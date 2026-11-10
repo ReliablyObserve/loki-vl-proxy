@@ -17,8 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each step of the answer itself, so the requests sent to VictoriaLogs and
   the answers do not change. Rankings with a clause, over a vector
   aggregation, a binary operation or `label_replace`, over an unwrapped label
-  with no parser, and spelled in ways the string translator reads unlike
-  Loki, are still written by the string translator.
+  with no parser, over a label filter after a parser or a `rate` over a parser
+  (where the lowering would allocate more than the translation), and spelled
+  in ways the string translator reads unlike Loki, are still written by the
+  string translator.
 - The query plan lowers binary operations (`+`, `-`, `*`, `/`, `%`, `^` and
   the comparisons) between range aggregations, vector aggregations without a
   `without` clause and numbers, with `on`, `ignoring`, `group_left` and

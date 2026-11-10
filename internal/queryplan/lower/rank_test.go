@@ -2,11 +2,16 @@ package lower
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // A ranking without a grouping over a range aggregation lowers to the operand's own operator: the string translator
@@ -19,7 +24,7 @@ import (
 func TestPlanLowersRankingsToTheOperand(t *testing.T) {
 	for _, operand := range []string{
 		`rate({app="a"}[5m])`, `count_over_time({app="a"} |= "x" [5m])`, `bytes_over_time({app=~"a.*"}[1h] offset 1h)`,
-		`bytes_rate({app="a", env!="p"}[1m])`, `absent_over_time({app="a"}[5m])`, `rate({app="a"} | json | status >= 500 [5m])`,
+		`bytes_rate({app="a", env!="p"}[1m])`, `absent_over_time({app="a"}[5m])`, `count_over_time({app="a"} | json [5m])`,
 		`sum_over_time({app="a"} | json | unwrap amount [5m])`, `last_over_time({app="a"} | logfmt | unwrap amount [5m])`,
 		`avg_over_time({app="a"} | json | unwrap amount [5m]) by (pod)`,
 	} {
@@ -156,4 +161,70 @@ func FuzzRankLowering(f *testing.F) {
 			}
 		}
 	})
+}
+
+// rankAllocGrid is the rankings the lowering writes, over every range function with and without a parser, a label
+// filter after it, and an unwrapped value with each conversion.
+func rankAllocGrid(t testing.TB) []string {
+	t.Helper()
+	qs, err := plancorpus.Queries("../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"topk(3, %s)", "sort(%s)"} {
+		for _, f := range []string{"count_over_time", "bytes_over_time", "absent_over_time", "rate", "bytes_rate"} {
+			for _, st := range []string{``, ` |= "x"`, ` | json`, ` | logfmt`, ` | json | status >= 500`, ` | json | level="error"`, ` | logfmt | status="x"`,
+				` |= "x" | json | status >= 500`, ` | json | drop a`, ` | regexp "(?P<a>x)"`, ` | pattern "<a> <b>"`, ` | json | a="b" | c="d"`, ` | status >= 500`, ` | json a="b"`} {
+				qs = append(qs, fmt.Sprintf(name, fmt.Sprintf(`%s({app="a"}%s [5m])`, f, st)))
+			}
+		}
+		for _, f := range []string{"sum_over_time", "avg_over_time", "min_over_time", "max_over_time", "first_over_time", "last_over_time", "stddev_over_time", "stdvar_over_time", "rate_counter", "rate"} {
+			for _, st := range []string{` | json`, ` | logfmt`, ` | json | status >= 500`, ` | json | level="error"`, ` | logfmt | status="x"`, ` | json | drop a`, ` |= "x" | json`, ``} {
+				for _, u := range []string{`amount`, `duration(t)`, `bytes(t)`} {
+					qs = append(qs, fmt.Sprintf(name, fmt.Sprintf(`%s({app="a"}%s | unwrap %s [5m])`, f, st, u)))
+				}
+			}
+		}
+	}
+	return qs
+}
+
+// A ranking the lowering writes allocates no more than the string translator does for the same text, with and
+// without the tenant's stream labels (Parse, Build, Resolve, the text screen and Plan against the translation): the
+// shapes where it would are left to the translator (Rank operand parser).
+//
+// conformance: architecture-syntax-package-layering
+func TestRankLoweringAllocatesNoMoreThanTheTranslator(t *testing.T) {
+	if raceDetectorEnabled {
+		t.Skip("allocation counts differ under the race detector")
+	}
+	checked := 0
+	for _, label := range []func(string) string{nil, benchStreamLabels} {
+		for _, q := range rankAllocGrid(t) {
+			p := rangeAggPlan(q)
+			if p == nil {
+				continue
+			}
+			if _, ok := p.Root.(*queryplan.Rank); !ok {
+				continue
+			}
+			if _, err := PlanQuery(q, p, Profile{Label: label}); err != nil {
+				continue
+			}
+			tr := testing.AllocsPerRun(5, func() { _, _ = translator.TranslateLogQLWithLabels(q, label) })
+			lo := testing.AllocsPerRun(5, func() {
+				expr, _ := logql.Parse(logql.CanonicalizeLogRanges(q))
+				pl, _ := queryplan.Build(expr, queryplan.Inputs{})
+				queryplan.Resolve(pl)
+				_, _ = PlanQuery(q, pl, Profile{Label: label})
+			})
+			checked++
+			if lo > tr {
+				t.Errorf("label=%v: %s: lowered %.0f allocs, translator %.0f", label != nil, q, lo, tr)
+			}
+		}
+	}
+	if checked < 500 {
+		t.Fatalf("only %d lowered rankings checked", checked)
+	}
 }

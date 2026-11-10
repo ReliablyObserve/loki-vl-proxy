@@ -21,7 +21,7 @@ func rankQueries(b *testing.B) []string {
 	qs = append(qs,
 		`topk(5, rate({app="a"} |= "x" [5m]))`, `bottomk(3, count_over_time({app="a"}[1h]))`, `sort(bytes_rate({app="a"} != "y" [1m]))`,
 		`sort_desc(bytes_over_time({app="a"} |~ "z.+" [5m]))`, `topk(10, absent_over_time({app="a"}[5m]))`,
-		`topk(3, rate({app="a"} | json | status >= 500 [5m]))`, `topk(3, last_over_time({app="a"} | logfmt | unwrap amount [5m]))`,
+		`topk(3, count_over_time({app="a"} | json [5m]))`, `topk(3, last_over_time({app="a"} | logfmt | unwrap amount [5m]))`,
 	)
 	var out []string
 	for _, q := range qs {

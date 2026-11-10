@@ -31,6 +31,10 @@ import (
 //   - an unwrapped value with no parser (Rank operand unwrap): a ranking is an outer name to the translator, which
 //     then groups the unwrapped stats by the stream, where the operand alone groups by nothing; the proxy sends the
 //     operand alone. With a parser both groupings are the same, and the text is the operand's;
+//   - an operand with a parser whose lowering allocates more than the translator's text for the ranking (Rank operand
+//     parser): a label filter after a parser, and rate and bytes_rate over a parser. The operand's own lowering has
+//     the same cost, which the ranking adds nothing to; the shape is left to the translator rather than written
+//     with more allocations than it makes (TestRankLoweringAllocatesNoMoreThanTheTranslator);
 //   - a spelling the translator reads unlike the plan (screenRank).
 func rank(n *queryplan.Rank, prof Profile) (physical.Op, error) {
 	if g := n.By; g != nil && (g.Without || len(g.Labels) > 0) {
@@ -47,12 +51,45 @@ func rank(n *queryplan.Rank, prof Profile) (physical.Op, error) {
 	if err != nil {
 		return nil, operandError(err, errRankOperandRange)
 	}
+	if parserCostsMore(ra) {
+		return nil, errRankParser
+	}
 	return op, nil
+}
+
+// parserCostsMore reports whether the lowering of the operand allocates more than the translator does for its text
+// (measured over the rank grid under the profile with and without stream labels): a label filter after a parser,
+// except behind an unwrapped value other than a rate's, and rate and bytes_rate over a parser with none.
+func parserCostsMore(ra *queryplan.RangeAgg) bool {
+	if !hasParser(ra.In) {
+		return false
+	}
+	unwrap := unwrapStage(ra.In) != nil && ra.Op != logql.RangeAbsentOverTime
+	rateLike := ra.Op == logql.RangeRate || ra.Op == logql.RangeBytesRate
+	if unwrap && !rateLike {
+		return false
+	}
+	if !unwrap && rateLike {
+		return true
+	}
+	parsed := false
+	for _, st := range ra.In.Stages {
+		switch st.(type) {
+		case *queryplan.Parse:
+			parsed = true
+		case *queryplan.LabelFilter:
+			if parsed {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 var (
 	errRankGrouping      = &NotLoweredError{Construct: "Rank grouping"}
 	errRankUnwrap        = &NotLoweredError{Construct: "Rank operand unwrap"}
+	errRankParser        = &NotLoweredError{Construct: "Rank operand parser"}
 	errRankOperandRange  = &NotLoweredError{Construct: "Rank operand RangeAgg"}
 	errRankSpelling      = &NotLoweredError{Construct: "Rank spelling"}
 	errRankParenthesized = &NotLoweredError{Construct: "Rank parenthesized"}
