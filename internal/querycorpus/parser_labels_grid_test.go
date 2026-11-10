@@ -421,3 +421,20 @@ func TestParserLabelsVLOracle(t *testing.T) {
 	}
 	checkLoweredGridWithVL(t, "parser-labels", grid)
 }
+
+// The oracle's typed pairs are made on the text the handlers translate (a quantile_over_time phi above 1 is
+// clamped to 1, which VictoriaLogs accepts) and leave out rate_counter, whose stats function is a marker the proxy
+// answers itself.
+// conformance: architecture-syntax-package-layering
+func TestTypedPairIsMadeOnTheTranslatedText(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	for _, v := range []string{"v1.49.0", "v1.53.0"} {
+		typed, built, ok := typedQueryPair(`quantile_over_time(2.0, {app="a"} | json | unwrap duration_ms [5m])`, v)
+		if !ok || typed != built || !strings.Contains(typed, "quantile(1,") {
+			t.Errorf("%s: phi above 1: pair %v, typed %q, built %q", v, ok, typed, built)
+		}
+		if _, _, ok := typedQueryPair(`rate_counter({app="a"} | unwrap n [5m])`, v); ok {
+			t.Errorf("%s: rate_counter makes a pair", v)
+		}
+	}
+}

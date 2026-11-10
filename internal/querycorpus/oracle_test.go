@@ -17,6 +17,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -242,8 +243,13 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 	return typedQueryPair(r.Query, v)
 }
 
+// rateCounterMarker is the stats function the proxy answers itself for rate_counter.
+const rateCounterMarker = "__rate_counter__("
+
 // typedQueryPair is typedSelectorPair for the LogQL query q.
 func typedQueryPair(q, v string) (typed, built string, ok bool) {
+	// The handlers clamp a quantile_over_time phi above 1 before they translate (VictoriaLogs rejects it).
+	q = proxy.RewriteQuantilePhiGT1(q)
 	// The translator is the wrong one for these (known_divergence_test.go): nothing to hold the plan to.
 	if translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q) {
 		return "", "", false
@@ -280,12 +286,18 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	}
 	queryplan.Resolve(plan)
 	caps := logsql.CapabilitiesFor(strings.TrimPrefix(v, "v"))
-	op, err := lower.Plan(plan, lower.Profile{Caps: caps, Label: identity})
+	// The pairing lowers what the shadow does (PlanQuery: the text screen turns away the spellings the string
+	// translator reads unlike the plan), so a row that is left to the translator is not held to it.
+	op, err := lower.PlanQuery(q, plan, lower.Profile{Caps: caps, Label: identity})
 	if err != nil {
 		return "", "", false
 	}
 	vq, isQuery := op.(physical.VLQuery)
 	if !isQuery {
+		return "", "", false
+	}
+	// rate_counter's stats function is a marker the proxy answers itself: the text is never a VictoriaLogs query.
+	if strings.Contains(vq.Text, rateCounterMarker) {
 		return "", "", false
 	}
 	// The string translator gets the text the handlers translate: the request rewrite removes comments and

@@ -230,6 +230,11 @@ func rewriteQuantilePhiGT1(query string) string {
 	})
 }
 
+// RewriteQuantilePhiGT1 is the request rewrite validateQuery applies to every query before it is translated: a
+// quantile_over_time with phi above 1 is clamped to 1. The query corpus pairs the plan with the translator on the
+// text the handlers translate.
+func RewriteQuantilePhiGT1(query string) string { return rewriteQuantilePhiGT1(query) }
+
 // sanitizeLimit caps and validates the limit parameter against the request
 // tenant's max_entries_limit_per_query; 0 is unlimited, as in Loki.
 func sanitizeLimit(limitStr string, maxLimit int) string {
