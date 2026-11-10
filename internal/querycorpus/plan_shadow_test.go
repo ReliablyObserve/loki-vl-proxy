@@ -49,8 +49,8 @@ type shadowSlice struct {
 // lowering is what the harness holds to the string translator: the native lowering, or a test's stand-in.
 type lowering func(q string, p *queryplan.Plan, prof planProfile) (physical.Op, error)
 
-func nativeLowering(_ string, p *queryplan.Plan, prof planProfile) (physical.Op, error) {
-	return lower.Plan(p, prof.lowerProfile())
+func nativeLowering(q string, p *queryplan.Plan, prof planProfile) (physical.Op, error) {
+	return lower.PlanQuery(q, p, prof.lowerProfile())
 }
 
 func (p planProfile) lowerProfile() lower.Profile {

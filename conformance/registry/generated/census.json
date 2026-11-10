@@ -1559,6 +1559,7 @@
     "internal/querycorpus/range_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/range_agg_oracle_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/vector_agg_blank_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_loki_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_test.go | architecture-syntax-package-layering",
@@ -2079,7 +2080,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 427,
+      "go": 428,
       "playwright": 1
     },
     "page_kinds": {

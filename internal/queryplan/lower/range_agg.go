@@ -54,9 +54,6 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	if err != nil {
 		return nil, err
 	}
-	if translatorReadsQuotedText(ra.In, log) {
-		return nil, &NotLoweredError{Construct: "RangeAgg quoted clause"}
-	}
 	if rate {
 		// One allocation for the text: the chain is most of it.
 		return physical.VLQuery{Text: log.text(translate.RateDetectedLevelChain(), "", ratePipes[:]...)}, nil
@@ -98,12 +95,28 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 		}
 		return metricLog{}, err
 	}
+	// The string translator strips what its regexp reads as a without clause out of the query text, and removes a
+	// " bool " modifier, quoted strings included: the lowering leaves such a query to it. The printed query may not
+	// hold the client's value (a value that is not UTF-8 is written as a filter that matches nothing), so the
+	// selector and the line filters are read as well as the printed filter and pipes.
+	quoted := quotedClauseError(owner)
+	if selectionHas(in, "without") || selectionHas(in, "bool") || selectionHas(in, "|||") {
+		return metricLog{}, quoted
+	}
+	head := logsql.Query{Filter: q.Filter}.String()
+	if readsAsClause(head) {
+		return metricLog{}, quoted
+	}
 	var pipes strings.Builder
 	for _, p := range q.Pipes {
 		pipes.WriteByte(' ')
+		start := pipes.Len()
 		pipes.WriteString(p.String())
+		if readsAsClause(pipes.String()[start:]) {
+			return metricLog{}, quoted
+		}
 	}
-	return metricLog{head: logsql.Query{Filter: q.Filter}.String(), restore: restore, pipes: pipes.String()}, nil
+	return metricLog{head: head, restore: restore, pipes: pipes.String()}, nil
 }
 
 // write puts the metric row's query, before its stats, into b, with room for extra more bytes: the filters, then the
@@ -158,4 +171,26 @@ func rangeInnerConstruct(sel *queryplan.LogSelect) string {
 		return "RangeAgg drop or keep"
 	}
 	return ""
+}
+
+// errQuotedClause and errVectorQuotedClause name a log query holding what a regexp of the string translator reads
+// out of the whole LogQL text, quoted strings included: a `without (...)` clause (stripped from the query, and a
+// fold marker appended), a ` bool ` modifier (removed) and the `|||` that separates the operands of a binary
+// expression (the translator splits its output there to insert the derived-label pipes).
+var (
+	errQuotedClause       = &NotLoweredError{Construct: "RangeAgg quoted clause"}
+	errVectorQuotedClause = &NotLoweredError{Construct: "VectorAgg quoted clause"}
+)
+
+func quotedClauseError(owner string) *NotLoweredError {
+	if owner == "VectorAgg" {
+		return errVectorQuotedClause
+	}
+	return errQuotedClause
+}
+
+// readsAsClause reports whether printed LogsQL holds a word the string translator reads as a without clause or a
+// bool modifier.
+func readsAsClause(s string) bool {
+	return strings.Contains(s, "without") || strings.Contains(s, "bool") || strings.Contains(s, "|||")
 }

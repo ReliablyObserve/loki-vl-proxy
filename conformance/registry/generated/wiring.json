@@ -28,6 +28,7 @@
       "internal/querycorpus/range_agg_grid_test.go",
       "internal/querycorpus/range_agg_oracle_test.go",
       "internal/querycorpus/stats_decode_test.go",
+      "internal/querycorpus/vector_agg_blank_grid_test.go",
       "internal/querycorpus/vector_agg_grid_test.go",
       "internal/querycorpus/vector_agg_loki_test.go",
       "internal/queryplan/lower/label_filter_test.go",
@@ -2952,6 +2953,9 @@
     "internal/querycorpus/stats_decode_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/vector_agg_blank_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/vector_agg_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3814,7 +3818,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 428,
+  "tests_with_markers": 429,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

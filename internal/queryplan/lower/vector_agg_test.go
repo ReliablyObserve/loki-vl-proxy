@@ -125,6 +125,8 @@ func TestPlanDelegatesVectorAggregations(t *testing.T) {
 		`sum without (x) (rate({x!="  "}[5m]))`:                          "VectorAgg quoted clause",
 		`sum without (x) (rate({app="a"} |= "without(0)\xa2"[5m]))`:      "VectorAgg quoted clause",
 		`sum by ( bool ) (rate({app="a"}[5m]))`:                          "VectorAgg quoted clause",
+		`sum(rate({app="a"} |~ "a|||b"[5m]))`:                            "VectorAgg quoted clause",
+		`rate({app="a"} |~ "|||"[5m])`:                                   "RangeAgg quoted clause",
 		`topk(3, sum by (app) (rate({app="a"}[5m])))`:                    "Rank",
 		`count_over_time({app="a"} |= "without (x)"[5m])`:                "RangeAgg quoted clause",
 		`rate({app="a"} |= "a bool b"[5m])`:                              "RangeAgg quoted clause",
@@ -156,25 +158,55 @@ func TestPlanDelegatesVectorAggregations(t *testing.T) {
 	}
 }
 
-// A query with blanks inside the parentheses (`sum( rate(...) )`) is a phrase to the string translator: its regexps
-// do not skip them, and the proxy's request rewrite (comments, keywords, parser flags) leaves the blanks, so the
-// proxy answers a phrase search for it today where Loki answers the metric. The plan has no text, so it lowers the
-// query as Loki reads it. Recorded here as the difference (it is not quoted text); no handler reads the lowering
-// for metric queries yet.
+// A query with blanks between the operand's parenthesis and the range function (`sum( rate(...) )`), or between the
+// function and its parenthesis, is a phrase to the string translator: its regexps do not skip them. The proxy's
+// request rewrite leaves the blanks, so the proxy answers a phrase search for it today where Loki answers the
+// metric. The plan has no text and lowers the aggregation as Loki reads it (Plan); the text screen turns the query
+// away (PlanQuery, ScreenText), so the lowering equals the translator wherever it answers. The difference is
+// recorded for the day metric queries flip.
 //
 // conformance: architecture-syntax-package-layering
-func TestPlanVectorAggregationReadsBlanksLikeLoki(t *testing.T) {
-	q := `sum( rate( {app="a"} [5m] ) )`
-	legacy, err := translator.TranslateLogQLWithCapabilities(q, nil, nil, logsql.Capabilities{})
-	if err != nil || !strings.HasPrefix(legacy, `"sum(`) {
-		t.Fatalf("the translator writes %q (%v): the difference this test records is gone", legacy, err)
+func TestPlanVectorAggregationBlankPadding(t *testing.T) {
+	canonical := vectorAggText(t, `sum(rate({app="a"}[5m]))`, Profile{})
+	for _, q := range []string{
+		`sum( rate({app="a"}[5m]))`, `sum(rate ({app="a"}[5m]))`, `sum( rate( {app="a"} [5m] ) )`, "sum(\n\trate\t(\t{app=\"a\"}[5m]))",
+		`sum by (app) ( rate({app="a"}[5m]))`, `sum(count_over_time ({app="a"}[5m])) by (app)`, `count without (pod) (  bytes_over_time ({app="a"}[5m]))`,
+	} {
+		legacy, err := translator.TranslateLogQLWithCapabilities(q, nil, nil, logsql.Capabilities{})
+		if err != nil || !strings.HasPrefix(legacy, `"`) {
+			t.Errorf("%q: the translator writes %q (%v): the difference this test records is gone", q, legacy, err)
+		}
+		p := rangeAggPlan(q)
+		if _, err := Plan(p, Profile{}); err != nil {
+			t.Errorf("%q: Plan: %v", q, err)
+		}
+		var nl *NotLoweredError
+		if _, err := PlanQuery(q, p, Profile{}); !errors.As(err, &nl) || nl.Construct != "VectorAgg blank padding" {
+			t.Errorf("%q: PlanQuery = %v, want not lowered: VectorAgg blank padding", q, err)
+		}
+		if ScreenText(q, p) == nil {
+			t.Errorf("%q: ScreenText lets it through", q)
+		}
 	}
-	op, err := Plan(rangeAggPlan(q), Profile{})
-	if err != nil {
-		t.Fatal(err)
+	if got := vectorAggText(t, `sum( rate({app="a"}[5m]))`, Profile{}); got != canonical {
+		t.Errorf("blanks change the lowering:\n got %s\nwant %s", got, canonical)
 	}
-	if got, want := vectorAggText(t, q, Profile{}), vectorAggText(t, `sum(rate({app="a"}[5m]))`, Profile{}); got != want || op == nil {
-		t.Errorf("blanks change the lowering:\n got %s\nwant %s", got, want)
+	// Blanks elsewhere are read alike by both: they stay lowered.
+	for _, q := range []string{
+		`sum by ( app ) (rate({ app = "a" } [ 5m ] ))`, "  sum(rate({app=\"a\"}[5m]))\n", `sum  by  (app)  (rate({app="a"}[5m]) )`,
+		`sum(rate({app="a"} |= "( rate (" [5m]))`, `sum(rate({app="a"} |= ` + "`" + `( rate (` + "`" + `[5m]))`, `sum(rate( {app="a"}[5m]))`,
+		`sum(rate({app="a"}[5m]) ) by (app, env)`,
+	} {
+		p := rangeAggPlan(q)
+		if err := ScreenText(q, p); err != nil {
+			t.Errorf("%q: turned away: %v", q, err)
+		}
+	}
+	// A range aggregation alone reads the same text alike.
+	for _, q := range []string{`rate( {app="a"} [5m] )`, `count_over_time ( {app="a"}[5m])`} {
+		if err := ScreenText(q, rangeAggPlan(q)); err != nil {
+			t.Errorf("%q: turned away: %v", q, err)
+		}
 	}
 }
 
@@ -218,12 +250,15 @@ func FuzzVectorAggLowering(f *testing.F) {
 		op := []string{"sum", "count", "min", "max", "avg", "stddev", "stdvar"}[agg%7]
 		labels := ident(name)
 		grouping := []string{``, ` by (` + labels + `)`, ` by (` + labels + `, service_name)`, ` without (` + labels + `)`, ` by (detected_level)`, ` by ()`, ` without (` + labels + `, ` + ident(sel) + `)`}[agg>>3%7]
-		inner := function + `(` + selector + stage + span + `)`
+		// blanks the translator reads unlike the plan sit between the operand's parenthesis and the function, and
+		// between the function and its parenthesis; the screen of PlanQuery turns those away.
+		pad := []string{"", " ", "\t", "\n"}
+		inner := function + pad[rng>>4%4] + `(` + selector + stage + span + `)`
 		var q string
 		if agg&0x80 != 0 {
-			q = op + `(` + inner + `)` + grouping
+			q = op + `(` + pad[rng>>6%4] + inner + `)` + grouping
 		} else {
-			q = op + grouping + ` (` + inner + `)`
+			q = op + grouping + ` (` + pad[rng>>6%4] + inner + `)`
 		}
 		for _, prof := range rangeProfiles() {
 			if lowered, legacy, same, delegated, ok := rangeAggLowering(t, q, prof); ok && !delegated && !same {

@@ -95,9 +95,6 @@ func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
 	if without && (textHas(log, "  ") || selectionHas(ra.In, "  ")) {
 		return nil, &NotLoweredError{Construct: "VectorAgg quoted clause"}
 	}
-	if translatorReadsQuotedText(ra.In, log) {
-		return nil, &NotLoweredError{Construct: "VectorAgg quoted clause"}
-	}
 	stats := vectorStats(va.Op, fn, rate, seconds, labels, without)
 	chain, service := "", ""
 	var needChain, needService bool
@@ -216,13 +213,6 @@ func hasField(fields []string, f string) bool {
 // textHas reports whether the filters or pipes of the log query contain s.
 func textHas(m metricLog, s string) bool {
 	return strings.Contains(m.head, s) || strings.Contains(m.restore, s) || strings.Contains(m.pipes, s)
-}
-
-// translatorReadsQuotedText reports whether the log query's text holds what a regexp of the string translator reads
-// out of the whole LogQL text, quoted strings included: a `without (...)` clause (stripped from the query, and a
-// fold marker appended) and a ` bool ` modifier (removed). The lowering leaves such a query to the translator.
-func translatorReadsQuotedText(sel *queryplan.LogSelect, m metricLog) bool {
-	return textHas(m, "without") || textHas(m, "bool") || selectionHas(sel, "without") || selectionHas(sel, "bool")
 }
 
 // selectionHas reports whether a value the client wrote in the selector or a line filter contains s. The printed

@@ -75,7 +75,7 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 	if strings.HasPrefix(legacy, "|") {
 		legacy = "* " + legacy
 	}
-	op, lerr := Plan(p, prof.lowerProfile())
+	op, lerr := PlanQuery(q, p, prof.lowerProfile())
 	if errors.Is(lerr, ErrNotLowered) {
 		return "", legacy, false, true, terr == nil
 	}

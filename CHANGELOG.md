@@ -23,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the time of the translation and allocates less. `stddev`, `stdvar`, nested and ranked
   aggregations and binary operations are still written by the string
   translator, and so are queries whose quoted text the translator reads as
-  syntax (a `without (...)`, ` bool ` or `| stats ` in a line filter).
+  syntax (a `without (...)`, ` bool ` or `| stats ` in a line filter) or
+  with a blank between an aggregation's parenthesis and its range function.
 - The query plan lowers `count_over_time`, `bytes_over_time` and
   `absent_over_time` over a log query with line, pattern and label filters and
   no parser (any offset, any range, with or without the tenant's stream

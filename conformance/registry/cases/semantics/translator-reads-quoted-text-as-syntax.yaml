@@ -25,8 +25,12 @@ why: |
   blanks inside the parentheses of a vector aggregation (`sum( rate( {a="x"}
   [5m] ) )`) make the translator return the query as a phrase, and the proxy's
   request rewrite leaves the blanks (checked 2026-11-10), so the proxy answers a
-  phrase search where Loki answers the metric; the plan lowers it as Loki reads
-  it (TestPlanVectorAggregationReadsBlanksLikeLoki).
+  phrase search where Loki answers the metric. The plan lowers it as Loki reads
+  it, but the lowering turns the query away (VectorAgg blank padding, a text
+  screen: lower.ScreenText) so it never differs from the translator while
+  metric queries are served by the translator; this stays the open difference
+  to close when they flip (TestPlanVectorAggregationBlankPadding,
+  TestVectorAggBlankPaddingShadow: 5,277 padded spellings x profiles).
 
   Evidence (main, 2026-11-09; the corpus rows come from TestKeyCraftedValues):
     {a="x"} | s=`…detected_level…`

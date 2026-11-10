@@ -77,7 +77,7 @@ func vectorAggGrid() []string {
 	}
 	// text a translator regexp reads as syntax: a line filter that spells a grouping, a stats pipe, a derived name.
 	for _, line := range []string{
-		` |= "without (x)"`, ` |= "by (x)"`, ` |= "| stats by (x)"`, ` |= "| stats "`, ` |= "service_name"`, ` |= "detected_level"`, ` |= "a bool b"`,
+		` |= "without (x)"`, ` |= "by (x)"`, ` |= "| stats by (x)"`, ` |= "| stats "`, ` |= "service_name"`, ` |= "detected_level"`, ` |= "a bool b"`, ` |~ "|||"`, ` |= "a|||b"`,
 		` |= "sum by (x) (rate(y))"`, ` |= "__without__:sum:app"`, ` |~ "without\\s*\\((a|b)\\)"`, " |= `without (z)`",
 	} {
 		for _, op := range []string{"sum", "count", "avg"} {
