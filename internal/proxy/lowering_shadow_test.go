@@ -214,7 +214,7 @@ func TestLoweringShadow_ResultsByConstruct(t *testing.T) {
 	p := newShadowProxy(t, 1, "http://unused")
 	for _, q := range []string{
 		`{app="a"}`,                                // match
-		`{app="a"} | line_format "{{.a}}"`,         // LogSelect pipeline: not lowered
+		`{app="a"} | line_format "{{.a|upper}}"`,   // LogSelect line format function: not lowered
 		`sum_over_time({app="a"} | unwrap n [5m])`, // RangeAgg: not lowered (unwrap)
 		`rate({app="a"}[5m])`,                      // RangeAgg: lowered, a match
 		`sum by (app) (rate({app="a"}[5m]))`,       // VectorAgg
@@ -237,7 +237,7 @@ func TestLoweringShadow_ResultsByConstruct(t *testing.T) {
 			t.Errorf("a query both reject is counted: %q in %v", key, got)
 		}
 	}
-	for _, want := range []string{"match LogSelect", "not_lowered LogSelect pipeline", "match RangeAgg", "not_lowered RangeAgg unwrap", "not_lowered VectorAgg", "not_lowered Rank", "not_lowered BinOp", "not_lowered LabelReplace"} {
+	for _, want := range []string{"match LogSelect", "not_lowered LogSelect line format function", "match RangeAgg", "not_lowered RangeAgg unwrap", "not_lowered VectorAgg", "not_lowered Rank", "not_lowered BinOp", "not_lowered LabelReplace"} {
 		if got[want] == 0 {
 			t.Errorf("no %q in %v", want, got)
 		}

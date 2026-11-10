@@ -126,7 +126,7 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 // drop or keep (written unlike a log query's) and any other stage the log query lowering leaves out is named by
 // that lowering.
 func rangeInnerConstruct(sel *queryplan.LogSelect) string {
-	parser, dropKeep := false, false
+	parser, dropKeep, format := false, false, false
 	for _, st := range sel.Stages {
 		switch st.(type) {
 		case *queryplan.Unwrap:
@@ -135,6 +135,8 @@ func rangeInnerConstruct(sel *queryplan.LogSelect) string {
 			parser = true
 		case *queryplan.Drop, *queryplan.Keep:
 			dropKeep = true
+		case *queryplan.Decolorize, *queryplan.LineFormat, *queryplan.LabelFormat:
+			format = true
 		}
 	}
 	if parser {
@@ -144,6 +146,10 @@ func rangeInnerConstruct(sel *queryplan.LogSelect) string {
 		// The string translator writes a metric row's drop and keep unlike a log query's: a drop deletes the
 		// level fields detected_level is derived from, and a keep of detected_level deletes level after its fields.
 		return "RangeAgg drop or keep"
+	}
+	if format {
+		// The log query lowering writes these stages; under a range aggregation they are not proven yet.
+		return "RangeAgg LogSelect pipeline"
 	}
 	return ""
 }

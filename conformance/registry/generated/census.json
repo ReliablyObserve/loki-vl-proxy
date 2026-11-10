@@ -1548,6 +1548,8 @@
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-sliding-sum-folded-buckets",
     "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/extract_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/format_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
@@ -1565,6 +1567,9 @@
     "internal/querycorpus/range_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/range_agg_oracle_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/extract_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/format_loki_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/format_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_parsed_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
@@ -1577,9 +1582,11 @@
     "internal/translate/detected_level_chain_memo_test.go | severity-detected-level-derivation",
     "internal/translate/detected_level_keyword_test.go | severity-detected-level-derivation",
     "internal/translate/detected_level_normalize_test.go | severity-detected-level-derivation",
+    "internal/translate/extract_stages_test.go | architecture-syntax-package-layering",
     "internal/translate/ip_label_prefilter_test.go | semantics/ip-label-filter-embedded-address",
     "internal/translate/ip_line_filter_loki_test.go | semantics/ip-filter-precision",
     "internal/translate/ip_line_filter_loki_test.go | semantics/ip-line-filter-ipv4-like-loki",
+    "internal/translate/line_format_test.go | architecture-syntax-package-layering",
     "internal/translate/linefilter_pattern_test.go | semantics/pattern-line-filter",
     "internal/translate/selector_test.go | architecture-syntax-package-layering",
     "internal/translator/detected_level_filter_stage_test.go | severity-detected-level-derivation",
@@ -2083,7 +2090,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 428,
+      "go": 435,
       "playwright": 1
     },
     "page_kinds": {

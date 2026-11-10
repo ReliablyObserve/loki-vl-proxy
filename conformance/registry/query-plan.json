@@ -125,12 +125,12 @@
     }
   },
   "predicate_parity": {
-    "rows": 2544,
-    "validated": 2435,
+    "rows": 2546,
+    "validated": 2437,
     "attributes": {
       "offset": {
         "predicate": "extractLogQLOffset(handler query text)",
-        "compared": 2435,
+        "compared": 2437,
         "explained": []
       }
     }
@@ -150,13 +150,12 @@
     "delegated_by_construct": {
       "BinOp": 2850,
       "LabelReplace": 1330,
-      "LogSelect (route rule)": 1850,
+      "LogSelect (route rule)": 2030,
       "LogSelect keep order": 10,
       "LogSelect label filter detected_level": 130,
       "LogSelect label filter numeric equality after parser": 40,
-      "LogSelect pattern parser": 30,
-      "LogSelect pipeline": 130,
-      "LogSelect regexp parser": 40,
+      "LogSelect line format function": 10,
+      "LogSelect pipeline": 10,
       "RangeAgg (route rule)": 1190,
       "RangeAgg LogSelect label filter detected_level": 10,
       "RangeAgg LogSelect pipeline": 10,
@@ -218,7 +217,7 @@
   "shadow": {
     "rows": 22935,
     "profiles": 12,
-    "native": 3327,
+    "native": 3543,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp": 2646,
@@ -226,9 +225,8 @@
       "LogSelect keep order": 12,
       "LogSelect label filter detected_level": 156,
       "LogSelect label filter numeric equality after parser": 48,
-      "LogSelect pattern parser": 36,
-      "LogSelect pipeline": 180,
-      "LogSelect regexp parser": 48,
+      "LogSelect line format function": 36,
+      "LogSelect pipeline": 12,
       "Opaque": 72,
       "RangeAgg LogSelect label filter detected_level": 9,
       "RangeAgg LogSelect pipeline": 9,
