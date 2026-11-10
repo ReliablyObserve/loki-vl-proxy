@@ -114,6 +114,9 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 			// Loki rejects a dotted grouping label and an invalid label_replace regexp when it parses; the proxy
 			// accepts the first and answers the second with Loki's error when it reads the markers, as the
 			// translator does: not part of what is compared here.
+			if !strings.Contains(lf.Error, "unexpected .") && !strings.Contains(lf.Error, "invalid regex in label_replace") {
+				t.Errorf("%s: lowered, Loki rejects it: %s", r.q, lf.Error)
+			}
 			rejected++
 			continue
 		}
