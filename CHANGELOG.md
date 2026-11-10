@@ -45,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   label inside an and/or tree and the shapes whose text the translator reads
   differently from the typed stage. No handler reads the lowering yet; the
   requests sent to VictoriaLogs do not change.
+### Fixed
+
+- Since 2.118.0, a log query whose parser or formatting stage was written in
+  another letter case (`| JSON`, `| Logfmt`, `| DROP x`) could be translated by
+  the query plan instead of the string translator: the check that keeps those
+  queries on the translator compared the stage name case-sensitively, while the
+  parser reads it in any case. The request sent to VictoriaLogs was the same
+  text either way, so results did not change. Such queries now stay on the
+  string translator, and the plan is served only after a typed check that the
+  query holds line and label filters only.
 
 ## [2.119.0] - 2026-11-10
 

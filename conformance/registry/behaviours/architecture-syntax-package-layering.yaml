@@ -553,3 +553,25 @@ decisions:
     performance:
       tracked: ['BenchmarkParsedLabelFilterQueriesTranslator / BenchmarkParsedLabelFilterQueriesLowered, and the line, pattern, label filter and parser pairs, ns/op, B/op, allocs/op (internal/queryplan/lower)']
       bound: 'M5 Pro, GOMAXPROCS=4, count=10, 2026-11-10, after the translator moved to a pooled text buffer (#1259): the corpus queries with a label filter after a parser string translator 10.0 µs, 10.6 KiB, 85 allocs, lowered (Parse + Build + Resolve + Plan) 3.7 µs, 6.1 KiB, 95 allocs (63% faster, 42% less memory, 12% more allocs: the shared plan front end and the filter pipes; before #1259 the same set measured 242 and 268 allocs); the line, pattern, label filter and parser sets equal to origin/main in allocs/op and B/op'
+  - id: flip-screen-stage-letter-case
+    pending: true
+    chosen: 'The flip''s text screen (logql.MayHaveNonFilterStage) reads a stage keyword in any letter case (folded on a stack buffer, no allocation), and lowerLogSelect serves the lowering only for a plan whose root is a LogSelect of line and label filters (filterOnly, a typed check behind the screen)'
+    over: ['the typed check alone (every parser query would then be planned before it is turned away; the screen keeps them to one scan of the text)', 'the screen alone (a word the scanner folds that the screen does not know would again pass)']
+    why: |
+      fuzz-smoke (FuzzMayHaveNonFilterStage) found `{}|jsOn`: the logql scanner
+      folds a word Loki reads as a keyword to lower case, so `| JSON` is a json
+      parser, while the screen compared stage names case-sensitively. Since
+      the json, logfmt, drop and keep lowering (#1255, #1266), such a query
+      passed the screen, built a LogSelect plan and was served from the
+      lowering, outside the construct the flip covers. The lowering writes the
+      translator''s text for them (probed on main: `| JSON`, `| Json | status>=500`,
+      `| LOGFMT`, `| Logfmt | level="error"`, `| DROP x`, `| Keep x` under every
+      profile, 0 differences), so the requests and answers did not change; the
+      fix restores the boundary the flip was proven for.
+    evidence: 'TestMayHaveNonFilterStage (mixed-case rows), TestMayHaveNonFilterStageDoesNotAllocate (a mixed-case query), the fuzz seed 589da9eadec5d8fa and FuzzMayHaveNonFilterStage 45 s with no finding; TestQueryPlanLowering_FallsBackToTheTranslator (mixed-case stages stay on the translator) and TestQueryPlanLowering_ServesFilterOnlyPlans (the typed check); TestPlanShadow, TestQueryPlanLowering_* and TestPlanRouteParity unchanged (2026-11-10)'
+    code: [internal/logql/stage_screen.go, internal/proxy/query_lowering.go]
+    tests: [TestMayHaveNonFilterStage, TestMayHaveNonFilterStageDoesNotAllocate, FuzzMayHaveNonFilterStage, TestQueryPlanLowering_FallsBackToTheTranslator, TestQueryPlanLowering_ServesFilterOnlyPlans]
+    quality: 'Behaviour-neutral for clients (same requests); the flip serves exactly the construct its proof covers.'
+    performance:
+      tracked: ['BenchmarkTranslateQueryMissShapes (internal/proxy) and the logql screen and parse benchmarks, ns/op, B/op, allocs/op']
+      bound: 'see the PR: allocs and B/op equal to main on every BenchmarkTranslateQueryMissShapes shape'

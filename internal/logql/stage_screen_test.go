@@ -38,6 +38,12 @@ func TestMayHaveNonFilterStage(t *testing.T) {
 		{`{app="a"} |= "x" | json | a="b"`, true},
 		{`sum(rate({app="a"} | unwrap n [5m]))`, true},
 		{`{app="a"} | distinct a`, true},
+		{`{app="a"} | JSON`, true},
+		{"{}|jsOn", true},
+		{`{app="a"} | Logfmt | level="x"`, true},
+		{`{app="a"} | DROP x`, true},
+		{`{app="a"} | Line_Format "x"`, true},
+		{`{app="a"} | JSON_x="1"`, false},
 		{``, false},
 		{`{app="a`, false},
 		{"{app=`a", false},
@@ -51,9 +57,13 @@ func TestMayHaveNonFilterStage(t *testing.T) {
 
 // The screen allocates nothing.
 func TestMayHaveNonFilterStageDoesNotAllocate(t *testing.T) {
-	q := `{app="api", namespace="prod"} |= "error" != "debug" | status >= 500 | json`
-	if n := testing.AllocsPerRun(100, func() { _ = MayHaveNonFilterStage(q) }); n != 0 {
-		t.Fatalf("%v allocations", n)
+	for _, q := range []string{
+		`{app="api", namespace="prod"} |= "error" != "debug" | status >= 500 | json`,
+		`{app="api", namespace="prod"} |= "error" != "debug" | Status >= 500 | Label_Format a="b"`,
+	} {
+		if n := testing.AllocsPerRun(100, func() { _ = MayHaveNonFilterStage(q) }); n != 0 {
+			t.Fatalf("%q: %v allocations", q, n)
+		}
 	}
 }
 
