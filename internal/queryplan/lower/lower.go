@@ -190,6 +190,12 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 	if err != nil {
 		return logsql.Query{}, err
 	}
+	return selectQuery(f, filters, pipes), nil
+}
+
+// selectQuery is the query of a stream selector's filter f, the filters written in front of the first pipe and
+// the pipes.
+func selectQuery(f logsql.FilterExpr, filters logsql.AllOf, pipes []logsql.Pipe) logsql.Query {
 	q := logsql.Query{Filter: f, Pipes: pipes}
 	if len(filters) > 0 {
 		// A selector that keeps every row (`{detected_level!="info"}`) is no filter next to the others, as the
@@ -200,7 +206,7 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 			q.Filter = append(logsql.AllOf{f}, filters...)
 		}
 	}
-	return q, nil
+	return q
 }
 
 // labelFilters builds the filter of each label filter stage of the query, by stage index (nil elsewhere), or
