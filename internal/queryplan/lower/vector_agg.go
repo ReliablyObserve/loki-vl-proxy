@@ -103,7 +103,8 @@ func buildVectorAgg(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *queryp
 			return builtVector{}, &NotLoweredError{Construct: "VectorAgg range"}
 		}
 	}
-	labels, raw, without, err := vectorClause(va, prof)
+	var labelBuf [6]string
+	labels, raw, without, err := vectorClause(va, prof, labelBuf[:0])
 	if err != nil {
 		return builtVector{}, err
 	}

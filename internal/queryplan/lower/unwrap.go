@@ -538,7 +538,7 @@ func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile)
 			return nil, &NotLoweredError{Construct: "VectorAgg range"}
 		}
 	}
-	labels, raw, without, err := vectorClause(va, prof)
+	labels, raw, without, err := vectorClause(va, prof, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -594,14 +594,18 @@ func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile)
 }
 
 // vectorClause reads the by or without clause of a vector aggregation: the labels as VictoriaLogs names them (for a
-// by clause), the labels as written (for a without clause) and whether it is a without.
-func vectorClause(va *queryplan.VectorAgg, prof Profile) (labels, raw []string, without bool, err error) {
+// by clause), the labels as written (for a without clause) and whether it is a without. buf, when not nil, holds
+// the labels, so a caller with a small array allocates nothing for them.
+func vectorClause(va *queryplan.VectorAgg, prof Profile, buf []string) (labels, raw []string, without bool, err error) {
 	g := va.By
 	if g == nil {
 		return nil, nil, false, nil
 	}
 	if len(g.Labels) > 0 {
-		labels = translate.NormalizeByLabels(g.Labels, prof.Label)
+		if buf == nil {
+			buf = make([]string, 0, len(g.Labels))
+		}
+		labels = translate.AppendNormalizedLabels(buf[:0], g.Labels, prof.Label)
 		if len(labels) == 0 {
 			return nil, nil, false, &NotLoweredError{Construct: "VectorAgg grouping label"}
 		}

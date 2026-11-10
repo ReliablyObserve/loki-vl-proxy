@@ -72,15 +72,10 @@ func (m metricLog) keyPipes(by []string, fn logsql.StatsFunc, arg, owner string,
 	}
 	var labelBuf [6]string
 	labels := labelBuf[:0]
-	for i := 0; i <= len(by); i++ {
-		l := arg
-		if i < len(by) {
-			l = by[i]
-		}
-		if l != "" && !slices.Contains(labels, l) && m.resolvable(l) {
-			labels = append(labels, l)
-		}
+	for _, l := range by {
+		labels = m.addResolvable(labels, l)
 	}
+	labels = m.addResolvable(labels, arg)
 	// The aggregated label of a stats function is dropped when empty if a pipe resolved it or a copy defined it.
 	filterArg := arg != "" && (slices.Contains(labels, arg) || m.holdsCopy() && m.hasJoined(asPipe, arg, ""))
 	if len(labels) == 0 && !filterArg {
@@ -118,6 +113,14 @@ func (m metricLog) keyPipes(by []string, fn logsql.StatsFunc, arg, owner string,
 		b.WriteString(anyTail)
 	}
 	return keyed{text: b.String(), copies: copies}, nil
+}
+
+// addResolvable appends label to labels when it is a name, not there yet, that the translator resolves.
+func (m metricLog) addResolvable(labels []string, label string) []string {
+	if label == "" || slices.Contains(labels, label) || !m.resolvable(label) {
+		return labels
+	}
+	return append(labels, label)
 }
 
 // asPipe is how a pipe names its result in the printed query.
