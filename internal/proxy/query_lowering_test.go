@@ -99,6 +99,16 @@ var loweringParityQueries = []struct {
 	{"json", `{app="a"} | json | status="200"`, false, ""},
 	{"logfmt", `{app="a"} | logfmt | level="error"`, false, ""},
 	{"line_format", `{app="a"} | line_format "{{.status}}"`, false, ""},
+	// The lowering writes these natively (the corpus shadow holds it to the translator), but the flip's screen turns
+	// every parser and formatting stage away: they stay on the string translator.
+	{"decolorize", `{app="a"} | decolorize`, false, ""},
+	{"decolorize then filter", `{app="a"} | decolorize | status="200" |= "x"`, false, ""},
+	{"regexp", "{app=\"a\"} | regexp `(?P<s>\\d+)` | s=\"200\"", false, ""},
+	{"pattern", "{app=\"a\"} | pattern `<_> <s> <_>` | s=\"200\"", false, ""},
+	{"label_format", `{app="a"} | label_format s=status | s="200"`, false, ""},
+	{"label_format template", `{app="a"} | label_format s="{{.status}}-x"`, false, ""},
+	{"drop", `{app="a"} | drop status`, false, ""},
+	{"keep", `{app="a"} | keep status`, false, ""},
 	// Two line_format stages keep the stored line aside in the Loki-compatible profile (translateQueryOpts keepLine).
 	{"keep line", `{app="a"} | line_format "{{.status}}" | line_format "{{.app}}: {{.__line__}}"`, false, ""},
 	{"keep line with filters", `{app="a"} |= "x" | line_format "{{.a}}" | status="200" | line_format "{{.b}}"`, false, ""},
