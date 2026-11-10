@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // A `<op> without (...)` over a tumbling window is folded by VictoriaLogs
@@ -93,7 +94,7 @@ func wpGenerateScenario(rnd *rand.Rand, fn string) (nvScenario, []wpStream) {
 		if rnd.Intn(2) == 0 {
 			stream = streams[rnd.Intn(min(2, len(streams)))]
 		}
-		s.rows = append(s.rows, emuRow{ts: ts, stream: stream.text, msg: "x=1"})
+		s.rows = append(s.rows, vlemu.Row{TS: ts, Stream: stream.text, Msg: "x=1"})
 	}
 	s.dropEdgeRows()
 	// An innermost `without` over names from the pool (some absent from some
@@ -129,8 +130,8 @@ func wpReference(s nvScenario, streams []wpStream) map[string]map[int64]float64 
 	for _, t := range s.times() {
 		perStream := map[string]float64{}
 		for _, row := range s.rows {
-			if row.ts > t-int64(s.window) && row.ts <= t {
-				perStream[row.stream]++
+			if row.TS > t-int64(s.window) && row.TS <= t {
+				perStream[row.Stream]++
 			}
 		}
 		var vec []nvSeries
@@ -163,8 +164,8 @@ func wpReference(s nvScenario, streams []wpStream) map[string]map[int64]float64 
 // labels key -> time -> value, and the queries VictoriaLogs received.
 func wpRun(t *testing.T, s nvScenario, pushdownOff bool, mappings ...FieldMapping) (map[string]map[int64]float64, []string) {
 	t.Helper()
-	emu := &vlEmulator{t: t, rows: s.rows, field: "amount"}
-	backend := httptest.NewServer(emu.handler())
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount"}
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	responseCache := cache.New(60*time.Second, 1000)
 	p, err := New(Config{BackendURL: backend.URL, Cache: responseCache, LogLevel: "error", FieldMappings: mappings})
@@ -207,7 +208,7 @@ func wpRun(t *testing.T, s nvScenario, pushdownOff bool, mappings ...FieldMappin
 			got[key][int64(point[0].(float64))*1e9] = v
 		}
 	}
-	return got, emu.endpointCalls("/select/logsql/stats_query_range")
+	return got, emu.EndpointCalls("/select/logsql/stats_query_range")
 }
 
 func wpEqual(a, b map[string]map[int64]float64) string {
@@ -305,9 +306,9 @@ func TestWithoutPushdownDirectedStreams(t *testing.T) {
 					s.end = s.start + int64(2*time.Minute)
 					for i, st := range streams {
 						for k := 0; k <= i%4+int(s.start/1e9)%2; k++ { // counts differ per stream and window
-							s.rows = append(s.rows, emuRow{ts: s.start + int64(k)*1e9 + int64(i)*7e8 + 1, stream: st.text, msg: "x=1"})
+							s.rows = append(s.rows, vlemu.Row{TS: s.start + int64(k)*1e9 + int64(i)*7e8 + 1, Stream: st.text, Msg: "x=1"})
 						}
-						s.rows = append(s.rows, emuRow{ts: s.start + int64(time.Minute) + int64(i)*3e8 + 1, stream: st.text, msg: "x=1"})
+						s.rows = append(s.rows, vlemu.Row{TS: s.start + int64(time.Minute) + int64(i)*3e8 + 1, Stream: st.text, Msg: "x=1"})
 					}
 					want := wpReference(s, streams)
 					for _, off := range []bool{false, true} {
@@ -338,7 +339,7 @@ func TestWithoutPushdownOnlyForTumblingWindows(t *testing.T) {
 		s.start = base - base%int64(time.Minute)
 		s.end = s.start + int64(2*time.Minute)
 		for i := 0; i < 8; i++ {
-			s.rows = append(s.rows, emuRow{ts: s.start - int64(window) + int64(i+1)*int64(window)/9 + 1, stream: streams[i%2].text, msg: "x=1"})
+			s.rows = append(s.rows, vlemu.Row{TS: s.start - int64(window) + int64(i+1)*int64(window)/9 + 1, Stream: streams[i%2].text, Msg: "x=1"})
 		}
 		return s
 	}
@@ -362,8 +363,8 @@ func TestWithoutPushdownOnlyForTumblingWindows(t *testing.T) {
 	}
 	// An instant query.
 	s := mk(time.Minute, time.Minute)
-	emu := &vlEmulator{t: t, rows: s.rows, field: "amount"}
-	backend := httptest.NewServer(emu.handler())
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount"}
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	responseCache := cache.New(60*time.Second, 1000)
 	p, err := New(Config{BackendURL: backend.URL, Cache: responseCache, LogLevel: "error"})
@@ -376,7 +377,7 @@ func TestWithoutPushdownOnlyForTumblingWindows(t *testing.T) {
 		t.Fatalf("%d %s", res.Code, res.Body)
 	}
 	for _, path := range []string{"/select/logsql/stats_query", "/select/logsql/stats_query_range"} {
-		for _, query := range emu.endpointCalls(path) {
+		for _, query := range emu.EndpointCalls(path) {
 			if strings.Contains(query, "replace_regexp") {
 				t.Errorf("an instant query was folded by VictoriaLogs: %s", query)
 			}
@@ -399,7 +400,7 @@ func TestWithoutPushdownLeavesMappedLabelsToTheProxyFold(t *testing.T) {
 	s.start = base - base%int64(time.Minute)
 	s.end = s.start
 	for i := 0; i < 6; i++ {
-		s.rows = append(s.rows, emuRow{ts: s.start - int64(i+1)*1e9, stream: streams[i%2].text, msg: "x=1"})
+		s.rows = append(s.rows, vlemu.Row{TS: s.start - int64(i+1)*1e9, Stream: streams[i%2].text, Msg: "x=1"})
 	}
 	for _, mapping := range []FieldMapping{{VLField: "pod", LokiLabel: "instance"}, {VLField: "host", LokiLabel: "pod"}} {
 		_, queries := wpRun(t, s, false, mapping)
@@ -441,7 +442,7 @@ func TestWithoutSlidingSumMatchesFoldAndLoki(t *testing.T) {
 			s.end = s.start + int64(rnd.Intn(8))*int64(step)
 			lo, hi := s.start-int64(window)-5e9, s.end+5e9
 			for k, n := 0, 10+rnd.Intn(80); k < n; k++ {
-				s.rows = append(s.rows, emuRow{ts: lo + rnd.Int63n(hi-lo), stream: streams[rnd.Intn(len(streams))].text, msg: "x=1"})
+				s.rows = append(s.rows, vlemu.Row{TS: lo + rnd.Int63n(hi-lo), Stream: streams[rnd.Intn(len(streams))].text, Msg: "x=1"})
 			}
 			s.dropEdgeRows()
 			excluded := []string{"pod", "abc", "zone", "baz", "pod_name", "note", "app"}

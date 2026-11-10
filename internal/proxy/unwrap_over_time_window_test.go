@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // This file pins sum, avg, max and min over time with unwrap to Loki's window
@@ -28,7 +29,7 @@ import (
 // with the outer aggregation applied per step (pkg/logql/evaluator.go
 // VectorAggEvaluator.Next). The reference below is written apart from the
 // proxy. The proxy under test is the real handler over the emulated
-// VictoriaLogs (vlEmulator), and the answer must come from stats: raw rows
+// VictoriaLogs (vlemu.Emulator), and the answer must come from stats: raw rows
 // only where the bucket grid would pass Loki's 11,000 points
 // (heavyQueryBucketThreshold), which TestUnwrapOverTimeRawWindowBounds forces.
 
@@ -82,26 +83,26 @@ func lokiOverTimeValue(fn string, values []float64) float64 {
 // range function per series, and the outer aggregation (sum, max, min, avg or
 // count; "" is sum) of the series per group key (group returns it from the
 // series' stream). A group whose series have no sample at t has no point there.
-func lokiOverTimeGroups(rows []emuRow, fn, outer string, window, offset int64, times []int64, group func(stream string) string) map[string]map[int64]float64 {
-	sorted := append([]emuRow(nil), rows...)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].ts < sorted[j].ts })
+func lokiOverTimeGroups(rows []vlemu.Row, fn, outer string, window, offset int64, times []int64, group func(stream string) string) map[string]map[int64]float64 {
+	sorted := append([]vlemu.Row(nil), rows...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].TS < sorted[j].TS })
 	out := map[string]map[int64]float64{}
 	for _, t := range times {
 		end := t - offset
 		perSeries := map[string][]float64{}
 		groupOf := map[string]string{}
 		for _, row := range sorted {
-			if row.ts <= end-window || row.ts > end {
+			if row.TS <= end-window || row.TS > end {
 				continue
 			}
-			labels := make([]string, 0, len(row.labels))
-			for k, v := range row.labels {
+			labels := make([]string, 0, len(row.Labels))
+			for k, v := range row.Labels {
 				labels = append(labels, k+"="+v)
 			}
 			sort.Strings(labels)
-			key := row.stream + "|" + strings.Join(labels, ",")
-			perSeries[key] = append(perSeries[key], row.value)
-			groupOf[key] = group(row.stream)
+			key := row.Stream + "|" + strings.Join(labels, ",")
+			perSeries[key] = append(perSeries[key], row.Value)
+			groupOf[key] = group(row.Stream)
 		}
 		members := map[string][]float64{}
 		for key, values := range perSeries {
@@ -159,7 +160,7 @@ type owShape struct {
 }
 
 func owPod(stream string) string {
-	return emuStreamLabelRE.FindAllStringSubmatch(stream, -1)[1][2]
+	return vlemu.StreamLabelRE.FindAllStringSubmatch(stream, -1)[1][2]
 }
 
 func owAnyParser(string, string) bool { return true }
@@ -295,7 +296,7 @@ type owCase struct {
 	window, step time.Duration // step 0: an instant query at end
 	offset       time.Duration
 	start, end   int64 // ns, whole seconds
-	rows         []emuRow
+	rows         []vlemu.Row
 }
 
 func (c owCase) rangeAgg() string {
@@ -340,9 +341,9 @@ func (c owCase) want() map[string]map[int64]float64 {
 	return out
 }
 
-func runOverTimeCase(t *testing.T, emu *vlEmulator, c owCase, seriesCap int) map[string]map[int64]float64 {
+func runOverTimeCase(t *testing.T, emu *vlemu.Emulator, c owCase, seriesCap int) map[string]map[int64]float64 {
 	t.Helper()
-	backend := httptest.NewServer(emu.handler())
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	rc := cache.New(60*time.Second, 1000)
 	defer rc.Close()
@@ -351,7 +352,7 @@ func runOverTimeCase(t *testing.T, emu *vlEmulator, c owCase, seriesCap int) map
 		t.Fatal(err)
 	}
 	defer func() { _ = p.Shutdown(context.Background()) }()
-	if emu.version != "" {
+	if emu.Version != "" {
 		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -441,15 +442,15 @@ var owWindowMergeRE = regexp.MustCompile(`\) as (c|__lvp_sum)(,|$|\n)`)
 // rows, and a range longer than the step merged its windows from buckets of
 // the partial aggregates (the sample count is their presence). An instant
 // query over a parser reads its one window's rows (proxyManualRangeMetricInstant).
-func checkOverTimeRoute(t *testing.T, label string, emu *vlEmulator, c owCase) {
+func checkOverTimeRoute(t *testing.T, label string, emu *vlemu.Emulator, c owCase) {
 	t.Helper()
 	if c.parser != "" && (c.step == 0 || (c.shape.name == "per stream" && c.fn == "avg_over_time")) {
 		return
 	}
-	if raw := emu.endpointCalls("/select/logsql/query"); len(raw) > 0 {
+	if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
 		t.Fatalf("%s: the metric read raw rows: %s\nquery %s step=%v window=%v", label, raw[0], c.query(), c.step, c.window)
 	}
-	stats := append(emu.endpointCalls("/select/logsql/stats_query_range"), emu.endpointCalls("/select/logsql/stats_query")...)
+	stats := append(emu.EndpointCalls("/select/logsql/stats_query_range"), emu.EndpointCalls("/select/logsql/stats_query")...)
 	if len(stats) == 0 {
 		t.Fatalf("%s: no stats query\nquery %s", label, c.query())
 	}
@@ -484,7 +485,7 @@ func owGenerate(rnd *rand.Rand, fn, parser string, shape owShape, instant bool) 
 	}
 	for _, pod := range []string{"a", "b", "c"} {
 		for ts := lo + rnd.Int63n(gap); ts < hi; ts += gap/2 + rnd.Int63n(gap) {
-			row := emuRow{ts: ts, stream: fmt.Sprintf(`{app="uw",pod=%q}`, pod), value: values[rnd.Intn(len(values))]}
+			row := vlemu.Row{TS: ts, Stream: fmt.Sprintf(`{app="uw",pod=%q}`, pod), Value: values[rnd.Intn(len(values))]}
 			if rnd.Intn(5) == 0 { // on a window edge, or a nanosecond beside it
 				edge := c.end - int64(c.offset)
 				if !instant {
@@ -493,7 +494,7 @@ func owGenerate(rnd *rand.Rand, fn, parser string, shape owShape, instant bool) 
 				if rnd.Intn(2) == 0 {
 					edge -= int64(c.window)
 				}
-				row.ts = edge + int64(rnd.Intn(3)-1)
+				row.TS = edge + int64(rnd.Intn(3)-1)
 			}
 			c.rows = append(c.rows, row)
 		}
@@ -521,7 +522,7 @@ func TestUnwrapOverTimeWindowsDifferential(t *testing.T) {
 						rnd := rand.New(rand.NewSource(int64(len(name))*7919 + int64(name[len(name)-1])))
 						for i := 0; i < 12; i++ {
 							c := owGenerate(rnd, fn, parser, shape, i%6 == 5 && !shape.rangeOnly)
-							emu := &vlEmulator{t: t, rows: c.rows, field: "amount", version: version}
+							emu := &vlemu.Emulator{T: t, Rows: c.rows, Field: "amount", Version: version}
 							got := runOverTimeCase(t, emu, c, 0)
 							label := fmt.Sprintf("%s #%d", name, i)
 							compareOverTime(t, label, c, got, c.want())
@@ -536,9 +537,9 @@ func TestUnwrapOverTimeWindowsDifferential(t *testing.T) {
 
 // owRawAnswer runs the case through the handler and returns the status and the
 // body as sent.
-func owRawAnswer(t *testing.T, emu *vlEmulator, c owCase, seriesCap int) (int, string) {
+func owRawAnswer(t *testing.T, emu *vlemu.Emulator, c owCase, seriesCap int) (int, string) {
 	t.Helper()
-	backend := httptest.NewServer(emu.handler())
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	rc := cache.New(60*time.Second, 1000)
 	defer rc.Close()
@@ -547,7 +548,7 @@ func owRawAnswer(t *testing.T, emu *vlEmulator, c owCase, seriesCap int) (int, s
 		t.Fatal(err)
 	}
 	defer func() { _ = p.Shutdown(context.Background()) }()
-	if emu.version != "" {
+	if emu.Version != "" {
 		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -621,17 +622,17 @@ func TestUnwrapGroupPushdownMatchesPerStreamFold(t *testing.T) {
 					for i := 0; i < 15; i++ {
 						c := owGenerate(rnd, fn, parser, shape, false)
 						limit := []int{0, 1, 2, 3}[rnd.Intn(4)]
-						emu := &vlEmulator{t: t, rows: c.rows, field: "amount", version: version}
+						emu := &vlemu.Emulator{T: t, Rows: c.rows, Field: "amount", Version: version}
 						unwrapGroupPushdownOff = false
 						gotCode, got := owRawAnswer(t, emu, c, limit)
 						unwrapGroupPushdownOff = true
-						wantCode, want := owRawAnswer(t, &vlEmulator{t: t, rows: c.rows, field: "amount", version: version}, c, limit)
+						wantCode, want := owRawAnswer(t, &vlemu.Emulator{T: t, Rows: c.rows, Field: "amount", Version: version}, c, limit)
 						unwrapGroupPushdownOff = false
 						if gotCode != wantCode || got != want {
 							t.Fatalf("#%d %s step=%v window=%v limit=%d:\npushed %d %s\nfolded %d %s", i, c.query(), c.step, c.window, limit, gotCode, got, wantCode, want)
 						}
 						if c.window > c.step && !strings.Contains(shape.name, "detected_level") {
-							for _, q := range emu.endpointCalls("/select/logsql/stats_query_range") {
+							for _, q := range emu.EndpointCalls("/select/logsql/stats_query_range") {
 								if strings.Contains(q, "_stream") {
 									t.Fatalf("#%d %s: the pushed-down query reads a series per stream: %s", i, c.query(), q)
 								}
@@ -658,17 +659,17 @@ func TestUnwrapGroupPushdownMatchesPerStreamFold(t *testing.T) {
 // conformance: semantics/unwrap-over-time-range-windows, metric-series-identity
 func TestUnwrapGroupPushdownDerivesServiceName(t *testing.T) {
 	const base = int64(1_800_000_000) * 1e9
-	rows := []emuRow{{ts: base - 60e9, stream: `{app="uw",pod="a"}`, value: 1}}
+	rows := []vlemu.Row{{TS: base - 60e9, Stream: `{app="uw",pod="a"}`, Value: 1}}
 	for _, query := range []string{
 		`max by (service_name) (max_over_time({app="uw"} | unwrap amount [5m]))`,
 		`min by (service_name) (min_over_time({app="uw"} | logfmt | unwrap amount [5m]))`,
 	} {
-		emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.53.0"}
+		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
 		c := owCase{shape: owShape{query: func(string) string { return query }}, step: time.Minute, start: base, end: base + 120e9}
 		if code, body := owRawAnswer(t, emu, c, 0); code != http.StatusOK {
 			t.Fatalf("%s: %d %s", query, code, body)
 		}
-		calls := emu.endpointCalls("/select/logsql/stats_query_range")
+		calls := emu.EndpointCalls("/select/logsql/stats_query_range")
 		if len(calls) != 1 {
 			t.Fatalf("%s: %d stats calls", query, len(calls))
 		}
@@ -690,12 +691,12 @@ func TestUnwrapGroupPushdownDerivesServiceName(t *testing.T) {
 // conformance: semantics/unwrap-over-time-range-windows, window-bounds-and-step-alignment
 func TestUnwrapOverTimeRangeWindowEdgeCases(t *testing.T) {
 	const base = int64(1_800_000_000) * 1e9
-	rows := []emuRow{
-		{ts: base + 10e9, stream: `{app="uw",pod="a"}`, value: 1},
-		{ts: base + 70e9, stream: `{app="uw",pod="a"}`, value: 2},
-		{ts: base + 130e9, stream: `{app="uw",pod="a"}`, value: 4},
-		{ts: base + 190e9, stream: `{app="uw",pod="a"}`, value: 8},
-		{ts: base + 100e9, stream: `{app="uw",pod="b"}`, value: 16},
+	rows := []vlemu.Row{
+		{TS: base + 10e9, Stream: `{app="uw",pod="a"}`, Value: 1},
+		{TS: base + 70e9, Stream: `{app="uw",pod="a"}`, Value: 2},
+		{TS: base + 130e9, Stream: `{app="uw",pod="a"}`, Value: 4},
+		{TS: base + 190e9, Stream: `{app="uw",pod="a"}`, Value: 8},
+		{TS: base + 100e9, Stream: `{app="uw",pod="b"}`, Value: 16},
 	}
 	at := func(sec int64) int64 { return base + sec*1e9 }
 	for _, tc := range []struct {
@@ -741,7 +742,7 @@ func TestUnwrapOverTimeRangeWindowEdgeCases(t *testing.T) {
 					if fmt.Sprint(c.want()) != fmt.Sprint(tc.want) {
 						t.Fatalf("reference sanity: %v, spelled out %v", c.want(), tc.want)
 					}
-					emu := &vlEmulator{t: t, rows: rows, field: "amount", version: version}
+					emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: version}
 					compareOverTime(t, label, c, runOverTimeCase(t, emu, c, 0), tc.want)
 					checkOverTimeRoute(t, label, emu, c)
 				})
@@ -771,12 +772,12 @@ func TestUnwrapOverTimeRawWindowBounds(t *testing.T) {
 						if j%8 == 0 {
 							edge -= int64(c.window)
 						}
-						c.rows[j].ts = edge + int64(rnd.Intn(3)-1)
+						c.rows[j].TS = edge + int64(rnd.Intn(3)-1)
 					}
 				}
-				emu := &vlEmulator{t: t, rows: c.rows, field: "amount", version: "v1.53.0"}
+				emu := &vlemu.Emulator{T: t, Rows: c.rows, Field: "amount", Version: "v1.53.0"}
 				got := runOverTimeCase(t, emu, c, 0)
-				if len(emu.endpointCalls("/select/logsql/query")) == 0 {
+				if len(emu.EndpointCalls("/select/logsql/query")) == 0 {
 					t.Fatalf("%s: expected the raw-row evaluator, got stats only", c.query())
 				}
 				compareOverTime(t, fmt.Sprintf("%s #%d", fn, i), c, got, c.want())
@@ -793,9 +794,9 @@ func TestUnwrapOverTimeRawWindowBounds(t *testing.T) {
 // conformance: semantics/unwrap-over-time-range-windows, window-bounds-and-step-alignment
 func TestUnwrapOverTimeSparseSamplePresence(t *testing.T) {
 	const base = int64(1_800_000_000) * 1e9
-	var rows []emuRow
+	var rows []vlemu.Row
 	for ts := base - int64(10*time.Minute) + 7e9; ts < base+int64(time.Hour); ts += int64(270 * time.Second) {
-		rows = append(rows, emuRow{ts: ts, stream: `{app="uw",pod="a"}`, value: float64(ts/1e9%17) + 0.25})
+		rows = append(rows, vlemu.Row{TS: ts, Stream: `{app="uw",pod="a"}`, Value: float64(ts/1e9%17) + 0.25})
 	}
 	for _, tc := range []struct {
 		window  time.Duration
@@ -804,7 +805,7 @@ func TestUnwrapOverTimeSparseSamplePresence(t *testing.T) {
 		for _, fn := range []string{"sum_over_time", "avg_over_time", "max_over_time", "min_over_time"} {
 			t.Run(fmt.Sprintf("%s/%s", fn, uwWindowText(tc.window)), func(t *testing.T) {
 				c := owCase{fn: fn, parser: "logfmt", shape: owShapes[0], window: tc.window, step: time.Minute, start: base, end: base + int64(time.Hour), rows: rows}
-				emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.53.0"}
+				emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
 				got := runOverTimeCase(t, emu, c, 0)
 				want := c.want()
 				if n := len(want["pod=a"]); n != tc.samples {
@@ -827,17 +828,17 @@ func TestUnwrapOverTimeSparseSamplePresence(t *testing.T) {
 // conformance: semantics/unwrap-over-time-range-windows, metric-series-identity
 func TestUnwrapOverTimeUngroupedSumIgnoresSeriesLimit(t *testing.T) {
 	const base = int64(1_800_000_000) * 1e9
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i := 0; i < 12; i++ { // twelve streams, six times the limit
 		for ts := base - int64(5*time.Minute); ts < base+int64(10*time.Minute); ts += int64(40*time.Second) + int64(i)*1e9 {
-			rows = append(rows, emuRow{ts: ts, stream: fmt.Sprintf(`{app="uw",pod="p%d"}`, i), value: float64(i + 1)})
+			rows = append(rows, vlemu.Row{TS: ts, Stream: fmt.Sprintf(`{app="uw",pod="p%d"}`, i), Value: float64(i + 1)})
 		}
 	}
 	for _, fn := range []string{"avg_over_time", "max_over_time", "min_over_time"} {
 		for _, shape := range []owShape{owShapes[2], owShapes[10]} {
 			t.Run(fn+"/"+shape.name, func(t *testing.T) {
 				c := owCase{fn: fn, shape: shape, window: 5 * time.Minute, step: time.Minute, start: base, end: base + int64(10*time.Minute), rows: rows}
-				emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.53.0"}
+				emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
 				got := runOverTimeCase(t, emu, c, 2)
 				compareOverTime(t, fn, c, got, c.want())
 				checkOverTimeRoute(t, fn, emu, c)
@@ -845,7 +846,7 @@ func TestUnwrapOverTimeUngroupedSumIgnoresSeriesLimit(t *testing.T) {
 		}
 	}
 	t.Run("grouped over the limit", func(t *testing.T) {
-		backend := httptest.NewServer((&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.53.0"}).handler())
+		backend := httptest.NewServer((&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}).Handler())
 		defer backend.Close()
 		rc := cache.New(60*time.Second, 1000)
 		defer rc.Close()
@@ -872,9 +873,9 @@ func TestUnwrapOverTimeUngroupedSumIgnoresSeriesLimit(t *testing.T) {
 // conformance: semantics/unwrap-over-time-range-windows-residual-forms, semantics/unwrap-over-time-range-windows
 func TestUnwrapOverTimeResidualShapesKeepStatsBuckets(t *testing.T) {
 	const base = int64(1_800_000_000) * 1e9
-	var rows []emuRow
+	var rows []vlemu.Row
 	for ts := base - int64(10*time.Minute); ts < base+int64(10*time.Minute); ts += int64(17 * time.Second) {
-		rows = append(rows, emuRow{ts: ts, stream: `{app="uw",pod="a"}`, value: float64(ts / 1e9 % 13)})
+		rows = append(rows, vlemu.Row{TS: ts, Stream: `{app="uw",pod="a"}`, Value: float64(ts / 1e9 % 13)})
 	}
 	for _, query := range []string{
 		`sum(max_over_time({app="uw"} | json | unwrap amount [5m]))`,
@@ -886,15 +887,15 @@ func TestUnwrapOverTimeResidualShapesKeepStatsBuckets(t *testing.T) {
 		`sum without () (max_over_time({app="uw"} | unwrap amount [5m]))`,
 	} {
 		t.Run(query, func(t *testing.T) {
-			emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.53.0"}
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
 			c := owCase{shape: owShape{query: func(string) string { return query }}, window: 5 * time.Minute, step: time.Minute, start: base, end: base + int64(10*time.Minute)}
 			if got := runOverTimeCase(t, emu, c, 0); len(got) == 0 {
 				t.Fatalf("%s: no series", query)
 			}
-			if raw := emu.endpointCalls("/select/logsql/query"); len(raw) > 0 {
+			if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
 				t.Fatalf("%s: read raw rows: %s", query, raw[0])
 			}
-			for _, q := range emu.endpointCalls("/select/logsql/stats_query_range") {
+			for _, q := range emu.EndpointCalls("/select/logsql/stats_query_range") {
 				if owWindowMergeRE.MatchString(q) {
 					t.Fatalf("%s: answered from the window merge: %s", query, q)
 				}
@@ -915,9 +916,9 @@ func TestUnwrapOverTimeResidualShapesKeepStatsBuckets(t *testing.T) {
 // conformance: window-bounds-and-step-alignment, quality/query-range-extent-cache
 func TestWindowPhaseFilterKeepsExtentCacheAcrossSteps(t *testing.T) {
 	s0 := time.Unix(1_700_001_000, 0).UTC()
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i := 0; time.Duration(i)*7*time.Second < 3*time.Hour; i++ {
-		rows = append(rows, emuRow{ts: s0.Add(time.Duration(i) * 7 * time.Second).UnixNano(), stream: fmt.Sprintf(`{app="uw",pod="p%d"}`, i%3), value: float64(i%11) + 0.5})
+		rows = append(rows, vlemu.Row{TS: s0.Add(time.Duration(i) * 7 * time.Second).UnixNano(), Stream: fmt.Sprintf(`{app="uw",pod="p%d"}`, i%3), Value: float64(i%11) + 0.5})
 	}
 	for _, tc := range []struct {
 		query string
@@ -935,7 +936,7 @@ func TestWindowPhaseFilterKeepsExtentCacheAcrossSteps(t *testing.T) {
 			}
 			windows = append(windows, windows[0])
 			newBackend := func() http.Handler {
-				return (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler()
+				return (&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler()
 			}
 			on, off, withData := runExtentDifferential(t, newBackend, []string{tc.query}, windows, nil)
 			if withData != len(windows) {
@@ -956,9 +957,9 @@ func TestWindowPhaseFilterKeepsExtentCacheAcrossSteps(t *testing.T) {
 // conformance: semantics/unwrap-over-time-range-windows, window-bounds-and-step-alignment
 func TestUnwrapOverTimeShortRangeStaysOnStepBuckets(t *testing.T) {
 	const base = int64(1_800_000_000) * 1e9
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i := int64(0); i < 300; i++ {
-		rows = append(rows, emuRow{ts: base + i*int64(37*time.Minute), stream: `{app="uw",pod="a"}`, value: float64(i % 7)})
+		rows = append(rows, vlemu.Row{TS: base + i*int64(37*time.Minute), Stream: `{app="uw",pod="a"}`, Value: float64(i % 7)})
 	}
 	for _, query := range []string{
 		`sum by (pod) (sum_over_time({app="uw"} | json | unwrap amount [1m]))`,
@@ -967,14 +968,14 @@ func TestUnwrapOverTimeShortRangeStaysOnStepBuckets(t *testing.T) {
 		`sum by (pod) (sum_over_time({app="uw"} | logfmt | unwrap amount [5m]))`,
 	} {
 		t.Run(query, func(t *testing.T) {
-			emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.53.0"}
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
 			c := owCase{shape: owShape{query: func(string) string { return query }}, step: 10 * time.Minute, start: base, end: base + int64(7*24*time.Hour)}
 			runOverTimeCase(t, emu, c, 0)
-			calls := emu.endpointCalls("/select/logsql/stats_query_range")
+			calls := emu.EndpointCalls("/select/logsql/stats_query_range")
 			if len(calls) != 1 || !strings.Contains(calls[0], "__lvp_window_phase") || strings.Contains(calls[0], "__sample_count") {
 				t.Fatalf("%s: want one phase-filtered step bucket query, got %d: %v", query, len(calls), calls)
 			}
-			if raw := emu.endpointCalls("/select/logsql/query"); len(raw) > 0 {
+			if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
 				t.Fatalf("%s: read raw rows: %s", query, raw[0])
 			}
 		})
@@ -1009,7 +1010,7 @@ func TestUnwrapOverTimeRangeWindowsNaN(t *testing.T) {
 			name = "__lvp_sum"
 		}
 		var values, counts, nanValues, nanCounts []string
-		for k := floorDiv(start+int64(offset), step); k*step-int64(offset) < end; k++ {
+		for k := vlemu.FloorDiv(start+int64(offset), step); k*step-int64(offset) < end; k++ {
 			edge := k*step - int64(offset)
 			ts := strconv.FormatFloat(float64(edge)/1e9, 'f', -1, 64)
 			values = append(values, `[`+ts+`,"1"]`)

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // BenchmarkQuantileCounts24h: quantile_over_time(0.95, ... [1m]) by
@@ -93,12 +94,12 @@ func BenchmarkQuantileCounts24h(b *testing.B) {
 func BenchmarkRateCounterUnderSum6h(b *testing.B) {
 	end := int64(1_800_000_000) * 1e9
 	start := end - int64(6*time.Hour)
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i, ts := 0, start-int64(5*time.Minute); ts <= end; i, ts = i+1, ts+int64(time.Second) {
-		rows = append(rows, emuRow{ts: ts + int64(i%7)*1e8, stream: fmt.Sprintf(`{app="rc",pod="p%d"}`, i%4), value: float64(i % 50),
-			labels: map[string]string{"txn": "t" + strconv.Itoa(i)}, msg: fmt.Sprintf("amount=%d txn=t%d", i%50, i)})
+		rows = append(rows, vlemu.Row{TS: ts + int64(i%7)*1e8, Stream: fmt.Sprintf(`{app="rc",pod="p%d"}`, i%4), Value: float64(i % 50),
+			Labels: map[string]string{"txn": "t" + strconv.Itoa(i)}, Msg: fmt.Sprintf("amount=%d txn=t%d", i%50, i)})
 	}
-	emu := &vlEmulator{t: b, rows: rows, field: "amount", version: "v1.53.0"}
+	emu := &vlemu.Emulator{T: b, Rows: rows, Field: "amount", Version: "v1.53.0"}
 	backend := httptest.NewServer(rateCounterEmuHandler(emu))
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
@@ -117,5 +118,5 @@ func BenchmarkRateCounterUnderSum6h(b *testing.B) {
 		}
 	}
 	b.StopTimer()
-	b.ReportMetric(float64(len(emu.calls))/float64(b.N), "vl-calls/op")
+	b.ReportMetric(float64(len(emu.Calls))/float64(b.N), "vl-calls/op")
 }

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -221,22 +222,22 @@ func TestUnwrapQuantileReadsValueCounts(t *testing.T) {
 		{"error filter", `quantile_over_time(0.5, {app="x"} | unwrap n | __error__="" [1m]) by (app)`, unwrapCountedGateMode("n", "", false), "app, ", "20"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			emu := &vlEmulator{t: t, field: "n"}
+			emu := &vlemu.Emulator{T: t, Field: "n"}
 			for _, sec := range []int{10, 20, 30} {
-				emu.rows = append(emu.rows, emuRow{ts: t0.Add(time.Duration(sec) * time.Second).UnixNano(), stream: `{app="x"}`, value: float64(sec)})
+				emu.Rows = append(emu.Rows, vlemu.Row{TS: t0.Add(time.Duration(sec) * time.Second).UnixNano(), Stream: `{app="x"}`, Value: float64(sec)})
 			}
-			srv := httptest.NewServer(emu.handler())
+			srv := httptest.NewServer(emu.Handler())
 			defer srv.Close()
 			p := newSlidingTestProxy(t, srv.URL)
 			got := unwrapRangeValues(t, p, tc.query, t0.Add(time.Minute), t0.Add(time.Minute), time.Minute)
 			if len(got) != 1 || got[0] != tc.want {
 				t.Fatalf("got %v, want [%s]", got, tc.want)
 			}
-			queries := emu.endpointCalls("/select/logsql/stats_query_range")
+			queries := emu.EndpointCalls("/select/logsql/stats_query_range")
 			if len(queries) != 1 || !strings.Contains(queries[0], tc.gate+" | stats by ("+tc.by+translator.UnwrapValueAlias) || !strings.HasSuffix(queries[0], ") count() as "+quantileCountName) {
 				t.Fatalf("expected the value counts behind the gate, got %q", queries)
 			}
-			if q := emu.endpointCalls("/select/logsql/query"); len(q) != 0 {
+			if q := emu.EndpointCalls("/select/logsql/query"); len(q) != 0 {
 				t.Fatalf("quantile read raw rows: %q", q)
 			}
 		})

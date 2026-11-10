@@ -3,6 +3,8 @@ package proxy
 import (
 	"strings"
 	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // TestSumWithoutExtractedLabelCollision: a parsed key that is also a label of
@@ -18,9 +20,9 @@ import (
 //
 // conformance: semantics/unwrap-sum-without-extracted-label-collision, metric-series-identity
 func TestSumWithoutExtractedLabelCollision(t *testing.T) {
-	parsedPod := func(rows []emuRow) []emuRow {
+	parsedPod := func(rows []vlemu.Row) []vlemu.Row {
 		for i := range rows {
-			rows[i].labels["pod"] = []string{"p1", "p2"}[i%2]
+			rows[i].Labels["pod"] = []string{"p1", "p2"}[i%2]
 		}
 		return rows
 	}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // This file pins absent_over_time to Loki's answer over generated rows and
@@ -30,7 +31,7 @@ import (
 // (pkg/querier/queryrange/queryrangebase/roundtrip.go:49).
 //
 // The proxy under test is the real handler. Only VictoriaLogs is simulated, by
-// vlEmulator, which keeps the rows a scenario gives it: a row is a line the
+// vlemu.Emulator, which keeps the rows a scenario gives it: a row is a line the
 // pipeline of the query keeps.
 
 type absentScenario struct {
@@ -42,7 +43,7 @@ type absentScenario struct {
 	offset   time.Duration
 	start    int64 // ns
 	end      int64 // ns
-	rows     []emuRow
+	rows     []vlemu.Row
 	// wrap is the vector aggregation around absent_over_time (empty: none).
 	wrap string // `sum`, `sum by (app)`, `count without (pod)`, ...
 }
@@ -88,12 +89,12 @@ func (s absentScenario) times() []int64 {
 
 // lokiAbsentSteps returns the evaluation times at which Loki's window
 // (t-offset-range, t-offset] holds no row.
-func lokiAbsentSteps(rows []emuRow, window, offset int64, times []int64) []int64 {
+func lokiAbsentSteps(rows []vlemu.Row, window, offset int64, times []int64) []int64 {
 	var out []int64
 next:
 	for _, t := range times {
 		for _, row := range rows {
-			if row.ts > t-offset-window && row.ts <= t-offset {
+			if row.TS > t-offset-window && row.TS <= t-offset {
 				continue next
 			}
 		}
@@ -119,15 +120,15 @@ type absentSeriesOut struct {
 	points map[int64]string
 }
 
-func runAbsentScenario(t *testing.T, emu *vlEmulator, s absentScenario) ([]absentSeriesOut, *httptest.ResponseRecorder) {
+func runAbsentScenario(t *testing.T, emu *vlemu.Emulator, s absentScenario) ([]absentSeriesOut, *httptest.ResponseRecorder) {
 	t.Helper()
-	backend := httptest.NewServer(emu.handler())
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if emu.version != "" {
+	if emu.Version != "" {
 		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -254,7 +255,7 @@ func generateAbsentScenario(rnd *rand.Rand, instant, exactEdges bool) absentScen
 	for b := 0; b < bursts; b++ {
 		centre := lo + rnd.Int63n(hi-lo)
 		for i, n := 0, 1+rnd.Intn(4); i < n; i++ {
-			s.rows = append(s.rows, emuRow{ts: centre + int64(rnd.Intn(40))*1e9 - 20e9, stream: `{app="ab",pod="a"}`, value: float64(rnd.Intn(3))})
+			s.rows = append(s.rows, vlemu.Row{TS: centre + int64(rnd.Intn(40))*1e9 - 20e9, Stream: `{app="ab",pod="a"}`, Value: float64(rnd.Intn(3))})
 		}
 	}
 	for i := 0; i < 3; i++ { // rows on window edges
@@ -267,7 +268,7 @@ func generateAbsentScenario(rnd *rand.Rand, instant, exactEdges bool) absentScen
 			if jitter == 0 && !exactEdges {
 				jitter = 1
 			}
-			s.rows = append(s.rows, emuRow{ts: edge + jitter, stream: `{app="ab",pod="b"}`, value: 1})
+			s.rows = append(s.rows, vlemu.Row{TS: edge + jitter, Stream: `{app="ab",pod="b"}`, Value: 1})
 		}
 	}
 	return s
@@ -294,13 +295,13 @@ func TestAbsentOverTimeDifferential(t *testing.T) {
 							s.unwrap = shape.name == "unwrap"
 							if shape.name == "json" {
 								for j := range s.rows {
-									s.rows[j].msg = fmt.Sprintf(`{"amount":%v}`, s.rows[j].value)
+									s.rows[j].Msg = fmt.Sprintf(`{"amount":%v}`, s.rows[j].Value)
 								}
 							}
-							emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+							emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 							defer func() {
 								if t.Failed() {
-									t.Logf("VictoriaLogs calls: %+v rows: %+v", emu.calls, s.rows)
+									t.Logf("VictoriaLogs calls: %+v rows: %+v", emu.Calls, s.rows)
 								}
 							}()
 							got, res := runAbsentScenario(t, emu, s)
@@ -309,7 +310,7 @@ func TestAbsentOverTimeDifferential(t *testing.T) {
 							}
 							absent := lokiAbsentSteps(s.rows, int64(s.window), int64(s.offset), s.times())
 							checkAbsent(t, fmt.Sprintf("%s #%d", name, i), s, got, absent, map[string]string{"app": "ab"}, "1")
-							if raw := emu.endpointCalls("/select/logsql/query"); len(raw) > 0 && version != "v1.40.0" {
+							if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 && version != "v1.40.0" {
 								t.Fatalf("%s #%d: the metric read raw rows: %s", name, i, raw[0])
 							}
 						}()
@@ -355,7 +356,7 @@ func TestAbsentOverTimeUnderVectorAggregation(t *testing.T) {
 					s := generateAbsentScenario(rnd, instant, true)
 					s.selector = `{app="ab",env="prod"}`
 					s.wrap = tc.wrap
-					emu := &vlEmulator{t: t, rows: s.rows, field: "amount"}
+					emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount"}
 					q := s.query()
 					got, res := runAbsentScenario(t, emu, s)
 					if res.Code != http.StatusOK {

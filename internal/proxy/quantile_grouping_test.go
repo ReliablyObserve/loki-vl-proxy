@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // Loki's range_vector.go uses (evaluation-window, evaluation] and interpolates
@@ -26,7 +28,7 @@ func TestGroupedQuantileExactWindows(t *testing.T) {
 	} {
 		for _, step := range []int{60, 300, 600} {
 			t.Run(fmt.Sprintf("%s/step=%d", tc.grouping, step), func(t *testing.T) {
-				emu := &vlEmulator{t: t, field: "latency"}
+				emu := &vlemu.Emulator{T: t, Field: "latency"}
 				for i, sample := range []struct {
 					sec, value int
 					level      string
@@ -35,13 +37,13 @@ func TestGroupedQuantileExactWindows(t *testing.T) {
 					{-240, 10, "info"}, {-60, 30, "info"}, {0, 50, "info"}, {60, 90, "info"},
 					{-60, 100, "error"}, {0, 200, "error"}, {60, 400, "error"},
 				} {
-					emu.rows = append(emu.rows, emuRow{
-						ts:     base.Add(time.Duration(sample.sec) * time.Second).UnixNano(),
-						stream: fmt.Sprintf(`{app="api",pod="pod-%d",level=%q}`, i, sample.level),
-						value:  float64(sample.value),
+					emu.Rows = append(emu.Rows, vlemu.Row{
+						TS:     base.Add(time.Duration(sample.sec) * time.Second).UnixNano(),
+						Stream: fmt.Sprintf(`{app="api",pod="pod-%d",level=%q}`, i, sample.level),
+						Value:  float64(sample.value),
 					})
 				}
-				backend := httptest.NewServer(emu.handler())
+				backend := httptest.NewServer(emu.Handler())
 				defer backend.Close()
 				p := newGapTestProxy(t, backend.URL)
 				params := url.Values{

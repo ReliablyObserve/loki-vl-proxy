@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // The stats extent cache answers the stats_query_range calls of an unwrap
@@ -17,16 +19,16 @@ import (
 
 // unwrapCacheRows: two streams with a value every 7 seconds over 3 hours, a
 // word Loki's conversion rejects at bad and a nan at nan (both on pod a).
-func unwrapCacheRows(s0 time.Time, bad, nan time.Duration) []emuRow {
-	var rows []emuRow
+func unwrapCacheRows(s0 time.Time, bad, nan time.Duration) []vlemu.Row {
+	var rows []vlemu.Row
 	for i := 0; time.Duration(i)*7*time.Second < 3*time.Hour; i++ {
 		at := time.Duration(i) * 7 * time.Second
-		row := emuRow{ts: s0.Add(at).UnixNano(), stream: fmt.Sprintf(`{app="uw",pod=%q}`, []string{"a", "b"}[i%2]), value: float64(i%11) + 0.5}
+		row := vlemu.Row{TS: s0.Add(at).UnixNano(), Stream: fmt.Sprintf(`{app="uw",pod=%q}`, []string{"a", "b"}[i%2]), Value: float64(i%11) + 0.5}
 		if i%2 == 0 && bad > 0 && at >= bad && at < bad+14*time.Second {
-			row.raw = "x7"
+			row.Raw = "x7"
 		}
 		if i%2 == 0 && nan > 0 && at >= nan && at < nan+14*time.Second {
-			row.raw = "NaN"
+			row.Raw = "NaN"
 		}
 		rows = append(rows, row)
 	}
@@ -78,8 +80,8 @@ func TestUnwrapExtentCacheMatchesUncached(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rows := unwrapCacheRows(s0, tc.bad, tc.nan)
-			onSrv, onShim := newExtentShim(t, (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler())
-			offSrv, offShim := newExtentShim(t, (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler())
+			onSrv, onShim := newExtentShim(t, (&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler())
+			offSrv, offShim := newExtentShim(t, (&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler())
 			on := newExtentTestProxy(t, onSrv.URL, true, 256<<20)
 			off := newExtentTestProxy(t, offSrv.URL, false, 256<<20)
 			rejected, nans := 0, 0

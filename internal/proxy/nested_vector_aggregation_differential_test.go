@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // This file pins nested vector aggregations (`min by (zone) (avg by (pod, zone)
@@ -31,7 +32,7 @@ import (
 // output of the level below it.
 //
 // The proxy under test is the real handler; only VictoriaLogs is simulated, by
-// the shared vlEmulator.
+// the shared vlemu.Emulator.
 
 // nvLevel is one vector aggregation of the query, innermost first.
 type nvLevel struct {
@@ -58,7 +59,7 @@ type nvScenario struct {
 	window     time.Duration
 	step       time.Duration // 0: instant
 	start, end int64         // ns, step-aligned evaluation times
-	rows       []emuRow
+	rows       []vlemu.Row
 	version    string
 	trailingBy bool    // `sum(...) by (l)` rather than `sum by (l) (...)`
 	divisor    float64 // when set, divides the aggregation by a scalar: `<aggregation> / 2`
@@ -109,11 +110,11 @@ func (s nvScenario) String() string {
 // dropEdgeRows removes the lines exactly on an edge of a window (t-window, t]:
 // VictoriaLogs v1.40 has no stats offset argument and misplaces them.
 func (s *nvScenario) dropEdgeRows() {
-	var kept []emuRow
+	var kept []vlemu.Row
 next:
 	for _, row := range s.rows {
 		for _, t := range s.times() {
-			if row.ts == t-int64(s.window) || row.ts == t {
+			if row.TS == t-int64(s.window) || row.TS == t {
 				continue next
 			}
 		}
@@ -165,7 +166,7 @@ func generateNestedScenario(rnd *rand.Rand, fn string, levels []nvLevel, instant
 		if rnd.Intn(2) == 0 {
 			stream = nvStreams[rnd.Intn(2)]
 		}
-		s.rows = append(s.rows, emuRow{ts: ts, stream: stream, msg: "x=1"})
+		s.rows = append(s.rows, vlemu.Row{TS: ts, Stream: stream, Msg: "x=1"})
 	}
 	return s
 }
@@ -249,8 +250,8 @@ func lokiNestedAggregation(s nvScenario) (map[string]map[int64]float64, map[stri
 	for _, t := range s.times() {
 		perStream := map[string]float64{}
 		for _, row := range s.rows {
-			if row.ts > t-int64(s.window) && row.ts <= t {
-				perStream[row.stream]++
+			if row.TS > t-int64(s.window) && row.TS <= t {
+				perStream[row.Stream]++
 			}
 		}
 		var vec []nvSeries
@@ -298,8 +299,8 @@ func nvStreamLabel(stream, label string) string {
 // proxy (an innermost `without`), so the stats answer is not the final one.
 func runNestedScenario(t *testing.T, label string, s nvScenario, fold bool) {
 	t.Helper()
-	emu := &vlEmulator{t: t, rows: s.rows, version: s.version, field: "amount"}
-	backend := httptest.NewServer(emu.handler())
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Version: s.version, Field: "amount"}
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	responseCache := cache.New(60*time.Second, 1000)
 	p, err := New(Config{BackendURL: backend.URL, Cache: responseCache, LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
@@ -311,7 +312,7 @@ func runNestedScenario(t *testing.T, label string, s nvScenario, fold bool) {
 		_ = p.Shutdown(context.Background())
 		responseCache.Close()
 	})
-	if emu.version != "" {
+	if emu.Version != "" {
 		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -390,11 +391,11 @@ func runNestedScenario(t *testing.T, label string, s nvScenario, fold bool) {
 		return
 	}
 	// Computed by VictoriaLogs: stats only, and only the final groups come back.
-	if raw := emu.endpointCalls("/select/logsql/query"); len(raw) > 0 {
+	if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
 		t.Fatalf("%s %s: the metric read raw rows: %s", label, s, raw[0])
 	}
-	if groups := s.outerGroups(); emu.widest > groups {
-		t.Fatalf("%s %s: VictoriaLogs answered %d series, the outer level has at most %d groups", label, s, emu.widest, groups)
+	if groups := s.outerGroups(); emu.Widest > groups {
+		t.Fatalf("%s %s: VictoriaLogs answered %d series, the outer level has at most %d groups", label, s, emu.Widest, groups)
 	}
 }
 
@@ -406,13 +407,13 @@ func (s nvScenario) outerGroups() int {
 	seen := map[string]bool{}
 	var vec []nvSeries
 	for _, row := range s.rows {
-		if seen[row.stream] {
+		if seen[row.Stream] {
 			continue
 		}
-		seen[row.stream] = true
+		seen[row.Stream] = true
 		labels := map[string]string{"service_name": "uw"}
 		for _, name := range []string{"app", "pod", "zone", "svc"} {
-			labels[name] = nvStreamLabel(row.stream, name)
+			labels[name] = nvStreamLabel(row.Stream, name)
 		}
 		vec = append(vec, nvSeries{labels, 1})
 	}
