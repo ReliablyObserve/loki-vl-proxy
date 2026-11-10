@@ -260,6 +260,14 @@ func screenEvaluated(query string, n queryplan.Node) error {
 		}
 		return errSeriesSpelling
 	}
+	// A level below the one a lone route evaluates, behind parentheses: the route sends the translator's text for the
+	// operand, which reads the parenthesized text as a phrase and costs less than any evaluation of the chain.
+	if len(chain) > 1 && isEvaluated(chain[0]) && loneRoute(chain) && wrappedWhole(below) {
+		if _, ranks := chain[len(chain)-1].(*queryplan.Rank); ranks {
+			return errRankSpelling
+		}
+		return errSeriesSpelling
+	}
 	// The route reads the text under the first layer for a parser, quoted text included.
 	if parsedLabelFold(chain[0]) && logql.ParserStageTextRE.MatchString(below) {
 		return errSeriesParsedLabel
@@ -275,6 +283,27 @@ func screenEvaluated(query string, n queryplan.Node) error {
 	// A plan of the operand alone, which the screen reads and does not keep.
 	alone := queryplan.Plan{Root: operand}
 	return ScreenText(text, &alone)
+}
+
+// loneRoute reports whether the route evaluates only the first layer of the chain and translates everything below it
+// as text: no ranking sits under a layer chain it takes (parseAggregationOverRanking: a ranking below sum, avg, min,
+// max, count and rankings, none of them a stddev or stdvar).
+func loneRoute(chain []queryplan.Node) bool {
+	lastRank := -1
+	for i, layer := range chain {
+		if _, ok := layer.(*queryplan.Rank); ok {
+			lastRank = i
+		}
+	}
+	if lastRank < 1 {
+		return true
+	}
+	for _, layer := range chain[:lastRank] {
+		if va, ok := layer.(*queryplan.VectorAgg); ok && (va.Op == logql.VectorStddev || va.Op == logql.VectorStdvar) {
+			return true
+		}
+	}
+	return false
 }
 
 // paddedRangeCall reports whether the operand text x is a range aggregation (or label_replace calls around one)
@@ -323,10 +352,10 @@ func evaluatedOperandSpan(query string, chain []queryplan.Node) (operand, below 
 		if !found {
 			return "", "", false
 		}
-		text = logql.UnwrapParens(args)
 		if i == 0 {
-			below = text
+			below = strings.TrimSpace(args)
 		}
+		text = logql.UnwrapParens(args)
 	}
 	operand, ok = levelArguments(text, deepest)
 	return strings.TrimSpace(operand), below, ok && strings.TrimSpace(operand) != ""
