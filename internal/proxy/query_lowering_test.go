@@ -253,6 +253,13 @@ func TestQueryPlanLowering_FallsBackToTheTranslator(t *testing.T) {
 	if got, ok := p.lowerLogSelect(context.Background(), `{a="b"} |= "x"`, prof); !ok || got != `a:="b" ~"x"` {
 		t.Fatalf("lowerLogSelect = %q, %v", got, ok)
 	}
+	// A stage the parser reads in any letter case is a stage: not served from the lowering, whether the screen or
+	// the typed check turns it away.
+	for _, q := range []string{`{a="b"} | JSON`, `{a="b"} | Logfmt | level="x"`, `{a="b"} | DROP c`, `{a="b"} | Keep c`} {
+		if got, ok := p.lowerLogSelect(context.Background(), q, prof); ok {
+			t.Errorf("lowerLogSelect(%q) = %q, want the translator to answer", q, got)
+		}
+	}
 	// A profile whose label function panics: recovered, counted, and the translator's answer is used.
 	boom := loweringProfile(func(string) string { panic("boom") }, nil, logsql.Capabilities{}, false)
 	if got, ok := p.lowerLogSelect(context.Background(), `{a="b"}`, boom); ok {
@@ -319,6 +326,24 @@ func TestQueryPlanLowering_KeepLineIsTranslatedAlike(t *testing.T) {
 		}
 		if n := shadowCounts(t, on)["flipped LogSelect"]; n != 0 {
 			t.Fatalf("a keep-line query was served from the lowering (%d)", n)
+		}
+	}
+}
+
+// The typed check behind the text screen: only a log query of line and label filters is served from the lowering.
+// conformance: architecture-syntax-package-layering
+func TestQueryPlanLowering_ServesFilterOnlyPlans(t *testing.T) {
+	for q, want := range map[string]bool{
+		`{a="b"}`: true, `{a="b"} |= "x" | c="d"`: true, `{a="b"} |> "<_> x"`: true,
+		`{a="b"} | JSON`: false, `{a="b"} | logfmt`: false, `{a="b"} | drop c`: false, `{a="b"} | line_format "x"`: false,
+		`rate({a="b"}[5m])`: false,
+	} {
+		plan, err := loweringPlan(context.Background(), q)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		if got := filterOnly(plan.Root); got != want {
+			t.Errorf("filterOnly(%s) = %v, want %v", q, got, want)
 		}
 	}
 }
