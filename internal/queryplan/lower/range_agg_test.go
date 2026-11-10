@@ -85,7 +85,10 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 		}
 		return "", "", false, false, false
 	}
-	lowered = op.(physical.VLQuery).Text
+	// A without clause is a fold around the query: the clean query is compared, and the fold with the marker.
+	core, post := physical.Split(op)
+	lowered = core.(physical.VLQuery).Text
+	legacy, wantPost := translator.SplitPost(legacy)
 	want, err := logsql.Parse(legacy)
 	if err != nil {
 		t.Fatalf("%s: the translator's %s does not parse: %v", q, legacy, err)
@@ -94,7 +97,7 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 	if err != nil {
 		t.Fatalf("%s: the lowered %s does not parse: %v", q, lowered, err)
 	}
-	return lowered, legacy, reflect.DeepEqual(want, got), false, true
+	return lowered, legacy, reflect.DeepEqual(want, got) && reflect.DeepEqual(post, wantPost), false, true
 }
 
 // A range aggregation over a log query with no parser lowers to the query the string translator writes, for every
@@ -344,18 +347,16 @@ func TestPlanRangeAggregationRestoresStreamLabels(t *testing.T) {
 	}
 }
 
-// Text the string translator reads as syntax, though a quoted value holds it (a " bool " or "without (x)" in a line
-// filter, a ")" that unbalances its parentheses): the lowering keeps the value whole.
+// Text the string translator reads as syntax, though a quoted value holds it (a ")" that unbalances its parentheses,
+// a "| unwrap x", the brackets of a range): the lowering keeps the value whole. A " bool " or "without (x)" the
+// translator rewrites is left to it (TestPlanDelegatesVectorAggregations).
 //
 // conformance: architecture-syntax-package-layering
 func TestPlanRangeAggregationKeepsQuotedValues(t *testing.T) {
 	for q, want := range map[string]string{
-		`count_over_time({app="a"} |= "a bool b" [5m])`:            "a bool b",
-		`count_over_time({app="a"} |= "x without (y)" [5m])`:       "x without",
-		`bytes_over_time({app="a"} |~ "a) + (b" [5m])`:             "a) + (b",
-		`absent_over_time({app="a"} |= "| unwrap x" [5m])`:         "unwrap x",
-		`count_over_time({app="a"} |= "[5m]" [5m])`:                "5m",
-		`count_over_time({app="a"} | m="a bool b" [5m] offset 1h)`: `m:="a bool b"`,
+		`bytes_over_time({app="a"} |~ "a) + (b" [5m])`:     "a) + (b",
+		`absent_over_time({app="a"} |= "| unwrap x" [5m])`: "unwrap x",
+		`count_over_time({app="a"} |= "[5m]" [5m])`:        "5m",
 	} {
 		op, err := Plan(rangeAggPlan(q), Profile{})
 		if err != nil {

@@ -213,7 +213,7 @@
   "shadow": {
     "rows": 22926,
     "profiles": 12,
-    "native": 2835,
+    "native": 4734,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp": 2646,
@@ -233,7 +233,14 @@
       "RangeAgg unwrap": 3231,
       "Rank": 1665,
       "Scalar": 18,
-      "VectorAgg": 9207,
+      "VectorAgg LogSelect label filter detected_level": 72,
+      "VectorAgg drop or keep": 81,
+      "VectorAgg grouping": 9,
+      "VectorAgg operand": 2619,
+      "VectorAgg parser": 1143,
+      "VectorAgg stddev": 729,
+      "VectorAgg stdvar": 738,
+      "VectorAgg unwrap": 1917,
       "VectorLit": 9,
       "known divergence semantics/translator-reads-quoted-text-as-syntax": 12
     },

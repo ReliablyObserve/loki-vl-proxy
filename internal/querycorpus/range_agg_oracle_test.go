@@ -14,6 +14,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
@@ -23,11 +24,24 @@ import (
 // read it as our parser does. It runs when LVP_RUN_ORACLES=1.
 // conformance: architecture-syntax-package-layering
 func TestRangeAggVLOracle(t *testing.T) {
+	checkLoweredGridWithVL(t, "range", rangeAggGrid())
+}
+
+// TestVectorAggVLOracle is TestRangeAggVLOracle for the vector aggregations of vectorAggGrid: VictoriaLogs' parser
+// reads the query the lowering writes (the clean query, without the fold the proxy applies) as it reads the string
+// translator's.
+// conformance: architecture-syntax-package-layering
+func TestVectorAggVLOracle(t *testing.T) {
+	checkLoweredGridWithVL(t, "vector", vectorAggGrid())
+}
+
+// checkLoweredGridWithVL has VictoriaLogs' parser read, on every version of the matrix, the query the lowering
+// writes for each row of grid next to the string translator's. It runs when LVP_RUN_ORACLES=1.
+func checkLoweredGridWithVL(t *testing.T, name string, grid []string) {
 	if os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("LVP_RUN_ORACLES=1 is not set")
 	}
 	t.Cleanup(querycorpus.PauseRecording())
-	grid := rangeAggGrid()
 	versions := goldenVersions(t)
 	work := t.TempDir()
 	for _, v := range versions {
@@ -40,7 +54,7 @@ func TestRangeAggVLOracle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		inputs := filepath.Join(work, "range-inputs-"+v+".jsonl")
+		inputs := filepath.Join(work, name+"-inputs-"+v+".jsonl")
 		f, err := os.Create(inputs)
 		if err != nil {
 			t.Fatal(err)
@@ -75,11 +89,14 @@ func TestRangeAggVLOracle(t *testing.T) {
 				if err != nil {
 					continue
 				}
-				lowered, ok := op.(physical.VLQuery)
+				core, _ := physical.Split(op)
+				lowered, ok := core.(physical.VLQuery)
 				legacy, ok2 := prof.translate(q)
 				if !ok || !ok2 {
 					continue
 				}
+				// The fold marker of a without clause is the proxy's, not VictoriaLogs'.
+				legacy, _ = translator.SplitPost(legacy)
 				// The oracle's check reads two texts: the translator's and the lowering's. Profiles that write the
 				// same pair once.
 				legacy = withLeadingStar(legacy)
@@ -108,7 +125,7 @@ func TestRangeAggVLOracle(t *testing.T) {
 		if n == 0 {
 			t.Fatalf("%s: no query lowered", v)
 		}
-		out := filepath.Join(work, "range-verdicts-"+v+".jsonl")
+		out := filepath.Join(work, name+"-verdicts-"+v+".jsonl")
 		if err := oraclerun.Run(bin, "check", "-in", inputs, "-out", out); err != nil {
 			t.Fatal(err)
 		}

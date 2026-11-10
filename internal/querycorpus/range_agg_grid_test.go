@@ -77,6 +77,12 @@ func rangeAggGrid() []string {
 			add(fmt.Sprintf(`%s({app="a"}%s[5m])`, f, st))
 		}
 	}
+	// quoted text the string translator reads as a without clause or a boolean modifier.
+	for _, line := range []string{` |= "without (x)"`, " |= `without (z)`", ` |= "a bool b"`, ` |~ "without\\s*\\(a\\)"`} {
+		for _, f := range funcs {
+			add(fmt.Sprintf(`%s({app="a"}%s[5m])`, f, line))
+		}
+	}
 	// functions that read an unwrapped value, and groupings.
 	for _, q := range []string{
 		`sum_over_time({app="a"} | unwrap x [5m])`, `avg_over_time({app="a"} | unwrap x [5m]) by (pod)`, `quantile_over_time(0.9, {app="a"} | unwrap x [5m])`,
