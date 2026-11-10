@@ -43,18 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   translator. The text writer of the legacy encoding moved from
   `internal/translator` to `internal/queryplan/physical` (`physical.Encode`);
   `translator.EncodePhysical` is a wrapper over it.
-
-## [2.117.0] - 2026-11-10
-
-### Changed
-
-- The query plan lowers log queries with a `| json` or `| logfmt` parser (with
-  `--strict`, `--keep-empty` and field lists, including `| json a="b.c"`) and
-  with `| drop` and `| keep` stages to VictoriaLogs natively, with builders in
-  the translation package; the lowering writes the requests the string
-  translator writes, and the corpus shadow holds it to them. `| regexp`,
-  `| pattern`, `| unpack`, `| line_format` and `| label_format` stay with the
-  string translator.
 - The query plan lowers the label filters after a `| json` or `| logfmt`
   parser (`| json | status >= 500`, `| logfmt | level="error"`,
   `| json | a=~"x|y" or b!="z"`, `| json | addr=ip("10.0.0.0/8")`, repeated
@@ -70,6 +58,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   label inside an and/or tree and the shapes whose text the translator reads
   differently from the typed stage. No handler reads the lowering yet; the
   requests sent to VictoriaLogs do not change.
+
+## [2.117.0] - 2026-11-10
+
+### Changed
+
+- The query plan lowers log queries with a `| json` or `| logfmt` parser (with
+  `--strict`, `--keep-empty` and field lists, including `| json a="b.c"`) and
+  with `| drop` and `| keep` stages to VictoriaLogs natively, with builders in
+  the translation package; the lowering writes the requests the string
+  translator writes, and the corpus shadow holds it to them. A label filter
+  after a parser, `| regexp`,
+  `| pattern`, `| unpack`, `| line_format` and `| label_format` stay with the
+  string translator.
 
 ## [2.116.0] - 2026-11-09
 
