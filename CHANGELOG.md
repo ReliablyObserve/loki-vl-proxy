@@ -28,6 +28,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same output. The requests sent to VictoriaLogs are those of the string
   translator, and the lowering takes about half the time of the translation
   and allocates less.
+- The query plan lowers the label filters after a `| json` or `| logfmt`
+  parser (`| json | status >= 500`, `| logfmt | level="error"`,
+  `| json | a=~"x|y" or b!="z"`, `| json | addr=ip("10.0.0.0/8")`, repeated
+  filters, and/or trees) to the VictoriaLogs query the string translator
+  writes, byte for byte, under every translator profile: the keys a sanitized
+  label can be stored under, the labels a json stage defines, the stream labels
+  read after a parser and the `name_extracted` labels, with the string
+  translator's pipes. Of the 22,926 corpus rows x 12 profiles the plan lowers
+  2,256 (was 1,764), 0 mismatches. It leaves to the string translator a
+  numeric, duration or bytes value compared with `=`, `==` or `!=` (the
+  translator writes the string form, a difference from Loki to fix as a
+  recorded divergence), `detected_level` and `service_name` filters, a stream
+  label inside an and/or tree and the shapes whose text the translator reads
+  differently from the typed stage. No handler reads the lowering yet; the
+  requests sent to VictoriaLogs do not change.
 
 ## [2.118.0] - 2026-11-10
 
