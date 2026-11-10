@@ -239,7 +239,7 @@ func TestLoweringShadow_ResultsByConstruct(t *testing.T) {
 			t.Errorf("a query both reject is counted: %q in %v", key, got)
 		}
 	}
-	for _, want := range []string{"match LogSelect", "not_lowered LogSelect pipeline", "match RangeAgg", "not_lowered RangeAgg unwrap", "match VectorAgg", "not_lowered VectorAgg stddev", "not_lowered VectorAgg blank padding", "not_lowered Rank", "not_lowered BinOp", "not_lowered LabelReplace"} {
+	for _, want := range []string{"match LogSelect", "not_lowered LogSelect pipeline", "match RangeAgg", "not_lowered RangeAgg unwrap", "match VectorAgg", "not_lowered VectorAgg stddev", "not_lowered VectorAgg operand spelling", "not_lowered Rank", "not_lowered BinOp", "not_lowered LabelReplace"} {
 		if got[want] == 0 {
 			t.Errorf("no %q in %v", want, got)
 		}

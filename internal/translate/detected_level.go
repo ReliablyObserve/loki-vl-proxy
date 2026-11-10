@@ -528,17 +528,6 @@ func detectedLevelLogLevelFieldNames() []string {
 	return DetectedLevelFieldNames[1 : len(DetectedLevelFieldNames)-1]
 }
 
-// LogsQLFieldName quotes a field name when it holds characters outside the
-// bare-name set.
-func LogsQLFieldName(name string) string {
-	for _, c := range name {
-		if c != '_' && c != '.' && (c < '0' || c > '9') && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
-			return logsql.QuoteValue(name)
-		}
-	}
-	return name
-}
-
 // BuildHasLevelFilter returns a filter matching rows whose detected_level is
 // decided by a stored field, or "" when existingFields hold none. OTLP rows
 // whose severity_text VictoriaLogs synthesised for severity_number 0 carry no

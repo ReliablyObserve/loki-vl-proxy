@@ -26,7 +26,7 @@ why: |
   [5m] ) )`) make the translator return the query as a phrase, and the proxy's
   request rewrite leaves the blanks (checked 2026-11-10), so the proxy answers a
   phrase search where Loki answers the metric. The plan lowers it as Loki reads
-  it, but the lowering turns the query away (VectorAgg blank padding, a text
+  it, but the lowering turns the query away (VectorAgg operand spelling, a text
   screen: lower.ScreenText) so it never differs from the translator while
   metric queries are served by the translator; this stays the open difference
   to close when they flip (TestPlanVectorAggregationBlankPadding,

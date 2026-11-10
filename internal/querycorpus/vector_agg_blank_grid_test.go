@@ -22,6 +22,8 @@ func blankPaddedVectorQueries() []string {
 		`count without (pod) (bytes_over_time({app="a"}[1m] offset 5m))`,
 		`avg(bytes_rate({app="a"}[5m]))`,
 		`sum without (a, b) (rate({app="a"} != "y" [5m]))`,
+		`(sum by (app) (rate({app="a"}[5m])))`,
+		`sum((rate({app="a"}[5m])))`,
 		`min by (detected_level) (count_over_time({app="a"}[5m]))`,
 		`sum(rate({app="a"}[5m])) without (pod)`,
 		`max by (service_name) (absent_over_time({app="a"}[5m]))`,
@@ -113,7 +115,7 @@ func TestVectorAggBlankPaddingShadow(t *testing.T) {
 			raw, rerr := lower.Plan(plan, prof.lowerProfile())
 			got, lerr := lower.PlanQuery(q, plan, prof.lowerProfile())
 			var nl *lower.NotLoweredError
-			if errors.As(lerr, &nl) && nl.Construct == "VectorAgg blank padding" {
+			if errors.As(lerr, &nl) && (nl.Construct == "VectorAgg operand spelling" || nl.Construct == "VectorAgg parenthesized") {
 				screened++
 				if rerr == nil && physical.Encode(raw) == legacy {
 					t.Errorf("%s: %q: turned away though the texts agree", prof.name, q)

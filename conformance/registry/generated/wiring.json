@@ -23,6 +23,7 @@
       "internal/proxy/query_lowering_test.go",
       "internal/proxy/unwrap_gate_spec_test.go",
       "internal/querycorpus/label_filter_grid_test.go",
+      "internal/querycorpus/label_filter_parsed_grid_test.go",
       "internal/querycorpus/parser_grid_test.go",
       "internal/querycorpus/plan_shadow_test.go",
       "internal/querycorpus/range_agg_grid_test.go",
@@ -31,6 +32,7 @@
       "internal/querycorpus/vector_agg_blank_grid_test.go",
       "internal/querycorpus/vector_agg_grid_test.go",
       "internal/querycorpus/vector_agg_loki_test.go",
+      "internal/queryplan/lower/label_filter_parsed_test.go",
       "internal/queryplan/lower/label_filter_test.go",
       "internal/queryplan/lower/lower_test.go",
       "internal/queryplan/lower/parser_test.go",
@@ -1440,6 +1442,9 @@
       "internal/proxy/topk_over_aggregation_test.go",
       "test/e2e-compat/topk_over_aggregation_test.go"
     ],
+    "semantics/translator-reads-parenthesized-metric-as-text": [
+      "internal/querycorpus/known_divergence_test.go"
+    ],
     "semantics/tumbling-window-single-grid": [
       "internal/proxy/sliding_window_stats_test.go"
     ],
@@ -1754,7 +1759,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 451,
+  "registry_items": 452,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2918,7 +2923,13 @@
       "semantics/without-over-inner-aggregation-collapses",
       "semantics/without-sliding-sum-folded-buckets"
     ],
+    "internal/querycorpus/known_divergence_test.go": [
+      "semantics/translator-reads-parenthesized-metric-as-text"
+    ],
     "internal/querycorpus/label_filter_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/label_filter_parsed_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/querycorpus/parser_grid_test.go": [
@@ -2960,6 +2971,9 @@
       "architecture-syntax-package-layering"
     ],
     "internal/querycorpus/vector_agg_loki_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/label_filter_parsed_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/label_filter_test.go": [
@@ -3818,7 +3832,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 429,
+  "tests_with_markers": 432,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3924,5 +3938,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 275
+  "wired_items": 276
 }

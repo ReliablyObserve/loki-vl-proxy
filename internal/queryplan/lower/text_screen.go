@@ -1,6 +1,8 @@
 package lower
 
 import (
+	"strings"
+
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
@@ -9,22 +11,62 @@ import (
 // The string translator finds the operand of a vector aggregation by matching the text of the query with regexps
 // that do not skip blanks: a blank, tab or newline between the opening parenthesis of the operand and the range
 // function, or between the function and its parenthesis, makes it write the whole query as a phrase search, where
-// the plan lowers the aggregation as Loki reads it. The shapes are named VectorAgg blank padding and left to the
+// the plan lowers the aggregation as Loki reads it. The shapes are named VectorAgg operand spelling and left to the
 // translator (the blanks of the other places a query takes them, around the labels of a clause, inside the
-// selector, around the range, are read alike by both). Callers that hold the query text call it before Plan (or
-// call PlanQuery); a nil error means Plan may answer. Only the construct at the top of the plan matters: a range
-// aggregation alone reads the same text alike.
+// selector, around the range, are read alike by both). A metric query wrapped whole in parentheses is turned away
+// too (RangeAgg or VectorAgg parenthesized). Callers that hold the query text call it before Plan (or call
+// PlanQuery); a nil error means Plan may answer. Only the construct at the top of the plan matters: a range
+// aggregation alone reads blanks alike.
 func ScreenText(query string, p *queryplan.Plan) error {
-	if _, ok := p.Root.(*queryplan.VectorAgg); !ok {
+	var parenthesized, padded *NotLoweredError
+	switch p.Root.(type) {
+	case *queryplan.VectorAgg:
+		parenthesized, padded = errVectorParenthesized, errBlankPadding
+	case *queryplan.RangeAgg:
+		parenthesized = errRangeParenthesized
+	default:
 		return nil
 	}
-	if paddedOperand(query) {
-		return errBlankPadding
+	// A metric query wrapped whole in parentheses, `(rate({a="x"}[5m]))`, is read by the translator as a line
+	// filter and written as a phrase (semantics/translator-reads-parenthesized-metric-as-text).
+	if wrappedWhole(query) {
+		return parenthesized
+	}
+	if padded != nil && paddedOperand(query) {
+		return padded
 	}
 	return nil
 }
 
-var errBlankPadding = &NotLoweredError{Construct: "VectorAgg blank padding"}
+var (
+	errBlankPadding        = &NotLoweredError{Construct: "VectorAgg operand spelling"}
+	errVectorParenthesized = &NotLoweredError{Construct: "VectorAgg parenthesized"}
+	errRangeParenthesized  = &NotLoweredError{Construct: "RangeAgg parenthesized"}
+)
+
+// wrappedWhole reports whether the query is one parenthesized expression whose content is no stream selector:
+// `(rate(...))`, `( sum(...) )`, `((rate(...)))`. A binary of two parenthesized operands, `(a) / (b)`, is not.
+func wrappedWhole(q string) bool {
+	q = strings.TrimSpace(q)
+	if len(q) < 2 || q[0] != '(' {
+		return false
+	}
+	depth := 0
+	for i := 0; i < len(q); i++ {
+		switch q[i] {
+		case '"', '`':
+			i = skipQuoted(q, i)
+		case '(':
+			depth++
+		case ')':
+			if depth--; depth == 0 && i != len(q)-1 {
+				return false
+			}
+		}
+	}
+	inner := strings.TrimLeft(strings.TrimSpace(q[1:len(q)-1]), "(")
+	return depth == 0 && inner != "" && inner[0] != '{'
+}
 
 // PlanQuery is Plan for a query whose text is at hand: it leaves the query to the string translator when ScreenText
 // says the translator reads its spelling unlike the plan.
@@ -50,6 +92,10 @@ func paddedOperand(q string) bool {
 			for j < n && isBlank(q[j]) {
 				j++
 				blankBefore = true
+			}
+			// An operand that is itself parenthesized, `sum((rate(...)))`, is read as text as well.
+			if j < n && q[j] == '(' {
+				return true
 			}
 			k := j
 			for k < n && isNameByte(q[k]) {

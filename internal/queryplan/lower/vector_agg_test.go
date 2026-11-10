@@ -181,8 +181,8 @@ func TestPlanVectorAggregationBlankPadding(t *testing.T) {
 			t.Errorf("%q: Plan: %v", q, err)
 		}
 		var nl *NotLoweredError
-		if _, err := PlanQuery(q, p, Profile{}); !errors.As(err, &nl) || nl.Construct != "VectorAgg blank padding" {
-			t.Errorf("%q: PlanQuery = %v, want not lowered: VectorAgg blank padding", q, err)
+		if _, err := PlanQuery(q, p, Profile{}); !errors.As(err, &nl) || nl.Construct != "VectorAgg operand spelling" {
+			t.Errorf("%q: PlanQuery = %v, want not lowered: VectorAgg operand spelling", q, err)
 		}
 		if ScreenText(q, p) == nil {
 			t.Errorf("%q: ScreenText lets it through", q)
@@ -199,6 +199,21 @@ func TestPlanVectorAggregationBlankPadding(t *testing.T) {
 	} {
 		p := rangeAggPlan(q)
 		if err := ScreenText(q, p); err != nil {
+			t.Errorf("%q: turned away: %v", q, err)
+		}
+	}
+	// A metric wrapped whole in parentheses is a phrase to the translator (both constructs).
+	for q, construct := range map[string]string{
+		`(sum(rate({app="a"}[5m])))`: "VectorAgg parenthesized", "( sum by (app) (rate({app=\"a\"}[5m])) )": "VectorAgg parenthesized",
+		`sum((rate({app="a"}[5m])))`: "VectorAgg operand spelling", `((rate({app="a"}[5m])))`: "RangeAgg parenthesized", "(count_over_time({app=\"a\"}[5m])\n)": "RangeAgg parenthesized",
+	} {
+		var nl *NotLoweredError
+		if _, err := PlanQuery(q, rangeAggPlan(q), Profile{}); !errors.As(err, &nl) || nl.Construct != construct {
+			t.Errorf("%q: PlanQuery = %v, want not lowered: %s", q, err, construct)
+		}
+	}
+	for _, q := range []string{`(sum(rate({app="a"}[5m]))) / (sum(rate({app="b"}[5m])))`} {
+		if err := ScreenText(q, rangeAggPlan(q)); err != nil {
 			t.Errorf("%q: turned away: %v", q, err)
 		}
 	}
