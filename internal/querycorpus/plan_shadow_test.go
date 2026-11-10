@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -283,8 +284,16 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		return translator.DecodePhysical(s)
 	}
 	sec, problems := runShadow(t, echo, rows)
+	// A row the translator misreads (known-typed-divergences, the quoted-text and parenthesized-metric recognisers)
+	// is delegated, not compared.
+	known := 0
+	for c, n := range sec.DelegatedByConstruct {
+		if strings.HasPrefix(c, "known divergence") {
+			known += n
+		}
+	}
 	t.Run("own operators are native", func(t *testing.T) {
-		if sec.Rows == 0 || sec.Native != sec.Rows || sec.Mismatches != 0 {
+		if sec.Rows == 0 || sec.Native+known != sec.Rows || sec.Mismatches != 0 {
 			t.Fatalf("the string translator's own operators: %+v\n%s", sec, joinFirst(problems, 5))
 		}
 	})
@@ -292,7 +301,7 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		return physical.VLQuery{Text: "*"}, nil
 	}
 	t.Run("a wrong query is a mismatch", func(t *testing.T) {
-		if bad, _ := runShadow(t, wrong, rows); bad.Native != 0 || bad.Mismatches < sec.Rows {
+		if bad, _ := runShadow(t, wrong, rows); bad.Native != 0 || bad.Mismatches < sec.Rows-known {
 			t.Fatalf("a lowering that answers `*` for everything: %+v", bad)
 		}
 	})
@@ -304,7 +313,7 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		return physical.LabelMap{Replace: []physical.LabelReplace{{DstLabel: "x"}}, In: op}, nil
 	}
 	t.Run("a changed post-processing is a mismatch", func(t *testing.T) {
-		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows {
+		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known {
 			t.Fatalf("a lowering that adds a label_replace to each answer: %+v", bad)
 		}
 	})
