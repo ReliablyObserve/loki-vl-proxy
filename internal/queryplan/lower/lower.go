@@ -64,13 +64,16 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 	case *queryplan.RangeAgg:
 		return rangeAgg(n, prof)
 	case *queryplan.VectorAgg:
+		if evaluates(n) {
+			return evaluated(n, prof)
+		}
 		return vectorAgg(n, prof)
 	case *queryplan.BinOp:
 		return binOp(n, prof)
 	case *queryplan.LabelReplace:
 		return labelReplace(n, prof)
 	case *queryplan.Rank:
-		return rank(n, prof)
+		return evaluated(n, prof)
 	}
 	return nil, &NotLoweredError{Construct: Construct(p.Root)}
 }
@@ -457,12 +460,13 @@ func collectLabelFilter(e *logql.LabelFilterExpr, op logql.LabelFilterOp, out *[
 func (lb *leafBuilder) leaf(e *logql.LabelFilterExpr) logsql.FilterExpr {
 	field, reserved := reservedLeafField(e, lb.label)
 	switch {
-	case reserved && lb.staged:
+	case reserved && lb.staged && logsql.ReservedFieldName(field):
+		// After a stage a lower-case name may be the stream tag or a key the stage wrote: the translator's.
 		if lb.bad == "" {
 			lb.bad = reservedAfterStageConstruct
 		}
 		return logsql.Wildcard{}
-	case reserved:
+	case reserved && !lb.staged:
 		return lb.reservedLeaf(field, e)
 	case lb.parsed:
 		f, c := lb.parsedLeaf(e)

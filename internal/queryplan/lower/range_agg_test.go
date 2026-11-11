@@ -70,6 +70,7 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 		return "", "", false, false, false
 	}
 	legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps)
+	legacy = guardedLegacy(p, legacy, terr)
 	// A selector that keeps every row followed by pipes only is written without its `*`: the proxy puts it in
 	// front (translateQueryOpts), as the lowering does.
 	if strings.HasPrefix(legacy, "|") {
@@ -89,6 +90,11 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 			t.Fatalf("%s: translator error %v, lowering error %v", q, terr, lerr)
 		}
 		return "", "", false, false, false
+	}
+	// The levels the proxy evaluates (a ranking, stddev or stdvar) are held to the proxy's route, not to the
+	// translator's text for the whole query.
+	if physical.Evaluated(op) {
+		return "", legacy, false, true, terr == nil
 	}
 	// A without clause is a fold around the query: the clean query is compared, and the fold with the marker.
 	core, post := physical.Split(op)
@@ -284,17 +290,12 @@ func TestPlanDelegatesRangeAggregations(t *testing.T) {
 	for q, construct := range map[string]string{
 		`rate({app="a"}[0s])`:                                          "RangeAgg range",
 		`bytes_rate({app="a"} |= "x" [0s] offset 1h)`:                  "RangeAgg range",
-		`rate({app="a"} | json | unwrap a_b [5m])`:                     "RangeAgg parser label",
 		`bytes_rate({app="a"} | unwrap n [5m])`:                        "RangeAgg unwrap bytes_rate",
-		`rate({app="a"} | keep x [5m])`:                                "RangeAgg keep identity",
-		`bytes_rate({app="a"} | keep x [5m])`:                          "RangeAgg keep identity",
 		`rate({app="a"} | detected_level="e" [5m])`:                    "RangeAgg LogSelect label filter detected_level",
 		`bytes_rate({app="a"} | line_format "{{.a | upper}}" [5m])`:    "RangeAgg LogSelect line format function",
 		`rate({app="a"}[5m]) by (x)`:                                   "RangeAgg grouping",
 		`count_over_time({app="a"} | unwrap n [5m])`:                   "RangeAgg unwrap count_over_time",
 		`count_over_time({app="a"} | line_format "{{upper .a}}" [5m])`: "RangeAgg LogSelect line format function",
-		`rate({app="a"} | json | keep a [5m])`:                         "RangeAgg keep identity",
-		`rate({app="a"} | keep a | line_format "x" [5m])`:              "RangeAgg keep identity",
 		`rate({app="a"} | drop a="| json" | keep a [5m])`:              "RangeAgg quoted clause",
 		`rate({app="a"} | drop a="| json" [5m])`:                       "RangeAgg quoted clause",
 		`rate({app="a"} | label_format a="| unwrap x" [5m])`:           "RangeAgg quoted clause",
@@ -383,6 +384,94 @@ func TestPlanRangeAggregationKeepsQuotedValues(t *testing.T) {
 	}
 }
 
+// A range aggregation spelled with a blank, tab or newline between its function and the parenthesis
+// (`rate ({app="a"}[5m])`) is a phrase to the string translator: it finds the call with a regexp that does not skip
+// blanks, as it does the operand of a vector aggregation. The proxy's request rewrite leaves the blank, so the proxy
+// answers a phrase search for it today where Loki answers the range aggregation (the Loki oracle accepts every
+// spelling here and reads the same function). The plan has no text and lowers the call as Loki reads it (Plan); the
+// text screen turns the query away (PlanQuery, ScreenText: RangeAgg spelling, and the operand screens of a binary
+// operation and a label_replace call), so the lowering equals the translator wherever it answers. The difference is
+// recorded for the day metric queries flip (semantics/translator-reads-blank-before-range-call-as-text).
+//
+// conformance: semantics/translator-reads-blank-before-range-call-as-text
+func TestPlanRangeCallBlankBeforeParenthesis(t *testing.T) {
+	for q, construct := range map[string]string{
+		`rate ({app="a"}[5m])`:                                            "RangeAgg spelling",
+		"rate\t({app=\"a\"}[5m])":                                         "RangeAgg spelling",
+		"  rate\n({app=\"a\"}[5m]) ":                                      "RangeAgg spelling",
+		`count_over_time ( {app="a"}[5m])`:                                "RangeAgg spelling",
+		`bytes_over_time  ({app="a"} |= "x" [5m] offset 1h)`:              "RangeAgg spelling",
+		`bytes_rate ({app="a"}[5m])`:                                      "RangeAgg spelling",
+		`absent_over_time ({app="a"}[5m])`:                                "RangeAgg spelling",
+		`sum_over_time ({app="a"} | json | unwrap x [5m])`:                "RangeAgg spelling",
+		`quantile_over_time (0.5, {app="a"} | json | unwrap x [5m])`:      "RangeAgg spelling",
+		`rate ({app="a"}[5m]) / 2`:                                        "BinOp operand spelling",
+		`1 + rate({app="a"}[5m])`:                                         "",
+		`1 + rate ({app="a"}[5m])`:                                        "BinOp operand spelling",
+		`rate({app="a"}[5m]) > rate ({app="b"}[5m])`:                      "BinOp operand spelling",
+		`label_replace(rate ({app="a"}[5m]), "d", "$1", "a", "(.*)")`:     "LabelReplace operand spelling",
+		`label_replace(rate({app="a"}[5m]) / 2 , "d", "$1", "a", "(.*)")`: "",
+		`label_replace(1 + rate ({app="a"}[5m]), "d", "$1", "a", "(.*)")`: "LabelReplace operand spelling",
+		// Blanks elsewhere in the call are read alike by both: the query stays lowered.
+		`rate( {app="a"}[5m])`:             "",
+		`rate({ app = "a" } [ 5m ] )`:      "",
+		`rate({app="a"}[5m] ) `:            "",
+		"\n\trate({app=\"a\"}[5m])\n":      "",
+		`rate({app="a"} |= "rate (" [5m])`: "",
+	} {
+		p := rangeAggPlan(q)
+		if p == nil {
+			t.Fatalf("%q: does not parse", q)
+		}
+		raw, rerr := Plan(p, Profile{})
+		if construct != "" && rerr != nil {
+			t.Errorf("%q: Plan: %v", q, rerr)
+		}
+		_, err := PlanQuery(q, p, Profile{})
+		var nl *NotLoweredError
+		switch {
+		case construct == "" && err != nil:
+			t.Errorf("%q: turned away: %v", q, err)
+		case construct != "" && (!errors.As(err, &nl) || nl.Construct != construct):
+			t.Errorf("%q: PlanQuery = %v, want not lowered: %s", q, err, construct)
+		}
+		if construct == "" || rerr != nil {
+			continue
+		}
+		// The defect recorded: the translator writes the text (or an operand of it) as a phrase, so what Plan
+		// writes without the screen differs from it.
+		legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), nil, nil, logsql.Capabilities{})
+		if terr != nil || physical.Encode(raw) == legacy {
+			t.Errorf("%q: the translator writes the lowering's text (%v): the difference this test records is gone", q, terr)
+		}
+	}
+	// What stays lowered equals the translator under every profile.
+	for _, q := range []string{`rate( {app="a"}[5m])`, `rate({ app = "a" } [ 5m ] )`, "\n\trate({app=\"a\"}[5m])\n", `1 + rate({app="a"}[5m])`} {
+		for _, prof := range rangeProfiles() {
+			if lowered, legacy, same, construct, ok := binOpLowering(t, q, prof); !ok || construct != "" || !same {
+				t.Errorf("%s: %q: delegated %q (ok %v)\n lowered %s\n  string %s", prof.name, q, construct, ok, lowered, legacy)
+			}
+		}
+	}
+}
+
+// The text screen of a range aggregation reads the start of the query only: it allocates nothing, so a query it lets
+// through costs the lowering no more than before (TestRankLoweringAllocatesNoMoreThanTheTranslator holds the same
+// bound for the rankings).
+//
+// conformance: architecture-syntax-package-layering
+func TestRangeCallScreenAllocatesNothing(t *testing.T) {
+	if raceDetectorEnabled {
+		t.Skip("allocation counts differ under the race detector")
+	}
+	for _, q := range []string{`rate({app="a"}[5m])`, `rate ({app="a"}[5m])`, `sum_over_time({app="a"} | json | unwrap x [5m])`, `count_over_time  ( {app="a"}[5m])`} {
+		p := rangeAggPlan(q)
+		if n := testing.AllocsPerRun(20, func() { _ = ScreenText(q, p) }); n != 0 {
+			t.Errorf("%q: ScreenText allocates %.0f", q, n)
+		}
+	}
+}
+
 // FuzzRangeAggLowering holds the lowering of range aggregations to the string translator on any selector values,
 // line filters, label filters, functions, ranges and offsets: both write the same query, or the lowering leaves the
 // query to the translator. Values the translator reads as syntax in a metric query (" bool ", "without", "unwrap",
@@ -393,6 +482,14 @@ func FuzzRangeAggLowering(f *testing.F) {
 	f.Add("a", "x", "level", "error", uint8(0), uint8(0), uint8(0))
 	f.Add("service_name", "é\n", "status", ".*", uint8(7), uint8(3), uint8(5))
 	f.Add("k8s.pod", "[5m]", "a-b", "10.0.0.0/8", uint8(200), uint8(9), uint8(11))
+	// Blanks at the places of the call: before its parenthesis, after it, before the range, before the closing one.
+	f.Add("a", "x", "level", "error", uint8(3), uint8(0), uint8(6))
+	f.Add("a", "x", "level", "error", uint8(8), uint8(33), uint8(12))
+	f.Add("a", "x", "level", "error", uint8(5), uint8(0), uint8(6))
+	f.Add("a", "x", "level", "error", uint8(14), uint8(34), uint8(19))
+	f.Add("a", "x", "level", "error", uint8(19), uint8(34), uint8(24))
+	f.Add("a", "x", "level", "error", uint8(24), uint8(2), uint8(18))
+	f.Add("a", "x", "level", "error", uint8(29), uint8(2), uint8(36))
 	f.Fuzz(func(t *testing.T, sel, line, name, val string, fn, shape, rng uint8) {
 		for _, s := range []string{sel, line, name, val} {
 			if translatorReadsAsSyntax(s) {
@@ -423,7 +520,13 @@ func FuzzRangeAggLowering(f *testing.F) {
 		}[shape>>5%10]
 		function := []string{"count_over_time", "bytes_over_time", "absent_over_time", "rate", "bytes_rate"}[fn%5]
 		span := []string{`[5m]`, `[1ms]`, `[1d]`, `[1h30m]`, `[5m] offset 1h`, `[1m] offset 0s`}[rng%6]
-		q := function + `(` + selector + stage + span + `)`
+		// A blank, tab, newline or two blanks at one of the places two tokens of the call meet: before the function,
+		// before its parenthesis (a phrase to the translator, left to it by the text screen), after it, before the
+		// range, before the closing parenthesis, after it.
+		pad := []string{"", " ", "\t", "\n", "  "}[rng/6%5]
+		gaps := [6]string{}
+		gaps[fn/5%6] = pad
+		q := gaps[0] + function + gaps[1] + `(` + gaps[2] + selector + stage + gaps[3] + span + gaps[4] + `)` + gaps[5]
 		for _, prof := range rangeProfiles() {
 			if lowered, legacy, same, delegated, ok := rangeAggLowering(t, q, prof); ok && !delegated && !same {
 				t.Fatalf("%s: %s:\n lowered %s\n  string %s", prof.name, q, lowered, legacy)

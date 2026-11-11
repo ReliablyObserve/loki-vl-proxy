@@ -1,0 +1,71 @@
+id: semantics/logql-unicode-runes
+title: 'LogQL reads the characters of every Unicode category as Loki''s lexer does: only an ASCII digit starts a number, and the parser returns on any input (fixed)'
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's lexer is Go's text/scanner: a name starts with a letter or '_' and goes on with letters and digits, a
+  number starts with an ASCII digit, and every other character starts no token and is returned as a name of its
+  own, which the grammar accepts only where a name may stand. The Loki oracle (Loki 3.7.9, check command) answers a
+  400 for each of
+
+      {a="b"} | x ٣            parse error at line 1, col 13: syntax error: unexpected IDENTIFIER
+      {a="b"} | x > ٣          parse error at line 1, col 15: syntax error: unexpected IDENTIFIER
+      {a="b"} | json | x == ٣1 parse error ...: syntax error: unexpected IDENTIFIER
+      {a="b"} | x ²            parse error at line 1, col 13: syntax error: unexpected IDENTIFIER   (also ⅓, Ⅳ)
+
+  The proxy's scanner took any Unicode decimal digit (category Nd: Arabic-Indic, Devanagari, fullwidth,
+  mathematical) for the start of a number and gave it to the number scanner, which reads ASCII digits only, read
+  nothing and returned the position it started from; the stage reader called the scanner again and again at that
+  position. The query never returned, held a core and built a buffer, and request cancellation could not stop it
+  (25 of 80 probe queries hung). A stage name followed by a character that starts no token (`| x ²`, `| x $`) was
+  accepted and passed to the backend, where Loki answers a 400.
+
+  Fixed: internal/logql/scanner.go starts a number only with an ASCII digit (and a scan that reads nothing moves one
+  character), the parser rejects a stage name followed by a character that starts no token, and a character that
+  starts no token is named IDENTIFIER in the parser's messages. Recorded with the Loki oracle on a grid of 19,370
+  queries (every Unicode category, sampled at the edges of its blocks, in 150 positions: label names in selectors
+  and label filters, numbers, durations and bytes, binary operations, ranges, offsets, name lists, function
+  arguments, stage names and keywords, strings, backquotes, comments): the proxy accepts nothing Loki rejects
+  because of a character but white space the scanner still skips (the white space fix,
+  semantics/logql-loki-whitespace) and a stage that is a bare name (the proxy passes it to the backend, with an
+  ASCII name as well); it rejects the 1,465 queries where Loki takes a character that starts no token as a label
+  name, because the translation to LogsQL cannot write such a name; and 3,526 queries are rejected by both with
+  other text (messages of the parser that are not about characters). Those limits are counted and bounded by the
+  test. A fuzz target (FuzzParseTerminates, in fuzz-smoke) holds every entry point of the package to return within
+  200 ms and to allocate at most a mebibyte per input byte; the 80 probe queries and the first, a middle and the
+  last digit of every Nd block, in 22 positions, are a unit test.
+
+  Breaking: the queries above answered a result, or did not return, and answer Loki's 400. The compat edge looks
+  its cache up before the handler validates a query, so the key of a query that is rejected carries a version
+  (rune_response_fence.go) and an answer cached before is not served.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} | x ٣'
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 `parse error at line 1, col 34: syntax error: unexpected IDENTIFIER`, byte for byte, in the
+    bad_data envelope, at once.
+gap:
+  status: fixed
+  fixed_by: "this change"
+  impact: api-only
+  effort: S
+  area: 'internal/logql scanner (scanToken, scanLiteral), parser (parsePipeBody, lokiTokenName); internal/proxy rune_response_fence'
+  loki: 'only an ASCII digit starts a number; a character that starts no token is an IDENTIFIER'
+  proxy: 'the same reading, with Loki''s error text; the parser returns on any input'
+  planned_test: 'TestCompat_LogQLUnicodeRunesLikeLoki (test/e2e-compat, group semantics: status 400 and the error text of 12 queries equal to Loki''s); TestUnicodeRunesMatchLoki, TestEntryPointsTerminate, TestEveryDecimalDigitTerminates, TestHangingQueriesAreRejectedLikeLoki and FuzzParseTerminates (internal/logql); TestRejectedQueryNeverReachesVictoriaLogs and TestCompatEdgeDoesNotServeAnAnswerCachedBeforeTheRuneFix (internal/proxy)'
+  visual: none
+  visual_reason: 'an error answer'
+  clusters: []

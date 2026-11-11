@@ -50,7 +50,9 @@ why: |
   by default), so they now get Loki's answer. Metric queries and a label filter
   after a parser, drop, keep or label_format are still the translator's: a
   label filter on such a name after one of those stages is left to it
-  (`LogSelect label filter reserved field after a stage`), since a json or
+  (`LogSelect label filter reserved field after a stage`; `_TIME` and the
+  other spellings in another case are lowered there as plain fields, sent
+  through the outbound guard), since a json or
   logfmt parser writes a key called _time over the entry's own _time in
   VictoriaLogs (unpack_json and unpack_logfmt), and `by (_stream)`, `drop
   _time`, `keep _msg` and label_format of these names read VictoriaLogs' own

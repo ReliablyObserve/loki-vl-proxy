@@ -1,0 +1,2 @@
+go test fuzz v1
+string("{a=\"b\"} | json | x == ٣1")

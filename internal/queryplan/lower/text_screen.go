@@ -14,10 +14,13 @@ import (
 // the plan lowers the aggregation as Loki reads it. The shapes are named VectorAgg operand spelling and left to the
 // translator (the blanks of the other places a query takes them, around the labels of a clause, inside the
 // selector, around the range, are read alike by both). A metric query wrapped whole in parentheses is turned away
-// too (RangeAgg or VectorAgg parenthesized). Callers that hold the query text call it before Plan (or call
-// PlanQuery); a nil error means Plan may answer. Only the construct at the top of the plan matters: a range
-// aggregation alone reads blanks alike. A binary operation and a label_replace call have screens of their own
-// (screenBinOp, screenLabelReplace), which screen their operands with this one.
+// too (RangeAgg or VectorAgg parenthesized). A range aggregation spelled with a blank, tab or newline between its
+// function and the parenthesis (`rate ({a="x"}[5m])`) is read as a phrase by the translator as well (RangeAgg
+// spelling): the operand of a vector aggregation is screened as part of it, so this is the screen of a range
+// aggregation at the top of a query, as an operand of a binary operation, or as the first argument of a
+// label_replace call. Callers that hold the query text call it before Plan (or call PlanQuery); a nil error means
+// Plan may answer. A binary operation and a label_replace call have screens of their own (screenBinOp,
+// screenLabelReplace), which screen their operands with this one.
 func ScreenText(query string, p *queryplan.Plan) error {
 	var parenthesized, padded *NotLoweredError
 	switch n := p.Root.(type) {
@@ -26,8 +29,11 @@ func ScreenText(query string, p *queryplan.Plan) error {
 	case *queryplan.LabelReplace:
 		return screenLabelReplace(query, n)
 	case *queryplan.Rank:
-		return screenRank(query, n)
+		return screenEvaluated(query, n)
 	case *queryplan.VectorAgg:
+		if evaluates(n) {
+			return screenEvaluated(query, n)
+		}
 		parenthesized, padded = errVectorParenthesized, errBlankPadding
 	case *queryplan.RangeAgg:
 		parenthesized = errRangeParenthesized
@@ -42,6 +48,10 @@ func ScreenText(query string, p *queryplan.Plan) error {
 	if padded != nil && paddedOperand(query) {
 		return padded
 	}
+	// A range aggregation with a blank between its function and the parenthesis is a phrase to the translator.
+	if _, ok := p.Root.(*queryplan.RangeAgg); ok && paddedCall(strings.TrimSpace(query)) {
+		return errRangeSpelling
+	}
 	if err := screenUnwrap(query, p); err != nil {
 		return err
 	}
@@ -52,6 +62,7 @@ var (
 	errBlankPadding        = &NotLoweredError{Construct: "VectorAgg operand spelling"}
 	errVectorParenthesized = &NotLoweredError{Construct: "VectorAgg parenthesized"}
 	errRangeParenthesized  = &NotLoweredError{Construct: "RangeAgg parenthesized"}
+	errRangeSpelling       = &NotLoweredError{Construct: "RangeAgg spelling"}
 )
 
 // wrappedWhole reports whether the query is one parenthesized expression whose content is no stream selector:

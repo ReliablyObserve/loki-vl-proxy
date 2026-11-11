@@ -13,10 +13,12 @@
     "architecture-syntax-package-layering": [
       "internal/logql/input_size_test.go",
       "internal/logql/line_template_test.go",
+      "internal/logsql/ip_range_vl_test.go",
       "internal/logsql/parser_read_test.go",
       "internal/logsql/parser_typed_test.go",
       "internal/logsql/pipe_math_as_test.go",
       "internal/proxy/binary_operand_test.go",
+      "internal/proxy/lowering_shadow_evaluated_test.go",
       "internal/proxy/lowering_shadow_test.go",
       "internal/proxy/plan_predicate_parity_test.go",
       "internal/proxy/plan_route_parity_test.go",
@@ -29,10 +31,13 @@
       "internal/querycorpus/escaped_spelling_grid_test.go",
       "internal/querycorpus/extract_grid_test.go",
       "internal/querycorpus/format_grid_test.go",
+      "internal/querycorpus/known_divergence_test.go",
       "internal/querycorpus/label_filter_grid_test.go",
       "internal/querycorpus/label_filter_parsed_grid_test.go",
       "internal/querycorpus/metric_stages_grid_test.go",
+      "internal/querycorpus/oracle_test.go",
       "internal/querycorpus/parser_grid_test.go",
+      "internal/querycorpus/parser_labels_grid_test.go",
       "internal/querycorpus/parser_metric_grid_test.go",
       "internal/querycorpus/plan_shadow_test.go",
       "internal/querycorpus/range_agg_grid_test.go",
@@ -41,6 +46,7 @@
       "internal/querycorpus/rank_loki_test.go",
       "internal/querycorpus/rank_step_alloc_test.go",
       "internal/querycorpus/rank_step_grid_test.go",
+      "internal/querycorpus/series_agg_grid_test.go",
       "internal/querycorpus/stats_decode_test.go",
       "internal/querycorpus/unwrap_grid_test.go",
       "internal/querycorpus/vector_agg_blank_grid_test.go",
@@ -55,11 +61,14 @@
       "internal/queryplan/lower/label_filter_parsed_test.go",
       "internal/queryplan/lower/label_filter_test.go",
       "internal/queryplan/lower/lower_test.go",
+      "internal/queryplan/lower/marker_bytes_test.go",
       "internal/queryplan/lower/metric_stages_test.go",
+      "internal/queryplan/lower/parser_labels_test.go",
       "internal/queryplan/lower/parser_test.go",
       "internal/queryplan/lower/pattern_filter_test.go",
       "internal/queryplan/lower/range_agg_test.go",
       "internal/queryplan/lower/rank_test.go",
+      "internal/queryplan/lower/series_agg_test.go",
       "internal/queryplan/lower/spelling_test.go",
       "internal/queryplan/lower/unwrap_test.go",
       "internal/queryplan/lower/vector_agg_nested_test.go",
@@ -91,6 +100,8 @@
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "cache-response-key-versions": [
+      "internal/proxy/fail_fast_unicode_test.go",
+      "internal/proxy/reserved_field_case_fence_test.go",
       "internal/proxy/reserved_field_test.go",
       "internal/proxy/response_key_fences_test.go"
     ],
@@ -424,6 +435,7 @@
       "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/query_semantics_matrix_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
+      "test/e2e-compat/reserved_field_name_case_test.go",
       "test/e2e-compat/selector_value_test.go",
       "test/e2e-compat/stddev_stdvar_grouped_test.go",
       "test/e2e-compat/sub_second_step_test.go",
@@ -530,6 +542,7 @@
       "test/e2e-compat/line_filter_invalid_utf8_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go",
       "test/e2e-compat/logfmt_risk_candidates_test.go",
+      "test/e2e-compat/logql_unicode_runes_test.go",
       "test/e2e-compat/marker_text_test.go",
       "test/e2e-compat/metric_range_extent_cache_test.go",
       "test/e2e-compat/metric_range_extent_large_answer_test.go",
@@ -550,6 +563,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/repeated_label_filters_test.go",
       "test/e2e-compat/reserved_field_labels_test.go",
+      "test/e2e-compat/reserved_field_name_case_test.go",
       "test/e2e-compat/selector_value_test.go",
       "test/e2e-compat/series_level_aggregation_fine_step_test.go",
       "test/e2e-compat/sliding_sum_without_test.go",
@@ -1291,6 +1305,12 @@
       "internal/proxy/ordered_json_vector_cache_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go"
     ],
+    "semantics/logql-unicode-runes": [
+      "internal/logql/terminates_test.go",
+      "internal/logql/unicode_runes_loki_test.go",
+      "internal/proxy/fail_fast_unicode_test.go",
+      "test/e2e-compat/logql_unicode_runes_test.go"
+    ],
     "semantics/loki-keyword-label-names": [
       "internal/logql/keyword_case_test.go",
       "internal/logql/keyword_label_names_loki_test.go",
@@ -1415,6 +1435,16 @@
       "internal/translator/repeated_label_filter_test.go",
       "test/e2e-compat/repeated_label_filters_test.go"
     ],
+    "semantics/reserved-field-name-case-outbound": [
+      "internal/logsql/outbound_guard_test.go",
+      "internal/proxy/outbound_guard_test.go",
+      "internal/proxy/reserved_field_case_fence_test.go",
+      "internal/querycorpus/outbound_guard_test.go",
+      "internal/queryplan/lower/outbound_guard_test.go",
+      "internal/queryplan/lower/reserved_field_case_test.go",
+      "internal/queryplan/lower/vl_clone_roundtrip_test.go",
+      "test/e2e-compat/reserved_field_name_case_test.go"
+    ],
     "semantics/scalar-sample-time-units": [
       "internal/proxy/binary_matching_test.go",
       "internal/proxy/instant_result_type_test.go",
@@ -1437,6 +1467,9 @@
       "internal/proxy/stddev_grouped_differential_test.go",
       "internal/proxy/stddev_grouped_test.go",
       "test/e2e-compat/stddev_stdvar_grouped_test.go"
+    ],
+    "semantics/stddev-stdvar-nested-or-binary": [
+      "internal/querycorpus/series_agg_grid_test.go"
     ],
     "semantics/stream-label-shadowed-by-ingest-json-key": [
       "internal/proxy/stream_tag_restore_test.go",
@@ -1481,6 +1514,13 @@
       "internal/proxy/topk_over_aggregation_differential_test.go",
       "internal/proxy/topk_over_aggregation_test.go",
       "test/e2e-compat/topk_over_aggregation_test.go"
+    ],
+    "semantics/translator-reads-blank-before-range-call-as-text": [
+      "internal/querycorpus/vector_agg_blank_grid_test.go",
+      "internal/queryplan/lower/range_agg_test.go"
+    ],
+    "semantics/translator-reads-marker-bytes-in-quoted-value": [
+      "internal/queryplan/lower/marker_bytes_test.go"
     ],
     "semantics/translator-reads-parenthesized-metric-as-text": [
       "internal/querycorpus/known_divergence_test.go"
@@ -1812,7 +1852,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 456,
+  "registry_items": 461,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1911,11 +1951,23 @@
     "internal/logql/stage_parse_validate_loki_test.go": [
       "semantics/label-filter-regex-parse-error"
     ],
+    "internal/logql/terminates_test.go": [
+      "semantics/logql-unicode-runes"
+    ],
+    "internal/logql/unicode_runes_loki_test.go": [
+      "semantics/logql-unicode-runes"
+    ],
     "internal/logql/vector_agg_log_expr_test.go": [
       "semantics/vector-aggregation-over-log-selector-status"
     ],
+    "internal/logsql/ip_range_vl_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/logsql/keyword_fields_test.go": [
       "semantics/translator-writes-keyword-field-names-bare"
+    ],
+    "internal/logsql/outbound_guard_test.go": [
+      "semantics/reserved-field-name-case-outbound"
     ],
     "internal/logsql/parser_read_test.go": [
       "architecture-syntax-package-layering"
@@ -2180,6 +2232,10 @@
       "semantics/topk-bottomk-without-strips-label",
       "semantics/unwrap-extraction-list-series-identity"
     ],
+    "internal/proxy/fail_fast_unicode_test.go": [
+      "cache-response-key-versions",
+      "semantics/logql-unicode-runes"
+    ],
     "internal/proxy/first_last_range_timestamps_test.go": [
       "loki_api_v1_query_range",
       "semantics/unwrap-first-last-range-timestamps",
@@ -2325,6 +2381,9 @@
       "profiles/label-browse-params-ignored",
       "profiles/parsed-fields-without-parser",
       "profiles/structured-metadata-keys-per-profile"
+    ],
+    "internal/proxy/lowering_shadow_evaluated_test.go": [
+      "architecture-syntax-package-layering"
     ],
     "internal/proxy/lowering_shadow_test.go": [
       "architecture-syntax-package-layering"
@@ -2484,6 +2543,9 @@
     ],
     "internal/proxy/ordered_json_vector_test.go": [
       "semantics/pipeline-error-text-parity"
+    ],
+    "internal/proxy/outbound_guard_test.go": [
+      "semantics/reserved-field-name-case-outbound"
     ],
     "internal/proxy/parenthesized_range_test.go": [
       "loki_api_v1_query",
@@ -2655,6 +2717,10 @@
     "internal/proxy/reprint_translation_test.go": [
       "semantics/binary-operand-literals-reprint",
       "semantics/label-filter-expression-syntax"
+    ],
+    "internal/proxy/reserved_field_case_fence_test.go": [
+      "cache-response-key-versions",
+      "semantics/reserved-field-name-case-outbound"
     ],
     "internal/proxy/reserved_field_test.go": [
       "cache-response-key-versions",
@@ -3014,6 +3080,7 @@
       "architecture-syntax-package-layering"
     ],
     "internal/querycorpus/known_divergence_test.go": [
+      "architecture-syntax-package-layering",
       "semantics/translator-reads-parenthesized-metric-as-text"
     ],
     "internal/querycorpus/label_filter_grid_test.go": [
@@ -3025,7 +3092,16 @@
     "internal/querycorpus/metric_stages_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/oracle_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/outbound_guard_test.go": [
+      "semantics/reserved-field-name-case-outbound"
+    ],
     "internal/querycorpus/parser_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/parser_labels_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/querycorpus/parser_metric_grid_test.go": [
@@ -3069,6 +3145,10 @@
     "internal/querycorpus/rank_step_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/series_agg_grid_test.go": [
+      "architecture-syntax-package-layering",
+      "semantics/stddev-stdvar-nested-or-binary"
+    ],
     "internal/querycorpus/stats_decode_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3076,7 +3156,8 @@
       "architecture-syntax-package-layering"
     ],
     "internal/querycorpus/vector_agg_blank_grid_test.go": [
-      "architecture-syntax-package-layering"
+      "architecture-syntax-package-layering",
+      "semantics/translator-reads-blank-before-range-call-as-text"
     ],
     "internal/querycorpus/vector_agg_grid_test.go": [
       "architecture-syntax-package-layering"
@@ -3114,7 +3195,17 @@
     "internal/queryplan/lower/lower_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/lower/marker_bytes_test.go": [
+      "architecture-syntax-package-layering",
+      "semantics/translator-reads-marker-bytes-in-quoted-value"
+    ],
     "internal/queryplan/lower/metric_stages_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/outbound_guard_test.go": [
+      "semantics/reserved-field-name-case-outbound"
+    ],
+    "internal/queryplan/lower/parser_labels_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/parser_test.go": [
@@ -3125,13 +3216,20 @@
       "semantics/pattern-line-filter"
     ],
     "internal/queryplan/lower/range_agg_test.go": [
-      "architecture-syntax-package-layering"
+      "architecture-syntax-package-layering",
+      "semantics/translator-reads-blank-before-range-call-as-text"
     ],
     "internal/queryplan/lower/rank_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/lower/reserved_field_case_test.go": [
+      "semantics/reserved-field-name-case-outbound"
+    ],
     "internal/queryplan/lower/reserved_field_test.go": [
       "semantics/translator-writes-reserved-field-names"
+    ],
+    "internal/queryplan/lower/series_agg_test.go": [
+      "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/spelling_test.go": [
       "architecture-syntax-package-layering"
@@ -3146,6 +3244,7 @@
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/vl_clone_roundtrip_test.go": [
+      "semantics/reserved-field-name-case-outbound",
       "semantics/translator-writes-keyword-field-names-bare",
       "semantics/translator-writes-reserved-field-names"
     ],
@@ -3637,6 +3736,10 @@
       "quality/logfmt-parse-risk-candidates",
       "severity-detected-level-derivation"
     ],
+    "test/e2e-compat/logql_unicode_runes_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/logql-unicode-runes"
+    ],
     "test/e2e-compat/loki_profile_parity_test.go": [
       "profiles/dotted-name-parse-error",
       "profiles/dotted-names-accepted-outside-loki-profile",
@@ -3789,6 +3892,11 @@
     "test/e2e-compat/reserved_field_labels_test.go": [
       "loki_api_v1_query_range",
       "semantics/translator-writes-reserved-field-names"
+    ],
+    "test/e2e-compat/reserved_field_name_case_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/reserved-field-name-case-outbound"
     ],
     "test/e2e-compat/row_limit_like_loki_limit_test.go": [
       "heavy-metric-fetch-bounds",
@@ -4006,7 +4114,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 470,
+  "tests_with_markers": 489,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4076,11 +4184,11 @@
     "semantics/logfmt-over-json-line-reads-stored-fields",
     "semantics/nested-aggregation-query-length",
     "semantics/parse-error-labels-on-log-lines",
+    "semantics/pattern-capture-before-bracket-text",
     "semantics/quantile-over-time-out-of-range",
     "semantics/regexp-chain-led-by-ip",
     "semantics/ruler-empty-list-status",
     "semantics/ruler-store-failure-status",
-    "semantics/stddev-stdvar-nested-or-binary",
     "semantics/stddev-stdvar-parsed-label-series-identity",
     "semantics/step-duration-grammar-wider-than-loki",
     "semantics/step-nonpositive-or-unparsable-is-400",
@@ -4112,5 +4220,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 280
+  "wired_items": 285
 }

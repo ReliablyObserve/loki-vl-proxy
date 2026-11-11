@@ -50,23 +50,3 @@ func ReservedFieldName(name string) bool {
 	}
 	return false
 }
-
-// ReservedFieldNameOtherCase reports _time, _stream or _stream_id spelled in another case than lower case (_TIME,
-// _Stream, _STREAM_ID): a field like any other to VictoriaLogs' storage and pipes, but no field filter can name it.
-// Bare, VictoriaLogs reads it, in any case, as its time, stream or stream id filter (`_TIME:="x"` is rejected,
-// `_TIME:>=5s` is a time range). Quoted, its parser reads the field, but VictoriaLogs prints the field bare when it
-// clones a query (lib/logstorage Query.Clone: print, then parse again), as its last-N optimization of a query with
-// a limit does (app/vlstorage RunQuery, GetLastNResultsQuery), and so do the live tail and a cluster's remote query;
-// the reprinted `_TIME:="x"` fails the second parse, Clone panics and the VictoriaLogs process restarts. So such a name is only ever written in a stream filter or a
-// pipe, where VictoriaLogs prints and reads it back as the field it is.
-func ReservedFieldNameOtherCase(name string) bool {
-	switch len(name) {
-	case 5:
-		return name != "_time" && strings.EqualFold(name, "_time")
-	case 7:
-		return name != "_stream" && strings.EqualFold(name, "_stream")
-	case 10:
-		return name != "_stream_id" && strings.EqualFold(name, "_stream_id")
-	}
-	return false
-}

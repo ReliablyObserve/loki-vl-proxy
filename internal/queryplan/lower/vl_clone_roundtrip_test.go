@@ -2,6 +2,7 @@ package lower
 
 import (
 	"bufio"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,8 +12,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
@@ -22,10 +25,10 @@ import (
 // query. A text VictoriaLogs accepts but cannot read back from its own print restarts the VictoriaLogs process. The
 // VictoriaLogs oracle's roundtrip command runs each text through the handler's steps (parse at a timestamp, the
 // request's _time filter, the sort and limit pipes, GetLastNResultsQuery) and every clone on the way, with the panic
-// recovered: the verdicts of v1.49.0 and v1.53.0 are recorded in testdata/vl-clone-roundtrip.jsonl
+// recovered: the verdicts of v1.49.0 and v1.53.0 are recorded in testdata/vl-clone-roundtrip.jsonl.gz
 // (LVP_RUN_ORACLES=1 records them again; the oracle downloads VictoriaLogs, so set GOMODCACHE to a fresh directory
 // when the shared cache holds other copies).
-const vlCloneRoundtrip = "testdata/vl-clone-roundtrip.jsonl"
+const vlCloneRoundtrip = "testdata/vl-clone-roundtrip.jsonl.gz"
 
 type vlCloneVerdict struct {
 	Accept bool   `json:"accept"`
@@ -61,6 +64,10 @@ var vlClonePositions = []string{
 	`{app="a"} | json x="W" | x="1"`, `{app="a"} | drop W`, `{app="a"} | keep W`, `{app="a"} | label_format x=W`,
 	`{app="a"} | label_format W=app`, `sum by (W) (count_over_time({app="a"}[1m]))`,
 	`count_over_time({app="a", W="a"}[1m])`, `count_over_time({app="a"} | W="x" [1m])`, `rate({app="a"} | W>5 [1m])`,
+	`sum(sum_over_time({app="a"} | logfmt | unwrap W [1m]))`, `sum_over_time({app="a"} | json | unwrap W [1m])`,
+	`sum by (app) (rate({app="a"} | logfmt | unwrap duration(W) [5m]))`, `avg_over_time({app="a"} | logfmt | unwrap bytes(W) [1m])`,
+	`max_over_time({app="a"} | logfmt | unwrap W [1m]) by (app)`, `quantile_over_time(0.5, {app="a"} | logfmt | unwrap W [1m])`,
+	`stdvar_over_time({app="a"} | logfmt | unwrap W [1m])`,
 }
 
 // vlCloneSpelling is a query of the spelling grid, and whether VictoriaLogs is expected to accept it and fail on
@@ -84,7 +91,7 @@ func vlCloneSpellings() []vlCloneSpelling {
 		`app:="a" | fields N`, `app:="a" | stats by (N) count()`,
 	}
 	var out []vlCloneSpelling
-	for _, n := range []string{"_time", "_TIME", "_Time", "_TiMe", "_stream", "_STREAM", "_Stream", "_sTrEaM", "_stream_id", "_STREAM_ID", "_Stream_Id", "_msg", "_MSG", "_Msg"} {
+	for _, n := range []string{"_time", "_TIME", "_Time", "_TiMe", "_stream", "_STREAM", "_Stream", "_sTrEaM", "_stream_id", "_STREAM_ID", "_Stream_Id", "_tİme", "_stream_İd", "_msg", "_MSG", "_Msg"} {
 		for _, quoted := range []bool{false, true} {
 			spelling := n
 			if quoted {
@@ -109,19 +116,24 @@ func vlCloneProfiles() []parserProfile {
 	return []parserProfile{all[0], all[2], all[7]}
 }
 
-// vlCloneE2EQueries are the queries of test/e2e-compat TestCompat_ReservedFieldLabelsLikeLoki (svc stands for the
-// run's service name): the texts the stack run sends are held to the clone before it runs.
+// vlCloneE2EQueries are the queries of test/e2e-compat TestCompat_ReservedFieldNameCaseLikeLoki and
+// TestCompat_ReservedFieldLabelsLikeLoki (svc stands for the run's service name): the texts the stack runs send are
+// held to the clone before they run.
 var vlCloneE2EQueries = []string{
-	`{service_name="svc"}`, `{service_name="svc", _time="st"}`, `{service_name="svc", _time!="st"}`,
+	`{service_name="svc", _time="st"}`, `{service_name="svc", _time!="st"}`,
 	`{service_name="svc", _time=~"1.*|7s"}`, `{service_name="svc", _time=""}`, `{service_name="svc"} | _time="10"`,
 	`{service_name="svc"} | _time!~"s.*"`, `{service_name="svc", _time=~"[0-9]+"} | _time > 5`,
 	`{service_name="svc", _time=~".*s"} | _time >= 5s`, `{service_name="svc"} | _stream_id="si"`,
 	`{service_name="svc", _stream_id!="si"}`, `{service_name="svc", _TIME="up"}`,
 	`{service_name="svc"} | _TIME=~"u.*" or _time="st"`, `{service_name="svc", _msg="m"}`, `{service_name="svc"} | _msg!="m"`,
+	`{service_name="svc"}`, `sum(sum_over_time({service_name="svc"} | logfmt | unwrap _TIME [1m]))`,
+	`sum by (service_name) (sum_over_time({service_name="svc"} | logfmt | unwrap _TIME [1m]))`,
+	`{service_name="svc"} | logfmt | _Stream_ID="si"`, `{service_name="svc"} | logfmt | _Stream_ID!="si"`,
+	`count_over_time({service_name="svc"} | logfmt | _Stream_ID="si" [1m])`,
 }
 
 // vlClonePlanQueries are the LogQL queries of the plan grid: every name in every position, the queries of the
-// Loki agreement grid (reservedFieldQueries) and of the e2e test.
+// Loki agreement grids (reservedFieldQueries, reservedFieldCaseQueries) and of the e2e tests.
 func vlClonePlanQueries() []string {
 	var qs []string
 	for _, n := range vlCloneNames() {
@@ -130,6 +142,7 @@ func vlClonePlanQueries() []string {
 		}
 	}
 	qs = append(qs, reservedFieldQueries...)
+	qs = append(qs, reservedFieldCaseQueries...)
 	return append(qs, vlCloneE2EQueries...)
 }
 
@@ -142,14 +155,18 @@ func vlClonePlanTexts() []string {
 			continue
 		}
 		for _, prof := range vlCloneProfiles() {
-			op, err := PlanQuery(q, p, Profile{Caps: prof.caps, Label: prof.label, StreamFields: prof.stream})
-			if err != nil {
-				continue
-			}
 			var texts []string
-			collectVLTexts(reflect.ValueOf(&op), &texts)
+			if op, err := PlanQuery(q, p, Profile{Caps: prof.caps, Label: prof.label, StreamFields: prof.stream}); err == nil {
+				collectVLTexts(reflect.ValueOf(&op), &texts)
+			}
+			if legacy, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps); err == nil {
+				if op, err := translator.DecodePhysical(legacy); err == nil {
+					collectVLTexts(reflect.ValueOf(&op), &texts)
+				}
+			}
 			for _, t := range texts {
-				seen[t] = true
+				// What the proxy sends: every text passes the outbound guard (internal/proxy guardOutboundQuery).
+				seen[logsql.GuardReservedFieldCase(t)] = true
 			}
 		}
 	}
@@ -189,14 +206,16 @@ func collectVLTexts(v reflect.Value, out *[]string) {
 	}
 }
 
-// Every text the lowering writes for a label called _time, _stream, _stream_id or _msg in any case, or after a word
-// LogsQL reads as a keyword, survives VictoriaLogs' clone on v1.49.0 and v1.53.0: it is not a query VictoriaLogs
-// accepts and then panics on. A text missing from the recorded verdicts fails the test until they are recorded
-// again. The spelling grid records why the lowering never quotes _TIME and the like in a filter: VictoriaLogs reads
-// `"_TIME":="x"`, prints it `_TIME:="x"` and fails on its own print, where the stream filter and the pipes read the
-// name back as written.
+// Every text the proxy sends for a label called _time, _stream, _stream_id or _msg in any case, or after a word
+// LogsQL reads as a keyword, in every position of the grid (selector, label filters, comparisons, parsers, drop, keep,
+// label_format, groupings, range aggregations and unwrap), survives VictoriaLogs' clone on v1.49.0 and v1.53.0:
+// the lowering's and the string translator's texts, each through the outbound guard (logsql.GuardReservedFieldCase,
+// which the proxy runs on every query it sends), are none of them a query VictoriaLogs accepts and then panics on. A
+// text missing from the recorded verdicts fails the test until they are recorded again. The spelling grid records
+// why the guard rewrites a filter on _TIME and the like: VictoriaLogs reads `"_TIME":="x"`, prints it `_TIME:="x"`
+// and fails on its own print, where a pipe and a stream filter read the name back as written.
 //
-// conformance: semantics/translator-writes-reserved-field-names, semantics/translator-writes-keyword-field-names-bare
+// conformance: semantics/reserved-field-name-case-outbound, semantics/translator-writes-reserved-field-names, semantics/translator-writes-keyword-field-names-bare
 func TestPlanTextsSurviveVictoriaLogsClone(t *testing.T) {
 	plan, spellings := vlClonePlanTexts(), vlCloneSpellings()
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {
@@ -242,8 +261,12 @@ func readVLCloneRoundtrip(t *testing.T) map[string]vlCloneRow {
 		t.Fatal(err)
 	}
 	defer func() { _ = f.Close() }()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
 	rows := map[string]vlCloneRow{}
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(zr)
 	sc.Buffer(make([]byte, 1<<20), 1<<24)
 	for sc.Scan() {
 		var r vlCloneRow
@@ -315,7 +338,11 @@ func recordVLCloneRoundtrip(t *testing.T, texts []string) {
 		w.Write(line)
 		w.WriteByte('\n')
 	}
-	if err := os.WriteFile(vlCloneRoundtrip, []byte(w.String()), 0o644); err != nil {
+	plain := filepath.Join(work, "verdicts.jsonl")
+	if err := os.WriteFile(plain, []byte(w.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := oraclerun.Gzip(plain, vlCloneRoundtrip); err != nil {
 		t.Fatal(err)
 	}
 }

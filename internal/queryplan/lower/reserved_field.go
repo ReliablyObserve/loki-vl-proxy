@@ -27,7 +27,8 @@ import (
 //     (a missing label fails every comparison) and spares VictoriaLogs the other streams;
 //   - a label filter after a parser, a drop, a keep or a label_format is left to the string translator (those
 //     stages can define, rename or remove the label, and VictoriaLogs' unpack_json and unpack_logfmt write a key
-//     called _time over the entry's own _time).
+//     called _time over the entry's own _time); a name in another case is a field like any other there, lowered
+//     as one, and the outbound guard (logsql.GuardReservedFieldCase) writes its filter as a copy.
 //
 // _time, _stream and _stream_id in another case (_TIME, _Stream, _STREAM_ID: logsql.ReservedFieldNameOtherCase)
 // are fields to VictoriaLogs, but no field filter can name them: bare they are its own filters, and quoted they do
@@ -132,7 +133,7 @@ func reservedTagOf(field string) reservedTag {
 	if tag, ok := otherCaseTags.Load(field); ok {
 		return tag.(reservedTag)
 	}
-	scratch := reservedScratch + field
+	scratch := logsql.ReservedFieldCaseScratch(field) // the outbound guard's scratch field for the name
 	tag := reservedTag{
 		scratch: scratch,
 		pipes:   []logsql.Pipe{logsql.PipeCopy{Pairs: [][2]string{{field, scratch}}}},

@@ -39,6 +39,14 @@ path. Link the registry ID, matrix case and focused differential test so CI
 reports the same behavior from one catalog. Extend existing fixtures and
 harnesses; do not create a parallel registry or test suite.
 
+A case that needs several queries in the plan corpus lists them under
+`corpus.dimensions.shapes` (`- query: '...'` per row) in its case file: the
+corpus walker reads every `query` key of a case, so each shape becomes a corpus
+row the shadows, the oracles and the route-parity digests see. Use it for the
+spellings or nestings of one difference (for example
+`semantics/stddev-stdvar-nested-or-binary`); a different difference gets its
+own case.
+
 - Record the actual ingest path, query stages, response encoding, tenant and
   time window that expose the difference. A passing variant with a different
   ingest path does not close the original gap.
@@ -51,6 +59,22 @@ harnesses; do not create a parallel registry or test suite.
 - Reuse matrix cases for later performance scenarios by case ID. Keep visual
   proof in its existing separate harness and add a PR-specific capture when the
   behavior changes what Grafana or Drilldown shows.
+
+## Fail fast like Loki (hard rule)
+
+A query Loki rejects quickly (a parse error, a validation error, a limit) the proxy rejects just as early: at the first
+parse or validation step of the route, before the response cache lookup, the query plan, the translation, response key
+fences, fan-out or any request to VictoriaLogs. The status, `errorType` and error text are Loki's, recorded with the
+Loki oracle (`test/oracle/loki`, API only).
+
+- Parsers and validators terminate quickly with bounded memory on any input. A termination fuzz target (a time and an
+  allocation bound per input) runs in fuzz-smoke; every parser or validator change adds its seeds.
+- Route order is validate, then cache, then plan. When a route validates after its cache, fix the order instead of
+  adding another response key fence.
+- Record Loki's answers for the inputs a change touches (acceptance and error text), and test the rejection both at
+  the parser and through the HTTP route (no upstream call is made for a rejected query).
+- A pull request that touches parsing or validation says in its body that rejected inputs still fail before any other
+  work.
 
 ## Cache semantic layers
 

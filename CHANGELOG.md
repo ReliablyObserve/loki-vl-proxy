@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The opt-in live shadow of the query plan (`-translate-shadow-sample`) now
+  also covers the rankings, `stddev` and `stdvar` the proxy evaluates itself
+  (and the `sum`, `avg`, `min`, `max` and `count` layers above a ranking), on
+  `query` and `query_range`. These handlers translate only the operand, so
+  the shadow never saw the whole query; on the same share of their requests
+  it now lowers the whole query in the background and compares it with what
+  the proxy runs: the operand's request it has just sent, byte for byte, and
+  the levels it applies to the answer. New `result` values of
+  `loki_vl_proxy_lowering_shadow_total`: `native_proxy_evaluated` (equal) and
+  `known_divergence` (the plan holds a level the proxy's route drops, such as
+  `topk(2, stddev by (app) (..))`; nothing compared); new `construct` values
+  `VectorAgg stddev` and `VectorAgg stdvar`. No answer, cache or request to
+  VictoriaLogs changes, and a request the sample skips costs no allocation.
+
+### Security
+
+- **A query with certain non-ASCII characters could make the LogQL parser stop responding.** Such queries are now
+  rejected with Loki's 400 before anything else on the route runs, and every entry point of the LogQL parser is held to
+  return within a bound of time and memory by a fuzz target. **Breaking:** a few queries Loki rejects (for example a
+  stage name followed by `²`) were accepted and now answer Loki's 400; answers cached for them are not served.
+
 ### Fixed
 
 - A log query that filters on a label called `_time`, `_stream`, `_stream_id` or
@@ -20,15 +43,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is `a`. The stream selector and the label filters of the queries the plan
   serves (line filters and label filters, no parser) now filter the stream tag
   (`{_time="a"}`; a comparison reads the tag's value out of `_stream`).
-  `_TIME`, `_Stream` or `_STREAM_ID` in another case, which VictoriaLogs reads
-  bare as its own filter too, is the stream filter in a selector and is copied
-  into a scratch field for a label filter (`| copy _TIME as __lxrf_TIME`), a
-  form VictoriaLogs reads back when it clones the query. Queries with a parser or a metric are still
+  `_TIME`, `_Stream` or `_STREAM_ID` in another case is the stream filter in a
+  selector, and the plan writes a label filter on it in the outbound guard's
+  form (`| copy _TIME as __lxrf_TIME`). Queries with a parser or a metric are still
   written by the string translator and answer as before. **Breaking:** a client
   that used `{..., _msg="text"}` or `| _msg=~"..."` as a filter on the line text
   now gets the streams whose label `_msg` matches, as Loki answers. Answers
   cached before this change are not reused for these queries (a response cache
   key version).
+
+## [2.141.0] - 2026-11-11
+
+### Security
+
+- Queries no longer make VictoriaLogs crash when a label name differs from
+  `_time`, `_stream` or `_stream_id` only by letter case (`_TIME`, `_Stream`,
+  `_STREAM_ID`). VictoriaLogs prints such a field name without its quotes when
+  it clones a query, cannot parse its own print, and restarts
+  ([VictoriaMetrics/VictoriaLogs#1942](https://github.com/VictoriaMetrics/VictoriaLogs/issues/1942)).
+  It clones every query with a limit, every live tail and, in a cluster, every
+  query. The proxy wrote such a filter for the unwrap of a key with such a
+  name (`| logfmt | unwrap _TIME`), so a client could restart the shared
+  VictoriaLogs for every tenant. The proxy now passes every query it sends
+  (every endpoint, probe, live tail and cold-tier request) through one
+  outbound guard. The guard rewrites a filter on such a name to a copy into a
+  scratch field and a filter on that copy (`| copy _TIME as __lxrf_TIME |
+  filter __lxrf_TIME:>=5s | delete __lxrf_TIME`), a form VictoriaLogs v1.49
+  and v1.53 read back as written. The query plan writes the unwrap in that
+  form itself. These queries now get Loki's answer, where they got a crash, a
+  400, or (`| _TIME >= 5s`) VictoriaLogs' time range of the last five seconds.
+  No data or answer changes for any other query: every other query is sent
+  byte for byte as before. Answers cached before this change are not reused
+  for these queries (a response cache key version).
+
+## [2.140.0] - 2026-11-11
+
+### Fixed
+
 - A log query that filters on a label called `not`, `in`, `options`, `contains_all`,
   `contains_any`, `contains_common_case` or `equals_common_case` (in any case), or
   on `and` or `or` once a label function maps a name such as `_or` to it, no
@@ -55,6 +106,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the word in lower case anywhere (`{Ip="a"}` filtered the field `ip`, and
   `| drop Ip` dropped it). Answers cached before this change are not reused for
   these queries (a response cache key version).
+
+## [2.133.0] - 2026-11-11
+
+### Changed
+
+- The query plan holds `stddev` and `stdvar` the way the proxy evaluates
+  them, for every translation profile: one series fold per aggregation, with
+  its `by` or `without` clause, over the operand's own query, which is the
+  request the proxy sends (it translates the operand alone and takes the
+  population deviation or variance of each group's series at each step
+  itself). The `sum`, `avg`, `min`, `max` and `count` layers above a ranking
+  are covered too, and the shadow holds them to the proxy's own route, not to
+  the translator's text for the whole query. A `stddev`, `stdvar` or ranking
+  below the one level the proxy evaluates (`sum(stddev by (app) (..))`,
+  `topk(2, stddev by (app) (..))`, `stddev(topk(3, ..))`) is held as the
+  chain Loki evaluates and recorded as a known difference of the proxy, which
+  answers the translator's text for those and drops the level: the answers
+  are unchanged until the proxy serves these queries from the plan. Nothing
+  serves the plan yet: no request sent to VictoriaLogs and no answer
+  changes. A `stddev` or `stdvar` by a label of a query with a parser, a
+  binary operation operand and a `stddev` under a binary operation stay with
+  the string translator. A query whose line filter holds a quoted `| json`
+  (or `| logfmt`, `| pattern`, `| regexp`, `| unpack`) followed by a
+  non-ASCII character is now left to the string translator, which reads it
+  as a parser stage where the plan did not.
+
+## [2.132.0] - 2026-11-11
+
+### Changed
+
+- The query plan holds `stddev` and `stdvar` the way the proxy evaluates
+  them, for every translation profile: one series fold per aggregation, with
+  its `by` or `without` clause, over the operand's own query, which is the
+  request the proxy sends (it translates the operand alone and takes the
+  population deviation or variance of each group's series at each step
+  itself). The `sum`, `avg`, `min`, `max` and `count` layers above a ranking
+  are covered too, and the shadow holds them to the proxy's own route, not to
+  the translator's text for the whole query. A `stddev`, `stdvar` or ranking
+  below the one level the proxy evaluates (`sum(stddev by (app) (..))`,
+  `topk(2, stddev by (app) (..))`, `stddev(topk(3, ..))`) is held as the
+  chain Loki evaluates and recorded as a known difference of the proxy, which
+  answers the translator's text for those and drops the level: the answers
+  are unchanged until the proxy serves these queries from the plan. Nothing
+  serves the plan yet: no request sent to VictoriaLogs and no answer
+  changes. A `stddev` or `stdvar` by a label of a query with a parser, a
+  binary operation operand and a `stddev` under a binary operation stay with
+  the string translator. A query whose line filter holds a quoted `| json`
+  (or `| logfmt`, `| pattern`, `| regexp`, `| unpack`) followed by a
+  non-ASCII character is now left to the string translator, which reads it
+  as a parser stage where the plan did not.
+- The proxy's LogsQL parser reads the addresses of `ipv4_range` and
+  `ipv6_range` the way VictoriaLogs v1.49 and v1.53 do (1,890 recorded
+  verdicts, identical on both): `ipv6_range` takes IPv4-mapped and embedded
+  forms (`::ffff:255.255.255.255`, `64:ff9b::1.2.3.4`), zone ids and plain
+  IPv4, `ipv4_range` dotted decimal only. It used to reject
+  `::ffff:255.255.255.255`, which the lowering of `ip("0::/80")` writes and
+  VictoriaLogs accepts, so the query-plan shadow could not read the text. The
+  parser checks the text the proxy compares; the requests sent to
+  VictoriaLogs do not change.
+
+## [2.131.0] - 2026-11-11
+
+### Security
+
+- **Go 1.27.4.** Go 1.27.4 fixes GO-2026-6859 (net/http: an HTTP/1 server
+  crash caused by a `MaxBytesReader` header race), which `govulncheck`
+  reports as reachable from the proxy's own HTTP server and handlers
+  (`Proxy.RegisterProxyRoutes`, the peer cache's `ServeHTTP`, the metrics
+  handler). With 1.27.3 the govulncheck step failed on main and on every
+  pull request. The builder image (`golang:1.27.4-alpine3.24`, pinned by its
+  multi-arch index digest), `go.mod`, `bench/go.mod`, the getting-started
+  guide and every workflow move to 1.27.4. govulncheck v1.8.0 (run with
+  `GOOS=linux`) reports no vulnerabilities for the module and for `bench`,
+  and golangci-lint v2.14.0 reports no issues.
+
+## [2.130.0] - 2026-11-11
+
+### Changed
+
+- The query plan lowers the metric queries whose labels come from a parser,
+  for every translation profile: a grouping or unwrapped label with an
+  underscore behind `json` or `logfmt` (the `http_method` a line may hold as
+  `http.method` or `http-method`, and the `<name>_extracted` rename of a label
+  that collides with a stream label), a `without` clause over a parser, and
+  a `rate`, or `count`, `min`, `max` and `avg`, behind a trailing `keep`. The
+  text is the string translator's, byte for byte. The requests sent to
+  VictoriaLogs do not change. A label filter or a drop after the parser under
+  such a label, a `without` fold or a `keep`, a collision rename that reuses
+  the scratch fields of a label filter, a `keep` that leaves no label and a
+  nest over an unwrapped label are still written by the string translator.
+- The query plan leaves a range function spelled with a blank, tab or newline
+  between its name and its parenthesis (`rate ({app="a"}[5m])`) to the string
+  translator, whether it stands alone, is an operand of a binary operation or
+  the first argument of a `label_replace` call. The translator reads that
+  spelling as a phrase search where Loki reads the range aggregation, and the
+  plan's text screen used to let it through to a lowering that differs from
+  the translator. Nothing is served from the plan for metric queries, so
+  requests and answers do not change; the open difference is recorded as
+  `semantics/translator-reads-blank-before-range-call-as-text`.
 
 ## [2.129.0] - 2026-11-10
 

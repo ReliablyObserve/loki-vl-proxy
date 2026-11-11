@@ -2,6 +2,7 @@ package translate
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -32,29 +33,35 @@ func ParsedKeyVariants(label string) []string {
 	if n == 0 {
 		return []string{label}
 	}
-	out := []string{label}
-	seen := map[string]struct{}{label: {}}
+	// At most 2^n spellings from the underscores, the label itself and the hyphenated one: one slice holds them
+	// (n is bounded below), and a spelling is told from the ones before it by comparison, not a set.
+	size := 3
+	if n <= maxParsedKeyUnderscores {
+		size += 1 << n
+	}
+	out := make([]string, 1, size)
+	out[0] = label
 	add := func(v string) {
 		// A key with adjacent, leading or trailing dots is not one the field
 		// identifier normalisation keeps, so it cannot be matched by name.
 		if strings.Contains(v, "..") || v[0] == '.' || v[len(v)-1] == '.' {
 			return
 		}
-		if _, ok := seen[v]; !ok {
-			seen[v] = struct{}{}
+		if !slices.Contains(out, v) {
 			out = append(out, v)
-		}
-	}
-	pos := make([]int, 0, n)
-	for i := 0; i < len(label); i++ {
-		if label[i] == '_' {
-			pos = append(pos, i)
 		}
 	}
 	if n > maxParsedKeyUnderscores {
 		add(strings.ReplaceAll(label, "_", "."))
 		add(strings.ReplaceAll(label, "_", "-"))
 		return out
+	}
+	var posBuf [maxParsedKeyUnderscores]int
+	pos := posBuf[:0]
+	for i := 0; i < len(label); i++ {
+		if label[i] == '_' {
+			pos = append(pos, i)
+		}
 	}
 	b := []byte(label)
 	for mask := 1; mask < 1<<n; mask++ {

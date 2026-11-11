@@ -22,7 +22,7 @@ func reservedFieldLabelResponseKeyVersion(query string) string {
 			for j < len(query) && (query[j] == '_' || query[j] >= 'a' && query[j] <= 'z' || query[j] >= 'A' && query[j] <= 'Z' || query[j] >= '0' && query[j] <= '9') {
 				j++
 			}
-			if reservedLabelWord(query[i:j]) && followedByComparison(query, j) {
+			if reservedLabelWord(query[i:j]) && comparisonFollows(query, j) {
 				return reservedFieldLabelResponseVersion
 			}
 			i = j
@@ -36,12 +36,4 @@ func reservedFieldLabelResponseKeyVersion(query string) string {
 // reservedLabelWord reports _time, _stream or _stream_id in any case, or _msg.
 func reservedLabelWord(w string) bool {
 	return strings.EqualFold(w, "_time") || strings.EqualFold(w, "_stream") || strings.EqualFold(w, "_stream_id") || w == "_msg"
-}
-
-// followedByComparison reports =, !, > or < after optional blanks from query[i].
-func followedByComparison(query string, i int) bool {
-	for i < len(query) && (query[i] == ' ' || query[i] == '\t' || query[i] == '\n' || query[i] == '\r') {
-		i++
-	}
-	return i < len(query) && (query[i] == '=' || query[i] == '!' || query[i] == '>' || query[i] == '<')
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
 
 // rankStepGrid is the generated grid of rankings the proxy evaluates: topk and bottomk in every spelling of k and of
@@ -44,23 +45,7 @@ func rankStepGrid() []string {
 		add(fmt.Sprintf(`%s(%s) %s`, n.name, args, clause))
 	}
 	sel := `{app="a"}`
-	ranges := []string{
-		`count_over_time(` + sel + `[5m])`, `bytes_over_time(` + sel + ` |= "x" [1h])`, `absent_over_time(` + sel + `[5m])`,
-		`rate(` + sel + ` != "y" [1m])`, `bytes_rate({app=~"a.*", env!="p"}[30s] offset 1h)`, `rate({service_name="s"}[5m])`,
-		`count_over_time(` + sel + ` | json [5m])`, `rate(` + sel + ` | logfmt [5m])`, `count_over_time(` + sel + ` | json | status >= 500 [5m])`,
-		`count_over_time(` + sel + ` | logfmt | level="error" [5m])`, `rate(` + sel + ` | json | drop a [5m])`,
-		`count_over_time(` + sel + ` | regexp "(?P<a>x)" [5m])`, `count_over_time(` + sel + ` | pattern "<a> <b>" [5m])`, `count_over_time(` + sel + ` | keep a [5m])`,
-		`count_over_time(` + sel + ` | detected_level="error" [5m])`, `rate({app="a"}[0s])`,
-		`sum_over_time(` + sel + ` | unwrap amount [5m])`, `last_over_time(` + sel + ` | json | unwrap amount [5m])`,
-		`avg_over_time(` + sel + ` | logfmt | unwrap duration(t) [5m]) by (pod)`, `quantile_over_time(0.9, ` + sel + ` | json | unwrap amount [5m])`,
-		`rate_counter(` + sel + ` | unwrap amount [5m])`, `max_over_time(` + sel + ` | unwrap bytes(b) [5m]) without (pod)`,
-		`first_over_time(` + sel + ` | json | unwrap x [5m] offset 5m)`,
-	}
-	vectors := []string{
-		`sum(%s)`, `sum by (app) (%s)`, `sum without (pod) (%s)`, `sum(%s) by (app, env)`, `avg by (app) (%s)`, `min without (pod, env) (%s)`,
-		`max by (app) (%s)`, `count by (app) (%s)`, `count(%s)`, `sum by () (%s)`, `max by (service_name) (%s)`, `sum by (detected_level) (%s)`,
-		`sum by (app) (sum by (app, pod) (%s))`, `max by (app) (min without (pod) (%s))`, `avg(sum by (app) (%s))`, `count without (pod) (sum by (app, pod) (%s))`,
-	}
+	ranges, vectors := gridRanges(sel), gridVectors()
 	operands := append([]string(nil), ranges...)
 	for _, v := range vectors {
 		for _, r := range ranges[:6] {
@@ -213,6 +198,33 @@ func rankStepGrid() []string {
 	return out
 }
 
+// gridRanges are the range aggregations of the grids over the selector sel: every function, with stages, parsers,
+// label filters and unwrapped values.
+func gridRanges(sel string) []string {
+	return []string{
+		`count_over_time(` + sel + `[5m])`, `bytes_over_time(` + sel + ` |= "x" [1h])`, `absent_over_time(` + sel + `[5m])`,
+		`rate(` + sel + ` != "y" [1m])`, `bytes_rate({app=~"a.*", env!="p"}[30s] offset 1h)`, `rate({service_name="s"}[5m])`,
+		`count_over_time(` + sel + ` | json [5m])`, `rate(` + sel + ` | logfmt [5m])`, `count_over_time(` + sel + ` | json | status >= 500 [5m])`,
+		`count_over_time(` + sel + ` | logfmt | level="error" [5m])`, `rate(` + sel + ` | json | drop a [5m])`,
+		`count_over_time(` + sel + ` | regexp "(?P<a>x)" [5m])`, `count_over_time(` + sel + ` | pattern "<a> <b>" [5m])`, `count_over_time(` + sel + ` | keep a [5m])`,
+		`count_over_time(` + sel + ` | detected_level="error" [5m])`, `rate({app="a"}[0s])`,
+		`sum_over_time(` + sel + ` | unwrap amount [5m])`, `last_over_time(` + sel + ` | json | unwrap amount [5m])`,
+		`avg_over_time(` + sel + ` | logfmt | unwrap duration(t) [5m]) by (pod)`, `quantile_over_time(0.9, ` + sel + ` | json | unwrap amount [5m])`,
+		`rate_counter(` + sel + ` | unwrap amount [5m])`, `max_over_time(` + sel + ` | unwrap bytes(b) [5m]) without (pod)`,
+		`first_over_time(` + sel + ` | json | unwrap x [5m] offset 5m)`,
+	}
+}
+
+// gridVectors are the vector aggregations of the grids, with %s where their operand goes: every operator and
+// clause, and nests.
+func gridVectors() []string {
+	return []string{
+		`sum(%s)`, `sum by (app) (%s)`, `sum without (pod) (%s)`, `sum(%s) by (app, env)`, `avg by (app) (%s)`, `min without (pod, env) (%s)`,
+		`max by (app) (%s)`, `count by (app) (%s)`, `count(%s)`, `sum by () (%s)`, `max by (service_name) (%s)`, `sum by (detected_level) (%s)`,
+		`sum by (app) (sum by (app, pod) (%s))`, `max by (app) (min without (pod) (%s))`, `avg(sum by (app) (%s))`, `count without (pod) (sum by (app, pod) (%s))`,
+	}
+}
+
 // TestRankStepGridShadow holds the lowering of rankings to the proxy's route on the generated grid under every
 // profile: the operators the route builds (a RankStep or SeriesAgg per level over the operand's operators) and the
 // operand's request byte for byte, with 0 mismatches. The rows the lowering leaves to the string translator are
@@ -236,15 +248,16 @@ func TestRankStepGridShadow(t *testing.T) {
 	}
 }
 
-// The operand the lowering screens is the text the proxy slices and translates: for every ranking of the corpus and
-// the grids that the plan reads as a ranking, the lowering's slice equals the route's operand when the proxy routes
-// the query, and the lowering does not answer a query the proxy does not route as a ranking.
+// The operand the lowering screens is the text the proxy slices and translates: for every ranking, stddev and stdvar
+// of the corpus and the grids that the plan reads as one evaluation, the lowering's slice equals the route's operand
+// when the proxy routes the query, and the lowering does not answer a query the proxy does not route as one
+// evaluation (the shapes the proxy sends as the translator's text are counted apart).
 // conformance: architecture-syntax-package-layering
-func TestRankOperandSpanIsTheProxysOperand(t *testing.T) {
+func TestEvaluatedOperandSpanIsTheProxysOperand(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	prof := planProfiles()[2].lowerProfile()
-	compared, routedRows, lowered := 0, 0, 0
-	for _, q := range append(append(planCorpus(t), rankGrid()...), rankStepGrid()...) {
+	compared, routedRows, lowered, nested, stddevs := 0, 0, 0, 0, 0
+	for _, q := range append(append(append(planCorpus(t), rankGrid()...), rankStepGrid()...), seriesAggGrid()...) {
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {
 			continue
@@ -254,45 +267,50 @@ func TestRankOperandSpanIsTheProxysOperand(t *testing.T) {
 			continue
 		}
 		queryplan.Resolve(plan)
-		if _, ok := plan.Root.(*queryplan.Rank); !ok {
+		shape, divergence := evaluatedRoot(plan)
+		if _, underLabelReplace := plan.Root.(*queryplan.LabelReplace); underLabelReplace || (!shape && divergence == "") {
 			continue
 		}
 		compared++
 		inner, routed := proxy.PostAggregationRoute(routedQuery(q))
-		span, sliced := lower.RankOperand(q, plan)
+		span, sliced := lower.EvaluatedOperand(q, plan)
+		_, lerr := lower.PlanQuery(q, plan, prof)
 		if routed {
 			routedRows++
 		}
+		if lerr == nil {
+			lowered++
+		}
+		if !shape {
+			// The proxy sends the translator's text for these: the plan holds the chain Loki evaluates.
+			if lerr == nil {
+				nested++
+			}
+			continue
+		}
+		if va, ok := plan.Root.(*queryplan.VectorAgg); ok && (va.Op == logql.VectorStddev || va.Op == logql.VectorStdvar) && lerr == nil {
+			stddevs++
+		}
 		// Where the lowering slices the query, the proxy routes it and slices the same text; where the proxy does
 		// not route it, nothing is lowered.
-		if sliced && (!routed || span != inner) {
-			// The route also reads a chain of layers the lowering does not lower; the slice is only held where it
-			// is the deepest ranking's own operand.
-			if routed && !strings.Contains(strings.ToLower(q), "stddev") && !strings.Contains(strings.ToLower(q), "stdvar") {
-				t.Errorf("%q: the lowering slices %q, the proxy %q (routed %v)", q, span, inner, routed)
-			} else if !routed {
-				if op, err := lower.PlanQuery(q, plan, prof); err == nil {
-					t.Errorf("%q: lowered (%T), the proxy does not route it as a ranking", q, op)
-				}
-			}
+		if lerr == nil && !routed {
+			t.Errorf("%q: lowered, the proxy does not route it as one evaluation", q)
 		}
-		if _, err := lower.PlanQuery(q, plan, prof); err == nil {
-			lowered++
-			if !routed {
-				t.Errorf("%q: lowered, the proxy does not route it as a ranking", q)
-			}
+		if sliced && routed && span != inner {
+			t.Errorf("%q: the lowering slices %q, the proxy %q", q, span, inner)
 		}
 	}
-	if compared < 5000 || routedRows == 0 || lowered < 1000 {
-		t.Fatalf("compared %d rankings, %d routed, %d lowered", compared, routedRows, lowered)
+	if compared < 5000 || routedRows == 0 || lowered < 1000 || nested == 0 || stddevs == 0 {
+		t.Fatalf("compared %d evaluations, %d routed, %d lowered, %d nested, %d stddev roots", compared, routedRows, lowered, nested, stddevs)
 	}
-	t.Logf("%d rankings: %d routed by the proxy, %d lowered", compared, routedRows, lowered)
+	t.Logf("%d evaluations: %d routed by the proxy, %d lowered (%d of them stddev or stdvar roots, %d the proxy sends as text)", compared, routedRows, lowered, stddevs, nested)
 }
 
-// FuzzProxyEvaluatedLowering holds the lowering of rankings to the proxy's route on any selector value, line
-// filter, label name, ranking name, k, function, operand kind, nesting, clause and blank placement: the lowering
-// either leaves the query to the string translator, or answers the operators the route builds and the operand's
-// request byte for byte, and only for a query the proxy routes as a ranking. The text a metric query's scans read as
+// FuzzProxyEvaluatedLowering holds the lowering of rankings, stddev and stdvar to the proxy's route on any selector
+// value, line filter, label name, ranking name, k, function, operand kind, nesting, clause and blank placement: the
+// lowering either leaves the query to the string translator, or answers the operators the route builds and the
+// operand's request byte for byte, and only for a query the proxy routes as one evaluation (a level the proxy sends
+// as the translator's text is the plan's chain, recorded as a known divergence). The text a metric query's scans read as
 // syntax inside a quoted value (" bool ", "without") stays in: the lowering delegates it. Inputs are bounded (64
 // bytes per value, k from a list), so a run does not stall on minimization.
 // conformance: architecture-syntax-package-layering
@@ -301,6 +319,8 @@ func FuzzProxyEvaluatedLowering(f *testing.F) {
 	f.Add("service_name", "é\n", "status", uint8(7), uint8(3), uint8(5), uint8(9), uint8(41))
 	f.Add("k8s.pod", "topk(1, x)", "a-b", uint8(200), uint8(9), uint8(11), uint8(70), uint8(250))
 	f.Add("app", "without (x)", "pod", uint8(3), uint8(81), uint8(2), uint8(133), uint8(77))
+	f.Add("app", "| json", "route", uint8(1), uint8(16), uint8(4), uint8(0), uint8(0x4a))
+	f.Add("app", "x", "pod", uint8(3), uint8(0), uint8(0), uint8(2), uint8(0xcd))
 	f.Fuzz(func(t *testing.T, sel, line, name string, fn, shape, rng, rank, operandKind uint8) {
 		for _, s := range []*string{&sel, &line, &name} {
 			if len(*s) > 64 {
@@ -323,13 +343,18 @@ func FuzzProxyEvaluatedLowering(f *testing.F) {
 			if lerr != nil {
 				continue
 			}
-			if rank, _ := evaluatedRoot(plan); !rank {
+			routed, divergence := evaluatedRoot(plan)
+			if !routed && divergence == "" && physical.Evaluated(got) {
+				t.Fatalf("%s: %q: lowered to a level the proxy evaluates (%#v), the plan has none", prof.name, q, got)
+			}
+			if !routed {
 				continue
 			}
 			if _, ok := prof.translate(q); !ok {
 				continue
 			}
-			if known := translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q); known {
+			// A root the proxy evaluates is held to its route, which strips the parentheses that wrap the whole query.
+			if translatorMisreadsQuotedText(q) || translatorReadsStageMarker(q) {
 				continue
 			}
 			if msg := checkProxyEvaluated(q, prof, got); msg != "" {
@@ -341,7 +366,7 @@ func FuzzProxyEvaluatedLowering(f *testing.F) {
 
 // rankFuzzQuery writes a ranking from the fuzzer's values: the name, k and clause spelling, the operand (a range
 // aggregation with a stage, an unwrapped value, a vector aggregation or a nest of them, label_replace, a ranking),
-// blanks, and wrappers around the whole.
+// blanks, and wrappers around the whole, and a stddev or stdvar around the operand or the ranking.
 func rankFuzzQuery(sel, line, name string, fn, shape, rng, rank, operandKind uint8) string {
 	ident := func(s string) string {
 		var b strings.Builder
@@ -401,6 +426,24 @@ func rankFuzzQuery(sel, line, name string, fn, shape, rng, rank, operandKind uin
 	switch shape >> 7 {
 	case 1:
 		q = `sum(` + q + `)`
+	}
+	// The top bits of operandKind make a stddev or stdvar of the operand or of the ranking instead.
+	clause := clauseOf(operandKind >> 3)
+	switch operandKind >> 5 {
+	case 1:
+		q = `stddev(` + operand + `)`
+	case 2:
+		q = `stdvar` + clause + ` (` + operand + `)`
+	case 3:
+		q = `stddev(` + pad[rng>>6%4] + operand + `)` + clause
+	case 4:
+		q = `(stddev` + clause + ` (` + operand + `))`
+	case 5:
+		q = `sum(stdvar` + clause + ` (` + operand + `))`
+	case 6:
+		q = `topk(2, stddev` + clause + ` (` + operand + `))`
+	case 7:
+		q = `stdvar` + clause + ` (` + q + `)`
 	}
 	return q
 }

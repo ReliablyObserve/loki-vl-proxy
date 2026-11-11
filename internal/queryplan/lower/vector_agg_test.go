@@ -107,15 +107,9 @@ func TestPlanVectorAggregationFold(t *testing.T) {
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesVectorAggregations(t *testing.T) {
 	for q, construct := range map[string]string{
-		`stddev(rate({app="a"}[5m]))`:                                              "VectorAgg stddev",
-		`stdvar by (app) (count_over_time({app="a"}[5m]))`:                         "VectorAgg stdvar",
 		`sum(rate({app="a"}[5m]) > 1)`:                                             "VectorAgg operand",
 		`sum without (a) (rate({app="a"}[5m])) / 2`:                                "BinOp operand without",
 		`sum by (app) (avg_over_time({app="a"} | unwrap n [5m]) by (x))`:           "VectorAgg grouping",
-		`sum by (a_b) (rate({app="a"} | json [5m]))`:                               "VectorAgg parser label",
-		`sum without (a) (rate({app="a"} | json [5m]))`:                            "VectorAgg parser without",
-		`count by (app) (rate({app="a"} | keep x [5m]))`:                           "VectorAgg keep identity",
-		`min(count_over_time({app="a"} | json | keep x [5m]))`:                     "VectorAgg keep identity",
 		`sum by (a) (rate({app="a"} | drop a="| json" | keep x [5m]))`:             "VectorAgg quoted clause",
 		`count(count_over_time({app="a"} | drop a="| json" [5m]))`:                 "VectorAgg quoted clause",
 		`sum without (x) (count_over_time({app="a"} | drop a="without (x)" [5m]))`: "VectorAgg quoted clause",
@@ -130,7 +124,9 @@ func TestPlanDelegatesVectorAggregations(t *testing.T) {
 		`sum without (x) (rate({app="a"} |= "without(0)\xa2"[5m]))`:                "VectorAgg quoted clause",
 		`sum(rate({app="a"} |~ "a|||b"[5m]))`:                                      "VectorAgg quoted clause",
 		`rate({app="a"} |~ "|||"[5m])`:                                             "RangeAgg quoted clause",
-		`sum(topk(3, rate({app="a"}[5m])))`:                                        "VectorAgg operand",
+		`rate({app="a"} |= "| jsoné"[5m])`:                                         "RangeAgg quoted clause",
+		`bytes_rate({app="a"} != "| json\xa3\xae0wl"[5m])`:                         "RangeAgg quoted clause",
+		`sum(count_over_time({app="a"} |= "| logfmtü"[5m]))`:                       "VectorAgg quoted clause",
 		`count_over_time({app="a"} |= "without (x)"[5m])`:                          "RangeAgg quoted clause",
 		`rate({app="a"} |= "a bool b"[5m])`:                                        "RangeAgg quoted clause",
 		`count_over_time({app="a"} | m="a bool b" [5m] offset 1h)`:                 "RangeAgg quoted clause",
@@ -223,8 +219,9 @@ func TestPlanVectorAggregationBlankPadding(t *testing.T) {
 			t.Errorf("%q: ScreenText = %v, want not lowered: BinOp operand spelling", q, err)
 		}
 	}
-	// A range aggregation alone reads the same text alike.
-	for _, q := range []string{`rate( {app="a"} [5m] )`, `count_over_time ( {app="a"}[5m])`} {
+	// A range aggregation alone reads blanks inside its parentheses alike (a blank before its parenthesis is a
+	// phrase to the translator: TestPlanRangeCallBlankBeforeParenthesis).
+	for _, q := range []string{`rate( {app="a"} [5m] )`, `count_over_time( {app="a"}[5m])`} {
 		if err := ScreenText(q, rangeAggPlan(q)); err != nil {
 			t.Errorf("%q: turned away: %v", q, err)
 		}

@@ -29,9 +29,18 @@ func PostAggregationPhysical(query string, translate func(string) (string, error
 	if err != nil {
 		return nil, "", true, err
 	}
-	op, err = translator.DecodePhysical(operandText)
+	op, err = postAggregationOp(postAgg, operandText)
+	return op, operandText, true, err
+}
+
+// postAggregationOp is the reference both shadows hold the lowering of a proxy-evaluated root to: the operand's
+// operators (operandText, the text the proxy sends for the operand, decoded) under one RankStep or SeriesAgg for each
+// level of postAgg, innermost first. The corpus shadow reaches it through PostAggregationPhysical, the live shadow
+// (shadowProxyEvaluated) with the text the handler has just sent, so neither translates anything twice.
+func postAggregationOp(postAgg instantMetricPostAgg, operandText string) (physical.Op, error) {
+	op, err := translator.DecodePhysical(operandText)
 	if err != nil {
-		return nil, operandText, true, err
+		return nil, err
 	}
 	for layer := &postAgg; layer != nil; layer = layer.outer {
 		by := layer.group
@@ -49,5 +58,5 @@ func PostAggregationPhysical(query string, translate func(string) (string, error
 			op = physical.SeriesAgg{Op: layer.name, By: clause, In: op}
 		}
 	}
-	return op, operandText, true, nil
+	return op, nil
 }

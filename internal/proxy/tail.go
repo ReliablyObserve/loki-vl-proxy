@@ -281,7 +281,7 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 	// VL sends headers well within the 5s budget.  VL expects a duration string
 	// (e.g. "0s"), not a bare integer.
 
-	params := p.scopedTenantParams(parent, url.Values{"query": {logsqlQuery}, "offset": {"0s"}})
+	params := guardOutboundQuery(p.scopedTenantParams(parent, url.Values{"query": {logsqlQuery}, "offset": {"0s"}}))
 	vlURL := p.backend.String() + "/select/logsql/tail?" + params.Encode()
 	querycorpus.RecordBackend("/select/logsql/tail", params.Get("query"))
 	req, err := http.NewRequestWithContext(parent, "GET", vlURL, nil)

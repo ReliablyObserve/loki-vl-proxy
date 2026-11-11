@@ -37,6 +37,31 @@ import (
 // rateCounterMarker is the stats function the proxy answers itself for rate_counter.
 const rateCounterMarker = "__rate_counter__"
 
+// UnwrapsReservedFieldOtherCase reports a plan whose lowering unwraps a label named _time, _stream or _stream_id in
+// another letter case (logsql.ReservedFieldNameOtherCase): the lowering writes its gate in the outbound guard's
+// form, where the string translator writes the filter VictoriaLogs cannot read back from its own print
+// (semantics/reserved-field-name-case-outbound), so the shadows hold the lowering to the translator's text guarded.
+func UnwrapsReservedFieldOtherCase(p *queryplan.Plan) bool {
+	var walk func(n queryplan.Node) bool
+	walk = func(n queryplan.Node) bool {
+		switch n := n.(type) {
+		case *queryplan.RangeAgg:
+			u := unwrapStage(n.In)
+			return u != nil && logsql.ReservedFieldNameOtherCase(u.Label)
+		case *queryplan.VectorAgg:
+			return walk(n.In)
+		case *queryplan.Rank:
+			return walk(n.In)
+		case *queryplan.LabelReplace:
+			return walk(n.In)
+		case *queryplan.BinOp:
+			return walk(n.L) || walk(n.R)
+		}
+		return false
+	}
+	return walk(p.Root)
+}
+
 // unwrapStage returns the unwrap stage of the log query, or nil.
 func unwrapStage(sel *queryplan.LogSelect) *queryplan.Unwrap {
 	for _, st := range sel.Stages {
@@ -164,7 +189,9 @@ func isRegexpSpace(c byte) bool {
 }
 
 func isWordByte(c byte) bool {
-	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c >= 0x80
+	// The word characters of the \b of Go's regexp, which the translator's scan uses: ASCII only. A byte of a
+	// multi-byte character (or an invalid one) after the word is a boundary, so `| jsoné` is a parser to it.
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
 
 // unwrapConv is the conversion the gate of an unwrap stage selects: "" for a plain number, "duration" (duration()
@@ -194,6 +221,9 @@ type unwrapQuery struct {
 	// unpacked says the log query holds a json or logfmt unpack, which makes the translator resolve the labels its
 	// stats read: a parser of regexp and pattern only does not.
 	unpacked bool
+	// fold is the series identity of a `without` fold over a parser that names the labels it extracts
+	// (parsedSeriesLabels); nil for the others.
+	fold []string
 	// firstBy and firstEmpty are the grouping of the first stats pipe, which reads the unwrapped value (set marks
 	// them known); the bare logfmt unpack ahead of it is narrowed to the labels it reads.
 	firstBy    []string
@@ -310,12 +340,10 @@ func unwrapRange(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 		return nil, &NotLoweredError{Construct: "RangeAgg unwrap conversion"}
 	}
 	// The unwrap stage stands where it was written: the translator takes a keep after it to decide the series of a rate.
-	if err := keepIdentityError(ra.In, "RangeAgg", rate); err != nil {
-		return nil, err
-	}
-	if log.parser && log.unpacked() {
-		if c := parserLabelConstruct("RangeAgg", u.Label, by); c != "" {
-			return nil, &NotLoweredError{Construct: c}
+	var ident []string
+	if rate {
+		if ident, err = seriesIdent(ra.In, log.parser, false, "RangeAgg", prof); err != nil {
+			return nil, err
 		}
 	}
 	// The pipes start in room a query rarely outgrows.
@@ -323,7 +351,7 @@ func unwrapRange(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	q := unwrapQuery{parser: log.parser, unpacked: log.unpacked(), pipes: pipeBuf[:0]}
 	switch {
 	case rate:
-		q.rate(op.fn, seconds)
+		q.rate(op.fn, seconds, ident)
 	case op.row:
 		// A function alone groups by the series, unless the clause says otherwise.
 		if len(by) == 0 && !empty {
@@ -339,7 +367,7 @@ func unwrapRange(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 		}
 		q.stats(by, empty, op.fn, "")
 	}
-	return q.op(op, log, u.Label, conv, prof), nil
+	return q.op(op, log, u.Label, conv, prof, "RangeAgg")
 }
 
 // squared is the right operand of the power the proxy takes of a deviation to answer stdvar_over_time.
@@ -347,21 +375,71 @@ var squared = physical.ScalarOp{V: 2, Text: "2"}
 
 // op is the lowered query: the text, and for stdvar_over_time the deviation it computes raised to the power of 2
 // by the proxy (a binary expression).
-func (q *unwrapQuery) op(op unwrapOp, log metricLog, field, conv string, prof Profile) physical.Op {
-	text := physical.VLQuery{Text: q.text(log, field, conv, prof)}
-	if op.variance && !q.squares {
-		return physical.Binary{Op: "^", L: text, R: squared}
+func (q *unwrapQuery) op(op unwrapOp, log metricLog, field, conv string, prof Profile, owner string) (physical.Op, error) {
+	// A parser that is a bare logfmt unpack ends the query: it reads only the unwrapped label and the labels of
+	// the first stats pipe. The translator narrows it before it resolves the labels, which then no longer finds
+	// a plain unpack pipe.
+	var names []string
+	narrowed := false
+	if q.parser && log.bareLogfmt >= 0 && q.firstSet {
+		names, narrowed = narrowedFields(field, q.firstBy, q.firstEmpty, log.resolvable)
 	}
-	return text
+	pre := log
+	if narrowed {
+		pre.bareMask &^= 1
+	}
+	keys, err := pre.keyPipes(q.firstBy, op.fn, field, owner, false)
+	if err != nil {
+		return nil, err
+	}
+	if narrowed {
+		log.pipes = narrowedUnpack(log.pipes[:log.bareLogfmt], names)
+	}
+	text := physical.VLQuery{Text: q.text(log, field, conv, keys.text, prof)}
+	if op.variance && !q.squares {
+		return physical.Binary{Op: "^", L: text, R: squared}, nil
+	}
+	return text, nil
+}
+
+// narrowedUnpack is the log query's pipes up to the bare logfmt unpack, then the unpack reading only names:
+// `| unpack_logfmt fields (a, b) skip_empty_results`, written in one allocation.
+func narrowedUnpack(head string, names []string) string {
+	const fields, skip = " fields (", ") skip_empty_results"
+	n := len(head) + 1 + len(bareUnpackLogfmt) + len(fields) + len(skip)
+	for _, name := range names {
+		n += len(name) + 2
+	}
+	var b strings.Builder
+	b.Grow(n)
+	b.WriteString(head)
+	b.WriteByte(' ')
+	b.WriteString(bareUnpackLogfmt)
+	b.WriteString(fields)
+	for i, name := range names {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(name)
+	}
+	b.WriteString(skip)
+	return b.String()
 }
 
 // rate appends the stats pipes of a rate over an unwrapped label: the values summed per series (the stream, its
 // stored level and the detected_level Loki attaches; the stream alone over a parser), divided by the range's
 // seconds, and summed again.
-func (q *unwrapQuery) rate(fn logsql.StatsFunc, seconds float64) {
-	if q.parser {
-		pipes := translate.RateStatsPipesBy(fn, seconds, parserIdentity)
-		q.noteFirst([]string{"_stream"}, false)
+func (q *unwrapQuery) rate(fn logsql.StatsFunc, seconds float64, ident []string) {
+	if q.parser || ident != nil {
+		keys, by := parserIdentity, parserBy
+		if ident != nil {
+			keys, by = groupKeys(ident), ident
+		}
+		pipes := translate.RateStatsPipesBy(fn, seconds, keys)
+		q.noteFirst(by, false)
+		first := pipes[0].(logsql.PipeStats)
+		q.chain = q.chain || groupsBy(first, translate.DetectedLevelLabel)
+		q.service = q.service || groupsBy(first, "service_name")
 		q.pipes = append(q.pipes, pipes[0].String(), pipes[1].String())
 		if q.unpacked {
 			q.pipes = appendRateFilter(q.pipes)
@@ -389,25 +467,13 @@ func (q *unwrapQuery) rowIdentity() []string {
 
 // outerIdentity is the grouping of the stats that read one value per series under an aggregation without a clause.
 func (q *unwrapQuery) outerIdentity() []string {
+	if q.fold != nil {
+		return q.fold
+	}
 	if q.parser {
 		return streamLine
 	}
 	return []string{"_stream"}
-}
-
-// parserLabelConstruct names the construct of an aggregation over a parser whose unwrapped label or grouping the
-// translator resolves by text (a name with an underscore, which a parser may have stored under another spelling),
-// "" when none is.
-func parserLabelConstruct(owner, field string, by []string) string {
-	if resolvableLabel(field) {
-		return owner + " parser label"
-	}
-	for _, l := range by {
-		if resolvableLabel(l) {
-			return owner + " parser label"
-		}
-	}
-	return ""
 }
 
 // rateFilterField is the label the final stats of a rate reads, which the translator looks for among the fields
@@ -422,7 +488,7 @@ func appendRateFilter(pipes []string) []string {
 }
 
 // text is the query: the log query with the derivations its groupings need, the unwrap gate and the stats pipes.
-func (q *unwrapQuery) text(log metricLog, field, conv string, prof Profile) string {
+func (q *unwrapQuery) text(log metricLog, field, conv, keys string, prof Profile) string {
 	chain, service := "", ""
 	if q.chain {
 		chain = translate.RateDetectedLevelChain()
@@ -433,25 +499,15 @@ func (q *unwrapQuery) text(log metricLog, field, conv string, prof Profile) stri
 	// The gate is translate.UnwrapGateFor(field, conv) written in pieces.
 	match, convert := translate.UnwrapGateParts(field, conv)
 	inRange := translate.UnwrapInRange(conv)
-	n := len(match) + len(convert) + len(translate.UnwrapFilterPipe) + len(inRange)
+	n := len(match) + len(convert) + len(translate.UnwrapFilterPipe) + len(inRange) + len(keys)
 	for _, p := range q.pipes {
 		n += len(p) + 1
 	}
-	// A parser that is a bare logfmt unpack ends the query: it reads only the unwrapped label and the labels of
-	// the first stats pipe.
-	if q.parser && log.bareLogfmt >= 0 && q.firstSet {
-		if names, ok := narrowedFields(field, q.firstBy, q.firstEmpty); ok {
-			log.pipes = log.pipes[:log.bareLogfmt] + " " + logsql.PipeUnpackLogfmt{Fields: names, SkipEmptyResults: true}.String()
-		}
-	}
 	var b strings.Builder
 	log.write(&b, chain, service, n+40)
-	// The translator drops the lines that have no value when a copy defines the label (a stored stream value, a json
-	// expression): it reads the unwrapped label among the fields the query defines.
-	if q.parser && log.unpacked() && log.has("| copy ") && log.has(" as "+field) {
-		b.WriteByte(' ')
-		b.WriteString(logsql.PipeFilter{Expr: logsql.FieldFilter{Field: field, Op: logsql.FieldOpAny}}.String())
-	}
+	// The pipes that resolve the labels of the first stats pipe, and drop the lines that have no value when they
+	// resolved the unwrapped label or a copy defines it (a stored stream value, a json expression).
+	b.WriteString(keys)
 	b.WriteString(match)
 	b.WriteString(convert)
 	b.WriteString(translate.UnwrapFilterPipe)
@@ -459,6 +515,13 @@ func (q *unwrapQuery) text(log metricLog, field, conv string, prof Profile) stri
 	for _, p := range q.pipes {
 		b.WriteByte(' ')
 		b.WriteString(p)
+	}
+	if logsql.ReservedFieldNameOtherCase(field) {
+		// The gate filters the unwrapped label by name, quoted, and VictoriaLogs cannot read back from its own
+		// print a filter on _time, _stream or _stream_id in another case (VictoriaMetrics/VictoriaLogs#1942): the
+		// query is written in the form the proxy's outbound guard writes, a copy into a scratch field around each
+		// such filter (logsql.GuardReservedFieldCase), so nothing is left for the guard to rewrite.
+		return logsql.GuardReservedFieldCase(b.String())
 	}
 	return b.String()
 }
@@ -509,7 +572,7 @@ func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile)
 			return nil, &NotLoweredError{Construct: "VectorAgg range"}
 		}
 	}
-	labels, raw, without, err := vectorClause(va, prof)
+	labels, raw, without, err := vectorClause(va, prof, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -521,9 +584,6 @@ func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile)
 	if !ok {
 		return nil, &NotLoweredError{Construct: "VectorAgg unwrap conversion"}
 	}
-	if err := keepIdentityError(ra.In, "VectorAgg", rate); err != nil {
-		return nil, err
-	}
 	// The translator reads a clause and a stats pipe out of the text of the query, quoted strings included.
 	if (without || len(labels) > 0) && textReadAsClause(log) {
 		return nil, &NotLoweredError{Construct: "VectorAgg quoted clause"}
@@ -532,23 +592,35 @@ func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile)
 	if without && (textHas(log, "  ") || selectionHas(ra.In, "  ")) {
 		return nil, &NotLoweredError{Construct: "VectorAgg quoted clause"}
 	}
-	if log.parser {
-		if c := parserVectorConstruct(labels, without, log.unpacked()); c != "" {
-			return nil, &NotLoweredError{Construct: c}
-		}
-		if log.unpacked() && resolvableLabel(u.Label) {
-			return nil, &NotLoweredError{Construct: "VectorAgg parser label"}
-		}
+	// A fold over a parser, with a label filter or a drop after it, costs more allocations to write than the
+	// translator spends on the same text (the stage's own lowering does).
+	if without && log.parser && log.afterParser {
+		return nil, &NotLoweredError{Construct: "VectorAgg" + costConstruct}
 	}
 	// The pipes start in room a query rarely outgrows.
 	var pipeBuf [4]string
 	q := unwrapQuery{parser: log.parser, unpacked: log.unpacked(), pipes: pipeBuf[:0]}
 	if rate {
-		q.vectorRate(va.Op, op.fn, seconds, labels, without, log)
+		// The unwrap stage stands where it was written: the translator takes a keep after it to decide the series.
+		ident, err := seriesIdent(ra.In, log.parser, without, "VectorAgg", prof)
+		if err != nil {
+			return nil, err
+		}
+		q.vectorRate(va.Op, op.fn, seconds, labels, without, log, ident)
 	} else {
+		// Under a `without` fold a series is told apart by the labels the parsers name (quantile_over_time groups the
+		// stream and each line whatever the clause says).
+		if without && log.parser && !op.quantile {
+			if names, ok := parsedSeriesLabels(ra.In, u.Label); ok {
+				q.fold = translate.JoinByLabels([]string{"_stream"}, names)
+			}
+		}
 		q.vector(va.Op, op, labels, without)
 	}
-	out := q.op(op, log, u.Label, conv, prof)
+	out, err := q.op(op, log, u.Label, conv, prof, "VectorAgg")
+	if err != nil {
+		return nil, err
+	}
 	if without {
 		out = physical.Fold{Levels: []physical.FoldLevel{{Op: string(va.Op), Labels: raw, Without: true}}, In: out}
 	}
@@ -556,14 +628,18 @@ func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile)
 }
 
 // vectorClause reads the by or without clause of a vector aggregation: the labels as VictoriaLogs names them (for a
-// by clause), the labels as written (for a without clause) and whether it is a without.
-func vectorClause(va *queryplan.VectorAgg, prof Profile) (labels, raw []string, without bool, err error) {
+// by clause), the labels as written (for a without clause) and whether it is a without. buf, when not nil, holds
+// the labels, so a caller with a small array allocates nothing for them.
+func vectorClause(va *queryplan.VectorAgg, prof Profile, buf []string) (labels, raw []string, without bool, err error) {
 	g := va.By
 	if g == nil {
 		return nil, nil, false, nil
 	}
 	if len(g.Labels) > 0 {
-		labels = translate.NormalizeByLabels(g.Labels, prof.Label)
+		if buf == nil {
+			buf = make([]string, 0, len(g.Labels))
+		}
+		labels = translate.AppendNormalizedLabels(buf[:0], g.Labels, prof.Label)
 		if len(labels) == 0 {
 			return nil, nil, false, &NotLoweredError{Construct: "VectorAgg grouping label"}
 		}
@@ -583,8 +659,11 @@ func vectorClause(va *queryplan.VectorAgg, prof Profile) (labels, raw []string, 
 
 // vectorRate appends the stats of a vector aggregation over the rate of an unwrapped label: the shapes of a rate
 // over rows (vectorStats), over the sum of the values.
-func (q *unwrapQuery) vectorRate(op logql.VectorOp, fn logsql.StatsFunc, seconds float64, labels []string, without bool, log metricLog) {
-	pipes := rateVectorPipes(vectorStats(op, fn, true, seconds, labels, without, seriesIdentity(q.parser)), op, labels, log, true)
+func (q *unwrapQuery) vectorRate(op logql.VectorOp, fn logsql.StatsFunc, seconds float64, labels []string, without bool, log metricLog, ident []string) {
+	if ident == nil {
+		ident = seriesIdentity(q.parser)
+	}
+	pipes := rateVectorPipes(vectorStats(op, fn, true, seconds, labels, without, ident), op, labels, log, true)
 	for i, p := range pipes {
 		if st, ok := p.(logsql.PipeStats); ok {
 			q.chain = q.chain || groupsBy(st, translate.DetectedLevelLabel)
@@ -603,9 +682,10 @@ func (q *unwrapQuery) vectorRate(op logql.VectorOp, fn logsql.StatsFunc, seconds
 
 // rateVectorPipes puts the filter of the final stats of a rate (appendRateFilter) into the pipes of a sum by labels
 // over a rate of a log query with a parser: the translator builds that stats through the path that resolves
-// the labels it reads.
-func rateVectorPipes(pipes []logsql.Pipe, op logql.VectorOp, labels []string, log metricLog, gated bool) []logsql.Pipe {
-	if !log.parser || !log.unpacked() || op != logql.VectorSum || len(labels) == 0 || !gated && !log.has("| copy ") || len(pipes) != 3 {
+// the labels it reads. copied says the query holds a copy pipe by then: the unwrap gate has one, a log query or
+// the pipes that resolved the labels may.
+func rateVectorPipes(pipes []logsql.Pipe, op logql.VectorOp, labels []string, log metricLog, copied bool) []logsql.Pipe {
+	if !log.parser || !log.unpacked() || op != logql.VectorSum || len(labels) == 0 || !copied || len(pipes) != 3 {
 		return pipes
 	}
 	return []logsql.Pipe{pipes[0], pipes[1], logsql.PipeFilter{Expr: logsql.FieldFilter{Field: rateFilterField, Op: logsql.FieldOpAny}}, pipes[2]}
@@ -638,7 +718,7 @@ func (q *unwrapQuery) vector(vop logql.VectorOp, op unwrapOp, labels []string, w
 	default:
 		q.seriesStats(op, q.outerIdentity())
 		if without {
-			q.stats(q.outerIdentity(), false, outerFunc(vop), "")
+			q.stats(foldKeep(q.outerIdentity(), vop), false, outerFunc(vop), "")
 		} else {
 			q.stats(nil, false, outerFunc(vop), "")
 		}
@@ -658,9 +738,30 @@ func (q *unwrapQuery) varianceVector(vop logql.VectorOp, op unwrapOp, labels []s
 	q.squares = true
 	var by []string
 	if without {
-		by = q.outerIdentity()
+		by = foldKeep(q.outerIdentity(), vop)
 	}
 	q.stats(by, false, outerFuncOf(vop, "__lvp_inner_var"), "")
+}
+
+// foldKeep is the grouping of the outer stats of a `without` fold over the series rows of the identity ident: the
+// translator keeps the labels of the series in it (keepWithoutSeries), except the line, which stands for the labels
+// a parser extracts and which the proxy does not expose. sum, max and min fold the rows of a stream to the same
+// value either way; count and avg read one value per series, which only a grouping without the line keeps.
+func foldKeep(ident []string, op logql.VectorOp) []string {
+	keep := ident
+	perLine := false
+	if i := slices.Index(ident, "_msg"); i >= 0 {
+		keep, perLine = slices.Delete(slices.Clone(ident), i, i+1), true
+	}
+	switch {
+	case len(keep) == 0:
+		return nil
+	case op == logql.VectorSum || op == logql.VectorMax || op == logql.VectorMin:
+		return keep
+	case !perLine:
+		return keep
+	}
+	return nil
 }
 
 // seriesStats appends the stats that read one value per series, grouped by by, aliased for the outer stats.
@@ -794,9 +895,10 @@ func plainIdent(s string) bool {
 }
 
 // narrowedFields are the fields a bare logfmt unpack ahead of an unwrap reads: the unwrapped label and the labels
-// of the first stats pipe, when each is a plain name that does not start with an underscore. ok is false when the
-// unpack stays bare: a grouping that is none, or that holds the stream or the line.
-func narrowedFields(field string, by []string, empty bool) (names []string, ok bool) {
+// of the first stats pipe, when each is a plain name that does not start with an underscore, each in every spelling
+// of its key when the log query leaves it to be resolved (resolvable). ok is false when the unpack stays bare: a
+// grouping that is none, or that holds the stream or the line.
+func narrowedFields(field string, by []string, empty bool, resolvable func(string) bool) (names []string, ok bool) {
 	if !empty && len(by) == 0 {
 		return nil, false
 	}
@@ -809,8 +911,15 @@ func narrowedFields(field string, by []string, empty bool) (names []string, ok b
 		if !plainIdent(l) || l[0] == '_' {
 			return nil, false
 		}
-		if !slices.Contains(names, l) {
-			names = append(names, l)
+		keys := [...]string{l}
+		spellings := keys[:]
+		if resolvable(l) {
+			spellings = translate.ParsedKeyVariants(l)
+		}
+		for _, key := range spellings {
+			if key = quoteField(key); !slices.Contains(names, key) {
+				names = append(names, key)
+			}
 		}
 	}
 	return names, true

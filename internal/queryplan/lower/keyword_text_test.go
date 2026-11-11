@@ -8,12 +8,15 @@ import (
 	"unicode"
 )
 
-// jsonKeyIsOperator matches a json or logfmt stage that reads a key called and or or (any case): `| json x="OR"`.
-var jsonKeyIsOperator = regexp.MustCompile("(?i)\\b(?:json|logfmt)\\b[^|]*=\\s*[\"`](?:or|and)[\"`]")
+// jsonKeyIsOperator matches a json or logfmt stage that reads a key named like a LogQL keyword (any case):
+// `| json x="OR"`, `| json x="BY"`, `| logfmt x="offset"`. The string translator searches the query text for these
+// words (and, or, unless, the grouping and vector matching words, offset, bool, and the stage keywords) wherever they
+// stand, so it reads the quoted key as syntax.
+var jsonKeyIsOperator = regexp.MustCompile("(?i)\\b(?:json|logfmt)\\b[^|]*=\\s*[\"`](?:or|and|unless|by|without|on|ignoring|group_left|group_right|offset|bool|of|unwrap|json|logfmt|regexp|pattern|unpack|label_format|line_format|decolorize|variants|keep|drop)[\"`]")
 
 // translatorMangledByKeywordKey reports a query the string translator cannot write: it splits a label filter at
-// the word or and the word and wherever they stand, and a json or logfmt stage that reads a key called or or and
-// puts that word bare into its text, so a filter beside it comes out cut (`x_extracted="x"`, a quote without its
+// the word or and the word and wherever they stand, and a json or logfmt stage that reads a key named like a LogQL
+// keyword puts that word bare into its text, so a filter beside it comes out cut (`x_extracted="x"`, a quote without its
 // colon, or an unbalanced quote) and VictoriaLogs rejects the query. Loki accepts it, and the lowering writes it
 // (semantics/translator-writes-keyword-field-names-bare). The fuzz targets leave such a query out: the translator's
 // text for it does not parse, or parses to something else.
@@ -81,6 +84,12 @@ func TestTranslatorMangledByKeywordKey(t *testing.T) {
 		`{app="a"} | json x="k" | y="or"`:    false,
 		`{app="a"} |= "or" | json x="k"`:     false,
 		`{app="a"} | json x="order"`:         false,
+		`{app="a"} | A00="" | json A00="BY" | (x_extracted="x", A00!=ip("10.0.0.0/8")) or x_extracted="x"`: true,
+		`{app="a"} | logfmt x="offset"`:          true,
+		`{app="a"} | json x="Group_Left", y="b"`: true,
+		"{app=\"a\"} | json x=`unwrap`":          true,
+		`{app="a"} | json x="bypass"`:            false,
+		`{app="a"} | json x="k" | y="by"`:        false,
 	} {
 		if got := translatorMangledByKeywordKey(q); got != want {
 			t.Errorf("%s: got %v, want %v", q, got, want)

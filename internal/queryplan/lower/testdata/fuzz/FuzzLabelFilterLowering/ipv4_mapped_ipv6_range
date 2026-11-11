@@ -1,0 +1,7 @@
+go test fuzz v1
+string("x")
+string("0::/80")
+string("P_C")
+string("\xad\xad\x8f")
+byte('\b')
+byte('\x04')

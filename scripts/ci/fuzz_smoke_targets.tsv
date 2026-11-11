@@ -82,6 +82,7 @@ smoke	internal/logql	FuzzLabelFilterRegexFormsAgree	12s	-	a label matcher regex 
 smoke	internal/logsql	FuzzCapabilitiesFor	12s	-	capabilities for
 smoke	internal/logsql	FuzzFieldFilterString	12s	-	field filter string
 smoke	internal/logsql	FuzzParseRoundTrip	12s	-	parse round trip
+smoke	internal/logsql	FuzzOutboundGuard	12s	-	outbound guard
 smoke	internal/logsql	FuzzQueryString	12s	-	query string
 smoke	internal/proxy	FuzzMergeLabelsIntoCache	12s	-	label merge is sorted and deduplicated
 smoke	internal/proxy	FuzzTwiceGateIsASupersetOfTheKeyPatterns	12s	-	twice gate is a superset of the key patterns
@@ -132,5 +133,7 @@ smoke	internal/queryplan/lower	FuzzFormatLowering	12s	-	line_format and label_fo
 smoke	internal/proxy	FuzzParseLokiTimeIntegerFastPath	12s	-	Loki time parse: integer fast path equals the layouts-first parse
 smoke	internal/queryplan/lower	FuzzEscapedSpellingLowering	12s	-	a value in any quoted spelling lowers to the bytes the string translator writes, or is left to it
 smoke	internal/queryplan/lower	FuzzMetricStagesLowering	12s	-	range and vector aggregations over drop, keep, formatting stages and regexp and pattern parsers lower to the query the string translator writes
-smoke	internal/querycorpus	FuzzProxyEvaluatedLowering	12s	-	topk, bottomk, sort and sort_desc lower to the operators and the operand request the proxy's route builds, or are left to the string translator
+smoke	internal/querycorpus	FuzzProxyEvaluatedLowering	12s	-	topk, bottomk, sort, sort_desc, stddev and stdvar lower to the operators and the operand request the proxy's route builds, or are left to the string translator
 smoke	internal/queryplan/lower	FuzzNestedVectorAggLowering	12s	-	vector aggregations over vector aggregations lower to the query the string translator writes
+smoke	internal/queryplan/lower	FuzzParserLabelsLowering	12s	-	grouping, unwrapped and kept labels a parser extracts, a without fold over a parser and a trailing keep lower to the query the string translator writes
+smoke	internal/logql	FuzzParseTerminates	12s	-	every logql entry point returns within 200 ms and allocates at most a mebibyte per input byte

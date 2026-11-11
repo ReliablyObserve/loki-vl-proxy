@@ -45,6 +45,15 @@ const (
 	// shadowFlipped counts a query the lowering answered instead of the string translator (-query-plan-lowering):
 	// nothing is compared for it.
 	shadowFlipped = "flipped"
+	// shadowNativeProxyEvaluated counts a query the proxy evaluates in part itself (a ranking, stddev or stdvar,
+	// and the layers above a ranking) whose lowering equals the proxy's route: the operand's request byte for
+	// byte and the levels the proxy applies to its answer (shadowProxyEvaluated); the corpus shadow's
+	// native_proxy_evaluated.
+	shadowNativeProxyEvaluated = "native_proxy_evaluated"
+	// shadowKnownDivergence counts such a query whose plan holds a level the route does not evaluate (a stddev,
+	// stdvar or ranking inside the operand the proxy translates as text, which drops it): the plan is right, the
+	// route is the known difference (registry case semantics/stddev-stdvar-nested-or-binary), nothing is compared.
+	shadowKnownDivergence = "known_divergence"
 
 	// shadowNoConstruct is the construct of an outcome with no plan: a query that does not parse, or a
 	// comparison that never ran.
@@ -153,28 +162,44 @@ func (in shadowInput) profile() lower.Profile {
 // never blocks: it samples, takes a free slot and hands the comparison to a goroutine.
 func (p *Proxy) shadowLowering(in shadowInput) {
 	s := p.loweringShadow
-	if s == nil || (s.sample < 1 && s.rand() >= s.sample) {
+	if !s.sampled() {
 		return
 	}
+	if p.takeShadowSlot(s) {
+		go func() {
+			defer s.done()
+			p.runLoweringShadow(s, in)
+		}()
+	}
+}
+
+// sampled reports whether this query is compared: the shadow is on and the sample draws it.
+func (s *loweringShadow) sampled() bool {
+	return s != nil && (s.sample >= 1 || s.rand() < s.sample)
+}
+
+// takeShadowSlot reserves a comparison: false when the proxy is closing, or when every slot is busy (counted as
+// skipped). The caller runs the comparison on a goroutine that calls s.done.
+func (p *Proxy) takeShadowSlot(s *loweringShadow) bool {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.closed {
-		s.mu.Unlock()
-		return
+		return false
 	}
 	select {
 	case s.slots <- struct{}{}:
 	default:
-		s.mu.Unlock()
 		p.recordLoweringShadow(shadowSkipped, shadowNoConstruct)
-		return
+		return false
 	}
 	s.wg.Add(1)
-	s.mu.Unlock()
-	go func() {
-		defer s.wg.Done()
-		defer func() { <-s.slots }()
-		p.runLoweringShadow(s, in)
-	}()
+	return true
+}
+
+// done frees the slot of a finished comparison.
+func (s *loweringShadow) done() {
+	<-s.slots
+	s.wg.Done()
 }
 
 func (p *Proxy) recordLoweringShadow(result, construct string) {
@@ -185,41 +210,16 @@ func (p *Proxy) recordLoweringShadow(result, construct string) {
 
 // runLoweringShadow compares the lowering with the string translator's answer and counts the outcome.
 func (p *Proxy) runLoweringShadow(s *loweringShadow, in shadowInput) {
-	construct := shadowNoConstruct
-	defer func() {
-		if r := recover(); r != nil {
-			p.recordLoweringShadow(shadowPanic, construct)
-			// The panic value can hold query text, so it is not logged; the query is redacted like any other.
-			if s.logAllowed(&s.lastPanicLog) {
-				p.log.Error("lowering shadow panicked", "construct", shadowConstruct(construct), "logql", redactQuery(in.query, p.debugLogRawQueries))
-			}
-		}
-	}()
-	deadline := time.Now().Add(s.budget)
-	// out is true when the comparison has used its budget; closed when the proxy is closing, which ends the
-	// comparison at its next stage without counting it.
-	out := func() bool { return time.Now().After(deadline) }
-	closed := func() bool {
-		select {
-		case <-s.stop:
-			return true
-		default:
-			return false
-		}
-	}
-	result := func(r string) {
-		if !closed() {
-			p.recordLoweringShadow(r, construct)
-		}
-	}
+	run := p.newShadowRun(s)
+	defer run.recoverPanic(in.query)
 
 	var lowered physical.Op
 	var newErr error
 	plan, err := loweringPlan(noFlowCtx, logqlpkg.CanonicalizeLogRanges(in.query))
 	if err == nil {
-		construct = lower.Construct(plan.Root)
-		if out() {
-			result(shadowBudget)
+		run.construct = lower.Construct(plan.Root)
+		if run.out() {
+			run.result(shadowBudget)
 			return
 		}
 		// The plan holds no text: a spelling the translator reads unlike the plan is left to it.
@@ -227,11 +227,12 @@ func (p *Proxy) runLoweringShadow(s *loweringShadow, in shadowInput) {
 			lowered, err = s.lower(plan, in.profile())
 		}
 		if err == nil && physical.Evaluated(lowered) {
-			// The proxy evaluates a ranking itself, over the answer of its operand, and translates the operand
-			// alone: the text the translator wrote for the whole query is not what it sends, so it is no reference
-			// for these operators. The corpus shadow holds them to the proxy's route
-			// (proxy.PostAggregationPhysical).
-			result(shadowNotLowered)
+			// The proxy evaluates a ranking, stddev or stdvar itself, over the answer of its operand, and translates
+			// the operand alone: the text the translator wrote for the whole query is not what it sends, so it is no
+			// reference for these operators. The corpus shadow holds them to the proxy's route
+			// (proxy.PostAggregationPhysical), and so does the post-aggregation handlers' live shadow
+			// (shadowProxyEvaluated); a query that reaches the translator whole is one the route does not take.
+			run.result(shadowNotLowered)
 			return
 		}
 		if err != nil {
@@ -241,26 +242,26 @@ func (p *Proxy) runLoweringShadow(s *loweringShadow, in shadowInput) {
 				// The translator rejects the query and the lowering does not cover it: not compared.
 				return
 			case errors.As(err, &nl):
-				construct = nl.Construct
-				result(shadowNotLowered)
+				run.construct = nl.Construct
+				run.result(shadowNotLowered)
 				return
 			case errors.Is(err, lower.ErrNotLowered):
-				result(shadowNotLowered)
+				run.result(shadowNotLowered)
 				return
 			}
 		}
 	}
 	newErr = err
-	if out() {
-		result(shadowBudget)
+	if run.out() {
+		run.result(shadowBudget)
 		return
 	}
 	switch {
 	case in.legacyErr != nil && newErr == nil:
-		result(shadowOldError)
+		run.result(shadowOldError)
 		return
 	case in.legacyErr == nil && newErr != nil:
-		result(shadowNewError)
+		run.result(shadowNewError)
 		return
 	case in.legacyErr != nil:
 		// Both reject the query: nothing to compare (the error texts are the error layer's), as in the corpus
@@ -271,26 +272,67 @@ func (p *Proxy) runLoweringShadow(s *loweringShadow, in shadowInput) {
 	// the tag, the translator writes a field filter VictoriaLogs rejects or reads as its own time, stream or line
 	// filter (semantics/translator-writes-reserved-field-names). The translator's text is the wrong one there.
 	if lower.ReadsReservedField(plan, in.profile()) {
-		result(shadowOldError)
+		run.result(shadowOldError)
 		return
 	}
 	// The translator writes a label called not or in bare, which VictoriaLogs rejects; the lowering quotes it. The
 	// translator's text is held to the lowering with that name quoted.
 	want, err := translator.DecodePhysical(lower.QuoteKeywordFieldText(in.legacy))
+	if err == nil && lower.UnwrapsReservedFieldOtherCase(plan) {
+		// The lowering writes the unwrap of _TIME and the like in the outbound guard's form, which is what the proxy
+		// sends for the translator's text too (guardOutboundQuery).
+		want = lower.GuardOutbound(want)
+	}
 	if err != nil {
-		result(shadowOldError)
+		run.result(shadowOldError)
 		return
 	}
-	if out() {
-		result(shadowBudget)
+	if run.out() {
+		run.result(shadowBudget)
 		return
 	}
 	if physical.Equal(want, lowered) {
-		result(shadowMatch)
+		run.result(shadowMatch)
 		return
 	}
-	result(shadowMismatch)
-	p.logLoweringShadowMismatch(s, in, construct, lowered)
+	run.result(shadowMismatch)
+	p.logLoweringShadowMismatch(s, in, run.construct, lowered)
+}
+
+// shadowRun is one comparison in progress: its budget and the construct it has reached.
+type shadowRun struct {
+	p         *Proxy
+	s         *loweringShadow
+	deadline  time.Time
+	construct string
+}
+
+func (p *Proxy) newShadowRun(s *loweringShadow) shadowRun {
+	return shadowRun{p: p, s: s, deadline: time.Now().Add(s.budget), construct: shadowNoConstruct}
+}
+
+// out reports that the comparison has used its budget.
+func (r *shadowRun) out() bool { return time.Now().After(r.deadline) }
+
+// result counts an outcome under the construct reached, unless the proxy is closing, which ends the comparison at
+// its next stage without counting it.
+func (r *shadowRun) result(res string) {
+	select {
+	case <-r.s.stop:
+	default:
+		r.p.recordLoweringShadow(res, r.construct)
+	}
+}
+
+// recoverPanic, deferred by a comparison, counts and logs a panic of it under the construct it had reached.
+func (r *shadowRun) recoverPanic(query string) {
+	if v := recover(); v != nil {
+		r.p.recordLoweringShadow(shadowPanic, r.construct)
+		// The panic value can hold query text, so it is not logged; the query is redacted like any other.
+		if r.s.logAllowed(&r.s.lastPanicLog) {
+			r.p.log.Error("lowering shadow panicked", "construct", shadowConstruct(r.construct), "logql", redactQuery(query, r.p.debugLogRawQueries))
+		}
+	}
 }
 
 // logLoweringShadowMismatch logs a mismatch, at most once per loweringShadowLogEvery (logAllowed), with the queries redacted
