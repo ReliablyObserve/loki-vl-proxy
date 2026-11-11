@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The opt-in live shadow of the query plan (`-translate-shadow-sample`) now
+  also covers the rankings, `stddev` and `stdvar` the proxy evaluates itself
+  (and the `sum`, `avg`, `min`, `max` and `count` layers above a ranking), on
+  `query` and `query_range`. These handlers translate only the operand, so
+  the shadow never saw the whole query; on the same share of their requests
+  it now lowers the whole query in the background and compares it with what
+  the proxy runs: the operand's request it has just sent, byte for byte, and
+  the levels it applies to the answer. New `result` values of
+  `loki_vl_proxy_lowering_shadow_total`: `native_proxy_evaluated` (equal) and
+  `known_divergence` (the plan holds a level the proxy's route drops, such as
+  `topk(2, stddev by (app) (..))`; nothing compared); new `construct` values
+  `VectorAgg stddev` and `VectorAgg stdvar`. No answer, cache or request to
+  VictoriaLogs changes, and a request the sample skips costs no allocation.
+
 ### Security
 
 - **A query with certain non-ASCII characters could make the LogQL parser stop responding.** Such queries are now
