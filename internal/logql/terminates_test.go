@@ -41,15 +41,35 @@ var entryPoints = []struct {
 }
 
 const (
-	terminationTime = 200 * time.Millisecond
+	// fuzzTerminationTime is the bound of the fuzz target, which runs alone in a fuzz-smoke job.
+	fuzzTerminationTime = 200 * time.Millisecond
+	// terminationTime is the bound of the deterministic tests. They run inside `go test ./... -coverprofile` next to
+	// every other package on a shared runner, where an entry point that returns in microseconds can still wait
+	// hundreds of milliseconds for a CPU; a parser that never returns misses any bound, so the bound is seconds.
+	terminationTime = 5 * time.Second
+	// coveredTerminationTime is that bound for a run with coverage counters (slower, and more loaded).
+	coveredTerminationTime = 20 * time.Second
 	// allocationPerByte is what an entry point may allocate for each byte of its input (and a base of 16 bytes).
 	allocationPerByte = 1 << 20
 )
 
-// terminationError runs every entry point on q, each in a goroutine, and reports one that does not return within
-// terminationTime or that allocates more than allocationPerByte per input byte. A parser that does not return
-// keeps its goroutine for the life of the process: the caller fails the test, and the process ends.
+// terminationBound is the time a deterministic test allows an entry point.
+func terminationBound() time.Duration {
+	if testing.CoverMode() != "" {
+		return coveredTerminationTime
+	}
+	return terminationTime
+}
+
+// terminationError is terminationErrorWithin at the bound of the deterministic tests.
 func terminationError(q string) error {
+	return terminationErrorWithin(q, terminationBound())
+}
+
+// terminationErrorWithin runs every entry point on q, each in a goroutine, and reports one that does not return
+// within bound or that allocates more than allocationPerByte per input byte. A parser that does not return keeps its
+// goroutine for the life of the process: the caller fails the test, and the process ends.
+func terminationErrorWithin(q string, bound time.Duration) error {
 	limit := uint64(len(q)+16) * allocationPerByte
 	for _, ep := range entryPoints {
 		var before, after runtime.MemStats
@@ -62,8 +82,8 @@ func terminationError(q string) error {
 		}()
 		select {
 		case <-done:
-		case <-time.After(terminationTime):
-			return fmt.Errorf("%s does not return within %v on %q", ep.name, terminationTime, q)
+		case <-time.After(bound):
+			return fmt.Errorf("%s does not return within %v on %q", ep.name, bound, q)
 		}
 		runtime.ReadMemStats(&after)
 		if used := after.TotalAlloc - before.TotalAlloc; used > limit {
@@ -203,7 +223,7 @@ func FuzzParseTerminates(f *testing.F) {
 		f.Add(q)
 	}
 	f.Fuzz(func(t *testing.T, q string) {
-		if err := terminationError(q); err != nil {
+		if err := terminationErrorWithin(q, fuzzTerminationTime); err != nil {
 			t.Fatal(err)
 		}
 	})
