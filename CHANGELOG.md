@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer fails in VictoriaLogs. Loki accepts such a label; the query written for
   it (`not:="a"`, `app:="a" in:="x"`) is rejected by VictoriaLogs v1.49 and v1.53
   ("missing whitespace or ':' ...", "the in must be put in quotes"), and the
-  client got a 500. The stream selector and the label filters of the queries the
+  client got a 400 ("failed to parse the log query"). The stream selector and the label filters of the queries the
   plan serves (line filters and label filters, no parser) now write the name
   quoted (`"not":="a"`). Queries with a parser or a metric are still written by
   the string translator and fail the same way until the plan serves them.

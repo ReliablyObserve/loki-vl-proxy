@@ -15,8 +15,9 @@ import (
 )
 
 // keywordLabelFixture is two streams with the labels Loki accepts and LogsQL reads as keywords: service_name and
-// in="x" on one, service_name and not="x" on the other, one line each, ingested alike into Loki and VictoriaLogs.
-// It returns the service name, the lines by label and the query window around them.
+// in=<svc> on one, service_name and not=<svc> on the other, one line each, ingested alike into Loki and VictoriaLogs.
+// The value is the run's service name, so a selector on in alone finds no line of an earlier run. It returns the
+// service name, the lines by label and the query window around them.
 func keywordLabelFixture(t *testing.T) (svc string, lines map[string]string, start, end time.Time) {
 	t.Helper()
 	svc = fmt.Sprintf("kw-labels-%d", time.Now().UnixNano())
@@ -24,14 +25,14 @@ func keywordLabelFixture(t *testing.T) (svc string, lines map[string]string, sta
 	lines = map[string]string{"in": "kw in line " + svc, "not": "kw not line " + svc}
 	for i, label := range []string{"in", "not"} {
 		ts := base.Add(time.Duration(i+1) * time.Second)
-		row, _ := json.Marshal(map[string]string{"_time": ts.UTC().Format(time.RFC3339Nano), "_msg": lines[label], "service_name": svc, label: "x"})
+		row, _ := json.Marshal(map[string]string{"_time": ts.UTC().Format(time.RFC3339Nano), "_msg": lines[label], "service_name": svc, label: svc})
 		status, body := hardeningRequest(t, http.MethodPost, vlURL+"/insert/jsonline?_stream_fields=service_name,"+label,
 			string(row)+"\n", map[string]string{"Content-Type": "application/stream+json"})
 		if status != http.StatusOK {
 			t.Fatalf("VictoriaLogs ingest: %d %s", status, body)
 		}
 		push, _ := json.Marshal(map[string]any{"streams": []any{map[string]any{
-			"stream": map[string]string{"service_name": svc, label: "x"},
+			"stream": map[string]string{"service_name": svc, label: svc},
 			"values": [][]string{{strconv.FormatInt(ts.UnixNano(), 10), lines[label]}},
 		}}})
 		status, body = hardeningRequest(t, http.MethodPost, lokiURL+"/loki/api/v1/push", string(push), map[string]string{"Content-Type": "application/json"})
@@ -92,9 +93,9 @@ func TestCompat_KeywordLabelNamesLikeLoki(t *testing.T) {
 		query string
 		want  []string
 	}{
-		{`{in="x"}`, []string{lines["in"]}},
-		{selector + ` | in="x"`, []string{lines["in"]}},
-		{selector + ` | not="x"`, []string{lines["not"]}},
+		{fmt.Sprintf(`{in=%q}`, svc), []string{lines["in"]}},
+		{selector + fmt.Sprintf(` | in=%q`, svc), []string{lines["in"]}},
+		{selector + fmt.Sprintf(` | not=%q`, svc), []string{lines["not"]}},
 	} {
 		ls, lb, lp := queryRangeGET(t, lokiURL, params(tc.query), headers)
 		ps, pb, pp := queryRangeGET(t, proxyURL, params(tc.query), headers)

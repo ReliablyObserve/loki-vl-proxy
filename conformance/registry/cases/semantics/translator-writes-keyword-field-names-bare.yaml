@@ -32,7 +32,7 @@ why: |
 
   Filter-only log queries (line filters and label filters, no parser) are
   served from the plan (-query-plan-lowering, on by default), so for them the
-  client now gets Loki's answer where it got a 500 before. Every other query
+  client now gets Loki's answer where it got a 400 ("failed to parse the log query") before. Every other query
   is still written by the translator, which is frozen, and fails the same way
   until the plan serves it. Metric queries are not served from the plan and
   neither are label names in pipes that VictoriaLogs reads bare (`| delete

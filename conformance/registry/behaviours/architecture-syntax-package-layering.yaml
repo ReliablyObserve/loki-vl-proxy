@@ -1097,7 +1097,7 @@ decisions:
       four separate causes, each fixed where it lives:
       (1) VictoriaLogs rejects a bare not, in, contains_*, equals_common_case
       and options (and and/or right after another filter), and Loki accepts a
-      label with such a name, so a client got a 500 from `{not="a"}` and
+      label with such a name, so a client got a 400 ("failed to parse the log query") from `{not="a"}` and
       `{app="a"} | in="x"` on the served path. The plan quotes them (the
       translator stays frozen, a registered known divergence by content);
       (2) the proxy's LogsQL parser was stricter than VictoriaLogs for and, or
@@ -1113,7 +1113,7 @@ decisions:
       non-ASCII value it reads as a name (more fuzz findings, recorded by
       content).
       Served answers change: filter-only queries with a keyword label
-      (500 -> Loki's answer), keyword label names in a selector or a list
+      (400 -> Loki's answer), keyword label names in a selector or a list
       (answer -> Loki's 400, Breaking), Ip/Label_replace (the wrong field ->
       the right one). Error answers are never cached
       (compatCacheCaptureAllowed stores a 200 only), so (1) leaves nothing
