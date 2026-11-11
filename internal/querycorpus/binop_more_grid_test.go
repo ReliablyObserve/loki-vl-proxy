@@ -10,18 +10,21 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
 
-// binOpMoreGrid is the generated grid of the two binary-operation spellings the lowering leaves to the string
-// translator (step 21): a bool modifier, which the translator drops, and a without clause on an operand, which it
-// removes from the text and writes once after the whole binary, a reading that is not Loki's. It covers a without
-// clause on each side and on both, in the head and tail form, with every aggregation, label lists in several
-// spellings (dotted names, blanks, the derived labels, none), every operator, bool on each comparison with vector
-// matching, nested operations, set operators, vector() and numbers, label_replace around each, the words in places
-// that are not the modifier or the clause (labels, quoted values), and operands with a parser or a formatting stage.
-// Deterministic; the lowering and the string translator are held to each other on every row under every profile
-// (TestBinOpMoreGridShadow): every row is delegated or lowered byte for byte, and none with a bool or a without
-// clause is lowered.
+// binOpMoreGrid is the generated grid of the two binary-operation spellings whose text the string translator does
+// not write as Loki reads it: a bool modifier, which the translator drops (left to the translator, step 21), and a
+// without clause on an operand, which it removes from the text and writes once after the whole binary (step 42:
+// lowered with the fold on the operand and held to the proxy's binary route, which evaluates each operand alone). It
+// covers a without clause on each side and on both, in the head and tail form, with every aggregation, label lists in
+// several spellings (dotted names, blanks, the derived labels, none), every operator, numbers on either side, bool on
+// each comparison with vector matching, on, ignoring, group_left and group_right around a clause on either side,
+// unwrapped operands, nested operations and aggregations, set operators, vector() and numbers, label_replace around
+// each, the words in places that are not the modifier or the clause (labels, quoted values), and operands with a
+// parser or a formatting stage. Deterministic; every row under every profile is delegated, lowered byte for byte as
+// the translator writes it, or (an operand with a without clause) held to the proxy's binary route
+// (TestBinOpMoreGridShadow).
 func binOpMoreGrid() []string {
 	seen := map[string]bool{}
 	var out []string
@@ -100,6 +103,14 @@ func binOpMoreGrid() []string {
 		add(fmt.Sprintf(`sum by (app) (%s) %s %s sum without (pod) (%s)`, ranges[1], ops[0], m, ranges[0]))
 		add(fmt.Sprintf(`sum without (pod) (%s) > bool %s sum without (node) (%s)`, ranges[0], m, ranges[1]))
 		add(fmt.Sprintf(`sum without (pod) (%s) %s %s sum without (node) (%s)`, ranges[0], "and", m, ranges[1]))
+	}
+	// vector matching with a group side around a clause on either side, and unwrapped operands.
+	for _, m := range []string{`on(app) group_left(pod)`, `on(app) group_right(pod)`, `ignoring(pod) group_left`, `ignoring(pod) group_right(env)`, `on(app, env)`, `ignoring(pod, node)`} {
+		for _, w := range []string{`max without (pod) (` + ranges[5] + `)`, `count(` + ranges[6] + `) without (pod)`, `sum without (pod, node) (` + ranges[7] + `)`} {
+			add(fmt.Sprintf(`%s / %s sum by (app) (%s)`, w, m, ranges[1]))
+			add(fmt.Sprintf(`sum by (app) (%s) > %s %s`, ranges[1], m, w))
+			add(fmt.Sprintf(`%s - %s %s`, w, m, w))
+		}
 	}
 	// a clause that is not one the lowering writes: no label, another aggregation, a nest, an operand that stays
 	// delegated, a word that is not the clause.
@@ -232,10 +243,12 @@ func binOpMoreGrid() []string {
 	return out
 }
 
-// TestBinOpMoreGridShadow holds the lowering to the string translator on the grid of bool and without spellings
-// under every profile: 0 mismatches, the text byte for byte on the rows it lowers, and no row with a bool modifier or
-// a without clause on an operand lowered (BinOp bool, BinOp operand without): the translator's reading of both is
-// not Loki's, and a lowering copying it is not wanted. The test fails the day one of them lowers.
+// TestBinOpMoreGridShadow holds the lowering on the grid of bool and without spellings under every profile: 0
+// mismatches, the text byte for byte on the rows held to the translator, and each row with an operand that has a
+// without clause either delegated or held to the proxy's binary route (each operand's request byte for byte, and not
+// the translator's text for the whole query: checkBinaryRoute). No row with a bool modifier is lowered (BinOp bool):
+// the translator drops it, and a lowering copying that is not wanted. The test fails the day one of them lowers, or
+// the day no row with a without operand does.
 // conformance: architecture-syntax-package-layering
 func TestBinOpMoreGridShadow(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
@@ -248,12 +261,9 @@ func TestBinOpMoreGridShadow(t *testing.T) {
 	sort.Strings(kinds)
 	t.Logf("%d queries x %d profiles: %d rows, %d lowered, %d delegated (%s)", len(grid), len(planProfiles()), rows, native, rows-native-len(problems), strings.Join(kinds, ", "))
 	if len(problems) > 0 {
-		t.Fatalf("%d rows lower unlike the string translator:\n%s", len(problems), joinFirst(problems, 60))
+		t.Fatalf("%d rows lower unlike the string translator or the proxy's route:\n%s", len(problems), joinFirst(problems, 60))
 	}
-	if delegated["BinOp bool"] == 0 || delegated["BinOp operand without"] == 0 {
-		t.Errorf("bool rows delegated %d, without rows %d: the grid must hold both", delegated["BinOp bool"], delegated["BinOp operand without"])
-	}
-	// A row that lowers natively has no bool modifier and no without clause on an operand.
+	routed := 0
 	for _, q := range grid {
 		if !strings.Contains(q, "bool") && !strings.Contains(q, "without") {
 			continue
@@ -267,17 +277,29 @@ func TestBinOpMoreGridShadow(t *testing.T) {
 			continue
 		}
 		queryplan.Resolve(plan)
-		if hasBoolOrWithoutOperand(plan.Root) {
-			if _, err := lower.PlanQuery(q, plan, planProfiles()[0].lowerProfile()); err == nil {
-				t.Errorf("%q has a bool or a without operand and is lowered", q)
-			}
+		b := topBinOp(plan.Root)
+		if b == nil {
+			continue
 		}
+		op, err := lower.PlanQuery(q, plan, planProfiles()[0].lowerProfile())
+		switch {
+		case err != nil:
+		case b.Bool:
+			t.Errorf("%q has a bool modifier and is lowered", q)
+		case lower.RoutedBinary(b):
+			if _, ok := op.(physical.Binary); !ok {
+				t.Errorf("%q has an operand with a without clause and is lowered to %#v", q, op)
+			}
+			routed++
+		}
+	}
+	if delegated["BinOp bool"] == 0 || routed == 0 {
+		t.Errorf("bool rows delegated %d, without rows held to the route %d: the grid must hold both", delegated["BinOp bool"], routed)
 	}
 }
 
-// hasBoolOrWithoutOperand reports whether the binary operation at the top of the plan (under label_replace calls)
-// has a bool modifier or a vector aggregation operand with a without clause.
-func hasBoolOrWithoutOperand(n queryplan.Node) bool {
+// topBinOp is the binary operation at the top of the plan (under label_replace calls), nil for another root.
+func topBinOp(n queryplan.Node) *queryplan.BinOp {
 	for {
 		lr, ok := n.(*queryplan.LabelReplace)
 		if !ok {
@@ -285,17 +307,6 @@ func hasBoolOrWithoutOperand(n queryplan.Node) bool {
 		}
 		n = lr.In
 	}
-	b, ok := n.(*queryplan.BinOp)
-	if !ok {
-		return false
-	}
-	if b.Bool {
-		return true
-	}
-	for _, x := range [2]queryplan.Node{b.L, b.R} {
-		if va, ok := x.(*queryplan.VectorAgg); ok && va.By != nil && va.By.Without {
-			return true
-		}
-	}
-	return false
+	b, _ := n.(*queryplan.BinOp)
+	return b
 }

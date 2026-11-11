@@ -71,7 +71,13 @@ func labelReplaceOver(n *queryplan.LabelReplace, prof Profile, rankOK bool) (phy
 			op, err = vectorAgg(v, inner)
 		}
 	case *queryplan.BinOp:
-		op, err = binOp(v, inner)
+		if withoutOperand(v) {
+			// The proxy evaluates the operands alone, folded by their own clauses; the translator's text for the
+			// whole call drops the clauses (binOp). Not lowered under the calls yet.
+			err = errBinOperandWithout
+		} else {
+			op, err = binOp(v, inner)
+		}
 	case *queryplan.Rank:
 		// The ranking is evaluated by the proxy, whose operand is translated with the request's own options.
 		op, err = evaluated(v, prof)
