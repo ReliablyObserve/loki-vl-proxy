@@ -18,6 +18,7 @@ smoke	internal/proxy	FuzzMergeLokiQueryResponsesStructuredMetadataContract	12s	-
 smoke	internal/proxy	FuzzParseLokiDuration	12s	-	parse Loki duration
 smoke	internal/proxy	FuzzParseTimestamp	12s	-	parse timestamp
 smoke	internal/proxy	FuzzSeriesKeyFromMetric	20s	60s	series key from metric
+smoke	internal/proxy	FuzzTenantHeader	12s	-	X-Scope-OrgID check: Loki's tenant ID rules, own-tenant routing
 smoke	internal/proxy	FuzzParseValueToFloat	12s	-	parse value to float
 smoke	internal/proxy	FuzzLokiErrorType	12s	-	Loki error type
 smoke	internal/proxy	FuzzFormatVLStep	12s	-	format VL step

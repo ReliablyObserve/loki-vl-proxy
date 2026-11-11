@@ -53,10 +53,11 @@ Use this as your starting point when running the binary directly (no Docker, no 
   -patterns-enabled=true \
 
   # ── Tenant routing ─────────────────────────────────────────────────────────
-  # Single-tenant (global VL default): X-Scope-OrgID "0", "fake", or "default"
-  # map automatically to VictoriaLogs 0:0 — no flag needed.
+  # Tenancy is off by default: X-Scope-OrgID is ignored and everyone reads
+  # VictoriaLogs 0:0, as Loki with auth_enabled: false. See
+  # docs/tenancy-and-auth.md for the setups.
   #
-  # Named tenants: uncomment one option below.
+  # Named tenants: uncomment one option below (either turns tenancy on).
   #
   # Option A — inline JSON (small, static maps):
   # -tenant-map='{"team-alpha":{"account_id":"1","project_id":"1"},"team-beta":{"account_id":"1","project_id":"2"}}' \
@@ -129,10 +130,10 @@ datasources:
     jsonData:
       httpHeaderName1: X-Scope-OrgID
     secureJsonData:
-      httpHeaderValue1: "0"   # or "fake" or "default" — all resolve to VL 0:0
+      httpHeaderValue1: "0"   # ignored while tenancy is off; everyone reads VL 0:0
 ```
 
-For named tenants, set `httpHeaderValue1` to the org ID string that matches a key in your `-tenant-map`.
+For named tenants, set `httpHeaderValue1` to the org ID string that matches a key in your `-tenant-map`. See [Tenancy and authentication](tenancy-and-auth.md) for every setup.
 
 See [Configuration Reference](configuration.md) for the full flag list and [Translation Modes](translation-modes.md) for when to switch from `translated` to `hybrid`.
 
@@ -273,6 +274,7 @@ If `/ready` is not `ok`, check backend connectivity and proxy logs first.
 ## Next Docs
 
 - [Configuration](configuration.md)
+- [Tenancy and authentication](tenancy-and-auth.md)
 - [Operations](operations.md)
 - [Testing](testing.md)
 - [Compatibility Matrix](compatibility-matrix.md)

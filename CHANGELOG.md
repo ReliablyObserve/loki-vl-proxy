@@ -47,6 +47,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   log query no longer takes its bytes from a `volume_range` answer of its
   selector (whole steps left up to a tenth of the window out).
 
+### Security
+
+- **Breaking: tenancy is off by default.** After upgrading, a deployment that
+  separated tenants by `X-Scope-OrgID` with no tenant setting (only numeric
+  org IDs such as `7`, routed by the old default `-tenant.numeric-passthrough=true`)
+  serves VictoriaLogs account `0:0` to everyone. **Upgrade: set
+  `-tenant.numeric-passthrough=true`** (Helm `extraArgs: {tenant.numeric-passthrough: "true"}`),
+  or a tenant map / `-auth.enabled`, to keep routing on the header. By
+  default the proxy is now Loki's single-tenant mode (`auth_enabled: false`):
+  `X-Scope-OrgID` is ignored on every route (not checked, routed on,
+  forwarded or used in cache keys), every request reads `0:0`, and every
+  Grafana user sees all data. A named org such as `team-a` that earlier releases
+  refused with `403 unknown tenant` now reads `0:0` too, as Loki does; `a|b` is no
+  multi-tenant request and headers that were refused with `400`/`403` get the
+  default tenant's answer (answers recorded from Loki with
+  `auth_enabled: false` in
+  `internal/proxy/testdata/tenant_noauth_loki_answers.jsonl`). Tenancy is on
+  with any of `-auth.enabled`, `-require-tenant-header`, `-tenant-map`,
+  `-tenant-map-file`, `-tenant-label` (or their `TENANT_MAP`,
+  `TENANT_MAP_FILE`, `TENANT_LABEL` environment forms) or
+  `-tenant.numeric-passthrough=true`. `-tenant.numeric-passthrough` now
+  defaults to `false`; left unset next to another tenant setting it stays on,
+  so deployments with a tenant map, tenant label or `-auth.enabled` route as
+  before, and an explicit `false` next to a tenant map is strict routing as before
+  (an explicit `false` with no other tenant setting, which refused every org,
+  is now tenancy off). The zero value
+  of `proxy.Config` (library use) is unchanged: numeric passthrough on.
+  `-tenant-limits` (`TENANT_LIMITS`), keyed by `X-Scope-OrgID`, now refuses to
+  start (and the Helm chart to render) with tenancy off, naming the flags that
+  turn it on; `-tenant-default-limits` alone stays allowed. See
+  `docs/tenancy-and-auth.md`.
+- The delete API needs its own token. With `-delete-api-enabled=true`, every
+  request to `/loki/api/v1/delete` must carry the new `-delete-api-auth-token`
+  in `X-Delete-Token` or `Authorization: Bearer` (constant-time compare);
+  without it the answer is `401 delete authentication required`, before the
+  method, tenant, rate limit, confirmation and parameter checks, and nothing
+  reaches VictoriaLogs. The token is removed from the request before it is
+  handled, so it is never forwarded to VictoriaLogs (even with
+  `-forward-authorization`) or logged. It is separate from
+  `-server.admin-auth-token`: the admin token does not open deletes, the delete
+  token does not open `/admin/*`, and enabling deletes leaves the admin and
+  debug surfaces on the loopback `-admin-listen` exactly as before. Before, the
+  route was protected only by the `X-Delete-Confirmation` header, so any client
+  that could reach the proxy could send a delete. Bare Loki has no
+  authentication of its own; every other answer on the route stays Loki's. The
+  Helm chart gains `deleteAuth.existingSecret` (rendered from a `secretKeyRef`,
+  like `adminAuth`). **Breaking:** the proxy (and `proxy.New`) refuses to start
+  with `-delete-api-enabled=true` and no `-delete-api-auth-token`, and the
+  chart refuses to render `extraArgs.delete-api-enabled: "true"` without
+  `deleteAuth.existingSecret` or `extraArgs.delete-api-auth-token`. Upgrade:
+  create a Secret with the token, set `deleteAuth.existingSecret` (or the
+  flag), and send the token with every delete request. Deployments without the
+  delete API need no change.
+- With tenancy on, `X-Scope-OrgID` is admitted and refused as Loki
+  3.7.9 does with `auth_enabled: true`, before the response cache or any
+  VictoriaLogs call (answers recorded from Loki and replayed byte for byte in
+  `internal/proxy/testdata/tenant_auth_loki_answers.jsonl`). A missing, empty or
+  blank header with `-auth.enabled` or `-require-tenant-header` is `401` `no org
+  id` (was `missing X-Scope-OrgID header`; a blank header was `403 unknown
+  tenant`). A tenant ID that is `.` or `..`, holds a byte outside `A-Z a-z 0-9 !
+  ' ( ) * - . : _`, or is longer than 150 bytes is `400` with Loki's text on
+  every route, with the querier prefix on `query_range`, `detected_fields` and
+  `detected_field` values, `401` on tail and the ruler views' JSON answers (was
+  `403 unknown tenant`, or admitted when the tenant map listed it). A
+  multi-tenant header is checked member by member: `a|` is served as a
+  multi-tenant request (was `400`), `a|a` is the tenant `a`, and tail and delete
+  answer `multiple org IDs present`. The check also narrows what reaches the
+  tenant map and the tenant-label stream filter. **Breaking:** with tenancy
+  on, a tenant ID Loki refuses (for example `+7`, `team a`, `team/x`)
+  is refused even when the tenant map lists it; rename such entries.
+- The user name of a client's basic authentication (`X-Loki-VL-Auth-User`,
+  `X-Loki-VL-Auth-Source`) is sent to VictoriaLogs only with
+  `-metrics.trust-proxy-headers`, as the configuration guide states; it was sent
+  on every request that carried basic authentication.
+
 ## [2.170.0] - 2026-11-11
 
 ### Fixed

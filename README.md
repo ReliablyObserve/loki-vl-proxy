@@ -176,7 +176,7 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints with tests that compare the proxy against Loki | **19 of 27** (70%) |
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
-| Behaviour and feature items | 6 proven, 21 partial, 3 gaps |
+| Behaviour and feature items | 10 proven, 21 partial, 3 gaps |
 | Known differences from Loki (ranked) | **118**: 94 open, 14 documented, 7 owner-kept, 3 upstream |
 | Open differences visible in Grafana (registry impact) | **61 of 94**: 47 Explore, 13 Logs Drilldown, 1 Grafana datasource; 11 API only, 22 edge cases |
 
@@ -389,7 +389,7 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 - Grafana Explore — log browsing, filtering, live tail
 - Grafana Logs Drilldown — patterns, service view, field breakdown
 - Dashboards — supported Loki log and metric queries
-- Multi-tenant — `X-Scope-OrgID` isolation, including Loki-style `a|b` multi-tenant reads
+- Multi-tenant — `X-Scope-OrgID` isolation once enabled (off by default, as Loki with `auth_enabled: false`), including Loki-style `a|b` multi-tenant reads
 - Live tail — native WebSocket tail or synthetic polling fallback
 - Rules and alerts — read bridge to vmalert (no write lifecycle)
 - LogQL — stream selectors, filters, parsers, metric queries, range functions and vector operators, with measured compatibility and documented limitations
@@ -402,7 +402,7 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 - **Circuit breaker** — opens on backend failure, closes automatically on recovery; lock-free fast path in healthy state
 - **Per-client rate limits** — token bucket per client source IP plus a global in-flight cap (`-max-concurrent`, excess gets `503`)
 - **Adaptive log sampling** — below 10 req/s logs everything; above it, OK traffic becomes periodic summaries while errors are always logged
-- **Tenant isolation** — strict `X-Scope-OrgID` fanout guardrails; no cross-tenant data bleed
+- **Tenant isolation** — off by default (one shared tenant, as Loki with `auth_enabled: false`); once enabled, strict `X-Scope-OrgID` routing and fanout guardrails with no cross-tenant data bleed. The header is not authenticated: put a gateway in front ([Tenancy and authentication](docs/tenancy-and-auth.md))
 - **TLS / mTLS** — configurable on both northbound (client) and southbound (backend) boundaries
 - **OTLP metrics push** — proxy pushes its own metrics to any OTLP HTTP endpoint
 - **Operator dashboard** — packaged Grafana dashboard covering Client → Proxy → VictoriaLogs, cache behavior, fanout, and resource utilization
@@ -532,6 +532,7 @@ VictoriaLogs backend with Loki-VL-proxy as the Loki-compatible query layer.
 - [Architecture](docs/architecture.md)
 - [API Reference](docs/api-reference.md)
 - [Security](docs/security.md)
+- [Tenancy and Authentication](docs/tenancy-and-auth.md)
 - [Observability](docs/observability.md)
 - [Performance](docs/performance.md)
 - [Scaling](docs/scaling.md)

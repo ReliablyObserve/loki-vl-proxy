@@ -116,6 +116,7 @@ type proxyRuntimeConfig struct {
 	queryStatsExactLogLines             bool
 	patternsEnabled                     bool
 	deleteAPIEnabled                    bool
+	deleteAPIAuthToken                  string
 	patternsAutodetectFromQueries       bool
 	patternsCounts                      bool
 	patternsExactMaxLines               int
@@ -519,7 +520,7 @@ func run(
 	forwardTenantHeader := fs.Bool("forward-tenant-header", true, "Forward the per-tenant X-Scope-OrgID header to the upstream backend. Safe for VictoriaLogs (ignores it). Required for Victoria Lakehouse native tenant routing.")
 	tenantLimitsAllowPublish := fs.String("tenant-limits-allow-publish", "", "Comma-separated limit fields published on /config/tenant/v1/limits and /loki/api/v1/drilldown-limits")
 	tenantDefaultLimitsJSON := fs.String("tenant-default-limits", "", `JSON map of Loki limits for every tenant, enforced and published (for example {"query_timeout":"2m","max_query_series":1000}); max_query_series, max_entries_limit_per_query, max_query_length, max_query_lookback, max_query_range and query_timeout are enforced`)
-	tenantLimitsJSON := fs.String("tenant-limits", "", `JSON map of per-tenant Loki limits keyed by X-Scope-OrgID, above -tenant-default-limits; enforced and published like it`)
+	tenantLimitsJSON := fs.String("tenant-limits", "", `JSON map of per-tenant Loki limits keyed by X-Scope-OrgID, above -tenant-default-limits; enforced and published like it. Requires tenancy (-tenant.numeric-passthrough=true, -tenant-map, -tenant-map-file, -tenant-label, -auth.enabled or -require-tenant-header): with tenancy off the proxy refuses to start, since the header is ignored`)
 
 	// OTLP telemetry flags
 	otlpEndpoint := fs.String("otlp-endpoint", "", "OTLP HTTP endpoint (e.g., http://otel-collector:4318/v1/metrics)")
@@ -610,7 +611,8 @@ func run(
 	backendDefaultMsgValue := fs.String("backend-default-msg-value", "", "VictoriaLogs -defaultMsgValue when it is customized. Rows whose _msg is empty, starts with VictoriaLogs' default \"missing _msg field\" text, or equals this value get their log line rebuilt as a JSON object of the row's non-stream fields")
 	detectedLevelBodyScan := fs.Bool("detected-level-body-scan", true, "Derive detected_level from the log line (JSON, logfmt, keywords) when a row has no stored level field, as Loki does; false uses stored level fields only with an unknown fallback")
 	patternsEnabled := fs.Bool("patterns-enabled", true, "Enable /loki/api/v1/patterns endpoint (Grafana Logs Drilldown patterns)")
-	deleteAPIEnabled := fs.Bool("delete-api-enabled", false, "Register /loki/api/v1/delete and forward its requests to VictoriaLogs (a proxy extension with its own safeguards; current VictoriaLogs releases reject the forwarded request). When false, the path answers 404 like Loki with deletion disabled (the default when compactor retention is off)")
+	deleteAPIAuthToken := fs.String("delete-api-auth-token", "", "Token every /loki/api/v1/delete request must carry, in X-Delete-Token or Authorization: Bearer (constant-time compare); required by -delete-api-enabled. It is the delete API's own credential: the admin token and the admin listener are unaffected. Prefer the Helm value deleteAuth.existingSecret, which keeps it out of the pod spec")
+	deleteAPIEnabled := fs.Bool("delete-api-enabled", false, "Register /loki/api/v1/delete and forward its requests to VictoriaLogs (a proxy extension with its own safeguards; current VictoriaLogs releases reject the forwarded request). Requires -delete-api-auth-token: every delete request must carry it in X-Delete-Token or Authorization: Bearer, and the proxy refuses to start without one. When false, the path answers 404 like Loki with deletion disabled (the default when compactor retention is off)")
 	exactParserSeriesIdentity := fs.Bool("exact-parser-series-identity", false, "Name the series of a metric over `| json` or `| logfmt` with the labels those parsers extracted, as Loki does, instead of the stream. Every such query is then evaluated from rows (bounded by -manual-metric-row-budget) rather than pushed down to VictoriaLogs stats, so it costs far more on wide ranges; `| regexp` and `| pattern` captures are always part of the identity because the query names them")
 	alignQueriesWithStep := fs.Bool("align-queries-with-step", true, "Move the start and end of a metric query_range request down to a multiple of its step before evaluating it, as Loki's query frontend does with query_range.align_queries_with_step (-querier.align-querier-with-step; false in Loki's flag defaults, true in its example configuration and Helm chart). On by default: answers share that Loki's evaluation grid, and a refresh that moves the window by less than a step maps onto the same request and is served from the caches. Log queries, instant queries, step-less requests, /loki/api/v1/patterns and Grafana Logs Drilldown query-split residual chunks are not changed. Set false to evaluate at the start the client sent")
 	translateShadowSample := fs.Float64("translate-shadow-sample", 0, "Share (0-1) of the queries the string translator translates (cache misses) that the typed query-plan lowering also translates, in the background, to compare the two translations: counted in loki_vl_proxy_lowering_shadow_total by result and construct, a mismatch logged (the query redacted), at most 1 line per second. At most 2 comparisons run at once, each within 100 ms; the answer, the caches and the VictoriaLogs requests are never affected. 0 turns it off")
@@ -682,7 +684,7 @@ func run(
 	gcPercent := fs.Int("go-gc-percent", 200, "GOGC target percentage. Higher values reduce GC frequency at the cost of higher peak RSS. Set to -1 to use Go runtime default (100). Ignored when GOGC env var is already set.")
 
 	// Loki-style auth / instrumentation controls
-	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
+	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant. With tenancy turned off (-tenant.numeric-passthrough=false and no -auth.enabled, -require-tenant-header, -tenant-map, -tenant-map-file or -tenant-label) the header is ignored and every request reads the backend default tenant, as in Loki's single-tenant mode (auth_enabled: false).")
 	requireTenantHeader := fs.Bool("require-tenant-header", false, "Reject requests missing X-Scope-OrgID with HTTP 401. Independent of -auth.enabled; use when you want tenant enforcement without full auth.")
 	registerInstrumentation := fs.Bool("server.register-instrumentation", false, "Register instrumentation handlers such as /metrics. Default false (BREAKING in v1.56.0; was true). Set true and optionally pair with --metrics-listen for a dedicated scrape port. The Helm chart sets this to true automatically so ServiceMonitor scrapes keep working without operator action.")
 	enablePprof := fs.Bool("server.enable-pprof", false, "Expose /debug/pprof/* handlers")
@@ -720,7 +722,7 @@ func run(
 	patternsStartupStale := fs.Duration("patterns-startup-stale-threshold", 60*time.Second, "Treat on-disk patterns snapshot older than this as stale and warm from peers before serving")
 	patternsPeerWarmTimeout := fs.Duration("patterns-startup-peer-warm-timeout", 5*time.Second, "Maximum time to wait for startup patterns snapshot warm from peers")
 	allowGlobalTenant := fs.Bool("tenant.allow-global", false, "Allow X-Scope-OrgID \"*\" to bypass AccountID/ProjectID scoping and use the backend default tenant. With -tenant-label or with -tenant.numeric-passthrough=false it also admits the default aliases 0, fake and default and a missing org without a tenant filter or tenant map entry")
-	tenantNumericPassthrough := fs.Bool("tenant.numeric-passthrough", true, "Route an X-Scope-OrgID that is a canonical decimal number (digits only, no sign, no leading zeros, at most 4294967295) to the VictoriaLogs account of that number. A number spelled any other way (007, 00, +7, -1) or above 4294967295 is refused with 403 unknown tenant unless -tenant-map lists it exactly, because Loki keeps 007 and 7 as different tenants. Set to false for strict routing: only orgs listed in -tenant-map are routed and every other numeric org gets 403; the default aliases 0, fake and default and a missing X-Scope-OrgID are then refused like the wildcard unless -tenant.allow-global is set or the tenant map lists them (no entry admits a missing org). Has no effect with -tenant-label")
+	tenantNumericPassthrough := fs.Bool("tenant.numeric-passthrough", false, "Route an X-Scope-OrgID that is a canonical decimal number (digits only, no sign, no leading zeros, at most 4294967295) to the VictoriaLogs account of that number. A number spelled any other way (007, 00, +7, -1) or above 4294967295 is refused with 403 unknown tenant unless -tenant-map lists it exactly, because Loki keeps 007 and 7 as different tenants. Tenancy is off by default: with this flag unset and none of -auth.enabled, -require-tenant-header, -tenant-map, -tenant-map-file or -tenant-label (or their TENANT_MAP, TENANT_MAP_FILE, TENANT_LABEL environment forms), X-Scope-OrgID is ignored and every request reads the backend default tenant, as in Loki's single-tenant mode (auth_enabled: false). Set true to route numeric org IDs with no other tenant setting. Left unset next to another tenant setting, it stays on as before. Set false explicitly for strict routing: only orgs listed in -tenant-map are routed and every other numeric org gets 403; the default aliases 0, fake and default and a missing X-Scope-OrgID are then refused like the wildcard unless -tenant.allow-global is set or the tenant map lists them (no entry admits a missing org). Has no effect with -tenant-label")
 
 	// Cold storage backend (Victoria Lakehouse)
 	coldBackendURL := fs.String("cold-backend", "", "Cold storage backend URL (Victoria Lakehouse). Empty disables cold routing.")
@@ -817,12 +819,24 @@ func run(
 	if v := getenv("TENANT_LABEL"); v != "" && *tenantLabel == "" {
 		*tenantLabel = v
 	}
+	numericPassthrough, err := resolveTenancy(tenancySettings{
+		numericPassthrough: *tenantNumericPassthrough, numericPassthroughExplicit: explicitFlags["tenant.numeric-passthrough"],
+		authEnabled: *authEnabled, requireTenantHeader: *requireTenantHeader,
+		tenantMapJSON: envCfg.tenantMapJSON, tenantMapFile: envCfg.tenantMapFile, tenantLabel: *tenantLabel,
+		tenantLimitsJSON: envCfg.tenantLimitsJSON,
+	})
+	if err != nil {
+		return err
+	}
 
 	adminTarget := resolveAdminTarget(envCfg.listenAddr, *adminListen, *adminAuthToken)
 	if err := validateAdminExposure(adminTarget, *registerInstrumentation, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
 		return err
 	}
 	if err := validatePeerAuth(*peerDiscovery, *peerStatic, *peerAuthToken, *peerInsecureIPAllowlist); err != nil {
+		return err
+	}
+	if err := validateDeleteAPI(*deleteAPIEnabled, *deleteAPIAuthToken); err != nil {
 		return err
 	}
 	if err := validateMetricsListen(*metricsListen, *registerInstrumentation); err != nil {
@@ -931,6 +945,7 @@ func run(
 			queryStatsExactLogLines:             *queryStatsExactLogLines,
 			patternsEnabled:                     *patternsEnabled,
 			deleteAPIEnabled:                    *deleteAPIEnabled,
+			deleteAPIAuthToken:                  *deleteAPIAuthToken,
 			patternsAutodetectFromQueries:       *patternsAutodetectFromQueries,
 			patternsCounts:                      *patternsCounts,
 			patternsExactMaxLines:               *patternsExactMaxLines,
@@ -976,7 +991,7 @@ func run(
 			authEnabled:                         *authEnabled,
 			requireTenantHeader:                 *requireTenantHeader,
 			allowGlobalTenant:                   *allowGlobalTenant,
-			strictTenantRouting:                 !*tenantNumericPassthrough,
+			strictTenantRouting:                 !numericPassthrough,
 			registerInstrumentation:             registerInstrumentation,
 			enablePprof:                         *enablePprof,
 			enableQueryAnalytics:                *enableQueryAnalytics,
@@ -1527,6 +1542,67 @@ func validatePeerAuth(discovery, peers, token string, insecureAllowlist bool) er
 	return fmt.Errorf("peer cache is configured (discovery=%q, peers=%q) but --peer-auth-token is empty. "+
 		"Set --peer-auth-token to a shared secret, or pass --peer-insecure-ip-allowlist=true to keep the legacy IP-only behavior",
 		discovery, peers)
+}
+
+// resolveNumericPassthrough is the effective -tenant.numeric-passthrough.
+// Tenancy is off by default, as Loki's single-tenant mode: with the flag unset
+// and no other tenant setting, passthrough is off and the proxy (strict routing
+// with nothing to route) ignores X-Scope-OrgID. An explicit value wins; left
+// unset next to another tenant setting (-auth.enabled, -require-tenant-header,
+// a tenant map or map file, -tenant-label, in flag or environment form) it
+// stays on, as before the default changed.
+func resolveNumericPassthrough(flagValue, explicit, authEnabled, requireTenantHeader bool, tenantMapJSON, tenantMapFile, tenantLabel string) bool {
+	if explicit {
+		return flagValue
+	}
+	return authEnabled || requireTenantHeader || strings.TrimSpace(tenantMapJSON) != "" ||
+		strings.TrimSpace(tenantMapFile) != "" || strings.TrimSpace(tenantLabel) != ""
+}
+
+// tenancySettings are the flags (after environment overrides) that decide
+// whether tenancy is on.
+type tenancySettings struct {
+	numericPassthrough, numericPassthroughExplicit bool
+	authEnabled, requireTenantHeader               bool
+	tenantMapJSON, tenantMapFile, tenantLabel      string
+	tenantLimitsJSON                               string
+}
+
+// resolveTenancy returns the effective -tenant.numeric-passthrough
+// (resolveNumericPassthrough) and refuses per-tenant limits while tenancy is
+// off (validateTenantLimitsNeedTenancy).
+func resolveTenancy(t tenancySettings) (numericPassthrough bool, err error) {
+	numericPassthrough = resolveNumericPassthrough(t.numericPassthrough, t.numericPassthroughExplicit,
+		t.authEnabled, t.requireTenantHeader, t.tenantMapJSON, t.tenantMapFile, t.tenantLabel)
+	tenancyOn := numericPassthrough || t.authEnabled || t.requireTenantHeader || strings.TrimSpace(t.tenantMapJSON) != "" ||
+		strings.TrimSpace(t.tenantMapFile) != "" || strings.TrimSpace(t.tenantLabel) != ""
+	return numericPassthrough, validateTenantLimitsNeedTenancy(t.tenantLimitsJSON, tenancyOn)
+}
+
+// validateTenantLimitsNeedTenancy refuses startup when per-tenant limits
+// (-tenant-limits, TENANT_LIMITS) are set while tenancy is off: the header is
+// then ignored, so limits keyed by X-Scope-OrgID would never apply.
+// -tenant-default-limits applies to every request and stays allowed.
+func validateTenantLimitsNeedTenancy(tenantLimitsJSON string, tenancyOn bool) error {
+	if tenancyOn || strings.TrimSpace(tenantLimitsJSON) == "" {
+		return nil
+	}
+	return fmt.Errorf("-tenant-limits (TENANT_LIMITS) is keyed by X-Scope-OrgID, but tenancy is off, so the header is ignored and the limits would never apply. " +
+		"Turn tenancy on with -tenant.numeric-passthrough=true, -tenant-map, -tenant-map-file, -tenant-label, -auth.enabled or -require-tenant-header, " +
+		"or move the limits to -tenant-default-limits, which applies to every request")
+}
+
+// validateDeleteAPI refuses startup when the delete API is enabled with no
+// -delete-api-auth-token: every delete request must carry that token, so the
+// route would otherwise be open to anyone who can reach the proxy. The token is
+// the delete API's own; the admin token and the admin listener are unaffected.
+func validateDeleteAPI(enabled bool, deleteAPIAuthToken string) error {
+	if !enabled || strings.TrimSpace(deleteAPIAuthToken) != "" {
+		return nil
+	}
+	return fmt.Errorf("-delete-api-enabled=true requires -delete-api-auth-token (Helm: deleteAuth.existingSecret): " +
+		"every delete request must carry the token in X-Delete-Token or Authorization: Bearer. " +
+		"Set the token, or remove -delete-api-enabled")
 }
 
 // validateMetricsListen refuses startup when --metrics-listen is set but
@@ -2160,6 +2236,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		RatePerSecond:                      cfg.ratePerSecond,
 		RateBurst:                          cfg.rateBurst,
 		TenantMap:                          tenantMap,
+		TenantMapFile:                      cfg.tenantMapFile,
 		TenantLabel:                        cfg.tenantLabel,
 		TenantLimitsAllowPublish:           parseCSV(cfg.tenantLimitsAllowPublish),
 		TenantDefaultLimits:                tenantDefaultLimits,
@@ -2196,6 +2273,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		QueryStatsExactLogLines:            cfg.queryStatsExactLogLines,
 		PatternsEnabled:                    boolPointer(cfg.patternsEnabled),
 		DeleteAPIEnabled:                   cfg.deleteAPIEnabled,
+		DeleteAPIAuthToken:                 cfg.deleteAPIAuthToken,
 		PatternsAutodetectFromQueries:      cfg.patternsAutodetectFromQueries,
 		PatternsCounts:                     cfg.patternsCounts,
 		PatternsExactMaxLines:              cfg.patternsExactMaxLines,

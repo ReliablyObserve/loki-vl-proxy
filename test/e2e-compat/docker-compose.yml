@@ -298,6 +298,10 @@ services:
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
       - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
+      # Tenancy is off by default (X-Scope-OrgID ignored, as Loki's single-tenant
+      # mode); the multi-tenant "0|fake" tests and the Grafana multi-tenant
+      # datasource need it on.
+      - "-tenant.numeric-passthrough=true"
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -673,6 +677,10 @@ services:
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
       - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
+      # Tenancy is off by default (X-Scope-OrgID ignored, as Loki's single-tenant
+      # mode); the multi-tenant "0|fake" tests and the Grafana multi-tenant
+      # datasource need it on.
+      - "-tenant.numeric-passthrough=true"
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"

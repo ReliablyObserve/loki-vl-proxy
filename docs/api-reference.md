@@ -183,6 +183,8 @@ The delete endpoint is the only write route, and it is registered only with `-de
 
 Requests are still validated before forwarding:
 
+- **Delete token**: `-delete-api-enabled=true` requires `-delete-api-auth-token`, and every request must carry it in `X-Delete-Token` or `Authorization: Bearer`; without it the answer is `401 delete authentication required`, before any other check (Loki itself has no authentication on this route). It is the delete API's own credential: the admin token does not open the route, and enabling deletes leaves the admin listener as it is
+- **Tenant**: checked as Loki checks it (see [Tenant header](#tenant-header-x-scope-orgid))
 - **Confirmation header**: Requires `X-Delete-Confirmation: true`
 - **Query required**: Must target specific streams (no wildcards `{}` or `*`)
 - **Time range required**: Both `start` and `end` parameters mandatory
@@ -194,6 +196,7 @@ Requests are still validated before forwarding:
 
 ```bash
 curl -X POST 'http://proxy:3100/loki/api/v1/delete' \
+  -H "X-Delete-Token: $DELETE_API_AUTH_TOKEN" \
   -H 'X-Delete-Confirmation: true' \
   -H 'X-Scope-OrgID: team-alpha' \
   -d 'query={app="nginx",env="staging"}&start=1704067200&end=1704153600'
@@ -251,6 +254,22 @@ Tenant limits notes:
 - published fields are filtered by `-tenant-limits-allow-publish`
 - `-tenant-default-limits` and `-tenant-limits` set Loki's query limits per tenant: `max_query_series`, `max_entries_limit_per_query`, `max_query_length`, `max_query_lookback`, `max_query_range` and `query_timeout` are enforced exactly as published (see [Published tenant limits](configuration.md#published-tenant-limits-compatibility-surface))
 
+## Tenant header (X-Scope-OrgID)
+
+Tenancy is off by default: the proxy is Loki's single-tenant mode (`auth_enabled: false`), the header is ignored on every route and every request reads the default tenant (recorded from the e2e stack's Loki in `testdata/tenant_noauth_loki_answers.jsonl`; see [Tenancy and authentication](tenancy-and-auth.md)). With tenancy on, the proxy admits and refuses `X-Scope-OrgID` as Loki 3.7.9 does with `auth_enabled: true`, before the response cache or any VictoriaLogs call. The answers below are recorded from Loki and replayed against the proxy in `internal/proxy/tenant_auth_parity_test.go`.
+
+| Header | Read routes | `/loki/api/v1/tail` | `/loki/api/v1/delete` |
+|---|---|---|---|
+| none, empty or blank | `401` `no org id` + newline | the same | the same |
+| `.` or `..` | `400` `tenant ID is '.' or '..'` | `401`, text + newline | `400`, text + newline |
+| a byte outside `A-Z a-z 0-9 ! ' ( ) * - . : _` | `400` `tenant ID '<id>' contains unsupported character '<byte>'` | `401`, text + newline | `400`, text + newline |
+| more than 150 bytes | `400` `tenant ID is too long: max 150 characters` | `401`, text + newline | `400`, text + newline |
+| `a\|b` (several distinct tenants) | served, each series or stream with `__tenant_id__` | `400` `multiple org IDs present` | `400` `multiple org IDs present` + newline |
+
+`query_range`, `detected_fields` and `detected_field/{name}/values` put Loki's querier prefix `rpc error: code = Code(400) desc = ` before the `400` texts. Characters are checked before length, and each member of `a|b` in header order (members are not trimmed, so `a | b` is refused for its space); delete checks only the first member before refusing more than one. `a|a` is the tenant `a`, and `a|` is a multi-tenant request over `a`. The ruler views answer in their JSON: `/loki/api/v1/rules` and `/api/prom/rules` `500` `no org id` for any refused or multi-tenant header, `/prometheus/api/v1/rules` and `/prometheus/api/v1/alerts` `400` `too many org ids found` for a multi-tenant header and `500` `no valid org id found` for a refused ID. `Authorization` plays no part in the tenant check.
+
+A tenant Loki accepts can still be refused by the proxy's own routing (`403 unknown tenant` for an unmapped name or a non-canonical number, `*` without `-tenant.allow-global`, tenant-label alias rules): VictoriaLogs has numeric accounts only, and serving an unmapped name from the default tenant would expose that tenant's data. See [Tenant resolution order](tenancy-and-auth.md#tenant-resolution-order-tenancy-on).
+
 ## Error Response Format
 
 Error responses are Loki's, byte for byte in shape (Loki v3.7.9). Every query, metadata and tail-upgrade route answers with the status, `Content-Type: text/plain; charset=utf-8`, `X-Content-Type-Options: nosniff` and the message alone, with no JSON envelope and no trailing newline (`pkg/util/server/error.go` `WriteError`):
@@ -279,7 +298,7 @@ The status codes below follow Loki's Prometheus-style API handler and are the st
 | HTTP Status | Prometheus `errorType` (not sent) | Typical causes |
 |---|---|---|
 | 400 | `bad_data` | LogQL parse errors, unsupported constructs, invalid parameters, query-length violations (`query length X exceeds limit Y`), `line_format` / binary-expression evaluation limits, multi-tenant fanout above 64 tenants, a multi-tenant request whose query a tenant rejected |
-| 401, 403, 413 and other 4xx | `bad_data` | missing `X-Scope-OrgID` with `-auth.enabled` or `-require-tenant-header` (401), unknown tenant, or unmapped wildcard `X-Scope-OrgID: *` (and, with `-tenant-label`, an unmapped default alias or empty org) without `-tenant.allow-global` (403), merged multi-tenant response above 32 MiB (413) |
+| 401, 403, 413 and other 4xx | `bad_data` | missing `X-Scope-OrgID` with `-auth.enabled` or `-require-tenant-header` (401 `no org id`, as Loki), a tenant ID Loki refuses (400 with Loki's text, see [Tenant header](#tenant-header-x-scope-orgid)), unknown tenant, or unmapped wildcard `X-Scope-OrgID: *` (and, with `-tenant-label`, an unmapped default alias or empty org) without `-tenant.allow-global` (403), merged multi-tenant response above 32 MiB (413) |
 | 404 | `not_found` | rules lookups with no matching rule group |
 | 406 | `not_acceptable` | Loki status mapping |
 | 429 | `bad_data` | a full query queue: `too many outstanding requests`, Loki's text (`pkg/queue/queue.go:21`), for the proxy's heavy-query and metadata-scan queues, for a VictoriaLogs `429`, and for VictoriaLogs' `503` when a query waited `-search.maxQueueDuration` for a slot |

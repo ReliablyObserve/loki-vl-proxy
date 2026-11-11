@@ -159,21 +159,25 @@ const (
 )
 
 type Config struct {
-	BackendURL          string
-	RulerBackendURL     string
-	AlertsBackendURL    string
-	Cache               *cache.Cache
-	CompatCache         *cache.Cache
-	LogLevel            string
-	MaxConcurrent       int                      // max concurrent backend queries (0=unlimited)
-	RatePerSecond       float64                  // per-client rate limit (0=unlimited)
-	RateBurst           int                      // per-client burst size
-	CBFailThreshold     int                      // circuit breaker: failures within window before opening
-	CBOpenDuration      time.Duration            // circuit breaker: how long to stay open before probing
-	CBWindowDuration    time.Duration            // circuit breaker: sliding window for failure counting (default 30s)
-	CoalescerDisabled   bool                     // disable singleflight coalescing; every request makes its own backend call
-	TenantMap           map[string]TenantMapping // string org ID → VL account/project
-	TenantLabel         string                   // VL field name for label-based tenant routing (alternative to AccountID/ProjectID headers)
+	BackendURL        string
+	RulerBackendURL   string
+	AlertsBackendURL  string
+	Cache             *cache.Cache
+	CompatCache       *cache.Cache
+	LogLevel          string
+	MaxConcurrent     int                      // max concurrent backend queries (0=unlimited)
+	RatePerSecond     float64                  // per-client rate limit (0=unlimited)
+	RateBurst         int                      // per-client burst size
+	CBFailThreshold   int                      // circuit breaker: failures within window before opening
+	CBOpenDuration    time.Duration            // circuit breaker: how long to stay open before probing
+	CBWindowDuration  time.Duration            // circuit breaker: sliding window for failure counting (default 30s)
+	CoalescerDisabled bool                     // disable singleflight coalescing; every request makes its own backend call
+	TenantMap         map[string]TenantMapping // string org ID → VL account/project
+	// TenantMapFile is the -tenant-map-file path. A configured file keeps the
+	// proxy routing on X-Scope-OrgID even while the file holds no entry (see
+	// tenantHeaderIgnored).
+	TenantMapFile       string
+	TenantLabel         string // VL field name for label-based tenant routing (alternative to AccountID/ProjectID headers)
 	AuthEnabled         bool
 	RequireTenantHeader bool
 	AllowGlobalTenant   bool
@@ -270,8 +274,13 @@ type Config struct {
 	PatternsEnabled *bool
 	// DeleteAPIEnabled registers /loki/api/v1/delete, which forwards to
 	// VictoriaLogs. False (the zero value) leaves the path unregistered, so it
-	// answers 404 like Loki with deletion disabled.
+	// answers 404 like Loki with deletion disabled. True requires
+	// DeleteAPIAuthToken: every delete request must carry it (New refuses the
+	// configuration without one).
 	DeleteAPIEnabled bool
+	// DeleteAPIAuthToken is the delete API's own credential (X-Delete-Token or
+	// Authorization: Bearer); it plays no part on the admin routes.
+	DeleteAPIAuthToken string
 	// PatternsAutodetectFromQueries passively extracts patterns from successful
 	// log query/query_range responses and warms /patterns cache entries.
 	PatternsAutodetectFromQueries bool
@@ -717,6 +726,8 @@ type Proxy struct {
 	detectedLevelBodyScan                 bool
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
+	deleteAPIAuthToken                    string
+	tenantMapFileSet                      bool
 	loweringShadow                        *loweringShadow // nil unless -translate-shadow-sample is set
 	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
 	queryStatsVictoriaLogsMode            bool            // -query-stats-mode=victorialogs: measured stats, not Loki's accounting
@@ -1027,6 +1038,9 @@ func newCoalescer(disabled bool) *mw.Coalescer {
 
 //nolint:gocyclo // constructor wires many optional config knobs (URLs, levels, multi-tenant, caches, ruler/alerts, telemetry); complexity is inherent to top-level assembly.
 func New(cfg Config) (*Proxy, error) {
+	if err := validateDeleteAPIConfig(cfg.DeleteAPIEnabled, cfg.DeleteAPIAuthToken); err != nil {
+		return nil, err
+	}
 	u, err := url.Parse(cfg.BackendURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid backend URL: %w", err)
@@ -1419,6 +1433,8 @@ func New(cfg Config) (*Proxy, error) {
 		queryStatsExactLogLines:               cfg.QueryStatsExactLogLines,
 		patternsEnabled:                       patternsEnabled,
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
+		deleteAPIAuthToken:                    cfg.DeleteAPIAuthToken,
+		tenantMapFileSet:                      cfg.TenantMapFile != "",
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
 		patternsCounts:                        cfg.PatternsCounts,
 		patternsExactMaxLines:                 cfg.PatternsExactMaxLines,
@@ -2064,8 +2080,11 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 	// Unregistered by default: Loki registers it only with compactor retention
 	// enabled and otherwise answers 404 before any auth, which the mux's
 	// not-found answer matches.
+	// Every request must carry the delete token, checked before the tenant,
+	// rate limit or parameters, so an unauthenticated caller learns nothing
+	// about the route (deleteAuthMiddleware).
 	if p.deleteAPIEnabled {
-		mux.Handle("/loki/api/v1/delete", p.routeHandler("delete", "/loki/api/v1/delete", p.handleDelete))
+		mux.Handle("/loki/api/v1/delete", securityHeaders(p.deleteAuthMiddleware(p.routeHandler("delete", "/loki/api/v1/delete", p.handleDelete))))
 	}
 
 	// Alerting / ruler read endpoints

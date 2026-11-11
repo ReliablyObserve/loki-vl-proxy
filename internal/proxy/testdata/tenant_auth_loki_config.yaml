@@ -1,0 +1,47 @@
+# Loki started for TestRecordTenantAuthLokiAnswers (internal/proxy): auth on,
+# multi-tenant queries on, compactor retention on so the delete API is
+# registered. The answers were recorded with the Loki 3.7.9 release binary:
+#   loki -config.file=internal/proxy/testdata/tenant_auth_loki_config.yaml
+# then two lines pushed, one per tenant:
+#   for t in team-a team-b; do curl -H "X-Scope-OrgID: $t" -H 'Content-Type: application/json' \
+#     http://127.0.0.1:23100/loki/api/v1/push --data '{"streams":[{"stream":{"app":"'$t'-app","tenant_owner":"'$t'"},"values":[["<now-ns>","secret line of '$t'"]]}]}'; done
+auth_enabled: true
+server:
+  http_listen_address: 127.0.0.1
+  http_listen_port: 23100
+  grpc_listen_address: 127.0.0.1
+  grpc_listen_port: 23196
+  log_level: warn
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /tmp/loki-tenant-auth/data
+  storage:
+    filesystem:
+      chunks_directory: /tmp/loki-tenant-auth/data/chunks
+      rules_directory: /tmp/loki-tenant-auth/data/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+limits_config:
+  volume_enabled: true
+  reject_old_samples: false
+compactor:
+  working_directory: /tmp/loki-tenant-auth/data/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+querier:
+  multi_tenant_queries_enabled: true
+pattern_ingester:
+  enabled: false
+analytics:
+  reporting_enabled: false

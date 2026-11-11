@@ -244,6 +244,7 @@ func TestTenantLabelRouting_DefaultAliasesNeedAllowGlobalOrMapping(t *testing.T)
 						p := newTestProxyWithOptions(t, withBackendURL(vl.URL), withTenantLabel("org_id"), func(c *Config) {
 							c.AllowGlobalTenant = allowGlobal
 							c.DeleteAPIEnabled = true
+							c.DeleteAPIAuthToken = testDeleteToken
 							if mapped {
 								c.TenantMap = map[string]TenantMapping{"0": mappedTenant, "fake": mappedTenant, "default": mappedTenant, "*": mappedTenant, "": mappedTenant}
 							}
@@ -252,7 +253,7 @@ func TestTenantLabelRouting_DefaultAliasesNeedAllowGlobalOrMapping(t *testing.T)
 						p.RegisterRoutes(mux)
 						srv := httptest.NewServer(mux)
 						defer srv.Close()
-						header := http.Header{"X-Delete-Confirmation": {"true"}}
+						header := http.Header{"X-Delete-Confirmation": {"true"}, "X-Delete-Token": {testDeleteToken}}
 						if org != "" {
 							header.Set("X-Scope-OrgID", org)
 						}

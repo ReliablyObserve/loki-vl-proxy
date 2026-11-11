@@ -140,7 +140,7 @@ export default function VictoriaLogsKubernetesLoki(): ReactNode {
               <li><code>cache.l1.maxBytes</code> — L1 memory cache size (default 256 MB).</li>
               <li><code>cache.l2.enabled</code> — enable bbolt disk cache for persistence across restarts.</li>
               <li><code>cache.l3.enabled</code> — enable peer cache for fleet-wide reuse across replicas.</li>
-              <li><code>multitenancy.enabled</code> — enable X-Scope-OrgID tenant isolation.</li>
+              <li><code>extraArgs.tenant-map</code> or <code>extraArgs.tenant.numeric-passthrough</code> — turn on X-Scope-OrgID tenant isolation (off by default: one shared tenant).</li>
               <li><code>circuitBreaker.failureThreshold</code> — sliding 30s window threshold (default 5).</li>
             </ul>
           </div>
@@ -151,7 +151,7 @@ export default function VictoriaLogsKubernetesLoki(): ReactNode {
               <li>Explore with label discovery, <code>detected_fields</code>, and <code>query_range</code>.</li>
               <li>Logs Drilldown with patterns, volume, and field browsing.</li>
               <li>Alert rules bridged through optional vmalert integration.</li>
-              <li>Multi-tenant dashboards via <code>X-Scope-OrgID</code> header passthrough.</li>
+              <li>Multi-tenant dashboards via the <code>X-Scope-OrgID</code> header, once tenancy is enabled.</li>
             </ul>
           </div>
           <div className={styles.card}>

@@ -627,192 +627,24 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 
 ## Multitenancy
 
+Tenancy is off by default: `X-Scope-OrgID` is ignored and everyone reads VictoriaLogs account `0:0`, as Loki with `auth_enabled: false`. Setups, defaults, resolution rules, the tenant map format and Grafana data source examples are in [Tenancy and authentication](tenancy-and-auth.md); the flags are:
+
 | Flag | Env | Default | Description |
 |---|---|---|---|
 | `-tenant-label` | `TENANT_LABEL` | `""` | VL field name for label-based tenant routing. When set, an unmapped `X-Scope-OrgID` (other than the default-tenant aliases, an empty org and `*`, which are rejected with `403` unless `-tenant.allow-global` is set) is sent as a VictoriaLogs `extra_stream_filters` constraint `{"<tenant-label>":"<orgID>"}` instead of `AccountID`/`ProjectID` headers; request parameters cannot override it. The field must be a VictoriaLogs **stream field** (part of `_stream_fields`). Use when all data is under the VL default tenant (0:0). Explicit `tenant-map` entries take priority. |
-| `-tenant-map` | `TENANT_MAP` | — | JSON string→int tenant mapping |
+| `-tenant-map` | `TENANT_MAP` | — | JSON object mapping each `X-Scope-OrgID` string to `{"account_id": "<n>", "project_id": "<n>"}`; turns tenancy on |
 | `-tenant-map-file` | `TENANT_MAP_FILE` | `""` | Path to a YAML or JSON file mapping Loki `X-Scope-OrgID` strings to VictoriaLogs `AccountID`/`ProjectID`. Reloaded on SIGHUP and automatically when the file changes (see `-tenant-map-reload-interval`). Suitable for Kubernetes ConfigMap volumes. File entries override `-tenant-map` inline entries for the same key. |
 | `-tenant-map-reload-interval` | *(flag only)* | `30s` | How often to poll `-tenant-map-file` for mtime changes. Set to `0` to disable polling (SIGHUP-only reload). |
 | `-tenant-limits-allow-publish` | `TENANT_LIMITS_ALLOW_PUBLISH` | built-in allowlist | Comma-separated limit fields exposed on `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` |
 | `-tenant-default-limits` | `TENANT_DEFAULT_LIMITS` | — | JSON map of Loki limits for every tenant, enforced and published; see [Published tenant limits](#published-tenant-limits-compatibility-surface) |
-| `-tenant-limits` | `TENANT_LIMITS` | — | JSON map of per-tenant Loki limits keyed by `X-Scope-OrgID`, above `-tenant-default-limits`; enforced and published |
+| `-tenant-limits` | `TENANT_LIMITS` | — | JSON map of per-tenant Loki limits keyed by `X-Scope-OrgID`, above `-tenant-default-limits`; enforced and published. Needs tenancy on: with tenancy off the proxy refuses to start |
 | `-auth.enabled` | — | `false` | Require `X-Scope-OrgID` on query requests; a missing header returns `401`. The header value is not authenticated |
 | `-require-tenant-header` | — | `false` | Reject requests missing `X-Scope-OrgID` with `401`, independent of `-auth.enabled` |
 | `-tenant.allow-global` | — | `false` | Allow an unmapped `X-Scope-OrgID: *` to bypass tenant scoping and use the backend default tenant. In `-tenant-label` mode, or with `-tenant.numeric-passthrough=false`, it also admits an unmapped default alias (`0`, `fake`, `default`) or a missing org without the tenant filter or a tenant-map entry. Without it, those return `403`; an explicit `"*"` tenant-map entry always takes precedence |
-| `-tenant.numeric-passthrough` | — | `true` | Route an `X-Scope-OrgID` that is a canonical decimal number (`7`, not `007`) to the VictoriaLogs account of that number. `false` is strict routing: only orgs in the tenant map are routed, every other numeric org gets `403`, and the aliases `0`, `fake`, `default` and a missing org are refused like `*` unless `-tenant.allow-global=true` or the tenant map lists them. Has no effect with `-tenant-label`; see [Numeric tenants](#numeric-tenants-and-strict-routing) |
+| `-tenant.numeric-passthrough` | — | `false` (left unset next to another tenant setting: on) | `true` turns tenancy on by itself. Route an `X-Scope-OrgID` that is a canonical decimal number (`7`, not `007`) to the VictoriaLogs account of that number. `false` is strict routing: only orgs in the tenant map are routed, every other numeric org gets `403`, and the aliases `0`, `fake`, `default` and a missing org are refused like `*` unless `-tenant.allow-global=true` or the tenant map lists them. Has no effect with `-tenant-label`; see [Numeric tenants](tenancy-and-auth.md#numeric-tenants-and-strict-routing) |
 | `-forward-tenant-header` | `FORWARD_TENANT_HEADER` | `true` | When `false`, suppresses X-Scope-OrgID header forwarding to the backend |
 
-### Tenant Resolution Order
-
-1. **No header** — when `-auth.enabled=false` and `-require-tenant-header=false`, requests without `X-Scope-OrgID` use VictoriaLogs' backend default tenant, which is `AccountID=0` and `ProjectID=0`; otherwise they return `401`
-2. **Tenant map lookup** — if `-tenant-map` is configured and the org ID matches a key, use the mapped `AccountID`/`ProjectID`
-3. **Explicit tenant map override** — if a tenant map contains an exact key such as `"0"` or `"fake"`, that explicit mapping wins
-4. **Default-tenant aliases** — `X-Scope-OrgID` values `0`, `fake`, and `default` map to VictoriaLogs' built-in `0:0` tenant without rewriting headers. With `-tenant-label` set they are treated like `*` (step 5): `403` unless `-tenant.allow-global=true` or the tenant map has an exact entry for the alias (a map entry never admits an empty org)
-5. **Wildcard global bypass** — `X-Scope-OrgID: *` is a proxy-specific convenience. Unless the tenant map has an explicit `"*"` entry, it uses the backend default tenant only when `-tenant.allow-global=true` and returns `403` otherwise (also in `-tenant-label` mode)
-6. **Label routing** — with `-tenant-label` set, any other non-empty org ID is accepted and scoped with a stream-field constraint instead of tenant headers
-7. **Numeric passthrough** — if the org ID is a canonical decimal number other than the default-tenant alias case (for example `"42"`), pass it directly as `AccountID` with `ProjectID: 0`. A number in any other spelling (`007`, `00`, `+7`, `-1`, above `4294967295`) is not canonical and is refused (step 8). With `-tenant.numeric-passthrough=false` this step does not exist: only mapped orgs are routed
-8. **Fail closed** — every other org ID is rejected with `403 Forbidden` (`unknown tenant`)
-
-The same resolver decides admission and the `AccountID`/`ProjectID` headers of every backend request the proxy sets on every backend request (queries, tail, rules and alerts, the cold tier, each part of a multi-tenant `a|b` request), so an admitted org is always routed to a tenant or deliberately served from the default tenant, never silently from `0:0`. The cold tier also receives `X-Scope-OrgID` and resolves it itself, so with the cold tier's own tenant alias table enabled, mirror tenant-map entries there.
-
-#### Numeric tenants and strict routing
-
-Loki treats `7` and `007` as two different tenants. VictoriaLogs has one account per number, so the proxy routes a numeric `X-Scope-OrgID` to account N only for the one canonical spelling of N: decimal digits only, no sign, no leading zeros (except `0` itself) and at most `4294967295`, the largest VictoriaLogs `AccountID`.
-
-| `X-Scope-OrgID` | default | `-tenant.numeric-passthrough=false` |
-|---|---|---|
-| `7` | routed to account `7` | `403` unless the tenant map lists `7` |
-| `007`, `00`, `+7`, `-1`, `4294967296` | `403 unknown tenant` unless the tenant map lists that exact string | `403` unless the tenant map lists that exact string |
-| `teamA` listed in the tenant map | its mapped account and project | its mapped account and project |
-| `0`, `fake`, `default`, no header | VictoriaLogs default tenant `0:0` | `403` unless `-tenant.allow-global=true` or the tenant map lists the alias (no entry admits a missing header) |
-| `*` | `403` unless `-tenant.allow-global=true` or mapped | same |
-
-A refusal for a non-canonical number is logged once per org and ten minutes as a `tenant refused` warning that names the org, the reason and the fix. At startup the proxy logs one `tenant routing` line stating the active mode. Tenant-map `account_id` and `project_id` values are not affected: `"007"` there still means account 7. Only plain unknown names, `*`, alias refusals and orgs past the table cap are refused without a log line.
-
-**Migrating.** Clients that send `007` today were reading account `7`: for each such client either send `7`, or add `"007": {"account_id": "7", "project_id": "0"}` to the tenant map to keep the old routing explicitly (the two spellings then share account 7 data, unlike Loki). To require that every tenant is explicitly mapped, set `-tenant.numeric-passthrough=false`, list every tenant in the tenant map, and add `-tenant.allow-global=true` only if clients that send `0`, `fake`, `default` or no header must keep reading the default tenant. Label routing (`-tenant-label`) never used account numbers and is unchanged by the flag.
-
-### Multi-Tenant Query Headers
-
-The proxy accepts Loki-style multi-tenant query headers on read/query endpoints by separating tenant IDs with `|`, for example `X-Scope-OrgID: team-a|team-b`.
-
-- Supported on query-style endpoints such as `/query`, `/query_range`, `/labels`, `/label/.../values`, `/series`, `/index/*`, and Drilldown metadata endpoints
-- Rejected on `/tail`, delete, and write paths
-- Query results inject a synthetic `__tenant_id__` label per tenant, matching Loki's documented query behavior
-- `__tenant_id__` matchers in the leading selector narrow the tenant fanout set before backend requests are sent
-- multi-tenant `detected_fields` and `detected_labels` use exact merged value unions, so cardinality does not double-count identical values across tenants
-- like Loki, a multi-tenant request fails as a whole when any tenant's sub-request fails: `400` when a tenant rejects the query, `504` on a timeout, `500` for any other backend failure; legacy partial-failure envelopes also count as failures, and nothing is merged or cached from the other tenants
-- Wildcard `*` is not allowed inside a multi-tenant header; use explicit tenant IDs
-- fanout is safety-capped to prevent one request from exploding into an unbounded number of backend queries
-- merged multi-tenant response bodies are also size-capped before they are returned to the client
-
-### Tenant Map File Format
-
-The tenant map file (YAML or JSON) maps each Loki `X-Scope-OrgID` string to a VictoriaLogs `AccountID`/`ProjectID` pair. Both fields are required and must be non-negative integers represented as strings.
-
-**YAML** (recommended — easier to comment and diff):
-
-```yaml
-# /etc/loki-vl-proxy/tenant-map.yaml
-#
-# Each key is the exact string sent in X-Scope-OrgID by Grafana (or Loki clients).
-# account_id maps to VictoriaLogs AccountID header (tenant namespace).
-# project_id maps to VictoriaLogs ProjectID header (sub-account partition).
-# Both fields must be non-negative integers.  Use "0" for the VL default.
-
-# Single VictoriaLogs account, separate projects per team:
-team-alpha:
-  account_id: "1"
-  project_id: "1"
-
-team-beta:
-  account_id: "1"
-  project_id: "2"
-
-# Different VL accounts (e.g. separate VL clusters behind a load balancer):
-ops-prod:
-  account_id: "42"
-  project_id: "0"
-
-ops-staging:
-  account_id: "43"
-  project_id: "0"
-
-# Explicit override for the default-tenant alias "0".
-# Without this, X-Scope-OrgID: "0" resolves to VL 0:0 automatically.
-# Add it only when you need to redirect "0" to a different VL project:
-# "0":
-#   account_id: "0"
-#   project_id: "99"
-```
-
-**JSON** (use when injecting from CI/CD tooling):
-
-```json
-{
-  "team-alpha": { "account_id": "1", "project_id": "1" },
-  "team-beta":  { "account_id": "1", "project_id": "2" },
-  "ops-prod":   { "account_id": "42", "project_id": "0" }
-}
-```
-
-**Validation rules enforced at load time:**
-
-- `account_id` and `project_id` must both be present and non-empty.
-- Both must parse as non-negative integers that fit in a `uint32` (0–4294967295).
-- Strings that are not valid integers (for example `"prod"`) are rejected immediately — the proxy does not start if the tenant map is invalid.
-- The file extension determines the parser: `.json` → JSON, anything else → YAML.
-
-### Configuration Examples
-
-```bash
-# Via flag (inline JSON — convenient for single-container deployments)
-./loki-vl-proxy \
-  -tenant-map='{"team-alpha":{"account_id":"1","project_id":"1"},"team-beta":{"account_id":"1","project_id":"2"}}'
-
-# Via environment variable (same JSON format)
-export TENANT_MAP='{"ops-prod":{"account_id":"42","project_id":"0"}}'
-./loki-vl-proxy -backend=http://victorialogs:9428
-
-# Via file with hot-reload — ideal for Kubernetes ConfigMap volumes
-./loki-vl-proxy \
-  -backend=http://victorialogs:9428 \
-  -tenant-map-file=/etc/loki-vl-proxy/tenant-map.yaml \
-  -tenant-map-reload-interval=30s
-```
-
-**Kubernetes ConfigMap:** use `-tenant-map-file` so the proxy can pick up tenant changes without a restart. The proxy polls the file's modification time every `-tenant-map-reload-interval` (default 30 s); Kubernetes atomically replaces the ConfigMap symlink, so the new mtime is visible immediately. See [k8s-tenant-map-configmap.yaml](k8s-tenant-map-configmap.yaml) for a complete Deployment snippet.
-
-**Global single-tenant (no map needed):** if every Grafana datasource sends the same `X-Scope-OrgID` value (`"0"`, `"fake"`, or `"default"`) and all data lives in VictoriaLogs' default tenant, you do not need `-tenant-map` at all. The proxy resolves those three aliases to VL's built-in `AccountID=0, ProjectID=0` automatically.
-
-### Grafana Datasource per Tenant
-
-```yaml
-datasources:
-  - name: Logs (team-alpha)
-    type: loki
-    url: http://loki-vl-proxy:3100
-    jsonData:
-      httpHeaderName1: X-Scope-OrgID
-    secureJsonData:
-      httpHeaderValue1: team-alpha
-```
-
-### Grafana Datasource for Explicit Multi-Tenant Reads
-
-```yaml
-datasources:
-  - name: Logs (team-a + team-b)
-    type: loki
-    url: http://loki-vl-proxy:3100
-    jsonData:
-      httpHeaderName1: X-Scope-OrgID
-    secureJsonData:
-      httpHeaderValue1: team-a|team-b
-```
-
-Use `__tenant_id__` in LogQL when the datasource fans out to more than one tenant:
-
-```logql
-{app="api-gateway", __tenant_id__="team-b"}
-{service_name="checkout", __tenant_id__=~"team-(a|b)"}
-```
-
-### Grafana Datasource for Single-Tenant VictoriaLogs
-
-If the backend only uses VictoriaLogs' default tenant, you can keep Grafana simple:
-
-```yaml
-datasources:
-  - name: Logs (global tenant)
-    type: loki
-    url: http://loki-vl-proxy:3100
-    jsonData:
-      httpHeaderName1: X-Scope-OrgID
-    secureJsonData:
-      httpHeaderValue1: "0"
-```
-
-`X-Scope-OrgID: "0"`, `X-Scope-OrgID: "fake"`, and `X-Scope-OrgID: "default"` resolve to VL's default `0:0` tenant in Loki-compatible single-tenant mode. With `-tenant-label` they are refused with `403` unless `-tenant.allow-global=true` or the tenant map has an exact entry for the alias; an absent or empty org is refused unless `-tenant.allow-global=true`, and no map entry admits it. `X-Scope-OrgID: "*"` remains a proxy-specific wildcard convenience and requires explicit `-tenant.allow-global=true` unless the tenant map contains an explicit `"*"` entry.
+Tenant resolution order, numeric and strict routing, multi-tenant `a|b` queries, the tenant map file format and Grafana data source examples: see [Tenancy and authentication](tenancy-and-auth.md#6-resolution-details).
 
 ### Hot Reload
 
@@ -904,7 +736,8 @@ See [Performance — Go Runtime Tuning](performance.md#go-runtime-tuning) for gu
 | `-http-conn-max-age-jitter` | — | `2m` | Jitter applied to downstream connection age rotation |
 | `-http-conn-max-requests` | — | `256` | Maximum requests per keepalive connection |
 | `-http-conn-overload-max-age` | — | `90s` | Shorter connection lifetime during backpressure |
-| `-delete-api-enabled` | — | `false` | Register `/loki/api/v1/delete` and forward its requests to VictoriaLogs (a proxy extension, see [Security](security.md#3-delete-api-unsupported)). When `false`, every method on the path answers `404` with `404 page not found`, as Loki does when deletion is disabled (its default: compactor retention off). Current VictoriaLogs releases reject the forwarded request, so enabling it does not make deletion work |
+| `-delete-api-enabled` | — | `false` | Register `/loki/api/v1/delete` and forward its requests to VictoriaLogs (a proxy extension, see [Security](security.md#3-delete-api-unsupported)). When `false`, every method on the path answers `404` with `404 page not found`, as Loki does when deletion is disabled (its default: compactor retention off). Current VictoriaLogs releases reject the forwarded request, so enabling it does not make deletion work. Requires `-delete-api-auth-token`: every delete request must carry it (`X-Delete-Token` or `Authorization: Bearer`), and the proxy refuses to start without it |
+| `-delete-api-auth-token` | — | — | The delete API's own token, required by `-delete-api-enabled`. Read from `X-Delete-Token` or `Authorization: Bearer` (constant-time compare), removed before the request is handled, never forwarded to VictoriaLogs or logged. Separate from `-server.admin-auth-token`: the admin token does not open deletes, and the admin listener is unaffected. Helm: `deleteAuth.existingSecret` |
 
 ## Grafana Compatibility
 
@@ -1211,43 +1044,6 @@ These Grafana Loki datasource settings now have a direct proxy-side mapping:
 | Timeout | `-backend-timeout` for proxy→VL, Grafana datasource timeout for Grafana→proxy |
 | Maximum lines | `-max-lines` |
 
-When `-metrics.trust-proxy-headers=true`, the proxy forwards trusted user headers and proxy-chain headers to the backend, plus derived context headers `X-Loki-VL-Client-ID` / `X-Loki-VL-Client-Source`.
-
-Datasource auth credentials are forwarded separately as `X-Loki-VL-Auth-User` / `X-Loki-VL-Auth-Source` and are not used as `enduser.id` client identity.
-
-### Grafana User Header Forwarding (Recommended)
-
-To attribute requests to real Grafana users instead of datasource service credentials:
-
-1. Enable trusted proxy headers on Loki-VL-proxy:
-
-```bash
--metrics.trust-proxy-headers=true
-```
-
-2. Configure Grafana server dataproxy to forward the logged-in user header:
-
-```ini
-[dataproxy]
-send_user_header = true
-```
-
-3. Keep Loki datasource in proxy mode (`access: proxy`) and point it to Loki-VL-proxy:
-
-```yaml
-datasources:
-  - name: Loki (VL Proxy)
-    type: loki
-    access: proxy
-    url: http://loki-vl-proxy:3100
-```
-
-4. If Grafana sits behind an auth/reverse proxy, preserve user/proxy-chain headers end to end (`X-Forwarded-User`, `X-Grafana-User`, `X-Forwarded-*`, `Forwarded`).
-
-Expected request-log behavior with this setup:
-
-- `enduser.id` reflects the trusted Grafana/auth user.
-- `enduser.source` indicates user-header source (for example `grafana_user` or `forwarded_user`).
-- `auth.principal` reflects datasource auth identity when present (for example basic-auth datasource user).
+Trusted user headers, `send_user_header`, what the request log records and what is forwarded to VictoriaLogs: see [Grafana user identity](tenancy-and-auth.md#5-grafana-user-identity).
 
 Alerting datasource integration is still partial: the proxy supports legacy Loki YAML rules reads and Prometheus-style JSON rules/alerts reads against a configured backend, but it does not yet implement the full Loki ruler write API surface.
