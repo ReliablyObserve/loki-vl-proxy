@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parser checks the text the proxy compares; the requests sent to
   VictoriaLogs do not change.
 
+## [2.131.0] - 2026-11-11
+
 ### Security
 
 - **Go 1.27.4.** Go 1.27.4 fixes GO-2026-6859 (net/http: an HTTP/1 server
