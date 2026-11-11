@@ -130,8 +130,8 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 			// accepts the first and answers the second with Loki's error when it reads the markers, as the
 			// translator does: not part of what is compared here. A label list that ends in a comma (`without
 			// (pod,)`) Loki rejects too, and the proxy's parser accepts it (semantics/label-list-trailing-comma).
-			if !strings.Contains(lf.Error, "unexpected .") && !strings.Contains(lf.Error, "invalid regex in label_replace") &&
-				!strings.Contains(lf.Error, "unexpected ), expecting IDENTIFIER") {
+			trailingComma := strings.Contains(lf.Error, "unexpected ), expecting IDENTIFIER") && strings.Contains(strings.ReplaceAll(r.q, " ", ""), ",)")
+			if !strings.Contains(lf.Error, "unexpected .") && !strings.Contains(lf.Error, "invalid regex in label_replace") && !trailingComma {
 				t.Errorf("%s: lowered, Loki rejects it: %s", r.q, lf.Error)
 			}
 			rejected++

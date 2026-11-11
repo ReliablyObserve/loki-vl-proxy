@@ -253,6 +253,29 @@ func TestLoweringShadow_ResultsByConstruct(t *testing.T) {
 	}
 }
 
+// A binary operation with an operand that has a without clause is lowered with the fold on the operand and held to
+// the proxy's binary route in the corpus shadow (BinaryOperandsPhysical); the translator's text for the whole query is
+// no reference for it, so the live shadow counts it as not lowered, never as a mismatch. A nested aggregation whose
+// without clause the lowering resolves without a fold is one of them too.
+// conformance: architecture-syntax-package-layering
+func TestLoweringShadow_BinaryWithWithoutOperandIsNotCompared(t *testing.T) {
+	p := newShadowProxy(t, 1, "http://unused")
+	queries := []string{
+		`sum without (pod) (rate({app="a"}[5m])) / 2`,
+		`max(rate({app="a"}[5m])) without (pod) > on(app) sum by (app) (rate({app="b"}[5m]))`,
+		`sum without (pod) (sum by (app, pod) (rate({app="a"}[5m]))) - 1`,
+	}
+	for _, q := range queries {
+		if _, err := translateAndSettle(t, p, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	got := shadowCounts(t, p)
+	if shadowTotal(got, "mismatch") != 0 || got["not_lowered BinOp"] != len(queries) {
+		t.Fatalf("each binary operation with a without operand is not compared: %v", got)
+	}
+}
+
 // A query both reject agrees (match); one only the translator rejects is old_error, one only the lowering rejects
 // is new_error.
 // conformance: architecture-syntax-package-layering
