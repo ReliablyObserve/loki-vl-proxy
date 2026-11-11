@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   return within a bound of time and memory by a fuzz target. **Breaking:** a few queries Loki rejects (for example a
   stage name followed by `²`) were accepted and now answer Loki's 400; answers cached for them are not served.
 
+## [2.140.0] - 2026-11-11
+
 ### Fixed
 
 - A log query that filters on a label called `not`, `in`, `options`, `contains_all`,
