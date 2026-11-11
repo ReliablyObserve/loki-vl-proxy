@@ -91,33 +91,39 @@ func TestPlanLowersStddevToSeriesAgg(t *testing.T) {
 func TestPlanDelegatesStddevShapes(t *testing.T) {
 	rate := `rate({app="a"}[5m])`
 	for q, construct := range map[string]string{
-		`stddev by (app) (rate({app="a"} | json [5m]))`:                            "VectorAgg stddev parsed label",
-		`stdvar by (a) (sum by (a) (count_over_time({app="a"} | logfmt [5m])))`:    "VectorAgg stddev parsed label",
-		`stddev(` + rate + `) by (app) `:                                           "",
-		`stddev without (app) (rate({app="a"} | json [5m]))`:                       "",
-		`stddev(rate({app="a"} | json [5m]))`:                                      "",
-		`stddev by (app) (rate({app="a"} |= "| json" [5m]))`:                       "VectorAgg stddev parsed label",
-		`stddev(` + rate + ` > 1)`:                                                 "SeriesAgg operand BinOp",
-		`stddev(vector(1))`:                                                        "SeriesAgg operand VectorLit",
-		`stddev(sum by (app) (rate({app="a"} | detected_level="e" [5m])))`:         "VectorAgg LogSelect label filter detected_level",
-		`stdvar(sum without () (` + rate + `))`:                                    "VectorAgg without empty",
-		`stddev(sum( rate({app="a"}[5m])))`:                                        "VectorAgg operand spelling",
-		`stddev (rate ({app="a"}[5m]))`:                                            "SeriesAgg spelling",
-		`stddev((` + rate + `))`:                                                   "SeriesAgg spelling",
-		`topk(2, (stddev by (app) (` + rate + `)))`:                                "SeriesAgg spelling",
-		`stddev((stdvar(` + rate + `)))`:                                           "SeriesAgg spelling",
-		`topk(2, (sum(topk(3, ` + rate + `))))`:                                    "",
-		`stddev(` + rate + `) / 2`:                                                 "BinOp operand VectorAgg",
-		`sum(stddev(` + rate + `) / 2)`:                                            "VectorAgg operand",
-		`topk(3, label_replace(stddev(` + rate + `), "a", "b", "c", "d"))`:         "LabelReplace operand VectorAgg",
-		`stddev(label_replace(topk(2, ` + rate + `), "a", "b", "c", "d"))`:         "LabelReplace operand Rank",
-		`stddev(label_replace(stdvar(` + rate + `), "a", "b", "c", "d"))`:          "LabelReplace operand VectorAgg",
-		`sort by (app) (stddev(` + rate + `))`:                                     "Rank grouping",
-		`stddev(sort_desc by (app) (` + rate + `))`:                                "Rank grouping",
-		`stddev(sum_over_time({app="a"} | json |unwrap x [5m]))`:                   "RangeAgg unwrap spelling",
-		`stddev(sum_over_time({app="a"} | unwrap x | unwrap y [5m]))`:              "SeriesAgg operand RangeAgg",
-		`stddev(absent_over_time({app="a"}[5m]))`:                                  "",
-		`stddev by (app) (sum(count_over_time({app="a"} | json | unwrap x [5m])))`: "VectorAgg stddev parsed label",
+		`stddev by (app) (rate({app="a"} | json [5m]))`:                                      "",
+		`stdvar by (a) (sum by (a) (count_over_time({app="a"} | logfmt [5m])))`:              "",
+		`stddev by (route) (topk(2, count_over_time({app="a"} | json [5m])))`:                "VectorAgg stddev parsed label",
+		`stddev by (route) (last_over_time({app="a"} | json | unwrap x [5m]))`:               "VectorAgg stddev parsed label operand",
+		`stddev by (route) (label_replace(rate({app="a"} | json [5m]), "a", "b", "c", "d"))`: "VectorAgg stddev parsed label operand",
+		`stddev by (route) (min without (pod) (rate({app="a"} | json [5m])))`:                "VectorAgg stddev parsed label cut",
+		`stddev by (_Time) (rate({app="a"} | json [5m]))`:                                    "VectorAgg stddev parsed label reserved name",
+		`stdvar by (route, _STREAM_ID) (rate({app="a"} | json [5m]))`:                        "VectorAgg stddev parsed label reserved name",
+		`stddev(` + rate + `) by (app) `:                                                     "",
+		`stddev without (app) (rate({app="a"} | json [5m]))`:                                 "",
+		`stddev(rate({app="a"} | json [5m]))`:                                                "",
+		`stddev by (app) (rate({app="a"} |= "| json" [5m]))`:                                 "VectorAgg stddev parsed label",
+		`stddev(` + rate + ` > 1)`:                                                           "SeriesAgg operand BinOp",
+		`stddev(vector(1))`:                                                                  "SeriesAgg operand VectorLit",
+		`stddev(sum by (app) (rate({app="a"} | detected_level="e" [5m])))`:                   "VectorAgg LogSelect label filter detected_level",
+		`stdvar(sum without () (` + rate + `))`:                                              "VectorAgg without empty",
+		`stddev(sum( rate({app="a"}[5m])))`:                                                  "VectorAgg operand spelling",
+		`stddev (rate ({app="a"}[5m]))`:                                                      "SeriesAgg spelling",
+		`stddev((` + rate + `))`:                                                             "SeriesAgg spelling",
+		`topk(2, (stddev by (app) (` + rate + `)))`:                                          "SeriesAgg spelling",
+		`stddev((stdvar(` + rate + `)))`:                                                     "SeriesAgg spelling",
+		`topk(2, (sum(topk(3, ` + rate + `))))`:                                              "",
+		`stddev(` + rate + `) / 2`:                                                           "BinOp operand VectorAgg",
+		`sum(stddev(` + rate + `) / 2)`:                                                      "VectorAgg operand",
+		`topk(3, label_replace(stddev(` + rate + `), "a", "b", "c", "d"))`:                   "LabelReplace operand VectorAgg",
+		`stddev(label_replace(topk(2, ` + rate + `), "a", "b", "c", "d"))`:                   "LabelReplace operand Rank",
+		`stddev(label_replace(stdvar(` + rate + `), "a", "b", "c", "d"))`:                    "LabelReplace operand VectorAgg",
+		`sort by (app) (stddev(` + rate + `))`:                                               "Rank grouping",
+		`stddev(sort_desc by (app) (` + rate + `))`:                                          "Rank grouping",
+		`stddev(sum_over_time({app="a"} | json |unwrap x [5m]))`:                             "RangeAgg unwrap spelling",
+		`stddev(sum_over_time({app="a"} | unwrap x | unwrap y [5m]))`:                        "SeriesAgg operand RangeAgg",
+		`stddev(absent_over_time({app="a"}[5m]))`:                                            "",
+		`stddev by (app) (sum(count_over_time({app="a"} | json | unwrap x [5m])))`:           "VectorAgg nested unwrap",
 	} {
 		p := rangeAggPlan(q)
 		if p == nil {
@@ -135,10 +141,44 @@ func TestPlanDelegatesStddevShapes(t *testing.T) {
 			t.Errorf("%s: the construct name %q is longer than the shadow's label allows", q, construct)
 		}
 	}
-	// Plan alone reads the plan's parsers: a clause by labels over an operand with a parser is delegated without the
-	// text too.
+	// Plan alone reads the plan's parsers: a clause by labels over an operand with a parser is the route's rewrite
+	// without the text too.
 	q := `stdvar by (route) (sum by (route) (count_over_time({app="a"} | logfmt [5m])))`
-	if _, err := Plan(rangeAggPlan(q), Profile{}); !errors.Is(err, ErrNotLowered) {
-		t.Errorf("%s: got %v, want not lowered", q, err)
+	alone, err := Plan(rangeAggPlan(q), Profile{})
+	withText, err2 := PlanQuery(q, rangeAggPlan(q), Profile{})
+	if err != nil || err2 != nil || !reflect.DeepEqual(alone, withText) {
+		t.Errorf("%s: Plan %#v (%v), PlanQuery %#v (%v)", q, alone, err, withText, err2)
+	}
+}
+
+// A stddev or stdvar by labels over a query with a parser lowers to the proxy's rewrite of its operand: the
+// series-level max by form cut after its first stats pipes, the alias of an unread value removed, a rate summed per
+// grouping (postAggOperandText; internal/querycorpus holds it to the route on the corpus and the grid).
+//
+// conformance: architecture-syntax-package-layering
+func TestPlanRebuildsParsedLabelOperand(t *testing.T) {
+	route := &physical.Grouping{Labels: []string{"route"}}
+	for q, want := range map[string]string{
+		`stddev by (route) (count_over_time({app="a"} | logfmt [5m]))`:                     `app:="a" | unpack_logfmt | stats by (route, _stream) count()`,
+		`stddev(count_over_time({app="a"} | logfmt [5m])) by (route)`:                      `app:="a" | unpack_logfmt | stats by (route, _stream) count()`,
+		`stdvar by (route) (rate({app="a"} | logfmt [5m]))`:                                `app:="a" | unpack_logfmt | stats by (route, _stream) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (route, _stream) sum(__lvp_rate)`,
+		`stddev by (route) (bytes_rate({app="a"} | json [5m]))`:                            `app:="a" | unpack_json | stats by (route, _stream) sum_len(_msg) as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (route, _stream) sum(__lvp_rate)`,
+		`stddev by (route) (count_over_time({app="a"} | regexp "(?P<route>\\w+)" [5m]))`:   `app:="a" | extract_regexp "(?P<route>\\w+)" | stats by (route, _stream) count()`,
+		`stddev by (route) (count_over_time({app="a"} | pattern "<route> <_>" [5m]))`:      `app:="a" | extract "<route> <_>" | stats by (route, _stream) count()`,
+		`stddev by (route) (sum by (route, pod) (count_over_time({app="a"} | json [5m])))`: `app:="a" | unpack_json | stats by (route, pod) count()`,
+	} {
+		got, err := PlanQuery(q, rangeAggPlan(q), Profile{})
+		if err != nil {
+			t.Errorf("%s: %v", q, err)
+			continue
+		}
+		agg, ok := got.(physical.SeriesAgg)
+		if !ok || !reflect.DeepEqual(agg.By, route) {
+			t.Errorf("%s: got %#v, want a SeriesAgg by route", q, got)
+			continue
+		}
+		if text := physical.Encode(agg.In); text != want {
+			t.Errorf("%s:\n got %s\nwant %s", q, text, want)
+		}
 	}
 }

@@ -172,6 +172,66 @@ func seriesAggGrid() []string {
 			add(fmt.Sprintf(`%s%s%s)))`, head, head, in))
 		}
 	}
+	for _, q := range parsedLabelFoldGrid() {
+		add(q)
+	}
+	return out
+}
+
+// parsedLabelFoldGrid is the part of the grid where the route rewrites the operand of a stddev or stdvar by labels
+// of a query with a parser (the series-level max by form, cut): every range function over json, logfmt, regexp,
+// pattern and unpack (with flags, extraction lists, label filters, drops, keeps and formats after them), nests of
+// sum, avg, min, max and count over them, groupings by parsed, stream, derived and dotted labels and by names that
+// differ from _time, _stream or _stream_id only by case, both clause positions; and the shapes the plan leaves to
+// the translator (an unwrapped value, a label_replace, a ranking, a quoted parser, a fold under another level).
+func parsedLabelFoldGrid() []string {
+	var out []string
+	sel := `{app="a"}`
+	parsers := []string{
+		`| json`, `| logfmt`, `| regexp "(?P<route>[a-z]+) (?P<code>\\d+)"`, `| pattern "<route> <code> <_>"`, `| unpack`,
+		`| json route="r.path", code`, `| logfmt --strict`, `| logfmt route, code`, `| json | status >= 500`,
+		`| logfmt | level="error"`, `| json | drop pod`, `| logfmt | keep route, code`, `| json | line_format "{{.route}}"`,
+		`| logfmt | route=~"/a.*"`, `| json | label_format r="{{.route}}"`, `| logfmt | json`, `|= "x" | logfmt`, `| decolorize | logfmt`,
+	}
+	funcs := []string{`count_over_time(%s [5m])`, `rate(%s [1m])`, `bytes_over_time(%s [30s])`, `bytes_rate(%s [5m] offset 1h)`, `absent_over_time(%s [5m])`}
+	clauses := []string{`by (route)`, `by (app, route)`, `by (route, code)`, `by (level)`, `by (detected_level)`, `by (service_name)`, `by (k8s.pod.name)`,
+		`by (route, route)`, `by (_Time)`, `by (_STREAM)`, `by (_stream_ID)`, `by (pod)`}
+	for _, op := range []string{"stddev", "stdvar"} {
+		for _, pr := range parsers {
+			for _, f := range funcs {
+				in := fmt.Sprintf(f, sel+" "+pr)
+				for _, c := range clauses[:4] {
+					out = append(out, fmt.Sprintf(`%s %s (%s)`, op, c, in), fmt.Sprintf(`%s(%s) %s`, op, in, c))
+				}
+			}
+		}
+		for _, pr := range parsers[:5] {
+			for _, c := range clauses {
+				for _, f := range funcs[:2] {
+					out = append(out, fmt.Sprintf(`%s %s (%s)`, op, c, fmt.Sprintf(f, sel+" "+pr)))
+				}
+				for _, v := range []string{`sum by (route, pod) (%s)`, `sum(%s)`, `sum by () (%s)`, `avg by (route) (%s)`, `max by (app, route) (%s)`, `count by (route) (%s)`,
+					`min without (pod) (%s)`, `sum by (route) (sum by (route, pod) (%s))`, `sum(sum by (route) (%s))`} {
+					for _, f := range []string{funcs[0], funcs[1], funcs[3]} {
+						out = append(out, fmt.Sprintf(`%s %s (%s)`, op, c, fmt.Sprintf(v, fmt.Sprintf(f, sel+" "+pr))))
+					}
+				}
+			}
+		}
+		// Left to the translator: an unwrapped value, a label_replace, a ranking, a binary operation, a quoted parser, a
+		// fold under another level, and a without clause (which the route does not rewrite).
+		for _, in := range []string{
+			`last_over_time({app="p"} | logfmt | unwrap amount [5m])`, `sum_over_time(` + sel + ` | json | unwrap n [5m])`,
+			`label_replace(count_over_time(` + sel + ` | json [5m]), "d", "$1", "route", "(.*)")`, `topk(2, count_over_time(` + sel + ` | json [5m]))`,
+			`count_over_time(` + sel + ` | json [5m]) / 2`, `count_over_time(` + sel + ` |= "| json" [5m])`, `rate(` + sel + ` != "| logfmt" [5m])`,
+			`count_over_time(` + sel + ` |= "| json" | logfmt [5m])`, `sum by (route) (rate(` + sel + ` | logfmt | unwrap n [5m]))`,
+		} {
+			out = append(out, fmt.Sprintf(`%s by (route) (%s)`, op, in), fmt.Sprintf(`%s without (pod) (%s)`, op, in))
+		}
+		for _, layer := range []string{`sum(%s)`, `topk(2, %s)`, `%s / 2`, `label_replace(%s, "d", "$1", "route", "(.*)")`, `stddev(%s)`} {
+			out = append(out, fmt.Sprintf(layer, op+` by (route) (count_over_time(`+sel+` | json [5m]))`))
+		}
+	}
 	return out
 }
 

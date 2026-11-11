@@ -22,7 +22,16 @@ var rankStreamLabels = translator.WithStreamLabels(nil, []string{"app", "namespa
 // decision on the routed query text, and the translation of the operand it slices (the canonical form of its ranges,
 // as translateQueryWithContext reads it, then the translator alone: the proxy's translation cache and singleflight
 // come on top, so this is the least the route costs).
+//
+// A stddev or stdvar by labels of an operand with a parser is translated as the route does it (the max by form, then
+// the cut: proxy.PostAggregationOperand), every other root as the operand alone.
 func rankRouteAllocs(rq string, label func(string) string) float64 {
+	translate := func(q string) (string, error) {
+		return translator.TranslateLogQLWithLabels(logql.CanonicalizeLogRanges(q), label)
+	}
+	if _, rewritten, _, _ := proxy.PostAggregationOperand(rq, translate); rewritten {
+		return testing.AllocsPerRun(5, func() { _, _, _, _ = proxy.PostAggregationOperand(rq, translate) })
+	}
 	return testing.AllocsPerRun(5, func() {
 		if inner, routed := proxy.PostAggregationRoute(rq); routed {
 			_, _ = translator.TranslateLogQLWithLabels(logql.CanonicalizeLogRanges(inner), label)
@@ -62,7 +71,7 @@ func TestRankLoweringAllocatesNoMoreThanTheProxyRoute(t *testing.T) {
 			qs = append(qs, q)
 		}
 	}
-	checked, viaRoute, worst := 0, 0, map[string]float64{}
+	checked, viaRoute, rewritten, worst := 0, 0, 0, map[string]float64{}
 	untaken, untakenAbove, untakenWorst, untakenQuery := 0, 0, 0.0, ""
 	for _, label := range []func(string) string{nil, rankStreamLabels} {
 		for _, q := range qs {
@@ -100,6 +109,9 @@ func TestRankLoweringAllocatesNoMoreThanTheProxyRoute(t *testing.T) {
 			}
 			route := rankRouteAllocs(rq, label)
 			checked++
+			if _, rw, _, _ := proxy.PostAggregationOperand(rq, func(string) (string, error) { return "", nil }); rw {
+				rewritten++
+			}
 			if !routed {
 				viaRoute++
 			}
@@ -111,9 +123,10 @@ func TestRankLoweringAllocatesNoMoreThanTheProxyRoute(t *testing.T) {
 			}
 		}
 	}
-	if checked < 4000 || viaRoute == 0 || untaken == 0 {
-		t.Fatalf("only %d lowered shapes checked against the route (%d of them nested), %d against the translator", checked, viaRoute, untaken)
+	if checked < 4000 || viaRoute == 0 || untaken == 0 || rewritten < 1000 {
+		t.Fatalf("only %d lowered shapes checked against the route (%d of them nested, %d parsed-label rewrites), %d against the translator", checked, viaRoute, rewritten, untaken)
 	}
+	t.Logf("%d parsed-label stddev and stdvar shapes held to the route's rewrite", rewritten)
 	var keys []string
 	for k := range worst {
 		keys = append(keys, k)

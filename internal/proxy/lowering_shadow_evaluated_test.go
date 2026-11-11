@@ -122,8 +122,16 @@ var evaluatedShadowQueries = []struct{ query, want string }{
 	{`sum(topk(2, count_over_time({app=~".+"}[1m])))`, "native_proxy_evaluated VectorAgg"},
 	// The route ranks the operand's text, which drops the stddev: the plan holds it.
 	{`topk(2, stddev by (app) (count_over_time({app=~".+"}[1m])))`, "known_divergence Rank"},
-	// Grouped by a label the parser extracts: the route rewrites the operand, the lowering leaves it to the translator.
-	{`stddev by (route) (count_over_time({app=~".+"} | logfmt [1m]))`, "not_lowered VectorAgg stddev parsed label"},
+	// Grouped by a label the parser extracts: the route rewrites the operand as the series-level max by form, cut, and
+	// the lowering makes the same rewrite on its typed pipes.
+	{`stddev by (route) (count_over_time({app=~".+"} | logfmt [1m]))`, "native_proxy_evaluated VectorAgg stddev"},
+	{`stdvar by (route) (rate({app=~".+"} | logfmt [1m]))`, "native_proxy_evaluated VectorAgg stdvar"},
+	{`stddev by (app, route) (bytes_over_time({app=~".+"} | json [1m]))`, "native_proxy_evaluated VectorAgg stddev"},
+	{`stddev by (route) (count_over_time({app=~".+"} | regexp "route=(?P<route>\\S+)" [1m]))`, "native_proxy_evaluated VectorAgg stddev"},
+	{`stdvar(count_over_time({app=~".+"} | pattern "<_> route=<route> <_>" [1m])) by (route)`, "native_proxy_evaluated VectorAgg stdvar"},
+	{`stddev by (route) (sum by (route, pod) (rate({app=~".+"} | logfmt [1m])))`, "native_proxy_evaluated VectorAgg stddev"},
+	// An unwrapped value under the rewrite stays with the translator.
+	{`stddev by (route) (last_over_time({app=~".+"} | logfmt | unwrap n [1m]))`, "not_lowered VectorAgg stddev parsed label operand"},
 }
 
 // Both post-aggregation handlers hand the whole query to the live shadow, which holds the lowering to the route.
