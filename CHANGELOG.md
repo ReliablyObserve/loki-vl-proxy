@@ -7,12 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.152.1] - 2026-11-11
+
 ### Fixed
 
 - **A stage that starts with a name keeps the text it was written with when the query is printed.** The query text of
   such a stage (`| A 0!0`) lost the space after the name (`A0!0`) and had every undecodable byte replaced by U+FFFD
   when the proxy printed the query, so the rewrite of a metric over `| keep` (`sum by (...) (rate(...))`) could
   produce a query that no longer parses. The text is the one the client sent.
+
+## [2.152.0] - 2026-11-11
+
+### Fixed
 
 - **A query with a character Loki's lexer reads as a name answers Loki's error text.** The parser's messages for a
   digit of another script, a superscript or another character outside ASCII in a selector, a name list, a `[range]`,
