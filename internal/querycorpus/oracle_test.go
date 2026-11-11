@@ -17,6 +17,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -231,7 +232,7 @@ const formatGridOracleStride = 5
 
 // typedSelectorPair is, for a client LogQL log query or range aggregation over one that the plan lowers natively
 // (a stream selector with its line filters, label filters, json and logfmt parsers, drop and keep), the query the
-// plan lowers to (lower.Plan) and the one the string translator writes for it, both for
+// plan lowers to (lower.PlanQuery) and the one the string translator writes for it, both for
 // version v: VictoriaLogs' parser must read the two the same. A selector whose regexp does not compile, and a query
 // the LogQL validation rejects (a pattern line filter Loki refuses), are left out: every route answers Loki's
 // rejection of them before it translates anything.
@@ -242,16 +243,33 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 	return typedQueryPair(r.Query, v)
 }
 
-// typedQueryPair is typedSelectorPair for the LogQL query q.
+// rateCounterMarker is the stats function the proxy answers itself for rate_counter.
+const rateCounterMarker = "__rate_counter__("
+
+// typedQueryPair is typedSelectorPair for the LogQL query q. The pair is what VictoriaLogs would receive from the
+// proxy for the query: for a log query or a range aggregation, the plan's text and the translator's text for the
+// whole query; for a ranking the proxy evaluates itself (topk, bottomk, sort, sort_desc), the plan's operand
+// request and the operand request the proxy sends (proxy.PostAggregationPhysical), because the proxy never
+// translates the whole query on that route.
 func typedQueryPair(q, v string) (typed, built string, ok bool) {
+	// The handlers clamp a quantile_over_time phi above 1 before they translate (VictoriaLogs rejects it).
+	q = proxy.RewriteQuantilePhiGT1(q)
 	// The translator is the wrong one for these (known_divergence_test.go): nothing to hold the plan to.
 	if translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q) {
 		return "", "", false
 	}
 	lq, err := logql.ParseLogQuery(q)
 	if err != nil {
-		// A range aggregation over a log query: the selector of its log query.
-		agg, ok := mustParse(q).(*logql.RangeAggregation)
+		// A range aggregation over a log query, or a ranking over one: the selector of its log query.
+		expr := mustParse(q)
+		for {
+			va, isVector := expr.(*logql.VectorAggregation)
+			if !isVector || !isRankOp(va.Op) {
+				break
+			}
+			expr = va.Inner
+		}
+		agg, ok := expr.(*logql.RangeAggregation)
 		if !ok {
 			return "", "", false
 		}
@@ -280,13 +298,34 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	}
 	queryplan.Resolve(plan)
 	caps := logsql.CapabilitiesFor(strings.TrimPrefix(v, "v"))
-	op, err := lower.Plan(plan, lower.Profile{Caps: caps, Label: identity})
+	// A spelling the translator reads as a phrase (ScreenText) is left to it: nothing to hold the plan to.
+	op, err := lower.PlanQuery(q, plan, lower.Profile{Caps: caps, Label: identity})
 	if err != nil {
 		return "", "", false
 	}
-	vq, isQuery := op.(physical.VLQuery)
+	levels, operand := physical.SplitEval(op)
+	vq, isQuery := operand.(physical.VLQuery)
 	if !isQuery {
 		return "", "", false
+	}
+	// rate_counter's stats function is a marker the proxy answers itself: the text is never a VictoriaLogs query.
+	if strings.Contains(vq.Text, rateCounterMarker) {
+		return "", "", false
+	}
+	if len(levels) > 0 {
+		// The proxy's reference for a ranking is the operand request it sends (the whole query is never translated).
+		translate := func(s string) (string, error) {
+			out, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(s), identity, nil, caps)
+			if err == nil && strings.HasPrefix(strings.TrimSpace(out), "|") {
+				out = "* " + strings.TrimSpace(out)
+			}
+			return out, err
+		}
+		_, ref, routed, err := proxy.PostAggregationPhysical(routedQuery(q), translate)
+		if err != nil || !routed {
+			return "", "", false
+		}
+		return vq.Text, ref, true
 	}
 	// The string translator gets the text the handlers translate: the request rewrite removes comments and
 	// canonicalizes the ranges first.
@@ -295,6 +334,15 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		return "", "", false
 	}
 	return vq.Text, built, true
+}
+
+// isRankOp reports whether op is a ranking the proxy evaluates itself.
+func isRankOp(op logql.VectorOp) bool {
+	switch op {
+	case logql.VectorTopK, logql.VectorBottomK, logql.VectorSort, logql.VectorSortDesc:
+		return true
+	}
+	return false
 }
 
 // mustParse is the parsed expression of q, nil when it does not parse.

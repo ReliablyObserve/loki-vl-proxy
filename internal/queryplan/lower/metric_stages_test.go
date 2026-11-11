@@ -70,16 +70,6 @@ func TestPlanLowersMetricStages(t *testing.T) {
 func TestPlanDelegatesMetricStages(t *testing.T) {
 	for q, construct := range map[string]string{
 		// a trailing keep decides the series; one followed by a parser, label_format, drop or unwrap does not
-		`rate({app="a"} | keep a [5m])`:                                                      "RangeAgg keep identity",
-		`bytes_rate({app="a"} | json | keep a, b | a="x" [5m])`:                              "RangeAgg keep identity",
-		`rate({app="a"} | keep a | line_format "x" | decolorize [5m])`:                       "RangeAgg keep identity",
-		`rate({app="a"} | keep a="x" [5m])`:                                                  "RangeAgg keep identity",
-		`rate({app="a"} | json | unwrap n | keep a [5m])`:                                    "RangeAgg keep identity",
-		`sum(rate({app="a"} | keep a [5m]))`:                                                 "VectorAgg keep identity",
-		`min by (a) (count_over_time({app="a"} | keep a [5m]))`:                              "VectorAgg keep identity",
-		`avg(absent_over_time({app="a"} | json | keep a [5m]))`:                              "VectorAgg keep identity",
-		`count(rate({app="a"} | json | unwrap n | keep a [5m]))`:                             "VectorAgg keep identity",
-		`max without (b) (bytes_over_time({app="a"} | keep a | a="1" [5m]))`:                 "VectorAgg keep identity",
 		`count_over_time({app="a"} | line_format "{{upper .a}}" | keep a [5m])`:              "RangeAgg LogSelect line format function",
 		`sum(count_over_time({app="a"} | label_format a="x <y>" [5m]))`:                      "VectorAgg LogSelect label format angle bracket",
 		`rate({app="a"} | drop a="x", b | keep k="v" | drop c="| json" [5m])`:                "RangeAgg quoted clause",
@@ -93,7 +83,7 @@ func TestPlanDelegatesMetricStages(t *testing.T) {
 		`sum without (a) (count_over_time({app="a"} | drop a="  " [5m]))`:                    "VectorAgg quoted clause",
 		`sum(rate({app="a"} | regexp "(?P<a>x)" |= "| unpack_json" [5m]))`:                   "VectorAgg quoted clause",
 		`count_over_time({app="a"} | pattern "<a>" | label_format b="| unpack_logfmt" [5m])`: "RangeAgg quoted clause",
-		`sum without (a) (count_over_time({app="a"} | regexp "(?P<a>x)" [5m]))`:              "VectorAgg parser without",
+		`sum without (a) (count_over_time({app="a"} | regexp "(?P<a>x)" [5m]))`:              "",
 		`sum(count_over_time({app="a"} | json | drop a | regexp "(?P<b>x)" [5m]))`:           "",
 	} {
 		p := rangeAggPlan(q)
@@ -201,29 +191,39 @@ func selectOf(t *testing.T, q string) *queryplan.LogSelect {
 }
 
 // The string translator takes a keep to decide the series when no parser, label_format, drop or unwrap follows the
-// last one (trailingKeepGrouping).
-func TestTrailingKeep(t *testing.T) {
-	for q, want := range map[string]bool{
-		`{a="b"}`:                                         false,
-		`{a="b"} | keep x`:                                true,
-		`{a="b"} | keep x="y"`:                            true,
-		`{a="b"} | keep x | keep y`:                       true,
-		`{a="b"} | keep x |= "z" | y="1"`:                 true,
-		`{a="b"} | keep x | line_format "q" | decolorize`: true,
-		`{a="b"} | json | keep x`:                         true,
-		`{a="b"} | keep x | json`:                         false,
-		`{a="b"} | keep x | label_format y=x`:             false,
-		`{a="b"} | keep x | drop y`:                       false,
-		`{a="b"} | keep x | unwrap n`:                     false,
-		`{a="b"} | keep x | regexp "(?P<q>.)"`:            false,
-		`{a="b"} | keep x | pattern "<q>"`:                false,
-		`{a="b"} | keep x | json | keep y`:                true,
-		`{a="b"} | drop x | keep y`:                       true,
-		`{a="b"} | keep x | unwrap n | keep y`:            true,
-		`{a="b"} | line_format "x"`:                       false,
+// last one, and it has no matcher and only plain names (trailingKeepGrouping): the labels it leaves, less the error
+// labels. "-" says the keep decides nothing.
+func TestTrailingKeepLabels(t *testing.T) {
+	for q, want := range map[string]string{
+		`{a="b"}`:                                         "-",
+		`{a="b"} | keep x`:                                "x",
+		`{a="b"} | keep x="y"`:                            "-",
+		`{a="b"} | keep x, y="z"`:                         "-",
+		`{a="b"} | keep x="y" | json | keep z`:            "-",
+		`{a="b"} | keep x | keep y`:                       "y",
+		`{a="b"} | keep x |= "z" | y="1"`:                 "x",
+		`{a="b"} | keep x | line_format "q" | decolorize`: "x",
+		`{a="b"} | json | keep x, y`:                      "x,y",
+		`{a="b"} | keep x | json`:                         "-",
+		`{a="b"} | keep x | label_format y=x`:             "-",
+		`{a="b"} | keep x | drop y`:                       "-",
+		`{a="b"} | keep x | unwrap n`:                     "-",
+		`{a="b"} | keep x | regexp "(?P<q>.)"`:            "-",
+		`{a="b"} | keep x | pattern "<q>"`:                "-",
+		`{a="b"} | keep x | json | keep y`:                "y",
+		`{a="b"} | drop x | keep y`:                       "y",
+		`{a="b"} | keep x | unwrap n | keep y`:            "y",
+		`{a="b"} | keep __error__, x, __error_details__`:  "x",
+		`{a="b"} | keep __error__`:                        "",
+		`{a="b"} | line_format "x"`:                       "-",
 	} {
-		if got := trailingKeep(selectOf(t, q)); got != want {
-			t.Errorf("%s: got %v, want %v", q, got, want)
+		kept, ok := trailingKeepLabels(selectOf(t, q))
+		got := "-"
+		if ok {
+			got = strings.Join(kept, ",")
+		}
+		if got != want {
+			t.Errorf("%s: got %q, want %q", q, got, want)
 		}
 	}
 }

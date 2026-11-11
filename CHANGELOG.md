@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan lowers the metric queries whose labels come from a parser,
+  for every translation profile: a grouping or unwrapped label with an
+  underscore behind `json` or `logfmt` (the `http_method` a line may hold as
+  `http.method` or `http-method`, and the `<name>_extracted` rename of a label
+  that collides with a stream label), a `without` clause over a parser, and
+  a `rate`, or `count`, `min`, `max` and `avg`, behind a trailing `keep`. The
+  text is the string translator's, byte for byte. The requests sent to
+  VictoriaLogs do not change. A label filter or a drop after the parser under
+  such a label, a `without` fold or a `keep`, a collision rename that reuses
+  the scratch fields of a label filter, a `keep` that leaves no label and a
+  nest over an unwrapped label are still written by the string translator.
+- The query plan leaves a range function spelled with a blank, tab or newline
+  between its name and its parenthesis (`rate ({app="a"}[5m])`) to the string
+  translator, whether it stands alone, is an operand of a binary operation or
+  the first argument of a `label_replace` call. The translator reads that
+  spelling as a phrase search where Loki reads the range aggregation, and the
+  plan's text screen used to let it through to a lowering that differs from
+  the translator. Nothing is served from the plan for metric queries, so
+  requests and answers do not change; the open difference is recorded as
+  `semantics/translator-reads-blank-before-range-call-as-text`.
+
 ## [2.129.0] - 2026-11-10
 
 ### Changed
