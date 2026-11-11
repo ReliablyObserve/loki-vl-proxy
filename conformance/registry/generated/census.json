@@ -919,6 +919,7 @@
     "internal/logql/selector_value_test.go | semantics/selector-values-are-strings",
     "internal/logql/stage_parse_validate_loki_test.go | semantics/label-filter-regex-parse-error",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
+    "internal/logsql/ip_range_vl_test.go | architecture-syntax-package-layering",
     "internal/logsql/parser_read_test.go | architecture-syntax-package-layering",
     "internal/logsql/parser_typed_test.go | architecture-syntax-package-layering",
     "internal/logsql/pipe_math_as_test.go | architecture-syntax-package-layering",
@@ -2135,7 +2136,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 462,
+      "go": 463,
       "playwright": 1
     },
     "page_kinds": {

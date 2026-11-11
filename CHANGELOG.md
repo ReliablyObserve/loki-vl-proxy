@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The proxy's LogsQL parser reads the addresses of `ipv4_range` and
+  `ipv6_range` the way VictoriaLogs v1.49 and v1.53 do (1,890 recorded
+  verdicts, identical on both): `ipv6_range` takes IPv4-mapped and embedded
+  forms (`::ffff:255.255.255.255`, `64:ff9b::1.2.3.4`), zone ids and plain
+  IPv4, `ipv4_range` dotted decimal only. It used to reject
+  `::ffff:255.255.255.255`, which the lowering of `ip("0::/80")` writes and
+  VictoriaLogs accepts, so the query-plan shadow could not read the text. The
+  parser checks the text the proxy compares; the requests sent to
+  VictoriaLogs do not change.
+
 ## [2.131.0] - 2026-11-11
 
 ### Security

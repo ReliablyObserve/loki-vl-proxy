@@ -13,6 +13,7 @@
     "architecture-syntax-package-layering": [
       "internal/logql/input_size_test.go",
       "internal/logql/line_template_test.go",
+      "internal/logsql/ip_range_vl_test.go",
       "internal/logsql/parser_read_test.go",
       "internal/logsql/parser_typed_test.go",
       "internal/logsql/pipe_math_as_test.go",
@@ -1897,6 +1898,9 @@
     ],
     "internal/logql/vector_agg_log_expr_test.go": [
       "semantics/vector-aggregation-over-log-selector-status"
+    ],
+    "internal/logsql/ip_range_vl_test.go": [
+      "architecture-syntax-package-layering"
     ],
     "internal/logsql/parser_read_test.go": [
       "architecture-syntax-package-layering"
@@ -3974,7 +3978,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 463,
+  "tests_with_markers": 464,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
