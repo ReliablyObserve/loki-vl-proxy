@@ -264,8 +264,8 @@ class WhatKeepsTheFullRun(unittest.TestCase):
         self.assertEqual(select_jobs([CI_WORKFLOW], pair_of(base, head)), frozenset())
 
     def test_an_inline_comment_edit_is_an_edit(self):
-        base, head = edited_ci('go-version: "1.27.3"\n          cache: true\n\n      - name: Tuple contract gate',
-                               'go-version: "1.27.3"\n          cache: true  # note\n\n      - name: Tuple contract gate')
+        base, head = edited_ci('go-version: "1.27.4"\n          cache: true\n\n      - name: Tuple contract gate',
+                               'go-version: "1.27.4"\n          cache: true  # note\n\n      - name: Tuple contract gate')
         self.assertEqual(select_jobs([CI_WORKFLOW], pair_of(base, head)), ci("tuple-contract"))
 
     def test_a_ci_workflow_that_is_identical_selects_nothing(self):
