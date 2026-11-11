@@ -60,6 +60,22 @@ own case.
   proof in its existing separate harness and add a PR-specific capture when the
   behavior changes what Grafana or Drilldown shows.
 
+## Fail fast like Loki (hard rule)
+
+A query Loki rejects quickly (a parse error, a validation error, a limit) the proxy rejects just as early: at the first
+parse or validation step of the route, before the response cache lookup, the query plan, the translation, response key
+fences, fan-out or any request to VictoriaLogs. The status, `errorType` and error text are Loki's, recorded with the
+Loki oracle (`test/oracle/loki`, API only).
+
+- Parsers and validators terminate quickly with bounded memory on any input. A termination fuzz target (a time and an
+  allocation bound per input) runs in fuzz-smoke; every parser or validator change adds its seeds.
+- Route order is validate, then cache, then plan. When a route validates after its cache, fix the order instead of
+  adding another response key fence.
+- Record Loki's answers for the inputs a change touches (acceptance and error text), and test the rejection both at
+  the parser and through the HTTP route (no upstream call is made for a rejected query).
+- A pull request that touches parsing or validation says in its body that rejected inputs still fail before any other
+  work.
+
 ## Cache semantic layers
 
 Keep the proxy's Loki-facing cache and VictoriaLogs-facing backend cache
