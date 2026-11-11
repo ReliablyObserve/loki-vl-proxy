@@ -26,7 +26,8 @@ func oldCompatQueryFences(r *http.Request, query string) string {
 		keepMetadataProjectionResponseKeyVersion(query) +
 		ipLabelFilterResponseKeyVersion(query) +
 		repeatedLabelFilterResponseKeyVersion(query) +
-		keywordLabelResponseKeyVersion(query)
+		keywordLabelResponseKeyVersion(query) +
+		reservedFieldCaseResponseKeyVersion(query)
 }
 
 func oldCompatQueryRangeFences(r *http.Request, query string) string {
@@ -43,6 +44,7 @@ func oldInnerQueryRangeFences(r *http.Request, query string) string {
 	key.WriteString(ipLabelFilterResponseKeyVersion(query))
 	key.WriteString(repeatedLabelFilterResponseKeyVersion(query))
 	key.WriteString(keywordLabelResponseKeyVersion(query))
+	key.WriteString(reservedFieldCaseResponseKeyVersion(query))
 	return key.String()
 }
 
@@ -183,7 +185,8 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, shape.path+"?"+shape.params.Encode(), nil)
 			endpoint := strings.TrimSuffix(strings.TrimPrefix(shape.path, "/loki/api/v1/"), "_nostep")
 
-			oldCompatQuery, oldCompatRange, oldInner := oldCompatQueryFences(r, query), oldCompatQueryRangeFences(r, query), oldInnerQueryRangeFences(r, query)
+			// The rune fence (rune_response_fence.go) ends the compat chains and is empty for a valid query.
+			oldCompatQuery, oldCompatRange, oldInner := oldCompatQueryFences(r, query)+runeResponseKeyVersion(query), oldCompatQueryRangeFences(r, query)+runeResponseKeyVersion(query), oldInnerQueryRangeFences(r, query)
 			if got := responseKeyFences(r, query, responseKeyCompatQuery); got != oldCompatQuery {
 				t.Errorf("compat query fences differ for %q (%s): got %q want %q", query, shape.name, got, oldCompatQuery)
 			}
@@ -193,7 +196,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			if got := responseKeyFences(r, query, responseKeyInnerQueryRange); got != oldInner {
 				t.Errorf("inner query_range fences differ for %q (%s): got %q want %q", query, shape.name, got, oldInner)
 			}
-			if got, want := responseKeyFences(nil, query, responseKeyLogWindowShape), keepMetadataProjectionResponseKeyVersion(query)+keywordLabelResponseKeyVersion(query); got != want {
+			if got, want := responseKeyFences(nil, query, responseKeyLogWindowShape), keepMetadataProjectionResponseKeyVersion(query)+keywordLabelResponseKeyVersion(query)+reservedFieldCaseResponseKeyVersion(query); got != want {
 				t.Errorf("window shape fences differ for %q: got %q want %q", query, got, want)
 			}
 			for _, f := range []string{

@@ -22,6 +22,7 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 		return "", "", false, "", false
 	}
 	legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps)
+	legacy = guardedLegacy(p, legacy, terr)
 	op, lerr := PlanQuery(q, p, prof.lowerProfile())
 	var nl *NotLoweredError
 	if errors.As(lerr, &nl) {

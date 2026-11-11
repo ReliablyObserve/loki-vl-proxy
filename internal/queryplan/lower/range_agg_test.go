@@ -70,6 +70,7 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 		return "", "", false, false, false
 	}
 	legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps)
+	legacy = guardedLegacy(p, legacy, terr)
 	// A selector that keeps every row followed by pipes only is written without its `*`: the proxy puts it in
 	// front (translateQueryOpts), as the lowering does.
 	if strings.HasPrefix(legacy, "|") {
