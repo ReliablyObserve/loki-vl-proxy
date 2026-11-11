@@ -56,33 +56,6 @@ func metricKeepPipes(st *queryplan.Keep, label func(string) string, prof Profile
 	return ps, nil
 }
 
-// keepIdentityError answers the construct "<owner> keep identity" when the aggregation reads the series of the rows
-// (seriesLevel: a rate, or count, min, max and avg) and the translator takes a trailing keep to decide them
-// (trailingKeep), nil otherwise.
-func keepIdentityError(sel *queryplan.LogSelect, owner string, seriesLevel bool) error {
-	if seriesLevel && trailingKeep(sel) {
-		return &NotLoweredError{Construct: owner + " keep identity"}
-	}
-	return nil
-}
-
-// trailingKeep reports whether the string translator takes a keep stage of the log query to decide the labels of every
-// sample (trailingKeepGrouping): the last keep is followed by no parser, label_format, drop or unwrap. It then groups
-// a rate, and the one value per series of count, min, max and avg, by the labels the keep leaves, where the lowering
-// groups by the stream: such an aggregation is left to the translator.
-func trailingKeep(sel *queryplan.LogSelect) bool {
-	found := false
-	for _, st := range sel.Stages {
-		switch st.(type) {
-		case *queryplan.Keep:
-			found = true
-		case *queryplan.Parse, *queryplan.LabelFormat, *queryplan.Drop, *queryplan.Unwrap:
-			found = false
-		}
-	}
-	return found
-}
-
 // anyClientString reports whether any text the client wrote in the log query satisfies f: the values and names of
 // the selector, the line filters, the label filters (as written), the parsers' arguments and extraction lists, the
 // names and conditions of a drop and a keep, the templates of line_format and the assignments of label_format. The

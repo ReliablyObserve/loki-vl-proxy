@@ -54,6 +54,7 @@ func nestedVectorAgg(top *queryplan.VectorAgg, prof Profile) (physical.Op, error
 	if !ok {
 		return nil, &NotLoweredError{Construct: "VectorAgg operand"}
 	}
+	src := ra.In
 	if unwrapStage(ra.In) != nil {
 		if ra.Op != logql.RangeAbsentOverTime {
 			return nil, &NotLoweredError{Construct: "VectorAgg nested unwrap"}
@@ -66,7 +67,7 @@ func nestedVectorAgg(top *queryplan.VectorAgg, prof Profile) (physical.Op, error
 		ra = stripped
 	}
 	innermost := levels[len(levels)-1]
-	b, err := buildVectorAgg(innermost, ra, prof)
+	b, err := buildVectorAgg(innermost, ra, src, prof)
 	if err != nil {
 		return nil, err
 	}
