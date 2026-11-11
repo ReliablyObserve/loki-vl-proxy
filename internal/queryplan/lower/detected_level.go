@@ -254,6 +254,8 @@ type levelWriter struct {
 	// next is the index of the next level filter's plan in levels.
 	next    int
 	pending []*levelFilterNodes
+	// wrote says the pipes of a level filter were written.
+	wrote bool
 }
 
 // write takes stage st when it is a level filter (and reports it), and writes the pipes held so far before any
@@ -296,6 +298,7 @@ func (w *levelWriter) flush(q *queryParts) {
 	}
 	if pipes := joinLevelFilters(w.pending, w.levels.mode); len(pipes) > 0 {
 		q.pipe(pipes...)
+		w.wrote = true
 	}
 	w.pending = w.pending[:0]
 }
@@ -308,15 +311,4 @@ func levelPrefilter(plan *levelFilterNodes) logsql.FilterExpr {
 		return translate.MatchNoRows()
 	}
 	return plan.Prefilter
-}
-
-// holdsLevelStage reports a log query with a filter on detected_level the lowering writes: in a metric row's log
-// query each one writes the grouping chain (an empty value, which writes none, is left to the translator).
-func holdsLevelStage(sel *queryplan.LogSelect) bool {
-	for _, st := range sel.Stages {
-		if lf, ok := st.(*queryplan.LabelFilter); ok && isLevelLeaf(lf.Expr) {
-			return true
-		}
-	}
-	return false
 }

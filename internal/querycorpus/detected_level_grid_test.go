@@ -114,6 +114,7 @@ func detectedLevelGrid() []string {
 		`{app="a"} | detected_level="error" | app="b"`, `{app="a"} | app="b" | detected_level="error"`,
 		`{app="a"} | detected_level="error" | service_name="api"`, `{app="a"} | detected_level="error" |> "<_> x"`,
 		`{app="a"} | detected_level=~"error|warn" | json | status>=500`, `{app="a"} | detected_level="error" | line_format "{{.app}}"`,
+		`{app="a"} | detected_level!="err"`, `{app="a"} | detected_level="ERR"`, `{app="a"} | detected_level!="err" | detected_level!="info"`,
 	}
 	funcs := []string{`count_over_time(%s [5m])`, `rate(%s [5m])`, `bytes_over_time(%s [1m])`, `bytes_rate(%s [1m])`, `absent_over_time(%s [5m])`}
 	aggs := []string{

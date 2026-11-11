@@ -52,6 +52,9 @@ func TestDetectedLevelFilterLoweringIsTheTranslatorsText(t *testing.T) {
 		`sum by (service_name) (rate({app="a"} | detected_level="error" [5m]))`, `sum(count_over_time({app="a"} | detected_level=~"" [5m]))`,
 		`sum by (level, detected_level) (count_over_time({app="a"} | detected_level="info" | json | drop __error__ [1m]))`,
 		`sum by (detected_level) (rate({app="a"} | detected_level=~"" [5m]))`,
+		// a filter every row passes writes no chain: the grouping writes its own.
+		`sum by (detected_level) (rate({app="a"} | detected_level!="err" [5m]))`, `rate({app="a"} | detected_level!="ERR" [5m])`,
+		`count_over_time({app="a"} | detected_level="err" [5m])`,
 	}
 	delegated := map[string]string{
 		`{app="a"} | json | detected_level="error"`:                      levelAfterStageConstruct,

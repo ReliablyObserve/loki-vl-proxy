@@ -158,7 +158,7 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	if keepsSpelling(in, Profile{Label: prof.Label}) {
 		return metricLog{}, &NotLoweredError{Construct: owner + " " + escapedSpellingConstruct}
 	}
-	q, err := logSelectQuery(in, Profile{Label: prof.Label, metric: true})
+	q, levelChain, err := logSelectQuery(in, Profile{Label: prof.Label, metric: true})
 	if err != nil {
 		if nl, ok := err.(*NotLoweredError); ok {
 			return metricLog{}, &NotLoweredError{Construct: owner + " " + nl.Construct}
@@ -186,7 +186,7 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	if readsAsClause(pipesText) {
 		return metricLog{}, quoted
 	}
-	bare, unpacks, copies, levelChain := -1, 0, false, holdsLevelStage(in)
+	bare, unpacks, copies := -1, 0, false
 	var mask, bareMask uint8
 	for i, p := range q.Pipes {
 		switch u := p.(type) {
