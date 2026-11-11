@@ -167,6 +167,9 @@ type routeRecord struct {
 	// Steps are the set of the route's operations and rewrites, sorted; Cache the set of its cache reads.
 	Steps []string
 	Cache []string
+	// queryShape marks a prediction whose calls hold each request's route shape (routeCallShape), not its whole
+	// query: equal compares the recorded calls' shapes with them.
+	queryShape bool
 }
 
 // gated is what the route_parity digests hold: the status and the route's decisions. The VictoriaLogs calls and
@@ -174,7 +177,8 @@ type routeRecord struct {
 // detected_level derivation) the first answer cancels the other calls, so which of them reach VictoriaLogs, and
 // which cache reads run, varies run to run (measured 2026-11-08: 18-28 of 24,300 runs differ between two runs;
 // holding each answer or keeping only uncancelled calls moves the tie, not removes it). A prediction compares
-// all of it (equal): the first native route step compares each probe group as a group.
+// the status, the calls and the steps (equal); a metric prediction holds each call by its route shape
+// (routeCallShape), and the concurrent probe routes stay delegated.
 func (r routeRecord) gated() string {
 	return fmt.Sprintf("status %d\n steps %s", r.Status, strings.Join(r.Steps, ", "))
 }
@@ -184,7 +188,11 @@ func (r routeRecord) String() string {
 }
 
 func (r routeRecord) equal(o routeRecord) bool {
-	return r.Status == o.Status && strings.Join(r.Calls, "\n") == strings.Join(o.Calls, "\n") && strings.Join(r.Steps, "\n") == strings.Join(o.Steps, "\n")
+	calls := o.Calls
+	if r.queryShape && !o.queryShape {
+		calls = routeCallShapes(o.Calls)
+	}
+	return r.Status == o.Status && strings.Join(r.Calls, "\n") == strings.Join(calls, "\n") && strings.Join(r.Steps, "\n") == strings.Join(o.Steps, "\n")
 }
 
 // runRoute serves one request on a fresh proxy (every cache cold) and records it.
@@ -296,11 +304,16 @@ func firstRange(n queryplan.Node) time.Duration {
 // stand-in (got is the recorded run, for those).
 type routePrediction func(q string, p *queryplan.Plan, rp routeProfile, data bool, got routeRecord) (routeRecord, error)
 
-// errRouteRulePending is a lowered plan whose route the physical route rules do not predict yet (they land with
-// the range-aggregation routes): it is delegated, counted under "<construct> (route rule)".
+// errRouteRulePending is a lowered plan whose route the physical route rules do not predict yet: it is delegated,
+// counted under "<construct> (route rule)". Range and vector aggregations have a route rule (lower.Route,
+// metricRoute).
 var errRouteRulePending = errors.New("route parity: no route rule for the lowered plan yet")
 
-func nativeRoute(_ string, p *queryplan.Plan, _ routeProfile, _ bool, _ routeRecord) (routeRecord, error) {
+func nativeRoute(q string, p *queryplan.Plan, rp routeProfile, data bool, _ routeRecord) (routeRecord, error) {
+	switch p.Root.(type) {
+	case *queryplan.RangeAgg, *queryplan.VectorAgg:
+		return metricRoute(q, p, rp, data)
+	}
 	if _, err := lower.Plan(p, lower.Profile{}); err != nil {
 		return routeRecord{}, err
 	}
