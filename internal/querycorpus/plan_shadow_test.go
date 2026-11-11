@@ -106,6 +106,7 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			}
 			got, lerr := lowerFn(q, plan, prof)
 			legacy, ok := prof.translate(q)
+			legacy = lower.QuoteKeywordFieldText(legacy) // the translator writes a keyword field name bare, the plan quotes it
 			if !ok {
 				if lerr == nil {
 					// Counted in the slice's rows (not the section's) so the slice's sum still holds.
@@ -143,6 +144,11 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			if !ok && translatorReadsStageMarker(q) {
 				caseID, ok = "semantics/translator-reads-marker-bytes-in-quoted-value", true
 			}
+			if !ok && lower.ReadsReservedField(plan, prof.lowerProfile()) {
+				// A label called _time, _stream, _stream_id or _msg: the plan filters the stream tag, the
+				// translator a field VictoriaLogs rejects or reads as its own filter.
+				caseID, ok = "semantics/translator-writes-reserved-field-names", true
+			}
 			if ok {
 				// The translator is the wrong one here (knownTypedDivergencesPath, with its registry case):
 				// not a mismatch of the lowering, and not native until the plan serves it.
@@ -169,6 +175,12 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			want, err := translator.DecodePhysical(legacy)
 			if err != nil {
 				t.Fatalf("%s: DecodePhysical(%q): %v", prof.name, legacy, err)
+			}
+			if lower.UnwrapsReservedFieldOtherCase(plan) {
+				// The lowering writes the unwrap of _TIME and the like in the outbound guard's form: it is held to
+				// the translator's text guarded, which is what the proxy sends for it (semantics/reserved-field-name-case-outbound).
+				want = lower.GuardOutbound(want)
+				legacy = translator.EncodePhysical(want)
 			}
 			if !physical.Equal(want, got) {
 				fail(fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, translator.EncodePhysical(got), legacy))
@@ -316,7 +328,11 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		if !ok {
 			return nil, &lower.NotLoweredError{Construct: "rejected"}
 		}
-		return translator.DecodePhysical(s)
+		op, err := translator.DecodePhysical(s)
+		if err == nil && lower.UnwrapsReservedFieldOtherCase(p) {
+			op = lower.GuardOutbound(op) // the translator's text as the proxy sends it
+		}
+		return op, err
 	}
 	sec, problems := runShadow(t, echo, rows)
 	// A row the translator misreads (known-typed-divergences, the quoted-text and parenthesized-metric recognisers)

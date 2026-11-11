@@ -22,7 +22,13 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 		return "", "", false, "", false
 	}
 	legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps)
+	legacy = guardedLegacy(p, legacy, terr)
 	op, lerr := PlanQuery(q, p, prof.lowerProfile())
+	// A label called _time, _stream, _stream_id or _msg is the stream tag in the lowering and a field filter VictoriaLogs
+	// rejects or misreads in the translator (semantics/translator-writes-reserved-field-names): not compared.
+	if ReadsReservedField(p, prof.lowerProfile()) {
+		return "", "", false, "", false
+	}
 	var nl *NotLoweredError
 	if errors.As(lerr, &nl) {
 		return "", legacy, false, nl.Construct, terr == nil
@@ -117,7 +123,7 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 		`rate({app="a"} |~ "(?i)x" [5m]) / 2`:                              "BinOp quoted text",
 		`rate({app="a"} |= "a  b" [5m]) / 2`:                               "BinOp quoted text",
 		`rate({app="a"} |= "@@@" [5m]) / 2`:                                "BinOp quoted text",
-		`sum by ( bool ) (` + rate + `) / 2`:                               "BinOp spelling",
+		`sum by ( hos ) (` + rate + `)  / 2`:                               "BinOp spelling",
 		rate + `  / 2`:                                                     "BinOp spelling",
 		rate + ` / on(app,env) ` + rate:                                    "BinOp vector matching spelling",
 		rate + ` / on(app) group_left ` + rate:                             "BinOp vector matching spelling",

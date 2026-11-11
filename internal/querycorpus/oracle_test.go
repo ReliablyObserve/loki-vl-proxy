@@ -300,6 +300,11 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		return "", "", false
 	}
 	queryplan.Resolve(plan)
+	if lower.ReadsReservedField(plan, lower.Profile{Label: identity}) {
+		// The plan filters the stream tag of a label called _time, _stream, _stream_id or _msg, the translator a
+		// field VictoriaLogs rejects or reads as its own filter: they do not mean the same, by design.
+		return "", "", false
+	}
 	caps := logsql.CapabilitiesFor(strings.TrimPrefix(v, "v"))
 	// A spelling the translator reads as a phrase (ScreenText) is left to it: nothing to hold the plan to.
 	op, err := lower.PlanQuery(q, plan, lower.Profile{Caps: caps, Label: identity})
@@ -341,7 +346,9 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	if err != nil {
 		return "", "", false
 	}
-	return vq.Text, built, true
+	// The translator writes a label called not or in bare, which VictoriaLogs rejects; the plan quotes it, and the
+	// pair is the plan's text and the translator's made right.
+	return vq.Text, lower.QuoteKeywordFieldText(built), true
 }
 
 // isEvaluatedOp reports whether op is a ranking, stddev or stdvar, which the proxy evaluates itself.

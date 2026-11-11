@@ -1,0 +1,8 @@
+go test fuzz v1
+string("I\x8bp")
+string("\xb0")
+string("OOOOOO\x00OA0abaYbb\x00O\xff\xffbB")
+string("\xa9\xa9\n")
+byte('¾')
+byte('Ñ')
+byte('\x01')

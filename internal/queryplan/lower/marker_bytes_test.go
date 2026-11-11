@@ -18,7 +18,8 @@ import (
 // translatorReadsStageMarker reports a query whose label filter value the string translator reads as syntax: it
 // brackets the names a `<name>_extracted` filter reads with a \x02 byte in the text of that filter's stage and later
 // takes the first pair of \x02 bytes of every stage that holds none for such brackets, cutting the bytes between them
-// out of the stage. A label filter value that holds two \x02 bytes (`o="\x02\x00\x02"`, `o="a\x02b\x02c"`), or two
+// out of the stage. A label filter value that holds two \x02 bytes (`o="\x02\x00\x02"`, `o="a\x02b\x02c"`), a single one on a name with an underscore (the translator writes such a name in three
+// spellings, the value after each: `a_b="\x02\x00b"`), or two
 // values of one stage that hold one each, in a stage with no `_extracted` filter of its own, in a query with a json or
 // logfmt parser and an `_extracted` filter elsewhere, is cut that way: the translator writes the filter on the value without those bytes (`o:=""`), copies the
 // stream where the bytes were instead of where the `_extracted` filter reads it, and may write a query VictoriaLogs
@@ -59,7 +60,13 @@ func translatorReadsStageMarker(q string) bool {
 		for _, l := range leaves {
 			own = own || strings.HasSuffix(l.Name, "_extracted")
 			if l.Kind == logql.LabelFilterValueString {
-				marks += strings.Count(l.Value, "\x02")
+				// The translator writes a name with an underscore in its dotted and dashed spellings too, the
+				// value after each: one byte in such a filter's value is three in the stage.
+				copies := 1
+				if strings.Contains(l.Name, "_") {
+					copies = 3
+				}
+				marks += copies * strings.Count(l.Value, "\x02")
 			}
 		}
 		if !own && marks >= 2 {
@@ -94,6 +101,9 @@ func TestTranslatorReadsStageMarker(t *testing.T) {
 		`{app="a"} | logfmt | K_extracted="x" | o="\x02" and z="\x02"`: true, // one byte in each of two values
 		`{app="a"} | o="\x02" and z="\x02"` + ext:                      true,
 		`{app="a"} | o="\x02"` + ext:                                   false, // one byte
+		`{app="a"} | o_p="\x02"` + ext:                                 true,  // one byte on a name with an underscore: three spellings
+		`{app="a"} | logfmt | K_extracted="x" | o_p=` + "`\x02\x00b`":  true,
+		`{app="a"} | o_p_extracted="\x02"` + ext:                       false, // the stage's own marker comes first
 		`{app="a"} | o="\x02" | z="\x02"` + ext:                        false, // one byte in each of two stages
 		`{app="a"} | o="\x00\x01\x00"` + ext:                           false, // the other bytes the translator uses
 		`{app="a"} | json | o="\x02\x02"`:                              false, // no _extracted filter

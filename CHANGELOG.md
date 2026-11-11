@@ -34,6 +34,145 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entries are read once more from VictoriaLogs after the upgrade (new
   `qs2:` key fence). No VictoriaLogs request is added.
 
+## [2.160.0] - 2026-11-11
+
+### Fixed
+
+- A log query that filters on a label called `_time`, `_stream`, `_stream_id` or
+  `_msg` gets Loki's answer. These are the fields VictoriaLogs keeps for itself:
+  a stream label with such a name reaches it only as a tag of the stream
+  (`_stream={_time="a",app="x"}`), and a filter that names the field is
+  VictoriaLogs' own time, stream, stream id or line filter. The query written for
+  it was rejected (`_time:="a"`, `_stream:="a"`: a 400, "failed to parse the log
+  query") or read as something else: `| _time >= 5s` answered every line of the
+  last five seconds (a time range), and `{app="x", _msg="a"}` the lines whose text
+  is `a`. The stream selector and the label filters of the queries the plan
+  serves (line filters and label filters, no parser) now filter the stream tag
+  (`{_time="a"}`; a comparison reads the tag's value out of `_stream`).
+  `_TIME`, `_Stream` or `_STREAM_ID` in another case is the stream filter in a
+  selector, and the plan writes a label filter on it in the outbound guard's
+  form (`| copy _TIME as __lxrf_TIME`). Queries with a parser or a metric are still
+  written by the string translator and answer as before. **Breaking:** a client
+  that used `{..., _msg="text"}` or `| _msg=~"..."` as a filter on the line text
+  now gets the streams whose label `_msg` matches, as Loki answers. Answers
+  cached before this change are not reused for these queries (a response cache
+  key version).
+
+## [2.152.1] - 2026-11-11
+
+### Fixed
+
+- **A stage that starts with a name keeps the text it was written with when the query is printed.** The query text of
+  such a stage (`| A 0!0`) lost the space after the name (`A0!0`) and had every undecodable byte replaced by U+FFFD
+  when the proxy printed the query, so the rewrite of a metric over `| keep` (`sum by (...) (rate(...))`) could
+  produce a query that no longer parses. The text is the one the client sent.
+
+## [2.152.0] - 2026-11-11
+
+### Fixed
+
+- **A query with a character Loki's lexer reads as a name answers Loki's error text.** The parser's messages for a
+  digit of another script, a superscript or another character outside ASCII in a selector, a name list, a `[range]`,
+  an offset, a function name, a stage or an `unwrap` were generic (`unexpected ERROR`, `expected duration: ...`) or
+  named another token or position; they are Loki's (`unexpected IDENTIFIER, expecting ...`, `not a valid duration
+  string: "٣5m"`, `unexpected unwrap`) in 16,785 of 19,370 recorded queries, and the other 201 differ only in text. No
+  query is newly accepted or rejected.
+
+### Changed
+
+- The query plan now holds a `stddev` or `stdvar` by a label of a query with a
+  parser the way the proxy sends it (`stddev by (route) (count_over_time({app="a"}
+  | logfmt [5m]))`): the proxy rewrites the operand as the per-series form of
+  `max by (route) (..)` without its last fold, which the plan now builds from
+  its typed pipes and holds to the proxy's request byte for byte, for json,
+  logfmt, regexp and pattern parsers and nests of sum, avg, min, max and count.
+  An unwrapped value or a `label_replace` under it, a sum with no clause over a
+  rate, and a name that differs from `_time`, `_stream` or `_stream_id` only by
+  case stay with the string translator. Nothing is served from the plan for
+  these queries yet: no request to VictoriaLogs and no answer changes.
+
+## [2.151.0] - 2026-11-11
+
+### Changed
+
+- The opt-in live shadow of the query plan (`-translate-shadow-sample`) now
+  also covers the rankings, `stddev` and `stdvar` the proxy evaluates itself
+  (and the `sum`, `avg`, `min`, `max` and `count` layers above a ranking), on
+  `query` and `query_range`. These handlers translate only the operand, so
+  the shadow never saw the whole query; on the same share of their requests
+  it now lowers the whole query in the background and compares it with what
+  the proxy runs: the operand's request it has just sent, byte for byte, and
+  the levels it applies to the answer. New `result` values of
+  `loki_vl_proxy_lowering_shadow_total`: `native_proxy_evaluated` (equal) and
+  `known_divergence` (the plan holds a level the proxy's route drops, such as
+  `topk(2, stddev by (app) (..))`; nothing compared); new `construct` values
+  `VectorAgg stddev` and `VectorAgg stdvar`. No answer, cache or request to
+  VictoriaLogs changes, and a request the sample skips costs no allocation.
+
+## [2.150.0] - 2026-11-11
+
+### Security
+
+- **A query with certain non-ASCII characters could make the LogQL parser stop responding.** Such queries are now
+  rejected with Loki's 400 before anything else on the route runs, and every entry point of the LogQL parser is held to
+  return within a bound of time and memory by a fuzz target. **Breaking:** a few queries Loki rejects (for example a
+  stage name followed by `²`) were accepted and now answer Loki's 400; answers cached for them are not served.
+
+## [2.141.0] - 2026-11-11
+
+### Security
+
+- Queries no longer make VictoriaLogs crash when a label name differs from
+  `_time`, `_stream` or `_stream_id` only by letter case (`_TIME`, `_Stream`,
+  `_STREAM_ID`). VictoriaLogs prints such a field name without its quotes when
+  it clones a query, cannot parse its own print, and restarts
+  ([VictoriaMetrics/VictoriaLogs#1942](https://github.com/VictoriaMetrics/VictoriaLogs/issues/1942)).
+  It clones every query with a limit, every live tail and, in a cluster, every
+  query. The proxy wrote such a filter for the unwrap of a key with such a
+  name (`| logfmt | unwrap _TIME`), so a client could restart the shared
+  VictoriaLogs for every tenant. The proxy now passes every query it sends
+  (every endpoint, probe, live tail and cold-tier request) through one
+  outbound guard. The guard rewrites a filter on such a name to a copy into a
+  scratch field and a filter on that copy (`| copy _TIME as __lxrf_TIME |
+  filter __lxrf_TIME:>=5s | delete __lxrf_TIME`), a form VictoriaLogs v1.49
+  and v1.53 read back as written. The query plan writes the unwrap in that
+  form itself. These queries now get Loki's answer, where they got a crash, a
+  400, or (`| _TIME >= 5s`) VictoriaLogs' time range of the last five seconds.
+  No data or answer changes for any other query: every other query is sent
+  byte for byte as before. Answers cached before this change are not reused
+  for these queries (a response cache key version).
+
+## [2.140.0] - 2026-11-11
+
+### Fixed
+
+- A log query that filters on a label called `not`, `in`, `options`, `contains_all`,
+  `contains_any`, `contains_common_case` or `equals_common_case` (in any case), or
+  on `and` or `or` once a label function maps a name such as `_or` to it, no
+  longer fails in VictoriaLogs. Loki accepts such a label; the query written for
+  it (`not:="a"`, `app:="a" in:="x"`) is rejected by VictoriaLogs v1.49 and v1.53
+  ("missing whitespace or ':' ...", "the in must be put in quotes"), and the
+  client got a 400 ("failed to parse the log query"). The stream selector and the label filters of the queries the
+  plan serves (line filters and label filters, no parser) now write the name
+  quoted (`"not":="a"`). Queries with a parser or a metric are still written by
+  the string translator and fail the same way until the plan serves them.
+- A label named after a word Loki's lexer reads as a keyword (`of`, `bool`,
+  `offset`, `unwrap`, `json`, `regexp`, `logfmt`, `unpack`, `pattern`,
+  `label_format`, `line_format`, `decolorize`, `drop`, `keep`, `variants`, in any
+  case) is answered with Loki's 400 and Loki's text in a stream selector, a
+  `by`, `without`, `on`, `ignoring`, `group_left` or `group_right` list, a
+  `drop` or `keep` list, a `json` or `logfmt` extraction, a `label_format` and an
+  `unwrap`. The proxy used to accept them, read the word in lower case and
+  translate the query (`{OF="a"}` filtered the field `of`). **Breaking:** a
+  client that sent such a query got an answer and gets Loki's 400 now; Loki never
+  accepted it. Answers cached before this change are not reused for these queries
+  (a response cache key version).
+- A label called `Ip`, `IP` or `Label_replace` keeps its case. `ip` and
+  `label_replace` are keywords only before a parenthesis, but the proxy read
+  the word in lower case anywhere (`{Ip="a"}` filtered the field `ip`, and
+  `| drop Ip` dropped it). Answers cached before this change are not reused for
+  these queries (a response cache key version).
+
 ## [2.133.0] - 2026-11-11
 
 ### Changed

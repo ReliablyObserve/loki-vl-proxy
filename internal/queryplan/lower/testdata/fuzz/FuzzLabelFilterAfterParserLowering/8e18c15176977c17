@@ -1,0 +1,8 @@
+go test fuzz v1
+string("a\xf4baas")
+string("azzac")
+string("btac_bcykab")
+string("\x02\x00b")
+byte('\f')
+byte('^')
+byte('~')

@@ -232,7 +232,7 @@ func FuzzEscapedSpellingLowering(f *testing.F) {
 			}
 			legacy, terr := translator.TranslateLogQLWithCapabilities(q, nil, stream, logsql.Capabilities{})
 			op, lerr := Plan(p, Profile{StreamFields: stream})
-			if errors.Is(lerr, ErrNotLowered) {
+			if errors.Is(lerr, ErrNotLowered) || ReadsReservedField(p, Profile{}) {
 				continue
 			}
 			if terr != nil || lerr != nil {
@@ -241,7 +241,7 @@ func FuzzEscapedSpellingLowering(f *testing.F) {
 				}
 				continue
 			}
-			if got := op.(physical.VLQuery).Text; got != legacy {
+			if got := op.(physical.VLQuery).Text; got != QuoteKeywordFieldText(legacy) {
 				t.Fatalf("%s: %s:\n lowered %s\n  string %s", name, q, got, legacy)
 			}
 		}

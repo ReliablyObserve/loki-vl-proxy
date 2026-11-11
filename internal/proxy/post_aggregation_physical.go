@@ -14,6 +14,20 @@ func PostAggregationRoute(query string) (operand string, routed bool) {
 	return postAgg.inner, routed
 }
 
+// PostAggregationOperand is the text the proxy sends to VictoriaLogs for the operand of a query it evaluates in part
+// itself (postAggOperandText: the operand's translation, or for a stddev or stdvar by labels of an operand with a
+// parser the cut translation of its max by form), and rewritten reports that second case. translate stands in for the
+// proxy's translation of a query. The allocation tests measure the route with it.
+func PostAggregationOperand(query string, translate func(string) (string, error)) (operandText string, rewritten, routed bool, err error) {
+	postAgg, routed := parseInstantMetricPostAggQuery(query)
+	if !routed {
+		return "", false, false, nil
+	}
+	_, rewritten = postAggTranslatedText(postAgg)
+	operandText, err = postAggOperandText(postAgg, translate)
+	return operandText, rewritten, true, err
+}
+
 // PostAggregationPhysical is what the proxy runs for a query it evaluates in part itself, as physical operators: the
 // operand's operators (the translation of the operand text decoded) under one RankStep or SeriesAgg for each level
 // the proxy evaluates, innermost first. operandText is the text the proxy translates the operand to, which is the
@@ -29,9 +43,18 @@ func PostAggregationPhysical(query string, translate func(string) (string, error
 	if err != nil {
 		return nil, "", true, err
 	}
-	op, err = translator.DecodePhysical(operandText)
+	op, err = postAggregationOp(postAgg, operandText)
+	return op, operandText, true, err
+}
+
+// postAggregationOp is the reference both shadows hold the lowering of a proxy-evaluated root to: the operand's
+// operators (operandText, the text the proxy sends for the operand, decoded) under one RankStep or SeriesAgg for each
+// level of postAgg, innermost first. The corpus shadow reaches it through PostAggregationPhysical, the live shadow
+// (shadowProxyEvaluated) with the text the handler has just sent, so neither translates anything twice.
+func postAggregationOp(postAgg instantMetricPostAgg, operandText string) (physical.Op, error) {
+	op, err := translator.DecodePhysical(operandText)
 	if err != nil {
-		return nil, operandText, true, err
+		return nil, err
 	}
 	for layer := &postAgg; layer != nil; layer = layer.outer {
 		by := layer.group
@@ -49,5 +72,5 @@ func PostAggregationPhysical(query string, translate func(string) (string, error
 			op = physical.SeriesAgg{Op: layer.name, By: clause, In: op}
 		}
 	}
-	return op, operandText, true, nil
+	return op, nil
 }

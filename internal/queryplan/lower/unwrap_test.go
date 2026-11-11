@@ -109,7 +109,6 @@ func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 		`sum_over_time({app="a"} |= "x without (y)" | unwrap n [5m])`:           "RangeAgg quoted clause",
 		`rate({app="a"} | unwrap n [0s])`:                                       "RangeAgg range",
 		`avg_over_time({app="a"} | unwrap n [5m]) without (pod)`:                "RangeAgg grouping",
-		`avg_over_time({app="a"} | unwrap n [5m]) by (bool)`:                    "RangeAgg grouping label",
 		`sum_over_time({app="a"} | unwrap n | unwrap m [5m])`:                   "RangeAgg unwrap stages",
 		`sum_over_time({app="a"} | line_format "{{upper .a}}" | unwrap n [5m])`: "RangeAgg LogSelect line format function",
 		`sum_over_time({app="a"} | detected_level="e" | unwrap n [5m])`:         "RangeAgg LogSelect label filter detected_level",
@@ -117,7 +116,6 @@ func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 		`sum by (app) (avg_over_time({app="a"} | unwrap n [5m]) by (x))`:        "VectorAgg grouping",
 		`sum(rate({app="a"} | unwrap n [0s]))`:                                  "VectorAgg range",
 		`sum without () (sum_over_time({app="a"} | unwrap n [5m]))`:             "VectorAgg without empty",
-		`sum by ( bool ) (sum_over_time({app="a"} | unwrap n [5m]))`:            "VectorAgg quoted clause",
 		`sum by (app) (sum_over_time({app="a"} |= "| stats " | unwrap n [5m]))`: "VectorAgg quoted clause",
 		`sum without (x) (sum_over_time({x!="  "} | unwrap n [5m]))`:            "VectorAgg quoted clause",
 		`avg(sum_over_time({app="a"} |= "| json" | unwrap n [5m]))`:             "VectorAgg quoted clause",
@@ -203,7 +201,13 @@ func unwrapLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy 
 		return "", "", false, false
 	}
 	legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps)
+	legacy = guardedLegacy(p, legacy, terr)
 	op, lerr := PlanQuery(q, p, prof.lowerProfile())
+	// A label called _time, _stream, _stream_id or _msg is the stream tag in the lowering and a field filter VictoriaLogs
+	// rejects or misreads in the translator (semantics/translator-writes-reserved-field-names): not compared.
+	if ReadsReservedField(p, prof.lowerProfile()) {
+		return "", "", false, false
+	}
 	if errors.Is(lerr, ErrNotLowered) {
 		return "", legacy, true, terr == nil
 	}
@@ -213,7 +217,7 @@ func unwrapLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy 
 	if terr != nil {
 		return "", "", false, false
 	}
-	return physical.Encode(op), legacy, false, true
+	return physical.Encode(op), QuoteKeywordFieldText(legacy), false, true
 }
 
 // FuzzUnwrapLowering holds the lowering of range and vector aggregations over an unwrapped label to the string

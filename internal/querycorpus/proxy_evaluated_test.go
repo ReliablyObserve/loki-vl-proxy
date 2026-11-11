@@ -7,6 +7,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -124,7 +125,8 @@ func (p planProfile) operandTranslate(q string) (string, error) {
 	if t := strings.TrimSpace(s); strings.HasPrefix(t, "|") {
 		s = "* " + t
 	}
-	return s, nil
+	// The translator writes a label called not or in bare, which VictoriaLogs rejects; the plan quotes it.
+	return lower.QuoteKeywordFieldText(s), nil
 }
 
 // routedQuery is the query as the handlers route it: keywords in lower case, comments and logfmt flags removed

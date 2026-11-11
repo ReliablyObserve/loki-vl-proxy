@@ -79,11 +79,27 @@ func benchRankRoute(b *testing.B, label func(string) string) {
 	benchRoute(b, loweredRankQueries(b), label)
 }
 
+// benchRoute measures the route on qs: a stddev or stdvar by labels of an operand with a parser is translated as the
+// route does it (the max by form, then the cut: proxy.PostAggregationOperand), every other root as the operand alone.
 func benchRoute(b *testing.B, qs []string, label func(string) string) {
+	translate := func(q string) (string, error) {
+		return translator.TranslateLogQLWithLabels(logql.CanonicalizeLogRanges(q), label)
+	}
+	rewritten := make([]bool, len(qs))
+	for i, q := range qs {
+		_, rewritten[i], _, _ = proxy.PostAggregationOperand(q, translate)
+	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		inner, routed := proxy.PostAggregationRoute(qs[i%len(qs)])
+		q := qs[i%len(qs)]
+		if rewritten[i%len(qs)] {
+			if _, _, _, err := proxy.PostAggregationOperand(q, translate); err != nil {
+				b.Fatal(err)
+			}
+			continue
+		}
+		inner, routed := proxy.PostAggregationRoute(q)
 		if !routed {
 			b.Fatal("not routed")
 		}
@@ -131,4 +147,35 @@ func BenchmarkSeriesAggRouteStreamLabels(b *testing.B) {
 func BenchmarkSeriesAggLowered(b *testing.B) { benchLowered(b, loweredSeriesAggQueries(b), nil) }
 func BenchmarkSeriesAggLoweredStreamLabels(b *testing.B) {
 	benchLowered(b, loweredSeriesAggQueries(b), rankStreamLabels)
+}
+
+// loweredParsedLabelQueries are the lowered stddev and stdvar roots by labels of an operand with a parser: the shapes
+// whose operand the route rewrites (the series-level max by form, cut) and the plan rewrites alike.
+func loweredParsedLabelQueries(b *testing.B) []string {
+	b.Helper()
+	var out []string
+	for _, q := range loweredSeriesAggQueries(b) {
+		if _, rewritten, _, _ := proxy.PostAggregationOperand(q, func(string) (string, error) { return "", nil }); rewritten {
+			out = append(out, q)
+		}
+	}
+	if len(out) == 0 {
+		b.Fatal("no lowered parsed-label stddev")
+	}
+	b.Logf("%d parsed-label queries", len(out))
+	return out
+}
+
+// The route and the plan on the parsed-label stddev and stdvar alone.
+func BenchmarkSeriesAggParsedLabelRoute(b *testing.B) {
+	benchRoute(b, loweredParsedLabelQueries(b), nil)
+}
+func BenchmarkSeriesAggParsedLabelRouteStreamLabels(b *testing.B) {
+	benchRoute(b, loweredParsedLabelQueries(b), rankStreamLabels)
+}
+func BenchmarkSeriesAggParsedLabelLowered(b *testing.B) {
+	benchLowered(b, loweredParsedLabelQueries(b), nil)
+}
+func BenchmarkSeriesAggParsedLabelLoweredStreamLabels(b *testing.B) {
+	benchLowered(b, loweredParsedLabelQueries(b), rankStreamLabels)
 }

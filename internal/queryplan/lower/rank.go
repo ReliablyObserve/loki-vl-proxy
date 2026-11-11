@@ -39,8 +39,9 @@ import (
 //   - a ranking or stddev inside a label_replace that sits under a level (the route translates that text, which drops
 //     the level there);
 //   - sort and sort_desc with a clause, which the route does not take;
-//   - a stddev or stdvar by a label of a query with a parser (VectorAgg stddev parsed label), whose operand the
-//     route rewrites as the series-level form of max by;
+//   - a stddev or stdvar by a label of a query with a parser under another level, or where the route's text test for
+//     a parser and the plan's parsers disagree (VectorAgg stddev parsed label); a lone one is lowered to the route's
+//     rewrite of its operand, the series-level form of max by cut (parsedLabelOperand);
 //   - everything the operand's own lowering leaves to the translator keeps its name (an operand that does not lower
 //     alone does not lower under a level);
 //   - a spelling the route reads unlike the plan (screenEvaluated).
@@ -56,7 +57,16 @@ func evaluated(n queryplan.Node, prof Profile) (physical.Op, error) {
 		return nil, errRankPattern
 	}
 	if parsedLabelFold(chain[0]) && hasParserStage(operand) {
-		return nil, errSeriesParsedLabel
+		// The route rewrites the operand of a lone stddev or stdvar by labels (parsedLabelOperand); under another
+		// level it translates that text whole.
+		if len(chain) > 1 {
+			return nil, errSeriesParsedLabel
+		}
+		op, err := parsedLabelOperand(chain[0].(*queryplan.VectorAgg), operand, prof)
+		if err != nil {
+			return nil, err
+		}
+		return evaluatedLevel(chain[0], op), nil
 	}
 	op, err := evaluatedOperand(operand, prof, chain[len(chain)-1])
 	if err != nil {
@@ -268,9 +278,13 @@ func screenEvaluated(query string, n queryplan.Node) error {
 		}
 		return errSeriesSpelling
 	}
-	// The route reads the text under the first layer for a parser, quoted text included.
-	if parsedLabelFold(chain[0]) && logql.ParserStageTextRE.MatchString(below) {
-		return errSeriesParsedLabel
+	// The route reads the text under the first layer for a parser, quoted text included, and rewrites the operand of
+	// a lone fold where it finds one: the plan rewrites it where it has a parser (parsedLabelOperand), so the two
+	// readings must agree.
+	if parsedLabelFold(chain[0]) {
+		if rewritten := logql.ParserStageTextRE.MatchString(below); rewritten && (len(chain) > 1 || !hasParserStage(operand)) || !rewritten && hasParserStage(operand) {
+			return errSeriesParsedLabel
+		}
 	}
 	// The translator reads a blank between a range function and its parenthesis as text, which a range aggregation
 	// screened on its own does not turn away (nor one in the first argument of a label_replace).

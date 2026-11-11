@@ -185,6 +185,8 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 		field := translate.SanitizeFieldIdentifier(key)
 		if strings.ContainsAny(field, ".-") {
 			field = `"` + field + `"`
+		} else {
+			field = logsql.QuoteKeywordField(field) // a key called not, in or the like
 		}
 		filters[i], _ = translate.LabelFilterLeaf(field, e.Cmp, e.Value, isIP, lb.caps)
 	}
