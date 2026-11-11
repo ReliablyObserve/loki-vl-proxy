@@ -277,7 +277,17 @@ func (p *Proxy) tenantMiddleware(next http.Handler) http.Handler {
 func (p *Proxy) adminMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p.adminAuthToken != "" {
-			if !p.adminTokenMatches(r) {
+			got := strings.TrimSpace(r.Header.Get("X-Admin-Token"))
+			if got == "" {
+				auth := strings.TrimSpace(r.Header.Get("Authorization"))
+				if strings.HasPrefix(auth, "Bearer ") {
+					got = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+				}
+			}
+			// Constant-time compare so response timing does not reveal how much
+			// of a guessed token matched. A missing or empty header never
+			// equals a configured (non-empty) token.
+			if subtle.ConstantTimeCompare([]byte(got), []byte(p.adminAuthToken)) != 1 {
 				p.writeError(w, http.StatusUnauthorized, "admin authentication required")
 				return
 			}
@@ -286,56 +296,63 @@ func (p *Proxy) adminMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// adminTokenMatches reports whether r carries the configured admin token, in
-// X-Admin-Token or as Authorization: Bearer. It is false when no token is
-// configured.
-func (p *Proxy) adminTokenMatches(r *http.Request) bool {
-	if p.adminAuthToken == "" {
-		return false
+// deleteTokenHeader carries the delete API's token; Authorization: Bearer is
+// the other place it is read from.
+const deleteTokenHeader = "X-Delete-Token"
+
+// bearerToken is the token of an Authorization: Bearer header, or "".
+func bearerToken(r *http.Request) string {
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return ""
 	}
-	got := strings.TrimSpace(r.Header.Get("X-Admin-Token"))
-	if got == "" {
-		auth := strings.TrimSpace(r.Header.Get("Authorization"))
-		if strings.HasPrefix(auth, "Bearer ") {
-			got = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-		}
-	}
-	// Constant-time compare so response timing does not reveal how much
-	// of a guessed token matched. A missing or empty header never
-	// equals a configured (non-empty) token.
-	return subtle.ConstantTimeCompare([]byte(got), []byte(p.adminAuthToken)) == 1
+	return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 }
 
-// errDeleteAPIWithoutAdminToken refuses a delete API with nothing to
-// authenticate its callers.
-var errDeleteAPIWithoutAdminToken = errors.New("-delete-api-enabled=true requires -server.admin-auth-token (Helm: adminAuth.existingSecret): every delete request must carry the admin token")
+// deleteTokenMatches reports whether r carries the configured delete token, in
+// X-Delete-Token or as Authorization: Bearer. It is false when no token is
+// configured. Constant-time compare: response timing does not reveal how much
+// of a guessed token matched.
+func (p *Proxy) deleteTokenMatches(r *http.Request) bool {
+	if p.deleteAPIAuthToken == "" {
+		return false
+	}
+	got := strings.TrimSpace(r.Header.Get(deleteTokenHeader))
+	if got == "" {
+		got = bearerToken(r)
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(p.deleteAPIAuthToken)) == 1
+}
 
-// validateDeleteAPIConfig refuses DeleteAPIEnabled without an admin token.
-func validateDeleteAPIConfig(enabled bool, adminAuthToken string) error {
-	if enabled && strings.TrimSpace(adminAuthToken) == "" {
-		return errDeleteAPIWithoutAdminToken
+// errDeleteAPIWithoutToken refuses a delete API with nothing to authenticate
+// its callers.
+var errDeleteAPIWithoutToken = errors.New("-delete-api-enabled=true requires -delete-api-auth-token (Helm: deleteAuth.existingSecret): every delete request must carry the token")
+
+// validateDeleteAPIConfig refuses DeleteAPIEnabled without a delete token.
+func validateDeleteAPIConfig(enabled bool, deleteAPIAuthToken string) error {
+	if enabled && strings.TrimSpace(deleteAPIAuthToken) == "" {
+		return errDeleteAPIWithoutToken
 	}
 	return nil
 }
 
 // deleteAuthMiddleware closes the delete API to every request that does not
-// carry the admin token, and to all of them when none is configured. Bare Loki
-// has no authentication of its own; deleting logs is a write the proxy opens
-// only to its operators, so this check answers before Loki's tenant and
-// parameter checks. The token is removed from the request before the handler
-// runs, so it can never be forwarded to VictoriaLogs (-forward-headers,
-// -forward-authorization).
+// carry the delete token (-delete-api-auth-token), and to all of them when none
+// is configured. Bare Loki has no authentication of its own; deleting logs is
+// a write the proxy opens only to holders of that token, so this check answers
+// before Loki's tenant and parameter checks. The token is removed from the
+// request before the handler runs, so it can never be forwarded to
+// VictoriaLogs (-forward-headers, -forward-authorization) or logged.
 func (p *Proxy) deleteAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !p.adminTokenMatches(r) {
-			p.writeError(w, http.StatusUnauthorized, "admin authentication required")
+		if !p.deleteTokenMatches(r) {
+			p.writeError(w, http.StatusUnauthorized, "delete authentication required")
 			return
 		}
-		r.Header.Del("X-Admin-Token")
+		r.Header.Del(deleteTokenHeader)
 		// An Authorization that carries the token goes too, also when the
-		// token was read from X-Admin-Token.
-		if auth := strings.TrimSpace(r.Header.Get("Authorization")); strings.HasPrefix(auth, "Bearer ") &&
-			subtle.ConstantTimeCompare([]byte(strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))), []byte(p.adminAuthToken)) == 1 {
+		// token was read from X-Delete-Token.
+		if subtle.ConstantTimeCompare([]byte(bearerToken(r)), []byte(p.deleteAPIAuthToken)) == 1 {
 			r.Header.Del("Authorization")
 		}
 		next.ServeHTTP(w, r)

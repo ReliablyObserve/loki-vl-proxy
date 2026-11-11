@@ -29,23 +29,24 @@ func TestInstrumentation_RevealsNoSecrets(t *testing.T) {
 	defer vl.Close()
 	vlHost := strings.TrimPrefix(vl.URL, "http://")
 	const (
-		adminToken = "admin-secret-token-31337"
-		peerToken  = "peer-secret-token-31337"
-		backendPw  = "vl-secret-password-31337"
-		backendUsr = "vl-secret-user-31337"
-		org        = "team-secret-org"
-		account    = "918273"
-		project    = "645"
-		peerA      = "10.99.88.77:3100"
-		peerB      = "10.99.88.78:3100"
-		clientAuth = "client-secret-bearer-31337"
+		adminToken  = "admin-secret-token-31337"
+		deleteToken = "delete-secret-token-31337"
+		peerToken   = "peer-secret-token-31337"
+		backendPw   = "vl-secret-password-31337"
+		backendUsr  = "vl-secret-user-31337"
+		org         = "team-secret-org"
+		account     = "918273"
+		project     = "645"
+		peerA       = "10.99.88.77:3100"
+		peerB       = "10.99.88.78:3100"
+		clientAuth  = "client-secret-bearer-31337"
 	)
 	for _, sensitive := range []bool{false, true} {
 		pc := cache.NewPeerCache(cache.PeerConfig{SelfAddr: peerA, DiscoveryType: "static", StaticPeers: peerA + "," + peerB, AuthToken: peerToken, Timeout: 50 * time.Millisecond})
 		on := true
 		p, err := New(Config{
 			BackendURL: vl.URL, Cache: cache.New(time.Minute, 100), LogLevel: "error",
-			RegisterInstrumentation: &on, AdminAuthToken: adminToken, DeleteAPIEnabled: true,
+			RegisterInstrumentation: &on, AdminAuthToken: adminToken, DeleteAPIEnabled: true, DeleteAPIAuthToken: deleteToken,
 			BackendBasicAuth: backendUsr + ":" + backendPw, BackendHeaders: map[string]string{"X-Static-Secret": backendPw},
 			PeerCache: pc, PeerAuthToken: peerToken,
 			TenantMap:                    map[string]TenantMapping{org: {AccountID: account, ProjectID: project}},
@@ -63,7 +64,7 @@ func TestInstrumentation_RevealsNoSecrets(t *testing.T) {
 			r.Header.Set("Authorization", "Bearer "+clientAuth)
 			mux.ServeHTTP(httptest.NewRecorder(), r)
 		}
-		secrets := []string{adminToken, peerToken, backendPw, backendUsr, base64.StdEncoding.EncodeToString([]byte(backendUsr + ":" + backendPw)),
+		secrets := []string{adminToken, deleteToken, peerToken, backendPw, backendUsr, base64.StdEncoding.EncodeToString([]byte(backendUsr + ":" + backendPw)),
 			account, project + `"`, peerA, peerB, "10.99.88.", vlHost, clientAuth}
 		if !sensitive {
 			secrets = append(secrets, org)

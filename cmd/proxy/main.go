@@ -113,6 +113,7 @@ type proxyRuntimeConfig struct {
 	queryPlanLowering                   bool
 	patternsEnabled                     bool
 	deleteAPIEnabled                    bool
+	deleteAPIAuthToken                  string
 	patternsAutodetectFromQueries       bool
 	patternsCounts                      bool
 	patternsExactMaxLines               int
@@ -607,7 +608,8 @@ func run(
 	backendDefaultMsgValue := fs.String("backend-default-msg-value", "", "VictoriaLogs -defaultMsgValue when it is customized. Rows whose _msg is empty, starts with VictoriaLogs' default \"missing _msg field\" text, or equals this value get their log line rebuilt as a JSON object of the row's non-stream fields")
 	detectedLevelBodyScan := fs.Bool("detected-level-body-scan", true, "Derive detected_level from the log line (JSON, logfmt, keywords) when a row has no stored level field, as Loki does; false uses stored level fields only with an unknown fallback")
 	patternsEnabled := fs.Bool("patterns-enabled", true, "Enable /loki/api/v1/patterns endpoint (Grafana Logs Drilldown patterns)")
-	deleteAPIEnabled := fs.Bool("delete-api-enabled", false, "Register /loki/api/v1/delete and forward its requests to VictoriaLogs (a proxy extension with its own safeguards; current VictoriaLogs releases reject the forwarded request). Requires -server.admin-auth-token: every delete request must carry it in X-Admin-Token or Authorization: Bearer, and the proxy refuses to start without one. When false, the path answers 404 like Loki with deletion disabled (the default when compactor retention is off)")
+	deleteAPIAuthToken := fs.String("delete-api-auth-token", "", "Token every /loki/api/v1/delete request must carry, in X-Delete-Token or Authorization: Bearer (constant-time compare); required by -delete-api-enabled. It is the delete API's own credential: the admin token and the admin listener are unaffected. Prefer the Helm value deleteAuth.existingSecret, which keeps it out of the pod spec")
+	deleteAPIEnabled := fs.Bool("delete-api-enabled", false, "Register /loki/api/v1/delete and forward its requests to VictoriaLogs (a proxy extension with its own safeguards; current VictoriaLogs releases reject the forwarded request). Requires -delete-api-auth-token: every delete request must carry it in X-Delete-Token or Authorization: Bearer, and the proxy refuses to start without one. When false, the path answers 404 like Loki with deletion disabled (the default when compactor retention is off)")
 	exactParserSeriesIdentity := fs.Bool("exact-parser-series-identity", false, "Name the series of a metric over `| json` or `| logfmt` with the labels those parsers extracted, as Loki does, instead of the stream. Every such query is then evaluated from rows (bounded by -manual-metric-row-budget) rather than pushed down to VictoriaLogs stats, so it costs far more on wide ranges; `| regexp` and `| pattern` captures are always part of the identity because the query names them")
 	alignQueriesWithStep := fs.Bool("align-queries-with-step", true, "Move the start and end of a metric query_range request down to a multiple of its step before evaluating it, as Loki's query frontend does with query_range.align_queries_with_step (-querier.align-querier-with-step; false in Loki's flag defaults, true in its example configuration and Helm chart). On by default: answers share that Loki's evaluation grid, and a refresh that moves the window by less than a step maps onto the same request and is served from the caches. Log queries, instant queries, step-less requests, /loki/api/v1/patterns and Grafana Logs Drilldown query-split residual chunks are not changed. Set false to evaluate at the start the client sent")
 	translateShadowSample := fs.Float64("translate-shadow-sample", 0, "Share (0-1) of the queries the string translator translates (cache misses) that the typed query-plan lowering also translates, in the background, to compare the two translations: counted in loki_vl_proxy_lowering_shadow_total by result and construct, a mismatch logged (the query redacted), at most 1 line per second. At most 2 comparisons run at once, each within 100 ms; the answer, the caches and the VictoriaLogs requests are never affected. 0 turns it off")
@@ -819,7 +821,7 @@ func run(
 	if err := validatePeerAuth(*peerDiscovery, *peerStatic, *peerAuthToken, *peerInsecureIPAllowlist); err != nil {
 		return err
 	}
-	if err := validateDeleteAPI(*deleteAPIEnabled, *adminAuthToken); err != nil {
+	if err := validateDeleteAPI(*deleteAPIEnabled, *deleteAPIAuthToken); err != nil {
 		return err
 	}
 	if err := validateMetricsListen(*metricsListen, *registerInstrumentation); err != nil {
@@ -925,6 +927,7 @@ func run(
 			queryPlanLowering:                   *queryPlanLowering,
 			patternsEnabled:                     *patternsEnabled,
 			deleteAPIEnabled:                    *deleteAPIEnabled,
+			deleteAPIAuthToken:                  *deleteAPIAuthToken,
 			patternsAutodetectFromQueries:       *patternsAutodetectFromQueries,
 			patternsCounts:                      *patternsCounts,
 			patternsExactMaxLines:               *patternsExactMaxLines,
@@ -1524,16 +1527,15 @@ func validatePeerAuth(discovery, peers, token string, insecureAllowlist bool) er
 }
 
 // validateDeleteAPI refuses startup when the delete API is enabled with no
-// -server.admin-auth-token: every delete request must carry that token, so the
-// route would otherwise be open to anyone who can reach the proxy. Setting the
-// token also moves /admin/* and /debug/* onto the main listener (behind the
-// same token; see resolveAdminTarget).
-func validateDeleteAPI(enabled bool, adminAuthToken string) error {
-	if !enabled || strings.TrimSpace(adminAuthToken) != "" {
+// -delete-api-auth-token: every delete request must carry that token, so the
+// route would otherwise be open to anyone who can reach the proxy. The token is
+// the delete API's own; the admin token and the admin listener are unaffected.
+func validateDeleteAPI(enabled bool, deleteAPIAuthToken string) error {
+	if !enabled || strings.TrimSpace(deleteAPIAuthToken) != "" {
 		return nil
 	}
-	return fmt.Errorf("-delete-api-enabled=true requires -server.admin-auth-token (Helm: adminAuth.existingSecret): " +
-		"every delete request must carry the admin token in X-Admin-Token or Authorization: Bearer. " +
+	return fmt.Errorf("-delete-api-enabled=true requires -delete-api-auth-token (Helm: deleteAuth.existingSecret): " +
+		"every delete request must carry the token in X-Delete-Token or Authorization: Bearer. " +
 		"Set the token, or remove -delete-api-enabled")
 }
 
@@ -2198,6 +2200,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DisableQueryPlanLowering:           !cfg.queryPlanLowering,
 		PatternsEnabled:                    boolPointer(cfg.patternsEnabled),
 		DeleteAPIEnabled:                   cfg.deleteAPIEnabled,
+		DeleteAPIAuthToken:                 cfg.deleteAPIAuthToken,
 		PatternsAutodetectFromQueries:      cfg.patternsAutodetectFromQueries,
 		PatternsCounts:                     cfg.patternsCounts,
 		PatternsExactMaxLines:              cfg.patternsExactMaxLines,

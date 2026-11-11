@@ -15,7 +15,7 @@ description: Security model, network exposure, tenant isolation, header forwardi
 - `/metrics` not served unless `-server.register-instrumentation=true`
 - query callers are not authenticated (see [Caller authentication](#caller-authentication))
 
-`/loki/api/v1/delete` is not registered by default and answers `404`, as Loki does with deletion disabled; `-delete-api-enabled=true` registers it behind the admin token (`-server.admin-auth-token`, required: the proxy refuses to start without it) and request safeguards, but deletion is not supported against VictoriaLogs (see [Delete API](#3-delete-api-unsupported)).
+`/loki/api/v1/delete` is not registered by default and answers `404`, as Loki does with deletion disabled; `-delete-api-enabled=true` registers it behind its own token (`-delete-api-auth-token`, required: the proxy refuses to start without it) and request safeguards, but deletion is not supported against VictoriaLogs (see [Delete API](#3-delete-api-unsupported)).
 
 Behavior changes from the 1.67.0 and 1.68.0 hardening releases (wildcard denial, tenant-scoped cache keys, execution limits) are described in the [security hardening migration guide](security-hardening-migration.md).
 
@@ -57,7 +57,7 @@ Where a gateway is not available, require client certificates at the proxy: `-tl
 
 By default `/loki/api/v1/delete` is not registered: every method answers `404` with the body `404 page not found`, which is what Loki returns when deletion is disabled (Loki registers the route only with `-compactor.retention-enabled=true`, off by default). No tenant header or other check runs first, as in Loki. With `-delete-api-enabled=true` the route is registered and validates each request before contacting the backend:
 
-- the admin token, in `X-Admin-Token` or `Authorization: Bearer` (constant-time compare): `-delete-api-enabled=true` requires `-server.admin-auth-token` (Helm: `adminAuth.existingSecret`), and the proxy refuses to start without it. A request without the token answers `401 admin authentication required` before any other check, so an unauthenticated caller learns nothing about the route. Bare Loki has no authentication of its own; this check is the proxy's. The token is removed from the request before it is handled, so it is never forwarded to VictoriaLogs, even with `-forward-authorization`. Setting the token also serves `/admin/*` and `/debug/*` on the main listener behind the same token
+- the delete token, in `X-Delete-Token` or `Authorization: Bearer` (constant-time compare): `-delete-api-enabled=true` requires `-delete-api-auth-token` (Helm: `deleteAuth.existingSecret`), and the proxy and the chart refuse to start or render without it. A request without the token answers `401 delete authentication required` before any other check, so an unauthenticated caller learns nothing about the route. Bare Loki has no authentication of its own; this check is the proxy's. The token is removed from the request before it is handled, so it is never forwarded to VictoriaLogs (even with `-forward-authorization`) or logged. It is separate from `-server.admin-auth-token`: neither token opens the other's routes, and enabling deletes leaves `/admin/*` and `/debug/*` on the loopback `-admin-listen` exactly as before
 - the tenant, as Loki checks it (`401 no org id`, Loki's tenant ID texts, `400 multiple org IDs present` for a multi-tenant header)
 - `POST` only and `X-Delete-Confirmation: true`
 - explicit query selector (`{}` and `*` are rejected)

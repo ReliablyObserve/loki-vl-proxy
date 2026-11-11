@@ -158,7 +158,7 @@ func tenantAuthCases() []tenantAuthCase {
 	add("labels/authorization-basic-with-tenant", labels.Method, labels.Target, tenantAuthHeader{Value: "team-a"}, basic)
 	add("labels/authorization-bearer-without-tenant", labels.Method, labels.Target, tenantAuthHeader{Absent: true}, bearer)
 	// The delete API: Loki's compactor serves it with retention enabled. The
-	// proxy asks for its confirmation header and admin token on top, which the
+	// proxy asks for its confirmation header and delete token on top, which the
 	// replay adds; the tenant answers are Loki's.
 	del := "/loki/api/v1/delete?query=%7Bapp%3D%22team-a-app%22%7D&start=" + tenantAuthStart + "&end=" + tenantAuthEnd
 	for _, h := range tenantAuthHeaders() {
@@ -285,12 +285,12 @@ func readTenantAuthLokiAnswers(t *testing.T) (tenantAuthMeta, []tenantAuthAnswer
 	return meta, rows
 }
 
-// tenantAuthReplayToken is the admin token the replay sends on delete.
+// tenantAuthReplayToken is the delete token the replay sends on delete.
 const tenantAuthReplayToken = "replay-admin-token"
 
 // newTenantAuthReplayProxy is the proxy the recorded answers are replayed
 // against: -auth.enabled (Loki's auth_enabled: true), the delete API on with an
-// admin token, and every tenant Loki accepted mapped to its own VictoriaLogs
+// delete token, and every tenant Loki accepted mapped to its own VictoriaLogs
 // account, since the proxy refuses an unmapped name of its own accord.
 func newTenantAuthReplayProxy(t *testing.T, rows []tenantAuthAnswer, backend string, opts ...testProxyOption) *http.ServeMux {
 	t.Helper()
@@ -311,7 +311,7 @@ func newTenantAuthReplayProxy(t *testing.T, rows []tenantAuthAnswer, backend str
 		c.AuthEnabled = true
 		c.TenantMap = tenants
 		c.DeleteAPIEnabled = true
-		c.AdminAuthToken = tenantAuthReplayToken
+		c.DeleteAPIAuthToken = tenantAuthReplayToken
 	}}
 	p := newTestProxyWithOptions(t, append(base, opts...)...)
 	mux := http.NewServeMux()

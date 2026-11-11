@@ -47,7 +47,7 @@ func TestTenantAuth_AnswersLikeLoki(t *testing.T) {
 		r.Header = req.Header
 		if strings.HasPrefix(row.ID, "delete/") {
 			r.Header.Set("X-Delete-Confirmation", "true")
-			r.Header.Set("X-Admin-Token", tenantAuthReplayToken)
+			r.Header.Set("X-Delete-Token", tenantAuthReplayToken)
 		}
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)

@@ -287,11 +287,11 @@ func TestCritical_DeleteEndpoint_ScopesToTenant(t *testing.T) {
 
 	c := cache.New(60*time.Second, 1000)
 	p, err := New(Config{
-		BackendURL:       vlBackend.URL,
-		Cache:            c,
-		LogLevel:         "error",
-		DeleteAPIEnabled: true,
-		AdminAuthToken:   testDeleteToken,
+		BackendURL:         vlBackend.URL,
+		Cache:              c,
+		LogLevel:           "error",
+		DeleteAPIEnabled:   true,
+		DeleteAPIAuthToken: testDeleteToken,
 		TenantMap: map[string]TenantMapping{
 			"team-a": {AccountID: "100", ProjectID: "1"},
 		},

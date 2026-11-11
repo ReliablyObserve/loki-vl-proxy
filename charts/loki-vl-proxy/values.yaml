@@ -282,8 +282,9 @@ extraArgs:
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
   # forward-cookies: "vmui_session"
   # delete-api-enabled: "false"   # register /loki/api/v1/delete and forward it to VictoriaLogs (opt-in); off answers 404 like Loki with deletion disabled.
-  #                               # Requires an admin token (adminAuth.existingSecret): every delete request must carry it in X-Admin-Token or
-  #                               # Authorization: Bearer; rendering fails without one. Setting the token also serves /admin/* and /debug/* on the main port behind it.
+  #                               # Requires the delete API's own token (deleteAuth.existingSecret): every delete request must carry it in X-Delete-Token or
+  #                               # Authorization: Bearer; rendering fails without one. The admin token and the admin listener are unaffected.
+  # delete-api-auth-token: ""     # the delete API's token; prefer deleteAuth.existingSecret (a plain value is visible in the pod spec and `helm get values`)
   # Compatibility profile knobs:
   # - label-style: passthrough | underscores (binary default: underscores)
   # - metadata-field-mode: native | translated | hybrid (binary default: translated)
@@ -501,6 +502,16 @@ observability:
 # spec or in `helm get values`. The plain value (extraArgs."server.admin-auth-token")
 # keeps working; setting both fails rendering.
 adminAuth:
+  existingSecret: ""
+  existingSecretKey: "token"       # key within existingSecret
+
+# Delete API token (-delete-api-auth-token) from an existing Secret. Required by
+# extraArgs.delete-api-enabled: "true". The chart renders
+# -delete-api-auth-token=$(DELETE_API_AUTH_TOKEN) with the variable sourced from
+# a secretKeyRef. The plain value (extraArgs.delete-api-auth-token) keeps
+# working; setting both fails rendering. Separate from adminAuth: enabling
+# deletes leaves the admin listener as it is.
+deleteAuth:
   existingSecret: ""
   existingSecretKey: "token"       # key within existingSecret
 

@@ -1084,9 +1084,9 @@
       "dynamic": false,
       "error_text": false,
       "error_type": "bad_data",
-      "expression": "\"admin authentication required\"",
+      "expression": "\"delete authentication required\"",
       "kind": "literal",
-      "message": "admin authentication required",
+      "message": "delete authentication required",
       "status": 401,
       "status_token": "http.StatusUnauthorized",
       "where": "internal/proxy/middleware.go deleteAuthMiddleware",
@@ -2403,6 +2403,7 @@
         "literal_sites": 5,
         "messages": [
           "admin authentication required",
+          "delete authentication required",
           "multiple org IDs present",
           "peer authentication required"
         ],

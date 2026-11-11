@@ -114,7 +114,7 @@
     "data-probing-and-freshness": [
       "internal/proxy/ordered_json_result_cache_test.go"
     ],
-    "delete-api-requires-admin-token": [
+    "delete-api-requires-token": [
       "cmd/proxy/delete_api_validation_test.go",
       "internal/proxy/delete_route_test.go"
     ],
@@ -1878,7 +1878,7 @@
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
-      "delete-api-requires-admin-token"
+      "delete-api-requires-token"
     ],
     "cmd/proxy/main_test.go": [
       "limits/every-cap-is-a-flag",
@@ -2136,7 +2136,7 @@
       "credential-passthrough-as-configured"
     ],
     "internal/proxy/delete_route_test.go": [
-      "delete-api-requires-admin-token",
+      "delete-api-requires-token",
       "loki_api_v1_delete",
       "semantics/delete-route-disabled-like-loki"
     ],

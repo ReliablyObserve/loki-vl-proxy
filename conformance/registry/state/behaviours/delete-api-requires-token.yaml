@@ -1,0 +1,23 @@
+id: delete-api-requires-token
+state: proven
+pending: true
+reason: |
+  internal/proxy/delete_route_test.go: proxy.New refuses -delete-api-enabled
+  with an empty or blank delete token (an admin token does not count); a route
+  opened without a token refuses every request; with a token, missing, wrong,
+  prefix, wrong-bearer and basic credentials answer 401 before the method
+  (GET), tenant and confirmation checks and nothing reaches VictoriaLogs; the
+  right token in X-Delete-Token or as Bearer passes to the existing safeguards
+  (405, 400s, 403 unknown tenant, Loki's invalid-tenant text, 204) and is not
+  forwarded even with -forward-headers=Authorization; the audit lines keep
+  tenant and query and hold no token; the admin token does not open the route
+  and the delete token does not open /admin/cache/flush.
+  cmd/proxy/delete_api_validation_test.go covers the startup refusal and that
+  the admin listener stays on loopback with deletes on;
+  scripts/ci/validate_helm_secrets.sh the chart. Tenant answers on the route:
+  tenant-auth-follows-loki.
+owner_decision: |
+  Delete requires its own token, not the admin token; the admin listener is
+  unchanged (owner, 2026-11-11). Breaking for operators who enabled delete
+  without a token.
+waiver: null

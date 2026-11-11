@@ -9,23 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- The delete API needs the admin token. With `-delete-api-enabled=true`, every
-  request to `/loki/api/v1/delete` must carry `-server.admin-auth-token` in
-  `X-Admin-Token` or `Authorization: Bearer` (constant-time compare); without it
-  the answer is `401 admin authentication required`, before the method, tenant,
-  rate limit, confirmation and parameter checks, and nothing reaches
-  VictoriaLogs. The token is removed from the request before it is handled, so
-  it is never forwarded to VictoriaLogs, even with `-forward-authorization`.
-  Before, the route was protected only by the `X-Delete-Confirmation` header, so
-  any client that could reach the proxy could send a delete. Bare Loki has no
-  authentication of its own; every other answer on the route stays Loki's.
-  **Breaking:** the proxy refuses to start with `-delete-api-enabled=true` and
-  no `-server.admin-auth-token` (proxy.New refuses the configuration too), and
-  the Helm chart refuses to render `extraArgs.delete-api-enabled: "true"`
-  without `adminAuth.existingSecret` or a token in `extraArgs`. Upgrade: set the
-  token (Helm `adminAuth.existingSecret`) and send it with every delete
-  request; note that a token also serves `/admin/*` and `/debug/*` on the main
-  listener behind it. Deployments without the delete API need no change.
+- The delete API needs its own token. With `-delete-api-enabled=true`, every
+  request to `/loki/api/v1/delete` must carry the new `-delete-api-auth-token`
+  in `X-Delete-Token` or `Authorization: Bearer` (constant-time compare);
+  without it the answer is `401 delete authentication required`, before the
+  method, tenant, rate limit, confirmation and parameter checks, and nothing
+  reaches VictoriaLogs. The token is removed from the request before it is
+  handled, so it is never forwarded to VictoriaLogs (even with
+  `-forward-authorization`) or logged. It is separate from
+  `-server.admin-auth-token`: the admin token does not open deletes, the delete
+  token does not open `/admin/*`, and enabling deletes leaves the admin and
+  debug surfaces on the loopback `-admin-listen` exactly as before. Before, the
+  route was protected only by the `X-Delete-Confirmation` header, so any client
+  that could reach the proxy could send a delete. Bare Loki has no
+  authentication of its own; every other answer on the route stays Loki's. The
+  Helm chart gains `deleteAuth.existingSecret` (rendered from a `secretKeyRef`,
+  like `adminAuth`). **Breaking:** the proxy (and `proxy.New`) refuses to start
+  with `-delete-api-enabled=true` and no `-delete-api-auth-token`, and the
+  chart refuses to render `extraArgs.delete-api-enabled: "true"` without
+  `deleteAuth.existingSecret` or `extraArgs.delete-api-auth-token`. Upgrade:
+  create a Secret with the token, set `deleteAuth.existingSecret` (or the
+  flag), and send the token with every delete request. Deployments without the
+  delete API need no change.
 - `X-Scope-OrgID` is admitted and refused as Loki 3.7.9 does with
   `auth_enabled: true`, before the response cache or any VictoriaLogs call
   (answers recorded from Loki and replayed byte for byte in

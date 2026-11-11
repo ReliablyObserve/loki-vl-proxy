@@ -79,30 +79,30 @@ func TestDeleteRoute_DisabledByDefaultAnswersLikeLoki(t *testing.T) {
 	}
 }
 
-// testDeleteToken is the admin token the delete API tests configure.
-const testDeleteToken = "test-delete-admin-token"
+// testDeleteToken is the delete token the delete API tests configure.
+const testDeleteToken = "test-delete-api-token"
 
 // enableDeleteAPIForTest opens the delete API on p as -delete-api-enabled with
-// -server.admin-auth-token does.
+// -delete-api-auth-token does.
 func enableDeleteAPIForTest(p *Proxy) {
 	p.deleteAPIEnabled = true
-	p.adminAuthToken = testDeleteToken
+	p.deleteAPIAuthToken = testDeleteToken
 }
 
-// serveWithDeleteToken serves r with the delete API's admin token.
+// serveWithDeleteToken serves r with the delete API's token.
 func serveWithDeleteToken(h http.Handler, w http.ResponseWriter, r *http.Request) {
-	r.Header.Set("X-Admin-Token", testDeleteToken)
+	r.Header.Set("X-Delete-Token", testDeleteToken)
 	h.ServeHTTP(w, r)
 }
 
 // With -delete-api-enabled the route is registered and the existing handler
-// answers unchanged once the admin token is presented.
+// answers unchanged once the delete token is presented.
 //
 // conformance: loki_api_v1_delete, semantics/delete-route-disabled-like-loki
 func TestDeleteRoute_EnabledRegistersExistingHandler(t *testing.T) {
 	p := newTestProxyWithOptions(t, withBackendURL("http://unused"), func(c *Config) {
 		c.DeleteAPIEnabled = true
-		c.AdminAuthToken = testDeleteToken
+		c.DeleteAPIAuthToken = testDeleteToken
 	})
 	mux := http.NewServeMux()
 	p.RegisterProxyRoutes(mux)
@@ -122,15 +122,15 @@ func TestDeleteRoute_EnabledRegistersExistingHandler(t *testing.T) {
 	}
 }
 
-// The delete API needs the admin token: New refuses DeleteAPIEnabled without
+// The delete API needs its token: New refuses DeleteAPIEnabled without
 // one, and a proxy whose delete route is open but holds no token (a field set
 // after New) refuses every request.
 //
-// conformance: delete-api-requires-admin-token
-func TestDeleteAuth_ClosedWithoutAdminToken(t *testing.T) {
+// conformance: delete-api-requires-token
+func TestDeleteAuth_ClosedWithoutToken(t *testing.T) {
 	for _, token := range []string{"", "   "} {
-		_, err := New(Config{BackendURL: "http://unused", DeleteAPIEnabled: true, AdminAuthToken: token, LogLevel: "error"})
-		if err == nil || !strings.Contains(err.Error(), "-delete-api-enabled=true requires -server.admin-auth-token") {
+		_, err := New(Config{BackendURL: "http://unused", DeleteAPIEnabled: true, DeleteAPIAuthToken: token, AdminAuthToken: "admin-token-is-not-the-delete-token", LogLevel: "error"})
+		if err == nil || !strings.Contains(err.Error(), "-delete-api-enabled=true requires -delete-api-auth-token") {
 			t.Fatalf("token %q: New error = %v, want the refusal naming both flags", token, err)
 		}
 	}
@@ -144,44 +144,44 @@ func TestDeleteAuth_ClosedWithoutAdminToken(t *testing.T) {
 	p.deleteAPIEnabled = true // open without a token: still closed
 	mux := http.NewServeMux()
 	p.RegisterProxyRoutes(mux)
-	for _, h := range []http.Header{{}, {"X-Admin-Token": {""}}, {"Authorization": {"Bearer "}}} {
+	for _, h := range []http.Header{{}, {"X-Delete-Token": {""}}, {"Authorization": {"Bearer "}}} {
 		r := httptest.NewRequest(http.MethodPost, `/loki/api/v1/delete?query={app="nginx"}&start=1700000000&end=1700003600`, nil)
 		r.Header = h.Clone()
 		r.Header.Set("X-Delete-Confirmation", "true")
 		r.Header.Set("X-Scope-OrgID", "0")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
-		if w.Code != http.StatusUnauthorized || w.Body.String() != "admin authentication required" {
-			t.Fatalf("%v: %d %q, want 401 admin authentication required", h, w.Code, w.Body.String())
+		if w.Code != http.StatusUnauthorized || w.Body.String() != "delete authentication required" {
+			t.Fatalf("%v: %d %q, want 401 delete authentication required", h, w.Code, w.Body.String())
 		}
 	}
 	if n := hits.Load(); n != 0 {
-		t.Fatalf("VictoriaLogs received %d delete requests with no admin token configured", n)
+		t.Fatalf("VictoriaLogs received %d delete requests with no delete token configured", n)
 	}
 }
 
 // With the token configured, only a request carrying it reaches the delete
 // handler: a missing or wrong token answers 401 before the method, tenant,
-// confirmation and parameter checks; the right one (X-Admin-Token or
+// confirmation and parameter checks; the right one (X-Delete-Token or
 // Authorization: Bearer) passes to the existing safeguards, and the token never
 // reaches VictoriaLogs even when Authorization is forwarded. The audit log
 // still names the tenant and the query.
 //
-// conformance: delete-api-requires-admin-token, loki_api_v1_delete
+// conformance: delete-api-requires-token, loki_api_v1_delete
 func TestDeleteAuth_TokenGatesTheHandler(t *testing.T) {
 	var hits atomic.Int64
 	var gotAuth, gotAdmin atomic.Value
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		gotAuth.Store(r.Header.Get("Authorization"))
-		gotAdmin.Store(r.Header.Get("X-Admin-Token"))
+		gotAdmin.Store(r.Header.Get("X-Delete-Token"))
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer vl.Close()
 	var logs lockedBuffer
 	p := newTestProxyWithOptions(t, withBackendURL(vl.URL), func(c *Config) {
 		c.DeleteAPIEnabled = true
-		c.AdminAuthToken = testDeleteToken
+		c.DeleteAPIAuthToken = testDeleteToken
 		c.ForwardHeaders = []string{"Authorization"}
 		c.TenantMap = map[string]TenantMapping{"team-a": {AccountID: "100", ProjectID: "0"}}
 	})
@@ -202,24 +202,24 @@ func TestDeleteAuth_TokenGatesTheHandler(t *testing.T) {
 		}
 		return h
 	}
-	const denied = "admin authentication required"
+	const denied = "delete authentication required"
 	for _, c := range []tc{
 		{"no token", http.MethodPost, ok, full(), 401, denied},
-		{"wrong token", http.MethodPost, ok, full("X-Admin-Token", "nope"), 401, denied},
-		{"token prefix", http.MethodPost, ok, full("X-Admin-Token", testDeleteToken[:5]), 401, denied},
+		{"wrong token", http.MethodPost, ok, full("X-Delete-Token", "nope"), 401, denied},
+		{"token prefix", http.MethodPost, ok, full("X-Delete-Token", testDeleteToken[:5]), 401, denied},
 		{"wrong bearer", http.MethodPost, ok, full("Authorization", "Bearer nope"), 401, denied},
 		{"basic auth is no token", http.MethodPost, ok, full("Authorization", "Basic dGVzdDp0ZXN0"), 401, denied},
 		{"no token, GET", http.MethodGet, ok, http.Header{}, 401, denied},
 		{"no token, no tenant", http.MethodPost, ok, http.Header{}, 401, denied},
-		{"token, GET is the handler's 405", http.MethodGet, ok, full("X-Admin-Token", testDeleteToken), 405, ""},
-		{"token, no confirmation", http.MethodPost, ok, http.Header{"X-Admin-Token": {testDeleteToken}, "X-Scope-Orgid": {"team-a"}}, 400, "delete requires X-Delete-Confirmation: true header for safety\n"},
-		{"token, wildcard", http.MethodPost, `/loki/api/v1/delete?query={}&start=1700000000&end=1700003600`, full("X-Admin-Token", testDeleteToken), 400, "wildcard delete rejected — query must target specific streams (e.g., {app=\"nginx\"})\n"},
-		{"token, range too wide", http.MethodPost, `/loki/api/v1/delete?query={app="nginx"}&start=1600000000&end=1700000000`, full("X-Admin-Token", testDeleteToken), 400, ""},
-		{"token, unknown tenant", http.MethodPost, ok, http.Header{"X-Admin-Token": {testDeleteToken}, "X-Delete-Confirmation": {"true"}, "X-Scope-Orgid": {"nobody"}}, 403, ""},
-		{"token, invalid tenant is Loki's", http.MethodPost, ok, http.Header{"X-Admin-Token": {testDeleteToken}, "X-Delete-Confirmation": {"true"}, "X-Scope-Orgid": {"a b"}}, 400, "tenant ID 'a b' contains unsupported character ' '\n"},
-		{"token in X-Admin-Token", http.MethodPost, ok, full("X-Admin-Token", testDeleteToken), 204, ""},
+		{"token, GET is the handler's 405", http.MethodGet, ok, full("X-Delete-Token", testDeleteToken), 405, ""},
+		{"token, no confirmation", http.MethodPost, ok, http.Header{"X-Delete-Token": {testDeleteToken}, "X-Scope-Orgid": {"team-a"}}, 400, "delete requires X-Delete-Confirmation: true header for safety\n"},
+		{"token, wildcard", http.MethodPost, `/loki/api/v1/delete?query={}&start=1700000000&end=1700003600`, full("X-Delete-Token", testDeleteToken), 400, "wildcard delete rejected — query must target specific streams (e.g., {app=\"nginx\"})\n"},
+		{"token, range too wide", http.MethodPost, `/loki/api/v1/delete?query={app="nginx"}&start=1600000000&end=1700000000`, full("X-Delete-Token", testDeleteToken), 400, ""},
+		{"token, unknown tenant", http.MethodPost, ok, http.Header{"X-Delete-Token": {testDeleteToken}, "X-Delete-Confirmation": {"true"}, "X-Scope-Orgid": {"nobody"}}, 403, ""},
+		{"token, invalid tenant is Loki's", http.MethodPost, ok, http.Header{"X-Delete-Token": {testDeleteToken}, "X-Delete-Confirmation": {"true"}, "X-Scope-Orgid": {"a b"}}, 400, "tenant ID 'a b' contains unsupported character ' '\n"},
+		{"token in X-Delete-Token", http.MethodPost, ok, full("X-Delete-Token", testDeleteToken), 204, ""},
 		{"token as bearer", http.MethodPost, ok, full("Authorization", "Bearer "+testDeleteToken), 204, ""},
-		{"token in both headers", http.MethodPost, ok, full("X-Admin-Token", testDeleteToken, "Authorization", "Bearer "+testDeleteToken), 204, ""},
+		{"token in both headers", http.MethodPost, ok, full("X-Delete-Token", testDeleteToken, "Authorization", "Bearer "+testDeleteToken), 204, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			before := hits.Load()
@@ -236,10 +236,10 @@ func TestDeleteAuth_TokenGatesTheHandler(t *testing.T) {
 			}
 			if reached {
 				if a, _ := gotAuth.Load().(string); strings.Contains(a, testDeleteToken) {
-					t.Fatalf("the admin token reached VictoriaLogs in Authorization: %q", a)
+					t.Fatalf("the delete token reached VictoriaLogs in Authorization: %q", a)
 				}
 				if a, _ := gotAdmin.Load().(string); a != "" {
-					t.Fatalf("X-Admin-Token reached VictoriaLogs: %q", a)
+					t.Fatalf("X-Delete-Token reached VictoriaLogs: %q", a)
 				}
 			}
 		})
@@ -250,6 +250,63 @@ func TestDeleteAuth_TokenGatesTheHandler(t *testing.T) {
 		t.Fatalf("audit log lines missing: %s", out)
 	}
 	if strings.Contains(out, testDeleteToken) {
-		t.Fatalf("the admin token reached the log: %s", out)
+		t.Fatalf("the delete token reached the log: %s", out)
+	}
+}
+
+// The delete token and the admin token are separate credentials: the admin
+// token does not open the delete API, and the delete token does not open the
+// admin routes.
+//
+// conformance: delete-api-requires-token
+func TestDeleteAuth_SeparateFromAdminToken(t *testing.T) {
+	const adminToken = "admin-only-token"
+	var hits atomic.Int64
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer vl.Close()
+	on := true
+	p := newTestProxyWithOptions(t, withBackendURL(vl.URL), func(c *Config) {
+		c.DeleteAPIEnabled = true
+		c.DeleteAPIAuthToken = testDeleteToken
+		c.AdminAuthToken = adminToken
+		c.RegisterInstrumentation = &on
+	})
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+	del := func(h http.Header) int {
+		r := httptest.NewRequest(http.MethodPost, `/loki/api/v1/delete?query={app="nginx"}&start=1700000000&end=1700003600`, nil)
+		r.Header = h
+		r.Header.Set("X-Delete-Confirmation", "true")
+		r.Header.Set("X-Scope-OrgID", "0")
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		return w.Code
+	}
+	if got := del(http.Header{"X-Admin-Token": {adminToken}}); got != http.StatusUnauthorized {
+		t.Fatalf("admin token in X-Admin-Token opened the delete API: %d", got)
+	}
+	if got := del(http.Header{"Authorization": {"Bearer " + adminToken}}); got != http.StatusUnauthorized {
+		t.Fatalf("admin token as bearer opened the delete API: %d", got)
+	}
+	if got := del(http.Header{"X-Delete-Token": {adminToken}}); got != http.StatusUnauthorized {
+		t.Fatalf("admin token in X-Delete-Token opened the delete API: %d", got)
+	}
+	if hits.Load() != 0 {
+		t.Fatal("a delete reached VictoriaLogs with the admin token")
+	}
+	if got := del(http.Header{"X-Delete-Token": {testDeleteToken}}); got != http.StatusNoContent {
+		t.Fatalf("delete token: %d", got)
+	}
+	for _, h := range []http.Header{{"X-Delete-Token": {testDeleteToken}}, {"Authorization": {"Bearer " + testDeleteToken}}, {"X-Admin-Token": {testDeleteToken}}} {
+		r := httptest.NewRequest(http.MethodPost, "/admin/cache/flush", nil)
+		r.Header = h
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("delete token %v opened /admin/cache/flush: %d", h, w.Code)
+		}
 	}
 }

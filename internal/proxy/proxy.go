@@ -258,9 +258,12 @@ type Config struct {
 	// DeleteAPIEnabled registers /loki/api/v1/delete, which forwards to
 	// VictoriaLogs. False (the zero value) leaves the path unregistered, so it
 	// answers 404 like Loki with deletion disabled. True requires
-	// AdminAuthToken: every delete request must carry it (New refuses the
+	// DeleteAPIAuthToken: every delete request must carry it (New refuses the
 	// configuration without one).
 	DeleteAPIEnabled bool
+	// DeleteAPIAuthToken is the delete API's own credential (X-Delete-Token or
+	// Authorization: Bearer); it plays no part on the admin routes.
+	DeleteAPIAuthToken string
 	// PatternsAutodetectFromQueries passively extracts patterns from successful
 	// log query/query_range responses and warms /patterns cache entries.
 	PatternsAutodetectFromQueries bool
@@ -706,6 +709,7 @@ type Proxy struct {
 	detectedLevelBodyScan                 bool
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
+	deleteAPIAuthToken                    string
 	loweringShadow                        *loweringShadow // nil unless -translate-shadow-sample is set
 	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
 	patternsAutodetectFromQueries         bool
@@ -1012,7 +1016,7 @@ func newCoalescer(disabled bool) *mw.Coalescer {
 
 //nolint:gocyclo // constructor wires many optional config knobs (URLs, levels, multi-tenant, caches, ruler/alerts, telemetry); complexity is inherent to top-level assembly.
 func New(cfg Config) (*Proxy, error) {
-	if err := validateDeleteAPIConfig(cfg.DeleteAPIEnabled, cfg.AdminAuthToken); err != nil {
+	if err := validateDeleteAPIConfig(cfg.DeleteAPIEnabled, cfg.DeleteAPIAuthToken); err != nil {
 		return nil, err
 	}
 	u, err := url.Parse(cfg.BackendURL)
@@ -1404,6 +1408,7 @@ func New(cfg Config) (*Proxy, error) {
 		queryPlanLowering:                     !cfg.DisableQueryPlanLowering,
 		patternsEnabled:                       patternsEnabled,
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
+		deleteAPIAuthToken:                    cfg.DeleteAPIAuthToken,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
 		patternsCounts:                        cfg.PatternsCounts,
 		patternsExactMaxLines:                 cfg.PatternsExactMaxLines,
@@ -2049,7 +2054,7 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 	// Unregistered by default: Loki registers it only with compactor retention
 	// enabled and otherwise answers 404 before any auth, which the mux's
 	// not-found answer matches.
-	// Every request must carry the admin token, checked before the tenant,
+	// Every request must carry the delete token, checked before the tenant,
 	// rate limit or parameters, so an unauthenticated caller learns nothing
 	// about the route (deleteAuthMiddleware).
 	if p.deleteAPIEnabled {

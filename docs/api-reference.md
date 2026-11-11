@@ -146,7 +146,7 @@ The delete endpoint is the only write route, and it is registered only with `-de
 
 Requests are still validated before forwarding:
 
-- **Admin token**: `-delete-api-enabled=true` requires `-server.admin-auth-token`, and every request must carry it in `X-Admin-Token` or `Authorization: Bearer`; without it the answer is `401 admin authentication required`, before any other check (Loki itself has no authentication on this route)
+- **Delete token**: `-delete-api-enabled=true` requires `-delete-api-auth-token`, and every request must carry it in `X-Delete-Token` or `Authorization: Bearer`; without it the answer is `401 delete authentication required`, before any other check (Loki itself has no authentication on this route). It is the delete API's own credential: the admin token does not open the route, and enabling deletes leaves the admin listener as it is
 - **Tenant**: checked as Loki checks it (see [Tenant header](#tenant-header-x-scope-orgid))
 - **Confirmation header**: Requires `X-Delete-Confirmation: true`
 - **Query required**: Must target specific streams (no wildcards `{}` or `*`)
@@ -159,7 +159,7 @@ Requests are still validated before forwarding:
 
 ```bash
 curl -X POST 'http://proxy:3100/loki/api/v1/delete' \
-  -H "X-Admin-Token: $ADMIN_AUTH_TOKEN" \
+  -H "X-Delete-Token: $DELETE_API_AUTH_TOKEN" \
   -H 'X-Delete-Confirmation: true' \
   -H 'X-Scope-OrgID: team-alpha' \
   -d 'query={app="nginx",env="staging"}&start=1704067200&end=1704153600'
