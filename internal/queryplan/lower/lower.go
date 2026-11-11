@@ -132,7 +132,7 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 	// level holds the detected_level filters whose pipes wait for the next stage that is not one (levelStages).
 	level := levelWriter{levels: levels}
 	for i, st := range sel.Stages {
-		if level.write(st, prof, &q) {
+		if level.write(st, &q) {
 			continue
 		}
 		switch st.(type) {

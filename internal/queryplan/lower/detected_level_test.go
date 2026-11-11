@@ -2,8 +2,10 @@ package lower
 
 import (
 	"errors"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -172,37 +174,112 @@ func TestDetectedLevelStagesEdges(t *testing.T) {
 }
 
 // A detected_level filter the lowering writes allocates no more than the string translator does for the same text
-// (Parse, Build, Resolve and Plan against the translation), under every profile, on the log and metric shapes below.
+// (Parse, Build, Resolve and Plan against the translation), under every profile, on the log and metric shapes below,
+// once the plan of its filter is in the memo (the memo is emptied first, so no other test's keys can crowd these out).
+// The first plan of a key, and a value too long to keep, is built each time: the cold shapes are measured and logged
+// (the build is the translator's; the parse, the plan and the memo store come on top), not held.
 //
 // conformance: architecture-syntax-package-layering
 func TestDetectedLevelLoweringAllocatesNoMoreThanTheTranslator(t *testing.T) {
 	if raceDetectorEnabled {
 		t.Skip("allocation counts differ under the race detector")
 	}
+	resetLevelPlans()
+	measure := func(q string, prof Profile) (lowered, translated float64) {
+		cq := logql.CanonicalizeLogRanges(q)
+		translated = testing.AllocsPerRun(5, func() {
+			_, _ = translator.TranslateLogQLWithCapabilities(cq, prof.Label, prof.StreamFields, prof.Caps)
+		})
+		lowered = testing.AllocsPerRun(5, func() {
+			expr, _ := logql.Parse(cq)
+			pl, _ := queryplan.Build(expr, queryplan.Inputs{})
+			queryplan.Resolve(pl)
+			_, _ = PlanQuery(q, pl, prof)
+		})
+		return lowered, translated
+	}
 	checked := 0
 	for name, prof := range detectedLevelProfiles() {
 		for _, q := range detectedLevelBenchQueries {
-			p := rangeAggPlan(q)
-			if _, err := PlanQuery(q, p, prof); err != nil {
+			if _, err := PlanQuery(q, rangeAggPlan(q), prof); err != nil {
 				t.Fatalf("%s: %q: %v", name, q, err)
 			}
-			cq := logql.CanonicalizeLogRanges(q)
-			tr := testing.AllocsPerRun(5, func() {
-				_, _ = translator.TranslateLogQLWithCapabilities(cq, prof.Label, prof.StreamFields, prof.Caps)
-			})
-			lo := testing.AllocsPerRun(5, func() {
-				expr, _ := logql.Parse(cq)
-				pl, _ := queryplan.Build(expr, queryplan.Inputs{})
-				queryplan.Resolve(pl)
-				_, _ = PlanQuery(q, pl, prof)
-			})
+			lo, tr := measure(q, prof)
 			checked++
 			if lo > tr {
 				t.Errorf("%s: %s: lowered %.0f allocs, translator %.0f", name, q, lo, tr)
 			}
 		}
 	}
-	t.Logf("%d shapes checked", checked)
+	t.Logf("%d warm shapes checked", checked)
+	// Cold: the memo emptied before every call.
+	above, most := 0, 0.0
+	for _, prof := range detectedLevelProfiles() {
+		for _, q := range detectedLevelBenchQueries {
+			cq := logql.CanonicalizeLogRanges(q)
+			tr := testing.AllocsPerRun(5, func() {
+				_, _ = translator.TranslateLogQLWithCapabilities(cq, prof.Label, prof.StreamFields, prof.Caps)
+			})
+			lo := testing.AllocsPerRun(5, func() {
+				resetLevelPlans()
+				expr, _ := logql.Parse(cq)
+				pl, _ := queryplan.Build(expr, queryplan.Inputs{})
+				queryplan.Resolve(pl)
+				_, _ = PlanQuery(q, pl, prof)
+			})
+			if lo > tr {
+				above, most = above+1, max(most, lo-tr)
+			}
+		}
+	}
+	resetLevelPlans()
+	t.Logf("cold (memo emptied before each call): %d of %d shapes above the translator, by at most %.0f allocs", above, checked, most)
+	// Cold: a value longer than the memo keeps is built on every call.
+	long := strings.Repeat("e", maxLevelPlanValue)
+	for _, q := range []string{
+		`{app="a"} | detected_level="` + long + `"`, `{app="a"} | detected_level=~"error|` + long + `"`,
+		`{app="a"} | detected_level!="` + long + `"`, `count_over_time({app="a"} | detected_level="` + long + `" [5m])`,
+	} {
+		lo, tr := measure(q, Profile{})
+		t.Logf("cold %.40s...: lowered %.0f allocs, translator %.0f", q, lo, tr)
+	}
+}
+
+// The memo of the plans is safe for concurrent use and answers what a build answers, for keys it keeps, keys past
+// its bound and values too long to keep (go test -race runs it with the race detector).
+//
+// conformance: architecture-syntax-package-layering
+func TestLevelPlanMemoConcurrentUse(t *testing.T) {
+	resetLevelPlans()
+	t.Cleanup(resetLevelPlans)
+	values := []string{"error", "warn", "info|debug", "(", "", strings.Repeat("x", maxLevelPlanValue+1)}
+	for i := 0; i < maxLevelPlans+20; i++ {
+		values = append(values, "v"+strconv.Itoa(i))
+	}
+	modes := []translate.DetectedLevelFilterMode{translate.DetectedLevelFilterLogs, translate.DetectedLevelFilterMetric, translate.DetectedLevelFilterStored}
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i, v := range values {
+				op := [...]string{"=", "!=", "=~", "!~"}[(i+g)%4]
+				mode := modes[(i+g)%3]
+				got, ok := levelFilterPlan(op, v, mode)
+				want, err := translate.BuildDetectedLevelFilter(op, v, translate.DetectedLevelFieldNames, mode)
+				if ok != (err == nil) || ok && *got != want {
+					t.Errorf("%s %q mode %d: memo %v %+v, build %v %+v", op, v, mode, ok, got, err, want)
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+	levelPlans.RLock()
+	n := len(levelPlans.m)
+	levelPlans.RUnlock()
+	if n > maxLevelPlans {
+		t.Fatalf("the memo holds %d plans, more than %d", n, maxLevelPlans)
+	}
 }
 
 // detectedLevelBenchQueries are the shapes of the allocation test and the benchmarks: Grafana's level filters on

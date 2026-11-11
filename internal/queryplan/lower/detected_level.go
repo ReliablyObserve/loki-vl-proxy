@@ -3,7 +3,6 @@ package lower
 import (
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -31,12 +30,33 @@ import (
 // chain, for fewer allocations than the plan's parse costs. An unwrap over such a filter is left to it too: the
 // translator reads the unpack pipes of the chain as the parser of the unwrapped label.
 
-// levelStages says whether a log query has detected_level filters the lowering writes, and their form. Once
-// detectedLevelStages accepted the query, every label filter stage that is a leaf named detected_level is one
-// (levelStage gives its plan).
+// levelStages are the detected_level filters of a log query the lowering writes: their form and their plans, in
+// stage order (the first in room, the rest in more). Once detectedLevelStages accepted the query, every label filter
+// stage that is a leaf named detected_level is one.
 type levelStages struct {
 	any  bool
 	mode translate.DetectedLevelFilterMode
+	n    int
+	room [4]*translate.DetectedLevelFilterPlan
+	more []*translate.DetectedLevelFilterPlan
+}
+
+// add records the plan of the next level filter.
+func (l *levelStages) add(p *translate.DetectedLevelFilterPlan) {
+	if l.n < len(l.room) {
+		l.room[l.n] = p
+	} else {
+		l.more = append(l.more, p)
+	}
+	l.n++
+}
+
+// plan is the plan of the k-th level filter.
+func (l *levelStages) plan(k int) *translate.DetectedLevelFilterPlan {
+	if k < len(l.room) {
+		return l.room[k]
+	}
+	return l.more[k-len(l.room)]
 }
 
 // The constructs the filters on detected_level the lowering does not write are delegated as (letters and spaces, at
@@ -80,11 +100,13 @@ func detectedLevelStages(sel *queryplan.LogSelect, prof Profile) (levelStages, s
 			if s.Expr == nil {
 				continue
 			}
-			if c := checkLevelStage(s.Expr, intact, prof); c != "" {
+			plan, c := checkLevelStage(s.Expr, intact, prof)
+			if c != "" {
 				return levelStages{}, c
 			}
-			if isLevelLeaf(s.Expr) {
-				res = levelStages{any: true, mode: levelFilterMode(prof)}
+			if plan != nil {
+				res.any, res.mode = true, levelFilterMode(prof)
+				res.add(plan)
 			}
 			continue
 		}
@@ -93,26 +115,25 @@ func detectedLevelStages(sel *queryplan.LogSelect, prof Profile) (levelStages, s
 	return res, ""
 }
 
-// checkLevelStage answers the construct of a label filter on detected_level the lowering does not write, "" for a
-// filter on another label and for one it writes (levelStage).
-func checkLevelStage(e *logql.LabelFilterExpr, intact bool, prof Profile) string {
+// checkLevelStage is the plan of a label filter on detected_level the lowering writes (levelStage), or the construct
+// of one it does not; nil and "" for a filter on another label.
+func checkLevelStage(e *logql.LabelFilterExpr, intact bool, prof Profile) (*translate.DetectedLevelFilterPlan, string) {
 	if !e.IsLeaf() {
 		if namesLevel(e) {
-			return levelTreeConstruct
+			return nil, levelTreeConstruct
 		}
-		return ""
+		return nil, ""
 	}
 	if e.Name != translate.DetectedLevelLabel {
 		if strings.Contains(e.Name, translate.DetectedLevelLabel) && translate.SanitizeFieldIdentifier(e.Name) == translate.DetectedLevelLabel {
-			return levelSpellingConstruct
+			return nil, levelSpellingConstruct
 		}
-		return ""
+		return nil, ""
 	}
 	if !intact {
-		return levelAfterStageConstruct
+		return nil, levelAfterStageConstruct
 	}
-	_, c := levelStage(e, prof)
-	return c
+	return levelStage(e, prof)
 }
 
 // isLevelLeaf reports a label filter stage that is one filter on detected_level, as written.
@@ -170,11 +191,11 @@ type levelPlanKey struct {
 // levelPlans holds the plans built so far (nil for a filter the translator does not read as one), by levelPlanKey.
 // Grafana sends the same few level filters over and over, and a plan is most of the cost of lowering one: it is
 // built once per key. The memo is bounded: past maxLevelPlans keys, or for a value longer than maxLevelPlanValue
-// bytes, a plan is built each time and not kept.
-var (
-	levelPlans     sync.Map
-	levelPlanCount atomic.Int64
-)
+// bytes, a plan is built each time and not kept. A map under a lock, so a lookup copies nothing.
+var levelPlans = struct {
+	sync.RWMutex
+	m map[levelPlanKey]*translate.DetectedLevelFilterPlan
+}{m: make(map[levelPlanKey]*translate.DetectedLevelFilterPlan, maxLevelPlans)}
 
 const (
 	maxLevelPlans     = 256
@@ -185,18 +206,31 @@ const (
 // memo; false when it fails (an invalid regexp).
 func levelFilterPlan(op, value string, mode translate.DetectedLevelFilterMode) (*translate.DetectedLevelFilterPlan, bool) {
 	key := levelPlanKey{op: op, value: value, mode: mode}
-	if p, ok := levelPlans.Load(key); ok {
-		plan := p.(*translate.DetectedLevelFilterPlan)
+	levelPlans.RLock()
+	plan, ok := levelPlans.m[key]
+	levelPlans.RUnlock()
+	if ok {
 		return plan, plan != nil
 	}
-	var plan *translate.DetectedLevelFilterPlan
+	plan = nil
 	if built, err := translate.BuildDetectedLevelFilter(op, value, translate.DetectedLevelFieldNames, mode); err == nil {
 		plan = &built
 	}
-	if len(value) <= maxLevelPlanValue && levelPlanCount.Add(1) <= maxLevelPlans {
-		levelPlans.Store(key, plan)
+	if len(value) <= maxLevelPlanValue {
+		levelPlans.Lock()
+		if len(levelPlans.m) < maxLevelPlans {
+			levelPlans.m[key] = plan
+		}
+		levelPlans.Unlock()
 	}
 	return plan, plan != nil
+}
+
+// resetLevelPlans empties the memo (tests measure the first plan of a key with it).
+func resetLevelPlans() {
+	levelPlans.Lock()
+	clear(levelPlans.m)
+	levelPlans.Unlock()
 }
 
 // dropsOnlyErrorLabels reports whether d drops the parser error labels alone, which leaves the level inputs as
@@ -216,19 +250,21 @@ func dropsOnlyErrorLabels(d *queryplan.Drop) bool {
 // levelWriter writes the detected_level filters of a log query into its parts: the prefilter where the stage stands,
 // the pipes held back until the next stage that is not a level filter (or the end), one chain for those in a row.
 type levelWriter struct {
-	levels  levelStages
+	levels levelStages
+	// next is the index of the next level filter's plan in levels.
+	next    int
 	pending []translate.DetectedLevelFilterPlan
 }
 
 // write takes stage st when it is a level filter (and reports it), and writes the pipes held so far before any
 // other stage but a line filter.
-func (w *levelWriter) write(st queryplan.Stage, prof Profile, q *queryParts) bool {
+func (w *levelWriter) write(st queryplan.Stage, q *queryParts) bool {
 	switch s := st.(type) {
 	case *queryplan.LineFilter:
 		return false
 	case *queryplan.LabelFilter:
 		if w.levels.any && isLevelLeaf(s.Expr) {
-			w.stage(s.Expr, prof, q)
+			w.stage(q)
 			return true
 		}
 	}
@@ -236,10 +272,11 @@ func (w *levelWriter) write(st queryplan.Stage, prof Profile, q *queryParts) boo
 	return false
 }
 
-// stage writes the level filter e: its prefilter, bare or, after a pipe, in a filter pipe of its own, as the
+// stage writes the next level filter: its prefilter, bare or, after a pipe, in a filter pipe of its own, as the
 // translator writes it; its pipes wait.
-func (w *levelWriter) stage(e *logql.LabelFilterExpr, prof Profile, q *queryParts) {
-	plan, _ := levelStage(e, prof)
+func (w *levelWriter) stage(q *queryParts) {
+	plan := w.levels.plan(w.next)
+	w.next++
 	if f := levelPrefilter(plan); f != nil {
 		if q.lastPipe {
 			q.own(f)
