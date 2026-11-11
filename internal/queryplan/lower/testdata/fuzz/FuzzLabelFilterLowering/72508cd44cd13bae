@@ -1,0 +1,7 @@
+go test fuzz v1
+string("AAAAAA")
+string("1\xf6\x88L\x88\xac\x94")
+string("\xc7_\x00\xc7\xe8O\x10R")
+string("0")
+byte('\u008a')
+byte('\x01')

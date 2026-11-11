@@ -118,7 +118,7 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 		`rate({app="a"} |~ "(?i)x" [5m]) / 2`:                              "BinOp quoted text",
 		`rate({app="a"} |= "a  b" [5m]) / 2`:                               "BinOp quoted text",
 		`rate({app="a"} |= "@@@" [5m]) / 2`:                                "BinOp quoted text",
-		`sum by ( bool ) (` + rate + `) / 2`:                               "BinOp spelling",
+		`sum by ( hos ) (` + rate + `)  / 2`:                               "BinOp spelling",
 		rate + `  / 2`:                                                     "BinOp spelling",
 		rate + ` / on(app,env) ` + rate:                                    "BinOp vector matching spelling",
 		rate + ` / on(app) group_left ` + rate:                             "BinOp vector matching spelling",

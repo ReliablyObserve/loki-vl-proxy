@@ -29,6 +29,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   byte for byte as before. Answers cached before this change are not reused
   for these queries (a response cache key version).
 
+### Fixed
+
+- A log query that filters on a label called `not`, `in`, `options`, `contains_all`,
+  `contains_any`, `contains_common_case` or `equals_common_case` (in any case), or
+  on `and` or `or` once a label function maps a name such as `_or` to it, no
+  longer fails in VictoriaLogs. Loki accepts such a label; the query written for
+  it (`not:="a"`, `app:="a" in:="x"`) is rejected by VictoriaLogs v1.49 and v1.53
+  ("missing whitespace or ':' ...", "the in must be put in quotes"), and the
+  client got a 400 ("failed to parse the log query"). The stream selector and the label filters of the queries the
+  plan serves (line filters and label filters, no parser) now write the name
+  quoted (`"not":="a"`). Queries with a parser or a metric are still written by
+  the string translator and fail the same way until the plan serves them.
+- A label named after a word Loki's lexer reads as a keyword (`of`, `bool`,
+  `offset`, `unwrap`, `json`, `regexp`, `logfmt`, `unpack`, `pattern`,
+  `label_format`, `line_format`, `decolorize`, `drop`, `keep`, `variants`, in any
+  case) is answered with Loki's 400 and Loki's text in a stream selector, a
+  `by`, `without`, `on`, `ignoring`, `group_left` or `group_right` list, a
+  `drop` or `keep` list, a `json` or `logfmt` extraction, a `label_format` and an
+  `unwrap`. The proxy used to accept them, read the word in lower case and
+  translate the query (`{OF="a"}` filtered the field `of`). **Breaking:** a
+  client that sent such a query got an answer and gets Loki's 400 now; Loki never
+  accepted it. Answers cached before this change are not reused for these queries
+  (a response cache key version).
+- A label called `Ip`, `IP` or `Label_replace` keeps its case. `ip` and
+  `label_replace` are keywords only before a parenthesis, but the proxy read
+  the word in lower case anywhere (`{Ip="a"}` filtered the field `ip`, and
+  `| drop Ip` dropped it). Answers cached before this change are not reused for
+  these queries (a response cache key version).
+
 ## [2.133.0] - 2026-11-11
 
 ### Changed

@@ -267,7 +267,9 @@ func (p *Proxy) runLoweringShadow(s *loweringShadow, in shadowInput) {
 		// shadow, which skips a row the translator rejects.
 		return
 	}
-	want, err := translator.DecodePhysical(in.legacy)
+	// The translator writes a label called not or in bare, which VictoriaLogs rejects; the lowering quotes it. The
+	// translator's text is held to the lowering with that name quoted.
+	want, err := translator.DecodePhysical(lower.QuoteKeywordFieldText(in.legacy))
 	if err == nil && lower.UnwrapsReservedFieldOtherCase(plan) {
 		// The lowering writes the unwrap of _TIME and the like in the outbound guard's form, which is what the proxy
 		// sends for the translator's text too (guardOutboundQuery).

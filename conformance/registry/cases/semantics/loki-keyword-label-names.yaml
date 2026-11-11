@@ -1,0 +1,54 @@
+id: semantics/loki-keyword-label-names
+title: 'A label cannot be called after a word Loki''s lexer reads as a keyword (of, bool, offset, unwrap, json, regexp, logfmt, unpack, pattern, label_format, line_format, decolorize, drop, keep, variants): 400, as Loki answers; Ip and Label_replace are labels and keep their case'
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Where Loki's grammar wants a label name (a stream selector, by/without/on/
+  ignoring/group_left/group_right lists, drop and keep lists, a json or logfmt
+  extraction, a label_format, an unwrap) it wants an IDENTIFIER, and the words
+  its lexer returns as keyword tokens are none, in any case: the Loki oracle
+  (Loki 3.7.9, check command) answers a 400 for `{of="a"}`, `{OF="a"}`,
+  `{app="a"} | keep OF`, `{app="a"} | json offset`, `sum by (json) (...)`, with
+  `parse error at line 1, col 2: syntax error: unexpected of, expecting
+  IDENTIFIER or }`. The proxy used to accept all 15 words in 12 places, read
+  the word as lower case (`{OF="a"}` became the field `of`) and translate the
+  query, so a client got an answer where Loki answers 400, and the query plan
+  and the string translator wrote different field names for it. It now answers
+  Loki's 400 with Loki's text, for the 1456 queries of the recorded grid.
+
+  `ip` and `label_replace` are keywords only before a parenthesis: `Ip`, `IP`
+  and `Label_replace` are labels, and Loki keeps their case (the oracle facts
+  command: drop names `["Ip"]`, matchers `Ip`, grouping `Ip`). The proxy lower-
+  cased them (`{Ip="a"}` filtered the field `ip`); it keeps the case now.
+
+  Breaking for a client that used one of these names: Loki never accepted it.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway", of="a"}'
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 `parse error at line 1, col 26: syntax error: unexpected of,
+    expecting IDENTIFIER`, byte for byte, in the bad_data envelope.
+gap:
+  status: fixed
+  fixed_by: "this change"
+  impact: edge
+  effort: S
+  area: 'internal/logql parser (label name positions), scanner (ip, label_replace)'
+  loki: 'the words of the lexer are keyword tokens, not identifiers; ip and label_replace are keywords before a parenthesis only'
+  proxy: 'a keyword word as a label name is Loki''s 400 with Loki''s text; Ip and Label_replace keep their case'
+  planned_test: 'TestCompat_KeywordLabelNamesLikeLoki (test/e2e-compat, group semantics: status 400 and the error text of {service_name="...", of="a"} and | keep OF equal to Loki''s); TestKeywordLabelNamesMatchLoki and TestLabelsKeepCaseAroundFunctionWords (internal/logql); TestKeywordLabelFenceDoesNotServeAnOldCachedAnswer (internal/proxy)'
+  visual: none
+  visual_reason: 'an error answer; found by the lowering fuzz targets'
+  clusters: []
