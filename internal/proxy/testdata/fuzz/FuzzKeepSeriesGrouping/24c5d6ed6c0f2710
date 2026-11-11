@@ -1,0 +1,2 @@
+go test fuzz v1
+string("rAte({A=\"\"}|keep A, A | A 0!0\xed\xa1![0y])   ")
