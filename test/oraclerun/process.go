@@ -20,11 +20,13 @@ type ProcessCase struct {
 // the line passes every stage, Line and Labels are the line and the labels after the stages (an __error__ label
 // shows there), Error is set when Loki rejects the query.
 type ProcessAnswer struct {
-	ID     string            `json:"id"`
-	Keep   bool              `json:"keep"`
-	Line   string            `json:"line,omitempty"`
-	Labels map[string]string `json:"labels,omitempty"`
-	Error  string            `json:"error,omitempty"`
+	ID string `json:"id"`
+	// Selected is whether the stream selector's matchers select the stream.
+	Selected bool              `json:"selected,omitempty"`
+	Keep     bool              `json:"keep"`
+	Line     string            `json:"line,omitempty"`
+	Labels   map[string]string `json:"labels,omitempty"`
+	Error    string            `json:"error,omitempty"`
 }
 
 // LokiProcess runs the Loki oracle in oracleDir (test/oracle/loki) over cases and returns its answers, in the order
