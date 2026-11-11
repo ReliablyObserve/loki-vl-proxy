@@ -436,6 +436,7 @@ func sortedEnvelopeEndsWithResultType(body []byte) bool {
 // carried across writes.
 type entryCounter struct {
 	n         int64
+	logs      int64 // the log entries among n
 	lineBytes int64
 	carry     [9]byte
 	cn        int
@@ -530,6 +531,7 @@ func (c *entryCounter) addLogEntries(b []byte) {
 		c.pending = false
 		if b[0] == '"' {
 			c.n++
+			c.logs++
 			c.ls, off = lineScanTimestamp, 1
 		}
 	}
@@ -570,6 +572,7 @@ func (c *entryCounter) addLogEntries(b []byte) {
 			}
 			if b[off] == '"' {
 				c.n++
+				c.logs++
 				off = c.entryInWrite(b, off+1, &bs)
 			}
 		}
@@ -628,6 +631,7 @@ func (c *entryCounter) entryInWrite(b []byte, off int, bs *int) int {
 			return off
 		}
 		c.n++
+		c.logs++
 		off += 4
 	}
 }
@@ -659,7 +663,8 @@ func (c *entryCounter) scanLine(b []byte, off int) int {
 			c.lineBytes++
 			continue
 		}
-		c.ls = lineScanIdle
+		// The line's end; a \u escape cut short (not JSON) ends with it.
+		c.ls, c.hexLeft = lineScanIdle, 0
 		return off
 	}
 	return off
@@ -744,7 +749,7 @@ type statsSummary struct {
 // A line count is never below the post-filter count it contains.
 func (w *queryStatsWriter) report(totals *statsTotals) statsReport {
 	rep := statsReport{entries: w.entries.n, queryLength: w.queryLength}
-	logs := w.entries.mode == entryModeStreams
+	logs := w.isLogAnswer()
 	switch {
 	case w.route == statsRouteVolume:
 	case w.hit && w.replayed.exec > 0:
@@ -755,6 +760,19 @@ func (w *queryStatsWriter) report(totals *statsTotals) statsReport {
 		rep.summary = processedSummary(&w.rt.flow, totals, logs, w.entries.n, w.entries.lineBytes)
 	}
 	return rep
+}
+
+var statsStreamsType = []byte(`"resultType":"streams"`)
+
+// isLogAnswer reports whether the answer the writer saw is a log (streams)
+// answer, whatever writer ordered its keys: its start names the type, or it
+// holds log entries, or its held-back end names the type (the sorted-key
+// multi-tenant merge ends with resultType). A Logs Drilldown answer with
+// encodingFlags before resultType is known by its entries; an empty one is
+// not (it then reports as an empty metric answer would: nothing processed).
+func (w *queryStatsWriter) isLogAnswer() bool {
+	return w.entries.mode == entryModeStreams || w.entries.logs > 0 ||
+		bytes.Contains(w.tail[:w.tailN], statsStreamsType)
 }
 
 func processedSummary(flow *flowCounters, totals *statsTotals, logs bool, entries, lineBytes int64) statsSummary {

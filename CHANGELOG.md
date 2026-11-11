@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Changed
 
 - Query statistics follow Loki's accounting on every route and on cache
   hits. The `data.stats` object of `query`, `query_range` and now also

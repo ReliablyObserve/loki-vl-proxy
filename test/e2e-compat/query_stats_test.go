@@ -313,9 +313,13 @@ type e2eStats struct {
 	} `json:"cache"`
 }
 
-func getE2EStats(t *testing.T, base, path string, params url.Values) e2eStats {
+func getE2EStats(t *testing.T, base, path string, params url.Values, extra map[string]string) e2eStats {
 	t.Helper()
-	status, raw, _ := doJSONGET(t, base+path+"?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+	headers := map[string]string{"X-Scope-OrgID": "0"}
+	for k, v := range extra {
+		headers[k] = v
+	}
+	status, raw, _ := doJSONGET(t, base+path+"?"+params.Encode(), headers)
 	if status != http.StatusOK {
 		t.Fatalf("%s%s: %d %s", base, path, status, raw)
 	}
@@ -361,20 +365,24 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 			return v
 		}
 		sel := `{app="api-gateway"} != "` + nonce + rng.String() + `"`
+		logCheck := func(t *testing.T, miss, again e2eStats) {
+			if miss.Summary.Lines <= 0 || miss.Summary.Bytes <= 0 || miss.Summary.Entries <= 0 {
+				t.Fatalf("miss %+v: a non-empty log answer reports what it processed", miss.Summary)
+			}
+			if again.Summary.Lines != miss.Summary.Lines || again.Summary.Bytes != miss.Summary.Bytes {
+				t.Fatalf("refresh %+v: Loki computes a log query again; the proxy's hit reports the computation's %+v", again.Summary, miss.Summary)
+			}
+		}
+		drilldown := map[string]string{"X-Query-Tags": "Source=grafana-lokiexplore-app", "X-Loki-Response-Encoding-Flags": "categorize-labels"}
 		for _, tc := range []struct {
 			name, path string
 			params     url.Values
+			headers    map[string]string
 			check      func(t *testing.T, miss, again e2eStats)
 		}{
-			{"log", "/loki/api/v1/query_range", win(sel, "limit", "100", "direction", "backward"), func(t *testing.T, miss, again e2eStats) {
-				if miss.Summary.Lines <= 0 || miss.Summary.Bytes <= 0 || miss.Summary.Entries <= 0 {
-					t.Fatalf("miss %+v: a non-empty log answer reports what it processed", miss.Summary)
-				}
-				if again.Summary.Lines != miss.Summary.Lines || again.Summary.Bytes != miss.Summary.Bytes {
-					t.Fatalf("refresh %+v: Loki computes a log query again; the proxy's hit reports the computation's %+v", again.Summary, miss.Summary)
-				}
-			}},
-			{"metric", "/loki/api/v1/query_range", win(`sum(count_over_time(` + sel + ` [1m]))`), func(t *testing.T, miss, again e2eStats) {
+			{"log", "/loki/api/v1/query_range", win(sel, "limit", "100", "direction", "backward"), nil, logCheck},
+			{"log-drilldown", "/loki/api/v1/query_range", win(sel+` != "dd"`, "limit", "100", "direction", "backward"), drilldown, logCheck},
+			{"metric", "/loki/api/v1/query_range", win(`sum(count_over_time(` + sel + ` [1m]))`), nil, func(t *testing.T, miss, again e2eStats) {
 				if miss.Summary.Lines <= 0 || miss.Summary.PostFilter != miss.Summary.Lines {
 					t.Fatalf("miss %+v: a tumbling count reports its window's lines", miss.Summary)
 				}
@@ -382,26 +390,26 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 					t.Fatalf("repeat %+v cache %+v: a results-cache hit with no processing and the window served", again.Summary, again.Cache["result"])
 				}
 			}},
-			{"instant", "/loki/api/v1/query", url.Values{"query": {`sum(count_over_time(` + sel + ` [` + logqlRange + `]))`}, "time": {fmt.Sprint(end.Unix())}}, func(t *testing.T, miss, again e2eStats) {
+			{"instant", "/loki/api/v1/query", url.Values{"query": {`sum(count_over_time(` + sel + ` [` + logqlRange + `]))`}, "time": {fmt.Sprint(end.Unix())}}, nil, func(t *testing.T, miss, again e2eStats) {
 				if miss.Summary.Lines <= 0 || again.Summary.Lines != miss.Summary.Lines {
 					t.Fatalf("instant miss %+v, repeat %+v: Loki computes instant queries again; the hit reports the computation", miss.Summary, again.Summary)
 				}
 			}},
-			{"volume_range", "/loki/api/v1/index/volume_range", win(`{app="api-gateway"}`), func(t *testing.T, miss, again e2eStats) {
+			{"volume_range", "/loki/api/v1/index/volume_range", win(`{app="api-gateway"}`), nil, func(t *testing.T, miss, again e2eStats) {
 				if miss.Summary.Lines != 0 || miss.Summary.Bytes != 0 || miss.Summary.Entries <= 0 {
 					t.Fatalf("volume %+v: Loki reports the series returned and no processed lines or bytes", miss.Summary)
 				}
 			}},
 		} {
 			t.Run(rng.String()+"/"+tc.name, func(t *testing.T) {
-				loki := getE2EStats(t, lokiURL, tc.path, tc.params)
-				miss := getE2EStats(t, proxyURL, tc.path, tc.params)
+				loki := getE2EStats(t, lokiURL, tc.path, tc.params, tc.headers)
+				miss := getE2EStats(t, proxyURL, tc.path, tc.params, tc.headers)
 				// Loki omits ingester.recvWaitTime when it is zero; the proxy has
 				// no ingesters, so its ingester section is always that zero form.
 				if got, want := statsShape(t, miss.raw), withoutRecvWaitTime(statsShape(t, loki.raw)); !reflect.DeepEqual(got, want) {
 					t.Fatalf("stats shape differs from Loki's\nproxy %v\nloki  %v", got, want)
 				}
-				again := getE2EStats(t, proxyURL, tc.path, tc.params)
+				again := getE2EStats(t, proxyURL, tc.path, tc.params, tc.headers)
 				if again.Summary.ExecTime == miss.Summary.ExecTime || again.Summary.ExecTime <= 0 {
 					t.Fatalf("refresh execTime %v (first %v): each request reports its own time", again.Summary.ExecTime, miss.Summary.ExecTime)
 				}

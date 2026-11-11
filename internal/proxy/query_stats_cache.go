@@ -52,23 +52,36 @@ func isStatsSidecarKey(key string) bool { return strings.HasSuffix(key, statsSid
 // answer's entry count and, when hits replay it, the stored computation.
 type statsTrailer struct {
 	entries  int64
+	logs     bool // a log (streams) answer
 	replay   bool
 	replayed statsReplay
 }
+
+// The trailer's kind byte: bit 0 set when hits replay the computation that
+// follows, bit 1 set for a log answer.
+const (
+	statsTrailerReplay = 1 << 0
+	statsTrailerLogs   = 1 << 1
+)
 
 // appendStatsTrailer appends the stats trailer to a cached body: its fields
 // as uvarints, their length, and a magic a JSON body cannot end with.
 func appendStatsTrailer(dst []byte, t statsTrailer) []byte {
 	n := len(dst)
 	dst = binary.AppendUvarint(dst, uint64(max(t.entries, 0)))
+	var kind byte
+	if t.logs {
+		kind |= statsTrailerLogs
+	}
+	if t.replay {
+		kind |= statsTrailerReplay
+	}
+	dst = append(dst, kind)
 	if t.replay {
 		r := t.replayed
-		dst = append(dst, 1)
 		for _, v := range [...]int64{r.bytes, r.lines, r.postFilter, int64(r.exec)} {
 			dst = binary.AppendUvarint(dst, uint64(max(v, 0)))
 		}
-	} else {
-		dst = append(dst, 0)
 	}
 	dst = append(dst, byte(len(dst)-n))
 	return append(dst, statsTrailerMagic...)
@@ -90,10 +103,13 @@ func splitStatsTrailer(value []byte) (body []byte, t statsTrailer, ok bool) {
 	if m <= 0 || len(raw) == m {
 		return value, statsTrailer{}, false
 	}
+	kind := value[end-n+m]
 	t.entries, raw = int64(entries), raw[m+1:]
-	switch value[end-n+m] {
-	case 0:
-	case 1:
+	if kind&^(statsTrailerReplay|statsTrailerLogs) != 0 {
+		return value, statsTrailer{}, false
+	}
+	t.logs = kind&statsTrailerLogs != 0
+	if kind&statsTrailerReplay != 0 {
 		var fields [4]int64
 		for i := range fields {
 			v, m := binary.Uvarint(raw)
@@ -104,8 +120,6 @@ func splitStatsTrailer(value []byte) (body []byte, t statsTrailer, ok bool) {
 		}
 		t.replay = true
 		t.replayed = statsReplay{bytes: fields[0], lines: fields[1], postFilter: fields[2], exec: time.Duration(fields[3])}
-	default:
-		return value, statsTrailer{}, false
 	}
 	if len(raw) != 0 {
 		return value, statsTrailer{}, false
@@ -224,9 +238,10 @@ func (p *Proxy) serveCompatHitWithStats(w http.ResponseWriter, r *http.Request, 
 	sw.entries.n, sw.entriesKnown = trailer.entries, true
 	sw.entries.mode = entryModeOf(body[:min(len(body), queryStatsTailHold)])
 	sw.hit = true
+	logs := trailer.logs || sw.entries.mode == entryModeStreams
 	if trailer.replay {
 		sw.replayed = trailer.replayed
-	} else if sw.route == statsRouteRange && sw.entries.mode != entryModeStreams {
+	} else if sw.route == statsRouteRange && !logs {
 		// A metric results-cache hit serves its window (Loki's
 		// queryLengthServed); Loki's empty log answers report none.
 		sw.queryLength = requestWindowLength(r)
@@ -359,7 +374,8 @@ const statsTrailerMaxLen = 5*binary.MaxVarintLen64 + 2 + len(statsTrailerMagic)
 // instant answer) replay its totals and time.
 func (w *queryStatsWriter) trailer() statsTrailer {
 	t := statsTrailer{entries: w.entries.n}
-	logs := w.entries.mode == entryModeStreams
+	logs := w.isLogAnswer()
+	t.logs = logs
 	if w.route != statsRouteInstant && (!logs || w.entries.n == 0) {
 		return t
 	}

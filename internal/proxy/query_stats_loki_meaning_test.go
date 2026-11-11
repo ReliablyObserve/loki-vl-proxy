@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
@@ -208,13 +209,28 @@ func TestQueryStats_LokiAccountingPerRouteAndCacheTier(t *testing.T) {
 		return v
 	}
 	type check func(t *testing.T, miss, hit lokiStatsView)
+	logReplays := func(rows int64) check {
+		return func(t *testing.T, miss, hit lokiStatsView) {
+			if miss.Summary.Lines != rows || miss.Summary.Bytes <= 0 || miss.Summary.Entries != rows {
+				t.Fatalf("miss %+v: want the %d rows read and their line bytes", miss.Summary, rows)
+			}
+			if hit.Summary.Lines != miss.Summary.Lines || hit.Summary.Bytes != miss.Summary.Bytes || hit.Cache["result"].QueryLengthServed != 0 {
+				t.Fatalf("hit %+v cache %+v: want the stored computation's totals %+v", hit.Summary, hit.Cache["result"], miss.Summary)
+			}
+		}
+	}
+	drilldown := map[string]string{"X-Query-Tags": "Source=grafana-lokiexplore-app", "X-Loki-Response-Encoding-Flags": "categorize-labels"}
 	for _, tc := range []struct {
 		name, path string
 		rows       int
 		params     url.Values
+		headers    map[string]string
+		twoTenant  bool
 		check      check
 	}{
-		{"log non-empty", "/loki/api/v1/query_range", 6, window(`{app="api"}`, "limit", "100"), func(t *testing.T, miss, hit lokiStatsView) {
+		{"log categorized", "/loki/api/v1/query_range", 6, window(`{app="api"}`, "limit", "100"), drilldown, false, logReplays(6)},
+		{"log multi-tenant", "/loki/api/v1/query_range", 6, window(`{app="api"}`, "limit", "100"), map[string]string{"X-Scope-OrgID": "tenant-a|tenant-b"}, true, logReplays(12)},
+		{"log non-empty", "/loki/api/v1/query_range", 6, window(`{app="api"}`, "limit", "100"), nil, false, func(t *testing.T, miss, hit lokiStatsView) {
 			if miss.Summary.Lines != 6 || miss.Summary.Bytes <= 0 || miss.Summary.Entries != 6 {
 				t.Fatalf("miss %+v: want the 6 rows read and their line bytes", miss.Summary)
 			}
@@ -225,12 +241,12 @@ func TestQueryStats_LokiAccountingPerRouteAndCacheTier(t *testing.T) {
 				t.Fatalf("hit %+v cache %+v: want no VictoriaLogs call, the entry found and the hit's own execTime", hit.Summary, hit.Cache["result"])
 			}
 		}},
-		{"log empty", "/loki/api/v1/query_range", 0, window(`{app="api"}`, "limit", "100"), func(t *testing.T, miss, hit lokiStatsView) {
+		{"log empty", "/loki/api/v1/query_range", 0, window(`{app="api"}`, "limit", "100"), nil, false, func(t *testing.T, miss, hit lokiStatsView) {
 			if hit.Summary.Lines != 0 || hit.Summary.Bytes != 0 || hit.Summary.Entries != 0 || hit.Cache["result"].EntriesFound != 1 || hit.Cache["result"].QueryLengthServed != 0 {
 				t.Fatalf("empty log hit %+v: want Loki's results-cache hit (no processing)", hit.Summary)
 			}
 		}},
-		{"metric range", "/loki/api/v1/query_range", 6, window(`sum(count_over_time({app="api"}[1m]))`), func(t *testing.T, miss, hit lokiStatsView) {
+		{"metric range", "/loki/api/v1/query_range", 6, window(`sum(count_over_time({app="api"}[1m]))`), nil, false, func(t *testing.T, miss, hit lokiStatsView) {
 			if miss.Summary.Lines <= 0 || miss.Summary.Lines != miss.Summary.PostFilter {
 				t.Fatalf("miss %+v: want the window's lines from the answer", miss.Summary)
 			}
@@ -244,12 +260,12 @@ func TestQueryStats_LokiAccountingPerRouteAndCacheTier(t *testing.T) {
 				t.Fatalf("hit cache.result %+v: want the window served, %d ns", hit.Cache["result"], want)
 			}
 		}},
-		{"metric sliding", "/loki/api/v1/query_range", 6, window(`sum(count_over_time({app="api"}[5m]))`), func(t *testing.T, miss, hit lokiStatsView) {
+		{"metric sliding", "/loki/api/v1/query_range", 6, window(`sum(count_over_time({app="api"}[5m]))`), nil, false, func(t *testing.T, miss, hit lokiStatsView) {
 			if miss.Summary.Lines != 0 || miss.Summary.Bytes != 0 {
 				t.Fatalf("miss %+v: a sliding window counts a line in several steps; nothing derived, nothing read means 0", miss.Summary)
 			}
 		}},
-		{"instant", "/loki/api/v1/query", 6, url.Values{"query": {`sum(count_over_time({app="api"}[5m]))`}, "time": {fmt.Sprint(end.Unix())}}, func(t *testing.T, miss, hit lokiStatsView) {
+		{"instant", "/loki/api/v1/query", 6, url.Values{"query": {`sum(count_over_time({app="api"}[5m]))`}, "time": {fmt.Sprint(end.Unix())}}, nil, false, func(t *testing.T, miss, hit lokiStatsView) {
 			if miss.Summary.Lines <= 0 {
 				t.Fatalf("miss %+v: want the instant answer's lines", miss.Summary)
 			}
@@ -257,7 +273,7 @@ func TestQueryStats_LokiAccountingPerRouteAndCacheTier(t *testing.T) {
 				t.Fatalf("hit %+v: want the stored computation's totals %+v", hit.Summary, miss.Summary)
 			}
 		}},
-		{"volume_range", "/loki/api/v1/index/volume_range", 6, window(`{app="api"}`), func(t *testing.T, miss, hit lokiStatsView) {
+		{"volume_range", "/loki/api/v1/index/volume_range", 6, window(`{app="api"}`), nil, false, func(t *testing.T, miss, hit lokiStatsView) {
 			for _, s := range []lokiSummary{miss.Summary, hit.Summary} {
 				if s.Lines != 0 || s.Bytes != 0 || s.PostFilter != 0 || s.ExecTime <= 0 {
 					t.Fatalf("volume %+v: Loki reports no processed lines or bytes for volume", s)
@@ -270,9 +286,13 @@ func TestQueryStats_LokiAccountingPerRouteAndCacheTier(t *testing.T) {
 			vl := httptest.NewServer(stub)
 			defer vl.Close()
 			h := newQueryStatsTestProxy(t, vl.URL, "")
-			miss := statsView(t, serveQueryStats(t, h, tc.path, tc.params, nil))
+			if tc.twoTenant {
+				_, _, mux := newTwoTenantProxy(t, vl.URL)
+				h = mux
+			}
+			miss := statsView(t, serveQueryStats(t, h, tc.path, tc.params, tc.headers))
 			before, _, _ := stub.snapshot()
-			hit := statsView(t, serveQueryStats(t, h, tc.path, tc.params, nil))
+			hit := statsView(t, serveQueryStats(t, h, tc.path, tc.params, tc.headers))
 			if after, _, _ := stub.snapshot(); after != before && tc.path != "/loki/api/v1/index/volume_range" {
 				t.Fatalf("the repeat reached VictoriaLogs (%d -> %d)", before, after)
 			}
@@ -315,6 +335,43 @@ func TestQueryStatsTotals_PartlyCachedMetricAnswerGivesNoTotals(t *testing.T) {
 		if !reused && rt.statsTotals.lines != 9 {
 			t.Fatalf("whole answer: %d lines, want 9", rt.statsTotals.lines)
 		}
+	}
+}
+
+// TestQueryStats_LogAnswerKnownWhateverTheKeyOrder: a log answer gets the log
+// accounting (rows read and their line bytes, replay on a hit) whatever
+// writer ordered its keys: encodingFlags before resultType (Logs
+// Drilldown), sorted keys (the multi-tenant merge), or the plain order.
+//
+// conformance: drilldown/logs-footer-query-stats, query-stats-envelope
+func TestQueryStats_LogAnswerKnownWhateverTheKeyOrder(t *testing.T) {
+	for _, body := range []string{
+		`{"status":"success","data":{"resultType":"streams","result":[{"stream":{},"values":[["1","abc"]]}],"stats":{}}}`,
+		`{"status":"success","data":{"encodingFlags":["categorize-labels"],"resultType":"streams","result":[{"stream":{},"values":[["1","abc",{}]]}],"stats":{}}}`,
+		`{"data":{"result":[{"stream":{},"values":[["1","abc"]]}],"resultType":"streams","stats":{}},"status":"success"}`,
+		`{"data":{"result":[],"resultType":"streams"},"status":"success"}`,
+	} {
+		rec := httptest.NewRecorder()
+		rec.Header().Set("Content-Type", "application/json")
+		w := new(queryStatsWriter)
+		w.reset(rec, newRequestTelemetry())
+		for i := 0; i < len(body); i += 7 {
+			_, _ = w.Write([]byte(body[i:min(i+7, len(body))]))
+		}
+		if !w.isLogAnswer() {
+			t.Fatalf("not read as a log answer: %s", body)
+		}
+		if w.entries.n > 0 && w.report(&statsTotals{}).summary.bytes != 3 {
+			t.Fatalf("line bytes %d, want 3: %s", w.report(&statsTotals{}).summary.bytes, body)
+		}
+	}
+	rec := httptest.NewRecorder()
+	rec.Header().Set("Content-Type", "application/json")
+	w := new(queryStatsWriter)
+	w.reset(rec, newRequestTelemetry())
+	_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"a":"[\"x"},"values":[[1,"2"]]}]}}`))
+	if w.isLogAnswer() {
+		t.Fatal("a matrix answer read as a log answer")
 	}
 }
 
@@ -421,7 +478,10 @@ func FuzzEntryCounterLineBytes(f *testing.F) {
 		if whole.lineBytes != split.lineBytes || whole.n != split.n {
 			t.Fatalf("whole %d/%d, split by %d: %d/%d (%q)", whole.n, whole.lineBytes, size, split.n, split.lineBytes, body)
 		}
-		if json.Valid(body) && strings.HasPrefix(string(body), `{"status":"success","data":{"resultType":"streams","result":[`) {
+		// encoding/json replaces invalid UTF-8 with U+FFFD (3 bytes), so the
+		// decoded lines are compared only for valid UTF-8 answers (the
+		// proxy writes no other).
+		if json.Valid(body) && utf8.Valid(body) && strings.HasPrefix(string(body), `{"status":"success","data":{"resultType":"streams","result":[`) {
 			var ans struct {
 				Data struct {
 					Result []struct {
@@ -449,4 +509,86 @@ func FuzzEntryCounterLineBytes(f *testing.F) {
 			}
 		}
 	})
+}
+
+// TestQueryStats_WorstCaseObjectFitsTheWriterBuffer: with every summary and
+// cache field at its largest value, the stats object plus the held-back
+// answer end, a stored-block header and the gzip trailer still fit the
+// writer's fixed buffer, and rendering into it allocates nothing.
+//
+// conformance: query-stats-envelope
+func TestQueryStats_WorstCaseObjectFitsTheWriterBuffer(t *testing.T) {
+	const maxI64 = int64(^uint64(0) >> 1)
+	var flow flowCounters
+	flow.vlCalls = int(^uint(0) >> 1)
+	flow.queueDur = time.Duration(maxI64)
+	for i := range flow.lokiCache {
+		flow.lokiCache[i] = flowLokiCache{requested: 1<<31 - 1, found: 1<<31 - 1, stored: 1<<31 - 1,
+			received: maxI64, sent: maxI64, dur: time.Duration(maxI64)}
+	}
+	rep := statsReport{summary: statsSummary{bytes: maxI64, lines: maxI64, postFilter: maxI64, rateOver: time.Nanosecond},
+		entries: maxI64, queryLength: maxI64}
+	w := new(queryStatsWriter)
+	out := appendQueryStats(w.buf[:0], &flow, rep, time.Duration(maxI64))
+	if !json.Valid(out) {
+		t.Fatalf("not JSON: %s", out)
+	}
+	const gzipBlockHeader, gzipTrailer = 5, 8
+	if need := len(out) + queryStatsTailHold + gzipBlockHeader + gzipTrailer; need > len(w.buf) {
+		t.Fatalf("worst case needs %d bytes, the buffer holds %d", need, len(w.buf))
+	}
+	if allocs := testing.AllocsPerRun(20, func() {
+		_ = appendQueryStats(w.buf[:0], &flow, rep, time.Duration(maxI64))
+	}); allocs != 0 {
+		t.Fatalf("rendering the worst case allocates %v times", allocs)
+	}
+}
+
+// TestQueryStats_ValueFromAnotherReplicaReplays: a cached log answer is
+// replayed the same way on a replica that did not compute it (the peer tier
+// hands it the stored value byte for byte): the second proxy, given only the
+// first one's stored value, answers the hit with the computation's totals
+// and makes no VictoriaLogs request.
+//
+// conformance: query-stats-envelope
+func TestQueryStats_ValueFromAnotherReplicaReplays(t *testing.T) {
+	stub := &statsStubVL{rows: 9}
+	vl := httptest.NewServer(stub)
+	defer vl.Close()
+	newProxy := func() (*Proxy, http.Handler) {
+		p, err := New(Config{BackendURL: vl.URL, Cache: cache.New(time.Minute, 1000), CompatCache: cache.New(time.Minute, 100), LogLevel: "error"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = p.Shutdown(t.Context()) })
+		mux := http.NewServeMux()
+		p.RegisterRoutes(mux)
+		return p, mux
+	}
+	a, ha := newProxy()
+	b, hb := newProxy()
+	now := time.Now()
+	params := url.Values{"query": {`{app="api"}`}, "limit": {"100"},
+		"start": {fmt.Sprint(now.Add(-5 * time.Minute).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())}}
+	miss := statsView(t, serveQueryStats(t, ha, "/loki/api/v1/query_range", params, nil))
+	keyReq := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	keyReq.Header.Set("X-Scope-OrgID", "0")
+	keyA, okA := a.compatCacheKey("query_range", keyReq)
+	keyB, okB := b.compatCacheKey("query_range", keyReq)
+	if !okA || !okB || keyA != keyB {
+		t.Fatalf("replicas key the request differently: %q %q", keyA, keyB)
+	}
+	value, ok := a.compatCache.Get(keyA)
+	if !ok {
+		t.Fatal("replica A stored no answer")
+	}
+	b.compatCache.SetWithTTL(keyB, value, time.Minute)
+	before, _, _ := stub.snapshot()
+	hit := statsView(t, serveQueryStats(t, hb, "/loki/api/v1/query_range", params, nil))
+	if after, _, _ := stub.snapshot(); after != before {
+		t.Fatalf("replica B reached VictoriaLogs (%d -> %d)", before, after)
+	}
+	if hit.Summary.Lines != miss.Summary.Lines || hit.Summary.Bytes != miss.Summary.Bytes || hit.Cache["result"].EntriesFound != 1 {
+		t.Fatalf("replica B hit %+v, want replica A's computation %+v", hit.Summary, miss.Summary)
+	}
 }

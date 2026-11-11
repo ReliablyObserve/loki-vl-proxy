@@ -349,14 +349,22 @@ decisions:
       and 1h, miss and repeat, once ingester.recvWaitTime (omitted by Loki
       when zero) is set aside.
     code: [internal/proxy/query_stats.go, internal/proxy/query_stats_cache.go, internal/proxy/query_stats_totals.go, internal/proxy/middleware.go]
-    tests: [TestQueryStats_ObjectHasLokisRecordedShape, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestQueryStatsTotals_PartlyCachedMetricAnswerGivesNoTotals, TestEntryCounter_LineBytes, FuzzEntryCounterLineBytes, TestStatsTrailerRoundTrip, TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStats_CompressedCacheHitCarriesStats, TestQueryStats_GzipCacheHitIsOneMember, TestQueryStatsTotals_LogQueryFromItsVolumeAnswer, TestDrilldown_QueryStatsLikeLoki, TestDrilldown_QueryStatsEnvelope]
+    tests: [TestQueryStats_ObjectHasLokisRecordedShape, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestQueryStats_LogAnswerKnownWhateverTheKeyOrder, TestQueryStats_WorstCaseObjectFitsTheWriterBuffer, TestQueryStats_ValueFromAnotherReplicaReplays, TestQueryStatsTotals_PartlyCachedMetricAnswerGivesNoTotals, TestEntryCounter_LineBytes, FuzzEntryCounterLineBytes, TestStatsTrailerRoundTrip, TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStats_CompressedCacheHitCarriesStats, TestQueryStats_GzipCacheHitIsOneMember, TestQueryStatsTotals_LogQueryFromItsVolumeAnswer, TestDrilldown_QueryStatsLikeLoki, TestDrilldown_QueryStatsEnvelope]
     quality: |
       The shape is pinned to recorded Loki answers (keys, order, value
       types) on every route, miss and hit, and in e2e to Loki's live answer.
       Line bytes are the decoded lines' bytes (a differential against
       encoding/json over split writes, fuzzed: escapes, \u escapes counted
       as one byte, categorized entries). Each route and cache tier has a
-      table row. Known differences, documented: structured-metadata bytes
+      table row, the Logs Drilldown (categorize-labels) and multi-tenant
+      (sorted keys) log answers included: a log answer is known by its
+      start, its entries or its end, whatever writer ordered its keys, and
+      the trailer records the kind for hits. The worst-case object (every
+      field at its largest) fits the writer's fixed buffer with the answer's
+      end and the gzip framing, with no allocation. A stored value served
+      on another replica replays the same totals (unit test with the value
+      handed over byte for byte); owed: the e2e-fleet proof through the
+      peer tier. Known differences, documented: structured-metadata bytes
       are not counted; metric bytes are 0 unless bytes_over_time; Loki's
       early stop on long log windows is not emulated; splits counts
       VictoriaLogs calls.

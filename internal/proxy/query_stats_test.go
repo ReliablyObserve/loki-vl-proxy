@@ -604,7 +604,9 @@ func TestStatsTrailerRoundTrip(t *testing.T) {
 		for _, n := range []int64{0, 1, 127, 128, 1 << 40} {
 			for _, want := range []statsTrailer{
 				{entries: n},
+				{entries: n, logs: true},
 				{entries: n, replay: true, replayed: statsReplay{bytes: n * 3, lines: n, postFilter: n / 2, exec: time.Duration(n) + 1}},
+				{entries: n, logs: true, replay: true, replayed: statsReplay{bytes: n * 3, lines: n, postFilter: n / 2, exec: time.Duration(n) + 1}},
 			} {
 				got, tr, ok := splitStatsTrailer(appendStatsTrailer([]byte(body), want))
 				if !ok || tr != want || string(got) != body {
