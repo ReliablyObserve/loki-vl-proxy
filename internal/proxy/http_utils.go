@@ -1212,9 +1212,14 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 		if gp.drilldownProfile != "" {
 			vlReq.Header[hdrVLDrilldownProfile] = []string{gp.drilldownProfile}
 		}
-		if authUser, authSource := metrics.ResolveAuthContext(origReq); authUser != "" {
-			vlReq.Header[hdrVLAuthUser] = []string{authUser}
-			vlReq.Header[hdrVLAuthSource] = []string{authSource}
+		// The basic-auth user name is part of the client's credentials: it
+		// reaches VictoriaLogs only when the operator trusts and forwards
+		// client identity (-metrics.trust-proxy-headers), never by default.
+		if p.metricsTrustProxyHeaders {
+			if authUser, authSource := metrics.ResolveAuthContext(origReq); authUser != "" {
+				vlReq.Header[hdrVLAuthUser] = []string{authUser}
+				vlReq.Header[hdrVLAuthSource] = []string{authSource}
+			}
 		}
 		for name, values := range p.forwardedIdentityHeaders(origReq) {
 			vlReq.Header[name] = values

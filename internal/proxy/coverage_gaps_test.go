@@ -1081,7 +1081,7 @@ func TestDelete_VLReturns500_PropagatesError(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
-	p.deleteAPIEnabled = true // -delete-api-enabled
+	enableDeleteAPIForTest(p)
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -1091,7 +1091,7 @@ func TestDelete_VLReturns500_PropagatesError(t *testing.T) {
 	r := httptest.NewRequest("POST",
 		fmt.Sprintf(`/loki/api/v1/delete?query={app="nginx"}&start=%d&end=%d`, start, end), nil)
 	r.Header.Set("X-Delete-Confirmation", "true")
-	mux.ServeHTTP(w, r)
+	serveWithDeleteToken(mux, w, r)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500 propagated from VL, got %d", w.Code)
@@ -1345,7 +1345,7 @@ func TestParseDeleteTimestamp_RFC3339BeyondCapRejected(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
-	p.deleteAPIEnabled = true // -delete-api-enabled
+	enableDeleteAPIForTest(p)
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -1358,7 +1358,7 @@ func TestParseDeleteTimestamp_RFC3339BeyondCapRejected(t *testing.T) {
 		fmt.Sprintf(`/loki/api/v1/delete?query={app="nginx"}&start=%s&end=%s`,
 			url.QueryEscape(startISO), url.QueryEscape(endISO)), nil)
 	r.Header.Set("X-Delete-Confirmation", "true")
-	mux.ServeHTTP(w, r)
+	serveWithDeleteToken(mux, w, r)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for RFC3339 delete range >30 days, got %d body=%s", w.Code, w.Body.String())
@@ -1379,7 +1379,7 @@ func TestParseDeleteTimestamp_RFC3339WithinCapAllowed(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
-	p.deleteAPIEnabled = true // -delete-api-enabled
+	enableDeleteAPIForTest(p)
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -1391,7 +1391,7 @@ func TestParseDeleteTimestamp_RFC3339WithinCapAllowed(t *testing.T) {
 		fmt.Sprintf(`/loki/api/v1/delete?query={app="nginx"}&start=%s&end=%s`,
 			url.QueryEscape(startISO), url.QueryEscape(endISO)), nil)
 	r.Header.Set("X-Delete-Confirmation", "true")
-	mux.ServeHTTP(w, r)
+	serveWithDeleteToken(mux, w, r)
 
 	if w.Code == http.StatusBadRequest {
 		t.Errorf("RFC3339 delete within cap should not be rejected: %s", w.Body.String())

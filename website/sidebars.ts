@@ -79,6 +79,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'operations',
         'security',
+        'tenancy-and-auth',
         'security-hardening-migration',
         'security-hardening-validation',
         'security-hardening-manual-acceptance',
