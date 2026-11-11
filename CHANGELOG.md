@@ -28,7 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   user headers to VictoriaLogs and keys the caches by user, so each user's
   identical requests are cached and sent separately.
   `-log-user-header-trusted-cidrs` accepts the header only from listed peers
-  (the TCP peer, never `X-Forwarded-For`); both flags are validated at startup.
+  (the TCP peer, never `X-Forwarded-For`); both flags are validated at startup,
+  and a header that carries credentials (`Authorization`, `Cookie`, or a name with
+  token, secret, password, key, session or credential) is refused, so no
+  credential can reach the log.
   Helm: `observability.queryUser.header` and `observability.queryUser.trustedCIDRs`.
 - `/debug/queries` (with `-server.enable-query-analytics`) shows the heaviest
   callers: the top 20 tenant and user pairs of the last 15 to 30 minutes by

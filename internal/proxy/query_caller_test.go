@@ -438,3 +438,24 @@ func TestParallelUpstreamLinesShareTheCaller(t *testing.T) {
 		}
 	}
 }
+
+// A header that carries credentials can never name the user: its value would be written to every request and
+// slow line.
+// conformance: observability-slow-query-log
+func TestLogUserHeaderRefusesCredentialHeaders(t *testing.T) {
+	for _, name := range []string{
+		"Authorization", "authorization", "Proxy-Authorization", "Cookie", "Set-Cookie",
+		"X-Auth-Token", "X-Api-Key", "X-API_KEY", "Apikey", "X-Session-Id", "X-Secret-User",
+		"X-Password", "X-Amz-Security-Token", "X-Id-Token", "X-Jwt-Assertion", "X-Forwarded-Access-Token",
+		"X-Grafana-Id-Credential",
+	} {
+		if _, err := parseLogUserHeader(name, ""); err == nil || !strings.Contains(err.Error(), "carries credentials") {
+			t.Errorf("-log-user-header %q: want a credentials refusal, got %v", name, err)
+		}
+	}
+	for _, name := range []string{"X-Grafana-User", "X-Forwarded-User", "X-Webauth-User", "X-Auth-Request-User", "X-Remote-User", "X-Email"} {
+		if _, err := parseLogUserHeader(name, ""); err != nil {
+			t.Errorf("-log-user-header %q: want accepted, got %v", name, err)
+		}
+	}
+}

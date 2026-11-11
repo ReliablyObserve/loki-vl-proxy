@@ -68,6 +68,22 @@ var userHeaderSources = map[string]string{
 	"X-Auth-Request-User": "auth_request_user",
 }
 
+// credentialHeaderName reports a header whose value is credential material (Authorization, cookies, tokens,
+// keys, passwords, sessions): its value must never be logged, so it cannot name the user.
+func credentialHeaderName(name string) bool {
+	n := strings.ToLower(name)
+	switch n {
+	case "authorization", "proxy-authorization", "cookie", "set-cookie":
+		return true
+	}
+	for _, part := range []string{"token", "secret", "password", "passwd", "api-key", "apikey", "api_key", "session", "credential", "cookie", "authorization", "jwt", "assertion"} {
+		if strings.Contains(n, part) {
+			return true
+		}
+	}
+	return false
+}
+
 // parseLogUserHeader reads -log-user-header and -log-user-header-trusted-cidrs at startup, so a bad value fails
 // fast.
 func parseLogUserHeader(name, cidrs string) (logUserHeader, error) {
@@ -80,6 +96,9 @@ func parseLogUserHeader(name, cidrs string) (logUserHeader, error) {
 		return logUserHeader{}, nil
 	}
 	h := logUserHeader{name: http.CanonicalHeaderKey(name), source: "user_header"}
+	if credentialHeaderName(h.name) {
+		return logUserHeader{}, fmt.Errorf("-log-user-header %q carries credentials and would write them to the log; name a header that holds only the user name, such as X-Grafana-User", h.name)
+	}
 	if src, ok := userHeaderSources[h.name]; ok {
 		h.source = src
 	}
