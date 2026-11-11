@@ -81,7 +81,8 @@ type requestTelemetrySnapshot struct {
 type requestRouteMeta struct {
 	endpoint string
 	route    string
-	caller   requestCaller
+	// req is the client request, read only when a line names its caller (query_caller.go).
+	req *http.Request
 }
 
 type grafanaClientProfile struct {

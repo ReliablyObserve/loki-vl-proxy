@@ -189,7 +189,7 @@ func (p *Proxy) observeUpstreamDone(ctx context.Context, path string, params url
 		"vl.body_outcome", outcome,
 	}
 	attrs = p.appendTenantScopeAttrs(ctx, attrs, getOrgID(ctx))
-	attrs = appendCallerAttrs(attrs, meta.caller)
+	attrs = appendCallerAttrs(attrs, p.requestCallerFromContext(ctx))
 	if meta.route != "" {
 		attrs = append(attrs, "http.parent_route", meta.route)
 	}
@@ -258,7 +258,7 @@ func (p *Proxy) logSlowRequest(ctx context.Context, endpoint, route, query strin
 		}
 		trace = append(trace, entry)
 	}
-	caller := requestCallerFromContext(ctx)
+	caller := p.requestCallerFromContext(ctx)
 	tenant := caller.tenant
 	if org := getOrgID(ctx); org != "" {
 		tenant = sanitizeCallerValue(org, callerIdentityMaxBytes)
@@ -279,6 +279,7 @@ func (p *Proxy) logSlowRequest(ctx context.Context, endpoint, route, query strin
 		"proxy.steps", trace,
 	}
 	attrs = append(attrs, telemetry.flow.logAttrs(elapsed)...)
+	attrs = append(attrs, "flow.vl.rows", telemetry.flow.vlRows)
 	attrs = p.appendTenantScopeAttrs(ctx, attrs, tenant)
 	attrs = appendCallerAttrs(attrs, caller)
 	if dropped > 0 {

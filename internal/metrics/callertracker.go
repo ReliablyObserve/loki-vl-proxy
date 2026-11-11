@@ -142,7 +142,7 @@ func (ct *CallerTracker) Record(req CallerRequest) {
 			ct.cur[key] = s
 		}
 	}
-	s.CallerCost.add(req.CallerCost)
+	s.add(req.CallerCost)
 	s.LastSeen = req.Time
 	if req.GrafanaSource != "" {
 		s.LastGrafanaSource = req.GrafanaSource
@@ -188,7 +188,7 @@ func (ct *CallerTracker) View(tenant, user string, n int) CallerView {
 	for _, half := range []map[callerKey]*CallerSummary{ct.prev, ct.cur} {
 		for k, s := range half {
 			if m, ok := merged[k]; ok {
-				m.CallerCost.add(s.CallerCost)
+				m.add(s.CallerCost)
 				m.LastSeen = max(m.LastSeen, s.LastSeen)
 				if s.LastGrafanaSource != "" {
 					m.LastGrafanaSource = s.LastGrafanaSource

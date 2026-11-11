@@ -35,11 +35,11 @@ type requestCaller struct {
 }
 
 // newRequestCaller sanitizes what the request log, the slow lines and /debug/queries read about the caller.
-func newRequestCaller(r *http.Request, user, userSource string, profile grafanaClientProfile) requestCaller {
+func newRequestCaller(r *http.Request, tenant, user, userSource string, profile grafanaClientProfile) requestCaller {
 	c := requestCaller{
 		user:       sanitizeCallerValue(user, callerIdentityMaxBytes),
 		userSource: userSource,
-		tenant:     sanitizeCallerValue(r.Header.Get("X-Scope-OrgID"), callerIdentityMaxBytes),
+		tenant:     sanitizeCallerValue(tenant, callerIdentityMaxBytes),
 		sourceTag:  sanitizeCallerValue(profile.sourceTag, callerIdentityMaxBytes),
 	}
 	if tags := r.Header.Values("X-Query-Tags"); len(tags) > 0 {
@@ -138,10 +138,26 @@ func (p *Proxy) callerUser(r *http.Request, clientID, clientSource string) (stri
 	return user, p.logUser.source
 }
 
-// requestCallerFromContext is the caller of the client request ctx belongs to; zero outside one. Work shared by
-// coalesced requests runs in the context of the request that started it, so it is attributed to that caller.
-func requestCallerFromContext(ctx context.Context) requestCaller {
-	return requestRouteMetaFromContext(ctx).caller
+// requestCallerFromContext is the caller of the client request ctx belongs to; zero outside one. It is resolved
+// when a line or the callers view needs it, so a request that logs nothing pays nothing. Work shared by coalesced
+// requests runs in the context of the request that started it, so it is attributed to that caller.
+func (p *Proxy) requestCallerFromContext(ctx context.Context) requestCaller {
+	meta := requestRouteMetaFromContext(ctx)
+	if meta.req == nil {
+		return requestCaller{}
+	}
+	r := meta.req
+	clientID, clientSource := metrics.ResolveClientContext(r, p.metricsTrustProxyHeaders)
+	user, userSource := p.callerUser(r, clientID, clientSource)
+	return newRequestCaller(r, r.Header.Get("X-Scope-Orgid"), user, userSource, grafanaClientProfileFromContext(ctx))
+}
+
+// vlCost is the VictoriaLogs part of a request's flow, passed by value so the request's telemetry snapshot stays
+// on the stack.
+type vlCost struct {
+	calls       int
+	dur         time.Duration
+	bytes, rows int64
 }
 
 // recordCallerCost adds what a finished client request cost to its tenant's VictoriaLogs cost counters
@@ -149,20 +165,23 @@ func requestCallerFromContext(ctx context.Context) requestCaller {
 // -server.enable-query-analytics, to the /debug/queries callers view. Live tail is left out: it lasts as long as
 // the client keeps it open.
 // The metric takes the tenant as sent (metricTenant), like loki_vl_proxy_tenant_requests_total.
-func (p *Proxy) recordCallerCost(c requestCaller, metricTenant, endpoint, route, query string, status int, elapsed time.Duration, flow *flowCounters) {
+func (p *Proxy) recordCallerCost(ctx context.Context, metricTenant, query string, status int, elapsed time.Duration, vl vlCost) {
+	meta := requestRouteMetaFromContext(ctx)
+	endpoint, route := meta.endpoint, meta.route
 	if slowRequestExempt(endpoint, route) {
 		return
 	}
-	p.metrics.RecordTenantVLCost(metricTenant, flow.vlCalls, flow.vlDur, flow.vlBytes, flow.vlRows)
+	p.metrics.RecordTenantVLCost(metricTenant, vl.calls, vl.dur, vl.bytes, vl.rows)
 	if !p.enableQueryAnalytics || p.queryTracker == nil {
 		return
 	}
+	c := p.requestCallerFromContext(ctx)
 	req := metrics.CallerRequest{
 		Tenant: c.tenant, User: c.user, UserSource: c.userSource, GrafanaSource: c.sourceTag,
 		Endpoint: endpoint, Route: route, Status: status, Query: query,
 		CallerCost: metrics.CallerCost{
-			DurationMs: elapsed.Milliseconds(), VLCalls: int64(flow.vlCalls), VLMs: flow.vlDur.Milliseconds(),
-			VLBytes: flow.vlBytes, VLRows: flow.vlRows,
+			DurationMs: elapsed.Milliseconds(), VLCalls: int64(vl.calls), VLMs: vl.dur.Milliseconds(),
+			VLBytes: vl.bytes, VLRows: vl.rows,
 		},
 	}
 	if status >= http.StatusBadRequest {
@@ -189,10 +208,16 @@ func appendCallerAttrs(attrs []any, c requestCaller) []any {
 	if c.surface != "" {
 		attrs = append(attrs, "grafana.client.surface", c.surface)
 	}
-	if c.queryTags != "" {
+	if c.queryTags != "" && !queryTagsAreSource(c.queryTags, c.sourceTag) {
 		attrs = append(attrs, "grafana.query_tags", c.queryTags)
 	}
 	return attrs
+}
+
+// queryTagsAreSource reports X-Query-Tags that hold nothing but the Source tag the line already carries.
+func queryTagsAreSource(tags, source string) bool {
+	k, v, ok := strings.Cut(tags, "=")
+	return ok && strings.EqualFold(strings.TrimSpace(k), "source") && strings.Trim(strings.TrimSpace(v), `"`) == source
 }
 
 // appendTenantScopeAttrs adds where the tenant's queries go in VictoriaLogs: the AccountID and ProjectID the

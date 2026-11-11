@@ -40,10 +40,8 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		rt := newRequestTelemetry()
 		rt.start, rt.traceOn = start, p.slowTraceOn()
 		ctx := context.WithValue(r.Context(), requestTelemetryKey, rt)
+		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route, req: r})
 		grafanaProfile := detectGrafanaClientProfile(r, endpoint, route)
-		user, userSource := p.callerUser(r, clientID, clientSource)
-		caller := newRequestCaller(r, user, userSource, grafanaProfile)
-		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route, caller: caller})
 		ctx = context.WithValue(ctx, requestGrafanaClientKey, grafanaProfile)
 		ctx = withExecutionLimits(ctx, p.execLimits)
 		reqWithTelemetry := r.WithContext(ctx)
@@ -62,7 +60,8 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 
 		// Per-tenant metrics
 		p.metrics.RecordTenantRequestWithRoute(tenant, endpoint, route, sc.code, elapsed)
-		p.recordCallerCost(caller, tenant, endpoint, route, query, sc.code, elapsed, &telemetry.flow)
+		p.recordCallerCost(reqWithTelemetry.Context(), tenant, query, sc.code, elapsed,
+			vlCost{telemetry.flow.vlCalls, telemetry.flow.vlDur, telemetry.flow.vlBytes, telemetry.flow.vlRows})
 
 		// Per-client identity metrics (Grafana user > tenant > IP)
 		p.metrics.RecordClientIdentityWithRoute(clientID, endpoint, route, elapsed, int64(sc.bytesWritten))
@@ -172,7 +171,8 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.error", telemetry.upstreamErrorSeen,
 		)
 		logAttrs = append(logAttrs, telemetry.flow.logAttrs(elapsed)...)
-		logAttrs = appendCallerAttrs(logAttrs, caller)
+		user, userSource := p.callerUser(r, clientID, clientSource)
+		logAttrs = appendCallerAttrs(logAttrs, newRequestCaller(r, tenant, user, userSource, grafanaProfile))
 		if len(telemetry.upstreamCallsByType) > 0 {
 			logAttrs = append(logAttrs, "upstream.call_types", len(telemetry.upstreamCallsByType))
 		}

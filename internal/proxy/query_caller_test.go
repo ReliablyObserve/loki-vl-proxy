@@ -48,7 +48,7 @@ func callerLines(t *testing.T, buf *bytes.Buffer) map[string][]map[string]any {
 }
 
 // Every line that reports a query names who ran it (enduser.id and enduser.source), the tenant and the Grafana
-// app's tags; the slow lines add where the tenant's queries go in VictoriaLogs and what the request cost there
+// app's tags (all of X-Query-Tags when it holds more than the Source tag); the slow lines add where the tenant's queries go in VictoriaLogs and what the request cost there
 // (calls, time, bytes, rows).
 //
 // conformance: observability-slow-query-log
@@ -59,7 +59,7 @@ func TestQueryLinesCarryTheCallerTenantAndCost(t *testing.T) {
 	serveCallerLog(p, http.Header{
 		"X-Scope-Orgid":  {"team-a"},
 		"X-Grafana-User": {"alice@example.com"},
-		"X-Query-Tags":   {"Source=grafana-lokiexplore-app"},
+		"X-Query-Tags":   {"Source=grafana-lokiexplore-app,Feature=patterns"},
 	})
 	lines := callerLines(t, buf)
 	for msg, ls := range lines {
@@ -70,7 +70,7 @@ func TestQueryLinesCarryTheCallerTenantAndCost(t *testing.T) {
 		if l["loki.tenant.id"] != "team-a" {
 			t.Fatalf("%s: tenant %v", msg, l["loki.tenant.id"])
 		}
-		if l["grafana.client.source_tag"] != "grafana-lokiexplore-app" || l["grafana.client.surface"] != "grafana_drilldown" || l["grafana.query_tags"] != "Source=grafana-lokiexplore-app" {
+		if l["grafana.client.source_tag"] != "grafana-lokiexplore-app" || l["grafana.client.surface"] != "grafana_drilldown" || l["grafana.query_tags"] != "Source=grafana-lokiexplore-app,Feature=patterns" {
 			t.Fatalf("%s: grafana tags %v / %v / %v", msg, l["grafana.client.source_tag"], l["grafana.client.surface"], l["grafana.query_tags"])
 		}
 	}
