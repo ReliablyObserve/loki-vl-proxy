@@ -21,7 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the scratch fields of a label filter, a `keep` that leaves no label and a
   nest over an unwrapped label are still written by the string translator.
 
-
 ## [2.129.0] - 2026-11-10
 
 ### Changed
