@@ -170,6 +170,16 @@ func vectorKeyPipes(stats []logsql.Pipe, fn logsql.StatsFunc, log metricLog, aga
 // op is the physical operator of the stats of b: the query, and for a without clause the fold of the series rows
 // by the operator foldOp (the aggregation at the top of the query), which the proxy runs itself.
 func (b builtVector) op(foldOp string, prof Profile) physical.Op {
+	op := physical.Op(physical.VLQuery{Text: b.text(prof, b.stats)})
+	if b.without {
+		op = physical.Fold{Levels: []physical.FoldLevel{{Op: foldOp, Labels: b.raw, Without: true}}, In: op}
+	}
+	return op
+}
+
+// text is the query of b written with pipes in place of its stats: the derived-label pipes in front are the ones
+// the stats of b need (the text the proxy cuts a parsed-label operand from holds them, parsedLabelOperand).
+func (b builtVector) text(prof Profile, pipes []logsql.Pipe) string {
 	chain, service := "", ""
 	var needChain, needService bool
 	for _, p := range b.stats {
@@ -184,11 +194,7 @@ func (b builtVector) op(foldOp string, prof Profile) physical.Op {
 	if needService {
 		service = translate.ServiceNameGroupingPipes(prof.Caps)
 	}
-	op := physical.Op(physical.VLQuery{Text: b.log.text(chain, service, b.keys, b.stats...)})
-	if b.without {
-		op = physical.Fold{Levels: []physical.FoldLevel{{Op: foldOp, Labels: b.raw, Without: true}}, In: op}
-	}
-	return op
+	return b.log.text(chain, service, b.keys, pipes...)
 }
 
 // vectorStats are the stats pipes of the aggregation over the rows of a range function fn (a rate divides by
