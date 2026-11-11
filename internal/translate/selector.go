@@ -78,11 +78,18 @@ type SelectorMatcher struct {
 
 // StreamSelectorFilter is SelectorFilter for the parsed matchers of a stream selector.
 func StreamSelectorFilter(ms []logql.LabelMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool) (logsql.FilterExpr, error) {
+	return StreamSelectorFilterNamed(ms, labelFn, streamFields, nil)
+}
+
+// StreamSelectorFilterNamed is StreamSelectorFilter with name applied to the field name of every field filter, after
+// the label function and the quoting of a dotted name (nil keeps the names as they are): the query plan quotes the
+// names VictoriaLogs reads as keywords this way (logsql.QuoteKeywordField), where the string translator does not.
+func StreamSelectorFilterNamed(ms []logql.LabelMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool, name func(string) string) (logsql.FilterExpr, error) {
 	matchers := make([]SelectorMatcher, len(ms))
 	for i, m := range ms {
 		matchers[i] = SelectorMatcher{Name: m.Name, Op: m.Op.String(), Value: m.Value}
 	}
-	return SelectorFilter(matchers, labelFn, streamFields)
+	return selectorFilter(matchers, labelFn, streamFields, name)
 }
 
 // SelectorFilter is the VictoriaLogs filter for a bare stream selector, built as nodes: the filter the string
@@ -90,6 +97,11 @@ func StreamSelectorFilter(ms []logql.LabelMatcher, labelFn LabelTranslateFunc, s
 // first; every other matcher becomes a field filter, in the selector's order. A detected_level matcher, when
 // detected_level is not a stream field, matches every row or none. A selector that keeps every row is *.
 func SelectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool) (logsql.FilterExpr, error) {
+	return selectorFilter(matchers, labelFn, streamFields, nil)
+}
+
+// selectorFilter is SelectorFilter with the field names passed through name (nil: as they are).
+func selectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool, name func(string) string) (logsql.FilterExpr, error) {
 	var stream []logsql.LabelMatcher
 	var parts logsql.AllOf
 	for _, m := range matchers {
@@ -112,7 +124,7 @@ func SelectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, stre
 			stream = append(stream, logsql.LabelMatcher{Name: m.Name, Op: "=", Value: m.Value})
 			continue
 		}
-		if f := MatcherFieldFilter(label, negate, isRe, m.Value, labelFn); f != nil {
+		if f := matcherFieldFilter(label, negate, isRe, m.Value, labelFn, name); f != nil {
 			parts = append(parts, f)
 		}
 	}
@@ -258,6 +270,11 @@ var StreamMatcherOps = []struct {
 // MatcherFieldFilter is the field filter for a selector matcher on label, with its value as Loki reads it
 // (unquoted), or nil when the label is no field name.
 func MatcherFieldFilter(label string, negate, isRe bool, value string, labelFn LabelTranslateFunc) logsql.FilterExpr {
+	return matcherFieldFilter(label, negate, isRe, value, labelFn, nil)
+}
+
+// matcherFieldFilter is MatcherFieldFilter with the field name passed through name (nil: as it is).
+func matcherFieldFilter(label string, negate, isRe bool, value string, labelFn LabelTranslateFunc, name func(string) string) logsql.FilterExpr {
 	if label == "" {
 		return nil
 	}
@@ -277,6 +294,8 @@ func MatcherFieldFilter(label string, negate, isRe bool, value string, labelFn L
 	// before building the FieldFilter so it uses it as-is.
 	if strings.Contains(label, ".") {
 		label = `"` + label + `"`
+	} else if name != nil {
+		label = name(label)
 	}
 
 	if isRe {

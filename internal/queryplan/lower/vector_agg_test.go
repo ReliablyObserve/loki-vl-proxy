@@ -128,7 +128,6 @@ func TestPlanDelegatesVectorAggregations(t *testing.T) {
 		`sum by (app) (count_over_time({app="a"} |= "| stats "[5m]))`:              "VectorAgg quoted clause",
 		`sum without (x) (rate({x!="  "}[5m]))`:                                    "VectorAgg quoted clause",
 		`sum without (x) (rate({app="a"} |= "without(0)\xa2"[5m]))`:                "VectorAgg quoted clause",
-		`sum by ( bool ) (rate({app="a"}[5m]))`:                                    "VectorAgg quoted clause",
 		`sum(rate({app="a"} |~ "a|||b"[5m]))`:                                      "VectorAgg quoted clause",
 		`rate({app="a"} |~ "|||"[5m])`:                                             "RangeAgg quoted clause",
 		`sum(topk(3, rate({app="a"}[5m])))`:                                        "VectorAgg operand",

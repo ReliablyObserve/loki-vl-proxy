@@ -1288,6 +1288,10 @@
       "internal/proxy/ordered_json_vector_cache_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go"
     ],
+    "semantics/loki-keyword-label-names": [
+      "internal/logql/keyword_case_test.go",
+      "internal/logql/keyword_label_names_loki_test.go"
+    ],
     "semantics/lower-bound-exclusive": [
       "internal/proxy/range_lower_bound_test.go",
       "internal/proxy/unwrap_over_time_window_test.go",
@@ -1476,6 +1480,10 @@
     ],
     "semantics/translator-reads-parenthesized-metric-as-text": [
       "internal/querycorpus/known_divergence_test.go"
+    ],
+    "semantics/translator-writes-keyword-field-names-bare": [
+      "internal/logsql/keyword_fields_test.go",
+      "internal/queryplan/lower/keyword_field_names_test.go"
     ],
     "semantics/tumbling-window-single-grid": [
       "internal/proxy/sliding_window_stats_test.go"
@@ -1791,7 +1799,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 453,
+  "registry_items": 455,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1833,6 +1841,12 @@
     ],
     "internal/logql/ip_label_filter_validate_loki_test.go": [
       "semantics/ip-label-filter-invalid-pattern"
+    ],
+    "internal/logql/keyword_case_test.go": [
+      "semantics/loki-keyword-label-names"
+    ],
+    "internal/logql/keyword_label_names_loki_test.go": [
+      "semantics/loki-keyword-label-names"
     ],
     "internal/logql/label_filter_expr_golden_test.go": [
       "semantics/label-filter-expression-syntax"
@@ -1886,6 +1900,9 @@
     ],
     "internal/logql/vector_agg_log_expr_test.go": [
       "semantics/vector-aggregation-over-log-selector-status"
+    ],
+    "internal/logsql/keyword_fields_test.go": [
+      "semantics/translator-writes-keyword-field-names-bare"
     ],
     "internal/logsql/parser_read_test.go": [
       "architecture-syntax-package-layering"
@@ -3065,6 +3082,9 @@
     "internal/queryplan/lower/format_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/lower/keyword_field_names_test.go": [
+      "semantics/translator-writes-keyword-field-names-bare"
+    ],
     "internal/queryplan/lower/label_filter_parsed_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3950,7 +3970,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 460,
+  "tests_with_markers": 464,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4056,5 +4076,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 277
+  "wired_items": 279
 }

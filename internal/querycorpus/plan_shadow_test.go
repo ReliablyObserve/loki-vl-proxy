@@ -106,6 +106,7 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			}
 			got, lerr := lowerFn(q, plan, prof)
 			legacy, ok := prof.translate(q)
+			legacy = lower.QuoteKeywordFieldText(legacy) // the translator writes a keyword field name bare, the plan quotes it
 			if !ok {
 				if lerr == nil {
 					// Counted in the slice's rows (not the section's) so the slice's sum still holds.

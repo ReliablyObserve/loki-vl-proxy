@@ -440,6 +440,39 @@ func (p *parser) parseBinaryRHS(lhs Expr, minPrecedence int) (Expr, error) {
 	}
 }
 
+// atKeywordName reports a word Loki's lexer returns as a keyword token (of, bool, offset, unwrap, json, regexp, logfmt,
+// unpack, pattern, label_format, line_format, decolorize, drop, keep, variants, in any case) where a label name is
+// expected: Loki's grammar wants an IDENTIFIER there and answers a 400, so no label can be called that (the proxy
+// has no other reading of it). or, and, by and the other words with a token of their own are not identifiers here.
+func (p *parser) atKeywordName() bool {
+	return p.cur.Typ == TokIdent && keywordLabelWord(p.cur.Val)
+}
+
+// keywordLabelWord reports one of the words atKeywordName lists, in lower case (the scanner lower-cases a keyword
+// whatever its case). A switch on the length avoids a map lookup per label name; it is lokiAlwaysKeywords without
+// the words that have a token of their own (by, without, on, ignoring, group_left, group_right, unless).
+func keywordLabelWord(v string) bool {
+	switch len(v) {
+	case 2:
+		return v == "of"
+	case 4:
+		return v == "bool" || v == "json" || v == "drop" || v == "keep"
+	case 6:
+		return v == "offset" || v == "unwrap" || v == "regexp" || v == "logfmt" || v == "unpack"
+	case 7:
+		return v == "pattern"
+	case 8:
+		return v == "variants"
+	case 10:
+		return v == "decolorize"
+	case 11:
+		return v == "line_format"
+	case 12:
+		return v == "label_format"
+	}
+	return false
+}
+
 // parseLabelList parses a parenthesised comma-separated label name list: (label1, label2).
 // Returns an empty slice if the next token is not '('.
 func (p *parser) parseLabelList() ([]string, error) {
@@ -449,6 +482,9 @@ func (p *parser) parseLabelList() ([]string, error) {
 	p.advance() // consume '('
 	var labels []string
 	for p.cur.Typ == TokIdent {
+		if p.atKeywordName() {
+			return nil, p.syntaxErrorAt(listNameExpecting(len(labels) == 0))
+		}
 		labels = append(labels, p.advance().Val)
 		if p.cur.Typ == TokComma {
 			p.advance()
@@ -501,6 +537,13 @@ func (p *parser) parseStreamSelector() (*StreamSelector, error) {
 	}
 
 	for {
+		if p.atKeywordName() {
+			expecting := "IDENTIFIER"
+			if len(sel.Matchers) == 0 {
+				expecting = "IDENTIFIER or }"
+			}
+			return nil, p.syntaxErrorAt(expecting)
+		}
 		m, err := p.parseLabelMatcher()
 		if err != nil {
 			return nil, err
@@ -736,6 +779,9 @@ func (p *parser) parseUnwrap() (Stage, error) {
 		return &UnwrapStage{Label: ""}, nil
 	}
 
+	if p.atKeywordName() {
+		return nil, p.syntaxErrorAt("IDENTIFIER or BYTES_CONV or DURATION_CONV or DURATION_SECONDS_CONV")
+	}
 	if p.cur.Typ != TokIdent {
 		return nil, fmt.Errorf("logql: expected label name after unwrap")
 	}
@@ -753,6 +799,9 @@ func (p *parser) parseUnwrap() (Stage, error) {
 			return &UnwrapStage{Label: "", Converter: converter}, nil
 		}
 
+		if p.atKeywordName() {
+			return nil, p.syntaxErrorAt("IDENTIFIER")
+		}
 		label, err := p.expect(TokIdent)
 		if err != nil {
 			return nil, err
@@ -815,6 +864,10 @@ func (p *parser) expectStringOrRaw() (string, error) {
 func (p *parser) parseDropKeepList() (labels []string, matchers []DropMatcher, err error) {
 	first := true
 	for p.cur.Typ == TokIdent {
+		if p.atKeywordName() {
+			err = p.syntaxErrorAt("IDENTIFIER")
+			return
+		}
 		first = false
 		name := p.advance().Val
 		switch p.cur.Typ {
@@ -875,6 +928,13 @@ func (p *parser) consumeExplicitFieldList(start int) (string, []ExtractionField,
 	end := start
 	var fields []ExtractionField
 	for p.cur.Typ == TokIdent {
+		if p.atKeywordName() {
+			expecting := "IDENTIFIER"
+			if len(fields) == 0 {
+				expecting = "" // Loki's grammar allows a bare parser here, so it names no expected token
+			}
+			return "", nil, p.syntaxErrorAt(expecting)
+		}
 		end = p.sc.pos
 		name := p.advance().Val // field name
 		field := ExtractionField{Name: name, Expression: name}
@@ -892,6 +952,9 @@ func (p *parser) consumeExplicitFieldList(start int) (string, []ExtractionField,
 		}
 		end = p.sc.pos
 		p.advance()
+		if p.atKeywordName() {
+			return "", nil, p.syntaxErrorAt("IDENTIFIER")
+		}
 		if p.cur.Typ != TokIdent {
 			return "", nil, p.syntaxError("IDENTIFIER")
 		}
@@ -908,6 +971,9 @@ func (p *parser) parseLabelFormat() (Stage, error) {
 		formats []LabelFormat
 	)
 	for {
+		if p.atKeywordName() {
+			return nil, p.syntaxErrorAt("IDENTIFIER")
+		}
 		if p.cur.Typ != TokIdent {
 			return nil, p.syntaxError("IDENTIFIER")
 		}
@@ -921,6 +987,9 @@ func (p *parser) parseLabelFormat() (Stage, error) {
 		switch p.cur.Typ {
 		case TokString, TokRawString:
 		case TokIdent:
+			if p.atKeywordName() {
+				return nil, p.syntaxErrorAt("IDENTIFIER or STRING")
+			}
 			format.Rename = true
 		default:
 			return nil, p.syntaxError("IDENTIFIER or STRING")
@@ -1112,6 +1181,16 @@ var errorKeywords = map[string]bool{
 	"json": true, "logfmt": true, "regexp": true, "unpack": true, "pattern": true,
 	"line_format": true, "label_format": true, "unwrap": true, "offset": true,
 	"bool": true, "ip": true, "decolorize": true, "drop": true, "keep": true,
+	"of": true, "variants": true,
+}
+
+// listNameExpecting is what Loki's parse error names as expected where a name of a parenthesised label list is not
+// an identifier: the first name or the closing parenthesis, or the next name after a comma.
+func listNameExpecting(first bool) string {
+	if first {
+		return "IDENTIFIER or )"
+	}
+	return "IDENTIFIER"
 }
 
 // lokiTokenName renders a token with the name Loki's grammar uses for it.
@@ -1696,6 +1775,9 @@ func (p *parser) parseGrouping() (*Grouping, error) {
 
 	var labels []string
 	for p.cur.Typ == TokIdent {
+		if p.atKeywordName() {
+			return nil, p.syntaxErrorAt(listNameExpecting(len(labels) == 0))
+		}
 		labels = append(labels, p.advance().Val)
 		if p.cur.Typ == TokComma {
 			p.advance()

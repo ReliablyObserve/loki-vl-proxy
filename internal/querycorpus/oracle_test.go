@@ -294,7 +294,9 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	if err != nil {
 		return "", "", false
 	}
-	return vq.Text, built, true
+	// The translator writes a label called not or in bare, which VictoriaLogs rejects; the plan quotes it, and the
+	// pair is the plan's text and the translator's made right.
+	return vq.Text, lower.QuoteKeywordFieldText(built), true
 }
 
 // mustParse is the parsed expression of q, nil when it does not parse.
