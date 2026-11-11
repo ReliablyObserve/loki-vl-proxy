@@ -82,6 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-metrics.trust-proxy-headers`, as the configuration guide states; it was sent
   on every request that carried basic authentication.
 
+## [2.170.0] - 2026-11-11
+
 ### Fixed
 
 - A label list that Loki's grammar rejects is Loki's 400 with Loki's text, where the proxy accepted it and answered the

@@ -69,7 +69,7 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 	// The peer protocol's size bounds: a write-through body above 8 MiB is
 	// refused (maxPeerSetBodyBytes, internal/cache/peer.go), one below is
 	// stored and read back whole.
-	proofRun(t, "edge_large_entry_peer_bounds", func(t *testing.T) {
+	edgeRun(t, "edge_large_entry_peer_bounds", func(t *testing.T) {
 		phase := startPhase("edge_large_entry_peer_bounds", fleetReplicas())
 		defer phase.stop()
 		key := "fleet-edge-large-" + fx.probe
@@ -110,7 +110,7 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 
 	// A proxy whose disk tier is a 32 KiB tmpfs: disk writes fail, answers
 	// must not.
-	proofRun(t, "edge_disk_full", func(t *testing.T) {
+	edgeRun(t, "edge_disk_full", func(t *testing.T) {
 		full := replica{name: "proxy-diskfull", addr: fleetDiskFullURL}
 		phase := startPhase("edge_disk_full", append(fleetReplicas(), full))
 		defer phase.stop()
@@ -148,7 +148,7 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 
 	// A proxy whose disk cache path cannot be created (read-only root, no
 	// volume) fails fast, saying why, or serves correct answers.
-	proofRun(t, "edge_unwritable_disk", func(t *testing.T) {
+	edgeRun(t, "edge_unwritable_disk", func(t *testing.T) {
 		ro := replica{name: "proxy-readonly", addr: fleetReadOnlyURL}
 		phase := startPhase("edge_unwritable_disk", fleetReplicas())
 		defer phase.stop()
@@ -190,7 +190,7 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 	// A slow peer: A is paused, so connections to it hang until the peer
 	// timeout. B and C must answer A's entries unchanged, each request
 	// slower by at most the peer timeout.
-	proofRun(t, "edge_owner_paused_timeout_bound", func(t *testing.T) {
+	edgeRun(t, "edge_owner_paused_timeout_bound", func(t *testing.T) {
 		phase := startPhase("edge_owner_paused_timeout_bound", fleetReplicas())
 		defer phase.stop()
 		set := freshProofSet(fx, "paused")
@@ -212,7 +212,7 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 	})
 
 	// The owner is killed while B is answering requests that need it.
-	proofRun(t, "edge_owner_killed_mid_request", func(t *testing.T) {
+	edgeRun(t, "edge_owner_killed_mid_request", func(t *testing.T) {
 		phase := startPhase("edge_owner_killed_mid_request", fleetReplicas())
 		defer phase.stop()
 		set := freshProofSet(fx, "killed")
@@ -256,7 +256,7 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 	// Clients keep reading every layer from all three replicas while B is
 	// recreated without its disk: A and C never fail or change an answer, B
 	// answers correctly whenever it answers.
-	proofRun(t, "edge_restart_under_load", func(t *testing.T) {
+	edgeRun(t, "edge_restart_under_load", func(t *testing.T) {
 		phase := startPhase("edge_restart_under_load", fleetReplicas())
 		defer phase.stop()
 		const workers = 6
@@ -384,6 +384,34 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 			"note": fmt.Sprintf("one cold replica alone made the calls recorded for %s in phase all_lost_rebuild_equals_loki", a.name),
 		})
 	})
+}
+
+// edgeRun is proofRun for an edge case that starts from a whole fleet: it
+// first requires A, B and C ready, so a replica an earlier case left down
+// fails here, named with its container state, instead of surfacing as a
+// wrong answer or a refused connection inside this case.
+func edgeRun(t *testing.T, name string, fn func(t *testing.T)) {
+	t.Helper()
+	proofRun(t, name, func(t *testing.T) {
+		requireFleetUp(t)
+		fn(t)
+	})
+}
+
+// requireFleetUp fails unless A, B and C answer /ready within 10s.
+func requireFleetUp(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for _, rep := range fleetReplicas() {
+		err := readyErr(rep.addr)
+		for err != nil && time.Now().Before(deadline) {
+			time.Sleep(250 * time.Millisecond)
+			err = readyErr(rep.addr)
+		}
+		if err != nil {
+			t.Fatalf("%s was not ready when this edge case started (an earlier case left it down): %v\n%s", rep.name, err, replicaDiagnostics(rep.addr))
+		}
+	}
 }
 
 func errorsOf(results []loadResult, name string) int {
