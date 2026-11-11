@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.132.0] - 2026-11-11
+
 ### Changed
 
 - The proxy's LogsQL parser reads the addresses of `ipv4_range` and
