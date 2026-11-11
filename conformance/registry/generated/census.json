@@ -708,6 +708,9 @@
     "semantics/translator-reads-blank-before-range-call-as-text | compare:observed",
     "semantics/translator-reads-blank-before-range-call-as-text | gap:open",
     "semantics/translator-reads-blank-before-range-call-as-text | query",
+    "semantics/translator-reads-marker-bytes-in-quoted-value | compare:observed",
+    "semantics/translator-reads-marker-bytes-in-quoted-value | gap:open",
+    "semantics/translator-reads-marker-bytes-in-quoted-value | query",
     "semantics/translator-reads-parenthesized-metric-as-text | compare:observed",
     "semantics/translator-reads-parenthesized-metric-as-text | gap:open",
     "semantics/translator-reads-parenthesized-metric-as-text | query",
@@ -1564,6 +1567,7 @@
     "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/extract_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/format_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/known_divergence_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
@@ -1602,6 +1606,8 @@
     "internal/queryplan/lower/label_filter_parsed_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/marker_bytes_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/marker_bytes_test.go | semantics/translator-reads-marker-bytes-in-quoted-value",
     "internal/queryplan/lower/metric_stages_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/parser_labels_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/parser_test.go | architecture-syntax-package-layering",
@@ -2123,14 +2129,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 53,
+      "api": 54,
       "drilldown": 50,
       "explore": 158,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 462,
+      "go": 463,
       "playwright": 1
     },
     "page_kinds": {
@@ -2150,7 +2156,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 103,
-    "wired_items": 278
+    "wired_items": 279
   },
   "gates": [
     "A/B shape selection",

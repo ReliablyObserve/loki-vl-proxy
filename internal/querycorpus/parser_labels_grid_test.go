@@ -285,7 +285,7 @@ func parserLabelsShadow(t *testing.T, grid []string, lowerFn lowering) (rows, na
 				problems = append(problems, fmt.Sprintf("%s: %q: lowering failed: %v", prof.name, q, lerr))
 				continue
 			}
-			if _, known := knownTypedDivergences()[queryID("logql", q)]; known || translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q) {
+			if _, known := knownTypedDivergences()[queryID("logql", q)]; known || translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q) || translatorReadsStageMarker(q) {
 				delegated["known divergence"]++
 				continue
 			}
