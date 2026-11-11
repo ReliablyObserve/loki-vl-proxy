@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   VictoriaLogs request. **Breaking:** a client that sent such a list now gets Loki's 400, as it would from Loki.
   Answers cached for these queries are not served (the compat edge key of a rejected query carries a version).
 
+## [2.161.0] - 2026-11-11
+
 ### Changed
 
 - The query plan lowers a binary operation whose operand has a `without` clause
