@@ -59,8 +59,8 @@ func TestValidateLogQL_DropKeepMatchers(t *testing.T) {
 		{"drop doubled =~~ operator", `{app="api"} | drop level=~~"x"`, "expecting STRING"},
 		{"keep matcher missing value", `{app="api"} | keep level=`, "expecting STRING"},
 		{"drop matcher missing value", `{app="api"} | drop level=`, "expecting STRING"},
-		{"empty drop stage", `{app="api"} | drop`, "at least one label name or matcher"},
-		{"empty keep stage", `{app="api"} | keep`, "at least one label name or matcher"},
+		{"empty drop stage", `{app="api"} | drop`, "unexpected $end, expecting IDENTIFIER"},
+		{"empty keep stage", `{app="api"} | keep`, "unexpected $end, expecting IDENTIFIER"},
 	}
 	for _, tc := range malformed {
 		t.Run("malformed/"+tc.name, func(t *testing.T) {
