@@ -1,0 +1,916 @@
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 12: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 12: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 13: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 13: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 15: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 12: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 13: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 9: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 10: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 9: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 10: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 9: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 9: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 13: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 16: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 17: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 17: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 16: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 16: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 17: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 14: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 15: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 14: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 15: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 14: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 14: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 16: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 42: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 43: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 42: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 43: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 42: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 42: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 50: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 50: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 51: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 51: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 53: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 50: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 51: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 51: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 51: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 12: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 13: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 13: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 14: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 14: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 16: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 12: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 12: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 13: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 14: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 10: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 10: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 10: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 10: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 12: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 14: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error at line 1, col 55: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 56: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 56: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 57: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 57: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 59: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 55: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 55: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 56: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 57: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 53: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 54: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 53: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 54: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 53: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 53: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 55: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 57: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error at line 1, col 60: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 61: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 61: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 62: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 62: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 64: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 60: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 60: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 61: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 62: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 58: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 59: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 58: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 59: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 58: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 58: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 60: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 62: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error at line 1, col 67: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 68: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 68: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 69: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 69: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 71: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 67: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 67: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 68: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 69: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 65: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 66: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 65: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 66: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 65: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 65: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error : grouping not allowed for sum_over_time aggregation"}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 67: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 69: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 42: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 43: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 42: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 43: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 42: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 42: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 50: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 51: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 51: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 54: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 50: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 50: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 51: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 50: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 58: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 59: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 59: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 60: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 60: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 62: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 58: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 58: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 59: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 60: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 56: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 57: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 56: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 57: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 56: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 56: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 58: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 60: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 59: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 60: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 60: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 61: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 61: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 63: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 59: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 59: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 60: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 61: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 57: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 58: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 57: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 58: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 57: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 57: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 59: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 61: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 64: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 65: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 65: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 66: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 66: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 68: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 64: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 64: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 65: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 66: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 62: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 63: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 62: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 63: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 62: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 62: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 64: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 66: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 42: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 43: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 42: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 43: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 42: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 42: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 50: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 46: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 50: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 50: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 51: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 51: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 53: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 50: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 51: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 51: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 12: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 12: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 13: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 13: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 15: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 12: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 13: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 9: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 10: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 9: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 10: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 9: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":false,"error":"parse error at line 1, col 9: syntax error: unexpected ,, expecting IDENTIFIER or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected ), expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":false,"error":"parse error at line 1, col 13: syntax error: unexpected IDENTIFIER, expecting , or )"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 19: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 23: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 23: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 26: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 23: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected IDENTIFIER"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 31: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 32: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 32: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 33: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 35: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 31: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 31: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 32: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 29: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 30: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 29: syntax error: unexpected ,"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 31: syntax error: unexpected IDENTIFIER"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 35: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 37: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 39: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 35: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 35: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 33: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 34: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 33: syntax error: unexpected ,"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 35: syntax error: unexpected IDENTIFIER"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 19: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 19: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 29: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 30: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 30: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 31: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 33: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 29: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 29: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 30: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 27: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 28: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 27: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 27: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 1: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 29: syntax error: unexpected IDENTIFIER"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 23: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 25: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 19: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 19: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 23: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 25: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 19: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 2, col 2: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 0, col 41: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 0, col 42: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 0, col 42: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 0, col 43: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 0, col 45: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 40: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 40: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 41: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 38: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 39: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 38: syntax error: unexpected ,"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 0, col 2: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 40: syntax error: unexpected IDENTIFIER"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 0, col 41: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 0, col 42: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 0, col 42: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 0, col 43: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 0, col 45: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 40: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 40: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 41: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 38: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 39: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 38: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 0, col 39: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 0, col 2: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 40: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 31: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 31: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 31: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 30: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 35: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 30: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 26: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 31: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 32: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 39: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 32: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 26: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 25: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 25: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 33: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 27: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 27: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 25: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 25: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 33: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 27: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 27: syntax error: unexpected $end, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 0, col 46: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 0, col 46: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 0, col 54: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 0, col 48: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 0, col 48: syntax error: unexpected RANGE, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 40: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 38: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 26: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 26: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 34: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 28: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 28: syntax error: unexpected |, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 10: syntax error: unexpected }, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 30: syntax error: unexpected }, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected }, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 31: syntax error: unexpected }, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 10: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 30: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 10: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 30: syntax error: unexpected ,, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 2: syntax error: unexpected ,, expecting IDENTIFIER or }"}
+{"accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected ,, expecting IDENTIFIER or }"}
+{"accept":false,"error":"parse error at line 1, col 2: syntax error: unexpected ,, expecting IDENTIFIER or }"}
+{"accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected ,, expecting IDENTIFIER or }"}
+{"accept":false,"error":"parse error : queries require at least one regexp or equality matcher that does not have an empty-compatible value. For instance, app=~\".*\" does not meet this requirement, but app=~\".+\" will"}
+{"accept":false,"error":"parse error : queries require at least one regexp or equality matcher that does not have an empty-compatible value. For instance, app=~\".*\" does not meet this requirement, but app=~\".+\" will"}
+{"accept":false,"error":"parse error at line 1, col 19: syntax error: unexpected }, expecting IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 39: syntax error: unexpected }, expecting IDENTIFIER"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
