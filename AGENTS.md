@@ -39,6 +39,14 @@ path. Link the registry ID, matrix case and focused differential test so CI
 reports the same behavior from one catalog. Extend existing fixtures and
 harnesses; do not create a parallel registry or test suite.
 
+A case that needs several queries in the plan corpus lists them under
+`corpus.dimensions.shapes` (`- query: '...'` per row) in its case file: the
+corpus walker reads every `query` key of a case, so each shape becomes a corpus
+row the shadows, the oracles and the route-parity digests see. Use it for the
+spellings or nestings of one difference (for example
+`semantics/stddev-stdvar-nested-or-binary`); a different difference gets its
+own case.
+
 - Record the actual ingest path, query stages, response encoding, tenant and
   time window that expose the difference. A passing variant with a different
   ingest path does not close the original gap.

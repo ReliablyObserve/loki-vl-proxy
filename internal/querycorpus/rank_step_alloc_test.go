@@ -18,13 +18,14 @@ var rankStreamLabels = translator.WithStreamLabels(nil, []string{"app", "namespa
 // The two sides take the query as the handlers hand it on: keywords in lower case, comments and logfmt flags removed
 // (routedQuery).
 //
-// rankRouteAllocs is what the proxy does for a ranking before it asks VictoriaLogs: the route decision on the routed
-// query text, and the translation of the operand it slices (the translator alone: the proxy's translation cache and
-// singleflight come on top, so this is the least the route costs).
+// rankRouteAllocs is what the proxy does for a ranking, stddev or stdvar before it asks VictoriaLogs: the route
+// decision on the routed query text, and the translation of the operand it slices (the canonical form of its ranges,
+// as translateQueryWithContext reads it, then the translator alone: the proxy's translation cache and singleflight
+// come on top, so this is the least the route costs).
 func rankRouteAllocs(rq string, label func(string) string) float64 {
 	return testing.AllocsPerRun(5, func() {
 		if inner, routed := proxy.PostAggregationRoute(rq); routed {
-			_, _ = translator.TranslateLogQLWithLabels(inner, label)
+			_, _ = translator.TranslateLogQLWithLabels(logql.CanonicalizeLogRanges(inner), label)
 		}
 	})
 }
@@ -39,10 +40,14 @@ func rankLoweredAllocs(q string, label func(string) string) float64 {
 	})
 }
 
-// A ranking the lowering answers allocates no more than the proxy's route does for it (the decision and the operand's
-// translation), with and without the tenant's stream labels. The comparator is the proxy's current route, not the
-// string translator's text for the whole query, which the proxy never translates; a shape where the lowering
-// allocates more is left to the translator under a named construct.
+// A ranking, stddev or stdvar the lowering answers allocates no more than the proxy's route does for it (the decision
+// and the operand's translation), with and without the tenant's stream labels. The comparator is the proxy's current
+// route, not the string translator's text for the whole query, which the proxy never translates on that route; a shape
+// where the lowering allocates more is left to the translator under a named construct. The shapes the proxy sends as
+// the translator's text but still routes (a ranking over a stddev, a stddev over a ranking) are held to the same
+// route: it is what the proxy does for them today. The shapes nothing routes (an aggregation over a stddev, a
+// label_replace around one) have no route; they are measured against the translator's text for the whole query and
+// reported (their allocation baseline is the owner's call: the translator reads some of them as a phrase).
 // conformance: architecture-syntax-package-layering
 func TestRankLoweringAllocatesNoMoreThanTheProxyRoute(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
@@ -51,13 +56,14 @@ func TestRankLoweringAllocatesNoMoreThanTheProxyRoute(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	var qs []string
-	for _, q := range append(append(planCorpus(t), rankGrid()...), rankStepGrid()...) {
+	for _, q := range append(append(append(planCorpus(t), rankGrid()...), rankStepGrid()...), seriesAggGrid()...) {
 		if !seen[q] {
 			seen[q] = true
 			qs = append(qs, q)
 		}
 	}
-	checked, worst := 0, map[string]float64{}
+	checked, viaRoute, worst := 0, 0, map[string]float64{}
+	untaken, untakenAbove, untakenWorst, untakenQuery := 0, 0, 0.0, ""
 	for _, label := range []func(string) string{nil, rankStreamLabels} {
 		for _, q := range qs {
 			expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
@@ -69,15 +75,34 @@ func TestRankLoweringAllocatesNoMoreThanTheProxyRoute(t *testing.T) {
 				continue
 			}
 			queryplan.Resolve(plan)
-			if rank, _ := evaluatedRoot(plan); !rank {
+			routed, divergence := evaluatedRoot(plan)
+			if !routed && divergence == "" {
 				continue
 			}
 			rq := routedQuery(q)
 			if _, err := lower.PlanQuery(rq, plan, lower.Profile{Label: label}); err != nil {
 				continue
 			}
-			route, lowered := rankRouteAllocs(rq, label), rankLoweredAllocs(rq, label)
+			lowered := rankLoweredAllocs(rq, label)
+			if _, proxyRoutes := proxy.PostAggregationRoute(rq); !routed && !proxyRoutes {
+				// Nothing routes it: the proxy sends the translator's text for the whole query.
+				legacy := testing.AllocsPerRun(5, func() {
+					_, _ = translator.TranslateLogQLWithLabels(logql.CanonicalizeLogRanges(rq), label)
+				})
+				untaken++
+				if lowered > legacy {
+					untakenAbove++
+				}
+				if legacy > 0 && lowered/legacy > untakenWorst {
+					untakenWorst, untakenQuery = lowered/legacy, q
+				}
+				continue
+			}
+			route := rankRouteAllocs(rq, label)
 			checked++
+			if !routed {
+				viaRoute++
+			}
 			if lowered > route {
 				t.Errorf("label=%v: %s: lowered %.0f allocs, the proxy's route %.0f", label != nil, q, lowered, route)
 			}
@@ -86,8 +111,8 @@ func TestRankLoweringAllocatesNoMoreThanTheProxyRoute(t *testing.T) {
 			}
 		}
 	}
-	if checked < 2000 {
-		t.Fatalf("only %d lowered rankings checked", checked)
+	if checked < 4000 || viaRoute == 0 || untaken == 0 {
+		t.Fatalf("only %d lowered shapes checked against the route (%d of them nested), %d against the translator", checked, viaRoute, untaken)
 	}
 	var keys []string
 	for k := range worst {
@@ -95,6 +120,7 @@ func TestRankLoweringAllocatesNoMoreThanTheProxyRoute(t *testing.T) {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		t.Logf("%s: %d lowered rankings checked, the lowering allocates at most %.2f of the route", k, checked, worst[k])
+		t.Logf("%s roots: the lowering allocates at most %.2f of the route (%d lowered shapes checked, %d of them nested shapes the proxy routes)", k, worst[k], checked, viaRoute)
 	}
+	t.Logf("%d lowered shapes nothing routes (sent as the translator's text): %d allocate more than the translator, at most %.2f of it (%s)", untaken, untakenAbove, untakenWorst, untakenQuery)
 }
