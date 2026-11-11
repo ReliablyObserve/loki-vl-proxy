@@ -16,7 +16,7 @@ why: |
   translator byte for byte), so the VictoriaLogs oracle's typed-selector check
   finds the pair rejected; the corpus row is listed in
   internal/querycorpus/testdata/known-typed-divergences.json with this case,
-  because the string translator is the wrong one. The fix is a pattern
+  because the string translator is the wrong one (the corpus holds the pattern in five spellings: double quoted, backticked, on another selector, before `| decolorize` and behind leading blanks). The fix is a pattern
   rewrite that keeps the literal `<b` apart from the capture (a quoted
   literal), in the query plan path (the translator is frozen).
 request:
