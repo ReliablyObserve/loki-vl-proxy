@@ -1,0 +1,67 @@
+id: semantics/translator-reads-blank-before-range-call-as-text
+title: The string translator writes a range function spelled with a blank before its parenthesis as a phrase search (open; the query plan reads the range aggregation)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  LogQL allows blanks, tabs and newlines between tokens, so
+  `rate ({app="a"}[5m])` is the range aggregation `rate({app="a"}[5m])`. The
+  string translator finds the call by matching the text with a regexp that
+  does not skip blanks, as it does the operand of a vector aggregation: with
+  a blank between the function and its parenthesis it sees no metric and
+  writes the whole text as one phrase filter. The proxy's request rewrite
+  leaves the blank (checked 2026-11-10), so the proxy answers a phrase search
+  where Loki answers the range aggregation. The query plan has no text and
+  lowers the call as Loki reads it.
+
+  It holds for every range function (rate, bytes_rate, count_over_time,
+  bytes_over_time, absent_over_time, and the functions over an unwrapped
+  label), for a query written with a tab or a newline in the blank's place,
+  and for a range aggregation that is an operand of a binary operation
+  (`1 + rate ({app="a"}[5m])`, where the translator writes the phrase for
+  that operand) or the first argument of a label_replace call. A blank
+  anywhere else in the call (after the parenthesis, around the selector,
+  inside the range) is read alike by both.
+
+  Evidence (2026-11-10, the fuzz target of the ranking lowering and the grid
+  TestRangeCallBlankSpellingShadow, 5,416 padded spellings x 9 profiles):
+  Loki's parser (the Loki oracle, TestRangeCallBlankSpellingMatchesLoki) accepts
+  the spellings of the finding (every range function, a tab and a newline, a
+  binary operand, label_replace) and reads the same function. VictoriaLogs
+  rejects the translator's text.
+    string translator  =>  "rate ({app=\"a\"}[5m])"
+    query plan         =>  app:="a" | format if (detected_level:*) ... | stats by (_stream, level, detected_level) ...
+
+  The lowering turns the query away so it never differs from the translator
+  while metric queries are served by the translator (the text screen
+  lower.ScreenText: RangeAgg spelling, and the operand screens of a binary
+  operation and of a label_replace call). The fix is in the query plan path
+  (the translator is frozen): it closes when metric queries are served from
+  the plan.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'rate ({app="x"}[5m])'
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [matrix.values]
+  expect: |
+    The series of rate({app="x"}[5m]), as without the blank.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator (reads the call from the query text); fixed when the query plan serves metric queries'
+  loki: 'blanks between the tokens of a call do not change it'
+  proxy: 'the string translator writes a range function spelled with a blank before its parenthesis as a phrase filter, which VictoriaLogs rejects'
+  planned_test: 'TestPlanRangeCallBlankBeforeParenthesis and TestRangeCallBlankSpellingShadow (the screen), TestRangeCallBlankSpellingMatchesLoki (Loki accepts); an e2e row against Loki when the plan serves metric queries'
+  visual: none
+  visual_reason: 'Grafana writes no blank before a function parenthesis; hand-written and generated queries can'
+  clusters: []

@@ -220,8 +220,9 @@ func TestPlanVectorAggregationBlankPadding(t *testing.T) {
 			t.Errorf("%q: ScreenText = %v, want not lowered: BinOp operand spelling", q, err)
 		}
 	}
-	// A range aggregation alone reads the same text alike.
-	for _, q := range []string{`rate( {app="a"} [5m] )`, `count_over_time ( {app="a"}[5m])`} {
+	// A range aggregation alone reads blanks inside its parentheses alike (a blank before its parenthesis is a
+	// phrase to the translator: TestPlanRangeCallBlankBeforeParenthesis).
+	for _, q := range []string{`rate( {app="a"} [5m] )`, `count_over_time( {app="a"}[5m])`} {
 		if err := ScreenText(q, rangeAggPlan(q)); err != nil {
 			t.Errorf("%q: turned away: %v", q, err)
 		}
