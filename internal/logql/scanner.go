@@ -481,10 +481,14 @@ func (s *scanner) scanToken(spaced bool) Token {
 		return s.scanIdent()
 	}
 
-	if unicode.IsDigit(r) && !s.inRange || r == '.' && !s.inRange && s.pos+1 < len(s.src) && s.src[s.pos+1] >= '0' && s.src[s.pos+1] <= '9' {
+	// Only an ASCII digit starts a number for Loki's lexer (Go's text/scanner): any other decimal digit (U+0663,
+	// U+0966, U+FF13, ...) starts no token. It must not reach scanLiteral, which reads nothing there and so made no
+	// progress.
+	digit := r >= '0' && r <= '9'
+	if digit && !s.inRange || r == '.' && !s.inRange && s.pos+1 < len(s.src) && s.src[s.pos+1] >= '0' && s.src[s.pos+1] <= '9' {
 		return s.scanLiteral(spaced)
 	}
-	if unicode.IsDigit(r) {
+	if digit {
 		return s.scanNumberOrDuration()
 	}
 
@@ -728,6 +732,9 @@ func (s *scanner) scanLiteral(spaced bool) Token {
 	start := s.pos
 	lit := scanNumberLiteral(s.src, start)
 	s.pos = lit.end
+	if s.pos <= start {
+		s.read() // a scan that reads nothing must still move: every caller loops until the end of the text
+	}
 	msg := lit.err
 	if s.pos < len(s.src) && s.src[s.pos] == 0 {
 		msg = "invalid character NUL"

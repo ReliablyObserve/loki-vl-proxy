@@ -710,7 +710,7 @@ func (p *parser) parsePipeBody() (Stage, error) {
 	// A label filter must have an operator (=, !=, =~, !~, >=, <=, >, <) next.
 	// Two consecutive identifiers (e.g. `| distinct method`) is invalid syntax —
 	// Loki rejects this with "syntax error: unexpected IDENTIFIER".
-	if p.cur.Typ == TokIdent {
+	if p.atOtherName() {
 		return nil, p.syntaxErrorAt("")
 	}
 	if strings.EqualFold(kw, "ip") && p.cur.Typ == TokLParen {
@@ -722,6 +722,16 @@ func (p *parser) parsePipeBody() (Stage, error) {
 		return p.parseLabelFilterStage(stageStart, kw, TokIdent)
 	}
 	return &LabelFilterStage{Raw: kw + p.consumeRestOfStage(TokIdent)}, nil
+}
+
+// stageNameFollower reports the characters that may follow the name that opens a stage although they start no token:
+// the `!` of `!=` and `!~` read apart, and the dot and colon of the proxy's dotted names and sub-query texts.
+func stageNameFollower(v string) bool { return v == "!" || v == "." || v == ":" }
+
+// atOtherName reports a name at the current token, or a character that starts no token, which Loki's lexer reads as an
+// identifier of its own: a second name after the one that opens a stage.
+func (p *parser) atOtherName() bool {
+	return p.cur.Typ == TokIdent || p.cur.Typ == TokError && !stageNameFollower(p.cur.Val)
 }
 
 // parseUnwrap parses `unwrap label` or `unwrap bytes(label)`.
@@ -1125,6 +1135,12 @@ func lokiTokenName(tok Token) string {
 		return "STRING"
 	case TokDuration, TokLBracket:
 		return "RANGE"
+	case TokError:
+		// A character that starts no token is an identifier of its own to Loki's lexer; a dot is a token of its own.
+		if tok.Val == "." {
+			return "."
+		}
+		return "IDENTIFIER"
 	case TokDurationLit:
 		return "DURATION"
 	case TokBytes:

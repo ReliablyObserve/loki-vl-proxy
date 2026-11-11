@@ -47,5 +47,9 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	if site == responseKeyCompatQueryRange {
 		b.WriteString(logfmtPresenceResponseKeyVersion(r, query))
 	}
+	if site == responseKeyCompatQuery || site == responseKeyCompatQueryRange {
+		// The compat edge looks its cache up before the handler validates the query.
+		b.WriteString(runeResponseKeyVersion(query))
+	}
 	return b.String()
 }

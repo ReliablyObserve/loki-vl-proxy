@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A query with certain non-ASCII digits could make the LogQL parser stop responding.** The scanner took any Unicode
+  decimal digit (Arabic-Indic, Devanagari, fullwidth and the like) for the start of a number, read nothing there and
+  went round again without end, so one such query kept a core busy until the process was restarted; request
+  cancellation could not stop it. Loki's lexer starts a number only with an ASCII digit and answers a 400 for these
+  queries, so the proxy now rejects them the same way, before anything else on the route happens. The same reading
+  rejects a stage name followed by a character that starts no token (`| x ²`, `| x ⅓`, `| x Ⅳ`), which was passed to
+  the backend. Every entry point of the parser package is now held to return within a bound of time and memory by a
+  fuzz target, and the characters of every Unicode category are checked against Loki's answers in every position of a
+  query. **Breaking:** the queries above answered a result or did not return and now answer Loki's 400; a cached answer
+  of one is not served (the compat cache key of a rejected query carries a version).
+
 ## [2.132.0] - 2026-11-11
 
 ### Changed

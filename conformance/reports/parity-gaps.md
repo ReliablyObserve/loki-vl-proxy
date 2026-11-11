@@ -239,6 +239,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/ip-label-filter-invalid-pattern` — An ip() label filter with an invalid pattern is Loki's 400 with Loki's text (fixed) | #1239 | 0 | 0 |
 | `semantics/label-filter-number-literal-scan` — A label filter reads its number, duration and bytes literals as Loki's lexer does (fixed) | #1248 | 0 | 0 |
 | `semantics/label-filter-regex-parse-error` — A label filter, drop or keep regex Loki cannot parse is Loki's 400, reported in Loki's order (fixed) | #1242 | 0 | 0 |
+| `semantics/logql-unicode-runes` — LogQL reads the characters of every Unicode category as Loki's lexer does: only an ASCII digit starts a number, and the parser returns on... | this change | 0 | 0 |
 | `semantics/ip-filter-ipv4-after-dot-run` — An IPv4 ip() filter does not match an address after a run of dots that a digit or a dot precedes (fixed) | #1273 | 0 | 0 |
 | `semantics/line-filter-invalid-utf8` — A \|= or != line filter whose text is not UTF-8 answers like Loki (fixed) | #1236 | 0 | 0 |
 | `versions/capabilities-floor-vs-matrix` — logsql.Capabilities treated VictoriaLogs below v1.40 as unsupported while the matrix claimed v1.30 (fixed) | #659 | 0 | 0 |
