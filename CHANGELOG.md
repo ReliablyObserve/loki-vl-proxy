@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   byte for byte as before. Answers cached before this change are not reused
   for these queries (a response cache key version).
 
+## [2.140.0] - 2026-11-11
+
 ### Fixed
 
 - A log query that filters on a label called `not`, `in`, `options`, `contains_all`,
