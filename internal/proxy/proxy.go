@@ -716,6 +716,7 @@ type Proxy struct {
 	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
 	queryStatsVictoriaLogsMode            bool            // -query-stats-mode=victorialogs: measured stats, not Loki's accounting
 	queryStatsExactMetricBytes            bool            // -query-stats-exact-metric-bytes
+	meanLines                             meanLineTable   // the mean line size of log answers, for metric bytes (query_stats_totals.go)
 	patternsAutodetectFromQueries         bool
 	patternsCounts                        bool
 	patternsExactMaxLines                 int

@@ -459,7 +459,7 @@ decisions:
       6h and 24h splits 6, 24 | 6, 24; volume_range splits 5, 60, 300, 301 |
       the same; querierExecTime 0.013-0.06 s on misses, 0 on hits.
     code: [internal/proxy/query_stats_loki.go, internal/proxy/query_stats.go, internal/proxy/query_stats_cache.go, internal/proxy/query_stats_totals.go, internal/proxy/proxy.go, cmd/proxy/main.go, internal/config/limits.go]
-    tests: [TestLokiStatsEmulation_MatchesRecordedLokiAnswers, TestLokiStats_ExactMetricBytesOnlyOnAMiss, TestLokiLogQueryRun_Table, TestLokiLogSummary_EstimatesTheRunFromTheAnswer, TestLokiStats_SplitsShardsAndQuerierTimePerRoute, TestLokiStats_MetricBytesFromTheSelectorsMeanLine, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStatsTotals_MetricAnswerSumsToLokisWindow, TestDrilldown_QueryStatsLikeLoki]
+    tests: [TestLokiStatsEmulation_MatchesRecordedLokiAnswers, TestLokiStats_ExactMetricBytesOnlyOnAMiss, TestMeanLineTable_NoAllocationAndBounded, TestLokiLogQueryRun_Table, TestLokiLogSummary_EstimatesTheRunFromTheAnswer, TestLokiStats_SplitsShardsAndQuerierTimePerRoute, TestLokiStats_MetricBytesFromTheSelectorsMeanLine, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStatsTotals_MetricAnswerSumsToLokisWindow, TestDrilldown_QueryStatsLikeLoki]
     quality: |
       Every rule is checked against the recorded Loki answers, every row;
       the e2e test compares each figure with Loki's live answer for the same
@@ -472,7 +472,7 @@ decisions:
       forward queries; structured-metadata bytes.
     performance:
       tracked: ['BenchmarkQueryAnswerPaths', 'BenchmarkQueryStatsWriter']
-      bound: 'no VictoriaLogs request added by default; with -query-stats-exact-metric-bytes the volume of the selector read once per metric query cache miss, started where the response cache misses (after validation and limits: a rejected request or a hit sends nothing), next to the query and ending with it; per answer one timestamp comparison per log entry (the 19-digit text), one parse of the query for an instant range, one mean-line-size write per log miss and one read per metric miss'
+      bound: 'no VictoriaLogs request added by default; with -query-stats-exact-metric-bytes the volume of the selector read once per metric query cache miss, started where the response cache misses (after validation and limits: a rejected request or a hit sends nothing), next to the query and ending with it; per answer one timestamp comparison per log entry (the 19-digit text), one parse of the query for an instant range; the mean line size kept per replica in a bounded table (4,096 entries, 1 hour) keyed by a hash of tenant scope and selector, written per log miss and read per metric miss without allocating; the companion keys of a request read lazily and once'
       measured: |
         Apple M5 Pro, GOMAXPROCS=4, benchstat of 10 interleaved runs, base
         origin/main 59dfecb29, default mode (loki), the stub of
@@ -480,9 +480,13 @@ decisions:
         no sec/op row significant (p >= 0.22); allocs/op log miss 7,438 ->
         7,432, metric miss 539 -> 538 (the companion keys of a request read
         once and hashed without allocating), hits equal, instant miss 484 ->
-        494 (+2.1%: the mean line size read for its bytes estimate, two cache
-        keys and the selector), B/op instant miss +1.2%, log miss gzip +0.4%
-        (the larger object on the wire). The layer alone
+        494 (+2.1%) before the mean line size moved to the per-replica
+        table; after it (owner 2026-11-11: no regression against base,
+        keep the estimate), allocs/op on every path at or below base:
+        log miss 7,438 -> 7,429 (gzip 7,466 -> 7,457), metric miss 539 ->
+        536 (546 -> 543), instant miss 484 -> 484 (491 -> 491), every hit
+        equal (82, 91, 83, 88, 81, 86). B/op log miss gzip +0.4% (the larger
+        object on the wire). The layer alone
         (BenchmarkQueryStatsWriter, 1000 entries): 11.3 -> 16.4 us on this
         run (round 1 measured 7.9 -> 11.8 us), plus about 1 us with the
         timestamp tracking of the default mode

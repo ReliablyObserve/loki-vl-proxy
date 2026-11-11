@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 // lokiSplitsRecording is testdata/loki_query_stats_splits.json: Loki 3.7.9's
@@ -421,5 +423,62 @@ func TestLokiStats_ExactMetricBytesOnlyOnAMiss(t *testing.T) {
 	exact.ServeHTTP(rec, req)
 	if t5, _ := counts(); rec.Code != http.StatusBadRequest || t5 != t4 {
 		t.Fatalf("rejected request: status %d, %d VictoriaLogs requests", rec.Code, t5-t4)
+	}
+}
+
+// TestMeanLineTable_NoAllocationAndBounded: the mean line size of a
+// selector is kept and read without allocating, falls back to the tenant's,
+// stays within its tenant, expires, and the table never holds more than its
+// bound.
+//
+// conformance: query-stats-envelope
+func TestMeanLineTable_NoAllocationAndBounded(t *testing.T) {
+	p, err := New(Config{BackendURL: "http://127.0.0.1:1", LogLevel: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(t.Context()) })
+	req := func(org string) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query", nil)
+		r.Header.Set("X-Scope-OrgID", org)
+		// The request chain memoizes the auth fingerprint (injectAuthFingerprint).
+		return r.WithContext(context.WithValue(r.Context(), authFingerprintKey, p.forwardedAuthFingerprint(r)))
+	}
+	sel := func(app string) *logqlpkg.StreamSelector {
+		return &logqlpkg.StreamSelector{Matchers: []logqlpkg.LabelMatcher{{Name: "app", Op: logqlpkg.MatchEq, Value: app}}}
+	}
+	a := req("tenant-a")
+	p.meanLines.store(p.meanLineKey(a, sel("api")), 3000, 10)
+	if m, ok := p.meanLines.mean(p.meanLineKey(a, sel("api"))); !ok || m != 300 {
+		t.Fatalf("selector mean %v %t, want 300", m, ok)
+	}
+	if m, ok := p.meanLines.mean(p.meanLineKey(a, sel("web"))); !ok || m != 300 {
+		t.Fatalf("another selector of the tenant: %v %t, want the tenant's 300", m, ok)
+	}
+	if _, ok := p.meanLines.mean(p.meanLineKey(req("tenant-b"), sel("api"))); ok {
+		t.Fatal("tenant-b read tenant-a's mean line size")
+	}
+	api := sel("api")
+	if allocs := testing.AllocsPerRun(100, func() {
+		k := p.meanLineKey(a, api)
+		p.meanLines.store(k, 3000, 10)
+		_, _ = p.meanLines.mean(k)
+	}); allocs != 0 {
+		t.Fatalf("store and read allocate %v times", allocs)
+	}
+	for i := 0; i < 3*meanLineTableSize; i++ {
+		p.meanLines.store(p.meanLineKey(a, sel(fmt.Sprint(i))), 10, 1)
+	}
+	if n := len(p.meanLines.m); n > meanLineTableSize {
+		t.Fatalf("table holds %d entries, bound %d", n, meanLineTableSize)
+	}
+	p.meanLines.mu.Lock()
+	for k, v := range p.meanLines.m {
+		v.expires = 0
+		p.meanLines.m[k] = v
+	}
+	p.meanLines.mu.Unlock()
+	if _, ok := p.meanLines.mean(p.meanLineKey(a, sel("api"))); ok {
+		t.Fatal("an expired mean was read")
 	}
 }
