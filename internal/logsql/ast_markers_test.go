@@ -16,7 +16,6 @@ func TestMarkerMethods(t *testing.T) {
 	DeferredExpr{}.expr()
 	DeferredExpr{}.filterExpr()
 	DeferredExpr{}.statsFunc()
-	DeferredExpr{}.pipe()
 
 	// FilterExpr implementors.
 	Word{}.filterExpr()

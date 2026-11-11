@@ -191,15 +191,13 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	}
 	var pipes strings.Builder
 	pipes.Grow(size)
-	bare, unpacks, copies, levelChain := -1, 0, false, false
+	bare, unpacks, copies, levelChain := -1, 0, false, holdsLevelStage(in)
 	var mask, bareMask uint8
 	for i, p := range q.Pipes {
 		pipes.WriteByte(' ')
 		start := pipes.Len()
 		pipes.WriteString(texts[i])
 		switch p.(type) {
-		case logsql.DeferredExpr:
-			levelChain = true
 		case logsql.PipeCopy:
 			copies = true
 		case logsql.PipeUnpackJSON:

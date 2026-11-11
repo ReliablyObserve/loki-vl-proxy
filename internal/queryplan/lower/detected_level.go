@@ -12,7 +12,7 @@ import (
 
 // Label filters on detected_level. Loki attaches detected_level at ingest; the proxy derives it on the read path,
 // so the string translator writes a filter on it that no parser, line rewrite or label stage precedes as the
-// derivation plus the filter (translate.BuildDetectedLevelFilter): a prefilter the rows go through first (a filter
+// derivation plus the filter (translate.BuildDetectedLevelFilter, built typed: detected_level_ast.go): a prefilter the rows go through first (a filter
 // next to the query's filters, or a filter pipe of its own after a pipe), and the pipes that derive the value and
 // filter it, held back until the next stage that is not such a filter so that the line filters in between stay
 // filters of the query and consecutive filters share one chain (translate.JoinDetectedLevelFilters). A log query
@@ -37,12 +37,12 @@ type levelStages struct {
 	any  bool
 	mode translate.DetectedLevelFilterMode
 	n    int
-	room [4]*translate.DetectedLevelFilterPlan
-	more []*translate.DetectedLevelFilterPlan
+	room [4]*levelFilterNodes
+	more []*levelFilterNodes
 }
 
 // add records the plan of the next level filter.
-func (l *levelStages) add(p *translate.DetectedLevelFilterPlan) {
+func (l *levelStages) add(p *levelFilterNodes) {
 	if l.n < len(l.room) {
 		l.room[l.n] = p
 	} else {
@@ -52,7 +52,7 @@ func (l *levelStages) add(p *translate.DetectedLevelFilterPlan) {
 }
 
 // plan is the plan of the k-th level filter.
-func (l *levelStages) plan(k int) *translate.DetectedLevelFilterPlan {
+func (l *levelStages) plan(k int) *levelFilterNodes {
 	if k < len(l.room) {
 		return l.room[k]
 	}
@@ -117,7 +117,7 @@ func detectedLevelStages(sel *queryplan.LogSelect, prof Profile) (levelStages, s
 
 // checkLevelStage is the plan of a label filter on detected_level the lowering writes (levelStage), or the construct
 // of one it does not; nil and "" for a filter on another label.
-func checkLevelStage(e *logql.LabelFilterExpr, intact bool, prof Profile) (*translate.DetectedLevelFilterPlan, string) {
+func checkLevelStage(e *logql.LabelFilterExpr, intact bool, prof Profile) (*levelFilterNodes, string) {
 	if !e.IsLeaf() {
 		if namesLevel(e) {
 			return nil, levelTreeConstruct
@@ -153,7 +153,7 @@ func namesLevel(e *logql.LabelFilterExpr) bool {
 // translator does not read as a filter on Loki's value (detectedLevelStageFilter): an operator other than =, ==, !=,
 // =~ and !~, a value that is not a string, a regexp that does not compile, and a log query's empty value (the
 // presence of the label for a double-quoted one, the stored level otherwise).
-func levelStage(e *logql.LabelFilterExpr, prof Profile) (*translate.DetectedLevelFilterPlan, string) {
+func levelStage(e *logql.LabelFilterExpr, prof Profile) (*levelFilterNodes, string) {
 	op := e.Cmp
 	switch op {
 	case "==":
@@ -194,17 +194,17 @@ type levelPlanKey struct {
 // bytes, a plan is built each time and not kept. A map under a lock, so a lookup copies nothing.
 var levelPlans = struct {
 	sync.RWMutex
-	m map[levelPlanKey]*translate.DetectedLevelFilterPlan
-}{m: make(map[levelPlanKey]*translate.DetectedLevelFilterPlan, maxLevelPlans)}
+	m map[levelPlanKey]*levelFilterNodes
+}{m: make(map[levelPlanKey]*levelFilterNodes, maxLevelPlans)}
 
 const (
 	maxLevelPlans     = 256
 	maxLevelPlanValue = 128
 )
 
-// levelFilterPlan is translate.BuildDetectedLevelFilter over every level field for op, value and mode, through the
-// memo; false when it fails (an invalid regexp).
-func levelFilterPlan(op, value string, mode translate.DetectedLevelFilterMode) (*translate.DetectedLevelFilterPlan, bool) {
+// levelFilterPlan is the typed translate.BuildDetectedLevelFilter over every level field for op, value and mode
+// (buildLevelFilterNodes), through the memo; false when it fails (an invalid regexp).
+func levelFilterPlan(op, value string, mode translate.DetectedLevelFilterMode) (*levelFilterNodes, bool) {
 	key := levelPlanKey{op: op, value: value, mode: mode}
 	levelPlans.RLock()
 	plan, ok := levelPlans.m[key]
@@ -213,7 +213,7 @@ func levelFilterPlan(op, value string, mode translate.DetectedLevelFilterMode) (
 		return plan, plan != nil
 	}
 	plan = nil
-	if built, err := translate.BuildDetectedLevelFilter(op, value, translate.DetectedLevelFieldNames, mode); err == nil {
+	if built, err := buildLevelFilterNodes(op, value, mode); err == nil {
 		plan = &built
 	}
 	if len(value) <= maxLevelPlanValue {
@@ -253,7 +253,7 @@ type levelWriter struct {
 	levels levelStages
 	// next is the index of the next level filter's plan in levels.
 	next    int
-	pending []translate.DetectedLevelFilterPlan
+	pending []*levelFilterNodes
 }
 
 // write takes stage st when it is a level filter (and reports it), and writes the pipes held so far before any
@@ -285,7 +285,7 @@ func (w *levelWriter) stage(q *queryParts) {
 		}
 	}
 	if !plan.Never {
-		w.pending = append(w.pending, *plan)
+		w.pending = append(w.pending, plan)
 	}
 }
 
@@ -294,27 +294,29 @@ func (w *levelWriter) flush(q *queryParts) {
 	if len(w.pending) == 0 {
 		return
 	}
-	if text := translate.JoinDetectedLevelFilters(w.pending, translate.DetectedLevelFieldNames, w.levels.mode); text != "" {
-		q.pipe(levelText(text))
+	if pipes := joinLevelFilters(w.pending, w.levels.mode); len(pipes) > 0 {
+		q.pipe(pipes...)
 	}
 	w.pending = w.pending[:0]
 }
 
 // levelPrefilter is the filter a level stage puts in front of its pipes: the prefilter, the filter no row passes
 // when the matcher accepts none, or nil.
-func levelPrefilter(plan *translate.DetectedLevelFilterPlan) logsql.FilterExpr {
+func levelPrefilter(plan *levelFilterNodes) logsql.FilterExpr {
 	switch {
 	case plan.Never:
 		return translate.MatchNoRows()
-	case plan.Prefilter != "":
-		return levelText(plan.Prefilter)
 	}
-	return nil
+	return plan.Prefilter
 }
 
-// levelText is text the detected_level builders wrote (translate.BuildDetectedLevelFilter and
-// translate.JoinDetectedLevelFilters build it as text, from builder-quoted values): a prefilter, or the pipes of a
-// level filter. It is the one raw node the lowering puts in a LogsQL query for them, until the builders are typed.
-func levelText(text string) logsql.DeferredExpr {
-	return logsql.DeferredExpr{Raw: text}
+// holdsLevelStage reports a log query with a filter on detected_level the lowering writes: in a metric row's log
+// query each one writes the grouping chain (an empty value, which writes none, is left to the translator).
+func holdsLevelStage(sel *queryplan.LogSelect) bool {
+	for _, st := range sel.Stages {
+		if lf, ok := st.(*queryplan.LabelFilter); ok && isLevelLeaf(lf.Expr) {
+			return true
+		}
+	}
+	return false
 }

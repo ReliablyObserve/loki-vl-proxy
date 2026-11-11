@@ -325,6 +325,9 @@ type FieldFilter struct {
 	// GoQuoted quotes an exact value as Go does (control characters escaped) rather than escaping only
 	// backslashes and double quotes.
 	GoQuoted bool
+	// Backquoted writes a regexp in backquotes, which keep its backslashes as they are, or, when it holds a
+	// backquote, quoted like an exact value: the spelling of the detected_level builders (internal/translate).
+	Backquoted bool
 }
 
 func (f FieldFilter) String() string { return string(f.appendTo(make([]byte, 0, 64))) }
@@ -346,6 +349,12 @@ func (f FieldFilter) appendTo(b []byte) []byte {
 		return appendQuoteLogsQL(b, f.Value)
 	case FieldOpRegexp:
 		b = append(b, '~')
+		if f.Backquoted {
+			if strings.IndexByte(f.Value, '`') < 0 {
+				return append(append(append(b, '`'), f.Value...), '`')
+			}
+			return appendQuoteLogsQL(b, f.Value)
+		}
 		return strconv.AppendQuote(b, f.Value)
 	case FieldOpEmpty:
 		return append(b, `""`...)
@@ -528,12 +537,14 @@ func (o OrExpr) filterExpr() {}
 // Exclude is LogsQL's "-" negation of a filter: -level:*, -(a OR b).
 type Exclude struct{ Expr FilterExpr }
 
-func (e Exclude) String() string {
+func (e Exclude) String() string { return string(e.appendTo(make([]byte, 0, 32))) }
+
+func (e Exclude) appendTo(b []byte) []byte {
 	// "-NOT x" would read as one word, "-NOT"
 	if _, ok := e.Expr.(NotExpr); ok {
-		return "-(" + e.Expr.String() + ")"
+		return append(appendFilter(append(b, "-("...), e.Expr), ')')
 	}
-	return "-" + operand(e.Expr, 3)
+	return appendOperand(append(b, '-'), e.Expr, 3)
 }
 func (e Exclude) filterExpr() {}
 
@@ -593,10 +604,16 @@ func (a AnyOfLower) filterExpr()              {}
 // NotExpr negates a filter expression.
 type NotExpr struct {
 	Expr FilterExpr
+	// Bang writes the negation as `!`, which LogsQL reads like `NOT`: the spelling of the detected_level builders.
+	// The parser never sets it.
+	Bang bool
 }
 
 func (n NotExpr) String() string { return string(n.appendTo(make([]byte, 0, 64))) }
 func (n NotExpr) appendTo(b []byte) []byte {
+	if n.Bang {
+		return appendOperand(append(b, '!'), n.Expr, 3)
+	}
 	return appendOperand(append(b, "NOT "...), n.Expr, 3)
 }
 
@@ -606,10 +623,38 @@ func (n NotExpr) filterExpr() {}
 
 // AnyCasePhrase matches a phrase case-insensitively using i("phrase") syntax.
 // Corresponds to filter_any_case_phrase.go in VL upstream.
-type AnyCasePhrase struct{ Value string }
+type AnyCasePhrase struct {
+	Value string
+	// Word writes a value that is one word bare (`i(error)`), as the detected_level builders do; any other value
+	// stays quoted.
+	Word bool
+}
 
-func (a AnyCasePhrase) String() string { return "i(" + quoteLogsQL(a.Value) + ")" }
-func (a AnyCasePhrase) filterExpr()    {}
+func (a AnyCasePhrase) String() string { return string(a.appendTo(make([]byte, 0, 16))) }
+
+// isBareWord reports a value of ASCII letters, digits and underscores that LogsQL reads as a word, not a keyword.
+func isBareWord(s string) bool {
+	if s == "" || isReserved(s) {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c != '_' && (c < '0' || c > '9') && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
+			return false
+		}
+	}
+	return true
+}
+
+func (a AnyCasePhrase) appendTo(b []byte) []byte {
+	b = append(b, "i("...)
+	if a.Word && isBareWord(a.Value) {
+		b = append(b, a.Value...)
+	} else {
+		b = appendQuoteLogsQL(b, a.Value)
+	}
+	return append(b, ')')
+}
+func (a AnyCasePhrase) filterExpr() {}
 
 // AnyCasePrefix matches a prefix case-insensitively using i(prefix*) syntax.
 // Corresponds to filter_any_case_prefix.go in VL upstream.
@@ -735,8 +780,12 @@ type FieldScope struct {
 	Expr  FilterExpr
 }
 
-func (f FieldScope) String() string { return f.Field + ":(" + f.Expr.String() + ")" }
-func (f FieldScope) filterExpr()    {}
+func (f FieldScope) String() string { return string(f.appendTo(make([]byte, 0, 64))) }
+func (f FieldScope) appendTo(b []byte) []byte {
+	b = append(append(b, f.Field...), ":("...)
+	return append(appendFilter(b, f.Expr), ')')
+}
+func (f FieldScope) filterExpr() {}
 
 // FilterFunc is a function-style filter whose arguments are kept as written: exact(...), re(...), lt_field(...),
 // pattern_match(...) and the like. The arguments are not inspected anywhere in the proxy.
@@ -752,9 +801,7 @@ func (f FilterFunc) filterExpr()    {}
 // --- DeferredExpr ---
 
 // DeferredExpr holds a raw expression string for deferred/opaque nodes.
-// It implements Expr and FilterExpr, and is a Pipe too: as a pipe its Raw is
-// the whole text of one or more pipes, each starting with "| " (the
-// detected_level pipes the builders in internal/translate write as text).
+// It implements both Expr and FilterExpr.
 type DeferredExpr struct {
 	Raw string
 }
@@ -763,7 +810,6 @@ func (d DeferredExpr) String() string { return d.Raw }
 func (d DeferredExpr) expr()          {}
 func (d DeferredExpr) filterExpr()    {}
 func (d DeferredExpr) statsFunc()     {}
-func (d DeferredExpr) pipe()          {}
 
 // ---------------------------------------------------------------------------
 // Core pipe types
@@ -774,23 +820,36 @@ func (d DeferredExpr) pipe()          {}
 // | unpack_json [if (cond)] [from f] [fields (a, b)] [preserve_keys (k)] [result_prefix "p"] [keep_original_fields | skip_empty_results]
 // Names are as written, quotes included.
 func unpackString(name string, cond FilterExpr, from string, fields, preserveKeys []string, resultPrefix string, keepOriginal, skipEmpty bool) string {
-	var b strings.Builder
-	b.WriteString(name)
-	b.WriteString(ifString(cond))
+	return string(appendUnpack(make([]byte, 0, 64), name, cond, from, fields, preserveKeys, resultPrefix, keepOriginal, skipEmpty))
+}
+
+// appendUnpack is unpackString, appended.
+func appendUnpack(b []byte, name string, cond FilterExpr, from string, fields, preserveKeys []string, resultPrefix string, keepOriginal, skipEmpty bool) []byte {
+	b = appendIf(append(b, name...), cond)
 	if from != "" {
-		b.WriteString(" from " + from)
+		b = append(append(b, " from "...), from...)
 	}
-	if len(fields) > 0 {
-		b.WriteString(" fields (" + strings.Join(fields, ", ") + ")")
-	}
-	if len(preserveKeys) > 0 {
-		b.WriteString(" preserve_keys (" + strings.Join(preserveKeys, ", ") + ")")
-	}
+	b = appendNameList(b, " fields (", fields)
+	b = appendNameList(b, " preserve_keys (", preserveKeys)
 	if resultPrefix != "" {
-		b.WriteString(" result_prefix " + quoteLogsQL(resultPrefix))
+		b = appendQuoteLogsQL(append(b, " result_prefix "...), resultPrefix)
 	}
-	b.WriteString(flagsString(keepOriginal, skipEmpty))
-	return b.String()
+	return append(b, flagsString(keepOriginal, skipEmpty)...)
+}
+
+// appendNameList appends head, the names separated by commas and ")", or nothing without a name.
+func appendNameList(b []byte, head string, names []string) []byte {
+	if len(names) == 0 {
+		return b
+	}
+	b = append(b, head...)
+	for i, n := range names {
+		if i > 0 {
+			b = append(b, ", "...)
+		}
+		b = append(b, n...)
+	}
+	return append(b, ')')
 }
 
 // ifString is the " if (cond)" argument of a pipe, empty without a condition.
@@ -799,6 +858,14 @@ func ifString(cond FilterExpr) string {
 		return ""
 	}
 	return " if (" + cond.String() + ")"
+}
+
+// appendIf is ifString, appended.
+func appendIf(b []byte, cond FilterExpr) []byte {
+	if cond == nil {
+		return b
+	}
+	return append(appendFilter(append(b, " if ("...), cond), ')')
 }
 
 // flagsString is the keep_original_fields or skip_empty_results flag a pipe was given.
@@ -827,6 +894,13 @@ type PipeUnpackJSON struct {
 
 func (p PipeUnpackJSON) String() string {
 	return unpackString("| unpack_json", p.If, p.From, p.Fields, p.PreserveKeys, p.ResultPrefix, p.KeepOriginalFields, p.SkipEmptyResults)
+}
+
+// unpackJSONPipe is the name PipeUnpackJSON writes.
+const unpackJSONPipe = "| unpack_json"
+
+func (p PipeUnpackJSON) appendTo(b []byte) []byte {
+	return appendUnpack(b, unpackJSONPipe, p.If, p.From, p.Fields, p.PreserveKeys, p.ResultPrefix, p.KeepOriginalFields, p.SkipEmptyResults)
 }
 func (p PipeUnpackJSON) pipe() {}
 
@@ -902,6 +976,13 @@ type PipeUnpackLogfmt struct {
 func (p PipeUnpackLogfmt) String() string {
 	return unpackString("| unpack_logfmt", p.If, p.From, p.Fields, nil, p.ResultPrefix, p.KeepOriginalFields, p.SkipEmptyResults)
 }
+
+// unpackLogfmtPipe is the name PipeUnpackLogfmt writes.
+const unpackLogfmtPipe = "| unpack_logfmt"
+
+func (p PipeUnpackLogfmt) appendTo(b []byte) []byte {
+	return appendUnpack(b, unpackLogfmtPipe, p.If, p.From, p.Fields, nil, p.ResultPrefix, p.KeepOriginalFields, p.SkipEmptyResults)
+}
 func (p PipeUnpackLogfmt) pipe() {}
 
 // PipeExtract extracts fields from a log line using a pattern:
@@ -944,16 +1025,22 @@ type PipeExtractRegexp struct {
 	Quoted bool
 }
 
-func (p PipeExtractRegexp) String() string {
-	pattern := rawOrQuoted(p.Pattern)
+func (p PipeExtractRegexp) String() string { return string(p.appendTo(make([]byte, 0, 128))) }
+
+// extractRegexpPipe is the name PipeExtractRegexp writes.
+const extractRegexpPipe = "| extract_regexp"
+
+func (p PipeExtractRegexp) appendTo(b []byte) []byte {
+	b = append(appendIf(append(b, extractRegexpPipe...), p.If), ' ')
 	if p.Quoted {
-		pattern = strconv.Quote(p.Pattern)
+		b = strconv.AppendQuote(b, p.Pattern)
+	} else {
+		b = append(b, rawOrQuoted(p.Pattern)...)
 	}
-	s := "| extract_regexp" + ifString(p.If) + " " + pattern
 	if p.From != "" {
-		s += " from " + p.From
+		b = append(append(b, " from "...), p.From...)
 	}
-	return s + flagsString(p.KeepOriginalFields, p.SkipEmptyResults)
+	return append(b, flagsString(p.KeepOriginalFields, p.SkipEmptyResults)...)
 }
 func (p PipeExtractRegexp) pipe() {}
 
@@ -1003,12 +1090,17 @@ type PipeFormat struct {
 	SkipEmptyResults   bool
 }
 
-func (p PipeFormat) String() string {
-	s := "| format" + ifString(p.If) + " " + strconv.Quote(p.Template)
+func (p PipeFormat) String() string { return string(p.appendTo(make([]byte, 0, 64))) }
+
+// formatPipe is the name PipeFormat writes.
+const formatPipe = "| format"
+
+func (p PipeFormat) appendTo(b []byte) []byte {
+	b = strconv.AppendQuote(append(appendIf(append(b, formatPipe...), p.If), ' '), p.Template)
 	if p.ResultField != "" {
-		s += " as " + p.ResultField
+		b = append(append(b, " as "...), p.ResultField...)
 	}
-	return s + flagsString(p.KeepOriginalFields, p.SkipEmptyResults)
+	return append(b, flagsString(p.KeepOriginalFields, p.SkipEmptyResults)...)
 }
 func (p PipeFormat) pipe() {}
 

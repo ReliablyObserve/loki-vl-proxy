@@ -1,7 +1,7 @@
 {
   "description": "Places production Go code (cmd/, internal/; not internal/logql, internal/logsql or internal/querycorpus) handles query text as strings, per category and file, counted by TestQueryTextSites from the source. They may only fall: a category that grows fails, and one that falls fails until this file holds the new counts (LVP_QUERY_TEXT_SITES_UPDATE=1 rewrites it). The AST work takes every category to 0.",
   "totals": {
-    "deferred_raw": 10,
+    "deferred_raw": 9,
     "lowering_marker_reads": 11,
     "parse_calls": 61,
     "string_reads": 51,
@@ -10,7 +10,6 @@
   },
   "files": {
     "deferred_raw": {
-      "internal/queryplan/lower/detected_level.go": 1,
       "internal/queryplan/lower/unwrap.go": 1,
       "internal/translate/ip_label_filter.go": 1,
       "internal/translator/translator.go": 7
