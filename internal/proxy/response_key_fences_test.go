@@ -180,7 +180,8 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, shape.path+"?"+shape.params.Encode(), nil)
 			endpoint := strings.TrimSuffix(strings.TrimPrefix(shape.path, "/loki/api/v1/"), "_nostep")
 
-			oldCompatQuery, oldCompatRange, oldInner := oldCompatQueryFences(r, query), oldCompatQueryRangeFences(r, query), oldInnerQueryRangeFences(r, query)
+			// The lexer fence (lexer_response_fence.go) ends the compat chains and is empty for a valid query.
+			oldCompatQuery, oldCompatRange, oldInner := oldCompatQueryFences(r, query)+lexerResponseKeyVersion(query), oldCompatQueryRangeFences(r, query)+lexerResponseKeyVersion(query), oldInnerQueryRangeFences(r, query)
 			if got := responseKeyFences(r, query, responseKeyCompatQuery); got != oldCompatQuery {
 				t.Errorf("compat query fences differ for %q (%s): got %q want %q", query, shape.name, got, oldCompatQuery)
 			}

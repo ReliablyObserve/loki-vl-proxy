@@ -185,6 +185,10 @@ type Token struct {
 	// Escaped is set on a TokString whose literal is not spelled the way strconv.Quote spells Val (see
 	// quotedSpelling).
 	Escaped bool
+	// Unknown is set on a TokIdent that is one character which starts no token: Loki's lexer reads it as an
+	// identifier of its own, and so does the parser, so that the errors after it are Loki's. A query that parses
+	// with such a character as a name is turned away: see Parse.
+	Unknown bool
 }
 
 type scanner struct {
@@ -271,11 +275,23 @@ func (s *scanner) read() rune {
 	return r
 }
 
+// isLokiSpace reports whether r is white space to Loki's lexer: a space, a tab, a line feed or a carriage return.
+// Every other character Go calls white space (a vertical tab, a form feed, U+0085, U+00A0, U+2003, ...) starts a
+// token of its own there, which no grammar rule accepts.
+func isLokiSpace(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' }
+
+// trimLokiSpace drops the white space Loki's lexer skips from both ends of s.
+func trimLokiSpace(s string) string { return strings.Trim(s, " \t\r\n") }
+
 // skipWS skips white space and comments. It reports whether white space stands right before the token: Loki's
 // lexer takes the line break that ends a comment with the comment.
 func (s *scanner) skipWS() (spaced bool) {
 	if s.hasNUL {
 		s.afterComment = false
+	}
+	if s.inRange {
+		// Loki's lexer reads a [range] as one token, up to the ']': nothing in it is skipped.
+		return false
 	}
 	for {
 		r, size := s.peek()
@@ -302,7 +318,7 @@ func (s *scanner) skipWS() (spaced bool) {
 			spaced = false
 			continue
 		}
-		if !unicode.IsSpace(r) {
+		if !isLokiSpace(r) {
 			return spaced
 		}
 		s.pos += size
@@ -481,15 +497,31 @@ func (s *scanner) scanToken(spaced bool) Token {
 		return s.scanIdent()
 	}
 
-	if unicode.IsDigit(r) && !s.inRange || r == '.' && !s.inRange && s.pos+1 < len(s.src) && s.src[s.pos+1] >= '0' && s.src[s.pos+1] <= '9' {
+	// Only an ASCII digit starts a number for Loki's lexer; another decimal digit (U+0663, U+07C6, ...) starts no
+	// token, and is read as an identifier of its own below.
+	digit := r >= '0' && r <= '9'
+	if digit && !s.inRange || r == '.' && !s.inRange && s.pos+1 < len(s.src) && s.src[s.pos+1] >= '0' && s.src[s.pos+1] <= '9' {
 		return s.scanLiteral(spaced)
 	}
-	if unicode.IsDigit(r) {
+	if digit {
 		return s.scanNumberOrDuration()
 	}
 
 	s.read()
+	if startsUnknownName(r) {
+		// Loki's lexer returns a character that starts no token as an identifier of its own: the grammar places it
+		// where it places a name, and the errors it reports are those of a name.
+		return Token{Typ: TokIdent, Val: string(r), Unknown: true}
+	}
 	return Token{Typ: TokError, Val: string(r)}
+}
+
+// startsUnknownName reports a character that Loki's lexer reads as an identifier of its own and the parser reads
+// so: white space it does not skip (a vertical tab, a form feed, U+0085, U+00A0, U+2003, ...), control and format
+// characters (a byte order mark, a zero-width space) and decimal digits that are not ASCII. The other characters
+// that start no token ($, &, ;, ., ...) stay errors of the scanner, for the places that read them as text.
+func startsUnknownName(r rune) bool {
+	return unicode.IsSpace(r) || unicode.IsControl(r) || unicode.In(r, unicode.Cf) || unicode.IsDigit(r)
 }
 
 func (s *scanner) scanQuotedString() Token {
@@ -500,6 +532,10 @@ func (s *scanner) scanQuotedString() Token {
 		if r == '\\' {
 			s.read() // an escaped quote cannot close the literal
 			continue
+		}
+		if r == '\n' {
+			// Go's text scanner, which Loki's lexer wraps, ends a double-quoted string at a line break.
+			return Token{Typ: TokError, Val: "unterminated quoted string"}
 		}
 		if r == '"' {
 			literal := s.src[start:s.pos]

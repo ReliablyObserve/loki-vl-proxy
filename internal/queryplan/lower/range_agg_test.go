@@ -402,7 +402,7 @@ func TestPlanRangeCallBlankBeforeParenthesis(t *testing.T) {
 		`label_replace(1 + rate ({app="a"}[5m]), "d", "$1", "a", "(.*)")`: "LabelReplace operand spelling",
 		// Blanks elsewhere in the call are read alike by both: the query stays lowered.
 		`rate( {app="a"}[5m])`:             "",
-		`rate({ app = "a" } [ 5m ] )`:      "",
+		`rate({ app = "a" } [5m] )`:        "",
 		`rate({app="a"}[5m] ) `:            "",
 		"\n\trate({app=\"a\"}[5m])\n":      "",
 		`rate({app="a"} |= "rate (" [5m])`: "",
@@ -434,7 +434,7 @@ func TestPlanRangeCallBlankBeforeParenthesis(t *testing.T) {
 		}
 	}
 	// What stays lowered equals the translator under every profile.
-	for _, q := range []string{`rate( {app="a"}[5m])`, `rate({ app = "a" } [ 5m ] )`, "\n\trate({app=\"a\"}[5m])\n", `1 + rate({app="a"}[5m])`} {
+	for _, q := range []string{`rate( {app="a"}[5m])`, `rate({ app = "a" } [5m] )`, "\n\trate({app=\"a\"}[5m])\n", `1 + rate({app="a"}[5m])`} {
 		for _, prof := range rangeProfiles() {
 			if lowered, legacy, same, construct, ok := binOpLowering(t, q, prof); !ok || construct != "" || !same {
 				t.Errorf("%s: %q: delegated %q (ok %v)\n lowered %s\n  string %s", prof.name, q, construct, ok, lowered, legacy)

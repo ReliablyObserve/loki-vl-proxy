@@ -240,4 +240,5 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/label-filter-regex-parse-error` — A label filter, drop or keep regex Loki cannot parse is Loki's 400, reported in Loki's order (fixed) | #1242 | 0 | 0 |
 | `semantics/ip-filter-ipv4-after-dot-run` — An IPv4 ip() filter does not match an address after a run of dots that a digit or a dot precedes (fixed) | #1273 | 0 | 0 |
 | `semantics/line-filter-invalid-utf8` — A \|= or != line filter whose text is not UTF-8 answers like Loki (fixed) | #1236 | 0 | 0 |
+| `semantics/logql-loki-whitespace` — LogQL white space is read as Loki's lexer reads it: four characters between tokens, a [range] is one token, a name list is names and comm... | this change | 0 | 0 |
 | `versions/capabilities-floor-vs-matrix` — logsql.Capabilities treated VictoriaLogs below v1.40 as unsupported while the matrix claimed v1.30 (fixed) | #659 | 0 | 0 |

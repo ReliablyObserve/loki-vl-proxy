@@ -40,6 +40,11 @@ func TestMayHaveNonFilterStage(t *testing.T) {
 		{`{app="a"} | distinct a`, true},
 		{`{app="a"} | JSON`, true},
 		{"{}|jsOn", true},
+		// Loki's lexer skips four characters between tokens; a vertical tab is a token that no stage follows, so
+		// the parser rejects the query and finds no stage the screen could have missed.
+		{"{}|\vjson", false},
+		{"{}|\u00a0json", false},
+		{"{} |\fjson", false},
 		{`{app="a"} | Logfmt | level="x"`, true},
 		{`{app="a"} | DROP x`, true},
 		{`{app="a"} | Line_Format "x"`, true},

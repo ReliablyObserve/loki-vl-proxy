@@ -1,0 +1,104 @@
+id: semantics/logql-loki-whitespace
+title: 'LogQL white space is read as Loki''s lexer reads it: four characters between tokens, a [range] is one token, a name list is names and commas; anything else is Loki''s 400 with Loki''s text (fixed)'
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's lexer (Go's text/scanner) skips a space, a tab, a line feed and a
+  carriage return between tokens. A vertical tab, a form feed, U+0085, U+00A0,
+  U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F and U+3000 are no
+  white space to it, and neither is any other control or format character
+  (U+FEFF, U+200B, ...): each is a token of its own that the grammar reads as
+  an IDENTIFIER, where an identifier does not fit the query is rejected, e.g.
+  the Loki oracle (Loki 3.7.9, check command) answers a 400 for
+
+      {app="a"} |\vjson            parse error at line 1, col 13: syntax error: unexpected json
+      {app="a"}\v|= "x"            parse error at line 1, col 10: syntax error: unexpected IDENTIFIER
+      {app="a"} |= "x" |\vlogfmt   parse error at line 1, col 20: syntax error: unexpected logfmt
+      {app="a"} |\vdrop x          parse error at line 1, col 13: syntax error: unexpected drop
+      rate\v({app="a"}[5m])        parse error at line 1, col 5: syntax error: unexpected IDENTIFIER, expecting (
+
+  (the lexer looks for the parenthesis of a function over Go's white space, so
+  `rate` is the keyword there and the vertical tab is the unexpected token; with
+  a character that is not white space to Go, `rate` is a name at column 1).
+  The proxy skipped every character Go calls white space, so it accepted these
+  and answered them; the stage screen of the query plan, which already used
+  Loki's four, was right, and a fuzz target found the difference on `{}|\vjson`
+  (a parser stage the screen missed). The same lexer, recorded on a grid of
+  16,356 queries (every such character in every position class: around a
+  pipe and a selector, inside a selector, between the tokens of a metric
+  query, leading and trailing the whole query, inside strings, backquotes and
+  comments, which keep them as part of the value), also differs from the
+  proxy in plain text the grid reaches:
+
+    * a [range] is one token up to its `]`: `[ 5m]`, `[5m ]`, `[5m\n]` are
+      `not a valid duration string: " 5m"` or `unknown unit "m " in duration
+      "5m "` at line 0, read with Prometheus' duration grammar (`[5m5]`);
+    * a by, without, on, ignoring, group_left or group_right list is names
+      separated by commas: `by (a b)` is `unexpected IDENTIFIER, expecting ,
+      or )`, `by (a,)` is `unexpected ), expecting IDENTIFIER`; on and
+      ignoring need their list (`unexpected RATE, expecting (`);
+    * a double-quoted string ends at a line break: `| x="a\nb"` is `literal
+      not terminated`;
+    * the errors of a stream selector (`{a b}`: `unexpected IDENTIFIER,
+      expecting = or =~ or !~ or !=`; `{app="a" b}`: `expecting } or ,`), of a
+      call without its parenthesis (`unexpected IDENTIFIER` at the name), of
+      `unwrap` (`expecting RANGE or |`), of a stage name (`json a=1`,
+      `line_format 1`, `label_format a=1`), of a unary minus (`-z`) and of a
+      range missing after a log query name the token Loki names, with its
+      line and column; the proxy printed `unexpected ERROR`, a generic
+      `expected ...` or the position of the start of the query;
+    * a decimal digit that is not ASCII (U+0663, U+07C6) starts no number for
+      Loki's lexer; the proxy's scanner read it as one, made no progress and
+      the parser looped without end on `{a="b"} | x ٣`.
+
+  Fixed: internal/logql skips Loki's four characters (scanner.go
+  isLokiSpace), reads any other white space, control or format character as
+  Loki's identifier of its own (Token.Unknown), reads a [range] as one token
+  (parser.go parseRangeSuffix, rangeLexError), the name lists and the
+  selector as the grammar does, and reports the unexpected token by the name
+  Loki prints. Two readings stay the proxy's own, both documented limits that
+  answer a 400 where Loki answers a result: a leading byte order mark (Loki's
+  lexer drops it), and one of those characters as a label name (Loki takes
+  `{\v="a"}` as a label called `\v`); the translation to LogsQL does not carry
+  such a name (it writes the name unquoted, or drops the matcher so that the
+  query selects every stream), so the query is turned away with the proxy's
+  `unsupported name character` text. Breaking: a query with one of these
+  characters outside quotes, a blank in a range, a name list that is not
+  names and commas, `on` or `ignoring` without a list, or a line break in a
+  double-quoted label filter string answers Loki's 400 instead of a result,
+  and so does an unresolved `[$__auto]` inside `label_replace` (the plain
+  `rate({...}[$__auto])` was a 400 before). The compat edge looks its cache up
+  before the handler validates a query, so the key of a query that is rejected
+  carries a version (lexer_response_fence.go) and an answer cached before is
+  not served.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: "{service_name=\"api-gateway\"} |\vjson"
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 `parse error at line 1, col 32: syntax error: unexpected json`,
+    byte for byte, in the bad_data envelope.
+gap:
+  status: fixed
+  fixed_by: "this change"
+  impact: edge
+  effort: M
+  area: 'internal/logql scanner (isLokiSpace, scanToken), parser (parseRangeSuffix, rangeLexError, parseNameList, parseStreamSelector, syntaxErrorAt, functionKeyword), label_filter_expr (lexString, isIPCall), validate; internal/proxy lexer_response_fence'
+  loki: 'four characters of white space between tokens; any other character that starts no token is an IDENTIFIER; a [range] is one token read with Prometheus'' duration grammar; a function name is a keyword when a ( follows it over Go white space'
+  proxy: 'the same reading, with Loki''s error text; a leading byte order mark and a control character as a name stay 400s of the proxy''s own'
+  planned_test: 'TestCompat_LogQLWhitespaceLikeLoki (test/e2e-compat, group semantics: status 400 and the error text of ten queries equal to Loki''s); TestWhitespaceMatchesLoki and TestNonASCIIDigitDoesNotStopTheParser (internal/logql); TestMayHaveNonFilterStage and FuzzMayHaveNonFilterStage (internal/logql); TestLexerResponseKeyVersionFencesTheChangedReadings and TestCompatEdgeDoesNotServeAnAnswerCachedBeforeTheLexerFix (internal/proxy)'
+  visual: none
+  visual_reason: 'an error answer; found by the stage screen fuzz target'
+  clusters: []

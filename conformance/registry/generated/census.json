@@ -543,6 +543,9 @@
     "semantics/logfmt-over-json-line-reads-stored-fields | compare:observed",
     "semantics/logfmt-over-json-line-reads-stored-fields | gap:open",
     "semantics/logfmt-over-json-line-reads-stored-fields | query",
+    "semantics/logql-loki-whitespace | compare:observed",
+    "semantics/logql-loki-whitespace | gap:fixed",
+    "semantics/logql-loki-whitespace | query",
     "semantics/lower-bound-exclusive | compare:observed",
     "semantics/lower-bound-exclusive | gap:fixed",
     "semantics/lower-bound-exclusive | query",
@@ -916,6 +919,7 @@
     "internal/logql/selector_value_test.go | semantics/selector-values-are-strings",
     "internal/logql/stage_parse_validate_loki_test.go | semantics/label-filter-regex-parse-error",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
+    "internal/logql/whitespace_loki_test.go | semantics/logql-loki-whitespace",
     "internal/logsql/parser_read_test.go | architecture-syntax-package-layering",
     "internal/logsql/parser_typed_test.go | architecture-syntax-package-layering",
     "internal/logsql/pipe_math_as_test.go | architecture-syntax-package-layering",
@@ -1124,6 +1128,7 @@
     "internal/proxy/labels_inclusive_end_test.go | semantics/labels-end-inclusive-like-loki",
     "internal/proxy/labels_post_form_cache_test.go | loki_api_v1_label",
     "internal/proxy/labels_post_form_cache_test.go | loki_api_v1_labels",
+    "internal/proxy/lexer_response_fence_test.go | cache-response-key-versions",
     "internal/proxy/lifecycle_leak_test.go | shutdown-releases-background-work",
     "internal/proxy/line_fields_without_parser_test.go | loki-compatible-profile",
     "internal/proxy/line_fields_without_parser_test.go | loki_api_v1_query_range",
@@ -1886,6 +1891,8 @@
     "test/e2e-compat/logfmt_risk_candidates_test.go | parser-logfmt",
     "test/e2e-compat/logfmt_risk_candidates_test.go | quality/logfmt-parse-risk-candidates",
     "test/e2e-compat/logfmt_risk_candidates_test.go | severity-detected-level-derivation",
+    "test/e2e-compat/logql_whitespace_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/logql_whitespace_test.go | semantics/logql-loki-whitespace",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-name-parse-error",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-names-accepted-outside-loki-profile",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/label-browse-params-ignored",
@@ -2122,14 +2129,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 53,
+      "api": 54,
       "drilldown": 50,
       "explore": 158,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 461,
+      "go": 464,
       "playwright": 1
     },
     "page_kinds": {
@@ -2149,7 +2156,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 103,
-    "wired_items": 278
+    "wired_items": 279
   },
   "gates": [
     "A/B shape selection",

@@ -193,7 +193,7 @@ func TestPlanVectorAggregationBlankPadding(t *testing.T) {
 	}
 	// Blanks elsewhere are read alike by both: they stay lowered.
 	for _, q := range []string{
-		`sum by ( app ) (rate({ app = "a" } [ 5m ] ))`, "  sum(rate({app=\"a\"}[5m]))\n", `sum  by  (app)  (rate({app="a"}[5m]) )`,
+		`sum by ( app ) (rate({ app = "a" } [5m] ))`, "  sum(rate({app=\"a\"}[5m]))\n", `sum  by  (app)  (rate({app="a"}[5m]) )`,
 		`sum(rate({app="a"} |= "( rate (" [5m]))`, `sum(rate({app="a"} |= ` + "`" + `( rate (` + "`" + `[5m]))`, `sum(rate( {app="a"}[5m]))`,
 		`sum(rate({app="a"}[5m]) ) by (app, env)`,
 	} {

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **LogQL white space is read as Loki's lexer reads it.** Loki skips four
+  characters between tokens (a space, a tab, a line feed, a carriage return);
+  the proxy skipped everything Go calls white space, so `{app="a"} |\vjson`
+  (a vertical tab) was answered where Loki answers `parse error at line 1,
+  col 13: syntax error: unexpected json`. A vertical tab, a form feed,
+  U+0085, U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F and
+  U+3000 are now tokens of their own that no grammar rule accepts, and every
+  other control character with them, outside quotes and comments; a query with
+  one answers Loki's 400 with Loki's text, found by the stage screen's fuzz
+  target on `{}|\vjson`. The same reading brings plain text to Loki's: a
+  blank or a line break inside a `[range]` (`[ 5m]`), a name list that is not
+  names separated by commas (`by (a b)`, `by (a,)`, `on(a,)`), `on` or
+  `ignoring` without a list, a line break inside a double-quoted label filter
+  string, an unresolved `[$__auto]` inside `label_replace`, and the errors of
+  a selector, a call, an `unwrap` and a stage name the token Loki names, with
+  its line and column. A decimal digit that is not ASCII after a label name
+  (`| x ٣`) no longer makes the parser loop without end. Recorded with the
+  Loki oracle on a grid of 16,000 queries: status and text equal, but for 124
+  queries on two readings that stay the proxy's own. A leading byte order mark
+  is not dropped, and a control or white space character as a label name
+  (`{\v="a"}`, which Loki takes as a label called `\v`) is a 400 with the
+  proxy's text, because the translation to LogsQL does not carry such a name.
+  **Breaking:** the queries above answered a result and now answer Loki's 400;
+  a cached answer of one is not served (the compat cache key of a rejected
+  query carries a version).
+
 ### Security
 
 - **Go 1.27.4.** Go 1.27.4 fixes GO-2026-6859 (net/http: an HTTP/1 server

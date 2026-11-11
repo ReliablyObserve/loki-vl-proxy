@@ -93,6 +93,7 @@
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "cache-response-key-versions": [
+      "internal/proxy/lexer_response_fence_test.go",
       "internal/proxy/response_key_fences_test.go"
     ],
     "data-probing-and-freshness": [
@@ -530,6 +531,7 @@
       "test/e2e-compat/line_filter_invalid_utf8_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go",
       "test/e2e-compat/logfmt_risk_candidates_test.go",
+      "test/e2e-compat/logql_whitespace_test.go",
       "test/e2e-compat/marker_text_test.go",
       "test/e2e-compat/metric_range_extent_cache_test.go",
       "test/e2e-compat/metric_range_extent_large_answer_test.go",
@@ -1290,6 +1292,10 @@
       "internal/proxy/ordered_json_vector_cache_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go"
     ],
+    "semantics/logql-loki-whitespace": [
+      "internal/logql/whitespace_loki_test.go",
+      "test/e2e-compat/logql_whitespace_test.go"
+    ],
     "semantics/lower-bound-exclusive": [
       "internal/proxy/range_lower_bound_test.go",
       "internal/proxy/unwrap_over_time_window_test.go",
@@ -1797,7 +1803,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 455,
+  "registry_items": 456,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1892,6 +1898,9 @@
     ],
     "internal/logql/vector_agg_log_expr_test.go": [
       "semantics/vector-aggregation-over-log-selector-status"
+    ],
+    "internal/logql/whitespace_loki_test.go": [
+      "semantics/logql-loki-whitespace"
     ],
     "internal/logsql/parser_read_test.go": [
       "architecture-syntax-package-layering"
@@ -2258,6 +2267,9 @@
     "internal/proxy/labels_post_form_cache_test.go": [
       "loki_api_v1_label",
       "loki_api_v1_labels"
+    ],
+    "internal/proxy/lexer_response_fence_test.go": [
+      "cache-response-key-versions"
     ],
     "internal/proxy/lifecycle_leak_test.go": [
       "shutdown-releases-background-work"
@@ -3599,6 +3611,10 @@
       "quality/logfmt-parse-risk-candidates",
       "severity-detected-level-derivation"
     ],
+    "test/e2e-compat/logql_whitespace_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/logql-loki-whitespace"
+    ],
     "test/e2e-compat/loki_profile_parity_test.go": [
       "profiles/dotted-name-parse-error",
       "profiles/dotted-names-accepted-outside-loki-profile",
@@ -3964,7 +3980,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 462,
+  "tests_with_markers": 465,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4071,5 +4087,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 278
+  "wired_items": 279
 }

@@ -3,7 +3,6 @@ package logql
 import (
 	"net/netip"
 	"strings"
-	"unicode"
 )
 
 // validIPPattern follows Loki's getMatcher: an address, prefix, or ordered
@@ -99,7 +98,7 @@ func (p *parser) parseLineFilterAlt() (LineFilterAlt, error) {
 		tok := p.advance()
 		return LineFilterAlt{Value: tok.Val, Escaped: tok.Escaped}, nil
 	case p.cur.Typ == TokIdent && p.cur.Val == "ip":
-		if !strings.HasPrefix(strings.TrimLeftFunc(p.sc.src[p.sc.pos:], unicode.IsSpace), "(") {
+		if !p.functionKeyword() {
 			// Loki reads ip as a function only before "(": a bare ip is an identifier it does not expect.
 			return LineFilterAlt{}, p.errorAt(p.pos(), "IDENTIFIER", "STRING or ip", false)
 		}
