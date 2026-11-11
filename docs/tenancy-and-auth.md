@@ -142,7 +142,7 @@ The proxy trusts nothing about the caller unless you configure it:
 
 Per-tenant limits (`-tenant-limits`) are keyed by `X-Scope-OrgID`, so with tenancy off the proxy refuses to start with them; turn tenancy on, or move them to `-tenant-default-limits`. If a reload adds tenant-map entries to a proxy that started with tenancy off, it routes strictly (only mapped orgs) until it is restarted, which fails closed.
 
-The delete API now needs its own token: set `-delete-api-auth-token` (Helm `deleteAuth.existingSecret`) and send it with every delete request. The [CHANGELOG](../CHANGELOG.md) lists the other changed answers, such as Loki's `401 no org id` and `400` tenant texts.
+The delete API now needs its own token: set `-delete-api-auth-token` (Helm `deleteAuth.existingSecret`) and send it with every delete request. The [CHANGELOG](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/CHANGELOG.md) lists the other changed answers, such as Loki's `401 no org id` and `400` tenant texts.
 
 ## 5. Grafana user identity
 
