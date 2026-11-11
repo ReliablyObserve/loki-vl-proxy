@@ -28,6 +28,7 @@
       "internal/querycorpus/binop_grid_test.go",
       "internal/querycorpus/binop_loki_test.go",
       "internal/querycorpus/binop_more_grid_test.go",
+      "internal/querycorpus/binop_route_test.go",
       "internal/querycorpus/escaped_spelling_grid_test.go",
       "internal/querycorpus/extract_grid_test.go",
       "internal/querycorpus/format_grid_test.go",
@@ -1853,7 +1854,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 461,
+  "registry_items": 463,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -3074,6 +3075,9 @@
     "internal/querycorpus/binop_more_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/binop_route_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/escaped_spelling_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -4118,7 +4122,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 490,
+  "tests_with_markers": 491,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4180,6 +4184,7 @@
     "semantics/label-filter-before-parser-reads-ingest-json-key",
     "semantics/label-filter-numeric-equality",
     "semantics/label-filter-numeric-error-label",
+    "semantics/label-list-trailing-comma",
     "semantics/label-replace-aggregation-over-transform",
     "semantics/label-replace-around-ranking-and-vector",
     "semantics/last-over-time-line-filter-offset-points",
@@ -4201,6 +4206,7 @@
     "semantics/stream-level-shadowed-by-ingest-json-key",
     "semantics/tail-history-start-limit",
     "semantics/topk-per-step-membership-differs",
+    "semantics/translator-folds-binary-by-operand-without",
     "semantics/translator-reads-quoted-text-as-syntax",
     "semantics/two-parsers-keep-one",
     "semantics/unpack-non-string-values",

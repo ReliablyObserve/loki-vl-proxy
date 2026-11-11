@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan lowers a binary operation whose operand has a `without` clause
+  (`sum without (pod) (rate({app="a"}[5m])) / 2`) the way Loki reads it: each
+  operand alone, folded by its own clause. The string translator's text for such
+  a query drops the clauses and folds the whole operation by the first one, a
+  text the proxy never sends (its binary route runs each operand as a query of
+  its own), so the shadows now hold these queries to that route, each operand's
+  request byte for byte: 603 more shadow rows match, with 0 mismatches. No answer
+  changes; the plan does not serve binary operations yet. `without ()` on an
+  operand and a `label_replace` around such an operation stay with the string
+  translator.
+
 ### Fixed
 
 - A log query that filters on a label called `_time`, `_stream`, `_stream_id` or

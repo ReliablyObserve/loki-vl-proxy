@@ -177,8 +177,8 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 6 proven, 21 partial, 3 gaps |
-| Known differences from Loki (ranked) | **117**: 93 open, 14 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **61 of 93**: 47 Explore, 13 Logs Drilldown, 1 Grafana datasource; 11 API only, 21 edge cases |
+| Known differences from Loki (ranked) | **119**: 95 open, 14 documented, 7 owner-kept, 3 upstream |
+| Open differences visible in Grafana (registry impact) | **61 of 95**: 47 Explore, 13 Logs Drilldown, 1 Grafana datasource; 12 API only, 22 edge cases |
 
 **Readiness by client**
 
@@ -189,7 +189,7 @@ The Loki endpoints each client calls (registry `consumers`), with the same evide
 | Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 47 |
 | Logs Drilldown | 11 | 11 (100%) | 11 (100%) | 9 (82%) | 13 |
 | Grafana Loki datasource | 6 | 6 (100%) | 6 (100%) | 4 (67%) | 1 |
-| Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 11 |
+| Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 12 |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 
