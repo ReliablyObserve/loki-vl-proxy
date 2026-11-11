@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.170.0] - 2026-11-11
+
 ### Fixed
 
 - A label list that Loki's grammar rejects is Loki's 400 with Loki's text, where the proxy accepted it and answered the
@@ -19,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name). The query is rejected at the first parse of the route, before the response cache, the plan or any
   VictoriaLogs request. **Breaking:** a client that sent such a list now gets Loki's 400, as it would from Loki.
   Answers cached for these queries are not served (the compat edge key of a rejected query carries a version).
+
+## [2.161.0] - 2026-11-11
 
 ### Changed
 
