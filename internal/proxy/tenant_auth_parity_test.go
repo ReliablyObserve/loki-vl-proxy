@@ -83,7 +83,7 @@ func describeTenantAuth(a tenantAuthAnswer) string {
 
 // testTenantMapFile configures a tenant map file with no entry: the proxy
 // routes on X-Scope-OrgID (tenants configured) with no mapping in force.
-const testTenantMapFile = "/etc/loki-vl-proxy/tenants.yaml"
+const testTenantMapFile = "testdata/tenant-map-absent.yaml"
 
 // emptyVictoriaLogs answers every VictoriaLogs read with an empty success, so a
 // request the proxy admits answers 200 and only the tenant check can refuse it.
