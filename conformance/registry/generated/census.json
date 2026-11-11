@@ -1177,6 +1177,7 @@
     "internal/proxy/loki_profile_test.go | profiles/label-browse-params-ignored",
     "internal/proxy/loki_profile_test.go | profiles/parsed-fields-without-parser",
     "internal/proxy/loki_profile_test.go | profiles/structured-metadata-keys-per-profile",
+    "internal/proxy/lowering_shadow_evaluated_test.go | architecture-syntax-package-layering",
     "internal/proxy/lowering_shadow_test.go | architecture-syntax-package-layering",
     "internal/proxy/manual_metric_encoding_test.go | numeric-and-response-formatting",
     "internal/proxy/manual_metric_encoding_test.go | quality/query-range-extent-cache",
@@ -2177,7 +2178,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 484,
+      "go": 485,
       "playwright": 1
     },
     "page_kinds": {
