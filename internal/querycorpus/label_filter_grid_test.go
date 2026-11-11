@@ -148,6 +148,48 @@ func filterOnly(plan *queryplan.Plan) bool {
 	return true
 }
 
+// filtersDetectedLevel reports a log query with a label filter on detected_level. The proxy derives the label, and
+// the flip's screen (logql.MayHaveNonFilterStage) turns such a query away until the plan serves it: lowered
+// natively, it is held to the string translator by the shadows and not served yet.
+func filtersDetectedLevel(plan *queryplan.Plan) bool {
+	sel, ok := plan.Root.(*queryplan.LogSelect)
+	if !ok {
+		return false
+	}
+	for _, st := range sel.Stages {
+		if lf, ok := st.(*queryplan.LabelFilter); ok && lf.Expr != nil && namesDetectedLevel(lf.Expr) {
+			return true
+		}
+	}
+	return false
+}
+
+// namesDetectedLevel reports whether a leaf of e is a filter on detected_level.
+func namesDetectedLevel(e *logql.LabelFilterExpr) bool {
+	if !e.IsLeaf() {
+		return namesDetectedLevel(e.Left) || namesDetectedLevel(e.Right)
+	}
+	return e.Name == "detected_level"
+}
+
+// screenProblem is what is wrong with the flip's screen for a filter-only query the lowering writes natively, "" when
+// nothing is: the screen must admit it, unless it filters on detected_level, which the screen must turn away until
+// the plan serves it (nothing new is served from the plan before its flip).
+func screenProblem(plan *queryplan.Plan, q string) string {
+	if !filterOnly(plan) {
+		return ""
+	}
+	canon := logql.CanonicalizeLogRanges(q)
+	passes := canon != "" && canon[0] == '{' && !logql.MayHaveNonFilterStage(canon)
+	switch level := filtersDetectedLevel(plan); {
+	case level && passes:
+		return "filters on detected_level, and the flip's screen admits it before the plan serves it"
+	case !level && !passes:
+		return "lowered natively, but the flip's screen turns it away"
+	}
+	return ""
+}
+
 // labelFilterShadow holds the lowering to the string translator on the grid under every profile and returns the
 // counts: rows both write, rows lowered natively, rows delegated by construct.
 func labelFilterShadow(t *testing.T, grid []string) (rows, native int, delegated map[string]int, problems []string) {
@@ -223,8 +265,8 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				problems = append(problems, fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, text, legacy))
 				continue
 			}
-			if canon := logql.CanonicalizeLogRanges(q); filterOnly(plan) && (canon == "" || canon[0] != '{' || logql.MayHaveNonFilterStage(canon)) {
-				problems = append(problems, fmt.Sprintf("%s: %q: lowered natively, but the flip's screen turns it away", prof.name, q))
+			if msg := screenProblem(plan, q); msg != "" {
+				problems = append(problems, fmt.Sprintf("%s: %q: %s", prof.name, q, msg))
 				continue
 			}
 			native++

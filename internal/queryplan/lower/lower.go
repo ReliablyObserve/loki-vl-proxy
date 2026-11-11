@@ -97,6 +97,10 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 
 // logSelectQuery is the typed query logSelect prints: a range aggregation appends its stats pipe to it.
 func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error) {
+	levels, c := detectedLevelStages(sel, prof)
+	if c != "" {
+		return logsql.Query{}, &NotLoweredError{Construct: c}
+	}
 	defs := definitions(sel)
 	staged, read, err := stagePipes(sel, prof, defs)
 	if err != nil {
@@ -107,7 +111,7 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 	if prof.metric {
 		filterRead = nil
 	}
-	lf, err := labelFilters(sel, prof, filterRead, defs)
+	lf, err := labelFilters(sel, prof, filterRead, defs, levels.any)
 	if err != nil {
 		return logsql.Query{}, err
 	}
@@ -117,36 +121,20 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 			return logsql.Query{}, err
 		}
 	}
-	var filters, after logsql.AllOf
-	pipes := pipeRoom(len(sel.Stages), staged, lf.pre)
+	q := queryParts{pipes: pipeRoom(len(sel.Stages), staged, lf.pre)}
 	// A stage that is one comparison on a reserved field keeps only the streams with its tag (reservedGuard).
-	filters = append(filters, lf.guards...)
-	flush := func() {
-		switch len(after) {
-		case 0:
-		case 1:
-			pipes = append(pipes, logsql.PipeFilter{Expr: after[0]})
-		default:
-			pipes = append(pipes, logsql.PipeFilter{Expr: after})
-		}
-		after = nil
-	}
-	add := func(fs ...logsql.FilterExpr) {
-		if len(pipes) == 0 {
-			filters = append(filters, fs...)
-		} else {
-			after = append(after, fs...)
-		}
-	}
+	q.filters = append(q.filters, lf.guards...)
 	// seq numbers the pattern alternatives that extract, across the query.
 	seq := 0
-	// lastPipe is whether the last part the string translator holds starts with a pipe: a pipe, or a label
-	// filter it wrapped in a filter pipe.
-	lastPipe := false
 	// afterParser is whether a json or logfmt parser came before: the string translator then gives every label
 	// filter that is a field filter a filter pipe of its own, wherever it stands.
 	afterParser := false
+	// level holds the detected_level filters whose pipes wait for the next stage that is not one (levelStages).
+	level := levelWriter{levels: levels}
 	for i, st := range sel.Stages {
+		if level.write(st, prof, &q) {
+			continue
+		}
 		switch st.(type) {
 		case *queryplan.Parse, *queryplan.Drop, *queryplan.Keep, *queryplan.Decolorize, *queryplan.LineFormat, *queryplan.LabelFormat:
 			// A parser, a drop, a keep and decolorize are pipes (stagePipes); a drop of matchers and a
@@ -155,25 +143,20 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 				if _, ok := st.(*queryplan.Parse); ok {
 					afterParser = true
 				}
-				flush()
-				pipes = append(pipes, staged[i]...)
-				lastPipe = true
+				q.pipe(staged[i]...)
 			}
 			continue
 		}
 		if _, ok := st.(*queryplan.LabelFilter); ok {
 			f := built[i]
 			if len(lf.pre) > 0 && len(lf.pre[i]) > 0 {
-				flush()
-				pipes = append(pipes, lf.pre[i]...)
-				lastPipe = true
+				q.pipe(lf.pre[i]...)
 			}
-			if (lastPipe || afterParser) && translate.IsFieldFilter(f.String()) {
-				flush()
-				after = logsql.AllOf{f}
+			if (q.lastPipe || afterParser) && translate.IsFieldFilter(f.String()) {
+				q.own(f)
 			} else {
-				add(f)
-				lastPipe = false
+				q.add(f)
+				q.lastPipe = false
 			}
 			continue
 		}
@@ -187,12 +170,11 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 				values = append(values, alt.Value)
 			}
 			fs, ps := translate.PatternLineFilter(values, lf.Op == logql.LineFilterExcludePat, &seq)
-			add(fs...)
+			q.add(fs...)
 			if len(ps) > 0 {
-				flush()
-				pipes = append(pipes, ps...)
+				q.pipe(ps...)
 			}
-			lastPipe = len(ps) > 0
+			q.lastPipe = len(ps) > 0
 			continue
 		}
 		f, ok := translate.LineFilter(lf)
@@ -200,17 +182,62 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 			return logsql.Query{}, &NotLoweredError{Construct: "LogSelect line filter"}
 		}
 		if f != nil {
-			add(f)
-			lastPipe = false
+			q.add(f)
+			q.lastPipe = false
 		}
 	}
-	flush()
-	pipes = appendScratchDeletes(pipes, lf, len(read) > 0)
+	level.flush(&q)
+	q.flush()
+	q.pipes = appendScratchDeletes(q.pipes, lf, len(read) > 0)
 	f, err := translate.StreamSelectorFilterNamed(sel.Matchers, prof.Label, prof.StreamFields, logsql.QuoteKeywordField)
 	if err != nil {
 		return logsql.Query{}, err
 	}
-	return selectQuery(f, filters, pipes), nil
+	return selectQuery(f, q.filters, q.pipes), nil
+}
+
+// queryParts are the parts of a log query the lowering writes, in the string translator's order: the filters in
+// front of the first pipe, the pipes, and the filters after the last pipe, which go into one filter pipe (after).
+type queryParts struct {
+	filters, after logsql.AllOf
+	pipes          []logsql.Pipe
+	// lastPipe is whether the last part the string translator holds starts with a pipe: a pipe, or a label
+	// filter it wrapped in a filter pipe.
+	lastPipe bool
+}
+
+// flush puts the filters after the last pipe into a filter pipe.
+func (q *queryParts) flush() {
+	switch len(q.after) {
+	case 0:
+	case 1:
+		q.pipes = append(q.pipes, logsql.PipeFilter{Expr: q.after[0]})
+	default:
+		q.pipes = append(q.pipes, logsql.PipeFilter{Expr: q.after})
+	}
+	q.after = nil
+}
+
+// add adds filters where they stand: in front of the first pipe, or after the last one.
+func (q *queryParts) add(fs ...logsql.FilterExpr) {
+	if len(q.pipes) == 0 {
+		q.filters = append(q.filters, fs...)
+	} else {
+		q.after = append(q.after, fs...)
+	}
+}
+
+// pipe appends pipes after the filters before them.
+func (q *queryParts) pipe(ps ...logsql.Pipe) {
+	q.flush()
+	q.pipes = append(q.pipes, ps...)
+	q.lastPipe = true
+}
+
+// own opens a filter pipe of its own for f, which the string translator wraps as it translates it.
+func (q *queryParts) own(f logsql.FilterExpr) {
+	q.flush()
+	q.after = logsql.AllOf{f}
 }
 
 // appendScratchDeletes appends the deletes of the scratch fields the query wrote: the tag values its comparisons on
@@ -265,7 +292,7 @@ func selectQuery(f logsql.FilterExpr, filters logsql.AllOf, pipes []logsql.Pipe)
 // answers NotLoweredError for a query whose label filters the lowering does not write: a filter on
 // detected_level or service_name (the string translator derives them), a value that is not a valid literal, and a
 // label that translates to several parsed keys or to no field.
-func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stageDefs) (filterStages, error) {
+func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stageDefs, levels bool) (filterStages, error) {
 	var res filterStages
 	lb := leafBuilder{label: prof.Label, caps: prof.Caps, sv: sv}
 	for i, st := range sel.Stages {
@@ -283,7 +310,7 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stag
 			continue
 		}
 		lbl, ok := st.(*queryplan.LabelFilter)
-		if !ok {
+		if !ok || (levels && isLevelLeaf(lbl.Expr)) {
 			continue
 		}
 		if lbl.Expr == nil {

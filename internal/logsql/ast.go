@@ -752,7 +752,9 @@ func (f FilterFunc) filterExpr()    {}
 // --- DeferredExpr ---
 
 // DeferredExpr holds a raw expression string for deferred/opaque nodes.
-// It implements both Expr and FilterExpr.
+// It implements Expr and FilterExpr, and is a Pipe too: as a pipe its Raw is
+// the whole text of one or more pipes, each starting with "| " (the
+// detected_level pipes the builders in internal/translate write as text).
 type DeferredExpr struct {
 	Raw string
 }
@@ -761,6 +763,7 @@ func (d DeferredExpr) String() string { return d.Raw }
 func (d DeferredExpr) expr()          {}
 func (d DeferredExpr) filterExpr()    {}
 func (d DeferredExpr) statsFunc()     {}
+func (d DeferredExpr) pipe()          {}
 
 // ---------------------------------------------------------------------------
 // Core pipe types

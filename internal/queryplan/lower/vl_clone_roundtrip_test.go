@@ -132,8 +132,19 @@ var vlCloneE2EQueries = []string{
 	`count_over_time({service_name="svc"} | logfmt | _Stream_ID="si" [1m])`,
 }
 
+// vlCloneLevelQueries are the label filters on detected_level the lowering writes (detectedLevelBenchQueries and
+// the shapes below): the prefilters, the chains, the stored-only filters and a metric row's chain it sends.
+var vlCloneLevelQueries = []string{
+	`{app="a"} | detected_level!~"debug|trace"`, `{app="a"} | detected_level="unknown"`, `{app="a"} | detected_level=~".*"`,
+	"{app=\"a\"} | detected_level=`ERROR`", `{app="a"} | detected_level="a\"b"`, `{app="a"} | detected_level="x"`,
+	`{app="a"} | drop __error__ | app="b" | detected_level="warn" |= "x"`, `{app="a"} | detected_level="error" |> "<_> x <_> y"`,
+	`rate({app="a"} | detected_level!="info" [5m])`, `sum by (detected_level) (rate({app="a"} | detected_level=~"" [5m]))`,
+	`sum by (level, detected_level) (count_over_time({app="a"} | detected_level="info" | json | drop __error__ [1m]))`,
+}
+
 // vlClonePlanQueries are the LogQL queries of the plan grid: every name in every position, the queries of the
-// Loki agreement grids (reservedFieldQueries, reservedFieldCaseQueries) and of the e2e tests.
+// Loki agreement grids (reservedFieldQueries, reservedFieldCaseQueries), of the e2e tests and the detected_level
+// filters (vlCloneLevelQueries, detectedLevelBenchQueries).
 func vlClonePlanQueries() []string {
 	var qs []string
 	for _, n := range vlCloneNames() {
@@ -143,6 +154,8 @@ func vlClonePlanQueries() []string {
 	}
 	qs = append(qs, reservedFieldQueries...)
 	qs = append(qs, reservedFieldCaseQueries...)
+	qs = append(qs, vlCloneLevelQueries...)
+	qs = append(qs, detectedLevelBenchQueries...)
 	return append(qs, vlCloneE2EQueries...)
 }
 

@@ -106,7 +106,7 @@ func TestPlanDelegatesStddevShapes(t *testing.T) {
 		`stddev by (app) (rate({app="a"} |= "| json" [5m]))`:                                 "VectorAgg stddev parsed label",
 		`stddev(` + rate + ` > 1)`:                                                           "SeriesAgg operand BinOp",
 		`stddev(vector(1))`:                                                                  "SeriesAgg operand VectorLit",
-		`stddev(sum by (app) (rate({app="a"} | detected_level="e" [5m])))`:                   "VectorAgg LogSelect label filter detected_level",
+		`stddev(sum by (app) (rate({app="a"} | detected_level="" [5m])))`:                    "VectorAgg " + levelPresenceConstruct,
 		`stdvar(sum without () (` + rate + `))`:                                              "VectorAgg without empty",
 		`stddev(sum( rate({app="a"}[5m])))`:                                                  "VectorAgg operand spelling",
 		`stddev (rate ({app="a"}[5m]))`:                                                      "SeriesAgg spelling",

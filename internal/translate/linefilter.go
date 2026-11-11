@@ -274,6 +274,9 @@ func IPLineFilter(pattern string, negate bool) logsql.FilterExpr {
 // matchNoRows is a LogsQL filter no row passes: an empty in() list (the translator's matchNoRows text).
 var matchNoRows = logsql.FieldFilter{Field: "_stream_id", Op: logsql.FieldOpIn}
 
+// MatchNoRows is the filter no row passes (matchNoRows), as the lowering writes it.
+func MatchNoRows() logsql.FilterExpr { return matchNoRows }
+
 // textHeld reports whether a stored line can hold an alternative of a substring line filter (|= or !=, alone or in
 // an `or` chain). A text that is not UTF-8 is in no line: every ingestion API carries UTF-8 strings (Loki's push API,
 // OTLP, VictoriaLogs' JSON lines), so Loki's byte match of it never matches, and VictoriaLogs could not compile its

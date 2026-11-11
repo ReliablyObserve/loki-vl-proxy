@@ -134,6 +134,9 @@ type metricLog struct {
 	unpacks, logfmtMask, bareMask uint8
 	// afterParser says a label filter or a drop stands after a parser stage.
 	afterParser bool
+	// levelChain says the pipes derive detected_level for a filter on it (detectedLevelStages): a grouping by it
+	// reads that value, the translator derives it once.
+	levelChain bool
 }
 
 // metricLogQuery lowers the log query of a range aggregation the way the string translator writes a metric row's
@@ -188,13 +191,15 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	}
 	var pipes strings.Builder
 	pipes.Grow(size)
-	bare, unpacks, copies := -1, 0, false
+	bare, unpacks, copies, levelChain := -1, 0, false, false
 	var mask, bareMask uint8
 	for i, p := range q.Pipes {
 		pipes.WriteByte(' ')
 		start := pipes.Len()
 		pipes.WriteString(texts[i])
 		switch p.(type) {
+		case logsql.DeferredExpr:
+			levelChain = true
 		case logsql.PipeCopy:
 			copies = true
 		case logsql.PipeUnpackJSON:
@@ -216,17 +221,18 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 		}
 	}
 	m := metricLog{head: head, restore: restore, pipes: pipes.String(), parser: hasParser(in), copies: copies, bareLogfmt: bare,
-		unpacks: uint8(min(unpacks, 255)), logfmtMask: mask, bareMask: bareMask, afterParser: filteredAfterParser(in)}
+		unpacks: uint8(min(unpacks, 255)), logfmtMask: mask, bareMask: bareMask, afterParser: filteredAfterParser(in), levelChain: levelChain}
 	// The translator narrows the unpack when its text of the query holds exactly one unpack pipe, quoted text included.
 	if unpacks != 1 || strings.Count(head, "| unpack_")+strings.Count(restore, "| unpack_")+strings.Count(m.pipes, "| unpack_") != 1 {
 		m.bareLogfmt = -1
 	}
 	// The translator resolves the labels a stats reads (and looks for a copy pipe) when its text of the query holds an
-	// unpack pipe: quoted text that holds one takes a query with no parser there.
-	if unpacks == 0 && m.holdsUnpack() {
+	// unpack pipe: quoted text that holds one takes a query with no parser there. The pipes that derive
+	// detected_level for a filter on it hold two, which the translator reads the same way.
+	if unpacks == 0 && !levelChain && m.holdsUnpack() {
 		return metricLog{}, quoted
 	}
-	m.unpack = unpacks > 0
+	m.unpack = unpacks > 0 || levelChain
 	return m, nil
 }
 
@@ -235,6 +241,9 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 // stream labels and the log query's pipes. The string translator inserts the derivations before the first pipe of
 // the log query, the chain after the service name's, in front of it.
 func (m metricLog) write(b *strings.Builder, chain, service string, extra int) {
+	if m.levelChain {
+		chain = ""
+	}
 	b.Grow(len(m.head) + len(chain) + len(service) + len(m.restore) + len(m.pipes) + extra)
 	b.WriteString(m.head)
 	for _, part := range [3]string{chain, service, m.restore} {

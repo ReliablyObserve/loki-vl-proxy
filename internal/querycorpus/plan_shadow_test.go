@@ -271,14 +271,14 @@ func TestPlanShadow(t *testing.T) {
 
 // The proxy asks two cheap screens before it plans a query to serve from the lowering (a stream selector first,
 // logql.MayHaveNonFilterStage): neither may turn away a filter-only query the lowering writes natively, or the flip
-// would silently leave it to the string translator.
+// would silently leave it to the string translator. A filter on detected_level is the exception the other way: lowered
+// natively, the screen must turn it away until the plan serves it (filtersDetectedLevel).
 // conformance: architecture-syntax-package-layering
 func TestFlipScreenAdmitsEveryNativeRow(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
-	admitted, turned := 0, 0
+	admitted, turned, held := 0, 0, 0
 	for _, q := range append(planCorpus(t), labelFilterGrid()...) {
-		canon := logql.CanonicalizeLogRanges(q)
-		expr, err := logql.Parse(canon)
+		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {
 			continue
 		}
@@ -290,20 +290,23 @@ func TestFlipScreenAdmitsEveryNativeRow(t *testing.T) {
 		if !filterOnly(plan) {
 			continue
 		}
-		passes := canon != "" && canon[0] == '{' && !logql.MayHaveNonFilterStage(canon)
 		for _, prof := range planProfiles() {
 			if _, err := lower.Plan(plan, prof.lowerProfile()); err != nil {
 				continue
 			}
-			if !passes {
-				t.Errorf("%s: %q is lowered natively, but the flip's screen turns it away", prof.name, q)
+			if msg := screenProblem(plan, q); msg != "" {
+				t.Errorf("%s: %q: %s", prof.name, q, msg)
 				turned++
+				continue
+			}
+			if filtersDetectedLevel(plan) {
+				held++
 				continue
 			}
 			admitted++
 		}
 	}
-	t.Logf("native rows admitted by the screen: %d, turned away: %d", admitted, turned)
+	t.Logf("native rows admitted by the screen: %d, turned away: %d, detected_level filters held back: %d", admitted, turned, held)
 	if admitted == 0 {
 		t.Fatal("no native row")
 	}

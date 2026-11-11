@@ -238,8 +238,8 @@ func TestPlanDelegatesParserShapes(t *testing.T) {
 		`{app="a"} | keep a="x!y"`:                    "LogSelect keep matcher value",
 		`{app="a"} | keep a, b="x"`:                   "LogSelect keep order",
 		`{app="a"} | keep b="x", a`:                   "LogSelect keep order",
-		`{app="a"} | detected_level="e" | json`:       "LogSelect label filter detected_level",
-		`{app="a"} | json | detected_level="e"`:       "LogSelect label filter detected_level",
+		`{app="a"} | drop level | detected_level="e"`: levelAfterStageConstruct,
+		`{app="a"} | json | detected_level="e"`:       levelAfterStageConstruct,
 	} {
 		expr, err := logql.Parse(q)
 		if err != nil {
