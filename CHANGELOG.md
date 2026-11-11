@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `VectorAgg stddev` and `VectorAgg stdvar`. No answer, cache or request to
   VictoriaLogs changes, and a request the sample skips costs no allocation.
 
+## [2.150.0] - 2026-11-11
+
 ### Security
 
 - **A query with certain non-ASCII characters could make the LogQL parser stop responding.** Such queries are now
