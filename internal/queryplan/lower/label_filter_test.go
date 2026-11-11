@@ -49,6 +49,7 @@ func labelFilterLowering(t testing.TB, q string, fn func(string) string) (lowere
 		return "", "", false, false, false
 	}
 	lowered = op.(physical.VLQuery).Text
+	legacy = QuoteKeywordFieldText(legacy)
 	if _, err := logsql.Parse(legacy); err != nil {
 		t.Fatalf("%s: the translator's %s does not parse: %v", q, legacy, err)
 	}

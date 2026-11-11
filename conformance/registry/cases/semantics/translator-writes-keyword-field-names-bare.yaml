@@ -1,0 +1,74 @@
+id: semantics/translator-writes-keyword-field-names-bare
+title: A label called not, in, options or the like is filtered on as a field; the string translator writes the name bare and VictoriaLogs rejects the query (open for the translator; the query plan quotes it)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki accepts a label called `not`, `in`, `contains_all`, `contains_any`,
+  `contains_common_case`, `equals_common_case` or `options` in a stream
+  selector and in a label filter (they are words of LogsQL, not of LogQL): the
+  Loki oracle (Loki 3.7.9, check command) answers 200 for `{not="a"}`,
+  `{in="a"}`, `{app="a"} | not="x"` and `{app="a"} | json | in="x"`, in any
+  case (`Not`, `IN`). The string translator writes the name bare in the field
+  filter, and VictoriaLogs v1.49.0 and v1.53.0 reject the query:
+    string translator  =>  not:="a"            ("missing whitespace or ':' between "not" and ":"")
+    string translator  =>  app:="a" in:="x"    ("the "in" must be put in quotes")
+    query plan         =>  "not":="a"   and   app:="a" "in":="x"   (accepted by both)
+  `and` and `or` are operators only right after another filter, so a label
+  that reaches them (`_or` under a label function that drops the leading
+  underscore, or a json expression for a key called `or`) is rejected there
+  (`app:="a" or:="x"`) and read as a field where a filter begins; the plan
+  quotes them as well. A word that VictoriaLogs reads bare (`range`, `exact`,
+  `i`, `offset`, `of`, ...) is not quoted: the grid of verdicts is
+  internal/logsql/testdata/keyword-field-names-vl.jsonl (1166 queries, both
+  versions).
+
+  The translator also splits a label filter at the word or and the word and
+  wherever they stand, so a json expression for a key called `OR` puts that
+  word bare into its text and cuts the filter beside it
+  (`... | filter (OR:>=1 and x_extracted="x")`, a quote without its colon),
+  which VictoriaLogs rejects. The plan writes the filter right.
+
+  Filter-only log queries (line filters and label filters, no parser) are
+  served from the plan (-query-plan-lowering, on by default), so for them the
+  client now gets Loki's answer where it got a 400 ("failed to parse the log query") before. Every other query
+  is still written by the translator, which is frozen, and fails the same way
+  until the plan serves it. Metric queries are not served from the plan and
+  neither are label names in pipes that VictoriaLogs reads bare (`| delete
+  not`), which are right as they are.
+
+  The shadows hold the plan to the translator's text made right
+  (lower.QuoteKeywordFieldText: the translator's text with those names
+  quoted), and the fuzz targets leave out the query a json expression for a
+  key named like a LogQL keyword cuts (translatorMangledByKeywordKey): or,
+  and, unless, by, without, on, ignoring, group_left, group_right, offset,
+  bool, of, unwrap, the parser and format stage words, keep and drop, in
+  any case (a grid over every LogQL keyword as the key found exactly these).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} | not="x"'
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, streams]
+  expect: |
+    200 with the lines whose label `not` is "x" (none in the stack data),
+    never VictoriaLogs' parse error.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator (writes the name bare); fixed when the query plan serves the remaining queries. internal/logsql QuoteKeywordFields, internal/queryplan/lower'
+  loki: 'a label called not or in is a plain label; the oracle answers 200'
+  proxy: 'filter-only log queries quote the name (the plan); every other query still fails in VictoriaLogs with the translator'
+  planned_test: 'TestCompat_KeywordLabelNamesLikeLoki (test/e2e-compat, group semantics: proxy against Loki on {in="x"}, | in="x" and | not="x" over a fixture ingested alike into both); TestPlanQuotesKeywordFieldNames (internal/queryplan/lower), TestParseKeywordFieldNamesMatchVictoriaLogs and TestQuoteKeywordField (internal/logsql)'
+  visual: none
+  visual_reason: 'no Grafana panel names a label not or in; found by the lowering fuzz targets'
+  clusters: []

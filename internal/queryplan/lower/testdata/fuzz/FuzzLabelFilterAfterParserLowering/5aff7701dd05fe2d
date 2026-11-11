@@ -1,0 +1,8 @@
+go test fuzz v1
+string("0")
+string("0")
+string("00\x9d0")
+string("0OR\t\xfe\x05")
+byte('Î')
+byte('\t')
+byte('ä')

@@ -1,0 +1,8 @@
+go test fuzz v1
+string("0")
+string("0")
+string("dtedetected_level")
+string("2")
+byte('µ')
+byte('\u0089')
+byte('\x19')
