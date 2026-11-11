@@ -11,14 +11,20 @@ import "strings"
 // the reprinted `_TIME:="x"` fails the second parse, Clone panics and the VictoriaLogs process restarts
 // (VictoriaMetrics/VictoriaLogs#1942). So such a name is only ever written in a stream filter or a pipe, where
 // VictoriaLogs prints and reads it back as the field it is.
+//
+// The test is VictoriaLogs' own: its lexer lowercases a bare token with strings.ToLower, which also maps U+0130 to
+// 'i' (`_tİme` is read as _time), where strings.EqualFold does not.
 func ReservedFieldNameOtherCase(name string) bool {
-	switch len(name) {
-	case 5:
-		return name != "_time" && strings.EqualFold(name, "_time")
-	case 7:
-		return name != "_stream" && strings.EqualFold(name, "_stream")
-	case 10:
-		return name != "_stream_id" && strings.EqualFold(name, "_stream_id")
+	if len(name) < len("_time") || len(name) > 3*len("_stream_id") || name[0] != '_' {
+		return false
+	}
+	switch name {
+	case "_time", "_stream", "_stream_id":
+		return false
+	}
+	switch lower := strings.ToLower(name); lower {
+	case "_time", "_stream", "_stream_id":
+		return true
 	}
 	return false
 }
@@ -47,7 +53,7 @@ func mayNameReservedOtherCase(text string) bool {
 	return false
 }
 
-// isNameByte is a byte of a bare LogsQL field name.
+// isNameByte is a byte of a bare LogsQL field name, or of a non-ASCII character in one (`_tİme`).
 func isNameByte(c byte) bool {
-	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c >= 0x80
 }

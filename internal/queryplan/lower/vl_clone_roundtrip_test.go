@@ -91,7 +91,7 @@ func vlCloneSpellings() []vlCloneSpelling {
 		`app:="a" | fields N`, `app:="a" | stats by (N) count()`,
 	}
 	var out []vlCloneSpelling
-	for _, n := range []string{"_time", "_TIME", "_Time", "_TiMe", "_stream", "_STREAM", "_Stream", "_sTrEaM", "_stream_id", "_STREAM_ID", "_Stream_Id", "_msg", "_MSG", "_Msg"} {
+	for _, n := range []string{"_time", "_TIME", "_Time", "_TiMe", "_stream", "_STREAM", "_Stream", "_sTrEaM", "_stream_id", "_STREAM_ID", "_Stream_Id", "_tİme", "_stream_İd", "_msg", "_MSG", "_Msg"} {
 		for _, quoted := range []bool{false, true} {
 			spelling := n
 			if quoted {

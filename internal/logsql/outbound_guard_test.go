@@ -129,3 +129,26 @@ func BenchmarkGuardReservedFieldCaseRewrite(b *testing.B) {
 		_ = GuardReservedFieldCase(q)
 	}
 }
+
+// VictoriaLogs' lexer lowercases a bare token with strings.ToLower, which maps U+0130 to 'i': `_tİme` and
+// `_stream_İd` are read as its time and stream id filters, so the guard treats them like _TIME.
+func TestReservedFieldNameOtherCaseUsesVictoriaLogsLowering(t *testing.T) {
+	for name, want := range map[string]bool{
+		"_TIME": true, "_tİme": true, "_stream_İd": true, "_STREAM": true,
+		"_time": false, "_stream": false, "_stream_id": false, "_tİmes": false, "x_tİme": false, "İ": false,
+	} {
+		if got := ReservedFieldNameOtherCase(name); got != want {
+			t.Errorf("ReservedFieldNameOtherCase(%q) = %v, want %v", name, got, want)
+		}
+	}
+	for text, want := range map[string]bool{
+		`"_tİme":="x"`:             true,
+		`app:="a" "_stream_İd":=x`: true,
+		`"x_tİme":="x"`:            false,
+		`app:="İstanbul"`:          false,
+	} {
+		if got := mayNameReservedOtherCase(text); got != want {
+			t.Errorf("mayNameReservedOtherCase(%q) = %v, want %v", text, got, want)
+		}
+	}
+}
