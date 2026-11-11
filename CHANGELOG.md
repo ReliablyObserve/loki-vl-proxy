@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.160.0] - 2026-11-11
+
 ### Fixed
 
 - A log query that filters on a label called `_time`, `_stream`, `_stream_id` or
