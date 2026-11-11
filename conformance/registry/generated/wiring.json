@@ -18,6 +18,7 @@
       "internal/logsql/parser_typed_test.go",
       "internal/logsql/pipe_math_as_test.go",
       "internal/proxy/binary_operand_test.go",
+      "internal/proxy/lowering_shadow_evaluated_test.go",
       "internal/proxy/lowering_shadow_test.go",
       "internal/proxy/plan_predicate_parity_test.go",
       "internal/proxy/plan_route_parity_test.go",
@@ -2334,6 +2335,9 @@
       "profiles/parsed-fields-without-parser",
       "profiles/structured-metadata-keys-per-profile"
     ],
+    "internal/proxy/lowering_shadow_evaluated_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/proxy/lowering_shadow_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -4022,7 +4026,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 472,
+  "tests_with_markers": 473,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

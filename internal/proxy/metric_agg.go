@@ -225,8 +225,8 @@ func (p *Proxy) translatePostAggOperand(ctx context.Context, postAgg instantMetr
 // postAggOperandText is translatePostAggOperand with the translation of a query as a parameter: the text the proxy
 // sends to VictoriaLogs for the operand of postAgg (PostAggregationPhysical reads it with another translation).
 func postAggOperandText(postAgg instantMetricPostAgg, translate func(string) (string, error)) (string, error) {
-	if g := postAgg.grouping; g != nil && !g.Without && len(g.Labels) > 0 && postAggParserStageRE.MatchString(postAgg.inner) {
-		translated, err := translate("max by (" + strings.Join(g.Labels, ", ") + ") (" + postAgg.inner + ")")
+	if text, rewritten := postAggTranslatedText(postAgg); rewritten {
+		translated, err := translate(text)
 		if i := strings.LastIndex(translated, " | stats "); err == nil && i > 0 && strings.Count(translated, "| stats ") > 1 {
 			operand := translated[:i]
 			first := strings.Index(operand, "| stats ")
@@ -241,6 +241,15 @@ func postAggOperandText(postAgg instantMetricPostAgg, translate func(string) (st
 		}
 	}
 	return translate(postAgg.inner)
+}
+
+// postAggTranslatedText is the text postAggOperandText translates first for postAgg: for a stddev or stdvar by labels
+// of an operand with a parser, its series-level max by form (rewritten), else the operand.
+func postAggTranslatedText(postAgg instantMetricPostAgg) (text string, rewritten bool) {
+	if g := postAgg.grouping; g != nil && !g.Without && len(g.Labels) > 0 && postAggParserStageRE.MatchString(postAgg.inner) {
+		return "max by (" + strings.Join(g.Labels, ", ") + ") (" + postAgg.inner + ")", true
+	}
+	return postAgg.inner, false
 }
 
 func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
@@ -528,6 +537,8 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
+	// The live shadow of the whole query (-translate-shadow-sample) sees the operand's request as sent.
+	p.shadowProxyEvaluated(r.Context(), originalQuery, postAgg, translatedInner)
 	translatedInner, markerOp, withoutLabels, replaces := splitPostProcessing(translatedInner)
 	withoutOp, foldWithout := withoutFoldOp(markerOp, originalQuery)
 	transforms, regexErr := newLabelTransforms(replaces)
@@ -668,6 +679,8 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		}
 		return
 	}
+	// The live shadow of the whole query (-translate-shadow-sample) sees the operand's request as sent.
+	p.shadowProxyEvaluated(r.Context(), originalQuery, postAgg, translatedInner)
 	translatedInner, markerOp, withoutLabels, replaces := splitPostProcessing(translatedInner)
 	withoutOp, foldWithout := withoutFoldOp(markerOp, originalQuery)
 	transforms, regexErr := newLabelTransforms(replaces)
