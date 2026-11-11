@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   VictoriaLogs accepts, so the query-plan shadow could not read the text. The
   parser checks the text the proxy compares; the requests sent to
   VictoriaLogs do not change.
+
+## [2.130.0] - 2026-11-11
+
+### Changed
+
 - The query plan lowers the metric queries whose labels come from a parser,
   for every translation profile: a grouping or unwrapped label with an
   underscore behind `json` or `logfmt` (the `http_method` a line may hold as
