@@ -509,5 +509,8 @@ func TestKeepSeriesGrouping_JSONFoldKeepsSettledSteps(t *testing.T) {
 		if i > 0 && span > 10*time.Minute {
 			t.Errorf("request %d read %s of stats; a repeat one step later reads the new step and its range, not the window", i, span)
 		}
+		// The answer's buckets are stored off the request path: wait for the store, as a client's next refresh
+		// does by arriving later, before the next request looks them up.
+		p.statsExtentStores.wait()
 	}
 }
