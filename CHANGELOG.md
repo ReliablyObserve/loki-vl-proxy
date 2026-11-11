@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Breaking: tenancy is off by default.** After upgrading, a deployment that
+  separated tenants by `X-Scope-OrgID` with no tenant setting (only numeric
+  org IDs such as `7`, routed by the old default `-tenant.numeric-passthrough=true`)
+  serves VictoriaLogs account `0:0` to everyone. **Upgrade: set
+  `-tenant.numeric-passthrough=true`** (Helm `extraArgs: {tenant.numeric-passthrough: "true"}`),
+  or a tenant map / `-auth.enabled`, to keep routing on the header. By
+  default the proxy is now Loki's single-tenant mode (`auth_enabled: false`):
+  `X-Scope-OrgID` is ignored on every route (not checked, routed on,
+  forwarded or used in cache keys), every request reads `0:0`, and every
+  Grafana user sees all data. A named org such as `team-a` that earlier releases
+  refused with `403 unknown tenant` now reads `0:0` too, as Loki does; `a|b` is no
+  multi-tenant request and headers that were refused with `400`/`403` get the
+  default tenant's answer (answers recorded from Loki with
+  `auth_enabled: false` in
+  `internal/proxy/testdata/tenant_noauth_loki_answers.jsonl`). Tenancy is on
+  with any of `-auth.enabled`, `-require-tenant-header`, `-tenant-map`,
+  `-tenant-map-file`, `-tenant-label` (or their `TENANT_MAP`,
+  `TENANT_MAP_FILE`, `TENANT_LABEL` environment forms) or
+  `-tenant.numeric-passthrough=true`. `-tenant.numeric-passthrough` now
+  defaults to `false`; left unset next to another tenant setting it stays on,
+  so deployments with a tenant map, tenant label or `-auth.enabled` route as
+  before, and an explicit `false` next to a tenant map is strict routing as before
+  (an explicit `false` with no other tenant setting, which refused every org,
+  is now tenancy off). The zero value
+  of `proxy.Config` (library use) is unchanged: numeric passthrough on. See
+  `docs/tenancy-and-auth.md`.
 - The delete API needs its own token. With `-delete-api-enabled=true`, every
   request to `/loki/api/v1/delete` must carry the new `-delete-api-auth-token`
   in `X-Delete-Token` or `Authorization: Bearer` (constant-time compare);
@@ -31,24 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   create a Secret with the token, set `deleteAuth.existingSecret` (or the
   flag), and send the token with every delete request. Deployments without the
   delete API need no change.
-- With no tenant configuration the proxy is Loki's single-tenant mode
-  (`auth_enabled: false`): `X-Scope-OrgID` is ignored on every route (not
-  checked, routed on, forwarded or used in cache keys) and every request reads
-  the VictoriaLogs default tenant `0:0`, as Loki serves tenant `fake` to
-  everyone (answers recorded from Loki with `auth_enabled: false` in
-  `internal/proxy/testdata/tenant_noauth_loki_answers.jsonl`). "No tenant
-  configuration" means `-auth.enabled=false`, `-require-tenant-header=false`,
-  no `-tenant-map` or `-tenant-map-file`, no `-tenant-label` and
-  `-tenant.numeric-passthrough=true`. **Breaking:** without any of these,
-  `X-Scope-OrgID: 7` now reads the default tenant `0:0` instead of
-  VictoriaLogs account `7`, `a|b` is no longer a multi-tenant request (no
-  `__tenant_id__`), and headers that were refused (`400`/`403`) get the default
-  tenant's answer. A deployment that separates tenants by numeric org IDs
-  without a tenant map now gives every client account `0:0`. Upgrade: to keep
-  routing on the header, set `-auth.enabled=true` (or
-  `-require-tenant-header`), or configure a tenant map; numeric org IDs are
-  then routed to their accounts as before.
-- Once tenants are configured, `X-Scope-OrgID` is admitted and refused as Loki
+- With tenancy on, `X-Scope-OrgID` is admitted and refused as Loki
   3.7.9 does with `auth_enabled: true`, before the response cache or any
   VictoriaLogs call (answers recorded from Loki and replayed byte for byte in
   `internal/proxy/testdata/tenant_auth_loki_answers.jsonl`). A missing, empty or
@@ -62,8 +71,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   multi-tenant header is checked member by member: `a|` is served as a
   multi-tenant request (was `400`), `a|a` is the tenant `a`, and tail and delete
   answer `multiple org IDs present`. The check also narrows what reaches the
-  tenant map and the tenant-label stream filter. **Breaking:** with tenants
-  configured, a tenant ID Loki refuses (for example `+7`, `team a`, `team/x`)
+  tenant map and the tenant-label stream filter. **Breaking:** with tenancy
+  on, a tenant ID Loki refuses (for example `+7`, `team a`, `team/x`)
   is refused even when the tenant map lists it; rename such entries.
 - The user name of a client's basic authentication (`X-Loki-VL-Auth-User`,
   `X-Loki-VL-Auth-Source`) is sent to VictoriaLogs only with

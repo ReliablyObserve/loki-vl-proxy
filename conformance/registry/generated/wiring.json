@@ -1798,6 +1798,7 @@
       "internal/proxy/loki_client_error_test.go"
     ],
     "tenant-auth-follows-loki": [
+      "cmd/proxy/tenant_routing_test.go",
       "internal/proxy/tenant_auth_parity_test.go",
       "internal/proxy/tenant_header_fuzz_test.go",
       "internal/proxy/tenant_isolation_leak_test.go",
@@ -1818,6 +1819,7 @@
       "internal/proxy/query_range_steps_test.go",
       "internal/proxy/sliding_without_cut_harden_test.go",
       "internal/proxy/stats_extent_cache_test.go",
+      "internal/proxy/tenant_auth_parity_test.go",
       "internal/proxy/tenant_header_fuzz_test.go",
       "internal/proxy/tenant_isolation_leak_test.go",
       "internal/proxy/tenant_routing_test.go",
@@ -1887,6 +1889,7 @@
       "semantics/query-range-step-alignment"
     ],
     "cmd/proxy/tenant_routing_test.go": [
+      "tenant-auth-follows-loki",
       "tenant-numeric-routing"
     ],
     "internal/cache/cache_coverage_test.go": [
@@ -2905,7 +2908,8 @@
       "loki_api_v1_tail"
     ],
     "internal/proxy/tenant_auth_parity_test.go": [
-      "tenant-auth-follows-loki"
+      "tenant-auth-follows-loki",
+      "tenant-numeric-routing"
     ],
     "internal/proxy/tenant_header_fuzz_test.go": [
       "tenant-auth-follows-loki",

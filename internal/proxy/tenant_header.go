@@ -88,16 +88,19 @@ func lokiTenantIDError(id string) string {
 	return ""
 }
 
-// tenantHeaderIgnored reports whether the proxy runs as Loki's single-tenant
-// mode (auth_enabled: false): no tenant is configured, so X-Scope-OrgID is
-// ignored and every request reads the backend default tenant, as Loki serves
-// tenant "fake" to everyone. Any tenant configuration keeps routing on the
-// header: -auth.enabled, -require-tenant-header, a tenant map (static, or a
-// -tenant-map-file even while it is empty), -tenant-label, or strict routing
-// (-tenant.numeric-passthrough=false). The tenant map and label are read from
-// the live routing, so a reload that adds or removes the map switches mode.
+// tenantHeaderIgnored reports whether tenancy is turned off completely, the
+// proxy then being Loki's single-tenant mode (auth_enabled: false):
+// X-Scope-OrgID is ignored and every request reads the backend default
+// tenant, as Loki serves tenant "fake" to everyone. Tenancy is off only when
+// numeric passthrough is off (-tenant.numeric-passthrough=false) and nothing
+// else names tenants: no -auth.enabled, no -require-tenant-header, no tenant
+// map (static, or a -tenant-map-file even while it is empty) and no
+// -tenant-label. Numeric passthrough is on by default, so the default
+// deployment routes X-Scope-OrgID: 7 to account 7. The tenant map and label
+// are read from the live routing, so a reload that adds or removes the map
+// switches mode.
 func (p *Proxy) tenantHeaderIgnored(routing requestRouting) bool {
-	return !p.authEnabled && !p.requireTenantHeader && !p.strictTenantRouting && !p.tenantMapFileSet &&
+	return p.strictTenantRouting && !p.authEnabled && !p.requireTenantHeader && !p.tenantMapFileSet &&
 		routing.label == "" && len(routing.tenants) == 0
 }
 

@@ -356,7 +356,6 @@ func TestGap_MultitenancyHeader_StringOrgIDRejectedWithoutMapping(t *testing.T) 
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
-	p.tenantMapFileSet = true // tenants configured (an empty -tenant-map-file): the header is routed
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 

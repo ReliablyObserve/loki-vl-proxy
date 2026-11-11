@@ -219,7 +219,7 @@ Tenant limits notes:
 
 ## Tenant header (X-Scope-OrgID)
 
-With no tenant configuration the proxy is Loki's single-tenant mode (`auth_enabled: false`): the header is ignored on every route and every request reads the default tenant (recorded from the e2e stack's Loki in `testdata/tenant_noauth_loki_answers.jsonl`; see [Tenant Resolution Order](configuration.md#tenant-resolution-order)). Once tenants are configured, the proxy admits and refuses `X-Scope-OrgID` as Loki 3.7.9 does with `auth_enabled: true`, before the response cache or any VictoriaLogs call. The answers below are recorded from Loki and replayed against the proxy in `internal/proxy/tenant_auth_parity_test.go`.
+Tenancy is off by default: the proxy is Loki's single-tenant mode (`auth_enabled: false`), the header is ignored on every route and every request reads the default tenant (recorded from the e2e stack's Loki in `testdata/tenant_noauth_loki_answers.jsonl`; see [Tenancy and authentication](tenancy-and-auth.md)). With tenancy on, the proxy admits and refuses `X-Scope-OrgID` as Loki 3.7.9 does with `auth_enabled: true`, before the response cache or any VictoriaLogs call. The answers below are recorded from Loki and replayed against the proxy in `internal/proxy/tenant_auth_parity_test.go`.
 
 | Header | Read routes | `/loki/api/v1/tail` | `/loki/api/v1/delete` |
 |---|---|---|---|
@@ -231,7 +231,7 @@ With no tenant configuration the proxy is Loki's single-tenant mode (`auth_enabl
 
 `query_range`, `detected_fields` and `detected_field/{name}/values` put Loki's querier prefix `rpc error: code = Code(400) desc = ` before the `400` texts. Characters are checked before length, and each member of `a|b` in header order (members are not trimmed, so `a | b` is refused for its space); delete checks only the first member before refusing more than one. `a|a` is the tenant `a`, and `a|` is a multi-tenant request over `a`. The ruler views answer in their JSON: `/loki/api/v1/rules` and `/api/prom/rules` `500` `no org id` for any refused or multi-tenant header, `/prometheus/api/v1/rules` and `/prometheus/api/v1/alerts` `400` `too many org ids found` for a multi-tenant header and `500` `no valid org id found` for a refused ID. `Authorization` plays no part in the tenant check.
 
-A tenant Loki accepts can still be refused by the proxy's own routing (`403 unknown tenant` for an unmapped name or a non-canonical number, `*` without `-tenant.allow-global`, tenant-label alias rules): VictoriaLogs has numeric accounts only, and serving an unmapped name from the default tenant would expose that tenant's data. See [Tenant Resolution Order](configuration.md#tenant-resolution-order).
+A tenant Loki accepts can still be refused by the proxy's own routing (`403 unknown tenant` for an unmapped name or a non-canonical number, `*` without `-tenant.allow-global`, tenant-label alias rules): VictoriaLogs has numeric accounts only, and serving an unmapped name from the default tenant would expose that tenant's data. See [Tenant resolution order](tenancy-and-auth.md#tenant-resolution-order-tenancy-on).
 
 ## Error Response Format
 

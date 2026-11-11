@@ -192,7 +192,6 @@ func TestRulesAndAlerts_NonLabelModesForwardTenantHeadersUnfiltered(t *testing.T
 		p := newTestProxyWithOptions(t, func(c *Config) {
 			c.RulerBackendURL = backend.URL
 			c.AlertsBackendURL = backend.URL
-			c.TenantMapFile = testTenantMapFile // route on the header
 		})
 		req := httptest.NewRequest("GET", rt.path, nil)
 		req.Header.Set("X-Scope-OrgID", "42")

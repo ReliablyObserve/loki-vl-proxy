@@ -69,8 +69,8 @@ func FuzzTenantHeader(f *testing.F) {
 	if err != nil {
 		f.Fatal(err)
 	}
-	// Loki's single-tenant mode: no tenant configured, the header is ignored.
-	single, err := New(Config{BackendURL: "http://unused", LogLevel: "error"})
+	// Tenancy off, Loki's single-tenant mode: the header is ignored.
+	single, err := New(Config{BackendURL: "http://unused", LogLevel: "error", StrictTenantRouting: true})
 	if err != nil {
 		f.Fatal(err)
 	}

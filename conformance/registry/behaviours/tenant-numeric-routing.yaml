@@ -14,7 +14,9 @@ victorialogs: |
   are rejected with 422 (cannot obtain tenantID).
 
 proxy: |
-  One resolver (resolveTenant) decides admission and the AccountID/ProjectID
+  Numeric routing applies once tenancy is on (tenant-auth-follows-loki):
+  -tenant.numeric-passthrough=true, or the flag left unset next to another
+  tenant setting; by default tenancy is off and the header is ignored. One resolver (resolveTenant) decides admission and the AccountID/ProjectID
   headers the proxy sets on every backend request (queries, tail, rules and
   alerts, the cold tier, each part of a multi-tenant a|b request); the cold tier
   also receives X-Scope-OrgID and resolves it itself. A numeric org is routed to the
@@ -23,7 +25,7 @@ proxy: |
   spelling is refused with 403 unknown tenant unless the tenant map lists that
   exact string, and the refusal is logged once per org. Tenant-map account_id
   and project_id values are unchanged. With -tenant.numeric-passthrough=false
-  only orgs listed in the tenant map are routed; the default aliases and a
+  set explicitly next to a tenant map only orgs listed in it are routed; the default aliases and a
   missing org are refused like "*" unless -tenant.allow-global or a map entry
   admits them (no entry admits a missing org). Label routing is unchanged.
 

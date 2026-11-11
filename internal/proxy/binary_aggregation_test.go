@@ -32,8 +32,7 @@ func binaryAggregationAnswerFor(t *testing.T, emu *vlemu.Emulator, orgID, query 
 	t.Helper()
 	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
-	cfg := Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second,
-		TenantMapFile: testTenantMapFile} // route on X-Scope-OrgID: the multi-tenant cases name tenants
+	cfg := Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second}
 	for _, apply := range configure {
 		apply(&cfg)
 	}

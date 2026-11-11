@@ -54,8 +54,13 @@ func TestTenantNumericPassthroughFlag(t *testing.T) {
 		args       []string
 		wantStrict bool
 	}{
-		{nil, false},
+		{nil, true}, // tenancy off by default: strict routing with nothing to route ignores the header
 		{[]string{"-tenant.numeric-passthrough=true"}, false},
+		{[]string{"-auth.enabled=true"}, false},
+		{[]string{"-require-tenant-header=true"}, false},
+		{[]string{`-tenant-map={"a":{"account_id":"1","project_id":"0"}}`}, false},
+		{[]string{"-tenant-label=org_id"}, false},
+		{[]string{"-tenant.numeric-passthrough=false", `-tenant-map={"a":{"account_id":"1","project_id":"0"}}`}, true},
 		{[]string{"-tenant.numeric-passthrough=false"}, true},
 		{[]string{"-tenant.numeric-passthrough=false", "-tenant.allow-global=true"}, true},
 	} {
@@ -69,6 +74,69 @@ func TestTenantNumericPassthroughFlag(t *testing.T) {
 		}
 		if cfg.StrictTenantRouting != tc.wantStrict {
 			t.Fatalf("%v: Config.StrictTenantRouting = %v, want %v", tc.args, cfg.StrictTenantRouting, tc.wantStrict)
+		}
+	}
+}
+
+// Tenancy is off by default (Loki's single-tenant mode); any tenant setting,
+// in flag or environment form, turns it on, and numeric passthrough then
+// stays on unless set false explicitly. The tenancy-off configuration is the
+// one TestTenantNoAuth_HeaderIgnoredLikeLoki (internal/proxy) replays Loki's
+// auth_enabled: false answers against: strict routing with no map, file,
+// label, -auth.enabled or -require-tenant-header.
+//
+// conformance: tenant-auth-follows-loki, tenant-numeric-routing
+func TestResolveNumericPassthrough(t *testing.T) {
+	for _, tc := range []struct {
+		name                          string
+		flag, explicit, auth, require bool
+		mapJSON, mapFile, label       string
+		want                          bool
+	}{
+		{name: "nothing set: tenancy off", want: false},
+		{name: "explicit true", flag: true, explicit: true, want: true},
+		{name: "explicit false", explicit: true, want: false},
+		{name: "explicit false with a map: strict", explicit: true, mapJSON: `{"a":{}}`, want: false},
+		{name: "-auth.enabled", auth: true, want: true},
+		{name: "-require-tenant-header", require: true, want: true},
+		{name: "tenant map (flag or TENANT_MAP)", mapJSON: `{"a":{}}`, want: true},
+		{name: "tenant map file (flag or TENANT_MAP_FILE)", mapFile: "/etc/t.yaml", want: true},
+		{name: "tenant label (flag or TENANT_LABEL)", label: "org_id", want: true},
+		{name: "blank values do not count", mapJSON: " ", mapFile: " ", label: " ", want: false},
+	} {
+		if got := resolveNumericPassthrough(tc.flag, tc.explicit, tc.auth, tc.require, tc.mapJSON, tc.mapFile, tc.label); got != tc.want {
+			t.Fatalf("%s: %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// The environment forms of the tenant settings turn tenancy on like the flags.
+//
+// conformance: tenant-auth-follows-loki
+func TestRun_TenantEnvTurnsTenancyOn(t *testing.T) {
+	for _, env := range []map[string]string{
+		{"TENANT_MAP": `{"a":{"account_id":"1","project_id":"0"}}`},
+		{"TENANT_LABEL": "org_id"},
+	} {
+		reloadCh := make(chan os.Signal)
+		close(reloadCh)
+		shutdownCh := make(chan os.Signal, 1)
+		shutdownCh <- syscall.SIGTERM
+		var captured runtimeOptions
+		err := run([]string{"-server.admin-auth-token=test-token"}, func(k string) string { return env[k] }, io.Discard,
+			func(chan<- os.Signal, ...os.Signal) {},
+			func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher { return &fakeOTLPPusher{} },
+			func(opts runtimeOptions, _ *slog.Logger, _ signalNotifier, _ otlpPusherFactory) (*runtimeState, error) {
+				captured = opts
+				return &runtimeState{proxy: &proxy.Proxy{}, server: &fakeHTTPServer{}, cacheCleanup: func() {}, stopOTLP: func() {}, reloadCh: reloadCh, shutdownCh: shutdownCh}, nil
+			},
+			func(httpServer, serverLoopOptions, *slog.Logger, func(string, ...any)) {},
+			func(ch <-chan os.Signal, _ httpServer, _ time.Duration, _ *slog.Logger) { <-ch })
+		if err != nil {
+			t.Fatalf("%v: %v", env, err)
+		}
+		if captured.proxyCfg.strictTenantRouting {
+			t.Fatalf("%v: tenancy stayed off (strict routing with no map)", env)
 		}
 	}
 }
