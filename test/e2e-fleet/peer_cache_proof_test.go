@@ -178,12 +178,16 @@ type proofSet struct {
 }
 
 func (s proofSet) all() []proofRequest {
+	return append(s.nonPatterns(), s.patterns...)
+}
+
+// nonPatterns is all() without the /patterns requests, in the same order.
+func (s proofSet) nonPatterns() []proofRequest {
 	out := append([]proofRequest{}, s.metric...)
 	out = append(out, s.steps...)
 	out = append(out, s.windows...)
 	out = append(out, s.metadata...)
-	out = append(out, s.volume...)
-	return append(out, s.patterns...)
+	return append(out, s.volume...)
 }
 
 // selectorSet builds a proof set from a metric grouping and two selectors.
@@ -319,10 +323,17 @@ func warm(t *testing.T, rep replica, reqs []proofRequest, into answers) (fleetCo
 // replica a key whose replicas are B and C is a local hit on both, so there
 // a peer read is not required.
 // route selects the counter: fleetVLStats for the extent cache, fleetVLSelect for all.
-func requireReadsWithoutVL(t *testing.T, reqs []proofRequest, want answers, route func(fleetCounters) float64, routeName string) {
+// ownerMined holds the requests A forwarded to the selector's pattern-state
+// owner (patternsWarm): that peer mined the answer and keeps it in its own
+// memory, so when it is B or C and the answer's key is owned by the other
+// one, both read it from memory and no peer read is left to require.
+func requireReadsWithoutVL(t *testing.T, reqs []proofRequest, want answers, route func(fleetCounters) float64, routeName string, ownerMined map[string]bool) {
 	t.Helper()
-	peerReads := 0.0
+	peerReads, required := 0.0, 0
 	for _, req := range reqs {
+		if !ownerMined[req.path] {
+			required++
+		}
 		for _, rep := range []replica{fleetReplica(replicaB), fleetReplica(replicaC)} {
 			d, _ := askSame(t, rep, req, want[req.path])
 			if route(d) != 0 {
@@ -331,12 +342,46 @@ func requireReadsWithoutVL(t *testing.T, reqs []proofRequest, want answers, rout
 			if d.missedAll != 0 {
 				t.Errorf("%s on %s: %.0f lookups missed every tier although every entry was pushed to its replicas (%s)", req, rep.name, d.missedAll, d)
 			}
-			peerReads += d.peerHits
+			if !ownerMined[req.path] {
+				peerReads += d.peerHits
+			}
 		}
 	}
-	if peerReads < 1 && replicationFactor < 2 {
+	switch {
+	case replicationFactor >= 2:
+	case required == 0:
+		t.Logf("%s: A handed every request to the pattern-state owner, which keeps the answer itself; no peer read is required", reqs[0].layer)
+	case peerReads < 1:
 		t.Errorf("%s: no replica read an entry from a peer; one written elsewhere must come through the peer tier", reqs[0].layer)
 	}
+}
+
+// patternsWarm asks A every /patterns request, like warm, and returns the
+// requests A forwarded to the selector's pattern-state owner (a peer) rather
+// than mined itself. The peer that mined each forwarded request (the one
+// whose VictoriaLogs calls rose) is logged.
+func patternsWarm(t *testing.T, a replica, reqs []proofRequest, into answers) map[string]bool {
+	t.Helper()
+	ownerMined := map[string]bool{}
+	peers := []replica{fleetReplica(replicaB), fleetReplica(replicaC)}
+	for _, req := range reqs {
+		before := scrapeAll(t, peers)
+		got, d, _ := ask(t, a, req)
+		into[req.path] = got
+		if d.patternsForwarded == 0 {
+			continue
+		}
+		ownerMined[req.path] = true
+		after := scrapeAll(t, peers)
+		miner := "none (the owner answered from its state)"
+		for _, rep := range peers {
+			if f := after[rep.name].minus(before[rep.name]); f.vlSelect-f.vlBackground > 0 {
+				miner = rep.name
+			}
+		}
+		t.Logf("%s: A forwarded it to the pattern-state owner; mined on %s", req, miner)
+	}
+	return ownerMined
 }
 
 func fleetStats(c fleetCounters) float64  { return c.fleetVLStats }
@@ -714,7 +759,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			}
 			// B and C read A's exact reply; then each reads its own moved
 			// window, which only the buckets A kept can answer.
-			requireReadsWithoutVL(t, base.metric, first, fleetStats, "stats_query_range")
+			requireReadsWithoutVL(t, base.metric, first, fleetStats, "stats_query_range", nil)
 			peerReads := 0.0
 			for idx, by := range map[int]time.Duration{replicaB: 10 * time.Minute, replicaC: 20 * time.Minute} {
 				d := requireMovedRead(t, fleetReplica(idx), movedMetric(fx, by), base.metric, first, fx.start.Add(by), "after A kept the buckets", false)
@@ -786,13 +831,13 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			readAgain(t, fleetReplicas(), base.volume, first)
 		})
 		proofRun(t, "patterns", func(t *testing.T) {
-			warm(t, a, base.patterns, first)
+			ownerMined := patternsWarm(t, a, base.patterns, first)
 			for _, req := range base.patterns {
 				if patternsCount(t, req.String(), first[req.path]) == 0 {
 					t.Fatalf("%s: A mined no pattern; an empty answer is never cached, so nothing would be proven", req)
 				}
 			}
-			requireReadsWithoutVL(t, base.patterns, first, fleetSelect, "select")
+			requireReadsWithoutVL(t, base.patterns, first, fleetSelect, "select", ownerMined)
 			readAgain(t, fleetReplicas(), base.patterns, first)
 		})
 		proofRun(t, "query_range_window", func(t *testing.T) {
@@ -1016,14 +1061,15 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		started := time.Now()
 		recreateWithoutDisk(t, replicaA, replicaB, replicaC)
 		proofRec.addEdge("recreate_without_disk", map[string]any{"replicas": fleetServices, "ready_after_ms": ms(time.Since(started))})
-		warm(t, a, base.all(), rebuilt)
+		warm(t, a, base.nonPatterns(), rebuilt)
+		ownerMined := patternsWarm(t, a, base.patterns, rebuilt)
 		for _, req := range base.all() {
 			if rebuilt[req.path] != first[req.path] {
 				t.Errorf("%s after the rebuild differs from the first answer:\n got: %.600s\nwant: %.600s", req, rebuilt[req.path], first[req.path])
 			}
 		}
-		requireReadsWithoutVL(t, base.metric, rebuilt, fleetStats, "stats_query_range")
-		requireReadsWithoutVL(t, base.patterns, rebuilt, fleetSelect, "select")
+		requireReadsWithoutVL(t, base.metric, rebuilt, fleetStats, "stats_query_range", nil)
+		requireReadsWithoutVL(t, base.patterns, rebuilt, fleetSelect, "select", ownerMined)
 		requireRepliesRead(t, base.steps, rebuilt, "after the rebuild", replicaB, replicaC)
 		for idx, by := range map[int]time.Duration{replicaB: 90 * time.Minute, replicaC: 100 * time.Minute} {
 			requireMovedRead(t, fleetReplica(idx), movedMetric(fx, by), base.metric, rebuilt, fx.start.Add(by), "after the rebuild", false)
