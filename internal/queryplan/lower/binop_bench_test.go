@@ -10,7 +10,8 @@ import (
 )
 
 // binOpQueries are the plan corpus's binary operations and label_replace calls that the plan lowers (root is the
-// construct), so that the translator and the lowering are measured on the same shapes.
+// construct), so that the translator and the lowering are measured on the same shapes. A binary operation held to
+// the proxy's binary route (RoutedBinary) is measured against that route (BenchmarkBinaryWithout*, internal/querycorpus).
 func binOpQueries(b *testing.B, root string) []string {
 	b.Helper()
 	qs, err := plancorpus.Queries("../../..")
@@ -28,7 +29,7 @@ func binOpQueries(b *testing.B, root string) []string {
 			continue
 		}
 		queryplan.Resolve(p)
-		if _, err := PlanQuery(q, p, Profile{}); err != nil {
+		if _, err := PlanQuery(q, p, Profile{}); err != nil || RoutedBinary(p.Root) {
 			continue
 		}
 		out = append(out, q)
