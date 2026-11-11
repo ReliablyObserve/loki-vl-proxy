@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A query with certain non-ASCII characters could make the LogQL parser stop responding.** Such queries are now
+  rejected with Loki's 400 before anything else on the route runs, and every entry point of the LogQL parser is held to
+  return within a bound of time and memory by a fuzz target. **Breaking:** a few queries Loki rejects (for example a
+  stage name followed by `²`) were accepted and now answer Loki's 400; answers cached for them are not served.
+
 - Queries no longer make VictoriaLogs crash when a label name differs from
   `_time`, `_stream` or `_stream_id` only by letter case (`_TIME`, `_Stream`,
   `_STREAM_ID`). VictoriaLogs prints such a field name without its quotes when
