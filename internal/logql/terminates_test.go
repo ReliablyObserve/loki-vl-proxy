@@ -185,6 +185,11 @@ func TestHangingQueriesAreRejectedLikeLoki(t *testing.T) {
 		t.Fatalf("%d queries, want 80", n)
 	}
 	t.Logf("%d queries, %d with Loki's text", n, same)
+	// The other eight are a range with no function around it (`{a="b"}[٣]`): Loki's lexer rejects the bracket text
+	// as a duration before the parser sees the token, the proxy rejects the token ("unexpected RANGE").
+	if same < 72 {
+		t.Errorf("%d of %d answers have Loki's text, want at least 72", same, n)
+	}
 }
 
 // FuzzParseTerminates runs every entry point of the package on the input, each in a goroutine, and fails when one

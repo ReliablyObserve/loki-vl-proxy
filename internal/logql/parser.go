@@ -46,11 +46,23 @@ var errLexerFirst = errors.New("logql: lexer error")
 // Parse parses a LogQL expression string and returns the typed AST.
 // It accepts log queries, range aggregations, and vector aggregations.
 func Parse(input string) (Expr, error) {
+	expr, unknown, err := parseExpression(input)
+	if err == nil && unknown != nil {
+		return nil, unknown
+	}
+	return expr, err
+}
+
+// parseExpression is Parse that reports a query whose names hold a character Loki's lexer reads as an identifier
+// of its own (a label called ٣ or €) apart: Loki accepts such a name, but the translation to LogsQL does not carry
+// it, so the proxy turns the query away. The error comes after the semantic checks, which have Loki's own errors
+// for the rest of the query.
+func parseExpression(input string) (Expr, *ParseError, error) {
 	querycorpus.Record(querycorpus.LogQL, input)
 	// Loki rejects a query this long before lexing it; doing the same bounds how deep a query can nest, and so
 	// the recursion of every parse, for whatever query length the handlers accept.
 	if msg := InputSizeError(input); msg != "" {
-		return nil, &ParseError{Msg: msg}
+		return nil, nil, &ParseError{Msg: msg}
 	}
 	p := &parser{sc: newScanner(input)}
 	p.advance()
@@ -61,12 +73,21 @@ func Parse(input string) (Expr, error) {
 	if p.sc.lexErrCount() > 0 {
 		// Loki's lexer reports its own error ahead of the parse error it may cause, and for a query that parses.
 		e := p.sc.extra.err
-		return nil, p.errorMsgAt(int(e.off), e.msg, e.zeroLine)
+		return nil, nil, p.errorMsgAt(int(e.off), e.msg, e.zeroLine)
 	}
 	if err != nil {
-		return nil, err
+		if p.plainUnwrapAt > 0 {
+			// An unwrap stage outside a range aggregation: Loki's parser stops at its token, before it reads on.
+			err = p.errorAt(int(p.plainUnwrapAt)-1, "unwrap", "", false)
+		}
+		return nil, nil, err
 	}
-	return expr, nil
+	var unknown *ParseError
+	if at := p.unknownName(); at >= 0 {
+		r, _ := utf8.DecodeRuneInString(input[at:])
+		unknown, _ = p.errorMsgAt(at, "unsupported name character "+strconv.QuoteRune(r), false).(*ParseError)
+	}
+	return expr, unknown, nil
 }
 
 // ParseAndValidate parses a LogQL expression and runs semantic validation.
@@ -197,6 +218,39 @@ type parser struct {
 	canon *canonState
 	// flagSpans collects the spans of the logfmt flags read, when not nil (StripParserFlags).
 	flagSpans *[][2]int
+	// rangeDepth is above 0 inside the argument of a range aggregation, where an unwrap stage may stand. plainUnwrapAt
+	// is one more than the offset of the first unwrap stage outside one: Loki's parser stops at that token whatever
+	// follows it.
+	rangeDepth, plainUnwrapAt int32
+}
+
+// keep marks as read over the characters that start no token between offset start and the current token: the tokens
+// of a stage, a range or a call kept as text are no names the parser read. It is deferred by the functions that
+// read over such text.
+func (p *parser) keep(start int) {
+	if p.sc.extra == nil {
+		return
+	}
+	end := p.pos()
+	for i, at := range p.sc.extra.unknown {
+		if int(at) >= start && int(at) < end {
+			p.sc.extra.unknown[i] = -1
+		}
+	}
+}
+
+// unknownName is the offset of the first character that starts no token the parser read as a name (see
+// Token.Unknown), or -1.
+func (p *parser) unknownName() int {
+	if p.sc.extra == nil {
+		return -1
+	}
+	for _, at := range p.sc.extra.unknown {
+		if at >= 0 {
+			return int(at)
+		}
+	}
+	return -1
 }
 
 // pos is the byte offset of the current token in the input.
@@ -258,39 +312,24 @@ func (p *parser) parsePrimary() (Expr, error) {
 		return nil, fmt.Errorf("logql: empty expression")
 	}
 
-	// Number literal (e.g. scalar in binary ops)
-	if p.cur.Typ == TokNumber {
-		val, err := strconv.ParseFloat(p.cur.Val, 64)
-		if err != nil {
-			p.advance()
-			return &BadLiteralExpr{Err: "parse error : unable to parse literal as a float: " + err.Error()}, nil
-		}
-		p.advance()
-		return &LiteralExpr{Value: val}, nil
-	}
-
-	// Negative number literal
-	if p.cur.Typ == TokMinus {
-		p.advance()
-		if p.cur.Typ != TokNumber {
-			return nil, fmt.Errorf("logql: expected number after '-'")
-		}
-		val, err := strconv.ParseFloat(p.cur.Val, 64)
-		if err != nil {
-			p.advance()
-			return &BadLiteralExpr{Err: "parse error : unable to parse literal as a float: " + err.Error()}, nil
-		}
-		p.advance()
-		return &LiteralExpr{Value: -val}, nil
+	// Number literal (e.g. scalar in binary ops), possibly negative.
+	if p.cur.Typ == TokNumber || p.cur.Typ == TokMinus {
+		return p.parseNumberLiteral()
 	}
 
 	// Vector aggregation: starts with a known aggregation name followed by
 	// optional grouping or '('.
 	if p.cur.Typ == TokIdent {
 		if op, ok := vectorOps[p.cur.Val]; ok {
+			if !p.keywordAhead(true) {
+				return nil, p.syntaxErrorAt("") // Loki reads the name as an identifier it cannot place
+			}
 			return p.parseVectorAggregation(op)
 		}
 		if op, ok := rangeOps[p.cur.Val]; ok {
+			if !p.keywordAhead(false) {
+				return nil, p.syntaxErrorAt("")
+			}
 			ra, err := p.parseRangeAggregation(op)
 			if err != nil {
 				return nil, err
@@ -310,6 +349,9 @@ func (p *parser) parsePrimary() (Expr, error) {
 		// is an IDENTIFIER it cannot place (group, label_join, abs, ...).
 		name := p.cur.Val
 		if !opaqueMetricFunctions[name] {
+			return nil, p.syntaxErrorAt("")
+		}
+		if name != "approx_topk" && !p.keywordAhead(false) {
 			return nil, p.syntaxErrorAt("")
 		}
 		// Capture the full raw text and return it as-is so VictoriaLogs
@@ -338,7 +380,7 @@ func (p *parser) parsePrimary() (Expr, error) {
 			}
 			return o, nil
 		}
-		return nil, fmt.Errorf("logql: unexpected identifier %q", name)
+		return nil, p.syntaxErrorAt("(")
 	}
 
 	// Parenthesised expression
@@ -364,6 +406,25 @@ func (p *parser) parsePrimary() (Expr, error) {
 	}
 
 	return nil, p.syntaxErrorAt("")
+}
+
+// parseNumberLiteral parses a number, or a minus and a number.
+func (p *parser) parseNumberLiteral() (Expr, error) {
+	sign := 1.0
+	if p.cur.Typ == TokMinus {
+		p.advance()
+		sign = -1
+		if p.cur.Typ != TokNumber {
+			return nil, p.syntaxErrorAt("NUMBER")
+		}
+	}
+	val, err := strconv.ParseFloat(p.cur.Val, 64)
+	if err != nil {
+		p.advance()
+		return &BadLiteralExpr{Err: "parse error : unable to parse literal as a float: " + err.Error()}, nil
+	}
+	p.advance()
+	return &LiteralExpr{Value: sign * val}, nil
 }
 
 // maybeInfix checks for a binary operator after a primary and builds a BinOpExpr
@@ -481,18 +542,25 @@ func (p *parser) parseLabelList() ([]string, error) {
 	}
 	p.advance() // consume '('
 	var labels []string
+	afterComma, afterUnknown := false, false
 	for p.cur.Typ == TokIdent {
 		if p.atKeywordName() {
 			return nil, p.syntaxErrorAt(listNameExpecting(len(labels) == 0))
 		}
+		if (p.cur.Unknown || afterUnknown) && len(labels) > 0 && !afterComma {
+			return nil, p.syntaxErrorAt(listCloseExpecting(labels, false)) // a character that starts no token is no comma
+		}
+		afterUnknown = p.cur.Unknown
 		labels = append(labels, p.advance().Val)
-		if p.cur.Typ == TokComma {
+		afterComma = p.cur.Typ == TokComma
+		if afterComma {
 			p.advance()
 		}
 	}
-	if _, err := p.expect(TokRParen); err != nil {
-		return nil, err
+	if p.cur.Typ != TokRParen {
+		return nil, p.syntaxErrorAt(listCloseExpecting(labels, afterComma))
 	}
+	p.advance()
 	return labels, nil
 }
 
@@ -544,7 +612,11 @@ func (p *parser) parseStreamSelector() (*StreamSelector, error) {
 			}
 			return nil, p.syntaxErrorAt(expecting)
 		}
-		m, err := p.parseLabelMatcher()
+		expecting := "IDENTIFIER"
+		if len(sel.Matchers) == 0 {
+			expecting = "IDENTIFIER or }"
+		}
+		m, err := p.parseLabelMatcher(expecting)
 		if err != nil {
 			return nil, err
 		}
@@ -557,18 +629,21 @@ func (p *parser) parseStreamSelector() (*StreamSelector, error) {
 		break
 	}
 
-	if _, err := p.expect(TokRBrace); err != nil {
-		return nil, err
+	if p.cur.Typ != TokRBrace {
+		return nil, p.syntaxErrorAt("} or ,")
 	}
+	p.advance()
 
 	return sel, nil
 }
 
-func (p *parser) parseLabelMatcher() (LabelMatcher, error) {
-	name, err := p.expect(TokIdent)
-	if err != nil {
-		return LabelMatcher{}, fmt.Errorf("logql: expected label name: %w", err)
+// parseLabelMatcher parses one matcher of a stream selector; expecting is what Loki names as the alternatives to
+// the label name.
+func (p *parser) parseLabelMatcher(expecting string) (LabelMatcher, error) {
+	if p.cur.Typ != TokIdent {
+		return LabelMatcher{}, p.syntaxErrorAt(expecting)
 	}
+	name := p.advance()
 
 	var op MatchOp
 	switch p.cur.Typ {
@@ -581,7 +656,7 @@ func (p *parser) parseLabelMatcher() (LabelMatcher, error) {
 	case TokReNotMatch:
 		op = MatchNotRe
 	default:
-		return LabelMatcher{}, fmt.Errorf("logql: expected label operator, got %v (%q)", p.cur.Typ, p.cur.Val)
+		return LabelMatcher{}, p.syntaxErrorAt("= or =~ or !~ or !=")
 	}
 	p.advance()
 
@@ -602,14 +677,11 @@ func (p *parser) parseLabelMatcher() (LabelMatcher, error) {
 func (p *parser) selectorValueError() error {
 	name := lokiTokenName(p.cur)
 	zeroLine := p.cur.Typ == TokDuration || p.cur.Typ == TokDurationLit || p.cur.Typ == TokBytes || p.cur.Typ == TokLBracket || isLineFilterOperator(p.cur.Typ)
-	switch {
-	case p.cur.Typ == TokDuration:
+	switch p.cur.Typ {
+	case TokDuration:
 		name = "DURATION"
-	case p.cur.Typ == TokIdent && isLexerFunctionName(p.cur.Val):
-		name = "IDENTIFIER"
-		if strings.HasPrefix(strings.TrimLeftFunc(p.sc.src[p.sc.pos:], unicode.IsSpace), "(") {
-			name = lokiTokenName(Token{Typ: TokIdent, Val: strings.ToLower(p.cur.Val)})
-		}
+	case TokIdent:
+		name = p.currentTokenName()
 	}
 	pos := p.pos()
 	if p.cur.Typ == TokEOF {
@@ -724,6 +796,9 @@ func (p *parser) parsePipeBody() (Stage, error) {
 		return &DecolorizeStage{}, nil
 
 	case "unwrap":
+		if p.rangeDepth == 0 && p.plainUnwrapAt == 0 {
+			p.plainUnwrapAt = int32(p.pos()) + 1
+		}
 		p.advance()
 		return p.parseUnwrap()
 
@@ -744,12 +819,24 @@ func (p *parser) parsePipeBody() (Stage, error) {
 		return p.parseLabelFormat()
 	}
 
+	return p.parseNameStage(stageStart, kw)
+}
+
+// parseNameStage parses the stage that opens with a name that is no parser or formatting keyword: a label filter, or
+// an opaque stage that passes through to the backend.
+func (p *parser) parseNameStage(stageStart int, kw string) (Stage, error) {
 	// Unknown keyword after `|`: consume the identifier and the rest of the
 	// stage. If followed by a comparison/assignment operator or dotted-label
 	// continuation, this is a label filter. Otherwise treat as an opaque stage
 	// (unknown parser keywords, custom extensions) so the query passes through
 	// to the backend rather than being rejected by the proxy.
+	unknownKw := p.cur.Unknown
 	p.advance() // consume the ident (this is the label name in a label filter)
+	bang := p.cur.Typ == TokError && p.cur.Val == "!"
+	if unknownKw && !isLabelFilterOperator(p.cur.Typ) && !bang {
+		// A character that starts no token is a name to Loki's lexer; the stage it opens needs an operator.
+		return nil, p.syntaxErrorAt("")
+	}
 	// A label filter must have an operator (=, !=, =~, !~, >=, <=, >, <) next.
 	// Two consecutive identifiers (e.g. `| distinct method`) is invalid syntax —
 	// Loki rejects this with "syntax error: unexpected IDENTIFIER".
@@ -830,6 +917,7 @@ func (p *parser) consumeRange() {
 	if p.cur.Typ != TokLBracket {
 		return
 	}
+	defer p.keep(p.pos())
 	p.advance() // consume '['
 	for p.cur.Typ != TokRBracket && p.cur.Typ != TokEOF {
 		p.advance()
@@ -849,6 +937,7 @@ func (p *parser) expectStringOrRaw() (string, error) {
 		return p.advance().Val, nil
 	case TokIdent:
 		// ip("cidr") line filter extension: validate and treat as raw pass-through.
+		pos, keyword := p.pos(), p.functionKeyword() // for the error below, which the next token decides
 		name := p.advance().Val
 		if p.cur.Typ == TokLParen {
 			p.advance() // consume '('
@@ -864,9 +953,9 @@ func (p *parser) expectStringOrRaw() (string, error) {
 			}
 			return name + "(" + val + ")", nil
 		}
-		return "", fmt.Errorf("logql: expected STRING or RAWSTRING, got IDENT (%q)", name)
+		return "", p.errorAt(pos, identTokenName(name, keyword), "STRING", false)
 	}
-	return "", fmt.Errorf("logql: expected STRING or RAWSTRING, got %v (%q)", p.cur.Typ, p.cur.Val)
+	return "", p.syntaxErrorAt("STRING")
 }
 
 // parseDropKeepList parses the item list for drop/keep stages.
@@ -951,7 +1040,7 @@ func (p *parser) consumeExplicitFieldList(start int) (string, []ExtractionField,
 		if p.cur.Typ == TokEq {
 			p.advance()
 			if p.cur.Typ != TokString && p.cur.Typ != TokRawString {
-				return "", nil, p.syntaxError("STRING")
+				return "", nil, p.syntaxErrorAt("STRING")
 			}
 			end = p.sc.pos
 			field.Expression = p.advance().Val
@@ -966,7 +1055,7 @@ func (p *parser) consumeExplicitFieldList(start int) (string, []ExtractionField,
 			return "", nil, p.syntaxErrorAt("IDENTIFIER")
 		}
 		if p.cur.Typ != TokIdent {
-			return "", nil, p.syntaxError("IDENTIFIER")
+			return "", nil, p.syntaxErrorAt("IDENTIFIER")
 		}
 	}
 	return strings.TrimSpace(p.sc.src[start:end]), fields, nil
@@ -985,12 +1074,12 @@ func (p *parser) parseLabelFormat() (Stage, error) {
 			return nil, p.syntaxErrorAt("IDENTIFIER")
 		}
 		if p.cur.Typ != TokIdent {
-			return nil, p.syntaxError("IDENTIFIER")
+			return nil, p.syntaxErrorAt("IDENTIFIER")
 		}
 		name := p.cur.Val
 		p.appendStageToken(&raw)
 		if p.cur.Typ != TokEq {
-			return nil, p.syntaxError("=")
+			return nil, p.syntaxErrorAt("=")
 		}
 		p.appendStageToken(&raw)
 		format := LabelFormat{Name: name}
@@ -1002,7 +1091,7 @@ func (p *parser) parseLabelFormat() (Stage, error) {
 			}
 			format.Rename = true
 		default:
-			return nil, p.syntaxError("IDENTIFIER or STRING")
+			return nil, p.syntaxErrorAt("IDENTIFIER or STRING")
 		}
 		format.Value = p.cur.Val
 		p.appendStageToken(&raw)
@@ -1140,17 +1229,6 @@ func signedDurationAt(src string, i int) bool {
 	return err == nil
 }
 
-func (p *parser) syntaxError(expecting string) error {
-	msg := "syntax error: unexpected " + lokiTokenName(p.cur)
-	if expecting != "" {
-		msg += ", expecting " + expecting
-	}
-	if p.cur.Typ == TokEOF {
-		return newParseError(1, len(p.sc.src)+1, msg)
-	}
-	return newParseError(0, 0, msg)
-}
-
 // syntaxErrorAt is syntaxError with the position Loki reports: the 1-based
 // column of the offending token on line 1, or line 0 for the line-filter
 // operators and a range, whose lexer tokens carry no line.
@@ -1159,8 +1237,83 @@ func (p *parser) syntaxErrorAt(expecting string) error {
 	if p.cur.Typ == TokEOF {
 		pos = len(p.sc.src)
 	}
+	if p.cur.Typ == TokError {
+		// Loki's lexer reports a bad string literal itself, at the start of the string.
+		switch p.cur.Val {
+		case "unterminated quoted string":
+			return p.errorMsgAt(pos, "literal not terminated", false)
+		case "invalid quoted string":
+			return p.errorMsgAt(pos, "invalid char escape", false)
+		}
+	}
 	zeroLine := p.cur.Typ != TokEOF && (isLineFilterOperator(p.cur.Typ) || p.cur.Typ == TokLBracket || p.cur.Typ == TokDurationLit || p.cur.Typ == TokBytes)
-	return p.errorAt(pos, lokiTokenName(p.cur), expecting, zeroLine)
+	return p.errorAt(pos, p.currentTokenName(), expecting, zeroLine)
+}
+
+// currentTokenName is the name Loki's parser prints for the current token. Loki's lexer returns the name of a
+// function (rate, sum, label_replace, ip, ...) as its keyword token only when a '(' follows it; any other
+// occurrence is an identifier.
+func (p *parser) currentTokenName() string {
+	if p.cur.Typ == TokIdent {
+		return identTokenName(p.cur.Val, isLexerFunctionName(p.cur.Val) && p.functionKeyword())
+	}
+	return lokiTokenName(p.cur)
+}
+
+// identTokenName is the name Loki's parser prints for the identifier name: the keyword of a function when keyword is
+// set, IDENTIFIER for a name of one that is not followed by its parenthesis.
+func identTokenName(name string, keyword bool) string {
+	if isLexerFunctionName(name) {
+		if keyword {
+			return lokiTokenName(Token{Typ: TokIdent, Val: strings.ToLower(name)})
+		}
+		return "IDENTIFIER"
+	}
+	return lokiTokenName(Token{Typ: TokIdent, Val: name})
+}
+
+// functionKeyword reports whether Loki's lexer reads the function name at the current token as its keyword.
+func (p *parser) functionKeyword() bool {
+	_, vector := vectorOps[p.cur.Val]
+	return p.keywordAhead(vector)
+}
+
+// keywordAhead is functionKeyword for a name known to be an aggregation (vector) or not: a '(' follows it, or for
+// an aggregation `by (` or `without (`. The lexer looks ahead over every character Go calls white space, not only
+// over the four it skips between tokens: the name is a keyword then, and the character that is not white space to
+// the lexer is the unexpected token after it.
+func (p *parser) keywordAhead(vector bool) bool {
+	rest := p.sc.src[p.sc.pos:]
+	if len(rest) > 0 && rest[0] == '(' {
+		return true
+	}
+	for len(rest) > 0 && rest[0] == ' ' {
+		rest = rest[1:]
+	}
+	rest = strings.TrimLeftFunc(rest, unicode.IsSpace)
+	if strings.HasPrefix(rest, "(") {
+		return true
+	}
+	if vector {
+		for _, word := range [...]string{"by", "without"} {
+			if startsWord(rest, word) {
+				return strings.HasPrefix(strings.TrimLeftFunc(rest[len(word):], unicode.IsSpace), "(")
+			}
+		}
+	}
+	return false
+}
+
+// startsWord reports whether s starts with word, in any case, as a whole word.
+func startsWord(s, word string) bool {
+	if len(s) < len(word) || !strings.EqualFold(s[:len(word)], word) {
+		return false
+	}
+	if len(s) == len(word) {
+		return true
+	}
+	r, _ := utf8.DecodeRuneInString(s[len(word):])
+	return r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
 // errorAt reports Loki's "syntax error: unexpected <token>" for the token that
@@ -1196,6 +1349,18 @@ var errorKeywords = map[string]bool{
 
 // listNameExpecting is what Loki's parse error names as expected where a name of a parenthesised label list is not
 // an identifier: the first name or the closing parenthesis, or the next name after a comma.
+// listCloseExpecting is what Loki expects where a list of names does not go on or end: a name or the closing
+// parenthesis of an empty list, a name after a comma, a comma or the parenthesis after a name.
+func listCloseExpecting(labels []string, afterComma bool) string {
+	switch {
+	case len(labels) == 0:
+		return "IDENTIFIER or )"
+	case afterComma:
+		return "IDENTIFIER"
+	}
+	return ", or )"
+}
+
 func listNameExpecting(first bool) string {
 	if first {
 		return "IDENTIFIER or )"
@@ -1214,6 +1379,8 @@ func lokiTokenName(tok Token) string {
 		return "STRING"
 	case TokDuration, TokLBracket:
 		return "RANGE"
+	case TokAt:
+		return "IDENTIFIER" // Loki v3.7 has no @ modifier: its lexer reads it as a name
 	case TokError:
 		// A character that starts no token is an identifier of its own to Loki's lexer; a dot is a token of its own.
 		if tok.Val == "." {
@@ -1250,6 +1417,7 @@ func lokiTokenName(tok Token) string {
 // a stale endPos of 0 (which panics for any startPos > 0). Used for opaque
 // function calls.
 func (p *parser) consumeBalancedParens() (endPos int, ok bool) {
+	defer p.keep(p.pos()) // the call's text is kept as it is: its tokens are no names
 	depth := 1
 	for depth > 0 && p.cur.Typ != TokEOF {
 		switch p.cur.Typ {
@@ -1277,6 +1445,7 @@ func (p *parser) consumeBalancedParens() (endPos int, ok bool) {
 // ( of the stage belongs to it. prev is the type of the token that precedes
 // the first one read.
 func (p *parser) consumeRestOfStage(prev TokType) string {
+	defer p.keep(p.pos())
 	var b strings.Builder
 	depth := 0
 	for {
@@ -1471,11 +1640,14 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 	start := p.pos()
 	p.advance() // consume function name
 
-	if _, err := p.expect(TokLParen); err != nil {
-		return nil, err
+	if p.cur.Typ != TokLParen {
+		return nil, p.syntaxErrorAt("(")
 	}
+	p.advance()
 
 	ra := &RangeAggregation{Op: op}
+	p.rangeDepth++
+	defer func() { p.rangeDepth-- }()
 
 	if op == RangeQuantileOverTime {
 		if err := p.parseQuantileParam(ra); err != nil {
@@ -1598,12 +1770,37 @@ func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 	// position just past it), which Loki reports for a malformed duration.
 	before := p.sc.src[:p.sc.pos]
 	bracketCol := utf8.RuneCountInString(before[strings.LastIndexByte(before, '\n')+1:])
-	if _, err := p.expect(TokLBracket); err != nil {
-		return fmt.Errorf("logql: expected '[' for range, got %v (%q)", p.cur.Typ, p.cur.Val)
+	textStart := p.sc.pos
+	if p.cur.Typ != TokLBracket {
+		expecting := ""
+		if lq, ok := ra.Inner.(*LogQuery); ok && len(lq.Pipeline) > 0 {
+			if _, ok := lq.Pipeline[len(lq.Pipeline)-1].(*UnwrapStage); ok {
+				expecting = "RANGE or |"
+			}
+		}
+		return p.syntaxErrorAt(expecting)
 	}
+	p.advance()
+	// Loki's lexer reads the text up to the ']' as one token and parses it as a duration: a character in it that is
+	// not part of one is an error of that token.
 	dur, err := p.expect(TokDuration)
 	if err != nil {
+		// A Grafana variable ([$__auto]) keeps its older error: label_replace passes its argument through with it.
+		if raw, closed := rangeToken(p.sc.src, textStart); closed && !strings.HasPrefix(raw, "$") {
+			if msg := rangeLexError(raw); msg != "" {
+				return newParseError(0, bracketCol, msg)
+			}
+		}
 		return fmt.Errorf("logql: expected duration: %w", err)
+	}
+	colon := p.cur.Typ == TokError && p.cur.Val == ":"
+	if p.cur.Typ != TokRBracket && !colon {
+		// Something else than the ']' follows the duration (a colon is reported below).
+		if raw, closed := rangeToken(p.sc.src, textStart); closed {
+			if msg := rangeLexError(raw); msg != "" {
+				return newParseError(0, bracketCol, msg)
+			}
+		}
 	}
 	ra.Range = dur.Val
 	ra.RangeDuration = parseDuration(dur.Val)
@@ -1713,9 +1910,13 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 		va.Grouping = g
 	}
 
-	if _, err := p.expect(TokLParen); err != nil {
-		return nil, err
+	if p.cur.Typ != TokLParen {
+		if va.Grouping == nil {
+			return nil, p.syntaxErrorAt("( or by or without")
+		}
+		return nil, p.syntaxErrorAt("(")
 	}
+	p.advance()
 
 	// topk/bottomk carry a numeric parameter before the inner expression.
 	if op == VectorTopK || op == VectorBottomK {
@@ -1764,9 +1965,10 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 		}
 	}
 
-	if _, err := p.expect(TokRParen); err != nil {
-		return nil, err
+	if p.cur.Typ != TokRParen {
+		return nil, p.syntaxErrorAt("")
 	}
+	p.advance()
 
 	// Optional trailing grouping: sum(...) by (label) — equivalent to sum by (label) (...)
 	if va.Grouping == nil && (p.cur.Typ == TokBy || p.cur.Typ == TokWithout) {
@@ -1785,24 +1987,73 @@ func (p *parser) parseGrouping() (*Grouping, error) {
 	without := p.cur.Typ == TokWithout
 	p.advance() // consume by/without
 
-	if _, err := p.expect(TokLParen); err != nil {
-		return nil, err
+	if p.cur.Typ != TokLParen {
+		return nil, p.syntaxErrorAt("(")
 	}
+	p.advance()
 
 	var labels []string
+	afterComma, afterUnknown := false, false
 	for p.cur.Typ == TokIdent {
 		if p.atKeywordName() {
 			return nil, p.syntaxErrorAt(listNameExpecting(len(labels) == 0))
 		}
+		if (p.cur.Unknown || afterUnknown) && len(labels) > 0 && !afterComma {
+			return nil, p.syntaxErrorAt(listCloseExpecting(labels, false)) // a character that starts no token is no comma
+		}
+		afterUnknown = p.cur.Unknown
 		labels = append(labels, p.advance().Val)
-		if p.cur.Typ == TokComma {
+		afterComma = p.cur.Typ == TokComma
+		if afterComma {
 			p.advance()
 		}
 	}
 
-	if _, err := p.expect(TokRParen); err != nil {
-		return nil, err
+	if p.cur.Typ != TokRParen {
+		return nil, p.syntaxErrorAt(listCloseExpecting(labels, afterComma))
 	}
+	p.advance()
 
 	return &Grouping{Without: without, Labels: labels}, nil
+}
+
+// rangeToken is the text of the range that starts at byte offset start, right after its '[': what stands up to the
+// next ']'. It reports false when there is none.
+func rangeToken(src string, start int) (string, bool) {
+	end := strings.IndexByte(src[start:], ']')
+	if end < 0 {
+		return "", false
+	}
+	return src[start : start+end], true
+}
+
+// rangeLexError is the error of Loki's lexer for the text d of a range, which it reads with Prometheus' duration
+// parser: digits and a unit, over and over. It returns "" when d reads so, and is called for a text the parser did
+// not read as a duration.
+func rangeLexError(d string) string {
+	if d == "" {
+		return "empty duration string"
+	}
+	for rest := d; rest != ""; {
+		i := 0
+		for i < len(rest) && rest[i] >= '0' && rest[i] <= '9' {
+			i++
+		}
+		if i == 0 {
+			return fmt.Sprintf("not a valid duration string: %q", d)
+		}
+		rest = rest[i:]
+		for i = 0; i < len(rest) && (rest[i] < '0' || rest[i] > '9'); i++ {
+		}
+		if i == 0 {
+			return fmt.Sprintf("not a valid duration string: %q", d)
+		}
+		switch unit := rest[:i]; unit {
+		case "y", "w", "d", "h", "m", "s", "ms":
+		default:
+			return fmt.Sprintf("unknown unit %q in duration %q", unit, d)
+		}
+		rest = rest[i:]
+	}
+	return ""
 }
