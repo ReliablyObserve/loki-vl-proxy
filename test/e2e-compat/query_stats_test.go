@@ -301,8 +301,10 @@ func withoutRecvWaitTime(shape any) any {
 }
 
 type e2eStats struct {
-	raw     json.RawMessage
-	Summary struct {
+	raw json.RawMessage
+	// lineBytes is the bytes of the log lines the answer returned (0 for a metric answer).
+	lineBytes int64
+	Summary   struct {
 		Bytes      int64   `json:"totalBytesProcessed"`
 		Lines      int64   `json:"totalLinesProcessed"`
 		PostFilter int64   `json:"totalPostFilterLines"`
@@ -335,7 +337,10 @@ func getE2EStats(t *testing.T, base, path string, params url.Values, extra map[s
 	var a struct {
 		Status string `json:"status"`
 		Data   struct {
-			Stats json.RawMessage `json:"stats"`
+			Stats  json.RawMessage `json:"stats"`
+			Result []struct {
+				Values [][]json.RawMessage `json:"values"`
+			} `json:"result"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal([]byte(raw), &a); err != nil || a.Status != "success" || len(a.Data.Stats) == 0 {
@@ -344,6 +349,14 @@ func getE2EStats(t *testing.T, base, path string, params url.Values, extra map[s
 	st := e2eStats{raw: a.Data.Stats}
 	if err := json.Unmarshal(a.Data.Stats, &st); err != nil {
 		t.Fatal(err)
+	}
+	for _, series := range a.Data.Result {
+		for _, v := range series.Values {
+			var line string
+			if len(v) >= 2 && json.Unmarshal(v[1], &line) == nil {
+				st.lineBytes += int64(len(line))
+			}
+		}
 	}
 	return st
 }
@@ -425,8 +438,12 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 			case miss.Summary.Entries >= 1000:
 				// Loki's bytes of a limit-filled answer follow its chunks.
 			case miss.Summary.Entries == miss.Summary.Lines && loki.Summary.Entries == loki.Summary.Lines:
-				if miss.Summary.Bytes != lokiLineBytes {
-					t.Errorf("bytes %d, Loki's line bytes %d (total %d - structured metadata %d)", miss.Summary.Bytes, lokiLineBytes, loki.Summary.Bytes, loki.Summary.StructuredMetadataBytes)
+				// A log answer under its limit processed exactly the lines it returned: the proxy's bytes are those
+				// lines' bytes, the same lines Loki returned. Loki's own total also counts its structured metadata
+				// and, read from chunks, more per entry, so it is logged, not compared.
+				if miss.lineBytes != loki.lineBytes || miss.Summary.Bytes != loki.lineBytes {
+					t.Errorf("bytes %d (returned lines %d bytes), Loki returned %d bytes of lines (Loki's total %d, structured metadata %d)",
+						miss.Summary.Bytes, miss.lineBytes, loki.lineBytes, loki.Summary.Bytes, loki.Summary.StructuredMetadataBytes)
 				}
 			case !near(miss.Summary.Bytes, lokiLineBytes, statsBytesTolerance):
 				t.Errorf("bytes %d, Loki's line bytes %d (total %d - structured metadata %d, tolerance %.0f%%)",
