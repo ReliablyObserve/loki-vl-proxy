@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   return within a bound of time and memory by a fuzz target. **Breaking:** a few queries Loki rejects (for example a
   stage name followed by `²`) were accepted and now answer Loki's 400; answers cached for them are not served.
 
+## [2.141.0] - 2026-11-11
+
+### Security
+
 - Queries no longer make VictoriaLogs crash when a label name differs from
   `_time`, `_stream` or `_stream_id` only by letter case (`_TIME`, `_Stream`,
   `_STREAM_ID`). VictoriaLogs prints such a field name without its quotes when
