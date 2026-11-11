@@ -412,6 +412,14 @@ func (p *Proxy) deriveQueryStatsTotals(r *http.Request, endpoint string, body []
 		p.meanLines.store(p.meanLineKey(r, shape.expr.Selector), sw.entries.lineBytes, sw.entries.n)
 		run := sw.lokiLogRun()
 		t, ok = p.logQueryTotals(r, keys, shape, run.from, run.to)
+		if !t.hasLines && p.exactLogLinesWanted(r, sw, shape) {
+			if n, counted := p.countSelectorLines(r.Context(), shape.expr.Selector, run.from, run.to); counted {
+				t.lines, t.hasLines, ok = n, true, true
+				if !shape.filtered {
+					t.postFilter, t.hasPostFilter = n, true
+				}
+			}
+		}
 	} else {
 		// The answer's steps are right whichever cache served them, so they
 		// are kept as the companion; but an answer partly served from cached

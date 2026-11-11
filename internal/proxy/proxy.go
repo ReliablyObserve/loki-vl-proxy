@@ -260,6 +260,11 @@ type Config struct {
 	// selector over its window, read from VictoriaLogs with a volume request next to the query (about six times the
 	// VictoriaLogs time of a count). Off by default: the bytes are estimated from the selector's mean line size.
 	QueryStatsExactMetricBytes bool
+	// QueryStatsExactLogLines makes a log query's totalLinesProcessed exact in Loki's accounting: when the panel's
+	// count answer is not held and the query fills its limit or filters lines, the lines of its stream selector over
+	// the pieces Loki reads are counted by VictoriaLogs (one timestamp-only count request per log query cache
+	// miss). Off by default: the lines are estimated from the answer.
+	QueryStatsExactLogLines bool
 	// PatternsEnabled controls /loki/api/v1/patterns availability.
 	// Nil defaults to true for backward compatibility.
 	PatternsEnabled *bool
@@ -716,6 +721,7 @@ type Proxy struct {
 	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
 	queryStatsVictoriaLogsMode            bool            // -query-stats-mode=victorialogs: measured stats, not Loki's accounting
 	queryStatsExactMetricBytes            bool            // -query-stats-exact-metric-bytes
+	queryStatsExactLogLines               bool            // -query-stats-exact-log-lines
 	meanLines                             meanLineTable   // the mean line size of log answers, for metric bytes (query_stats_totals.go)
 	patternsAutodetectFromQueries         bool
 	patternsCounts                        bool
@@ -1410,6 +1416,7 @@ func New(cfg Config) (*Proxy, error) {
 		queryPlanLowering:                     !cfg.DisableQueryPlanLowering,
 		queryStatsVictoriaLogsMode:            cfg.QueryStatsMode == QueryStatsModeVictoriaLogs,
 		queryStatsExactMetricBytes:            cfg.QueryStatsExactMetricBytes,
+		queryStatsExactLogLines:               cfg.QueryStatsExactLogLines,
 		patternsEnabled:                       patternsEnabled,
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,

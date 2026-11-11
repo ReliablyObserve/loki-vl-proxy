@@ -7,7 +7,11 @@ import (
 	"strings"
 	"time"
 
+	fj "github.com/valyala/fastjson"
+
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // Loki's accounting of a query, emulated (the default -query-stats-mode=loki;
@@ -225,39 +229,79 @@ func (w *queryStatsWriter) lokiLogRun() lokiLogRun {
 }
 
 // lokiLogSummary is a log answer's summary in Loki's accounting: the lines
-// of the pieces Loki would have read, from the panel's volume answer when
-// the proxy holds one (totals, derived for the run's part of the window),
-// else estimated from the answer itself: its entries spread over the time
-// they cover, scaled to the run (exact when the limit was not filled: every
-// matching line was returned). Bytes are those lines times the returned
+// of the pieces Loki reads, whole. They come from the panel's count answer
+// when the proxy holds one (totals, derived for the run's part of the
+// window), or from VictoriaLogs' count of those pieces
+// (-query-stats-exact-log-lines); else they are estimated from the answer
+// itself (lokiRunLinesEstimate). Bytes are those lines times the returned
 // lines' mean size.
+//
+// Loki's own figure for a query that fills its limit depends on its chunk
+// layout (head blocks read whole, compressed and flushed chunks read until
+// the limit is met, a flushed chunk once per split it overlaps), which no
+// VictoriaLogs answer tells: the proxy reports the pieces read, whole
+// (registry decision query-stats-limit-filled-log-lines).
 func (w *queryStatsWriter) lokiLogSummary(totals *statsTotals, filtered bool) (statsSummary, lokiLogRun) {
 	run := w.lokiLogRun()
 	q, entries := w.request(), w.entries.n
-	post := entries
-	if entries > 0 && q.limit > 0 && entries >= q.limit && w.entries.hasTS {
-		covered := q.end - parseTS19(w.entries.tsMin)
-		if !q.backward {
-			covered = parseTS19(w.entries.tsMax) - q.start
-		}
-		if covered > 0 && run.to > run.from {
-			post = max(entries, int64(float64(entries)*float64(run.to-run.from)/float64(covered)))
-		}
-	}
+	post := lokiRunLinesEstimate(entries, q.limit, q.backward, q.start, q.end,
+		parseTS19(w.entries.tsMin), parseTS19(w.entries.tsMax), w.entries.hasTS, run)
 	var s statsSummary
 	s.postFilter, s.lines = post, post
 	if totals.hasPostFilter {
 		s.postFilter = totals.postFilter
 		s.lines = s.postFilter
 	}
-	if totals.hasLines && (filtered || !totals.hasPostFilter) {
-		s.lines = totals.lines
+	if totals.hasLines {
+		// The pieces' lines bound the post-filter estimate, which never
+		// drops below the entries returned.
+		if totals.lines >= entries {
+			s.postFilter = min64(s.postFilter, totals.lines)
+		}
+		if filtered || !totals.hasPostFilter {
+			s.lines = totals.lines
+		}
 	}
 	s.lines = max(s.lines, s.postFilter)
 	if entries > 0 {
 		s.bytes = int64(float64(w.entries.lineBytes) / float64(entries) * float64(s.lines))
 	}
 	return s, run
+}
+
+func min64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// lokiRunLinesEstimate estimates the lines of the pieces a log query reads
+// from its answer alone. A limit not filled means every matching line of the
+// window was returned: the entries, exactly. A limit filled is estimated as
+// the entries spread over the time they cover, scaled to the pieces read,
+// and capped at the entries scaled to the pieces' count (as many lines in
+// each piece read as the answer returned): a burst of entries near the end
+// of a long window would otherwise be extrapolated over the whole run
+// (41,369 lines for a window holding 3,174 on the e2e stack). The estimate
+// lies in [entries, entries x pieces read].
+func lokiRunLinesEstimate(entries, limit int64, backward bool, start, end, tMin, tMax int64, hasTS bool, run lokiLogRun) int64 {
+	if entries <= 0 || limit <= 0 || entries < limit || !hasTS {
+		return max(entries, 0)
+	}
+	ceiling := entries * max(run.ran, 1)
+	covered := end - tMin
+	if !backward {
+		covered = tMax - start
+	}
+	if covered <= 0 || run.to <= run.from {
+		return entries
+	}
+	est := float64(entries) * float64(run.to-run.from) / float64(covered)
+	if est >= float64(ceiling) {
+		return ceiling
+	}
+	return max(entries, int64(est))
 }
 
 // lokiReport fills rep with Loki's accounting of a computed answer.
@@ -409,4 +453,43 @@ func volumeVectorSum(result map[string]interface{}) (int64, bool) {
 		sum += v
 	}
 	return sum, true
+}
+
+// exactLogLinesWanted reports whether a log query's lines are counted by
+// VictoriaLogs (-query-stats-exact-log-lines): its answer alone cannot give
+// them (it filled its limit, or it filters lines, whose selector lines it
+// never saw), for one tenant (a multi-tenant merge keeps the estimate).
+func (p *Proxy) exactLogLinesWanted(r *http.Request, sw *queryStatsWriter, shape totalsShape) bool {
+	if !p.queryStatsExactLogLines || strings.Contains(r.Header.Get("X-Scope-OrgID"), "|") {
+		return false
+	}
+	q := sw.request()
+	return q.ok && (shape.filtered || (q.limit > 0 && sw.entries.n >= q.limit))
+}
+
+// countSelectorLines is VictoriaLogs' count of a stream selector's lines in
+// [from, to): one stats request over the timestamps of the selector's
+// streams, scoped to the request's tenant as every VictoriaLogs call is.
+func (p *Proxy) countSelectorLines(ctx context.Context, sel *logqlpkg.StreamSelector, from, to int64) (int64, bool) {
+	if sel == nil || to <= from {
+		return 0, false
+	}
+	p.configMu.RLock()
+	streamFields := p.streamFieldsMap
+	var labelFn translate.LabelTranslateFunc
+	if p.labelTranslator != nil {
+		labelFn = p.labelTranslator.ToVL
+	}
+	p.configMu.RUnlock()
+	filter, err := translate.StreamSelectorFilterNamed(sel.Matchers, labelFn, streamFields, logsql.QuoteKeywordField)
+	if err != nil {
+		return 0, false
+	}
+	lines := int64(-1)
+	err = p.readPatternCountRows(ctx, patternExactCountQuery(filter), from, to, 1, func(v *fj.Value) bool {
+		n, err := strconv.ParseInt(string(v.GetStringBytes("c")), 10, 64)
+		lines = n
+		return err == nil
+	})
+	return lines, err == nil && lines >= 0
 }

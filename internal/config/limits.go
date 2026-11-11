@@ -421,6 +421,16 @@ var Limits = []Limit{
 		Sizing:     "Off by default: reading the line bytes of a selector costs VictoriaLogs about six times a count over the same window (24h of every stream on the test stack: 0.55 s against 0.09 s), on every metric query cache miss. Turn it on only where exact bytes in Grafana's inspector are worth that VictoriaLogs time; the volume caches answer repeats.",
 	},
 	{
+		Flag:       "query-stats-exact-log-lines",
+		Unit:       "switch",
+		Bounds:     "false (the default) estimates a log query's lines processed from its answer; true counts them with VictoriaLogs, one timestamp-only count request of the query's stream selector over the 1h pieces Loki reads, per log query cache miss that fills its limit or filters lines, sent after the answer and bounded by the request",
+		Error:      "none; a failed or cancelled count leaves the estimate",
+		Metric:     "loki_vl_proxy_backend_read_bytes_total{kind=\"raw\"} counts the extra requests' bytes (one row each)",
+		Alert:      "none",
+		LokiParity: "data.stats.summary.totalLinesProcessed of Loki's log queries",
+		Sizing:     "Off by default: the count reads only the timestamps of the selector's streams over the pieces read (about a volume query's VictoriaLogs time; 24h of every stream on the test stack: 0.09 s), but it is one more VictoriaLogs request for every log query cache miss on every replica, which a fleet multiplies by its replicas and clients. Turn it on where exact lines processed in Grafana's inspector are worth that load; repeats are cache hits and send none.",
+	},
+	{
 		Flag:       "max-lines",
 		Unit:       "rows",
 		Bounds:     "the default number of log lines per query when the client sends no limit",

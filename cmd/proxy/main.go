@@ -113,6 +113,7 @@ type proxyRuntimeConfig struct {
 	queryPlanLowering                   bool
 	queryStatsMode                      string
 	queryStatsExactMetricBytes          bool
+	queryStatsExactLogLines             bool
 	patternsEnabled                     bool
 	deleteAPIEnabled                    bool
 	patternsAutodetectFromQueries       bool
@@ -616,6 +617,7 @@ func run(
 	queryPlanLowering := fs.Bool("query-plan-lowering", true, "Translate the queries the typed query-plan lowering covers natively with it instead of the string translator: log queries with a stream selector, line filters, pattern filters (|> and !>) and label filters, no parser stage. The lowering writes the same VictoriaLogs query, byte for byte, under every translator option (held by the corpus shadow in CI), so answers, caches and VictoriaLogs requests do not change, except that a label called not, in, options, and, or, contains_all, contains_any, contains_common_case or equals_common_case is written quoted, which VictoriaLogs needs and the string translator leaves out; every other query, and any query the lowering cannot translate, goes to the string translator. Counted as result=flipped in loki_vl_proxy_lowering_shadow_total. false is the rollback: every query is translated by the string translator")
 	queryStatsMode := fs.String("query-stats-mode", "loki", "Accounting of the data.stats object of query, query_range, volume and volume_range answers (the Stats of Grafana's query inspector and the Logs Drilldown footer). loki (the default) emulates Loki's numbers: the lines and bytes of the pieces Loki would have read (a log query that fills its limit stops after the piece holding its last entry; lines estimated from the answer's entries when no volume answer of the panel is known; bytes as lines times the mean line size), Loki's splits and shards (1h pieces), cache hits as Loki reports them (log and instant answers replay the computation; metric query_range hits are results-cache hits). victorialogs reports what the proxy measured: the rows VictoriaLogs returned and their line bytes, a metric answer's own counts, VictoriaLogs calls as splits, nothing processed on a cache hit")
 	queryStatsExactMetricBytes := fs.Bool("query-stats-exact-metric-bytes", false, "With -query-stats-mode=loki, read a metric query's totalBytesProcessed from VictoriaLogs: the line bytes of its stream selector over its window, with a volume request sent next to the query (about six times the VictoriaLogs time of a count over the same window; cached like volume answers). Off by default: the bytes are estimated as the lines counted times the selector's mean line size, taken from its log answers")
+	queryStatsExactLogLines := fs.Bool("query-stats-exact-log-lines", false, "With -query-stats-mode=loki, count a log query's totalLinesProcessed with VictoriaLogs when its answer cannot give it (it filled its limit, or it filters lines) and the panel's count answer is not held: one timestamp-only count of its stream selector over the 1h pieces Loki reads, per log query cache miss. Off by default: the lines are estimated from the answer, capped at its entries times the pieces read. Loki's own figure for a limit-filled query depends on its chunk layout; this reports the pieces read, whole")
 	patternsAutodetectFromQueries := fs.Bool("patterns-autodetect-from-queries", false, "Warm /loki/api/v1/patterns cache from successful query/query_range log responses (opt-in global autodetect)")
 	patternsExactMaxLines := fs.Int("patterns-exact-max-lines", proxy.DefaultPatternsExactMaxLines, "Read at most this many lines from VictoriaLogs to answer /loki/api/v1/patterns for a stream selector with the patterns Loki mines from them: each stream and level mined apart, oldest line first, with Loki's cluster limits. A range with more lines is answered from VictoriaLogs' counts (-patterns-counts) instead, which mines the lines of a level's streams together. Reading costs about 200 bytes per line of transfer and a sort in VictoriaLogs' memory; 0 turns the exact reading off")
 	patternsStateMaxBytes := fs.Int64("patterns-state-max-bytes", proxy.DefaultPatternsStateMaxBytes, "Memory the /loki/api/v1/patterns state of all tenants may hold: each stream's clusters at each level trained on every line read since the state was built from Loki's pattern retention (3h), as Loki's pattern ingester keeps them, so a refresh reads only the lines after what was read and templates come from every line; past it the least recently used tenant's state is dropped. A selector whose lines over the retention exceed -patterns-exact-max-lines is answered without the state; 0 turns the state off")
@@ -926,6 +928,7 @@ func run(
 			queryPlanLowering:                   *queryPlanLowering,
 			queryStatsMode:                      *queryStatsMode,
 			queryStatsExactMetricBytes:          *queryStatsExactMetricBytes,
+			queryStatsExactLogLines:             *queryStatsExactLogLines,
 			patternsEnabled:                     *patternsEnabled,
 			deleteAPIEnabled:                    *deleteAPIEnabled,
 			patternsAutodetectFromQueries:       *patternsAutodetectFromQueries,
@@ -2190,6 +2193,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DisableQueryPlanLowering:           !cfg.queryPlanLowering,
 		QueryStatsMode:                     cfg.queryStatsMode,
 		QueryStatsExactMetricBytes:         cfg.queryStatsExactMetricBytes,
+		QueryStatsExactLogLines:            cfg.queryStatsExactLogLines,
 		PatternsEnabled:                    boolPointer(cfg.patternsEnabled),
 		DeleteAPIEnabled:                   cfg.deleteAPIEnabled,
 		PatternsAutodetectFromQueries:      cfg.patternsAutodetectFromQueries,

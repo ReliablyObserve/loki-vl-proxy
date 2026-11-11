@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -319,9 +320,13 @@ func TestLokiLogSummary_EstimatesTheRunFromTheAnswer(t *testing.T) {
 		wantLines, wantPost int64
 		wantBytesPerLine    int64
 	}{
-		{"limit filled in the last fifth", base + 5*m, base + 55*m, 1000, 1000, base + 45*m, base + 55*m, statsTotals{}, 5000, 5000, 30},
+		// One piece read: the estimate is capped at the entries.
+		{"limit filled in the last fifth", base + 5*m, base + 55*m, 1000, 1000, base + 45*m, base + 55*m, statsTotals{}, 1000, 1000, 30},
 		{"limit not filled", base + 5*m, base + 55*m, 1000, 400, base + 6*m, base + 54*m, statsTotals{}, 400, 400, 30},
-		{"newest piece only", base - 30*m, base + 20*m, 1000, 1000, base + 15*m, base + 20*m, statsTotals{}, 4000, 4000, 30},
+		{"newest piece only", base - 30*m, base + 20*m, 1000, 1000, base + 15*m, base + 20*m, statsTotals{}, 1000, 1000, 30},
+		// Two pieces read (the last entry in the older one): at most two pieces' worth.
+		{"two pieces, density under the cap", base - 30*m, base + 20*m, 1000, 1000, base - 10*m, base + 20*m, statsTotals{}, 1666, 1666, 30},
+		{"bursty two pieces, capped", base - 70*m, base + 20*m, 1000, 1000, base - 1*m, base + 20*m, statsTotals{}, 2000, 2000, 30},
 		{"the panel's count answer", base - 30*m, base + 20*m, 1000, 1000, base + 15*m, base + 20*m,
 			statsTotals{postFilter: 3700, hasPostFilter: true, lines: 3700, hasLines: true}, 3700, 3700, 30},
 	} {
@@ -480,5 +485,141 @@ func TestMeanLineTable_NoAllocationAndBounded(t *testing.T) {
 	p.meanLines.mu.Unlock()
 	if _, ok := p.meanLines.mean(p.meanLineKey(a, sel("api"))); ok {
 		t.Fatal("an expired mean was read")
+	}
+}
+
+// TestLokiRunLinesEstimate_Table is the edge-case table of the lines a log
+// query's answer alone gives in Loki's accounting: a limit not filled is the
+// entries exactly; a filled one is the entries' density over the pieces
+// read, capped at the entries times the pieces read; bursty answers, empty
+// pieces, a limit equal to the window's lines, and both directions.
+//
+// conformance: query-stats-envelope
+func TestLokiRunLinesEstimate_Table(t *testing.T) {
+	h := lokiSplitInterval
+	base := int64(1_800_000_000) * int64(time.Second) / h * h
+	m := int64(time.Minute)
+	for _, tc := range []struct {
+		name                         string
+		entries, limit               int64
+		backward                     bool
+		start, end, tMin, tMax, want int64
+	}{
+		{"limit not filled", 400, 1000, true, base + 5*m, base + 55*m, base + 6*m, base + 54*m, 400},
+		{"limit equal to the window's lines", 1000, 1000, true, base + 5*m, base + 55*m, base + 5*m, base + 55*m, 1000},
+		{"steady, one piece, capped at the entries", 1000, 1000, true, base + 5*m, base + 55*m, base + 45*m, base + 55*m, 1000},
+		{"bursty at the end of a long window", 1000, 1000, true, base - 70*m, base + 20*m, base + 19*m, base + 20*m, 1000},
+		{"bursty over two pieces, capped", 1000, 1000, true, base - 70*m, base + 20*m, base - 1*m, base + 20*m, 2000},
+		{"two pieces under the cap", 1000, 1000, true, base - 30*m, base + 20*m, base - 10*m, base + 20*m, 1666},
+		{"forward, two pieces read, entries over 40 of their 50 minutes", 1000, 1000, false, base - 30*m, base + 20*m, base - 30*m, base + 10*m, 1250},
+		{"forward, one piece read, capped at the entries", 1000, 1000, false, base - 30*m, base + 20*m, base - 30*m, base - 5*m, 1000},
+		{"forward over two pieces", 1000, 1000, false, base - 30*m, base + 20*m, base - 30*m, base + 5*m, 1428},
+		{"empty pieces before the data (backward)", 1000, 1000, true, base - 5*h, base + 20*m, base + 1*m, base + 20*m, 1000},
+		{"no timestamps", 1000, 1000, true, base, base + h, 0, 0, 1000},
+		{"no entries", 0, 1000, true, base, base + h, 0, 0, 0},
+	} {
+		run := lokiLogQueryRun(tc.start, tc.end, tc.limit, tc.backward, tc.entries, tc.tMin, tc.tMax, tc.tMin != 0)
+		got := lokiRunLinesEstimate(tc.entries, tc.limit, tc.backward, tc.start, tc.end, tc.tMin, tc.tMax, tc.tMin != 0, run)
+		if got != tc.want {
+			t.Errorf("%s: %d (run %+v), want %d", tc.name, got, run, tc.want)
+		}
+	}
+}
+
+// FuzzLokiRunLinesEstimate: whatever the answer, the estimate is the entries
+// when the limit is not filled, and lies in [entries, entries x pieces read]
+// when it is: never below what was returned, never an unbounded extrapolation.
+func FuzzLokiRunLinesEstimate(f *testing.F) {
+	f.Add(int64(1000), int64(1000), true, int64(0), int64(3600e9), int64(3500e9), int64(3600e9))
+	f.Add(int64(5), int64(10), false, int64(-7200e9), int64(60e9), int64(-60e9), int64(0))
+	f.Fuzz(func(t *testing.T, entries, limit int64, backward bool, start, end, tMin, tMax int64) {
+		if entries < 0 || entries > 1e9 || limit > 1e9 || start < -1e19/4 || end > 1e19/4 || end < start || end-start > 400*24*int64(time.Hour) {
+			return
+		}
+		run := lokiLogQueryRun(start, end, limit, backward, entries, tMin, tMax, true)
+		got := lokiRunLinesEstimate(entries, limit, backward, start, end, tMin, tMax, true, run)
+		if limit <= 0 || entries < limit {
+			if got != entries {
+				t.Fatalf("limit not filled: %d, want the %d entries", got, entries)
+			}
+			return
+		}
+		if got < entries || got > entries*max(run.ran, 1) {
+			t.Fatalf("estimate %d outside [%d, %d] (run %+v)", got, entries, entries*max(run.ran, 1), run)
+		}
+	})
+}
+
+// TestLokiStats_ExactLogLinesOnlyWhenTheAnswerCannotTell: with
+// -query-stats-exact-log-lines a log query cache miss that fills its limit
+// reports VictoriaLogs' count of its selector over the pieces read, with one
+// count request; a miss that does not fill it, a cache hit, a multi-tenant
+// request and the flag off send none.
+//
+// conformance: query-stats-envelope
+func TestLokiStats_ExactLogLinesOnlyWhenTheAnswerCannotTell(t *testing.T) {
+	stub := &statsStubVL{rows: 20}
+	var mu sync.Mutex
+	counts := 0
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.URL.Path == "/select/logsql/query" && strings.Contains(r.Form.Get("query"), "count(") {
+			mu.Lock()
+			counts++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"c":"4321"}` + "\n"))
+			return
+		}
+		stub.ServeHTTP(w, r)
+	}))
+	defer vl.Close()
+	countsNow := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return counts
+	}
+	newProxy := func(exact bool) http.Handler {
+		p, err := New(Config{BackendURL: vl.URL, Cache: cache.New(time.Minute, 1000), CompatCache: cache.New(time.Minute, 100),
+			LogLevel: "error", QueryStatsExactLogLines: exact,
+			TenantMap: map[string]TenantMapping{"a": {AccountID: "1"}, "b": {AccountID: "2"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = p.Shutdown(t.Context()) })
+		mux := http.NewServeMux()
+		p.RegisterRoutes(mux)
+		return mux
+	}
+	now := time.Now()
+	logs := func(limit string) url.Values {
+		return url.Values{"query": {`{app="api"}`}, "limit": {limit}, "direction": {"backward"},
+			"start": {fmt.Sprint(now.Add(-10 * time.Minute).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())}}
+	}
+	exact, plain := newProxy(true), newProxy(false)
+	before := countsNow()
+	filled := statsView(t, serveQueryStats(t, exact, "/loki/api/v1/query_range", logs("20"), nil))
+	if countsNow() != before+1 || filled.Summary.Lines != 4321 || filled.Summary.PostFilter != 4321 {
+		t.Fatalf("limit filled: %d count requests, %+v; want one and VictoriaLogs' 4321 lines", countsNow()-before, filled.Summary)
+	}
+	if filled.Summary.Bytes <= 0 {
+		t.Fatalf("limit filled: bytes %d, want the counted lines times the mean line size", filled.Summary.Bytes)
+	}
+	hit := statsView(t, serveQueryStats(t, exact, "/loki/api/v1/query_range", logs("20"), nil))
+	if countsNow() != before+1 || hit.Summary.Lines != 4321 {
+		t.Fatalf("cache hit: %d more count requests, %+v; want none and the replayed 4321", countsNow()-before-1, hit.Summary)
+	}
+	notFilled := statsView(t, serveQueryStats(t, exact, "/loki/api/v1/query_range", logs("100"), nil))
+	if countsNow() != before+1 || notFilled.Summary.Lines != 20 {
+		t.Fatalf("limit not filled: %d more count requests, %+v; want none and the 20 entries", countsNow()-before-1, notFilled.Summary)
+	}
+	off := statsView(t, serveQueryStats(t, plain, "/loki/api/v1/query_range", logs("20"), nil))
+	if countsNow() != before+1 || off.Summary.Lines != 20 {
+		t.Fatalf("flag off: %d more count requests, %+v; want none and the capped estimate", countsNow()-before-1, off.Summary)
+	}
+	multi := logs("20")
+	multi.Set("start", fmt.Sprint(now.Add(-11*time.Minute).UnixNano()))
+	_ = serveQueryStats(t, exact, "/loki/api/v1/query_range", multi, map[string]string{"X-Scope-OrgID": "a|b"})
+	if countsNow() != before+1 {
+		t.Fatalf("multi-tenant: %d more count requests, want none", countsNow()-before-1)
 	}
 }
