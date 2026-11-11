@@ -94,7 +94,7 @@ func TestFeature_Multitenancy_NumericRoutingIsCanonicalAndStrictModeServesOnlyMa
 		{"default: largest account", defaults, "4294967295", want{200, accounts["4294967295"]}},
 		{"default: mapped name reads its mapped account", defaults, "mapped-ten", want{200, accounts["4102"]}},
 		{"default: leading zeros are refused, not merged into 4101", defaults, "04101", want{403, ""}},
-		{"default: sign is refused", defaults, "+4101", want{403, ""}},
+		{"default: sign is refused by Loki's tenant ID check", defaults, "+4101", want{400, ""}},
 		{"default: negative is refused", defaults, "-1", want{403, ""}},
 		{"default: above uint32 is refused", defaults, "4294967296", want{403, ""}},
 		{"default: unknown name is refused", defaults, "nobody", want{403, ""}},

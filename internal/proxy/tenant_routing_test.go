@@ -95,6 +95,7 @@ func TestTenantRouting_Matrix(t *testing.T) {
 	const missing = "<missing>"
 	ok := func(acct, proj string) tenantExpect { return tenantExpect{http.StatusOK, acct, proj} }
 	refused := tenantExpect{status: http.StatusForbidden}
+	lokiRefused := tenantExpect{status: http.StatusBadRequest} // Loki's own tenant ID check
 	def := ok("", "")
 	labelOK := def
 	cases := map[string]map[string]tenantExpect{
@@ -103,8 +104,8 @@ func TestTenantRouting_Matrix(t *testing.T) {
 			"0": def, "fake": def, "default": def, missing: def,
 			"teamA": ok("42", "0"), "007": ok("9", "1"), // an exact tenant-map entry wins over the canonical rule
 			"unmapped": refused, "*": refused,
-			"00": refused, "+7": refused, "-1": refused, "-0": refused, "0042": refused, "07": refused,
-			"4294967296": refused, "99999999999999999999": refused, "2024-01-01": refused, "123-456": refused, "+": refused, "-": refused, "1e3": refused, "٣": refused,
+			"00": refused, "+7": lokiRefused, "-1": refused, "-0": refused, "0042": refused, "07": refused,
+			"4294967296": refused, "99999999999999999999": refused, "2024-01-01": refused, "123-456": refused, "+": lokiRefused, "-": refused, "1e3": refused, "٣": lokiRefused,
 			"7|teamA": ok("", ""), "7|0": ok("", ""),
 			"7|00": refused, "7|unmapped": refused, "7|*": {status: http.StatusBadRequest},
 		},
@@ -119,7 +120,7 @@ func TestTenantRouting_Matrix(t *testing.T) {
 			"0": def, "fake": def, "default": def, missing: def, "*": def,
 		},
 		"label": {
-			"7": labelOK, "007": labelOK, "+7": labelOK, "-1": labelOK, "4294967296": labelOK, "unmapped": labelOK,
+			"7": labelOK, "007": labelOK, "+7": lokiRefused, "-1": labelOK, "4294967296": labelOK, "unmapped": labelOK,
 			"teamA": ok("42", "0"), "0": refused, "fake": refused, missing: refused, "*": refused,
 		},
 		"label+strict-flag": {
@@ -321,7 +322,7 @@ func TestTenantRouting_RefusalIsLoggedOncePerOrg(t *testing.T) {
 		t.Fatalf("fix = %q", fix)
 	}
 	// Another org is its own line.
-	tenantProbe(t, p, "+7", false)
+	tenantProbe(t, p, "-1", false)
 	if got := len(out.lines()); got != 2 {
 		t.Fatalf("a second org must log once: %d lines", got)
 	}

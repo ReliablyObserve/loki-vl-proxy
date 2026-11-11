@@ -41,6 +41,8 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `peerCache.enabled` | `false` | Enable distributed cache sharing across replicas |
 | `adminAuth.existingSecret` | `""` | Existing Secret holding the admin/debug bearer token. The chart renders `-server.admin-auth-token=$(ADMIN_AUTH_TOKEN)` from a `secretKeyRef`, so the token is not in the pod spec or `helm get values`. Setting it together with `extraArgs."server.admin-auth-token"` fails rendering |
 | `adminAuth.existingSecretKey` | `token` | Key within `adminAuth.existingSecret` |
+| `deleteAuth.existingSecret` | `""` | Existing Secret holding the delete API's token, required by `extraArgs.delete-api-enabled: "true"` (rendering fails without it or `extraArgs.delete-api-auth-token`). The chart renders `-delete-api-auth-token=$(DELETE_API_AUTH_TOKEN)` from a `secretKeyRef`. Every delete request must carry the token in `X-Delete-Token` or `Authorization: Bearer`. It is separate from the admin token: enabling deletes leaves the admin listener on loopback. Setting it together with `extraArgs.delete-api-auth-token` fails rendering |
+| `deleteAuth.existingSecretKey` | `token` | Key within `deleteAuth.existingSecret` |
 | `backendAuth.existingSecret` | `""` | Existing Secret holding the VictoriaLogs basic-auth credentials as one `user:password` value. The chart renders `-backend-basic-auth=$(BACKEND_BASIC_AUTH)` from a `secretKeyRef`. Setting it together with `extraArgs.backend-basic-auth` fails rendering |
 | `backendAuth.existingSecretKey` | `basic-auth` | Key within `backendAuth.existingSecret` |
 | `observability.otlp.existingSecret` | `""` | Existing Secret holding the OTLP exporter headers (`key=value[,key=value]`, usually an `Authorization` value), exposed to the proxy as `OTLP_HEADERS` from a `secretKeyRef`. Setting it together with `observability.otlp.headers` or `extraArgs.otlp-headers` fails rendering |
@@ -114,7 +116,7 @@ extraArgs:
 
 `require-tenant-header` only checks that `X-Scope-OrgID` is present (`401` otherwise); it does not authenticate the value. With `extraArgs.tenant-label`, the named field must be a VictoriaLogs stream field. An unmapped `X-Scope-OrgID: *` is rejected unless `extraArgs.tenant.allow-global` is `"true"`; with `extraArgs.tenant-label`, an unmapped default alias (`0`, `fake`, `default`) or empty org is rejected the same way.
 
-A numeric `X-Scope-OrgID` routes to the VictoriaLogs account of the same number only in its canonical spelling (`7`, not `007`, `00`, `+7` or `-1`; at most `4294967295`), because Loki keeps `007` and `7` as different tenants. Any other numeric spelling is refused with `403` unless it is listed in `extraArgs.tenant-map`, and the proxy logs a warning naming the org and the fix. Set `extraArgs.tenant.numeric-passthrough: "false"` for strict routing, where only orgs listed in `tenant-map` are served (the aliases `0`, `fake`, `default` and a missing org then need `tenant.allow-global: "true"` or a map entry); it has no effect with `tenant-label`.
+Tenancy is off by default: with no tenant setting the proxy ignores `X-Scope-OrgID` and every user reads VictoriaLogs account `0:0`, as Loki with `auth_enabled: false`. Any of `tenant-map`, `tenant-map-file`, `tenant-label`, `auth.enabled`, `require-tenant-header` or `tenant.numeric-passthrough: "true"` turns it on; see [Tenancy and authentication](../../docs/tenancy-and-auth.md). With tenancy on, a numeric `X-Scope-OrgID` routes to the VictoriaLogs account of the same number only in its canonical spelling (`7`, not `007`, `00`, `+7` or `-1`; at most `4294967295`), because Loki keeps `007` and `7` as different tenants. Any other numeric spelling is refused with `403` unless it is listed in `extraArgs.tenant-map`, and the proxy logs a warning naming the org and the fix. Set `extraArgs.tenant.numeric-passthrough: "false"` for strict routing, where only orgs listed in `tenant-map` are served (the aliases `0`, `fake`, `default` and a missing org then need `tenant.allow-global: "true"` or a map entry); it has no effect with `tenant-label`.
 
 For secret tenant maps, use `envFrom` to mount from a ConfigMap or Secret instead of embedding credentials in `extraArgs`.
 
@@ -165,7 +167,7 @@ This mounts exactly five files read-only as `hostPath` volumes of type `File` (`
 
 ### Secrets from an existing Secret
 
-The plain values `extraArgs."server.admin-auth-token"`, `extraArgs.backend-basic-auth` and `observability.otlp.headers` still work, but they are written into the pod spec and are readable with `helm get values` and `kubectl get pod -o yaml`. To keep them out of both, create the Secret yourself (Vault, External Secrets Operator, sealed-secrets, SOPS) and reference it:
+The plain values `extraArgs."server.admin-auth-token"`, `extraArgs.delete-api-auth-token`, `extraArgs.backend-basic-auth` and `observability.otlp.headers` still work, but they are written into the pod spec and are readable with `helm get values` and `kubectl get pod -o yaml`. To keep them out of both, create the Secret yourself (Vault, External Secrets Operator, sealed-secrets, SOPS) and reference it:
 
 ```yaml
 adminAuth:

@@ -21,8 +21,11 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	if !hasMultiTenantOrgID(orgID) {
 		return false
 	}
+	// One distinct ID beside an empty member ("a|") is still a multi-tenant
+	// request to Loki, answered with __tenant_id__; "a|a" was made "a" by
+	// normalizeTenantHeader.
 	tenantIDs := splitMultiTenantOrgIDs(orgID)
-	if len(tenantIDs) < 2 {
+	if len(tenantIDs) == 0 {
 		return false
 	}
 	if len(tenantIDs) > p.limits().MultiTenantFanout {

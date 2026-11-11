@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -58,57 +59,69 @@ func securityHeaders(h http.Handler) http.Handler {
 type requestPolicyError struct {
 	status int
 	msg    string
+	// loki is set when Loki itself refuses the tenant this way; the answer
+	// then takes the shape Loki's route gives it (writeLokiTenantRefusal).
+	loki lokiTenantRefusalKind
 }
 
 func (e *requestPolicyError) Error() string { return e.msg }
 
-// validateTenantHeader applies Loki-style tenant presence checks and proxy-specific
-// mapping validation before any backend call is made.
+// validateTenantHeader checks X-Scope-OrgID as Loki does first (presence with
+// -auth.enabled or -require-tenant-header, the tenant ID syntax of every
+// member, one tenant on tail and delete), then the proxy's own routing rules
+// (tenant map, strict routing, tenant-label mode, the global bypass), before
+// any cache lookup or backend call. Call normalizeTenantHeader first.
 func (p *Proxy) validateTenantHeader(r *http.Request) error {
-	rawOrgID := r.Header.Get("X-Scope-OrgID")
-	orgID := strings.TrimSpace(rawOrgID)
-	if rawOrgID == "" {
+	orgID := r.Header.Get("X-Scope-OrgID")
+	if orgID == "" {
 		if p.authEnabled || p.requireTenantHeader {
-			return &requestPolicyError{
-				status: http.StatusUnauthorized,
-				msg:    "missing X-Scope-OrgID header",
-			}
+			return lokiTenantRefusal(lokiTenantMissing, lokiNoOrgID)
 		}
 		// An absent org is a default-alias request: tenant-label mode and strict
 		// tenant routing refuse it unless the global bypass is allowed or the
 		// tenant map maps it.
 		return p.validateSingleTenantOrgIDWithRouting("", p.routingForContext(r.Context()))
 	}
-	if strings.Contains(orgID, "|") {
-		if !isMultiTenantQueryPath(r.URL.Path) {
-			return &requestPolicyError{
-				status: http.StatusBadRequest,
-				msg:    "multi-tenant X-Scope-OrgID values are only supported on query endpoints",
-			}
+	if !hasMultiTenantOrgID(orgID) {
+		if msg := lokiTenantIDError(orgID); msg != "" {
+			return lokiTenantRefusal(lokiTenantInvalid, msg)
 		}
-		tenantIDs := splitMultiTenantOrgIDs(orgID)
-		if len(tenantIDs) < 2 {
-			return &requestPolicyError{
-				status: http.StatusBadRequest,
-				msg:    "multi-tenant X-Scope-OrgID must include at least two tenant IDs",
-			}
-		}
-		for _, tenantID := range tenantIDs {
-			if tenantID == "*" {
-				return &requestPolicyError{
-					status: http.StatusBadRequest,
-					msg:    `wildcard "*" is not supported inside multi-tenant X-Scope-OrgID values`,
-				}
-			}
-			if err := p.validateSingleTenantOrgIDWithRouting(tenantID, p.routingForContext(r.Context())); err != nil {
-				return err
-			}
-		}
-		return nil
+		// The org is judged exactly as the request context carries it into the
+		// backend headers, so what is admitted is what gets routed.
+		return p.validateSingleTenantOrgIDWithRouting(orgID, p.routingForContext(r.Context()))
 	}
-	// The org is judged exactly as the request context carries it into the
-	// backend headers, so what is admitted is what gets routed.
-	return p.validateSingleTenantOrgIDWithRouting(rawOrgID, p.routingForContext(r.Context()))
+	if tenantRulerView(r.URL.Path) != 0 {
+		// The ruler refuses a multi-tenant header before reading its members.
+		return lokiTenantRefusal(lokiTenantMultiple, lokiMultipleOrgIDs)
+	}
+	members := lokiTenantMembers(orgID)
+	if err := validateLokiTenantMembers(r.URL.Path, members); err != nil {
+		return err
+	}
+	if !isMultiTenantQueryPath(r.URL.Path) {
+		if r.URL.Path == "/loki/api/v1/tail" || r.URL.Path == "/loki/api/v1/delete" {
+			return lokiTenantRefusal(lokiTenantMultiple, lokiMultipleOrgIDs)
+		}
+		return &requestPolicyError{
+			status: http.StatusBadRequest,
+			msg:    "multi-tenant X-Scope-OrgID values are only supported on query endpoints",
+		}
+	}
+	for _, tenantID := range members {
+		if tenantID == "" {
+			continue // Loki reads an empty member as a tenant that holds nothing
+		}
+		if tenantID == "*" {
+			return &requestPolicyError{
+				status: http.StatusBadRequest,
+				msg:    `wildcard "*" is not supported inside multi-tenant X-Scope-OrgID values`,
+			}
+		}
+		if err := p.validateSingleTenantOrgIDWithRouting(tenantID, p.routingForContext(r.Context())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (p *Proxy) validateSingleTenantOrgID(orgID string) error {
@@ -243,9 +256,20 @@ func (p *Proxy) globalTenantAllowed() bool {
 
 func (p *Proxy) tenantMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p.tenantHeaderIgnored(p.routingForContext(r.Context())) {
+			// Tenancy off, Loki's single-tenant mode: the header names no
+			// tenant, so it neither routes, nor keys a cache, nor reaches
+			// VictoriaLogs.
+			r.Header.Del("X-Scope-OrgID")
+		}
+		normalizeTenantHeader(r)
 		r = p.withRequestScope(r)
 		if err := p.validateTenantHeader(r); err != nil {
 			if rpe, ok := err.(*requestPolicyError); ok {
+				if rpe.loki != lokiTenantNotRefused {
+					p.writeLokiTenantRefusal(w, r.URL.Path, rpe)
+					return
+				}
 				p.writeError(w, rpe.status, rpe.msg)
 				return
 			}
@@ -273,6 +297,69 @@ func (p *Proxy) adminMiddleware(next http.Handler) http.Handler {
 				p.writeError(w, http.StatusUnauthorized, "admin authentication required")
 				return
 			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// deleteTokenHeader carries the delete API's token; Authorization: Bearer is
+// the other place it is read from.
+const deleteTokenHeader = "X-Delete-Token"
+
+// bearerToken is the token of an Authorization: Bearer header, or "".
+func bearerToken(r *http.Request) string {
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+}
+
+// deleteTokenMatches reports whether r carries the configured delete token, in
+// X-Delete-Token or as Authorization: Bearer. It is false when no token is
+// configured. Constant-time compare: response timing does not reveal how much
+// of a guessed token matched.
+func (p *Proxy) deleteTokenMatches(r *http.Request) bool {
+	if p.deleteAPIAuthToken == "" {
+		return false
+	}
+	got := strings.TrimSpace(r.Header.Get(deleteTokenHeader))
+	if got == "" {
+		got = bearerToken(r)
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(p.deleteAPIAuthToken)) == 1
+}
+
+// errDeleteAPIWithoutToken refuses a delete API with nothing to authenticate
+// its callers.
+var errDeleteAPIWithoutToken = errors.New("-delete-api-enabled=true requires -delete-api-auth-token (Helm: deleteAuth.existingSecret): every delete request must carry the token")
+
+// validateDeleteAPIConfig refuses DeleteAPIEnabled without a delete token.
+func validateDeleteAPIConfig(enabled bool, deleteAPIAuthToken string) error {
+	if enabled && strings.TrimSpace(deleteAPIAuthToken) == "" {
+		return errDeleteAPIWithoutToken
+	}
+	return nil
+}
+
+// deleteAuthMiddleware closes the delete API to every request that does not
+// carry the delete token (-delete-api-auth-token), and to all of them when none
+// is configured. Bare Loki has no authentication of its own; deleting logs is
+// a write the proxy opens only to holders of that token, so this check answers
+// before Loki's tenant and parameter checks. The token is removed from the
+// request before the handler runs, so it can never be forwarded to
+// VictoriaLogs (-forward-headers, -forward-authorization) or logged.
+func (p *Proxy) deleteAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !p.deleteTokenMatches(r) {
+			p.writeError(w, http.StatusUnauthorized, "delete authentication required")
+			return
+		}
+		r.Header.Del(deleteTokenHeader)
+		// An Authorization that carries the token goes too, also when the
+		// token was read from X-Delete-Token.
+		if subtle.ConstantTimeCompare([]byte(bearerToken(r)), []byte(p.deleteAPIAuthToken)) == 1 {
+			r.Header.Del("Authorization")
 		}
 		next.ServeHTTP(w, r)
 	})

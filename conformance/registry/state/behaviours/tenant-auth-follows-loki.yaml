@@ -1,0 +1,32 @@
+id: tenant-auth-follows-loki
+state: proven
+pending: true
+reason: |
+  internal/proxy/tenant_auth_parity_test.go replays 664 requests recorded from
+  Loki 3.7.9 with auth_enabled: true (13 read routes plus delete and the four
+  ruler views x 29 headers: absent, empty, blank, single, nine multi-tenant
+  forms, '.', '..', 150/151/152 bytes, spaces, '/', non-ASCII, '*'; a sweep of
+  every byte 0x09 and 0x20-0xff on /labels; Authorization next to a tenant and
+  without one) and matches each status, Content-Type and body byte for byte.
+  tenant_isolation_leak_test.go runs two replicas with memory, disk and peer
+  caches over a tenant-scoped VictoriaLogs emulator (vlemu.Tenants): every read
+  route and tail answers each tenant its own rows, from VictoriaLogs under its
+  own account, never the other tenant's cached answer (a cache key without the
+  tenant fails it). TestTenantNoAuth_HeaderIgnoredLikeLoki replays 616 GETs
+  recorded from the stack's Loki (auth_enabled: false) against a proxy with
+  tenancy off: every answer equal, and VictoriaLogs receives no tenant;
+  TestTenantHeaderIgnored_OnlyWithTenancyOff covers every form of tenant
+  configuration and reloads; TestTenantHeader_NumericPassthroughRoutesTenancyOffIgnores
+  holds numeric passthrough to its routing as before; cmd/proxy
+  TestResolveNumericPassthrough and TestRun_TenantEnvTurnsTenancyOn cover the
+  binary's default and every setting (flag and environment) that turns
+  tenancy on. FuzzTenantHeader (fuzz-smoke) holds every admitted header
+  to Loki's rules and own-tenant routing, with bounded time.
+  test/e2e-compat/tenant_auth_loki_test.go (draft, not in a CI group) asks an
+  auth-enabled Loki and the proxy the same requests live.
+owner_decision: |
+  Tenancy is off by default (Loki's single-tenant mode) and on with any
+  explicit tenant setting, numeric passthrough included; with tenancy on,
+  Loki's ID check in both auth modes; the 403 for unmapped tenants
+  and the "*" bypass stay (owner, 2026-11-11).
+waiver: null

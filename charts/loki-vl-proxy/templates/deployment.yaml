@@ -97,6 +97,8 @@ spec:
 {{- $observabilityQueryUser := default (dict) (get $observability "queryUser") }}
       {{- $adminAuth := default (dict) .Values.adminAuth }}
       {{- $adminAuthSecret := $adminAuth.existingSecret }}
+      {{- $deleteAuth := default (dict) .Values.deleteAuth }}
+      {{- $deleteAuthSecret := $deleteAuth.existingSecret }}
       {{- $backendAuth := default (dict) .Values.backendAuth }}
       {{- $backendAuthSecret := $backendAuth.existingSecret }}
       {{- $otlpSecret := $observabilityOTLP.existingSecret }}
@@ -219,12 +221,15 @@ spec:
             {{- if $adminAuthSecret }}
             - {{ "-server.admin-auth-token=$(ADMIN_AUTH_TOKEN)" | quote }}
             {{- end }}
+            {{- if $deleteAuthSecret }}
+            - {{ "-delete-api-auth-token=$(DELETE_API_AUTH_TOKEN)" | quote }}
+            {{- end }}
             {{- if $backendAuthSecret }}
             - {{ "-backend-basic-auth=$(BACKEND_BASIC_AUTH)" | quote }}
             {{- end }}
           {{- $hasChartEnv := and (kindIs "slice" .Values.env) (gt (len .Values.env) 0) }}
           {{- $hasExtraEnv := and (kindIs "slice" .Values.extraEnv) (gt (len .Values.extraEnv) 0) }}
-          {{- if or .Values.peerCache.enabled $adminAuthSecret $backendAuthSecret $otlpSecret $hasChartEnv $hasExtraEnv $goMemLimitValue $injectOTELFromPod }}
+          {{- if or .Values.peerCache.enabled $adminAuthSecret $deleteAuthSecret $backendAuthSecret $otlpSecret $hasChartEnv $hasExtraEnv $goMemLimitValue $injectOTELFromPod }}
           env:
             {{- if $goMemLimitValue }}
             - name: GOMEMLIMIT
@@ -271,6 +276,13 @@ spec:
                 secretKeyRef:
                   name: {{ $adminAuthSecret | quote }}
                   key: {{ default "token" $adminAuth.existingSecretKey | quote }}
+            {{- end }}
+            {{- if $deleteAuthSecret }}
+            - name: DELETE_API_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $deleteAuthSecret | quote }}
+                  key: {{ default "token" $deleteAuth.existingSecretKey | quote }}
             {{- end }}
             {{- if $backendAuthSecret }}
             - name: BACKEND_BASIC_AUTH

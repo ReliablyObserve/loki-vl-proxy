@@ -1019,8 +1019,9 @@ The same proxy layer also improves trust separation between components.
 | Proxy -> peer cache | `-peer-auth-token` | Prevents peer-cache reuse from becoming an unauthenticated east-west path. Required whenever peer discovery is configured; the proxy refuses to start without it unless `-peer-insecure-ip-allowlist=true` restores the legacy IP-only check. |
 | Operator -> admin/debug endpoints | `-server.admin-auth-token`, `-admin-listen` | Protects admin and troubleshooting surfaces without weakening the main read path. Without a token, `/admin/*` and `/debug/*` live on the loopback `-admin-listen` address (default `127.0.0.1:3101`); when instrumentation, pprof or query analytics is enabled, the proxy refuses to start if those routes would be exposed on a non-loopback address without the token. |
 
-When trusted proxy headers are enabled, the proxy also forwards derived context
-headers to VictoriaLogs:
+The proxy sends derived context headers to VictoriaLogs on every request: the
+trusted user when trusted proxy headers are enabled, otherwise the tenant
+(`X-Scope-OrgID`) or the client address:
 
 - `X-Loki-VL-Client-ID`
 - `X-Loki-VL-Client-Source`

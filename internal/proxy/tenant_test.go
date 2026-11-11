@@ -702,8 +702,9 @@ func TestTenant_MultiTenantHeaderRejectedForTail(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for multi-tenant X-Scope-OrgID, got %d body=%s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "query endpoints") {
-		t.Fatalf("expected multi-tenant rejection message, got %s", w.Body.String())
+	// Loki's tail answers a multi-tenant header with this text, no newline.
+	if w.Body.String() != "multiple org IDs present" {
+		t.Fatalf("expected Loki's multi-tenant rejection, got %q", w.Body.String())
 	}
 }
 

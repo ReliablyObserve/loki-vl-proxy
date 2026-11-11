@@ -195,7 +195,10 @@ func isNumericTenantLike(s string) bool {
 // tenant, and never falls through to 0:0 by accident.
 func (p *Proxy) resolveTenant(orgID string, routing requestRouting) tenantRoute {
 	tenantLabel := routing.label
-	strict := p.strictTenantRouting && tenantLabel == ""
+	// With tenancy off (strict routing and nothing else configured) the header
+	// was dropped and the request reads the default tenant like Loki's
+	// single-tenant mode, so strict routing refuses nothing.
+	strict := p.strictTenantRouting && tenantLabel == "" && !p.tenantHeaderIgnored(routing)
 	// An absent org never receives a mapping's tenant headers, so a mapping under
 	// the empty key never serves it: it is the default tenant where that is
 	// allowed, and refused where only an explicit tenant may be served.
