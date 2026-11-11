@@ -28,6 +28,26 @@ import (
 // LVP_RUN_ORACLES=1 runs it (it builds the oracle).
 // conformance: architecture-syntax-package-layering
 func TestRankMatchesLoki(t *testing.T) {
+	holdEvaluatedLevelsToLoki(t, append(rankGrid(), rankStepGrid()...), func(n queryplan.Node) bool {
+		_, ok := n.(*queryplan.Rank)
+		return ok
+	})
+}
+
+// TestSeriesAggMatchesLoki holds what the lowering writes for a stddev or stdvar at the top (a SeriesAgg) to Loki's
+// own syntax tree: the aggregation Loki reads, and its by or without clause, and the range function under it. The
+// levels below the outermost are not in Loki's facts. LVP_RUN_ORACLES=1 runs it (it builds the oracle).
+// conformance: architecture-syntax-package-layering
+func TestSeriesAggMatchesLoki(t *testing.T) {
+	holdEvaluatedLevelsToLoki(t, seriesAggGrid(), func(n queryplan.Node) bool {
+		va, ok := n.(*queryplan.VectorAgg)
+		return ok && (va.Op == logql.VectorStddev || va.Op == logql.VectorStdvar)
+	})
+}
+
+// holdEvaluatedLevelsToLoki lowers the rows of grid whose plan root is the kind isRoot says, and compares the level
+// at the top of each with Loki's tree: the operation, k and the clause, and the range function under it.
+func holdEvaluatedLevelsToLoki(t *testing.T, grid []string, isRoot func(queryplan.Node) bool) {
 	if os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("LVP_RUN_ORACLES=1 is not set")
 	}
@@ -38,9 +58,9 @@ func TestRankMatchesLoki(t *testing.T) {
 		t.Fatal(err)
 	}
 	type row struct {
-		q    string
-		step physical.RankStep
-		rank *queryplan.Rank
+		q     string
+		top   physical.Level
+		below queryplan.Node
 	}
 	var rows []row
 	in := filepath.Join(work, "facts-in.jsonl")
@@ -52,7 +72,7 @@ func TestRankMatchesLoki(t *testing.T) {
 	identity := func(s string) string { return s }
 	prof := lower.Profile{Caps: logsql.CapabilitiesFor("v1.53.0"), Label: identity}
 	nested := 0
-	for _, q := range append(rankGrid(), rankStepGrid()...) {
+	for _, q := range grid {
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {
 			continue
@@ -61,8 +81,7 @@ func TestRankMatchesLoki(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		rk, ok := p.Root.(*queryplan.Rank)
-		if !ok {
+		if !isRoot(p.Root) {
 			continue
 		}
 		queryplan.Resolve(p)
@@ -70,16 +89,24 @@ func TestRankMatchesLoki(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		step, ok := op.(physical.RankStep)
-		if !ok {
-			t.Fatalf("%s: lowered to %T, not a RankStep", q, op)
+		levels, _ := physical.SplitEval(op)
+		if len(levels) == 0 {
+			t.Fatalf("%s: lowered to %T, not a level the proxy evaluates", q, op)
 		}
-		if levels, _ := physical.SplitEval(op); len(levels) > 1 {
+		if len(levels) > 1 {
 			nested++
+		}
+		var below queryplan.Node
+		switch v := p.Root.(type) {
+		case *queryplan.Rank:
+			below = v.In
+		case *queryplan.VectorAgg:
+			below = v.In
 		}
 		b, _ := json.Marshal(map[string]string{"id": strconv.Itoa(len(rows)), "q": q})
 		w.Write(append(b, '\n'))
-		rows = append(rows, row{q, step, rk})
+		// SplitEval lists the levels innermost first: the outermost is the last.
+		rows = append(rows, row{q, levels[len(levels)-1], below})
 	}
 	if err := w.Flush(); err != nil {
 		t.Fatal(err)
@@ -115,11 +142,11 @@ func TestRankMatchesLoki(t *testing.T) {
 			continue
 		}
 		compared++
-		if lf.Outer != r.step.Op {
-			t.Errorf("%s: Loki reads %q, the plan %q", r.q, lf.Outer, r.step.Op)
+		if lf.Outer != r.top.Op {
+			t.Errorf("%s: Loki reads %q, the plan %q", r.q, lf.Outer, r.top.Op)
 		}
-		if lf.Param != r.step.K {
-			t.Errorf("%s: Loki reads k %d, the plan %d", r.q, lf.Param, r.step.K)
+		if lf.Param != r.top.K {
+			t.Errorf("%s: Loki reads k %d, the plan %d", r.q, lf.Param, r.top.K)
 		}
 		// by () and no clause are one group in Loki's tree as in the proxy's.
 		var want physical.Grouping
@@ -127,13 +154,13 @@ func TestRankMatchesLoki(t *testing.T) {
 			want = physical.Grouping{Labels: g.Groups, Without: g.Without}
 		}
 		var got physical.Grouping
-		if g := r.step.By; g != nil {
+		if g := r.top.By; g != nil {
 			got = *g
 		}
 		if got.Without != want.Without || !slices.Equal(got.Labels, want.Labels) {
 			t.Errorf("%s: Loki reads the clause %+v, the plan %+v", r.q, want, got)
 		}
-		if ra, ok := r.rank.In.(*queryplan.RangeAgg); ok {
+		if ra, ok := r.below.(*queryplan.RangeAgg); ok {
 			operands++
 			if lf.Operand != string(ra.Op) {
 				t.Errorf("%s: Loki reads the operand %q, the lowering %q", r.q, lf.Operand, ra.Op)
@@ -143,5 +170,5 @@ func TestRankMatchesLoki(t *testing.T) {
 	if compared < 100 {
 		t.Fatalf("only %d queries compared", compared)
 	}
-	t.Logf("%d of %d lowered rankings: outermost ranking, k and clause equal Loki's tree (%d with the range function under them); %d of the lowered rankings have levels below the outermost, which the facts do not cover", compared, len(rows), operands, nested)
+	t.Logf("%d of %d lowered rows: outermost level, k and clause equal Loki's tree (%d with the range function under them); %d of the lowered rows have levels below the outermost, which the facts do not cover", compared, len(rows), operands, nested)
 }

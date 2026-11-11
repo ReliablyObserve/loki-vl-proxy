@@ -85,6 +85,11 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 		}
 		return "", "", false, false, false
 	}
+	// The levels the proxy evaluates (a ranking, stddev or stdvar) are held to the proxy's route, not to the
+	// translator's text for the whole query.
+	if physical.Evaluated(op) {
+		return "", legacy, false, true, terr == nil
+	}
 	// A without clause is a fold around the query: the clean query is compared, and the fold with the marker.
 	core, post := physical.Split(op)
 	lowered = core.(physical.VLQuery).Text

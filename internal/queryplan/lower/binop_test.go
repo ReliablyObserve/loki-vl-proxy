@@ -36,6 +36,11 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 	if lerr != nil {
 		t.Fatalf("%s: %s: lowering failed: %v", prof.name, q, lerr)
 	}
+	// The levels the proxy evaluates (a ranking, stddev or stdvar, around which a label_replace may stand) are held to
+	// the proxy's route in the corpus shadow, not to the translator's text for the whole query.
+	if physical.Evaluated(op) {
+		return "", legacy, false, "proxy-evaluated", true
+	}
 	want, _ := translator.DecodePhysical(legacy)
 	lowered = physical.Encode(op)
 	return lowered, legacy, lowered == legacy && physical.Equal(want, op), "", true
@@ -124,7 +129,6 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 		`sum( ` + rate + `) / 2`:                                           "BinOp operand spelling",
 		`label_replace(topk(2, ` + rate + ` > 1), "a", "b", "c", "d")`:     "LabelReplace operand Rank",
 		`label_replace(vector(1), "a", "b", "c", "d")`:                     "LabelReplace operand VectorLit",
-		`label_replace(stddev(` + rate + `), "a", "b", "c", "d")`:          "LabelReplace operand VectorAgg",
 		`label_replace(` + rate + ` and ` + rate + `, "a", "b", "c", "d")`: "LabelReplace operand BinOp",
 		`label_replace(sum by (service_name) (` + rate + `), "a", "b", "c", "d")`:                 "LabelReplace service_name grouping",
 		`label_replace(` + rate + `, "a", "\x00", "c", "d")`:                                      "LabelReplace argument with NUL",

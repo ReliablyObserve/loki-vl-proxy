@@ -164,7 +164,9 @@ func isRegexpSpace(c byte) bool {
 }
 
 func isWordByte(c byte) bool {
-	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c >= 0x80
+	// The word characters of the \b of Go's regexp, which the translator's scan uses: ASCII only. A byte of a
+	// multi-byte character (or an invalid one) after the word is a boundary, so `| jsoné` is a parser to it.
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
 
 // unwrapConv is the conversion the gate of an unwrap stage selects: "" for a plain number, "duration" (duration()

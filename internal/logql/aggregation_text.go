@@ -1,6 +1,9 @@
 package logql
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // The text scanners the proxy's post-aggregation route (a ranking, a stddev or stdvar, evaluated by the proxy over
 // the answer of its operand) and the lowering's operand screen read a query with: they slice the operand out of the
@@ -95,3 +98,37 @@ func TopLevelCommaIndex(s string) int {
 	}
 	return -1
 }
+
+// SeriesFoldOperand is the operand of the stddev or stdvar (op) a query is, sliced from the text the way the proxy's
+// route reads it: the parentheses that wrap the whole query are stripped, the text must start with op, a leading
+// by or without clause is skipped to its first closing parenthesis, and the operand is what the next parentheses
+// hold. ok is false when the text does not read so. The proxy translates this text alone and folds the series of its
+// answer itself.
+func SeriesFoldOperand(query, op string) (operand string, ok bool) {
+	source := strings.TrimSpace(query)
+	for strings.HasPrefix(source, "(") && ClosingParen(source, 0) == len(source)-1 {
+		source = strings.TrimSpace(source[1 : len(source)-1])
+	}
+	if !strings.HasPrefix(source, op) {
+		return "", false
+	}
+	rest := strings.TrimSpace(strings.TrimPrefix(source, op))
+	if !strings.HasPrefix(rest, "(") {
+		// A leading grouping clause: skip it to the operand.
+		open := strings.IndexByte(rest, '(')
+		if open < 0 {
+			return "", false
+		}
+		rest = strings.TrimSpace(rest[open+1+strings.IndexByte(rest[open+1:], ')')+1:])
+	}
+	end := ClosingParen(rest, 0)
+	if end < 0 {
+		return "", false
+	}
+	return strings.TrimSpace(rest[1:end]), true
+}
+
+// ParserStageTextRE finds a parser stage (json, logfmt, pattern, regexp or unpack) written in the text of a query,
+// quoted text included. The proxy reads the operand of a stddev or stdvar by a label this way to tell a parsed label
+// from a stream one.
+var ParserStageTextRE = regexp.MustCompile(`\|\s*(?:json|logfmt|pattern|regexp|unpack)\b`)

@@ -25,8 +25,9 @@ import (
 // over the rows from the LogQL.
 //
 // Left to the string translator under a construct name:
-//   - a level that is not sum, avg, min, max or count (stddev, stdvar, a ranking), and an operand that is not a
-//     range aggregation (a binary, label_replace, a vector): VectorAgg operand;
+//   - a level that is not sum, avg, min, max or count (stddev, stdvar, a ranking; the proxy evaluates them, see
+//     evaluated), and an operand that is not a range aggregation (a binary, label_replace, a vector): VectorAgg
+//     operand;
 //   - a nest over an unwrapped label (VectorAgg nested unwrap), and a without clause with no label at any level
 //     (VectorAgg without empty);
 //   - everything the innermost level leaves to the translator when it stands alone keeps its name.

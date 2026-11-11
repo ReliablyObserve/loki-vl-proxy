@@ -156,29 +156,13 @@ func parseStddevStdvarQuery(logql string) (instantMetricPostAgg, bool) {
 	if !ok || (agg.Op != logqlpkg.VectorStddev && agg.Op != logqlpkg.VectorStdvar) {
 		return instantMetricPostAgg{}, false
 	}
-	// Fully enclosing parentheses do not change the aggregation. Strip only
-	// complete pairs, leaving the operand and its quoted contents untouched.
-	source := strings.TrimSpace(logql)
-	for strings.HasPrefix(source, "(") && closingParenIndex(source) == len(source)-1 {
-		source = strings.TrimSpace(source[1 : len(source)-1])
-	}
-	if !strings.HasPrefix(source, string(agg.Op)) {
+	// Fully enclosing parentheses do not change the aggregation, and the operand is the text the clause leaves
+	// (logqlpkg.SeriesFoldOperand, which the lowering's screen reads too).
+	inner, ok := logqlpkg.SeriesFoldOperand(logql, string(agg.Op))
+	if !ok {
 		return instantMetricPostAgg{}, false
 	}
-	rest := strings.TrimSpace(strings.TrimPrefix(source, string(agg.Op)))
-	if !strings.HasPrefix(rest, "(") {
-		// A leading grouping clause: skip it to the operand.
-		open := strings.IndexByte(rest, '(')
-		if open < 0 {
-			return instantMetricPostAgg{}, false
-		}
-		rest = strings.TrimSpace(rest[open+1+strings.IndexByte(rest[open+1:], ')')+1:])
-	}
-	end := closingParenIndex(rest)
-	if end < 0 {
-		return instantMetricPostAgg{}, false
-	}
-	return instantMetricPostAgg{name: string(agg.Op), inner: strings.TrimSpace(rest[1:end]), grouping: agg.Grouping}, true
+	return instantMetricPostAgg{name: string(agg.Op), inner: inner, grouping: agg.Grouping}, true
 }
 
 // foldedGroupsKey marks a stddev or stdvar whose operand's series are folded
@@ -219,7 +203,7 @@ func (p *Proxy) capFoldedGroups(w http.ResponseWriter, r *http.Request, body []b
 }
 
 var (
-	postAggParserStageRE = regexp.MustCompile(`\|\s*(?:json|logfmt|pattern|regexp|unpack)\b`)
+	postAggParserStageRE = logqlpkg.ParserStageTextRE
 	postAggFirstByRE     = regexp.MustCompile(`\| stats by \(([^)]*)\)`)
 	postAggMathAliasRE   = regexp.MustCompile(`\| math [^|]* as (\w+)`)
 )
@@ -257,29 +241,6 @@ func postAggOperandText(postAgg instantMetricPostAgg, translate func(string) (st
 		}
 	}
 	return translate(postAgg.inner)
-}
-
-// closingParenIndex returns the index of the parenthesis closing the one s
-// opens, skipping quoted strings, or -1.
-func closingParenIndex(s string) int {
-	depth := 0
-	for i := 0; i < len(s); i++ {
-		switch c := s[i]; c {
-		case '"', '`':
-			for i++; i < len(s) && s[i] != c; i++ {
-				if c == '"' && s[i] == '\\' {
-					i++
-				}
-			}
-		case '(':
-			depth++
-		case ')':
-			if depth--; depth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
 }
 
 func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {

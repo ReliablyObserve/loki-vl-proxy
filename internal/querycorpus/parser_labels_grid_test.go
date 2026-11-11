@@ -285,8 +285,22 @@ func parserLabelsShadow(t *testing.T, grid []string, lowerFn lowering) (rows, na
 				problems = append(problems, fmt.Sprintf("%s: %q: lowering failed: %v", prof.name, q, lerr))
 				continue
 			}
-			if _, known := knownTypedDivergences()[queryID("logql", q)]; known || translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q) || translatorReadsStageMarker(q) {
+			// A root the proxy evaluates (stddev, stdvar, a ranking) is held to the proxy's route, as in TestPlanShadow.
+			routed, divergence := evaluatedRoot(plan)
+			if _, known := knownTypedDivergences()[queryID("logql", q)]; known || translatorMisreadsQuotedText(q) || (!routed && translatorMisreadsParenthesizedMetric(q)) || translatorReadsStageMarker(q) {
 				delegated["known divergence"]++
+				continue
+			}
+			if routed {
+				if msg := checkProxyEvaluated(q, prof, got); msg != "" {
+					problems = append(problems, msg)
+					continue
+				}
+				native++
+				continue
+			}
+			if divergence != "" {
+				delegated["known divergence "+divergence]++
 				continue
 			}
 			want, err := translator.DecodePhysical(legacy)

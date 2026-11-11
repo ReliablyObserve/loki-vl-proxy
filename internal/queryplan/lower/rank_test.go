@@ -96,8 +96,6 @@ func TestPlanDelegatesRankShapes(t *testing.T) {
 		`topk(3, ` + rate + ` > 1)`:                                         "Rank operand BinOp",
 		`topk(3, vector(1))`:                                                "Rank operand VectorLit",
 		`topk(3, label_replace(topk(2, ` + rate + `), "a", "b", "c", "d"))`: "LabelReplace operand Rank",
-		`topk(3, stddev(` + rate + `))`:                                     "VectorAgg stddev",
-		`topk(2, stddev(topk(3, ` + rate + `)))`:                            "VectorAgg stddev",
 		`topk(3, rate({app="a"} | detected_level="error" [5m]))`:            "Rank operand RangeAgg",
 		`topk(3, sum by (app) (rate({app="a"} | detected_level="e" [5m])))`: "VectorAgg LogSelect label filter detected_level",
 		`topk(3, sum without () (` + rate + `))`:                            "VectorAgg without empty",
@@ -113,7 +111,6 @@ func TestPlanDelegatesRankShapes(t *testing.T) {
 		`(topk(3, ` + rate + `))`:                                           "Rank spelling",
 		`label_replace(topk(3, ` + rate + ` > 1), "a", "b", "c", "d")`:      "LabelReplace operand Rank",
 		`topk(3, ` + rate + `) + 1`:                                         "BinOp operand Rank",
-		`sum(topk(3, ` + rate + `))`:                                        "VectorAgg operand",
 	} {
 		p := rangeAggPlan(q)
 		if p == nil {
@@ -131,18 +128,15 @@ func TestPlanDelegatesRankShapes(t *testing.T) {
 }
 
 // Plan alone (no query text to screen) leaves a ranking the route does not take to the translator: a sort with a
-// clause, and a stddev or stdvar layer above a ranking.
+// clause.
 //
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesRankLayersTheRouteDoesNotTake(t *testing.T) {
 	rate := `rate({app="a"}[5m])`
 	for q, construct := range map[string]string{
-		`sort by (app) (` + rate + `)`:                    "Rank grouping",
-		`sort_desc(` + rate + `) without (pod)`:           "Rank grouping",
-		`topk(2, sort by () (` + rate + `))`:              "Rank grouping",
-		`topk(2, stddev(topk(3, ` + rate + `)))`:          "VectorAgg stddev",
-		`sort(stdvar by (app) (sort_desc(` + rate + `)))`: "VectorAgg stdvar",
-		`bottomk(1, sum(stddev(topk(2, ` + rate + `))))`:  "VectorAgg stddev",
+		`sort by (app) (` + rate + `)`:          "Rank grouping",
+		`sort_desc(` + rate + `) without (pod)`: "Rank grouping",
+		`topk(2, sort by () (` + rate + `))`:    "Rank grouping",
 	} {
 		p := rangeAggPlan(q)
 		if p == nil {

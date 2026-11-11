@@ -1572,6 +1572,7 @@
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/metric_stages_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/oracle_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/parser_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/parser_labels_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/parser_metric_grid_test.go | architecture-syntax-package-layering",
@@ -1591,6 +1592,8 @@
     "internal/querycorpus/rank_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/rank_step_alloc_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/rank_step_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/series_agg_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/series_agg_grid_test.go | semantics/stddev-stdvar-nested-or-binary",
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/unwrap_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_blank_grid_test.go | architecture-syntax-package-layering",
@@ -1616,6 +1619,7 @@
     "internal/queryplan/lower/range_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/range_agg_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/queryplan/lower/rank_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/series_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vector_agg_nested_test.go | architecture-syntax-package-layering",
@@ -2136,7 +2140,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 463,
+      "go": 466,
       "playwright": 1
     },
     "page_kinds": {
@@ -2155,8 +2159,8 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 103,
-    "wired_items": 279
+    "unwired_items": 102,
+    "wired_items": 280
   },
   "gates": [
     "A/B shape selection",

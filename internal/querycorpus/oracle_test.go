@@ -260,14 +260,17 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	}
 	lq, err := logql.ParseLogQuery(q)
 	if err != nil {
-		// A range aggregation over a log query, or a ranking over one: the selector of its log query.
+		// A range aggregation over a log query, or a level the proxy evaluates (a ranking, stddev or stdvar, with
+		// the layers around them) over one: the selector of its log query.
 		expr := mustParse(q)
-		for {
-			va, isVector := expr.(*logql.VectorAggregation)
-			if !isVector || !isRankOp(va.Op) {
-				break
+		if holdsEvaluatedLevel(expr) {
+			for {
+				va, isVector := expr.(*logql.VectorAggregation)
+				if !isVector {
+					break
+				}
+				expr = va.Inner
 			}
-			expr = va.Inner
 		}
 		agg, ok := expr.(*logql.RangeAggregation)
 		if !ok {
@@ -321,8 +324,13 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 			}
 			return out, err
 		}
-		_, ref, routed, err := proxy.PostAggregationPhysical(routedQuery(q), translate)
+		want, ref, routed, err := proxy.PostAggregationPhysical(routedQuery(q), translate)
 		if err != nil || !routed {
+			return "", "", false
+		}
+		// A level below the one the route evaluates is sent as the translator's text, which drops it (a known
+		// divergence of the proxy): the operand request the proxy sends is not the plan's, nothing to pair.
+		if !physical.Equal(want, op) {
 			return "", "", false
 		}
 		return vq.Text, ref, true
@@ -336,13 +344,27 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	return vq.Text, built, true
 }
 
-// isRankOp reports whether op is a ranking the proxy evaluates itself.
-func isRankOp(op logql.VectorOp) bool {
+// isEvaluatedOp reports whether op is a ranking, stddev or stdvar, which the proxy evaluates itself.
+func isEvaluatedOp(op logql.VectorOp) bool {
 	switch op {
-	case logql.VectorTopK, logql.VectorBottomK, logql.VectorSort, logql.VectorSortDesc:
+	case logql.VectorTopK, logql.VectorBottomK, logql.VectorSort, logql.VectorSortDesc, logql.VectorStddev, logql.VectorStdvar:
 		return true
 	}
 	return false
+}
+
+// holdsEvaluatedLevel reports whether a chain of vector aggregations from expr down holds a level the proxy evaluates.
+func holdsEvaluatedLevel(expr logql.Expr) bool {
+	for {
+		va, ok := expr.(*logql.VectorAggregation)
+		if !ok {
+			return false
+		}
+		if isEvaluatedOp(va.Op) {
+			return true
+		}
+		expr = va.Inner
+	}
 }
 
 // mustParse is the parsed expression of q, nil when it does not parse.
@@ -794,5 +816,30 @@ func TestKnownTypedDivergences(t *testing.T) {
 	head["typed-selector"] = map[string]oracleVerdict{listed: verdict(false)}
 	if got = oracleRegressions("v1.53.0", nil, head); got.any() {
 		t.Fatalf("a listed divergence fails the gate: %+v", got)
+	}
+}
+
+// A stddev, stdvar or ranking the proxy evaluates is paired on the operand request it sends, as are the layers
+// around it; a level below the one the route evaluates (sent as the translator's text) is not paired.
+// conformance: architecture-syntax-package-layering
+func TestTypedPairOfAnEvaluatedRootIsTheOperandRequest(t *testing.T) {
+	rate := `rate({app="a"} != "x" [5m])`
+	for q, want := range map[string]bool{
+		`stddev by (app) (` + rate + `)`:                                true,
+		`stdvar(sum by (app) (` + rate + `))`:                           true,
+		`topk(2, ` + rate + `)`:                                         true,
+		`sum(topk(2, ` + rate + `))`:                                    true,
+		`sum(stddev by (app) (` + rate + `))`:                           false,
+		`topk(2, stddev by (app) (` + rate + `))`:                       false,
+		`stddev(topk(3, ` + rate + `))`:                                 false,
+		`label_replace(stddev(` + rate + `), "d", "$1", "app", "(.*)")`: false,
+	} {
+		typed, built, ok := typedQueryPair(q, "v1.53.0")
+		if ok != want {
+			t.Errorf("%s: paired %v, want %v", q, ok, want)
+		}
+		if ok && (typed == "" || typed != built) {
+			t.Errorf("%s: typed %q, the proxy's operand request %q", q, typed, built)
+		}
 	}
 }

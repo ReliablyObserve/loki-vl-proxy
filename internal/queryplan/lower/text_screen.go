@@ -29,8 +29,11 @@ func ScreenText(query string, p *queryplan.Plan) error {
 	case *queryplan.LabelReplace:
 		return screenLabelReplace(query, n)
 	case *queryplan.Rank:
-		return screenRank(query, n)
+		return screenEvaluated(query, n)
 	case *queryplan.VectorAgg:
+		if evaluates(n) {
+			return screenEvaluated(query, n)
+		}
 		parenthesized, padded = errVectorParenthesized, errBlankPadding
 	case *queryplan.RangeAgg:
 		parenthesized = errRangeParenthesized
