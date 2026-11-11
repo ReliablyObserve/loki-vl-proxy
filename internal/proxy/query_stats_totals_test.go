@@ -201,8 +201,10 @@ func TestQueryStatsTotals_LogQueryFromItsVolumeAnswer(t *testing.T) {
 	if want == 0 || got.TotalPostFilterLines != want {
 		t.Fatalf("post-filter lines %d, the volume answer's steps inside the window sum to %d", got.TotalPostFilterLines, want)
 	}
-	if got.TotalLinesProcessed != 9 {
-		t.Fatalf("lines processed %d: with a filter and no selector-only count it is the 9 rows read", got.TotalLinesProcessed)
+	// With a filter and no selector-only count, the lines processed are at
+	// least the post-filter lines they hold.
+	if got.TotalLinesProcessed != want {
+		t.Fatalf("lines processed %d: with a filter and no selector-only count it is the %d post-filter lines", got.TotalLinesProcessed, want)
 	}
 	// A refresh 5 minutes later: the covered 55 minutes (92%) are reported.
 	if g := logs(`{app="api"} |= "x"`, start+300, end+300, "0").Data.Stats.Summary; g.TotalPostFilterLines != volume.sum(t, step, start+300, end, true) {
@@ -216,8 +218,10 @@ func TestQueryStatsTotals_LogQueryFromItsVolumeAnswer(t *testing.T) {
 		{"other expression", `{app="api"} |= "y"`, "0", start, end},
 		{"other tenant", `{app="api"} |= "x"`, "1", start, end},
 	} {
-		if g := logs(tc.query, tc.s, tc.e, tc.org).Data.Stats.Summary; g.TotalPostFilterLines != 0 {
-			t.Fatalf("%s: took %d post-filter lines from a companion", tc.name, g.TotalPostFilterLines)
+		// No companion: the post-filter lines are the 9 rows VictoriaLogs
+		// returned for the filter.
+		if g := logs(tc.query, tc.s, tc.e, tc.org).Data.Stats.Summary; g.TotalPostFilterLines != 9 {
+			t.Fatalf("%s: %d post-filter lines, want the 9 rows read (no companion)", tc.name, g.TotalPostFilterLines)
 		}
 	}
 }

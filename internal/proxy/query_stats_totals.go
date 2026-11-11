@@ -358,7 +358,7 @@ func (p *Proxy) deriveQueryStatsTotals(r *http.Request, endpoint string, body []
 		return
 	}
 	rt.mu.Lock()
-	active, vlCalls := rt.statsWriter != nil, rt.flow.vlCalls
+	active, vlCalls, reused := rt.statsWriter != nil, rt.flow.vlCalls, rt.flow.reusedCachedAnswers()
 	rt.mu.Unlock()
 	if !active || vlCalls == 0 {
 		return
@@ -371,7 +371,12 @@ func (p *Proxy) deriveQueryStatsTotals(r *http.Request, endpoint string, body []
 	if shape.op == "" {
 		t, ok = p.logQueryTotals(r, endpoint, shape)
 	} else {
+		// The answer's steps are right whichever cache served them, so they
+		// are kept as the companion; but an answer partly served from cached
+		// steps or extents was not all processed by this request (Loki counts
+		// only the part it computed), so it gives this request no totals.
 		t, ok = p.metricQueryTotals(r, endpoint, shape, body)
+		ok = ok && !reused
 	}
 	if !ok {
 		return
@@ -379,6 +384,18 @@ func (p *Proxy) deriveQueryStatsTotals(r *http.Request, endpoint string, body []
 	rt.mu.Lock()
 	rt.statsTotals = t
 	rt.mu.Unlock()
+}
+
+// reusedCachedAnswers reports whether the request found any cached answer
+// or part of one (Loki's result, statsResult, volumeResult or
+// instantMetricResult sections).
+func (f *flowCounters) reusedCachedAnswers() bool {
+	for _, c := range f.lokiCache {
+		if c.found > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Proxy) metricQueryTotals(r *http.Request, endpoint string, shape totalsShape, body []byte) (statsTotals, bool) {

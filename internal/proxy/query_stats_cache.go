@@ -14,10 +14,13 @@ import (
 // A response-cache hit of a query or query_range answer is finished here with
 // this request's stats, without reading or recompressing the cached body:
 //
-//   - The cached value carries the answer's entry count after the body (a
-//     short trailer the answer never shows; query and query_range compat keys
-//     carry queryStatsCompatFence, so no code that does not know the trailer
-//     reads such a value, on this replica or a peer).
+//   - The cached value carries the answer's entry count after the body, and
+//     for an answer Loki computes on every request (a non-empty log answer, an
+//     instant answer: Loki's results cache keeps neither by default) the
+//     computation's processed totals and time, which the hit replays (a short
+//     trailer the answer never shows; query and query_range compat keys carry
+//     queryStatsCompatFence, so no code that does not know the trailer reads
+//     such a value, on this replica or a peer).
 //   - For a gzip client, a sidecar entry next to the body (local only, with
 //     the body's remaining TTL) holds the gzip encoding of the body up to its
 //     last bytes (sync-flushed, unfinished), its CRC-32 and those last bytes.
@@ -34,42 +37,80 @@ import (
 
 const (
 	// queryStatsCompatFence versions query and query_range compat keys whose
-	// values end with the entry-count trailer.
-	queryStatsCompatFence  = "qs1:"
+	// values end with the stats trailer.
+	queryStatsCompatFence  = "qs2:"
 	statsSidecarGzipSuffix = "#qs1gz"
 	statsSidecarMagic      = "qs1"
-	statsTrailerMagic      = "\x00qs1"
+	statsTrailerMagic      = "\x00qs2"
 )
 
 func statsSidecarKey(cacheKey string) string { return cacheKey + statsSidecarGzipSuffix }
 
 func isStatsSidecarKey(key string) bool { return strings.HasSuffix(key, statsSidecarGzipSuffix) }
 
-// appendStatsTrailer appends the entry-count trailer to a cached body: the
-// count as a uvarint, its length, and a magic a JSON body cannot end with.
-func appendStatsTrailer(dst []byte, entries int64) []byte {
+// statsTrailer is what a cached query answer carries for its hits: the
+// answer's entry count and, when hits replay it, the stored computation.
+type statsTrailer struct {
+	entries  int64
+	replay   bool
+	replayed statsReplay
+}
+
+// appendStatsTrailer appends the stats trailer to a cached body: its fields
+// as uvarints, their length, and a magic a JSON body cannot end with.
+func appendStatsTrailer(dst []byte, t statsTrailer) []byte {
 	n := len(dst)
-	dst = binary.AppendUvarint(dst, uint64(max(entries, 0)))
+	dst = binary.AppendUvarint(dst, uint64(max(t.entries, 0)))
+	if t.replay {
+		r := t.replayed
+		dst = append(dst, 1)
+		for _, v := range [...]int64{r.bytes, r.lines, r.postFilter, int64(r.exec)} {
+			dst = binary.AppendUvarint(dst, uint64(max(v, 0)))
+		}
+	} else {
+		dst = append(dst, 0)
+	}
 	dst = append(dst, byte(len(dst)-n))
 	return append(dst, statsTrailerMagic...)
 }
 
 // splitStatsTrailer returns a cached value's body and, when it has the
-// trailer, the entry count.
-func splitStatsTrailer(value []byte) (body []byte, entries int64, ok bool) {
-	if !bytes.HasSuffix(value, []byte(statsTrailerMagic)) || len(value) < len(statsTrailerMagic)+2 {
-		return value, 0, false
+// trailer, the trailer.
+func splitStatsTrailer(value []byte) (body []byte, t statsTrailer, ok bool) {
+	if !bytes.HasSuffix(value, []byte(statsTrailerMagic)) || len(value) < len(statsTrailerMagic)+3 {
+		return value, statsTrailer{}, false
 	}
 	end := len(value) - len(statsTrailerMagic) - 1
 	n := int(value[end])
-	if n < 1 || n > binary.MaxVarintLen64 || n > end {
-		return value, 0, false
+	if n < 2 || n > end {
+		return value, statsTrailer{}, false
 	}
-	v, m := binary.Uvarint(value[end-n : end])
-	if m != n {
-		return value, 0, false
+	raw := value[end-n : end]
+	entries, m := binary.Uvarint(raw)
+	if m <= 0 || len(raw) == m {
+		return value, statsTrailer{}, false
 	}
-	return value[:end-n], int64(v), true
+	t.entries, raw = int64(entries), raw[m+1:]
+	switch value[end-n+m] {
+	case 0:
+	case 1:
+		var fields [4]int64
+		for i := range fields {
+			v, m := binary.Uvarint(raw)
+			if m <= 0 {
+				return value, statsTrailer{}, false
+			}
+			fields[i], raw = int64(v), raw[m:]
+		}
+		t.replay = true
+		t.replayed = statsReplay{bytes: fields[0], lines: fields[1], postFilter: fields[2], exec: time.Duration(fields[3])}
+	default:
+		return value, statsTrailer{}, false
+	}
+	if len(raw) != 0 {
+		return value, statsTrailer{}, false
+	}
+	return value[:end-n], t, true
 }
 
 // countEntries counts a body's entries as the stats layer does when it
@@ -176,11 +217,20 @@ func (p *Proxy) serveCompatHitWithStats(w http.ResponseWriter, r *http.Request, 
 	if sw == nil || sw.wroteHeader {
 		return false
 	}
-	body, entries, ok := splitStatsTrailer(value)
+	body, trailer, ok := splitStatsTrailer(value)
 	if !ok {
-		entries = countEntries(body)
+		trailer.entries = countEntries(body)
 	}
-	sw.entries.n, sw.entriesKnown = entries, true
+	sw.entries.n, sw.entriesKnown = trailer.entries, true
+	sw.entries.mode = entryModeOf(body[:min(len(body), queryStatsTailHold)])
+	sw.hit = true
+	if trailer.replay {
+		sw.replayed = trailer.replayed
+	} else if sw.route == statsRouteRange && sw.entries.mode != entryModeStreams {
+		// A metric results-cache hit serves its window (Loki's
+		// queryLengthServed); Loki's empty log answers report none.
+		sw.queryLength = requestWindowLength(r)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	// A body the client compression threshold leaves uncompressed is
 	// served as before, with its stats added uncompressed.
@@ -283,17 +333,55 @@ func crc32Unappend(crc uint32, suffix []byte) uint32 {
 }
 
 // compatCacheValue is what the response cache stores for an answer: a copy
-// of the body, and for an answer the stats layer counted, the entry-count
-// trailer. Storing a body again drops the gzip sidecar of the one before.
+// of the body, and for a query or query_range answer the stats layer
+// counted, the stats trailer. Storing a body again drops the gzip sidecar of
+// the one before.
 func (p *Proxy) compatCacheValue(w http.ResponseWriter, r *http.Request, cacheKey string, body []byte) []byte {
 	sw := statsWriterFor(w, r)
-	if sw == nil {
+	if sw == nil || sw.route == statsRouteVolume {
+		if sw != nil {
+			p.compatCache.Invalidate(statsSidecarKey(cacheKey))
+		}
 		return append([]byte(nil), body...)
 	}
 	p.compatCache.Invalidate(statsSidecarKey(cacheKey))
-	value := make([]byte, len(body), len(body)+binary.MaxVarintLen64+1+len(statsTrailerMagic))
+	value := make([]byte, len(body), len(body)+statsTrailerMaxLen)
 	copy(value, body)
-	return appendStatsTrailer(value, sw.entries.n)
+	return appendStatsTrailer(value, sw.trailer())
+}
+
+// statsTrailerMaxLen bounds a trailer: five uvarints, the flag, the length
+// and the magic.
+const statsTrailerMaxLen = 5*binary.MaxVarintLen64 + 2 + len(statsTrailerMagic)
+
+// trailer is the stats trailer of the answer this writer counted: hits of
+// an answer Loki computes on every request (a non-empty log answer; an
+// instant answer) replay its totals and time.
+func (w *queryStatsWriter) trailer() statsTrailer {
+	t := statsTrailer{entries: w.entries.n}
+	logs := w.entries.mode == entryModeStreams
+	if w.route != statsRouteInstant && (!logs || w.entries.n == 0) {
+		return t
+	}
+	rt := w.rt
+	rt.mu.Lock()
+	s := processedSummary(&rt.flow, &rt.statsTotals, logs, w.entries.n, w.entries.lineBytes)
+	exec := time.Since(rt.start)
+	rt.mu.Unlock()
+	t.replay = true
+	t.replayed = statsReplay{bytes: s.bytes, lines: s.lines, postFilter: s.postFilter, exec: max(exec, time.Nanosecond)}
+	return t
+}
+
+// requestWindowLength is a query_range request's window (ns), 0 when it
+// cannot be read.
+func requestWindowLength(r *http.Request) int64 {
+	start, okS := parseLokiTimeToUnixNano(r.FormValue("start"))
+	end, okE := parseLokiTimeToUnixNano(r.FormValue("end"))
+	if !okS || !okE || end < start {
+		return 0
+	}
+	return end - start
 }
 
 // compatHitBody is the body of a cached value served without the stats

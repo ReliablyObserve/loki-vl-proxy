@@ -232,8 +232,9 @@ query's `data.stats.summary.totalBytesProcessed`. When the proxy holds a
 within the last 5 minutes, for example on a refresh), it reports the line
 bytes of the window from it, as Loki counts for short windows (Loki adds
 structured-metadata bytes). Otherwise, as on a first page load where the logs
-query usually finishes first, the footer shows the bytes the proxy read from
-VictoriaLogs for the logs panel. See [Known Issues](KNOWN_ISSUES.md) and the
+query usually finishes first, the footer shows the line bytes of the rows the
+logs panel read. A refresh answered from the proxy's response cache shows the
+same figure again (Loki computes log queries on every request), not 0 B. See [Known Issues](KNOWN_ISSUES.md) and the
 [API reference](api-reference.md#query-statistics-datastats) for each field's
 source.
 

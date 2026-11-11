@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
@@ -19,6 +18,9 @@ import (
 // The Logs Drilldown footer reads the frame stat "Summary: total bytes
 // processed"; Grafana builds the frame's meta.stats from data.stats.summary.
 const drilldownFooterStat = "Summary: total bytes processed"
+
+// lokiStatsSections are data.stats' sections in Loki's order.
+var lokiStatsSections = []string{"summary", "querier", "ingester", "cache", "index"}
 
 // lokiSummaryKeys is the key order of Loki's data.stats.summary.
 var lokiSummaryKeys = []string{
@@ -129,8 +131,8 @@ func TestDrilldown_QueryStatsEnvelope(t *testing.T) {
 	if len(answer.Data.Result) == 0 {
 		t.Fatalf("the fixture window must answer streams: %s", raw)
 	}
-	if got := jsonObjectKeys(t, answer.Data.Stats); len(got) == 0 || got[0] != "summary" {
-		t.Fatalf("data.stats sections %v: %s", got, answer.Data.Stats)
+	if got := jsonObjectKeys(t, answer.Data.Stats); !reflect.DeepEqual(got, lokiStatsSections) {
+		t.Fatalf("data.stats sections %v, want Loki's %v: %s", got, lokiStatsSections, answer.Data.Stats)
 	}
 	var stats struct {
 		Summary json.RawMessage `json:"summary"`
@@ -168,17 +170,10 @@ func TestDrilldown_QueryStatsEnvelope(t *testing.T) {
 	if !hasFooterStat(proxy) {
 		t.Fatalf("the proxy's frame lacks %q (Loki: %v): %v", drilldownFooterStat, loki, proxy)
 	}
-	summaryStats := func(names []string) []string {
-		var out []string
-		for _, n := range names {
-			if strings.HasPrefix(n, "Summary: ") {
-				out = append(out, n)
-			}
-		}
-		return out
-	}
-	if got, want := summaryStats(proxy), summaryStats(loki); !reflect.DeepEqual(got, want) {
-		t.Fatalf("the proxy's summary stats %v differ from Loki's %v (all: proxy %v, Loki %v)", got, want, proxy, loki)
+	// Every stat Grafana lists for Loki (the "Summary:" and "Ingester:"
+	// entries) is listed for the proxy, in the same order.
+	if !reflect.DeepEqual(proxy, loki) {
+		t.Fatalf("the proxy's frame stats %v differ from Loki's %v", proxy, loki)
 	}
 }
 
@@ -251,4 +246,168 @@ func TestDrilldown_QueryStatsWindowTotalsFromTheVolumeAnswer(t *testing.T) {
 		t.Fatalf("the logs query reports %v post-filter lines; the volume answer's steps inside the window hold %d (summary %v)", got["totalPostFilterLines"], want, got)
 	}
 	t.Logf("window lines from the volume answer %d; Loki reports %v lines processed for the same logs query", want, summary(lokiURL)["totalLinesProcessed"])
+}
+
+// statsShape is a JSON value's shape: an object's keys in order with their
+// shapes, or the JSON type of any other value.
+func statsShape(t *testing.T, raw json.RawMessage) any {
+	t.Helper()
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		t.Fatal("empty JSON value")
+	}
+	switch raw[0] {
+	case '{':
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		_, _ = dec.Token()
+		var out []any
+		for dec.More() {
+			tok, _ := dec.Token()
+			var v json.RawMessage
+			if err := dec.Decode(&v); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, tok.(string), statsShape(t, v))
+		}
+		return out
+	case 't', 'f':
+		return "bool"
+	case '"':
+		return "string"
+	}
+	return "number"
+}
+
+// withoutRecvWaitTime removes the ingester's recvWaitTime from a stats shape.
+func withoutRecvWaitTime(shape any) any {
+	sections, _ := shape.([]any)
+	out := make([]any, 0, len(sections))
+	for i := 0; i+1 < len(sections); i += 2 {
+		v := sections[i+1]
+		if fields, ok := v.([]any); ok && sections[i] == "ingester" {
+			var keep []any
+			for j := 0; j+1 < len(fields); j += 2 {
+				if fields[j] != "recvWaitTime" {
+					keep = append(keep, fields[j], fields[j+1])
+				}
+			}
+			v = keep
+		}
+		out = append(out, sections[i], v)
+	}
+	return out
+}
+
+type e2eStats struct {
+	raw     json.RawMessage
+	Summary struct {
+		Bytes      int64   `json:"totalBytesProcessed"`
+		Lines      int64   `json:"totalLinesProcessed"`
+		PostFilter int64   `json:"totalPostFilterLines"`
+		ExecTime   float64 `json:"execTime"`
+		Entries    int64   `json:"totalEntriesReturned"`
+	} `json:"summary"`
+	Cache map[string]struct {
+		EntriesFound      int64 `json:"entriesFound"`
+		QueryLengthServed int64 `json:"queryLengthServed"`
+	} `json:"cache"`
+}
+
+func getE2EStats(t *testing.T, base, path string, params url.Values) e2eStats {
+	t.Helper()
+	status, raw, _ := doJSONGET(t, base+path+"?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+	if status != http.StatusOK {
+		t.Fatalf("%s%s: %d %s", base, path, status, raw)
+	}
+	var a struct {
+		Status string `json:"status"`
+		Data   struct {
+			Stats json.RawMessage `json:"stats"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(raw), &a); err != nil || a.Status != "success" || len(a.Data.Stats) == 0 {
+		t.Fatalf("%s%s: no stats object (%v): %.300s", base, path, err, raw)
+	}
+	st := e2eStats{raw: a.Data.Stats}
+	if err := json.Unmarshal(a.Data.Stats, &st); err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
+// TestDrilldown_QueryStatsLikeLoki: for log, metric, instant and volume
+// answers over 5m and 1h, the proxy's data.stats has exactly the shape Loki
+// answers (every section, key, key order and value type), and its values
+// follow Loki's accounting (the query-stats-loki-meaning-totals decision):
+// a log answer reports the lines and line bytes it processed, also when a
+// refresh is a proxy cache hit (Loki computes log queries on every request);
+// a tumbling count reports its window's lines; a metric query_range repeat
+// is a results-cache hit with no processing and the window served; volume
+// answers report no lines or bytes; every refresh reports its own execTime.
+//
+// conformance: drilldown/logs-footer-query-stats, query-stats-envelope
+func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
+	ensureDataIngested(t)
+	end := time.Now().Add(-time.Minute).Truncate(time.Minute)
+	nonce := fmt.Sprintf("qsl-%d", time.Now().UnixNano())
+	for _, rng := range []time.Duration{5 * time.Minute, time.Hour} {
+		start := end.Add(-rng)
+		logqlRange := map[time.Duration]string{5 * time.Minute: "5m", time.Hour: "1h"}[rng]
+		win := func(q string, kv ...string) url.Values {
+			v := url.Values{"query": {q}, "start": {fmt.Sprint(start.Unix())}, "end": {fmt.Sprint(end.Unix())}, "step": {"60"}}
+			for i := 0; i < len(kv); i += 2 {
+				v.Set(kv[i], kv[i+1])
+			}
+			return v
+		}
+		sel := `{app="api-gateway"} != "` + nonce + rng.String() + `"`
+		for _, tc := range []struct {
+			name, path string
+			params     url.Values
+			check      func(t *testing.T, miss, again e2eStats)
+		}{
+			{"log", "/loki/api/v1/query_range", win(sel, "limit", "100", "direction", "backward"), func(t *testing.T, miss, again e2eStats) {
+				if miss.Summary.Lines <= 0 || miss.Summary.Bytes <= 0 || miss.Summary.Entries <= 0 {
+					t.Fatalf("miss %+v: a non-empty log answer reports what it processed", miss.Summary)
+				}
+				if again.Summary.Lines != miss.Summary.Lines || again.Summary.Bytes != miss.Summary.Bytes {
+					t.Fatalf("refresh %+v: Loki computes a log query again; the proxy's hit reports the computation's %+v", again.Summary, miss.Summary)
+				}
+			}},
+			{"metric", "/loki/api/v1/query_range", win(`sum(count_over_time(` + sel + ` [1m]))`), func(t *testing.T, miss, again e2eStats) {
+				if miss.Summary.Lines <= 0 || miss.Summary.PostFilter != miss.Summary.Lines {
+					t.Fatalf("miss %+v: a tumbling count reports its window's lines", miss.Summary)
+				}
+				if again.Summary.Lines != 0 || again.Summary.Bytes != 0 || again.Cache["result"].EntriesFound == 0 || again.Cache["result"].QueryLengthServed <= 0 {
+					t.Fatalf("repeat %+v cache %+v: a results-cache hit with no processing and the window served", again.Summary, again.Cache["result"])
+				}
+			}},
+			{"instant", "/loki/api/v1/query", url.Values{"query": {`sum(count_over_time(` + sel + ` [` + logqlRange + `]))`}, "time": {fmt.Sprint(end.Unix())}}, func(t *testing.T, miss, again e2eStats) {
+				if miss.Summary.Lines <= 0 || again.Summary.Lines != miss.Summary.Lines {
+					t.Fatalf("instant miss %+v, repeat %+v: Loki computes instant queries again; the hit reports the computation", miss.Summary, again.Summary)
+				}
+			}},
+			{"volume_range", "/loki/api/v1/index/volume_range", win(`{app="api-gateway"}`), func(t *testing.T, miss, again e2eStats) {
+				if miss.Summary.Lines != 0 || miss.Summary.Bytes != 0 || miss.Summary.Entries <= 0 {
+					t.Fatalf("volume %+v: Loki reports the series returned and no processed lines or bytes", miss.Summary)
+				}
+			}},
+		} {
+			t.Run(rng.String()+"/"+tc.name, func(t *testing.T) {
+				loki := getE2EStats(t, lokiURL, tc.path, tc.params)
+				miss := getE2EStats(t, proxyURL, tc.path, tc.params)
+				// Loki omits ingester.recvWaitTime when it is zero; the proxy has
+				// no ingesters, so its ingester section is always that zero form.
+				if got, want := statsShape(t, miss.raw), withoutRecvWaitTime(statsShape(t, loki.raw)); !reflect.DeepEqual(got, want) {
+					t.Fatalf("stats shape differs from Loki's\nproxy %v\nloki  %v", got, want)
+				}
+				again := getE2EStats(t, proxyURL, tc.path, tc.params)
+				if again.Summary.ExecTime == miss.Summary.ExecTime || again.Summary.ExecTime <= 0 {
+					t.Fatalf("refresh execTime %v (first %v): each request reports its own time", again.Summary.ExecTime, miss.Summary.ExecTime)
+				}
+				tc.check(t, miss, again)
+				t.Logf("loki %+v | proxy %+v | refresh %+v", loki.Summary, miss.Summary, again.Summary)
+			})
+		}
+	}
 }
