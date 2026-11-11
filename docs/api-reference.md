@@ -141,10 +141,12 @@ Loki's accounting (`-query-stats-mode=loki`):
 A response-cache hit reports what Loki reports for the same request with its
 default results cache: Loki computes a non-empty log query and an instant
 query on every request, so the proxy's hit of one replays the stored
-computation's lines, bytes, rates, splits, shards and querier time with the
-hit's own `execTime`; an empty log answer and a metric `query_range` are
-served from Loki's results cache, so their hits report no lines or bytes
-processed, the entry found and (metric) the pieces as `splits`. A metric
+computation's lines, bytes, rates, splits and querier time with the hit's
+own `execTime` (a log repeat's `shards` are the pieces between its oldest
+and newest entries: Loki serves the empty pieces from its results cache);
+an empty log answer and a metric `query_range` are served from Loki's
+results cache, so their hits report no lines or bytes processed, the entry
+found and the pieces as `splits`. A metric
 answer partly served from cached steps or extents reports no derived lines
 (Loki counts only the part it computed).
 

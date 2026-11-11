@@ -750,6 +750,9 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 		var storedBody []byte // the body this miss stored, for the gzip stats sidecar
 		p.captureGzipStatsSidecar(w, r, cacheKey, func() ([]byte, time.Duration) { return storedBody, ttl })
 		capture = newCompatCacheCaptureWriter(w, p.compatCache.MaxEntrySizeBytes())
+		// A miss that passed validation and limits: the exact bytes of a
+		// metric query are read next to it (query_stats_loki.go).
+		p.startExactMetricBytesFor(w, r)
 		rWithFlag := r.WithContext(context.WithValue(r.Context(), compatCacheActiveCtxKey{}, true))
 		next(capture, rWithFlag)
 		p.deriveQueryStatsTotalsFromCapture(r, endpoint, capture)

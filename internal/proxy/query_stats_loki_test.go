@@ -3,11 +3,16 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 // lokiSplitsRecording is testdata/loki_query_stats_splits.json: Loki 3.7.9's
@@ -26,11 +31,21 @@ type lokiSplitsRecording struct {
 		RangeSeconds int64 `json:"range_seconds"`
 		Splits       int64 `json:"splits"`
 		Shards       int64 `json:"shards"`
+		HitSplits    int64 `json:"hit_splits"`
+		HitShards    int64 `json:"hit_shards"`
 	} `json:"instant"`
 	VolumeRange []struct {
 		Start, End, Step int64
 		Splits           int64 `json:"splits"`
+		HitSplits        int64 `json:"hit_splits"`
 	} `json:"volume_range"`
+	EmptyLog []struct {
+		Start, End   int64
+		Splits       int64 `json:"splits"`
+		HitLines     int64 `json:"hit_lines"`
+		HitSplitsRaw int64 `json:"hit_splits"`
+		HitShards    int64 `json:"hit_shards"`
+	} `json:"empty_log"`
 	Log []struct {
 		Start, End, Limit int64
 		Direction         string
@@ -39,6 +54,9 @@ type lokiSplitsRecording struct {
 		TMax              int64 `json:"t_max"`
 		Splits, Shards    int64
 		Lines             int64
+		HitSplits         int64 `json:"hit_splits"`
+		HitShards         int64 `json:"hit_shards"`
+		HitLines          int64 `json:"hit_lines"`
 		Pieces            []struct {
 			Start, End int64
 			VLLines    int64 `json:"vl_lines"`
@@ -75,13 +93,14 @@ func TestLokiStatsEmulation_MatchesRecordedLokiAnswers(t *testing.T) {
 	}
 	for _, r := range rec.Instant {
 		n := lokiInstantPieces(time.Duration(r.RangeSeconds) * time.Second)
-		if splitsOf(n) != r.Splits || n != r.Shards {
-			t.Errorf("instant [%ds]: pieces %d; Loki splits %d shards %d", r.RangeSeconds, n, r.Splits, r.Shards)
+		// Loki computes an instant query again: the repeat is the same.
+		if splitsOf(n) != r.Splits || n != r.Shards || r.HitSplits != r.Splits || r.HitShards != r.Shards {
+			t.Errorf("instant [%ds]: pieces %d; Loki splits %d shards %d, repeat %d %d", r.RangeSeconds, n, r.Splits, r.Shards, r.HitSplits, r.HitShards)
 		}
 	}
 	for _, r := range rec.VolumeRange {
-		if n := lokiPieces(r.Start*sec, r.End*sec, r.Step*sec); n != r.Splits {
-			t.Errorf("volume_range [%d,%d] step %d: %d buckets; Loki splits %d", r.Start, r.End, r.Step, n, r.Splits)
+		if n := lokiPieces(r.Start*sec, r.End*sec, r.Step*sec); n != r.Splits || n != r.HitSplits {
+			t.Errorf("volume_range [%d,%d] step %d: %d buckets; Loki splits %d, repeat %d", r.Start, r.End, r.Step, n, r.Splits, r.HitSplits)
 		}
 	}
 	var whole, partial int
@@ -94,6 +113,15 @@ func TestLokiStatsEmulation_MatchesRecordedLokiAnswers(t *testing.T) {
 		}
 		if splits != r.Splits || run.ran != r.Shards {
 			t.Errorf("%s: ran %d of %d pieces; Loki splits %d shards %d", name, run.ran, run.pieces, r.Splits, r.Shards)
+		}
+		// Loki computes a non-empty log query again: the repeat is the same
+		// (the proxy's cache hit replays the computation).
+		// Loki serves the pieces that held no line from its results cache on
+		// the repeat, so its shards are the pieces between the oldest and
+		// newest entries.
+		if r.HitSplits != r.Splits || r.HitLines != r.Lines || r.HitShards != lokiLogHitShards(r.Start, r.End, r.TMin, r.TMax) {
+			t.Errorf("%s: Loki's repeat %d/%d/%d lines; first answer %d/%d/%d, entries' pieces %d", name, r.HitSplits, r.HitShards, r.HitLines,
+				r.Splits, r.Shards, r.Lines, lokiLogHitShards(r.Start, r.End, r.TMin, r.TMax))
 		}
 		var lines int64
 		for _, p := range r.Pieces {
@@ -114,6 +142,14 @@ func TestLokiStatsEmulation_MatchesRecordedLokiAnswers(t *testing.T) {
 		}
 	}
 	t.Logf("log rows: %d read whole pieces as emulated, %d forward rows partly read by Loki (store chunks)", whole, partial)
+	for _, r := range rec.EmptyLog {
+		n := lokiPieces(r.Start, r.End, lokiSplitInterval)
+		// An empty answer runs every piece; its repeat is Loki's
+		// results-cache hit: nothing processed, the pieces as splits.
+		if splitsOf(n) != r.Splits || r.HitLines != 0 || splitsOf(n) != r.HitSplitsRaw || r.HitShards != 0 {
+			t.Errorf("empty log [%d,%d]: pieces %d; Loki splits %d, repeat lines %d splits %d shards %d", r.Start, r.End, n, r.Splits, r.HitLines, r.HitSplitsRaw, r.HitShards)
+		}
+	}
 	if whole == 0 {
 		t.Fatal("no recorded log row reads whole pieces")
 	}
@@ -230,7 +266,9 @@ func TestLokiStats_SplitsShardsAndQuerierTimePerRoute(t *testing.T) {
 		loki       want
 	}{
 		{"metric", "/loki/api/v1/query_range", rangeParams(`sum(count_over_time({app="api"}[1m]))`), want{3, 3, 3, 0}},
-		{"log, limit not filled", "/loki/api/v1/query_range", rangeParams(`{app="api"}`, "limit", "100"), want{3, 3, 3, 3}},
+		// The stub's rows lie in one piece: the repeat's shards are that
+		// piece (Loki serves the empty pieces from its results cache).
+		{"log, limit not filled", "/loki/api/v1/query_range", rangeParams(`{app="api"}`, "limit", "100"), want{3, 3, 3, 1}},
 		{"instant 2h", "/loki/api/v1/query", url.Values{"query": {`sum(count_over_time({app="api"}[2h]))`}, "time": {fmt.Sprint(end)}}, want{2, 2, 2, 2}},
 		{"volume_range", "/loki/api/v1/index/volume_range", rangeParams(`{app="api"}`), want{120, 0, 120, 0}},
 	} {
@@ -292,5 +330,96 @@ func TestLokiLogSummary_EstimatesTheRunFromTheAnswer(t *testing.T) {
 		if s.lines != tc.wantLines || s.postFilter != tc.wantPost || s.bytes != tc.wantBytesPerLine*tc.wantLines {
 			t.Errorf("%s: %+v, want lines %d post %d bytes %d", tc.name, s, tc.wantLines, tc.wantPost, tc.wantBytesPerLine*tc.wantLines)
 		}
+	}
+}
+
+// TestLokiStats_ExactMetricBytesOnlyOnAMiss: with
+// -query-stats-exact-metric-bytes a metric query cache miss also reads the
+// selector's volume from VictoriaLogs and reports its sum as bytes
+// processed; a cache hit and a request rejected by validation send no
+// VictoriaLogs request at all.
+//
+// conformance: query-stats-envelope
+func TestLokiStats_ExactMetricBytesOnlyOnAMiss(t *testing.T) {
+	stub := &statsStubVL{rows: 3}
+	var mu sync.Mutex
+	volumes, total := 0, 0
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		total++
+		if r.URL.Path == "/select/logsql/stats_query" {
+			volumes++
+		}
+		mu.Unlock()
+		stub.ServeHTTP(w, r)
+	}))
+	defer vl.Close()
+	counts := func() (int, int) {
+		mu.Lock()
+		defer mu.Unlock()
+		return total, volumes
+	}
+	newProxy := func(exact bool) http.Handler {
+		p, err := New(Config{BackendURL: vl.URL, Cache: cache.New(time.Minute, 1000), CompatCache: cache.New(time.Minute, 100),
+			LogLevel: "error", QueryStatsExactMetricBytes: exact})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = p.Shutdown(t.Context()) })
+		mux := http.NewServeMux()
+		p.RegisterRoutes(mux)
+		return mux
+	}
+	now := time.Now().Truncate(time.Minute)
+	params := func(q string) url.Values {
+		return url.Values{"query": {q}, "step": {"60"}, "start": {fmt.Sprint(now.Add(-10 * time.Minute).Unix())}, "end": {fmt.Sprint(now.Unix())}}
+	}
+	plain, exact := newProxy(false), newProxy(true)
+	t0, _ := counts()
+	_ = serveQueryStats(t, plain, "/loki/api/v1/query_range", params(`sum(count_over_time({app="api"}[1m]))`), nil)
+	t1, v1 := counts()
+	miss := statsView(t, serveQueryStats(t, exact, "/loki/api/v1/query_range", params(`sum(count_over_time({app="api"}[1m]))`), nil))
+	t2, v2 := counts()
+	// The volume of the selector, read the way the volume endpoint reads it.
+	if v2-v1 == 0 || t2-t1 <= t1-t0 {
+		t.Fatalf("miss: %d VictoriaLogs requests (%d volume), the plain proxy %d", t2-t1, v2-v1, t1-t0)
+	}
+	// The bytes are the selector's volume over the window the query reads,
+	// (start - 1m, end], as the volume endpoint answers it.
+	var vol struct {
+		Data struct {
+			Result []struct {
+				Value []json.RawMessage `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	volParams := url.Values{"query": {`{app="api"}`}, "targetLabels": {"service_name"},
+		"start": {fmt.Sprint(now.Add(-11 * time.Minute).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())}}
+	if err := json.Unmarshal(serveQueryStats(t, plain, "/loki/api/v1/index/volume", volParams, nil), &vol); err != nil {
+		t.Fatal(err)
+	}
+	var want int64
+	for _, r := range vol.Data.Result {
+		var v string
+		_ = json.Unmarshal(r.Value[1], &v)
+		n, _ := strconv.ParseInt(v, 10, 64)
+		want += n
+	}
+	if want == 0 || miss.Summary.Bytes != want {
+		t.Fatalf("miss bytes %d, want the selector's volume %d", miss.Summary.Bytes, want)
+	}
+	t2, _ = counts()
+	_ = serveQueryStats(t, exact, "/loki/api/v1/query_range", params(`sum(count_over_time({app="api"}[1m]))`), nil)
+	if t3, _ := counts(); t3 != t2 {
+		t.Fatalf("a cache hit sent %d VictoriaLogs requests", t3-t2)
+	}
+	bad := params(`sum(count_over_time({app="api"}[1m])`) // a parse error: Loki's 400
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+bad.Encode(), nil)
+	req.Header.Set("X-Scope-OrgID", "0")
+	rec := httptest.NewRecorder()
+	t4, _ := counts()
+	exact.ServeHTTP(rec, req)
+	if t5, _ := counts(); rec.Code != http.StatusBadRequest || t5 != t4 {
+		t.Fatalf("rejected request: status %d, %d VictoriaLogs requests", rec.Code, t5-t4)
 	}
 }

@@ -38,10 +38,10 @@ import (
 const (
 	// queryStatsCompatFence versions query and query_range compat keys whose
 	// values end with the stats trailer.
-	queryStatsCompatFence  = "qs2:"
+	queryStatsCompatFence  = "qs3:"
 	statsSidecarGzipSuffix = "#qs1gz"
 	statsSidecarMagic      = "qs1"
-	statsTrailerMagic      = "\x00qs2"
+	statsTrailerMagic      = "\x00qs3"
 )
 
 func statsSidecarKey(cacheKey string) string { return cacheKey + statsSidecarGzipSuffix }
@@ -389,6 +389,10 @@ func (w *queryStatsWriter) trailer() statsTrailer {
 	t.replay = true
 	t.replayed = statsReplay{bytes: s.bytes, lines: s.lines, postFilter: s.postFilter, exec: max(exec, time.Nanosecond),
 		splits: rep.splits, shards: rep.shards, querierExec: rep.querierExec}
+	if logs && w.lokiMode && w.entries.hasTS {
+		q := w.request()
+		t.replayed.shards = lokiLogHitShards(q.start, q.end, parseTS19(w.entries.tsMin), parseTS19(w.entries.tsMax))
+	}
 	return t
 }
 

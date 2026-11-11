@@ -164,9 +164,6 @@ func (p *Proxy) queryStatsLayer(endpoint string, next http.HandlerFunc) http.Han
 		sw.route, sw.req, sw.lokiMode = kind, r, !p.queryStatsVictoriaLogsMode
 		if sw.lokiMode {
 			sw.entries.trackTS = kind == statsRouteRange
-			if p.queryStatsExactMetricBytes && kind != statsRouteVolume {
-				p.startExactMetricBytes(r, sw)
-			}
 		}
 		rt.mu.Lock()
 		rt.statsWriter = sw

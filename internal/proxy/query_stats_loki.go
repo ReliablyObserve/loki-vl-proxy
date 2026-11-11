@@ -29,6 +29,8 @@ import (
 //     piece it runs is read whole (its lines and bytes processed are every
 //     line of the pieces it ran); splits = the pieces it ran when the query
 //     was split, else 0; shards = the pieces it ran.
+//     An empty log answer comes from Loki's results cache on a repeat:
+//     nothing processed, splits = the window's pieces when more than one.
 //   - volume_range: splits = the step buckets, aligned to the step since the
 //     epoch, the window touches; volume: 1.
 
@@ -191,6 +193,21 @@ func maxRangeOf(expr logqlpkg.Expr) time.Duration {
 	return longest
 }
 
+// lokiLogHitShards is the shards of a repeat of a log query Loki computes
+// again: Loki serves the pieces that held no line from its results cache
+// (an empty piece is cached), so only the pieces between the answer's oldest
+// and newest entries count.
+func lokiLogHitShards(start, end, tMin, tMax int64) int64 {
+	from, to := max(start, tMin), tMax+1
+	if to > end {
+		to = end
+	}
+	if to <= from {
+		return 1
+	}
+	return lokiPieces(from, to, lokiSplitInterval)
+}
+
 // parseTS19 reads a 19-digit nanosecond timestamp.
 func parseTS19(b [19]byte) int64 {
 	var v int64
@@ -289,6 +306,10 @@ func (w *queryStatsWriter) lokiHitReport(rep *statsReport, logs bool) {
 		if q := w.request(); q.ok {
 			rep.splits = max(lokiMetricRangePieces(q.start, q.end, q.step), 1)
 		}
+	case w.route == statsRouteRange: // an empty log answer, from Loki's results cache
+		if q := w.request(); q.ok {
+			rep.splits = splitsOf(lokiPieces(q.start, q.end, lokiSplitInterval))
+		}
 	}
 }
 
@@ -299,6 +320,21 @@ func (w *queryStatsWriter) lokiVolumeSplits() int64 {
 		return 1
 	}
 	return lokiPieces(q.start, q.end, q.step)
+}
+
+// startExactMetricBytesFor starts the exact bytes request of a metric query
+// cache miss (-query-stats-exact-metric-bytes with -query-stats-mode=loki),
+// called where the response cache misses: after validation and limits, so
+// a rejected request and a cache hit send nothing to VictoriaLogs.
+func (p *Proxy) startExactMetricBytesFor(w http.ResponseWriter, r *http.Request) {
+	if !p.queryStatsExactMetricBytes {
+		return
+	}
+	sw := statsWriterFor(w, r)
+	if sw == nil || !sw.lokiMode || sw.route == statsRouteVolume || sw.exactBytes != nil {
+		return
+	}
+	p.startExactMetricBytes(r, sw)
 }
 
 // startExactMetricBytes starts, next to a metric query, the VictoriaLogs

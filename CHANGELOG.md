@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     as `queryLengthServed`.
   Volume answers report the series returned and no processed lines or
   bytes, as Loki's. Query and query_range response-cache entries are read
-  once more from VictoriaLogs after the upgrade (new `qs2:` key fence). The
+  once more from VictoriaLogs after the upgrade (new `qs3:` key fence). The
   log query no longer takes its bytes from a `volume_range` answer of its
   selector (whole steps left up to a tenth of the window out).
 

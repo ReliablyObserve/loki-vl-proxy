@@ -76,7 +76,7 @@ proxy: |
   and volume_range answers.
   A response-cache hit is finished without reading the body again
   (query_stats_cache.go): the cached value ends with the answer's entry
-  count (a trailer behind the `qs1:` key fence, `qs2:` since
+  count (a trailer behind the `qs1:` key fence, `qs3:` since
   query-stats-loki-accounting, so no code that does not
   know it reads such a value, here or on a peer), and for gzip clients a
   local sidecar holds the gzip encoding of the body up to its last 64 bytes,
@@ -314,7 +314,7 @@ decisions:
       answer found.
       Per cache tier: a response-cache hit of a non-empty log answer or an
       instant answer -> the stored computation's totals and rates (the stats
-      trailer carries them, behind the `qs2:` key fence); an empty log
+      trailer carries them, behind the `qs3:` key fence); an empty log
       answer and a metric query_range hit -> Loki's results-cache hit (0
       processed, the entry found); a metric answer partly from cached steps
       or extents (stats extent cache, settled steps) -> no derived totals
@@ -432,16 +432,22 @@ decisions:
     evidence: |
       Recorded 2026-11-11 from the freshly rebuilt stack (Loki 3.7.9,
       VictoriaLogs v1.53.0), internal/proxy/testdata/loki_query_stats_splits.json:
-      26 metric query_range rows (5m to 2d, steps 60 and 120, windows on and
-      across hour boundaries), 10 instant ranges (5m to 2d), 13 volume_range
-      rows (steps 15 s to 1h), 48 log rows (5m to 24h, limits 100 to 10,000,
-      both directions, with VictoriaLogs' line count of every 1h piece):
-      every splits and shards value matches the rules
-      (TestLokiStatsEmulation_MatchesRecordedLokiAnswers); the lines of the
-      pieces the rule reads equal Loki's totalLinesProcessed on all 32
-      backward and unsplit rows, and on the 16 forward rows that start in a
-      piece Loki already flushed to its store Loki read part of it (15,383 to
-      25,358 of 35,315 lines). Loki vs a local build (default mode) on the
+      every request sent twice (first answer and repeat): 26 metric
+      query_range rows (5m to 2d, steps 60 and 120, windows on and across
+      hour boundaries), 10 instant ranges (5m to 2d), 13 volume_range rows
+      (steps 15 s to 1h), 56 log rows (5m to 2d, limits 100 to 10,000, both
+      directions, with VictoriaLogs' line count of every 1h piece), 3 empty
+      log answers (5m, 1h, 6h): every splits and shards value matches the
+      rules, first answer and repeat
+      (TestLokiStatsEmulation_MatchesRecordedLokiAnswers): a repeated log or
+      instant query is computed again (same lines and splits; a log repeat's
+      shards are only the pieces between its oldest and newest entries, the
+      empty pieces coming from Loki's results cache), a repeated empty log
+      answer is a results-cache hit (0 lines, the pieces as splits, no
+      shards), a repeated volume_range keeps its splits; the lines of the
+      pieces the rule reads equal Loki's totalLinesProcessed on all 36
+      backward and unsplit rows, and on the 20 forward rows that start in a
+      piece Loki already flushed to its store Loki read part of it. Loki vs a local build (default mode) on the
       stack, {service_name="api-gateway"}, windows ending a minute ago:
       log limit 1000 5m lines 5,250 | 5,327, bytes 1,799,470 | 1,784,230;
       1h 24,150 | 24,504, bytes 8,282,888 | 8,207,051, splits 1 | 1; the
@@ -453,7 +459,7 @@ decisions:
       6h and 24h splits 6, 24 | 6, 24; volume_range splits 5, 60, 300, 301 |
       the same; querierExecTime 0.013-0.06 s on misses, 0 on hits.
     code: [internal/proxy/query_stats_loki.go, internal/proxy/query_stats.go, internal/proxy/query_stats_cache.go, internal/proxy/query_stats_totals.go, internal/proxy/proxy.go, cmd/proxy/main.go, internal/config/limits.go]
-    tests: [TestLokiStatsEmulation_MatchesRecordedLokiAnswers, TestLokiLogQueryRun_Table, TestLokiLogSummary_EstimatesTheRunFromTheAnswer, TestLokiStats_SplitsShardsAndQuerierTimePerRoute, TestLokiStats_MetricBytesFromTheSelectorsMeanLine, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStatsTotals_MetricAnswerSumsToLokisWindow, TestDrilldown_QueryStatsLikeLoki]
+    tests: [TestLokiStatsEmulation_MatchesRecordedLokiAnswers, TestLokiStats_ExactMetricBytesOnlyOnAMiss, TestLokiLogQueryRun_Table, TestLokiLogSummary_EstimatesTheRunFromTheAnswer, TestLokiStats_SplitsShardsAndQuerierTimePerRoute, TestLokiStats_MetricBytesFromTheSelectorsMeanLine, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStatsTotals_MetricAnswerSumsToLokisWindow, TestDrilldown_QueryStatsLikeLoki]
     quality: |
       Every rule is checked against the recorded Loki answers, every row;
       the e2e test compares each figure with Loki's live answer for the same
@@ -466,7 +472,7 @@ decisions:
       forward queries; structured-metadata bytes.
     performance:
       tracked: ['BenchmarkQueryAnswerPaths', 'BenchmarkQueryStatsWriter']
-      bound: 'no VictoriaLogs request added by default; with -query-stats-exact-metric-bytes one volume request per metric query miss, sent next to the query and ending with it; per answer one timestamp comparison per log entry (the 19-digit text), one parse of the query for an instant range, one mean-line-size write per log miss and one read per metric miss'
+      bound: 'no VictoriaLogs request added by default; with -query-stats-exact-metric-bytes the volume of the selector read once per metric query cache miss, started where the response cache misses (after validation and limits: a rejected request or a hit sends nothing), next to the query and ending with it; per answer one timestamp comparison per log entry (the 19-digit text), one parse of the query for an instant range, one mean-line-size write per log miss and one read per metric miss'
       measured: |
         Apple M5 Pro, GOMAXPROCS=4, benchstat of 10 interleaved runs, base
         origin/main 59dfecb29, default mode (loki), the stub of
