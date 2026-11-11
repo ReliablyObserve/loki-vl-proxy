@@ -52,6 +52,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `| drop Ip` dropped it). Answers cached before this change are not reused for
   these queries (a response cache key version).
 
+## [2.133.0] - 2026-11-11
+
+### Changed
+
+- The query plan holds `stddev` and `stdvar` the way the proxy evaluates
+  them, for every translation profile: one series fold per aggregation, with
+  its `by` or `without` clause, over the operand's own query, which is the
+  request the proxy sends (it translates the operand alone and takes the
+  population deviation or variance of each group's series at each step
+  itself). The `sum`, `avg`, `min`, `max` and `count` layers above a ranking
+  are covered too, and the shadow holds them to the proxy's own route, not to
+  the translator's text for the whole query. A `stddev`, `stdvar` or ranking
+  below the one level the proxy evaluates (`sum(stddev by (app) (..))`,
+  `topk(2, stddev by (app) (..))`, `stddev(topk(3, ..))`) is held as the
+  chain Loki evaluates and recorded as a known difference of the proxy, which
+  answers the translator's text for those and drops the level: the answers
+  are unchanged until the proxy serves these queries from the plan. Nothing
+  serves the plan yet: no request sent to VictoriaLogs and no answer
+  changes. A `stddev` or `stdvar` by a label of a query with a parser, a
+  binary operation operand and a `stddev` under a binary operation stay with
+  the string translator. A query whose line filter holds a quoted `| json`
+  (or `| logfmt`, `| pattern`, `| regexp`, `| unpack`) followed by a
+  non-ASCII character is now left to the string translator, which reads it
+  as a parser stage where the plan did not.
+
 ## [2.132.0] - 2026-11-11
 
 ### Changed
