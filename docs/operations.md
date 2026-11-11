@@ -174,6 +174,18 @@ When set, the client still sends `X-Scope-OrgID`. For an org ID that is not in t
 
 `-auth.enabled=true` has the same effect on requests without the header (`401`). Neither flag authenticates the header value; put an authenticating proxy in front of the proxy when tenants must not be able to choose their own `X-Scope-OrgID`.
 
+### Who is loading the proxy or VictoriaLogs
+
+Every `slow_request` and `slow_upstream_request` line names its tenant (with the
+VictoriaLogs account and project it goes to), its user and Grafana app, and what
+it cost VictoriaLogs. `/debug/queries` lists the heaviest callers by
+VictoriaLogs time and bytes, and `loki_vl_proxy_tenant_vl_*_total` count each
+tenant's VictoriaLogs cost. To name Grafana users set Grafana's
+`[dataproxy] send_user_header = true` and `-log-user-header=X-Grafana-User`
+(Helm `observability.queryUser.header`). Every identity option, its default and
+the spoofing caveat: [Grafana user identity](observability.md#grafana-user-identity)
+and [Who is loading the proxy or VictoriaLogs](observability.md#who-is-loading-the-proxy-or-victorialogs).
+
 ---
 
 ## Health Check Endpoints

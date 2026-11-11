@@ -952,6 +952,7 @@
     "internal/logsql/parser_typed_test.go | architecture-syntax-package-layering",
     "internal/logsql/pipe_math_as_test.go | architecture-syntax-package-layering",
     "internal/logsql/reserved_fields_test.go | semantics/translator-writes-reserved-field-names",
+    "internal/metrics/callertracker_test.go | observability-slow-query-log",
     "internal/metrics/request_flow_test.go | observability-query-flow",
     "internal/middleware/coalescer_body_limit_test.go | limits/label-values-response-cap",
     "internal/middleware/coalescer_cancel_test.go | backend-deadlines-and-cancellation",
@@ -1343,6 +1344,7 @@
     "internal/proxy/quantile_histogram_test.go | semantics/unwrap-quantile-response-limit",
     "internal/proxy/quantile_slider_harden_test.go | quality/query-range-settled-steps",
     "internal/proxy/quantile_slider_harden_test.go | semantics/unwrap-quantile-response-limit",
+    "internal/proxy/query_caller_test.go | observability-slow-query-log",
     "internal/proxy/query_flow_test.go | observability-query-flow",
     "internal/proxy/query_flow_test.go | observability-slow-query-log",
     "internal/proxy/query_lowering_test.go | architecture-syntax-package-layering",
@@ -2199,7 +2201,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 493,
+      "go": 495,
       "playwright": 1
     },
     "page_kinds": {

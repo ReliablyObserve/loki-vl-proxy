@@ -180,9 +180,9 @@ VictoriaLogs or the cache and tail internals, is described under Log Sources):
 | `event.duration` | request duration in nanoseconds; `proxy.duration_ms` is the same in milliseconds |
 | `loki.tenant.id` | the `X-Scope-OrgID` of the request |
 | `loki.query` | the LogQL, cut at 200 bytes |
-| `enduser.id`, `enduser.source`, `enduser.name`, `auth.source` | the client identity and how it was derived (`-metrics.trust-proxy-headers`); `auth.source` is only the mechanism (for example `basic_auth`), never the credential |
+| `enduser.id`, `enduser.source`, `enduser.name`, `auth.source` | who sent the request and how the proxy knows: the user named by `-log-user-header` or the trusted headers of `-metrics.trust-proxy-headers`, otherwise the tenant (`enduser.source` `tenant`) or the client address; capped at 128 bytes, control characters escaped. `auth.source` is only the mechanism (for example `basic_auth`), never the credential. See [Who is loading the proxy or VictoriaLogs](#who-is-loading-the-proxy-or-victorialogs) |
 | `client.address`, `network.peer.address`, `user_agent.original` | the forwarded client address, the connection peer and the user agent |
-| `grafana.*` | the Grafana version, surface (Explore, Drilldown), source tag and profiles read from the user agent and `X-Query-Tags`, when present |
+| `grafana.*` | the Grafana version, surface (Explore, Drilldown), source tag and profiles read from the user agent and `X-Query-Tags`, and `grafana.query_tags`, the `X-Query-Tags` header as sent (capped at 256 bytes) when it holds more than the Source tag |
 | `cache.result` | the answer-cache outcome of the request: `hit`, `miss` or `bypass` (cache not used) |
 | `proxy.overhead_ms` | the request's duration minus `upstream.duration_ms` (never below 0) |
 | `upstream.calls`, `upstream.duration_ms`, `upstream.status_code`, `upstream.error` | the requests sent to VictoriaLogs and Loki-compatible backends for this request: how many, their summed time to the response headers, the last status and whether any failed |
@@ -205,6 +205,7 @@ metrics, which see every request whatever the log sampling.
 | `flow.cache.ms`, `flow.cache.bytes` | summed lookup time, and the bytes the cache returned on hits and stale reads |
 | `flow.cache.by_tier` | per tier (`l1_memory`, `l2_disk`, `l3_peer`, `unknown`) the `hits`, `misses` and `stale` counts. A read through every tier that misses is `unknown` (it consulted all of them); a memory-only read is `l1_memory` |
 | `flow.vl.calls`, `flow.vl.ms`, `flow.vl.bytes` | VictoriaLogs calls, their summed time from sending to the end of the response body (the slow-query definition, so body reading is included), and the decoded response bytes. `upstream.calls` and `upstream.duration_ms` keep their earlier meaning (time to the response headers) |
+| `flow.vl.rows` | on `slow_request` only: log rows read from VictoriaLogs raw query bodies (0 for stats and metadata calls, which return aggregates) |
 | `flow.proxy.ms` | the request's own time: its duration minus `flow.vl.ms` and `flow.cache.ms`, never below 0. It includes the parse and translate time, which are not subtracted |
 
 Times are sums of the calls' own times. When a request runs calls in parallel
@@ -261,7 +262,15 @@ How to read it:
   "flow.vl.calls": 2,
   "flow.vl.ms": 4180,
   "flow.vl.bytes": 912340,
+  "flow.vl.rows": 0,
   "flow.proxy.ms": 29,
+  "vl.account_id": "10",
+  "vl.project_id": "0",
+  "enduser.id": "alice@example.com",
+  "enduser.source": "grafana_user",
+  "enduser.name": "alice@example.com",
+  "grafana.client.source_tag": "grafana-lokiexplore-app",
+  "grafana.client.surface": "grafana_drilldown",
   "proxy.steps": [
     {"kind": "cache", "at_ms": 0, "tier": "unknown", "result": "miss", "bytes": 0, "duration_ms": 0},
     {"kind": "rewrite", "at_ms": 0, "from": "sum by (level) (count_over_time({service_name=\"api\"} | json [5m]))",
@@ -282,7 +291,9 @@ How to read it:
 | `http.route`, `loki.request.type`, `http.response.status_code`, `event.duration`, `loki.tenant.id`, `cache.result`, `upstream.calls`, `upstream.duration_ms` | as on the `request` line |
 | `slow.threshold_ms` | the `-slow-query-threshold` that was crossed |
 | `loki.query` | the LogQL as received: its text up to 8 KB, or its `sha256:` hash and length with `-slow-query-log-raw-queries=false` |
-| `flow.*` | as on the `request` line |
+| `flow.*` | as on the `request` line: what the request cost, with `flow.vl.calls`, `flow.vl.ms`, `flow.vl.bytes` and `flow.vl.rows` its VictoriaLogs cost |
+| `enduser.*`, `grafana.*` | who ran it and from which Grafana app, as on the `request` line |
+| `vl.account_id`, `vl.project_id` | the VictoriaLogs tenant the tenant's queries go to (its `-tenant-map` entry, the numeric org itself, or `0`/`0` for the default tenant); `vl.tenant_label` instead names the field of `-tenant-label` routing. Absent for a multi-tenant request (`a\|b`, whose `slow_upstream_request` lines carry each tenant's) and a refused one |
 | `proxy.steps` | the request's steps, listed as they started, each with `at_ms` (the offset from the request's start); at most 64 |
 | `proxy.steps_dropped` | steps beyond the limit that were counted, not kept (only present when above 0); at most 16 of the 64 are cache steps, so a request that reads the cache many times keeps room for its VictoriaLogs calls |
 
@@ -318,6 +329,13 @@ steps (of any kind) not kept.
   "vl.window": "start=1794000000 end=1794003600 step=300",
   "vl.body_bytes": 640112,
   "vl.body_outcome": "eof",
+  "vl.account_id": "10",
+  "vl.project_id": "0",
+  "enduser.id": "alice@example.com",
+  "enduser.source": "grafana_user",
+  "enduser.name": "alice@example.com",
+  "grafana.client.source_tag": "grafana-lokiexplore-app",
+  "grafana.client.surface": "grafana_drilldown",
   "http.parent_route": "/loki/api/v1/query_range"
 }
 ```
@@ -330,6 +348,8 @@ steps (of any kind) not kept.
 | `vl.query`, `vl.window` | the LogsQL (text up to 8 KB, or its hash) and the `start`, `end`, `step` it was sent with |
 | `vl.body_bytes`, `vl.body_outcome` | decoded body bytes and how the body ended (`eof`, `closed`, `canceled`, `timeout`, `error`) |
 | `http.parent_route` | the client route the call served |
+| `loki.tenant.id`, `vl.account_id`, `vl.project_id`, `vl.tenant_label` | the tenant the call ran for and its VictoriaLogs tenant, as on `slow_request` |
+| `enduser.*`, `grafana.*` | the caller of the client request the call served. A call shared by coalesced identical requests, or started by one and reused by others, runs in the context of the request that started it and names that caller |
 | `proxy.background` | `true` when the call outlived its request (a background build); such a call is in no request's trace |
 
 ### Log Sources
@@ -399,6 +419,200 @@ timed to headers; above the 99.9th timed to the end of their bodies).
 | `-slow-upstream-threshold` | `2s` | VictoriaLogs call duration (to the end of its body) at or over which it is slow; `0` turns it off |
 | `-slow-query-log-raw-queries` | `true` | Slow lines carry the queries' text (capped at 8 KB); `false` carries their sha256 and length |
 | `-slow-query-log-level` | `warn` | Level of the slow lines: `warn`, `info`, `debug` (written only when `-log-level` lets it through), or `off` (no lines and no trace; the metric still counts) |
+
+### Who is loading the proxy or VictoriaLogs
+
+Every line that reports a query (`request`, `upstream_request`, `slow_request`,
+`slow_upstream_request`) names its caller: the user (`enduser.id`,
+`enduser.source`, `enduser.name`), the tenant (`loki.tenant.id`, and on the slow
+lines the VictoriaLogs `vl.account_id`/`vl.project_id` or `vl.tenant_label`)
+and the Grafana app (`grafana.client.source_tag`, `grafana.client.surface`, and
+`grafana.query_tags`, all of `X-Query-Tags`, when it holds more than the Source
+tag). The slow lines also carry what the request cost: `flow.vl.calls`,
+`flow.vl.ms`, `flow.vl.bytes` and `flow.vl.rows` on `slow_request`;
+`event.duration` and `vl.body_bytes` on `slow_upstream_request`. One line
+answers "who did this and what did it cost".
+
+The caller is resolved only when a line is written or the callers view records
+a request, so a request that logs nothing pays nothing for it.
+
+#### Grafana user identity
+
+Every option that decides who a request is attributed to, with its default:
+
+| Option | Default | Effect |
+|---|---|---|
+| Grafana `[dataproxy] send_user_header` (`GF_DATAPROXY_SEND_USER_HEADER`) | `false` | Grafana adds `X-Grafana-User: <login>` to the datasource requests it proxies. Only signed-in users get the header: requests of anonymous users carry none, and are logged under their tenant |
+| `-log-user-header` | (empty: off) | The header named here (for example `X-Grafana-User`) is the user on the log lines and in `/debug/queries`. Never a metric label, never sent to VictoriaLogs, never part of a cache key |
+| `-log-user-header-trusted-cidrs` | (empty: every peer) | The TCP peers (CIDRs or addresses) allowed to send that header; other peers' requests are logged under their tenant |
+| `-metrics.trust-proxy-headers` | `false` | Trusts `X-Grafana-User`, `X-Forwarded-User`, `X-Webauth-User` and `X-Auth-Request-User` (first one set wins) as the user, and `X-Forwarded-For` as the client address. It also labels the per-client metrics with that user (below), forwards those headers and `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Real-Ip`, `Forwarded` to VictoriaLogs, and makes them part of every cache key |
+| `-metrics.export-sensitive-labels` | `false` | Exports the per-tenant and per-client metrics at all |
+| `-metrics.max-tenants`, `-metrics.max-clients` | `256`, `256` | Distinct tenant and client label values kept before the rest become `__overflow__` |
+| `-server.enable-query-analytics` | `false` | Serves `/debug/queries`, with the callers view |
+
+Which identity a line names, in order: the `-log-user-header` value from a
+trusted peer; else, with `-metrics.trust-proxy-headers`, the first trusted user
+header (`enduser.source` `grafana_user`, `forwarded_user`, `webauth_user`,
+`auth_request_user`); else the tenant (`X-Scope-OrgID`, `enduser.source`
+`tenant`); else the client address (`remote_addr`, or `forwarded_for` with
+`-metrics.trust-proxy-headers`).
+
+Where the user appears:
+
+- the `request`, `upstream_request`, `slow_request` and `slow_upstream_request`
+  lines (`enduser.id`, `enduser.source`, `enduser.name`);
+- `/debug/queries` (`callers`: top callers and recent requests).
+
+Where it never appears: metric labels under `-log-user-header`, and no
+`loki_vl_proxy_tenant_*` metric at all. The one exception is the older
+`-metrics.trust-proxy-headers`: with `-metrics.export-sensitive-labels` also on,
+the `client` label of the `loki_vl_proxy_client_*` metrics is the trusted user
+(at most `-metrics.max-clients` values, then `__overflow__`). Leave that pair
+off when users must stay out of metrics.
+
+Spoofing: every one of these headers is written by the client. Trust them only
+when the proxy is reachable from Grafana or an authenticating gateway alone
+(a network policy, or `-log-user-header-trusted-cidrs` set to their addresses):
+any other client can put any name in them. `-metrics.trust-proxy-headers` has
+no address check of its own.
+
+#### Who ran this query
+
+Without a user header the caller is the tenant (`enduser.source` `tenant`).
+To name the Grafana user:
+
+1. Grafana sends the logged-in user in `X-Grafana-User` when its data proxy is
+   told to:
+
+   ```ini
+   [dataproxy]
+   send_user_header = true
+   ```
+
+   (`GF_DATAPROXY_SEND_USER_HEADER=true` in a container). The Loki datasource
+   must use `access: proxy` (the default).
+
+2. The proxy logs that header as the user:
+
+   ```bash
+   -log-user-header=X-Grafana-User
+   -log-user-header-trusted-cidrs=10.0.0.0/8   # where Grafana, or the load balancer in front of the proxy, connects from
+   ```
+
+   With Helm:
+
+   ```yaml
+   observability:
+     queryUser:
+       header: X-Grafana-User
+       trustedCIDRs: "10.0.0.0/8"
+   ```
+
+`-log-user-header` names the user in the logs and `/debug/queries` only. It
+never labels a metric (users are unbounded), is never sent to VictoriaLogs and
+is never part of a cache key, so two users opening the same dashboard share its
+cached answers. `-metrics.trust-proxy-headers=true` also names the user, but it
+additionally labels the per-client metrics with it (with
+`-metrics.export-sensitive-labels`), forwards the user headers to VictoriaLogs,
+and makes the user part of every cache key, so each user's requests are cached
+and sent to VictoriaLogs separately. Prefer `-log-user-header` unless
+VictoriaLogs needs the user.
+
+The header is sent by the client, so anyone who can reach the proxy can write
+any name in it. `-log-user-header-trusted-cidrs` accepts it only from the
+listed peers. The peer is the TCP connection's address (Grafana itself, or the
+last load balancer in front of the proxy), never `X-Forwarded-For`, which the
+client writes. A request from another peer, or without the header, is logged
+under its tenant. Either way the value is capped at 128 bytes (`...` marks the
+cut) and its control characters (C0, DEL, C1, U+2028, U+2029) and invalid UTF-8
+are escaped as `\uNNNN` / `\xNN`, so a name cannot forge a log line or a field.
+
+A slow Drilldown request by a Grafana user, and the VictoriaLogs call it made:
+
+```json
+{"severity": {"text": "WARN"}, "body": "slow_request", "http.route": "/loki/api/v1/query_range",
+ "http.response.status_code": 200, "event.duration": 4210000000, "slow.threshold_ms": 3000,
+ "loki.tenant.id": "team-a", "vl.account_id": "10", "vl.project_id": "0",
+ "enduser.id": "alice@example.com", "enduser.source": "grafana_user", "enduser.name": "alice@example.com",
+ "grafana.client.source_tag": "grafana-lokiexplore-app", "grafana.client.surface": "grafana_drilldown",
+ "loki.query": "sum by (level) (count_over_time({service_name=\"api\"} | json [5m]))",
+ "flow.vl.calls": 2, "flow.vl.ms": 4180, "flow.vl.bytes": 912340, "flow.vl.rows": 0, "proxy.steps": ["..."]}
+{"severity": {"text": "WARN"}, "body": "slow_upstream_request", "http.route": "/select/logsql/stats_query_range",
+ "event.duration": 2301000000, "vl.body_bytes": 640112, "loki.tenant.id": "team-a", "vl.account_id": "10",
+ "vl.project_id": "0", "enduser.id": "alice@example.com", "enduser.source": "grafana_user",
+ "grafana.client.source_tag": "grafana-lokiexplore-app", "http.parent_route": "/loki/api/v1/query_range",
+ "vl.query": "{service_name=\"api\"} | unpack_json | stats by (_time:5m, level) count() c"}
+```
+
+The same request without a user header names the tenant:
+`"enduser.id": "team-a", "enduser.source": "tenant"`.
+
+#### The heaviest callers: `/debug/queries`
+
+With `-server.enable-query-analytics`, `/debug/queries` (an admin route: on
+the loopback `-admin-listen` listener, or behind `-server.admin-auth-token`)
+adds a `callers` object next to the top queries:
+
+```json
+"callers": {
+  "window_seconds": 1800,
+  "since": 1794000000000,
+  "callers": 2,
+  "overflowed": false,
+  "top_by_vl_ms": [
+    {"tenant": "team-a", "user": "alice@example.com", "user_source": "grafana_user",
+     "last_grafana_source": "grafana-lokiexplore-app", "last_seen": 1794000912000,
+     "requests": 41, "errors": 0, "slow": 3, "duration_ms": 52310,
+     "vl_calls": 96, "vl_ms": 48712, "vl_bytes": 182334112, "vl_rows": 0}
+  ],
+  "top_by_vl_bytes": ["..."],
+  "recent_requests": [
+    {"time": 1794000912000, "tenant": "team-a", "user": "alice@example.com", "user_source": "grafana_user",
+     "grafana_source": "grafana-lokiexplore-app", "endpoint": "query_range", "route": "/loki/api/v1/query_range",
+     "status": 200, "query": "sum by (level) (count_over_time({service_name=\"api\"} | json [5m]))",
+     "requests": 1, "errors": 0, "slow": 1, "duration_ms": 4210, "vl_calls": 2, "vl_ms": 4180,
+     "vl_bytes": 912340, "vl_rows": 0}
+  ]
+}
+```
+
+- `top_by_vl_ms` and `top_by_vl_bytes`: the 20 callers (tenant and user) that
+  cost VictoriaLogs the most time and bytes over the window, with their
+  requests, errors (status 400 and above), slow requests, time and VictoriaLogs
+  calls, time, bytes and rows.
+- `recent_requests`: the 256 most recent client requests, newest first, each
+  with its caller, route, status, query (first 512 bytes) and cost.
+- `?tenant=team-a` and `?user=alice@example.com` keep the callers and requests
+  of that tenant or user (exact match; both may be given). The top-query lists
+  above them are not filtered.
+
+The window is two halves of 15 minutes: the lists cover between 15 and 30
+minutes of traffic (`since` is the oldest). Memory is bounded: at most 1000
+callers per half (the rest are summed under one `__overflow__` caller, and
+`overflowed` turns true) and 256 recent requests. The view is per replica and
+in memory; query each replica, or use the per-tenant metrics below for a
+fleet-wide view. Live tail is left out (it lasts as long as the client keeps
+it open).
+
+#### Per-tenant cost metrics
+
+With `-metrics.export-sensitive-labels`, like the other tenant metrics,
+`loki_vl_proxy_tenant_vl_calls_total`, `loki_vl_proxy_tenant_vl_duration_seconds_total`,
+`loki_vl_proxy_tenant_vl_response_bytes_total` and `loki_vl_proxy_tenant_vl_rows_total`
+count what each tenant's client requests cost VictoriaLogs (`tenant` label,
+bounded by `-metrics.max-tenants`). The heaviest tenant over the last hour:
+
+```promql
+topk(5, sum by (tenant) (rate(loki_vl_proxy_tenant_vl_duration_seconds_total[1h])))
+```
+
+No metric is labelled by user: users stay in the logs and `/debug/queries`.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `-log-user-header` | (empty) | Header naming the user who ran a query, for the logs and `/debug/queries` only (`X-Grafana-User` with Grafana's `send_user_header`) |
+| `-log-user-header-trusted-cidrs` | (empty) | Peers (CIDRs or addresses) allowed to send it; empty trusts every peer |
+| `-server.enable-query-analytics` | `false` | Serve `/debug/queries`, with the callers view |
 
 ### OpenTelemetry Fields Used in Logs
 
@@ -730,6 +944,10 @@ These are the metrics to use when you want to identify the users or tenants actu
 |---|---|---|---|---|
 | `loki_vl_proxy_tenant_requests_total` | counter | `system`, `direction`, `tenant`, `endpoint`, `route`, `status` | `High (capped)` | request volume by tenant |
 | `loki_vl_proxy_tenant_request_duration_seconds` | histogram | `system`, `direction`, `tenant`, `endpoint`, `route` | `High (capped)` | latency by tenant |
+| `loki_vl_proxy_tenant_vl_calls_total` | counter | `tenant` | `High (capped)` | VictoriaLogs calls made for the tenant's client requests |
+| `loki_vl_proxy_tenant_vl_duration_seconds_total` | counter | `tenant` | `High (capped)` | their summed time, to the end of the body (calls in parallel add up) |
+| `loki_vl_proxy_tenant_vl_response_bytes_total` | counter | `tenant` | `High (capped)` | bytes VictoriaLogs returned for them |
+| `loki_vl_proxy_tenant_vl_rows_total` | counter | `tenant` | `High (capped)` | log rows read from VictoriaLogs for them |
 | `loki_vl_proxy_client_requests_total` | counter | `system`, `direction`, `client`, `endpoint`, `route` | `High (capped)` | request volume by client identity |
 | `loki_vl_proxy_client_response_bytes_total` | counter | `client` | `High (capped)` | response bytes by client |
 | `loki_vl_proxy_client_status_total` | counter | `system`, `direction`, `client`, `endpoint`, `route`, `status` | `High (capped)` | final status breakdown by client |
@@ -761,7 +979,7 @@ That gives you:
 - per-client response-volume visibility via `loki_vl_proxy_client_response_bytes_total`
 - per-client query-size outlier visibility via `loki_vl_proxy_client_query_length_chars`
 - per-client bad-request and error clustering via `loki_vl_proxy_client_status_total` and `loki_vl_proxy_client_errors_total`
-- per-tenant volume and latency visibility via `loki_vl_proxy_tenant_*`
+- per-tenant volume and latency visibility via `loki_vl_proxy_tenant_*`, and the VictoriaLogs cost each tenant causes via `loki_vl_proxy_tenant_vl_*_total`
 
 Those tenant and client identity series are opt-in. Set `-metrics.export-sensitive-labels=true` only on trusted scrape or OTLP paths where exposing identity labels is acceptable.
 

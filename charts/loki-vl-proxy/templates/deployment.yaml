@@ -94,6 +94,7 @@ spec:
       {{- $observabilityOTLP := default (dict) (get $observability "otlp") }}
       {{- $observabilityMetrics := default (dict) (get $observability "metrics") }}
       {{- $observabilityServer := default (dict) (get $observability "server") }}
+{{- $observabilityQueryUser := default (dict) (get $observability "queryUser") }}
       {{- $adminAuth := default (dict) .Values.adminAuth }}
       {{- $adminAuthSecret := $adminAuth.existingSecret }}
       {{- $backendAuth := default (dict) .Values.backendAuth }}
@@ -161,6 +162,12 @@ spec:
             {{- end }}
             {{- if not (hasKey .Values.extraArgs "metrics.export-sensitive-labels") }}
             - {{ printf "-metrics.export-sensitive-labels=%s" (ternary "true" "false" (default false (get $observabilityMetrics "exportSensitiveLabels"))) | quote }}
+            {{- end }}
+            {{- if and (not (hasKey .Values.extraArgs "log-user-header")) (ne (default "" (get $observabilityQueryUser "header")) "") }}
+            - {{ printf "-log-user-header=%v" (get $observabilityQueryUser "header") | quote }}
+            {{- end }}
+            {{- if and (not (hasKey .Values.extraArgs "log-user-header-trusted-cidrs")) (ne (default "" (get $observabilityQueryUser "trustedCIDRs")) "") }}
+            - {{ printf "-log-user-header-trusted-cidrs=%v" (get $observabilityQueryUser "trustedCIDRs") | quote }}
             {{- end }}
             {{- if not (hasKey .Values.extraArgs "server.register-instrumentation") }}
             - {{ printf "-server.register-instrumentation=%s" (ternary "true" "false" (default true (get $observabilityServer "registerInstrumentation"))) | quote }}

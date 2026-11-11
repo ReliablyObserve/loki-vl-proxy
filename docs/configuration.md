@@ -1097,6 +1097,8 @@ Each takes `0` to mean "use the built-in default", so a configuration that sets 
 | `-metrics.max-clients` | — | `256` | Max unique client labels retained in `/metrics` before using `__overflow__` |
 | `-metrics.export-sensitive-labels` | — | `false` | Export per-tenant and per-client identity metrics on `/metrics` and OTLP |
 | `-metrics.trust-proxy-headers` | — | `false` | Trust user/proxy headers (`X-Grafana-User`, `X-Forwarded-User`, `X-Webauth-User`, `X-Auth-Request-User`, `X-Forwarded-*`) for client metrics/log attribution and backend context forwarding |
+| `-log-user-header` | — | — | Header naming the end user who ran a query (`X-Grafana-User` with Grafana's `[dataproxy] send_user_header = true`): `enduser.id` on the `request`, `upstream_request`, `slow_request` and `slow_upstream_request` lines and the user in `/debug/queries`. Logs and the admin view only: never a metric label, never sent to VictoriaLogs, never part of a cache key. Client-sent and spoofable: restrict it with `-log-user-header-trusted-cidrs`. See [Who is loading the proxy or VictoriaLogs](observability.md#who-is-loading-the-proxy-or-victorialogs). |
+| `-log-user-header-trusted-cidrs` | — | — | Comma-separated CIDRs or addresses of the TCP peers (Grafana, or the load balancer in front of the proxy) allowed to name the user through `-log-user-header`; a request from any other peer is logged under its tenant. Matches the connection's address, never `X-Forwarded-For`. Empty trusts every peer. An invalid value fails startup. |
 | `-debug-log-raw-queries` | — | `false` | Include raw LogQL/LogsQL strings and backend query params in `debug`-level logs. By default each query is logged as `sha256:<8hex>+len=<n>` to keep PII out of operator log pipelines. Set to `true` only for ad-hoc investigation; INFO-level access logs are unaffected. |
 | `-slow-query-threshold` | — | `3s` | A client request taking at least this long is counted in `loki_vl_proxy_slow_requests_total{system="loki"}` and logged at `WARN` as `slow_request` with its LogQL and its steps (each VictoriaLogs call with its LogsQL, window, status, bytes and time; each proxy-side operation and route decision; each rewrite), whatever the request-log sampling. Live tail is exempt. Default: the 99th percentile of the weekly A/B benchmark's cold first loads. `0` turns it off. |
 | `-slow-upstream-threshold` | — | `2s` | One VictoriaLogs call taking at least this long to the end of its body is counted in `loki_vl_proxy_slow_requests_total{system="vl"}` and logged at `WARN` as `slow_upstream_request` with its LogsQL, window, bytes and the client route it served. Default: rarer than 1 in 50 VictoriaLogs calls on the compose stack (98th percentile over 24h of heavy Drilldown use, timed to headers; above the 99.9th timed to the end of their bodies). `0` turns it off. |
@@ -1216,11 +1218,20 @@ Datasource auth credentials are forwarded separately as `X-Loki-VL-Auth-User` / 
 
 To attribute requests to real Grafana users instead of datasource service credentials:
 
-1. Enable trusted proxy headers on Loki-VL-proxy:
+1. Name the user header on Loki-VL-proxy, and trust it only from Grafana's addresses:
 
 ```bash
--metrics.trust-proxy-headers=true
+-log-user-header=X-Grafana-User
+-log-user-header-trusted-cidrs=10.0.0.0/8   # the addresses Grafana (or the load balancer in front of the proxy) connects from
 ```
+
+   With Helm: `observability.queryUser.header: X-Grafana-User` and `observability.queryUser.trustedCIDRs`.
+
+   This names the user in the logs and `/debug/queries` only. `-metrics.trust-proxy-headers=true` names it too,
+   and in addition labels the per-client metrics with it (with `-metrics.export-sensitive-labels`), forwards the
+   user headers to VictoriaLogs, and makes the user part of every cache key: each Grafana user then gets their
+   own cached answers, so the same dashboard opened by ten users costs VictoriaLogs ten times. Use it only when
+   VictoriaLogs (or a proxy in front of it) needs the user.
 
 2. Configure Grafana server dataproxy to forward the logged-in user header:
 
@@ -1243,8 +1254,9 @@ datasources:
 
 Expected request-log behavior with this setup:
 
-- `enduser.id` reflects the trusted Grafana/auth user.
+- `enduser.id` reflects the trusted Grafana/auth user, on the `request`, `upstream_request`, `slow_request` and `slow_upstream_request` lines.
 - `enduser.source` indicates user-header source (for example `grafana_user` or `forwarded_user`).
+- A request from a peer outside `-log-user-header-trusted-cidrs`, or without the header, is logged under its tenant (`enduser.source` `tenant`).
 - `auth.principal` reflects datasource auth identity when present (for example basic-auth datasource user).
 
 Alerting datasource integration is still partial: the proxy supports legacy Loki YAML rules reads and Prometheus-style JSON rules/alerts reads against a configured backend, but it does not yet implement the full Loki ruler write API surface.
