@@ -41,7 +41,10 @@ why: |
   The shadows hold the plan to the translator's text made right
   (lower.QuoteKeywordFieldText: the translator's text with those names
   quoted), and the fuzz targets leave out the query a json expression for a
-  key called or/and cuts (translatorMangledByKeywordKey).
+  key named like a LogQL keyword cuts (translatorMangledByKeywordKey): or,
+  and, unless, by, without, on, ignoring, group_left, group_right, offset,
+  bool, of, unwrap, the parser and format stage words, keep and drop, in
+  any case (a grid over every LogQL keyword as the key found exactly these).
 request:
   method: GET
   path: /loki/api/v1/query_range
