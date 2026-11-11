@@ -338,17 +338,20 @@ func TestUnicodeRunesMatchLoki(t *testing.T) {
 		t.Errorf("%d queries are accepted by the proxy and rejected by Loki because of a character", diffs)
 	}
 	// The limits may only shrink: the white space fix and the stage fix remove the first two, the characters the
-	// scanner still reports as errors the text classes.
-	if wideSpace > 649 || bareStage > 272 || nameLimit > 1463 {
+	// scanner still reports as errors the text classes. Since a stage name followed by more of the stage is
+	// rejected (semantics/stage-name-followed-by-more-of-stage), the 11 `| js<wide space>on` queries are rejected
+	// at the column of `on`, as the scanner skips the wide space: they moved from the first limit (649 to 638) to
+	// the white space text class (143 to 154, all classes 201 to 206).
+	if wideSpace > 638 || bareStage > 224 || nameLimit > 1463 {
 		t.Errorf("the limits grew: white space %d, bare-name stage %d, name %d", wideSpace, bareStage, nameLimit)
 	}
-	for class, bound := range map[string]int{"white space": 143, "ASCII symbol": 38, "bang": 13, "character literal": 7} {
+	for class, bound := range map[string]int{"white space": 154, "ASCII symbol": 38, "bang": 13, "character literal": 7} {
 		if textByClass[class] > bound {
 			t.Errorf("%d queries differ in text for %s, the limit is %d", textByClass[class], class, bound)
 		}
 	}
-	if textDiffs > 201 {
-		t.Errorf("%d queries differ in text, the limit is 201", textDiffs)
+	if textDiffs > 206 {
+		t.Errorf("%d queries differ in text, the limit is 206", textDiffs)
 	}
 	if accepted < 1000 || rejected < 1000 {
 		t.Fatalf("grid too small: %d accepted, %d rejected", accepted, rejected)
