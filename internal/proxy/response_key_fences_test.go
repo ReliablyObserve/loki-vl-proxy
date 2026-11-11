@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"gopkg.in/yaml.v3"
 )
 
@@ -24,7 +25,8 @@ func oldCompatQueryFences(r *http.Request, query string) string {
 		detectedLevelMutationResponseKeyVersion(query) +
 		keepMetadataProjectionResponseKeyVersion(query) +
 		ipLabelFilterResponseKeyVersion(query) +
-		repeatedLabelFilterResponseKeyVersion(query)
+		repeatedLabelFilterResponseKeyVersion(query) +
+		keywordLabelResponseKeyVersion(query)
 }
 
 func oldCompatQueryRangeFences(r *http.Request, query string) string {
@@ -40,6 +42,7 @@ func oldInnerQueryRangeFences(r *http.Request, query string) string {
 	key.WriteString(keepMetadataProjectionResponseKeyVersion(query))
 	key.WriteString(ipLabelFilterResponseKeyVersion(query))
 	key.WriteString(repeatedLabelFilterResponseKeyVersion(query))
+	key.WriteString(keywordLabelResponseKeyVersion(query))
 	return key.String()
 }
 
@@ -191,12 +194,12 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			if got := responseKeyFences(r, query, responseKeyInnerQueryRange); got != oldInner {
 				t.Errorf("inner query_range fences differ for %q (%s): got %q want %q", query, shape.name, got, oldInner)
 			}
-			if got, want := responseKeyFences(nil, query, responseKeyLogWindowShape), keepMetadataProjectionResponseKeyVersion(query); got != want {
+			if got, want := responseKeyFences(nil, query, responseKeyLogWindowShape), keepMetadataProjectionResponseKeyVersion(query)+keywordLabelResponseKeyVersion(query); got != want {
 				t.Errorf("window shape fences differ for %q: got %q want %q", query, got, want)
 			}
 			for _, f := range []string{
 				orderedJSONVectorResponseVersion, bareJSONMetricResponseVersion, logfmtPresenceResponseVersion,
-				detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion,
+				detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion, keywordLabelResponseVersion,
 			} {
 				if strings.Contains(oldInner, f) {
 					fired[f] = true
@@ -227,7 +230,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 	}
 	for _, f := range []string{
 		orderedJSONVectorResponseVersion, bareJSONMetricResponseVersion, logfmtPresenceResponseVersion,
-		detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion,
+		detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion, keywordLabelResponseVersion,
 	} {
 		if !fired[f] {
 			t.Errorf("no corpus query fires %s: the differential does not cover it", f)
@@ -277,5 +280,126 @@ func TestIPFilterResponseKeyVersionFencesLineAndLabelFilters(t *testing.T) {
 		if got := ipLabelFilterResponseKeyVersion(query) == ipLabelFilterResponseVersion; got != fenced {
 			t.Errorf("%s: fenced %v, want %v", query, got, fenced)
 		}
+	}
+}
+
+// TestKeywordLabelResponseKeyVersionFencesTheChangedReadings pins which queries carry the keyword label fence: a label
+// that is not all lower case ip or label_replace with no parenthesis after it, and a query now rejected for naming a
+// label after a word of Loki's lexer; no other query, the stages and ranges that use the same words included.
+//
+// conformance: cache-response-key-versions
+func TestKeywordLabelResponseKeyVersionFencesTheChangedReadings(t *testing.T) {
+	for query, fenced := range map[string]bool{
+		`{Ip="a"}`:                                       true,
+		`{app="a"} | IP="x"`:                             true,
+		`{app="a"} | drop Label_replace`:                 true,
+		`sum by (Ip) (count_over_time({app="a"}[5m]))`:   true,
+		`{OF="a"}`:                                       true,
+		`{app="a"} | keep OF`:                            true,
+		`{app="a"} | json a, drop`:                       true,
+		`sum by (json) (count_over_time({app="a"}[5m]))`: true,
+		`{app="a"} | label_format x=Offset`:              true,
+		`{app="a"} | json`:                               false,
+		`{app="a"} | logfmt | drop a | keep b | line_format "{{.a}}"`: false,
+		`{app="a"} | json | unwrap n`:                                 false,
+		`sum(count_over_time({app="a"}[5m] offset 1h))`:               false,
+		`sum(rate({app="a"}[5m])) > bool 1`:                           false,
+		`{app="a"} | addr = ip("10.0.0.1")`:                           false,
+		`{app="a"} | addr = IP("10.0.0.1")`:                           false,
+		`{app="a"} | x = ip ("10.0.0.1")`:                             false,
+		`{app="a"} |= "Ip" |~ "of json"`:                              false,
+		`{app="a"} | ip_addr="x"`:                                     false,
+		`{app="a"} | Zip="x"`:                                         false,
+		`label_replace(rate({app="a"}[5m]), "a", "b", "c", "d")`:      false,
+		`{app="a"} | not="x" | in="y"`:                                false,
+		``:                                                            false,
+	} {
+		got := keywordLabelResponseKeyVersion(query)
+		if (got == keywordLabelResponseVersion) != fenced {
+			t.Errorf("%s: fence %q, want fenced %v", query, got, fenced)
+		}
+	}
+	if allocs := testing.AllocsPerRun(100, func() {
+		_ = keywordLabelResponseKeyVersion(`{app="a",env=~"p.*"} | json | status="500" |= "error" | keep level`)
+	}); allocs != 0 {
+		t.Errorf("an unaffected query allocates %v times", allocs)
+	}
+}
+
+// TestKeywordLabelFenceMovesOnlyAffectedKeys: on the registry and matrix corpus the fence changes the response keys of
+// the queries the parser now reads differently or rejects, and no other.
+//
+// conformance: cache-response-key-versions
+func TestKeywordLabelFenceMovesOnlyAffectedKeys(t *testing.T) {
+	corpus := append([]string{}, fenceSyntheticQueries...)
+	corpus = append(corpus, fenceCorpusYAMLQueries(t)...)
+	for _, path := range []string{"../../bench/ab/shapes.json", "../../test/e2e-compat/query-semantics-matrix.json"} {
+		for _, s := range jsonStrings(t, path) {
+			if strings.Contains(s, "{") {
+				corpus = append(corpus, s)
+			}
+		}
+	}
+	moved := map[string]bool{}
+	for _, query := range corpus {
+		if keywordLabelResponseKeyVersion(query) != "" {
+			moved[query] = true
+		}
+	}
+	if len(moved) == 0 {
+		t.Fatal("no corpus query is fenced: the registry cases of the change are missing")
+	}
+	for query := range moved {
+		if !strings.Contains(query, `of="a"`) && !strings.Contains(query, "OF") && !strings.Contains(query, "Ip") && query != `not a logql | json keep x logfmt != ""` {
+			t.Errorf("an unaffected corpus query is fenced: %s", query)
+		}
+	}
+}
+
+// A reply cached under the key an older binary built is not served: the edge cache is looked up before the handler
+// validates the query, and the fenced key differs from the old one.
+//
+// conformance: cache-response-key-versions
+func TestKeywordLabelFenceDoesNotServeAnOldCachedAnswer(t *testing.T) {
+	const stale = `{"status":"success","data":{"resultType":"streams","result":[{"stream":{"stale":"yes"},"values":[["1700000000000000000","old"]]}],"stats":{}}}`
+	for _, c := range []struct {
+		query    string
+		wantCode int
+	}{
+		{`{OF="a"}`, http.StatusBadRequest}, // Loki's 400, not the 200 cached before
+		{`{Ip="a"}`, http.StatusOK},         // another field now: the backend answers, not the cache
+	} {
+		backendCalls := 0
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			backendCalls++
+			w.Header().Set("Content-Type", "application/x-ndjson")
+		}))
+		p := newCompatTestProxy(t, backend.URL)
+		target := "/loki/api/v1/query_range?" + url.Values{"query": {c.query}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}}.Encode()
+		// The route rewrites the keywords of the query (lowercaseQueryKeywords) before the cache key is built.
+		rewritten := logqlpkg.LowercaseKeywords(logqlpkg.StripParserFlags(logqlpkg.StripComments(c.query)))
+		keyTarget := "/loki/api/v1/query_range?" + url.Values{"query": {rewritten}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}}.Encode()
+		req := httptest.NewRequest(http.MethodGet, keyTarget, nil)
+		req.Header.Set("X-Scope-OrgID", "team-a")
+		key, ok := p.compatCacheKey("query_range", req)
+		if !ok || !strings.Contains(key, keywordLabelResponseVersion) {
+			t.Fatalf("%s: compat key %q lacks the fence", c.query, key)
+		}
+		oldKey := strings.Replace(key, keywordLabelResponseVersion, "", 1)
+		if oldKey == key {
+			t.Fatalf("%s: the fence does not move the key", c.query)
+		}
+		p.compatCache.Set(oldKey, []byte(stale))
+		rec := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "team-a"})
+		if rec.Code != c.wantCode || strings.Contains(rec.Body.String(), "stale") {
+			t.Errorf("%s: status %d, body %s; want %d and not the cached answer", c.query, rec.Code, rec.Body.String(), c.wantCode)
+		}
+		// Control: the same cached answer under the key the proxy builds now is served.
+		p.compatCache.Set(key, []byte(stale))
+		before := backendCalls
+		if rec := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "team-a"}); !strings.Contains(rec.Body.String(), "stale") || backendCalls != before {
+			t.Errorf("%s: the control did not hit the cache: %d %s", c.query, rec.Code, rec.Body.String())
+		}
+		backend.Close()
 	}
 }

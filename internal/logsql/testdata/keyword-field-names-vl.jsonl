@@ -1,0 +1,1166 @@
+{"q":"and:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"and\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"and\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and and:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"and\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or and:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"and\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not and:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"and\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -and:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"and\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (and:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"and\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and and:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"and\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter and:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"and\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"and\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and and:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"and\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and and:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"and\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete and","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, and","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as and","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename and as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (and) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (and)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as and","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (and)","v1.49.0":true,"v1.53.0":true}
+{"q":"or:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and or:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or or:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not or:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -or:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (or:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"or\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and or:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"or\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter or:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" or:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"or\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and or:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"or\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and or:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"or\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete or","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, or","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as or","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename or as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (or) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (or)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as or","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (or)","v1.49.0":true,"v1.53.0":true}
+{"q":"not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"\"not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" and \"not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" or \"not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" not \"not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (not:=\"x\" or a:=\"1\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"not\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and not:>=1)","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (a:=\"1\" and \"not\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter \"not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" not:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"not\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and not:!\"x\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"not\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and not:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"not\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete not","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, not","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as not","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename not as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (not) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (not)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as not","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (not)","v1.49.0":true,"v1.53.0":true}
+{"q":"in:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"\"in\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" in:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"in\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and in:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" and \"in\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or in:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" or \"in\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not in:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" not \"in\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -in:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"in\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (in:=\"x\" or a:=\"1\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"in\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and in:>=1)","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (a:=\"1\" and \"in\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter in:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter \"in\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" in:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"in\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and in:!\"x\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"in\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and in:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"in\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete in","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, in","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as in","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename in as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (in) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (in)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as in","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (in)","v1.49.0":true,"v1.53.0":true}
+{"q":"options:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"\"options\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" options:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"options\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and options:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"options\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or options:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"options\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not options:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"options\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -options:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"options\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (options:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"options\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and options:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"options\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter options:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"options\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" options:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"options\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and options:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"options\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and options:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"options\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete options","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, options","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as options","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename options as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (options) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (options)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as options","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (options)","v1.49.0":true,"v1.53.0":true}
+{"q":"contains_all:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"\"contains_all\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" contains_all:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"contains_all\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and contains_all:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" and \"contains_all\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or contains_all:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" or \"contains_all\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not contains_all:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" not \"contains_all\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -contains_all:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"contains_all\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (contains_all:=\"x\" or a:=\"1\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"contains_all\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and contains_all:>=1)","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (a:=\"1\" and \"contains_all\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter contains_all:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter \"contains_all\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" contains_all:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"contains_all\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and contains_all:!\"x\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"contains_all\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and contains_all:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"contains_all\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete contains_all","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, contains_all","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as contains_all","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename contains_all as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (contains_all) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (contains_all)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as contains_all","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (contains_all)","v1.49.0":true,"v1.53.0":true}
+{"q":"contains_any:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"\"contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" contains_any:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and contains_any:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" and \"contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or contains_any:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" or \"contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not contains_any:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" not \"contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -contains_any:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (contains_any:=\"x\" or a:=\"1\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"contains_any\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and contains_any:>=1)","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (a:=\"1\" and \"contains_any\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter contains_any:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter \"contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" contains_any:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"contains_any\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and contains_any:!\"x\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"contains_any\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and contains_any:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"contains_any\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete contains_any","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, contains_any","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as contains_any","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename contains_any as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (contains_any) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (contains_any)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as contains_any","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (contains_any)","v1.49.0":true,"v1.53.0":true}
+{"q":"contains_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"\"contains_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" contains_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"contains_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and contains_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" and \"contains_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or contains_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" or \"contains_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not contains_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" not \"contains_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -contains_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"contains_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (contains_common_case:=\"x\" or a:=\"1\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"contains_common_case\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and contains_common_case:>=1)","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (a:=\"1\" and \"contains_common_case\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter contains_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter \"contains_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" contains_common_case:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"contains_common_case\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and contains_common_case:!\"x\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"contains_common_case\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and contains_common_case:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"contains_common_case\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete contains_common_case","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, contains_common_case","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as contains_common_case","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename contains_common_case as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (contains_common_case) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (contains_common_case)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as contains_common_case","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (contains_common_case)","v1.49.0":true,"v1.53.0":true}
+{"q":"equals_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"\"equals_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" equals_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"equals_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and equals_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" and \"equals_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or equals_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" or \"equals_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not equals_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" not \"equals_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -equals_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"equals_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (equals_common_case:=\"x\" or a:=\"1\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"equals_common_case\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and equals_common_case:>=1)","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (a:=\"1\" and \"equals_common_case\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter equals_common_case:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter \"equals_common_case\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" equals_common_case:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"equals_common_case\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and equals_common_case:!\"x\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"equals_common_case\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and equals_common_case:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"equals_common_case\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete equals_common_case","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, equals_common_case","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as equals_common_case","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename equals_common_case as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (equals_common_case) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (equals_common_case)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as equals_common_case","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (equals_common_case)","v1.49.0":true,"v1.53.0":true}
+{"q":"i:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"i\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" i:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"i\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and i:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"i\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or i:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"i\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not i:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"i\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -i:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"i\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (i:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"i\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and i:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"i\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter i:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"i\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" i:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"i\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and i:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"i\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and i:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"i\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete i","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, i","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as i","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename i as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (i) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (i)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as i","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (i)","v1.49.0":true,"v1.53.0":true}
+{"q":"exact:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"exact\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" exact:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"exact\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and exact:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"exact\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or exact:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"exact\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not exact:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"exact\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -exact:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"exact\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (exact:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"exact\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and exact:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"exact\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter exact:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"exact\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" exact:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"exact\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and exact:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"exact\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and exact:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"exact\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete exact","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, exact","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as exact","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename exact as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (exact) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (exact)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as exact","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (exact)","v1.49.0":true,"v1.53.0":true}
+{"q":"re:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"re\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" re:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"re\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and re:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"re\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or re:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"re\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not re:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"re\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -re:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"re\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (re:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"re\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and re:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"re\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter re:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"re\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" re:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"re\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and re:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"re\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and re:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"re\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete re","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, re","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as re","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename re as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (re) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (re)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as re","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (re)","v1.49.0":true,"v1.53.0":true}
+{"q":"seq:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"seq\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" seq:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"seq\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and seq:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"seq\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or seq:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"seq\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not seq:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"seq\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -seq:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"seq\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (seq:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"seq\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and seq:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"seq\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter seq:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"seq\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" seq:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"seq\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and seq:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"seq\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and seq:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"seq\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete seq","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, seq","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as seq","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename seq as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (seq) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (seq)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as seq","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (seq)","v1.49.0":true,"v1.53.0":true}
+{"q":"range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (range:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"range\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and range:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"range\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" range:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"range\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and range:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"range\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and range:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"range\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete range","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, range","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as range","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename range as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (range) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (range)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as range","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (range)","v1.49.0":true,"v1.53.0":true}
+{"q":"offset:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"offset\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" offset:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"offset\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and offset:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"offset\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or offset:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"offset\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not offset:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"offset\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -offset:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"offset\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (offset:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"offset\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and offset:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"offset\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter offset:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"offset\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" offset:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"offset\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and offset:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"offset\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and offset:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"offset\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete offset","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, offset","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as offset","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename offset as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (offset) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (offset)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as offset","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (offset)","v1.49.0":true,"v1.53.0":true}
+{"q":"of:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"of\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" of:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"of\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and of:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"of\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or of:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"of\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not of:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"of\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -of:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"of\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (of:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"of\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and of:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"of\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter of:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"of\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" of:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"of\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and of:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"of\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and of:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"of\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete of","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, of","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as of","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename of as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (of) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (of)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as of","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (of)","v1.49.0":true,"v1.53.0":true}
+{"q":"ipv4_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"ipv4_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" ipv4_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"ipv4_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and ipv4_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"ipv4_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or ipv4_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"ipv4_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not ipv4_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"ipv4_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -ipv4_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"ipv4_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (ipv4_range:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"ipv4_range\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and ipv4_range:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"ipv4_range\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter ipv4_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"ipv4_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" ipv4_range:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"ipv4_range\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and ipv4_range:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"ipv4_range\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and ipv4_range:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"ipv4_range\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete ipv4_range","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, ipv4_range","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as ipv4_range","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename ipv4_range as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (ipv4_range) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (ipv4_range)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as ipv4_range","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (ipv4_range)","v1.49.0":true,"v1.53.0":true}
+{"q":"eq_field:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"eq_field\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" eq_field:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"eq_field\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and eq_field:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"eq_field\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or eq_field:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"eq_field\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not eq_field:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"eq_field\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -eq_field:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"eq_field\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (eq_field:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"eq_field\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and eq_field:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"eq_field\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter eq_field:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"eq_field\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" eq_field:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"eq_field\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and eq_field:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"eq_field\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and eq_field:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"eq_field\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete eq_field","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, eq_field","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as eq_field","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename eq_field as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (eq_field) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (eq_field)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as eq_field","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (eq_field)","v1.49.0":true,"v1.53.0":true}
+{"q":"value_type:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"value_type\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" value_type:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"value_type\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and value_type:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"value_type\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or value_type:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"value_type\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not value_type:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"value_type\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -value_type:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"value_type\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (value_type:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"value_type\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and value_type:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"value_type\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter value_type:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"value_type\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" value_type:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"value_type\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and value_type:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"value_type\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and value_type:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"value_type\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete value_type","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, value_type","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as value_type","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename value_type as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (value_type) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (value_type)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as value_type","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (value_type)","v1.49.0":true,"v1.53.0":true}
+{"q":"pattern_match:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"pattern_match\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" pattern_match:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"pattern_match\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and pattern_match:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"pattern_match\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or pattern_match:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"pattern_match\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not pattern_match:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"pattern_match\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -pattern_match:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"pattern_match\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (pattern_match:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"pattern_match\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and pattern_match:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"pattern_match\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter pattern_match:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"pattern_match\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" pattern_match:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"pattern_match\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and pattern_match:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"pattern_match\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and pattern_match:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"pattern_match\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete pattern_match","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, pattern_match","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as pattern_match","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename pattern_match as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (pattern_match) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (pattern_match)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as pattern_match","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (pattern_match)","v1.49.0":true,"v1.53.0":true}
+{"q":"json_array_contains_any:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"json_array_contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" json_array_contains_any:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"json_array_contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and json_array_contains_any:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"json_array_contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or json_array_contains_any:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"json_array_contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not json_array_contains_any:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"json_array_contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -json_array_contains_any:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"json_array_contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (json_array_contains_any:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"json_array_contains_any\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and json_array_contains_any:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"json_array_contains_any\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter json_array_contains_any:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"json_array_contains_any\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" json_array_contains_any:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"json_array_contains_any\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and json_array_contains_any:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"json_array_contains_any\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and json_array_contains_any:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"json_array_contains_any\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete json_array_contains_any","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, json_array_contains_any","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as json_array_contains_any","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename json_array_contains_any as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (json_array_contains_any) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (json_array_contains_any)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as json_array_contains_any","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (json_array_contains_any)","v1.49.0":true,"v1.53.0":true}
+{"q":"string_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"string_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" string_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"string_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and string_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"string_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or string_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"string_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not string_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"string_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -string_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"string_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (string_range:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"string_range\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and string_range:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"string_range\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter string_range:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"string_range\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" string_range:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"string_range\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and string_range:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"string_range\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and string_range:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"string_range\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete string_range","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, string_range","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as string_range","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename string_range as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (string_range) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (string_range)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as string_range","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (string_range)","v1.49.0":true,"v1.53.0":true}
+{"q":"by:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"by\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" by:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"by\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and by:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"by\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or by:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"by\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not by:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"by\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -by:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"by\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (by:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"by\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and by:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"by\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter by:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"by\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" by:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"by\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and by:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"by\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and by:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"by\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete by","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, by","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as by","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename by as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (by) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (by)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as by","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (by)","v1.49.0":true,"v1.53.0":true}
+{"q":"as:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"as\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" as:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"as\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and as:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"as\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or as:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"as\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not as:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"as\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -as:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"as\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (as:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"as\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and as:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"as\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter as:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"as\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" as:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"as\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and as:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"as\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and as:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"as\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete as","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, as","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as as","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename as as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (as) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (as)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as as","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (as)","v1.49.0":true,"v1.53.0":true}
+{"q":"if:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"if\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" if:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"if\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and if:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"if\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or if:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"if\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not if:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"if\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -if:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"if\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (if:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"if\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and if:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"if\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter if:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"if\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" if:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"if\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and if:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"if\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and if:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"if\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete if","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, if","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as if","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename if as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (if) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (if)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as if","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (if)","v1.49.0":true,"v1.53.0":true}
+{"q":"from:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"from\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" from:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"from\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and from:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"from\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or from:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"from\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not from:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"from\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -from:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"from\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (from:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"from\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and from:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"from\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter from:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"from\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" from:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"from\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and from:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"from\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and from:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"from\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete from","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, from","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as from","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename from as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (from) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (from)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as from","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (from)","v1.49.0":true,"v1.53.0":true}
+{"q":"fields:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"fields\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" fields:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"fields\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and fields:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"fields\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or fields:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"fields\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not fields:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"fields\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -fields:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"fields\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (fields:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"fields\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and fields:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"fields\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter fields:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"fields\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" fields:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"fields\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and fields:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"fields\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and fields:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"fields\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete fields","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, fields","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as fields","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename fields as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (fields) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (fields)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as fields","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (fields)","v1.49.0":true,"v1.53.0":true}
+{"q":"OR:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"OR\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" OR:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"OR\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and OR:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"OR\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or OR:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"OR\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not OR:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"OR\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -OR:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"OR\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (OR:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"OR\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and OR:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"OR\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter OR:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"OR\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" OR:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"OR\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and OR:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"OR\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and OR:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"OR\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete OR","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, OR","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as OR","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename OR as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (OR) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (OR)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as OR","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (OR)","v1.49.0":true,"v1.53.0":true}
+{"q":"AND:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"AND\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" AND:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"AND\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and AND:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"AND\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or AND:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"AND\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not AND:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"AND\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -AND:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"AND\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (AND:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"AND\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and AND:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"AND\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter AND:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"AND\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" AND:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"AND\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and AND:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"AND\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and AND:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"AND\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete AND","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, AND","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as AND","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename AND as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (AND) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (AND)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as AND","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (AND)","v1.49.0":true,"v1.53.0":true}
+{"q":"NOT:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"\"NOT\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" NOT:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"NOT\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and NOT:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" and \"NOT\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or NOT:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" or \"NOT\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not NOT:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" not \"NOT\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -NOT:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"NOT\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (NOT:=\"x\" or a:=\"1\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"NOT\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and NOT:>=1)","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (a:=\"1\" and \"NOT\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter NOT:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter \"NOT\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" NOT:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"NOT\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and NOT:!\"x\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"NOT\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and NOT:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"NOT\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete NOT","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, NOT","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as NOT","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename NOT as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (NOT) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (NOT)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as NOT","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (NOT)","v1.49.0":true,"v1.53.0":true}
+{"q":"IN:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"\"IN\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" IN:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"IN\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and IN:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" and \"IN\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or IN:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" or \"IN\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not IN:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" not \"IN\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -IN:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"IN\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (IN:=\"x\" or a:=\"1\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"IN\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and IN:>=1)","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (a:=\"1\" and \"IN\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter IN:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter \"IN\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" IN:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"IN\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and IN:!\"x\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"IN\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and IN:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"IN\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete IN","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, IN","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as IN","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename IN as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (IN) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (IN)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as IN","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (IN)","v1.49.0":true,"v1.53.0":true}
+{"q":"OPTIONS:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"\"OPTIONS\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" OPTIONS:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"OPTIONS\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and OPTIONS:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"OPTIONS\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or OPTIONS:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"OPTIONS\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not OPTIONS:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"OPTIONS\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -OPTIONS:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"OPTIONS\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (OPTIONS:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"OPTIONS\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and OPTIONS:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"OPTIONS\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter OPTIONS:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"OPTIONS\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" OPTIONS:~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"OPTIONS\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and OPTIONS:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"OPTIONS\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and OPTIONS:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"OPTIONS\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete OPTIONS","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, OPTIONS","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as OPTIONS","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename OPTIONS as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (OPTIONS) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (OPTIONS)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as OPTIONS","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (OPTIONS)","v1.49.0":true,"v1.53.0":true}
+{"q":"CONTAINS_ALL:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"\"CONTAINS_ALL\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" CONTAINS_ALL:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"CONTAINS_ALL\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and CONTAINS_ALL:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" and \"CONTAINS_ALL\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or CONTAINS_ALL:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" or \"CONTAINS_ALL\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not CONTAINS_ALL:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" not \"CONTAINS_ALL\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -CONTAINS_ALL:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"CONTAINS_ALL\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (CONTAINS_ALL:=\"x\" or a:=\"1\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"CONTAINS_ALL\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and CONTAINS_ALL:>=1)","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (a:=\"1\" and \"CONTAINS_ALL\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter CONTAINS_ALL:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter \"CONTAINS_ALL\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" CONTAINS_ALL:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"CONTAINS_ALL\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and CONTAINS_ALL:!\"x\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"CONTAINS_ALL\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and CONTAINS_ALL:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"CONTAINS_ALL\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete CONTAINS_ALL","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, CONTAINS_ALL","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as CONTAINS_ALL","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename CONTAINS_ALL as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (CONTAINS_ALL) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (CONTAINS_ALL)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as CONTAINS_ALL","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (CONTAINS_ALL)","v1.49.0":true,"v1.53.0":true}
+{"q":"Not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"\"Not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" Not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"Not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and Not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" and \"Not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or Not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" or \"Not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not Not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" not \"Not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -Not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"Not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (Not:=\"x\" or a:=\"1\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"Not\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and Not:>=1)","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (a:=\"1\" and \"Not\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter Not:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter \"Not\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" Not:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"Not\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and Not:!\"x\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"Not\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and Not:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"Not\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete Not","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, Not","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as Not","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename Not as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (Not) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (Not)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as Not","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (Not)","v1.49.0":true,"v1.53.0":true}
+{"q":"Or:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"\"Or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" Or:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"Or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and Or:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and \"Or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or Or:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or \"Or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not Or:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not \"Or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -Or:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"Or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (Or:=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"Or\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and Or:>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and \"Or\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter Or:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter \"Or\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" Or:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"Or\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and Or:!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"Or\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and Or:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"Or\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete Or","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, Or","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as Or","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename Or as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (Or) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (Or)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as Or","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (Or)","v1.49.0":true,"v1.53.0":true}
+{"q":"In:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"\"In\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" In:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"In\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" and In:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" and \"In\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" or In:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" or \"In\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" not In:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" not \"In\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -In:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"In\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (In:=\"x\" or a:=\"1\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"In\":=\"x\" or a:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (a:=\"1\" and In:>=1)","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (a:=\"1\" and \"In\":>=1)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter In:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter \"In\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" In:~\"x.+\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" \"In\":~\"x.+\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and In:!\"x\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter (a:=\"1\" and \"In\":!\"x\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and In:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | filter a:=\"1\" and \"In\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete In","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time, _msg, In","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy \"a.b\" as In","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | rename In as x","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (In) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | sort by (In)","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format \"<x>\" as In","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json fields (In)","v1.49.0":true,"v1.53.0":true}
+{"q":"\"not\":=\"a\"","v1.49.0":true,"v1.53.0":true}
+{"q":"not:=\"a\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"contains_all\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" contains_all:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"Not\":=\"x\" or b:=\"1\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (Not:=\"x\" or b:=\"1\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | copy \"not\" as x | filter \"not\":=\"1\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | copy \"not\" as x | filter not:=\"1\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | unpack_json | copy \"OR\" as x | filter \"OR\":>=1","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | unpack_json | copy \"OR\" as x | filter OR:>=1","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (AAAAAA:>7KB and \"OR\":~\".*\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (AAAAAA:>7KB and OR:~\".*\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"options\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" options:>5","v1.49.0":true,"v1.53.0":true}

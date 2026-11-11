@@ -273,7 +273,7 @@ Everything else goes through the full parse + semantic pass.
 
 ### Query plan lowering (which translator answers)
 
-A query is translated by one of two paths, and the client cannot tell which: the same VictoriaLogs query comes out of both, byte for byte.
+A query is translated by one of two paths, and the client cannot tell which: the same VictoriaLogs query comes out of both, byte for byte, but for a label that LogsQL reads as a keyword (`not`, `in`, `options`, `and`, `or`, `contains_all`, `contains_any`, `contains_common_case`, `equals_common_case`, in any case): Loki accepts such a label, VictoriaLogs rejects it written bare, and the plan quotes it (`"not":="a"`) where the string translator does not.
 
 ```mermaid
 flowchart LR
@@ -288,7 +288,8 @@ flowchart LR
 
 - **Served from the plan:** log queries made of a stream selector, line filters (`|=`, `!=`, `|~`, `!~`), pattern filters (`|>`, `!>`) and label filters (including `ip()` and repeated filters), with no parser stage. `lower.Plan` builds the filters with the shared builders in `internal/translate` and `physical.Encode` writes the text. `-query-plan-lowering=false` returns every query to the string translator.
 - **Still on the string translator:** every query with a parser or formatting stage (`| json`, `| logfmt`, `| line_format`, `| drop`, …), every metric query (range and vector aggregations, `unwrap`, binary operations, `label_replace`), and any log query the lowering answers with an error. That includes a regexp line filter (`|~`, `!~`) or an exact matcher on a stream field whose value is written with an escape (`\x41`, an octal escape), a raw control character or backquotes: the string translator sends the client's spelling of those two, and the lowering holds only the value, so it leaves them (`LogSelect escaped spelling`, counted as not lowered). Every other position, and a plain spelling of the same value, is still served from the plan.
-- **Why it is safe to switch:** the corpus shadow (`TestPlanShadow`, see [testing](testing.md#query-plan-shadow)) asserts, for every native corpus row under each of the 12 translator profiles, that `physical.Encode(lower.Plan(...))` equals the translator's text byte for byte; the route-parity test sends the same queries through a fake VictoriaLogs with the flag on and off and compares the answers and every upstream request.
+- **Labels that are keywords:** a label Loki's lexer reads as a keyword token (`of`, `bool`, `offset`, `unwrap`, `json`, `regexp`, `logfmt`, `unpack`, `pattern`, `label_format`, `line_format`, `decolorize`, `drop`, `keep`, `variants`, in any case) is no label name: a stream selector, grouping list, drop or keep list, json or logfmt extraction, `label_format` or `unwrap` that names one is Loki's 400 with Loki's text. `Ip`, `IP` and `Label_replace` are labels (`ip` and `label_replace` are keywords only before a parenthesis) and keep their case.
+- **Why it is safe to switch:** the corpus shadow (`TestPlanShadow`, see [testing](testing.md#query-plan-shadow)) asserts, for every native corpus row under each of the 12 translator profiles, that `physical.Encode(lower.Plan(...))` equals the translator's text byte for byte (with the keyword label names above quoted: `lower.QuoteKeywordFieldText`); the route-parity test sends the same queries through a fake VictoriaLogs with the flag on and off and compares the answers and every upstream request.
 
 ### LogQL stage → LogsQL pipe mapping
 

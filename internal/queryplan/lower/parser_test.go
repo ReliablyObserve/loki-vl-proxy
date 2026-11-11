@@ -78,15 +78,26 @@ func parserLowering(t testing.TB, q string, prof parserProfile) (lowered, legacy
 		return "", "", "", false, false, false
 	}
 	lowered = op.(physical.VLQuery).Text
+	legacy = QuoteKeywordFieldText(legacy)
 	want, err := logsql.Parse(legacy)
+	if translatorMangledByKeywordKey(q) {
+		return "", "", "", false, false, false // the translator's text for it is cut, whether or not it parses
+	}
+	if err != nil && translatorWritesUnicodeAsName(err) {
+		return "", "", "", false, false, false
+	}
 	if err != nil {
-		t.Fatalf("%s: the translator's %s does not parse: %v", q, legacy, err)
+		t.Fatalf("%s: the translator's %s does not parse: %v (the lowering writes %s)", q, legacy, err, lowered)
 	}
 	got, err := logsql.Parse(lowered)
 	if err != nil {
 		t.Fatalf("%s: the lowered %s does not parse: %v", q, lowered, err)
 	}
-	return lowered, legacy, "", reflect.DeepEqual(want, got), false, true
+	same = reflect.DeepEqual(want, got)
+	if !same && translatorReadsNameAsSyntax(q) {
+		return "", "", "", false, false, false
+	}
+	return lowered, legacy, "", same, false, true
 }
 
 // The json and logfmt parsers, drop and keep lower to the query the string translator writes, under every

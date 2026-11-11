@@ -9,16 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **A query with certain non-ASCII digits could make the LogQL parser stop responding.** The scanner took any Unicode
-  decimal digit (Arabic-Indic, Devanagari, fullwidth and the like) for the start of a number, read nothing there and
-  went round again without end, so one such query kept a core busy until the process was restarted; request
-  cancellation could not stop it. Loki's lexer starts a number only with an ASCII digit and answers a 400 for these
-  queries, so the proxy now rejects them the same way, before anything else on the route happens. The same reading
-  rejects a stage name followed by a character that starts no token (`| x ²`, `| x ⅓`, `| x Ⅳ`), which was passed to
-  the backend. Every entry point of the parser package is now held to return within a bound of time and memory by a
-  fuzz target, and the characters of every Unicode category are checked against Loki's answers in every position of a
-  query. **Breaking:** the queries above answered a result or did not return and now answer Loki's 400; a cached answer
-  of one is not served (the compat cache key of a rejected query carries a version).
+- **A query with certain non-ASCII characters could make the LogQL parser stop responding.** Such queries are now
+  rejected with Loki's 400 before anything else on the route runs, and every entry point of the LogQL parser is held to
+  return within a bound of time and memory by a fuzz target. **Breaking:** a few queries Loki rejects (for example a
+  stage name followed by `²`) were accepted and now answer Loki's 400; answers cached for them are not served.
+
+### Fixed
+
+- A log query that filters on a label called `not`, `in`, `options`, `contains_all`,
+  `contains_any`, `contains_common_case` or `equals_common_case` (in any case), or
+  on `and` or `or` once a label function maps a name such as `_or` to it, no
+  longer fails in VictoriaLogs. Loki accepts such a label; the query written for
+  it (`not:="a"`, `app:="a" in:="x"`) is rejected by VictoriaLogs v1.49 and v1.53
+  ("missing whitespace or ':' ...", "the in must be put in quotes"), and the
+  client got a 400 ("failed to parse the log query"). The stream selector and the label filters of the queries the
+  plan serves (line filters and label filters, no parser) now write the name
+  quoted (`"not":="a"`). Queries with a parser or a metric are still written by
+  the string translator and fail the same way until the plan serves them.
+- A label named after a word Loki's lexer reads as a keyword (`of`, `bool`,
+  `offset`, `unwrap`, `json`, `regexp`, `logfmt`, `unpack`, `pattern`,
+  `label_format`, `line_format`, `decolorize`, `drop`, `keep`, `variants`, in any
+  case) is answered with Loki's 400 and Loki's text in a stream selector, a
+  `by`, `without`, `on`, `ignoring`, `group_left` or `group_right` list, a
+  `drop` or `keep` list, a `json` or `logfmt` extraction, a `label_format` and an
+  `unwrap`. The proxy used to accept them, read the word in lower case and
+  translate the query (`{OF="a"}` filtered the field `of`). **Breaking:** a
+  client that sent such a query got an answer and gets Loki's 400 now; Loki never
+  accepted it. Answers cached before this change are not reused for these queries
+  (a response cache key version).
+- A label called `Ip`, `IP` or `Label_replace` keeps its case. `ip` and
+  `label_replace` are keywords only before a parenthesis, but the proxy read
+  the word in lower case anywhere (`{Ip="a"}` filtered the field `ip`, and
+  `| drop Ip` dropped it). Answers cached before this change are not reused for
+  these queries (a response cache key version).
+
+## [2.133.0] - 2026-11-11
+
+### Changed
+
+- The query plan holds `stddev` and `stdvar` the way the proxy evaluates
+  them, for every translation profile: one series fold per aggregation, with
+  its `by` or `without` clause, over the operand's own query, which is the
+  request the proxy sends (it translates the operand alone and takes the
+  population deviation or variance of each group's series at each step
+  itself). The `sum`, `avg`, `min`, `max` and `count` layers above a ranking
+  are covered too, and the shadow holds them to the proxy's own route, not to
+  the translator's text for the whole query. A `stddev`, `stdvar` or ranking
+  below the one level the proxy evaluates (`sum(stddev by (app) (..))`,
+  `topk(2, stddev by (app) (..))`, `stddev(topk(3, ..))`) is held as the
+  chain Loki evaluates and recorded as a known difference of the proxy, which
+  answers the translator's text for those and drops the level: the answers
+  are unchanged until the proxy serves these queries from the plan. Nothing
+  serves the plan yet: no request sent to VictoriaLogs and no answer
+  changes. A `stddev` or `stdvar` by a label of a query with a parser, a
+  binary operation operand and a `stddev` under a binary operation stay with
+  the string translator. A query whose line filter holds a quoted `| json`
+  (or `| logfmt`, `| pattern`, `| regexp`, `| unpack`) followed by a
+  non-ASCII character is now left to the string translator, which reads it
+  as a parser stage where the plan did not.
 
 ## [2.132.0] - 2026-11-11
 

@@ -105,6 +105,16 @@ func (p *parser) expectIdent() (string, error) {
 	return "", fmt.Errorf("logsql: expected identifier, got %q (type %d)", tok.Val, tok.Typ)
 }
 
+// expectName is expectIdent for a field name or result name: VictoriaLogs reads and, or and not as names there
+// (`| delete not`, `| copy a as or`); only the start of a filter takes them as operators.
+func (p *parser) expectName() (string, error) {
+	switch p.peek().Typ {
+	case TokAnd, TokOr, TokNot:
+		return p.advance().Val, nil
+	}
+	return p.expectIdent()
+}
+
 // expectString consumes a string token and returns its unquoted value.
 func (p *parser) expectString() (string, error) {
 	tok := p.advance()
@@ -264,6 +274,12 @@ func isFieldOpTok(t TokType) bool {
 // time filters, parenthesised expressions.
 func (p *parser) parsePrimaryFilter() (FilterExpr, error) {
 	tok := p.peek()
+	if (tok.Typ == TokAnd || tok.Typ == TokOr) && strings.HasPrefix(p.sc.Remaining(), ":") {
+		// and and or are operators between two filters; where a filter begins, a colon right after the word makes it
+		// the name of a field (`or:="x"`), as VictoriaLogs reads it.
+		tok.Typ = TokIdent
+		p.buf = &tok
+	}
 
 	switch tok.Typ {
 	case TokLParen:
@@ -1355,7 +1371,7 @@ func (p *parser) atPipeEnd() bool {
 
 // expectAlias consumes a result name. An unquoted one may hold colons (a:b), as a compound token does.
 func (p *parser) expectAlias() (string, error) {
-	alias, err := p.expectIdent()
+	alias, err := p.expectName()
 	if err != nil || strings.HasPrefix(alias, `"`) || strings.HasPrefix(alias, "`") {
 		return alias, err
 	}
@@ -1425,7 +1441,7 @@ func (p *parser) parseIf() (FilterExpr, error) {
 
 // expectFieldName consumes a field name or field-name prefix (foo*) and returns it as written.
 func (p *parser) expectFieldName() (string, error) {
-	name, err := p.expectIdent()
+	name, err := p.expectName()
 	if err != nil {
 		return "", err
 	}
@@ -1499,7 +1515,7 @@ func (p *parser) parsePipeUnpack(isJSON bool) (Pipe, error) {
 		if p.isKeyword("from") {
 			p.advance()
 		}
-		if from, err = p.expectIdent(); err != nil {
+		if from, err = p.expectName(); err != nil {
 			return fail(err)
 		}
 	}
@@ -1552,7 +1568,7 @@ func (p *parser) parsePipeExtract(isRegexp bool) (Pipe, error) {
 	var from string
 	if p.isKeyword("from") {
 		p.advance()
-		if from, err = p.expectIdent(); err != nil {
+		if from, err = p.expectName(); err != nil {
 			return fail(err)
 		}
 	}
@@ -1577,7 +1593,7 @@ func (p *parser) parsePipeFormat() (Pipe, error) {
 	var result string
 	if p.isKeyword("as") {
 		p.advance()
-		if result, err = p.expectIdent(); err != nil {
+		if result, err = p.expectName(); err != nil {
 			return fail(err)
 		}
 	}
@@ -1648,7 +1664,7 @@ func (p *parser) parsePipeReplace(isRegexp bool) (Pipe, error) {
 	var field string
 	if p.isKeyword("at") {
 		p.advance()
-		if field, err = p.expectIdent(); err != nil {
+		if field, err = p.expectName(); err != nil {
 			return fail(err)
 		}
 	}
@@ -1682,7 +1698,7 @@ func (p *parser) parsePipePack(name string) (Pipe, error) {
 	var result string
 	if !p.atPipeEnd() {
 		var err error
-		if result, err = p.expectIdent(); err != nil {
+		if result, err = p.expectName(); err != nil {
 			return fail(err)
 		}
 	}
@@ -1737,7 +1753,7 @@ func (p *parser) parsePipeSort() (Pipe, error) {
 
 	var fields []SortField
 	for p.peek().Typ != TokRParen && p.peek().Typ != TokEOF {
-		ident, err := p.expectIdent()
+		ident, err := p.expectName()
 		if err != nil {
 			return nil, err
 		}
@@ -1795,7 +1811,7 @@ func (p *parser) parseStatsBy(keyword string) ([]GroupKey, error) {
 	}
 	var byKeys []GroupKey
 	for p.peek().Typ != TokRParen && p.peek().Typ != TokEOF {
-		ident, err := p.expectIdent()
+		ident, err := p.expectName()
 		if err != nil {
 			return nil, err
 		}
@@ -1954,7 +1970,7 @@ func (p *parser) parseStatsFunc() (StatsFunc, error) {
 		if _, err := p.expect(TokLParen); err != nil {
 			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
 		}
-		field, err := p.expectIdent() // a quoted name keeps its quotes, as in the other stats functions
+		field, err := p.expectName() // a quoted name keeps its quotes, as in the other stats functions
 		if err != nil {
 			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
 		}
@@ -1974,7 +1990,7 @@ func (p *parser) parseStatsFunc() (StatsFunc, error) {
 		if _, err := p.expect(TokLParen); err != nil {
 			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
 		}
-		field, err := p.expectIdent() // a quoted name keeps its quotes, as in the other stats functions
+		field, err := p.expectName() // a quoted name keeps its quotes, as in the other stats functions
 		if err != nil {
 			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
 		}
@@ -2097,7 +2113,7 @@ func (p *parser) parseIdentListInParens() ([]string, error) {
 	}
 	var fields []string
 	for p.peek().Typ != TokRParen && p.peek().Typ != TokEOF {
-		f, err := p.expectIdent()
+		f, err := p.expectName()
 		if err != nil {
 			return nil, err
 		}
@@ -2131,7 +2147,7 @@ func (p *parser) parsePipeCoalesce() (Pipe, error) {
 	var result string
 	if p.isKeyword("as") {
 		p.advance()
-		if result, err = p.expectIdent(); err != nil {
+		if result, err = p.expectName(); err != nil {
 			return nil, fmt.Errorf("logsql: pipe coalesce: %w", err)
 		}
 	}
@@ -2142,7 +2158,7 @@ func (p *parser) parsePipeCoalesce() (Pipe, error) {
 func (p *parser) parsePipeCollapseNums() (Pipe, error) {
 	if p.peek().Typ == TokIdent && p.peek().Val == "at" {
 		p.advance()
-		field, err := p.expectIdent()
+		field, err := p.expectName()
 		if err != nil {
 			return nil, fmt.Errorf("logsql: pipe collapse_nums: %w", err)
 		}
@@ -2175,7 +2191,7 @@ func (p *parser) parsePipeFacets() (Pipe, error) {
 
 // parsePipeFieldValues parses: field_values field [limit N]
 func (p *parser) parsePipeFieldValues() (Pipe, error) {
-	field, err := p.expectIdent()
+	field, err := p.expectName()
 	if err != nil {
 		return nil, fmt.Errorf("logsql: pipe field_values: %w", err)
 	}
@@ -2209,7 +2225,7 @@ func (p *parser) parsePipeHash() (Pipe, error) {
 	if asTok.Typ != TokIdent || asTok.Val != "as" {
 		return nil, fmt.Errorf("logsql: pipe hash: expected 'as', got %q", asTok.Val)
 	}
-	result, err := p.expectIdent()
+	result, err := p.expectName()
 	if err != nil {
 		return nil, fmt.Errorf("logsql: pipe hash: %w", err)
 	}
@@ -2236,7 +2252,7 @@ func (p *parser) parsePipeJoin() (Pipe, error) {
 	var prefix string
 	if p.peek().Typ == TokIdent && p.peek().Val == "prefix" {
 		p.advance()
-		prefix, err = p.expectIdent()
+		prefix, err = p.expectName()
 		if err != nil {
 			return nil, fmt.Errorf("logsql: pipe join: %w", err)
 		}
@@ -2249,7 +2265,7 @@ func (p *parser) parsePipeJSONArrayLen() (Pipe, error) {
 	if _, err := p.expect(TokLParen); err != nil {
 		return nil, fmt.Errorf("logsql: pipe json_array_len: %w", err)
 	}
-	field, err := p.expectIdent()
+	field, err := p.expectName()
 	if err != nil {
 		return nil, fmt.Errorf("logsql: pipe json_array_len: %w", err)
 	}
@@ -2260,7 +2276,7 @@ func (p *parser) parsePipeJSONArrayLen() (Pipe, error) {
 	if asTok.Typ != TokIdent || asTok.Val != "as" {
 		return nil, fmt.Errorf("logsql: pipe json_array_len: expected 'as', got %q", asTok.Val)
 	}
-	result, err := p.expectIdent()
+	result, err := p.expectName()
 	if err != nil {
 		return nil, fmt.Errorf("logsql: pipe json_array_len: %w", err)
 	}
@@ -2280,7 +2296,7 @@ func (p *parser) parsePipeJSONArrayConcat() (Pipe, error) {
 	}
 	if p.peek().Typ == TokIdent && p.peek().Val == "from" {
 		p.advance()
-		from, err := p.expectIdent()
+		from, err := p.expectName()
 		if err != nil {
 			return nil, fmt.Errorf("logsql: pipe json_array_concat: %w", err)
 		}
@@ -2288,7 +2304,7 @@ func (p *parser) parsePipeJSONArrayConcat() (Pipe, error) {
 	}
 	if p.peek().Typ == TokIdent && p.peek().Val == "as" {
 		p.advance()
-		as, err := p.expectIdent()
+		as, err := p.expectName()
 		if err != nil {
 			return nil, fmt.Errorf("logsql: pipe json_array_concat: %w", err)
 		}
@@ -2302,7 +2318,7 @@ func (p *parser) parsePipeLen() (Pipe, error) {
 	if _, err := p.expect(TokLParen); err != nil {
 		return nil, fmt.Errorf("logsql: pipe len: %w", err)
 	}
-	field, err := p.expectIdent()
+	field, err := p.expectName()
 	if err != nil {
 		return nil, fmt.Errorf("logsql: pipe len: %w", err)
 	}
@@ -2313,7 +2329,7 @@ func (p *parser) parsePipeLen() (Pipe, error) {
 	if asTok.Typ != TokIdent || asTok.Val != "as" {
 		return nil, fmt.Errorf("logsql: pipe len: expected 'as', got %q", asTok.Val)
 	}
-	result, err := p.expectIdent()
+	result, err := p.expectName()
 	if err != nil {
 		return nil, fmt.Errorf("logsql: pipe len: %w", err)
 	}
@@ -2329,14 +2345,14 @@ func (p *parser) parsePipeSplit() (Pipe, error) {
 	var from, as string
 	if p.peek().Typ == TokIdent && p.peek().Val == "from" {
 		p.advance()
-		from, err = p.expectIdent()
+		from, err = p.expectName()
 		if err != nil {
 			return nil, fmt.Errorf("logsql: pipe split: %w", err)
 		}
 	}
 	if p.peek().Typ == TokIdent && p.peek().Val == "as" {
 		p.advance()
-		as, err = p.expectIdent()
+		as, err = p.expectName()
 		if err != nil {
 			return nil, fmt.Errorf("logsql: pipe split: %w", err)
 		}
@@ -2374,14 +2390,14 @@ func (p *parser) parsePipeUnpackWords() (Pipe, error) {
 	var err error
 	if p.peek().Typ == TokIdent && p.peek().Val == "from" {
 		p.advance()
-		from, err = p.expectIdent()
+		from, err = p.expectName()
 		if err != nil {
 			return nil, fmt.Errorf("logsql: pipe unpack_words: %w", err)
 		}
 	}
 	if p.peek().Typ == TokIdent && p.peek().Val == "as" {
 		p.advance()
-		as, err = p.expectIdent()
+		as, err = p.expectName()
 		if err != nil {
 			return nil, fmt.Errorf("logsql: pipe unpack_words: %w", err)
 		}
@@ -2400,7 +2416,7 @@ func (p *parser) parsePipeUnroll() (Pipe, error) {
 
 // parsePipeUpdate parses: update field = expr (raw expression to end of pipe)
 func (p *parser) parsePipeUpdate() (Pipe, error) {
-	field, err := p.expectIdent()
+	field, err := p.expectName()
 	if err != nil {
 		return nil, fmt.Errorf("logsql: pipe update: %w", err)
 	}
@@ -2508,7 +2524,7 @@ func (p *parser) parseOptionalByClause() ([]string, error) {
 	}
 	var fields []string
 	for p.peek().Typ != TokRParen && p.peek().Typ != TokEOF {
-		ident, err := p.expectIdent()
+		ident, err := p.expectName()
 		if err != nil {
 			return nil, err
 		}

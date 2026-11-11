@@ -32,6 +32,17 @@ why: |
   to close when they flip (TestPlanVectorAggregationBlankPadding,
   TestVectorAggBlankPaddingShadow: 5,277 padded spellings x profiles).
 
+  Two more spellings, found by the lowering fuzz targets on 2026-11-11 and
+  recognised by content in internal/queryplan/lower (translatorReadsNameAsSyntax,
+  translatorWritesUnicodeAsName): a label NAME that holds the word inside a
+  longer name (`{app="a"} | keep x_extracted | dtedetected_level="1"` makes the
+  translator add `| unpack_logfmt` before the filter, where the plan and Loki
+  read a plain label), and a label filter value that holds a non-ASCII
+  character (`x!="\u070f ..."`), which the translator reads as the name of a
+  stream label and writes bare into a `copy "__lxp0_<char>" as __lxp_<char>`
+  pipe that the LogsQL parser cannot read. The plan holds the value only and
+  writes the filter right.
+
   Evidence (main, 2026-11-09; the corpus rows come from TestKeyCraftedValues):
     {a="x"} | s=`…detected_level…`
     string translator  =>  a:="x" | unpack_logfmt | filter s:="…detected_level…"

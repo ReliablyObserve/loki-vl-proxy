@@ -546,6 +546,9 @@
     "semantics/logql-unicode-runes | compare:observed",
     "semantics/logql-unicode-runes | gap:fixed",
     "semantics/logql-unicode-runes | query",
+    "semantics/loki-keyword-label-names | compare:observed",
+    "semantics/loki-keyword-label-names | gap:fixed",
+    "semantics/loki-keyword-label-names | query",
     "semantics/lower-bound-exclusive | compare:observed",
     "semantics/lower-bound-exclusive | gap:fixed",
     "semantics/lower-bound-exclusive | query",
@@ -720,6 +723,9 @@
     "semantics/translator-reads-quoted-text-as-syntax | compare:observed",
     "semantics/translator-reads-quoted-text-as-syntax | gap:open",
     "semantics/translator-reads-quoted-text-as-syntax | query",
+    "semantics/translator-writes-keyword-field-names-bare | compare:observed",
+    "semantics/translator-writes-keyword-field-names-bare | gap:open",
+    "semantics/translator-writes-keyword-field-names-bare | query",
     "semantics/tumbling-window-single-grid | compare:exact",
     "semantics/tumbling-window-single-grid | query",
     "semantics/two-parsers-keep-one | compare:observed",
@@ -901,6 +907,8 @@
     "internal/logql/dotted_names_test.go | profiles/dotted-name-parse-error",
     "internal/logql/input_size_test.go | architecture-syntax-package-layering",
     "internal/logql/ip_label_filter_validate_loki_test.go | semantics/ip-label-filter-invalid-pattern",
+    "internal/logql/keyword_case_test.go | semantics/loki-keyword-label-names",
+    "internal/logql/keyword_label_names_loki_test.go | semantics/loki-keyword-label-names",
     "internal/logql/label_filter_expr_golden_test.go | semantics/label-filter-expression-syntax",
     "internal/logql/label_filter_expr_syntax_test.go | semantics/label-filter-expression-syntax",
     "internal/logql/label_filter_expr_test.go | semantics/ip-filter-json-stats-pushdown",
@@ -925,6 +933,7 @@
     "internal/logql/unicode_runes_loki_test.go | semantics/logql-unicode-runes",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
     "internal/logsql/ip_range_vl_test.go | architecture-syntax-package-layering",
+    "internal/logsql/keyword_fields_test.go | semantics/translator-writes-keyword-field-names-bare",
     "internal/logsql/parser_read_test.go | architecture-syntax-package-layering",
     "internal/logsql/parser_typed_test.go | architecture-syntax-package-layering",
     "internal/logsql/pipe_math_as_test.go | architecture-syntax-package-layering",
@@ -1613,6 +1622,7 @@
     "internal/queryplan/lower/extract_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/format_loki_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/format_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/keyword_field_names_test.go | semantics/translator-writes-keyword-field-names-bare",
     "internal/queryplan/lower/label_filter_parsed_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
@@ -1860,6 +1870,9 @@
     "test/e2e-compat/keep_service_name_test.go | semantics/keep-leaves-labels-loki-drops",
     "test/e2e-compat/keep_structured_metadata_test.go | loki_api_v1_query_range",
     "test/e2e-compat/keep_structured_metadata_test.go | profiles/keep-structured-metadata-key",
+    "test/e2e-compat/keyword_label_names_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/keyword_label_names_test.go | semantics/loki-keyword-label-names",
+    "test/e2e-compat/keyword_label_names_test.go | semantics/translator-writes-keyword-field-names-bare",
     "test/e2e-compat/label_filter_expression_test.go | loki_api_v1_query_range",
     "test/e2e-compat/label_filter_expression_test.go | semantics/label-filter-expression-syntax",
     "test/e2e-compat/label_filter_number_literal_test.go | loki_api_v1_query",
@@ -2144,12 +2157,12 @@
       "any": 28,
       "api": 55,
       "drilldown": 50,
-      "explore": 158,
+      "explore": 160,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 470,
+      "go": 475,
       "playwright": 1
     },
     "page_kinds": {
@@ -2169,7 +2182,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 102,
-    "wired_items": 281
+    "wired_items": 283
   },
   "gates": [
     "A/B shape selection",

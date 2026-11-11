@@ -267,7 +267,9 @@ func (p *Proxy) runLoweringShadow(s *loweringShadow, in shadowInput) {
 		// shadow, which skips a row the translator rejects.
 		return
 	}
-	want, err := translator.DecodePhysical(in.legacy)
+	// The translator writes a label called not or in bare, which VictoriaLogs rejects; the lowering quotes it. The
+	// translator's text is held to the lowering with that name quoted.
+	want, err := translator.DecodePhysical(lower.QuoteKeywordFieldText(in.legacy))
 	if err != nil {
 		result(shadowOldError)
 		return

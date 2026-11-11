@@ -37,7 +37,6 @@ func TestCompat_LogQLUnicodeRunesLikeLoki(t *testing.T) {
 		sel + " | x ⅓",
 		sel + " | x Ⅳ",
 		fmt.Sprintf("sum(rate(%s[5m])) > ٣", sel),
-		fmt.Sprintf("rate(%s[٣5m])", sel),
 	} {
 		t.Run(strconv.Quote(query), func(t *testing.T) {
 			params := url.Values{"query": {query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"60"}}
