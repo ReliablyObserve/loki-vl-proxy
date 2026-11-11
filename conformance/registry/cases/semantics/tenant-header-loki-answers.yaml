@@ -1,0 +1,26 @@
+id: semantics/tenant-header-loki-answers
+title: A missing, invalid or multi-tenant X-Scope-OrgID gets Loki's status and text on every route
+proves:
+  - tenant-auth-follows-loki
+  - loki_api_v1_labels
+consumer: api
+why: |
+  Grafana shows Loki's error text when a data source sends no tenant or a bad
+  one, and API clients branch on the status. The proxy used to answer 401
+  "missing X-Scope-OrgID header" and 403 unknown tenant for IDs Loki refuses
+  with 400, refused "a|" that Loki serves, and named its own reason on tail.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  headers:
+    X-Scope-OrgID: "a b"
+compare:
+  mode: observed
+  fields: [status, body]
+  expect: |
+    400 "tenant ID 'a b' contains unsupported character ' '" (text/plain, no
+    newline); without the header 401 "no org id\n"; the full table is
+    internal/proxy/testdata/tenant_auth_loki_answers.jsonl.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.49.0"

@@ -116,63 +116,7 @@ Critical defaults to reduce incident frequency:
 
 ## Multi-Tenancy
 
-### Tenant Mapping Strategies
-
-The proxy maps `X-Scope-OrgID` headers to VictoriaLogs tenant IDs. Three strategies are available depending on deployment size and dynamism.
-
-#### 1. Inline JSON (`-tenant-map`)
-
-Best for small, static tenant maps. The entire map is provided directly as a CLI flag or env var value:
-
-```bash
--tenant-map='{"team-a":{"account_id":"1","project_id":"0"},"team-b":{"account_id":"2","project_id":"0"}}'
-```
-
-This requires a proxy restart to update. (A map supplied through the `TENANT_MAP` environment variable is re-read on SIGHUP when no `-tenant-map-file` is set.)
-
-#### 2. File-based (`-tenant-map-file`)
-
-Best for Kubernetes environments where tenant maps are mounted as ConfigMaps. The proxy hot-reloads the file on SIGHUP and also polls for mtime changes on the configured interval:
-
-```bash
--tenant-map-file=/etc/proxy/tenants.yaml
--tenant-map-reload-interval=30s
-```
-
-The default reload interval is `30s`. To trigger an immediate reload without restarting the proxy:
-
-```bash
-kill -HUP <pid>
-```
-
-In Helm, configure a lifecycle hook to send SIGHUP on ConfigMap updates:
-
-```yaml
-lifecycle:
-  postStart:
-    exec:
-      command: ["/bin/sh", "-c", "kill -HUP 1"]
-```
-
-Polling every `30s` means changes are picked up automatically even without an explicit signal, which suits ConfigMap-mounted files that are updated by an external controller.
-
-#### 3. Label-based (`-tenant-label`)
-
-Scopes each request by a stream field instead of VictoriaLogs `AccountID`/`ProjectID` headers. Useful when the VictoriaLogs default tenant (0:0) holds data for several tenants distinguished by a stream label such as `tenant`:
-
-```bash
--tenant-label=tenant
-```
-
-When set, the client still sends `X-Scope-OrgID`. For an org ID that is not in the tenant map, not a default-tenant alias (`0`, `fake`, `default`), not empty and not `*`, the proxy adds a VictoriaLogs `extra_stream_filters` constraint `{"tenant":"<orgID>"}` to backend queries; request parameters cannot override it. The configured field must be a VictoriaLogs **stream field** (part of `_stream_fields` at ingestion). Explicit tenant-map entries take priority. The rules and alerts read routes (`-ruler-backend` / `-alerts-backend`) are confined the same way: an unmapped org sees only the rules and alerts whose `labels` carry `<tenant-label>=<org>`, so label the rules of each tenant with a literal value (a templated tenant label hides the rule); unlabeled rules are visible to no org except under `-tenant.allow-global=true`. A mapped org is not filtered by the proxy: it relies on the backend scoping by the forwarded `AccountID`/`ProjectID`, which vmalert and the Loki ruler do not do. In this mode the default-tenant aliases, an absent or empty `X-Scope-OrgID` and `*` carry no tenant to filter on, so an alias without an exact tenant-map entry, and an empty org (which no map entry admits), are rejected with `403` unless `-tenant.allow-global=true`.
-
----
-
-### `-require-tenant-header` Flag
-
-`-require-tenant-header=true` enforces that every request carries an `X-Scope-OrgID` header (returns HTTP 401 if missing) without enabling full auth. This is useful for catching misconfigured clients in multi-tenant setups without a full auth proxy.
-
-`-auth.enabled=true` has the same effect on requests without the header (`401`). Neither flag authenticates the header value; put an authenticating proxy in front of the proxy when tenants must not be able to choose their own `X-Scope-OrgID`.
+Tenant map strategies (inline JSON, a hot-reloaded file, tenant label routing), `-require-tenant-header` and `-auth.enabled`: see [Tenancy and authentication](tenancy-and-auth.md). Tenancy is off by default.
 
 ---
 

@@ -195,14 +195,14 @@ func TestCritical_BinaryMetricQuery_Modulo(t *testing.T) {
 
 func TestCritical_DeleteEndpoint_RequiresConfirmationHeader(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
-	p.deleteAPIEnabled = true // -delete-api-enabled
+	enableDeleteAPIForTest(p)
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/loki/api/v1/delete?query={app=\"nginx\"}&start=1234567890&end=1234567900", nil)
 	// No X-Delete-Confirmation header
-	mux.ServeHTTP(w, r)
+	serveWithDeleteToken(mux, w, r)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 without confirmation header, got %d: %s", w.Code, w.Body.String())
@@ -211,14 +211,14 @@ func TestCritical_DeleteEndpoint_RequiresConfirmationHeader(t *testing.T) {
 
 func TestCritical_DeleteEndpoint_RequiresQuery(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
-	p.deleteAPIEnabled = true // -delete-api-enabled
+	enableDeleteAPIForTest(p)
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/loki/api/v1/delete?start=1234567890&end=1234567900", nil)
 	r.Header.Set("X-Delete-Confirmation", "true")
-	mux.ServeHTTP(w, r)
+	serveWithDeleteToken(mux, w, r)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 without query, got %d: %s", w.Code, w.Body.String())
@@ -227,14 +227,14 @@ func TestCritical_DeleteEndpoint_RequiresQuery(t *testing.T) {
 
 func TestCritical_DeleteEndpoint_RequiresTimeRange(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
-	p.deleteAPIEnabled = true // -delete-api-enabled
+	enableDeleteAPIForTest(p)
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", `/loki/api/v1/delete?query={app="nginx"}`, nil)
 	r.Header.Set("X-Delete-Confirmation", "true")
-	mux.ServeHTTP(w, r)
+	serveWithDeleteToken(mux, w, r)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 without time range, got %d: %s", w.Code, w.Body.String())
@@ -243,14 +243,14 @@ func TestCritical_DeleteEndpoint_RequiresTimeRange(t *testing.T) {
 
 func TestCritical_DeleteEndpoint_RejectsWildcardQuery(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
-	p.deleteAPIEnabled = true // -delete-api-enabled
+	enableDeleteAPIForTest(p)
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", `/loki/api/v1/delete?query={}&start=1234567890&end=1234567900`, nil)
 	r.Header.Set("X-Delete-Confirmation", "true")
-	mux.ServeHTTP(w, r)
+	serveWithDeleteToken(mux, w, r)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for wildcard query, got %d: %s", w.Code, w.Body.String())
@@ -259,7 +259,7 @@ func TestCritical_DeleteEndpoint_RejectsWildcardQuery(t *testing.T) {
 
 func TestCritical_DeleteEndpoint_RejectsTooWideTimeRange(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
-	p.deleteAPIEnabled = true // -delete-api-enabled
+	enableDeleteAPIForTest(p)
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -270,7 +270,7 @@ func TestCritical_DeleteEndpoint_RejectsTooWideTimeRange(t *testing.T) {
 	r := httptest.NewRequest("POST",
 		fmt.Sprintf(`/loki/api/v1/delete?query={app="nginx"}&start=%d&end=%d`, start, end), nil)
 	r.Header.Set("X-Delete-Confirmation", "true")
-	mux.ServeHTTP(w, r)
+	serveWithDeleteToken(mux, w, r)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for >30 day range, got %d: %s", w.Code, w.Body.String())
@@ -287,10 +287,11 @@ func TestCritical_DeleteEndpoint_ScopesToTenant(t *testing.T) {
 
 	c := cache.New(60*time.Second, 1000)
 	p, err := New(Config{
-		BackendURL:       vlBackend.URL,
-		Cache:            c,
-		LogLevel:         "error",
-		DeleteAPIEnabled: true,
+		BackendURL:         vlBackend.URL,
+		Cache:              c,
+		LogLevel:           "error",
+		DeleteAPIEnabled:   true,
+		DeleteAPIAuthToken: testDeleteToken,
 		TenantMap: map[string]TenantMapping{
 			"team-a": {AccountID: "100", ProjectID: "1"},
 		},
@@ -309,7 +310,7 @@ func TestCritical_DeleteEndpoint_ScopesToTenant(t *testing.T) {
 		fmt.Sprintf(`/loki/api/v1/delete?query={app="nginx"}&start=%d&end=%d`, start, end), nil)
 	r.Header.Set("X-Delete-Confirmation", "true")
 	r.Header.Set("X-Scope-OrgID", "team-a")
-	mux.ServeHTTP(w, r)
+	serveWithDeleteToken(mux, w, r)
 
 	if receivedAccountID != "100" {
 		t.Errorf("expected AccountID=100, got %q", receivedAccountID)
@@ -326,7 +327,7 @@ func TestCritical_DeleteEndpoint_SuccessfulDelete(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
-	p.deleteAPIEnabled = true // -delete-api-enabled
+	enableDeleteAPIForTest(p)
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -336,7 +337,7 @@ func TestCritical_DeleteEndpoint_SuccessfulDelete(t *testing.T) {
 	r := httptest.NewRequest("POST",
 		fmt.Sprintf(`/loki/api/v1/delete?query={app="nginx"}&start=%d&end=%d`, start, end), nil)
 	r.Header.Set("X-Delete-Confirmation", "true")
-	mux.ServeHTTP(w, r)
+	serveWithDeleteToken(mux, w, r)
 
 	if w.Code != http.StatusNoContent {
 		t.Errorf("expected 204, got %d: %s", w.Code, w.Body.String())
@@ -503,7 +504,7 @@ func TestStatusCapture_WriteHeader(t *testing.T) {
 
 func TestCritical_DeleteEndpoint_OnlyPOST(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
-	p.deleteAPIEnabled = true // -delete-api-enabled
+	enableDeleteAPIForTest(p)
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -511,7 +512,7 @@ func TestCritical_DeleteEndpoint_OnlyPOST(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", `/loki/api/v1/delete?query={app="nginx"}&start=1&end=2`, nil)
 	r.Header.Set("X-Delete-Confirmation", "true")
-	mux.ServeHTTP(w, r)
+	serveWithDeleteToken(mux, w, r)
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected 405 for GET on delete, got %d", w.Code)

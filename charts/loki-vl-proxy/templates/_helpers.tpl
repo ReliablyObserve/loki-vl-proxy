@@ -276,6 +276,23 @@ Invoked from the deployment.
 {{- if and $backendAuth.existingSecret (hasKey $extraArgs "backend-basic-auth") -}}
 {{- fail "backendAuth.existingSecret cannot be combined with extraArgs.backend-basic-auth; the chart renders -backend-basic-auth from the Secret. Remove the extraArgs entry." -}}
 {{- end -}}
+{{- $deleteAuth := default (dict) .Values.deleteAuth -}}
+{{- if and $deleteAuth.existingSecret (hasKey $extraArgs "delete-api-auth-token") -}}
+{{- fail "deleteAuth.existingSecret cannot be combined with extraArgs.delete-api-auth-token; the chart renders -delete-api-auth-token from the Secret. Remove the extraArgs entry." -}}
+{{- end -}}
+{{- /* The delete API answers only requests that carry its own token; the
+proxy refuses to start with it enabled and no token (validateDeleteAPI). */ -}}
+{{- if and (eq (toString (get $extraArgs "delete-api-enabled")) "true") (not $deleteAuth.existingSecret) (eq (trim (toString (default "" (get $extraArgs "delete-api-auth-token")))) "") -}}
+{{- fail "extraArgs.delete-api-enabled=true requires a delete token: set deleteAuth.existingSecret (or extraArgs.delete-api-auth-token). Every delete request must carry it in X-Delete-Token or Authorization: Bearer." -}}
+{{- end -}}
+{{- /* Per-tenant limits are keyed by X-Scope-OrgID, which the proxy ignores while
+tenancy is off; it refuses to start then (validateTenantLimitsNeedTenancy). */ -}}
+{{- if ne (trim (toString (default "" (get $extraArgs "tenant-limits")))) "" -}}
+{{- $tenancy := or (ne (trim (toString (default "" (get $extraArgs "tenant-map")))) "") (ne (trim (toString (default "" (get $extraArgs "tenant-map-file")))) "") (ne (trim (toString (default "" (get $extraArgs "tenant-label")))) "") (eq (toString (get $extraArgs "auth.enabled")) "true") (eq (toString (get $extraArgs "require-tenant-header")) "true") (eq (toString (get $extraArgs "tenant.numeric-passthrough")) "true") -}}
+{{- if not $tenancy -}}
+{{- fail "extraArgs.tenant-limits is keyed by X-Scope-OrgID, but tenancy is off: set extraArgs.tenant.numeric-passthrough \"true\", tenant-map, tenant-map-file, tenant-label, auth.enabled or require-tenant-header, or use tenant-default-limits." -}}
+{{- end -}}
+{{- end -}}
 {{- $observability := default (dict) .Values.observability -}}
 {{- $otlp := default (dict) (get $observability "otlp") -}}
 {{- if and $otlp.existingSecret (or (hasKey $extraArgs "otlp-headers") (ne (default "" $otlp.headers | toString) "")) -}}

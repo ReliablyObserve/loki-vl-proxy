@@ -281,7 +281,10 @@ extraArgs:
   # forward-headers: "Authorization"
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
   # forward-cookies: "vmui_session"
-  # delete-api-enabled: "false"   # register /loki/api/v1/delete and forward it to VictoriaLogs (opt-in); off answers 404 like Loki with deletion disabled
+  # delete-api-enabled: "false"   # register /loki/api/v1/delete and forward it to VictoriaLogs (opt-in); off answers 404 like Loki with deletion disabled.
+  #                               # Requires the delete API's own token (deleteAuth.existingSecret): every delete request must carry it in X-Delete-Token or
+  #                               # Authorization: Bearer; rendering fails without one. The admin token and the admin listener are unaffected.
+  # delete-api-auth-token: ""     # the delete API's token; prefer deleteAuth.existingSecret (a plain value is visible in the pod spec and `helm get values`)
   # Compatibility profile knobs:
   # - label-style: passthrough | underscores (binary default: underscores)
   # - metadata-field-mode: native | translated | hybrid (binary default: translated)
@@ -389,9 +392,9 @@ extraArgs:
   # tenant-map-reload-interval: "30s"          # poll interval for tenant map file changes
   # tenant-limits-allow-publish: ""            # comma-separated limit fields published on /config/tenant/v1/limits
   # tenant-default-limits: ""                  # JSON map of Loki limits for every tenant, enforced and published: max_query_series, max_entries_limit_per_query, max_query_length, max_query_lookback, max_query_range, query_timeout
-  # tenant-limits: ""                          # JSON map of per-tenant Loki limits keyed by X-Scope-OrgID, above tenant-default-limits; enforced and published
+  # tenant-limits: ""                          # JSON map of per-tenant Loki limits keyed by X-Scope-OrgID, above tenant-default-limits; enforced and published. Needs tenancy on (tenant-map, tenant-map-file, tenant-label, auth.enabled, require-tenant-header or tenant.numeric-passthrough "true"); rendering fails otherwise
   # tenant.allow-global: "false"                # allow an unmapped X-Scope-OrgID "*" to bypass tenant scoping (backend default tenant); otherwise 403 (with tenant-label or tenant.numeric-passthrough=false this includes the default aliases 0/fake/default and a missing org). An explicit tenant-map entry always wins
-  # tenant.numeric-passthrough: "true"          # route a canonical numeric X-Scope-OrgID (7, not 007) to the VictoriaLogs account of that number; "false" = strict: only orgs in the tenant map are routed, other numeric orgs get 403, and the aliases 0/fake/default plus a missing org are refused unless tenant.allow-global or a tenant-map entry. A non-canonical number (007, 00, +7, -1, above 4294967295) is refused with 403 in both modes unless listed in the tenant map. No effect with tenant-label
+  # tenant.numeric-passthrough: "false"         # default unset = tenancy off (Loki single-tenant mode: X-Scope-OrgID ignored, account 0:0 for everyone) unless another tenant setting (tenant-map, tenant-map-file, tenant-label, auth.enabled, require-tenant-header) is present, which keeps it on. "true" routes a canonical numeric X-Scope-OrgID (7, not 007) to the VictoriaLogs account of that number; an explicit "false" = strict: only orgs in the tenant map are routed, other numeric orgs get 403, and the aliases 0/fake/default plus a missing org are refused unless tenant.allow-global or a tenant-map entry. A non-canonical number (007, 00, +7, -1, above 4294967295) is refused with 403 in both modes unless listed in the tenant map. No effect with tenant-label
   # metrics.max-tenants: "256"
   # metrics.max-clients: "256"
   # metrics.trust-proxy-headers: "false"
@@ -499,6 +502,16 @@ observability:
 # spec or in `helm get values`. The plain value (extraArgs."server.admin-auth-token")
 # keeps working; setting both fails rendering.
 adminAuth:
+  existingSecret: ""
+  existingSecretKey: "token"       # key within existingSecret
+
+# Delete API token (-delete-api-auth-token) from an existing Secret. Required by
+# extraArgs.delete-api-enabled: "true". The chart renders
+# -delete-api-auth-token=$(DELETE_API_AUTH_TOKEN) with the variable sourced from
+# a secretKeyRef. The plain value (extraArgs.delete-api-auth-token) keeps
+# working; setting both fails rendering. Separate from adminAuth: enabling
+# deletes leaves the admin listener as it is.
+deleteAuth:
   existingSecret: ""
   existingSecretKey: "token"       # key within existingSecret
 

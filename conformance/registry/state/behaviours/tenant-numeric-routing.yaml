@@ -17,7 +17,8 @@ reason: |
   are read back through a default-routing proxy and a strict proxy, and 007 is
   refused instead of reading account 7.
 owner_decision: |
-  Default routing keeps full Loki compatibility for canonical numbers; a
+  Numeric routing keeps full Loki compatibility for canonical numbers; a
   non-canonical number is refused unless the tenant map lists it. Strict routing
-  is an opt-in extension.
+  is an opt-in extension. Since 2026-11-11 tenancy (numeric routing included)
+  is off by default and turned on explicitly (tenant-auth-follows-loki).
 waiver: null

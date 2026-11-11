@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # validate_helm_secrets.sh — CI gate for the chart's "secret from an existing
-# Secret" values (adminAuth, backendAuth, observability.otlp).
+# Secret" values (adminAuth, deleteAuth, backendAuth, observability.otlp), and
+# for the delete API's own token.
 #
 #   1) With each existingSecret set, the rendered manifest references the Secret
 #      through a secretKeyRef env var and contains no plain secret value.
@@ -51,6 +52,35 @@ must_fail --set backendAuth.existingSecret=s --set extraArgs.backend-basic-auth=
 must_fail --set observability.otlp.existingSecret=s --set observability.otlp.headers=a=b
 must_fail --set observability.otlp.existingSecret=s --set extraArgs.otlp-headers=a=b
 
+# The delete API needs its own token; enabling it leaves the admin listener alone.
+must_fail --set extraArgs.delete-api-enabled=true
+must_fail --set extraArgs.delete-api-enabled=true --set 'extraArgs.delete-api-auth-token=  '
+must_fail --set extraArgs.delete-api-enabled=true --set adminAuth.existingSecret=s
+must_fail --set deleteAuth.existingSecret=s --set extraArgs.delete-api-auth-token=plain
+DEL="$(helm template rel "$CHART" --set extraArgs.delete-api-enabled=true --set deleteAuth.existingSecret=del-sec)" ||
+  fail "delete API with deleteAuth.existingSecret should render"
+grep -qF '"-delete-api-auth-token=$(DELETE_API_AUTH_TOKEN)"' <<<"$DEL" || fail "deleteAuth.existingSecret does not render the flag"
+block="$(grep -A5 -F -- "- name: DELETE_API_AUTH_TOKEN" <<<"$DEL" || true)"
+grep -qF 'name: "del-sec"' <<<"$block" || fail "DELETE_API_AUTH_TOKEN does not reference Secret del-sec"
+grep -qF '"-admin-listen=127.0.0.1:3101"' <<<"$DEL" || fail "enabling deletes moved the admin listener"
+if grep -qE 'ADMIN_AUTH_TOKEN|server.admin-auth-token' <<<"$DEL"; then fail "enabling deletes set an admin token"; fi
+helm template rel "$CHART" --set extraArgs.delete-api-enabled=true --set extraArgs.delete-api-auth-token=plain >/dev/null 2>&1 ||
+  fail "delete API with a plain delete token should render"
+helm template rel "$CHART" --set extraArgs.delete-api-enabled=false >/dev/null 2>&1 ||
+  fail "delete API off should render without a token"
+
+# Per-tenant limits need tenancy; default limits do not.
+# (--set-json: helm's --set reads a value that starts with "{" as a list)
+LIMITS='extraArgs.tenant-limits="{\"a\":{\"max_query_series\":1}}"'
+TENANCY_ERR="$(helm template rel "$CHART" --set-json "$LIMITS" 2>&1 >/dev/null || true)"
+grep -qF "tenancy is off" <<<"$TENANCY_ERR" || fail "tenant-limits without tenancy should fail rendering with the tenancy message: $TENANCY_ERR"
+helm template rel "$CHART" --set-json "$LIMITS" --set-string 'extraArgs.tenant\.numeric-passthrough=true' >/dev/null 2>&1 ||
+  fail "tenant-limits with numeric passthrough should render"
+helm template rel "$CHART" --set-json "$LIMITS" --set-json 'extraArgs.tenant-map="{\"a\":{\"account_id\":\"1\",\"project_id\":\"0\"}}"' >/dev/null 2>&1 ||
+  fail "tenant-limits with a tenant map should render"
+helm template rel "$CHART" --set-json 'extraArgs.tenant-default-limits="{\"max_query_series\":1}"' >/dev/null 2>&1 ||
+  fail "tenant-default-limits alone should render"
+
 # --- 3) plain values still render --------------------------------------------
 PLAIN="$(helm template rel "$CHART" \
   --set 'extraArgs.server\.admin-auth-token=plain-admin' \
@@ -60,7 +90,7 @@ grep -qF '"-backend-basic-auth=user:plain"' <<<"$PLAIN" || fail "plain backend b
 if grep -qE 'ADMIN_AUTH_TOKEN|BACKEND_BASIC_AUTH' <<<"$PLAIN"; then fail "plain values must not add the secretKeyRef env vars"; fi
 
 # --- defaults must not mention the new env vars ------------------------------
-if helm template rel "$CHART" | grep -qE 'ADMIN_AUTH_TOKEN|BACKEND_BASIC_AUTH|OTLP_HEADERS'; then
+if helm template rel "$CHART" | grep -qE 'ADMIN_AUTH_TOKEN|DELETE_API_AUTH_TOKEN|BACKEND_BASIC_AUTH|OTLP_HEADERS'; then
   fail "default render must not reference the secret env vars"
 fi
 

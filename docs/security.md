@@ -15,7 +15,7 @@ description: Security model, network exposure, tenant isolation, header forwardi
 - `/metrics` not served unless `-server.register-instrumentation=true`
 - query callers are not authenticated (see [Caller authentication](#caller-authentication))
 
-`/loki/api/v1/delete` is not registered by default and answers `404`, as Loki does with deletion disabled; `-delete-api-enabled=true` registers it with request safeguards, but deletion is not supported against VictoriaLogs (see [Delete API](#3-delete-api-unsupported)).
+`/loki/api/v1/delete` is not registered by default and answers `404`, as Loki does with deletion disabled; `-delete-api-enabled=true` registers it behind its own token (`-delete-api-auth-token`, required: the proxy refuses to start without it) and request safeguards, but deletion is not supported against VictoriaLogs (see [Delete API](#3-delete-api-unsupported)).
 
 Behavior changes from the 1.67.0 and 1.68.0 hardening releases (wildcard denial, tenant-scoped cache keys, execution limits) are described in the [security hardening migration guide](security-hardening-migration.md).
 
@@ -35,11 +35,13 @@ Where a gateway is not available, require client certificates at the proxy: `-tl
 
 ### 1) Tenant Isolation
 
-- `X-Scope-OrgID` is mapped to VictoriaLogs tenant IDs via `-tenant-map`
+Setups, defaults and every option: [Tenancy and authentication](tenancy-and-auth.md).
+
+- tenancy is off by default: `X-Scope-OrgID` is ignored and every client reads VictoriaLogs account `0:0`, as Loki with `auth_enabled: false`. It is on with any of `-auth.enabled`, `-require-tenant-header`, `-tenant-map`, `-tenant-map-file`, `-tenant-label` or `-tenant.numeric-passthrough=true`
+- with tenancy on, `X-Scope-OrgID` is checked as Loki checks it (Loki's `401 no org id` and `400` texts) and mapped to VictoriaLogs tenants via the tenant map, numeric passthrough or the tenant label
 - optional multi-tenant fanout is explicit (`tenant-a|tenant-b`)
-- wildcard tenant mode (`*`) is proxy-specific and requires explicit allow config: an unmapped `X-Scope-OrgID: *` returns `403` in native and label-routing (`-tenant-label`) modes unless `-tenant.allow-global=true`; an explicit tenant-map entry for `*` takes precedence; in label-routing mode the default aliases (`0`, `fake`, `default`) and an absent or empty `X-Scope-OrgID` follow the same rule, except that no map entry admits an empty org; with strict routing (`-tenant.numeric-passthrough=false`) they follow the same rule too
-- numeric tenants are canonical: `X-Scope-OrgID: 7` routes to VictoriaLogs account `7`, while `007`, `00`, `+7`, `-1` and anything above `4294967295` is refused with `403 unknown tenant` unless the tenant map lists that exact string, because Loki keeps `007` and `7` as different tenants and VictoriaLogs would otherwise merge them (or receive an invalid `AccountID`)
-- strict tenant routing (`-tenant.numeric-passthrough=false`, default `true`) serves only orgs listed in the tenant map: an unmapped numeric org is refused with `403 unknown tenant`, and the default aliases `0`, `fake`, `default` and a missing `X-Scope-OrgID` are refused like `*` unless `-tenant.allow-global=true` or the tenant map lists the alias (no entry admits a missing header). Use it when no tenant should be reachable by merely sending its number. Admission and the `AccountID`/`ProjectID` headers the proxy sets come from one resolver, so an admitted org is never served from `0:0` by accident (the cold tier also receives `X-Scope-OrgID` and resolves it itself; mirror tenant-map entries in its own alias table). Label routing is unchanged by the flag; see [Numeric tenants](configuration.md#numeric-tenants-and-strict-routing) for the table and migration steps
+- wildcard tenant mode (`*`) is proxy-specific and requires explicit allow config: an unmapped `X-Scope-OrgID: *` returns `403` in native and label-routing (`-tenant-label`) modes unless `-tenant.allow-global=true`; an explicit tenant-map entry for `*` takes precedence; in label-routing mode, and with strict routing (an explicit `-tenant.numeric-passthrough=false` next to a tenant map), the default aliases (`0`, `fake`, `default`) and an absent or empty `X-Scope-OrgID` follow the same rule, except that no map entry admits an empty org
+- numeric tenants are canonical: with numeric passthrough, `X-Scope-OrgID: 7` routes to VictoriaLogs account `7`, while `007`, `00`, `-1` and anything above `4294967295` is refused with `403 unknown tenant` unless the tenant map lists that exact string, because Loki keeps `007` and `7` as different tenants and VictoriaLogs would otherwise merge them (or receive an invalid `AccountID`). Admission and the `AccountID`/`ProjectID` headers the proxy sets come from one resolver, so an admitted org is never served from `0:0` by accident (the cold tier also receives `X-Scope-OrgID` and resolves it itself; mirror tenant-map entries in its own alias table); see [Numeric tenants](tenancy-and-auth.md#numeric-tenants-and-strict-routing)
 - label-routing mode enforces the tenant constraint through VictoriaLogs `extra_stream_filters`, so request parameters and query pipelines cannot override it; the configured tenant field must be a stream field
 - cache and coalescer keys (memory, disk, peer, window, metadata and label-value indexes) include the resolved tenant routing, backend identity and forwarded-identity fingerprint, so entries are never shared across tenants or authorization scopes
 
@@ -57,6 +59,8 @@ Where a gateway is not available, require client certificates at the proxy: `-tl
 
 By default `/loki/api/v1/delete` is not registered: every method answers `404` with the body `404 page not found`, which is what Loki returns when deletion is disabled (Loki registers the route only with `-compactor.retention-enabled=true`, off by default). No tenant header or other check runs first, as in Loki. With `-delete-api-enabled=true` the route is registered and validates each request before contacting the backend:
 
+- the delete token, in `X-Delete-Token` or `Authorization: Bearer` (constant-time compare): `-delete-api-enabled=true` requires `-delete-api-auth-token` (Helm: `deleteAuth.existingSecret`), and the proxy and the chart refuse to start or render without it. A request without the token answers `401 delete authentication required` before any other check, so an unauthenticated caller learns nothing about the route. Bare Loki has no authentication of its own; this check is the proxy's. The token is removed from the request before it is handled, so it is never forwarded to VictoriaLogs (even with `-forward-authorization`) or logged. It is separate from `-server.admin-auth-token`: neither token opens the other's routes, and enabling deletes leaves `/admin/*` and `/debug/*` on the loopback `-admin-listen` exactly as before
+- the tenant, as Loki checks it (`401 no org id`, Loki's tenant ID texts, `400 multiple org IDs present` for a multi-tenant header)
 - `POST` only and `X-Delete-Confirmation: true`
 - explicit query selector (`{}` and `*` are rejected)
 - explicit `start` and `end` time bounds, at most 30 days apart
@@ -230,7 +234,7 @@ Enable only for controlled troubleshooting windows. Without `-server.admin-auth-
 ## Recommended Production Baseline
 
 - an authenticating gateway in front of the proxy that sets `X-Scope-OrgID` (see [Caller authentication](#caller-authentication)), or client certificates required at the proxy
-- explicit `-tenant-map` (avoid implicit defaults for multi-tenant production)
+- explicit tenancy (`-tenant-map` or `-tenant-map-file`, with `-auth.enabled`): the default is one shared tenant
 - keep `-tenant.allow-global=false` unless you intentionally need wildcard backend-default access
 - strict `/tail` origin allowlist
 - conservative request-size and timeout limits

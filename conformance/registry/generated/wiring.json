@@ -109,8 +109,15 @@
       "internal/proxy/reserved_field_test.go",
       "internal/proxy/response_key_fences_test.go"
     ],
+    "credential-passthrough-as-configured": [
+      "internal/proxy/credential_passthrough_test.go"
+    ],
     "data-probing-and-freshness": [
       "internal/proxy/ordered_json_result_cache_test.go"
+    ],
+    "delete-api-requires-token": [
+      "cmd/proxy/delete_api_validation_test.go",
+      "internal/proxy/delete_route_test.go"
     ],
     "drilldown/fields-pill-json-path-extracted-empty": [
       "internal/proxy/drilldown_fields_json_path_test.go",
@@ -157,6 +164,9 @@
       "internal/proxy/topk_over_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/row_limit_like_loki_limit_test.go"
+    ],
+    "instrumentation-reveals-no-secrets": [
+      "internal/proxy/instrumentation_secrets_test.go"
     ],
     "limits/concurrent-full-retention-scans-exhaust-backend": [
       "internal/proxy/metadata_inventory_test.go",
@@ -1794,6 +1804,13 @@
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/loki_client_error_test.go"
     ],
+    "tenant-auth-follows-loki": [
+      "cmd/proxy/tenant_routing_test.go",
+      "internal/proxy/tenant_auth_parity_test.go",
+      "internal/proxy/tenant_header_fuzz_test.go",
+      "internal/proxy/tenant_isolation_leak_test.go",
+      "test/e2e-compat/tenant_auth_loki_test.go"
+    ],
     "tenant-label-isolation": [
       "internal/proxy/alerting_tenant_label_test.go",
       "internal/proxy/labels_cache_warm_test.go",
@@ -1809,6 +1826,9 @@
       "internal/proxy/query_range_steps_test.go",
       "internal/proxy/sliding_without_cut_harden_test.go",
       "internal/proxy/stats_extent_cache_test.go",
+      "internal/proxy/tenant_auth_parity_test.go",
+      "internal/proxy/tenant_header_fuzz_test.go",
+      "internal/proxy/tenant_isolation_leak_test.go",
       "internal/proxy/tenant_routing_test.go",
       "test/e2e-compat/tenant_numeric_routing_test.go"
     ],
@@ -1864,15 +1884,19 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 463,
+  "registry_items": 468,
   "routes_without_registry_item": [],
   "test_to_items": {
+    "cmd/proxy/delete_api_validation_test.go": [
+      "delete-api-requires-token"
+    ],
     "cmd/proxy/main_test.go": [
       "limits/every-cap-is-a-flag",
       "operator-configurable-limits",
       "semantics/query-range-step-alignment"
     ],
     "cmd/proxy/tenant_routing_test.go": [
+      "tenant-auth-follows-loki",
       "tenant-numeric-routing"
     ],
     "internal/cache/cache_coverage_test.go": [
@@ -2122,7 +2146,11 @@
     "internal/proxy/count_values_test.go": [
       "semantics/count-values-unsupported"
     ],
+    "internal/proxy/credential_passthrough_test.go": [
+      "credential-passthrough-as-configured"
+    ],
     "internal/proxy/delete_route_test.go": [
+      "delete-api-requires-token",
       "loki_api_v1_delete",
       "semantics/delete-route-disabled-like-loki"
     ],
@@ -2279,6 +2307,9 @@
     "internal/proxy/instant_unwrap_sum_test.go": [
       "profiles/sanitized-json-key-grouping",
       "semantics/non-sum-vector-aggregation-unreduced"
+    ],
+    "internal/proxy/instrumentation_secrets_test.go": [
+      "instrumentation-reveals-no-secrets"
     ],
     "internal/proxy/ip_label_filter_test.go": [
       "loki_api_v1_query_range",
@@ -2886,6 +2917,18 @@
     ],
     "internal/proxy/tail_pipeline_test.go": [
       "loki_api_v1_tail"
+    ],
+    "internal/proxy/tenant_auth_parity_test.go": [
+      "tenant-auth-follows-loki",
+      "tenant-numeric-routing"
+    ],
+    "internal/proxy/tenant_header_fuzz_test.go": [
+      "tenant-auth-follows-loki",
+      "tenant-numeric-routing"
+    ],
+    "internal/proxy/tenant_isolation_leak_test.go": [
+      "tenant-auth-follows-loki",
+      "tenant-numeric-routing"
     ],
     "internal/proxy/tenant_matcher_anchor_test.go": [
       "profiles/stream-selector-regexp-anchoring"
@@ -3999,6 +4042,9 @@
     "test/e2e-compat/tail_pipeline_test.go": [
       "loki_api_v1_tail"
     ],
+    "test/e2e-compat/tenant_auth_loki_test.go": [
+      "tenant-auth-follows-loki"
+    ],
     "test/e2e-compat/tenant_label_isolation_test.go": [
       "prometheus_api_v1_alerts",
       "prometheus_api_v1_rules",
@@ -4150,7 +4196,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 496,
+  "tests_with_markers": 503,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4232,6 +4278,7 @@
     "semantics/stream-label-shadowed-after-json-parser",
     "semantics/stream-level-shadowed-by-ingest-json-key",
     "semantics/tail-history-start-limit",
+    "semantics/tenant-header-loki-answers",
     "semantics/topk-per-step-membership-differs",
     "semantics/translator-folds-binary-by-operand-without",
     "semantics/translator-reads-quoted-text-as-syntax",
@@ -4257,5 +4304,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 286
+  "wired_items": 290
 }

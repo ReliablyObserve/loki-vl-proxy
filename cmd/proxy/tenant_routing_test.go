@@ -54,8 +54,13 @@ func TestTenantNumericPassthroughFlag(t *testing.T) {
 		args       []string
 		wantStrict bool
 	}{
-		{nil, false},
+		{nil, true}, // tenancy off by default: strict routing with nothing to route ignores the header
 		{[]string{"-tenant.numeric-passthrough=true"}, false},
+		{[]string{"-auth.enabled=true"}, false},
+		{[]string{"-require-tenant-header=true"}, false},
+		{[]string{`-tenant-map={"a":{"account_id":"1","project_id":"0"}}`}, false},
+		{[]string{"-tenant-label=org_id"}, false},
+		{[]string{"-tenant.numeric-passthrough=false", `-tenant-map={"a":{"account_id":"1","project_id":"0"}}`}, true},
 		{[]string{"-tenant.numeric-passthrough=false"}, true},
 		{[]string{"-tenant.numeric-passthrough=false", "-tenant.allow-global=true"}, true},
 	} {
@@ -69,6 +74,69 @@ func TestTenantNumericPassthroughFlag(t *testing.T) {
 		}
 		if cfg.StrictTenantRouting != tc.wantStrict {
 			t.Fatalf("%v: Config.StrictTenantRouting = %v, want %v", tc.args, cfg.StrictTenantRouting, tc.wantStrict)
+		}
+	}
+}
+
+// Tenancy is off by default (Loki's single-tenant mode); any tenant setting,
+// in flag or environment form, turns it on, and numeric passthrough then
+// stays on unless set false explicitly. The tenancy-off configuration is the
+// one TestTenantNoAuth_HeaderIgnoredLikeLoki (internal/proxy) replays Loki's
+// auth_enabled: false answers against: strict routing with no map, file,
+// label, -auth.enabled or -require-tenant-header.
+//
+// conformance: tenant-auth-follows-loki, tenant-numeric-routing
+func TestResolveNumericPassthrough(t *testing.T) {
+	for _, tc := range []struct {
+		name                          string
+		flag, explicit, auth, require bool
+		mapJSON, mapFile, label       string
+		want                          bool
+	}{
+		{name: "nothing set: tenancy off", want: false},
+		{name: "explicit true", flag: true, explicit: true, want: true},
+		{name: "explicit false", explicit: true, want: false},
+		{name: "explicit false with a map: strict", explicit: true, mapJSON: `{"a":{}}`, want: false},
+		{name: "-auth.enabled", auth: true, want: true},
+		{name: "-require-tenant-header", require: true, want: true},
+		{name: "tenant map (flag or TENANT_MAP)", mapJSON: `{"a":{}}`, want: true},
+		{name: "tenant map file (flag or TENANT_MAP_FILE)", mapFile: "/etc/t.yaml", want: true},
+		{name: "tenant label (flag or TENANT_LABEL)", label: "org_id", want: true},
+		{name: "blank values do not count", mapJSON: " ", mapFile: " ", label: " ", want: false},
+	} {
+		if got := resolveNumericPassthrough(tc.flag, tc.explicit, tc.auth, tc.require, tc.mapJSON, tc.mapFile, tc.label); got != tc.want {
+			t.Fatalf("%s: %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// The environment forms of the tenant settings turn tenancy on like the flags.
+//
+// conformance: tenant-auth-follows-loki
+func TestRun_TenantEnvTurnsTenancyOn(t *testing.T) {
+	for _, env := range []map[string]string{
+		{"TENANT_MAP": `{"a":{"account_id":"1","project_id":"0"}}`},
+		{"TENANT_LABEL": "org_id"},
+	} {
+		reloadCh := make(chan os.Signal)
+		close(reloadCh)
+		shutdownCh := make(chan os.Signal, 1)
+		shutdownCh <- syscall.SIGTERM
+		var captured runtimeOptions
+		err := run([]string{"-server.admin-auth-token=test-token"}, func(k string) string { return env[k] }, io.Discard,
+			func(chan<- os.Signal, ...os.Signal) {},
+			func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher { return &fakeOTLPPusher{} },
+			func(opts runtimeOptions, _ *slog.Logger, _ signalNotifier, _ otlpPusherFactory) (*runtimeState, error) {
+				captured = opts
+				return &runtimeState{proxy: &proxy.Proxy{}, server: &fakeHTTPServer{}, cacheCleanup: func() {}, stopOTLP: func() {}, reloadCh: reloadCh, shutdownCh: shutdownCh}, nil
+			},
+			func(httpServer, serverLoopOptions, *slog.Logger, func(string, ...any)) {},
+			func(ch <-chan os.Signal, _ httpServer, _ time.Duration, _ *slog.Logger) { <-ch })
+		if err != nil {
+			t.Fatalf("%v: %v", env, err)
+		}
+		if captured.proxyCfg.strictTenantRouting {
+			t.Fatalf("%v: tenancy stayed off (strict routing with no map)", env)
 		}
 	}
 }
@@ -136,5 +204,64 @@ func TestLogTenantRouting_StatesTheActiveMode(t *testing.T) {
 				t.Errorf("%+v: line lacks %s: %s", tc.cfg, w, buf.String())
 			}
 		}
+	}
+}
+
+// Per-tenant limits are keyed by X-Scope-OrgID, which tenancy-off ignores:
+// they refuse to start without a tenancy setting, naming the flags that turn
+// it on. Default limits apply to every request and stay allowed.
+//
+// conformance: tenant-auth-follows-loki
+func TestTenantLimitsNeedTenancy(t *testing.T) {
+	const limits = `{"team-a":{"max_query_series":10}}`
+	for _, tc := range []struct {
+		name    string
+		s       tenancySettings
+		wantErr bool
+	}{
+		{"no limits, tenancy off", tenancySettings{}, false},
+		{"default limits only", tenancySettings{}, false},
+		{"tenant limits, tenancy off", tenancySettings{tenantLimitsJSON: limits}, true},
+		{"tenant limits, explicit passthrough false", tenancySettings{tenantLimitsJSON: limits, numericPassthroughExplicit: true}, true},
+		{"tenant limits + numeric passthrough", tenancySettings{tenantLimitsJSON: limits, numericPassthrough: true, numericPassthroughExplicit: true}, false},
+		{"tenant limits + tenant map", tenancySettings{tenantLimitsJSON: limits, tenantMapJSON: `{"team-a":{"account_id":"1","project_id":"0"}}`}, false},
+		{"tenant limits + map file", tenancySettings{tenantLimitsJSON: limits, tenantMapFile: "/etc/t.yaml"}, false},
+		{"tenant limits + label", tenancySettings{tenantLimitsJSON: limits, tenantLabel: "org_id"}, false},
+		{"tenant limits + auth", tenancySettings{tenantLimitsJSON: limits, authEnabled: true}, false},
+		{"tenant limits + require header", tenancySettings{tenantLimitsJSON: limits, requireTenantHeader: true}, false},
+	} {
+		_, err := resolveTenancy(tc.s)
+		if (err != nil) != tc.wantErr {
+			t.Fatalf("%s: err %v, want error %v", tc.name, err, tc.wantErr)
+		}
+		if err != nil {
+			for _, flag := range []string{"-tenant-limits", "-tenant.numeric-passthrough=true", "-tenant-map", "-tenant-map-file", "-tenant-label", "-auth.enabled", "-require-tenant-header", "-tenant-default-limits"} {
+				if !strings.Contains(err.Error(), flag) {
+					t.Fatalf("%s: error does not name %s: %v", tc.name, flag, err)
+				}
+			}
+		}
+	}
+	for _, env := range []map[string]string{{"TENANT_LIMITS": limits}, {}} {
+		args := []string{"-server.admin-auth-token=test-token"}
+		if len(env) == 0 {
+			args = append(args, "-tenant-limits="+limits)
+		}
+		err := run(args, func(k string) string { return env[k] }, io.Discard, func(chan<- os.Signal, ...os.Signal) {},
+			func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher { return &fakeOTLPPusher{} },
+			func(runtimeOptions, *slog.Logger, signalNotifier, otlpPusherFactory) (*runtimeState, error) {
+				t.Fatal("runtime builder must not run when per-tenant limits have no tenancy")
+				return nil, nil
+			},
+			func(httpServer, serverLoopOptions, *slog.Logger, func(string, ...any)) {},
+			func(<-chan os.Signal, httpServer, time.Duration, *slog.Logger) {})
+		if err == nil || !strings.Contains(err.Error(), "tenancy is off") {
+			t.Fatalf("env %v args %v: %v, want the tenancy refusal", env, args, err)
+		}
+	}
+	// Default limits alone start.
+	got := runCapturingProxyCfg(t, `-tenant-default-limits={"max_query_series":10}`).proxyCfg
+	if !got.strictTenantRouting {
+		t.Fatal("default limits turned tenancy on")
 	}
 }

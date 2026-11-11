@@ -289,10 +289,12 @@ func TestTenantLabelRouting_RulesNestedAlertsTemplatesAndGroupFields(t *testing.
 				t.Fatalf("a nested alert without the tenant label leaked: %s", body)
 			}
 		}
-		// An org named like the rule's template must not match it.
+		// An org named like the rule's template must not match it: Loki's
+		// tenant ID check refuses it before the ruler is read (500 in the
+		// ruler's JSON, as Loki answers).
 		for _, tmpl := range []string{"{{ $labels.org_id }}"} {
 			rec := getAlerting(p, path, tmpl)
-			if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "rule-") || strings.Contains(rec.Body.String(), "alert-") {
+			if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "rule-") || strings.Contains(rec.Body.String(), "alert-") {
 				t.Fatalf("%s: org %q: %d %s", path, tmpl, rec.Code, rec.Body.String())
 			}
 		}
