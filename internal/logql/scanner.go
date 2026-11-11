@@ -281,7 +281,20 @@ func (s *scanner) read() rune {
 func isLokiSpace(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' }
 
 // trimLokiSpace drops the white space Loki's lexer skips from both ends of s.
-func trimLokiSpace(s string) string { return strings.Trim(s, " \t\r\n") }
+func trimLokiSpace(s string) string {
+	for len(s) > 0 && isLokiSpace(rune(s[0])) {
+		s = s[1:]
+	}
+	for len(s) > 0 && isLokiSpace(rune(s[len(s)-1])) {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+// isWildcard reports the bare wildcard some clients send for "all streams", with the white space Loki skips around it.
+func isWildcard(s string) bool {
+	return strings.IndexByte(s, '*') >= 0 && trimLokiSpace(s) == "*"
+}
 
 // skipWS skips white space and comments. It reports whether white space stands right before the token: Loki's
 // lexer takes the line break that ends a comment with the comment.

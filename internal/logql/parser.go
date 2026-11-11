@@ -282,42 +282,24 @@ func (p *parser) parsePrimary() (Expr, error) {
 		return nil, fmt.Errorf("logql: empty expression")
 	}
 
-	// Number literal (e.g. scalar in binary ops)
-	if p.cur.Typ == TokNumber {
-		val, err := strconv.ParseFloat(p.cur.Val, 64)
-		if err != nil {
-			p.advance()
-			return &BadLiteralExpr{Err: "parse error : unable to parse literal as a float: " + err.Error()}, nil
-		}
-		p.advance()
-		return &LiteralExpr{Value: val}, nil
-	}
-
-	// Negative number literal
-	if p.cur.Typ == TokMinus {
-		p.advance()
-		if p.cur.Typ != TokNumber {
-			return nil, p.syntaxErrorAt("NUMBER")
-		}
-		val, err := strconv.ParseFloat(p.cur.Val, 64)
-		if err != nil {
-			p.advance()
-			return &BadLiteralExpr{Err: "parse error : unable to parse literal as a float: " + err.Error()}, nil
-		}
-		p.advance()
-		return &LiteralExpr{Value: -val}, nil
+	// Number literal (e.g. scalar in binary ops), possibly negative.
+	if p.cur.Typ == TokNumber || p.cur.Typ == TokMinus {
+		return p.parseNumberLiteral()
 	}
 
 	// Vector aggregation: starts with a known aggregation name followed by
 	// optional grouping or '('.
 	if p.cur.Typ == TokIdent {
-		if isLexerFunctionName(p.cur.Val) && !p.functionKeyword() {
-			return nil, p.syntaxErrorAt("") // Loki reads the name as an identifier it cannot place
-		}
 		if op, ok := vectorOps[p.cur.Val]; ok {
+			if !p.keywordAhead(true) {
+				return nil, p.syntaxErrorAt("") // Loki reads the name as an identifier it cannot place
+			}
 			return p.parseVectorAggregation(op)
 		}
 		if op, ok := rangeOps[p.cur.Val]; ok {
+			if !p.keywordAhead(false) {
+				return nil, p.syntaxErrorAt("")
+			}
 			ra, err := p.parseRangeAggregation(op)
 			if err != nil {
 				return nil, err
@@ -337,6 +319,9 @@ func (p *parser) parsePrimary() (Expr, error) {
 		// is an IDENTIFIER it cannot place (group, label_join, abs, ...).
 		name := p.cur.Val
 		if !opaqueMetricFunctions[name] {
+			return nil, p.syntaxErrorAt("")
+		}
+		if name != "approx_topk" && !p.keywordAhead(false) {
 			return nil, p.syntaxErrorAt("")
 		}
 		// Capture the full raw text and return it as-is so VictoriaLogs
@@ -391,6 +376,25 @@ func (p *parser) parsePrimary() (Expr, error) {
 	}
 
 	return nil, p.syntaxErrorAt("")
+}
+
+// parseNumberLiteral parses a number, or a minus and a number.
+func (p *parser) parseNumberLiteral() (Expr, error) {
+	sign := 1.0
+	if p.cur.Typ == TokMinus {
+		p.advance()
+		sign = -1
+		if p.cur.Typ != TokNumber {
+			return nil, p.syntaxErrorAt("NUMBER")
+		}
+	}
+	val, err := strconv.ParseFloat(p.cur.Val, 64)
+	if err != nil {
+		p.advance()
+		return &BadLiteralExpr{Err: "parse error : unable to parse literal as a float: " + err.Error()}, nil
+	}
+	p.advance()
+	return &LiteralExpr{Value: sign * val}, nil
 }
 
 // maybeInfix checks for a binary operator after a primary and builds a BinOpExpr
@@ -1169,19 +1173,36 @@ func identTokenName(name string, keyword bool) string {
 	return lokiTokenName(Token{Typ: TokIdent, Val: name})
 }
 
-// functionKeyword reports whether Loki's lexer reads the function name at the current token as its keyword: a '('
-// follows it, or for an aggregation by or without. It looks ahead over every character Go calls white space (a
+// functionKeyword reports whether Loki's lexer reads the function name at the current token as its keyword.
+func (p *parser) functionKeyword() bool {
+	_, vector := vectorOps[p.cur.Val]
+	return p.keywordAhead(vector)
+}
+
+// keywordAhead is functionKeyword for a name known to be an aggregation (vector) or not: a '(' follows it, or for
+// an aggregation `by (` or `without (`. The lexer looks ahead over every character Go calls white space (a
 // vertical tab, a form feed, U+00A0, ...), not only over the four it skips between tokens: the name is a keyword
 // then, and the character that is not white space to the lexer is the unexpected token after it.
-func (p *parser) functionKeyword() bool {
-	rest := strings.TrimLeftFunc(p.sc.src[p.sc.pos:], unicode.IsSpace)
+func (p *parser) keywordAhead(vector bool) bool {
+	rest := p.sc.src[p.sc.pos:]
+	if len(rest) > 0 && rest[0] == '(' {
+		return true
+	}
+	for len(rest) > 0 && rest[0] == ' ' {
+		rest = rest[1:]
+	}
+	rest = strings.TrimLeftFunc(rest, unicode.IsSpace)
 	if strings.HasPrefix(rest, "(") {
 		return true
 	}
-	if _, ok := vectorOps[p.cur.Val]; ok {
+	if vector {
 		for _, word := range [...]string{"by", "without"} {
 			if startsWord(rest, word) {
-				return strings.HasPrefix(strings.TrimLeftFunc(rest[len(word):], unicode.IsSpace), "(")
+				rest = rest[len(word):]
+				for len(rest) > 0 && rest[0] == ' ' {
+					rest = rest[1:]
+				}
+				return strings.HasPrefix(strings.TrimLeftFunc(rest, unicode.IsSpace), "(")
 			}
 		}
 	}
@@ -1641,20 +1662,22 @@ func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 	p.advance()
 	// Loki's lexer reads the text up to the ']' as one token and parses it as a duration: a character in it that
 	// is not part of one, white space among them, is an error of that token.
-	raw, closed := rangeToken(p.sc.src, textStart)
 	dur, err := p.expect(TokDuration)
 	if err != nil {
-		if closed {
+		if raw, closed := rangeToken(p.sc.src, textStart); closed {
 			if msg := rangeLexError(raw); msg != "" {
 				return newParseError(0, bracketCol, msg)
 			}
 		}
 		return fmt.Errorf("logql: expected duration: %w", err)
 	}
-	subquery := p.cur.Typ == TokError && p.cur.Val == ":" // reported below
-	if closed && dur.Val != raw && !subquery {
-		if msg := rangeLexError(raw); msg != "" {
-			return newParseError(0, bracketCol, msg)
+	// Nothing is skipped inside the range, so the duration starts the text: it is the whole text when the ']' follows.
+	if end := textStart + len(dur.Val); end >= len(p.sc.src) || p.sc.src[end] != ']' {
+		subquery := p.cur.Typ == TokError && p.cur.Val == ":" // reported below
+		if raw, closed := rangeToken(p.sc.src, textStart); closed && !subquery {
+			if msg := rangeLexError(raw); msg != "" {
+				return newParseError(0, bracketCol, msg)
+			}
 		}
 	}
 	ra.Range = dur.Val

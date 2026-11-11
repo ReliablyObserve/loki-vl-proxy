@@ -10,7 +10,7 @@ import (
 )
 
 // TestLexerResponseKeyVersionFencesTheChangedReadings pins which queries carry the lexer fence: those the LogQL lexer
-// answered before and rejects now, in every spelling the candidate scan looks for; no query that is valid, the
+// answered before and rejects now, and any other query the validation rejects; no query that is valid, the
 // words, brackets and strings that look alike included.
 //
 // conformance: cache-response-key-versions
@@ -43,37 +43,22 @@ func TestLexerResponseKeyVersionFencesTheChangedReadings(t *testing.T) {
 		"rate({app=\"a\"}[5m])":                                         false,
 		"sum by (a, b) (rate({app=\"a\"}[5m]))":                         false,
 		"sum without (a) (rate({app=\"a\"}[5m]))":                       false,
+		"sum by ( a , b ) (rate({app=\"a\"}[5m]))":                      false,
+		"sum by () (rate({app=\"a\"}[5m]))":                             false,
+		"sum by (a,b,) (rate({app=\"a\"}[5m]))":                         true,
+		"sum by (,a) (rate({app=\"a\"}[5m]))":                           true,
+		"sum by (a b ) (rate({app=\"a\"}[5m]))":                         true,
+		"sum by (a) rate({app=\"a\"}[5m])":                              true, // rejected before as well: nothing cached to fence, the version is harmless
+		"rate({a=\"b\"}[5m]) / on(a) group_right rate({a=\"b\"}[5m])":   false,
 		"rate({a=\"b\"}[5m]) / on(a) group_left(c) rate({a=\"b\"}[5m])": false,
 		"sum(rate({app=\"a\"}[5m])) by (a)":                             false,
 		"{app=\"a\"} # a\vb\n| json":                                    false,
 		"{app=\"a\"} |= \"by  (a b\"":                                   false,
 		"rate({app=\"a\"} |= \"[ \" [5m])":                              false,
-		"":                                                              false,
+		"":                                                              true,
 	} {
 		if got := lexerResponseKeyVersion(query) != ""; got != fenced {
 			t.Errorf("lexerResponseKeyVersion(%q) fenced = %v, want %v", query, got, fenced)
-		}
-	}
-}
-
-// A candidate the scan finds but the validation accepts carries no fence, so no valid query's key changes.
-//
-// conformance: cache-response-key-versions
-func TestLexerResponseKeyVersionLeavesValidQueriesAlone(t *testing.T) {
-	for _, query := range []string{
-		`sum by (a) (rate({app="a"}[5m]))`,
-		`sum(rate({app="a"}[5m])) by (a, b)`,
-		`rate({a="b"}[5m]) / on(a) group_left rate({a="b"}[5m])`,
-		"{app=\"a\"} |= `a\nb`",
-		"{app=\"a\"} |= \"a b\" | json",
-		`sum(rate({app="a"}[5m])) > bool 1`,
-		"{app=\"a\"} # note\v\n| json",
-	} {
-		if !lexerFenceCandidate(query) && !strings.Contains(query, "by") {
-			continue
-		}
-		if got := lexerResponseKeyVersion(query); got != "" {
-			t.Errorf("%q is valid but carries the fence %q", query, got)
 		}
 	}
 }

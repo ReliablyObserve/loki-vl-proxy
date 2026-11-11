@@ -52,7 +52,7 @@ func validateLogQL(query string) (Expr, string) {
 	// would reject it, but translateQueryWithContext handles * specially so
 	// it must be allowed through validation unchanged. Only the white space
 	// Loki's lexer skips is dropped around it.
-	if trimLokiSpace(query) == "*" {
+	if isWildcard(query) {
 		return nil, ""
 	}
 
@@ -128,7 +128,7 @@ const (
 // that does not match the empty string. Returns "" when valid.
 func ValidateMatchersQuery(query string) string {
 	// Bare wildcard: tolerated for the same clients ValidateLogQL tolerates.
-	if trimLokiSpace(query) == "*" {
+	if isWildcard(query) {
 		return ""
 	}
 	if msg := InputSizeError(query); msg != "" {
@@ -196,7 +196,7 @@ func ValidateSeriesMatchers(groups []string) string {
 	selectors := make([]*StreamSelector, 0, len(deduped))
 	for _, g := range deduped {
 		// Bare wildcard: tolerated for the same clients ValidateLogQL tolerates.
-		if trimLokiSpace(g) == "*" {
+		if isWildcard(g) {
 			continue
 		}
 		lq, msg := parseMatchersOnly(g)
