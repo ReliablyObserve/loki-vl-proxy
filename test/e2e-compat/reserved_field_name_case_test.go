@@ -141,7 +141,7 @@ func TestCompat_ReservedFieldNameCaseLikeLoki(t *testing.T) {
 		want  float64
 	}{
 		{fmt.Sprintf(`sum(sum_over_time({service_name=%q, kind="u"} | logfmt | unwrap _TIME [5m]))`, svc), 20.5},
-		{fmt.Sprintf(`sum(max_over_time({service_name=%q, kind="u"} | logfmt | unwrap _TIME [5m]))`, svc), 10},
+		{fmt.Sprintf(`sum(max_over_time({service_name=%q, kind="u"} | logfmt | unwrap _TIME [5m]))`, svc), 20.5}, // logfmt makes k a label: three series, max 10 + 3.5 + 7
 		{fmt.Sprintf(`sum(count_over_time({service_name=%q} | logfmt | _Stream_ID="si" [5m]))`, svc), 2},
 	} {
 		ls, lb, lp := queryInstantGET(t, lokiURL, tc.query, at)
