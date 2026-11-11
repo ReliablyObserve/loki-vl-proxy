@@ -11,18 +11,26 @@
 # (host files outside the module); they run with -count=1. Run
 # `go run ./test/testcache/cmd/normalize-mtimes` first in a fresh checkout (see test/testcache).
 #
-# internal/proxy is ~96% of the time, so CI splits the suite over parallel jobs
-# (UNIT_SHARD), each writing its own `go test -json` events and coverage profile;
-# the `test` aggregate job merges them (scripts/ci/merge_unit_shards.sh):
-#   UNIT_SHARD=<1..UNIT_SHARDS>  that share of internal/proxy's top-level tests, chosen
-#                                by scripts/ci/test_shards.py (every test in exactly one shard)
+# internal/proxy and internal/querycorpus are nearly all of the time (under -race with
+# coverage, minutes each), so CI splits the suite over parallel jobs (UNIT_SHARD), each
+# writing its own `go test -json` events and coverage profile; the `test` aggregate job
+# merges them (scripts/ci/merge_unit_shards.py):
+#   UNIT_SHARD=<1..UNIT_SHARDS>  that share of the top-level tests of each package in
+#                                UNIT_SHARD_PACKAGES, chosen by scripts/ci/test_shards.py
+#                                (every test of a package in exactly one shard); one
+#                                `go test -run <share>` per package, the profiles merged
 #   UNIT_SHARD=rest              every other package, the uncached ones included
 #   UNIT_SHARD unset             everything in one job, as before (local runs)
-#   UNIT_SHARDS                  number of internal/proxy shards (default 4)
+#   UNIT_SHARDS                  number of shards (default 4)
+#   UNIT_SHARD_PACKAGES          the split packages, directories of the module, space separated
+#                                (default "internal/proxy internal/querycorpus"); a package
+#                                added here leaves `rest` and is split like the others; keep
+#                                equal to PACKAGES in scripts/ci/merge_unit_shards.py
 #   UNIT_FRESH=1                 expire every stored test result first (`go clean -testcache`), then run
 #                                normally: every test executes and its result is stored for later pull
 #                                requests (main, dispatch, ci-full). Not -count=1, which stores nothing.
-#   UNIT_SHARD_DIR               where a proxy shard writes all-tests.txt and its assigned tests
+#   UNIT_SHARD_DIR               where a numbered shard writes all-tests.txt and assigned.txt: one
+#                                "<package directory>:<test>" line per test
 #
 # Writes the `go test -json` events of the runs to stdout, one after the other,
 # and the merged coverage profile to $COVERPROFILE (default coverage.out). The
@@ -37,7 +45,8 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 module="$(go list -m)"
-proxy="$module/internal/proxy"
+# shellcheck disable=SC2206 # word splitting of the list is intended
+split_dirs=(${UNIT_SHARD_PACKAGES:-internal/proxy internal/querycorpus})
 shard="${UNIT_SHARD:-}"
 shards="${UNIT_SHARDS:-4}"
 # Fresh: forget every stored result (the compiled packages stay), so each test runs once and its
@@ -46,24 +55,44 @@ if [ "${UNIT_FRESH:-}" = "1" ]; then
   go clean -testcache || exit 2
 fi
 
+# merge_profiles OUT IN...: one "mode:" line, then the blocks of every input (the packages are disjoint).
+merge_profiles() {
+  local out="$1" header=1 f
+  shift
+  : > "$out"
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    if [ "$header" -eq 1 ]; then cat "$f" >> "$out"; header=0; else tail -n +2 "$f" >> "$out"; fi
+  done
+}
+
 if [ -n "$shard" ] && [ "$shard" != "rest" ]; then
-  # One share of internal/proxy's tests. The list comes from the same race build the run
-  # uses, so it compiles once. Every test is in exactly one shard (test_shards.py check).
+  # One share of the tests of each split package. Each list comes from the same race build the
+  # run uses, so it compiles once. Every test is in exactly one shard (test_shards.py check).
   dir="${UNIT_SHARD_DIR:-$tmp}"
   mkdir -p "$dir"
-  if ! go test -race -coverprofile="$tmp/list.out" -list '.*' ./internal/proxy/ > "$tmp/list.txt" 2> "$tmp/list.err"; then
-    cat "$tmp/list.txt" "$tmp/list.err" >&2
-    echo "go_test_unit: go test -list failed" >&2
-    exit 2
-  fi
-  scripts/ci/test_shards.py check --shards "$shards" --list "$tmp/list.txt" >&2 || exit 2
-  scripts/ci/test_shards.py assign --shards "$shards" --list "$tmp/list.txt" > "$tmp/assign.tsv" || exit 2
-  cut -f2 "$tmp/assign.tsv" | LC_ALL=C sort > "$dir/all-tests.txt"
-  awk -F'\t' -v s="$shard" '$1 == s { print $2 }' "$tmp/assign.tsv" | LC_ALL=C sort > "$dir/assigned.txt"
-  run="$(scripts/ci/test_shards.py regex --shards "$shards" --shard "$shard" --list "$tmp/list.txt")" || exit 2
-  echo "go_test_unit: internal/proxy shard $shard of $shards: $(wc -l < "$dir/assigned.txt" | tr -d ' ') of $(wc -l < "$dir/all-tests.txt" | tr -d ' ') tests" >&2
+  : > "$dir/all-tests.txt"
+  : > "$dir/assigned.txt"
   status=0
-  go test ./internal/proxy/ -race -timeout=50m -run "$run" -coverprofile="$COVERPROFILE" -json "$@" || status=$?
+  profiles=()
+  i=0
+  for pkgdir in "${split_dirs[@]}"; do
+    i=$((i + 1))
+    if ! go test -race -coverprofile="$tmp/list-$i.out" -list '.*' "./$pkgdir/" > "$tmp/list-$i.txt" 2> "$tmp/list-$i.err"; then
+      cat "$tmp/list-$i.txt" "$tmp/list-$i.err" >&2
+      echo "go_test_unit: go test -list failed for $pkgdir" >&2
+      exit 2
+    fi
+    scripts/ci/test_shards.py check --package "$pkgdir" --shards "$shards" --list "$tmp/list-$i.txt" >&2 || exit 2
+    scripts/ci/test_shards.py assign --package "$pkgdir" --shards "$shards" --list "$tmp/list-$i.txt" > "$tmp/assign-$i.tsv" || exit 2
+    cut -f2 "$tmp/assign-$i.tsv" | LC_ALL=C sort | sed "s|^|$pkgdir:|" >> "$dir/all-tests.txt"
+    awk -F'\t' -v s="$shard" '$1 == s { print $2 }' "$tmp/assign-$i.tsv" | LC_ALL=C sort | sed "s|^|$pkgdir:|" >> "$dir/assigned.txt"
+    run="$(scripts/ci/test_shards.py regex --package "$pkgdir" --shards "$shards" --shard "$shard" --list "$tmp/list-$i.txt")" || exit 2
+    echo "go_test_unit: $pkgdir shard $shard of $shards: $(grep -c "^$pkgdir:" "$dir/assigned.txt") of $(grep -c "^$pkgdir:" "$dir/all-tests.txt") tests" >&2
+    profiles+=("$tmp/shard-$i.out")
+    go test "./$pkgdir/" -race -timeout=50m -run "$run" -coverprofile="$tmp/shard-$i.out" -json "$@" || status=$?
+  done
+  merge_profiles "$COVERPROFILE" "${profiles[@]}"
   exit "$status"
 fi
 
@@ -75,7 +104,9 @@ done < scripts/ci/test-cache-uncached.tsv
 cached=()
 while IFS= read -r pkg; do
   [ -n "$pkg" ] || continue
-  [ "$shard" = "rest" ] && [ "$pkg" = "$proxy" ] && continue
+  if [ "$shard" = "rest" ]; then
+    for d in "${split_dirs[@]}"; do [ "$pkg" = "$module/$d" ] && continue 2; done
+  fi
   skip=0
   for u in "${uncached[@]}"; do [ "$pkg" = "$u" ] && skip=1; done
   [ "$skip" -eq 1 ] || cached+=("$pkg")
@@ -90,11 +121,6 @@ status=0
 go test "${uncached[@]}" -count=1 -race -timeout=50m -coverprofile="$tmp/uncached.out" -json "$@" || status=$?
 go test "${cached[@]}" -race -timeout=50m -coverprofile="$tmp/cached.out" -json "$@" || status=$?
 
-# One "mode:" line, then the blocks of both runs (the sets of packages are disjoint).
-: > "$COVERPROFILE"
-header=1
-for f in "$tmp/uncached.out" "$tmp/cached.out"; do
-  [ -f "$f" ] || continue
-  if [ "$header" -eq 1 ]; then cat "$f" >> "$COVERPROFILE"; header=0; else tail -n +2 "$f" >> "$COVERPROFILE"; fi
-done
+# The sets of packages of the two runs are disjoint.
+merge_profiles "$COVERPROFILE" "$tmp/uncached.out" "$tmp/cached.out"
 exit "$status"
