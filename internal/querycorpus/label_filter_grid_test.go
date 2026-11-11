@@ -162,6 +162,9 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 	t.Helper()
 	delegated = map[string]int{}
 	for _, q := range grid {
+		if translatorReadsStageMarker(q) {
+			continue // the translator cuts the value (semantics/translator-reads-marker-bytes-in-quoted-value)
+		}
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {
 			continue
@@ -195,15 +198,15 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				problems = append(problems, fmt.Sprintf("%s: %q: lowering failed: %v", prof.name, q, lerr))
 				continue
 			}
-			if rank, underLabelReplace := evaluatedRoot(plan); rank {
+			if routed, divergence := evaluatedRoot(plan); routed {
 				if msg := checkProxyEvaluated(q, prof, got); msg != "" {
 					problems = append(problems, msg)
 					continue
 				}
 				native++
 				continue
-			} else if underLabelReplace {
-				delegated["known divergence "+knownLabelReplaceAroundRanking]++
+			} else if divergence != "" {
+				delegated["known divergence "+divergence]++
 				continue
 			}
 			want, err := translator.DecodePhysical(legacy)

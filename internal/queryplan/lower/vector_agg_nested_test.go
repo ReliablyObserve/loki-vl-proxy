@@ -83,10 +83,6 @@ func TestPlanNestedVectorAggregationFold(t *testing.T) {
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesNestedVectorAggregations(t *testing.T) {
 	for q, construct := range map[string]string{
-		`sum(stddev by (app) (rate({app="a"}[5m])))`:                                         "VectorAgg operand",
-		`stddev(sum by (app) (rate({app="a"}[5m])))`:                                         "VectorAgg operand",
-		`sum(sum by (app) (stdvar(rate({app="a"}[5m]))))`:                                    "VectorAgg operand",
-		`sum(topk(2, sum by (app) (rate({app="a"}[5m]))))`:                                   "VectorAgg operand",
 		`sum(sum by (app) (rate({app="a"}[5m]) > 1))`:                                        "VectorAgg operand",
 		`sum(sum by (app) (label_replace(rate({app="a"}[5m]), "b", "$1", "app", "(.*)")))`:   "VectorAgg operand",
 		`sum(sum by (app) (sum_over_time({app="a"} | unwrap n [5m])))`:                       "VectorAgg nested unwrap",
@@ -94,9 +90,6 @@ func TestPlanDelegatesNestedVectorAggregations(t *testing.T) {
 		`sum without () (sum by (app) (rate({app="a"}[5m])))`:                                "VectorAgg without empty",
 		`sum(sum without () (rate({app="a"}[5m])))`:                                          "VectorAgg without empty",
 		`sum(sum by (app) (rate({app="a"}[0s])))`:                                            "VectorAgg range",
-		`sum(sum without (a) (rate({app="a"} | json [5m])))`:                                 "VectorAgg parser without",
-		`sum(sum by (app) (rate({app="a"} | keep x [5m])))`:                                  "VectorAgg keep identity",
-		`sum(sum by (a_b) (count_over_time({app="a"} | logfmt [5m])))`:                       "VectorAgg parser label",
 		`sum(sum by (app) (count_over_time({app="a"} |= "| stats " [5m])))`:                  "VectorAgg quoted clause",
 		`sum(sum without (app) (count_over_time({app="a"} |= "without (x)" [5m])))`:          "VectorAgg quoted clause",
 		`sum(sum by (app) (avg_over_time({app="a"} | unwrap n [5m]) by (x)))`:                "VectorAgg nested unwrap",

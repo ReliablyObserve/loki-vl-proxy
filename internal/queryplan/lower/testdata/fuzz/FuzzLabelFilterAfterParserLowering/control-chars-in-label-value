@@ -1,0 +1,8 @@
+go test fuzz v1
+string("o")
+string("\x02\x00\x02")
+string("K")
+string("x|y")
+byte('\xd2')
+byte('\x04')
+byte('\x01')

@@ -1,0 +1,9 @@
+go test fuzz v1
+string("app")
+string("| json\xa3\xae0wl")
+string("route")
+byte('D')
+byte(')')
+byte('\x04')
+byte('\x00')
+byte('\b')

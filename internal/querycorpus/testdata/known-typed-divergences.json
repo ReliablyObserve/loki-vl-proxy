@@ -1,5 +1,10 @@
 {
+  "q-416ed374da85": "semantics/pattern-capture-before-bracket-text",
+  "q-471dd27188a0": "semantics/pattern-capture-before-bracket-text",
+  "q-63ccc3e60bac": "semantics/pattern-capture-before-bracket-text",
   "q-640a79bad53a": "semantics/translator-reads-quoted-text-as-syntax",
+  "q-74130bb26b09": "semantics/pattern-capture-before-bracket-text",
   "q-8224a467eecd": "semantics/translator-reads-quoted-text-as-syntax",
-  "q-d9c5c8b25e5e": "semantics/translator-reads-quoted-text-as-syntax"
+  "q-d9c5c8b25e5e": "semantics/translator-reads-quoted-text-as-syntax",
+  "q-e1d1c6e571a4": "semantics/pattern-capture-before-bracket-text"
 }

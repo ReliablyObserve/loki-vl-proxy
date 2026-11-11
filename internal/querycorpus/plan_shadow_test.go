@@ -131,12 +131,18 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 				fail(fmt.Sprintf("%s: %q: lowering failed: %v", prof.name, q, lerr))
 				continue
 			}
+			// A root the proxy evaluates is held to the proxy's route, which strips the parentheses that wrap the whole
+			// query before it translates the operand: the translator's misreading of them is not in that reference.
+			routed, divergence := evaluatedRoot(plan)
 			caseID, ok := knownTypedDivergences()[queryID("logql", q)]
 			if !ok && translatorMisreadsQuotedText(q) {
 				caseID, ok = "semantics/translator-reads-quoted-text-as-syntax", true
 			}
-			if !ok && translatorMisreadsParenthesizedMetric(q) {
+			if !ok && !routed && translatorMisreadsParenthesizedMetric(q) {
 				caseID, ok = "semantics/translator-reads-parenthesized-metric-as-text", true
+			}
+			if !ok && translatorReadsStageMarker(q) {
+				caseID, ok = "semantics/translator-reads-marker-bytes-in-quoted-value", true
 			}
 			if ok {
 				// The translator is the wrong one here (knownTypedDivergencesPath, with its registry case):
@@ -145,7 +151,7 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 				sl.delegated++
 				continue
 			}
-			if rank, underLabelReplace := evaluatedRoot(plan); rank {
+			if routed {
 				if msg := checkProxyEvaluated(q, prof, got); msg != "" {
 					fail(msg)
 					continue
@@ -154,10 +160,10 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 				sec.NativeProxyEvaluated++
 				sl.native++
 				continue
-			} else if underLabelReplace {
-				// The proxy does not route a label_replace around a ranking as one, and the translator's text for
-				// it drops the ranking (knownLabelReplaceAroundRanking): the plan is right, not served yet.
-				sec.DelegatedByConstruct["known divergence "+knownLabelReplaceAroundRanking]++
+			} else if divergence != "" {
+				// The proxy does not take the shape as one evaluation, and the translator's text for it drops a level
+				// (evaluatedRoot): the plan is right, not served yet.
+				sec.DelegatedByConstruct["known divergence "+divergence]++
 				sl.delegated++
 				continue
 			}
@@ -299,8 +305,8 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	const rows = 300
 	echo := func(q string, p *queryplan.Plan, prof planProfile) (physical.Op, error) {
-		// A ranking is evaluated by the proxy: the operators it runs are the route's, not the translator's text.
-		if rank, _ := evaluatedRoot(p); rank {
+		// A ranking or stddev is evaluated by the proxy: the operators it runs are the route's, not the translator's text.
+		if routed, _ := evaluatedRoot(p); routed {
 			op, _, routed, err := proxyReference(q, prof)
 			if err != nil || !routed {
 				return nil, &lower.NotLoweredError{Construct: "rejected"}

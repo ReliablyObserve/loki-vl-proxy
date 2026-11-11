@@ -1,0 +1,250 @@
+[
+ {
+  "q": "{app=\"a\"} | o=\"\\x02\\x00\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": "\u0002\u0000\u0002"
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o=\"\\x02\\x00\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": ""
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o=\"\\x02\\x00\\x02\"",
+  "labels": {
+   "app": "a"
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o=\"\\x02\\x00\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": "\u0002\u0000\u0002x"
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"\\x02\\x00\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": "\u0002\u0000\u0002"
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"\\x02\\x00\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": ""
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"\\x02\\x00\\x02\"",
+  "labels": {
+   "app": "a"
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"\\x02\\x00\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": "\u0002\u0000\u0002x"
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o=\"\\x02\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": "\u0002\u0002"
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o=\"\\x02\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": ""
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o=\"\\x02\\x02\"",
+  "labels": {
+   "app": "a"
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o=\"\\x02\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": "\u0002\u0002x"
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"\\x02\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": "\u0002\u0002"
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"\\x02\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": ""
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"\\x02\\x02\"",
+  "labels": {
+   "app": "a"
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"\\x02\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": "\u0002\u0002x"
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o=\"a\\x02b\\x02c\"",
+  "labels": {
+   "app": "a",
+   "o": "a\u0002b\u0002c"
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o=\"a\\x02b\\x02c\"",
+  "labels": {
+   "app": "a",
+   "o": ""
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o=\"a\\x02b\\x02c\"",
+  "labels": {
+   "app": "a"
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o=\"a\\x02b\\x02c\"",
+  "labels": {
+   "app": "a",
+   "o": "a\u0002b\u0002cx"
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"a\\x02b\\x02c\"",
+  "labels": {
+   "app": "a",
+   "o": "a\u0002b\u0002c"
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"a\\x02b\\x02c\"",
+  "labels": {
+   "app": "a",
+   "o": ""
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"a\\x02b\\x02c\"",
+  "labels": {
+   "app": "a"
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"a\\x02b\\x02c\"",
+  "labels": {
+   "app": "a",
+   "o": "a\u0002b\u0002cx"
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o=\"\\x02a\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": "\u0002a\u0002"
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o=\"\\x02a\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": ""
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o=\"\\x02a\\x02\"",
+  "labels": {
+   "app": "a"
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o=\"\\x02a\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": "\u0002a\u0002x"
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"\\x02a\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": "\u0002a\u0002"
+  },
+  "keep": false
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"\\x02a\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": ""
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"\\x02a\\x02\"",
+  "labels": {
+   "app": "a"
+  },
+  "keep": true
+ },
+ {
+  "q": "{app=\"a\"} | o!=\"\\x02a\\x02\"",
+  "labels": {
+   "app": "a",
+   "o": "\u0002a\u0002x"
+  },
+  "keep": true
+ }
+]

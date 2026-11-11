@@ -36,6 +36,11 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 	if lerr != nil {
 		t.Fatalf("%s: %s: lowering failed: %v", prof.name, q, lerr)
 	}
+	// The levels the proxy evaluates (a ranking, stddev or stdvar, around which a label_replace may stand) are held to
+	// the proxy's route in the corpus shadow, not to the translator's text for the whole query.
+	if physical.Evaluated(op) {
+		return "", legacy, false, "proxy-evaluated", true
+	}
 	want, _ := translator.DecodePhysical(legacy)
 	lowered = physical.Encode(op)
 	return lowered, legacy, lowered == legacy && physical.Equal(want, op), "", true
@@ -107,28 +112,26 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 		`vector(1) + ` + rate:                  "BinOp operand VectorLit",
 		`topk(2, ` + rate + `) / 2`:            "BinOp operand Rank",
 		`{app="a"} > 1`:                        "BinOp operand LogSelect",
-		`label_replace(` + rate + `, "a", "b", "c", "d") / 2`:                     "BinOp operand LabelReplace",
-		`stddev(` + rate + `) / 2`:                                                "BinOp operand VectorAgg",
-		`rate({app="a"} | keep x [5m]) / 2`:                                       "BinOp operand RangeAgg",
-		`rate({app="a"} |~ "(?i)x" [5m]) / 2`:                                     "BinOp quoted text",
-		`rate({app="a"} |= "a  b" [5m]) / 2`:                                      "BinOp quoted text",
-		`rate({app="a"} |= "@@@" [5m]) / 2`:                                       "BinOp quoted text",
-		`sum by ( hos ) (` + rate + `)  / 2`:                                      "BinOp spelling",
-		rate + `  / 2`:                                                            "BinOp spelling",
-		rate + ` / on(app,env) ` + rate:                                           "BinOp vector matching spelling",
-		rate + ` / on(app) group_left ` + rate:                                    "BinOp vector matching spelling",
-		rate + `/2`:                                                               "BinOp operator spelling",
-		rate + "\n/ 2":                                                            "BinOp operator spelling",
-		rate + ` / 1e3`:                                                           "BinOp number spelling",
-		rate + ` / 2.50`:                                                          "BinOp number spelling",
-		`(` + rate + `) / 2`:                                                      "BinOp operand spelling",
-		`sum( ` + rate + `) / 2`:                                                  "BinOp operand spelling",
-		`label_replace(topk(2, ` + rate + ` > 1), "a", "b", "c", "d")`:            "LabelReplace operand Rank",
-		`label_replace(vector(1), "a", "b", "c", "d")`:                            "LabelReplace operand VectorLit",
-		`label_replace(stddev(` + rate + `), "a", "b", "c", "d")`:                 "LabelReplace operand VectorAgg",
-		`label_replace(` + rate + ` and ` + rate + `, "a", "b", "c", "d")`:        "LabelReplace operand BinOp",
-		`label_replace(sum by (service_name) (` + rate + `), "a", "b", "c", "d")`: "LabelReplace service_name grouping",
-		`label_replace(` + rate + `, "a", "\x00", "c", "d")`:                      "LabelReplace argument with NUL",
+		`label_replace(` + rate + `, "a", "b", "c", "d") / 2`:              "BinOp operand LabelReplace",
+		`stddev(` + rate + `) / 2`:                                         "BinOp operand VectorAgg",
+		`rate({app="a"} |~ "(?i)x" [5m]) / 2`:                              "BinOp quoted text",
+		`rate({app="a"} |= "a  b" [5m]) / 2`:                               "BinOp quoted text",
+		`rate({app="a"} |= "@@@" [5m]) / 2`:                                "BinOp quoted text",
+		`sum by ( hos ) (` + rate + `)  / 2`:                               "BinOp spelling",
+		rate + `  / 2`:                                                     "BinOp spelling",
+		rate + ` / on(app,env) ` + rate:                                    "BinOp vector matching spelling",
+		rate + ` / on(app) group_left ` + rate:                             "BinOp vector matching spelling",
+		rate + `/2`:                                                        "BinOp operator spelling",
+		rate + "\n/ 2":                                                     "BinOp operator spelling",
+		rate + ` / 1e3`:                                                    "BinOp number spelling",
+		rate + ` / 2.50`:                                                   "BinOp number spelling",
+		`(` + rate + `) / 2`:                                               "BinOp operand spelling",
+		`sum( ` + rate + `) / 2`:                                           "BinOp operand spelling",
+		`label_replace(topk(2, ` + rate + ` > 1), "a", "b", "c", "d")`:     "LabelReplace operand Rank",
+		`label_replace(vector(1), "a", "b", "c", "d")`:                     "LabelReplace operand VectorLit",
+		`label_replace(` + rate + ` and ` + rate + `, "a", "b", "c", "d")`: "LabelReplace operand BinOp",
+		`label_replace(sum by (service_name) (` + rate + `), "a", "b", "c", "d")`:                 "LabelReplace service_name grouping",
+		`label_replace(` + rate + `, "a", "\x00", "c", "d")`:                                      "LabelReplace argument with NUL",
 		strings.Repeat(`label_replace(`, 17) + rate + strings.Repeat(`, "a", "b", "c", "d")`, 17): "LabelReplace nesting",
 		`label_replace (` + rate + `, "a", "b", "c", "d")`:                                        "LabelReplace spelling",
 		`label_replace((` + rate + `), "a", "b", "c", "d")`:                                       "LabelReplace operand spelling",
@@ -185,6 +188,9 @@ func FuzzBinOpLowering(f *testing.F) {
 	f.Add("service_name", "a  b", "pod", "(.*)", uint8(7), uint8(3), uint8(5), uint8(9))
 	f.Add("k8s.pod", "(x)", "a-b", "*bad", uint8(200), uint8(91), uint8(11), uint8(70))
 	f.Add("é", "@@@on:x", "env", "", uint8(13), uint8(250), uint8(130), uint8(255))
+	f.Add("a", "x", "app", "$1", uint8(0), uint8(0), uint8(0), uint8(0x20))
+	f.Add("a", "x", "app", "$1", uint8(1), uint8(8), uint8(0x80), uint8(0x40))
+	f.Add("a", "x", "app", "$1", uint8(2), uint8(6), uint8(0), uint8(0xe0))
 	f.Fuzz(func(t *testing.T, sel, line, label, arg string, opSel, left, right, mod uint8) {
 		ident := func(s string) string {
 			var b strings.Builder
@@ -201,7 +207,10 @@ func FuzzBinOpLowering(f *testing.F) {
 		lbl := ident(label)
 		selector := `{app="` + escapeValue(sel) + `"}`
 		filter := []string{``, ` |= ` + strconv.Quote(line), ` != ` + strconv.Quote(line), ` | ` + lbl + `="` + escapeValue(line) + `"`}[mod%4]
-		inner := []string{"rate", "count_over_time", "bytes_rate", "bytes_over_time", "absent_over_time"}[left%5] + `(` + selector + filter + `[5m])`
+		// A blank, tab or newline between the function and its parenthesis is a phrase to the translator, which the
+		// text screens of the operands leave to it.
+		callPad := []string{"", " ", "\t", "\n"}[mod>>5&3]
+		inner := []string{"rate", "count_over_time", "bytes_rate", "bytes_over_time", "absent_over_time"}[left%5] + callPad + `(` + selector + filter + `[5m])`
 		operand := func(k uint8) string {
 			switch k % 12 {
 			case 0, 1:

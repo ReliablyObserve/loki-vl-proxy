@@ -36,6 +36,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `| drop Ip` dropped it). Answers cached before this change are not reused for
   these queries (a response cache key version).
 
+## [2.132.0] - 2026-11-11
+
+### Changed
+
+- The query plan holds `stddev` and `stdvar` the way the proxy evaluates
+  them, for every translation profile: one series fold per aggregation, with
+  its `by` or `without` clause, over the operand's own query, which is the
+  request the proxy sends (it translates the operand alone and takes the
+  population deviation or variance of each group's series at each step
+  itself). The `sum`, `avg`, `min`, `max` and `count` layers above a ranking
+  are covered too, and the shadow holds them to the proxy's own route, not to
+  the translator's text for the whole query. A `stddev`, `stdvar` or ranking
+  below the one level the proxy evaluates (`sum(stddev by (app) (..))`,
+  `topk(2, stddev by (app) (..))`, `stddev(topk(3, ..))`) is held as the
+  chain Loki evaluates and recorded as a known difference of the proxy, which
+  answers the translator's text for those and drops the level: the answers
+  are unchanged until the proxy serves these queries from the plan. Nothing
+  serves the plan yet: no request sent to VictoriaLogs and no answer
+  changes. A `stddev` or `stdvar` by a label of a query with a parser, a
+  binary operation operand and a `stddev` under a binary operation stay with
+  the string translator. A query whose line filter holds a quoted `| json`
+  (or `| logfmt`, `| pattern`, `| regexp`, `| unpack`) followed by a
+  non-ASCII character is now left to the string translator, which reads it
+  as a parser stage where the plan did not.
+- The proxy's LogsQL parser reads the addresses of `ipv4_range` and
+  `ipv6_range` the way VictoriaLogs v1.49 and v1.53 do (1,890 recorded
+  verdicts, identical on both): `ipv6_range` takes IPv4-mapped and embedded
+  forms (`::ffff:255.255.255.255`, `64:ff9b::1.2.3.4`), zone ids and plain
+  IPv4, `ipv4_range` dotted decimal only. It used to reject
+  `::ffff:255.255.255.255`, which the lowering of `ip("0::/80")` writes and
+  VictoriaLogs accepts, so the query-plan shadow could not read the text. The
+  parser checks the text the proxy compares; the requests sent to
+  VictoriaLogs do not change.
+
+## [2.131.0] - 2026-11-11
+
+### Security
+
+- **Go 1.27.4.** Go 1.27.4 fixes GO-2026-6859 (net/http: an HTTP/1 server
+  crash caused by a `MaxBytesReader` header race), which `govulncheck`
+  reports as reachable from the proxy's own HTTP server and handlers
+  (`Proxy.RegisterProxyRoutes`, the peer cache's `ServeHTTP`, the metrics
+  handler). With 1.27.3 the govulncheck step failed on main and on every
+  pull request. The builder image (`golang:1.27.4-alpine3.24`, pinned by its
+  multi-arch index digest), `go.mod`, `bench/go.mod`, the getting-started
+  guide and every workflow move to 1.27.4. govulncheck v1.8.0 (run with
+  `GOOS=linux`) reports no vulnerabilities for the module and for `bench`,
+  and golangci-lint v2.14.0 reports no issues.
+
+## [2.130.0] - 2026-11-11
+
+### Changed
+
+- The query plan lowers the metric queries whose labels come from a parser,
+  for every translation profile: a grouping or unwrapped label with an
+  underscore behind `json` or `logfmt` (the `http_method` a line may hold as
+  `http.method` or `http-method`, and the `<name>_extracted` rename of a label
+  that collides with a stream label), a `without` clause over a parser, and
+  a `rate`, or `count`, `min`, `max` and `avg`, behind a trailing `keep`. The
+  text is the string translator's, byte for byte. The requests sent to
+  VictoriaLogs do not change. A label filter or a drop after the parser under
+  such a label, a `without` fold or a `keep`, a collision rename that reuses
+  the scratch fields of a label filter, a `keep` that leaves no label and a
+  nest over an unwrapped label are still written by the string translator.
+- The query plan leaves a range function spelled with a blank, tab or newline
+  between its name and its parenthesis (`rate ({app="a"}[5m])`) to the string
+  translator, whether it stands alone, is an operand of a binary operation or
+  the first argument of a `label_replace` call. The translator reads that
+  spelling as a phrase search where Loki reads the range aggregation, and the
+  plan's text screen used to let it through to a lowering that differs from
+  the translator. Nothing is served from the plan for metric queries, so
+  requests and answers do not change; the open difference is recorded as
+  `semantics/translator-reads-blank-before-range-call-as-text`.
+
 ## [2.129.0] - 2026-11-10
 
 ### Changed

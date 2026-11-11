@@ -1,22 +1,60 @@
 id: semantics/stddev-stdvar-nested-or-binary
-title: stddev and stdvar nested in another expression or under a binary operator keep the group count (open)
+title: stddev, stdvar or a ranking nested below another proxy-evaluated level answer the translator's text (open)
+pending: true
 proves:
   - metric-series-identity
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  Only a stddev or stdvar that is the whole query takes the route that runs its
-  operand and folds the series of each group (parseInstantMetricPostAggQuery).
-  Nested in another expression, `sum(stddev by (app) (count_over_time(..[5m])))`,
-  or under a binary operator, `stddev by (app) (count_over_time(..[5m])) / 2`,
-  the translator still emits the single-pipe `stats by (app) count()` of the
-  operand's range function: the group's line count where Loki folds the values of
-  the group's series (pkg/logql/evaluator.go VectorAggEvaluator.Next).
+  The post-aggregation route (parseInstantMetricPostAggQuery) evaluates one
+  proxy-side level, plus the sum, avg, min, max and count layers above a
+  ranking, and folds the series of its operand itself (pkg/logql/evaluator.go
+  VectorAggEvaluator.Next). A stddev, stdvar or ranking below that level, or
+  under an aggregation or label_replace the route does not take, is sent as the
+  translator's text, which drops it: `sum(stddev by (app) (count_over_time(..[5m])))`
+  answers the total line count, `topk(2, stddev by (app) (..))` and
+  `sort_desc(stddev by (app) (..))` rank the group line counts (the same request
+  as the same call over `sum by (app)`), `stddev(topk(3, ..))` answers 0 where
+  the ranking is dropped, and `label_replace(stddev by (app) (..), ..)` the
+  group line counts. A binary operation whose whole operand is a stddev is a
+  sub-request with a route of its own and matches: `stddev by (app) (..) / 2`
+  and `sum(stddev by (app) (..) / 2)` are the fixed controls listed with the
+  shapes (corpus.dimensions.shapes), next to `topk(2, ..)` over a range
+  aggregation.
+
+  Reproduced against the emulated VictoriaLogs (internal/proxy vlEmulator, the
+  real handlers) with generated data, instant, tumbling and sliding windows:
+  `sum(stddev by (app) (X))` answers `=10` where Loki's definition gives `=0.5`
+  (6 of 6 scenarios, every mode), `topk(2, stddev by (app) (X))` answers the two
+  largest group line counts, `max by (app) (stddev without (pod) (X))` one series
+  with the labels lost. The query plan lowers each shape to the chain Loki
+  evaluates (internal/queryplan/lower), the corpus shadow records it as a known
+  divergence of the proxy, and the answer changes when the proxy serves these
+  roots from the plan.
+corpus:
+  size: 15
+  dimensions:
+    shapes:
+      - query: 'sum(stddev by (app) (count_over_time({env="production"}[5m])))'
+      - query: 'avg(stdvar by (app) (count_over_time({env="production"}[5m])))'
+      - query: 'max by (app) (stddev without (pod) (count_over_time({env="production"}[5m])))'
+      - query: 'count(stddev by (app) (count_over_time({env="production"}[5m])))'
+      - query: 'stddev(stddev by (app) (count_over_time({env="production"}[5m])))'
+      - query: 'topk(2, stddev by (app) (count_over_time({env="production"}[5m])))'
+      - query: 'sort_desc(stddev by (app) (count_over_time({env="production"}[5m])))'
+      - query: 'sum(topk(2, stddev by (app) (count_over_time({env="production"}[5m]))))'
+      - query: 'stddev(topk(3, count_over_time({env="production"}[5m])))'
+      - query: 'label_replace(stddev by (app) (count_over_time({env="production"}[5m])), "a", "$1", "app", "(.*)")'
+      - query: 'sum(stddev by (app) (count_over_time({env="production"}[5m]))) / 2'
+      - query: 'stddev by (app) (count_over_time({env="production"}[5m])) / 2'
+      - query: 'sum(stddev by (app) (count_over_time({env="production"}[5m])) / 2)'
+      - query: 'stddev by (app) (count_over_time({env="production"}[5m]))'
+      - query: 'topk(2, count_over_time({env="production"}[5m]))'
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'stddev by (app) (count_over_time({env="production"}[5m])) / 2'
+    query: 'sum(stddev by (app) (count_over_time({env="production"}[5m])))'
     start: 'now-1h'
     end: 'now'
     step: '60'
@@ -24,15 +62,15 @@ request:
     X-Scope-OrgID: "0"
 compare:
   mode: observed
-  fields: [values]
+  fields: [status, series labels, values]
   expect: |
-    Loki's values.
+    Loki's series and values.
 gap:
   status: open
   impact: explore-visible
   effort: M
-  area: 'internal/translator tryTranslateMetricQueryWithout stddev/stdvar outer aggregation; internal/proxy binary and nested metric evaluation'
+  area: 'internal/queryplan/lower (SeriesAgg and RankStep below the top) and the plan-served post-aggregation route; internal/proxy parseInstantMetricPostAggQuery'
   loki: 'pkg/logql/evaluator.go:400-529 newVectorAggEvaluator / VectorAggEvaluator.Next'
-  proxy: 'the single-pipe group count of the operand'
+  proxy: 'the translator text of the nested level: the group line counts, the total line count, or a dropped ranking'
   planned_test: 'TestCompat_StddevStdvarNestedAndBinary (test/e2e-compat, group core)'
   clusters: []

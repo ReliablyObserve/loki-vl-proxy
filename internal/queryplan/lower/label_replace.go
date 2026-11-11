@@ -28,9 +28,9 @@ func labelReplace(n *queryplan.LabelReplace, prof Profile) (physical.Op, error) 
 	return labelReplaceOver(n, prof, true)
 }
 
-// labelReplaceOver is labelReplace; rankOK says a ranking may stand under the calls. It is false for the operand of
-// a ranking, which the proxy translates as text: a ranking inside that text is dropped by the translator, so the
-// route evaluates nothing the plan could say there.
+// labelReplaceOver is labelReplace; rankOK says a ranking, stddev or stdvar may stand under the calls. It is false for
+// the operand of a level the proxy evaluates, which the proxy translates as text: a level inside that text is dropped
+// by the translator, so the route evaluates nothing the plan could say there.
 func labelReplaceOver(n *queryplan.LabelReplace, prof Profile, rankOK bool) (physical.Op, error) {
 	var specs []physical.LabelReplace
 	x := queryplan.Node(n)
@@ -54,8 +54,8 @@ func labelReplaceOver(n *queryplan.LabelReplace, prof Profile, rankOK bool) (phy
 	if err := labelReplaceShape(x); err != nil {
 		return nil, err
 	}
-	if _, isRank := x.(*queryplan.Rank); isRank && !rankOK {
-		return nil, &NotLoweredError{Construct: "LabelReplace operand Rank"}
+	if !rankOK && evaluates(x) {
+		return nil, &NotLoweredError{Construct: "LabelReplace operand " + Construct(x)}
 	}
 	inner := Profile{Label: prof.Label, KeepLine: prof.KeepLine}
 	var op physical.Op
@@ -64,12 +64,17 @@ func labelReplaceOver(n *queryplan.LabelReplace, prof Profile, rankOK bool) (phy
 	case *queryplan.RangeAgg:
 		op, err = rangeAgg(v, inner)
 	case *queryplan.VectorAgg:
-		op, err = vectorAgg(v, inner)
+		if evaluates(v) {
+			// A stddev or stdvar is evaluated by the proxy, like a ranking (below).
+			op, err = evaluated(v, prof)
+		} else {
+			op, err = vectorAgg(v, inner)
+		}
 	case *queryplan.BinOp:
 		op, err = binOp(v, inner)
 	case *queryplan.Rank:
 		// The ranking is evaluated by the proxy, whose operand is translated with the request's own options.
-		op, err = rank(v, prof)
+		op, err = evaluated(v, prof)
 	}
 	if err != nil {
 		return nil, operandError(err, &NotLoweredError{Construct: "LabelReplace operand " + Construct(x)})

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -105,6 +106,102 @@ func TestTranslatorMisreadsParenthesizedMetric(t *testing.T) {
 		// The defect recorded: the translator writes the whole query as a phrase.
 		if text, err := translator.TranslateLogQL(q); err != nil || !strings.HasPrefix(text, `"`) {
 			t.Errorf("%q: the string translator wrote %q (%v), not a phrase: the case may be fixed", q, text, err)
+		}
+	}
+}
+
+// translatorReadsStageMarker reports a query whose label filter value the string translator reads as syntax: it
+// brackets the names a `<name>_extracted` filter reads with a \x02 byte in the text of that filter's stage and later
+// takes the first pair of \x02 bytes of every stage that holds none for such brackets, cutting the bytes between them
+// out of the stage. A label filter value that holds two \x02 bytes (`o="\x02\x00\x02"`, `o="a\x02b\x02c"`), or two
+// values of one stage that hold one each, in a stage with no `_extracted` filter of its own, in a query with a json or
+// logfmt parser and an `_extracted` filter elsewhere, is cut that way: the translator writes the filter on the value without those bytes (`o:=""`), copies the
+// stream where the bytes were instead of where the `_extracted` filter reads it, and may write a query VictoriaLogs
+// rejects. Loki and the query plan read the value as written (semantics/translator-reads-marker-bytes-in-quoted-value).
+// internal/queryplan/lower holds the same function for its fuzz targets. The value is the decoded one, so the query may spell it with an escape, a raw byte or backquotes. A single \x02
+// byte, and the \x00 and \x01 bytes the translator also uses, are read as text on every shape the grid found.
+func translatorReadsStageMarker(q string) bool {
+	expr, err := logql.Parse(q)
+	if err != nil {
+		return false
+	}
+	lq, ok := expr.(*logql.LogQuery)
+	if !ok {
+		return false
+	}
+	var stages [][]*logql.LabelFilterExpr
+	extracted, parsed := false, false
+	for _, st := range lq.Pipeline {
+		if _, ok := st.(*logql.ParserStage); ok {
+			parsed = true
+		}
+		lf, ok := st.(*logql.LabelFilterStage)
+		if !ok || lf.Expr == nil {
+			continue
+		}
+		var leaves []*logql.LabelFilterExpr
+		collectLabelFilterLeaves(lf.Expr, &leaves)
+		stages = append(stages, leaves)
+		for _, l := range leaves {
+			extracted = extracted || strings.HasSuffix(l.Name, "_extracted")
+		}
+	}
+	if !extracted || !parsed {
+		return false
+	}
+	for _, leaves := range stages {
+		marks, own := 0, false
+		for _, l := range leaves {
+			own = own || strings.HasSuffix(l.Name, "_extracted")
+			if l.Kind == logql.LabelFilterValueString {
+				marks += strings.Count(l.Value, "\x02")
+			}
+		}
+		if !own && marks >= 2 {
+			return true
+		}
+	}
+	return false
+}
+
+func collectLabelFilterLeaves(e *logql.LabelFilterExpr, out *[]*logql.LabelFilterExpr) {
+	if e == nil {
+		return
+	}
+	if e.IsLeaf() {
+		*out = append(*out, e)
+		return
+	}
+	collectLabelFilterLeaves(e.Left, out)
+	collectLabelFilterLeaves(e.Right, out)
+}
+
+// conformance: architecture-syntax-package-layering
+func TestTranslatorReadsStageMarker(t *testing.T) {
+	const ext = ` | json | K_extracted!~"p|q"`
+	for q, want := range map[string]bool{
+		`{app="a"} | o="\x02\x00\x02"` + ext:                           true,
+		`{app="a"} | o="\x02\x02"` + ext:                               true,
+		`{app="a"} | o="a\x02b\x02c" | json | K_extracted="x"`:         true,
+		`{app="a"} | o=` + "`\x02\x00\x02`" + ext:                      true, // a raw byte in backquotes
+		`{app="a"} | o="\u0002a\U00000002"` + ext:                      true, // the same bytes spelled otherwise
+		`{app="a"} | json | K_extracted="x" | o="\x02\x00\x02"`:        true, // behind the filter that reads the name
+		`{app="a"} | logfmt | K_extracted="x" | o="\x02" and z="\x02"`: true, // one byte in each of two values
+		`{app="a"} | o="\x02" and z="\x02"` + ext:                      true,
+		`{app="a"} | o="\x02"` + ext:                                   false, // one byte
+		`{app="a"} | o="\x02" | z="\x02"` + ext:                        false, // one byte in each of two stages
+		`{app="a"} | o="\x00\x01\x00"` + ext:                           false, // the other bytes the translator uses
+		`{app="a"} | json | o="\x02\x02"`:                              false, // no _extracted filter
+		`{app="a"} | o="\x02\x02"`:                                     false, // filter-only
+		`{app="a"} | json | K_extracted="x" and o="\x02\x02"`:          false, // the stage's own marker comes first
+		`{app="a"} | json | o="\x02\x02" or K_extracted="x"`:           false,
+		`{app="a"} |= "\x02\x02" | json | K_extracted="x"`:             false, // a line filter
+		`{app="a"} | o="\\x02\\x02"` + ext:                             false, // a backslash and the text x02
+		`rate({app="a"} | o="\x02\x02"` + ext + `[5m])`:                false, // not a log query
+		`not a query`: false,
+	} {
+		if got := translatorReadsStageMarker(q); got != want {
+			t.Errorf("%q: got %v, want %v", q, got, want)
 		}
 	}
 }

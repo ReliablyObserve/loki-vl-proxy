@@ -229,15 +229,15 @@
   ],
   "date": "2026-11-09",
   "differences": {
-    "open": 89,
+    "open": 92,
     "open_by_impact": {
       "api-only": 11,
       "drilldown-visible": 13,
-      "edge": 17,
+      "edge": 20,
       "explore-visible": 47,
       "grafana-datasource": 1
     },
-    "ranked": 113
+    "ranked": 116
   },
   "distribution": [
     {
