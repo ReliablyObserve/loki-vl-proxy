@@ -68,7 +68,7 @@ func lvGoRe(f, re string) logsql.FilterExpr {
 	return logsql.FieldFilter{Field: f, Op: logsql.FieldOpRegexp, Value: re}
 }
 
-func lvBang(f logsql.FilterExpr) logsql.FilterExpr { return logsql.NotExpr{Expr: f, Bang: true} }
+func lvBang(f logsql.FilterExpr) logsql.FilterExpr { return logsql.Bang{Expr: f} }
 func lvExcl(f logsql.FilterExpr) logsql.FilterExpr { return logsql.Exclude{Expr: f} }
 func lvGroup(f logsql.FilterExpr) logsql.FilterExpr {
 	return logsql.Group{Expr: f}
@@ -78,7 +78,7 @@ func lvGroup(f logsql.FilterExpr) logsql.FilterExpr {
 func lvWords(field string, words []string) logsql.FilterExpr {
 	alts := make(logsql.AnyOf, len(words))
 	for i, w := range words {
-		alts[i] = logsql.AnyCasePhrase{Value: w, Word: true}
+		alts[i] = logsql.AnyCaseWord{Value: w}
 	}
 	return logsql.FieldScope{Field: field, Expr: alts}
 }

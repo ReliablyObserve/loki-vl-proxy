@@ -477,7 +477,7 @@ func filterPrec(f FilterExpr) int {
 		return 1
 	case AndExpr, AllOf:
 		return 2
-	case NotExpr, Exclude:
+	case NotExpr, Bang, Exclude:
 		return 3
 	}
 	return 4
@@ -610,38 +610,40 @@ func (a AnyOfLower) filterExpr()              {}
 // NotExpr negates a filter expression.
 type NotExpr struct {
 	Expr FilterExpr
-	// Bang writes the negation as `!`, which LogsQL reads like `NOT`: the spelling of the detected_level builders.
-	// The parser never sets it.
-	Bang bool
 }
 
 func (n NotExpr) String() string { return string(n.appendTo(make([]byte, 0, 64))) }
 func (n NotExpr) appendTo(b []byte) []byte {
-	if n.Bang {
-		return appendOperand(append(b, '!'), n.Expr, 3)
-	}
 	return appendOperand(append(b, "NOT "...), n.Expr, 3)
 }
 
 func (n NotExpr) filterExpr() {}
 
+// Bang negates a filter expression written `!`, which LogsQL reads like `NOT`: the spelling of the detected_level
+// builders (internal/translate). The parser reads it as NotExpr.
+type Bang struct{ Expr FilterExpr }
+
+func (n Bang) String() string { return string(n.appendTo(make([]byte, 0, 64))) }
+func (n Bang) appendTo(b []byte) []byte {
+	return appendOperand(append(b, '!'), n.Expr, 3)
+}
+func (n Bang) filterExpr() {}
+
 // --- Additional filter types ---
 
 // AnyCasePhrase matches a phrase case-insensitively using i("phrase") syntax.
 // Corresponds to filter_any_case_phrase.go in VL upstream.
-type AnyCasePhrase struct {
-	Value string
-	// Word writes a value that is one word bare (`i(error)`), as the detected_level builders do; any other value
-	// stays quoted.
-	Word bool
-}
+type AnyCasePhrase struct{ Value string }
 
-func (a AnyCasePhrase) String() string {
-	if a.Word && isBareWord(a.Value) {
-		return "i(" + a.Value + ")"
-	}
-	return "i(" + quoteLogsQL(a.Value) + ")"
-}
+func (a AnyCasePhrase) String() string { return "i(" + quoteLogsQL(a.Value) + ")" }
+
+func (a AnyCasePhrase) filterExpr() {}
+
+// AnyCaseWord is AnyCasePhrase written as the detected_level builders write it: a value that is one word bare
+// (`i(error)`), any other value quoted.
+type AnyCaseWord struct{ Value string }
+
+func (a AnyCaseWord) String() string { return string(a.appendTo(make([]byte, 0, 16))) }
 
 // isBareWord reports a value of ASCII letters, digits and underscores that LogsQL reads as a word, not a keyword.
 func isBareWord(s string) bool {
@@ -656,16 +658,16 @@ func isBareWord(s string) bool {
 	return true
 }
 
-func (a AnyCasePhrase) appendTo(b []byte) []byte {
+func (a AnyCaseWord) appendTo(b []byte) []byte {
 	b = append(b, "i("...)
-	if a.Word && isBareWord(a.Value) {
+	if isBareWord(a.Value) {
 		b = append(b, a.Value...)
 	} else {
 		b = appendQuoteLogsQL(b, a.Value)
 	}
 	return append(b, ')')
 }
-func (a AnyCasePhrase) filterExpr() {}
+func (a AnyCaseWord) filterExpr() {}
 
 // AnyCasePrefix matches a prefix case-insensitively using i(prefix*) syntax.
 // Corresponds to filter_any_case_prefix.go in VL upstream.

@@ -34,6 +34,8 @@ func TestMarkerMethods(t *testing.T) {
 	OrExpr{}.filterExpr()
 	NotExpr{}.filterExpr()
 	AnyCasePhrase{}.filterExpr()
+	AnyCaseWord{}.filterExpr()
+	Bang{}.filterExpr()
 	AnyCasePrefix{}.filterExpr()
 	ExactPrefix{}.filterExpr()
 	ContainsAll{}.filterExpr()
