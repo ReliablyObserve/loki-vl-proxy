@@ -256,6 +256,25 @@ func (p *parser) unknownName() int {
 // pos is the byte offset of the current token in the input.
 func (p *parser) pos() int { return int(p.sc.start) }
 
+// skippedWideSpace reports white space that is no ASCII white space (U+0085, U+00A0, U+2003, ...) between byte
+// offset from and the current token. The scanner skips it where Loki's lexer reads it as a name of its own, so a
+// list that ends in a comma and such a character is a list with one more name to Loki, which it accepts.
+func (p *parser) skippedWideSpace(from int) bool {
+	to := p.pos()
+	if p.cur.Typ == TokEOF {
+		to = len(p.sc.src)
+	}
+	if from < 0 || from > to {
+		return false
+	}
+	for _, r := range p.sc.src[from:to] {
+		if r >= utf8.RuneSelf && unicode.IsSpace(r) {
+			return true
+		}
+	}
+	return false
+}
+
 // canonState collects what CanonicalizeLogRanges rewrites.
 type canonState struct {
 	// rewrites are the spans of alternative log range forms, in order.
@@ -534,7 +553,9 @@ func keywordLabelWord(v string) bool {
 	return false
 }
 
-// parseLabelList parses a parenthesised comma-separated label name list: (label1, label2).
+// parseLabelList parses a parenthesised comma-separated label name list: (label1, label2). The list may be empty;
+// after a name a comma or the closing parenthesis follows, and after a comma a name, as in Loki's grammar: a
+// trailing, doubled or leading comma and two names without one between are its syntax errors.
 // Returns an empty slice if the next token is not '('.
 func (p *parser) parseLabelList() ([]string, error) {
 	if p.cur.Typ != TokLParen {
@@ -542,22 +563,22 @@ func (p *parser) parseLabelList() ([]string, error) {
 	}
 	p.advance() // consume '('
 	var labels []string
-	afterComma, afterUnknown := false, false
+	afterComma, commaEnd := false, 0
 	for p.cur.Typ == TokIdent {
 		if p.atKeywordName() {
 			return nil, p.syntaxErrorAt(listNameExpecting(len(labels) == 0))
 		}
-		if (p.cur.Unknown || afterUnknown) && len(labels) > 0 && !afterComma {
-			return nil, p.syntaxErrorAt(listCloseExpecting(labels, false)) // a character that starts no token is no comma
+		if len(labels) > 0 && !afterComma {
+			return nil, p.syntaxErrorAt(listCloseExpecting(labels, false)) // a name needs a comma before it
 		}
-		afterUnknown = p.cur.Unknown
 		labels = append(labels, p.advance().Val)
 		afterComma = p.cur.Typ == TokComma
 		if afterComma {
+			commaEnd = p.sc.pos
 			p.advance()
 		}
 	}
-	if p.cur.Typ != TokRParen {
+	if p.cur.Typ != TokRParen || afterComma && !p.skippedWideSpace(commaEnd) {
 		return nil, p.syntaxErrorAt(listCloseExpecting(labels, afterComma))
 	}
 	p.advance()
@@ -961,13 +982,16 @@ func (p *parser) expectStringOrRaw() (string, error) {
 // parseDropKeepList parses the item list for drop/keep stages.
 // Each item is either a bare label name or a conditional matcher: field="value", field!="val", field=~"re", field!~"re".
 func (p *parser) parseDropKeepList() (labels []string, matchers []DropMatcher, err error) {
-	first := true
-	for p.cur.Typ == TokIdent {
-		if p.atKeywordName() {
+	commaEnd := -1
+	for {
+		// A list holds at least one item, and one follows every comma, as in Loki's grammar.
+		if p.cur.Typ != TokIdent && p.skippedWideSpace(commaEnd) {
+			return // the character after the comma is a name to Loki, which the scanner skips
+		}
+		if p.cur.Typ != TokIdent || p.atKeywordName() {
 			err = p.syntaxErrorAt("IDENTIFIER")
 			return
 		}
-		first = false
 		name := p.advance().Val
 		switch p.cur.Typ {
 		case TokEq: // field="value"
@@ -1005,16 +1029,12 @@ func (p *parser) parseDropKeepList() (labels []string, matchers []DropMatcher, e
 		default:
 			labels = append(labels, name)
 		}
-		if p.cur.Typ == TokComma {
-			p.advance()
-		} else {
-			break
+		if p.cur.Typ != TokComma {
+			return
 		}
+		commaEnd = p.sc.pos
+		p.advance()
 	}
-	if first {
-		err = fmt.Errorf("logql: expected at least one label name or matcher after drop/keep")
-	}
-	return
 }
 
 // consumeExplicitFieldList consumes an optional comma-separated field list
@@ -2003,30 +2023,10 @@ func (p *parser) parseGrouping() (*Grouping, error) {
 	if p.cur.Typ != TokLParen {
 		return nil, p.syntaxErrorAt("(")
 	}
-	p.advance()
-
-	var labels []string
-	afterComma, afterUnknown := false, false
-	for p.cur.Typ == TokIdent {
-		if p.atKeywordName() {
-			return nil, p.syntaxErrorAt(listNameExpecting(len(labels) == 0))
-		}
-		if (p.cur.Unknown || afterUnknown) && len(labels) > 0 && !afterComma {
-			return nil, p.syntaxErrorAt(listCloseExpecting(labels, false)) // a character that starts no token is no comma
-		}
-		afterUnknown = p.cur.Unknown
-		labels = append(labels, p.advance().Val)
-		afterComma = p.cur.Typ == TokComma
-		if afterComma {
-			p.advance()
-		}
+	labels, err := p.parseLabelList()
+	if err != nil {
+		return nil, err
 	}
-
-	if p.cur.Typ != TokRParen {
-		return nil, p.syntaxErrorAt(listCloseExpecting(labels, afterComma))
-	}
-	p.advance()
-
 	return &Grouping{Without: without, Labels: labels}, nil
 }
 
