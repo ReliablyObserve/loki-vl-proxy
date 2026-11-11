@@ -1,0 +1,20 @@
+id: tenant-auth-follows-loki
+state: proven
+pending: true
+reason: |
+  internal/proxy/tenant_auth_parity_test.go replays 664 requests recorded from
+  Loki 3.7.9 with auth_enabled: true (13 read routes plus delete and the four
+  ruler views x 29 headers: absent, empty, blank, single, nine multi-tenant
+  forms, '.', '..', 150/151/152 bytes, spaces, '/', non-ASCII, '*'; a sweep of
+  every byte 0x09 and 0x20-0xff on /labels; Authorization next to a tenant and
+  without one) and matches each status, Content-Type and body byte for byte.
+  tenant_isolation_leak_test.go runs two replicas with memory, disk and peer
+  caches over a tenant-scoped VictoriaLogs emulator (vlemu.Tenants): every read
+  route and tail answers each tenant its own rows, from VictoriaLogs under its
+  own account, never the other tenant's cached answer (a cache key without the
+  tenant fails it). FuzzTenantHeader (fuzz-smoke) holds every admitted header
+  to Loki's rules and own-tenant routing, with bounded time.
+  test/e2e-compat/tenant_auth_loki_test.go (draft, not in a CI group) asks an
+  auth-enabled Loki and the proxy the same requests live.
+owner_decision: null
+waiver: null

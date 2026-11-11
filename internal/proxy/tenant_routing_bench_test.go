@@ -49,3 +49,35 @@ func BenchmarkTenantAdmissionAndHeaders(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkTenantMiddleware is the whole tenant step of a routed request:
+// Loki's header checks, the request scope and admission.
+func BenchmarkTenantMiddleware(b *testing.B) {
+	p, err := New(Config{
+		BackendURL:  "http://unused",
+		Cache:       cache.New(60*time.Second, 1000),
+		LogLevel:    "error",
+		AuthEnabled: true,
+		TenantMap:   map[string]TenantMapping{"teamA": {AccountID: "42", ProjectID: "0"}, "teamB": {AccountID: "43", ProjectID: "0"}},
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	h := p.tenantMiddleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	for _, tc := range []struct{ name, org string }{
+		{"numeric", "7"},
+		{"mapped", "teamA"},
+		{"multi", "teamA|teamB"},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels", nil)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				r.Header["X-Scope-Orgid"] = []string{tc.org}
+				h.ServeHTTP(w, r)
+			}
+		})
+	}
+}

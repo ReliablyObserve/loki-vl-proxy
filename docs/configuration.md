@@ -641,7 +641,8 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 
 ### Tenant Resolution Order
 
-1. **No header** — when `-auth.enabled=false` and `-require-tenant-header=false`, requests without `X-Scope-OrgID` use VictoriaLogs' backend default tenant, which is `AccountID=0` and `ProjectID=0`; otherwise they return `401`
+1. **No header** — when `-auth.enabled=false` and `-require-tenant-header=false`, requests without `X-Scope-OrgID` (or with an empty or blank one) use VictoriaLogs' backend default tenant, which is `AccountID=0` and `ProjectID=0`; otherwise they return Loki's `401 no org id`
+   **Loki's tenant ID check** — before any of the steps below, every tenant in the header is checked as Loki checks it: `.` and `..`, a byte outside `A-Z a-z 0-9 ! ' ( ) * - . : _`, or more than 150 bytes is refused with Loki's `400` text on every route (tail and the ruler views answer in their own Loki shapes). A multi-tenant `a|b` header is checked member by member; `a|a` is the tenant `a`. The check runs in both `-auth.enabled` modes because the proxy routes on the header in both (Loki with `auth_enabled: false` ignores it). See [Tenant header](api-reference.md#tenant-header-x-scope-orgid)
 2. **Tenant map lookup** — if `-tenant-map` is configured and the org ID matches a key, use the mapped `AccountID`/`ProjectID`
 3. **Explicit tenant map override** — if a tenant map contains an exact key such as `"0"` or `"fake"`, that explicit mapping wins
 4. **Default-tenant aliases** — `X-Scope-OrgID` values `0`, `fake`, and `default` map to VictoriaLogs' built-in `0:0` tenant without rewriting headers. With `-tenant-label` set they are treated like `*` (step 5): `403` unless `-tenant.allow-global=true` or the tenant map has an exact entry for the alias (a map entry never admits an empty org)
@@ -659,7 +660,8 @@ Loki treats `7` and `007` as two different tenants. VictoriaLogs has one account
 | `X-Scope-OrgID` | default | `-tenant.numeric-passthrough=false` |
 |---|---|---|
 | `7` | routed to account `7` | `403` unless the tenant map lists `7` |
-| `007`, `00`, `+7`, `-1`, `4294967296` | `403 unknown tenant` unless the tenant map lists that exact string | `403` unless the tenant map lists that exact string |
+| `007`, `00`, `-1`, `4294967296` | `403 unknown tenant` unless the tenant map lists that exact string | `403` unless the tenant map lists that exact string |
+| `+7`, `a b`, `..`, more than 150 bytes | `400` with Loki's tenant ID text, before any routing | the same |
 | `teamA` listed in the tenant map | its mapped account and project | its mapped account and project |
 | `0`, `fake`, `default`, no header | VictoriaLogs default tenant `0:0` | `403` unless `-tenant.allow-global=true` or the tenant map lists the alias (no entry admits a missing header) |
 | `*` | `403` unless `-tenant.allow-global=true` or mapped | same |
@@ -901,7 +903,7 @@ See [Performance — Go Runtime Tuning](performance.md#go-runtime-tuning) for gu
 | `-http-conn-max-age-jitter` | — | `2m` | Jitter applied to downstream connection age rotation |
 | `-http-conn-max-requests` | — | `256` | Maximum requests per keepalive connection |
 | `-http-conn-overload-max-age` | — | `90s` | Shorter connection lifetime during backpressure |
-| `-delete-api-enabled` | — | `false` | Register `/loki/api/v1/delete` and forward its requests to VictoriaLogs (a proxy extension, see [Security](security.md#3-delete-api-unsupported)). When `false`, every method on the path answers `404` with `404 page not found`, as Loki does when deletion is disabled (its default: compactor retention off). Current VictoriaLogs releases reject the forwarded request, so enabling it does not make deletion work |
+| `-delete-api-enabled` | — | `false` | Register `/loki/api/v1/delete` and forward its requests to VictoriaLogs (a proxy extension, see [Security](security.md#3-delete-api-unsupported)). When `false`, every method on the path answers `404` with `404 page not found`, as Loki does when deletion is disabled (its default: compactor retention off). Current VictoriaLogs releases reject the forwarded request, so enabling it does not make deletion work. Requires `-server.admin-auth-token`: every delete request must carry it (`X-Admin-Token` or `Authorization: Bearer`), and the proxy refuses to start without it |
 
 ## Grafana Compatibility
 
@@ -1208,9 +1210,9 @@ These Grafana Loki datasource settings now have a direct proxy-side mapping:
 | Timeout | `-backend-timeout` for proxy→VL, Grafana datasource timeout for Grafana→proxy |
 | Maximum lines | `-max-lines` |
 
-When `-metrics.trust-proxy-headers=true`, the proxy forwards trusted user headers and proxy-chain headers to the backend, plus derived context headers `X-Loki-VL-Client-ID` / `X-Loki-VL-Client-Source`.
+When `-metrics.trust-proxy-headers=true`, the proxy forwards trusted user headers and proxy-chain headers to the backend. Every backend request carries the derived context headers `X-Loki-VL-Client-ID` / `X-Loki-VL-Client-Source`: the trusted user with that flag, otherwise the tenant (`X-Scope-OrgID`) or the client address.
 
-Datasource auth credentials are forwarded separately as `X-Loki-VL-Auth-User` / `X-Loki-VL-Auth-Source` and are not used as `enduser.id` client identity.
+With the same flag, the user name of a datasource's basic authentication is forwarded separately as `X-Loki-VL-Auth-User` / `X-Loki-VL-Auth-Source` and is not used as `enduser.id` client identity. Without it, no part of a client credential reaches VictoriaLogs unless `-forward-headers`, `-forward-authorization` or `-forward-cookies` names it; the request log never writes a credential or the basic-auth user name.
 
 ### Grafana User Header Forwarding (Recommended)
 

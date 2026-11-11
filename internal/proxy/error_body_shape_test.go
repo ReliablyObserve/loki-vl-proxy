@@ -185,7 +185,7 @@ func TestErrorBody_RulerAndDeleteShapes(t *testing.T) {
 		}
 	}))
 	defer failing.Close()
-	_, mux := newAlertProxyMux(t, Config{BackendURL: "http://unused", RulerBackendURL: failing.URL, AlertsBackendURL: failing.URL, DeleteAPIEnabled: true})
+	_, mux := newAlertProxyMux(t, Config{BackendURL: "http://unused", RulerBackendURL: failing.URL, AlertsBackendURL: failing.URL, DeleteAPIEnabled: true, AdminAuthToken: testDeleteToken})
 	const plain, json = "text/plain; charset=utf-8", "application/json"
 	const serverErr = `{"status":"error","data":null,"errorType":"server_error","error":"Internal Server Error"}`
 	cases := []struct {
@@ -219,6 +219,7 @@ func TestErrorBody_RulerAndDeleteShapes(t *testing.T) {
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			req.Header.Set("X-Scope-OrgID", "0")
+			req.Header.Set("X-Admin-Token", testDeleteToken) // the delete API's credential
 			handler.ServeHTTP(rec, req)
 			if rec.Code != tc.status || rec.Header().Get("Content-Type") != tc.contentType || (rec.Header().Get("X-Content-Type-Options") == "nosniff") != tc.nosniff || rec.Body.String() != tc.body {
 				t.Fatalf("got %d %q nosniff=%q %q, want %d %q nosniff=%v %q", rec.Code, rec.Header().Get("Content-Type"), rec.Header().Get("X-Content-Type-Options"), rec.Body.String(), tc.status, tc.contentType, tc.nosniff, tc.body)

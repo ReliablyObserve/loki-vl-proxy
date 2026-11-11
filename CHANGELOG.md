@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The delete API needs the admin token. With `-delete-api-enabled=true`, every
+  request to `/loki/api/v1/delete` must carry `-server.admin-auth-token` in
+  `X-Admin-Token` or `Authorization: Bearer` (constant-time compare); without it
+  the answer is `401 admin authentication required`, before the method, tenant,
+  rate limit, confirmation and parameter checks, and nothing reaches
+  VictoriaLogs. The token is removed from the request before it is handled, so
+  it is never forwarded to VictoriaLogs, even with `-forward-authorization`.
+  Before, the route was protected only by the `X-Delete-Confirmation` header, so
+  any client that could reach the proxy could send a delete. Bare Loki has no
+  authentication of its own; every other answer on the route stays Loki's.
+  **Breaking:** the proxy refuses to start with `-delete-api-enabled=true` and
+  no `-server.admin-auth-token` (proxy.New refuses the configuration too), and
+  the Helm chart refuses to render `extraArgs.delete-api-enabled: "true"`
+  without `adminAuth.existingSecret` or a token in `extraArgs`. Upgrade: set the
+  token (Helm `adminAuth.existingSecret`) and send it with every delete
+  request; note that a token also serves `/admin/*` and `/debug/*` on the main
+  listener behind it. Deployments without the delete API need no change.
+- `X-Scope-OrgID` is admitted and refused as Loki 3.7.9 does with
+  `auth_enabled: true`, before the response cache or any VictoriaLogs call
+  (answers recorded from Loki and replayed byte for byte in
+  `internal/proxy/testdata/tenant_auth_loki_answers.jsonl`). A missing, empty or
+  blank header with `-auth.enabled` or `-require-tenant-header` is `401` `no org
+  id` (was `missing X-Scope-OrgID header`; a blank header was `403 unknown
+  tenant`). A tenant ID that is `.` or `..`, holds a byte outside `A-Z a-z 0-9 !
+  ' ( ) * - . : _`, or is longer than 150 bytes is `400` with Loki's text on
+  every route, with the querier prefix on `query_range`, `detected_fields` and
+  `detected_field` values, `401` on tail and the ruler views' JSON answers (was
+  `403 unknown tenant`, or admitted when the tenant map listed it). A
+  multi-tenant header is checked member by member: `a|` is served as a
+  multi-tenant request (was `400`), `a|a` is the tenant `a`, and tail and delete
+  answer `multiple org IDs present`. The check also narrows what reaches the
+  tenant map and the tenant-label stream filter. **Breaking:** a tenant ID Loki
+  refuses (for example `+7`, `team a`, `team/x`) is now refused even when the
+  tenant map lists it; rename such entries.
+- The user name of a client's basic authentication (`X-Loki-VL-Auth-User`,
+  `X-Loki-VL-Auth-Source`) is sent to VictoriaLogs only with
+  `-metrics.trust-proxy-headers`, as the configuration guide states; it was sent
+  on every request that carried basic authentication.
+
 ## [2.160.0] - 2026-11-11
 
 ### Fixed

@@ -25,7 +25,7 @@ Do NOT open a public issue for security vulnerabilities.
 
 - read APIs enabled for Loki-compatible querying
 - write ingestion API (`/loki/api/v1/push`) blocked with `405`
-- delete API unsupported: the `/loki/api/v1/delete` handler validates requests (confirmation header, time bounds, selector, tenant scope, audit log) but forwards to a VictoriaLogs path that VictoriaLogs rejects, so no deletion is performed
+- delete API off by default (`404` like Loki) and unsupported: `-delete-api-enabled=true` requires `-server.admin-auth-token` and every delete request must carry that token; the handler validates requests (confirmation header, time bounds, selector, tenant scope, audit log) but forwards to a VictoriaLogs path that VictoriaLogs rejects, so no deletion is performed
 - admin/debug endpoints disabled unless explicitly enabled; without `-server.admin-auth-token` they bind to a loopback-only `-admin-listen` (default `127.0.0.1:3101`)
 - `/metrics` not served unless `-server.register-instrumentation=true` (optionally on a dedicated `-metrics-listen`)
 - peer cache refuses to start without `-peer-auth-token` unless `-peer-insecure-ip-allowlist=true` is set explicitly

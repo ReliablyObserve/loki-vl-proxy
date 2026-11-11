@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # validate_helm_secrets.sh — CI gate for the chart's "secret from an existing
-# Secret" values (adminAuth, backendAuth, observability.otlp).
+# Secret" values (adminAuth, backendAuth, observability.otlp), and for the
+# delete API's admin token.
 #
 #   1) With each existingSecret set, the rendered manifest references the Secret
 #      through a secretKeyRef env var and contains no plain secret value.
@@ -50,6 +51,16 @@ must_fail --set adminAuth.existingSecret=s --set 'extraArgs.server\.admin-auth-t
 must_fail --set backendAuth.existingSecret=s --set extraArgs.backend-basic-auth=user:plain
 must_fail --set observability.otlp.existingSecret=s --set observability.otlp.headers=a=b
 must_fail --set observability.otlp.existingSecret=s --set extraArgs.otlp-headers=a=b
+
+# The delete API needs the admin token.
+must_fail --set extraArgs.delete-api-enabled=true
+must_fail --set extraArgs.delete-api-enabled=true --set 'extraArgs.server\.admin-auth-token=  '
+helm template rel "$CHART" --set extraArgs.delete-api-enabled=true --set adminAuth.existingSecret=s >/dev/null 2>&1 ||
+  fail "delete API with adminAuth.existingSecret should render"
+helm template rel "$CHART" --set extraArgs.delete-api-enabled=true --set 'extraArgs.server\.admin-auth-token=plain' >/dev/null 2>&1 ||
+  fail "delete API with a plain admin token should render"
+helm template rel "$CHART" --set extraArgs.delete-api-enabled=false >/dev/null 2>&1 ||
+  fail "delete API off should render without a token"
 
 # --- 3) plain values still render --------------------------------------------
 PLAIN="$(helm template rel "$CHART" \

@@ -276,6 +276,11 @@ Invoked from the deployment.
 {{- if and $backendAuth.existingSecret (hasKey $extraArgs "backend-basic-auth") -}}
 {{- fail "backendAuth.existingSecret cannot be combined with extraArgs.backend-basic-auth; the chart renders -backend-basic-auth from the Secret. Remove the extraArgs entry." -}}
 {{- end -}}
+{{- /* The delete API answers only requests that carry the admin token; the
+proxy refuses to start with it enabled and no token (validateDeleteAPI). */ -}}
+{{- if and (eq (toString (get $extraArgs "delete-api-enabled")) "true") (not $adminAuth.existingSecret) (eq (trim (toString (default "" (get $extraArgs "server.admin-auth-token")))) "") -}}
+{{- fail "extraArgs.delete-api-enabled=true requires an admin token: set adminAuth.existingSecret (or extraArgs.\"server.admin-auth-token\"). Every delete request must carry it in X-Admin-Token or Authorization: Bearer." -}}
+{{- end -}}
 {{- $observability := default (dict) .Values.observability -}}
 {{- $otlp := default (dict) (get $observability "otlp") -}}
 {{- if and $otlp.existingSecret (or (hasKey $extraArgs "otlp-headers") (ne (default "" $otlp.headers | toString) "")) -}}

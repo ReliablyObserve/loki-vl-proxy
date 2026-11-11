@@ -257,7 +257,9 @@ type Config struct {
 	PatternsEnabled *bool
 	// DeleteAPIEnabled registers /loki/api/v1/delete, which forwards to
 	// VictoriaLogs. False (the zero value) leaves the path unregistered, so it
-	// answers 404 like Loki with deletion disabled.
+	// answers 404 like Loki with deletion disabled. True requires
+	// AdminAuthToken: every delete request must carry it (New refuses the
+	// configuration without one).
 	DeleteAPIEnabled bool
 	// PatternsAutodetectFromQueries passively extracts patterns from successful
 	// log query/query_range responses and warms /patterns cache entries.
@@ -1010,6 +1012,9 @@ func newCoalescer(disabled bool) *mw.Coalescer {
 
 //nolint:gocyclo // constructor wires many optional config knobs (URLs, levels, multi-tenant, caches, ruler/alerts, telemetry); complexity is inherent to top-level assembly.
 func New(cfg Config) (*Proxy, error) {
+	if err := validateDeleteAPIConfig(cfg.DeleteAPIEnabled, cfg.AdminAuthToken); err != nil {
+		return nil, err
+	}
 	u, err := url.Parse(cfg.BackendURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid backend URL: %w", err)
@@ -2044,8 +2049,11 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 	// Unregistered by default: Loki registers it only with compactor retention
 	// enabled and otherwise answers 404 before any auth, which the mux's
 	// not-found answer matches.
+	// Every request must carry the admin token, checked before the tenant,
+	// rate limit or parameters, so an unauthenticated caller learns nothing
+	// about the route (deleteAuthMiddleware).
 	if p.deleteAPIEnabled {
-		mux.Handle("/loki/api/v1/delete", p.routeHandler("delete", "/loki/api/v1/delete", p.handleDelete))
+		mux.Handle("/loki/api/v1/delete", securityHeaders(p.deleteAuthMiddleware(p.routeHandler("delete", "/loki/api/v1/delete", p.handleDelete))))
 	}
 
 	// Alerting / ruler read endpoints
