@@ -1567,6 +1567,7 @@
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/metric_stages_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/oracle_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/parser_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/parser_metric_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/physical_codec_test.go | semantics/label-replace-new-label",
@@ -2130,7 +2131,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 461,
+      "go": 462,
       "playwright": 1
     },
     "page_kinds": {

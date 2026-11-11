@@ -32,6 +32,7 @@
       "internal/querycorpus/label_filter_grid_test.go",
       "internal/querycorpus/label_filter_parsed_grid_test.go",
       "internal/querycorpus/metric_stages_grid_test.go",
+      "internal/querycorpus/oracle_test.go",
       "internal/querycorpus/parser_grid_test.go",
       "internal/querycorpus/parser_metric_grid_test.go",
       "internal/querycorpus/plan_shadow_test.go",
@@ -2997,6 +2998,9 @@
     "internal/querycorpus/metric_stages_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/oracle_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/parser_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3968,7 +3972,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 462,
+  "tests_with_markers": 463,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
