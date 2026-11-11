@@ -1795,7 +1795,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 454,
+  "registry_items": 455,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -4026,6 +4026,7 @@
     "semantics/logfmt-over-json-line-reads-stored-fields",
     "semantics/nested-aggregation-query-length",
     "semantics/parse-error-labels-on-log-lines",
+    "semantics/pattern-capture-before-bracket-text",
     "semantics/quantile-over-time-out-of-range",
     "semantics/regexp-chain-led-by-ip",
     "semantics/ruler-empty-list-status",

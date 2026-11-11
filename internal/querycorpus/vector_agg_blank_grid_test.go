@@ -334,3 +334,33 @@ func TestTypedPairLeavesBlankBeforeRangeCall(t *testing.T) {
 		}
 	}
 }
+
+// The oracle's typed pairs are what VictoriaLogs would receive from the proxy: the text the handlers translate (a
+// quantile_over_time phi above 1 is clamped to 1, which VictoriaLogs accepts), no pair for rate_counter (its stats
+// function is a marker the proxy answers itself), and, for a ranking the proxy evaluates, the operand's request the
+// plan lowers to against the operand request the proxy sends (the whole query is never translated on that route).
+// conformance: architecture-syntax-package-layering
+func TestTypedPairsAreWhatTheProxySends(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	for _, v := range []string{"v1.49.0", "v1.53.0"} {
+		typed, built, ok := typedQueryPair(`quantile_over_time(2.0, {app="a"} | unwrap duration_ms [5m])`, v)
+		if !ok || typed != built || !strings.Contains(typed, "quantile(1,") {
+			t.Errorf("%s: phi above 1: pair %v, typed %q, built %q", v, ok, typed, built)
+		}
+		if _, _, ok := typedQueryPair(`rate_counter({app="a"} | unwrap n [5m])`, v); ok {
+			t.Errorf("%s: rate_counter makes a pair", v)
+		}
+		for _, q := range []string{
+			`topk(3, rate({app="a"}[5m]))`, `bottomk(2, count_over_time({app="a"} |= "x" [1m]))`, `sort(bytes_rate({app="a"}[5m]))`,
+			`sort_desc(rate({app="a"} | json | unwrap n [5m]))`,
+		} {
+			typed, built, ok := typedQueryPair(q, v)
+			if !ok || typed != built || typed == "" {
+				t.Errorf("%s: %q: ranking pair %v\n typed %q\n built %q", v, q, ok, typed, built)
+			}
+		}
+		if _, _, ok := typedQueryPair(`topk(3, rate ({app="a"}[5m]))`, v); ok {
+			t.Errorf("%s: a screened ranking makes a pair", v)
+		}
+	}
+}
