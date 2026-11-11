@@ -286,7 +286,7 @@ func TestLokiLogSummary_EstimatesTheRunFromTheAnswer(t *testing.T) {
 			statsTotals{postFilter: 3700, hasPostFilter: true, lines: 3700, hasLines: true}, 3700, 3700, 30},
 	} {
 		w := &queryStatsWriter{route: statsRouteRange, lokiMode: true,
-			sreq: statsRequest{start: tc.start, end: tc.end, limit: tc.limit, backward: true, ok: true}}
+			sreq: statsRequest{start: tc.start, end: tc.end, limit: tc.limit, backward: true, ok: true}, sreqRead: true}
 		w.entries = entryCounter{n: tc.entries, lineBytes: 30 * tc.entries, hasTS: true, tsMin: ts19(tc.tMin), tsMax: ts19(tc.tMax)}
 		s, _ := w.lokiLogSummary(&tc.totals, false)
 		if s.lines != tc.wantLines || s.postFilter != tc.wantPost || s.bytes != tc.wantBytesPerLine*tc.wantLines {

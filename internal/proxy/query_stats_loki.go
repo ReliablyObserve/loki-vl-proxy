@@ -137,9 +137,7 @@ func readStatsRequest(r *http.Request, route uint8) statsRequest {
 	start, okS := parseLokiTimeToUnixNano(r.FormValue("start"))
 	end, okE := parseLokiTimeToUnixNano(r.FormValue("end"))
 	q.start, q.end, q.ok = start, end, okS && okE && end >= start
-	if step, ok := parseStepToNanos(r.FormValue("step")); ok {
-		q.step = step
-	}
+	q.step = statsStepNanos(r.FormValue("step"))
 	q.limit = 100 // Loki's default limit
 	if raw := strings.TrimSpace(r.FormValue("limit")); raw != "" {
 		if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
@@ -148,6 +146,30 @@ func readStatsRequest(r *http.Request, route uint8) statsRequest {
 	}
 	q.backward = !strings.EqualFold(r.FormValue("direction"), "forward")
 	return q
+}
+
+// statsStepNanos reads a step: whole seconds (Grafana's usual form) without
+// allocating, anything else as the query handlers read it; 0 when unread.
+func statsStepNanos(raw string) int64 {
+	if raw != "" && len(raw) <= 12 && strings.Trim(raw, "0123456789") == "" {
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err == nil && n > 0 && n < 1<<33 {
+			return n * int64(time.Second)
+		}
+	}
+	if step, ok := parseStepToNanos(raw); ok {
+		return step
+	}
+	return 0
+}
+
+// request is the request as the stats layer reads it, read on first use
+// (a cache hit that replays its computation never needs it).
+func (w *queryStatsWriter) request() statsRequest {
+	if !w.sreqRead {
+		w.sreq, w.sreqRead = readStatsRequest(w.req, w.route), true
+	}
+	return w.sreq
 }
 
 // maxRangeOf is the longest range selector of a query (0 for none).
@@ -180,7 +202,7 @@ func parseTS19(b [19]byte) int64 {
 
 // lokiLogRun is the run of this writer's log answer.
 func (w *queryStatsWriter) lokiLogRun() lokiLogRun {
-	q := w.sreq
+	q := w.request()
 	tMin, tMax := parseTS19(w.entries.tsMin), parseTS19(w.entries.tsMax)
 	return lokiLogQueryRun(q.start, q.end, q.limit, q.backward, w.entries.n, tMin, tMax, w.entries.hasTS)
 }
@@ -194,7 +216,7 @@ func (w *queryStatsWriter) lokiLogRun() lokiLogRun {
 // lines' mean size.
 func (w *queryStatsWriter) lokiLogSummary(totals *statsTotals, filtered bool) (statsSummary, lokiLogRun) {
 	run := w.lokiLogRun()
-	q, entries := w.sreq, w.entries.n
+	q, entries := w.request(), w.entries.n
 	post := entries
 	if entries > 0 && q.limit > 0 && entries >= q.limit && w.entries.hasTS {
 		covered := q.end - parseTS19(w.entries.tsMin)
@@ -223,7 +245,7 @@ func (w *queryStatsWriter) lokiLogSummary(totals *statsTotals, filtered bool) (s
 
 // lokiReport fills rep with Loki's accounting of a computed answer.
 func (w *queryStatsWriter) lokiReport(rep *statsReport, totals *statsTotals, logs bool) {
-	q := w.sreq
+	q := w.request()
 	switch {
 	case logs && w.route == statsRouteRange && q.ok:
 		filtered := true
@@ -258,20 +280,21 @@ func (w *queryStatsWriter) instantRange() time.Duration {
 
 // lokiHitReport fills rep for a response-cache hit in Loki's accounting.
 func (w *queryStatsWriter) lokiHitReport(rep *statsReport, logs bool) {
-	q := w.sreq
 	switch {
 	case w.replayed.exec > 0: // an answer Loki computes on every request
 		r := w.replayed
 		rep.summary = statsSummary{bytes: r.bytes, lines: r.lines, postFilter: r.postFilter, rateOver: r.exec}
 		rep.splits, rep.shards, rep.querierExec = r.splits, r.shards, r.querierExec
-	case w.route == statsRouteRange && !logs && q.ok: // Loki's results-cache hit
-		rep.splits = max(lokiMetricRangePieces(q.start, q.end, q.step), 1)
+	case w.route == statsRouteRange && !logs: // Loki's results-cache hit
+		if q := w.request(); q.ok {
+			rep.splits = max(lokiMetricRangePieces(q.start, q.end, q.step), 1)
+		}
 	}
 }
 
 // lokiVolumeSplits is Loki's splits of a volume answer.
 func (w *queryStatsWriter) lokiVolumeSplits() int64 {
-	q := w.sreq
+	q := w.request()
 	if q.step <= 0 || !q.ok || q.end == q.start {
 		return 1
 	}
@@ -286,13 +309,14 @@ func (w *queryStatsWriter) lokiVolumeSplits() int64 {
 // request ends with the client's.
 func (p *Proxy) startExactMetricBytes(r *http.Request, sw *queryStatsWriter) {
 	shape, ok := totalsShapeOf(r.Context(), r.FormValue("query"))
-	if !ok || shape.op == "" || shape.op == logqlpkg.RangeBytesOverTime || shape.op == logqlpkg.RangeBytesRate || !sw.sreq.ok {
+	q := sw.request()
+	if !ok || shape.op == "" || shape.op == logqlpkg.RangeBytesOverTime || shape.op == logqlpkg.RangeBytesRate || !q.ok {
 		return
 	}
 	req := volumeRequest{
 		query:   (&logqlpkg.LogQuery{Selector: shape.expr.Selector}).String(),
-		startNs: sw.sreq.start - int64(shape.rangeDur),
-		endNs:   sw.sreq.end,
+		startNs: q.start - int64(shape.rangeDur),
+		endNs:   q.end,
 		targets: []string{"service_name"},
 		limit:   exactMetricBytesSeriesLimit,
 	}

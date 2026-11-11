@@ -468,4 +468,16 @@ decisions:
       tracked: ['BenchmarkQueryAnswerPaths', 'BenchmarkQueryStatsWriter']
       bound: 'no VictoriaLogs request added by default; with -query-stats-exact-metric-bytes one volume request per metric query miss, sent next to the query and ending with it; per answer one timestamp comparison per log entry (the 19-digit text), one parse of the query for an instant range, one mean-line-size write per log miss and one read per metric miss'
       measured: |
-        PENDING_BENCH2
+        Apple M5 Pro, GOMAXPROCS=4, benchstat of 10 interleaved runs, base
+        origin/main 59dfecb29, default mode (loki), the stub of
+        BenchmarkQueryAnswerPaths; the machine was busy (sec/op spread 20-90%):
+        no sec/op row significant (p >= 0.22); allocs/op log miss 7,438 ->
+        7,432, metric miss 539 -> 538 (the companion keys of a request read
+        once and hashed without allocating), hits equal, instant miss 484 ->
+        494 (+2.1%: the mean line size read for its bytes estimate, two cache
+        keys and the selector), B/op instant miss +1.2%, log miss gzip +0.4%
+        (the larger object on the wire). The layer alone
+        (BenchmarkQueryStatsWriter, 1000 entries): 11.3 -> 16.4 us on this
+        run (round 1 measured 7.9 -> 11.8 us), plus about 1 us with the
+        timestamp tracking of the default mode
+        (BenchmarkQueryStatsWriterLokiMode); no allocation of its own.

@@ -163,7 +163,6 @@ func (p *Proxy) queryStatsLayer(endpoint string, next http.HandlerFunc) http.Han
 		sw.reset(w, rt)
 		sw.route, sw.req, sw.lokiMode = kind, r, !p.queryStatsVictoriaLogsMode
 		if sw.lokiMode {
-			sw.sreq = readStatsRequest(r, kind)
 			sw.entries.trackTS = kind == statsRouteRange
 			if p.queryStatsExactMetricBytes && kind != statsRouteVolume {
 				p.startExactMetricBytes(r, sw)
@@ -219,6 +218,7 @@ type queryStatsWriter struct {
 	lokiMode bool
 	req      *http.Request
 	sreq     statsRequest
+	sreqRead bool
 	// exactBytes delivers the exact bytes of a metric query
 	// (-query-stats-exact-metric-bytes), nil when none was asked for.
 	exactBytes   chan int64
@@ -232,7 +232,7 @@ type queryStatsWriter struct {
 
 func (w *queryStatsWriter) reset(rw http.ResponseWriter, rt *requestTelemetry) {
 	w.ResponseWriter, w.rt = rw, rt
-	w.route, w.req, w.lokiMode, w.sreq, w.exactBytes = statsRouteRange, nil, false, statsRequest{}, nil
+	w.route, w.req, w.lokiMode, w.sreq, w.sreqRead, w.exactBytes = statsRouteRange, nil, false, statsRequest{}, false, nil
 	w.wroteHeader, w.patch, w.done, w.entriesKnown = false, false, false, false
 	w.hit, w.replayed, w.queryLength = false, statsReplay{}, 0
 	w.headN, w.tailN, w.total = 0, 0, 0
