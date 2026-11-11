@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.129.0] - 2026-11-10
-
 ### Changed
 
 - The query plan holds `stddev` and `stdvar` the way the proxy evaluates
@@ -31,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (or `| logfmt`, `| pattern`, `| regexp`, `| unpack`) followed by a
   non-ASCII character is now left to the string translator, which reads it
   as a parser stage where the plan did not.
+
+## [2.129.0] - 2026-11-10
+
+### Changed
+
 - The query plan holds `topk`, `bottomk`, `sort` and `sort_desc` the way the
   proxy evaluates them, for every translation profile: one ranking step per
   ranking, with its `k` and its `by` or `without` clause, over the operand's
@@ -42,8 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   own route, not to the translator's text for the whole query, which the
   proxy never sends. Nothing serves the plan yet: no request sent to
   VictoriaLogs and no answer changes. A binary operation operand, a `sort`
-  with a clause and a lone ranking wrapped in parentheses stay with the
-  string translator.
+  with a clause, a lone ranking wrapped in parentheses and a `stddev` or
+  `stdvar` above a ranking stay with the string translator.
 
 ## [2.128.1] - 2026-11-10
 
