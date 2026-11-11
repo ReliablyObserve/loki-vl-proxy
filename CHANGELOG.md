@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The query plan now holds a `stddev` or `stdvar` by a label of a query with a
+  parser the way the proxy sends it (`stddev by (route) (count_over_time({app="a"}
+  | logfmt [5m]))`): the proxy rewrites the operand as the per-series form of
+  `max by (route) (..)` without its last fold, which the plan now builds from
+  its typed pipes and holds to the proxy's request byte for byte, for json,
+  logfmt, regexp and pattern parsers and nests of sum, avg, min, max and count.
+  An unwrapped value or a `label_replace` under it, a sum with no clause over a
+  rate, and a name that differs from `_time`, `_stream` or `_stream_id` only by
+  case stay with the string translator. Nothing is served from the plan for
+  these queries yet: no request to VictoriaLogs and no answer changes.
 - The opt-in live shadow of the query plan (`-translate-shadow-sample`) now
   also covers the rankings, `stddev` and `stdvar` the proxy evaluates itself
   (and the `sum`, `avg`, `min`, `max` and `count` layers above a ranking), on
