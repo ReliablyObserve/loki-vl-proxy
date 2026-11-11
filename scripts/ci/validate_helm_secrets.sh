@@ -69,6 +69,18 @@ helm template rel "$CHART" --set extraArgs.delete-api-enabled=true --set extraAr
 helm template rel "$CHART" --set extraArgs.delete-api-enabled=false >/dev/null 2>&1 ||
   fail "delete API off should render without a token"
 
+# Per-tenant limits need tenancy; default limits do not.
+# (--set-json: helm's --set reads a value that starts with "{" as a list)
+LIMITS='extraArgs.tenant-limits="{\"a\":{\"max_query_series\":1}}"'
+TENANCY_ERR="$(helm template rel "$CHART" --set-json "$LIMITS" 2>&1 >/dev/null || true)"
+grep -qF "tenancy is off" <<<"$TENANCY_ERR" || fail "tenant-limits without tenancy should fail rendering with the tenancy message: $TENANCY_ERR"
+helm template rel "$CHART" --set-json "$LIMITS" --set-string 'extraArgs.tenant\.numeric-passthrough=true' >/dev/null 2>&1 ||
+  fail "tenant-limits with numeric passthrough should render"
+helm template rel "$CHART" --set-json "$LIMITS" --set-json 'extraArgs.tenant-map="{\"a\":{\"account_id\":\"1\",\"project_id\":\"0\"}}"' >/dev/null 2>&1 ||
+  fail "tenant-limits with a tenant map should render"
+helm template rel "$CHART" --set-json 'extraArgs.tenant-default-limits="{\"max_query_series\":1}"' >/dev/null 2>&1 ||
+  fail "tenant-default-limits alone should render"
+
 # --- 3) plain values still render --------------------------------------------
 PLAIN="$(helm template rel "$CHART" \
   --set 'extraArgs.server\.admin-auth-token=plain-admin' \

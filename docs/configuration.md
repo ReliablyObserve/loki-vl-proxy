@@ -634,7 +634,7 @@ Tenancy is off by default: `X-Scope-OrgID` is ignored and everyone reads Victori
 | `-tenant-map-reload-interval` | *(flag only)* | `30s` | How often to poll `-tenant-map-file` for mtime changes. Set to `0` to disable polling (SIGHUP-only reload). |
 | `-tenant-limits-allow-publish` | `TENANT_LIMITS_ALLOW_PUBLISH` | built-in allowlist | Comma-separated limit fields exposed on `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` |
 | `-tenant-default-limits` | `TENANT_DEFAULT_LIMITS` | — | JSON map of Loki limits for every tenant, enforced and published; see [Published tenant limits](#published-tenant-limits-compatibility-surface) |
-| `-tenant-limits` | `TENANT_LIMITS` | — | JSON map of per-tenant Loki limits keyed by `X-Scope-OrgID`, above `-tenant-default-limits`; enforced and published |
+| `-tenant-limits` | `TENANT_LIMITS` | — | JSON map of per-tenant Loki limits keyed by `X-Scope-OrgID`, above `-tenant-default-limits`; enforced and published. Needs tenancy on: with tenancy off the proxy refuses to start |
 | `-auth.enabled` | — | `false` | Require `X-Scope-OrgID` on query requests; a missing header returns `401`. The header value is not authenticated |
 | `-require-tenant-header` | — | `false` | Reject requests missing `X-Scope-OrgID` with `401`, independent of `-auth.enabled` |
 | `-tenant.allow-global` | — | `false` | Allow an unmapped `X-Scope-OrgID: *` to bypass tenant scoping and use the backend default tenant. In `-tenant-label` mode, or with `-tenant.numeric-passthrough=false`, it also admits an unmapped default alias (`0`, `fake`, `default`) or a missing org without the tenant filter or a tenant-map entry. Without it, those return `403`; an explicit `"*"` tenant-map entry always takes precedence |

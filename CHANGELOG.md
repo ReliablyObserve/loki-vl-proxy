@@ -33,7 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before, and an explicit `false` next to a tenant map is strict routing as before
   (an explicit `false` with no other tenant setting, which refused every org,
   is now tenancy off). The zero value
-  of `proxy.Config` (library use) is unchanged: numeric passthrough on. See
+  of `proxy.Config` (library use) is unchanged: numeric passthrough on.
+  `-tenant-limits` (`TENANT_LIMITS`), keyed by `X-Scope-OrgID`, now refuses to
+  start (and the Helm chart to render) with tenancy off, naming the flags that
+  turn it on; `-tenant-default-limits` alone stays allowed. See
   `docs/tenancy-and-auth.md`.
 - The delete API needs its own token. With `-delete-api-enabled=true`, every
   request to `/loki/api/v1/delete` must carry the new `-delete-api-auth-token`

@@ -517,7 +517,7 @@ func run(
 	forwardTenantHeader := fs.Bool("forward-tenant-header", true, "Forward the per-tenant X-Scope-OrgID header to the upstream backend. Safe for VictoriaLogs (ignores it). Required for Victoria Lakehouse native tenant routing.")
 	tenantLimitsAllowPublish := fs.String("tenant-limits-allow-publish", "", "Comma-separated limit fields published on /config/tenant/v1/limits and /loki/api/v1/drilldown-limits")
 	tenantDefaultLimitsJSON := fs.String("tenant-default-limits", "", `JSON map of Loki limits for every tenant, enforced and published (for example {"query_timeout":"2m","max_query_series":1000}); max_query_series, max_entries_limit_per_query, max_query_length, max_query_lookback, max_query_range and query_timeout are enforced`)
-	tenantLimitsJSON := fs.String("tenant-limits", "", `JSON map of per-tenant Loki limits keyed by X-Scope-OrgID, above -tenant-default-limits; enforced and published like it`)
+	tenantLimitsJSON := fs.String("tenant-limits", "", `JSON map of per-tenant Loki limits keyed by X-Scope-OrgID, above -tenant-default-limits; enforced and published like it. Requires tenancy (-tenant.numeric-passthrough=true, -tenant-map, -tenant-map-file, -tenant-label, -auth.enabled or -require-tenant-header): with tenancy off the proxy refuses to start, since the header is ignored`)
 
 	// OTLP telemetry flags
 	otlpEndpoint := fs.String("otlp-endpoint", "", "OTLP HTTP endpoint (e.g., http://otel-collector:4318/v1/metrics)")
@@ -813,8 +813,15 @@ func run(
 	if v := getenv("TENANT_LABEL"); v != "" && *tenantLabel == "" {
 		*tenantLabel = v
 	}
-	numericPassthrough := resolveNumericPassthrough(*tenantNumericPassthrough, explicitFlags["tenant.numeric-passthrough"],
-		*authEnabled, *requireTenantHeader, envCfg.tenantMapJSON, envCfg.tenantMapFile, *tenantLabel)
+	numericPassthrough, err := resolveTenancy(tenancySettings{
+		numericPassthrough: *tenantNumericPassthrough, numericPassthroughExplicit: explicitFlags["tenant.numeric-passthrough"],
+		authEnabled: *authEnabled, requireTenantHeader: *requireTenantHeader,
+		tenantMapJSON: envCfg.tenantMapJSON, tenantMapFile: envCfg.tenantMapFile, tenantLabel: *tenantLabel,
+		tenantLimitsJSON: envCfg.tenantLimitsJSON,
+	})
+	if err != nil {
+		return err
+	}
 
 	adminTarget := resolveAdminTarget(envCfg.listenAddr, *adminListen, *adminAuthToken)
 	if err := validateAdminExposure(adminTarget, *registerInstrumentation, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
@@ -1541,6 +1548,39 @@ func resolveNumericPassthrough(flagValue, explicit, authEnabled, requireTenantHe
 	}
 	return authEnabled || requireTenantHeader || strings.TrimSpace(tenantMapJSON) != "" ||
 		strings.TrimSpace(tenantMapFile) != "" || strings.TrimSpace(tenantLabel) != ""
+}
+
+// tenancySettings are the flags (after environment overrides) that decide
+// whether tenancy is on.
+type tenancySettings struct {
+	numericPassthrough, numericPassthroughExplicit bool
+	authEnabled, requireTenantHeader               bool
+	tenantMapJSON, tenantMapFile, tenantLabel      string
+	tenantLimitsJSON                               string
+}
+
+// resolveTenancy returns the effective -tenant.numeric-passthrough
+// (resolveNumericPassthrough) and refuses per-tenant limits while tenancy is
+// off (validateTenantLimitsNeedTenancy).
+func resolveTenancy(t tenancySettings) (numericPassthrough bool, err error) {
+	numericPassthrough = resolveNumericPassthrough(t.numericPassthrough, t.numericPassthroughExplicit,
+		t.authEnabled, t.requireTenantHeader, t.tenantMapJSON, t.tenantMapFile, t.tenantLabel)
+	tenancyOn := numericPassthrough || t.authEnabled || t.requireTenantHeader || strings.TrimSpace(t.tenantMapJSON) != "" ||
+		strings.TrimSpace(t.tenantMapFile) != "" || strings.TrimSpace(t.tenantLabel) != ""
+	return numericPassthrough, validateTenantLimitsNeedTenancy(t.tenantLimitsJSON, tenancyOn)
+}
+
+// validateTenantLimitsNeedTenancy refuses startup when per-tenant limits
+// (-tenant-limits, TENANT_LIMITS) are set while tenancy is off: the header is
+// then ignored, so limits keyed by X-Scope-OrgID would never apply.
+// -tenant-default-limits applies to every request and stays allowed.
+func validateTenantLimitsNeedTenancy(tenantLimitsJSON string, tenancyOn bool) error {
+	if tenancyOn || strings.TrimSpace(tenantLimitsJSON) == "" {
+		return nil
+	}
+	return fmt.Errorf("-tenant-limits (TENANT_LIMITS) is keyed by X-Scope-OrgID, but tenancy is off, so the header is ignored and the limits would never apply. " +
+		"Turn tenancy on with -tenant.numeric-passthrough=true, -tenant-map, -tenant-map-file, -tenant-label, -auth.enabled or -require-tenant-header, " +
+		"or move the limits to -tenant-default-limits, which applies to every request")
 }
 
 // validateDeleteAPI refuses startup when the delete API is enabled with no

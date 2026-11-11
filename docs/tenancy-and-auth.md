@@ -114,8 +114,10 @@ The proxy trusts nothing about the caller unless you configure it:
 | `-tenant-label` / `TENANT_LABEL` | `extraArgs.tenant-label` | empty | yes | none |
 | `-tenant.numeric-passthrough` | `extraArgs.tenant.numeric-passthrough` | `false` (unset: on next to another tenant setting) | `true` turns it on | none |
 | `-tenant.allow-global` | `extraArgs.tenant.allow-global` | `false` | no | none (`*` is an ordinary name to Loki) |
+| `-tenant-limits` / `TENANT_LIMITS` | `extraArgs.tenant-limits` | empty | no; **requires** tenancy (the proxy and the chart refuse it with tenancy off) | per-tenant `limits_config` overrides |
+| `-tenant-default-limits` / `TENANT_DEFAULT_LIMITS` | `extraArgs.tenant-default-limits` | empty | no; allowed with tenancy off (applies to every request) | `limits_config` |
 | `-forward-tenant-header` / `FORWARD_TENANT_HEADER` | `extraArgs.forward-tenant-header` | `true` | no | none |
-| `-multi-tenant-max-fanout` | `extraArgs.multi-tenant-max-fanout` | `100` | no | `multi_tenant_queries_enabled` (Loki has no count cap) |
+| `-multi-tenant-max-fanout` | `extraArgs.multi-tenant-max-fanout` | `64` | no | `multi_tenant_queries_enabled` (Loki has no count cap) |
 | `-delete-api-enabled` | `extraArgs.delete-api-enabled` | `false` | no | compactor `retention_enabled` + deletion |
 | `-delete-api-auth-token` | `deleteAuth.existingSecret` / `extraArgs.delete-api-auth-token` | empty, required by the delete API | no | none |
 | `-server.admin-auth-token` | `adminAuth.existingSecret` / `extraArgs.server.admin-auth-token` | empty | no | none |
@@ -137,6 +139,8 @@ The proxy trusts nothing about the caller unless you configure it:
 ```
 
 (Helm: `extraArgs: {tenant.numeric-passthrough: "true"}`). Deployments with any other tenant setting keep routing as before.
+
+Per-tenant limits (`-tenant-limits`) are keyed by `X-Scope-OrgID`, so with tenancy off the proxy refuses to start with them; turn tenancy on, or move them to `-tenant-default-limits`. If a reload adds tenant-map entries to a proxy that started with tenancy off, it routes strictly (only mapped orgs) until it is restarted, which fails closed.
 
 The delete API now needs its own token: set `-delete-api-auth-token` (Helm `deleteAuth.existingSecret`) and send it with every delete request. The [CHANGELOG](../CHANGELOG.md) lists the other changed answers, such as Loki's `401 no org id` and `400` tenant texts.
 
