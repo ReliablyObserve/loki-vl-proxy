@@ -105,7 +105,7 @@ jobs:
       # build must neither read nor write a cache that commit's code could shape.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: false
 
       - name: Install Helm
@@ -170,7 +170,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           # No restored cache in the job that publishes release artifacts: nothing
           # a pull request or branch run saved can reach what ships.
           cache: false

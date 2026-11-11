@@ -76,7 +76,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         id: setup-go
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: false
 
       # A pull request replays unchanged packages from the Go test cache; main,
@@ -262,7 +262,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         id: setup-go
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: false
 
       - name: Locate the Go module cache
@@ -340,7 +340,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true
 
       - name: Tuple contract gate (default 2-tuple + categorize-labels 3-tuple)
@@ -366,7 +366,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         id: setup-go
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true
 
       # Every Fuzz function in the tree is either a smoke row or an unscheduled
@@ -463,7 +463,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         id: setup-go
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: false
 
       # Go keys a cached test result on the modification time of each file the
@@ -626,7 +626,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
 
       # Built once by the `image` job.
@@ -679,7 +679,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true
 
       # bench-results.txt is read only by the PR evidence report, which keeps the
@@ -1035,7 +1035,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true
 
       # A few tests skip or assert less under the race detector (the metadata scan
@@ -1094,7 +1094,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true
 
       - name: gofmt -s (Go Report Card parity)
@@ -1195,7 +1195,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
 
       # Built once by the `image` job.
@@ -1296,7 +1296,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
 
       # Built once by the `image` job.
@@ -1407,7 +1407,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
@@ -1512,7 +1512,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true
 
       - name: Stress tests (concurrency + race detector)
@@ -1539,7 +1539,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true
 
       - name: Memory-leak tests (bounded heap growth + race detector)
@@ -1563,7 +1563,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true
 
       - name: Install Helm

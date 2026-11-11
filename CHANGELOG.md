@@ -29,6 +29,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (or `| logfmt`, `| pattern`, `| regexp`, `| unpack`) followed by a
   non-ASCII character is now left to the string translator, which reads it
   as a parser stage where the plan did not.
+
+### Security
+
+- **Go 1.27.4.** Go 1.27.4 fixes GO-2026-6859 (net/http: an HTTP/1 server
+  crash caused by a `MaxBytesReader` header race), which `govulncheck`
+  reports as reachable from the proxy's own HTTP server and handlers
+  (`Proxy.RegisterProxyRoutes`, the peer cache's `ServeHTTP`, the metrics
+  handler). With 1.27.3 the govulncheck step failed on main and on every
+  pull request. The builder image (`golang:1.27.4-alpine3.24`, pinned by its
+  multi-arch index digest), `go.mod`, `bench/go.mod`, the getting-started
+  guide and every workflow move to 1.27.4. govulncheck v1.8.0 (run with
+  `GOOS=linux`) reports no vulnerabilities for the module and for `bench`,
+  and golangci-lint v2.14.0 reports no issues.
+
+## [2.130.0] - 2026-11-11
+
+### Changed
+
 - The query plan lowers the metric queries whose labels come from a parser,
   for every translation profile: a grouping or unwrapped label with an
   underscore behind `json` or `logfmt` (the `http_method` a line may hold as
