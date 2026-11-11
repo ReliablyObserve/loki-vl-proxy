@@ -1335,6 +1335,7 @@
     "internal/proxy/plain_stream_labels_test.go | loki_api_v1_query_range",
     "internal/proxy/plain_stream_labels_test.go | semantics/plain-name-after-parser-reads-stream-label",
     "internal/proxy/plan_predicate_parity_test.go | architecture-syntax-package-layering",
+    "internal/proxy/plan_route_metric_test.go | architecture-syntax-package-layering",
     "internal/proxy/plan_route_parity_test.go | architecture-syntax-package-layering",
     "internal/proxy/post_aggregation_physical_test.go | architecture-syntax-package-layering",
     "internal/proxy/proxy_helpers_test.go | semantics/absent-over-time-semantics",
@@ -1662,6 +1663,8 @@
     "internal/queryplan/lower/rank_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/reserved_field_case_test.go | semantics/reserved-field-name-case-outbound",
     "internal/queryplan/lower/reserved_field_test.go | semantics/translator-writes-reserved-field-names",
+    "internal/queryplan/lower/route_bench_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/route_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/series_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
@@ -2196,7 +2199,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 490,
+      "go": 493,
       "playwright": 1
     },
     "page_kinds": {

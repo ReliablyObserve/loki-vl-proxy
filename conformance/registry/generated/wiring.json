@@ -21,6 +21,7 @@
       "internal/proxy/lowering_shadow_evaluated_test.go",
       "internal/proxy/lowering_shadow_test.go",
       "internal/proxy/plan_predicate_parity_test.go",
+      "internal/proxy/plan_route_metric_test.go",
       "internal/proxy/plan_route_parity_test.go",
       "internal/proxy/post_aggregation_physical_test.go",
       "internal/proxy/query_lowering_test.go",
@@ -69,6 +70,8 @@
       "internal/queryplan/lower/pattern_filter_test.go",
       "internal/queryplan/lower/range_agg_test.go",
       "internal/queryplan/lower/rank_test.go",
+      "internal/queryplan/lower/route_bench_test.go",
+      "internal/queryplan/lower/route_test.go",
       "internal/queryplan/lower/series_agg_test.go",
       "internal/queryplan/lower/spelling_test.go",
       "internal/queryplan/lower/unwrap_test.go",
@@ -2635,6 +2638,9 @@
     "internal/proxy/plan_predicate_parity_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/proxy/plan_route_metric_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/proxy/plan_route_parity_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3235,6 +3241,12 @@
     ],
     "internal/queryplan/lower/reserved_field_test.go": [
       "semantics/translator-writes-reserved-field-names"
+    ],
+    "internal/queryplan/lower/route_bench_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/route_test.go": [
+      "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/series_agg_test.go": [
       "architecture-syntax-package-layering"
@@ -4122,7 +4134,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 491,
+  "tests_with_markers": 494,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
