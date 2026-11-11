@@ -161,7 +161,14 @@ func (p *Proxy) queryStatsLayer(endpoint string, next http.HandlerFunc) http.Han
 		}
 		sw := queryStatsWriterPool.Get().(*queryStatsWriter)
 		sw.reset(w, rt)
-		sw.route = kind
+		sw.route, sw.req, sw.lokiMode = kind, r, !p.queryStatsVictoriaLogsMode
+		if sw.lokiMode {
+			sw.sreq = readStatsRequest(r, kind)
+			sw.entries.trackTS = kind == statsRouteRange
+			if p.queryStatsExactMetricBytes && kind != statsRouteVolume {
+				p.startExactMetricBytes(r, sw)
+			}
+		}
 		rt.mu.Lock()
 		rt.statsWriter = sw
 		rt.mu.Unlock()
@@ -204,9 +211,17 @@ type queryStatsWriter struct {
 	entriesKnown bool
 	// hit: a response-cache hit (query_stats_cache.go): replayed holds the
 	// stored computation's totals, queryLength the window it served (ns).
-	hit          bool
-	replayed     statsReplay
-	queryLength  int64
+	hit         bool
+	replayed    statsReplay
+	queryLength int64
+	// lokiMode: Loki's accounting (-query-stats-mode=loki, the default) of
+	// the request req, read as sreq (query_stats_loki.go).
+	lokiMode bool
+	req      *http.Request
+	sreq     statsRequest
+	// exactBytes delivers the exact bytes of a metric query
+	// (-query-stats-exact-metric-bytes), nil when none was asked for.
+	exactBytes   chan int64
 	headN, tailN int
 	total        int                      // bytes the handler wrote
 	head         [queryStatsTailHold]byte // the first bytes, to check the envelope's start
@@ -217,7 +232,7 @@ type queryStatsWriter struct {
 
 func (w *queryStatsWriter) reset(rw http.ResponseWriter, rt *requestTelemetry) {
 	w.ResponseWriter, w.rt = rw, rt
-	w.route = statsRouteRange
+	w.route, w.req, w.lokiMode, w.sreq, w.exactBytes = statsRouteRange, nil, false, statsRequest{}, nil
 	w.wroteHeader, w.patch, w.done, w.entriesKnown = false, false, false, false
 	w.hit, w.replayed, w.queryLength = false, statsReplay{}, 0
 	w.headN, w.tailN, w.total = 0, 0, 0
@@ -445,6 +460,13 @@ type entryCounter struct {
 	ls        uint8 // where a log entry's scan is (lineScan*)
 	esc       bool  // inside the line: the last byte was an escaping backslash
 	hexLeft   uint8 // inside the line: hex digits of a \u escape still to skip
+	// trackTS: keep the oldest and newest nanosecond timestamp of the log
+	// entries read in one write (tsMin, tsMax as their 19-digit text, which
+	// compares like the numbers; hasTS once one is kept), for Loki's
+	// accounting of a log query that fills its limit (query_stats_loki.go).
+	trackTS      bool
+	hasTS        bool
+	tsMin, tsMax [19]byte
 }
 
 const (
@@ -601,6 +623,9 @@ func (c *entryCounter) entryInWrite(b []byte, off int, bs *int) int {
 			c.ls = lineScanTimestamp
 			return ts
 		}
+		if c.trackTS && ts-off == len(c.tsMin) {
+			c.keepTimestamp(b[off:ts])
+		}
 		line := ts + 3 // past `","`
 		if line > len(b) || b[ts+1] != ',' || b[ts+2] != '"' {
 			c.ls = lineScanComma
@@ -633,6 +658,21 @@ func (c *entryCounter) entryInWrite(b []byte, off int, bs *int) int {
 		c.n++
 		c.logs++
 		off += 4
+	}
+}
+
+// keepTimestamp keeps a 19-digit entry timestamp as the oldest or newest.
+func (c *entryCounter) keepTimestamp(ts []byte) {
+	if !c.hasTS {
+		c.hasTS = true
+		copy(c.tsMin[:], ts)
+		copy(c.tsMax[:], ts)
+		return
+	}
+	if bytes.Compare(ts, c.tsMin[:]) < 0 {
+		copy(c.tsMin[:], ts)
+	} else if bytes.Compare(ts, c.tsMax[:]) > 0 {
+		copy(c.tsMax[:], ts)
 	}
 }
 
@@ -710,17 +750,22 @@ func (w *queryStatsWriter) appendStats(dst []byte) []byte {
 }
 
 // statsReplay is what a response-cache hit replays of the computation that
-// stored the answer (query_stats_cache.go): its processed totals and time.
+// stored the answer (query_stats_cache.go): its processed totals, splits,
+// shards, time in VictoriaLogs and time.
 type statsReplay struct {
 	bytes, lines, postFilter int64
+	splits, shards           int64
+	querierExec              time.Duration
 	exec                     time.Duration
 }
 
 // statsReport is everything appendQueryStats renders besides the flow.
 type statsReport struct {
-	summary     statsSummary
-	entries     int64
-	queryLength int64 // ns of the window a result-cache hit served
+	summary        statsSummary
+	entries        int64
+	splits, shards int64
+	querierExec    time.Duration // querier.querierExecTime: the time in VictoriaLogs calls
+	queryLength    int64         // ns of the window a result-cache hit served
 }
 
 // statsSummary is the summary's processed totals and the time the rates are
@@ -730,34 +775,52 @@ type statsSummary struct {
 	rateOver                 time.Duration // 0: this request's execTime
 }
 
-// report gives the summary its Loki meaning (the query-stats-loki-accounting
-// decision of the query-stats-envelope registry item):
+// report gives the summary its meaning. With -query-stats-mode=loki (the
+// default) every field follows Loki's accounting (query_stats_loki.go; the
+// query-stats-loki-emulation decision of the query-stats-envelope registry
+// item):
 //
-//   - volume answers: no processed lines or bytes, as Loki's.
+//   - volume answers: no processed lines or bytes, as Loki's, and Loki's
+//     splits (the step buckets of the window).
 //   - a response-cache hit of an answer Loki computes on every request (a
 //     non-empty log answer, an instant answer) replays the stored
-//     computation's totals and rates; any other hit reports no processing,
-//     as Loki's results cache does.
-//   - a log answer computed now: the Loki-meaning totals when the proxy
-//     derived them (query_stats_totals.go), else what it read: the rows
-//     VictoriaLogs returned and the bytes of the lines it returned. When the
-//     window's lines are known and its bytes are not, the bytes are the
-//     window's lines times the returned lines' mean size.
-//   - a metric answer: only derived totals. VictoriaLogs returns aggregated
-//     rows, whose count and size mean nothing in Loki's terms.
+//     computation's totals, rates, splits, shards and querier time; a metric
+//     query_range hit is Loki's results-cache hit (no processing, the window
+//     served, its pieces as splits); an empty log answer's hit reports
+//     nothing, as Loki's results cache does.
+//   - a log answer computed now: the lines of the pieces Loki would have
+//     read before its limit was filled, and their bytes.
+//   - a metric answer: the lines and bytes its counts give, the bytes else
+//     estimated from the selector's mean line size (query_stats_totals.go);
+//     splits and shards from Loki's pieces.
+//
+// With -query-stats-mode=victorialogs every field is what the proxy
+// measured for this request: the rows VictoriaLogs returned and their line
+// bytes for a log answer, a metric answer's own counts, VictoriaLogs calls
+// as splits, and nothing processed on a cache hit.
 //
 // A line count is never below the post-filter count it contains.
 func (w *queryStatsWriter) report(totals *statsTotals) statsReport {
-	rep := statsReport{entries: w.entries.n, queryLength: w.queryLength}
+	flow := &w.rt.flow
+	rep := statsReport{entries: w.entries.n, queryLength: w.queryLength, querierExec: flow.vlDur}
 	logs := w.isLogAnswer()
 	switch {
+	case !w.lokiMode:
+		rep.splits = int64(flow.vlCalls)
+		if !w.hit && w.route != statsRouteVolume {
+			measured := totals // a metric answer's own counts
+			if logs {
+				measured = &statsTotals{} // the rows read, not the panel's volume answer
+			}
+			rep.summary = processedSummary(flow, measured, logs, w.entries.n, w.entries.lineBytes)
+		}
 	case w.route == statsRouteVolume:
-	case w.hit && w.replayed.exec > 0:
-		r := w.replayed
-		rep.summary = statsSummary{bytes: r.bytes, lines: r.lines, postFilter: r.postFilter, rateOver: r.exec}
+		// Loki answers volume from its index: no querier time.
+		rep.splits, rep.querierExec = w.lokiVolumeSplits(), 0
 	case w.hit:
+		w.lokiHitReport(&rep, logs)
 	default:
-		rep.summary = processedSummary(&w.rt.flow, totals, logs, w.entries.n, w.entries.lineBytes)
+		w.lokiReport(&rep, totals, logs)
 	}
 	return rep
 }
@@ -812,7 +875,7 @@ const (
 		`"prePredicateDecompressedStructuredMetadataBytes":0,"postPredicateRows":0,"postPredicateDecompressedBytes":0,` +
 		`"postPredicateStructuredMetadataBytes":0,"postFilterRows":0,"pagesScanned":0,"pagesDownloaded":0,` +
 		`"pagesDownloadedBytes":0,"pageBatches":0,"totalRowsAvailable":0,"totalPageDownloadTime":0}}`
-	lokiQuerierIngesterZero = `"querier":{` + lokiStoreZero + `,"querierExecTime":0},"ingester":{"totalReached":0,` +
+	lokiIngesterZero = `"ingester":{"totalReached":0,` +
 		`"totalChunksMatched":0,"totalBatches":0,"totalLinesSent":0,` + lokiStoreZero + `}`
 	lokiIndexZero = `"index":{"totalChunks":0,"postFilterChunks":0,"shardsDuration":0,"usedBloomFilters":false,` +
 		`"totalStreams":0,"chunkRefsLookupTime":0,"bloomFilterTime":0}`
@@ -855,11 +918,17 @@ func appendQueryStats(b []byte, flow *flowCounters, rep statsReport, exec time.D
 	b = append(b, `,"subqueries":0,"totalEntriesReturned":`...)
 	b = strconv.AppendInt(b, rep.entries, 10)
 	b = append(b, `,"splits":`...)
-	b = strconv.AppendInt(b, int64(flow.vlCalls), 10)
-	b = append(b, `,"shards":0,"totalPostFilterLines":`...)
+	b = strconv.AppendInt(b, rep.splits, 10)
+	b = append(b, `,"shards":`...)
+	b = strconv.AppendInt(b, rep.shards, 10)
+	b = append(b, `,"totalPostFilterLines":`...)
 	b = strconv.AppendInt(b, s.postFilter, 10)
-	b = append(b, `,"totalStructuredMetadataBytesProcessed":0},`...)
-	b = append(b, lokiQuerierIngesterZero...)
+	b = append(b, `,"totalStructuredMetadataBytesProcessed":0},"querier":{`...)
+	b = append(b, lokiStoreZero...)
+	b = append(b, `,"querierExecTime":`...)
+	b = strconv.AppendFloat(b, rep.querierExec.Seconds(), 'f', -1, 64)
+	b = append(b, `},`...)
+	b = append(b, lokiIngesterZero...)
 	b = append(b, `,"cache":{`...)
 	for i, slot := range lokiCacheSlots {
 		if i > 0 {

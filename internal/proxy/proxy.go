@@ -252,6 +252,14 @@ type Config struct {
 	// stream selector, line, pattern and label filters, no parser) from it: they are then translated by the string
 	// translator, as before. Zero value serves them from the lowering (see query_lowering.go).
 	DisableQueryPlanLowering bool
+	// QueryStatsMode chooses the accounting of the data.stats object of query, query_range and volume answers:
+	// "loki" (the default, also for "") emulates Loki's numbers, "victorialogs" reports what the proxy measured
+	// (query_stats_loki.go).
+	QueryStatsMode string
+	// QueryStatsExactMetricBytes makes a metric query's totalBytesProcessed exact: the line bytes of its stream
+	// selector over its window, read from VictoriaLogs with a volume request next to the query (about six times the
+	// VictoriaLogs time of a count). Off by default: the bytes are estimated from the selector's mean line size.
+	QueryStatsExactMetricBytes bool
 	// PatternsEnabled controls /loki/api/v1/patterns availability.
 	// Nil defaults to true for backward compatibility.
 	PatternsEnabled *bool
@@ -706,6 +714,8 @@ type Proxy struct {
 	deleteAPIEnabled                      bool
 	loweringShadow                        *loweringShadow // nil unless -translate-shadow-sample is set
 	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
+	queryStatsVictoriaLogsMode            bool            // -query-stats-mode=victorialogs: measured stats, not Loki's accounting
+	queryStatsExactMetricBytes            bool            // -query-stats-exact-metric-bytes
 	patternsAutodetectFromQueries         bool
 	patternsCounts                        bool
 	patternsExactMaxLines                 int
@@ -1397,6 +1407,8 @@ func New(cfg Config) (*Proxy, error) {
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
 		loweringShadow:                        newLoweringShadow(cfg.TranslateShadowSample),
 		queryPlanLowering:                     !cfg.DisableQueryPlanLowering,
+		queryStatsVictoriaLogsMode:            cfg.QueryStatsMode == QueryStatsModeVictoriaLogs,
+		queryStatsExactMetricBytes:            cfg.QueryStatsExactMetricBytes,
 		patternsEnabled:                       patternsEnabled,
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,

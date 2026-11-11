@@ -954,6 +954,7 @@
     ],
     "query-stats-envelope": [
       "internal/proxy/query_stats_loki_meaning_test.go",
+      "internal/proxy/query_stats_loki_test.go",
       "internal/proxy/query_stats_test.go",
       "internal/proxy/query_stats_totals_test.go",
       "test/e2e-compat/query_stats_test.go"
@@ -2690,6 +2691,9 @@
       "drilldown/logs-footer-query-stats",
       "query-stats-envelope"
     ],
+    "internal/proxy/query_stats_loki_test.go": [
+      "query-stats-envelope"
+    ],
     "internal/proxy/query_stats_test.go": [
       "drilldown/logs-footer-query-stats",
       "query-stats-envelope"
@@ -4124,7 +4128,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 491,
+  "tests_with_markers": 492,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

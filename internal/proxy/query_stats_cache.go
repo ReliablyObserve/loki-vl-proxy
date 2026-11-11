@@ -79,7 +79,7 @@ func appendStatsTrailer(dst []byte, t statsTrailer) []byte {
 	dst = append(dst, kind)
 	if t.replay {
 		r := t.replayed
-		for _, v := range [...]int64{r.bytes, r.lines, r.postFilter, int64(r.exec)} {
+		for _, v := range [...]int64{r.bytes, r.lines, r.postFilter, int64(r.exec), r.splits, r.shards, int64(r.querierExec)} {
 			dst = binary.AppendUvarint(dst, uint64(max(v, 0)))
 		}
 	}
@@ -110,7 +110,7 @@ func splitStatsTrailer(value []byte) (body []byte, t statsTrailer, ok bool) {
 	}
 	t.logs = kind&statsTrailerLogs != 0
 	if kind&statsTrailerReplay != 0 {
-		var fields [4]int64
+		var fields [7]int64
 		for i := range fields {
 			v, m := binary.Uvarint(raw)
 			if m <= 0 {
@@ -119,7 +119,8 @@ func splitStatsTrailer(value []byte) (body []byte, t statsTrailer, ok bool) {
 			fields[i], raw = int64(v), raw[m:]
 		}
 		t.replay = true
-		t.replayed = statsReplay{bytes: fields[0], lines: fields[1], postFilter: fields[2], exec: time.Duration(fields[3])}
+		t.replayed = statsReplay{bytes: fields[0], lines: fields[1], postFilter: fields[2], exec: time.Duration(fields[3]),
+			splits: fields[4], shards: fields[5], querierExec: time.Duration(fields[6])}
 	}
 	if len(raw) != 0 {
 		return value, statsTrailer{}, false
@@ -365,9 +366,9 @@ func (p *Proxy) compatCacheValue(w http.ResponseWriter, r *http.Request, cacheKe
 	return appendStatsTrailer(value, sw.trailer())
 }
 
-// statsTrailerMaxLen bounds a trailer: five uvarints, the flag, the length
+// statsTrailerMaxLen bounds a trailer: eight uvarints, the kind, the length
 // and the magic.
-const statsTrailerMaxLen = 5*binary.MaxVarintLen64 + 2 + len(statsTrailerMagic)
+const statsTrailerMaxLen = 8*binary.MaxVarintLen64 + 2 + len(statsTrailerMagic)
 
 // trailer is the stats trailer of the answer this writer counted: hits of
 // an answer Loki computes on every request (a non-empty log answer; an
@@ -381,11 +382,13 @@ func (w *queryStatsWriter) trailer() statsTrailer {
 	}
 	rt := w.rt
 	rt.mu.Lock()
-	s := processedSummary(&rt.flow, &rt.statsTotals, logs, w.entries.n, w.entries.lineBytes)
+	rep := w.report(&rt.statsTotals)
 	exec := time.Since(rt.start)
 	rt.mu.Unlock()
+	s := rep.summary
 	t.replay = true
-	t.replayed = statsReplay{bytes: s.bytes, lines: s.lines, postFilter: s.postFilter, exec: max(exec, time.Nanosecond)}
+	t.replayed = statsReplay{bytes: s.bytes, lines: s.lines, postFilter: s.postFilter, exec: max(exec, time.Nanosecond),
+		splits: rep.splits, shards: rep.shards, querierExec: rep.querierExec}
 	return t
 }
 

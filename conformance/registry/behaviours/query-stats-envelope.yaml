@@ -92,6 +92,9 @@ proxy: |
 
 implementation:
   - internal/proxy/query_stats.go
+  - internal/proxy/query_stats_loki.go
+  - cmd/proxy/main.go
+  - internal/config/limits.go
   - internal/proxy/query_stats_cache.go
   - internal/proxy/query_stats_totals.go
   - internal/proxy/volume.go
@@ -257,7 +260,7 @@ decisions:
       companions reach only the key's replicas (and the writer), so one
       proxy is the upper bound.
     code: [internal/proxy/query_stats_totals.go, internal/proxy/middleware.go, internal/proxy/volume.go]
-    tests: [TestQueryStatsTotals_MetricAnswerSumsToLokisWindow, TestQueryStatsTotals_LogQueryFromItsVolumeAnswer, TestQueryStatsTotals_LogQueryBytesFromVolumeRange, TestQueryStatsTotals_CompanionCoverage, TestQueryStatsTotals_CompanionsStayInTheirTenant, TestStatsTotalsStepsWithin, TestDrilldown_QueryStatsWindowTotalsFromTheVolumeAnswer]
+    tests: [TestQueryStatsTotals_MetricAnswerSumsToLokisWindow, TestQueryStatsTotals_LogQueryFromItsVolumeAnswer, TestQueryStatsTotals_CompanionCoverage, TestQueryStatsTotals_CompanionsStayInTheirTenant, TestStatsTotalsStepsWithin, TestDrilldown_QueryStatsWindowTotalsFromTheVolumeAnswer]
     quality: |
       The derived totals are the answer's own sums (a differential over
       random windows and steps against the answer the client got) and a
@@ -348,6 +351,14 @@ decisions:
       types) equals Loki's for log, metric, instant and volume_range at 5m
       and 1h, miss and repeat, once ingester.recvWaitTime (omitted by Loki
       when zero) is set aside.
+    history:
+      - date: '2026-11-11'
+        what: 'owner review of this decision (round 2): Loki''s numbers by default, measured numbers as an option'
+        measured: 'this decision''s fallback reported the rows read (1,000) where Loki reads 5,250 to 24,150 lines for the same log query, metric bytes 0, splits as VictoriaLogs calls'
+        cause: 'measured values chosen over emulating Loki''s accounting'
+        effect: 'Grafana''s Stats far from Loki''s for log queries without the panel''s count answer and for metric bytes'
+        fixed_by: 'fix/query-stats-like-loki (decision query-stats-loki-emulation: -query-stats-mode=loki by default, this decision''s measured accounting as -query-stats-mode=victorialogs, without its cache-hit replay; the volume_range bytes of a log query dropped)'
+        after: 'see query-stats-loki-emulation'
     code: [internal/proxy/query_stats.go, internal/proxy/query_stats_cache.go, internal/proxy/query_stats_totals.go, internal/proxy/middleware.go]
     tests: [TestQueryStats_ObjectHasLokisRecordedShape, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestQueryStats_LogAnswerKnownWhateverTheKeyOrder, TestQueryStats_WorstCaseObjectFitsTheWriterBuffer, TestQueryStats_ValueFromAnotherReplicaReplays, TestQueryStatsTotals_PartlyCachedMetricAnswerGivesNoTotals, TestEntryCounter_LineBytes, FuzzEntryCounterLineBytes, TestStatsTrailerRoundTrip, TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStats_CompressedCacheHitCarriesStats, TestQueryStats_GzipCacheHitIsOneMember, TestQueryStatsTotals_LogQueryFromItsVolumeAnswer, TestDrilldown_QueryStatsLikeLoki, TestDrilldown_QueryStatsEnvelope]
     quality: |
@@ -388,3 +399,73 @@ decisions:
         costs about 4 ns per entry (one IndexByte for the line end, a SWAR
         skip of the timestamp, one backslash lookup per write), 0.5% of the
         log miss it belongs to; a hit does not scan.
+  - id: query-stats-loki-emulation
+    pending: true
+    chosen: 'One setting, -query-stats-mode: loki (the default) emulates Loki''s numbers with rules read off Loki''s answers (1h pieces for splits and shards; a log query reads whole pieces and stops after the piece filling its limit, its lines from the panel''s count answer or estimated from its entries; bytes = lines x mean line size; metric bytes estimated from the selector''s mean line size, exact behind the opt-in -query-stats-exact-metric-bytes; querierExecTime = time in VictoriaLogs calls; replayed hits of answers Loki computes on every request); victorialogs reports what the proxy measured (rows read and their line bytes, a metric answer''s own counts, VictoriaLogs calls as splits, nothing on a hit)'
+    over: ['measured values only (round 1: 1,000 rows and their bytes for a log query where Loki reads tens of thousands of lines)', 'a per-question switch for every field (one mode, plus one opt-in for the only rule that costs VictoriaLogs time)', 'an extra VictoriaLogs count per log query to replace the estimate (doubles VictoriaLogs work on every log panel)', 'emulating Loki''s partial read of a piece already flushed to its store (depends on its chunk layout; seen only on forward queries)', 'the bytes of a volume_range answer of the selector for a log query (its whole steps left up to a tenth of the window out: 268 bytes a line against 335)', 'shards 0 (Loki reports one shard a piece at the test stack''s volume)']
+    why: |
+      Owner 2026-11-11 (round 2): by default simulate Loki as closely as
+      possible ("as close to Loki as possible, closest data"); one setting
+      switches to VictoriaLogs-style (what the proxy measured); metric bytes
+      an estimate with an opt-in exact sum_len; splits Loki's time-split
+      count; querierExecTime the time in VictoriaLogs calls; cache hits
+      replay the stored totals; long log queries emulate Loki's early stop.
+      Rules (all read from Loki 3.7.9's answers on the test stack, never
+      from its source): a range query is split at 1h, aligned to the hour,
+      after start and end are aligned down to the step; pieces = the
+      intervals [start, end] touches (an end on a boundary opens none). A
+      metric query runs every piece: splits = pieces when more than one,
+      else 0; shards = pieces; its results-cache hit reports splits =
+      pieces (at least 1), shards 0. An instant query splits its range:
+      pieces = ceil(range / 1h) (61m: 2), not aligned. A log query reads
+      pieces from the newest (backward) or the oldest (forward), each whole
+      (every line of the piece, at any limit), and stops after the piece in
+      which its limit was filled: splits = pieces read when the window has
+      more than one, else 0; shards = pieces read; its lines are the lines
+      of those pieces. volume_range: splits = the step buckets (aligned to
+      the step since the epoch) the window touches, shards 0, no querier
+      time; volume: splits 1. The proxy knows the pieces a log query reads
+      from its own answer (the timestamp of its oldest entry, backward, or
+      newest, forward) and their lines from the panel's count answer, else
+      by the entries' density over the time they cover scaled to the pieces
+      read (exact when the limit is not filled).
+    evidence: |
+      Recorded 2026-11-11 from the freshly rebuilt stack (Loki 3.7.9,
+      VictoriaLogs v1.53.0), internal/proxy/testdata/loki_query_stats_splits.json:
+      26 metric query_range rows (5m to 2d, steps 60 and 120, windows on and
+      across hour boundaries), 10 instant ranges (5m to 2d), 13 volume_range
+      rows (steps 15 s to 1h), 48 log rows (5m to 24h, limits 100 to 10,000,
+      both directions, with VictoriaLogs' line count of every 1h piece):
+      every splits and shards value matches the rules
+      (TestLokiStatsEmulation_MatchesRecordedLokiAnswers); the lines of the
+      pieces the rule reads equal Loki's totalLinesProcessed on all 32
+      backward and unsplit rows, and on the 16 forward rows that start in a
+      piece Loki already flushed to its store Loki read part of it (15,383 to
+      25,358 of 35,315 lines). Loki vs a local build (default mode) on the
+      stack, {service_name="api-gateway"}, windows ending a minute ago:
+      log limit 1000 5m lines 5,250 | 5,327, bytes 1,799,470 | 1,784,230;
+      1h 24,150 | 24,504, bytes 8,282,888 | 8,207,051, splits 1 | 1; the
+      same with the Logs Drilldown headers equal; with the panel's count
+      answer held 5,250 | 5,250 and 23,100 | 23,100; metric 1h lines 59,512 |
+      59,465, bytes 21,616,944 | 19,928,327 (estimate; exact mode 19,918,652:
+      Loki adds structured-metadata bytes), splits/shards 2/2 | 2/2, repeat
+      splits 2 | 2; 24h metric splits 25 | 25; instant 1h 59,512 | 59,465,
+      6h and 24h splits 6, 24 | 6, 24; volume_range splits 5, 60, 300, 301 |
+      the same; querierExecTime 0.013-0.06 s on misses, 0 on hits.
+    code: [internal/proxy/query_stats_loki.go, internal/proxy/query_stats.go, internal/proxy/query_stats_cache.go, internal/proxy/query_stats_totals.go, internal/proxy/proxy.go, cmd/proxy/main.go, internal/config/limits.go]
+    tests: [TestLokiStatsEmulation_MatchesRecordedLokiAnswers, TestLokiLogQueryRun_Table, TestLokiLogSummary_EstimatesTheRunFromTheAnswer, TestLokiStats_SplitsShardsAndQuerierTimePerRoute, TestLokiStats_MetricBytesFromTheSelectorsMeanLine, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStatsTotals_MetricAnswerSumsToLokisWindow, TestDrilldown_QueryStatsLikeLoki]
+    quality: |
+      Every rule is checked against the recorded Loki answers, every row;
+      the e2e test compares each figure with Loki's live answer for the same
+      request: splits and shards equal, lines within 10% and bytes within
+      25% (an estimate against Loki's own run-to-run numbers and its
+      structured-metadata bytes). Known differences, documented: an
+      estimated log line count is off by a few percent, more for a small
+      limit; a filtered log query with no count of its bare selector reports
+      post-filter lines as lines; Loki's partial read of a flushed piece on
+      forward queries; structured-metadata bytes.
+    performance:
+      tracked: ['BenchmarkQueryAnswerPaths', 'BenchmarkQueryStatsWriter']
+      bound: 'no VictoriaLogs request added by default; with -query-stats-exact-metric-bytes one volume request per metric query miss, sent next to the query and ending with it; per answer one timestamp comparison per log entry (the 19-digit text), one parse of the query for an instant range, one mean-line-size write per log miss and one read per metric miss'
+      measured: |
+        PENDING_BENCH2

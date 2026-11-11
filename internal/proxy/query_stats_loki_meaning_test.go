@@ -261,8 +261,10 @@ func TestQueryStats_LokiAccountingPerRouteAndCacheTier(t *testing.T) {
 			}
 		}},
 		{"metric sliding", "/loki/api/v1/query_range", 6, window(`sum(count_over_time({app="api"}[5m]))`), nil, false, func(t *testing.T, miss, hit lokiStatsView) {
-			if miss.Summary.Lines != 0 || miss.Summary.Bytes != 0 {
-				t.Fatalf("miss %+v: a sliding window counts a line in several steps; nothing derived, nothing read means 0", miss.Summary)
+			// A line is counted in range/step = 5 samples: the estimate is the
+			// sum over 5; no log answer gave a mean line size, so no bytes.
+			if miss.Summary.Lines <= 0 || miss.Summary.Bytes != 0 || miss.Summary.Splits != 0 {
+				t.Fatalf("miss %+v: want the sliding estimate of the lines, no bytes", miss.Summary)
 			}
 		}},
 		{"instant", "/loki/api/v1/query", 6, url.Values{"query": {`sum(count_over_time({app="api"}[5m]))`}, "time": {fmt.Sprint(end.Unix())}}, nil, false, func(t *testing.T, miss, hit lokiStatsView) {

@@ -549,6 +549,34 @@
       "sizing": "On is the default: the lowering writes the string translator's text byte for byte on the whole query corpus under every translator profile (a CI gate), takes less CPU and fewer bytes per translation than the translator on the shapes it covers, and only runs on a translation cache miss. A query it does not cover (a metric query, a parser or formatting stage, a detected_level or service_name filter) is decided by a scan of its text and not planned. Turn it off (false) as a rollback if a translated query ever differs from the string translator's: compare -translate-shadow-sample=1 with it off to see the difference as mismatch counts by construct."
     },
     {
+      "flag": "query-stats-mode",
+      "helm_value": "extraArgs.query-stats-mode",
+      "type": "String",
+      "default": "\"loki\"",
+      "unit": "mode",
+      "bounds": "loki (the default) or victorialogs: how the data.stats object of query, query_range, volume and volume_range answers is filled. Nothing grows with the setting: the stats object is a fixed-size rendering per answer, and Loki's accounting reads only the answer, the request and the volume answers the proxy already keeps",
+      "error": "none; an unknown value stops the proxy at start-up with `invalid -query-stats-mode`",
+      "metric": "none",
+      "alert": "none",
+      "loki_parity": "data.stats of Loki's query, query_range and index/volume answers",
+      "per_tenant": false,
+      "sizing": "loki is the default: Grafana's query inspector and the Logs Drilldown footer show numbers close to Loki's for the same query (estimated where VictoriaLogs does not tell them, documented per field in the API reference). Set victorialogs to see what the proxy actually read from VictoriaLogs for each request, for example when sizing VictoriaLogs or comparing the proxy's own work across replicas."
+    },
+    {
+      "flag": "query-stats-exact-metric-bytes",
+      "helm_value": "extraArgs.query-stats-exact-metric-bytes",
+      "type": "Bool",
+      "default": "false",
+      "unit": "switch",
+      "bounds": "false (the default) estimates a metric query's bytes processed from the selector's mean line size; true reads them from VictoriaLogs with one volume request per metric query cache miss, sent next to the query and bounded by it",
+      "error": "none; a failed or cancelled volume request leaves the estimate",
+      "metric": "loki_vl_proxy_backend_read_bytes_total{kind=\"stats\"} counts the extra requests' bytes",
+      "alert": "none",
+      "loki_parity": "data.stats.summary.totalBytesProcessed of Loki's metric queries",
+      "per_tenant": false,
+      "sizing": "Off by default: reading the line bytes of a selector costs VictoriaLogs about six times a count over the same window (24h of every stream on the test stack: 0.55 s against 0.09 s), on every metric query cache miss. Turn it on only where exact bytes in Grafana's inspector are worth that VictoriaLogs time; the volume caches answer repeats."
+    },
+    {
       "flag": "max-lines",
       "helm_value": "extraArgs.max-lines",
       "type": "Int",

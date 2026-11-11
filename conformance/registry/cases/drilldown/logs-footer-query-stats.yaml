@@ -47,6 +47,15 @@ why: |
   computation's bytes (Loki computes log queries on every request) instead
   of 0 B; when Grafana loads a range over one day in pieces and sums their
   "total bytes processed", cached pieces keep their bytes.
+
+  Since query-stats-loki-emulation (owner, 2026-11-11), by default
+  (-query-stats-mode=loki) the footer's bytes are Loki's emulated: the lines
+  of the 1h pieces Loki reads for the logs query (it stops after the piece
+  in which its limit was filled) times the returned lines' mean size; on the
+  stack 1,784,230 against Loki's 1,799,470 for 5m and 8,207,051 against
+  8,282,888 for 1h (Loki adds structured-metadata bytes). With
+  -query-stats-mode=victorialogs the footer shows the bytes of the lines the
+  proxy read.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -78,5 +87,5 @@ gap:
   area: 'internal/proxy/stream_processing.go (stats envelope of log query_range answers)'
   loki: 'pkg/util/marshal/query.go:323-324 stats field; pkg/logqlmodel/stats/stats.pb.go:205-211 Summary.totalBytesProcessed'
   proxy: 'data.stats in Loki''s five sections from the request flow (internal/proxy/query_stats.go); lines and bytes processed from the answer itself or the panel''s volume answer (internal/proxy/query_stats_totals.go), else the rows read and their line bytes; cache hits replay the computation of answers Loki computes on every request (internal/proxy/query_stats_cache.go)'
-  planned_test: 'TestDrilldown_QueryStatsEnvelope, TestDrilldown_QueryStatsLikeLoki (test/e2e-compat, drilldown group); TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStats_ObjectHasLokisRecordedShape, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestQueryStatsTotals_LogQueryBytesFromVolumeRange (internal/proxy)'
+  planned_test: 'TestDrilldown_QueryStatsEnvelope, TestDrilldown_QueryStatsLikeLoki (test/e2e-compat, drilldown group); TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStats_ObjectHasLokisRecordedShape, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestLokiStatsEmulation_MatchesRecordedLokiAnswers (internal/proxy)'
   clusters: []

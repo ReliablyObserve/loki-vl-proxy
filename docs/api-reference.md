@@ -103,24 +103,36 @@ carries Loki's `data.stats` object with all five sections, `summary`,
 value types (recorded from Loki 3.7.9 in
 `internal/proxy/testdata/loki_query_stats_object.json`). Grafana builds the
 query inspector's Stats ("Summary:" and "Ingester:" rows) and the Logs
-Drilldown footer's "Total bytes processed" from them. `querier`, `ingester`
-and `index` measure Loki's own components; the proxy has none, so they are
-always in Loki's zero form (as Loki writes them for a results-cache hit, and
-its ingester section for a window its ingesters do not hold). No VictoriaLogs
-request is added for the statistics.
+Drilldown footer's "Total bytes processed" from them. `ingester` and `index`
+measure Loki's own components; the proxy has none, so they are always in
+Loki's zero form (as Loki writes them for a results-cache hit).
+
+`-query-stats-mode` chooses how the numbers are filled:
+
+- `loki` (the default) emulates Loki's numbers for the same query, as close
+  as the proxy can get without asking VictoriaLogs for more. The rules were
+  read off Loki's answers on the test stack and are pinned by
+  `internal/proxy/testdata/loki_query_stats_splits.json`.
+- `victorialogs` reports what the proxy measured for the request: the rows
+  VictoriaLogs returned and their line bytes, a metric answer's own counts,
+  the VictoriaLogs calls as `splits`, and nothing processed on a cache hit.
+
+No VictoriaLogs request is added for the statistics, except with
+`-query-stats-exact-metric-bytes` (below).
+
+Loki's accounting (`-query-stats-mode=loki`):
 
 | Field | Source |
 |---|---|
 | `summary.execTime` | The request's time in the proxy, in seconds. Every request reports its own, cache hits included. |
 | `summary.queueTime` | Time the request waited for heavy-query admission (`-backend-heavy-query-*`), in seconds. |
-| `summary.totalLinesProcessed` | Log query: the lines its window holds according to the volume answer of the same expression or selector that Explore and Logs Drilldown send with it (see below), else the log rows VictoriaLogs returned. Metric query: for a `count_over_time` (optionally under `sum`) of a log expression without a parser, on tumbling windows (range equal to step) or as an instant query, the lines its own answer counts over `(start - range, end]`, Loki's window; else 0. Never below `totalPostFilterLines`. Volume: 0, as Loki's. |
-| `summary.totalPostFilterLines` | The same counts after the line and label filters; for a log query without them, the rows VictoriaLogs returned for the filters. |
-| `summary.totalBytesProcessed` | Log query: the line bytes of its window from the `volume_range` answer of its selector; when only the window's lines are known, those lines times the mean size of the lines it returned; else the bytes of the lines it returned. Metric query: for a `bytes_over_time` of a bare selector (same window rules), its own answer's line bytes; else 0 (VictoriaLogs returns aggregated rows, whose size is not Loki's bytes processed). Volume: 0. |
+| `summary.splits`, `summary.shards` | Loki's pieces. A range query is split at 1h (Loki's default `split_queries_by_interval`), aligned to the hour, after aligning start and end down to the step. A metric query runs every piece: `splits` = the pieces when there are more than one, else 0; `shards` = the pieces. An instant query splits its range into ceil(range / 1h) pieces. A log query reads its pieces from the newest (backward) or the oldest (forward) and stops after the piece in which its limit was filled: `splits` and `shards` = the pieces it read. `volume_range`: `splits` = the step buckets the window touches; `volume`: 1. |
+| `summary.totalLinesProcessed`, `totalPostFilterLines` | Log query: the lines of the pieces Loki reads, which it reads whole. When the panel's count answer of the same expression is held (Explore and Logs Drilldown send one with the logs query), they come from it, else they are estimated from the answer: its entries spread over the time they cover, scaled to the pieces read (exact when the limit was not filled). A filtered log query with no count of its bare selector reports the post-filter lines as its lines. Metric query: the lines its answer counts over Loki's window `(start - range, end]` (`count_over_time`; `rate` times its range; on sliding windows the sum times step/range, an estimate). Volume: 0. |
+| `summary.totalBytesProcessed` | Those lines times the mean line size: for a log query the mean of the lines it returned; for a metric query the mean the selector's (or the tenant's) log answers showed, kept an hour; `bytes_over_time` and `bytes_rate` count their own bytes. With `-query-stats-exact-metric-bytes`, a metric query's bytes are the line bytes of its stream selector over its window, read from VictoriaLogs with one volume request sent next to the query (about six times the VictoriaLogs time of a count; cached like volume answers). Structured-metadata bytes, which Loki adds, are not counted. Volume: 0. |
 | `summary.bytesProcessedPerSecond`, `linesProcessedPerSecond` | The two totals over `execTime`; on a replayed cache hit, over the stored computation's time. |
 | `summary.totalEntriesReturned` | Entries of a streams answer, series of a matrix or vector answer. |
-| `summary.splits` | VictoriaLogs calls the request made. |
-| `summary.subqueries`, `shards`, `totalStructuredMetadataBytesProcessed` | 0: VictoriaLogs has no shards or subqueries and keeps no structured-metadata byte count. |
-| `querier`, `ingester`, `index` | Loki's zero form (no such component). |
+| `summary.subqueries`, `totalStructuredMetadataBytesProcessed` | 0: VictoriaLogs has no subqueries and keeps no structured-metadata byte count. |
+| `querier.querierExecTime` | The time the request spent in VictoriaLogs calls, in seconds (0 for volume answers, as Loki's index answers them). The rest of `querier`, `ingester` and `index` is Loki's zero form. |
 | `cache.result` | The request's reads and stores in the response caches (final answers, log windows, settled steps): `entriesRequested`, `entriesFound`, `entriesStored`, `bytesReceived`, `bytesSent`, `requests`, `downloadTime` (ns); `queryLengthServed` the window (ns) of a whole metric answer found. |
 | `cache.instantMetricResult` | The same for the response cache of instant queries. |
 | `cache.statsResult`, `cache.volumeResult` | Reads of the stats extent cache and of volume segments. |
@@ -128,33 +140,36 @@ request is added for the statistics.
 
 A response-cache hit reports what Loki reports for the same request with its
 default results cache: Loki computes a non-empty log query and an instant
-query on every request, so the proxy's hit of one reports the stored
-computation's lines and bytes (and its rates) with the hit's own `execTime`;
-an empty log answer and a metric `query_range` are served from Loki's results
-cache, so their hits report no lines or bytes processed and the entry found.
-A metric answer partly served from cached steps or extents reports no derived
-lines (Loki counts only the part it computed).
+query on every request, so the proxy's hit of one replays the stored
+computation's lines, bytes, rates, splits, shards and querier time with the
+hit's own `execTime`; an empty log answer and a metric `query_range` are
+served from Loki's results cache, so their hits report no lines or bytes
+processed, the entry found and (metric) the pieces as `splits`. A metric
+answer partly served from cached steps or extents reports no derived lines
+(Loki counts only the part it computed).
 
-A volume answer computed from VictoriaLogs is kept for the log query's totals
-(`qs-totals:` entries, 5 minutes, in memory and pushed to the key's peer
-replicas; keyed by tenant org, routing and auth scope and the expression)
-when it holds every line of the expression: a `count_over_time`/
-`bytes_over_time` range answer as above, or a `volume_range` answer grouped
-only by labels every stream has (the selector's own when every matcher
-requires a value, `service_name`, `detected_level`) and not cut by `limit`. A
-log query reads it from memory only (never waiting on a peer) and uses it when
-the answer's whole steps inside the log query's window span at least 90% of
-it, summing those steps; the uncovered edge is left out, not estimated. Its
-newest steps are the counts as of when the volume answer was computed. The
-logs query of a first page load usually finishes before its volume query, and
-then reports the rows and line bytes it read.
+The panel's count answer is kept for this (`qs-totals:` entries, 5 minutes,
+in memory and pushed to the key's peer replicas; keyed by tenant org,
+routing and auth scope and the expression) when it holds every line of the
+expression: a tumbling `count_over_time` range answer of a log expression
+without a parser. A log query reads it from memory only (never waiting on a
+peer) and uses it when the answer's whole steps inside the pieces read span
+at least 90% of them; the uncovered edge is left out, not estimated.
+
+Known differences in Loki's accounting, measured on the test stack:
+
+- Loki reads part of a piece already flushed to its store when a forward
+  query starts there, where the proxy counts the piece whole.
+- An estimated log line count is off by up to a few percent, more for a
+  small limit (the entries cover only seconds).
+- Bytes are within about 10% (no structured-metadata bytes; a metric query's
+  bytes estimated from the mean line size).
 
 When Grafana loads a long range in pieces (query splitting, ranges over one
 day), it sends one request per piece and its Stats tab keeps only "Summary:
 total bytes processed" (summed over the pieces) and "Summary: exec time"
 (observed with Grafana 13.3.0); each piece reports its own figures by the
-rules above, so a refresh whose older pieces are proxy cache hits keeps their
-bytes for log queries, as Loki recomputing them does.
+rules above.
 
 ## Delete Endpoint (Exception)
 

@@ -227,16 +227,15 @@ These profiles are matrix-level compatibility profiles (contract and CI guidance
 ### Logs footer "Total bytes processed"
 
 Logs Drilldown 3.1 shows "Total bytes processed" under the logs panel from the
-query's `data.stats.summary.totalBytesProcessed`. When the proxy holds a
-`volume_range` answer of the panel's selector covering the window (computed
-within the last 5 minutes, for example on a refresh), it reports the line
-bytes of the window from it, as Loki counts for short windows (Loki adds
-structured-metadata bytes). Otherwise, as on a first page load where the logs
-query usually finishes first, the footer shows the line bytes of the rows the
-logs panel read. A refresh answered from the proxy's response cache shows the
-same figure again (Loki computes log queries on every request), not 0 B. See [Known Issues](KNOWN_ISSUES.md) and the
-[API reference](api-reference.md#query-statistics-datastats) for each field's
-source.
+query's `data.stats.summary.totalBytesProcessed`. With the default
+`-query-stats-mode=loki` the proxy reports what Loki would: the lines of the
+1h pieces Loki reads for the logs query (from the panel's count answer when
+the proxy holds it, else estimated from the logs answer) times the mean size
+of the lines it returned; Loki adds structured-metadata bytes. A refresh
+answered from the proxy's response cache shows the same figure again (Loki
+computes log queries on every request), not 0 B. See [Known Issues](KNOWN_ISSUES.md)
+and the [API reference](api-reference.md#query-statistics-datastats) for each
+field's source.
 
 ### Drilldown 2.0.4 through 3.1.0: Patterns Tab Initialization
 

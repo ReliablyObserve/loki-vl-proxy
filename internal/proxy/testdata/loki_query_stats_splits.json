@@ -1,0 +1,2772 @@
+{
+ "source": "Loki 3.7.9 on the test stack (split_queries_by_interval 1h, align_queries_with_step true, results cache on), {service_name=\"api-gateway\"}, recorded 2026-11-11 17:16 UTC; VictoriaLogs v1.53.0 counts of the same stream for the log rows",
+ "metric_range": [
+  {
+   "start": 1794417060,
+   "end": 1794417360,
+   "step": 60,
+   "miss_splits": 0,
+   "miss_shards": 1,
+   "hit_splits": 1,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794417060,
+   "end": 1794417360,
+   "step": 120,
+   "miss_splits": 0,
+   "miss_shards": 1,
+   "hit_splits": 1,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794416460,
+   "end": 1794417360,
+   "step": 60,
+   "miss_splits": 0,
+   "miss_shards": 1,
+   "hit_splits": 1,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794416460,
+   "end": 1794417360,
+   "step": 120,
+   "miss_splits": 0,
+   "miss_shards": 1,
+   "hit_splits": 1,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794413760,
+   "end": 1794417360,
+   "step": 60,
+   "miss_splits": 2,
+   "miss_shards": 2,
+   "hit_splits": 2,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794413760,
+   "end": 1794417360,
+   "step": 120,
+   "miss_splits": 2,
+   "miss_shards": 2,
+   "hit_splits": 2,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794411960,
+   "end": 1794417360,
+   "step": 60,
+   "miss_splits": 3,
+   "miss_shards": 3,
+   "hit_splits": 3,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794411960,
+   "end": 1794417360,
+   "step": 120,
+   "miss_splits": 3,
+   "miss_shards": 3,
+   "hit_splits": 3,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794410160,
+   "end": 1794417360,
+   "step": 60,
+   "miss_splits": 3,
+   "miss_shards": 3,
+   "hit_splits": 3,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794410160,
+   "end": 1794417360,
+   "step": 120,
+   "miss_splits": 3,
+   "miss_shards": 3,
+   "hit_splits": 3,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794395760,
+   "end": 1794417360,
+   "step": 60,
+   "miss_splits": 7,
+   "miss_shards": 7,
+   "hit_splits": 7,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794395760,
+   "end": 1794417360,
+   "step": 120,
+   "miss_splits": 7,
+   "miss_shards": 7,
+   "hit_splits": 7,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794330960,
+   "end": 1794417360,
+   "step": 60,
+   "miss_splits": 25,
+   "miss_shards": 25,
+   "hit_splits": 25,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794330960,
+   "end": 1794417360,
+   "step": 120,
+   "miss_splits": 25,
+   "miss_shards": 25,
+   "hit_splits": 25,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794244560,
+   "end": 1794417360,
+   "step": 60,
+   "miss_splits": 49,
+   "miss_shards": 49,
+   "hit_splits": 49,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794244560,
+   "end": 1794417360,
+   "step": 120,
+   "miss_splits": 49,
+   "miss_shards": 49,
+   "hit_splits": 49,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794412800,
+   "end": 1794416400,
+   "step": 60,
+   "miss_splits": 0,
+   "miss_shards": 1,
+   "hit_splits": 1,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794412800,
+   "end": 1794416400,
+   "step": 120,
+   "miss_splits": 0,
+   "miss_shards": 1,
+   "hit_splits": 1,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794414600,
+   "end": 1794416400,
+   "step": 60,
+   "miss_splits": 0,
+   "miss_shards": 1,
+   "hit_splits": 1,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794414600,
+   "end": 1794416400,
+   "step": 120,
+   "miss_splits": 0,
+   "miss_shards": 1,
+   "hit_splits": 1,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794416100,
+   "end": 1794416400,
+   "step": 60,
+   "miss_splits": 0,
+   "miss_shards": 1,
+   "hit_splits": 1,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794416100,
+   "end": 1794416400,
+   "step": 120,
+   "miss_splits": 0,
+   "miss_shards": 1,
+   "hit_splits": 1,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794416100,
+   "end": 1794416700,
+   "step": 60,
+   "miss_splits": 2,
+   "miss_shards": 2,
+   "hit_splits": 2,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794416100,
+   "end": 1794416700,
+   "step": 120,
+   "miss_splits": 2,
+   "miss_shards": 2,
+   "hit_splits": 2,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794412800,
+   "end": 1794416400,
+   "step": 60,
+   "miss_splits": 0,
+   "miss_shards": 1,
+   "hit_splits": 1,
+   "hit_shards": 0
+  },
+  {
+   "start": 1794412800,
+   "end": 1794416400,
+   "step": 120,
+   "miss_splits": 0,
+   "miss_shards": 1,
+   "hit_splits": 1,
+   "hit_shards": 0
+  }
+ ],
+ "instant": [
+  {
+   "range_seconds": 300,
+   "time": 1794417360,
+   "splits": 0,
+   "shards": 1
+  },
+  {
+   "range_seconds": 1800,
+   "time": 1794417360,
+   "splits": 0,
+   "shards": 1
+  },
+  {
+   "range_seconds": 3600,
+   "time": 1794417360,
+   "splits": 0,
+   "shards": 1
+  },
+  {
+   "range_seconds": 3660,
+   "time": 1794417360,
+   "splits": 2,
+   "shards": 2
+  },
+  {
+   "range_seconds": 5400,
+   "time": 1794417360,
+   "splits": 2,
+   "shards": 2
+  },
+  {
+   "range_seconds": 7200,
+   "time": 1794417360,
+   "splits": 2,
+   "shards": 2
+  },
+  {
+   "range_seconds": 10800,
+   "time": 1794417360,
+   "splits": 3,
+   "shards": 3
+  },
+  {
+   "range_seconds": 21600,
+   "time": 1794417360,
+   "splits": 6,
+   "shards": 6
+  },
+  {
+   "range_seconds": 86400,
+   "time": 1794417360,
+   "splits": 24,
+   "shards": 24
+  },
+  {
+   "range_seconds": 172800,
+   "time": 1794417360,
+   "splits": 48,
+   "shards": 48
+  }
+ ],
+ "volume_range": [
+  {
+   "start": 1794417060,
+   "end": 1794417360,
+   "step": 60,
+   "splits": 5,
+   "shards": 0
+  },
+  {
+   "start": 1794417043,
+   "end": 1794417343,
+   "step": 60,
+   "splits": 6,
+   "shards": 0
+  },
+  {
+   "start": 1794417060,
+   "end": 1794417360,
+   "step": 62,
+   "splits": 6,
+   "shards": 0
+  },
+  {
+   "start": 1794417043,
+   "end": 1794417343,
+   "step": 30,
+   "splits": 11,
+   "shards": 0
+  },
+  {
+   "start": 1794416443,
+   "end": 1794417343,
+   "step": 60,
+   "splits": 16,
+   "shards": 0
+  },
+  {
+   "start": 1794413760,
+   "end": 1794417360,
+   "step": 60,
+   "splits": 60,
+   "shards": 0
+  },
+  {
+   "start": 1794413760,
+   "end": 1794417360,
+   "step": 120,
+   "splits": 30,
+   "shards": 0
+  },
+  {
+   "start": 1794413743,
+   "end": 1794417343,
+   "step": 15,
+   "splits": 241,
+   "shards": 0
+  },
+  {
+   "start": 1794395760,
+   "end": 1794417360,
+   "step": 72,
+   "splits": 301,
+   "shards": 0
+  },
+  {
+   "start": 1794395743,
+   "end": 1794417343,
+   "step": 300,
+   "splits": 73,
+   "shards": 0
+  },
+  {
+   "start": 1794330960,
+   "end": 1794417360,
+   "step": 288,
+   "splits": 301,
+   "shards": 0
+  },
+  {
+   "start": 1794330943,
+   "end": 1794417343,
+   "step": 3600,
+   "splits": 25,
+   "shards": 0
+  },
+  {
+   "start": 1794244560,
+   "end": 1794417360,
+   "step": 576,
+   "splits": 301,
+   "shards": 0
+  }
+ ],
+ "log": [
+  {
+   "start": 1794417052000000000,
+   "end": 1794417352000000000,
+   "limit": 100,
+   "direction": "backward",
+   "entries": 100,
+   "t_min": 1794417347669194496,
+   "t_max": 1794417351671963392,
+   "splits": 0,
+   "shards": 1,
+   "lines": 5250,
+   "post_filter_lines": 5250,
+   "bytes": 1800667,
+   "structured_metadata_bytes": 42000,
+   "pieces": [
+    {
+     "start": 1794417052000000000,
+     "end": 1794417352000000000,
+     "vl_lines": 5250
+    }
+   ]
+  },
+  {
+   "start": 1794417052000000000,
+   "end": 1794417352000000000,
+   "limit": 100,
+   "direction": "forward",
+   "entries": 100,
+   "t_min": 1794417053649684992,
+   "t_max": 1794417057651401728,
+   "splits": 0,
+   "shards": 1,
+   "lines": 5250,
+   "post_filter_lines": 5250,
+   "bytes": 1800667,
+   "structured_metadata_bytes": 42000,
+   "pieces": [
+    {
+     "start": 1794417052000000000,
+     "end": 1794417352000000000,
+     "vl_lines": 5250
+    }
+   ]
+  },
+  {
+   "start": 1794417052000000000,
+   "end": 1794417352000000000,
+   "limit": 1000,
+   "direction": "backward",
+   "entries": 1000,
+   "t_min": 1794417295637933056,
+   "t_max": 1794417351671963392,
+   "splits": 0,
+   "shards": 1,
+   "lines": 5250,
+   "post_filter_lines": 5250,
+   "bytes": 1800667,
+   "structured_metadata_bytes": 42000,
+   "pieces": [
+    {
+     "start": 1794417052000000000,
+     "end": 1794417352000000000,
+     "vl_lines": 5250
+    }
+   ]
+  },
+  {
+   "start": 1794417052000000000,
+   "end": 1794417352000000000,
+   "limit": 1000,
+   "direction": "forward",
+   "entries": 1000,
+   "t_min": 1794417053649684992,
+   "t_max": 1794417109672991744,
+   "splits": 0,
+   "shards": 1,
+   "lines": 5250,
+   "post_filter_lines": 5250,
+   "bytes": 1800667,
+   "structured_metadata_bytes": 42000,
+   "pieces": [
+    {
+     "start": 1794417052000000000,
+     "end": 1794417352000000000,
+     "vl_lines": 5250
+    }
+   ]
+  },
+  {
+   "start": 1794417052000000000,
+   "end": 1794417352000000000,
+   "limit": 5000,
+   "direction": "backward",
+   "entries": 5000,
+   "t_min": 1794417067658033920,
+   "t_max": 1794417351671963392,
+   "splits": 0,
+   "shards": 1,
+   "lines": 5250,
+   "post_filter_lines": 5250,
+   "bytes": 1800667,
+   "structured_metadata_bytes": 42000,
+   "pieces": [
+    {
+     "start": 1794417052000000000,
+     "end": 1794417352000000000,
+     "vl_lines": 5250
+    }
+   ]
+  },
+  {
+   "start": 1794417052000000000,
+   "end": 1794417352000000000,
+   "limit": 5000,
+   "direction": "forward",
+   "entries": 5000,
+   "t_min": 1794417053649684992,
+   "t_max": 1794417337664227840,
+   "splits": 0,
+   "shards": 1,
+   "lines": 5250,
+   "post_filter_lines": 5250,
+   "bytes": 1800667,
+   "structured_metadata_bytes": 42000,
+   "pieces": [
+    {
+     "start": 1794417052000000000,
+     "end": 1794417352000000000,
+     "vl_lines": 5250
+    }
+   ]
+  },
+  {
+   "start": 1794417052000000000,
+   "end": 1794417352000000000,
+   "limit": 10000,
+   "direction": "backward",
+   "entries": 5250,
+   "t_min": 1794417053649684992,
+   "t_max": 1794417351671963392,
+   "splits": 0,
+   "shards": 1,
+   "lines": 5250,
+   "post_filter_lines": 5250,
+   "bytes": 1800667,
+   "structured_metadata_bytes": 42000,
+   "pieces": [
+    {
+     "start": 1794417052000000000,
+     "end": 1794417352000000000,
+     "vl_lines": 5250
+    }
+   ]
+  },
+  {
+   "start": 1794417052000000000,
+   "end": 1794417352000000000,
+   "limit": 10000,
+   "direction": "forward",
+   "entries": 5250,
+   "t_min": 1794417053649684992,
+   "t_max": 1794417351671963392,
+   "splits": 0,
+   "shards": 1,
+   "lines": 5250,
+   "post_filter_lines": 5250,
+   "bytes": 1800667,
+   "structured_metadata_bytes": 42000,
+   "pieces": [
+    {
+     "start": 1794417052000000000,
+     "end": 1794417352000000000,
+     "vl_lines": 5250
+    }
+   ]
+  },
+  {
+   "start": 1794416452000000000,
+   "end": 1794417352000000000,
+   "limit": 100,
+   "direction": "backward",
+   "entries": 100,
+   "t_min": 1794417347669194496,
+   "t_max": 1794417351671963392,
+   "splits": 0,
+   "shards": 1,
+   "lines": 15750,
+   "post_filter_lines": 15750,
+   "bytes": 5403109,
+   "structured_metadata_bytes": 126000,
+   "pieces": [
+    {
+     "start": 1794416452000000000,
+     "end": 1794417352000000000,
+     "vl_lines": 15750
+    }
+   ]
+  },
+  {
+   "start": 1794416452000000000,
+   "end": 1794417352000000000,
+   "limit": 100,
+   "direction": "forward",
+   "entries": 100,
+   "t_min": 1794416453402334976,
+   "t_max": 1794416457402657280,
+   "splits": 0,
+   "shards": 1,
+   "lines": 15750,
+   "post_filter_lines": 15750,
+   "bytes": 5403109,
+   "structured_metadata_bytes": 126000,
+   "pieces": [
+    {
+     "start": 1794416452000000000,
+     "end": 1794417352000000000,
+     "vl_lines": 15750
+    }
+   ]
+  },
+  {
+   "start": 1794416453000000000,
+   "end": 1794417353000000000,
+   "limit": 1000,
+   "direction": "backward",
+   "entries": 1000,
+   "t_min": 1794417295637933056,
+   "t_max": 1794417351671963392,
+   "splits": 0,
+   "shards": 1,
+   "lines": 15750,
+   "post_filter_lines": 15750,
+   "bytes": 5403109,
+   "structured_metadata_bytes": 126000,
+   "pieces": [
+    {
+     "start": 1794416453000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 15750
+    }
+   ]
+  },
+  {
+   "start": 1794416453000000000,
+   "end": 1794417353000000000,
+   "limit": 1000,
+   "direction": "forward",
+   "entries": 1000,
+   "t_min": 1794416453402334976,
+   "t_max": 1794416509425655040,
+   "splits": 0,
+   "shards": 1,
+   "lines": 15750,
+   "post_filter_lines": 15750,
+   "bytes": 5403109,
+   "structured_metadata_bytes": 126000,
+   "pieces": [
+    {
+     "start": 1794416453000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 15750
+    }
+   ]
+  },
+  {
+   "start": 1794416453000000000,
+   "end": 1794417353000000000,
+   "limit": 5000,
+   "direction": "backward",
+   "entries": 5000,
+   "t_min": 1794417067658033920,
+   "t_max": 1794417351671963392,
+   "splits": 0,
+   "shards": 1,
+   "lines": 15750,
+   "post_filter_lines": 15750,
+   "bytes": 5403109,
+   "structured_metadata_bytes": 126000,
+   "pieces": [
+    {
+     "start": 1794416453000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 15750
+    }
+   ]
+  },
+  {
+   "start": 1794416453000000000,
+   "end": 1794417353000000000,
+   "limit": 5000,
+   "direction": "forward",
+   "entries": 5000,
+   "t_min": 1794416453402334976,
+   "t_max": 1794416737532030720,
+   "splits": 0,
+   "shards": 1,
+   "lines": 15750,
+   "post_filter_lines": 15750,
+   "bytes": 5403109,
+   "structured_metadata_bytes": 126000,
+   "pieces": [
+    {
+     "start": 1794416453000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 15750
+    }
+   ]
+  },
+  {
+   "start": 1794416453000000000,
+   "end": 1794417353000000000,
+   "limit": 10000,
+   "direction": "backward",
+   "entries": 10000,
+   "t_min": 1794416781559371776,
+   "t_max": 1794417351671963392,
+   "splits": 0,
+   "shards": 1,
+   "lines": 15750,
+   "post_filter_lines": 15750,
+   "bytes": 5403109,
+   "structured_metadata_bytes": 126000,
+   "pieces": [
+    {
+     "start": 1794416453000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 15750
+    }
+   ]
+  },
+  {
+   "start": 1794416453000000000,
+   "end": 1794417353000000000,
+   "limit": 10000,
+   "direction": "forward",
+   "entries": 10000,
+   "t_min": 1794416453402334976,
+   "t_max": 1794417023629629184,
+   "splits": 0,
+   "shards": 1,
+   "lines": 15750,
+   "post_filter_lines": 15750,
+   "bytes": 5403109,
+   "structured_metadata_bytes": 126000,
+   "pieces": [
+    {
+     "start": 1794416453000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 15750
+    }
+   ]
+  },
+  {
+   "start": 1794413753000000000,
+   "end": 1794417353000000000,
+   "limit": 100,
+   "direction": "backward",
+   "entries": 100,
+   "t_min": 1794417347669194496,
+   "t_max": 1794417351671963392,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16660,
+   "post_filter_lines": 16660,
+   "bytes": 5715506,
+   "structured_metadata_bytes": 133280,
+   "pieces": [
+    {
+     "start": 1794413753000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 16660
+    }
+   ]
+  },
+  {
+   "start": 1794413753000000000,
+   "end": 1794417353000000000,
+   "limit": 100,
+   "direction": "forward",
+   "entries": 100,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414390776770816,
+   "splits": 1,
+   "shards": 1,
+   "lines": 15383,
+   "post_filter_lines": 15383,
+   "bytes": 5288827,
+   "structured_metadata_bytes": 130786,
+   "pieces": [
+    {
+     "start": 1794413753000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 16660
+    }
+   ]
+  },
+  {
+   "start": 1794413753000000000,
+   "end": 1794417353000000000,
+   "limit": 1000,
+   "direction": "backward",
+   "entries": 1000,
+   "t_min": 1794417295637933056,
+   "t_max": 1794417351671963392,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16660,
+   "post_filter_lines": 16660,
+   "bytes": 5715506,
+   "structured_metadata_bytes": 133280,
+   "pieces": [
+    {
+     "start": 1794413753000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 16660
+    }
+   ]
+  },
+  {
+   "start": 1794413753000000000,
+   "end": 1794417353000000000,
+   "limit": 1000,
+   "direction": "forward",
+   "entries": 1000,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414442814990080,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16118,
+   "post_filter_lines": 16118,
+   "bytes": 5571663,
+   "structured_metadata_bytes": 152836,
+   "pieces": [
+    {
+     "start": 1794413753000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 16660
+    }
+   ]
+  },
+  {
+   "start": 1794413753000000000,
+   "end": 1794417353000000000,
+   "limit": 5000,
+   "direction": "backward",
+   "entries": 5000,
+   "t_min": 1794417067658033920,
+   "t_max": 1794417351671963392,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16660,
+   "post_filter_lines": 16660,
+   "bytes": 5715506,
+   "structured_metadata_bytes": 133280,
+   "pieces": [
+    {
+     "start": 1794413753000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 16660
+    }
+   ]
+  },
+  {
+   "start": 1794413753000000000,
+   "end": 1794417353000000000,
+   "limit": 5000,
+   "direction": "forward",
+   "entries": 5000,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414670552096256,
+   "splits": 1,
+   "shards": 1,
+   "lines": 20038,
+   "post_filter_lines": 20038,
+   "bytes": 7080746,
+   "structured_metadata_bytes": 270436,
+   "pieces": [
+    {
+     "start": 1794413753000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 16660
+    }
+   ]
+  },
+  {
+   "start": 1794413753000000000,
+   "end": 1794417353000000000,
+   "limit": 10000,
+   "direction": "backward",
+   "entries": 10000,
+   "t_min": 1794416781559371776,
+   "t_max": 1794417351671963392,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16660,
+   "post_filter_lines": 16660,
+   "bytes": 5715506,
+   "structured_metadata_bytes": 133280,
+   "pieces": [
+    {
+     "start": 1794413753000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 16660
+    }
+   ]
+  },
+  {
+   "start": 1794413753000000000,
+   "end": 1794417353000000000,
+   "limit": 10000,
+   "direction": "forward",
+   "entries": 10000,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414956277501696,
+   "splits": 1,
+   "shards": 1,
+   "lines": 25358,
+   "post_filter_lines": 25358,
+   "bytes": 9129545,
+   "structured_metadata_bytes": 430036,
+   "pieces": [
+    {
+     "start": 1794413753000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 16660
+    }
+   ]
+  },
+  {
+   "start": 1794410153000000000,
+   "end": 1794417353000000000,
+   "limit": 100,
+   "direction": "backward",
+   "entries": 100,
+   "t_min": 1794417347669194496,
+   "t_max": 1794417351671963392,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16660,
+   "post_filter_lines": 16660,
+   "bytes": 5715506,
+   "structured_metadata_bytes": 133280,
+   "pieces": [
+    {
+     "start": 1794410153000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 16660
+    }
+   ]
+  },
+  {
+   "start": 1794410153000000000,
+   "end": 1794417353000000000,
+   "limit": 100,
+   "direction": "forward",
+   "entries": 100,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414390776770816,
+   "splits": 2,
+   "shards": 2,
+   "lines": 15383,
+   "post_filter_lines": 15383,
+   "bytes": 5288827,
+   "structured_metadata_bytes": 130786,
+   "pieces": [
+    {
+     "start": 1794410153000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 16660
+    }
+   ]
+  },
+  {
+   "start": 1794410153000000000,
+   "end": 1794417353000000000,
+   "limit": 1000,
+   "direction": "backward",
+   "entries": 1000,
+   "t_min": 1794417295637933056,
+   "t_max": 1794417351671963392,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16660,
+   "post_filter_lines": 16660,
+   "bytes": 5715506,
+   "structured_metadata_bytes": 133280,
+   "pieces": [
+    {
+     "start": 1794410153000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 16660
+    }
+   ]
+  },
+  {
+   "start": 1794410153000000000,
+   "end": 1794417353000000000,
+   "limit": 1000,
+   "direction": "forward",
+   "entries": 1000,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414442814990080,
+   "splits": 2,
+   "shards": 2,
+   "lines": 16118,
+   "post_filter_lines": 16118,
+   "bytes": 5571663,
+   "structured_metadata_bytes": 152836,
+   "pieces": [
+    {
+     "start": 1794410153000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 16660
+    }
+   ]
+  },
+  {
+   "start": 1794410153000000000,
+   "end": 1794417353000000000,
+   "limit": 5000,
+   "direction": "backward",
+   "entries": 5000,
+   "t_min": 1794417067658033920,
+   "t_max": 1794417351671963392,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16660,
+   "post_filter_lines": 16660,
+   "bytes": 5715506,
+   "structured_metadata_bytes": 133280,
+   "pieces": [
+    {
+     "start": 1794410153000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417353000000000,
+     "vl_lines": 16660
+    }
+   ]
+  },
+  {
+   "start": 1794410154000000000,
+   "end": 1794417354000000000,
+   "limit": 5000,
+   "direction": "forward",
+   "entries": 5000,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414670552096256,
+   "splits": 2,
+   "shards": 2,
+   "lines": 20038,
+   "post_filter_lines": 20038,
+   "bytes": 7080746,
+   "structured_metadata_bytes": 270436,
+   "pieces": [
+    {
+     "start": 1794410154000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794410154000000000,
+   "end": 1794417354000000000,
+   "limit": 10000,
+   "direction": "backward",
+   "entries": 10000,
+   "t_min": 1794416783561292544,
+   "t_max": 1794417353672583680,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16695,
+   "post_filter_lines": 16695,
+   "bytes": 5727550,
+   "structured_metadata_bytes": 133560,
+   "pieces": [
+    {
+     "start": 1794410154000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794410154000000000,
+   "end": 1794417354000000000,
+   "limit": 10000,
+   "direction": "forward",
+   "entries": 10000,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414956277501696,
+   "splits": 2,
+   "shards": 2,
+   "lines": 25358,
+   "post_filter_lines": 25358,
+   "bytes": 9129545,
+   "structured_metadata_bytes": 430036,
+   "pieces": [
+    {
+     "start": 1794410154000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794395754000000000,
+   "end": 1794417354000000000,
+   "limit": 100,
+   "direction": "backward",
+   "entries": 100,
+   "t_min": 1794417349669595136,
+   "t_max": 1794417353672583680,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16695,
+   "post_filter_lines": 16695,
+   "bytes": 5727550,
+   "structured_metadata_bytes": 133560,
+   "pieces": [
+    {
+     "start": 1794395754000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794395754000000000,
+   "end": 1794417354000000000,
+   "limit": 100,
+   "direction": "forward",
+   "entries": 100,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414390776770816,
+   "splits": 6,
+   "shards": 6,
+   "lines": 15383,
+   "post_filter_lines": 15383,
+   "bytes": 5288827,
+   "structured_metadata_bytes": 130786,
+   "pieces": [
+    {
+     "start": 1794395754000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794395754000000000,
+   "end": 1794417354000000000,
+   "limit": 1000,
+   "direction": "backward",
+   "entries": 1000,
+   "t_min": 1794417297638791680,
+   "t_max": 1794417353672583680,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16695,
+   "post_filter_lines": 16695,
+   "bytes": 5727550,
+   "structured_metadata_bytes": 133560,
+   "pieces": [
+    {
+     "start": 1794395754000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794395754000000000,
+   "end": 1794417354000000000,
+   "limit": 1000,
+   "direction": "forward",
+   "entries": 1000,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414442814990080,
+   "splits": 6,
+   "shards": 6,
+   "lines": 16118,
+   "post_filter_lines": 16118,
+   "bytes": 5571663,
+   "structured_metadata_bytes": 152836,
+   "pieces": [
+    {
+     "start": 1794395754000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794395754000000000,
+   "end": 1794417354000000000,
+   "limit": 5000,
+   "direction": "backward",
+   "entries": 5000,
+   "t_min": 1794417069659947520,
+   "t_max": 1794417353672583680,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16695,
+   "post_filter_lines": 16695,
+   "bytes": 5727550,
+   "structured_metadata_bytes": 133560,
+   "pieces": [
+    {
+     "start": 1794395754000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794395754000000000,
+   "end": 1794417354000000000,
+   "limit": 5000,
+   "direction": "forward",
+   "entries": 5000,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414670552096256,
+   "splits": 6,
+   "shards": 6,
+   "lines": 20038,
+   "post_filter_lines": 20038,
+   "bytes": 7080746,
+   "structured_metadata_bytes": 270436,
+   "pieces": [
+    {
+     "start": 1794395754000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794395754000000000,
+   "end": 1794417354000000000,
+   "limit": 10000,
+   "direction": "backward",
+   "entries": 10000,
+   "t_min": 1794416783561292544,
+   "t_max": 1794417353672583680,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16695,
+   "post_filter_lines": 16695,
+   "bytes": 5727550,
+   "structured_metadata_bytes": 133560,
+   "pieces": [
+    {
+     "start": 1794395754000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794395754000000000,
+   "end": 1794417354000000000,
+   "limit": 10000,
+   "direction": "forward",
+   "entries": 10000,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414956277501696,
+   "splits": 6,
+   "shards": 6,
+   "lines": 25358,
+   "post_filter_lines": 25358,
+   "bytes": 9129545,
+   "structured_metadata_bytes": 430036,
+   "pieces": [
+    {
+     "start": 1794395754000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794330954000000000,
+   "end": 1794417354000000000,
+   "limit": 100,
+   "direction": "backward",
+   "entries": 100,
+   "t_min": 1794417349669595136,
+   "t_max": 1794417353672583680,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16695,
+   "post_filter_lines": 16695,
+   "bytes": 5727550,
+   "structured_metadata_bytes": 133560,
+   "pieces": [
+    {
+     "start": 1794330954000000000,
+     "end": 1794333600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794333600000000000,
+     "end": 1794337200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794337200000000000,
+     "end": 1794340800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794340800000000000,
+     "end": 1794344400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794344400000000000,
+     "end": 1794348000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794348000000000000,
+     "end": 1794351600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794351600000000000,
+     "end": 1794355200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794355200000000000,
+     "end": 1794358800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794358800000000000,
+     "end": 1794362400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794362400000000000,
+     "end": 1794366000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794366000000000000,
+     "end": 1794369600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794369600000000000,
+     "end": 1794373200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794373200000000000,
+     "end": 1794376800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794376800000000000,
+     "end": 1794380400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794380400000000000,
+     "end": 1794384000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794384000000000000,
+     "end": 1794387600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794387600000000000,
+     "end": 1794391200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794391200000000000,
+     "end": 1794394800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794394800000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794330954000000000,
+   "end": 1794417354000000000,
+   "limit": 100,
+   "direction": "forward",
+   "entries": 100,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414390776770816,
+   "splits": 24,
+   "shards": 24,
+   "lines": 15383,
+   "post_filter_lines": 15383,
+   "bytes": 5288827,
+   "structured_metadata_bytes": 130786,
+   "pieces": [
+    {
+     "start": 1794330954000000000,
+     "end": 1794333600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794333600000000000,
+     "end": 1794337200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794337200000000000,
+     "end": 1794340800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794340800000000000,
+     "end": 1794344400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794344400000000000,
+     "end": 1794348000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794348000000000000,
+     "end": 1794351600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794351600000000000,
+     "end": 1794355200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794355200000000000,
+     "end": 1794358800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794358800000000000,
+     "end": 1794362400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794362400000000000,
+     "end": 1794366000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794366000000000000,
+     "end": 1794369600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794369600000000000,
+     "end": 1794373200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794373200000000000,
+     "end": 1794376800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794376800000000000,
+     "end": 1794380400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794380400000000000,
+     "end": 1794384000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794384000000000000,
+     "end": 1794387600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794387600000000000,
+     "end": 1794391200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794391200000000000,
+     "end": 1794394800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794394800000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794330954000000000,
+   "end": 1794417354000000000,
+   "limit": 1000,
+   "direction": "backward",
+   "entries": 1000,
+   "t_min": 1794417297638791680,
+   "t_max": 1794417353672583680,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16695,
+   "post_filter_lines": 16695,
+   "bytes": 5727550,
+   "structured_metadata_bytes": 133560,
+   "pieces": [
+    {
+     "start": 1794330954000000000,
+     "end": 1794333600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794333600000000000,
+     "end": 1794337200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794337200000000000,
+     "end": 1794340800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794340800000000000,
+     "end": 1794344400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794344400000000000,
+     "end": 1794348000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794348000000000000,
+     "end": 1794351600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794351600000000000,
+     "end": 1794355200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794355200000000000,
+     "end": 1794358800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794358800000000000,
+     "end": 1794362400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794362400000000000,
+     "end": 1794366000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794366000000000000,
+     "end": 1794369600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794369600000000000,
+     "end": 1794373200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794373200000000000,
+     "end": 1794376800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794376800000000000,
+     "end": 1794380400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794380400000000000,
+     "end": 1794384000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794384000000000000,
+     "end": 1794387600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794387600000000000,
+     "end": 1794391200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794391200000000000,
+     "end": 1794394800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794394800000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417354000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794330955000000000,
+   "end": 1794417355000000000,
+   "limit": 1000,
+   "direction": "forward",
+   "entries": 1000,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414442814990080,
+   "splits": 24,
+   "shards": 24,
+   "lines": 16118,
+   "post_filter_lines": 16118,
+   "bytes": 5571663,
+   "structured_metadata_bytes": 152836,
+   "pieces": [
+    {
+     "start": 1794330955000000000,
+     "end": 1794333600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794333600000000000,
+     "end": 1794337200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794337200000000000,
+     "end": 1794340800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794340800000000000,
+     "end": 1794344400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794344400000000000,
+     "end": 1794348000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794348000000000000,
+     "end": 1794351600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794351600000000000,
+     "end": 1794355200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794355200000000000,
+     "end": 1794358800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794358800000000000,
+     "end": 1794362400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794362400000000000,
+     "end": 1794366000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794366000000000000,
+     "end": 1794369600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794369600000000000,
+     "end": 1794373200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794373200000000000,
+     "end": 1794376800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794376800000000000,
+     "end": 1794380400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794380400000000000,
+     "end": 1794384000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794384000000000000,
+     "end": 1794387600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794387600000000000,
+     "end": 1794391200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794391200000000000,
+     "end": 1794394800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794394800000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417355000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794330955000000000,
+   "end": 1794417355000000000,
+   "limit": 5000,
+   "direction": "backward",
+   "entries": 5000,
+   "t_min": 1794417069659947520,
+   "t_max": 1794417353672583680,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16695,
+   "post_filter_lines": 16695,
+   "bytes": 5727550,
+   "structured_metadata_bytes": 133560,
+   "pieces": [
+    {
+     "start": 1794330955000000000,
+     "end": 1794333600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794333600000000000,
+     "end": 1794337200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794337200000000000,
+     "end": 1794340800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794340800000000000,
+     "end": 1794344400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794344400000000000,
+     "end": 1794348000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794348000000000000,
+     "end": 1794351600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794351600000000000,
+     "end": 1794355200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794355200000000000,
+     "end": 1794358800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794358800000000000,
+     "end": 1794362400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794362400000000000,
+     "end": 1794366000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794366000000000000,
+     "end": 1794369600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794369600000000000,
+     "end": 1794373200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794373200000000000,
+     "end": 1794376800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794376800000000000,
+     "end": 1794380400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794380400000000000,
+     "end": 1794384000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794384000000000000,
+     "end": 1794387600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794387600000000000,
+     "end": 1794391200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794391200000000000,
+     "end": 1794394800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794394800000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417355000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794330955000000000,
+   "end": 1794417355000000000,
+   "limit": 5000,
+   "direction": "forward",
+   "entries": 5000,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414670552096256,
+   "splits": 24,
+   "shards": 24,
+   "lines": 20038,
+   "post_filter_lines": 20038,
+   "bytes": 7080746,
+   "structured_metadata_bytes": 270436,
+   "pieces": [
+    {
+     "start": 1794330955000000000,
+     "end": 1794333600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794333600000000000,
+     "end": 1794337200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794337200000000000,
+     "end": 1794340800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794340800000000000,
+     "end": 1794344400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794344400000000000,
+     "end": 1794348000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794348000000000000,
+     "end": 1794351600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794351600000000000,
+     "end": 1794355200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794355200000000000,
+     "end": 1794358800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794358800000000000,
+     "end": 1794362400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794362400000000000,
+     "end": 1794366000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794366000000000000,
+     "end": 1794369600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794369600000000000,
+     "end": 1794373200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794373200000000000,
+     "end": 1794376800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794376800000000000,
+     "end": 1794380400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794380400000000000,
+     "end": 1794384000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794384000000000000,
+     "end": 1794387600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794387600000000000,
+     "end": 1794391200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794391200000000000,
+     "end": 1794394800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794394800000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417355000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794330955000000000,
+   "end": 1794417355000000000,
+   "limit": 10000,
+   "direction": "backward",
+   "entries": 10000,
+   "t_min": 1794416783561292544,
+   "t_max": 1794417353672583680,
+   "splits": 1,
+   "shards": 1,
+   "lines": 16695,
+   "post_filter_lines": 16695,
+   "bytes": 5727550,
+   "structured_metadata_bytes": 133560,
+   "pieces": [
+    {
+     "start": 1794330955000000000,
+     "end": 1794333600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794333600000000000,
+     "end": 1794337200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794337200000000000,
+     "end": 1794340800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794340800000000000,
+     "end": 1794344400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794344400000000000,
+     "end": 1794348000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794348000000000000,
+     "end": 1794351600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794351600000000000,
+     "end": 1794355200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794355200000000000,
+     "end": 1794358800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794358800000000000,
+     "end": 1794362400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794362400000000000,
+     "end": 1794366000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794366000000000000,
+     "end": 1794369600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794369600000000000,
+     "end": 1794373200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794373200000000000,
+     "end": 1794376800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794376800000000000,
+     "end": 1794380400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794380400000000000,
+     "end": 1794384000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794384000000000000,
+     "end": 1794387600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794387600000000000,
+     "end": 1794391200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794391200000000000,
+     "end": 1794394800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794394800000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417355000000000,
+     "vl_lines": 16695
+    }
+   ]
+  },
+  {
+   "start": 1794330955000000000,
+   "end": 1794417355000000000,
+   "limit": 10000,
+   "direction": "forward",
+   "entries": 10000,
+   "t_min": 1794414386776176128,
+   "t_max": 1794414956277501696,
+   "splits": 24,
+   "shards": 24,
+   "lines": 25358,
+   "post_filter_lines": 25358,
+   "bytes": 9129545,
+   "structured_metadata_bytes": 430036,
+   "pieces": [
+    {
+     "start": 1794330955000000000,
+     "end": 1794333600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794333600000000000,
+     "end": 1794337200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794337200000000000,
+     "end": 1794340800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794340800000000000,
+     "end": 1794344400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794344400000000000,
+     "end": 1794348000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794348000000000000,
+     "end": 1794351600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794351600000000000,
+     "end": 1794355200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794355200000000000,
+     "end": 1794358800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794358800000000000,
+     "end": 1794362400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794362400000000000,
+     "end": 1794366000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794366000000000000,
+     "end": 1794369600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794369600000000000,
+     "end": 1794373200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794373200000000000,
+     "end": 1794376800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794376800000000000,
+     "end": 1794380400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794380400000000000,
+     "end": 1794384000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794384000000000000,
+     "end": 1794387600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794387600000000000,
+     "end": 1794391200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794391200000000000,
+     "end": 1794394800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794394800000000000,
+     "end": 1794398400000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794398400000000000,
+     "end": 1794402000000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794402000000000000,
+     "end": 1794405600000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794405600000000000,
+     "end": 1794409200000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794409200000000000,
+     "end": 1794412800000000000,
+     "vl_lines": 0
+    },
+    {
+     "start": 1794412800000000000,
+     "end": 1794416400000000000,
+     "vl_lines": 35315
+    },
+    {
+     "start": 1794416400000000000,
+     "end": 1794417355000000000,
+     "vl_lines": 16695
+    }
+   ]
+  }
+ ]
+}

@@ -181,7 +181,13 @@ func (s *statsStubVL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func newQueryStatsTestProxy(t *testing.T, backendURL, compression string) http.Handler {
 	t.Helper()
+	return newQueryStatsTestProxyMode(t, backendURL, compression, "")
+}
+
+func newQueryStatsTestProxyMode(t *testing.T, backendURL, compression, mode string) http.Handler {
+	t.Helper()
 	p, err := New(Config{
+		QueryStatsMode:                    mode,
 		BackendURL:                        backendURL,
 		Cache:                             cache.New(60*time.Second, 1000),
 		CompatCache:                       cache.New(60*time.Second, 100),
@@ -276,7 +282,7 @@ func TestQueryStats_LogQueryNumbersAreMeasured(t *testing.T) {
 			stub := &statsStubVL{rows: rows}
 			vl := httptest.NewServer(stub)
 			defer vl.Close()
-			h := newQueryStatsTestProxy(t, vl.URL, "")
+			h := newQueryStatsTestProxyMode(t, vl.URL, "", QueryStatsModeVictoriaLogs)
 			now := time.Now()
 			params := url.Values{
 				"query": {`{app="api"}`}, "limit": {"1000"}, "direction": {"backward"},
@@ -308,19 +314,16 @@ func TestQueryStats_LogQueryNumbersAreMeasured(t *testing.T) {
 			}
 
 			// The same request again is answered from the response cache, with
-			// no VictoriaLogs work. Loki computes a non-empty log query on every
-			// request, so the hit reports the stored computation's totals, its
-			// own execTime and the entry found.
+			// no VictoriaLogs work: its own execTime and the entry found.
 			again := serveQueryStats(t, h, "/loki/api/v1/query_range", params, nil)
 			_, hit := assertLokiStatsShape(t, again)
 			if requests2, _, _ := stub.snapshot(); requests2 != requests {
 				t.Fatalf("repeat reached VictoriaLogs (%d -> %d requests)", requests, requests2)
 			}
-			if hit.Summary.TotalBytesProcessed != st.Summary.TotalBytesProcessed || hit.Summary.TotalLinesProcessed != st.Summary.TotalLinesProcessed || hit.Summary.Splits != 0 {
-				t.Errorf("cache hit %+v, want the stored computation's totals of %+v and no splits", hit.Summary, st.Summary)
-			}
-			if hit.Summary.BytesProcessedPerSecond <= 0 || hit.Summary.BytesProcessedPerSecond > 2*st.Summary.BytesProcessedPerSecond+1 {
-				t.Errorf("cache hit rate %d, want the stored computation's (%d), not totals over the hit's time", hit.Summary.BytesProcessedPerSecond, st.Summary.BytesProcessedPerSecond)
+			// victorialogs mode reports what this request measured: a hit read
+			// nothing (Loki's accounting replays it: TestQueryStats_LokiAccountingPerRouteAndCacheTier).
+			if hit.Summary.TotalBytesProcessed != 0 || hit.Summary.TotalLinesProcessed != 0 || hit.Summary.Splits != 0 {
+				t.Errorf("cache hit %+v, want nothing measured", hit.Summary)
 			}
 			if hit.Summary.TotalEntriesReturned != int64(rows) {
 				t.Errorf("cache hit totalEntriesReturned %d, want %d", hit.Summary.TotalEntriesReturned, rows)
@@ -908,7 +911,13 @@ func FuzzEntryCounter(f *testing.F) {
 
 // BenchmarkQueryStatsWriter measures the layer on a log answer of 1000
 // entries written in 32 KiB chunks, as the streams writer does.
-func BenchmarkQueryStatsWriter(b *testing.B) {
+func BenchmarkQueryStatsWriter(b *testing.B) { benchmarkQueryStatsWriter(b, false) }
+
+// BenchmarkQueryStatsWriterLokiMode is the same with the timestamp tracking
+// of Loki's accounting (-query-stats-mode=loki, the default).
+func BenchmarkQueryStatsWriterLokiMode(b *testing.B) { benchmarkQueryStatsWriter(b, true) }
+
+func benchmarkQueryStatsWriter(b *testing.B, lokiMode bool) {
 	var body bytes.Buffer
 	body.WriteString(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[`)
 	for i := 0; i < 1000; i++ {
@@ -928,6 +937,7 @@ func BenchmarkQueryStatsWriter(b *testing.B) {
 		rec := discardResponseWriter{h: http.Header{"Content-Type": {"application/json"}}}
 		w := queryStatsWriterPool.Get().(*queryStatsWriter)
 		w.reset(&rec, rt)
+		w.entries.trackTS = lokiMode
 		for off := 0; off < len(raw); off += 32 << 10 {
 			_, _ = w.Write(raw[off:min(off+32<<10, len(raw))])
 		}
