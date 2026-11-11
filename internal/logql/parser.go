@@ -1444,9 +1444,16 @@ func (p *parser) consumeBalancedParens() (endPos int, ok bool) {
 // parser can consume the [duration] and closing ) tokens; a ) that closes a
 // ( of the stage belongs to it. kw is the text that opens the stage, which the result starts with, and prev the type
 // of the token that precedes the first one read.
+// stageTextBuffer bounds the source consumeRestOfStage sizes its buffer for.
+const stageTextBuffer = 64
+
 func (p *parser) consumeRestOfStage(kw string, prev TokType) string {
 	defer p.keep(p.pos())
 	var b strings.Builder
+	// One buffer for the whole text: the name and the source still to read, which a stage's text rarely outgrows (a
+	// run of blanks becomes one space), bounded so that a long query does not size each of its stages to its end.
+	// Without it the buffer the name opens is grown again once the text passes 8 bytes (`_time=~""`).
+	b.Grow(len(kw) + min(len(p.sc.src)-p.pos(), stageTextBuffer))
 	b.WriteString(kw) // the first token is spaced from it like any other from the one before
 	depth := 0
 	for {
