@@ -1,0 +1,72 @@
+id: semantics/label-list-trailing-comma
+title: A label list with a trailing, doubled or leading comma, an empty drop or keep, or two names without a comma is Loki's 400 with Loki's text (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's grammar reads a label list as identifiers separated by commas, with no
+  comma before the first name, between two commas or after the last one:
+  `sum by (app,) (..)`, `sum without (pod,) (..)`, `.. / on(app,) ..`,
+  `| drop a,`, `| drop ,a` and `sum by (a b) (..)` are parse errors (`parse
+  error at line 1, col 11: syntax error: unexpected ), expecting IDENTIFIER` for
+  the first). The proxy's parser (internal/logql) accepted the comma, and the
+  second name without one, and answered the query. Found by the Loki oracle
+  (test/oracle/loki `facts`) on the rows of the binary-operation grid the query
+  plan lowers (TestBinOpLoweringMatchesLoki, 2026-11-11): every row with
+  `without (pod,)` is rejected by Loki.
+
+  Recorded with the Loki oracle (check command) on a grid of 916 queries: a
+  trailing comma, a doubled one, a leading one, a lone comma, an empty list,
+  white space and a line break around the names, and two names without a comma,
+  in the lists of by, without (before and after the operand, on topk,
+  count_values and unwrap range aggregations), on, ignoring, group_left and
+  group_right (with a bool and a set operator), in the lists of json, logfmt
+  (with --strict and --keep-empty), drop and keep (names and matchers), in
+  label_format, and in a stream selector (which Loki lets end in one comma).
+  Before the change the proxy accepted 204 queries Loki rejects and gave 79
+  other text; after it every status and every text is Loki's, the empty list of
+  by, without and on and the one trailing comma of a selector stay accepted, and
+  an empty `| drop` or `| keep` is Loki's `unexpected $end, expecting
+  IDENTIFIER`.
+
+  A comma followed by white space that is no ASCII white space (U+00A0, U+2003,
+  ...) is not a trailing comma to Loki, whose lexer reads the character as a
+  name, and stays accepted.
+
+  Breaking for a client that sent such a list: Loki never accepted it.
+corpus:
+  size: 3
+  dimensions:
+    shapes:
+      - query: 'sum by (app,) (count_over_time({env="production"}[5m]))'
+      - query: 'sum without (pod,) (count_over_time({env="production"}[5m])) / 2'
+      - query: 'rate({env="production"}[5m]) / on(app,) rate({env="production"}[5m])'
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (app,) (count_over_time({env="production"}[5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, errorType, error]
+  expect: |
+    400, errorType bad_data, Loki's parse error text.
+gap:
+  status: fixed
+  fixed_by: "this change"
+  impact: api-only
+  effort: S
+  area: 'internal/logql parseLabelList, parseGrouping, parseDropKeepList (the label list of a grouping, a vector matching, group_left/group_right, drop and keep)'
+  loki: 'pkg/logql/syntax/expr.y labels: IDENTIFIER | labels COMMA IDENTIFIER; drop and keep lists need one item and one after each comma'
+  proxy: 'the lists are read as Loki reads them and rejected with Loki''s text at parse time, before the response cache, the plan or any VictoriaLogs call'
+  planned_test: 'TestLabelListCommasMatchLoki (internal/logql, 916 recorded Loki answers); TestRejectedQueryNeverReachesVictoriaLogs and TestCompatEdgeDoesNotServeAnAnswerCachedBeforeTheRuneFix (internal/proxy: zero VictoriaLogs requests on every route, no cached 200 served); TestCompat_LabelListTrailingCommaLikeLoki (test/e2e-compat, group core)'
+  visual: none
+  visual_reason: 'a parse error; no Grafana panel writes the comma'
+  clusters: []

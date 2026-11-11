@@ -27,6 +27,13 @@ func FuzzParse(f *testing.F) {
 		`{app="nginx"} | unwrap bytes(size)`,
 		`{app="nginx"} | line_format "{{.msg}}"`,
 		`{app="nginx"} | label_format new=old`,
+		// label lists Loki rejects and accepts
+		`sum by (a,) (rate({app="api"}[5m]))`,
+		`sum without (,a) (rate({app="api"}[5m]))`,
+		`sum by (a b) (rate({app="api"}[5m]))`,
+		`sum by () (rate({app="api"}[5m]))`,
+		`rate({app="api"}[5m]) / on (a,) group_left (b,) rate({app="api"}[5m])`,
+		`{app="nginx"} | drop a,,b | keep`,
 		// range ops
 		`count_over_time({app="api"}[1h])`,
 		`bytes_rate({app="api"}[5m])`,

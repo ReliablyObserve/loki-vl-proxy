@@ -1329,3 +1329,30 @@ decisions:
     performance:
       tracked: ['BenchmarkLabelFilterQueriesLowered / BenchmarkLineFilterQueriesLowered / BenchmarkPatternFilterQueriesLowered / BenchmarkParserQueriesLowered / BenchmarkParsedLabelFilterQueriesLowered and the translator''s benchmarks (internal/queryplan/lower) ns/op, B/op, allocs/op; TestReservedFieldLoweringAllocations']
       bound: 'M5 Pro, GOMAXPROCS=4, 3000 iterations x 10 runs interleaved base/branch, 2026-11-11, same corpus in both trees: the label filter queries without a reserved name 2.00 us -> 2.11 us (not significant), 54 allocs both; the 5 filter-only corpus queries with one 5.38 -> 6.02 us, 142 -> 148 allocs (the stream filter, the tag pipes and the copy of a name in another case they did not write before); all lowered label filter queries 2.87 -> 2.95 us, 75 -> 76 allocs; parsed label filter queries 93 -> 92 allocs; line, pattern and parser queries and every translator benchmark unchanged in allocations (parser queries 2.12 -> 2.22 us, the same bytes and allocations, within the run''s spread). Against a plain label, a reserved matcher or string filter costs at most 2 allocations more, a label filter on a name in another case at most 8, and a comparison at most 16 (the pipes and guard are built once per name, a name in another case once per spelling). StreamFilter and PipeCopy print into the query buffer (appendTo, the same bytes).'
+  - id: logql-label-list-grammar
+    pending: true
+    chosen: 'a label list is read as Loki''s grammar reads it, at parse time: names separated by commas with none before the first, between two commas or after the last, and a comma between two names (internal/logql parseLabelList, shared by parseGrouping for by and without; parseDropKeepList for drop and keep, which need one item and one after each comma); the errors are the parser''s own syntax errors with Loki''s text (unexpected ), expecting IDENTIFIER; unexpected IDENTIFIER, expecting , or )), so they come out of ParseAndValidate, ValidateLogQL and every route''s first parse; the empty list of by, without and on, white space and line breaks around names and the one trailing comma of a stream selector stay accepted'
+    over: ['a separate pre-check of the query text for a comma before a closing parenthesis (it would read quoted text and need its own copy of the grammar)', 'leaving the comma accepted until the lowering reads the AST (Loki answers 400 and the plan would answer 200)']
+    why: |
+      Found by the Loki oracle on the binary-operation grid (step 42): Loki
+      rejects `by (app,)`, `without (pod,)` and `on(app,)`, and the proxy
+      answered them. The recorded grid of 916 queries (every list position of
+      by, without, on, ignoring, group_left, group_right, json, logfmt, drop,
+      keep and label_format against a trailing, doubled and leading comma, a
+      lone comma, an empty list, white space and two names with no comma)
+      showed 204 queries the proxy accepted and Loki rejects, 79 with other
+      text, and the same grid after the change has none of either. The parser
+      is the one place every route reads a query first, so the fail-fast rule
+      (reject before the cache, the plan or VictoriaLogs) holds with no code
+      on the routes: TestRejectedQueryNeverReachesVictoriaLogs counts zero
+      requests. The compat edge looks its cache up before it validates, and
+      its key already carries a version for every query the validation
+      rejects (runeResponseKeyVersion), so an answer an older binary cached
+      for such a list is not served.
+    evidence: 'Loki oracle check command, 916 recorded queries (internal/logql/testdata/label-list-commas-loki.jsonl); the 246 queries of the repository''s tests and grids that went from accepted to rejected (found by logging every rejection by the new rules over the full internal test run) are all Loki''s 400 with the same text; 22 more, in the unicode grid, are queries Loki accepts that end a list in a comma and one white space character that is not ASCII white space (Loki reads it as a name; the scanner skips it): they stay accepted (Parser.skippedWideSpace), and the limits of TestUnicodeRunesMatchLoki do not move'
+    code: [internal/logql/parser.go]
+    tests: [TestLabelListCommasMatchLoki, TestValidateLogQL_DropKeepMatchers, TestUnicodeRunesMatchLoki, TestRejectedQueryNeverReachesVictoriaLogs, TestCompatEdgeDoesNotServeAnAnswerCachedBeforeTheRuneFix, TestCompat_LabelListTrailingCommaLikeLoki]
+    quality: 'Every status and text of the 916 recorded queries is Loki''s. Open: a bare-name stage (`| foo`, `| distinct a`) is passed to the backend where Loki rejects it (internal/logql parseNameStage), and Loki''s white space characters that are no ASCII white space are skipped by the scanner, so a list with such a character in the place of a name (`by (a, <U+00A0>b)`) is read as `by (a, b)` (the white space limit of TestUnicodeRunesMatchLoki).'
+    performance:
+      tracked: ['BenchmarkParse and BenchmarkValidateLogQL (internal/logql)']
+      bound: 'M5 Pro, GOMAXPROCS=4, base and branch test binaries run interleaved 10 times at 20000 iterations each, 2026-11-11: geomean over the 26 queries 589.7 ns -> 581.2 ns (-1.4%, not significant), B/op and allocs/op identical on every query (parseGrouping now calls parseLabelList: one loop instead of two copies)'
