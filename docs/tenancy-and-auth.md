@@ -161,9 +161,6 @@ The delete API now needs its own token: set `-delete-api-auth-token` (Helm `dele
 | Custom HTTP headers (`X-Scope-OrgID`, others) | tenant as in setups b–d; others forwarded only when listed in `-forward-headers` |
 | Allowed cookies / With credentials | forwarded only when listed in `-forward-cookies` |
 
-<!-- step-48: slow-query logging and top callers by user. -->
-**Slow queries and top callers by user:** *to be documented with the slow-query logging feature.*
-
 ## 6. Resolution details
 
 ### Tenant resolution order (tenancy on)
