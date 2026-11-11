@@ -2,7 +2,9 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/netip"
 	"strings"
 	"unicode/utf8"
 )
@@ -44,6 +46,93 @@ func newRequestCaller(r *http.Request, user, userSource string, profile grafanaC
 		c.surface = profile.surface
 	}
 	return c
+}
+
+// logUserHeader is -log-user-header: the header naming the end user for the logs and /debug/queries only, and
+// the TCP peers trusted to send it (-log-user-header-trusted-cidrs; none listed trusts every peer).
+type logUserHeader struct {
+	name    string // canonical header name; "" when unset
+	source  string // enduser.source of a user it names
+	trusted []netip.Prefix
+}
+
+// userHeaderSources are the enduser.source names of the user headers the proxy knows; another header is
+// user_header.
+var userHeaderSources = map[string]string{
+	"X-Grafana-User":      "grafana_user",
+	"X-Forwarded-User":    "forwarded_user",
+	"X-Webauth-User":      "webauth_user",
+	"X-Auth-Request-User": "auth_request_user",
+}
+
+// parseLogUserHeader reads -log-user-header and -log-user-header-trusted-cidrs at startup, so a bad value fails
+// fast.
+func parseLogUserHeader(name, cidrs string) (logUserHeader, error) {
+	name = strings.TrimSpace(name)
+	cidrs = strings.TrimSpace(cidrs)
+	if name == "" {
+		if cidrs != "" {
+			return logUserHeader{}, fmt.Errorf("-log-user-header-trusted-cidrs %q needs -log-user-header", cidrs)
+		}
+		return logUserHeader{}, nil
+	}
+	h := logUserHeader{name: http.CanonicalHeaderKey(name), source: "user_header"}
+	if src, ok := userHeaderSources[h.name]; ok {
+		h.source = src
+	}
+	for _, part := range strings.Split(cidrs, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(part)
+		if err != nil {
+			addr, addrErr := netip.ParseAddr(part)
+			if addrErr != nil {
+				return logUserHeader{}, fmt.Errorf("-log-user-header-trusted-cidrs: %q is neither a CIDR nor an address", part)
+			}
+			prefix = netip.PrefixFrom(addr.Unmap(), addr.Unmap().BitLen())
+		}
+		h.trusted = append(h.trusted, prefix.Masked())
+	}
+	return h, nil
+}
+
+// peerTrusted reports whether the request's TCP peer (RemoteAddr: the client or the last load balancer, never
+// X-Forwarded-For, which the client writes) may name the user.
+func (h logUserHeader) peerTrusted(remoteAddr string) bool {
+	if len(h.trusted) == 0 {
+		return true
+	}
+	var addr netip.Addr
+	if ap, err := netip.ParseAddrPort(remoteAddr); err == nil {
+		addr = ap.Addr()
+	} else if a, err := netip.ParseAddr(remoteAddr); err == nil {
+		addr = a
+	} else {
+		return false
+	}
+	addr = addr.Unmap()
+	for _, prefix := range h.trusted {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// callerUser is the end user the logs and /debug/queries name: the -log-user-header value from a trusted peer,
+// otherwise the client identity the metrics use (the trusted user headers of -metrics.trust-proxy-headers, the
+// tenant, or the client address).
+func (p *Proxy) callerUser(r *http.Request, clientID, clientSource string) (string, string) {
+	if p.logUser.name == "" {
+		return clientID, clientSource
+	}
+	user := strings.TrimSpace(r.Header.Get(p.logUser.name))
+	if user == "" || !p.logUser.peerTrusted(r.RemoteAddr) {
+		return clientID, clientSource
+	}
+	return user, p.logUser.source
 }
 
 // requestCallerFromContext is the caller of the client request ctx belongs to; zero outside one. Work shared by

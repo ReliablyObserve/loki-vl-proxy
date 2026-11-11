@@ -41,7 +41,8 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		rt.start, rt.traceOn = start, p.slowTraceOn()
 		ctx := context.WithValue(r.Context(), requestTelemetryKey, rt)
 		grafanaProfile := detectGrafanaClientProfile(r, endpoint, route)
-		caller := newRequestCaller(r, clientID, clientSource, grafanaProfile)
+		user, userSource := p.callerUser(r, clientID, clientSource)
+		caller := newRequestCaller(r, user, userSource, grafanaProfile)
 		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route, caller: caller})
 		ctx = context.WithValue(ctx, requestGrafanaClientKey, grafanaProfile)
 		ctx = withExecutionLimits(ctx, p.execLimits)
@@ -369,7 +370,7 @@ func parseGrafanaRuntimeMajor(version string) int {
 
 func deriveEnduserName(clientID, clientSource string) string {
 	switch clientSource {
-	case "grafana_user", "forwarded_user", "webauth_user", "auth_request_user":
+	case "grafana_user", "forwarded_user", "webauth_user", "auth_request_user", "user_header":
 		return clientID
 	default:
 		return ""

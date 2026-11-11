@@ -2,13 +2,19 @@ package proxy
 
 import (
 	"bytes"
+	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 // callerLogHandler is slowLogHandler with the request's tenant scope, as the proxy's routes set it.
@@ -168,5 +174,123 @@ func TestSanitizeCallerValue(t *testing.T) {
 	}
 	if n := testing.AllocsPerRun(100, func() { _ = sanitizeCallerValue("alice@example.com", callerIdentityMaxBytes) }); n != 0 {
 		t.Fatalf("a clean value allocates %v times", n)
+	}
+}
+
+// -log-user-header names the user only when the connection comes from a trusted peer: the same header from any
+// other peer, or a trusted address claimed in X-Forwarded-For, leaves the request under its tenant.
+//
+// conformance: observability-slow-query-log
+func TestLogUserHeaderNamesTheUserFromTrustedPeersOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name, cidrs, peer, forwardedFor, wantUser, wantSource string
+	}{
+		{"any peer trusted", "", "192.0.2.9:4000", "", "alice", "grafana_user"},
+		{"trusted peer", "10.0.0.0/8, 192.0.2.1", "10.1.2.3:4000", "", "alice", "grafana_user"},
+		{"trusted single address", "10.0.0.0/8, 192.0.2.1", "192.0.2.1:4000", "", "alice", "grafana_user"},
+		{"untrusted peer", "10.0.0.0/8", "192.0.2.9:4000", "", "team-a", "tenant"},
+		{"spoofed X-Forwarded-For", "10.0.0.0/8", "192.0.2.9:4000", "10.1.2.3", "team-a", "tenant"},
+		{"IPv4-mapped peer", "10.0.0.0/8", "[::ffff:10.1.2.3]:4000", "", "alice", "grafana_user"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, buf := slowLogProxy(t, 40*time.Millisecond)
+			var err error
+			if p.logUser, err = parseLogUserHeader("x-grafana-user", tc.cidrs); err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query="+url.QueryEscape(`count_over_time({app="api"}[1m])`), nil)
+			req.RemoteAddr = tc.peer
+			req.Header.Set("X-Scope-OrgID", "team-a")
+			req.Header.Set("X-Grafana-User", "alice")
+			if tc.forwardedFor != "" {
+				req.Header.Set("X-Forwarded-For", tc.forwardedFor)
+			}
+			p.requestLogger("query_range", "/loki/api/v1/query_range", callerLogHandler(p)).ServeHTTP(httptest.NewRecorder(), req)
+			for msg, ls := range callerLines(t, buf) {
+				if l := ls[0]; l["enduser.id"] != tc.wantUser || l["enduser.source"] != tc.wantSource {
+					t.Fatalf("%s: %v / %v, want %s / %s", msg, l["enduser.id"], l["enduser.source"], tc.wantUser, tc.wantSource)
+				}
+			}
+			if tc.wantUser != "alice" && strings.Contains(buf.String(), "alice") {
+				t.Fatalf("an untrusted user header reached the log\n%s", buf)
+			}
+		})
+	}
+	for _, tc := range []struct{ header, cidrs, source string }{
+		{"X-Grafana-User", "", "grafana_user"},
+		{"x-forwarded-user", "", "forwarded_user"},
+		{"X-Email", "10.0.0.0/8", "user_header"},
+	} {
+		if h, err := parseLogUserHeader(tc.header, tc.cidrs); err != nil || h.source != tc.source {
+			t.Fatalf("parseLogUserHeader(%q, %q) = %+v, %v", tc.header, tc.cidrs, h, err)
+		}
+	}
+	for _, tc := range []struct{ header, cidrs string }{
+		{"", "10.0.0.0/8"},
+		{"X-Grafana-User", "10.0.0.0/33"},
+		{"X-Grafana-User", "grafana.internal"},
+	} {
+		if _, err := parseLogUserHeader(tc.header, tc.cidrs); err == nil {
+			t.Fatalf("parseLogUserHeader(%q, %q) accepted", tc.header, tc.cidrs)
+		}
+	}
+	if _, err := New(Config{BackendURL: "http://unused", LogUserHeaderTrustedCIDRs: "10.0.0.0/8"}); err == nil {
+		t.Fatal("New accepted trusted CIDRs without -log-user-header")
+	}
+}
+
+// The user -log-user-header names reaches the logs only: two users asking the same question share one cache
+// entry and one VictoriaLogs request, the header is not sent to VictoriaLogs, and no metric names a user even
+// with -metrics.export-sensitive-labels.
+//
+// conformance: observability-slow-query-log
+func TestLogUserHeaderNeverSplitsTheCacheReachesVictoriaLogsOrLabelsAMetric(t *testing.T) {
+	var calls atomic.Int32
+	var forwarded atomic.Value
+	forwarded.Store("")
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if v := r.Header.Get("X-Grafana-User"); v != "" {
+			forwarded.Store(v)
+		}
+		_, _ = io.WriteString(w, `{"values":[{"value":"app","hits":1}]}`)
+	}))
+	defer backend.Close()
+	p, err := New(Config{
+		BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error",
+		TenantMap:                    map[string]TenantMapping{"team-a": {AccountID: "10", ProjectID: "0"}},
+		LogUserHeader:                "X-Grafana-User",
+		MetricsExportSensitiveLabels: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	var buf bytes.Buffer
+	p.log = slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	a := doCompatProxyRequest(p, "/loki/api/v1/labels", map[string]string{"X-Scope-OrgID": "team-a", "X-Grafana-User": "alice"})
+	b := doCompatProxyRequest(p, "/loki/api/v1/labels", map[string]string{"X-Scope-OrgID": "team-a", "X-Grafana-User": "bob"})
+	if a.Code != 200 || b.Code != 200 || a.Body.String() != b.Body.String() {
+		t.Fatalf("answers %d %s / %d %s", a.Code, a.Body, b.Code, b.Body)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("VictoriaLogs calls: %d, want 1 (the second user is served from the cache)", n)
+	}
+	if v := forwarded.Load().(string); v != "" {
+		t.Fatalf("X-Grafana-User reached VictoriaLogs: %q", v)
+	}
+	var users []string
+	for _, l := range slowLogLines(t, &buf, "request") {
+		users = append(users, fmt.Sprint(l["enduser.id"], "/", l["enduser.source"]))
+	}
+	if strings.Join(users, ",") != "alice/grafana_user,bob/grafana_user" {
+		t.Fatalf("request lines name %v", users)
+	}
+	body := metricsBody(p)
+	if !strings.Contains(body, `tenant="team-a"`) {
+		t.Fatalf("sensitive labels are not exported; the check below proves nothing\n%s", body)
+	}
+	if strings.Contains(body, "alice") || strings.Contains(body, "bob") {
+		t.Fatalf("a user reached a metric label")
 	}
 }
