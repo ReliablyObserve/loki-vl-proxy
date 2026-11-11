@@ -354,7 +354,7 @@ func FuzzProxyEvaluatedLowering(f *testing.F) {
 				continue
 			}
 			// A root the proxy evaluates is held to its route, which strips the parentheses that wrap the whole query.
-			if translatorMisreadsQuotedText(q) {
+			if translatorMisreadsQuotedText(q) || translatorReadsStageMarker(q) {
 				continue
 			}
 			if msg := checkProxyEvaluated(q, prof, got); msg != "" {

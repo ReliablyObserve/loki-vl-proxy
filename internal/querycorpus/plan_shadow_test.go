@@ -140,6 +140,9 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			if !ok && !routed && translatorMisreadsParenthesizedMetric(q) {
 				caseID, ok = "semantics/translator-reads-parenthesized-metric-as-text", true
 			}
+			if !ok && translatorReadsStageMarker(q) {
+				caseID, ok = "semantics/translator-reads-marker-bytes-in-quoted-value", true
+			}
 			if ok {
 				// The translator is the wrong one here (knownTypedDivergencesPath, with its registry case):
 				// not a mismatch of the lowering, and not native until the plan serves it.
