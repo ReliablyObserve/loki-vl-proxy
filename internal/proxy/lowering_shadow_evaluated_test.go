@@ -53,13 +53,31 @@ func evaluatedShadowBackend(t *testing.T) (*httptest.Server, func() []string) {
 	}
 }
 
+// evaluatedShadowProfiles are the label settings the handler tests run under: the Loki-compatible profile (the one
+// that reads the tenant's stream label names), underscores alone, and passthrough.
+var evaluatedShadowProfiles = []struct {
+	name  string
+	style LabelStyle
+	mode  MetadataFieldMode
+}{
+	{"loki", LabelStyleUnderscores, MetadataFieldModeTranslated},
+	{"underscores", LabelStyleUnderscores, ""},
+	{"passthrough", LabelStylePassthrough, ""},
+}
+
 func newEvaluatedShadowProxy(t *testing.T, sample float64, backend string, style LabelStyle) *Proxy {
+	t.Helper()
+	return newEvaluatedShadowProxyMode(t, sample, backend, style, "")
+}
+
+func newEvaluatedShadowProxyMode(t *testing.T, sample float64, backend string, style LabelStyle, mode MetadataFieldMode) *Proxy {
 	t.Helper()
 	p, err := New(Config{
 		BackendURL:               backend,
 		Cache:                    cache.New(60*time.Second, 1000),
 		LogLevel:                 "error",
 		LabelStyle:               style,
+		MetadataFieldMode:        mode,
 		TranslateShadowSample:    sample,
 		DisableQueryPlanLowering: true,
 	})
@@ -111,11 +129,14 @@ var evaluatedShadowQueries = []struct{ query, want string }{
 // Both post-aggregation handlers hand the whole query to the live shadow, which holds the lowering to the route.
 // conformance: architecture-syntax-package-layering
 func TestLoweringShadow_ProxyEvaluatedRootsAreHeldToTheRoute(t *testing.T) {
-	for _, style := range []LabelStyle{LabelStyleUnderscores, LabelStylePassthrough} {
+	for _, prof := range evaluatedShadowProfiles {
 		for _, ranged := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/range=%t", style, ranged), func(t *testing.T) {
+			t.Run(fmt.Sprintf("%s/range=%t", prof.name, ranged), func(t *testing.T) {
 				srv, _ := evaluatedShadowBackend(t)
-				p := newEvaluatedShadowProxy(t, 1, srv.URL, style)
+				p := newEvaluatedShadowProxyMode(t, 1, srv.URL, prof.style, prof.mode)
+				if prof.name == "loki" && !p.lokiCompatibleProfile() {
+					t.Fatal("the loki settings are not the Loki-compatible profile")
+				}
 				for _, tc := range evaluatedShadowQueries {
 					before := shadowCounts(t, p)
 					evaluatedShadowRequest(t, p, tc.query, ranged)
@@ -205,10 +226,11 @@ func TestLoweringShadow_ProxyEvaluatedSkipAllocatesNothing(t *testing.T) {
 // Answers and VictoriaLogs requests are the same with the shadow on and off, on every proxy-evaluated route.
 // conformance: architecture-syntax-package-layering
 func TestLoweringShadow_ProxyEvaluatedChangesNoAnswer(t *testing.T) {
-	for _, style := range []LabelStyle{LabelStyleUnderscores, LabelStylePassthrough} {
+	for _, prof := range evaluatedShadowProfiles {
+		style := prof.name
 		run := func(sample float64) ([]string, []string, map[string]int) {
 			srv, reqs := evaluatedShadowBackend(t)
-			p := newEvaluatedShadowProxy(t, sample, srv.URL, style)
+			p := newEvaluatedShadowProxyMode(t, sample, srv.URL, prof.style, prof.mode)
 			var bodies []string
 			for pass := 0; pass < 2; pass++ { // the second pass is served from the caches
 				for _, tc := range evaluatedShadowQueries {
@@ -337,5 +359,60 @@ func TestLoweringShadow_ProxyEvaluatedPanicIsRecovered(t *testing.T) {
 	}
 	if got := shadowCounts(t, p); got["panic Rank"] != 1 {
 		t.Fatalf("%v", got)
+	}
+}
+
+// The comparison reads the tenant's stream label names as last known: it starts no refresh (a request to
+// VictoriaLogs) and records nothing, even when the names are due for one, and the profile of the whole query gets
+// the names the operand's translation reads (here a parsed name that is also a stream label).
+// conformance: architecture-syntax-package-layering
+func TestLoweringShadow_ProxyEvaluatedReadsStreamLabelsWithoutRefresh(t *testing.T) {
+	p := newEvaluatedShadowProxyMode(t, 1, "http://unused", LabelStyleUnderscores, MetadataFieldModeTranslated)
+	t.Cleanup(p.stopStreamLabelNames)
+	if !p.lokiCompatibleProfile() {
+		t.Fatal("not the Loki-compatible profile")
+	}
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query", nil)
+	req.Header.Set("X-Scope-OrgID", "t1")
+	req = p.withRequestScope(req)
+	ctx := context.WithValue(req.Context(), origRequestKey, req)
+	st := &p.streamLabelNames
+	st.mu.Lock()
+	st.byKey = map[string]*streamLabelNamesEntry{"slnames:" + getOrgID(ctx): {names: []string{"route"}}} // never fresh: due
+	st.mu.Unlock()
+	q := `stddev by (route) (count_over_time({app="a"} | logfmt [5m]))`
+	postAgg, ok := parseInstantMetricPostAggQuery(q)
+	if !ok {
+		t.Fatal("not routed")
+	}
+	text, rewritten := postAggTranslatedText(postAgg)
+	if !rewritten {
+		t.Fatal("the route does not rewrite a stddev by a parsed label")
+	}
+	got := p.plainStreamLabelNamesFrom(ctx, text, p.knownTenantStreamLabelNames)
+	st.mu.Lock()
+	refreshes := st.refreshes
+	st.mu.Unlock()
+	if strings.Join(got, ",") != "route" || refreshes != 0 {
+		t.Fatalf("names %v, refreshes %d: want [route] and none", got, refreshes)
+	}
+	prof := p.evaluatedShadowProfile(evaluatedShadowInput{ctx: ctx, query: q, postAgg: postAgg})
+	// The label function carries the names it reads as stream labels behind a probe name (translator.WithStreamLabels).
+	if probe := "\x03"; prof.Label(probe) != probe+"=route" {
+		t.Fatalf("the profile does not carry route as a stream label: %q", prof.Label(probe))
+	}
+	st.mu.Lock()
+	refreshes = st.refreshes
+	st.mu.Unlock()
+	if refreshes != 0 {
+		t.Fatalf("the shadow started %d refreshes", refreshes)
+	}
+	// The translation's own reader does start one: the entry is due.
+	p.tenantStreamLabelNames(ctx)
+	st.mu.Lock()
+	refreshes = st.refreshes
+	st.mu.Unlock()
+	if refreshes != 1 {
+		t.Fatalf("the translation's reader started %d refreshes, want 1 (the entry is due)", refreshes)
 	}
 }

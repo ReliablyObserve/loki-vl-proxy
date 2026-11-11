@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -131,6 +132,35 @@ func (p *Proxy) runProxyEvaluatedShadow(s *loweringShadow, in evaluatedShadowInp
 		run.result(shadowNativeProxyEvaluated)
 	default:
 		run.result(shadowMismatch)
-		p.logLoweringShadowMismatch(s, shadowInput{query: in.query, legacy: operand}, run.construct, lowered)
+		if s.logAllowed(&s.lastLog) {
+			// The levels are the operation, k and the kind and size of the clause of each level: no name from the query.
+			p.log.Warn("lowering shadow: the lowering differs from the proxy's route",
+				"construct", shadowConstruct(run.construct),
+				"logql", redactQuery(in.query, p.debugLogRawQueries),
+				"route_levels", fmt.Sprint(levelsText(wantLevels)),
+				"lowering_levels", fmt.Sprint(levelsText(gotLevels)),
+				"route_operand", redactQuery(operand, p.debugLogRawQueries),
+				"lowering_operand", redactQuery(physical.Encode(gotOperand), p.debugLogRawQueries))
+		}
 	}
+}
+
+// levelsText writes the levels of an evaluation for a log line: operation, k, and the kind and number of labels of
+// the clause.
+func levelsText(levels []physical.Level) []string {
+	out := make([]string, len(levels))
+	for i, l := range levels {
+		out[i] = l.Op
+		if l.K != 0 {
+			out[i] += fmt.Sprintf("(%d)", l.K)
+		}
+		if l.By != nil {
+			kind := "by"
+			if l.By.Without {
+				kind = "without"
+			}
+			out[i] += fmt.Sprintf(" %s(%d)", kind, len(l.By.Labels))
+		}
+	}
+	return out
 }
