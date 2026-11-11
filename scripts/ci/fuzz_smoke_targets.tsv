@@ -126,6 +126,7 @@ smoke	internal/proxy	FuzzPatchStatsTail	12s	-	query stats envelope end over any 
 smoke	internal/proxy	FuzzPatchStatsTailAnyBytes	12s	-	query stats writer on any bytes
 smoke	internal/proxy	FuzzEntryCounter	12s	-	query stats entry count over split writes
 smoke	internal/proxy	FuzzEntryCounterLineBytes	12s	-	query stats line bytes over split writes
+smoke	internal/proxy	FuzzLokiRunLinesEstimate	12s	-	query stats limit-filled log lines estimate bounds
 smoke	internal/logql	FuzzMayHaveNonFilterStage	12s	-	the stage screen the lowering flip asks never misses a parser stage and never panics
 smoke	internal/queryplan/lower	FuzzParserLowering	12s	-	json, logfmt, drop and keep lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzLabelFilterAfterParserLowering	12s	-	label filters after a json or logfmt parser lower to the query the string translator writes, byte for byte

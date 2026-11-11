@@ -346,16 +346,12 @@ func getE2EStats(t *testing.T, base, path string, params url.Values, extra map[s
 	return st
 }
 
-// Tolerances of the proxy's Loki-style figures against Loki's own for the
-// same request on the same data (the query-stats-loki-emulation decision):
-// lines within 10% (Loki and the proxy read the window a moment apart, and a
-// log answer that fills its limit is estimated from its entries); bytes
-// within 25% (estimated as lines times the mean line size, without Loki's
-// structured-metadata bytes). Splits and shards are equal.
-const (
-	statsLinesTolerance = 0.10
-	statsBytesTolerance = 0.25
-)
+// statsBytesTolerance: the proxy's bytes processed are its lines times the
+// mean line size, without Loki's structured-metadata bytes, so they are
+// within 25% of Loki's (the query-stats-loki-emulation decision). Lines of an
+// answer Loki and the proxy both read whole are equal; splits and shards are
+// equal.
+const statsBytesTolerance = 0.25
 
 func near(got, want int64, tol float64) bool {
 	if want == 0 {
@@ -369,15 +365,19 @@ func near(got, want int64, tol float64) bool {
 // answers over 5m and 1h, the proxy's data.stats has exactly the shape Loki
 // answers (every section, key, key order and value type) and, in the
 // default -query-stats-mode=loki, Loki's figures: splits and shards equal to
-// Loki's; lines and bytes processed within the documented tolerances of
-// Loki's (bytes of a metric query estimated from the mean line size of the
-// selector's log answer, which this test asks first); a refresh of a log or
-// instant answer served from the proxy's cache reports the computation again
-// (Loki computes those again); a metric query_range repeat is a
-// results-cache hit like Loki's (no processing, Loki's splits, the window
-// served); volume answers process nothing; every request reports its own
-// execTime and a computed answer its time in VictoriaLogs as
-// querier.querierExecTime.
+// Loki's; lines processed equal to Loki's for an answer under its limit
+// (metric and instant answers read the whole window); for a log answer that
+// fills its limit, lines between the entries returned and the window's lines
+// (Loki's figure depends on its chunk layout, the proxy reports the pieces it
+// read: the query-stats-limit-filled-log-lines decision); bytes within the
+// documented tolerance of Loki's; a refresh of a log or instant answer served
+// from the proxy's cache reports the computation again (Loki computes those
+// again); a metric query_range repeat is a results-cache hit like Loki's (no
+// processing, Loki's splits, the window served); volume answers process
+// nothing; every request reports its own execTime and a computed answer its
+// time in VictoriaLogs as querier.querierExecTime. On the proxy started with
+// -query-stats-exact-log-lines, a limit-filled log answer reports
+// VictoriaLogs' count of the selector over the pieces it read.
 //
 // conformance: drilldown/logs-footer-query-stats, query-stats-envelope
 func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
@@ -395,14 +395,21 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 			return v
 		}
 		sel := `{app="api-gateway"} != "` + nonce + rng.String() + `"`
+		// windowLines is Loki's count of the selector's lines over the window.
+		windowLines := lokiWindowLines(t, `sum(count_over_time(`+sel+` [`+logqlRange+`]))`, end)
 		likeLoki := func(t *testing.T, loki, miss e2eStats) {
 			if miss.Summary.Splits != loki.Summary.Splits || miss.Summary.Shards != loki.Summary.Shards {
 				t.Errorf("splits/shards %d/%d, Loki %d/%d", miss.Summary.Splits, miss.Summary.Shards, loki.Summary.Splits, loki.Summary.Shards)
 			}
-			if !near(miss.Summary.Lines, loki.Summary.Lines, statsLinesTolerance) || !near(miss.Summary.PostFilter, loki.Summary.PostFilter, statsLinesTolerance) {
-				t.Errorf("lines %d post-filter %d, Loki %d %d (tolerance %.0f%%)", miss.Summary.Lines, miss.Summary.PostFilter, loki.Summary.Lines, loki.Summary.PostFilter, statsLinesTolerance*100)
+			if limitFilled := miss.Summary.Entries >= 1000 && loki.Summary.Entries >= 1000; limitFilled {
+				if miss.Summary.Lines < miss.Summary.Entries || miss.Summary.Lines > windowLines || miss.Summary.PostFilter > miss.Summary.Lines {
+					t.Errorf("limit filled: lines %d post-filter %d, want entries %d <= post-filter <= lines <= window lines %d (Loki %d)",
+						miss.Summary.Lines, miss.Summary.PostFilter, miss.Summary.Entries, windowLines, loki.Summary.Lines)
+				}
+			} else if miss.Summary.Lines != loki.Summary.Lines || miss.Summary.PostFilter != loki.Summary.PostFilter {
+				t.Errorf("lines %d post-filter %d, Loki %d %d", miss.Summary.Lines, miss.Summary.PostFilter, loki.Summary.Lines, loki.Summary.PostFilter)
 			}
-			if !near(miss.Summary.Bytes, loki.Summary.Bytes, statsBytesTolerance) {
+			if !near(miss.Summary.Bytes, loki.Summary.Bytes, statsBytesTolerance) && miss.Summary.Entries < 1000 {
 				t.Errorf("bytes %d, Loki %d (tolerance %.0f%%)", miss.Summary.Bytes, loki.Summary.Bytes, statsBytesTolerance*100)
 			}
 		}
@@ -455,5 +462,101 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 				t.Logf("loki %+v | proxy %+v | refresh %+v", loki.Summary, miss.Summary, again.Summary)
 			})
 		}
+		t.Run(rng.String()+"/log-exact-lines", func(t *testing.T) {
+			// The proxy behind vmauth runs -query-stats-exact-log-lines.
+			params := win(sel+` != "exact-`+nonce+`"`, "limit", "1000", "direction", "backward")
+			miss := getE2EStats(t, proxyVmauthURL, "/loki/api/v1/query_range", params, nil)
+			oldest := oldestEntryNs(t, proxyVmauthURL, params)
+			if miss.Summary.Entries < 1000 || oldest == 0 {
+				t.Fatalf("entries %d (oldest %d): this row needs an answer that fills its limit", miss.Summary.Entries, oldest)
+			}
+			// Backward, Loki reads its one-hour pieces newest first and stops
+			// after the piece that holds the oldest entry returned.
+			from := oldest / int64(time.Hour) * int64(time.Hour)
+			if from < start.UnixNano() {
+				from = start.UnixNano()
+			}
+			want := vlSelectorLines(t, `app:="api-gateway"`, from, end.UnixNano())
+			// The line filter keeps every line, but the proxy counts the
+			// selector, so post-filter lines stay an estimate under the count.
+			if miss.Summary.Lines != want || miss.Summary.PostFilter < miss.Summary.Entries || miss.Summary.PostFilter > want {
+				t.Errorf("lines %d post-filter %d, want VictoriaLogs' count of the pieces read %d (post-filter between the %d entries and it)",
+					miss.Summary.Lines, miss.Summary.PostFilter, want, miss.Summary.Entries)
+			}
+			t.Logf("exact lines %d over [%d, %d] (window lines %d)", miss.Summary.Lines, from, end.UnixNano(), windowLines)
+		})
 	}
+}
+
+// lokiWindowLines is the value of Loki's instant answer to a count query at t.
+func lokiWindowLines(t *testing.T, query string, at time.Time) int64 {
+	t.Helper()
+	status, raw, _ := doJSONGET(t, lokiURL+"/loki/api/v1/query?"+url.Values{"query": {query}, "time": {fmt.Sprint(at.Unix())}}.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+	var a struct {
+		Data struct {
+			Result []struct {
+				Value [2]json.RawMessage `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if status != http.StatusOK || json.Unmarshal([]byte(raw), &a) != nil || len(a.Data.Result) != 1 {
+		t.Fatalf("Loki window count: %d %.300s", status, raw)
+	}
+	var v string
+	if err := json.Unmarshal(a.Data.Result[0].Value[1], &v); err != nil {
+		t.Fatal(err)
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// oldestEntryNs is the oldest entry's timestamp in a log answer.
+func oldestEntryNs(t *testing.T, base string, params url.Values) int64 {
+	t.Helper()
+	status, raw, _ := doJSONGET(t, base+"/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+	var a struct {
+		Data struct {
+			Result []struct {
+				Values [][2]string `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if status != http.StatusOK || json.Unmarshal([]byte(raw), &a) != nil {
+		t.Fatalf("log answer: %d %.300s", status, raw)
+	}
+	var oldest int64
+	for _, s := range a.Data.Result {
+		for _, v := range s.Values {
+			if ts, err := strconv.ParseInt(v[0], 10, 64); err == nil && (oldest == 0 || ts < oldest) {
+				oldest = ts
+			}
+		}
+	}
+	return oldest
+}
+
+// vlSelectorLines is VictoriaLogs' count of a filter's rows over [from, to],
+// with the time bounds the proxy sends.
+func vlSelectorLines(t *testing.T, filter string, from, to int64) int64 {
+	t.Helper()
+	form := url.Values{"query": {filter + " | stats count() as c"}, "start": {strconv.FormatInt(from, 10)}, "end": {strconv.FormatInt(to, 10)}}
+	resp, err := http.PostForm(vlURL+"/select/logsql/query", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var row struct {
+		C string `json:"c"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&row); err != nil {
+		t.Fatal(err)
+	}
+	n, err := strconv.ParseInt(row.C, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }

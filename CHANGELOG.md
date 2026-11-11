@@ -23,9 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     piece in which its limit was filled, `volume_range` counts its step
     buckets);
   - a log query reports the lines of the pieces Loki reads (from the panel's
-    count answer, else estimated from its entries) and their bytes as lines
-    times its returned lines' mean size, no longer the rows read and
-    VictoriaLogs' NDJSON size, which stayed the same on every refresh;
+    count answer, else estimated from its entries and capped at the entries
+    times the pieces read) and their bytes as lines times its returned
+    lines' mean size, no longer the rows read and VictoriaLogs' NDJSON size,
+    which stayed the same on every refresh; the new opt-in
+    `-query-stats-exact-log-lines` counts the pieces read with one
+    VictoriaLogs count per log query miss that fills its limit;
   - a metric query's lines come from its own counts (`rate` too, sliding
     windows estimated) and its bytes are estimated from the selector's mean
     line size, or read exactly from VictoriaLogs with the new opt-in

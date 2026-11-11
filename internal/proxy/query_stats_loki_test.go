@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -621,5 +622,70 @@ func TestLokiStats_ExactLogLinesOnlyWhenTheAnswerCannotTell(t *testing.T) {
 	_ = serveQueryStats(t, exact, "/loki/api/v1/query_range", multi, map[string]string{"X-Scope-OrgID": "a|b"})
 	if countsNow() != before+1 {
 		t.Fatalf("multi-tenant: %d more count requests, want none", countsNow()-before-1)
+	}
+}
+
+// BenchmarkLokiRunLinesEstimate times the default estimate of a limit-filled
+// log answer's lines: the pieces read and the capped density.
+func BenchmarkLokiRunLinesEstimate(b *testing.B) {
+	h := lokiSplitInterval
+	base := int64(1_800_000_000) * int64(time.Second) / h * h
+	start, end := base-5*h+7*int64(time.Minute), base+20*int64(time.Minute)
+	tMin, tMax := base-30*int64(time.Minute), end
+	b.ReportAllocs()
+	var sink int64
+	for i := 0; i < b.N; i++ {
+		run := lokiLogQueryRun(start, end, 1000, i&1 == 0, 1000, tMin, tMax, true)
+		sink += lokiRunLinesEstimate(1000, 1000, i&1 == 0, start, end, tMin, tMax, true, run)
+	}
+	if sink == 0 {
+		b.Fatal("no estimate")
+	}
+}
+
+// BenchmarkExactLogLinesMiss times a limit-filled log query cache miss
+// through the route chain with -query-stats-exact-log-lines off and on (on:
+// one more VictoriaLogs count request, answered by the stub).
+func BenchmarkExactLogLinesMiss(b *testing.B) {
+	stub := &statsStubVL{rows: 1000}
+	var counts atomic.Int64
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.URL.Path == "/select/logsql/query" && strings.Contains(r.Form.Get("query"), "count(") {
+			counts.Add(1)
+			_, _ = w.Write([]byte(`{"c":"4321"}` + "\n"))
+			return
+		}
+		stub.ServeHTTP(w, r)
+	}))
+	b.Cleanup(vl.Close)
+	// The stub's rows are a minute old; each window ends a moment later.
+	now := time.Now()
+	for _, exact := range []bool{false, true} {
+		b.Run(fmt.Sprintf("exact=%v", exact), func(b *testing.B) {
+			p, err := New(Config{BackendURL: vl.URL, Cache: cache.New(time.Hour, 100000), CompatCache: cache.New(time.Hour, 100000),
+				LogLevel: "error", QueryStatsExactLogLines: exact})
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+			mux := http.NewServeMux()
+			p.RegisterRoutes(mux)
+			counts.Store(0)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				e := now.Add(time.Duration(i) * time.Microsecond)
+				req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+url.Values{"query": {`{app="api"}`}, "limit": {"1000"},
+					"start": {fmt.Sprint(e.Add(-time.Hour).UnixNano())}, "end": {fmt.Sprint(e.UnixNano())}}.Encode(), nil)
+				req.Header.Set("X-Scope-OrgID", "0")
+				rec := &benchAnswerWriter{h: http.Header{}, code: http.StatusOK}
+				mux.ServeHTTP(rec, req)
+				if rec.code != http.StatusOK {
+					b.Fatalf("status %d", rec.code)
+				}
+			}
+			b.ReportMetric(float64(counts.Load())/float64(b.N), "counts/op")
+		})
 	}
 }
