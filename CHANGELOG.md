@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `VectorAgg stddev` and `VectorAgg stdvar`. No answer, cache or request to
   VictoriaLogs changes, and a request the sample skips costs no allocation.
 
+## [2.140.0] - 2026-11-11
+
 ### Fixed
 
 - A log query that filters on a label called `not`, `in`, `options`, `contains_all`,
