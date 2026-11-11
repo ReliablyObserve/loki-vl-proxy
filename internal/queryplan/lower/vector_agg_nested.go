@@ -32,6 +32,16 @@ import (
 //     (VectorAgg without empty);
 //   - everything the innermost level leaves to the translator when it stands alone keeps its name.
 func nestedVectorAgg(top *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
+	b, err := buildNestedVector(top, prof)
+	if err != nil {
+		return nil, err
+	}
+	return b.op(string(top.Op), prof), nil
+}
+
+// buildNestedVector is nestedVectorAgg up to its stats: the innermost level's build, with one stats pipe appended for
+// each level above it (none under a without fold at the innermost level, which the proxy folds).
+func buildNestedVector(top *queryplan.VectorAgg, prof Profile) (builtVector, error) {
 	var levels []*queryplan.VectorAgg // outermost first
 	var node queryplan.Node = top
 	for {
@@ -42,38 +52,35 @@ func nestedVectorAgg(top *queryplan.VectorAgg, prof Profile) (physical.Op, error
 		switch va.Op {
 		case logql.VectorSum, logql.VectorCount, logql.VectorMin, logql.VectorMax, logql.VectorAvg:
 		default:
-			return nil, &NotLoweredError{Construct: "VectorAgg operand"}
+			return builtVector{}, &NotLoweredError{Construct: "VectorAgg operand"}
 		}
 		// The translator reads a without clause by a regexp that needs a label, and strips it from the text.
 		if g := va.By; g != nil && g.Without && len(g.Labels) == 0 {
-			return nil, &NotLoweredError{Construct: "VectorAgg without empty"}
+			return builtVector{}, &NotLoweredError{Construct: "VectorAgg without empty"}
 		}
 		levels = append(levels, va)
 		node = va.In
 	}
 	ra, ok := node.(*queryplan.RangeAgg)
 	if !ok {
-		return nil, &NotLoweredError{Construct: "VectorAgg operand"}
+		return builtVector{}, &NotLoweredError{Construct: "VectorAgg operand"}
 	}
 	src := ra.In
 	if unwrapStage(ra.In) != nil {
 		if ra.Op != logql.RangeAbsentOverTime {
-			return nil, &NotLoweredError{Construct: "VectorAgg nested unwrap"}
+			return builtVector{}, &NotLoweredError{Construct: "VectorAgg nested unwrap"}
 		}
 		// absent_over_time reads no unwrapped value: the aggregation is the same over the query without the stage.
 		stripped, err := withoutUnwrap(ra, "VectorAgg")
 		if err != nil {
-			return nil, err
+			return builtVector{}, err
 		}
 		ra = stripped
 	}
 	innermost := levels[len(levels)-1]
 	b, err := buildVectorAgg(innermost, ra, src, prof)
-	if err != nil {
-		return nil, err
-	}
-	if b.without {
-		return b.op(string(top.Op), prof), nil
+	if err != nil || b.without {
+		return b, err
 	}
 	var kept []string
 	if g := innermost.By; g != nil {
@@ -93,7 +100,7 @@ func nestedVectorAgg(top *queryplan.VectorAgg, prof Profile) (physical.Op, error
 		stats = append(nameLastValue(stats), statsPipe(translate.NormalizeByLabels(kept, prof.Label), levelFunc(lv.Op), ""))
 	}
 	b.stats = stats
-	return b.op(string(top.Op), prof), nil
+	return b, nil
 }
 
 // innerValue is the name the stats of one level give their value for the stats of the level above.

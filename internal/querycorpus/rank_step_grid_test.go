@@ -307,7 +307,8 @@ func TestEvaluatedOperandSpanIsTheProxysOperand(t *testing.T) {
 }
 
 // FuzzProxyEvaluatedLowering holds the lowering of rankings, stddev and stdvar to the proxy's route on any selector
-// value, line filter, label name, ranking name, k, function, operand kind, nesting, clause and blank placement: the
+// value, line filter, label name, ranking name, k, function, operand kind (parsers among them: json, logfmt, regexp,
+// pattern, whose labels a stddev or stdvar by a label reads), nesting, clause and blank placement: the
 // lowering either leaves the query to the string translator, or answers the operators the route builds and the
 // operand's request byte for byte, and only for a query the proxy routes as one evaluation (a level the proxy sends
 // as the translator's text is the plan's chain, recorded as a known divergence). The text a metric query's scans read as
@@ -321,6 +322,14 @@ func FuzzProxyEvaluatedLowering(f *testing.F) {
 	f.Add("app", "without (x)", "pod", uint8(3), uint8(81), uint8(2), uint8(133), uint8(77))
 	f.Add("app", "| json", "route", uint8(1), uint8(16), uint8(4), uint8(0), uint8(0x4a))
 	f.Add("app", "x", "pod", uint8(3), uint8(0), uint8(0), uint8(2), uint8(0xcd))
+	// a stddev or stdvar by a parsed label: json, logfmt with a filter, regexp, pattern, a rate, a nest
+	f.Add("app", "x", "route", uint8(3), uint8(0x30), uint8(0), uint8(0), uint8(0x52))
+	f.Add("app", "x", "route", uint8(0), uint8(0x40), uint8(0), uint8(0), uint8(0x52))
+	f.Add("app", "x", "route", uint8(0), uint8(0x80), uint8(0), uint8(0), uint8(0x52))
+	f.Add("app", "x", "route", uint8(4), uint8(0x90), uint8(0), uint8(0), uint8(0x5a))
+	f.Add("app", "x", "route", uint8(3), uint8(0xb0), uint8(0), uint8(0), uint8(0x72))
+	f.Add("app", "x", "route", uint8(3), uint8(0x30), uint8(0), uint8(0), uint8(0x50))
+	f.Add("app", "x", "route", uint8(0), uint8(0x80), uint8(0), uint8(0), uint8(0x50))
 	f.Fuzz(func(t *testing.T, sel, line, name string, fn, shape, rng, rank, operandKind uint8) {
 		for _, s := range []*string{&sel, &line, &name} {
 			if len(*s) > 64 {
@@ -385,7 +394,10 @@ func rankFuzzQuery(sel, line, name string, fn, shape, rng, rank, operandKind uin
 	stage := []string{
 		``, ` |= ` + quote(line), ` != ` + quote(line), ` | json`, ` | logfmt | ` + ident(name) + `=` + quote(line),
 		` | json | unwrap ` + ident(name), ` | unwrap ` + ident(name), ` | json | ` + ident(name) + ` >= 5`,
-	}[shape>>4%8]
+		// parsers whose labels a stddev or stdvar by a label reads (the route's rewrite of the operand)
+		` | regexp "(?P<` + ident(name) + `>[a-z]+) "`, ` | pattern "<` + ident(name) + `> <_>"`, ` | json | drop pod`,
+		` | logfmt ` + ident(name) + `, code | ` + ident(name) + `!=""`,
+	}[shape>>4%12]
 	function := []string{"count_over_time", "bytes_over_time", "absent_over_time", "rate", "bytes_rate", "sum_over_time", "last_over_time", "avg_over_time"}[fn%8]
 	span := []string{`[5m]`, `[1ms]`, `[1d]`, `[1h30m]`, `[5m] offset 1h`, `[0s]`}[rng%6]
 	pad := []string{"", " ", "\t", "\n"}

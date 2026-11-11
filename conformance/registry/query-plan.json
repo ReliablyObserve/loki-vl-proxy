@@ -1,7 +1,7 @@
 {
   "description": "Ratchets of the query plan (internal/queryplan), one section per gate; a count may only fall, and LVP_QUERY_PLAN_UPDATE=1 rewrites the section of the test that ran. `logical` is the logical plan built from every query of the plan corpus (the curated sources and the capture sample): how many rows parse and build (all of them), and the spots the plan still holds as text, per construct (typing them lowers the count). `logical_key_sound` is, per profile, how the logical keys group the corpus and what the string translator wrote for the queries of a group: no group may differ in structure. `predicate_parity` is, per attribute of the resolver (queryplan.Resolve), the text predicate it replaces and every corpus row where the two differ, each with its reason (internal/proxy TestPlanPredicateParity: an unexplained or stale row fails).",
   "logical": {
-    "rows": 2569,
+    "rows": 2570,
     "parsed": 2499,
     "built": 2499,
     "untyped_by_construct": {
@@ -176,7 +176,7 @@
       "Rank (route rule)": 1820,
       "Rank operand BinOp": 30,
       "Scalar": 20,
-      "VectorAgg (route rule)": 8940,
+      "VectorAgg (route rule)": 9680,
       "VectorAgg LogSelect json extraction": 20,
       "VectorAgg LogSelect label filter detected_level": 170,
       "VectorAgg grouping": 10,
@@ -184,7 +184,7 @@
       "VectorAgg operand": 220,
       "VectorAgg parser extracted label": 20,
       "VectorAgg parser label cost": 140,
-      "VectorAgg stddev parsed label": 750,
+      "VectorAgg stddev parsed label operand": 10,
       "VectorAgg without empty": 10,
       "VectorLit": 10
     },
@@ -238,8 +238,8 @@
   "shadow": {
     "rows": 23148,
     "profiles": 12,
-    "native": 19453,
-    "native_proxy_evaluated": 2520,
+    "native": 20119,
+    "native_proxy_evaluated": 3186,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp bool": 72,
@@ -281,7 +281,7 @@
       "VectorAgg operand spelling": 72,
       "VectorAgg parser extracted label": 18,
       "VectorAgg parser label cost": 119,
-      "VectorAgg stddev parsed label": 675,
+      "VectorAgg stddev parsed label operand": 9,
       "VectorAgg without empty": 9,
       "VectorLit": 9,
       "known divergence semantics/label-replace-around-ranking-and-vector": 18,
