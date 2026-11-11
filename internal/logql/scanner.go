@@ -552,7 +552,8 @@ func (s *scanner) scanRawString() Token {
 // called Rate or Count stays a label.
 func (s *scanner) readsAsKeyword(lower string) bool {
 	if lower == "ip" || lower == "label_replace" {
-		// Keywords only before a parenthesis (lex.go isFunction): a label called Ip or Label_replace keeps its case.
+		// Keywords only before a parenthesis (testdata/keyword-label-names-loki.jsonl): a label called Ip or
+		// Label_replace keeps its case.
 		i := skipSpace(s.src, s.pos)
 		return i < len(s.src) && s.src[i] == '('
 	}
