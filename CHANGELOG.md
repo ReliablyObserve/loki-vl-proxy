@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rate, and a name that differs from `_time`, `_stream` or `_stream_id` only by
   case stay with the string translator. Nothing is served from the plan for
   these queries yet: no request to VictoriaLogs and no answer changes.
+
+## [2.151.0] - 2026-11-11
+
+### Changed
+
 - The opt-in live shadow of the query plan (`-translate-shadow-sample`) now
   also covers the rankings, `stddev` and `stdvar` the proxy evaluates itself
   (and the `sum`, `avg`, `min`, `max` and `count` layers above a ranking), on
