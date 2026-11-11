@@ -1211,6 +1211,7 @@
       "test/e2e-compat/json_metric_step_wider_test.go"
     ],
     "semantics/keep-leaves-labels-loki-drops": [
+      "internal/logql/stage_raw_test.go",
       "internal/proxy/keep_extracted_collision_test.go",
       "internal/proxy/keep_series_grouping_test.go",
       "internal/translator/keep_grouping_test.go",
@@ -1940,6 +1941,9 @@
     ],
     "internal/logql/stage_parse_validate_loki_test.go": [
       "semantics/label-filter-regex-parse-error"
+    ],
+    "internal/logql/stage_raw_test.go": [
+      "semantics/keep-leaves-labels-loki-drops"
     ],
     "internal/logql/terminates_test.go": [
       "semantics/logql-unicode-runes"
@@ -4088,7 +4092,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 485,
+  "tests_with_markers": 486,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
