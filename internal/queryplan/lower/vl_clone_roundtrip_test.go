@@ -109,26 +109,47 @@ func vlCloneProfiles() []parserProfile {
 	return []parserProfile{all[0], all[2], all[7]}
 }
 
+// vlCloneE2EQueries are the queries of test/e2e-compat TestCompat_ReservedFieldLabelsLikeLoki (svc stands for the
+// run's service name): the texts the stack run sends are held to the clone before it runs.
+var vlCloneE2EQueries = []string{
+	`{service_name="svc"}`, `{service_name="svc", _time="st"}`, `{service_name="svc", _time!="st"}`,
+	`{service_name="svc", _time=~"1.*|7s"}`, `{service_name="svc", _time=""}`, `{service_name="svc"} | _time="10"`,
+	`{service_name="svc"} | _time!~"s.*"`, `{service_name="svc", _time=~"[0-9]+"} | _time > 5`,
+	`{service_name="svc", _time=~".*s"} | _time >= 5s`, `{service_name="svc"} | _stream_id="si"`,
+	`{service_name="svc", _stream_id!="si"}`, `{service_name="svc", _TIME="up"}`,
+	`{service_name="svc"} | _TIME=~"u.*" or _time="st"`, `{service_name="svc", _msg="m"}`, `{service_name="svc"} | _msg!="m"`,
+}
+
+// vlClonePlanQueries are the LogQL queries of the plan grid: every name in every position, the queries of the
+// Loki agreement grid (reservedFieldQueries) and of the e2e test.
+func vlClonePlanQueries() []string {
+	var qs []string
+	for _, n := range vlCloneNames() {
+		for _, pos := range vlClonePositions {
+			qs = append(qs, strings.ReplaceAll(pos, "W", n))
+		}
+	}
+	qs = append(qs, reservedFieldQueries...)
+	return append(qs, vlCloneE2EQueries...)
+}
+
 // vlClonePlanTexts are the texts the lowering sends to VictoriaLogs for every query of the plan grid.
 func vlClonePlanTexts() []string {
 	seen := map[string]bool{}
-	for _, n := range vlCloneNames() {
-		for _, pos := range vlClonePositions {
-			q := strings.ReplaceAll(pos, "W", n)
-			p := rangeAggPlan(q)
-			if p == nil {
+	for _, q := range vlClonePlanQueries() {
+		p := rangeAggPlan(q)
+		if p == nil {
+			continue
+		}
+		for _, prof := range vlCloneProfiles() {
+			op, err := PlanQuery(q, p, Profile{Caps: prof.caps, Label: prof.label, StreamFields: prof.stream})
+			if err != nil {
 				continue
 			}
-			for _, prof := range vlCloneProfiles() {
-				op, err := PlanQuery(q, p, Profile{Caps: prof.caps, Label: prof.label, StreamFields: prof.stream})
-				if err != nil {
-					continue
-				}
-				var texts []string
-				collectVLTexts(reflect.ValueOf(&op), &texts)
-				for _, t := range texts {
-					seen[t] = true
-				}
+			var texts []string
+			collectVLTexts(reflect.ValueOf(&op), &texts)
+			for _, t := range texts {
+				seen[t] = true
 			}
 		}
 	}
