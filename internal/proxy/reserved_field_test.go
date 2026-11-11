@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -37,6 +38,8 @@ func TestReservedFieldLabelResponseKeyVersionFencesTheChangedReadings(t *testing
 		`sum by (_stream) (count_over_time({app="a"}[5m]))`: false,
 		`{app="a"} | drop _time | keep _msg`:                false,
 		`{app="a"} | label_format x=_time`:                  false,
+		`sum(count_over_time({app="a"}[5m])) > 1`:           false,
+		`bytes_over_time({app="a"}[5m]) < 10`:               false,
 		``:                                                  false,
 	} {
 		got := reservedFieldLabelResponseKeyVersion(query)
@@ -50,6 +53,10 @@ func TestReservedFieldLabelResponseKeyVersionFencesTheChangedReadings(t *testing
 		t.Errorf("an unaffected query allocates %v times", allocs)
 	}
 }
+
+// reservedFilterText is a reserved name as a whole word (not the end of count_over_time) before a matcher or a
+// comparison: what the fence looks for, read independently of its scanner.
+var reservedFilterText = regexp.MustCompile(`(?:^|[^A-Za-z0-9_])(?:(?i:_time|_stream_id|_stream)|_msg)\s*[=!<>]`)
 
 // TestReservedFieldLabelFenceMovesOnlyAffectedKeys: on the registry and matrix corpus the fence changes the response
 // keys of the queries that filter a reserved field name, and no other.
@@ -71,7 +78,7 @@ func TestReservedFieldLabelFenceMovesOnlyAffectedKeys(t *testing.T) {
 			continue
 		}
 		moved++
-		if !strings.Contains(query, "_time") && !strings.Contains(query, "_stream") && !strings.Contains(query, "_msg") && !strings.Contains(strings.ToLower(query), "_time") {
+		if !reservedFilterText.MatchString(query) {
 			t.Errorf("an unaffected corpus query is fenced: %s", query)
 		}
 	}
