@@ -23,9 +23,11 @@ import (
 // The route parity prediction of a metric query from its plan: lower.Route decides the route (the VictoriaLogs
 // endpoint, how the windows are read, the level probe), and metricRoute writes the requests and the route steps the
 // handlers record for it, under the route parity request profile and stub answer. A request is predicted by its
-// shape (routeCallShape): the endpoint, every parameter, and the query's route pipes (the window phase filter and
-// the stats pipes); the base before them is the lowering's text, which the corpus shadow (internal/querycorpus
-// TestPlanShadow) holds to the translator byte for byte.
+// shape (routeCallShape): the endpoint, every parameter, the query's filters (the text before its first pipe) and
+// its route pipes (the window phase filter and the stats pipes on). The pipes between them are not compared: the
+// handlers build them from the lowering's text (the level chain the presence probe masks, the scratch-field delete
+// they keep or drop, the stream identity of a bare range aggregation), and the corpus shadow
+// (internal/querycorpus TestPlanShadow) holds the lowering's own text to the translator byte for byte.
 
 // routeLoweringProfile is the lowering profile of the route parity proxy (the options its translator gets).
 var routeLoweringProfile = sync.OnceValue(func() lower.Profile {
@@ -52,12 +54,14 @@ const routeShapeChain = "[level chain] "
 
 var routeShapeSpace = regexp.MustCompile(`\s+`)
 
-// routeQueryShape is the route part of a VictoriaLogs query: the presence probe, or the pipes from the window phase
-// filter or the first stats pipe on, whitespace folded, after a mark for the derived level chain in the base.
+// routeQueryShape is the route part of a VictoriaLogs query: its filters, then the presence probe, or the pipes
+// from the window phase filter or the first stats pipe on, whitespace folded, after a mark for the derived level
+// chain in the pipes between.
 func routeQueryShape(q string) string {
 	if strings.Contains(q, " as p0,") {
-		return routeLevelProbeShape
+		return routeShapeFilters(q) + routeLevelProbeShape
 	}
+	filters := routeShapeFilters(q)
 	at := strings.Index(q, "| stats ")
 	if i := strings.Index(q, "| math ((_time - "); i >= 0 && (at < 0 || i < at) {
 		at = i
@@ -69,7 +73,16 @@ func routeQueryShape(q string) string {
 	if strings.Contains(q, translate.RateDetectedLevelChain()) || strings.Contains(q, "as detected_level") {
 		shape = routeShapeChain + shape
 	}
-	return shape
+	return filters + shape
+}
+
+// routeShapeFilters is the filters of q, before its first pipe, whitespace folded: the lowering's filters as the
+// handlers send them.
+func routeShapeFilters(q string) string {
+	if i := translator.FirstTopLevelPipe(q); i >= 0 {
+		q = q[:i]
+	}
+	return routeShapeSpace.ReplaceAllString(strings.TrimSpace(q), " ") + " … "
 }
 
 // routeCallShape is a recorded VictoriaLogs request with its query replaced by routeQueryShape.
@@ -107,6 +120,14 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 			return routeRecord{}, err
 		}
 		return routeRecord{}, &lower.NotLoweredError{Construct: "RangeAgg route spelling"}
+	}
+	// The handlers send the string translator's filter on a label called _time, _stream, _stream_id or _msg
+	// (semantics/translator-writes-reserved-field-names): the plan's stream filter is the fix, not their request.
+	if lower.ReadsReservedField(p, routeLoweringProfile()) {
+		if _, err := lower.Plan(p, routeLoweringProfile()); err != nil {
+			return routeRecord{}, err
+		}
+		return routeRecord{}, &lower.NotLoweredError{Construct: lower.Construct(p.Root) + " route reserved field"}
 	}
 	req := lower.RouteRequest{Instant: rp.instant}
 	var start, end time.Time
@@ -174,7 +195,7 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 	params.Set("query", routeQueryShape(routeStatsQuery(route, phase, start, req.Step)))
 	out.Calls = append(out.Calls, "/select/logsql/stats_query_range?"+params.Encode())
 	if route.LevelProbe {
-		probe := url.Values{"query": {routeLevelProbeShape}, "start": {routeTime(fetchStart)}, "end": {routeTime(end.Add(2))}, "timeout": {routeTimeout}}
+		probe := url.Values{"query": {routeShapeFilters(route.Text) + routeLevelProbeShape}, "start": {routeTime(fetchStart)}, "end": {routeTime(end.Add(2))}, "timeout": {routeTimeout}}
 		out.Calls = append(out.Calls, "/select/logsql/query?"+probe.Encode())
 	}
 	out.Calls, out.Steps = uniqueSorted(out.Calls), uniqueSorted(steps)
@@ -301,20 +322,23 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			// The unchanged rule predicts every run, so a run is mispredicted exactly when its prediction changed.
 			changed := 0
 			for _, row := range rows {
 				for _, rp := range routeProfiles() {
-					want, err := predictMetricRoute(row.q, row.plan, rp, true, nil)
-					if err != nil {
-						continue
-					}
-					if got, err := predictMetricRoute(row.q, row.plan, rp, true, c.mutate); err == nil && !got.equal(want) {
-						changed++
+					for _, data := range []bool{true, false} {
+						want, err := predictMetricRoute(row.q, row.plan, rp, data, nil)
+						if err != nil {
+							continue
+						}
+						if got, err := predictMetricRoute(row.q, row.plan, rp, data, c.mutate); err != nil || !got.equal(want) {
+							changed++
+						}
 					}
 				}
 			}
 			bad, _ := runRouteParity(t, rows, native(c.mutate))
-			if changed == 0 || bad.Mismatches < changed {
+			if changed == 0 || bad.Mismatches != changed {
 				t.Fatalf("a changed decision went unseen: %d predictions changed, %d runs mispredicted (%+v)", changed, bad.Mismatches, bad)
 			}
 		})

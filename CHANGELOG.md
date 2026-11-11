@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   level presence probe runs first, whether the series keep their stream identity,
   and the empty-input guard of an ungrouped instant answer. Route parity holds the
   plan's decision to the handlers on every corpus row under five request profiles,
-  with and without data: 2,120 of 24,660 runs are now predicted from the plan
+  with and without data: 2,110 of 24,660 runs are now predicted from the plan
   (count, bytes, rate and bytes_rate under sum, avg, min, max and count, with
   filters only), 0 mismatches. Parsers, unwrapped values, offsets, `without`
   folds and the levels the proxy evaluates itself stay delegated by name. Nothing

@@ -145,7 +145,7 @@
       "step\u003erange",
       "24h chunk"
     ],
-    "native": 2120,
+    "native": 2110,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp (route rule)": 1380,
@@ -176,6 +176,7 @@
       "RangeAgg route no bucket grid": 64,
       "RangeAgg route offset": 80,
       "RangeAgg route pipeline": 790,
+      "RangeAgg route reserved field": 10,
       "RangeAgg route spelling": 20,
       "Rank (route rule)": 1820,
       "Rank operand BinOp": 30,
