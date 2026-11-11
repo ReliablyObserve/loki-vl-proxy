@@ -490,7 +490,7 @@
     "semantics/label-inventory-exact-and-incremental | perf",
     "semantics/label-inventory-exact-and-incremental | perf:locked",
     "semantics/label-list-trailing-comma | compare:observed",
-    "semantics/label-list-trailing-comma | gap:open",
+    "semantics/label-list-trailing-comma | gap:fixed",
     "semantics/label-list-trailing-comma | query",
     "semantics/label-replace-aggregation-over-transform | compare:observed",
     "semantics/label-replace-aggregation-over-transform | gap:open",
@@ -926,6 +926,7 @@
     "internal/logql/label_filter_expr_test.go | semantics/ip-filter-json-stats-pushdown",
     "internal/logql/label_filter_expr_test.go | semantics/label-filter-expression-syntax",
     "internal/logql/label_filter_number_literal_loki_test.go | semantics/label-filter-number-literal-scan",
+    "internal/logql/label_list_commas_loki_test.go | semantics/label-list-trailing-comma",
     "internal/logql/line_filter_runs_loki_test.go | semantics/line-filter-error-quotes-the-run",
     "internal/logql/line_template_test.go | architecture-syntax-package-layering",
     "internal/logql/line_template_test.go | formatter-line-format",
@@ -1100,6 +1101,7 @@
     "internal/proxy/extraction_list_outside_without_test.go | semantics/topk-bottomk-without-strips-label",
     "internal/proxy/extraction_list_outside_without_test.go | semantics/unwrap-extraction-list-series-identity",
     "internal/proxy/fail_fast_unicode_test.go | cache-response-key-versions",
+    "internal/proxy/fail_fast_unicode_test.go | semantics/label-list-trailing-comma",
     "internal/proxy/fail_fast_unicode_test.go | semantics/logql-unicode-runes",
     "internal/proxy/first_last_range_timestamps_test.go | loki_api_v1_query_range",
     "internal/proxy/first_last_range_timestamps_test.go | semantics/unwrap-first-last-range-timestamps",
@@ -1915,6 +1917,9 @@
     "test/e2e-compat/label_filter_number_literal_test.go | semantics/label-filter-number-literal-scan",
     "test/e2e-compat/label_freshness_e2e_test.go | quality/metadata-bounded-staleness",
     "test/e2e-compat/label_freshness_e2e_test.go | semantics/metadata-answers-include-last-24h-like-loki",
+    "test/e2e-compat/label_list_trailing_comma_test.go | loki_api_v1_query",
+    "test/e2e-compat/label_list_trailing_comma_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/label_list_trailing_comma_test.go | semantics/label-list-trailing-comma",
     "test/e2e-compat/label_matcher_regexp_anchoring_test.go | loki_api_v1_detected_labels",
     "test/e2e-compat/label_matcher_regexp_anchoring_test.go | loki_api_v1_index_volume",
     "test/e2e-compat/label_matcher_regexp_anchoring_test.go | loki_api_v1_label_name_values",
@@ -2202,7 +2207,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 496,
+      "go": 498,
       "playwright": 1
     },
     "page_kinds": {
@@ -2221,8 +2226,8 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 104,
-    "wired_items": 285
+    "unwired_items": 103,
+    "wired_items": 286
   },
   "gates": [
     "A/B shape selection",
