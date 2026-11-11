@@ -101,6 +101,12 @@ var (
 // answer, the translation and every cache key are the same on every replica
 // from the first request on.
 func (p *Proxy) plainStreamLabelNames(ctx context.Context, query string) []string {
+	return p.plainStreamLabelNamesFrom(ctx, query, p.tenantStreamLabelNames)
+}
+
+// plainStreamLabelNamesFrom is plainStreamLabelNames with the tenant's stream label names read by known: the
+// translation's tenantStreamLabelNames, or the lowering shadow's knownTenantStreamLabelNames, which starts no refresh.
+func (p *Proxy) plainStreamLabelNamesFrom(ctx context.Context, query string, known func(context.Context) []string) []string {
 	if ctx.Value(origRequestKey) == nil || !p.lokiCompatibleProfile() {
 		return nil
 	}
@@ -110,9 +116,9 @@ func (p *Proxy) plainStreamLabelNames(ctx context.Context, query string) []strin
 		}
 		return p.streamLabelNames.groupingNames(query, p.restorableName)
 	}
-	known := p.tenantStreamLabelNames(ctx)
+	knownNames := known(ctx)
 	candidate := false
-	for _, name := range known {
+	for _, name := range knownNames {
 		if strings.Contains(query, name) {
 			candidate = true
 			break
@@ -123,7 +129,7 @@ func (p *Proxy) plainStreamLabelNames(ctx context.Context, query string) []strin
 	}
 	mentioned := p.streamLabelNames.mentionedNames(query)
 	var out []string
-	for _, name := range known {
+	for _, name := range knownNames {
 		if mentioned[name] {
 			out = append(out, name)
 		}
@@ -205,6 +211,19 @@ func (st *streamLabelNamesState) mentionedNames(query string) map[string]bool {
 	st.mentioned[query] = m
 	st.mu.Unlock()
 	return m
+}
+
+// knownTenantStreamLabelNames is the tenant's stream label names as last known, read without starting a refresh or
+// counting an internal operation: the lowering shadow reads the names the request's translation has just read,
+// and must not change what the proxy asks VictoriaLogs or records.
+func (p *Proxy) knownTenantStreamLabelNames(ctx context.Context) []string {
+	st := &p.streamLabelNames
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if e := st.byKey["slnames:"+getOrgID(ctx)]; e != nil {
+		return e.names
+	}
+	return nil
 }
 
 // tenantStreamLabelNames returns the tenant's recent stream label names whose

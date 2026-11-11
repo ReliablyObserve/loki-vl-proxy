@@ -16,12 +16,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   string: "٣5m"`, `unexpected unwrap`) in 16,785 of 19,370 recorded queries, and the other 201 differ only in text. No
   query is newly accepted or rejected.
 
+### Changed
+
+- The opt-in live shadow of the query plan (`-translate-shadow-sample`) now
+  also covers the rankings, `stddev` and `stdvar` the proxy evaluates itself
+  (and the `sum`, `avg`, `min`, `max` and `count` layers above a ranking), on
+  `query` and `query_range`. These handlers translate only the operand, so
+  the shadow never saw the whole query; on the same share of their requests
+  it now lowers the whole query in the background and compares it with what
+  the proxy runs: the operand's request it has just sent, byte for byte, and
+  the levels it applies to the answer. New `result` values of
+  `loki_vl_proxy_lowering_shadow_total`: `native_proxy_evaluated` (equal) and
+  `known_divergence` (the plan holds a level the proxy's route drops, such as
+  `topk(2, stddev by (app) (..))`; nothing compared); new `construct` values
+  `VectorAgg stddev` and `VectorAgg stdvar`. No answer, cache or request to
+  VictoriaLogs changes, and a request the sample skips costs no allocation.
+
 ### Security
 
 - **A query with certain non-ASCII characters could make the LogQL parser stop responding.** Such queries are now
   rejected with Loki's 400 before anything else on the route runs, and every entry point of the LogQL parser is held to
   return within a bound of time and memory by a fuzz target. **Breaking:** a few queries Loki rejects (for example a
   stage name followed by `²`) were accepted and now answer Loki's 400; answers cached for them are not served.
+
+## [2.141.0] - 2026-11-11
+
+### Security
 
 - Queries no longer make VictoriaLogs crash when a label name differs from
   `_time`, `_stream` or `_stream_id` only by letter case (`_TIME`, `_Stream`,
