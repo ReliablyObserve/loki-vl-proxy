@@ -22,11 +22,25 @@ func ReservedFieldNameOtherCase(name string) bool {
 	case "_time", "_stream", "_stream_id":
 		return false
 	}
+	if isASCII(name) {
+		// strings.ToLower of ASCII is the byte-wise lowering EqualFold compares by, without the allocation.
+		return strings.EqualFold(name, "_time") || strings.EqualFold(name, "_stream") || strings.EqualFold(name, "_stream_id")
+	}
 	switch lower := strings.ToLower(name); lower {
 	case "_time", "_stream", "_stream_id":
 		return true
 	}
 	return false
+}
+
+// isASCII reports a name of ASCII bytes only.
+func isASCII(name string) bool {
+	for i := 0; i < len(name); i++ {
+		if name[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
 }
 
 // ReservedFieldCaseScratch is the scratch field a filter on a name in another case (ReservedFieldNameOtherCase)

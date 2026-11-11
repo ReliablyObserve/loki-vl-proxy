@@ -119,6 +119,8 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 	}
 	var filters, after logsql.AllOf
 	pipes := pipeRoom(len(sel.Stages), staged, lf.pre)
+	// A stage that is one comparison on a reserved field keeps only the streams with its tag (reservedGuard).
+	filters = append(filters, lf.guards...)
 	flush := func() {
 		switch len(after) {
 		case 0:
@@ -203,17 +205,28 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 		}
 	}
 	flush()
-	if len(read) > 0 {
-		pipes = append(pipes, translate.StreamValueDelete())
-	}
-	if len(lf.bases) > 0 {
-		pipes = append(pipes, translate.ExtractedDelete())
-	}
+	pipes = appendScratchDeletes(pipes, lf, len(read) > 0)
 	f, err := translate.StreamSelectorFilterNamed(sel.Matchers, prof.Label, prof.StreamFields, logsql.QuoteKeywordField)
 	if err != nil {
 		return logsql.Query{}, err
 	}
 	return selectQuery(f, filters, pipes), nil
+}
+
+// appendScratchDeletes appends the deletes of the scratch fields the query wrote: the tag values its comparisons on
+// reserved fields read, the copies of the stream values it read after a parser (read), and the name_extracted
+// scratch fields.
+func appendScratchDeletes(pipes []logsql.Pipe, lf filterStages, read bool) []logsql.Pipe {
+	if len(lf.reserved) > 0 {
+		pipes = append(pipes, reservedDelete(lf.reserved))
+	}
+	if read {
+		pipes = append(pipes, translate.StreamValueDelete())
+	}
+	if len(lf.bases) > 0 {
+		pipes = append(pipes, translate.ExtractedDelete())
+	}
+	return pipes
 }
 
 // pipeRoom is the empty list the pipes of a query go into, with room for the staged pipes, the pipes ahead of a
@@ -257,6 +270,9 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stag
 	lb := leafBuilder{label: prof.Label, caps: prof.Caps, sv: sv}
 	for i, st := range sel.Stages {
 		lb.names.note(defs, i)
+		if changesLabels(st) {
+			lb.staged = true
+		}
 		if p, ok := st.(*queryplan.Parse); ok {
 			lb.parsed = true
 			if p.Type == logql.ParserJSON || p.Type == logql.ParserLogfmt {
@@ -292,6 +308,16 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stag
 		if lb.bad != "" {
 			return filterStages{}, &NotLoweredError{Construct: lb.bad}
 		}
+		if len(lb.stageReserved) > 0 {
+			if res.pre == nil {
+				res.pre = make([][]logsql.Pipe, len(sel.Stages))
+			}
+			res.pre[i] = reservedStagePipes(res.pre[i], lb.stageReserved)
+			lb.stageReserved = lb.stageReserved[:0]
+			if g := reservedGuard(lbl.Expr, lb.label); g != nil {
+				res.guards = append(res.guards, g)
+			}
+		}
 		if len(lb.stageBases) > 0 {
 			if res.pre == nil {
 				res.pre = make([][]logsql.Pipe, len(sel.Stages))
@@ -301,6 +327,7 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stag
 		}
 	}
 	res.bases = lb.bases
+	res.reserved = lb.reserved
 	return res, nil
 }
 
@@ -314,6 +341,10 @@ type filterStages struct {
 	// bases are the labels whose name_extracted rename the filters read; each json or logfmt parser unpacks their
 	// keys into scratch fields.
 	bases []string
+	// reserved are the reserved fields a comparison reads the stream tag of (reservedLeaf), deleted at the end;
+	// guards keep the streams with the tag a stage of one such comparison needs (reservedGuard).
+	reserved []string
+	guards   []logsql.FilterExpr
 }
 
 // checkLabelFilterExpr names the construct of the first leaf the lowering does not write, "" when it writes all.
@@ -378,6 +409,10 @@ type leafBuilder struct {
 	stageBases   []string
 	streamCopied bool
 	bad          string
+	// staged is whether a stage that can define, rename or remove a label (changesLabels) came before the stage;
+	// reserved the reserved fields a comparison read the tag of so far, stageReserved those first read by the stage.
+	staged                  bool
+	reserved, stageReserved []string
 }
 
 // labelFilter is the filter of a label filter stage that checkLabelFilters accepted: the leaf, or the and/or
@@ -423,14 +458,24 @@ func collectLabelFilter(e *logql.LabelFilterExpr, op logql.LabelFilterOp, out *[
 // leaf is the filter of one leaf: the one translateSingleLabelFilter writes, which names the sanitized keys a
 // parser can have produced when a parser came before the stage (parsedLabelFilterLeaf).
 func (lb *leafBuilder) leaf(e *logql.LabelFilterExpr) logsql.FilterExpr {
-	if lb.parsed {
+	field, reserved := reservedLeafField(e, lb.label)
+	switch {
+	case reserved && lb.staged && logsql.ReservedFieldName(field):
+		// After a stage a lower-case name may be the stream tag or a key the stage wrote: the translator's.
+		if lb.bad == "" {
+			lb.bad = reservedAfterStageConstruct
+		}
+		return logsql.Wildcard{}
+	case reserved && !lb.staged:
+		return lb.reservedLeaf(field, e)
+	case lb.parsed:
 		f, c := lb.parsedLeaf(e)
 		if c != "" && lb.bad == "" {
 			lb.bad = c
 		}
 		return f
 	}
-	return labelFilterLeaf(e, lb.label, lb.caps)
+	return fieldFilterLeaf(e, field, lb.caps)
 }
 
 // labelFilterLeaf is translateSingleLabelFilter's generic path for one leaf: the label named like the selector
@@ -441,6 +486,11 @@ func labelFilterLeaf(e *logql.LabelFilterExpr, labelFn func(string) string, caps
 	if labelFn != nil {
 		label = translate.SanitizeFieldIdentifier(labelFn(label))
 	}
+	return fieldFilterLeaf(e, label, caps)
+}
+
+// fieldFilterLeaf is labelFilterLeaf for the field the leaf's label translates to.
+func fieldFilterLeaf(e *logql.LabelFilterExpr, label string, caps logsql.Capabilities) logsql.FilterExpr {
 	if strings.ContainsAny(label, ".-") {
 		label = `"` + label + `"`
 	} else {

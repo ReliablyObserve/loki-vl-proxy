@@ -24,6 +24,11 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 	legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps)
 	legacy = guardedLegacy(p, legacy, terr)
 	op, lerr := PlanQuery(q, p, prof.lowerProfile())
+	// A label called _time, _stream, _stream_id or _msg is the stream tag in the lowering and a field filter VictoriaLogs
+	// rejects or misreads in the translator (semantics/translator-writes-reserved-field-names): not compared.
+	if ReadsReservedField(p, prof.lowerProfile()) {
+		return "", "", false, "", false
+	}
 	var nl *NotLoweredError
 	if errors.As(lerr, &nl) {
 		return "", legacy, false, nl.Construct, terr == nil

@@ -1,0 +1,7 @@
+go test fuzz v1
+string("_time")
+string("st")
+string("_TIME")
+string("5")
+byte('\x40')
+byte('\x00')

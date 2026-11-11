@@ -102,6 +102,7 @@
     "cache-response-key-versions": [
       "internal/proxy/fail_fast_unicode_test.go",
       "internal/proxy/reserved_field_case_fence_test.go",
+      "internal/proxy/reserved_field_test.go",
       "internal/proxy/response_key_fences_test.go"
     ],
     "data-probing-and-freshness": [
@@ -561,6 +562,7 @@
       "test/e2e-compat/query_semantics_matrix_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/repeated_label_filters_test.go",
+      "test/e2e-compat/reserved_field_labels_test.go",
       "test/e2e-compat/reserved_field_name_case_test.go",
       "test/e2e-compat/selector_value_test.go",
       "test/e2e-compat/series_level_aggregation_fine_step_test.go",
@@ -1527,7 +1529,15 @@
     "semantics/translator-writes-keyword-field-names-bare": [
       "internal/logsql/keyword_fields_test.go",
       "internal/queryplan/lower/keyword_field_names_test.go",
+      "internal/queryplan/lower/vl_clone_roundtrip_test.go",
       "test/e2e-compat/keyword_label_names_test.go"
+    ],
+    "semantics/translator-writes-reserved-field-names": [
+      "internal/logsql/reserved_fields_test.go",
+      "internal/proxy/reserved_field_test.go",
+      "internal/queryplan/lower/reserved_field_test.go",
+      "internal/queryplan/lower/vl_clone_roundtrip_test.go",
+      "test/e2e-compat/reserved_field_labels_test.go"
     ],
     "semantics/tumbling-window-single-grid": [
       "internal/proxy/sliding_window_stats_test.go"
@@ -1843,7 +1853,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 460,
+  "registry_items": 461,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1971,6 +1981,9 @@
     ],
     "internal/logsql/pipe_math_as_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/logsql/reserved_fields_test.go": [
+      "semantics/translator-writes-reserved-field-names"
     ],
     "internal/metrics/request_flow_test.go": [
       "observability-query-flow"
@@ -2713,6 +2726,10 @@
       "cache-response-key-versions",
       "semantics/reserved-field-name-case-outbound"
     ],
+    "internal/proxy/reserved_field_test.go": [
+      "cache-response-key-versions",
+      "semantics/translator-writes-reserved-field-names"
+    ],
     "internal/proxy/response_key_fences_test.go": [
       "cache-response-key-versions"
     ],
@@ -3212,6 +3229,9 @@
     "internal/queryplan/lower/reserved_field_case_test.go": [
       "semantics/reserved-field-name-case-outbound"
     ],
+    "internal/queryplan/lower/reserved_field_test.go": [
+      "semantics/translator-writes-reserved-field-names"
+    ],
     "internal/queryplan/lower/series_agg_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3228,7 +3248,9 @@
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/vl_clone_roundtrip_test.go": [
-      "semantics/reserved-field-name-case-outbound"
+      "semantics/reserved-field-name-case-outbound",
+      "semantics/translator-writes-keyword-field-names-bare",
+      "semantics/translator-writes-reserved-field-names"
     ],
     "internal/queryplan/physical/eval_test.go": [
       "architecture-syntax-package-layering"
@@ -3871,6 +3893,10 @@
       "loki_api_v1_query_range",
       "semantics/repeated-label-filter-replaced-across-label-format"
     ],
+    "test/e2e-compat/reserved_field_labels_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/translator-writes-reserved-field-names"
+    ],
     "test/e2e-compat/reserved_field_name_case_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -4092,7 +4118,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 486,
+  "tests_with_markers": 490,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4198,5 +4224,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 284
+  "wired_items": 285
 }

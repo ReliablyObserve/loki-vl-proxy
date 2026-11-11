@@ -26,6 +26,11 @@ func loweredMatchesTranslator(t testing.TB, q string) (lowered, legacy string, s
 	queryplan.Resolve(p)
 	legacy, terr := translator.TranslateLogQLWithLabels(q, nil)
 	op, lerr := Plan(p, Profile{})
+	// A label called _time, _stream, _stream_id or _msg is the stream tag in the lowering and a field filter VictoriaLogs
+	// rejects or misreads in the translator (semantics/translator-writes-reserved-field-names): not compared.
+	if ReadsReservedField(p, Profile{}) {
+		return "", "", false, false
+	}
 	if terr != nil || lerr != nil {
 		if (terr == nil) != (lerr == nil) {
 			t.Fatalf("%s: translator error %v, lowering error %v", q, terr, lerr)
@@ -33,6 +38,7 @@ func loweredMatchesTranslator(t testing.TB, q string) (lowered, legacy string, s
 		return "", "", false, false
 	}
 	lowered = op.(physical.VLQuery).Text
+	legacy = QuoteKeywordFieldText(legacy) // the translator writes a keyword or a reserved name in another case bare
 	if _, err := logsql.Parse(legacy); err != nil {
 		t.Fatalf("%s: the translator's %s does not parse: %v", q, legacy, err)
 	}

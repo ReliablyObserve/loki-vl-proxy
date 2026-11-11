@@ -77,6 +77,11 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 		legacy = "* " + legacy
 	}
 	op, lerr := PlanQuery(q, p, prof.lowerProfile())
+	// A label called _time, _stream, _stream_id or _msg is the stream tag in the lowering and a field filter VictoriaLogs
+	// rejects or misreads in the translator (semantics/translator-writes-reserved-field-names): not compared.
+	if ReadsReservedField(p, prof.lowerProfile()) {
+		return "", "", false, false, false
+	}
 	if errors.Is(lerr, ErrNotLowered) {
 		return "", legacy, false, true, terr == nil
 	}
@@ -95,6 +100,7 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 	core, post := physical.Split(op)
 	lowered = core.(physical.VLQuery).Text
 	legacy, wantPost := translator.SplitPost(legacy)
+	legacy = QuoteKeywordFieldText(legacy) // the translator writes a keyword or a reserved name in another case bare
 	want, err := logsql.Parse(legacy)
 	if err != nil {
 		t.Fatalf("%s: the translator's %s does not parse: %v", q, legacy, err)

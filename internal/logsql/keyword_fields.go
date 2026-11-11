@@ -36,3 +36,17 @@ func QuoteKeywordField(name string) string {
 	}
 	return quoteLogsQL(name)
 }
+
+// ReservedFieldName reports a name VictoriaLogs keeps for itself: _time (the timestamp), _stream and _stream_id
+// (the stream and its id) and _msg (the line). A filter on _time, _stream or _stream_id is the time, stream or
+// stream id filter, bare or quoted, so no field filter can name them; and a label with one of these names reaches
+// VictoriaLogs only inside the stream: a stream label called so is a tag of _stream (`_stream:{_time="a"}` finds
+// it), while a field of the entry called so is dropped (_time, _stream, _stream_id) or replaces the line (_msg).
+// Only lower case: in another case they are fields (ReservedFieldNameOtherCase).
+func ReservedFieldName(name string) bool {
+	switch name {
+	case "_time", "_stream", "_stream_id", "_msg":
+		return true
+	}
+	return false
+}

@@ -1,0 +1,7 @@
+go test fuzz v1
+string("_stream_id")
+string("10.0.0.1")
+string("_msg")
+string("x")
+byte('\x08')
+byte('\x03')

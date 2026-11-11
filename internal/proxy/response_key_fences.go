@@ -20,8 +20,8 @@ const (
 	// carries the logfmt presence fence, right after the JSON ones.
 	responseKeyInnerQueryRange
 	// responseKeyLogWindowShape feeds the log window fragment fingerprint,
-	// which only the keep projection, keyword label and reserved field case fences
-	// reach. It reads no request.
+	// which only the keep projection, keyword label, reserved field case and reserved
+	// field label fences reach. It reads no request.
 	responseKeyLogWindowShape
 )
 
@@ -33,7 +33,7 @@ const (
 // The line version and the endpoint forms stay with the key builders.
 func responseKeyFences(r *http.Request, query string, site responseKeySite) string {
 	if site == responseKeyLogWindowShape {
-		return keepMetadataProjectionResponseKeyVersion(query) + keywordLabelResponseKeyVersion(query) + reservedFieldCaseResponseKeyVersion(query)
+		return keepMetadataProjectionResponseKeyVersion(query) + keywordLabelResponseKeyVersion(query) + reservedFieldCaseResponseKeyVersion(query) + reservedFieldLabelResponseKeyVersion(query)
 	}
 	var b strings.Builder
 	b.WriteString(orderedJSONVectorResponseKeyVersion(r, query))
@@ -47,6 +47,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	b.WriteString(repeatedLabelFilterResponseKeyVersion(query))
 	b.WriteString(keywordLabelResponseKeyVersion(query))
 	b.WriteString(reservedFieldCaseResponseKeyVersion(query))
+	b.WriteString(reservedFieldLabelResponseKeyVersion(query))
 	if site == responseKeyCompatQueryRange {
 		b.WriteString(logfmtPresenceResponseKeyVersion(r, query))
 	}

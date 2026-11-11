@@ -116,9 +116,16 @@ func vlCloneProfiles() []parserProfile {
 	return []parserProfile{all[0], all[2], all[7]}
 }
 
-// vlCloneE2EQueries are the queries of test/e2e-compat TestCompat_ReservedFieldNameCaseLikeLoki (svc stands for the
-// run's service name): the texts the stack run sends are held to the clone before it runs.
+// vlCloneE2EQueries are the queries of test/e2e-compat TestCompat_ReservedFieldNameCaseLikeLoki and
+// TestCompat_ReservedFieldLabelsLikeLoki (svc stands for the run's service name): the texts the stack runs send are
+// held to the clone before they run.
 var vlCloneE2EQueries = []string{
+	`{service_name="svc", _time="st"}`, `{service_name="svc", _time!="st"}`,
+	`{service_name="svc", _time=~"1.*|7s"}`, `{service_name="svc", _time=""}`, `{service_name="svc"} | _time="10"`,
+	`{service_name="svc"} | _time!~"s.*"`, `{service_name="svc", _time=~"[0-9]+"} | _time > 5`,
+	`{service_name="svc", _time=~".*s"} | _time >= 5s`, `{service_name="svc"} | _stream_id="si"`,
+	`{service_name="svc", _stream_id!="si"}`, `{service_name="svc", _TIME="up"}`,
+	`{service_name="svc"} | _TIME=~"u.*" or _time="st"`, `{service_name="svc", _msg="m"}`, `{service_name="svc"} | _msg!="m"`,
 	`{service_name="svc"}`, `sum(sum_over_time({service_name="svc"} | logfmt | unwrap _TIME [1m]))`,
 	`sum by (service_name) (sum_over_time({service_name="svc"} | logfmt | unwrap _TIME [1m]))`,
 	`{service_name="svc"} | logfmt | _Stream_ID="si"`, `{service_name="svc"} | logfmt | _Stream_ID!="si"`,
@@ -126,7 +133,7 @@ var vlCloneE2EQueries = []string{
 }
 
 // vlClonePlanQueries are the LogQL queries of the plan grid: every name in every position, the queries of the
-// Loki agreement grid (reservedFieldCaseQueries) and of the e2e test.
+// Loki agreement grids (reservedFieldQueries, reservedFieldCaseQueries) and of the e2e tests.
 func vlClonePlanQueries() []string {
 	var qs []string
 	for _, n := range vlCloneNames() {
@@ -134,6 +141,7 @@ func vlClonePlanQueries() []string {
 			qs = append(qs, strings.ReplaceAll(pos, "W", n))
 		}
 	}
+	qs = append(qs, reservedFieldQueries...)
 	qs = append(qs, reservedFieldCaseQueries...)
 	return append(qs, vlCloneE2EQueries...)
 }
@@ -207,7 +215,7 @@ func collectVLTexts(v reflect.Value, out *[]string) {
 // why the guard rewrites a filter on _TIME and the like: VictoriaLogs reads `"_TIME":="x"`, prints it `_TIME:="x"`
 // and fails on its own print, where a pipe and a stream filter read the name back as written.
 //
-// conformance: semantics/reserved-field-name-case-outbound
+// conformance: semantics/reserved-field-name-case-outbound, semantics/translator-writes-reserved-field-names, semantics/translator-writes-keyword-field-names-bare
 func TestPlanTextsSurviveVictoriaLogsClone(t *testing.T) {
 	plan, spellings := vlClonePlanTexts(), vlCloneSpellings()
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {

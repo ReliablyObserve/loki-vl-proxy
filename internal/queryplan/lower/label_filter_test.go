@@ -39,6 +39,11 @@ func labelFilterLowering(t testing.TB, q string, fn func(string) string) (lowere
 	queryplan.Resolve(p)
 	legacy, terr := translator.TranslateLogQLWithLabels(q, fn)
 	op, lerr := Plan(p, Profile{Label: fn})
+	// A label called _time, _stream, _stream_id or _msg is the stream tag in the lowering and a field filter VictoriaLogs
+	// rejects or misreads in the translator (semantics/translator-writes-reserved-field-names): not compared.
+	if ReadsReservedField(p, Profile{Label: fn}) {
+		return "", "", false, false, false
+	}
 	if errors.Is(lerr, ErrNotLowered) {
 		return "", legacy, false, true, terr == nil
 	}

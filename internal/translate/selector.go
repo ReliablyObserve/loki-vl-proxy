@@ -84,6 +84,11 @@ func StreamSelectorFilter(ms []logql.LabelMatcher, labelFn LabelTranslateFunc, s
 // StreamSelectorFilterNamed is StreamSelectorFilter with name applied to the field name of every field filter, after
 // the label function and the quoting of a dotted name (nil keeps the names as they are): the query plan quotes the
 // names VictoriaLogs reads as keywords this way (logsql.QuoteKeywordField), where the string translator does not.
+// With a name function, a matcher on a label that names (after the label function) a field VictoriaLogs keeps for
+// itself (logsql.ReservedFieldName: _time, _stream, _stream_id, _msg), or _time, _stream or _stream_id in another
+// case (logsql.ReservedFieldNameOtherCase), is the stream filter on that tag (ReservedFieldStreamFilter), which the
+// string translator writes as a field filter VictoriaLogs rejects or reads as its own filter. A selector names
+// stream labels only, and VictoriaLogs keeps every stream label as a tag of the stream.
 func StreamSelectorFilterNamed(ms []logql.LabelMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool, name func(string) string) (logsql.FilterExpr, error) {
 	matchers := make([]SelectorMatcher, len(ms))
 	for i, m := range ms {
@@ -120,11 +125,27 @@ func selectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, stre
 			}
 			continue
 		}
+		// The query plan (a name function) translates the label once: a reserved field is the stream filter on
+		// its tag, any other field the filter matcherFieldFilter writes for it.
+		field, translated := "", false
+		if name != nil && label != "" && label != "service_name" {
+			field, translated = translatedField(label, labelFn), true
+			if logsql.ReservedFieldName(field) || logsql.ReservedFieldNameOtherCase(field) {
+				parts = append(parts, ReservedFieldStreamFilter(field, m.Op, m.Value))
+				continue
+			}
+		}
 		if inStreamFilter(label, negate, isRe, labelFn, streamFields) {
 			stream = append(stream, logsql.LabelMatcher{Name: m.Name, Op: "=", Value: m.Value})
 			continue
 		}
-		if f := matcherFieldFilter(label, negate, isRe, m.Value, labelFn, name); f != nil {
+		var f logsql.FilterExpr
+		if translated {
+			f = translatedMatcherFieldFilter(field, negate, isRe, m.Value, name)
+		} else {
+			f = matcherFieldFilter(label, negate, isRe, m.Value, labelFn, name)
+		}
+		if f != nil {
 			parts = append(parts, f)
 		}
 	}
@@ -138,6 +159,25 @@ func selectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, stre
 		return parts[0], nil
 	}
 	return parts, nil
+}
+
+// translatedField is the field a selector label names: the label function's name for it, sanitized.
+func translatedField(label string, labelFn LabelTranslateFunc) string {
+	if labelFn == nil {
+		return label
+	}
+	return SanitizeFieldIdentifier(labelFn(label))
+}
+
+// ReservedFieldStreamFilter is the filter of a matcher `field op value` on a label called after a field VictoriaLogs
+// keeps for itself (logsql.ReservedFieldName): the stream filter {field op "value"}, op a stream matcher operator
+// (=, !=, =~, !~). VictoriaLogs keeps such a label only as a tag of the stream (a stream label called _time is in
+// _stream, never a field of the entry), so the stream filter is the one filter that finds it, and it reads a
+// missing tag as the empty value, as Loki reads a missing label: {_time!="a"} and {_time=""} keep the streams
+// without one. A stream filter's regexp matches the whole value with . matching a line break, as a stream
+// selector's does in Loki.
+func ReservedFieldStreamFilter(field, op, value string) logsql.FilterExpr {
+	return logsql.StreamFilter{Matchers: []logsql.LabelMatcher{{Name: field, Op: op, Value: value}}}
 }
 
 // inStreamFilter reports whether an exact matcher on label goes into the stream filter, where the string translator
@@ -283,11 +323,13 @@ func matcherFieldFilter(label string, negate, isRe bool, value string, labelFn L
 	if label == "service_name" {
 		return ServiceNameMatcherFilterExpr(value, negate, isRe)
 	}
-	if labelFn != nil {
-		label = SanitizeFieldIdentifier(labelFn(label))
-		if label == "" {
-			return nil
-		}
+	return translatedMatcherFieldFilter(translatedField(label, labelFn), negate, isRe, value, name)
+}
+
+// translatedMatcherFieldFilter is matcherFieldFilter for a label already translated to its field: nil for none.
+func translatedMatcherFieldFilter(label string, negate, isRe bool, value string, name func(string) string) logsql.FilterExpr {
+	if label == "" {
+		return nil
 	}
 
 	// VL requires quoting for dotted field names. Quote the field name
