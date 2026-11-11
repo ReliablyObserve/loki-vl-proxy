@@ -382,6 +382,8 @@ func near(got, want int64, tol float64) bool {
 // conformance: drilldown/logs-footer-query-stats, query-stats-envelope
 func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 	ensureDataIngested(t)
+	// Loki's window count below needs Loki's range metrics, which a fresh stack answers empty for a few minutes.
+	waitForLokiMetricData(t)
 	end := time.Now().Add(-time.Minute).Truncate(time.Minute)
 	nonce := fmt.Sprintf("qsl-%d", time.Now().UnixNano())
 	for _, rng := range []time.Duration{5 * time.Minute, time.Hour} {
@@ -464,10 +466,12 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 		}
 		t.Run(rng.String()+"/log-exact-lines", func(t *testing.T) {
 			// The proxy behind vmauth runs -query-stats-exact-log-lines.
-			params := win(sel+` != "exact-`+nonce+`"`, "limit", "1000", "direction", "backward")
+			// A small limit fills on any stack the setup fixture has populated.
+			const exactLimit = 20
+			params := win(sel+` != "exact-`+nonce+`"`, "limit", strconv.Itoa(exactLimit), "direction", "backward")
 			miss := getE2EStats(t, proxyVmauthURL, "/loki/api/v1/query_range", params, nil)
 			oldest := oldestEntryNs(t, proxyVmauthURL, params)
-			if miss.Summary.Entries < 1000 || oldest == 0 {
+			if miss.Summary.Entries < exactLimit || oldest == 0 {
 				t.Fatalf("entries %d (oldest %d): this row needs an answer that fills its limit", miss.Summary.Entries, oldest)
 			}
 			// Backward, Loki reads its one-hour pieces newest first and stops
