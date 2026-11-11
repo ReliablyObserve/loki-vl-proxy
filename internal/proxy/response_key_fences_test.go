@@ -26,7 +26,8 @@ func oldCompatQueryFences(r *http.Request, query string) string {
 		keepMetadataProjectionResponseKeyVersion(query) +
 		ipLabelFilterResponseKeyVersion(query) +
 		repeatedLabelFilterResponseKeyVersion(query) +
-		keywordLabelResponseKeyVersion(query)
+		keywordLabelResponseKeyVersion(query) +
+		reservedFieldLabelResponseKeyVersion(query)
 }
 
 func oldCompatQueryRangeFences(r *http.Request, query string) string {
@@ -43,6 +44,7 @@ func oldInnerQueryRangeFences(r *http.Request, query string) string {
 	key.WriteString(ipLabelFilterResponseKeyVersion(query))
 	key.WriteString(repeatedLabelFilterResponseKeyVersion(query))
 	key.WriteString(keywordLabelResponseKeyVersion(query))
+	key.WriteString(reservedFieldLabelResponseKeyVersion(query))
 	return key.String()
 }
 
@@ -193,7 +195,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			if got := responseKeyFences(r, query, responseKeyInnerQueryRange); got != oldInner {
 				t.Errorf("inner query_range fences differ for %q (%s): got %q want %q", query, shape.name, got, oldInner)
 			}
-			if got, want := responseKeyFences(nil, query, responseKeyLogWindowShape), keepMetadataProjectionResponseKeyVersion(query)+keywordLabelResponseKeyVersion(query); got != want {
+			if got, want := responseKeyFences(nil, query, responseKeyLogWindowShape), keepMetadataProjectionResponseKeyVersion(query)+keywordLabelResponseKeyVersion(query)+reservedFieldLabelResponseKeyVersion(query); got != want {
 				t.Errorf("window shape fences differ for %q: got %q want %q", query, got, want)
 			}
 			for _, f := range []string{

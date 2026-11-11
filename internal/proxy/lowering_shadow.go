@@ -267,6 +267,13 @@ func (p *Proxy) runLoweringShadow(s *loweringShadow, in shadowInput) {
 		// shadow, which skips a row the translator rejects.
 		return
 	}
+	// A label called _time, _stream, _stream_id or _msg is a tag of the stream to VictoriaLogs: the lowering filters
+	// the tag, the translator writes a field filter VictoriaLogs rejects or reads as its own time, stream or line
+	// filter (semantics/translator-writes-reserved-field-names). The translator's text is the wrong one there.
+	if lower.ReadsReservedField(plan, in.profile()) {
+		result(shadowOldError)
+		return
+	}
 	// The translator writes a label called not or in bare, which VictoriaLogs rejects; the lowering quotes it. The
 	// translator's text is held to the lowering with that name quoted.
 	want, err := translator.DecodePhysical(lower.QuoteKeywordFieldText(in.legacy))

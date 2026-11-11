@@ -279,6 +279,11 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		return "", "", false
 	}
 	queryplan.Resolve(plan)
+	if lower.ReadsReservedField(plan, lower.Profile{Label: identity}) {
+		// The plan filters the stream tag of a label called _time, _stream, _stream_id or _msg, the translator a
+		// field VictoriaLogs rejects or reads as its own filter: they do not mean the same, by design.
+		return "", "", false
+	}
 	caps := logsql.CapabilitiesFor(strings.TrimPrefix(v, "v"))
 	op, err := lower.Plan(plan, lower.Profile{Caps: caps, Label: identity})
 	if err != nil {

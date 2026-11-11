@@ -67,6 +67,11 @@ func parserLowering(t testing.TB, q string, prof parserProfile) (lowered, legacy
 		legacy, terr = translator.TranslateLogQLWithCapabilities(q, prof.label, prof.stream, prof.caps)
 	}
 	op, lerr := Plan(p, Profile{Caps: prof.caps, Label: prof.label, StreamFields: prof.stream, KeepLine: prof.keep})
+	// A label called _time, _stream, _stream_id or _msg is the stream tag in the lowering and a field filter VictoriaLogs
+	// rejects or misreads in the translator (semantics/translator-writes-reserved-field-names): not compared.
+	if ReadsReservedField(p, Profile{Label: prof.label}) {
+		return "", "", "", false, false, false
+	}
 	var nl *NotLoweredError
 	if errors.As(lerr, &nl) {
 		return "", legacy, nl.Construct, false, true, terr == nil

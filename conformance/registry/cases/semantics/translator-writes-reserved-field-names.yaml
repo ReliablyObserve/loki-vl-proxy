@@ -1,0 +1,93 @@
+id: semantics/translator-writes-reserved-field-names
+title: A label called _time, _stream, _stream_id or _msg is filtered as the stream tag VictoriaLogs keeps it as; the string translator writes a field filter VictoriaLogs rejects or reads as its own time, stream or line filter (open for the translator; the query plan filters the tag)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki reads `_time`, `_stream`, `_stream_id` and `_msg` as plain label names
+  everywhere a label stands (the Loki oracle, Loki 3.7.9: check accepts
+  `{_time="a"}`, `| _stream="x"`, `| json | _time="x"`, `by (_stream)`,
+  `drop _stream_id`, `label_format _time=app`; process keeps a stream labelled
+  `_time="a"` with its label, and a json key `_time` is the label `_time`).
+  VictoriaLogs keeps these names for itself (the VictoriaLogs oracle, store
+  command, v1.49.0 and v1.53.0 agree): a stream label called so reaches it
+  only as a tag of the stream, `_stream={_time="st",app="x"}`, never as a
+  field of the entry, through the Loki push API and as an OpenTelemetry
+  resource attribute; a field of the entry called _time, _stream or _stream_id
+  (structured metadata, a log attribute) is dropped at ingest, jsonline reads
+  `_time` as the timestamp, and a label or metadata called `_msg` replaces the
+  line. A filter that names the field is VictoriaLogs' own filter, bare or
+  quoted: `_time:="a"` (a duration it cannot parse), `_stream:="a"` (wants
+  `{`), `_stream_id:="a"` are rejected, and `_time:>=5s` is a time range and
+  `_msg:="x"` the line. In another case (`_TIME`, `_Stream`, `_STREAM_ID`)
+  they are plain fields when quoted, and the bare spelling is still read as
+  the special filter, case-insensitively (`_TIME:="x"` is rejected,
+  `_TIME:>=5s` is a time range).
+
+  So the query plan filters the tag, as VictoriaLogs models it: a selector
+  matcher or a label filter =, !=, =~, !~ is the stream filter
+  `{_time="a"}`, which reads a missing tag as the empty value as Loki reads a
+  missing label; a comparison (number, duration, size, ip()) reads the tag's
+  value out of _stream into a scratch field and compares it; `_TIME` and the
+  other cases are quoted fields. The string translator (frozen) still writes
+  the field filter, and the client got, from the plan's byte-identical text:
+    {app="a", _time="a"}       string translator  _time:="a"   400 (VictoriaLogs parse error)
+    {app="a"} | _time>=5s      string translator  _time:>=5s   200, every line of the window
+    {app="a", _msg=~".+"}      string translator  _msg:~".+"   200, every line with text
+    {app="a", _msg="x"}        string translator  _msg:="x"    200, the lines that are "x" too
+    query plan                 {_time="a"}, {_time=~".+"} | extract_regexp ... from _stream | filter __lxrf_time:>=5s, "_TIME":="a"
+  The grid of internal/queryplan/lower TestReservedFieldLabelsMatchLoki (49
+  queries over 15 streams, recorded with both oracles) holds Loki's kept lines
+  equal to VictoriaLogs' answer to the plan's text on both versions.
+
+  Filter-only log queries are served from the plan (-query-plan-lowering, on
+  by default), so they now get Loki's answer. Metric queries and a label filter
+  after a parser, drop, keep or label_format are still the translator's: a
+  label filter on such a name after one of those stages is left to it
+  (`LogSelect label filter reserved field after a stage`), since a json or
+  logfmt parser writes a key called _time over the entry's own _time in
+  VictoriaLogs (unpack_json and unpack_logfmt), and `by (_stream)`, `drop
+  _time`, `keep _msg` and label_format of these names read VictoriaLogs' own
+  fields (open; not part of this change).
+
+  Not reachable from the proxy: a structured metadata `_time`, `_stream` or
+  `_stream_id` that Loki filters is gone in VictoriaLogs, and a line whose
+  stream label or metadata `_msg` replaced it is that value to a line filter.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} | _time >= 5s'
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+corpus:
+  dimensions:
+    shapes:
+      - query: '{service_name="api-gateway", _time="a"}'
+      - query: '{service_name="api-gateway", _stream!="x"}'
+      - query: '{service_name="api-gateway"} | _msg="x"'
+      - query: '{service_name="api-gateway"} | _stream_id=~"x.*" or _TIME="y"'
+      - query: '{service_name="api-gateway"} | _time > 5 | _time < 10'
+      - query: 'count_over_time({service_name="api-gateway"} | _time="x" [5m])'
+compare:
+  mode: observed
+  fields: [status, streams]
+  expect: |
+    200 with the lines of streams whose label `_time` is a duration of 5s or
+    more (none in the stack data), never VictoriaLogs' time range of the last
+    5s, nor its parse error for the other spellings.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator (writes the field filter); fixed when the query plan serves the remaining queries. internal/logsql ReservedFieldName and KeywordFieldName, internal/translate ReservedFieldStreamFilter, internal/queryplan/lower reserved_field.go'
+  loki: '_time, _stream, _stream_id and _msg are plain labels; the oracle answers 200 and filters the label'
+  proxy: 'filter-only log queries filter the stream tag (the plan); metric queries, and label filters after a parser, drop, keep or label_format, still get the translator''s field filter'
+  planned_test: 'TestCompat_ReservedFieldLabelsLikeLoki (test/e2e-compat, group semantics: a stream pushed alike to Loki and VictoriaLogs with a label _time, _stream_id or _msg, and the selector matchers, label filters and comparisons on it, against Loki); TestReservedFieldLabelsMatchLoki and TestReadsReservedField (internal/queryplan/lower), TestReservedFieldLabelFenceDoesNotServeAnOldCachedAnswer (internal/proxy)'
+  visual: none
+  visual_reason: 'no Grafana panel names a label _time or _stream; found by reading what VictoriaLogs does with these names'
+  clusters: []

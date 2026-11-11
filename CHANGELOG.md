@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A log query that filters on a label called `_time`, `_stream`, `_stream_id` or
+  `_msg` gets Loki's answer. These are the fields VictoriaLogs keeps for itself:
+  a stream label with such a name reaches it only as a tag of the stream
+  (`_stream={_time="a",app="x"}`), and a filter that names the field is
+  VictoriaLogs' own time, stream, stream id or line filter. The query written for
+  it was rejected (`_time:="a"`, `_stream:="a"`: a 400, "failed to parse the log
+  query") or read as something else: `| _time >= 5s` answered every line of the
+  last five seconds (a time range), and `{app="x", _msg="a"}` the lines whose text
+  is `a`. The stream selector and the label filters of the queries the plan
+  serves (line filters and label filters, no parser) now filter the stream tag
+  (`{_time="a"}`; a comparison reads the tag's value out of `_stream`), and
+  `_TIME`, `_Stream` or `_STREAM_ID` in another case is written as the quoted
+  field it is (`"_TIME":="a"`). Queries with a parser or a metric are still
+  written by the string translator and answer as before. **Breaking:** a client
+  that used `{..., _msg="text"}` or `| _msg=~"..."` as a filter on the line text
+  now gets the streams whose label `_msg` matches, as Loki answers. Answers
+  cached before this change are not reused for these queries (a response cache
+  key version).
 - A log query that filters on a label called `not`, `in`, `options`, `contains_all`,
   `contains_any`, `contains_common_case` or `equals_common_case` (in any case), or
   on `and` or `or` once a label function maps a name such as `_or` to it, no

@@ -9,14 +9,23 @@ import "strings"
 // `options:="x"` is rejected as the first filter. A name that VictoriaLogs accepts bare (i, exact, re, seq, range,
 // offset, of, ...) is not listed: quoting it would change a query that already works. Quoted, every one of them
 // is read as a field. A name that is already quoted is not a keyword.
+//
+// _time, _stream and _stream_id in any other case than lower case (_TIME, _Stream, _STREAM_ID) are listed too:
+// VictoriaLogs reads them bare, in any case, as its time, stream and stream id filters (`_TIME:="x"` is rejected,
+// `_TIME:>=5s` is a time range), and quoted as the fields they are (`"_TIME":="x"`). In lower case they are those
+// filters quoted or not, which no quoting changes (ReservedFieldName).
 func KeywordFieldName(name string) bool {
 	switch len(name) {
 	case 2:
 		return strings.EqualFold(name, "or") || strings.EqualFold(name, "in")
 	case 3:
 		return strings.EqualFold(name, "and") || strings.EqualFold(name, "not")
+	case 5:
+		return strings.EqualFold(name, "_time") && name != "_time"
 	case 7:
-		return strings.EqualFold(name, "options")
+		return strings.EqualFold(name, "options") || strings.EqualFold(name, "_stream") && name != "_stream"
+	case 10:
+		return strings.EqualFold(name, "_stream_id") && name != "_stream_id"
 	case 12:
 		return strings.EqualFold(name, "contains_all") || strings.EqualFold(name, "contains_any")
 	case 18:
@@ -35,4 +44,18 @@ func QuoteKeywordField(name string) string {
 		return name
 	}
 	return quoteLogsQL(name)
+}
+
+// ReservedFieldName reports a name VictoriaLogs keeps for itself: _time (the timestamp), _stream and _stream_id
+// (the stream and its id) and _msg (the line). A filter on _time, _stream or _stream_id is the time, stream or
+// stream id filter, bare or quoted, so no field filter can name them; and a label with one of these names reaches
+// VictoriaLogs only inside the stream: a stream label called so is a tag of _stream (`_stream:{_time="a"}` finds
+// it), while a field of the entry called so is dropped (_time, _stream, _stream_id) or replaces the line (_msg).
+// Only lower case: in another case they are fields (KeywordFieldName quotes them).
+func ReservedFieldName(name string) bool {
+	switch name {
+	case "_time", "_stream", "_stream_id", "_msg":
+		return true
+	}
+	return false
 }

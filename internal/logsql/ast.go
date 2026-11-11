@@ -438,6 +438,19 @@ func (s StreamFilter) String() string {
 
 func (s StreamFilter) filterExpr() {}
 
+func (s StreamFilter) appendTo(b []byte) []byte {
+	b = append(b, '{')
+	for i, m := range s.Matchers {
+		if i > 0 {
+			b = append(b, ", "...)
+		}
+		b = append(b, m.Name...)
+		b = append(b, m.Op...)
+		b = appendQuoteLogsQL(b, m.Value)
+	}
+	return append(b, '}')
+}
+
 // TimeFilter constrains the query to a time range.
 type TimeFilter struct {
 	Range string // e.g. "5m" or "[2024-01-01,2024-01-02]"

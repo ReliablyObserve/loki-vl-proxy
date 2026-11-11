@@ -1,0 +1,352 @@
+{"q":"_time:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _time:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -_time:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _time:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _time:\u003e5","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _time:\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _time:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (_time:=\"x\" or b:=\"y\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | filter _time:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | format if (_time:*) \"\u003ca\u003e\" as b","v1.49.0":false,"v1.53.0":false}
+{"q":"{_time=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _stream:{_time!=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" {_time=~\"x.*\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _time","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete _time","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (_time) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as _time","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | extract_regexp \"(?P\u003c_time\u003e.+)\" from a","v1.49.0":true,"v1.53.0":true}
+{"q":"\"_time\":=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_time\":=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"_time\":=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_time\":~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_time\":\u003e5","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_time\":\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_time\":*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"_time\":=\"x\" or b:=\"y\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | filter \"_time\":=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | format if (\"_time\":*) \"\u003ca\u003e\" as b","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | fields \"_time\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete \"_time\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (\"_time\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as \"_time\"","v1.49.0":true,"v1.53.0":true}
+{"q":"_TIME:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _TIME:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -_TIME:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _TIME:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _TIME:\u003e5","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _TIME:\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _TIME:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (_TIME:=\"x\" or b:=\"y\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | filter _TIME:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | format if (_TIME:*) \"\u003ca\u003e\" as b","v1.49.0":false,"v1.53.0":false}
+{"q":"{_TIME=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _stream:{_TIME!=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" {_TIME=~\"x.*\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _TIME","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete _TIME","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (_TIME) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as _TIME","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | extract_regexp \"(?P\u003c_TIME\u003e.+)\" from a","v1.49.0":true,"v1.53.0":true}
+{"q":"\"_TIME\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_TIME\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"_TIME\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_TIME\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_TIME\":\u003e5","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_TIME\":\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_TIME\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"_TIME\":=\"x\" or b:=\"y\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | filter \"_TIME\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format if (\"_TIME\":*) \"\u003ca\u003e\" as b","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields \"_TIME\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete \"_TIME\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (\"_TIME\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as \"_TIME\"","v1.49.0":true,"v1.53.0":true}
+{"q":"_Time:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Time:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -_Time:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Time:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Time:\u003e5","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Time:\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _Time:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (_Time:=\"x\" or b:=\"y\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | filter _Time:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | format if (_Time:*) \"\u003ca\u003e\" as b","v1.49.0":false,"v1.53.0":false}
+{"q":"{_Time=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _stream:{_Time!=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" {_Time=~\"x.*\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _Time","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete _Time","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (_Time) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as _Time","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | extract_regexp \"(?P\u003c_Time\u003e.+)\" from a","v1.49.0":true,"v1.53.0":true}
+{"q":"\"_Time\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Time\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"_Time\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Time\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Time\":\u003e5","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Time\":\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Time\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"_Time\":=\"x\" or b:=\"y\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | filter \"_Time\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format if (\"_Time\":*) \"\u003ca\u003e\" as b","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields \"_Time\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete \"_Time\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (\"_Time\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as \"_Time\"","v1.49.0":true,"v1.53.0":true}
+{"q":"_stream:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _stream:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -_stream:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _stream:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _stream:\u003e5","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _stream:\u003e=5s","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _stream:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (_stream:=\"x\" or b:=\"y\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | filter _stream:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | format if (_stream:*) \"\u003ca\u003e\" as b","v1.49.0":false,"v1.53.0":false}
+{"q":"{_stream=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _stream:{_stream!=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" {_stream=~\"x.*\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _stream","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete _stream","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (_stream) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as _stream","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | extract_regexp \"(?P\u003c_stream\u003e.+)\" from a","v1.49.0":true,"v1.53.0":true}
+{"q":"\"_stream\":=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_stream\":=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"_stream\":=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_stream\":~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_stream\":\u003e5","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_stream\":\u003e=5s","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_stream\":*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"_stream\":=\"x\" or b:=\"y\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | filter \"_stream\":=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | format if (\"_stream\":*) \"\u003ca\u003e\" as b","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | fields \"_stream\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete \"_stream\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (\"_stream\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as \"_stream\"","v1.49.0":true,"v1.53.0":true}
+{"q":"_STREAM:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _STREAM:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -_STREAM:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _STREAM:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _STREAM:\u003e5","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _STREAM:\u003e=5s","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _STREAM:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (_STREAM:=\"x\" or b:=\"y\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | filter _STREAM:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | format if (_STREAM:*) \"\u003ca\u003e\" as b","v1.49.0":false,"v1.53.0":false}
+{"q":"{_STREAM=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _stream:{_STREAM!=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" {_STREAM=~\"x.*\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _STREAM","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete _STREAM","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (_STREAM) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as _STREAM","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | extract_regexp \"(?P\u003c_STREAM\u003e.+)\" from a","v1.49.0":true,"v1.53.0":true}
+{"q":"\"_STREAM\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_STREAM\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"_STREAM\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_STREAM\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_STREAM\":\u003e5","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_STREAM\":\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_STREAM\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"_STREAM\":=\"x\" or b:=\"y\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | filter \"_STREAM\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format if (\"_STREAM\":*) \"\u003ca\u003e\" as b","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields \"_STREAM\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete \"_STREAM\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (\"_STREAM\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as \"_STREAM\"","v1.49.0":true,"v1.53.0":true}
+{"q":"_Stream:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Stream:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -_Stream:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Stream:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Stream:\u003e5","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Stream:\u003e=5s","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Stream:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (_Stream:=\"x\" or b:=\"y\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | filter _Stream:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | format if (_Stream:*) \"\u003ca\u003e\" as b","v1.49.0":false,"v1.53.0":false}
+{"q":"{_Stream=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _stream:{_Stream!=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" {_Stream=~\"x.*\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _Stream","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete _Stream","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (_Stream) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as _Stream","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | extract_regexp \"(?P\u003c_Stream\u003e.+)\" from a","v1.49.0":true,"v1.53.0":true}
+{"q":"\"_Stream\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Stream\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"_Stream\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Stream\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Stream\":\u003e5","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Stream\":\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Stream\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"_Stream\":=\"x\" or b:=\"y\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | filter \"_Stream\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format if (\"_Stream\":*) \"\u003ca\u003e\" as b","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields \"_Stream\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete \"_Stream\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (\"_Stream\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as \"_Stream\"","v1.49.0":true,"v1.53.0":true}
+{"q":"_stream_id:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _stream_id:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -_stream_id:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _stream_id:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _stream_id:\u003e5","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _stream_id:\u003e=5s","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _stream_id:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (_stream_id:=\"x\" or b:=\"y\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | filter _stream_id:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | format if (_stream_id:*) \"\u003ca\u003e\" as b","v1.49.0":false,"v1.53.0":false}
+{"q":"{_stream_id=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _stream:{_stream_id!=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" {_stream_id=~\"x.*\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _stream_id","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete _stream_id","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (_stream_id) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as _stream_id","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | extract_regexp \"(?P\u003c_stream_id\u003e.+)\" from a","v1.49.0":true,"v1.53.0":true}
+{"q":"\"_stream_id\":=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_stream_id\":=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -\"_stream_id\":=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_stream_id\":~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_stream_id\":\u003e5","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_stream_id\":\u003e=5s","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" \"_stream_id\":*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (\"_stream_id\":=\"x\" or b:=\"y\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | filter \"_stream_id\":=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | format if (\"_stream_id\":*) \"\u003ca\u003e\" as b","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | fields \"_stream_id\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete \"_stream_id\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (\"_stream_id\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as \"_stream_id\"","v1.49.0":true,"v1.53.0":true}
+{"q":"_STREAM_ID:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _STREAM_ID:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -_STREAM_ID:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _STREAM_ID:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _STREAM_ID:\u003e5","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _STREAM_ID:\u003e=5s","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _STREAM_ID:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (_STREAM_ID:=\"x\" or b:=\"y\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | filter _STREAM_ID:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | format if (_STREAM_ID:*) \"\u003ca\u003e\" as b","v1.49.0":false,"v1.53.0":false}
+{"q":"{_STREAM_ID=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _stream:{_STREAM_ID!=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" {_STREAM_ID=~\"x.*\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _STREAM_ID","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete _STREAM_ID","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (_STREAM_ID) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as _STREAM_ID","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | extract_regexp \"(?P\u003c_STREAM_ID\u003e.+)\" from a","v1.49.0":true,"v1.53.0":true}
+{"q":"\"_STREAM_ID\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_STREAM_ID\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"_STREAM_ID\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_STREAM_ID\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_STREAM_ID\":\u003e5","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_STREAM_ID\":\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_STREAM_ID\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"_STREAM_ID\":=\"x\" or b:=\"y\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | filter \"_STREAM_ID\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format if (\"_STREAM_ID\":*) \"\u003ca\u003e\" as b","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields \"_STREAM_ID\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete \"_STREAM_ID\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (\"_STREAM_ID\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as \"_STREAM_ID\"","v1.49.0":true,"v1.53.0":true}
+{"q":"_Stream_Id:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Stream_Id:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" -_Stream_Id:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Stream_Id:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Stream_Id:\u003e5","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Stream_Id:\u003e=5s","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" _Stream_Id:*","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" (_Stream_Id:=\"x\" or b:=\"y\")","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | filter _Stream_Id:=\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"app:=\"a\" | format if (_Stream_Id:*) \"\u003ca\u003e\" as b","v1.49.0":false,"v1.53.0":false}
+{"q":"{_Stream_Id=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _stream:{_Stream_Id!=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" {_Stream_Id=~\"x.*\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _Stream_Id","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete _Stream_Id","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (_Stream_Id) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as _Stream_Id","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | extract_regexp \"(?P\u003c_Stream_Id\u003e.+)\" from a","v1.49.0":true,"v1.53.0":true}
+{"q":"\"_Stream_Id\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Stream_Id\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"_Stream_Id\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Stream_Id\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Stream_Id\":\u003e5","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Stream_Id\":\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_Stream_Id\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"_Stream_Id\":=\"x\" or b:=\"y\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | filter \"_Stream_Id\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format if (\"_Stream_Id\":*) \"\u003ca\u003e\" as b","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields \"_Stream_Id\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete \"_Stream_Id\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (\"_Stream_Id\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as \"_Stream_Id\"","v1.49.0":true,"v1.53.0":true}
+{"q":"_msg:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _msg:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -_msg:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _msg:~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _msg:\u003e5","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _msg:\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _msg:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (_msg:=\"x\" or b:=\"y\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | filter _msg:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format if (_msg:*) \"\u003ca\u003e\" as b","v1.49.0":true,"v1.53.0":true}
+{"q":"{_msg=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _stream:{_msg!=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" {_msg=~\"x.*\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _msg","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete _msg","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (_msg) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as _msg","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | extract_regexp \"(?P\u003c_msg\u003e.+)\" from a","v1.49.0":true,"v1.53.0":true}
+{"q":"\"_msg\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_msg\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"_msg\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_msg\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_msg\":\u003e5","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_msg\":\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_msg\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"_msg\":=\"x\" or b:=\"y\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | filter \"_msg\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format if (\"_msg\":*) \"\u003ca\u003e\" as b","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields \"_msg\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete \"_msg\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (\"_msg\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as \"_msg\"","v1.49.0":true,"v1.53.0":true}
+{"q":"_MSG:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _MSG:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -_MSG:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _MSG:~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _MSG:\u003e5","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _MSG:\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _MSG:*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (_MSG:=\"x\" or b:=\"y\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | filter _MSG:=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format if (_MSG:*) \"\u003ca\u003e\" as b","v1.49.0":true,"v1.53.0":true}
+{"q":"{_MSG=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" _stream:{_MSG!=\"x\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" {_MSG=~\"x.*\"}","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields _MSG","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete _MSG","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (_MSG) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as _MSG","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | extract_regexp \"(?P\u003c_MSG\u003e.+)\" from a","v1.49.0":true,"v1.53.0":true}
+{"q":"\"_MSG\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_MSG\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" -\"_MSG\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_MSG\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_MSG\":\u003e5","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_MSG\":\u003e=5s","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" \"_MSG\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" (\"_MSG\":=\"x\" or b:=\"y\")","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | filter \"_MSG\":=\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | format if (\"_MSG\":*) \"\u003ca\u003e\" as b","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | fields \"_MSG\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | delete \"_MSG\"","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | stats by (\"_MSG\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"app:=\"a\" | copy a as \"_MSG\"","v1.49.0":true,"v1.53.0":true}

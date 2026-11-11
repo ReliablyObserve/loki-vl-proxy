@@ -107,7 +107,9 @@ func LabelFormats(formats []logql.LabelFormat) (pipes []logsql.Pipe, reason stri
 			pipes = append(pipes,
 				logsql.PipeFormat{
 					Template: "<" + f.Value + ">", ResultField: f.Name, SkipEmptyResults: true,
-					If: logsql.FieldFilter{Field: f.Value, Op: logsql.FieldOpAny},
+					// The condition is a filter: a name VictoriaLogs reads as a keyword there is quoted
+					// (logsql.QuoteKeywordField), as the query plan quotes it wherever a filter names a field.
+					If: logsql.FieldFilter{Field: logsql.QuoteKeywordField(f.Value), Op: logsql.FieldOpAny},
 				},
 				logsql.PipeDelete{Labels: []string{f.Value}})
 			continue

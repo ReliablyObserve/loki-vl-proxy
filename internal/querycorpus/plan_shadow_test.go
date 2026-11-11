@@ -138,6 +138,11 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			if !ok && translatorMisreadsParenthesizedMetric(q) {
 				caseID, ok = "semantics/translator-reads-parenthesized-metric-as-text", true
 			}
+			if !ok && lower.ReadsReservedField(plan, prof.lowerProfile()) {
+				// A label called _time, _stream, _stream_id or _msg: the plan filters the stream tag, the
+				// translator a field VictoriaLogs rejects or reads as its own filter.
+				caseID, ok = "semantics/translator-writes-reserved-field-names", true
+			}
 			if ok {
 				// The translator is the wrong one here (knownTypedDivergencesPath, with its registry case):
 				// not a mismatch of the lowering, and not native until the plan serves it.

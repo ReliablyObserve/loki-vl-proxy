@@ -210,6 +210,11 @@ func unwrapLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy 
 	}
 	legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps)
 	op, lerr := PlanQuery(q, p, prof.lowerProfile())
+	// A label called _time, _stream, _stream_id or _msg is the stream tag in the lowering and a field filter VictoriaLogs
+	// rejects or misreads in the translator (semantics/translator-writes-reserved-field-names): not compared.
+	if ReadsReservedField(p, prof.lowerProfile()) {
+		return "", "", false, false
+	}
 	if errors.Is(lerr, ErrNotLowered) {
 		return "", legacy, true, terr == nil
 	}
@@ -219,7 +224,7 @@ func unwrapLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy 
 	if terr != nil {
 		return "", "", false, false
 	}
-	return physical.Encode(op), legacy, false, true
+	return physical.Encode(op), QuoteKeywordFieldText(legacy), false, true
 }
 
 // FuzzUnwrapLowering holds the lowering of range and vector aggregations over an unwrapped label to the string
