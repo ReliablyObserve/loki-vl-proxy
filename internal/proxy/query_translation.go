@@ -40,8 +40,9 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		rt := newRequestTelemetry()
 		rt.start, rt.traceOn = start, p.slowTraceOn()
 		ctx := context.WithValue(r.Context(), requestTelemetryKey, rt)
-		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route})
 		grafanaProfile := detectGrafanaClientProfile(r, endpoint, route)
+		caller := newRequestCaller(r, clientID, clientSource, grafanaProfile)
+		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route, caller: caller})
 		ctx = context.WithValue(ctx, requestGrafanaClientKey, grafanaProfile)
 		ctx = withExecutionLimits(ctx, p.execLimits)
 		reqWithTelemetry := r.WithContext(ctx)
@@ -139,8 +140,6 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		authUser, authSource := metrics.ResolveAuthContext(r)
 		clientAddr := forwardedClientAddress(r, p.metricsTrustProxyHeaders)
 		peerAddr, _ := splitHostPortValue(r.RemoteAddr)
-		grafanaSurface := grafanaProfile.surface
-		grafanaSourceTag := grafanaProfile.sourceTag
 		grafanaVersion := grafanaProfile.version
 		upstreamDurationByTypeMs := make(map[string]int64, len(telemetry.upstreamDurationByType))
 		for key, value := range telemetry.upstreamDurationByType {
@@ -162,8 +161,6 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"event.duration", elapsed.Nanoseconds(),
 			"loki.tenant.id", tenant,
 			"loki.query", truncateQuery(query, 200),
-			"enduser.id", clientID,
-			"enduser.source", clientSource,
 			"cache.result", telemetry.cacheResult,
 			"proxy.duration_ms", elapsed.Milliseconds(),
 			"proxy.overhead_ms", proxyOverhead.Milliseconds(),
@@ -173,6 +170,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.error", telemetry.upstreamErrorSeen,
 		)
 		logAttrs = append(logAttrs, telemetry.flow.logAttrs(elapsed)...)
+		logAttrs = appendCallerAttrs(logAttrs, caller)
 		if len(telemetry.upstreamCallsByType) > 0 {
 			logAttrs = append(logAttrs, "upstream.call_types", len(telemetry.upstreamCallsByType))
 		}
@@ -211,12 +209,6 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		if grafanaVersion != "" {
 			logAttrs = append(logAttrs, "grafana.version", grafanaVersion)
 		}
-		if grafanaSourceTag != "" {
-			logAttrs = append(logAttrs, "grafana.client.source_tag", grafanaSourceTag)
-		}
-		if grafanaSurface != "unknown" {
-			logAttrs = append(logAttrs, "grafana.client.surface", grafanaSurface)
-		}
 		if grafanaProfile.runtimeFamily != "" {
 			logAttrs = append(logAttrs, "grafana.runtime.family", grafanaProfile.runtimeFamily)
 		}
@@ -225,9 +217,6 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		}
 		if grafanaProfile.datasourceProfile != "" {
 			logAttrs = append(logAttrs, "grafana.datasource.profile", grafanaProfile.datasourceProfile)
-		}
-		if enduserName := deriveEnduserName(clientID, clientSource); enduserName != "" {
-			logAttrs = append(logAttrs, "enduser.name", enduserName)
 		}
 		if authUser != "" {
 			// authUser is the Basic-Auth username, read from the Authorization

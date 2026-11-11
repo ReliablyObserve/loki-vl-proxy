@@ -87,6 +87,7 @@ func (p *Proxy) recordUpstreamObservation(ctx context.Context, system, method, r
 		"event.duration", duration.Nanoseconds(),
 		"loki.tenant.id", getOrgID(ctx),
 	}
+	logAttrs = appendCallerAttrs(logAttrs, meta.caller)
 	if parentRequestType != "" && parentRequestType != "unknown" {
 		logAttrs = append(logAttrs, "loki.parent_request.type", parentRequestType)
 	}

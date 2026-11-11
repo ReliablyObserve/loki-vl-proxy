@@ -125,6 +125,7 @@ func (f *flowCounters) logAttrs(elapsed time.Duration) []any {
 		"flow.vl.calls", f.vlCalls,
 		"flow.vl.ms", f.vlDur.Milliseconds(),
 		"flow.vl.bytes", f.vlBytes,
+		"flow.vl.rows", f.vlRows,
 		"flow.proxy.ms", f.proxyDur(elapsed).Milliseconds(),
 	}
 }

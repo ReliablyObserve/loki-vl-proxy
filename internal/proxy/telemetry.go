@@ -81,6 +81,7 @@ type requestTelemetrySnapshot struct {
 type requestRouteMeta struct {
 	endpoint string
 	route    string
+	caller   requestCaller
 }
 
 type grafanaClientProfile struct {
