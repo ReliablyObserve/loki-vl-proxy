@@ -201,6 +201,7 @@ func unwrapLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy 
 		return "", "", false, false
 	}
 	legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps)
+	legacy = guardedLegacy(p, legacy, terr)
 	op, lerr := PlanQuery(q, p, prof.lowerProfile())
 	if errors.Is(lerr, ErrNotLowered) {
 		return "", legacy, true, terr == nil
