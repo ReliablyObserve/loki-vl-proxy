@@ -96,7 +96,6 @@ func TestPlanDelegatesRankShapes(t *testing.T) {
 		`topk(3, ` + rate + ` > 1)`:                                         "Rank operand BinOp",
 		`topk(3, vector(1))`:                                                "Rank operand VectorLit",
 		`topk(3, label_replace(topk(2, ` + rate + `), "a", "b", "c", "d"))`: "LabelReplace operand Rank",
-		`topk(3, rate({app="a"} | keep x [5m]))`:                            "Rank operand RangeAgg",
 		`topk(3, rate({app="a"} | detected_level="error" [5m]))`:            "Rank operand RangeAgg",
 		`topk(3, sum by (app) (rate({app="a"} | detected_level="e" [5m])))`: "VectorAgg LogSelect label filter detected_level",
 		`topk(3, sum without () (` + rate + `))`:                            "VectorAgg without empty",

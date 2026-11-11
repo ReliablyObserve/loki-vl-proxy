@@ -29,6 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (or `| logfmt`, `| pattern`, `| regexp`, `| unpack`) followed by a
   non-ASCII character is now left to the string translator, which reads it
   as a parser stage where the plan did not.
+- The query plan lowers the metric queries whose labels come from a parser,
+  for every translation profile: a grouping or unwrapped label with an
+  underscore behind `json` or `logfmt` (the `http_method` a line may hold as
+  `http.method` or `http-method`, and the `<name>_extracted` rename of a label
+  that collides with a stream label), a `without` clause over a parser, and
+  a `rate`, or `count`, `min`, `max` and `avg`, behind a trailing `keep`. The
+  text is the string translator's, byte for byte. The requests sent to
+  VictoriaLogs do not change. A label filter or a drop after the parser under
+  such a label, a `without` fold or a `keep`, a collision rename that reuses
+  the scratch fields of a label filter, a `keep` that leaves no label and a
+  nest over an unwrapped label are still written by the string translator.
 - The query plan leaves a range function spelled with a blank, tab or newline
   between its name and its parenthesis (`rate ({app="a"}[5m])`) to the string
   translator, whether it stands alone, is an operand of a binary operation or

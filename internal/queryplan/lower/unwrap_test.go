@@ -110,11 +110,7 @@ func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 		`rate({app="a"} | unwrap n [0s])`:                                       "RangeAgg range",
 		`avg_over_time({app="a"} | unwrap n [5m]) without (pod)`:                "RangeAgg grouping",
 		`avg_over_time({app="a"} | unwrap n [5m]) by (bool)`:                    "RangeAgg grouping label",
-		`sum_over_time({app="a"} | json | unwrap a_b [5m])`:                     "RangeAgg parser label",
-		`avg_over_time({app="a"} | logfmt | unwrap n [5m]) by (a_b)`:            "RangeAgg parser label",
-		`rate({app="a"} | json | unwrap n | keep a [5m])`:                       "RangeAgg keep identity",
 		`sum_over_time({app="a"} | unwrap n | unwrap m [5m])`:                   "RangeAgg unwrap stages",
-		`sum(rate({app="a"} | unwrap n | keep x [5m]))`:                         "VectorAgg keep identity",
 		`sum_over_time({app="a"} | line_format "{{upper .a}}" | unwrap n [5m])`: "RangeAgg LogSelect line format function",
 		`sum_over_time({app="a"} | detected_level="e" | unwrap n [5m])`:         "RangeAgg LogSelect label filter detected_level",
 		`sum_over_time({app="a"} |~ "\x41b" | unwrap n [5m])`:                   "RangeAgg LogSelect escaped spelling",
@@ -126,8 +122,6 @@ func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 		`sum without (x) (sum_over_time({x!="  "} | unwrap n [5m]))`:            "VectorAgg quoted clause",
 		`avg(sum_over_time({app="a"} |= "| json" | unwrap n [5m]))`:             "VectorAgg quoted clause",
 		`sum(sum_over_time({app="a"} |unwrap n [5m]))`:                          "VectorAgg unwrap spelling",
-		`sum(sum_over_time({app="a"} | json | unwrap a_b [5m]))`:                "VectorAgg parser label",
-		`sum without (x) (sum_over_time({app="a"} | json | unwrap n [5m]))`:     "VectorAgg parser without",
 		`sum(bytes_rate({app="a"} | unwrap n [5m]))`:                            "VectorAgg unwrap bytes_rate",
 		// the quoted text a translator regexp reads out of a rate or a count, min, max and avg (a parser in the text
 		// takes the level from their series identity, an unwrap makes a rate a sum).

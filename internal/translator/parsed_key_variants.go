@@ -229,9 +229,7 @@ func resolveStatsKeys(query, byLabels, statsExpr string) string {
 	var pipes strings.Builder
 	var extractedBases, extractedLabels []string
 	for _, label := range labels {
-		for _, key := range parsedKeyVariants(label)[1:] {
-			pipes.WriteString(" | format if (" + strconv.Quote(key) + `:*) "<` + key + `>" as ` + label + " keep_original_fields")
-		}
+		translate.ParsedKeyPipesText(&pipes, label)
 		if base, ok := strings.CutSuffix(label, extractedSuffix); ok && isBareIdentifier(base) {
 			extractedBases = append(extractedBases, base)
 			extractedLabels = append(extractedLabels, label)
@@ -331,8 +329,7 @@ func narrowUnwrapLogfmtUnpack(query, byLabels, gateField string) string {
 // resolvableLabel reports whether label can be a sanitized parser key that the
 // query does not define itself.
 func resolvableLabel(query, label string) bool {
-	if !labelIdentRE.MatchString(label) || !strings.Contains(label, "_") || strings.HasPrefix(label, "_") ||
-		label == "service_name" || label == "detected_level" {
+	if !translate.ParsedLabelCandidate(label) {
 		return false
 	}
 	return !strings.Contains(query, " as "+label) && !strings.Contains(query, "<"+label+">")

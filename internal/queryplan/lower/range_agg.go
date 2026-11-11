@@ -42,14 +42,12 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	}
 	rate := ra.Op == logql.RangeRate || ra.Op == logql.RangeBytesRate
 	var stats logsql.PipeStats
-	var ratePipes [3]logsql.Pipe
 	if rate {
 		// The translator reads the range's seconds from its text and writes none for a range of no length.
 		seconds := ra.Range.Seconds()
 		if seconds <= 0 {
 			return nil, &NotLoweredError{Construct: "RangeAgg range"}
 		}
-		ratePipes, _ = translate.RateStatsPipes(ra.Op, seconds)
 	} else {
 		var ok bool
 		if stats, ok = translate.RangeStatsPipe(ra.Op); !ok {
@@ -68,21 +66,43 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	if rate && readsUnwrapOrParser(ra.In, log, true, !log.parser) {
 		return nil, errQuotedClause
 	}
-	if err := keepIdentityError(ra.In, "RangeAgg", rate); err != nil {
-		return nil, err
+	// The series of a rate behind a trailing keep are the labels it leaves.
+	var ident []string
+	if rate {
+		if ident, err = seriesIdent(ra.In, log.parser, false, "RangeAgg", prof); err != nil {
+			return nil, err
+		}
 	}
-	if rate && log.parser {
+	if rate && (log.parser || ident != nil) {
 		// The stream is the series of a rate over a parser: the detected_level chain is not derived.
-		ratePipes = translate.RateStatsPipesBy(rateFunc(ra.Op), ra.Range.Seconds(), parserIdentity)
+		keys, by := parserIdentity, parserBy
+		if ident != nil {
+			keys, by = groupKeys(ident), ident
+		}
+		ratePipes := translate.RateStatsPipesBy(rateFunc(ra.Op), ra.Range.Seconds(), keys)
+		resolved, err := log.keyPipes(by, rateFunc(ra.Op), statArg(rateFunc(ra.Op)), "RangeAgg", true)
+		if err != nil {
+			return nil, err
+		}
+		// The final stats is built through the path that resolves the labels again, which finds a copy pipe.
 		pipes := ratePipes[:]
-		if log.has("| copy ") && log.unpacked() {
+		if (log.holdsCopy() || resolved.copies) && log.unpacked() {
 			pipes = []logsql.Pipe{ratePipes[0], ratePipes[1], logsql.PipeFilter{Expr: logsql.FieldFilter{Field: rateFilterField, Op: logsql.FieldOpAny}}, ratePipes[2]}
 		}
-		return physical.VLQuery{Text: log.text("", "", pipes...)}, nil
+		chain, service := "", ""
+		first := ratePipes[0].(logsql.PipeStats)
+		if groupsBy(first, translate.DetectedLevelLabel) {
+			chain = translate.RateDetectedLevelChain()
+		}
+		if groupsBy(first, "service_name") {
+			service = translate.ServiceNameGroupingPipes(prof.Caps)
+		}
+		return physical.VLQuery{Text: log.text(chain, service, resolved.text, pipes...)}, nil
 	}
 	if rate {
 		// One allocation for the text: the chain is most of it.
-		return physical.VLQuery{Text: log.text(translate.RateDetectedLevelChain(), "", ratePipes[:]...)}, nil
+		ratePipes, _ := translate.RateStatsPipes(ra.Op, ra.Range.Seconds())
+		return physical.VLQuery{Text: log.text(translate.RateDetectedLevelChain(), "", "", ratePipes[:]...)}, nil
 	}
 	var b strings.Builder
 	log.write(&b, "", "", 80)
@@ -109,6 +129,11 @@ type metricLog struct {
 	// bareLogfmt is where the last pipe in pipes starts when it is the query's only unpack and a bare
 	// `| unpack_logfmt` (an unwrap names the fields to read then), and -1 otherwise.
 	bareLogfmt int
+	// unpacks counts the json and logfmt unpack pipes (at most 8 are told apart), logfmtMask says which of them are
+	// logfmt (bit i for the i-th), and bareMask which are the plain pipe with no field list.
+	unpacks, logfmtMask, bareMask uint8
+	// afterParser says a label filter or a drop stands after a parser stage.
+	afterParser bool
 }
 
 // metricLogQuery lowers the log query of a range aggregation the way the string translator writes a metric row's
@@ -164,6 +189,7 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	var pipes strings.Builder
 	pipes.Grow(size)
 	bare, unpacks, copies := -1, 0, false
+	var mask, bareMask uint8
 	for i, p := range q.Pipes {
 		pipes.WriteByte(' ')
 		start := pipes.Len()
@@ -172,15 +198,25 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 		case logsql.PipeCopy:
 			copies = true
 		case logsql.PipeUnpackJSON:
+			if unpacks < 8 && texts[i] == bareUnpackJSON {
+				bareMask |= 1 << unpacks
+			}
 			unpacks++
 		case logsql.PipeUnpackLogfmt:
+			if unpacks < 8 {
+				mask |= 1 << unpacks
+				if texts[i] == bareUnpackLogfmt {
+					bareMask |= 1 << unpacks
+				}
+			}
 			unpacks++
 			if i == len(q.Pipes)-1 && texts[i] == bareUnpackLogfmt {
 				bare = start - 1
 			}
 		}
 	}
-	m := metricLog{head: head, restore: restore, pipes: pipes.String(), parser: hasParser(in), copies: copies, bareLogfmt: bare}
+	m := metricLog{head: head, restore: restore, pipes: pipes.String(), parser: hasParser(in), copies: copies, bareLogfmt: bare,
+		unpacks: uint8(min(unpacks, 255)), logfmtMask: mask, bareMask: bareMask, afterParser: filteredAfterParser(in)}
 	// The translator narrows the unpack when its text of the query holds exactly one unpack pipe, quoted text included.
 	if unpacks != 1 || strings.Count(head, "| unpack_")+strings.Count(restore, "| unpack_")+strings.Count(m.pipes, "| unpack_") != 1 {
 		m.bareLogfmt = -1
@@ -211,9 +247,10 @@ func (m metricLog) write(b *strings.Builder, chain, service string, extra int) {
 }
 
 // text is the metric row's query with the stats pipes after it (write).
-func (m metricLog) text(chain, service string, stats ...logsql.Pipe) string {
+func (m metricLog) text(chain, service, keys string, stats ...logsql.Pipe) string {
 	var b strings.Builder
-	m.write(&b, chain, service, 80*len(stats))
+	m.write(&b, chain, service, len(keys)+80*len(stats))
+	b.WriteString(keys)
 	for _, p := range stats {
 		b.WriteByte(' ')
 		b.WriteString(p.String())
@@ -278,11 +315,17 @@ func clientReadsAsClause(s string) bool {
 	return false
 }
 
+// bareUnpackJSON is the printed `| unpack_json` of a json stage.
+var bareUnpackJSON = logsql.PipeUnpackJSON{}.String()
+
 // bareUnpackLogfmt is the printed `| unpack_logfmt` of a logfmt stage with no flags and no extraction list.
 var bareUnpackLogfmt = logsql.PipeUnpackLogfmt{}.String()
 
 // parserIdentity is the series of a rate over a log query with a parser.
 var parserIdentity = []logsql.GroupKey{{Field: "_stream"}}
+
+// parserBy is parserIdentity's fields.
+var parserBy = []string{"_stream"}
 
 // rateFunc is the stats function of the rows a rate or a bytes_rate reads.
 func rateFunc(op logql.RangeOp) logsql.StatsFunc {

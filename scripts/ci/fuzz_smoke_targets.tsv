@@ -134,3 +134,4 @@ smoke	internal/queryplan/lower	FuzzEscapedSpellingLowering	12s	-	a value in any 
 smoke	internal/queryplan/lower	FuzzMetricStagesLowering	12s	-	range and vector aggregations over drop, keep, formatting stages and regexp and pattern parsers lower to the query the string translator writes
 smoke	internal/querycorpus	FuzzProxyEvaluatedLowering	12s	-	topk, bottomk, sort, sort_desc, stddev and stdvar lower to the operators and the operand request the proxy's route builds, or are left to the string translator
 smoke	internal/queryplan/lower	FuzzNestedVectorAggLowering	12s	-	vector aggregations over vector aggregations lower to the query the string translator writes
+smoke	internal/queryplan/lower	FuzzParserLabelsLowering	12s	-	grouping, unwrapped and kept labels a parser extracts, a without fold over a parser and a trailing keep lower to the query the string translator writes
