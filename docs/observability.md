@@ -433,8 +433,9 @@ tag). The slow lines also carry what the request cost: `flow.vl.calls`,
 `event.duration` and `vl.body_bytes` on `slow_upstream_request`. One line
 answers "who did this and what did it cost".
 
-The caller is resolved only when a line is written or the callers view records
-a request, so a request that logs nothing pays nothing for it.
+The caller is resolved once per request, by the first line that names it (or
+by the callers view), and shared by the request's later lines, such as one
+`upstream_request` per VictoriaLogs call.
 
 #### Grafana user identity
 

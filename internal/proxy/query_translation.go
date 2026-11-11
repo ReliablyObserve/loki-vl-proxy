@@ -33,7 +33,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		start := time.Now()
 		tenant := r.Header.Get("X-Scope-OrgID")
 		query := r.FormValue("query")
-		clientID, clientSource := metrics.ResolveClientContext(r, p.metricsTrustProxyHeaders)
+		clientID := metrics.ResolveClientID(r, p.metricsTrustProxyHeaders)
 		p.metrics.RecordClientInflight(clientID, 1)
 		defer p.metrics.RecordClientInflight(clientID, -1)
 
@@ -171,8 +171,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.error", telemetry.upstreamErrorSeen,
 		)
 		logAttrs = append(logAttrs, telemetry.flow.logAttrs(elapsed)...)
-		user, userSource := p.callerUser(r, clientID, clientSource)
-		logAttrs = appendCallerAttrs(logAttrs, newRequestCaller(r, tenant, user, userSource, grafanaProfile))
+		logAttrs = append(logAttrs, p.callerLogAttrs(reqCtx)...)
 		if len(telemetry.upstreamCallsByType) > 0 {
 			logAttrs = append(logAttrs, "upstream.call_types", len(telemetry.upstreamCallsByType))
 		}

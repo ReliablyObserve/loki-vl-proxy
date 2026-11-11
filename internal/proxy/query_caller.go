@@ -160,6 +160,30 @@ type vlCost struct {
 	bytes, rows int64
 }
 
+// callerLogAttrs are the caller fields of a log line of the request ctx belongs to (appendCallerAttrs). The first
+// line of a request resolves them and its later lines (one upstream_request per VictoriaLogs call) reuse them, so a
+// request pays for its caller once, and only when it writes a line.
+func (p *Proxy) callerLogAttrs(ctx context.Context) []any {
+	rt := getRequestTelemetry(ctx)
+	if rt == nil {
+		return nil
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if !rt.callerResolved {
+		rt.setCallerAttrs(p.requestCallerFromContext(ctx))
+	}
+	return rt.callerAttrs
+}
+
+// setCallerAttrs stores the caller's log fields; the caller holds rt.mu.
+func (rt *requestTelemetry) setCallerAttrs(c requestCaller) {
+	rt.callerResolved = true
+	if n := callerAttrCount(c); n > 0 {
+		rt.callerAttrs = appendCallerAttrs(make([]any, 0, n), c)
+	}
+}
+
 // recordCallerCost adds what a finished client request cost to its tenant's VictoriaLogs cost counters
 // (loki_vl_proxy_tenant_vl_*_total, with -metrics.export-sensitive-labels) and, with
 // -server.enable-query-analytics, to the /debug/queries callers view. Live tail is left out: it lasts as long as
@@ -176,6 +200,14 @@ func (p *Proxy) recordCallerCost(ctx context.Context, metricTenant, query string
 		return
 	}
 	c := p.requestCallerFromContext(ctx)
+	if rt := getRequestTelemetry(ctx); rt != nil {
+		// The request line, written next, reuses this resolution.
+		rt.mu.Lock()
+		if !rt.callerResolved {
+			rt.setCallerAttrs(c)
+		}
+		rt.mu.Unlock()
+	}
 	req := metrics.CallerRequest{
 		Tenant: c.tenant, User: c.user, UserSource: c.userSource, GrafanaSource: c.sourceTag,
 		Endpoint: endpoint, Route: route, Status: status, Query: query,
@@ -193,13 +225,35 @@ func (p *Proxy) recordCallerCost(ctx context.Context, metricTenant, query string
 	p.queryTracker.RecordRequest(req)
 }
 
+// callerAttrCount is the length appendCallerAttrs gives c, so the shared slice is allocated at its size.
+func callerAttrCount(c requestCaller) int {
+	n := 0
+	if c.user != "" {
+		n += 4
+		if deriveEnduserName(c.user, c.userSource) != "" {
+			n += 2
+		}
+	}
+	if c.sourceTag != "" {
+		n += 2
+	}
+	if c.surface != "" {
+		n += 2
+	}
+	if c.queryTags != "" && !queryTagsAreSource(c.queryTags, c.sourceTag) {
+		n += 2
+	}
+	return n
+}
+
 // appendCallerAttrs adds the caller to a log line: the end user and its source, its name when a user header
 // named it, and the Grafana app's tags when present.
 func appendCallerAttrs(attrs []any, c requestCaller) []any {
 	if c.user != "" {
-		attrs = append(attrs, "enduser.id", c.user, "enduser.source", c.userSource)
-		if name := deriveEnduserName(c.user, c.userSource); name != "" {
-			attrs = append(attrs, "enduser.name", name)
+		user := any(c.user) // boxed once: enduser.name is the same value when a user header named the user
+		attrs = append(attrs, "enduser.id", user, "enduser.source", c.userSource)
+		if deriveEnduserName(c.user, c.userSource) != "" {
+			attrs = append(attrs, "enduser.name", user)
 		}
 	}
 	if c.sourceTag != "" {

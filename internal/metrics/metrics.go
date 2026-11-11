@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"runtime"
@@ -781,6 +782,21 @@ var tenantVLCostMetrics = []struct {
 	{"loki_vl_proxy_tenant_vl_rows_total", "Log rows read from VictoriaLogs for the tenant's client requests.", "{row}", func(c *tenantVLCost) float64 { return float64(c.rows.Load()) }},
 }
 
+// writeTenantVLCost writes the loki_vl_proxy_tenant_vl_*_total families from a snapshot.
+func writeTenantVLCost(sb *strings.Builder, costs map[string]*tenantVLCost) {
+	tenants := make([]string, 0, len(costs))
+	for k := range costs {
+		tenants = append(tenants, k)
+	}
+	sort.Strings(tenants)
+	for _, family := range tenantVLCostMetrics {
+		fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s counter\n", family.name, family.help, family.name)
+		for _, tenant := range tenants {
+			fmt.Fprintf(sb, "%s{tenant=%q} %g\n", family.name, tenant, family.value(costs[tenant]))
+		}
+	}
+}
+
 // RecordClientIdentity records a request for a specific client identity.
 // Client is identified by trusted user header > tenant > client IP.
 func (m *Metrics) RecordClientIdentity(clientID, endpoint string, duration time.Duration, responseBytes int64) {
@@ -859,8 +875,8 @@ func ResolveClientContext(r *http.Request, trustProxyHeaders bool) (string, stri
 			}
 		}
 	}
-	// Tenant ID (X-Scope-OrgID)
-	if tenant := strings.TrimSpace(r.Header.Get("X-Scope-OrgID")); tenant != "" {
+	// Tenant ID (X-Scope-OrgID, read under its canonical spelling so the lookup does not allocate)
+	if tenant := strings.TrimSpace(r.Header.Get("X-Scope-Orgid")); tenant != "" {
 		return tenant, "tenant"
 	}
 	// Forwarded client IP
@@ -1717,10 +1733,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	if sExportSensitive {
 		sTenantRequests = snapshotAtomicMap(m.tenantRequests)
 		sTenantDurations = snapshotHistogramMap(m.tenantDurations)
-		sTenantVLCost = make(map[string]*tenantVLCost, len(m.tenantVLCost))
-		for k, v := range m.tenantVLCost {
-			sTenantVLCost[k] = v
-		}
+		sTenantVLCost = maps.Clone(m.tenantVLCost)
 		sClientRequests = snapshotAtomicMap(m.clientRequests)
 		sClientBytes = snapshotAtomicMap(m.clientBytes)
 		sClientStatuses = snapshotAtomicMap(m.clientStatuses)
@@ -2099,19 +2112,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_count{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q} %d\n",
 				lokiSystemLabel, downstreamDirection, tenant, endpoint, route, h.loadCount())
 		}
-
-		// Per-tenant VictoriaLogs cost
-		costTenants := make([]string, 0, len(sTenantVLCost))
-		for k := range sTenantVLCost {
-			costTenants = append(costTenants, k)
-		}
-		sort.Strings(costTenants)
-		for _, family := range tenantVLCostMetrics {
-			fmt.Fprintf(&sb, "# HELP %s %s\n# TYPE %s counter\n", family.name, family.help, family.name)
-			for _, tenant := range costTenants {
-				fmt.Fprintf(&sb, "%s{tenant=%q} %g\n", family.name, tenant, family.value(sTenantVLCost[tenant]))
-			}
-		}
+		writeTenantVLCost(&sb, sTenantVLCost)
 	}
 
 	// Client error breakdown

@@ -295,6 +295,25 @@ func TestLogUserHeaderNeverSplitsTheCacheReachesVictoriaLogsOrLabelsAMetric(t *t
 	if strings.Contains(body, "alice") || strings.Contains(body, "bob") {
 		t.Fatalf("a user reached a metric label")
 	}
+	pushed := make(chan string, 1)
+	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		select {
+		case pushed <- string(b):
+		default:
+		}
+	}))
+	defer collector.Close()
+	pusher := metrics.NewOTLPPusher(metrics.OTLPConfig{Endpoint: collector.URL, Interval: 10 * time.Millisecond}, p.metrics)
+	pusher.Start()
+	otlp := <-pushed
+	pusher.Stop()
+	if !strings.Contains(otlp, "team-a") {
+		t.Fatalf("the OTLP push carries no tenant series; the check below proves nothing")
+	}
+	if strings.Contains(otlp, "alice") || strings.Contains(otlp, "bob") {
+		t.Fatalf("a user reached an OTLP metric attribute")
+	}
 }
 
 // /debug/queries names who ran the recent requests and which callers cost VictoriaLogs the most, by user and
@@ -337,5 +356,85 @@ func TestDebugQueriesShowsCallersAndTheirCost(t *testing.T) {
 	}
 	if out.Callers.Callers != 2 || len(out.Callers.RecentRequests) != 3 {
 		t.Fatalf("unfiltered: %d callers, %d requests (live tail must not count)", out.Callers.Callers, len(out.Callers.RecentRequests))
+	}
+}
+
+// The callers view applies the same trust and bounds as the log lines: a user header from an untrusted peer never
+// reaches it, and an oversized or forged one is capped and escaped.
+//
+// conformance: observability-slow-query-log
+func TestDebugQueriesCallerTrustAndBounds(t *testing.T) {
+	p, _ := slowLogProxy(t, 0)
+	p.enableQueryAnalytics = true
+	p.logUser, _ = parseLogUserHeader("X-Grafana-User", "10.0.0.0/8")
+	serve := func(peer, user string) {
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query="+url.QueryEscape(`{app="api"}`), nil)
+		req.RemoteAddr = peer
+		req.Header.Set("X-Scope-OrgID", "team-a")
+		req.Header.Set("X-Grafana-User", user)
+		p.requestLogger("query_range", "/loki/api/v1/query_range", callerLogHandler(p)).ServeHTTP(httptest.NewRecorder(), req)
+	}
+	serve("192.0.2.9:4000", "mallory")
+	serve("10.1.2.3:4000", "eve\u2028"+strings.Repeat("z", 400))
+	rec := httptest.NewRecorder()
+	p.queryTracker.Handler(rec, httptest.NewRequest(http.MethodGet, "/debug/queries", nil))
+	body := rec.Body.String()
+	if strings.Contains(body, "mallory") {
+		t.Fatalf("an untrusted user header reached /debug/queries\n%s", body)
+	}
+	if strings.Contains(body, "\u2028") || strings.Contains(body, strings.Repeat("z", 200)) {
+		t.Fatalf("a forged or oversized user reached /debug/queries unescaped or uncapped")
+	}
+	var out struct {
+		Callers metrics.CallerView `json:"callers"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	users := map[string]string{}
+	for _, c := range out.Callers.TopByVLMs {
+		users[c.UserSource] = c.User
+	}
+	if users["tenant"] != "team-a" || !strings.HasPrefix(users["grafana_user"], `eve\u2028zz`) || len(users["grafana_user"]) > callerIdentityMaxBytes+3 {
+		t.Fatalf("callers %v", users)
+	}
+}
+
+// VictoriaLogs calls made in parallel by one request share its caller: each upstream_request line names it, the
+// first line resolving it (run under -race).
+//
+// conformance: observability-slow-query-log
+func TestParallelUpstreamLinesShareTheCaller(t *testing.T) {
+	p, buf := slowLogProxy(t, 0)
+	p.logUser, _ = parseLogUserHeader("X-Grafana-User", "")
+	h := func(w http.ResponseWriter, r *http.Request) {
+		r = p.withRequestScope(r)
+		done := make(chan struct{})
+		for range 4 {
+			go func() {
+				defer func() { done <- struct{}{} }()
+				if resp, err := p.vlGet(r.Context(), "/select/logsql/query", url.Values{"query": {`app:="api"`}}); err == nil {
+					_, _ = io.Copy(io.Discard, resp.Body)
+					_ = resp.Body.Close()
+				}
+			}()
+		}
+		for range 4 {
+			<-done
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query="+url.QueryEscape(`{app="api"}`), nil)
+	req.Header.Set("X-Scope-OrgID", "team-a")
+	req.Header.Set("X-Grafana-User", "alice")
+	p.requestLogger("query_range", "/loki/api/v1/query_range", h).ServeHTTP(httptest.NewRecorder(), req)
+	lines := slowLogLines(t, buf, "upstream_request")
+	if len(lines) != 4 {
+		t.Fatalf("upstream_request lines: %d", len(lines))
+	}
+	for _, l := range lines {
+		if l["enduser.id"] != "alice" || l["enduser.source"] != "grafana_user" {
+			t.Fatalf("upstream_request %v", l)
+		}
 	}
 }

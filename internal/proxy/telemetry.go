@@ -35,6 +35,10 @@ type requestTelemetry struct {
 	internalDurationByType map[string]time.Duration
 	// flow is what the request caused (query_flow.go).
 	flow flowCounters
+	// callerAttrs are the caller's log fields, resolved by the first line that names the caller and shared by the
+	// request's later lines (query_caller.go); callerResolved is set with them.
+	callerAttrs    []any
+	callerResolved bool
 	// statsWriter fills the stats of a query or query_range answer while the
 	// handler runs (query_stats.go).
 	statsWriter *queryStatsWriter
