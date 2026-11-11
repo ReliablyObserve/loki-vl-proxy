@@ -7,29 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- The opt-in live shadow of the query plan (`-translate-shadow-sample`) now
-  also covers the rankings, `stddev` and `stdvar` the proxy evaluates itself
-  (and the `sum`, `avg`, `min`, `max` and `count` layers above a ranking), on
-  `query` and `query_range`. These handlers translate only the operand, so
-  the shadow never saw the whole query; on the same share of their requests
-  it now lowers the whole query in the background and compares it with what
-  the proxy runs: the operand's request it has just sent, byte for byte, and
-  the levels it applies to the answer. New `result` values of
-  `loki_vl_proxy_lowering_shadow_total`: `native_proxy_evaluated` (equal) and
-  `known_divergence` (the plan holds a level the proxy's route drops, such as
-  `topk(2, stddev by (app) (..))`; nothing compared); new `construct` values
-  `VectorAgg stddev` and `VectorAgg stdvar`. No answer, cache or request to
-  VictoriaLogs changes, and a request the sample skips costs no allocation.
-
-### Security
-
-- **A query with certain non-ASCII characters could make the LogQL parser stop responding.** Such queries are now
-  rejected with Loki's 400 before anything else on the route runs, and every entry point of the LogQL parser is held to
-  return within a bound of time and memory by a fuzz target. **Breaking:** a few queries Loki rejects (for example a
-  stage name followed by `²`) were accepted and now answer Loki's 400; answers cached for them are not served.
-
 ### Fixed
 
 - A log query that filters on a label called `_time`, `_stream`, `_stream_id` or
@@ -51,6 +28,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now gets the streams whose label `_msg` matches, as Loki answers. Answers
   cached before this change are not reused for these queries (a response cache
   key version).
+
+### Changed
+
+- The query plan now holds a `stddev` or `stdvar` by a label of a query with a
+  parser the way the proxy sends it (`stddev by (route) (count_over_time({app="a"}
+  | logfmt [5m]))`): the proxy rewrites the operand as the per-series form of
+  `max by (route) (..)` without its last fold, which the plan now builds from
+  its typed pipes and holds to the proxy's request byte for byte, for json,
+  logfmt, regexp and pattern parsers and nests of sum, avg, min, max and count.
+  An unwrapped value or a `label_replace` under it, a sum with no clause over a
+  rate, and a name that differs from `_time`, `_stream` or `_stream_id` only by
+  case stay with the string translator. Nothing is served from the plan for
+  these queries yet: no request to VictoriaLogs and no answer changes.
+- The opt-in live shadow of the query plan (`-translate-shadow-sample`) now
+  also covers the rankings, `stddev` and `stdvar` the proxy evaluates itself
+  (and the `sum`, `avg`, `min`, `max` and `count` layers above a ranking), on
+  `query` and `query_range`. These handlers translate only the operand, so
+  the shadow never saw the whole query; on the same share of their requests
+  it now lowers the whole query in the background and compares it with what
+  the proxy runs: the operand's request it has just sent, byte for byte, and
+  the levels it applies to the answer. New `result` values of
+  `loki_vl_proxy_lowering_shadow_total`: `native_proxy_evaluated` (equal) and
+  `known_divergence` (the plan holds a level the proxy's route drops, such as
+  `topk(2, stddev by (app) (..))`; nothing compared); new `construct` values
+  `VectorAgg stddev` and `VectorAgg stdvar`. No answer, cache or request to
+  VictoriaLogs changes, and a request the sample skips costs no allocation.
+
+## [2.150.0] - 2026-11-11
+
+### Security
+
+- **A query with certain non-ASCII characters could make the LogQL parser stop responding.** Such queries are now
+  rejected with Loki's 400 before anything else on the route runs, and every entry point of the LogQL parser is held to
+  return within a bound of time and memory by a fuzz target. **Breaking:** a few queries Loki rejects (for example a
+  stage name followed by `²`) were accepted and now answer Loki's 400; answers cached for them are not served.
 
 ## [2.141.0] - 2026-11-11
 
