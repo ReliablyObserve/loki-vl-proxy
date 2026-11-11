@@ -189,6 +189,9 @@ func FuzzBinOpLowering(f *testing.F) {
 	f.Add("service_name", "a  b", "pod", "(.*)", uint8(7), uint8(3), uint8(5), uint8(9))
 	f.Add("k8s.pod", "(x)", "a-b", "*bad", uint8(200), uint8(91), uint8(11), uint8(70))
 	f.Add("é", "@@@on:x", "env", "", uint8(13), uint8(250), uint8(130), uint8(255))
+	f.Add("a", "x", "app", "$1", uint8(0), uint8(0), uint8(0), uint8(0x20))
+	f.Add("a", "x", "app", "$1", uint8(1), uint8(8), uint8(0x80), uint8(0x40))
+	f.Add("a", "x", "app", "$1", uint8(2), uint8(6), uint8(0), uint8(0xe0))
 	f.Fuzz(func(t *testing.T, sel, line, label, arg string, opSel, left, right, mod uint8) {
 		ident := func(s string) string {
 			var b strings.Builder
@@ -205,7 +208,10 @@ func FuzzBinOpLowering(f *testing.F) {
 		lbl := ident(label)
 		selector := `{app="` + escapeValue(sel) + `"}`
 		filter := []string{``, ` |= ` + strconv.Quote(line), ` != ` + strconv.Quote(line), ` | ` + lbl + `="` + escapeValue(line) + `"`}[mod%4]
-		inner := []string{"rate", "count_over_time", "bytes_rate", "bytes_over_time", "absent_over_time"}[left%5] + `(` + selector + filter + `[5m])`
+		// A blank, tab or newline between the function and its parenthesis is a phrase to the translator, which the
+		// text screens of the operands leave to it.
+		callPad := []string{"", " ", "\t", "\n"}[mod>>5&3]
+		inner := []string{"rate", "count_over_time", "bytes_rate", "bytes_over_time", "absent_over_time"}[left%5] + callPad + `(` + selector + filter + `[5m])`
 		operand := func(k uint8) string {
 			switch k % 12 {
 			case 0, 1:

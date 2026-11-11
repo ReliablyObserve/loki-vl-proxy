@@ -578,6 +578,9 @@
     "semantics/parse-error-text-parity | query",
     "semantics/partial-parse-before-error | compare:exact",
     "semantics/partial-parse-before-error | query",
+    "semantics/pattern-capture-before-bracket-text | compare:observed",
+    "semantics/pattern-capture-before-bracket-text | gap:open",
+    "semantics/pattern-capture-before-bracket-text | query",
     "semantics/pattern-line-filter | compare:observed",
     "semantics/pattern-line-filter | gap:fixed",
     "semantics/pattern-line-filter | perf",
@@ -702,6 +705,9 @@
     "semantics/topk-per-step-membership-differs | compare:observed",
     "semantics/topk-per-step-membership-differs | gap:open",
     "semantics/topk-per-step-membership-differs | query",
+    "semantics/translator-reads-blank-before-range-call-as-text | compare:observed",
+    "semantics/translator-reads-blank-before-range-call-as-text | gap:open",
+    "semantics/translator-reads-blank-before-range-call-as-text | query",
     "semantics/translator-reads-parenthesized-metric-as-text | compare:observed",
     "semantics/translator-reads-parenthesized-metric-as-text | gap:open",
     "semantics/translator-reads-parenthesized-metric-as-text | query",
@@ -1584,6 +1590,7 @@
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/unwrap_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_blank_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/vector_agg_blank_grid_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/querycorpus/vector_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_nested_grid_test.go | architecture-syntax-package-layering",
@@ -1600,6 +1607,7 @@
     "internal/queryplan/lower/pattern_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/pattern_filter_test.go | semantics/pattern-line-filter",
     "internal/queryplan/lower/range_agg_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/range_agg_test.go | semantics/translator-reads-blank-before-range-call-as-text",
     "internal/queryplan/lower/rank_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/series_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
@@ -2115,9 +2123,9 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 52,
+      "api": 53,
       "drilldown": 50,
-      "explore": 157,
+      "explore": 158,
       "grafana-datasource": 2,
       "operator": 4
     },
@@ -2141,8 +2149,8 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 101,
-    "wired_items": 278
+    "unwired_items": 102,
+    "wired_items": 279
   },
   "gates": [
     "A/B shape selection",

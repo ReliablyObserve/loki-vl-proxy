@@ -34,7 +34,8 @@ func rateQueries(b *testing.B) []string {
 			continue
 		}
 		queryplan.Resolve(p)
-		if _, err := Plan(p, Profile{}); err != nil {
+		// A spelling the translator reads as a phrase (ScreenText) is not a shape the plan lowers.
+		if _, err := PlanQuery(q, p, Profile{}); err != nil {
 			continue
 		}
 		out = append(out, q)
