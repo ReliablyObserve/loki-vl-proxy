@@ -1,5 +1,5 @@
 id: semantics/translator-reads-marker-bytes-in-quoted-value
-title: The string translator cuts a label filter value that holds two \x02 bytes behind a parser (open; the query plan keeps the value)
+title: The string translator cuts a label filter value that holds two \x02 bytes, or one on a name with an underscore, behind a parser (open; the query plan keeps the value)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -12,6 +12,9 @@ why: |
   stage. A label filter value is part of that text: a value that holds two
   \x02 bytes (`o="\x02\x00\x02"`, `o="a\x02b\x02c"`), or two values of one
   stage that hold one each, in a stage with no `_extracted` filter of its own,
+  or a single \x02 byte in the value of a name with an underscore (the translator
+  writes such a name in its dotted and dashed spellings too, the value after
+  each: ``btac_bcykab=`\x02\x00b` `` is three copies of the byte in the stage),
   in a query that has one elsewhere, is cut that way. The translator then
   filters on the value without the cut bytes, copies the stream aside where the
   bytes were instead of where the `_extracted` filter reads it, and for some
