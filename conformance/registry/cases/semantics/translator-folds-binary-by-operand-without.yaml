@@ -1,0 +1,74 @@
+id: semantics/translator-folds-binary-by-operand-without
+title: The string translator's text for a binary operation with a without operand folds the whole operation by the first clause (open; the proxy's binary route and the query plan fold each operand)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki applies a `without (labels)` clause to the vector aggregation it is
+  written on: in `sum without (pod) (rate(..[5m])) / 2` the left operand has one
+  series per label set without pod, and the division is applied to each
+  (pkg/logql/evaluator.go newBinOpStepEvaluator over the operand's
+  VectorAggEvaluator; the Loki oracle `facts` reads the clause on the operand,
+  left_groupings / right_groupings).
+
+  The string translator reads the whole query text: it removes every
+  `without (labels)` clause from it (regexp `\bwithout\s*\(([^)]+)\)`), writes
+  the binary operation of the operands as if they had no clause (an ungrouped
+  `stats sum(..)` for the sum above), and appends one `__without__:<labels>`
+  marker, of the first clause's labels and with no operator, after the whole
+  binary text. Read as a plan, that text folds the result of the operation and
+  computes each operand over every series: not Loki's reading, and two clauses
+  with different labels keep only the first.
+
+  The proxy does not send that text. The query_range and query handlers route a
+  binary operation by its LogQL (binaryExprForRequest, proxyBinaryLogQL): each
+  operand that is not a number is sent through the handlers as a query of its
+  own (its printed LogQL), translated alone, folded by its own clause, and the
+  marker of the whole query is dropped (withoutLabels = nil for a binary root).
+  Evidence (2026-11-11): TestPlanRouteParity with LVP_ROUTE_DUMP over the 101
+  corpus rows of this shape x 5 request profiles x 2 stub answers, 1,010 runs,
+  1,010 VictoriaLogs requests, none holding `__binary__`, `|||` or
+  `__without__`.
+
+  The query plan lowers the shape as Loki reads it (each operand alone, the
+  fold on the operand) and the shadows hold it to the binary route
+  (proxy.BinaryOperandsPhysical: each operand's request byte for byte), not to
+  the translator's text, which internal/querycorpus checkBinaryRoute rejects as
+  a lowering. The difference goes when the string translator is removed; the
+  answer users see is Loki's today.
+corpus:
+  size: 4
+  dimensions:
+    shapes:
+      - query: 'sum without (pod) (count_over_time({env="production"}[5m])) / 2'
+      - query: 'max without (pod) (rate({env="production"}[5m])) > on(app) group_left sum by (app) (rate({env="production"}[5m]))'
+      - query: 'sum without (pod) (count_over_time({env="production"}[5m])) / sum without (node) (count_over_time({env="production"}[5m]))'
+      - query: 'count(rate({env="production"}[5m])) without (pod, node) * 100'
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum without (pod) (count_over_time({env="production"}[5m])) / 2'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series labels, values]
+  expect: |
+    Loki's series and values: one series per label set without pod, halved.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator (the whole-query text of a binary operation, which the proxy does not send); fixed when the string translator is removed'
+  loki: 'pkg/logql/evaluator.go newBinOpStepEvaluator: each operand is evaluated with its own grouping'
+  proxy: 'the translator''s text folds the binary result by the first clause; the binary route evaluates each operand alone, as Loki does'
+  planned_test: 'TestPlanShadow and TestBinOpMoreGridShadow hold the plan to proxy.BinaryOperandsPhysical (internal/querycorpus); an e2e row against Loki when the plan serves binary operations'
+  visual: none
+  visual_reason: 'the answer users see is Loki''s; the difference is in text the proxy does not send'
+  clusters: []

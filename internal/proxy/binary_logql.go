@@ -39,8 +39,13 @@ func nextBinaryEvaluation(r *http.Request) (*http.Request, error) {
 // binaryRequestQuery is the request's own LogQL with Grafana tokens resolved
 // and a uniform offset stripped, as binaryExprForRequest reads it.
 func binaryRequestQuery(r *http.Request) string {
-	query := stripIncompleteUnwrapStubs(r.FormValue("query"))
-	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+	return binaryRouteQuery(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+}
+
+// binaryRouteQuery is binaryRequestQuery of a request whose query, start, end and step are these.
+func binaryRouteQuery(query, start, end, step string) string {
+	query = stripIncompleteUnwrapStubs(query)
+	query = resolveGrafanaRangeTemplateTokens(query, start, end, step)
 	// The outer handler has already shifted uniform offsets. Mixed offsets
 	// remain on their individual operands and are applied by each child handler.
 	if _, stripped, err := extractLogQLOffset(query); err == nil {
@@ -65,7 +70,12 @@ func binaryExprForRequest(r *http.Request) *logqlpkg.BinOpExpr {
 
 // binaryRequestExpr parses the request's query.
 func binaryRequestExpr(r *http.Request) logqlpkg.Expr {
-	expr, err := parseLogQLExpr(r.Context(), binaryRequestQuery(r))
+	return binaryRouteExpr(r.Context(), binaryRequestQuery(r))
+}
+
+// binaryRouteExpr parses the query the binary route reads (binaryRouteQuery), nil when it does not parse.
+func binaryRouteExpr(ctx context.Context, query string) logqlpkg.Expr {
+	expr, err := parseLogQLExpr(ctx, query)
 	if err != nil {
 		return nil
 	}

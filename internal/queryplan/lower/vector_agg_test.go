@@ -108,7 +108,7 @@ func TestPlanVectorAggregationFold(t *testing.T) {
 func TestPlanDelegatesVectorAggregations(t *testing.T) {
 	for q, construct := range map[string]string{
 		`sum(rate({app="a"}[5m]) > 1)`:                                             "VectorAgg operand",
-		`sum without (a) (rate({app="a"}[5m])) / 2`:                                "BinOp operand without",
+		`sum without () (rate({app="a"}[5m])) / 2`:                                 "BinOp operand without empty",
 		`sum by (app) (avg_over_time({app="a"} | unwrap n [5m]) by (x))`:           "VectorAgg grouping",
 		`sum by (a) (rate({app="a"} | drop a="| json" | keep x [5m]))`:             "VectorAgg quoted clause",
 		`count(count_over_time({app="a"} | drop a="| json" [5m]))`:                 "VectorAgg quoted clause",
