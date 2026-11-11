@@ -38,8 +38,19 @@ func evaluatedShadowBackend(t *testing.T) (*httptest.Server, func() []string) {
 	h := emu.Handler()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
+		// The request's remaining deadline and the windows of the background label discovery follow the wall
+		// clock, so two runs differ there without any change of behaviour: record the request without them.
+		form := url.Values{}
+		for k, v := range r.Form {
+			form[k] = v
+		}
+		form.Del("timeout")
+		if strings.HasSuffix(r.URL.Path, "/stream_field_names") {
+			form.Del("start")
+			form.Del("end")
+		}
 		mu.Lock()
-		reqs = append(reqs, r.Method+" "+r.URL.Path+" "+r.Form.Encode())
+		reqs = append(reqs, r.Method+" "+r.URL.Path+" "+form.Encode())
 		mu.Unlock()
 		h.ServeHTTP(w, r)
 	}))

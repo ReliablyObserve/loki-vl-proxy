@@ -1,0 +1,80 @@
+{"q": "{a=\"b\"} | x \u0663", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x > \u0663", "accept": false, "error": "parse error at line 1, col 15: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x=\u0663", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "sum(rate({a=\"b\"}[5m])) > \u0663", "accept": false, "error": "parse error at line 1, col 26: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"}[\u0663]", "accept": false, "error": "parse error at line 0, col 8: not a valid duration string: \"\u0663\""}
+{"q": "rate({a=\"b\"}[\u0663m])", "accept": false, "error": "parse error at line 0, col 13: not a valid duration string: \"\u0663m\""}
+{"q": "{a=\"b\"} \u0663", "accept": false, "error": "parse error at line 1, col 9: syntax error: unexpected IDENTIFIER"}
+{"q": "topk(\u0663, rate({a=\"b\"}[5m]))", "accept": false, "error": "parse error at line 1, col 6: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | json | x == \u06631", "accept": false, "error": "parse error at line 1, col 23: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x >= 1\u0663", "accept": false, "error": "parse error at line 1, col 18: syntax error: unexpected $end"}
+{"q": "{a=\"b\"} | x \u0966", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x > \u0966", "accept": false, "error": "parse error at line 1, col 15: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x=\u0966", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "sum(rate({a=\"b\"}[5m])) > \u0966", "accept": false, "error": "parse error at line 1, col 26: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"}[\u0966]", "accept": false, "error": "parse error at line 0, col 8: not a valid duration string: \"\u0966\""}
+{"q": "rate({a=\"b\"}[\u0966m])", "accept": false, "error": "parse error at line 0, col 13: not a valid duration string: \"\u0966m\""}
+{"q": "{a=\"b\"} \u0966", "accept": false, "error": "parse error at line 1, col 9: syntax error: unexpected IDENTIFIER"}
+{"q": "topk(\u0966, rate({a=\"b\"}[5m]))", "accept": false, "error": "parse error at line 1, col 6: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | json | x == \u09661", "accept": false, "error": "parse error at line 1, col 23: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x >= 1\u0966", "accept": false, "error": "parse error at line 1, col 18: syntax error: unexpected $end"}
+{"q": "{a=\"b\"} | x \uff13", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x > \uff13", "accept": false, "error": "parse error at line 1, col 15: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x=\uff13", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "sum(rate({a=\"b\"}[5m])) > \uff13", "accept": false, "error": "parse error at line 1, col 26: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"}[\uff13]", "accept": false, "error": "parse error at line 0, col 8: not a valid duration string: \"\uff13\""}
+{"q": "rate({a=\"b\"}[\uff13m])", "accept": false, "error": "parse error at line 0, col 13: not a valid duration string: \"\uff13m\""}
+{"q": "{a=\"b\"} \uff13", "accept": false, "error": "parse error at line 1, col 9: syntax error: unexpected IDENTIFIER"}
+{"q": "topk(\uff13, rate({a=\"b\"}[5m]))", "accept": false, "error": "parse error at line 1, col 6: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | json | x == \uff131", "accept": false, "error": "parse error at line 1, col 23: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x >= 1\uff13", "accept": false, "error": "parse error at line 1, col 18: syntax error: unexpected $end"}
+{"q": "{a=\"b\"} | x \u06f3", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x > \u06f3", "accept": false, "error": "parse error at line 1, col 15: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x=\u06f3", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "sum(rate({a=\"b\"}[5m])) > \u06f3", "accept": false, "error": "parse error at line 1, col 26: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"}[\u06f3]", "accept": false, "error": "parse error at line 0, col 8: not a valid duration string: \"\u06f3\""}
+{"q": "rate({a=\"b\"}[\u06f3m])", "accept": false, "error": "parse error at line 0, col 13: not a valid duration string: \"\u06f3m\""}
+{"q": "{a=\"b\"} \u06f3", "accept": false, "error": "parse error at line 1, col 9: syntax error: unexpected IDENTIFIER"}
+{"q": "topk(\u06f3, rate({a=\"b\"}[5m]))", "accept": false, "error": "parse error at line 1, col 6: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | json | x == \u06f31", "accept": false, "error": "parse error at line 1, col 23: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x >= 1\u06f3", "accept": false, "error": "parse error at line 1, col 18: syntax error: unexpected $end"}
+{"q": "{a=\"b\"} | x \ud835\udfd1", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x > \ud835\udfd1", "accept": false, "error": "parse error at line 1, col 15: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x=\ud835\udfd1", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "sum(rate({a=\"b\"}[5m])) > \ud835\udfd1", "accept": false, "error": "parse error at line 1, col 26: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"}[\ud835\udfd1]", "accept": false, "error": "parse error at line 0, col 8: not a valid duration string: \"\ud835\udfd1\""}
+{"q": "rate({a=\"b\"}[\ud835\udfd1m])", "accept": false, "error": "parse error at line 0, col 13: not a valid duration string: \"\ud835\udfd1m\""}
+{"q": "{a=\"b\"} \ud835\udfd1", "accept": false, "error": "parse error at line 1, col 9: syntax error: unexpected IDENTIFIER"}
+{"q": "topk(\ud835\udfd1, rate({a=\"b\"}[5m]))", "accept": false, "error": "parse error at line 1, col 6: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | json | x == \ud835\udfd11", "accept": false, "error": "parse error at line 1, col 23: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x >= 1\ud835\udfd1", "accept": false, "error": "parse error at line 1, col 18: syntax error: unexpected $end"}
+{"q": "{a=\"b\"} | x \u00b2", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x > \u00b2", "accept": false, "error": "parse error at line 1, col 15: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x=\u00b2", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "sum(rate({a=\"b\"}[5m])) > \u00b2", "accept": false, "error": "parse error at line 1, col 26: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"}[\u00b2]", "accept": false, "error": "parse error at line 0, col 8: not a valid duration string: \"\u00b2\""}
+{"q": "rate({a=\"b\"}[\u00b2m])", "accept": false, "error": "parse error at line 0, col 13: not a valid duration string: \"\u00b2m\""}
+{"q": "{a=\"b\"} \u00b2", "accept": false, "error": "parse error at line 1, col 9: syntax error: unexpected IDENTIFIER"}
+{"q": "topk(\u00b2, rate({a=\"b\"}[5m]))", "accept": false, "error": "parse error at line 1, col 6: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | json | x == \u00b21", "accept": false, "error": "parse error at line 1, col 23: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x >= 1\u00b2", "accept": false, "error": "parse error at line 1, col 18: syntax error: unexpected $end"}
+{"q": "{a=\"b\"} | x \u2153", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x > \u2153", "accept": false, "error": "parse error at line 1, col 15: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x=\u2153", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "sum(rate({a=\"b\"}[5m])) > \u2153", "accept": false, "error": "parse error at line 1, col 26: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"}[\u2153]", "accept": false, "error": "parse error at line 0, col 8: not a valid duration string: \"\u2153\""}
+{"q": "rate({a=\"b\"}[\u2153m])", "accept": false, "error": "parse error at line 0, col 13: not a valid duration string: \"\u2153m\""}
+{"q": "{a=\"b\"} \u2153", "accept": false, "error": "parse error at line 1, col 9: syntax error: unexpected IDENTIFIER"}
+{"q": "topk(\u2153, rate({a=\"b\"}[5m]))", "accept": false, "error": "parse error at line 1, col 6: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | json | x == \u21531", "accept": false, "error": "parse error at line 1, col 23: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x >= 1\u2153", "accept": false, "error": "parse error at line 1, col 18: syntax error: unexpected $end"}
+{"q": "{a=\"b\"} | x \u2163", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x > \u2163", "accept": false, "error": "parse error at line 1, col 15: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x=\u2163", "accept": false, "error": "parse error at line 1, col 13: syntax error: unexpected IDENTIFIER"}
+{"q": "sum(rate({a=\"b\"}[5m])) > \u2163", "accept": false, "error": "parse error at line 1, col 26: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"}[\u2163]", "accept": false, "error": "parse error at line 0, col 8: not a valid duration string: \"\u2163\""}
+{"q": "rate({a=\"b\"}[\u2163m])", "accept": false, "error": "parse error at line 0, col 13: not a valid duration string: \"\u2163m\""}
+{"q": "{a=\"b\"} \u2163", "accept": false, "error": "parse error at line 1, col 9: syntax error: unexpected IDENTIFIER"}
+{"q": "topk(\u2163, rate({a=\"b\"}[5m]))", "accept": false, "error": "parse error at line 1, col 6: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | json | x == \u21631", "accept": false, "error": "parse error at line 1, col 23: syntax error: unexpected IDENTIFIER"}
+{"q": "{a=\"b\"} | x >= 1\u2163", "accept": false, "error": "parse error at line 1, col 18: syntax error: unexpected $end"}
