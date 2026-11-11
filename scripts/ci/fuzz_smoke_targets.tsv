@@ -82,6 +82,7 @@ smoke	internal/logql	FuzzLabelFilterRegexFormsAgree	12s	-	a label matcher regex 
 smoke	internal/logsql	FuzzCapabilitiesFor	12s	-	capabilities for
 smoke	internal/logsql	FuzzFieldFilterString	12s	-	field filter string
 smoke	internal/logsql	FuzzParseRoundTrip	12s	-	parse round trip
+smoke	internal/logsql	FuzzOutboundGuard	12s	-	outbound guard
 smoke	internal/logsql	FuzzQueryString	12s	-	query string
 smoke	internal/proxy	FuzzMergeLabelsIntoCache	12s	-	label merge is sorted and deduplicated
 smoke	internal/proxy	FuzzTwiceGateIsASupersetOfTheKeyPatterns	12s	-	twice gate is a superset of the key patterns

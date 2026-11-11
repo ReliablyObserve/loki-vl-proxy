@@ -25,13 +25,16 @@ type ProcessInput struct {
 }
 
 // ProcessVerdict is Loki's answer for one input; Error is set when Loki rejects the query or cannot build its
-// pipeline.
+// pipeline. Selected is whether the stream selector's matchers select the stream (a missing label is the empty
+// value): Loki's index chooses the streams, the pipeline never sees one it does not select, so Keep alone says
+// nothing about the selector.
 type ProcessVerdict struct {
-	ID     string            `json:"id"`
-	Keep   bool              `json:"keep"`
-	Line   string            `json:"line,omitempty"`
-	Labels map[string]string `json:"labels,omitempty"`
-	Error  string            `json:"error,omitempty"`
+	ID       string            `json:"id"`
+	Selected bool              `json:"selected,omitempty"`
+	Keep     bool              `json:"keep"`
+	Line     string            `json:"line,omitempty"`
+	Labels   map[string]string `json:"labels,omitempty"`
+	Error    string            `json:"error,omitempty"`
 }
 
 func process(in, out string) error {
@@ -81,6 +84,12 @@ func processOne(x ProcessInput) (v ProcessVerdict) {
 	if err != nil {
 		v.Error = err.Error()
 		return v
+	}
+	v.Selected = true
+	for _, m := range sel.Matchers() {
+		if !m.Matches(x.Labels[m.Name]) {
+			v.Selected = false
+		}
 	}
 	line, res, keep := pipe.ForStream(labels.FromMap(x.Labels)).Process(0, []byte(x.Line), labels.EmptyLabels())
 	v.Keep = keep

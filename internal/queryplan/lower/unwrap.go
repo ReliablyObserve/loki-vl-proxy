@@ -37,6 +37,31 @@ import (
 // rateCounterMarker is the stats function the proxy answers itself for rate_counter.
 const rateCounterMarker = "__rate_counter__"
 
+// UnwrapsReservedFieldOtherCase reports a plan whose lowering unwraps a label named _time, _stream or _stream_id in
+// another letter case (logsql.ReservedFieldNameOtherCase): the lowering writes its gate in the outbound guard's
+// form, where the string translator writes the filter VictoriaLogs cannot read back from its own print
+// (semantics/reserved-field-name-case-outbound), so the shadows hold the lowering to the translator's text guarded.
+func UnwrapsReservedFieldOtherCase(p *queryplan.Plan) bool {
+	var walk func(n queryplan.Node) bool
+	walk = func(n queryplan.Node) bool {
+		switch n := n.(type) {
+		case *queryplan.RangeAgg:
+			u := unwrapStage(n.In)
+			return u != nil && logsql.ReservedFieldNameOtherCase(u.Label)
+		case *queryplan.VectorAgg:
+			return walk(n.In)
+		case *queryplan.Rank:
+			return walk(n.In)
+		case *queryplan.LabelReplace:
+			return walk(n.In)
+		case *queryplan.BinOp:
+			return walk(n.L) || walk(n.R)
+		}
+		return false
+	}
+	return walk(p.Root)
+}
+
 // unwrapStage returns the unwrap stage of the log query, or nil.
 func unwrapStage(sel *queryplan.LogSelect) *queryplan.Unwrap {
 	for _, st := range sel.Stages {
@@ -488,6 +513,13 @@ func (q *unwrapQuery) text(log metricLog, field, conv, keys string, prof Profile
 	for _, p := range q.pipes {
 		b.WriteByte(' ')
 		b.WriteString(p)
+	}
+	if logsql.ReservedFieldNameOtherCase(field) {
+		// The gate filters the unwrapped label by name, quoted, and VictoriaLogs cannot read back from its own
+		// print a filter on _time, _stream or _stream_id in another case (VictoriaMetrics/VictoriaLogs#1942): the
+		// query is written in the form the proxy's outbound guard writes, a copy into a scratch field around each
+		// such filter (logsql.GuardReservedFieldCase), so nothing is left for the guard to rewrite.
+		return logsql.GuardReservedFieldCase(b.String())
 	}
 	return b.String()
 }

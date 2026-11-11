@@ -167,6 +167,12 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			if err != nil {
 				t.Fatalf("%s: DecodePhysical(%q): %v", prof.name, legacy, err)
 			}
+			if lower.UnwrapsReservedFieldOtherCase(plan) {
+				// The lowering writes the unwrap of _TIME and the like in the outbound guard's form: it is held to
+				// the translator's text guarded, which is what the proxy sends for it (semantics/reserved-field-name-case-outbound).
+				want = lower.GuardOutbound(want)
+				legacy = translator.EncodePhysical(want)
+			}
 			if !physical.Equal(want, got) {
 				fail(fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, translator.EncodePhysical(got), legacy))
 				continue
@@ -313,7 +319,11 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		if !ok {
 			return nil, &lower.NotLoweredError{Construct: "rejected"}
 		}
-		return translator.DecodePhysical(s)
+		op, err := translator.DecodePhysical(s)
+		if err == nil && lower.UnwrapsReservedFieldOtherCase(p) {
+			op = lower.GuardOutbound(op) // the translator's text as the proxy sends it
+		}
+		return op, err
 	}
 	sec, problems := runShadow(t, echo, rows)
 	// A row the translator misreads (known-typed-divergences, the quoted-text and parenthesized-metric recognisers)

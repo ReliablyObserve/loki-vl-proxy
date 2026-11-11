@@ -7,6 +7,8 @@ description: Complete mapping of LogQL operators, parsers, metric functions, and
 
 For label/field exposure mode behavior (`label-style`, `metadata-field-mode`, `emit-structured-metadata`, and custom mappings), see [Translation Modes Guide](translation-modes.md).
 
+Every query is sent through one outbound guard: a filter on a field named `_time`, `_stream` or `_stream_id` in another letter case (`_TIME`, `_Stream_ID`), which VictoriaLogs reads bare as its own filter and cannot read back quoted when it clones a query (VictoriaMetrics/VictoriaLogs#1942), is sent as a copy into a scratch field and a filter on it (`| copy _TIME as __lxrf_TIME | filter __lxrf_TIME:>=5s | delete __lxrf_TIME`). Every other query is sent as this reference shows it.
+
 The queries in this reference are translated by one of two paths that write the same VictoriaLogs query, byte for byte: log queries with a stream selector, line filters, pattern filters and label filters and no parser stage come from the typed query-plan lowering (`-query-plan-lowering`, on by default, `false` returns them to the string translator); every other query, such as parsers, formatting stages and metric queries, comes from the string translator. See [LogQL Parser](logql-parser.md#query-plan-lowering-which-translator-answers).
 
 ## Stream Selectors

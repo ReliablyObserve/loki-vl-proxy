@@ -16,8 +16,8 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2480,
-      "keys": 2428,
+      "rows": 2485,
+      "keys": 2433,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -25,8 +25,8 @@
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2480,
-      "keys": 2428,
+      "rows": 2485,
+      "keys": 2433,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -34,8 +34,8 @@
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2480,
-      "keys": 2428,
+      "rows": 2485,
+      "keys": 2433,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -43,8 +43,8 @@
       "unsound": 0
     },
     "v1.53 identity": {
-      "rows": 2480,
-      "keys": 2428,
+      "rows": 2485,
+      "keys": 2433,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -52,8 +52,8 @@
       "unsound": 0
     },
     "v1.53 no body scan": {
-      "rows": 2480,
-      "keys": 2428,
+      "rows": 2485,
+      "keys": 2433,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -61,8 +61,8 @@
       "unsound": 0
     },
     "v1.53 no body scan, stream fields, keepLine": {
-      "rows": 2480,
-      "keys": 2428,
+      "rows": 2485,
+      "keys": 2433,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 0,
@@ -70,8 +70,8 @@
       "unsound": 0
     },
     "v1.53 stream fields": {
-      "rows": 2480,
-      "keys": 2428,
+      "rows": 2485,
+      "keys": 2433,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -79,8 +79,8 @@
       "unsound": 0
     },
     "v1.53 stream fields and labels": {
-      "rows": 2480,
-      "keys": 2428,
+      "rows": 2485,
+      "keys": 2433,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -88,8 +88,8 @@
       "unsound": 0
     },
     "v1.53 stream labels": {
-      "rows": 2480,
-      "keys": 2428,
+      "rows": 2485,
+      "keys": 2433,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -97,8 +97,8 @@
       "unsound": 0
     },
     "v1.53 stream labels keepLine": {
-      "rows": 2480,
-      "keys": 2428,
+      "rows": 2485,
+      "keys": 2433,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 0,
@@ -106,8 +106,8 @@
       "unsound": 0
     },
     "v1.53 underscores": {
-      "rows": 2480,
-      "keys": 2428,
+      "rows": 2485,
+      "keys": 2433,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -115,8 +115,8 @@
       "unsound": 0
     },
     "v1.53 underscores keepLine": {
-      "rows": 2480,
-      "keys": 2428,
+      "rows": 2485,
+      "keys": 2433,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 0,
@@ -136,8 +136,8 @@
     }
   },
   "route_parity": {
-    "rows": 2440,
-    "runs": 24400,
+    "rows": 2445,
+    "runs": 24450,
     "profiles": [
       "instant",
       "step=range",
@@ -161,13 +161,13 @@
       "LabelReplace operand BinOp": 20,
       "LabelReplace operand VectorAgg": 60,
       "LabelReplace service_name grouping": 40,
-      "LogSelect (route rule)": 2050,
+      "LogSelect (route rule)": 2070,
       "LogSelect keep order": 10,
       "LogSelect label filter detected_level": 130,
       "LogSelect label filter numeric equality after parser": 40,
       "LogSelect line format function": 10,
       "LogSelect pipeline": 10,
-      "RangeAgg (route rule)": 5590,
+      "RangeAgg (route rule)": 5600,
       "RangeAgg LogSelect label filter detected_level": 30,
       "RangeAgg LogSelect label filter numeric equality after parser": 10,
       "RangeAgg LogSelect line format function": 10,
@@ -176,7 +176,7 @@
       "Rank (route rule)": 1790,
       "Rank operand BinOp": 30,
       "Scalar": 20,
-      "VectorAgg (route rule)": 7860,
+      "VectorAgg (route rule)": 7880,
       "VectorAgg LogSelect json extraction": 20,
       "VectorAgg LogSelect label filter detected_level": 170,
       "VectorAgg grouping": 10,
@@ -190,56 +190,56 @@
       "VectorLit": 10
     },
     "statuses": {
-      "200": 23831,
-      "400": 569
+      "200": 23877,
+      "400": 573
     },
     "routes": {
       "24h chunk/BinOp": "76a7ebe5b8a4984c",
       "24h chunk/LabelReplace": "0ff08ac8cc547b64",
-      "24h chunk/LogSelect": "3731a0e60f6eaa13",
-      "24h chunk/RangeAgg": "17eb00eca4e6ae41",
+      "24h chunk/LogSelect": "0966f0977ea7ff96",
+      "24h chunk/RangeAgg": "38d8a73e328ef2e6",
       "24h chunk/Rank": "41ff879ddf08d1cc",
       "24h chunk/Scalar": "b01ddfee0a162681",
-      "24h chunk/VectorAgg": "4a166d718c9dc101",
+      "24h chunk/VectorAgg": "fd3814280e8c15e4",
       "24h chunk/VectorLit": "fafe78111335aec9",
       "instant/BinOp": "23c635a83e7d79a6",
       "instant/LabelReplace": "c0b4ae4abf36fca0",
-      "instant/LogSelect": "07e1a91fc0b0c749",
-      "instant/RangeAgg": "4f5f0e6f5790e8f2",
+      "instant/LogSelect": "a5bd64c85121ab58",
+      "instant/RangeAgg": "f4c0aa4e20cfe708",
       "instant/Rank": "cb196deda8adb031",
       "instant/Scalar": "058ee94c303a0c46",
-      "instant/VectorAgg": "7d5755e9f38ccdc1",
+      "instant/VectorAgg": "ee566c68ce57ff99",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "b7b3b5f201c14428",
       "step\u003crange/LabelReplace": "aa1622bb85af9e46",
-      "step\u003crange/LogSelect": "3731a0e60f6eaa13",
-      "step\u003crange/RangeAgg": "1fa02b60cf478cb0",
+      "step\u003crange/LogSelect": "0966f0977ea7ff96",
+      "step\u003crange/RangeAgg": "491ddc32abb7b227",
       "step\u003crange/Rank": "a79d1134f4ee1ace",
       "step\u003crange/Scalar": "b01ddfee0a162681",
-      "step\u003crange/VectorAgg": "5dfd1a02c360e9ee",
+      "step\u003crange/VectorAgg": "e1fd6d233ade9578",
       "step\u003crange/VectorLit": "fafe78111335aec9",
       "step=range/BinOp": "1bb7def2359357d6",
       "step=range/LabelReplace": "4dfec76f0862d3b3",
-      "step=range/LogSelect": "3731a0e60f6eaa13",
-      "step=range/RangeAgg": "d579bf0b08a180f6",
+      "step=range/LogSelect": "0966f0977ea7ff96",
+      "step=range/RangeAgg": "ca87f33e838f7ffe",
       "step=range/Rank": "ecdba279b647a204",
       "step=range/Scalar": "b01ddfee0a162681",
-      "step=range/VectorAgg": "a363a23e37765498",
+      "step=range/VectorAgg": "4a6af488ab25ba62",
       "step=range/VectorLit": "fafe78111335aec9",
       "step\u003erange/BinOp": "44b1d7a4d2e956bc",
       "step\u003erange/LabelReplace": "72d6607fc2ffdbc0",
-      "step\u003erange/LogSelect": "3731a0e60f6eaa13",
-      "step\u003erange/RangeAgg": "e743d2638ac6a684",
+      "step\u003erange/LogSelect": "0966f0977ea7ff96",
+      "step\u003erange/RangeAgg": "494b7940c84bd955",
       "step\u003erange/Rank": "617689db49dcd66f",
       "step\u003erange/Scalar": "b01ddfee0a162681",
-      "step\u003erange/VectorAgg": "c3a249e1451aaa86",
+      "step\u003erange/VectorAgg": "3aa3ad8b8c9fbb35",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     }
   },
   "shadow": {
-    "rows": 22968,
+    "rows": 23019,
     "profiles": 12,
-    "native": 18490,
+    "native": 18541,
     "native_proxy_evaluated": 1620,
     "mismatches": 0,
     "delegated_by_construct": {
