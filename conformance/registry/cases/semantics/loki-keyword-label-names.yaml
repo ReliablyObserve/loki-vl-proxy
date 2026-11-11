@@ -48,7 +48,7 @@ gap:
   area: 'internal/logql parser (label name positions), scanner (ip, label_replace)'
   loki: 'the words of the lexer are keyword tokens, not identifiers; ip and label_replace are keywords before a parenthesis only'
   proxy: 'a keyword word as a label name is Loki''s 400 with Loki''s text; Ip and Label_replace keep their case'
-  planned_test: 'TestKeywordLabelNamesMatchLoki and TestLabelsKeepCaseAroundFunctionWords (internal/logql); an e2e row against Loki on the compose stack: query_range of `{service_name="api-gateway", of="a"}` and `{service_name="api-gateway"} | keep OF`, status 400 and the error text equal to Loki''s'
+  planned_test: 'TestCompat_KeywordLabelNamesLikeLoki (test/e2e-compat, group semantics: status 400 and the error text of {service_name="...", of="a"} and | keep OF equal to Loki''s); TestKeywordLabelNamesMatchLoki and TestLabelsKeepCaseAroundFunctionWords (internal/logql); TestKeywordLabelFenceDoesNotServeAnOldCachedAnswer (internal/proxy)'
   visual: none
   visual_reason: 'an error answer; found by the lowering fuzz targets'
   clusters: []

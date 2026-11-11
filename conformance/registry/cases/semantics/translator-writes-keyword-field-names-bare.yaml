@@ -65,7 +65,7 @@ gap:
   area: 'internal/translator (writes the name bare); fixed when the query plan serves the remaining queries. internal/logsql QuoteKeywordFields, internal/queryplan/lower'
   loki: 'a label called not or in is a plain label; the oracle answers 200'
   proxy: 'filter-only log queries quote the name (the plan); every other query still fails in VictoriaLogs with the translator'
-  planned_test: 'TestPlanQuotesKeywordFieldNames (internal/queryplan/lower), TestParseKeywordFieldNamesMatchVictoriaLogs and TestQuoteKeywordField (internal/logsql); an e2e row against Loki on the compose stack: query_range of `{service_name="api-gateway"} | not="x"` and `{service_name="api-gateway"} | in="x"`, status and streams equal to Loki (empty here)'
+  planned_test: 'TestCompat_KeywordLabelNamesLikeLoki (test/e2e-compat, group semantics: proxy against Loki on {in="x"}, | in="x" and | not="x" over a fixture ingested alike into both); TestPlanQuotesKeywordFieldNames (internal/queryplan/lower), TestParseKeywordFieldNamesMatchVictoriaLogs and TestQuoteKeywordField (internal/logsql)'
   visual: none
   visual_reason: 'no Grafana panel names a label not or in; found by the lowering fuzz targets'
   clusters: []

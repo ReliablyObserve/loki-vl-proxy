@@ -519,6 +519,7 @@
       "test/e2e-compat/ip_line_filter_test.go",
       "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/keep_structured_metadata_test.go",
+      "test/e2e-compat/keyword_label_names_test.go",
       "test/e2e-compat/label_filter_expression_test.go",
       "test/e2e-compat/label_filter_number_literal_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
@@ -1290,7 +1291,8 @@
     ],
     "semantics/loki-keyword-label-names": [
       "internal/logql/keyword_case_test.go",
-      "internal/logql/keyword_label_names_loki_test.go"
+      "internal/logql/keyword_label_names_loki_test.go",
+      "test/e2e-compat/keyword_label_names_test.go"
     ],
     "semantics/lower-bound-exclusive": [
       "internal/proxy/range_lower_bound_test.go",
@@ -1483,7 +1485,8 @@
     ],
     "semantics/translator-writes-keyword-field-names-bare": [
       "internal/logsql/keyword_fields_test.go",
-      "internal/queryplan/lower/keyword_field_names_test.go"
+      "internal/queryplan/lower/keyword_field_names_test.go",
+      "test/e2e-compat/keyword_label_names_test.go"
     ],
     "semantics/tumbling-window-single-grid": [
       "internal/proxy/sliding_window_stats_test.go"
@@ -3535,6 +3538,11 @@
       "loki_api_v1_query_range",
       "profiles/keep-structured-metadata-key"
     ],
+    "test/e2e-compat/keyword_label_names_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/loki-keyword-label-names",
+      "semantics/translator-writes-keyword-field-names-bare"
+    ],
     "test/e2e-compat/label_filter_expression_test.go": [
       "loki_api_v1_query_range",
       "semantics/label-filter-expression-syntax"
@@ -3970,7 +3978,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 464,
+  "tests_with_markers": 465,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

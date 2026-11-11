@@ -1842,6 +1842,9 @@
     "test/e2e-compat/keep_service_name_test.go | semantics/keep-leaves-labels-loki-drops",
     "test/e2e-compat/keep_structured_metadata_test.go | loki_api_v1_query_range",
     "test/e2e-compat/keep_structured_metadata_test.go | profiles/keep-structured-metadata-key",
+    "test/e2e-compat/keyword_label_names_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/keyword_label_names_test.go | semantics/loki-keyword-label-names",
+    "test/e2e-compat/keyword_label_names_test.go | semantics/translator-writes-keyword-field-names-bare",
     "test/e2e-compat/label_filter_expression_test.go | loki_api_v1_query_range",
     "test/e2e-compat/label_filter_expression_test.go | semantics/label-filter-expression-syntax",
     "test/e2e-compat/label_filter_number_literal_test.go | loki_api_v1_query",
@@ -2129,7 +2132,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 463,
+      "go": 464,
       "playwright": 1
     },
     "page_kinds": {

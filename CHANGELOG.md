@@ -28,11 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `unwrap`. The proxy used to accept them, read the word in lower case and
   translate the query (`{OF="a"}` filtered the field `of`). **Breaking:** a
   client that sent such a query got an answer and gets Loki's 400 now; Loki never
-  accepted it.
+  accepted it. Answers cached before this change are not reused for these queries
+  (a response cache key version).
 - A label called `Ip`, `IP` or `Label_replace` keeps its case. `ip` and
   `label_replace` are keywords only before a parenthesis, but the proxy read
   the word in lower case anywhere (`{Ip="a"}` filtered the field `ip`, and
-  `| drop Ip` dropped it).
+  `| drop Ip` dropped it). Answers cached before this change are not reused for
+  these queries (a response cache key version).
 
 ## [2.129.0] - 2026-11-10
 
