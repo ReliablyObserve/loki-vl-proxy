@@ -7,23 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.170.0] - 2026-11-11
-
-### Fixed
-
-- A label list that Loki's grammar rejects is Loki's 400 with Loki's text, where the proxy accepted it and answered the
-  query. A comma after the last name (`sum by (app,) (...)`, `without (pod,)`, `on(app,)`, `ignoring(app,)`,
-  `group_left(app,)`, `group_right(app,)`, `| drop a,`, `| keep a,`), a doubled or a leading comma, two names with no
-  comma between them (`by (a b)`) and an empty `| drop` or `| keep` are syntax errors, found by the Loki oracle on 916
-  recorded queries (the status and the text of each are Loki's now). The empty list of `by`, `without` and `on`, white
-  space and line breaks around the names, and the one trailing comma Loki lets a stream selector end in are still
-  accepted, and so is a comma followed by white space that is no ASCII white space (Loki reads that character as a
-  name). The query is rejected at the first parse of the route, before the response cache, the plan or any
-  VictoriaLogs request. **Breaking:** a client that sent such a list now gets Loki's 400, as it would from Loki.
-  Answers cached for these queries are not served (the compat edge key of a rejected query carries a version).
-
-## [2.161.0] - 2026-11-11
-
 ### Changed
 
 - Query statistics follow Loki's accounting on every route and on cache
@@ -60,6 +43,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once more from VictoriaLogs after the upgrade (new `qs3:` key fence). The
   log query no longer takes its bytes from a `volume_range` answer of its
   selector (whole steps left up to a tenth of the window out).
+
+## [2.170.0] - 2026-11-11
+
+### Fixed
+
+- A label list that Loki's grammar rejects is Loki's 400 with Loki's text, where the proxy accepted it and answered the
+  query. A comma after the last name (`sum by (app,) (...)`, `without (pod,)`, `on(app,)`, `ignoring(app,)`,
+  `group_left(app,)`, `group_right(app,)`, `| drop a,`, `| keep a,`), a doubled or a leading comma, two names with no
+  comma between them (`by (a b)`) and an empty `| drop` or `| keep` are syntax errors, found by the Loki oracle on 916
+  recorded queries (the status and the text of each are Loki's now). The empty list of `by`, `without` and `on`, white
+  space and line breaks around the names, and the one trailing comma Loki lets a stream selector end in are still
+  accepted, and so is a comma followed by white space that is no ASCII white space (Loki reads that character as a
+  name). The query is rejected at the first parse of the route, before the response cache, the plan or any
+  VictoriaLogs request. **Breaking:** a client that sent such a list now gets Loki's 400, as it would from Loki.
+  Answers cached for these queries are not served (the compat edge key of a rejected query carries a version).
+
+## [2.161.0] - 2026-11-11
+
+### Changed
 
 - The query plan lowers a binary operation whose operand has a `without` clause
   (`sum without (pod) (rate({app="a"}[5m])) / 2`) the way Loki reads it: each
