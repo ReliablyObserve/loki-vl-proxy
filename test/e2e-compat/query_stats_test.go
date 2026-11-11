@@ -310,6 +310,8 @@ type e2eStats struct {
 		Entries    int64   `json:"totalEntriesReturned"`
 		Splits     int64   `json:"splits"`
 		Shards     int64   `json:"shards"`
+
+		StructuredMetadataBytes int64 `json:"totalStructuredMetadataBytesProcessed"`
 	} `json:"summary"`
 	Querier struct {
 		ExecTime float64 `json:"querierExecTime"`
@@ -346,11 +348,16 @@ func getE2EStats(t *testing.T, base, path string, params url.Values, extra map[s
 	return st
 }
 
-// statsBytesTolerance: the proxy's bytes processed are its lines times the
-// mean line size, without Loki's structured-metadata bytes, so they are
-// within 25% of Loki's (the query-stats-loki-emulation decision). Lines of an
-// answer Loki and the proxy both read whole are equal; splits and shards are
-// equal.
+// statsBytesTolerance: Loki's totalBytesProcessed is the line bytes it read
+// plus its structured-metadata bytes (totalStructuredMetadataBytesProcessed;
+// on the test stack total - structured metadata equals the returned lines'
+// bytes exactly), and its structured-metadata bytes depend on how its blocks
+// are laid out (8 bytes a line for detected_level on a steady stream, about 50
+// on the small CI fixture). The proxy counts line bytes only, so it is
+// compared with Loki's line bytes: exactly for a log answer under its limit
+// (the bytes of the lines returned), within 25% for a metric or instant
+// answer (lines times the selector's mean line size, the
+// query-stats-loki-emulation decision).
 const statsBytesTolerance = 0.25
 
 func near(got, want int64, tol float64) bool {
@@ -369,8 +376,10 @@ func near(got, want int64, tol float64) bool {
 // (metric and instant answers read the whole window); for a log answer that
 // fills its limit, lines between the entries returned and the window's lines
 // (Loki's figure depends on its chunk layout, the proxy reports the pieces it
-// read: the query-stats-limit-filled-log-lines decision); bytes within the
-// documented tolerance of Loki's; a refresh of a log or instant answer served
+// read: the query-stats-limit-filled-log-lines decision); bytes equal to
+// Loki's line bytes (its total minus its structured-metadata bytes) for a
+// log answer under its limit, within the documented tolerance of them for a
+// metric or instant answer; a refresh of a log or instant answer served
 // from the proxy's cache reports the computation again (Loki computes those
 // again); a metric query_range repeat is a results-cache hit like Loki's (no
 // processing, Loki's splits, the window served); volume answers process
@@ -411,8 +420,17 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 			} else if miss.Summary.Lines != loki.Summary.Lines || miss.Summary.PostFilter != loki.Summary.PostFilter {
 				t.Errorf("lines %d post-filter %d, Loki %d %d", miss.Summary.Lines, miss.Summary.PostFilter, loki.Summary.Lines, loki.Summary.PostFilter)
 			}
-			if !near(miss.Summary.Bytes, loki.Summary.Bytes, statsBytesTolerance) && miss.Summary.Entries < 1000 {
-				t.Errorf("bytes %d, Loki %d (tolerance %.0f%%)", miss.Summary.Bytes, loki.Summary.Bytes, statsBytesTolerance*100)
+			lokiLineBytes := loki.Summary.Bytes - loki.Summary.StructuredMetadataBytes
+			switch {
+			case miss.Summary.Entries >= 1000:
+				// Loki's bytes of a limit-filled answer follow its chunks.
+			case miss.Summary.Entries == miss.Summary.Lines && loki.Summary.Entries == loki.Summary.Lines:
+				if miss.Summary.Bytes != lokiLineBytes {
+					t.Errorf("bytes %d, Loki's line bytes %d (total %d - structured metadata %d)", miss.Summary.Bytes, lokiLineBytes, loki.Summary.Bytes, loki.Summary.StructuredMetadataBytes)
+				}
+			case !near(miss.Summary.Bytes, lokiLineBytes, statsBytesTolerance):
+				t.Errorf("bytes %d, Loki's line bytes %d (total %d - structured metadata %d, tolerance %.0f%%)",
+					miss.Summary.Bytes, lokiLineBytes, loki.Summary.Bytes, loki.Summary.StructuredMetadataBytes, statsBytesTolerance*100)
 			}
 		}
 		replays := func(t *testing.T, loki, lokiAgain, miss, again e2eStats) {

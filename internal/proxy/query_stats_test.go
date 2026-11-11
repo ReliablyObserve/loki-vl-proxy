@@ -283,7 +283,7 @@ func TestQueryStats_LogQueryNumbersAreMeasured(t *testing.T) {
 			vl := httptest.NewServer(stub)
 			defer vl.Close()
 			h := newQueryStatsTestProxyMode(t, vl.URL, "", QueryStatsModeVictoriaLogs)
-			now := time.Now()
+			now := statsTestNow()
 			params := url.Values{
 				"query": {`{app="api"}`}, "limit": {"1000"}, "direction": {"backward"},
 				"start": {fmt.Sprint(now.Add(-5 * time.Minute).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())},
@@ -348,7 +348,7 @@ func TestQueryStats_EveryAnswerShape(t *testing.T) {
 	vl := httptest.NewServer(stub)
 	defer vl.Close()
 	h := newQueryStatsTestProxy(t, vl.URL, "")
-	now := time.Now().Truncate(time.Minute)
+	now := statsTestNow().Truncate(time.Minute)
 	rangeParams := func(q string) url.Values {
 		return url.Values{"query": {q}, "step": {"60"},
 			"start": {fmt.Sprint(now.Add(-10 * time.Minute).Unix())}, "end": {fmt.Sprint(now.Unix())}}
@@ -387,7 +387,7 @@ func TestQueryStats_CategorizedAndMultiTenantAnswers(t *testing.T) {
 	vl := httptest.NewServer(stub)
 	defer vl.Close()
 	_, _, mux := newTwoTenantProxy(t, vl.URL)
-	now := time.Now()
+	now := statsTestNow()
 	logParams := url.Values{"query": {`{app="api"}`}, "limit": {"1000"}, "direction": {"backward"},
 		"start": {fmt.Sprint(now.Add(-5 * time.Minute).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())}}
 	metricParams := url.Values{"query": {`sum(count_over_time({app="api"}[1m]))`}, "step": {"60"},
@@ -444,7 +444,7 @@ func TestQueryStats_CompressedCacheHitCarriesStats(t *testing.T) {
 	vl := httptest.NewServer(stub)
 	defer vl.Close()
 	h := newQueryStatsTestProxy(t, vl.URL, "gzip")
-	now := time.Now()
+	now := statsTestNow()
 	params := url.Values{"query": {`{app="api"}`}, "limit": {"100"},
 		"start": {fmt.Sprint(now.Add(-5 * time.Minute).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())}}
 	gz := map[string]string{"Accept-Encoding": "gzip"}
@@ -475,7 +475,7 @@ func TestQueryStats_GzipCacheHitIsOneMember(t *testing.T) {
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 	h := mw.CompressionHandlerWithOptions(mux, mw.CompressionOptions{Mode: "gzip", MinBytes: 64})
-	now := time.Now()
+	now := statsTestNow()
 	params := url.Values{"query": {`{app="api"}`}, "limit": {"1000"},
 		"start": {fmt.Sprint(now.Add(-5 * time.Minute).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())}}
 	target := "/loki/api/v1/query_range?" + params.Encode()
@@ -580,7 +580,7 @@ func TestQueryStats_SmallAnswersStayUncompressed(t *testing.T) {
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 	gz := mw.CompressionHandlerWithOptions(mux, mw.CompressionOptions{Mode: "gzip", MinBytes: 1024})
-	now := time.Now().Truncate(time.Minute)
+	now := statsTestNow().Truncate(time.Minute)
 	target := "/loki/api/v1/query?" + url.Values{"query": {`sum(count_over_time({app="api"}[5m]))`}, "time": {fmt.Sprint(now.Unix())}}.Encode()
 	for _, step := range []string{"miss", "hit"} {
 		req := httptest.NewRequest(http.MethodGet, target, nil)
@@ -951,3 +951,15 @@ type discardResponseWriter struct{ h http.Header }
 func (d *discardResponseWriter) Header() http.Header         { return d.h }
 func (d *discardResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
 func (d *discardResponseWriter) WriteHeader(int)             {}
+
+// statsTestNow is now, unless the ten minutes before it cross an hour
+// boundary: then a minute before that boundary. Loki splits a range at the
+// hour, so a test window ending at the wall clock would have 2 pieces for the
+// first ten minutes of every hour.
+func statsTestNow() time.Time {
+	now := time.Now()
+	if hour := now.Truncate(time.Hour); now.Sub(hour) < 15*time.Minute {
+		return hour.Add(-time.Minute)
+	}
+	return now
+}

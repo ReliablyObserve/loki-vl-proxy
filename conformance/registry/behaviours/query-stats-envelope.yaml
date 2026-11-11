@@ -463,9 +463,15 @@ decisions:
     quality: |
       Every rule is checked against the recorded Loki answers, every row;
       the e2e test compares each figure with Loki's live answer for the same
-      request: splits and shards equal, lines within 10% and bytes within
-      25% (an estimate against Loki's own run-to-run numbers and its
-      structured-metadata bytes). Known differences, documented: an
+      request: splits and shards equal, lines equal under the limit, bytes
+      equal to Loki's line bytes (totalBytesProcessed minus
+      totalStructuredMetadataBytesProcessed, which equals the returned
+      lines' bytes on the stack: 359,775 - 8,400 = 351,375 for 1,050 lines)
+      for a log answer under its limit and within 25% of them for a metric
+      or instant answer. Loki's structured-metadata bytes depend on its
+      block layout (8 a line for detected_level on a steady stream, about
+      50 on the small CI fixture: 3,628 against 2,428 line bytes for 24
+      lines), so they are left out of the comparison and documented. Known differences, documented: an
       estimated log line count is off by a few percent, more for a small
       limit; a filtered log query with no count of its bare selector reports
       post-filter lines as lines; Loki's partial read of a flushed piece on

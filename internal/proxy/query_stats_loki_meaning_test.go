@@ -101,7 +101,7 @@ func TestQueryStats_ObjectHasLokisRecordedShape(t *testing.T) {
 	vl := httptest.NewServer(stub)
 	defer vl.Close()
 	h := newQueryStatsTestProxy(t, vl.URL, "")
-	now := time.Now().Truncate(time.Minute)
+	now := statsTestNow().Truncate(time.Minute)
 	window := url.Values{"start": {fmt.Sprint(now.Add(-10 * time.Minute).Unix())}, "end": {fmt.Sprint(now.Unix())}, "step": {"60"}}
 	with := func(kv ...string) url.Values {
 		out := url.Values{}
@@ -199,7 +199,7 @@ func statsView(t *testing.T, body []byte) lokiStatsView {
 //
 // conformance: drilldown/logs-footer-query-stats, query-stats-envelope
 func TestQueryStats_LokiAccountingPerRouteAndCacheTier(t *testing.T) {
-	now := time.Now().Truncate(time.Minute)
+	now := statsTestNow().Truncate(time.Minute)
 	start, end := now.Add(-10*time.Minute), now
 	window := func(q string, extra ...string) url.Values {
 		v := url.Values{"query": {q}, "step": {"60"}, "start": {fmt.Sprint(start.Unix())}, "end": {fmt.Sprint(end.Unix())}}
@@ -569,7 +569,7 @@ func TestQueryStats_ValueFromAnotherReplicaReplays(t *testing.T) {
 	}
 	a, ha := newProxy()
 	b, hb := newProxy()
-	now := time.Now()
+	now := statsTestNow()
 	params := url.Values{"query": {`{app="api"}`}, "limit": {"100"},
 		"start": {fmt.Sprint(now.Add(-5 * time.Minute).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())}}
 	miss := statsView(t, serveQueryStats(t, ha, "/loki/api/v1/query_range", params, nil))

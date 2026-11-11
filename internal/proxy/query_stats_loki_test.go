@@ -202,7 +202,7 @@ func TestLokiStats_MetricBytesFromTheSelectorsMeanLine(t *testing.T) {
 	stub := &statsStubVL{rows: 20}
 	vl := httptest.NewServer(stub)
 	defer vl.Close()
-	now := time.Now().Truncate(time.Minute)
+	now := statsTestNow().Truncate(time.Minute)
 	window := url.Values{"start": {fmt.Sprint(now.Add(-10 * time.Minute).Unix())}, "end": {fmt.Sprint(now.Unix())}, "step": {"60"}}
 	with := func(q string) url.Values {
 		v := url.Values{"query": {q}}
@@ -378,7 +378,7 @@ func TestLokiStats_ExactMetricBytesOnlyOnAMiss(t *testing.T) {
 		p.RegisterRoutes(mux)
 		return mux
 	}
-	now := time.Now().Truncate(time.Minute)
+	now := statsTestNow().Truncate(time.Minute)
 	params := func(q string) url.Values {
 		return url.Values{"query": {q}, "step": {"60"}, "start": {fmt.Sprint(now.Add(-10 * time.Minute).Unix())}, "end": {fmt.Sprint(now.Unix())}}
 	}
@@ -591,7 +591,7 @@ func TestLokiStats_ExactLogLinesOnlyWhenTheAnswerCannotTell(t *testing.T) {
 		p.RegisterRoutes(mux)
 		return mux
 	}
-	now := time.Now()
+	now := statsTestNow()
 	logs := func(limit string) url.Values {
 		return url.Values{"query": {`{app="api"}`}, "limit": {limit}, "direction": {"backward"},
 			"start": {fmt.Sprint(now.Add(-10 * time.Minute).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())}}
