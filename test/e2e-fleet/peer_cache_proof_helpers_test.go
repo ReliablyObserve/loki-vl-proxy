@@ -109,10 +109,32 @@ func waitProxyReady(t *testing.T, addr string) {
 			}
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("%s did not become ready within 90s (last error %v)", addr, err)
+			t.Fatalf("%s did not become ready within 90s (last error %v)\n%s", addr, err, replicaDiagnostics(addr))
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
+}
+
+// replicaDiagnostics describes the container behind a fleet address for a
+// failure message: its state and the end of its log, so a replica that did
+// not come back says why (exited, restarting, still starting, never listening).
+func replicaDiagnostics(addr string) string {
+	service := ""
+	for i, a := range proxyAddrs {
+		if a == addr {
+			service = fleetServices[i]
+		}
+	}
+	if service == "" {
+		return "(no fleet replica at " + addr + ")"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	container := envOr("FLEET_NAME_PREFIX", "fleet") + "-" + service
+	state, _ := exec.CommandContext(ctx, "docker", "inspect", "-f",
+		"status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} restarts={{.RestartCount}}", container).CombinedOutput()
+	logs, _ := exec.CommandContext(ctx, "docker", "compose", "logs", "--no-color", "--tail", "40", service).CombinedOutput()
+	return fmt.Sprintf("%s: %s\nlast log lines:\n%s", container, strings.TrimSpace(string(state)), logs)
 }
 
 // restartKeepDisk restarts a proxy container: its memory tier is lost, its
@@ -341,6 +363,10 @@ type fleetCounters struct {
 	// (forwarded; the owner counts served_peer), or locally after the owner
 	// did not answer (forward_fallback).
 	invHit, invForwarded, invServedPeer, invForwardFallback float64
+	// patternsForwarded counts /patterns requests this replica handed to the
+	// selector's pattern-state owner (operation patterns_owner, outcome
+	// forwarded): the owner mined the answer and keeps a copy of it itself.
+	patternsForwarded float64
 	// VictoriaLogs calls made by every running replica of the fleet while
 	// one request was answered (set by ask): a replica may forward work to
 	// a peer, so "no VictoriaLogs call" is checked fleet-wide.
@@ -411,6 +437,7 @@ func countersFrom(m promScrape) fleetCounters {
 		invForwarded:       invOp("forwarded"),
 		invServedPeer:      invOp("served_peer"),
 		invForwardFallback: invOp("forward_fallback"),
+		patternsForwarded:  m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "patterns_owner", "outcome": "forwarded"}),
 		slnRefreshes:       m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "stream_label_names", "outcome": "refresh*"}),
 		vlRoutes:           vlRouteCounts(m),
 	}
@@ -457,7 +484,8 @@ func (a fleetCounters) minus(b fleetCounters) fleetCounters {
 		vlBackground: a.vlBackground - b.vlBackground, vlStatsBackground: a.vlStatsBackground - b.vlStatsBackground,
 		invMemory: a.invMemory - b.invMemory, invDisk: a.invDisk - b.invDisk, invPeer: a.invPeer - b.invPeer, invVL: a.invVL - b.invVL,
 		invHit: a.invHit - b.invHit, invForwarded: a.invForwarded - b.invForwarded, invServedPeer: a.invServedPeer - b.invServedPeer, invForwardFallback: a.invForwardFallback - b.invForwardFallback,
-		fleetVLSelect: a.fleetVLSelect - b.fleetVLSelect, fleetVLStats: a.fleetVLStats - b.fleetVLStats, fleetVLSeconds: a.fleetVLSeconds - b.fleetVLSeconds,
+		patternsForwarded: a.patternsForwarded - b.patternsForwarded, fleetVLSelect: a.fleetVLSelect - b.fleetVLSelect,
+		fleetVLStats: a.fleetVLStats - b.fleetVLStats, fleetVLSeconds: a.fleetVLSeconds - b.fleetVLSeconds,
 		slnRefreshes: a.slnRefreshes - b.slnRefreshes,
 		vlRoutes:     routesMinus(a.vlRoutes, b.vlRoutes), fleetVLRoutes: routesMinus(a.fleetVLRoutes, b.fleetVLRoutes),
 	}
