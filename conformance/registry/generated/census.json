@@ -935,6 +935,7 @@
     "internal/logql/range_rules_test.go | semantics/proxy-accepts-invalid-logql",
     "internal/logql/selector_value_test.go | semantics/selector-values-are-strings",
     "internal/logql/stage_parse_validate_loki_test.go | semantics/label-filter-regex-parse-error",
+    "internal/logql/stage_raw_test.go | semantics/keep-leaves-labels-loki-drops",
     "internal/logql/terminates_test.go | semantics/logql-unicode-runes",
     "internal/logql/unicode_runes_loki_test.go | semantics/logql-unicode-runes",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
@@ -2188,7 +2189,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 488,
+      "go": 489,
       "playwright": 1
     },
     "page_kinds": {

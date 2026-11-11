@@ -851,7 +851,7 @@ func (p *parser) parseNameStage(stageStart int, kw string) (Stage, error) {
 	if isLabelFilterOperator(p.cur.Typ) || p.cur.Typ == TokError && p.cur.Val == "!" {
 		return p.parseLabelFilterStage(stageStart, kw, TokIdent)
 	}
-	return &LabelFilterStage{Raw: kw + p.consumeRestOfStage(TokIdent)}, nil
+	return &LabelFilterStage{Raw: p.consumeRestOfStage(kw, TokIdent)}, nil
 }
 
 // stageNameFollower reports the characters that may follow the name that opens a stage although they start no token:
@@ -1442,11 +1442,12 @@ func (p *parser) consumeBalancedParens() (endPos int, ok bool) {
 // label_format stages whose expression grammar is complex and opaque to this
 // parser. Stops at [ and an unmatched ) so that the outer range aggregation
 // parser can consume the [duration] and closing ) tokens; a ) that closes a
-// ( of the stage belongs to it. prev is the type of the token that precedes
-// the first one read.
-func (p *parser) consumeRestOfStage(prev TokType) string {
+// ( of the stage belongs to it. kw is the text that opens the stage, which the result starts with, and prev the type
+// of the token that precedes the first one read.
+func (p *parser) consumeRestOfStage(kw string, prev TokType) string {
 	defer p.keep(p.pos())
 	var b strings.Builder
+	b.WriteString(kw) // the first token is spaced from it like any other from the one before
 	depth := 0
 	for {
 		switch p.cur.Typ {
@@ -1491,7 +1492,7 @@ func isLabelFilterOperator(t TokType) bool {
 func (p *parser) parseLabelFilterStage(start int, kw string, prev TokType) (Stage, error) {
 	known := p.sc.lexErrCount()
 	saved := *p.sc
-	raw := kw + p.consumeRestOfStage(prev)
+	raw := p.consumeRestOfStage(kw, prev)
 	// The filter lexer reads the text of the stage: the errors of the scanner inside it are not Loki's.
 	if curStart := int(p.sc.start); known == 0 && p.sc.lexErrCount() > 0 && int(p.sc.extra.err.off) < curStart {
 		// The error is inside the text the filter lexer reads; the token after the stage may have one of its own.
@@ -1549,7 +1550,12 @@ func zeroLineToken(name string) bool {
 // space there would change it (`1h 5m`).
 func (p *parser) appendStageToken(b *strings.Builder) {
 	touches := p.prevEnd == p.pos()
-	raw := tokenRaw(p.advance())
+	start := p.pos()
+	tok := p.advance()
+	raw := tokenRaw(tok)
+	if tok.Typ == TokError && !utf8.ValidString(p.sc.src[start:p.prevEnd]) {
+		raw = p.sc.src[start:p.prevEnd] // not the replacement character the scanner reads an invalid byte as
+	}
 	if b.Len() > 0 && raw != "" && isAlphanumeric(raw[0]) {
 		prev := b.String()[b.Len()-1]
 		if ((isAlphanumeric(prev) || prev == '.' || prev >= 0x80) && !touches) || prev == '"' || prev == '`' {
