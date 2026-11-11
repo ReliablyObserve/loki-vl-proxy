@@ -219,7 +219,7 @@ Tenant limits notes:
 
 ## Tenant header (X-Scope-OrgID)
 
-The proxy admits and refuses `X-Scope-OrgID` as Loki 3.7.9 does with `auth_enabled: true` (`-auth.enabled` or `-require-tenant-header`), before the response cache or any VictoriaLogs call. The answers below are recorded from Loki and replayed against the proxy in `internal/proxy/tenant_auth_parity_test.go`.
+With no tenant configuration the proxy is Loki's single-tenant mode (`auth_enabled: false`): the header is ignored on every route and every request reads the default tenant (recorded from the e2e stack's Loki in `testdata/tenant_noauth_loki_answers.jsonl`; see [Tenant Resolution Order](configuration.md#tenant-resolution-order)). Once tenants are configured, the proxy admits and refuses `X-Scope-OrgID` as Loki 3.7.9 does with `auth_enabled: true`, before the response cache or any VictoriaLogs call. The answers below are recorded from Loki and replayed against the proxy in `internal/proxy/tenant_auth_parity_test.go`.
 
 | Header | Read routes | `/loki/api/v1/tail` | `/loki/api/v1/delete` |
 |---|---|---|---|

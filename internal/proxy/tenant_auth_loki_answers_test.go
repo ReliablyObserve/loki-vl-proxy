@@ -197,8 +197,48 @@ func TestRecordTenantAuthLokiAnswers(t *testing.T) {
 	if base == "" {
 		t.Skip("set LVP_ORACLE_RECORD_TENANT_AUTH to an auth-enabled Loki to record its answers")
 	}
+	recordTenantAnswers(t, base, tenantAuthLokiAnswersFile, "testdata/tenant_auth_loki_config.yaml", tenantAuthCases())
+}
+
+// tenantNoAuthLokiAnswersFile holds the answers of a Loki with
+// auth_enabled: false (the e2e stack's) to the read requests of
+// tenantNoAuthCases: Loki ignores X-Scope-OrgID and serves tenant "fake".
+// Record them again, read-only, with
+//
+//	LVP_ORACLE_RECORD_TENANT_NOAUTH=http://127.0.0.1:13101 go test ./internal/proxy -run TestRecordTenantNoAuthLokiAnswers -count=1
+const tenantNoAuthLokiAnswersFile = "testdata/tenant_noauth_loki_answers.jsonl"
+
+// tenantNoAuthCases are the GET requests of tenantAuthCases (no delete, no
+// ruler: those need a backend of their own) plus a lone "|", which the
+// auth-enabled Loki never answers.
+func tenantNoAuthCases() []tenantAuthCase {
+	var out []tenantAuthCase
+	for _, c := range tenantAuthCases() {
+		if c.Method == http.MethodGet && !strings.HasPrefix(c.ID, "ruler/") {
+			out = append(out, c)
+		}
+	}
+	for _, r := range tenantAuthRoutes() {
+		out = append(out, tenantAuthCase{ID: r.Name + "/only-bars", Method: r.Method, Target: r.Target, Header: map[string]string{"X-Scope-OrgID": "|"}})
+	}
+	return out
+}
+
+// TestRecordTenantNoAuthLokiAnswers records an auth-disabled Loki's answers
+// into tenantNoAuthLokiAnswersFile; it runs only with
+// LVP_ORACLE_RECORD_TENANT_NOAUTH set to its base URL. It sends GETs only.
+func TestRecordTenantNoAuthLokiAnswers(t *testing.T) {
+	base := os.Getenv("LVP_ORACLE_RECORD_TENANT_NOAUTH")
+	if base == "" {
+		t.Skip("set LVP_ORACLE_RECORD_TENANT_NOAUTH to a Loki with auth_enabled: false to record its answers")
+	}
+	recordTenantAnswers(t, base, tenantNoAuthLokiAnswersFile, "test/e2e-compat/loki-local-config.yaml (auth_enabled: false)", tenantNoAuthCases())
+}
+
+func recordTenantAnswers(t *testing.T, base, file, config string, cases []tenantAuthCase) {
+	t.Helper()
 	version := lokiBuildVersion(t, base)
-	out, err := os.Create(tenantAuthLokiAnswersFile)
+	out, err := os.Create(file)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,13 +246,14 @@ func TestRecordTenantAuthLokiAnswers(t *testing.T) {
 	w := bufio.NewWriter(out)
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
-	if err := enc.Encode(tenantAuthMeta{Loki: version, Config: "testdata/tenant_auth_loki_config.yaml"}); err != nil {
+	if err := enc.Encode(tenantAuthMeta{Loki: version, Config: config}); err != nil {
 		t.Fatal(err)
 	}
-	// Loki 3.7.9 never answers some headers (a lone "|" retries an empty org
-	// until the client gives up), so a request that hangs fails the recording.
+	// Loki 3.7.9 with auth on never answers some headers (a lone "|" retries an
+	// empty org until the client gives up), so a request that hangs fails the
+	// recording.
 	client := &http.Client{Timeout: 20 * time.Second}
-	for _, c := range tenantAuthCases() {
+	for _, c := range cases {
 		req, err := c.request(base)
 		if err != nil {
 			t.Fatal(err)
@@ -254,10 +295,16 @@ func lokiBuildVersion(t *testing.T, base string) string {
 	return info.Version
 }
 
-// readTenantAuthLokiAnswers reads the recorded answers.
+// readTenantAuthLokiAnswers reads the recorded answers of the auth-enabled Loki.
 func readTenantAuthLokiAnswers(t *testing.T) (tenantAuthMeta, []tenantAuthAnswer) {
 	t.Helper()
-	fh, err := os.Open(tenantAuthLokiAnswersFile)
+	return readTenantAnswers(t, tenantAuthLokiAnswersFile)
+}
+
+// readTenantAnswers reads one file of recorded answers.
+func readTenantAnswers(t *testing.T, file string) (tenantAuthMeta, []tenantAuthAnswer) {
+	t.Helper()
+	fh, err := os.Open(file)
 	if err != nil {
 		t.Fatal(err)
 	}

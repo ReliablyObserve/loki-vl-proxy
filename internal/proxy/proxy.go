@@ -159,21 +159,25 @@ const (
 )
 
 type Config struct {
-	BackendURL          string
-	RulerBackendURL     string
-	AlertsBackendURL    string
-	Cache               *cache.Cache
-	CompatCache         *cache.Cache
-	LogLevel            string
-	MaxConcurrent       int                      // max concurrent backend queries (0=unlimited)
-	RatePerSecond       float64                  // per-client rate limit (0=unlimited)
-	RateBurst           int                      // per-client burst size
-	CBFailThreshold     int                      // circuit breaker: failures within window before opening
-	CBOpenDuration      time.Duration            // circuit breaker: how long to stay open before probing
-	CBWindowDuration    time.Duration            // circuit breaker: sliding window for failure counting (default 30s)
-	CoalescerDisabled   bool                     // disable singleflight coalescing; every request makes its own backend call
-	TenantMap           map[string]TenantMapping // string org ID → VL account/project
-	TenantLabel         string                   // VL field name for label-based tenant routing (alternative to AccountID/ProjectID headers)
+	BackendURL        string
+	RulerBackendURL   string
+	AlertsBackendURL  string
+	Cache             *cache.Cache
+	CompatCache       *cache.Cache
+	LogLevel          string
+	MaxConcurrent     int                      // max concurrent backend queries (0=unlimited)
+	RatePerSecond     float64                  // per-client rate limit (0=unlimited)
+	RateBurst         int                      // per-client burst size
+	CBFailThreshold   int                      // circuit breaker: failures within window before opening
+	CBOpenDuration    time.Duration            // circuit breaker: how long to stay open before probing
+	CBWindowDuration  time.Duration            // circuit breaker: sliding window for failure counting (default 30s)
+	CoalescerDisabled bool                     // disable singleflight coalescing; every request makes its own backend call
+	TenantMap         map[string]TenantMapping // string org ID → VL account/project
+	// TenantMapFile is the -tenant-map-file path. A configured file keeps the
+	// proxy routing on X-Scope-OrgID even while the file holds no entry (see
+	// tenantHeaderIgnored).
+	TenantMapFile       string
+	TenantLabel         string // VL field name for label-based tenant routing (alternative to AccountID/ProjectID headers)
 	AuthEnabled         bool
 	RequireTenantHeader bool
 	AllowGlobalTenant   bool
@@ -710,6 +714,7 @@ type Proxy struct {
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
 	deleteAPIAuthToken                    string
+	tenantMapFileSet                      bool
 	loweringShadow                        *loweringShadow // nil unless -translate-shadow-sample is set
 	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
 	patternsAutodetectFromQueries         bool
@@ -1409,6 +1414,7 @@ func New(cfg Config) (*Proxy, error) {
 		patternsEnabled:                       patternsEnabled,
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		deleteAPIAuthToken:                    cfg.DeleteAPIAuthToken,
+		tenantMapFileSet:                      cfg.TenantMapFile != "",
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
 		patternsCounts:                        cfg.PatternsCounts,
 		patternsExactMaxLines:                 cfg.PatternsExactMaxLines,

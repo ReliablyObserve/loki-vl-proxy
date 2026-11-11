@@ -67,6 +67,7 @@ func TestSlidingSumWithoutCutTenants(t *testing.T) {
 	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount"}
 	backend, shim := newExtentShim(t, emu.Handler())
 	p := newExtentTestProxy(t, backend.URL, true, 64<<20)
+	p.tenantMapFileSet = true // tenants configured: the header is routed
 	p.labelTranslator = NewLabelTranslator(LabelStyleUnderscores, nil)
 	start, end := s0.Add(10*time.Minute), s0.Add(70*time.Minute)
 	params := url.Values{"query": {`sum without (pod) (count_over_time({app="uw"}[1m]))`}, "start": {strconv.FormatInt(start.Unix(), 10)}, "end": {strconv.FormatInt(end.Unix(), 10)}, "step": {"20"}}

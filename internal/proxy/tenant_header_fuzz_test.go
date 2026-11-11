@@ -69,9 +69,28 @@ func FuzzTenantHeader(f *testing.F) {
 	if err != nil {
 		f.Fatal(err)
 	}
+	// Loki's single-tenant mode: no tenant configured, the header is ignored.
+	single, err := New(Config{BackendURL: "http://unused", LogLevel: "error"})
+	if err != nil {
+		f.Fatal(err)
+	}
+	var reached bool
+	var sawOrg string
+	singleChain := single.tenantMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		reached, sawOrg = true, r.Header.Get("X-Scope-OrgID")+getOrgID(r.Context())
+	}))
 	f.Fuzz(func(t *testing.T, header, path string) {
 		if len(header) > 4096 || !strings.HasPrefix(path, "/") || strings.ContainsAny(path, "?# \t\r\n") {
 			return // a header is capped by -http-max-header-bytes; the path is the route
+		}
+		sr := httptest.NewRequest(http.MethodGet, "http://proxy/", nil)
+		sr.URL.Path = path
+		sr.Header["X-Scope-Orgid"] = []string{header}
+		reached, sawOrg = false, ""
+		sw := httptest.NewRecorder()
+		singleChain.ServeHTTP(sw, sr)
+		if !reached || sawOrg != "" {
+			t.Fatalf("single-tenant mode: header %q on %s answered %d (reached %v, org %q): it must be ignored", header, path, sw.Code, reached, sawOrg)
 		}
 		r := httptest.NewRequest(http.MethodGet, "http://proxy/", nil)
 		r.URL.Path = path

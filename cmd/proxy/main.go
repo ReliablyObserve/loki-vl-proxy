@@ -678,7 +678,7 @@ func run(
 	gcPercent := fs.Int("go-gc-percent", 200, "GOGC target percentage. Higher values reduce GC frequency at the cost of higher peak RSS. Set to -1 to use Go runtime default (100). Ignored when GOGC env var is already set.")
 
 	// Loki-style auth / instrumentation controls
-	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
+	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant. With no tenant configuration at all (this flag false, no -require-tenant-header, -tenant-map, -tenant-map-file or -tenant-label, -tenant.numeric-passthrough=true) the header is ignored and every request reads the backend default tenant, as in Loki's single-tenant mode (auth_enabled: false).")
 	requireTenantHeader := fs.Bool("require-tenant-header", false, "Reject requests missing X-Scope-OrgID with HTTP 401. Independent of -auth.enabled; use when you want tenant enforcement without full auth.")
 	registerInstrumentation := fs.Bool("server.register-instrumentation", false, "Register instrumentation handlers such as /metrics. Default false (BREAKING in v1.56.0; was true). Set true and optionally pair with --metrics-listen for a dedicated scrape port. The Helm chart sets this to true automatically so ServiceMonitor scrapes keep working without operator action.")
 	enablePprof := fs.Bool("server.enable-pprof", false, "Expose /debug/pprof/* handlers")
@@ -716,7 +716,7 @@ func run(
 	patternsStartupStale := fs.Duration("patterns-startup-stale-threshold", 60*time.Second, "Treat on-disk patterns snapshot older than this as stale and warm from peers before serving")
 	patternsPeerWarmTimeout := fs.Duration("patterns-startup-peer-warm-timeout", 5*time.Second, "Maximum time to wait for startup patterns snapshot warm from peers")
 	allowGlobalTenant := fs.Bool("tenant.allow-global", false, "Allow X-Scope-OrgID \"*\" to bypass AccountID/ProjectID scoping and use the backend default tenant. With -tenant-label or with -tenant.numeric-passthrough=false it also admits the default aliases 0, fake and default and a missing org without a tenant filter or tenant map entry")
-	tenantNumericPassthrough := fs.Bool("tenant.numeric-passthrough", true, "Route an X-Scope-OrgID that is a canonical decimal number (digits only, no sign, no leading zeros, at most 4294967295) to the VictoriaLogs account of that number. A number spelled any other way (007, 00, +7, -1) or above 4294967295 is refused with 403 unknown tenant unless -tenant-map lists it exactly, because Loki keeps 007 and 7 as different tenants. Set to false for strict routing: only orgs listed in -tenant-map are routed and every other numeric org gets 403; the default aliases 0, fake and default and a missing X-Scope-OrgID are then refused like the wildcard unless -tenant.allow-global is set or the tenant map lists them (no entry admits a missing org). Has no effect with -tenant-label")
+	tenantNumericPassthrough := fs.Bool("tenant.numeric-passthrough", true, "Route an X-Scope-OrgID that is a canonical decimal number (digits only, no sign, no leading zeros, at most 4294967295) to the VictoriaLogs account of that number. A number spelled any other way (007, 00, +7, -1) or above 4294967295 is refused with 403 unknown tenant unless -tenant-map lists it exactly, because Loki keeps 007 and 7 as different tenants. Set to false for strict routing: only orgs listed in -tenant-map are routed and every other numeric org gets 403; the default aliases 0, fake and default and a missing X-Scope-OrgID are then refused like the wildcard unless -tenant.allow-global is set or the tenant map lists them (no entry admits a missing org). Has no effect with -tenant-label. Numbers are routed only once tenants are configured (-auth.enabled, -require-tenant-header, a tenant map or -tenant-label); with none the header is ignored, as in Loki's single-tenant mode")
 
 	// Cold storage backend (Victoria Lakehouse)
 	coldBackendURL := fs.String("cold-backend", "", "Cold storage backend URL (Victoria Lakehouse). Empty disables cold routing.")
@@ -2167,6 +2167,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		RatePerSecond:                      cfg.ratePerSecond,
 		RateBurst:                          cfg.rateBurst,
 		TenantMap:                          tenantMap,
+		TenantMapFile:                      cfg.tenantMapFile,
 		TenantLabel:                        cfg.tenantLabel,
 		TenantLimitsAllowPublish:           parseCSV(cfg.tenantLimitsAllowPublish),
 		TenantDefaultLimits:                tenantDefaultLimits,

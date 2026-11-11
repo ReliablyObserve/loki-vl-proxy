@@ -76,7 +76,7 @@ func (f *indexStatsFakeVL) server(t testing.TB) *httptest.Server {
 
 func newIndexStatsTestProxy(t *testing.T, backend string) *Proxy {
 	t.Helper()
-	p := newTestProxyWithOptions(t, func(c *Config) { c.BackendURL = backend })
+	p := newTestProxyWithOptions(t, func(c *Config) { c.BackendURL = backend; c.TenantMapFile = testTenantMapFile })
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	return p
 }

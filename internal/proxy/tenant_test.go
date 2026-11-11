@@ -269,7 +269,7 @@ func TestTenant_WildcardGlobalBypassRequiresOptInWithoutMappings(t *testing.T) {
 	defer vlBackend.Close()
 
 	c := cache.New(60*time.Second, 1000)
-	p, _ := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error"})
+	p, _ := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error", TenantMapFile: testTenantMapFile})
 
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
@@ -689,7 +689,7 @@ func TestTenant_MultiTenantHeaderRejectedForTail(t *testing.T) {
 	defer vlBackend.Close()
 
 	c := cache.New(60*time.Second, 1000)
-	p, _ := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error"})
+	p, _ := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error", TenantMapFile: testTenantMapFile})
 
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)

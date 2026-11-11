@@ -476,8 +476,9 @@ func TestQueryStats_GzipCacheHitIsOneMember(t *testing.T) {
 		}
 		return rec, plain
 	}
+	// No tenant is configured, so the header is ignored before the compat
+	// cache keys the request (Loki's single-tenant mode).
 	keyReq := httptest.NewRequest(http.MethodGet, target, nil)
-	keyReq.Header.Set("X-Scope-OrgID", "0")
 	cacheKey, ok := p.compatCacheKey("query_range", keyReq)
 	if !ok {
 		t.Fatal("no compat cache key")

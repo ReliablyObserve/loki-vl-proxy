@@ -256,6 +256,11 @@ func (p *Proxy) globalTenantAllowed() bool {
 
 func (p *Proxy) tenantMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p.tenantHeaderIgnored(p.routingForContext(r.Context())) {
+			// Loki's single-tenant mode: the header names no tenant, so it
+			// neither routes, nor keys a cache, nor reaches VictoriaLogs.
+			r.Header.Del("X-Scope-OrgID")
+		}
 		normalizeTenantHeader(r)
 		r = p.withRequestScope(r)
 		if err := p.validateTenantHeader(r); err != nil {

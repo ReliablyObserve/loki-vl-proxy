@@ -23,14 +23,20 @@ loki: |
   multi-tenant header, /prometheus/api/v1/rules and alerts 400 "too many org
   ids found" for a multi-tenant header (before the members are read) and 500
   "no valid org id found" for a refused ID. Authorization is ignored. With
-  auth_enabled: false Loki ignores the header and serves tenant "fake".
+  auth_enabled: false Loki ignores the header and serves tenant "fake" (616
+  GET answers recorded read-only from the e2e stack's Loki,
+  internal/proxy/testdata/tenant_noauth_loki_answers.jsonl: every header
+  answers as if absent, tail 400 without a WebSocket, no __tenant_id__).
 
 victorialogs: |
   VictoriaLogs scopes by AccountID/ProjectID (uint32 each); it has no notion of
   Loki's tenant names.
 
 proxy: |
-  The tenant middleware (normalizeTenantHeader, validateTenantHeader) checks
+  With no tenant configuration (-auth.enabled=false, -require-tenant-header=false,
+  no tenant map or -tenant-map-file, no -tenant-label, numeric passthrough on)
+  the tenant middleware deletes the header (tenantHeaderIgnored): Loki's
+  single-tenant mode, every request on the default tenant. Otherwise the tenant middleware (normalizeTenantHeader, validateTenantHeader) checks
   presence (-auth.enabled or -require-tenant-header), then Loki's tenant ID
   rules on every member, then the one-tenant routes, and answers each refusal
   in the shape Loki's route uses (writeLokiTenantRefusal), before the
@@ -49,20 +55,22 @@ cases:
   - semantics/tenant-header-loki-answers
 
 decisions:
-  - id: loki-tenant-id-check-in-every-auth-mode
-    chosen: "Loki's tenant ID check (syntax, length, members) runs whenever an X-Scope-OrgID is present, with -auth.enabled on or off"
-    over: [skip the check with -auth.enabled=false (Loki then ignores the header), keep the proxy's 403 unknown tenant for an ID Loki refuses]
+  - id: single-tenant-mode-without-tenant-configuration
+    chosen: "With no tenant configuration (-auth.enabled=false, -require-tenant-header=false, no tenant map or -tenant-map-file, no -tenant-label, -tenant.numeric-passthrough=true) X-Scope-OrgID is ignored on every route and every request reads the default tenant, as Loki's auth_enabled: false; any tenant configuration routes on the header, with Loki's tenant ID check in both -auth.enabled modes"
+    over: [route on the header in every mode (numeric passthrough without a map; what the proxy did before), apply Loki's check but keep routing with no tenant configured, skip the check with -auth.enabled=false while tenants are configured]
     why: |
-      With auth_enabled: false Loki ignores the header and serves "fake";
-      the proxy routes on the header in both modes (it fronts a multi-tenant
-      VictoriaLogs), so ignoring it would route every org to the default
-      tenant. An ID Loki refuses is refused in Loki's words in both modes; the
-      check only narrows what reaches the tenant map and the LogsQL tenant
-      filter of label mode.
-    evidence: 'Loki 3.7.9 recorded 2026-11-11 (auth_enabled true and false, the latter on the e2e stack): 664 answers in internal/proxy/testdata/tenant_auth_loki_answers.jsonl'
+      Owner 2026-11-11: with nothing configured the proxy behaves as Loki's
+      single-tenant mode, where the header names no tenant and everyone sees
+      all data. Once an operator configures tenants (a map, a label, strict
+      routing, -auth.enabled, -require-tenant-header) the proxy routes on the
+      header like an auth-enabled Loki, and an ID Loki refuses is refused in
+      Loki's words in both auth modes, which also narrows what reaches the
+      tenant map and the tenant-label filter. Breaking for deployments that
+      separated numeric tenants without any configuration.
+    evidence: 'Loki 3.7.9 recorded 2026-11-11: 664 answers with auth_enabled true (local release binary) in internal/proxy/testdata/tenant_auth_loki_answers.jsonl; 616 GET answers with auth_enabled false (the e2e stack, read-only) in internal/proxy/testdata/tenant_noauth_loki_answers.jsonl'
     code: [internal/proxy/tenant_header.go, internal/proxy/middleware.go]
-    tests: [TestTenantAuth_AnswersLikeLoki, TestLokiTenantIDError_MatchesRecordedCharacterSweep, FuzzTenantHeader]
-    quality: 'Every recorded answer equal to Loki: status, Content-Type and body byte for byte, including invalid UTF-8.'
+    tests: [TestTenantAuth_AnswersLikeLoki, TestTenantNoAuth_HeaderIgnoredLikeLoki, TestTenantHeaderIgnored_OnlyWithoutTenantConfiguration, TestLokiTenantIDError_MatchesRecordedCharacterSweep, FuzzTenantHeader]
+    quality: 'Every recorded answer equal to Loki in its mode: status, Content-Type and body byte for byte, including invalid UTF-8; with no tenant configured VictoriaLogs never receives a tenant.'
     pending: true
   - id: proxy-own-tenant-refusals-kept
     chosen: 'A Loki-valid ID the proxy cannot route stays a proxy refusal: 403 unknown tenant (unmapped name, non-canonical number, strict routing), "*" as the global bypass, tenant-label alias rules'

@@ -131,6 +131,7 @@ func newEdgeProxy(t *testing.T, vl *edgeVL, o edgeProxyOptions) (*Proxy, *http.S
 		RecentTailRefreshMaxStaleness: time.Nanosecond,
 		MetadataMaxStaleness:          o.maxStaleness,
 		MetadataEdgeRefreshBudget:     o.budget,
+		TenantMapFile:                 testTenantMapFile, // per-tenant answers: route on the header
 	})
 	if err != nil {
 		t.Fatal(err)
