@@ -219,7 +219,10 @@ func FuzzParseTerminates(f *testing.F) {
 	for _, q := range terminationSeeds() {
 		f.Add(q)
 	}
-	for _, q := range []string{`{a="b"}`, `{a="b"} |= "x" | json | x > 5`, `sum by (a) (rate({a="b"}[5m]))`, `rate({a="b"}[5m]) / on(a) rate({a="b"}[5m])`, "{a=`b`} # c\n| logfmt", `1 + 1`, ``} {
+	for _, q := range []string{`{a="b"}`, `{a="b"} |= "x" | json | x > 5`, `sum by (a) (rate({a="b"}[5m]))`, `rate({a="b"}[5m]) / on(a) rate({a="b"}[5m])`, "{a=`b`} # c\n| logfmt", `1 + 1`, ``,
+		// label lists: a trailing, doubled and leading comma, two names, an empty list
+		`sum by (a,) (rate({a="b"}[5m]))`, `sum without (,a) (rate({a="b"}[5m]))`, `sum by (a b) (rate({a="b"}[5m]))`, `sum by () (rate({a="b"}[5m]))`,
+		`rate({a="b"}[5m]) / on(a,) group_left(,b) rate({a="b"}[5m])`, `{a="b"} | drop a,,b`, `{a="b"} | keep`, `{a="b"} | drop a="x",`, `{a="b"} | json a,`} {
 		f.Add(q)
 	}
 	f.Fuzz(func(t *testing.T, q string) {
