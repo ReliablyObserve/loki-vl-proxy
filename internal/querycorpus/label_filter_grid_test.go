@@ -213,6 +213,11 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 			if err != nil {
 				t.Fatalf("%s: DecodePhysical(%q): %v", prof.name, legacy, err)
 			}
+			if lower.UnwrapsReservedFieldOtherCase(plan) {
+				// Held to the translator's text guarded, what the proxy sends (semantics/reserved-field-name-case-outbound).
+				want = lower.GuardOutbound(want)
+				legacy = translator.EncodePhysical(want)
+			}
 			// The flip serves the lowering's text: byte for byte, which includes the parsed structure.
 			if text := physical.Encode(got); (byteExact && text != legacy) || !physical.Equal(want, got) {
 				problems = append(problems, fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, text, legacy))

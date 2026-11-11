@@ -6,11 +6,16 @@
 //
 //	go run -modfile=go.v1.49.0.mod . cases -src "$(go list -modfile=go.v1.49.0.mod -m -f '{{.Replace.Dir}}' github.com/VictoriaMetrics/VictoriaLogs)" -out cases.json
 //	go run -modfile=go.v1.49.0.mod . check -in inputs.jsonl -out verdicts.jsonl
+//	go run -modfile=go.v1.49.0.mod . store -in rows-and-queries.jsonl -out answers.jsonl
+//	go run -modfile=go.v1.49.0.mod . roundtrip -in queries.jsonl -out verdicts.jsonl
 //
 // cases writes VictoriaLogs' own parser test cases of that version (TestParseQuery_Success and
 // TestParseQuery_Failure in lib/logstorage/parser_test.go); constructs writes its pipes, stats functions and
 // filters, one per pipe_*.go, stats_*.go and filter_*.go source file; check parses every input query, and the
-// proxy's printed form of it, and writes whether VictoriaLogs accepts each and whether they mean the same to it.
+// proxy's printed form of it, and writes whether VictoriaLogs accepts each and whether they mean the same to it;
+// store stores rows the way the ingestion routes hand them to lib/logstorage and writes what each query returns
+// over them (store.go); roundtrip runs each query through the steps of VictoriaLogs' /select/logsql/query handler
+// and reports whether its clones (print, parse again) read it back or would panic (roundtrip.go).
 package main
 
 import (
@@ -62,7 +67,7 @@ type Verdict struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fail(fmt.Errorf("usage: vl cases|constructs -src DIR -out FILE | vl check -in FILE -out FILE"))
+		fail(fmt.Errorf("usage: vl cases|constructs -src DIR -out FILE | vl check|store|roundtrip -in FILE -out FILE"))
 	}
 	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
 	src := fs.String("src", "", "the VictoriaLogs module directory (cases, constructs)")
@@ -77,6 +82,10 @@ func main() {
 		err = writeConstructs(*src, *out)
 	case "check":
 		err = check(*in, *out)
+	case "store":
+		err = store(*in, *out)
+	case "roundtrip":
+		err = roundtrip(*in, *out)
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}

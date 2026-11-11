@@ -14,6 +14,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   return within a bound of time and memory by a fuzz target. **Breaking:** a few queries Loki rejects (for example a
   stage name followed by `²`) were accepted and now answer Loki's 400; answers cached for them are not served.
 
+- Queries no longer make VictoriaLogs crash when a label name differs from
+  `_time`, `_stream` or `_stream_id` only by letter case (`_TIME`, `_Stream`,
+  `_STREAM_ID`). VictoriaLogs prints such a field name without its quotes when
+  it clones a query, cannot parse its own print, and restarts
+  ([VictoriaMetrics/VictoriaLogs#1942](https://github.com/VictoriaMetrics/VictoriaLogs/issues/1942)).
+  It clones every query with a limit, every live tail and, in a cluster, every
+  query. The proxy wrote such a filter for the unwrap of a key with such a
+  name (`| logfmt | unwrap _TIME`), so a client could restart the shared
+  VictoriaLogs for every tenant. The proxy now passes every query it sends
+  (every endpoint, probe, live tail and cold-tier request) through one
+  outbound guard. The guard rewrites a filter on such a name to a copy into a
+  scratch field and a filter on that copy (`| copy _TIME as __lxrf_TIME |
+  filter __lxrf_TIME:>=5s | delete __lxrf_TIME`), a form VictoriaLogs v1.49
+  and v1.53 read back as written. The query plan writes the unwrap in that
+  form itself. These queries now get Loki's answer, where they got a crash, a
+  400, or (`| _TIME >= 5s`) VictoriaLogs' time range of the last five seconds.
+  No data or answer changes for any other query: every other query is sent
+  byte for byte as before. Answers cached before this change are not reused
+  for these queries (a response cache key version).
+
 ## [2.140.0] - 2026-11-11
 
 ### Fixed

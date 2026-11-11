@@ -244,4 +244,5 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/ip-filter-ipv4-after-dot-run` — An IPv4 ip() filter does not match an address after a run of dots that a digit or a dot precedes (fixed) | #1273 | 0 | 0 |
 | `semantics/line-filter-invalid-utf8` — A \|= or != line filter whose text is not UTF-8 answers like Loki (fixed) | #1236 | 0 | 0 |
 | `semantics/loki-keyword-label-names` — A label cannot be called after a word Loki's lexer reads as a keyword (of, bool, offset, unwrap, json, regexp, logfmt, unpack, pattern, l... | this change | 0 | 0 |
+| `semantics/reserved-field-name-case-outbound` — A label named _time, _stream or _stream_id in another letter case (_TIME, _Stream_ID) is filtered as the field it is, through a copy into... | this change | 0 | 0 |
 | `versions/capabilities-floor-vs-matrix` — logsql.Capabilities treated VictoriaLogs below v1.40 as unsupported while the matrix claimed v1.30 (fixed) | #659 | 0 | 0 |

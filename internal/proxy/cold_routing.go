@@ -265,6 +265,7 @@ func (cr *ColdRouter) ColdBoundaryNs() int64 {
 }
 
 func (cr *ColdRouter) ColdGet(ctx context.Context, path string, params url.Values) (*http.Response, error) {
+	params = guardOutboundQuery(params)
 	u := *cr.coldBackend
 	u.Path = path
 	u.RawQuery = params.Encode()
@@ -282,6 +283,7 @@ func (cr *ColdRouter) ColdPost(ctx context.Context, path string, params url.Valu
 }
 
 func (cr *ColdRouter) coldRequest(ctx context.Context, method, path string, params url.Values, headers func(*http.Request), do func(*http.Request, *http.Client) (*http.Response, error)) (*http.Response, error) {
+	params = guardOutboundQuery(params)
 	u := *cr.coldBackend
 	u.Path = path
 	querycorpus.RecordBackend(path, params.Get("query"))

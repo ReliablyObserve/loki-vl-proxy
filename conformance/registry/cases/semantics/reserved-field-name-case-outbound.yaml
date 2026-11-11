@@ -1,0 +1,70 @@
+id: semantics/reserved-field-name-case-outbound
+title: A label named _time, _stream or _stream_id in another letter case (_TIME, _Stream_ID) is filtered as the field it is, through a copy into a scratch field, never as a filter VictoriaLogs cannot read back from its own print
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki reads `_TIME`, `_Stream`, `_Stream_ID` and the like as plain labels: a
+  stream label, structured metadata or a key a parser extracts (the Loki
+  oracle, process: `| logfmt | unwrap _TIME` reads the key, `| _Stream_ID="si"`
+  filters the label). VictoriaLogs (v1.49.0 and v1.53.0) stores them as fields
+  like any other (the VictoriaLogs oracle, store). But its parser reads the
+  bare name, in any letter case, as its own time, stream or stream id filter
+  (`_TIME:="x"` is rejected, `_TIME:>=5s` is a time range), and when it clones
+  a query (lib/logstorage Query.Clone: print, then parse again), which every
+  query with a limit, the live tail and a cluster's remote query go through,
+  it prints a quoted `"_TIME"` bare, cannot parse its own print and panics:
+  the VictoriaLogs process restarts (VictoriaMetrics/VictoriaLogs#1942).
+
+  The proxy wrote both forms. A label filter on such a name was sent bare
+  (`app:="a" _TIME:>=5s`: a 400, or every line of the window), and the gate of
+  an unwrap of such a key quoted (`| filter "_TIME":~"..."`), which a query
+  that VictoriaLogs clones turns into a crash.
+
+  Every query the proxy sends now passes the outbound guard
+  (logsql.GuardReservedFieldCase, internal/proxy guardOutboundQuery, on every
+  sender: the hot backend's GET and POST, the live tail and the cold tier): a
+  filter that names such a field is rewritten to a copy of the field into a
+  scratch field, the filter on the scratch field and its delete
+  (`| copy _TIME as __lxrf_TIME | filter __lxrf_TIME:>=5s | delete __lxrf_TIME`),
+  which VictoriaLogs reads back from its own print. Any other query is sent as
+  it is, byte for byte (the 43,096 corpus texts of every profile). The query
+  plan writes the unwrap of such a key in that form itself. Data and answers
+  change for no other query.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(sum_over_time({service_name="api-gateway"} | logfmt | unwrap _TIME [5m]))'
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+corpus:
+  dimensions:
+    shapes:
+      - query: '{service_name="api-gateway"} | logfmt | _Stream_ID="x"'
+      - query: '{service_name="api-gateway"} | _TIME >= 5s'
+      - query: 'sum by (service_name) (rate({service_name="api-gateway"} | json | unwrap duration(_Stream) [5m]))'
+      - query: 'count_over_time({service_name="api-gateway"} | logfmt | _STREAM_ID!="x" [5m])'
+compare:
+  mode: observed
+  fields: [status, series]
+  expect: |
+    200 with the sum of the logfmt key _TIME, as Loki answers, and
+    VictoriaLogs' restart count unchanged.
+gap:
+  status: fixed
+  fixed_by: "this change"
+  impact: edge
+  effort: S
+  area: 'internal/logsql GuardReservedFieldCase, internal/proxy guardOutboundQuery (every sender), internal/queryplan/lower unwrap'
+  loki: '_TIME, _Stream, _STREAM_ID are plain labels in every position'
+  proxy: 'a filter on such a name reaches VictoriaLogs as a copy into a scratch field and a filter on it, which VictoriaLogs reads back when it clones the query'
+  planned_test: 'TestCompat_ReservedFieldNameCaseLikeLoki (test/e2e-compat, group semantics: a logfmt key _TIME unwrapped and a _Stream_ID label filter, pushed alike to Loki and VictoriaLogs, against Loki, VictoriaLogs restart count unchanged); TestPlanTextsSurviveVictoriaLogsClone and TestReservedFieldCaseMatchesLoki (internal/queryplan/lower), TestGuardReservedFieldCase and FuzzOutboundGuard (internal/logsql), TestEveryBackendSenderGuardsItsQuery (internal/proxy), TestOutboundGuardOverTheCorpus (internal/querycorpus)'
+  visual: none
+  visual_reason: 'no Grafana panel names a label _TIME; found by the VictoriaLogs clone round trip'
+  clusters: []
