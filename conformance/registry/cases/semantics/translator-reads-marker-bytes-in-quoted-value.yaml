@@ -53,7 +53,7 @@ why: |
   not recorded here).
 
   FuzzLabelFilterAfterParserLowering recognises the shape by content
-  (translatorReadsStageMarker, in internal/queryplan/lower): the decoded values
+  (translatorReadsStageMarker, in internal/queryplan/lower, and the same function in internal/querycorpus for the plan shadow, which counts the case's own request as a known divergence): the decoded values
   of the label filter stages, so any spelling of the bytes (an escape, a raw
   byte, backquotes) is left out.
 request:

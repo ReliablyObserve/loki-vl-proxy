@@ -1566,6 +1566,7 @@
     "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/extract_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/format_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/known_divergence_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",

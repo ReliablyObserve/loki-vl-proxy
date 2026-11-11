@@ -255,7 +255,7 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	// The handlers clamp a quantile_over_time phi above 1 before they translate (VictoriaLogs rejects it).
 	q = proxy.RewriteQuantilePhiGT1(q)
 	// The translator is the wrong one for these (known_divergence_test.go): nothing to hold the plan to.
-	if translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q) {
+	if translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q) || translatorReadsStageMarker(q) {
 		return "", "", false
 	}
 	lq, err := logql.ParseLogQuery(q)

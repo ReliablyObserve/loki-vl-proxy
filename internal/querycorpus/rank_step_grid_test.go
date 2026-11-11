@@ -329,7 +329,7 @@ func FuzzProxyEvaluatedLowering(f *testing.F) {
 			if _, ok := prof.translate(q); !ok {
 				continue
 			}
-			if known := translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q); known {
+			if known := translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q) || translatorReadsStageMarker(q); known {
 				continue
 			}
 			if msg := checkProxyEvaluated(q, prof, got); msg != "" {
