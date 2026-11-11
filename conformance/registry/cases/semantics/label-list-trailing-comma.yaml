@@ -1,0 +1,50 @@
+id: semantics/label-list-trailing-comma
+title: A by, without, on or ignoring label list that ends in a comma is accepted where Loki rejects it (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki's grammar reads a label list as identifiers separated by commas, with no
+  comma after the last one: `sum by (app,) (..)`, `sum without (pod,) (..)` and
+  `.. / on(app,) ..` are parse errors (`parse error at line 1, col 11: syntax
+  error: unexpected ), expecting IDENTIFIER` for the first). The proxy's parser
+  (internal/logql) accepts the comma and answers the query. Found by the Loki
+  oracle (test/oracle/loki `facts`) on the rows of the binary-operation grid the
+  query plan now lowers (TestBinOpLoweringMatchesLoki, 2026-11-11): every row
+  with `without (pod,)` is rejected by Loki; a leading comma (`without (,pod)`)
+  is rejected by both. Not changed by the lowering: the parser accepted these
+  before it.
+corpus:
+  size: 3
+  dimensions:
+    shapes:
+      - query: 'sum by (app,) (count_over_time({env="production"}[5m]))'
+      - query: 'sum without (pod,) (count_over_time({env="production"}[5m])) / 2'
+      - query: 'rate({env="production"}[5m]) / on(app,) rate({env="production"}[5m])'
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (app,) (count_over_time({env="production"}[5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, errorType, error]
+  expect: |
+    400, errorType bad_data, Loki's parse error text.
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: 'internal/logql (the label list of a grouping and of a vector matching)'
+  loki: 'pkg/logql/syntax/expr.y labels: IDENTIFIER | labels COMMA IDENTIFIER'
+  proxy: 'the comma after the last label is accepted and the query answered'
+  planned_test: 'a validation table in internal/logql with Loki''s recorded error, and the fail-fast route test'
+  visual: none
+  visual_reason: 'a parse error; no Grafana panel writes the comma'
+  clusters: []

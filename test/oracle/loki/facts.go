@@ -79,6 +79,10 @@ type BinaryFact struct {
 	Right      string   `json:"right"`
 	LeftValue  float64  `json:"left_value"`
 	RightValue float64  `json:"right_value"`
+	// LeftGroupings and RightGroupings are the clauses of the vector aggregations an operand is, outermost level
+	// first, nil for a level with no clause; empty for an operand that is no vector aggregation.
+	LeftGroupings  []*Grouping `json:"left_groupings,omitempty"`
+	RightGroupings []*Grouping `json:"right_groupings,omitempty"`
 }
 
 // LabelReplaceFact is the four arguments of a label_replace call, unquoted.
@@ -261,7 +265,8 @@ func stageOf(st syntax.StageExpr) Stage {
 
 // binaryFact reads a binary operation of Loki's tree.
 func binaryFact(b *syntax.BinOpExpr) *BinaryFact {
-	f := &BinaryFact{Op: b.Op, Left: fmt.Sprintf("%T", b.SampleExpr), Right: fmt.Sprintf("%T", b.RHS)}
+	f := &BinaryFact{Op: b.Op, Left: fmt.Sprintf("%T", b.SampleExpr), Right: fmt.Sprintf("%T", b.RHS),
+		LeftGroupings: vectorGroupings(b.SampleExpr), RightGroupings: vectorGroupings(b.RHS)}
 	if l, ok := b.SampleExpr.(*syntax.LiteralExpr); ok {
 		f.LeftValue = l.Val
 	}
@@ -275,4 +280,21 @@ func binaryFact(b *syntax.BinOpExpr) *BinaryFact {
 		}
 	}
 	return f
+}
+
+// vectorGroupings is the clause of each vector aggregation level of e, outermost first (nil for a level with none).
+func vectorGroupings(e syntax.Expr) []*Grouping {
+	var out []*Grouping
+	for {
+		v, ok := e.(*syntax.VectorAggregationExpr)
+		if !ok {
+			return out
+		}
+		var g *Grouping
+		if v.Grouping != nil {
+			g = &Grouping{Groups: append([]string{}, v.Grouping.Groups...), Without: v.Grouping.Without}
+		}
+		out = append(out, g)
+		e = v.Left
+	}
 }

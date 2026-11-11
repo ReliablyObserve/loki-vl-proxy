@@ -11,18 +11,26 @@ import (
 )
 
 // binOp lowers a binary operation between two operands the lowering writes natively: a range aggregation rangeAgg
-// lowers, a vector aggregation vectorAgg lowers with no without clause, or a number (not two numbers). The string
-// translator writes the operands as two metric queries in one text, `__binary__:<op>:<left>|||<right>`, with the
-// vector matching modifiers after it (`@@@on:app@@@group_left:pod`), and the proxy evaluates the operation over
-// their answers; the lowering returns the physical.Binary that text decodes to. Each operand is the query the
-// lowering writes for it alone (the translator derives service_name and detected_level per operand), a number is
-// written as Go prints it, and the labels of a modifier are joined with ", ".
+// lowers, a vector aggregation vectorAgg lowers, or a number (not two numbers). The string translator writes the
+// operands as two metric queries in one text, `__binary__:<op>:<left>|||<right>`, with the vector matching
+// modifiers after it (`@@@on:app@@@group_left:pod`), and the proxy evaluates the operation over their answers; the
+// lowering returns the physical.Binary that text decodes to. Each operand is the query the lowering writes for it
+// alone (the translator derives service_name and detected_level per operand), a number is written as Go prints it,
+// and the labels of a modifier are joined with ", ".
+//
+// An operand with a without clause (at any level of its vector aggregations) is lowered alone too, the fold on the
+// operand as Loki reads it (physical.Fold of the operand's clause over its per-series stats). The translator's text
+// for the whole query is no reference there: it removes every without clause from the text, writes the operands as
+// if they had none, and appends one fold of the first clause's labels after the whole binary
+// (semantics/translator-folds-binary-by-operand-without). The proxy never sends that text: the binary route reads
+// the query again and evaluates each operand as a query of its own, so such a binary operation is held to the
+// proxy's route (proxy.BinaryOperandsPhysical), the text screen does not read it, and RoutedBinary tells it apart.
 //
 // Left to the string translator under a construct name:
 //   - and, or and unless (the translator writes the left operand alone), and a bool modifier (it drops it);
 //   - two numbers, an operand that is a binary operation, vector(), label_replace, a ranking or a log query, a
-//     vector aggregation with a without clause (the translator folds the whole binary by it), an operand the
-//     range or vector aggregation lowering leaves to the translator;
+//     without clause with no label (BinOp operand without empty), an operand the range or vector aggregation
+//     lowering leaves to the translator;
 //   - a spelling the translator reads unlike the plan (screenBinOp, before the lowering).
 func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
 	if err := binOpShape(n); err != nil {
@@ -45,7 +53,7 @@ var (
 	errBinSetOperator     = &NotLoweredError{Construct: "BinOp set operator"}
 	errBinBool            = &NotLoweredError{Construct: "BinOp bool"}
 	errBinScalarOperands  = &NotLoweredError{Construct: "BinOp scalar operands"}
-	errBinOperandWithout  = &NotLoweredError{Construct: "BinOp operand without"}
+	errBinOperandWithout  = &NotLoweredError{Construct: "BinOp operand without empty"}
 	errBinOperandRange    = &NotLoweredError{Construct: "BinOp operand RangeAgg"}
 	errBinOperandVector   = &NotLoweredError{Construct: "BinOp operand VectorAgg"}
 	errBinQuotedText      = &NotLoweredError{Construct: "BinOp quoted text"}
@@ -74,14 +82,38 @@ func binOpShape(n *queryplan.BinOp) error {
 		switch v := x.(type) {
 		case *queryplan.Scalar, *queryplan.RangeAgg:
 		case *queryplan.VectorAgg:
-			if v.By != nil && v.By.Without {
-				return errBinOperandWithout
+			// The translator needs a label to read a without clause: `without ()` stays in its text.
+			for lv := v; lv != nil; lv, _ = lv.In.(*queryplan.VectorAgg) {
+				if lv.By != nil && lv.By.Without && len(lv.By.Labels) == 0 {
+					return errBinOperandWithout
+				}
 			}
 		default:
 			return &NotLoweredError{Construct: "BinOp operand " + Construct(x)}
 		}
 	}
 	return nil
+}
+
+// withoutOperand reports whether an operand of n is a vector aggregation with a without clause at one of its levels.
+func withoutOperand(n *queryplan.BinOp) bool {
+	for _, x := range [2]queryplan.Node{n.L, n.R} {
+		for lv, _ := x.(*queryplan.VectorAgg); lv != nil; lv, _ = lv.In.(*queryplan.VectorAgg) {
+			if lv.By != nil && lv.By.Without {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// RoutedBinary reports whether root is a binary operation with an operand that has a without clause (at any level
+// of its vector aggregations): the lowering writes each operand alone, which the string translator's text for the
+// whole query does not describe, so it is held to the proxy's binary route (proxy.BinaryOperandsPhysical), not to
+// that text (see binOp).
+func RoutedBinary(root queryplan.Node) bool {
+	n, ok := root.(*queryplan.BinOp)
+	return ok && withoutOperand(n)
 }
 
 // binOperand lowers one operand binOpShape accepted: a number, or the query of a range or vector aggregation.
@@ -186,9 +218,17 @@ func appendMatchingModifier(dst []byte, keyword string, labels []string) []byte 
 //   - a number spelled unlike binNumber: BinOp number spelling; an operand the range and vector aggregation
 //     screens turn away (ScreenText): BinOp operand spelling.
 //
-// A binary operation the lowering does not write (binOpShape) is left to it to name.
+// A binary operation the lowering does not write (binOpShape) is left to it to name, and one with an operand that
+// has a without clause is not screened (RoutedBinary: the proxy's route does not read the query's text).
 func screenBinOp(query string, n *queryplan.BinOp) error {
 	if binOpShape(n) != nil {
+		return nil
+	}
+	if withoutOperand(n) {
+		// The proxy's binary route translates each operand alone, as its printed LogQL (logql.Expr.String), which
+		// holds none of the spellings the screens read (the client's blanks, parentheses and modifier spelling,
+		// and its quoted text is never read with the whole query): nothing to screen. The corpus shadow holds the
+		// lowering to that route (proxy.BinaryOperandsPhysical).
 		return nil
 	}
 	q := strings.TrimSpace(logql.CanonicalizeLogRanges(query))

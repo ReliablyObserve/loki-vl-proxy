@@ -116,7 +116,7 @@ smoke	internal/queryplan/lower	FuzzPatternLineFilterLowering	12s	-	pattern line 
 smoke	internal/queryplan/lower	FuzzLabelFilterLowering	12s	-	label filters lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzRangeAggLowering	12s	-	range aggregations lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzVectorAggLowering	12s	-	vector aggregations lower to the query the string translator writes
-smoke	internal/queryplan/lower	FuzzBinOpLowering	12s	-	binary operations and label_replace calls lower to the operators and text the string translator writes
+smoke	internal/queryplan/lower	FuzzBinOpLowering	12s	-	binary operations and label_replace calls lower to the operators and text the string translator writes (an operand with a without clause: each operand to its own translation, the proxy's binary route)
 smoke	internal/queryplan/lower	FuzzUnwrapLowering	12s	-	range and vector aggregations over an unwrapped label lower to the query the string translator writes
 smoke	internal/querycorpus	FuzzPhysicalCodec	20s	-	physical-plan codec round trip, seeded with the capture sample under 12 profiles
 smoke	internal/querycorpus	FuzzSplitPostMatchesLegacy	20s	-	SplitPost reads the markers like the old two-step strip
