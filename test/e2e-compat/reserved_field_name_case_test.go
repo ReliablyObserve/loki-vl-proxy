@@ -135,6 +135,11 @@ func TestCompat_ReservedFieldNameCaseLikeLoki(t *testing.T) {
 		}
 	}
 
+	// Loki answers range metrics of a new stream only once its ingester cut the chunks (the fresh-stack blank
+	// window), and an empty answer compared with an empty answer proves nothing: wait for Loki's range metric on
+	// the fixture's three streams before the range part, with a query shape the comparison does not use.
+	waitForReservedCaseLokiMetrics(t, selector, start, end, headers)
+
 	at := end
 	for _, tc := range []struct {
 		query string
@@ -157,10 +162,34 @@ func TestCompat_ReservedFieldNameCaseLikeLoki(t *testing.T) {
 		rp := url.Values{"query": {tc.query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"60"}}
 		rls, rlb, rlp := queryRangeGET(t, lokiURL, rp, headers)
 		rps, rpb, rpp := queryRangeGET(t, proxyURL, rp, headers)
-		if rls != http.StatusOK || rps != rls || reservedCaseMax(rpp) != reservedCaseMax(rlp) {
+		lokiMax, proxyMax := reservedCaseMax(rlp), reservedCaseMax(rpp)
+		if math.IsNaN(lokiMax) {
+			t.Fatalf("%s (range): Loki answered no point after the wait, nothing to compare: %d %s", tc.query, rls, rlb)
+		}
+		if rls != http.StatusOK || rps != rls || proxyMax != lokiMax {
 			t.Errorf("%s (range):\n proxy %d max %v (%s)\n Loki  %d max %v (%s)", tc.query, rps, reservedCaseMax(rpp), rpb, rls, reservedCaseMax(rlp), rlb)
 		}
 	}
+}
+
+// waitForReservedCaseLokiMetrics waits for Loki to answer a range metric of the fixture's three streams (the
+// fresh-stack blank window), 3 minutes at most, and fails with Loki's last answer when it does not. The probe is a
+// shape the comparisons do not send (another step), so no partial answer lands in Loki's results cache.
+func waitForReservedCaseLokiMetrics(t *testing.T, selector string, start, end time.Time, headers map[string]string) {
+	t.Helper()
+	probe := url.Values{"query": {`count_over_time(` + selector + `[5m])`}, "start": {strconv.FormatInt(start.UnixNano(), 10)},
+		"end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"59"}}
+	deadline := time.Now().Add(3 * time.Minute)
+	var last string
+	for time.Now().Before(deadline) {
+		status, body, payload := queryRangeGET(t, lokiURL, probe, headers)
+		last = body
+		if status == http.StatusOK && len(extractArray(extractMap(payload, "data"), "result")) == 3 {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	t.Fatalf("Loki range metrics of the fixture incomplete after 3m (fresh-stack blank window): %s", last)
 }
 
 // reservedCaseMax is the highest point of a matrix answer's series, NaN for none.
