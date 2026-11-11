@@ -3,7 +3,7 @@ package logsql
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -592,18 +592,96 @@ func checkArgValues(name string, args []Token) error {
 	return nil
 }
 
-// checkIP checks an address (or, when cidr, a CIDR) of an ipv4_range or ipv6_range filter.
+// checkIP checks an address (or, when cidr, an address or a CIDR) of an ipv4_range or ipv6_range filter the way
+// VictoriaLogs reads it (lib/logstorage tryParseIPv4CIDR, tryParseIPv6CIDR and their callers; the same in v1.49.0
+// and v1.53.0): ipv6_range takes any address netip.ParseAddr reads, of 2 to 45 bytes, an IPv4 one, an IPv4-mapped
+// ::ffff:a.b.c.d and a zone id included, with a mask of up to 128 bits; ipv4_range takes dotted decimal and nothing
+// else, with a mask of up to 32 bits.
 func checkIP(s string, v6, cidr bool) error {
+	addr := s
 	if cidr {
-		if _, _, err := net.ParseCIDR(s); err == nil {
-			return nil
+		var mask string
+		var ok bool
+		if addr, mask, ok = strings.Cut(s, "/"); ok {
+			bits, valid := parseMaskBits(mask)
+			if !valid || bits > map[bool]uint64{false: 32, true: 128}[v6] {
+				return fmt.Errorf("%q is not an IPv%d address or CIDR", s, map[bool]int{false: 4, true: 6}[v6])
+			}
 		}
 	}
-	ip := net.ParseIP(s)
-	if ip == nil || (ip.To4() != nil) == v6 {
-		return fmt.Errorf("%q is not an IPv%d address", s, map[bool]int{false: 4, true: 6}[v6])
+	if v6 {
+		if _, err := netip.ParseAddr(addr); err == nil && len(addr) >= 2 && len(addr) <= 45 {
+			return nil
+		}
+	} else if validIPv4(addr) {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("%q is not an IPv%d address", s, map[bool]int{false: 4, true: 6}[v6])
+}
+
+// validIPv4 reports whether s is four dot-separated octets as VictoriaLogs reads them (tryParseIPv4): up to 3
+// digits each, at most 255, a leading zero allowed. It reads a two-byte octet as 10*first digit + (second byte -
+// '0'), so a second byte that is not a digit counts as a number when that is at most 255 (1a is 59), which this
+// repeats.
+func validIPv4(s string) bool {
+	if len(s) < len("1.1.1.1") || len(s) > len("255.255.255.255") || strings.Count(s, ".") != 3 {
+		return false
+	}
+	for rest := s; ; {
+		octet, tail, more := strings.Cut(rest, ".")
+		if !validIPv4Octet(octet) {
+			return false
+		}
+		if !more {
+			return true
+		}
+		rest = tail
+	}
+}
+
+// validIPv4Octet reports whether octet is read as at most 255 (see validIPv4).
+func validIPv4Octet(octet string) bool {
+	if len(octet) == 0 || len(octet) > 3 {
+		return false
+	}
+	var n uint64
+	if len(octet) == 2 {
+		if octet[0] < '0' || octet[0] > '9' {
+			return false
+		}
+		n = 10*uint64(octet[0]-'0') + uint64(octet[1]-'0')
+	} else {
+		for i := 0; i < len(octet); i++ {
+			if octet[i] < '0' || octet[i] > '9' {
+				return false
+			}
+			n = n*10 + uint64(octet[i]-'0')
+		}
+	}
+	return n <= 255
+}
+
+// parseMaskBits reads the mask of a CIDR as VictoriaLogs does (tryParseUint64): digits and underscores, no leading
+// zero, at most 26 bytes.
+func parseMaskBits(s string) (uint64, bool) {
+	if s == "" || len(s) > len("18_446_744_073_709_551_615") || len(s) > 1 && s[0] == '0' {
+		return 0, false
+	}
+	var n uint64
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '_':
+		case c < '0' || c > '9' || n > (1<<64-1)/10:
+			return 0, false
+		default:
+			next := n*10 + uint64(c-'0')
+			if next < n*10 {
+				return 0, false
+			}
+			n = next
+		}
+	}
+	return n, true
 }
 
 // parseStringList parses the "a", b, ... of contains_all( and the like up to the closing ).
