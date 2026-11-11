@@ -489,6 +489,9 @@
     "semantics/label-inventory-exact-and-incremental | compare:exact",
     "semantics/label-inventory-exact-and-incremental | perf",
     "semantics/label-inventory-exact-and-incremental | perf:locked",
+    "semantics/label-list-trailing-comma | compare:observed",
+    "semantics/label-list-trailing-comma | gap:open",
+    "semantics/label-list-trailing-comma | query",
     "semantics/label-replace-aggregation-over-transform | compare:observed",
     "semantics/label-replace-aggregation-over-transform | gap:open",
     "semantics/label-replace-aggregation-over-transform | query",
@@ -714,6 +717,9 @@
     "semantics/topk-per-step-membership-differs | compare:observed",
     "semantics/topk-per-step-membership-differs | gap:open",
     "semantics/topk-per-step-membership-differs | query",
+    "semantics/translator-folds-binary-by-operand-without | compare:observed",
+    "semantics/translator-folds-binary-by-operand-without | gap:open",
+    "semantics/translator-folds-binary-by-operand-without | query",
     "semantics/translator-reads-blank-before-range-call-as-text | compare:observed",
     "semantics/translator-reads-blank-before-range-call-as-text | gap:open",
     "semantics/translator-reads-blank-before-range-call-as-text | query",
@@ -1596,6 +1602,7 @@
     "internal/querycorpus/binop_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/binop_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/binop_more_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/binop_route_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/detected_level_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/extract_grid_test.go | architecture-syntax-package-layering",
@@ -1637,6 +1644,7 @@
     "internal/querycorpus/vector_agg_nested_grid_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_alloc_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/detected_level_ast_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/detected_level_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/extract_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/format_loki_test.go | architecture-syntax-package-layering",
@@ -2187,14 +2195,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 55,
+      "api": 57,
       "drilldown": 50,
       "explore": 162,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 494,
+      "go": 496,
       "playwright": 1
     },
     "page_kinds": {
@@ -2213,7 +2221,7 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 102,
+    "unwired_items": 104,
     "wired_items": 285
   },
   "gates": [

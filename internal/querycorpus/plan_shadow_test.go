@@ -133,7 +133,7 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			}
 			// A root the proxy evaluates is held to the proxy's route, which strips the parentheses that wrap the whole
 			// query before it translates the operand: the translator's misreading of them is not in that reference.
-			routed, divergence := evaluatedRoot(plan)
+			routed, divergence := routedRoot(plan)
 			caseID, ok := knownTypedDivergences()[queryID("logql", q)]
 			if !ok && translatorMisreadsQuotedText(q) {
 				caseID, ok = "semantics/translator-reads-quoted-text-as-syntax", true
@@ -320,6 +320,13 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 	const rows = 300
 	echo := func(q string, p *queryplan.Plan, prof planProfile) (physical.Op, error) {
 		// A ranking or stddev is evaluated by the proxy: the operators it runs are the route's, not the translator's text.
+		if lower.RoutedBinary(p.Root) {
+			op, _, routed, err := proxy.BinaryOperandsPhysical(routedQuery(q), prof.operandTranslate)
+			if err != nil || !routed {
+				return nil, &lower.NotLoweredError{Construct: "rejected"}
+			}
+			return op, nil
+		}
 		if routed, _ := evaluatedRoot(p); routed {
 			op, _, routed, err := proxyReference(q, prof)
 			if err != nil || !routed {

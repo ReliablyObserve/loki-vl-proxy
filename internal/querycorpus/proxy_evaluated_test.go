@@ -17,6 +17,11 @@ import (
 // whole query is not what the proxy sends, so the shadow's reference for these roots is the proxy's route
 // (proxy.PostAggregationPhysical): a RankStep or SeriesAgg per level over the operand's operators, and the operand's
 // request byte for byte. These rows are counted apart (native_proxy_evaluated in query-plan.json).
+//
+// A binary operation with an operand that has a without clause is held to the proxy's route as well: the binary
+// route reads the query again and evaluates each operand as a query of its own, folded by its own clause
+// (proxy.BinaryOperandsPhysical), where the translator's text for the whole query drops the clauses and folds the
+// whole operation by the first one (semantics/translator-folds-binary-by-operand-without).
 
 // knownLabelReplaceAroundRanking is the registry case of a label_replace around a ranking, which the proxy does not
 // route as a ranking: the string translator's text for it drops the ranking.
@@ -94,6 +99,16 @@ func evaluatedRoot(p *queryplan.Plan) (routed bool, divergence string) {
 	return false, knownNestedEvaluation
 }
 
+// routedRoot is evaluatedRoot, and routed for a binary operation the proxy's binary route evaluates operand by
+// operand (lower.RoutedBinary: an operand with a without clause), which the shadows hold to that route
+// (checkProxyEvaluated, checkBinaryRoute).
+func routedRoot(p *queryplan.Plan) (routed bool, divergence string) {
+	if lower.RoutedBinary(p.Root) {
+		return true, ""
+	}
+	return evaluatedRoot(p)
+}
+
 // evaluatedLayer reports whether the layer is a ranking, stddev or stdvar.
 func evaluatedLayer(n queryplan.Node) bool {
 	switch v := n.(type) {
@@ -142,8 +157,12 @@ func proxyReference(q string, prof planProfile) (want physical.Op, operand strin
 }
 
 // checkProxyEvaluated holds the lowering of a ranking to the proxy's route: the same operators (physical.Equal) and
-// the operand's request byte for byte. It returns "" or what differs.
+// the operand's request byte for byte. It returns "" or what differs. A binary operation is held to the binary route
+// (checkBinaryRoute).
 func checkProxyEvaluated(q string, prof planProfile, got physical.Op) string {
+	if b, ok := got.(physical.Binary); ok {
+		return checkBinaryRoute(q, prof, b)
+	}
 	want, operand, routed, err := proxyReference(q, prof)
 	switch {
 	case err != nil:
@@ -155,6 +174,31 @@ func checkProxyEvaluated(q string, prof planProfile, got physical.Op) string {
 	}
 	if _, in := physical.SplitEval(got); physical.Encode(in) != operand {
 		return fmt.Sprintf("%s: %q:\n lowered text %s\n   proxy text %s", prof.name, q, physical.Encode(in), operand)
+	}
+	return ""
+}
+
+// checkBinaryRoute holds the lowering of a binary operation to the proxy's binary route
+// (proxy.BinaryOperandsPhysical): the same operators (physical.Equal), each operand's request byte for byte, and the
+// lowering must not write the translator's text for the whole query, which is not the route's reading. It returns ""
+// or what differs.
+func checkBinaryRoute(q string, prof planProfile, got physical.Binary) string {
+	want, operands, routed, err := proxy.BinaryOperandsPhysical(routedQuery(q), prof.operandTranslate)
+	switch {
+	case err != nil:
+		return fmt.Sprintf("%s: %q: lowered, the proxy's binary route fails: %v", prof.name, q, err)
+	case !routed:
+		return fmt.Sprintf("%s: %q: lowered, the proxy does not route it as a binary operation", prof.name, q)
+	case !physical.Equal(want, got):
+		return fmt.Sprintf("%s: %q:\n lowered %s %#v\n   proxy %#v", prof.name, q, translator.EncodePhysical(got), got, want)
+	}
+	for i, x := range [2]physical.Op{got.L, got.R} {
+		if operands[i] != "" && physical.Encode(x) != operands[i] {
+			return fmt.Sprintf("%s: %q: operand %d:\n lowered text %s\n   proxy text %s", prof.name, q, i, physical.Encode(x), operands[i])
+		}
+	}
+	if legacy, ok := prof.translate(q); ok && physical.Encode(got) == legacy {
+		return fmt.Sprintf("%s: %q: lowered to the translator's text for the whole query, which the route does not read", prof.name, q)
 	}
 	return ""
 }

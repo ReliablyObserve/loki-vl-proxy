@@ -25,6 +25,7 @@ func TestPlanDelegatesEveryConstruct(t *testing.T) {
 		"Rank operand BinOp":                                   `topk(3, sum by (app) (rate({app="a"}[5m])) > 1)`,
 		"Rank grouping":                                        `sort by (app) (rate({app="a"}[5m]))`,
 		"BinOp set operator":                                   `sum(rate({app="a"}[5m])) and sum(rate({app="b"}[5m]))`,
+		"BinOp operand without empty":                          `sum without () (rate({app="a"}[5m])) / 2`,
 		"LabelReplace operand Rank":                            `label_replace(topk(3, rate({app="a"}[5m]) > 1), "b", "$1", "app", "(.*)")`,
 		"VectorLit":                                            `vector(1)`,
 		"Scalar":                                               `1`,

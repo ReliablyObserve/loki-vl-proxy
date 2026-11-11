@@ -240,7 +240,7 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				problems = append(problems, fmt.Sprintf("%s: %q: lowering failed: %v", prof.name, q, lerr))
 				continue
 			}
-			if routed, divergence := evaluatedRoot(plan); routed {
+			if routed, divergence := routedRoot(plan); routed {
 				if msg := checkProxyEvaluated(q, prof, got); msg != "" {
 					problems = append(problems, msg)
 					continue
