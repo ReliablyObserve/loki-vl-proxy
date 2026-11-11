@@ -227,7 +227,7 @@ func levelChainPipes(mode translate.DetectedLevelChainMode) []logsql.Pipe {
 	// The stored level fields in Loki's order, then the rows a stored level decides (storedLevelPicks).
 	for _, field := range texts {
 		name := translate.LogsQLFieldName(field)
-		var cond logsql.FilterExpr = lvAny(name)
+		cond := lvAny(name)
 		switch field {
 		case sevText:
 			cond = logsql.AllOf{cond, lvBang(synthesizedSeverityText()), lvBang(lvGroup(logsql.AllOf{lvExact(sevText, unspecified), lvExact(sevNumber, "0")}))}
