@@ -1252,6 +1252,19 @@ func (p PipeCopy) String() string {
 }
 func (p PipeCopy) pipe() {}
 
+func (p PipeCopy) appendTo(b []byte) []byte {
+	b = append(b, "| copy "...)
+	for i, pair := range p.Pairs {
+		if i > 0 {
+			b = append(b, ", "...)
+		}
+		b = append(b, pair[0]...)
+		b = append(b, " as "...)
+		b = append(b, pair[1]...)
+	}
+	return b
+}
+
 // PipeCoalesce returns the first non-empty value across the listed fields.
 // Syntax: | coalesce(f1, f2, ...) [default "val"] as result
 type PipeCoalesce struct {

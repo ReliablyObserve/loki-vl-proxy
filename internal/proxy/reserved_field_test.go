@@ -139,7 +139,7 @@ func TestReservedFieldLabelServedFromThePlan(t *testing.T) {
 		{`{app="a", _stream_id!="x"}`, `{_stream_id="si",app="a"}`, `{_stream_id!="x"}`, [2]string{"_stream_id", "si"}},
 		{`{app="a"} | _msg=~"m.*"`, `{_msg="m1",app="a"}`, `{_msg=~"(?-s:(?s:.*)m(?s:.*))"}`, [2]string{"_msg", "m1"}},
 		{`{app="a"} | _time>=5s`, `{_time="7s",app="a"}`, `| filter __lxrf_time:>=5s`, [2]string{"_time", "7s"}},
-		{`{app="a"} | _TIME="up"`, `{app="a"}`, `"_TIME":="up"`, [2]string{"app", "a"}},
+		{`{app="a"} | _TIME="up"`, `{app="a"}`, `| copy _TIME as __lxrf_TIME | filter __lxrf_TIME:="up"`, [2]string{"app", "a"}},
 	} {
 		var sent []string
 		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

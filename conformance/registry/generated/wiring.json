@@ -1488,12 +1488,14 @@
     "semantics/translator-writes-keyword-field-names-bare": [
       "internal/logsql/keyword_fields_test.go",
       "internal/queryplan/lower/keyword_field_names_test.go",
+      "internal/queryplan/lower/vl_clone_roundtrip_test.go",
       "test/e2e-compat/keyword_label_names_test.go"
     ],
     "semantics/translator-writes-reserved-field-names": [
       "internal/logsql/reserved_fields_test.go",
       "internal/proxy/reserved_field_test.go",
       "internal/queryplan/lower/reserved_field_test.go",
+      "internal/queryplan/lower/vl_clone_roundtrip_test.go",
       "test/e2e-compat/reserved_field_labels_test.go"
     ],
     "semantics/tumbling-window-single-grid": [
@@ -3143,6 +3145,10 @@
     "internal/queryplan/lower/vector_agg_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/lower/vl_clone_roundtrip_test.go": [
+      "semantics/translator-writes-keyword-field-names-bare",
+      "semantics/translator-writes-reserved-field-names"
+    ],
     "internal/queryplan/physical/eval_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -4000,7 +4006,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 469,
+  "tests_with_markers": 470,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

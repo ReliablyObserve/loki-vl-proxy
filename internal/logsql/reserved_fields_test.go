@@ -15,9 +15,10 @@ import (
 // reservedFieldVerdicts are VictoriaLogs' own verdicts (lib/logstorage ParseQuery, v1.49.0 and v1.53.0) on the
 // field names it keeps for itself, _time, _stream, _stream_id and _msg, in lower case and in other cases, bare and
 // quoted, at the places a filter, a stream filter and a pipe name a field (reservedFieldGrid). They are the evidence
-// of ReservedFieldName and of the other-case names in KeywordFieldName: in lower case _time, _stream and _stream_id
-// are VictoriaLogs' own filters bare and quoted, in another case only bare; _msg is the line; every name is a tag in
-// a stream filter and a field to the pipes. LVP_RUN_ORACLES=1 records them again (the oracle downloads VictoriaLogs;
+// of ReservedFieldName and ReservedFieldNameOtherCase: in lower case _time, _stream and _stream_id are VictoriaLogs'
+// own filters bare and quoted, in another case its parser reads them quoted as fields (but its clone of the query
+// prints them bare, which the roundtrip verdicts of internal/queryplan/lower record); _msg is the line; every name is
+// a tag in a stream filter and a field to the pipes. LVP_RUN_ORACLES=1 records them again (the oracle downloads VictoriaLogs;
 // set GOMODCACHE to a fresh directory when the shared cache holds other copies).
 const reservedFieldVerdicts = "testdata/reserved-field-names-vl.jsonl"
 
@@ -121,8 +122,8 @@ func TestParseReservedFieldNamesMatchVictoriaLogs(t *testing.T) {
 		if want := !special || !ReservedFieldName(name); accepted[quoted] != want {
 			t.Errorf("%s: VictoriaLogs accepts=%v, want %v", quoted, accepted[quoted], want)
 		}
-		if KeywordFieldName(name) != (special && !ReservedFieldName(name)) {
-			t.Errorf("KeywordFieldName(%s) = %v", name, KeywordFieldName(name))
+		if KeywordFieldName(name) || ReservedFieldNameOtherCase(name) != (special && !ReservedFieldName(name)) {
+			t.Errorf("KeywordFieldName(%s) = %v, ReservedFieldNameOtherCase = %v", name, KeywordFieldName(name), ReservedFieldNameOtherCase(name))
 		}
 		for _, q := range []string{fmt.Sprintf(`{%s="x"}`, name), fmt.Sprintf(`app:="a" | fields %s`, name), fmt.Sprintf(`app:="a" | stats by (%s) count()`, name)} {
 			if !accepted[q] {

@@ -45,7 +45,7 @@ var reservedFieldStreams = []struct {
 }
 
 // reservedFieldQueries are the stream selector matchers and label filters on those names, written by the lowering
-// as stream filters, comparisons of the tag's value, and quoted fields.
+// as stream filters, comparisons of the tag's value, and copies of a field in another case.
 var reservedFieldQueries = []string{
 	`{app="r", _time="st"}`, `{app="r", _time!="st"}`, `{app="r", _time=~"s.*"}`, `{app="r", _time!~"s.*"}`,
 	`{app="r", _time=""}`, `{app="r", _time!=""}`, `{app="r", _time=~"a.b"}`, `{app="r", _time=~"1.|3"}`,
@@ -276,8 +276,8 @@ func recordReservedFieldAnswers(t *testing.T) {
 
 // The string translator writes each of these names as a field filter: VictoriaLogs rejects the text, or reads it as
 // its time, stream or line filter. The lowering's text differs for every query of the grid, and
-// ReadsReservedField names the ones that read the tag (the mixed-case names are quoted fields, the translator's
-// text made right by QuoteKeywordFieldText).
+// ReadsReservedField names every one of them: the lowering filters the tag, or copies a field in another case into
+// a scratch field, where the translator's text (made right by QuoteKeywordFieldText for the keywords) names the field.
 //
 // conformance: semantics/translator-writes-reserved-field-names
 func TestReadsReservedField(t *testing.T) {
@@ -331,9 +331,10 @@ func TestReservedFieldAfterAStageIsDelegated(t *testing.T) {
 }
 
 // The cost of filtering a reserved field as its tag, against the same query on a plain label (x): a matcher or a
-// label filter on a string at most 2 more (the stream filter's matcher, or the quoted name of another case; 5 in an
-// or tree that has both), and a comparison at most 16 more (the extract, extract and delete pipes ahead of it, the
-// guard and the final delete; the pipes and the guard are built once per name). The string translator's text for these is
+// label filter on a string at most 2 more (the stream filter's matcher), a label filter on another case at most 8
+// (the copy pipe, the filter pipe and the delete; 12 in an or tree with a lower-case name), and a comparison at most
+// 16 more (the extract, extract and delete pipes ahead of it, the guard and the final delete; the pipes and the
+// guard are built once per name). The string translator's text for these is
 // VictoriaLogs' parse error or another filter, so it is no reference here; with a label function (the tenant's
 // stream labels) the translator allocates hundreds of times on each and the lowering under 60.
 //
@@ -352,12 +353,15 @@ func TestReservedFieldLoweringAllocations(t *testing.T) {
 	}
 	plain := strings.NewReplacer("_time", "x", "_stream_id", "x", "_stream", "x", "_msg", "x", "_TIME", "x", "_Stream", "x", "_STREAM_ID", "x")
 	for _, q := range reservedFieldQueries {
+		tail := q[strings.IndexByte(q, '}'):]
 		bound := 2.0
 		switch {
-		case strings.ContainsAny(q[strings.IndexByte(q, '}'):], "<>") || strings.Contains(q, "ip(") || strings.Contains(q, "==") || strings.Contains(q, "!=1"):
+		case strings.ContainsAny(tail, "<>") || strings.Contains(q, "ip(") || strings.Contains(q, "==") || strings.Contains(q, "!=1"):
 			bound = 16
 		case strings.Contains(q, " or "):
-			bound = 5
+			bound = 12
+		case strings.ContainsAny(tail, "TIMESR"):
+			bound = 8 // the copy pipe of another case, its filter pipe and delete
 		}
 		if got, base := lowered(q), lowered(plain.Replace(q)); got > base+bound {
 			t.Errorf("%s: %.0f allocations, %.0f for a plain label (bound +%.0f)", q, got, base, bound)

@@ -85,9 +85,10 @@ func StreamSelectorFilter(ms []logql.LabelMatcher, labelFn LabelTranslateFunc, s
 // the label function and the quoting of a dotted name (nil keeps the names as they are): the query plan quotes the
 // names VictoriaLogs reads as keywords this way (logsql.QuoteKeywordField), where the string translator does not.
 // With a name function, a matcher on a label that names (after the label function) a field VictoriaLogs keeps for
-// itself (logsql.ReservedFieldName: _time, _stream, _stream_id, _msg) is the stream filter on that tag
-// (ReservedFieldStreamFilter), which the string translator writes as a field filter VictoriaLogs rejects or reads
-// as its own filter.
+// itself (logsql.ReservedFieldName: _time, _stream, _stream_id, _msg), or _time, _stream or _stream_id in another
+// case (logsql.ReservedFieldNameOtherCase), is the stream filter on that tag (ReservedFieldStreamFilter), which the
+// string translator writes as a field filter VictoriaLogs rejects or reads as its own filter. A selector names
+// stream labels only, and VictoriaLogs keeps every stream label as a tag of the stream.
 func StreamSelectorFilterNamed(ms []logql.LabelMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool, name func(string) string) (logsql.FilterExpr, error) {
 	matchers := make([]SelectorMatcher, len(ms))
 	for i, m := range ms {
@@ -129,7 +130,7 @@ func selectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, stre
 		field, translated := "", false
 		if name != nil && label != "" && label != "service_name" {
 			field, translated = translatedField(label, labelFn), true
-			if logsql.ReservedFieldName(field) {
+			if logsql.ReservedFieldName(field) || logsql.ReservedFieldNameOtherCase(field) {
 				parts = append(parts, ReservedFieldStreamFilter(field, m.Op, m.Value))
 				continue
 			}

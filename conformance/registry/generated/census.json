@@ -1620,6 +1620,8 @@
     "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vector_agg_nested_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vector_agg_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/vl_clone_roundtrip_test.go | semantics/translator-writes-keyword-field-names-bare",
+    "internal/queryplan/lower/vl_clone_roundtrip_test.go | semantics/translator-writes-reserved-field-names",
     "internal/queryplan/physical/eval_test.go | architecture-syntax-package-layering",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
     "internal/translate/detected_level_chain_memo_test.go | severity-detected-level-derivation",
@@ -2141,7 +2143,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 468,
+      "go": 469,
       "playwright": 1
     },
     "page_kinds": {

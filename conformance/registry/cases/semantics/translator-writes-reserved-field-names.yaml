@@ -29,14 +29,19 @@ why: |
   matcher or a label filter =, !=, =~, !~ is the stream filter
   `{_time="a"}`, which reads a missing tag as the empty value as Loki reads a
   missing label; a comparison (number, duration, size, ip()) reads the tag's
-  value out of _stream into a scratch field and compares it; `_TIME` and the
-  other cases are quoted fields. The string translator (frozen) still writes
+  value out of _stream into a scratch field and compares it. `_TIME` and the
+  other cases are the stream filter in a selector and, for a label filter, a
+  copy of the field into a scratch field that the filter reads: a field filter
+  cannot name them, bare (VictoriaLogs' own filter) or quoted (VictoriaLogs
+  prints the name bare when it clones the query, print and parse again, and
+  cannot read its own print back; internal/queryplan/lower
+  TestPlanTextsSurviveVictoriaLogsClone). The string translator (frozen) still writes
   the field filter, and the client got, from the plan's byte-identical text:
     {app="a", _time="a"}       string translator  _time:="a"   400 (VictoriaLogs parse error)
     {app="a"} | _time>=5s      string translator  _time:>=5s   200, every line of the window
     {app="a", _msg=~".+"}      string translator  _msg:~".+"   200, every line with text
     {app="a", _msg="x"}        string translator  _msg:="x"    200, the lines that are "x" too
-    query plan                 {_time="a"}, {_time=~".+"} | extract_regexp ... from _stream | filter __lxrf_time:>=5s, "_TIME":="a"
+    query plan                 {_time="a"}, {_time=~".+"} | extract_regexp ... from _stream | filter __lxrf_time:>=5s, | copy _TIME as __lxrf_TIME | filter __lxrf_TIME:="a"
   The grid of internal/queryplan/lower TestReservedFieldLabelsMatchLoki (49
   queries over 15 streams, recorded with both oracles) holds Loki's kept lines
   equal to VictoriaLogs' answer to the plan's text on both versions.
@@ -87,7 +92,7 @@ gap:
   area: 'internal/translator (writes the field filter); fixed when the query plan serves the remaining queries. internal/logsql ReservedFieldName and KeywordFieldName, internal/translate ReservedFieldStreamFilter, internal/queryplan/lower reserved_field.go'
   loki: '_time, _stream, _stream_id and _msg are plain labels; the oracle answers 200 and filters the label'
   proxy: 'filter-only log queries filter the stream tag (the plan); metric queries, and label filters after a parser, drop, keep or label_format, still get the translator''s field filter'
-  planned_test: 'TestCompat_ReservedFieldLabelsLikeLoki (test/e2e-compat, group semantics: a stream pushed alike to Loki and VictoriaLogs with a label _time, _stream_id or _msg, and the selector matchers, label filters and comparisons on it, against Loki); TestReservedFieldLabelsMatchLoki and TestReadsReservedField (internal/queryplan/lower), TestReservedFieldLabelFenceDoesNotServeAnOldCachedAnswer (internal/proxy)'
+  planned_test: 'TestPlanTextsSurviveVictoriaLogsClone (internal/queryplan/lower, every text the plan writes for these names read back by VictoriaLogs'' clone, v1.49.0 and v1.53.0); TestCompat_ReservedFieldLabelsLikeLoki (test/e2e-compat, group semantics: a stream pushed alike to Loki and VictoriaLogs with a label _time, _stream_id or _msg, and the selector matchers, label filters and comparisons on it, against Loki); TestReservedFieldLabelsMatchLoki and TestReadsReservedField (internal/queryplan/lower), TestReservedFieldLabelFenceDoesNotServeAnOldCachedAnswer (internal/proxy)'
   visual: none
   visual_reason: 'no Grafana panel names a label _time or _stream; found by reading what VictoriaLogs does with these names'
   clusters: []

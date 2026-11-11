@@ -19,9 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   last five seconds (a time range), and `{app="x", _msg="a"}` the lines whose text
   is `a`. The stream selector and the label filters of the queries the plan
   serves (line filters and label filters, no parser) now filter the stream tag
-  (`{_time="a"}`; a comparison reads the tag's value out of `_stream`), and
-  `_TIME`, `_Stream` or `_STREAM_ID` in another case is written as the quoted
-  field it is (`"_TIME":="a"`). Queries with a parser or a metric are still
+  (`{_time="a"}`; a comparison reads the tag's value out of `_stream`).
+  `_TIME`, `_Stream` or `_STREAM_ID` in another case, which VictoriaLogs reads
+  bare as its own filter too, is the stream filter in a selector and is copied
+  into a scratch field for a label filter (`| copy _TIME as __lxrf_TIME`), a
+  form VictoriaLogs reads back when it clones the query. Queries with a parser or a metric are still
   written by the string translator and answer as before. **Breaking:** a client
   that used `{..., _msg="text"}` or `| _msg=~"..."` as a filter on the line text
   now gets the streams whose label `_msg` matches, as Loki answers. Answers

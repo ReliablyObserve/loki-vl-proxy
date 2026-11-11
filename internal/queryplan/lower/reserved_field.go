@@ -2,6 +2,7 @@ package lower
 
 import (
 	"regexp"
+	"sync"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -27,6 +28,14 @@ import (
 //   - a label filter after a parser, a drop, a keep or a label_format is left to the string translator (those
 //     stages can define, rename or remove the label, and VictoriaLogs' unpack_json and unpack_logfmt write a key
 //     called _time over the entry's own _time).
+//
+// _time, _stream and _stream_id in another case (_TIME, _Stream, _STREAM_ID: logsql.ReservedFieldNameOtherCase)
+// are fields to VictoriaLogs, but no field filter can name them: bare they are its own filters, and quoted they do
+// not survive VictoriaLogs' clone of the query (it prints them bare and the second parse panics). A stream selector
+// matcher on one is the stream filter on its tag, as above (a selector names stream labels only); a label filter
+// copies the field into a scratch field ahead of the stage (`| copy _TIME as __lxrf_TIME`), filters the scratch
+// field, and deletes it at the end. The internal/queryplan/lower roundtrip grid (TestPlanTextsSurviveVictoriaLogsClone)
+// holds every text the lowering writes for these names to VictoriaLogs' clone.
 
 // reservedAfterStageConstruct names a label filter on a reserved field name after a stage that can change labels.
 const reservedAfterStageConstruct = "LogSelect label filter reserved field after a stage"
@@ -34,19 +43,20 @@ const reservedAfterStageConstruct = "LogSelect label filter reserved field after
 // reservedScratch prefixes the scratch field a comparison on a reserved field reads its tag's value into.
 const reservedScratch = "__lxrf"
 
-// reservedLeafField is the field a label filter leaf names after the label function, and whether it is reserved.
+// reservedLeafField is the field a label filter leaf names after the label function, and whether it is reserved in
+// lower case or in another case.
 func reservedLeafField(e *logql.LabelFilterExpr, labelFn func(string) string) (string, bool) {
 	field := translate.SanitizeFieldIdentifier(e.Name)
 	if labelFn != nil {
 		field = translate.SanitizeFieldIdentifier(labelFn(field))
 	}
-	return field, logsql.ReservedFieldName(field)
+	return field, logsql.ReservedFieldName(field) || logsql.ReservedFieldNameOtherCase(field)
 }
 
 // reservedLeaf is the filter of a label filter leaf on the reserved field: the stream filter on its tag, or, for
 // a comparison, the comparison of the scratch field the tag is read into (noted in lb.reserved for its pipes).
 func (lb *leafBuilder) reservedLeaf(field string, e *logql.LabelFilterExpr) logsql.FilterExpr {
-	if e.Kind == logql.LabelFilterValueString {
+	if e.Kind == logql.LabelFilterValueString && logsql.ReservedFieldName(field) {
 		switch e.Cmp {
 		case "=", "==":
 			return translate.ReservedFieldStreamFilter(field, "=", e.Value)
@@ -56,7 +66,7 @@ func (lb *leafBuilder) reservedLeaf(field string, e *logql.LabelFilterExpr) logs
 			return translate.ReservedFieldStreamFilter(field, e.Cmp, "(?-s:"+translate.LokiLabelFilterPattern(e.Value)+")")
 		}
 	}
-	tag := reservedTags[field]
+	tag := reservedTagOf(field)
 	lb.noteReserved(field)
 	f, _ := translate.LabelFilterLeaf(tag.scratch, e.Cmp, e.Value, e.Kind == logql.LabelFilterValueIP, lb.caps) // the operator is known
 	return f
@@ -112,10 +122,35 @@ func reservedTagPipes(field, scratch string) []logsql.Pipe {
 	}
 }
 
+// reservedTagOf is the reservedTag of a reserved field: built once for the four lower-case names; for a name in
+// another case, the copy of the field into its scratch field, its delete and no guard (the field can be a stream
+// label or structured metadata, so no stream filter selects the entries that have it).
+func reservedTagOf(field string) reservedTag {
+	if tag, ok := reservedTags[field]; ok {
+		return tag
+	}
+	if tag, ok := otherCaseTags.Load(field); ok {
+		return tag.(reservedTag)
+	}
+	scratch := reservedScratch + field
+	tag := reservedTag{
+		scratch: scratch,
+		pipes:   []logsql.Pipe{logsql.PipeCopy{Pairs: [][2]string{{field, scratch}}}},
+		delete:  logsql.PipeDelete{Labels: []string{scratch}},
+	}
+	otherCaseTags.Store(field, tag)
+	return tag
+}
+
+// otherCaseTags are the reservedTags of the names in another case, built on first use. They are bounded by
+// construction, whatever the client sends: a name is stored only when logsql.ReservedFieldNameOtherCase accepts
+// it, and _time, _stream and _stream_id have 15, 63 and 255 spellings in another case.
+var otherCaseTags sync.Map
+
 // reservedStagePipes are the pipes ahead of a stage that first reads the tags of fields.
 func reservedStagePipes(pre []logsql.Pipe, fields []string) []logsql.Pipe {
 	for _, f := range fields {
-		pre = append(pre, reservedTags[f].pipes...)
+		pre = append(pre, reservedTagOf(f).pipes...)
 	}
 	return pre
 }
@@ -123,11 +158,11 @@ func reservedStagePipes(pre []logsql.Pipe, fields []string) []logsql.Pipe {
 // reservedDelete deletes the scratch fields of the reserved fields a query compared.
 func reservedDelete(fields []string) logsql.Pipe {
 	if len(fields) == 1 {
-		return reservedTags[fields[0]].delete
+		return reservedTagOf(fields[0]).delete
 	}
 	names := make([]string, len(fields))
 	for i, f := range fields {
-		names[i] = reservedTags[f].scratch
+		names[i] = reservedTagOf(f).scratch
 	}
 	return logsql.PipeDelete{Labels: names}
 }
@@ -142,7 +177,7 @@ func reservedGuard(e *logql.LabelFilterExpr, labelFn func(string) string) logsql
 	if !ok {
 		return nil
 	}
-	return reservedTags[field].guard
+	return reservedTagOf(field).guard
 }
 
 // changesLabels reports a stage after which a label can be defined, renamed or gone: a parser, a drop, a keep or a
@@ -189,7 +224,7 @@ func selectReadsReservedField(sel *queryplan.LogSelect, prof Profile) bool {
 		if prof.Label != nil {
 			label = translate.SanitizeFieldIdentifier(prof.Label(label))
 		}
-		if logsql.ReservedFieldName(label) {
+		if logsql.ReservedFieldName(label) || logsql.ReservedFieldNameOtherCase(label) {
 			return true
 		}
 	}
