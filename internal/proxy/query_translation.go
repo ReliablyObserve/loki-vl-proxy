@@ -62,6 +62,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 
 		// Per-tenant metrics
 		p.metrics.RecordTenantRequestWithRoute(tenant, endpoint, route, sc.code, elapsed)
+		p.recordCallerCost(caller, tenant, endpoint, route, query, sc.code, elapsed, &telemetry.flow)
 
 		// Per-client identity metrics (Grafana user > tenant > IP)
 		p.metrics.RecordClientIdentityWithRoute(clientID, endpoint, route, elapsed, int64(sc.bytesWritten))

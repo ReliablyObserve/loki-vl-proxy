@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"time"
 	"unicode/utf8"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 )
 
 // The caller of a client request: who sent it (the end user and how the proxy knows it), for which tenant, and
@@ -139,6 +142,36 @@ func (p *Proxy) callerUser(r *http.Request, clientID, clientSource string) (stri
 // coalesced requests runs in the context of the request that started it, so it is attributed to that caller.
 func requestCallerFromContext(ctx context.Context) requestCaller {
 	return requestRouteMetaFromContext(ctx).caller
+}
+
+// recordCallerCost adds what a finished client request cost to its tenant's VictoriaLogs cost counters
+// (loki_vl_proxy_tenant_vl_*_total, with -metrics.export-sensitive-labels) and, with
+// -server.enable-query-analytics, to the /debug/queries callers view. Live tail is left out: it lasts as long as
+// the client keeps it open.
+// The metric takes the tenant as sent (metricTenant), like loki_vl_proxy_tenant_requests_total.
+func (p *Proxy) recordCallerCost(c requestCaller, metricTenant, endpoint, route, query string, status int, elapsed time.Duration, flow *flowCounters) {
+	if slowRequestExempt(endpoint, route) {
+		return
+	}
+	p.metrics.RecordTenantVLCost(metricTenant, flow.vlCalls, flow.vlDur, flow.vlBytes, flow.vlRows)
+	if !p.enableQueryAnalytics || p.queryTracker == nil {
+		return
+	}
+	req := metrics.CallerRequest{
+		Tenant: c.tenant, User: c.user, UserSource: c.userSource, GrafanaSource: c.sourceTag,
+		Endpoint: endpoint, Route: route, Status: status, Query: query,
+		CallerCost: metrics.CallerCost{
+			DurationMs: elapsed.Milliseconds(), VLCalls: int64(flow.vlCalls), VLMs: flow.vlDur.Milliseconds(),
+			VLBytes: flow.vlBytes, VLRows: flow.vlRows,
+		},
+	}
+	if status >= http.StatusBadRequest {
+		req.Errors = 1
+	}
+	if p.slowQueryThreshold > 0 && elapsed >= p.slowQueryThreshold {
+		req.Slow = 1
+	}
+	p.queryTracker.RecordRequest(req)
 }
 
 // appendCallerAttrs adds the caller to a log line: the end user and its source, its name when a user header

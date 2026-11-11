@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 )
 
 // callerLogHandler is slowLogHandler with the request's tenant scope, as the proxy's routes set it.
@@ -292,5 +294,48 @@ func TestLogUserHeaderNeverSplitsTheCacheReachesVictoriaLogsOrLabelsAMetric(t *t
 	}
 	if strings.Contains(body, "alice") || strings.Contains(body, "bob") {
 		t.Fatalf("a user reached a metric label")
+	}
+}
+
+// /debug/queries names who ran the recent requests and which callers cost VictoriaLogs the most, by user and
+// tenant, filterable by either; live tail is left out.
+//
+// conformance: observability-slow-query-log
+func TestDebugQueriesShowsCallersAndTheirCost(t *testing.T) {
+	p, _ := slowLogProxy(t, 40*time.Millisecond)
+	p.enableQueryAnalytics = true
+	p.logUser, _ = parseLogUserHeader("X-Grafana-User", "")
+	for _, user := range []string{"alice", "bob", "alice"} {
+		serveCallerLog(p, http.Header{"X-Scope-Orgid": {"team-a"}, "X-Grafana-User": {user}, "X-Query-Tags": {"Source=grafana-lokiexplore-app"}})
+	}
+	serveSlowLog(p, "tail", "/loki/api/v1/tail", slowLogHandler(p))
+
+	rec := httptest.NewRecorder()
+	p.queryTracker.Handler(rec, httptest.NewRequest(http.MethodGet, "/debug/queries?user=alice&tenant=team-a", nil))
+	var out struct {
+		Callers metrics.CallerView `json:"callers"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Callers.Callers != 1 || len(out.Callers.TopByVLMs) != 1 {
+		t.Fatalf("callers %+v", out.Callers)
+	}
+	top := out.Callers.TopByVLMs[0]
+	if top.User != "alice" || top.UserSource != "grafana_user" || top.Tenant != "team-a" || top.Requests != 2 || top.Slow != 2 ||
+		top.VLCalls != 2 || top.VLMs < 80 || top.VLBytes <= 0 || top.LastGrafanaSource != "grafana-lokiexplore-app" {
+		t.Fatalf("top caller %+v", top)
+	}
+	if len(out.Callers.RecentRequests) != 2 || out.Callers.RecentRequests[0].Query != `count_over_time({app="api"}[1m])` {
+		t.Fatalf("recent requests %+v", out.Callers.RecentRequests)
+	}
+	all := p.queryTracker
+	rec = httptest.NewRecorder()
+	all.Handler(rec, httptest.NewRequest(http.MethodGet, "/debug/queries", nil))
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Callers.Callers != 2 || len(out.Callers.RecentRequests) != 3 {
+		t.Fatalf("unfiltered: %d callers, %d requests (live tail must not count)", out.Callers.Callers, len(out.Callers.RecentRequests))
 	}
 }
