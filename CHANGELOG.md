@@ -44,6 +44,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   log query no longer takes its bytes from a `volume_range` answer of its
   selector (whole steps left up to a tenth of the window out).
 
+- The query plan lowers a binary operation whose operand has a `without` clause
+  (`sum without (pod) (rate({app="a"}[5m])) / 2`) the way Loki reads it: each
+  operand alone, folded by its own clause. The string translator's text for such
+  a query drops the clauses and folds the whole operation by the first one, a
+  text the proxy never sends (its binary route runs each operand as a query of
+  its own), so the shadows now hold these queries to that route, each operand's
+  request byte for byte: 603 more shadow rows match, with 0 mismatches. No answer
+  changes; the plan does not serve binary operations yet. `without ()` on an
+  operand and a `label_replace` around such an operation stay with the string
+  translator.
+
+- The query plan now decides the route of a range or vector aggregation itself:
+  which VictoriaLogs endpoint answers it and how the windows of its samples are
+  read (one `stats_query` for an instant request; for a range request one bucket
+  per window when the range equals the step, buckets of gcd(step, range) when it
+  is longer, a phase filter and a bucket per step when it is shorter), whether the
+  level presence probe runs first, whether the series keep their stream identity,
+  and the empty-input guard of an ungrouped instant answer. Route parity holds the
+  plan's decision to the handlers on every corpus row under five request profiles,
+  with and without data: 2,110 of 24,660 runs are now predicted from the plan
+  (count, bytes, rate and bytes_rate under sum, avg, min, max and count, with
+  filters only), 0 mismatches. Parsers, unwrapped values, offsets, `without`
+  folds and the levels the proxy evaluates itself stay delegated by name. Nothing
+  is served from the plan for metric queries yet: no request to VictoriaLogs and
+  no answer changes.
+
 ## [2.160.0] - 2026-11-11
 
 ### Fixed
