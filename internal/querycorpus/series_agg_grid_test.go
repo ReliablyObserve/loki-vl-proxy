@@ -238,8 +238,9 @@ func parsedLabelFoldGrid() []string {
 // TestSeriesAggGridShadow holds the lowering of stddev and stdvar (and the layers around them) to the proxy's route
 // on the generated grid under every profile: the operators the route builds (a SeriesAgg per level over the
 // operand's operators) and the operand's request byte for byte, with 0 mismatches. The shapes the proxy sends as the
-// translator's text, which drops a level, are counted as known divergences, and the clause by a parsed label as
-// delegations; the rows the lowering leaves to the string translator are counted by construct.
+// translator's text, which drops a level, are counted as known divergences; a clause by a parsed label is held to the
+// route's rewrite of the operand (parsedLabelFoldGrid), and the rows the lowering leaves to the string translator are
+// counted by construct.
 // conformance: architecture-syntax-package-layering
 func TestSeriesAggGridShadow(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())

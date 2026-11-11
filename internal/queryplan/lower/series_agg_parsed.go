@@ -26,7 +26,7 @@ import (
 //   - another operand (an unwrapped value, a label_replace, a ranking, a binary operation): VectorAgg stddev parsed
 //     label operand;
 //   - a form the route does not cut, or cuts by a grouping its scan reads short (no grouping to sum by after a
-//     math pipe, a field name holding a parenthesis, a without fold under the form): VectorAgg stddev parsed label cut;
+//     math pipe, a field name holding a parenthesis): VectorAgg stddev parsed label cut;
 //   - a rewrite that would allocate more than the route's (parsedLabelCostsMore): VectorAgg stddev parsed label cost;
 //   - a grouping by a name that differs from _time, _stream or _stream_id only by case: VectorAgg stddev parsed
 //     label reserved name;
@@ -44,9 +44,6 @@ func parsedLabelOperand(va *queryplan.VectorAgg, x queryplan.Node, prof Profile)
 	b, err := parsedLabelForm(&maxBy, prof)
 	if err != nil {
 		return nil, err
-	}
-	if b.without {
-		return nil, errSeriesParsedLabelCut
 	}
 	pipes, ok := routeOperandCut(b.stats)
 	if !ok {

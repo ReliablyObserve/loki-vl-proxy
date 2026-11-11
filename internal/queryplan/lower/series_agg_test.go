@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
 
@@ -96,7 +97,7 @@ func TestPlanDelegatesStddevShapes(t *testing.T) {
 		`stddev by (route) (topk(2, count_over_time({app="a"} | json [5m])))`:                "VectorAgg stddev parsed label",
 		`stddev by (route) (last_over_time({app="a"} | json | unwrap x [5m]))`:               "VectorAgg stddev parsed label operand",
 		`stddev by (route) (label_replace(rate({app="a"} | json [5m]), "a", "b", "c", "d"))`: "VectorAgg stddev parsed label operand",
-		`stddev by (route) (min without (pod) (rate({app="a"} | json [5m])))`:                "VectorAgg stddev parsed label cut",
+		`stddev by (route) (min without (pod) (rate({app="a"} | json [5m])))`:                "",
 		`stddev by (_Time) (rate({app="a"} | json [5m]))`:                                    "VectorAgg stddev parsed label reserved name",
 		`stdvar by (route, _STREAM_ID) (rate({app="a"} | json [5m]))`:                        "VectorAgg stddev parsed label reserved name",
 		`stddev(` + rate + `) by (app) `:                                                     "",
@@ -180,5 +181,35 @@ func TestPlanRebuildsParsedLabelOperand(t *testing.T) {
 		if text := physical.Encode(agg.In); text != want {
 			t.Errorf("%s:\n got %s\nwant %s", q, text, want)
 		}
+	}
+}
+
+// routeOperandCut declines where the route does not cut the text or falls back to the operand alone (fewer than two
+// stats pipes, a math pipe with no grouping to sum by) and where the route's scan reads a pipe unlike the typed one
+// (a grouping field with a parenthesis, a math pipe whose expression holds a pipe).
+//
+// conformance: architecture-syntax-package-layering
+func TestRouteOperandCutDeclines(t *testing.T) {
+	stats := func(by []string, alias string) logsql.PipeStats {
+		keys := make([]logsql.GroupKey, len(by))
+		for i, f := range by {
+			keys[i] = logsql.GroupKey{Field: f}
+		}
+		return logsql.PipeStats{By: keys, Funcs: []logsql.StatsFuncAlias{{Func: logsql.Count{}, Alias: alias}}}
+	}
+	rate := logsql.PipeMath{Expr: "__lvp_inner/300", Alias: "__lvp_rate"}
+	for name, pipes := range map[string][]logsql.Pipe{
+		"one stats pipe":         {stats([]string{"route", "_stream"}, "")},
+		"math with no grouping":  {stats(nil, "__lvp_inner"), rate, stats(nil, "")},
+		"parenthesis in a field": {stats([]string{"a)b", "_stream"}, "__lvp_inner"), rate, stats([]string{"a)b"}, "")},
+		"pipe in a math pipe":    {stats([]string{"route"}, "__lvp_inner"), logsql.PipeMath{Expr: "a|b", Alias: "__lvp_rate"}, stats([]string{"route"}, "")},
+	} {
+		if _, ok := routeOperandCut(pipes); ok {
+			t.Errorf("%s: cut, want declined", name)
+		}
+	}
+	got, ok := routeOperandCut([]logsql.Pipe{stats([]string{"route", "_stream"}, "__lvp_inner"), rate, stats([]string{"route"}, "")})
+	if !ok || len(got) != 3 || got[2].String() != "| stats by (route, _stream) sum(__lvp_rate)" {
+		t.Errorf("a rate: got %v %v", got, ok)
 	}
 }
