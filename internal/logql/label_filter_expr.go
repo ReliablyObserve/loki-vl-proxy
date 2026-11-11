@@ -282,6 +282,11 @@ func (p *lfParser) next() {
 			return
 		}
 	case '=', '!', '<', '>':
+		if c == '!' && (start+1 >= len(p.src) || !strings.ContainsRune("=~>", rune(p.src[start+1]))) {
+			// A lone '!' starts no token: Loki's lexer returns it as a name.
+			kind, name, lexErr, binaryAfterSpace, zeroLine = p.lexWord(start, spaced)
+			break
+		}
 		kind, p.pos = lfOp, start+1
 		if p.pos < len(p.src) && (p.src[p.pos] == '=' || p.src[p.pos] == '~' && (c == '=' || c == '!')) {
 			p.pos++
@@ -376,7 +381,7 @@ func (p *lfParser) skipSpace() (spaced bool) {
 func (p *lfParser) lexWord(start int, spaced bool) (kind lfTokKind, name, lexErr string, binaryAfterSpace, zeroLine bool) {
 	c := p.src[start]
 	kind, name = lfWord, "IDENTIFIER"
-	if c|0x20 >= 'a' && c|0x20 <= 'z' || c == '_' || c >= utf8.RuneSelf {
+	if c|0x20 >= 'a' && c|0x20 <= 'z' || c == '_' || c >= utf8.RuneSelf && startsLetter(p.src[start:]) {
 		// A name: letters, digits, '_' and '.' (dotted names stay one word); a keyword has its own token name.
 		if p.pos = start + lfNameEnd(p.src[start:], p.literalEnd != start); p.pos > start {
 			return kind, p.keywordName(start), "", false, false
@@ -406,9 +411,17 @@ func (p *lfParser) lexWord(start int, spaced bool) (kind lfTokKind, name, lexErr
 		lexErr = p.lexChar(start)
 	default:
 		// Any other character is a token of its own: Loki's lexer returns it as an identifier.
-		p.pos = start + 1
+		_, size := utf8.DecodeRuneInString(p.src[start:])
+		p.pos = start + size
 	}
 	return kind, name, lexErr, binaryAfterSpace, zeroLine
+}
+
+// startsLetter reports whether s starts with a letter: a name starts with one, and any other character that is no
+// ASCII (a digit of another script, a superscript, a mark, a symbol) is a token of its own to Loki's lexer.
+func startsLetter(s string) bool {
+	r, _ := utf8.DecodeRuneInString(s)
+	return unicode.IsLetter(r)
 }
 
 // lexRange reads the `[duration]` that starts at start, which Loki's lexer returns as one RANGE token; it

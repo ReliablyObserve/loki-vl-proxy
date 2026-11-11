@@ -72,7 +72,7 @@ func validateLogQL(query string) (Expr, string) {
 	// Structural parse. Loki does not trim the query: white space before the first token and after the last one
 	// counts in the line and column of an error, a trailing character that is not white space to Loki (a
 	// vertical tab) is a token, and a 0b literal after leading white space is read as after any white space.
-	expr, err := Parse(parsed)
+	expr, unknown, err := parseExpression(parsed)
 	if err != nil {
 		return nil, formatParseError(err, parsed)
 	}
@@ -80,6 +80,9 @@ func validateLogQL(query string) (Expr, string) {
 	// Semantic pass over the typed AST.
 	if msg := validateSemantics(expr, parsed); msg != "" {
 		return nil, msg
+	}
+	if unknown != nil {
+		return nil, unknown.Msg
 	}
 
 	return expr, ""
@@ -109,8 +112,6 @@ func formatParseError(err error, raw string) string {
 	case strings.Contains(msg, "expected label operator") ||
 		strings.Contains(msg, "expected label value"):
 		return "parse error at line 1, col 1: syntax error: unexpected }, expecting STRING"
-	case strings.Contains(msg, "expected '[' for range"):
-		return "parse error at line 1, col 1: syntax error: unexpected ), expecting RANGE"
 	case strings.Contains(msg, "unknown pipeline stage"):
 		// Extract the stage name for a more helpful message.
 		return "parse error : syntax error: unexpected IDENT"

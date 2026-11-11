@@ -185,6 +185,10 @@ type Token struct {
 	// Escaped is set on a TokString whose literal is not spelled the way strconv.Quote spells Val (see
 	// quotedSpelling).
 	Escaped bool
+	// Unknown is set on a TokIdent that is one character which starts no token: Loki's lexer reads it as an
+	// identifier of its own, and so does the parser, so that the errors after it are Loki's. A query that parses
+	// with such a character as a name is turned away: see Parse.
+	Unknown bool
 }
 
 type scanner struct {
@@ -211,6 +215,8 @@ type scanner struct {
 type scanExtra struct {
 	// comments collects the spans of the comments skipped, when not nil (StripComments).
 	comments *[][2]int
+	// unknown holds the offsets of the characters met that start no token and are read as names (Token.Unknown).
+	unknown []int32
 	// err is the first error of Loki's lexer found so far (a malformed number literal, NUL, an unclosed
 	// range); its message is empty while there is none.
 	err lexError
@@ -475,6 +481,9 @@ func (s *scanner) scanToken(spaced bool) Token {
 
 	case '`':
 		return s.scanRawString()
+
+	case '\'':
+		return s.scanCharLiteral()
 	}
 
 	if unicode.IsLetter(r) || r == '_' {
@@ -493,7 +502,69 @@ func (s *scanner) scanToken(spaced bool) Token {
 	}
 
 	s.read()
+	if startsUnknownName(r) {
+		// Loki's lexer returns a character that starts no token as an identifier of its own: the grammar places it
+		// where it places a name, and the errors it reports are those of a name.
+		s.noteUnknown()
+		return Token{Typ: TokIdent, Val: string(r), Unknown: true}
+	}
 	return Token{Typ: TokError, Val: string(r)}
+}
+
+// startsUnknownName reports a character that Loki's lexer reads as an identifier of its own and the parser reads
+// so: every character outside ASCII that is no letter (digits of other scripts, superscripts, marks, symbols,
+// punctuation, format and private-use characters), the ASCII control characters and the ASCII symbols $ & ; ? \ ~.
+// The dot, the colon and the exclamation mark stay errors of the scanner, for the places that read them as text
+// (dotted names, sub-query ranges, !=).
+func startsUnknownName(r rune) bool {
+	return r >= utf8.RuneSelf || r < ' ' || r == 0x7f || strings.ContainsRune("$&;?\\~", r)
+}
+
+// noteUnknown records the token that starts at s.start as a character that starts no token.
+func (s *scanner) noteUnknown() { s.noteUnknownAt(int(s.start)) }
+
+func (s *scanner) noteUnknownAt(at int) {
+	if s.quiet {
+		return
+	}
+	if s.extra == nil {
+		s.extra = &scanExtra{}
+	}
+	s.extra.unknown = append(s.extra.unknown, int32(at))
+}
+
+// scanCharLiteral reads the character literal that starts with a quote ('x'), which Loki's lexer returns as a name
+// and checks: one character between the quotes, ended before a line break; it notes the lexer error of a bad one.
+func (s *scanner) scanCharLiteral() Token {
+	start := s.pos
+	s.read() // the opening quote
+	n := 0
+	for s.pos < len(s.src) {
+		switch c := s.src[s.pos]; c {
+		case '\'':
+			s.pos++
+			if n != 1 {
+				s.addLexErr(start, "invalid char literal", false)
+			}
+			s.noteUnknownAt(start)
+			return Token{Typ: TokIdent, Val: s.src[start:s.pos], Unknown: true}
+		case '\n':
+			s.addLexErr(start, "literal not terminated", false)
+			s.noteUnknownAt(start)
+			return Token{Typ: TokIdent, Val: s.src[start:s.pos], Unknown: true}
+		case '\\':
+			s.pos += 2
+			if s.pos > len(s.src) {
+				s.pos = len(s.src)
+			}
+		default:
+			s.read()
+		}
+		n++
+	}
+	s.addLexErr(start, "literal not terminated", false)
+	s.noteUnknownAt(start)
+	return Token{Typ: TokIdent, Val: s.src[start:s.pos], Unknown: true}
 }
 
 func (s *scanner) scanQuotedString() Token {
