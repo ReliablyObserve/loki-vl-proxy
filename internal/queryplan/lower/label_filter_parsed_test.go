@@ -196,7 +196,8 @@ func TestParsedKeyBuilders(t *testing.T) {
 
 // FuzzLabelFilterAfterParserLowering holds the lowering of label filters after a json or logfmt parser to the string
 // translator, byte for byte, on any names, operators, values, trees, parsers and surrounding stages, under profiles
-// with and without stream labels: both write the same query, or the lowering leaves the query to the translator.
+// with and without stream labels: both write the same query, or the lowering leaves the query to the translator. A
+// value the translator cuts (translatorReadsStageMarker) is left out; the seed control-chars-in-label-value is one.
 //
 // conformance: architecture-syntax-package-layering
 func FuzzLabelFilterAfterParserLowering(f *testing.F) {
@@ -279,6 +280,9 @@ func FuzzLabelFilterAfterParserLowering(f *testing.F) {
 		q := `{app="a"}` + pre + ` ` + parsers[int(which>>2)%len(parsers)] + ` | ` + stage
 		if which%5 == 0 {
 			q += ` | drop q`
+		}
+		if translatorReadsStageMarker(q) {
+			return // the translator cuts the value (semantics/translator-reads-marker-bytes-in-quoted-value)
 		}
 		for _, prof := range profiles {
 			if lowered, legacy, _, delegated, ok := parsedLowering(t, q, prof); ok && !delegated && lowered != legacy {

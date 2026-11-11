@@ -1,0 +1,84 @@
+id: semantics/translator-reads-marker-bytes-in-quoted-value
+title: The string translator cuts a label filter value that holds two \x02 bytes behind a parser (open; the query plan keeps the value)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  The string translator marks the names a `<name>_extracted` label filter reads
+  with a \x02 byte inside the text of that filter's stage and, once it has the
+  whole pipeline, takes the first pair of \x02 bytes of every stage that holds
+  no mark of its own for such marks, cutting what lies between them out of the
+  stage. A label filter value is part of that text: a value that holds two
+  \x02 bytes (`o="\x02\x00\x02"`, `o="a\x02b\x02c"`), or two values of one
+  stage that hold one each, in a stage with no `_extracted` filter of its own,
+  in a query that has one elsewhere, is cut that way. The translator then
+  filters on the value without the cut bytes, copies the stream aside where the
+  bytes were instead of where the `_extracted` filter reads it, and for some
+  values writes a query VictoriaLogs rejects. Loki reads the value as written.
+  The query plan keeps the value and the translator's own order, so the plan is
+  the one that means what Loki means.
+
+  Evidence (main, 2026-11-11; found by FuzzLabelFilterAfterParserLowering):
+    {app="a"} | o="\x02\x00\x02" | json | K_extracted!~"p|q"
+    string translator  =>  app:="a" | copy _stream as __lxp_stream | filter o:="" | unpack_json | ...
+    query plan         =>  app:="a" o:="\x02\x00\x02" | unpack_json | ... | copy _stream as __lxp_stream | ...
+  Loki's pipeline (the Loki oracle, `process`, Loki 3.7.9) over 32 rows
+  (testdata/marker-bytes-label-value-loki.json: four values, `=` and `!=`, a
+  row whose label holds the value, an empty label, no label, and the value plus
+  a byte): `o="\x02\x00\x02"` keeps the row that holds exactly those bytes and
+  drops an empty or missing label; `o=""` keeps only the rows without the label.
+  The plan keeps the rows Loki keeps on all 32; the translator keeps other rows
+  on 20. VictoriaLogs reads a double-quoted LogsQL token with Go's
+  strconv.QuotedPrefix and strconv.Unquote (lib/logstorage lexer, v1.53.0), so a
+  raw control byte in the token is that byte and `""` is an empty value: the
+  plan's filter is the value Loki means, the translator's is a different one.
+
+  The two writings also differ in where `copy _stream as __lxp_stream` stands
+  (before the first filter in the translator's text, after the first unpack in
+  the plan's). That is a side effect of the same cut, not a choice: the cut
+  marks make the translator write the copy where the bytes were; without them
+  the translator writes the copy where the plan does (the same query with a
+  single \x02 byte: byte for byte equal).
+
+  Not affected, on the grid of the finding (two values from {\x00, \x01, \x02}
+  at one to three bytes, one to two stages, json and logfmt, with and without an
+  `_extracted` filter, filter-only queries): a single \x02 byte, the \x00 and
+  \x01 bytes the translator also uses, a value in a stage that holds an
+  `_extracted` filter, line filters, drop and keep matchers. Queries with a
+  parser are served by the string translator, so the proxy answers the cut
+  filter for them today; filter-only queries, served from the plan, are not
+  affected. The same marker also reads a \x02 byte of a stream selector value
+  under an `_extracted` filter (a range aggregation, found by an earlier step,
+  not recorded here).
+
+  FuzzLabelFilterAfterParserLowering recognises the shape by content
+  (translatorReadsStageMarker, in internal/queryplan/lower, and the same function in internal/querycorpus for the plan shadow, which counts the case's own request as a known divergence): the decoded values
+  of the label filter stages, so any spelling of the bytes (an escape, a raw
+  byte, backquotes) is left out.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x"} | o="\x02\x00\x02" | json | K_extracted!~"p|q"'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    The lines whose label o holds exactly the bytes \x02\x00\x02, filtered as for the same query without the value.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator (the stage marks are bytes of the query text); fixed when the query plan serves queries with a parser'
+  loki: 'a label filter value is a string literal; its bytes are compared as they are'
+  proxy: 'a value that holds two \x02 bytes behind a parser is cut: the filter is written on the value without them'
+  planned_test: 'TestMarkerBytesInLabelValueMeanWhatLokiMeans (internal/queryplan/lower) holds the plan to Loki''s recorded answers; an e2e row against Loki when the plan serves queries with a parser'
+  visual: none
+  visual_reason: 'crafted control bytes; no Grafana panel sends them'
+  clusters: []
