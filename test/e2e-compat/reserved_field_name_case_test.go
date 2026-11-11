@@ -177,11 +177,13 @@ func TestCompat_ReservedFieldNameCaseLikeLoki(t *testing.T) {
 // shape the comparisons do not send (another step), so no partial answer lands in Loki's results cache.
 func waitForReservedCaseLokiMetrics(t *testing.T, selector string, start, end time.Time, headers map[string]string) {
 	t.Helper()
-	probe := url.Values{"query": {`count_over_time(` + selector + `[5m])`}, "start": {strconv.FormatInt(start.UnixNano(), 10)},
-		"end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"59"}}
+	// Loki's results cache keeps the first answer to a query, so a repeated probe would replay an early,
+	// incomplete answer for the whole wait: each try asks a range one second longer, a query Loki has not cached.
 	deadline := time.Now().Add(3 * time.Minute)
 	var last string
-	for time.Now().Before(deadline) {
+	for try := 0; time.Now().Before(deadline); try++ {
+		probe := url.Values{"query": {fmt.Sprintf(`count_over_time(%s[%ds])`, selector, 300+try)}, "start": {strconv.FormatInt(start.UnixNano(), 10)},
+			"end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"59"}}
 		status, body, payload := queryRangeGET(t, lokiURL, probe, headers)
 		last = body
 		if status == http.StatusOK && len(extractArray(extractMap(payload, "data"), "result")) == 3 {
