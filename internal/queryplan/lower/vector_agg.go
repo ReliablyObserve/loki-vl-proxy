@@ -181,13 +181,7 @@ func (b builtVector) op(foldOp string, prof Profile) physical.Op {
 // the stats of b need (the text the proxy cuts a parsed-label operand from holds them, parsedLabelOperand).
 func (b builtVector) text(prof Profile, pipes []logsql.Pipe) string {
 	chain, service := "", ""
-	var needChain, needService bool
-	for _, p := range b.stats {
-		if st, ok := p.(logsql.PipeStats); ok {
-			needChain = needChain || groupsBy(st, translate.DetectedLevelLabel)
-			needService = needService || groupsBy(st, "service_name")
-		}
-	}
+	needChain, needService := b.derives()
 	if needChain {
 		chain = translate.RateDetectedLevelChain()
 	}
@@ -195,6 +189,18 @@ func (b builtVector) text(prof Profile, pipes []logsql.Pipe) string {
 		service = translate.ServiceNameGroupingPipes(prof.Caps)
 	}
 	return b.log.text(chain, service, b.keys, pipes...)
+}
+
+// derives reports whether the stats of b group by a label the query derives in front of them: detected_level (the
+// level chain) and service_name.
+func (b builtVector) derives() (chain, service bool) {
+	for _, p := range b.stats {
+		if st, ok := p.(logsql.PipeStats); ok {
+			chain = chain || groupsBy(st, translate.DetectedLevelLabel)
+			service = service || groupsBy(st, "service_name")
+		}
+	}
+	return chain, service
 }
 
 // vectorStats are the stats pipes of the aggregation over the rows of a range function fn (a rate divides by

@@ -137,6 +137,13 @@ collect_tests_and_coverage() {
     fi
     log_step "go test -json failed (exit=${test_status}); failing test events:"
     jq -r 'select(.Action == "fail") | [.Package, (.Test // "package")] | @tsv' "$events_file" >&2 || true
+    # The failing tests' own output (their t.Error/t.Fatal lines), so a failure that does not reproduce
+    # elsewhere still shows its cause in the job log; bounded so a noisy test cannot flood it.
+    log_step "output of the failing tests (first 400 lines):"
+    jq -r -s '
+      ([.[] | select(.Action == "fail" and .Test) | .Package + "\t" + .Test]) as $failed
+      | .[] | select(.Action == "output" and .Test and ((.Package + "\t" + .Test) as $k | $failed | index($k)))
+      | .Test + ": " + (.Output | rtrimstr("\n"))' "$events_file" 2>/dev/null | head -n 400 >&2 || true
     python3 "$SCRIPT_DIR/pr_evidence.py" --summarize-tests "$events_file" --test-exit-code "$test_status"
     return "$test_status"
   fi
