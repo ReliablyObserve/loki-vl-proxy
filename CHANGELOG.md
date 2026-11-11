@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A stage that starts with a name keeps the text it was written with when the query is printed.** The query text of
+  such a stage (`| A 0!0`) lost the space after the name (`A0!0`) and had every undecodable byte replaced by U+FFFD
+  when the proxy printed the query, so the rewrite of a metric over `| keep` (`sum by (...) (rate(...))`) could
+  produce a query that no longer parses. The text is the one the client sent.
+
 ### Security
 
 - **A query with certain non-ASCII characters could make the LogQL parser stop responding.** Such queries are now
