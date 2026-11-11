@@ -537,7 +537,13 @@ func (o OrExpr) filterExpr() {}
 // Exclude is LogsQL's "-" negation of a filter: -level:*, -(a OR b).
 type Exclude struct{ Expr FilterExpr }
 
-func (e Exclude) String() string { return string(e.appendTo(make([]byte, 0, 32))) }
+func (e Exclude) String() string {
+	// "-NOT x" would read as one word, "-NOT"
+	if _, ok := e.Expr.(NotExpr); ok {
+		return "-(" + e.Expr.String() + ")"
+	}
+	return "-" + operand(e.Expr, 3)
+}
 
 func (e Exclude) appendTo(b []byte) []byte {
 	// "-NOT x" would read as one word, "-NOT"
@@ -630,7 +636,12 @@ type AnyCasePhrase struct {
 	Word bool
 }
 
-func (a AnyCasePhrase) String() string { return string(a.appendTo(make([]byte, 0, 16))) }
+func (a AnyCasePhrase) String() string {
+	if a.Word && isBareWord(a.Value) {
+		return "i(" + a.Value + ")"
+	}
+	return "i(" + quoteLogsQL(a.Value) + ")"
+}
 
 // isBareWord reports a value of ASCII letters, digits and underscores that LogsQL reads as a word, not a keyword.
 func isBareWord(s string) bool {
@@ -780,7 +791,7 @@ type FieldScope struct {
 	Expr  FilterExpr
 }
 
-func (f FieldScope) String() string { return string(f.appendTo(make([]byte, 0, 64))) }
+func (f FieldScope) String() string { return f.Field + ":(" + f.Expr.String() + ")" }
 func (f FieldScope) appendTo(b []byte) []byte {
 	b = append(append(b, f.Field...), ":("...)
 	return append(appendFilter(b, f.Expr), ')')
@@ -820,7 +831,23 @@ func (d DeferredExpr) statsFunc()     {}
 // | unpack_json [if (cond)] [from f] [fields (a, b)] [preserve_keys (k)] [result_prefix "p"] [keep_original_fields | skip_empty_results]
 // Names are as written, quotes included.
 func unpackString(name string, cond FilterExpr, from string, fields, preserveKeys []string, resultPrefix string, keepOriginal, skipEmpty bool) string {
-	return string(appendUnpack(make([]byte, 0, 64), name, cond, from, fields, preserveKeys, resultPrefix, keepOriginal, skipEmpty))
+	var b strings.Builder
+	b.WriteString(name)
+	b.WriteString(ifString(cond))
+	if from != "" {
+		b.WriteString(" from " + from)
+	}
+	if len(fields) > 0 {
+		b.WriteString(" fields (" + strings.Join(fields, ", ") + ")")
+	}
+	if len(preserveKeys) > 0 {
+		b.WriteString(" preserve_keys (" + strings.Join(preserveKeys, ", ") + ")")
+	}
+	if resultPrefix != "" {
+		b.WriteString(" result_prefix " + quoteLogsQL(resultPrefix))
+	}
+	b.WriteString(flagsString(keepOriginal, skipEmpty))
+	return b.String()
 }
 
 // appendUnpack is unpackString, appended.
@@ -1025,7 +1052,17 @@ type PipeExtractRegexp struct {
 	Quoted bool
 }
 
-func (p PipeExtractRegexp) String() string { return string(p.appendTo(make([]byte, 0, 128))) }
+func (p PipeExtractRegexp) String() string {
+	pattern := rawOrQuoted(p.Pattern)
+	if p.Quoted {
+		pattern = strconv.Quote(p.Pattern)
+	}
+	s := "| extract_regexp" + ifString(p.If) + " " + pattern
+	if p.From != "" {
+		s += " from " + p.From
+	}
+	return s + flagsString(p.KeepOriginalFields, p.SkipEmptyResults)
+}
 
 // extractRegexpPipe is the name PipeExtractRegexp writes.
 const extractRegexpPipe = "| extract_regexp"
@@ -1090,7 +1127,13 @@ type PipeFormat struct {
 	SkipEmptyResults   bool
 }
 
-func (p PipeFormat) String() string { return string(p.appendTo(make([]byte, 0, 64))) }
+func (p PipeFormat) String() string {
+	s := "| format" + ifString(p.If) + " " + strconv.Quote(p.Template)
+	if p.ResultField != "" {
+		s += " as " + p.ResultField
+	}
+	return s + flagsString(p.KeepOriginalFields, p.SkipEmptyResults)
+}
 
 // formatPipe is the name PipeFormat writes.
 const formatPipe = "| format"

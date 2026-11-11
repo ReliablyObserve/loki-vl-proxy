@@ -177,48 +177,40 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	if readsAsClause(head) {
 		return metricLog{}, quoted
 	}
-	// Each pipe is printed once, into a builder sized for all of them.
-	var printed [8]string
-	texts := printed[:0]
-	size := 0
-	for _, p := range q.Pipes {
-		t := p.String()
-		if readsAsClause(t) {
-			return metricLog{}, quoted
-		}
-		texts = append(texts, t)
-		size += 1 + len(t)
+	// The pipes are printed once, into one text, each after a space (a word the translator reads as a clause never
+	// spans the space between two pipes, so the whole text is read at once).
+	var pipesText string
+	if len(q.Pipes) > 0 {
+		pipesText = logsql.Query{Pipes: q.Pipes}.String()[1:]
 	}
-	var pipes strings.Builder
-	pipes.Grow(size)
+	if readsAsClause(pipesText) {
+		return metricLog{}, quoted
+	}
 	bare, unpacks, copies, levelChain := -1, 0, false, holdsLevelStage(in)
 	var mask, bareMask uint8
 	for i, p := range q.Pipes {
-		pipes.WriteByte(' ')
-		start := pipes.Len()
-		pipes.WriteString(texts[i])
-		switch p.(type) {
+		switch u := p.(type) {
 		case logsql.PipeCopy:
 			copies = true
 		case logsql.PipeUnpackJSON:
-			if unpacks < 8 && texts[i] == bareUnpackJSON {
+			if unpacks < 8 && isBareUnpackJSON(u) {
 				bareMask |= 1 << unpacks
 			}
 			unpacks++
 		case logsql.PipeUnpackLogfmt:
 			if unpacks < 8 {
 				mask |= 1 << unpacks
-				if texts[i] == bareUnpackLogfmt {
+				if isBareUnpackLogfmt(u) {
 					bareMask |= 1 << unpacks
 				}
 			}
 			unpacks++
-			if i == len(q.Pipes)-1 && texts[i] == bareUnpackLogfmt {
-				bare = start - 1
+			if i == len(q.Pipes)-1 && isBareUnpackLogfmt(u) {
+				bare = len(pipesText) - len(bareUnpackLogfmt) - 1
 			}
 		}
 	}
-	m := metricLog{head: head, restore: restore, pipes: pipes.String(), parser: hasParser(in), copies: copies, bareLogfmt: bare,
+	m := metricLog{head: head, restore: restore, pipes: pipesText, parser: hasParser(in), copies: copies, bareLogfmt: bare,
 		unpacks: uint8(min(unpacks, 255)), logfmtMask: mask, bareMask: bareMask, afterParser: filteredAfterParser(in), levelChain: levelChain}
 	// The translator narrows the unpack when its text of the query holds exactly one unpack pipe, quoted text included.
 	if unpacks != 1 || strings.Count(head, "| unpack_")+strings.Count(restore, "| unpack_")+strings.Count(m.pipes, "| unpack_") != 1 {
@@ -320,6 +312,17 @@ func clientReadsAsClause(s string) bool {
 		}
 	}
 	return false
+}
+
+// isBareUnpackJSON reports an unpack_json pipe that prints as bareUnpackJSON: no condition, source, list, prefix or
+// flag.
+func isBareUnpackJSON(u logsql.PipeUnpackJSON) bool {
+	return u.If == nil && u.From == "" && len(u.Fields) == 0 && len(u.PreserveKeys) == 0 && u.ResultPrefix == "" && !u.KeepOriginalFields && !u.SkipEmptyResults
+}
+
+// isBareUnpackLogfmt reports an unpack_logfmt pipe that prints as bareUnpackLogfmt.
+func isBareUnpackLogfmt(u logsql.PipeUnpackLogfmt) bool {
+	return u.If == nil && u.From == "" && len(u.Fields) == 0 && u.ResultPrefix == "" && !u.KeepOriginalFields && !u.SkipEmptyResults
 }
 
 // bareUnpackJSON is the printed `| unpack_json` of a json stage.
