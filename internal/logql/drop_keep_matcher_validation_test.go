@@ -54,11 +54,11 @@ func TestValidateLogQL_DropKeepMatchers(t *testing.T) {
 		// return. It must be non-empty (i.e. the query must be rejected).
 		substr string
 	}{
-		{"keep unsupported !=~ operator", `{app="api"} | keep method="GET", status!=~"5.."`, "expected STRING or RAWSTRING"},
-		{"drop unsupported !=~ operator", `{app="api"} | drop level!=~"debug"`, "expected STRING or RAWSTRING"},
-		{"drop doubled =~~ operator", `{app="api"} | drop level=~~"x"`, "expected STRING or RAWSTRING"},
-		{"keep matcher missing value", `{app="api"} | keep level=`, "expected STRING or RAWSTRING"},
-		{"drop matcher missing value", `{app="api"} | drop level=`, "expected STRING or RAWSTRING"},
+		{"keep unsupported !=~ operator", `{app="api"} | keep method="GET", status!=~"5.."`, "expecting STRING"},
+		{"drop unsupported !=~ operator", `{app="api"} | drop level!=~"debug"`, "expecting STRING"},
+		{"drop doubled =~~ operator", `{app="api"} | drop level=~~"x"`, "expecting STRING"},
+		{"keep matcher missing value", `{app="api"} | keep level=`, "expecting STRING"},
+		{"drop matcher missing value", `{app="api"} | drop level=`, "expecting STRING"},
 		{"empty drop stage", `{app="api"} | drop`, "at least one label name or matcher"},
 		{"empty keep stage", `{app="api"} | keep`, "at least one label name or matcher"},
 	}

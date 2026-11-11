@@ -76,7 +76,7 @@ func TestValidateLogQL_LokiRejections(t *testing.T) {
 		{`{app="a"} | json foo="a[x]"`, `parse error : stage '| json foo="a[x]"' : cannot parse expression [a[x]]: syntax error: unexpected FIELD, expecting STRING or INDEX`},
 		{`{app="a"} | json foo="a]"`, `parse error : stage '| json foo="a]"' : cannot parse expression [a]]: syntax error: unexpected RSB`},
 		{`{app="a"} | json foo=`, "parse error at line 1, col 22: syntax error: unexpected $end, expecting STRING"},
-		{`{app="a"} | json foo=bar`, "parse error : syntax error: unexpected IDENTIFIER, expecting STRING"},
+		{`{app="a"} | json foo=bar`, "parse error at line 1, col 22: syntax error: unexpected IDENTIFIER, expecting STRING"},
 		{`count_over_time({app="a"} | json foo="a[" [5m])`, `parse error : stage '| json foo="a["' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX`},
 
 		// logfmt expressions.

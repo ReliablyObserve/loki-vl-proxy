@@ -261,6 +261,22 @@ func hasWideSpace(q string) bool {
 	return false
 }
 
+// textClass names why the proxy's message differs from Loki's where both reject: white space the scanner still skips
+// (step "logql-loki-whitespace"), a quote (Loki's lexer reads 'x' as a character literal and reports its own errors,
+// which the query scanner does not), a '!' (the proxy reads it as the start of !=), or another ASCII symbol (&, $, @,
+// ;, ?, \\, ~: the scanner reports it as an error where Loki takes it as a name).
+func textClass(q string) string {
+	switch {
+	case hasWideSpace(q):
+		return "white space"
+	case strings.Contains(q, "'"):
+		return "character literal"
+	case strings.Contains(q, "!"):
+		return "bang"
+	}
+	return "ASCII symbol"
+}
+
 // Characters of every Unicode category, in every position of a query, are read as Loki's lexer reads them. Loki's
 // scanner is Go's text/scanner: a name starts with a letter or '_' and goes on with letters and digits, a number
 // starts with an ASCII digit, and any other character starts no token and is returned as a name of its own, which
@@ -282,6 +298,7 @@ func TestUnicodeRunesMatchLoki(t *testing.T) {
 		t.Fatalf("%d recorded answers for %d queries: record them again with LVP_RUN_ORACLES=1", len(answers), len(queries))
 	}
 	var accepted, rejected, diffs, bareStage, wideSpace, nameLimit, textDiffs, same int
+	textByClass := map[string]int{}
 	for i, a := range answers {
 		if a.Q != queries[i] {
 			t.Fatalf("answer %d is for %q, not %q: record them again with LVP_RUN_ORACLES=1", i, a.Q, queries[i])
@@ -309,19 +326,29 @@ func TestUnicodeRunesMatchLoki(t *testing.T) {
 			nameLimit++
 		case got != "" && got != a.Error:
 			textDiffs++
+			textByClass[textClass(a.Q)]++
 		default:
 			same++
 		}
 	}
 	t.Logf("%d queries: Loki accepts %d and rejects %d; same answer %d; proxy accepts what Loki rejects: %d on white space, %d on a bare-name stage, %d other; proxy rejects what Loki accepts: %d; rejected by both with other text: %d",
 		len(answers), accepted, rejected, same, wideSpace, bareStage, diffs, nameLimit, textDiffs)
+	t.Logf("rejected by both with other text, by class: %v", textByClass)
 	if diffs > 0 {
 		t.Errorf("%d queries are accepted by the proxy and rejected by Loki because of a character", diffs)
 	}
-	// The limits may only shrink: the white space fix and the stage fix remove the first two, the text of the
-	// parser's other messages the last.
-	if wideSpace > 649 || bareStage > 272 || nameLimit > 1465 || textDiffs > 3526 {
-		t.Errorf("the limits grew: white space %d, bare-name stage %d, name %d, text %d", wideSpace, bareStage, nameLimit, textDiffs)
+	// The limits may only shrink: the white space fix and the stage fix remove the first two, the characters the
+	// scanner still reports as errors the text classes.
+	if wideSpace > 649 || bareStage > 272 || nameLimit > 1463 {
+		t.Errorf("the limits grew: white space %d, bare-name stage %d, name %d", wideSpace, bareStage, nameLimit)
+	}
+	for class, bound := range map[string]int{"white space": 143, "ASCII symbol": 38, "bang": 13, "character literal": 7} {
+		if textByClass[class] > bound {
+			t.Errorf("%d queries differ in text for %s, the limit is %d", textByClass[class], class, bound)
+		}
+	}
+	if textDiffs > 201 {
+		t.Errorf("%d queries differ in text, the limit is 201", textDiffs)
 	}
 	if accepted < 1000 || rejected < 1000 {
 		t.Fatalf("grid too small: %d accepted, %d rejected", accepted, rejected)
