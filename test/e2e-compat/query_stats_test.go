@@ -420,7 +420,7 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 		}
 		sel := `{app="api-gateway"} != "` + nonce + rng.String() + `"`
 		// windowLines is Loki's count of the selector's lines over the window.
-		windowLines := lokiWindowLines(t, `sum(count_over_time(`+sel+` [`+logqlRange+`]))`, end)
+		windowLines := lokiWindowLines(t, sel, logqlRange, end)
 		likeLoki := func(t *testing.T, loki, miss e2eStats) {
 			if miss.Summary.Splits != loki.Summary.Splits || miss.Summary.Shards != loki.Summary.Shards {
 				t.Errorf("splits/shards %d/%d, Loki %d/%d", miss.Summary.Splits, miss.Summary.Shards, loki.Summary.Splits, loki.Summary.Shards)
@@ -528,28 +528,41 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 }
 
 // lokiWindowLines is the value of Loki's instant answer to a count query at t.
-func lokiWindowLines(t *testing.T, query string, at time.Time) int64 {
+func lokiWindowLines(t *testing.T, sel, logqlRange string, at time.Time) int64 {
 	t.Helper()
-	status, raw, _ := doJSONGET(t, lokiURL+"/loki/api/v1/query?"+url.Values{"query": {query}, "time": {fmt.Sprint(at.Unix())}}.Encode(), map[string]string{"X-Scope-OrgID": "0"})
-	var a struct {
-		Data struct {
-			Result []struct {
-				Value [2]json.RawMessage `json:"value"`
-			} `json:"result"`
-		} `json:"data"`
+	// On a fresh stack Loki answers a new stream's metrics empty for a while. Each try adds a line filter no line
+	// matches, a query Loki has not cached, and an empty answer past the wait means there is no Loki figure to
+	// compare with: skip rather than fail on Loki's readiness.
+	deadline := time.Now().Add(3 * time.Minute)
+	for try := 0; ; try++ {
+		query := fmt.Sprintf(`sum(count_over_time(%s != "lwl-try-%d" [%s]))`, sel, try, logqlRange)
+		status, raw, _ := doJSONGET(t, lokiURL+"/loki/api/v1/query?"+url.Values{"query": {query}, "time": {fmt.Sprint(at.Unix())}}.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+		var a struct {
+			Data struct {
+				Result []struct {
+					Value [2]json.RawMessage `json:"value"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		if status != http.StatusOK || json.Unmarshal([]byte(raw), &a) != nil {
+			t.Fatalf("Loki window count: %d %.300s", status, raw)
+		}
+		if len(a.Data.Result) == 1 {
+			var v string
+			if err := json.Unmarshal(a.Data.Result[0].Value[1], &v); err != nil {
+				t.Fatal(err)
+			}
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return n
+		}
+		if time.Now().After(deadline) {
+			t.Skipf("Loki's window count stayed empty for 3m (fresh-stack blank window), nothing to compare with: %.300s", raw)
+		}
+		time.Sleep(time.Second)
 	}
-	if status != http.StatusOK || json.Unmarshal([]byte(raw), &a) != nil || len(a.Data.Result) != 1 {
-		t.Fatalf("Loki window count: %d %.300s", status, raw)
-	}
-	var v string
-	if err := json.Unmarshal(a.Data.Result[0].Value[1], &v); err != nil {
-		t.Fatal(err)
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return n
 }
 
 // oldestEntryNs is the oldest entry's timestamp in a log answer.
