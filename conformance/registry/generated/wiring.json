@@ -984,6 +984,7 @@
     "query-stats-envelope": [
       "internal/proxy/query_stats_loki_meaning_test.go",
       "internal/proxy/query_stats_loki_test.go",
+      "internal/proxy/query_stats_shards_test.go",
       "internal/proxy/query_stats_test.go",
       "internal/proxy/query_stats_totals_test.go",
       "test/e2e-compat/query_stats_test.go"
@@ -1470,6 +1471,7 @@
       "test/e2e-compat/query_range_lead_window_test.go"
     ],
     "semantics/query-stats-shards-empty-pieces": [
+      "internal/proxy/query_stats_shards_test.go",
       "test/e2e-compat/query_stats_test.go"
     ],
     "semantics/repeated-label-filter-replaced-across-label-format": [
@@ -2793,6 +2795,10 @@
     ],
     "internal/proxy/query_stats_loki_test.go": [
       "query-stats-envelope"
+    ],
+    "internal/proxy/query_stats_shards_test.go": [
+      "query-stats-envelope",
+      "semantics/query-stats-shards-empty-pieces"
     ],
     "internal/proxy/query_stats_test.go": [
       "drilldown/logs-footer-query-stats",
@@ -4288,7 +4294,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 518,
+  "tests_with_markers": 519,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
