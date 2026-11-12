@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The `shards` of the `data.stats` of a repeated log query follow Loki's: a repeat answered from the
+  proxy's response cache reports the 1h pieces that hold a returned entry, wherever they lie in the
+  window, as Loki does (it keeps the pieces in which a query found nothing in its results cache). A
+  window of five pieces with entries in three of them, separated by empty pieces, reported 5 shards
+  on the repeat and Loki 3. The first answer of a query text still reports every piece it ran.
+
 ### Changed
 
 - The query plan now decides how the handlers answer `sum`, `avg`, `min`, `max` and `count` (with
