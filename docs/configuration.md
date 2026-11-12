@@ -1048,4 +1048,4 @@ These Grafana Loki datasource settings now have a direct proxy-side mapping:
 
 Trusted user headers, `send_user_header`, what the request log records and what is forwarded to VictoriaLogs: see [Grafana user identity](tenancy-and-auth.md#5-grafana-user-identity). The recommended setup is `-log-user-header=X-Grafana-User` with `-log-user-header-trusted-cidrs`.
 
-Alerting datasource integration is still partial: the proxy supports legacy Loki YAML rules reads and Prometheus-style JSON rules/alerts reads against a configured backend, but it does not yet implement the full Loki ruler write API surface.
+Alerting is not finished: the proxy supports legacy Loki YAML rules reads and Prometheus-style JSON rules/alerts reads against a configured backend (a read bridge to vmalert), but it does not evaluate rules or implement Loki's ruler API. Loki-compatible rule evaluation, rule writes and full ruler parity are planned work, not shipped.

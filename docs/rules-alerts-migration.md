@@ -5,6 +5,10 @@ description: Migrating Loki alerting rules and recording rules to work with Vict
 
 # Rules And Alerts Migration
 
+:::caution Alerting is not finished
+The proxy does not evaluate alerting or recording rules and does not implement Loki's ruler API. What ships today is the read bridge described on this page: vmalert runs the rules and the proxy shows its rules and alerts to Grafana. Loki-compatible rule evaluation, rule writes and full ruler parity are planned work, not shipped.
+:::
+
 This project treats alerting and ruler compatibility as a read path:
 
 - `vmalert` executes alerting and recording rules against VictoriaLogs

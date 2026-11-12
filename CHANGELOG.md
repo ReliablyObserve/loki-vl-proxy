@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bytes of the line, and an unwrapped value stay with the string translator
   under a name that says what they read. Nothing is served from the plan for
   these queries yet: no request to VictoriaLogs and no answer changes.
+
 - The query plan now writes the label filters on `detected_level` that Grafana
   Explore and Logs Drilldown send (`| detected_level="error"`, `!="info"`,
   `=~"error|warn"`, `unknown`, several in a row, under `count_over_time`, `rate`
@@ -28,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trees and an unwrap over such a filter stay with the string translator. Nothing
   is served from the plan for these queries yet: no request to VictoriaLogs and
   no answer changes.
+
+## [2.180.0] - 2026-11-12
 
 ### Fixed
 
