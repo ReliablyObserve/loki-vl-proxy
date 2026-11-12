@@ -80,6 +80,7 @@
       "internal/queryplan/lower/route_test.go",
       "internal/queryplan/lower/series_agg_test.go",
       "internal/queryplan/lower/spelling_test.go",
+      "internal/queryplan/lower/unwrap_stats_test.go",
       "internal/queryplan/lower/unwrap_test.go",
       "internal/queryplan/lower/vector_agg_nested_test.go",
       "internal/queryplan/lower/vector_agg_test.go",
@@ -984,6 +985,8 @@
     "query-stats-envelope": [
       "internal/proxy/query_stats_loki_meaning_test.go",
       "internal/proxy/query_stats_loki_test.go",
+      "internal/proxy/query_stats_mean_window_test.go",
+      "internal/proxy/query_stats_shards_test.go",
       "internal/proxy/query_stats_test.go",
       "internal/proxy/query_stats_totals_test.go",
       "test/e2e-compat/query_stats_test.go"
@@ -1030,6 +1033,10 @@
       "internal/proxy/binary_literal_reprint_test.go",
       "internal/proxy/reprint_translation_test.go",
       "test/e2e-compat/binary_operand_literals_test.go"
+    ],
+    "semantics/binary-operand-without-empty-collapses": [
+      "internal/querycorpus/binop_without_empty_test.go",
+      "internal/queryplan/lower/binop_without_empty_test.go"
     ],
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
@@ -1273,6 +1280,10 @@
       "internal/logql/label_filter_number_literal_loki_test.go",
       "test/e2e-compat/label_filter_number_literal_test.go"
     ],
+    "semantics/label-filter-numeric-equality": [
+      "internal/queryplan/lower/label_filter_numeric_eq_oracle_test.go",
+      "internal/queryplan/lower/label_filter_numeric_eq_test.go"
+    ],
     "semantics/label-filter-regex-parse-error": [
       "internal/logql/stage_parse_validate_loki_test.go"
     ],
@@ -1405,6 +1416,9 @@
     "semantics/parse-error-text-parity": [
       "internal/proxy/ordered_json_recorded_test.go"
     ],
+    "semantics/parser-reads-unicode-blank-as-white-space": [
+      "internal/querycorpus/odd_spellings_loki_test.go"
+    ],
     "semantics/partial-parse-before-error": [
       "internal/proxy/ordered_json_filter_pushdown_test.go"
     ],
@@ -1470,6 +1484,7 @@
       "test/e2e-compat/query_range_lead_window_test.go"
     ],
     "semantics/query-stats-shards-empty-pieces": [
+      "internal/proxy/query_stats_shards_test.go",
       "test/e2e-compat/query_stats_test.go"
     ],
     "semantics/repeated-label-filter-replaced-across-label-format": [
@@ -1582,18 +1597,29 @@
     "semantics/translator-reads-parenthesized-metric-as-text": [
       "internal/querycorpus/known_divergence_test.go"
     ],
+    "semantics/translator-writes-exotic-field-names-bare": [
+      "internal/logsql/field_names_test.go",
+      "internal/querycorpus/exotic_names_oracle_test.go",
+      "internal/querycorpus/odd_spellings_loki_test.go",
+      "internal/queryplan/lower/exotic_field_names_test.go"
+    ],
     "semantics/translator-writes-keyword-field-names-bare": [
       "internal/logsql/keyword_fields_test.go",
       "internal/queryplan/lower/keyword_field_names_test.go",
+      "internal/queryplan/lower/unwrap_test.go",
       "internal/queryplan/lower/vl_clone_roundtrip_test.go",
       "test/e2e-compat/keyword_label_names_test.go"
     ],
     "semantics/translator-writes-reserved-field-names": [
       "internal/logsql/reserved_fields_test.go",
       "internal/proxy/reserved_field_test.go",
+      "internal/queryplan/lower/exotic_field_names_test.go",
       "internal/queryplan/lower/reserved_field_test.go",
       "internal/queryplan/lower/vl_clone_roundtrip_test.go",
       "test/e2e-compat/reserved_field_labels_test.go"
+    ],
+    "semantics/translator-writes-signed-number-with-blank": [
+      "internal/querycorpus/odd_spellings_loki_test.go"
     ],
     "semantics/translator-writes-unpack-as-unpack-json": [
       "internal/queryplan/lower/unpack_test.go"
@@ -1924,7 +1950,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 480,
+  "registry_items": 484,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2044,6 +2070,9 @@
     ],
     "internal/logql/vector_agg_log_expr_test.go": [
       "semantics/vector-aggregation-over-log-selector-status"
+    ],
+    "internal/logsql/field_names_test.go": [
+      "semantics/translator-writes-exotic-field-names-bare"
     ],
     "internal/logsql/ip_range_vl_test.go": [
       "architecture-syntax-package-layering"
@@ -2797,6 +2826,13 @@
     "internal/proxy/query_stats_loki_test.go": [
       "query-stats-envelope"
     ],
+    "internal/proxy/query_stats_mean_window_test.go": [
+      "query-stats-envelope"
+    ],
+    "internal/proxy/query_stats_shards_test.go": [
+      "query-stats-envelope",
+      "semantics/query-stats-shards-empty-pieces"
+    ],
     "internal/proxy/query_stats_test.go": [
       "drilldown/logs-footer-query-stats",
       "query-stats-envelope"
@@ -3210,11 +3246,17 @@
     "internal/querycorpus/binop_route_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/binop_without_empty_test.go": [
+      "semantics/binary-operand-without-empty-collapses"
+    ],
     "internal/querycorpus/detected_level_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/querycorpus/escaped_spelling_grid_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/exotic_names_oracle_test.go": [
+      "semantics/translator-writes-exotic-field-names-bare"
     ],
     "internal/querycorpus/extract_grid_test.go": [
       "architecture-syntax-package-layering"
@@ -3234,6 +3276,11 @@
     ],
     "internal/querycorpus/metric_stages_grid_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/odd_spellings_loki_test.go": [
+      "semantics/parser-reads-unicode-blank-as-white-space",
+      "semantics/translator-writes-exotic-field-names-bare",
+      "semantics/translator-writes-signed-number-with-blank"
     ],
     "internal/querycorpus/oracle_test.go": [
       "architecture-syntax-package-layering"
@@ -3323,11 +3370,18 @@
     "internal/queryplan/lower/binop_vector_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/lower/binop_without_empty_test.go": [
+      "semantics/binary-operand-without-empty-collapses"
+    ],
     "internal/queryplan/lower/detected_level_ast_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/detected_level_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/exotic_field_names_test.go": [
+      "semantics/translator-writes-exotic-field-names-bare",
+      "semantics/translator-writes-reserved-field-names"
     ],
     "internal/queryplan/lower/extract_test.go": [
       "architecture-syntax-package-layering"
@@ -3340,6 +3394,12 @@
     ],
     "internal/queryplan/lower/keyword_field_names_test.go": [
       "semantics/translator-writes-keyword-field-names-bare"
+    ],
+    "internal/queryplan/lower/label_filter_numeric_eq_oracle_test.go": [
+      "semantics/label-filter-numeric-equality"
+    ],
+    "internal/queryplan/lower/label_filter_numeric_eq_test.go": [
+      "semantics/label-filter-numeric-equality"
     ],
     "internal/queryplan/lower/label_filter_parsed_test.go": [
       "architecture-syntax-package-layering"
@@ -3398,8 +3458,12 @@
     "internal/queryplan/lower/unpack_test.go": [
       "semantics/translator-writes-unpack-as-unpack-json"
     ],
-    "internal/queryplan/lower/unwrap_test.go": [
+    "internal/queryplan/lower/unwrap_stats_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/unwrap_test.go": [
+      "architecture-syntax-package-layering",
+      "semantics/translator-writes-keyword-field-names-bare"
     ],
     "internal/queryplan/lower/vector_agg_nested_test.go": [
       "architecture-syntax-package-layering"
@@ -4294,7 +4358,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 519,
+  "tests_with_markers": 530,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4354,7 +4418,6 @@
     "semantics/ip-filter-keeps-parser-error-lines",
     "semantics/json-empty-value-label-series",
     "semantics/label-filter-before-parser-reads-ingest-json-key",
-    "semantics/label-filter-numeric-equality",
     "semantics/label-filter-numeric-error-label",
     "semantics/label-replace-aggregation-over-transform",
     "semantics/label-replace-around-ranking-and-vector",
@@ -4407,5 +4470,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 297
+  "wired_items": 302
 }

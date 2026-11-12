@@ -31,8 +31,8 @@ func translatorReadsStageMarker(q string) bool {
 	if err != nil {
 		return false
 	}
-	lq, ok := expr.(*logql.LogQuery)
-	if !ok {
+	lq := innerLogQuery(expr)
+	if lq == nil {
 		return false
 	}
 	var stages [][]*logql.LabelFilterExpr
@@ -76,6 +76,23 @@ func translatorReadsStageMarker(q string) bool {
 	return false
 }
 
+// innerLogQuery is the log query a range aggregation reads, under any vector aggregations around it, or expr when it
+// is a log query: the stages of a metric query are written by the same code that writes a log query's.
+func innerLogQuery(expr logql.Expr) *logql.LogQuery {
+	for {
+		switch e := expr.(type) {
+		case *logql.LogQuery:
+			return e
+		case *logql.VectorAggregation:
+			expr = e.Inner
+		case *logql.RangeAggregation:
+			expr = e.Inner
+		default:
+			return nil
+		}
+	}
+}
+
 func collectLeaves(e *logql.LabelFilterExpr, out *[]*logql.LabelFilterExpr) {
 	if e == nil {
 		return
@@ -112,7 +129,10 @@ func TestTranslatorReadsStageMarker(t *testing.T) {
 		`{app="a"} | json | o="\x02\x02" or K_extracted="x"`:           false,
 		`{app="a"} |= "\x02\x02" | json | K_extracted="x"`:             false, // a line filter
 		`{app="a"} | o="\\x02\\x02"` + ext:                             false, // a backslash and the text x02
-		`rate({app="a"} | o="\x02\x02"` + ext + `[5m])`:                false, // not a log query
+		`rate({app="a"} | o="\x02\x02"` + ext + `[5m])`:                true,  // a range aggregation over it
+		`sum by (app) (rate({app="a"} | o="\x02\x02"` + ext + `[5m]))`: true,  // and a vector aggregation over that
+		`rate({app="a"} | o="\x02"` + ext + `[5m])`:                    false, // one byte
+		`vector(1)`:   false, // no log query at all
 		`not a query`: false,
 	} {
 		if got := translatorReadsStageMarker(q); got != want {

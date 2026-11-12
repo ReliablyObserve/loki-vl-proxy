@@ -26,6 +26,15 @@ import (
 // the query again and evaluates each operand as a query of its own, so such a binary operation is held to the
 // proxy's route (proxy.BinaryOperandsPhysical), the text screen does not read it, and RoutedBinary tells it apart.
 //
+// A `without ()` clause removes no label in Loki, so each series of the operand stays its own: the operand lowers to a
+// physical.Fold with a without level and no labels, over the series rows the same operand writes under a clause with
+// a label (vectorAggKeepAll). The string translator reads the clause as none and writes the operand ungrouped, and the
+// handlers serve that text, so the lowering is not what the proxy sends: EmptyWithoutOperand tells such an operation
+// apart, and the corpus shadow records it as a known divergence
+// (semantics/binary-operand-without-empty-collapses) instead of counting it native. The text of a fold with no labels
+// is the operand's request alone (physical.Encode: the marker needs a label), which is the series rows a proxy that
+// folds nothing returns, Loki's answer for the clause.
+//
 // A vector(n) operand next to a range or vector aggregation is lowered to the physical.VectorOp the proxy's binary
 // route answers it from (binop_vector.go), and such a binary operation is held to that route too (RoutedBinary): the
 // translator reads the operand as a phrase to search for or drops it.
@@ -35,8 +44,10 @@ import (
 //   - two numbers, or numbers and vector(n) only (BinOp constant operands: the proxy folds an instant query of
 //     constants itself, before any binary route, and the route's answer for a range query is a constant, which costs
 //     less than the plan), an operand that is a binary
-//     operation, label_replace, a ranking or a log query, a without clause with no label (BinOp operand without
-//     empty), an operand the range or vector aggregation lowering leaves to the translator;
+//     operation, label_replace, a ranking or a log query, an operand the range or vector aggregation lowering leaves
+//     to the translator, and a `without ()` operand over an unwrapped label (BinOp operand without empty unwrap) or
+//     in a nest of vector aggregations (BinOp operand without empty nest: a fold carries one level, and the levels
+//     above an empty clause are not in it, `count without ()` turns every series into 1);
 //   - a spelling the translator reads unlike the plan (screenBinOp, before the lowering).
 func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
 	if err := binOpShape(n); err != nil {
@@ -60,6 +71,8 @@ var (
 	errBinBool            = &NotLoweredError{Construct: "BinOp bool"}
 	errBinScalarOperands  = &NotLoweredError{Construct: "BinOp scalar operands"}
 	errBinOperandWithout  = &NotLoweredError{Construct: "BinOp operand without empty"}
+	errBinWithoutNest     = &NotLoweredError{Construct: "BinOp operand without empty nest"}
+	errBinWithoutUnwrap   = &NotLoweredError{Construct: "BinOp operand without empty unwrap"}
 	errBinOperandRange    = &NotLoweredError{Construct: "BinOp operand RangeAgg"}
 	errBinOperandVector   = &NotLoweredError{Construct: "BinOp operand VectorAgg"}
 	errBinQuotedText      = &NotLoweredError{Construct: "BinOp quoted text"}
@@ -92,15 +105,40 @@ func binOpShape(n *queryplan.BinOp) error {
 		switch v := x.(type) {
 		case *queryplan.Scalar, *queryplan.RangeAgg, *queryplan.VectorLit:
 		case *queryplan.VectorAgg:
-			// The translator needs a label to read a without clause: `without ()` stays in its text.
-			for lv := v; lv != nil; lv, _ = lv.In.(*queryplan.VectorAgg) {
-				if lv.By != nil && lv.By.Without && len(lv.By.Labels) == 0 {
-					return errBinOperandWithout
-				}
+			if err := emptyWithoutShape(v); err != nil {
+				return err
 			}
 		default:
 			return &NotLoweredError{Construct: "BinOp operand " + Construct(x)}
 		}
+	}
+	return nil
+}
+
+// emptyWithoutShape answers the NotLoweredError of an operand with a `without ()` clause the lowering does not write:
+// one in a nest of vector aggregations (the fold carries one level), or over a range aggregation of an unwrapped
+// label (that lowering reads the clause the string translator's way). Both are named here, as the operand's own
+// error would be renamed. An operand without an empty clause, or a single level over a range aggregation, is nil.
+func emptyWithoutShape(n *queryplan.VectorAgg) error {
+	empty, levels := false, 0
+	var in queryplan.Node = n
+	for {
+		lv, ok := in.(*queryplan.VectorAgg)
+		if !ok {
+			break
+		}
+		empty = empty || lv.By != nil && lv.By.Without && len(lv.By.Labels) == 0
+		levels++
+		in = lv.In
+	}
+	switch {
+	case !empty:
+		return nil
+	case levels > 1:
+		return errBinWithoutNest
+	}
+	if ra, ok := in.(*queryplan.RangeAgg); ok && ra.Op != logql.RangeAbsentOverTime && unwrapStage(ra.In) != nil {
+		return errBinWithoutUnwrap
 	}
 	return nil
 }
@@ -116,6 +154,25 @@ func withoutOperand(n *queryplan.BinOp) bool {
 	for _, x := range [2]queryplan.Node{n.L, n.R} {
 		for lv, _ := x.(*queryplan.VectorAgg); lv != nil; lv, _ = lv.In.(*queryplan.VectorAgg) {
 			if lv.By != nil && lv.By.Without {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// EmptyWithoutOperand reports whether root is a binary operation with an operand that has a `without ()` clause at
+// one of its vector aggregations. Loki keeps every series of such an operand; the string translator reads the clause as
+// none and the handlers serve the operand ungrouped (semantics/binary-operand-without-empty-collapses), so the
+// lowering of such an operation is held to Loki's reading, not to the route.
+func EmptyWithoutOperand(root queryplan.Node) bool {
+	n, ok := root.(*queryplan.BinOp)
+	if !ok {
+		return false
+	}
+	for _, x := range [2]queryplan.Node{n.L, n.R} {
+		for lv, _ := x.(*queryplan.VectorAgg); lv != nil; lv, _ = lv.In.(*queryplan.VectorAgg) {
+			if lv.By != nil && lv.By.Without && len(lv.By.Labels) == 0 {
 				return true
 			}
 		}
@@ -147,7 +204,7 @@ func binOperand(x queryplan.Node, prof Profile) (physical.Op, error) {
 			return nil, operandError(err, errBinOperandRange)
 		}
 	case *queryplan.VectorAgg:
-		if op, err = vectorAgg(v, prof); err != nil {
+		if op, err = vectorAggKeepAll(v, prof); err != nil {
 			return nil, operandError(err, errBinOperandVector)
 		}
 	}

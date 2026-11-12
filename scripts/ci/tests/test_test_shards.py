@@ -133,6 +133,58 @@ class PartitionTest(unittest.TestCase):
         text = test_shards.render_weights(seconds)
         self.assertEqual(test_shards.parse_weights(text), {"TestSlow": 12.0})
 
+    def test_the_heavy_tests_of_two_packages_are_placed_together(self):
+        # Placed apart, each package puts its heaviest test on shard 1 and the shard holds both; placed together the
+        # slowest of the second package goes to the shard with the least work.
+        proxy = {"TestP1": 500.0, "TestP2": 100.0, "TestP3": 90.0}
+        qc = {"TestQ1": 480.0, "TestQ2": 100.0, "TestQ3": 90.0}
+        names_p, names_q = list(proxy), list(qc)
+        apart = [test_shards.partition(n, 3, w) for n, w in ((names_p, proxy), (names_q, qc))]
+        self.assertEqual(apart[0][0], ["TestP1"])
+        self.assertEqual(apart[1][0], ["TestQ1"])
+        together = {"internal/proxy": proxy, "internal/querycorpus": qc}
+        p = test_shards.partition(names_p, 3, proxy, "internal/proxy", {"internal/querycorpus": qc})
+        q = test_shards.partition(names_q, 3, qc, "internal/querycorpus", {"internal/proxy": proxy})
+        loads = [sum(proxy.get(n, 0) for n in p[i]) + sum(qc.get(n, 0) for n in q[i]) for i in range(3)]
+        self.assertEqual(max(loads), 500.0, loads)
+        self.assertEqual(test_shards.check(names_p, p), [])
+        self.assertEqual(test_shards.check(names_q, q), [])
+        # the placement reads the weights only: the same for any list of tests
+        self.assertEqual(test_shards.place_heavy(together, 3)[("internal/querycorpus", "TestQ1")],
+                         test_shards.assign(names_q + ["TestOther"], 3, qc, "internal/querycorpus", {"internal/proxy": proxy})["TestQ1"])
+
+    def test_the_checked_in_weights_balance_both_packages_over_twelve_shards(self):
+        text = (CI / "test-shard-weights.tsv").read_text()
+        proxy = test_shards.parse_weights(text)
+        qc = test_shards.parse_weights(text, "internal/querycorpus")
+        self.assertGreater(len(proxy), 50)
+        loads = [0.0] * 12
+        for package, weights in (("internal/proxy", proxy), ("internal/querycorpus", qc)):
+            tests = list(weights) + names(300, "Test" + package[-4:])
+            other = {p: w for p, w in (("internal/proxy", proxy), ("internal/querycorpus", qc)) if p != package}
+            for i, part in enumerate(test_shards.partition(tests, 12, weights, package, other)):
+                loads[i] += sum(weights.get(n, 0) for n in part)
+        # no shard is more than the slowest single test above an even split
+        self.assertLess(max(loads) - sum(loads) / 12, max(max(proxy.values()), max(qc.values())) / 2, loads)
+
+    def test_a_shard_can_hold_none_of_a_small_package(self):
+        run = subprocess.run([sys.executable, str(CI / "test_shards.py"), "regex", "--shards", "5", "--shard", "5"],
+                             input="TestOnly\n", capture_output=True, text=True)
+        self.assertEqual((run.returncode, run.stdout.strip()), (0, ""), run.stderr)
+        run = subprocess.run([sys.executable, str(CI / "test_shards.py"), "regex", "--shards", "5", "--shard", "1"],
+                             input="TestOnly\n", capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual([r for r in (self.shard_regex("TestOnly", k) for k in range(1, 6)) if r], ["^(TestOnly)$"])
+
+    @staticmethod
+    def shard_regex(test, k):
+        return subprocess.run([sys.executable, str(CI / "test_shards.py"), "regex", "--shards", "5", "--shard", str(k)],
+                              input=test + "\n", capture_output=True, text=True).stdout.strip()
+
+    def test_weights_from_several_runs_are_their_mean(self):
+        events = [{"Action": "pass", "Package": PKG, "Test": "TestSlow", "Elapsed": e} for e in (10.0, 30.0)]
+        self.assertEqual(test_shards.weights_from_events([json.dumps(e) for e in events], "/internal/proxy"), {"TestSlow": 20.0})
+
 
 class CoverageMergeTest(unittest.TestCase):
     def test_blocks_covered_by_several_shards_are_summed_and_the_rest_copied(self):
@@ -281,11 +333,13 @@ class MergeShardsTest(unittest.TestCase):
     def test_the_cli_exit_status(self):
         self.build(None)
         run = subprocess.run([sys.executable, str(CI / "merge_unit_shards.py"), "--shards-dir", str(self.shards),
-                              "--out-dir", str(self.out), "--require-complete"], capture_output=True, text=True)
+                              "--out-dir", str(self.out), "--require-complete", "--shards", "rest 1 2 3 4"],
+                             capture_output=True, text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         (self.shards / "unit-shard-1" / "assigned.txt").write_text("internal/proxy:TestA\n")
         run = subprocess.run([sys.executable, str(CI / "merge_unit_shards.py"), "--shards-dir", str(self.shards),
-                              "--out-dir", str(self.out), "--require-complete"], capture_output=True, text=True)
+                              "--out-dir", str(self.out), "--require-complete", "--shards", "rest 1 2 3 4"],
+                             capture_output=True, text=True)
         self.assertEqual(run.returncode, 1)
         self.assertIn("internal/proxy: TestB is in no shard", run.stderr)
         self.assertIn("internal/querycorpus: TestQ1 is in no shard", run.stderr)
@@ -346,9 +400,11 @@ class RunnerShardTest(unittest.TestCase):
         return {arg for call in calls for arg in call.split() if arg.startswith("stub/mod/")}
 
     def expected(self, package, tests_file):
-        weights = test_shards.parse_weights((CI / "test-shard-weights.tsv").read_text(), package)
+        text = (CI / "test-shard-weights.tsv").read_text()
+        weights = test_shards.parse_weights(text, package)
+        joint = {p: test_shards.parse_weights(text, p) for p in ("internal/proxy", "internal/querycorpus") if p != package}
         listed = test_shards.parse_list(tests_file.read_text())
-        return listed, test_shards.partition(listed, 4, weights)
+        return listed, test_shards.partition(listed, 4, weights, package, joint)
 
     def test_a_numbered_shard_runs_only_its_tests_of_each_split_package(self):
         seen = {"internal/proxy": [], "internal/querycorpus": []}
@@ -506,9 +562,10 @@ class WorkflowWiringTest(unittest.TestCase):
     def test_nothing_else_in_the_workflow_started_running_the_unit_suite(self):
         self.assertEqual(WORKFLOW.count("scripts/ci/go_test_unit.sh"), 1)
 
-    def test_every_downstream_job_still_needs_the_test_check(self):
-        for name in ("conformance", "tuple-contract", "fuzz-smoke-shard", "race-stress-shard"):
-            self.assertRegex(self.job(name), r"needs: \[[^\]]*\btest\b[^\]]*\]", name)
+    def test_the_job_that_reads_the_unit_results_still_needs_the_test_check(self):
+        # The fuzz, race and tuple jobs read nothing `test` produces and start next to the shards
+        # (test_scope_wiring.INDEPENDENT_OF_TEST); only conformance reads its results.
+        self.assertRegex(self.job("conformance"), r"needs: \[[^\]]*\btest\b[^\]]*\]")
 
 
 if __name__ == "__main__":

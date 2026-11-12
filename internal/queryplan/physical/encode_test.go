@@ -70,3 +70,35 @@ func TestCanonOfAVectorOperand(t *testing.T) {
 		t.Error("a vector(n) operand is not a level the proxy evaluates")
 	}
 }
+
+// A `without` level with no labels is `without ()`: it removes no label, so the fold combines no series. It has no
+// legacy marker (the marker needs a label), so Encode writes the operand's request alone, and Split still reports the
+// level, with no labels. An empty label list and no list are the same clause to Equal.
+func TestFoldOfNoLabelsKeepsEverySeries(t *testing.T) {
+	q := VLQuery{Text: `app:="x" | stats by (_stream) count()`}
+	for _, labels := range [][]string{nil, {}} {
+		f := Fold{Levels: []FoldLevel{{Op: "sum", Labels: labels, Without: true}}, In: q}
+		if got := Encode(f); got != q.Text {
+			t.Errorf("Encode = %q, want the operand's request %q", got, q.Text)
+		}
+		core, post := Split(f)
+		if core != Op(q) || !post.Folds() || post.Without.Op != "sum" || len(post.Without.Labels) != 0 {
+			t.Errorf("Split = %#v, %#v", core, post)
+		}
+	}
+	empty := Fold{Levels: []FoldLevel{{Op: "sum", Labels: []string{}, Without: true}}, In: q}
+	none := Fold{Levels: []FoldLevel{{Op: "sum", Without: true}}, In: q}
+	if !Equal(empty, none) {
+		t.Error("an empty label list differs from no list")
+	}
+	for name, other := range map[string]Op{
+		"the operand alone": q,
+		"another operation": Fold{Levels: []FoldLevel{{Op: "max", Without: true}}, In: q},
+		"a label":           Fold{Levels: []FoldLevel{{Op: "sum", Labels: []string{"pod"}, Without: true}}, In: q},
+		"a by level":        Fold{Levels: []FoldLevel{{Op: "sum"}}, In: q},
+	} {
+		if Equal(none, other) {
+			t.Errorf("a fold of no label equals %s", name)
+		}
+	}
+}

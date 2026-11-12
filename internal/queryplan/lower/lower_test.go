@@ -18,14 +18,14 @@ import (
 func TestPlanDelegatesEveryConstruct(t *testing.T) {
 	for construct, q := range map[string]string{
 		"LogSelect pipeline": `{app="a"} | json | unwrap x`,
-		"LogSelect label filter numeric equality after parser": `{app="a"} | json | status=5`,
+		"LogSelect label filter numeric equality literal form": `{app="a"} | json | status=0x10`,
 		"LogSelect unpack line":                                `{app="a"} | unpack`,
 		"RangeAgg grouping":                                    `avg_over_time({app="a"} | unwrap n [5m]) without (x)`,
 		"VectorAgg operand":                                    `sum by (app) (rate({app="a"}[5m]) > 1)`,
 		"Rank operand BinOp":                                   `topk(3, sum by (app) (rate({app="a"}[5m])) > 1)`,
 		"Rank grouping":                                        `sort by (app) (rate({app="a"}[5m]))`,
 		"BinOp set operator":                                   `sum(rate({app="a"}[5m])) and sum(rate({app="b"}[5m]))`,
-		"BinOp operand without empty":                          `sum without () (rate({app="a"}[5m])) / 2`,
+		"BinOp operand without empty nest":                     `sum without () (rate({app="a"}[5m])) / sum by (app) (sum without () (rate({app="a"}[5m])))`,
 		"LabelReplace operand Rank":                            `label_replace(topk(3, rate({app="a"}[5m]) > 1), "b", "$1", "app", "(.*)")`,
 		"VectorLit":                                            `vector(1)`,
 		"Scalar":                                               `1`,

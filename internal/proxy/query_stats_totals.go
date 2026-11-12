@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	fj "github.com/valyala/fastjson"
@@ -188,11 +189,16 @@ func (k *totalsKeys) scope() statsTotalsScope {
 	return k.scopeV
 }
 
-func (k *totalsKeys) exprKey(kind string) string {
+// exprText is the log expression's text, printed once.
+func (k *totalsKeys) exprText() string {
 	if k.expr == "" {
 		k.expr = k.shape.expr.String()
 	}
-	return k.scope().key(kind, k.expr)
+	return k.expr
+}
+
+func (k *totalsKeys) exprKey(kind string) string {
+	return k.scope().key(kind, k.exprText())
 }
 
 func (k *totalsKeys) selectorKey(kind string) string {
@@ -409,7 +415,7 @@ func (p *Proxy) deriveQueryStatsTotals(r *http.Request, endpoint string, body []
 	}
 	keys := &totalsKeys{p: p, r: r, shape: shape}
 	if shape.op == "" {
-		p.meanLines.store(p.meanLineKey(r, shape.expr.Selector), sw.entries.lineBytes, sw.entries.n)
+		p.storeMeanLine(r, keys, sw)
 		run := sw.lokiLogRun()
 		t, ok = p.logQueryTotals(r, keys, shape, run.from, run.to)
 		if !t.hasLines && p.exactLogLinesWanted(r, sw, shape) {
@@ -539,20 +545,35 @@ func (p *Proxy) logQueryTotals(r *http.Request, keys *totalsKeys, shape totalsSh
 	return t, t.hasLines || t.hasPostFilter
 }
 
-// The mean line size a log answer measured, kept for the metric queries of
-// the same selector (and of the tenant, when the selector has none): Loki
-// counts the bytes of the lines a metric query reads, which VictoriaLogs'
-// aggregated answer does not tell. Each replica keeps the means of the log
-// answers it computed (a statistic that changes slowly, so no peer copy),
-// in a bounded table keyed by a hash of the tenant scope and the selector:
-// reading and writing it allocates nothing.
+// What a log answer measured of the size of lines, kept for the metric
+// queries that follow it: Loki counts the bytes of the lines a metric query
+// reads, which VictoriaLogs' aggregated answer does not tell. Each replica
+// keeps what the log answers it computed showed (a statistic that changes
+// slowly, so no peer copy), in a bounded table of hashes of the tenant scope
+// and:
+//
+//   - the log expression, with the window its lines cover: the lines and
+//     bytes of that expression over that window, exact (a log answer under its
+//     limit holds every line of its window; one that filled it, every line from
+//     its oldest entry on, backward). A metric query of the same expression
+//     takes the part of its own window the record covers from it exactly, and
+//     prices the rest of its lines at the record's mean line size.
+//   - the selector, and the tenant when the selector has none: the mean line
+//     size of the last log answer, the estimate for a metric query no record
+//     covers (its window or expression was not logged). That answer may be of
+//     another window, or of filtered lines, so this one can be off wherever the
+//     lines of a selector differ in size from one window or filter to another.
+//
+// Reading and writing the table allocates nothing.
 type meanLineTable struct {
-	mu sync.Mutex
-	m  map[[sha256.Size]byte]meanLine
+	mu      sync.Mutex
+	m       map[[sha256.Size]byte]meanLine
+	windows atomic.Bool // a window record was ever stored: a metric query then looks for its own
 }
 
 type meanLine struct {
 	bytes, lines int64
+	from, to     int64 // the window the lines cover (ns); zero for a selector or tenant mean
 	expires      int64 // unix ns
 }
 
@@ -561,33 +582,50 @@ const (
 	meanLineTableSize = 4096
 )
 
-func (t *meanLineTable) store(keys [2][sha256.Size]byte, lineBytes, lines int64) {
+// meanLineKeys are the table keys of a log answer: the selector's, the
+// tenant's and, for a record with a window, the expression's.
+type meanLineKeys struct {
+	selector, tenant, expr [sha256.Size]byte
+	hasExpr                bool
+}
+
+// store keeps a log answer's lines and their bytes: the mean under the
+// selector and tenant keys, the window [from, to] they cover under the
+// expression's (a zero window keeps none).
+func (t *meanLineTable) store(keys meanLineKeys, lineBytes, lines, from, to int64) {
 	if lines <= 0 || lineBytes <= 0 {
 		return
 	}
-	v := meanLine{bytes: lineBytes, lines: lines, expires: time.Now().Add(meanLineTTL).UnixNano()}
+	exp := time.Now().Add(meanLineTTL).UnixNano()
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.m == nil {
 		t.m = make(map[[sha256.Size]byte]meanLine, 64)
 	}
-	for _, k := range keys {
-		if _, ok := t.m[k]; !ok && len(t.m) >= meanLineTableSize {
-			for old := range t.m { // a full table drops one entry
-				delete(t.m, old)
-				break
-			}
-		}
-		t.m[k] = v
+	t.put(keys.selector, meanLine{bytes: lineBytes, lines: lines, expires: exp})
+	t.put(keys.tenant, meanLine{bytes: lineBytes, lines: lines, expires: exp})
+	if keys.hasExpr && to > from {
+		t.put(keys.expr, meanLine{bytes: lineBytes, lines: lines, from: from, to: to, expires: exp})
+		t.windows.Store(true)
 	}
 }
 
+func (t *meanLineTable) put(k [sha256.Size]byte, v meanLine) {
+	if _, ok := t.m[k]; !ok && len(t.m) >= meanLineTableSize {
+		for old := range t.m { // a full table drops one entry
+			delete(t.m, old)
+			break
+		}
+	}
+	t.m[k] = v
+}
+
 // mean is the mean line size kept for the selector, else its tenant.
-func (t *meanLineTable) mean(keys [2][sha256.Size]byte) (float64, bool) {
+func (t *meanLineTable) mean(keys meanLineKeys) (float64, bool) {
 	now := time.Now().UnixNano()
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	for _, k := range keys {
+	for _, k := range [...][sha256.Size]byte{keys.selector, keys.tenant} {
 		if v, ok := t.m[k]; ok && v.expires > now {
 			return float64(v.bytes) / float64(v.lines), true
 		}
@@ -595,10 +633,31 @@ func (t *meanLineTable) mean(keys [2][sha256.Size]byte) (float64, bool) {
 	return 0, false
 }
 
-// meanLineKey is the table keys of a selector and of its tenant: hashes of
-// the tenant org, routing namespace and auth fingerprint, and the selector's
+// within is the record of the expression over the window (from, to]: the
+// lines and bytes of the part the record covers (all of them when it lies
+// inside the window, else the share of its time inside) and its mean line
+// size. False when it has none or does not overlap the window.
+func (t *meanLineTable) within(k [sha256.Size]byte, from, to int64) (bytes, lines, mean float64, ok bool) {
+	now := time.Now().UnixNano()
+	t.mu.Lock()
+	v, found := t.m[k]
+	t.mu.Unlock()
+	if !found || v.expires <= now || v.to <= v.from {
+		return 0, 0, 0, false
+	}
+	overlap := min64(to, v.to) - max(from, v.from)
+	if overlap <= 0 {
+		return 0, 0, 0, false
+	}
+	share := float64(overlap) / float64(v.to-v.from)
+	return float64(v.bytes) * share, float64(v.lines) * share, float64(v.bytes) / float64(v.lines), true
+}
+
+// meanLineKey is the table keys of a log expression (its text, when it is
+// to be kept with a window), its selector and its tenant: hashes of the
+// tenant org, routing namespace and auth fingerprint, and the selector's
 // matchers, built in a pooled buffer.
-func (p *Proxy) meanLineKey(r *http.Request, sel *logqlpkg.StreamSelector) (keys [2][sha256.Size]byte) {
+func (p *Proxy) meanLineKey(r *http.Request, sel *logqlpkg.StreamSelector, expr string) (keys meanLineKeys) {
 	routing := p.routingForContext(r.Context())
 	namespace := routing.namespace
 	if namespace == "" {
@@ -613,25 +672,75 @@ func (p *Proxy) meanLineKey(r *http.Request, sel *logqlpkg.StreamSelector) (keys
 	for _, part := range [...]string{statsMeanLineKind, org, namespace, p.fingerprintFromCtx(r.Context(), r)} {
 		buf = append(append(buf, part...), 0)
 	}
-	keys[1] = sha256.Sum256(buf)
+	keys.tenant = sha256.Sum256(buf)
+	if expr != "" {
+		keys.hasExpr = true
+		keys.expr = sha256.Sum256(append(append(buf, statsMeanLineExprKind...), expr...))
+	}
 	if sel != nil {
 		for _, m := range sel.Matchers {
 			buf = append(append(append(buf, m.Name...), 1, byte(m.Op)), m.Value...)
 			buf = append(buf, 0)
 		}
 	}
-	keys[0] = sha256.Sum256(buf)
+	keys.selector = sha256.Sum256(buf)
 	*bufp = buf[:0]
 	statsTotalsKeyBufs.Put(bufp)
 	return keys
 }
 
-const statsMeanLineKind = "meanline"
+const (
+	statsMeanLineKind     = "meanline"
+	statsMeanLineExprKind = "expr\x00"
+)
+
+// storeMeanLine keeps what a log answer showed of the size of the lines of
+// its expression (see meanLineTable) after the answer was computed.
+func (p *Proxy) storeMeanLine(r *http.Request, keys *totalsKeys, sw *queryStatsWriter) {
+	from, to, _ := sw.entriesWindow()
+	expr := ""
+	if to > from {
+		expr = keys.exprText()
+	}
+	p.meanLines.store(p.meanLineKey(r, keys.shape.expr.Selector, expr), sw.entries.lineBytes, sw.entries.n, from, to)
+}
+
+// entriesWindow is the window [from, to] a log answer holds every line of
+// its expression for: the request's window when the answer is under its
+// limit, else the part from its oldest entry (backward) or to its newest
+// (forward) up to the request's end, the lines a filled limit cut off lying
+// outside it. False when the request or the entries' times are unread.
+func (w *queryStatsWriter) entriesWindow() (from, to int64, ok bool) {
+	q := w.request()
+	if !q.ok || q.end <= q.start {
+		return 0, 0, false
+	}
+	e := &w.entries
+	if q.limit <= 0 || e.n < q.limit {
+		return q.start, q.end, true
+	}
+	if !e.hasTS {
+		return 0, 0, false
+	}
+	from, to = q.start, q.end
+	if q.backward {
+		from = max(q.start, e.tsMin)
+	} else {
+		to = min64(q.end, e.tsMax+1)
+	}
+	return from, to, to > from
+}
 
 // metricQueryBytes is a metric query's bytes processed in Loki's
-// accounting: exact from VictoriaLogs (-query-stats-exact-metric-bytes, the
-// selector's line bytes over the query's window), else its lines times the
-// selector's mean line size.
+// accounting, from the first source that has them:
+//
+//  1. VictoriaLogs, exact (-query-stats-exact-metric-bytes, the selector's
+//     line bytes over the query's window, one more request);
+//  2. the log answer of the same expression over the window (or a part of
+//     it): its bytes exactly, the other lines of the metric query at its mean
+//     line size;
+//  3. its lines times the mean line size of the selector's (else the
+//     tenant's) last log answer.
 func (p *Proxy) metricQueryBytes(r *http.Request, keys *totalsKeys, sw *queryStatsWriter, lines int64) (int64, bool) {
 	if sw.exactBytes != nil {
 		select {
@@ -643,7 +752,26 @@ func (p *Proxy) metricQueryBytes(r *http.Request, keys *totalsKeys, sw *querySta
 			return 0, false
 		}
 	}
-	mean, ok := p.meanLines.mean(p.meanLineKey(r, keys.shape.expr.Selector))
+	// Only once a log answer was kept with its window is it looked for: a
+	// replica that has not computed one reads nothing more than the means.
+	var from, to int64
+	expr := ""
+	if p.meanLines.windows.Load() {
+		if q := sw.request(); q.ok {
+			// Loki's window of a metric query: (start - range, end].
+			from, to, expr = q.start-int64(keys.shape.rangeDur), q.end, keys.exprText()
+		}
+	}
+	mk := p.meanLineKey(r, keys.shape.expr.Selector, expr)
+	if expr != "" {
+		if b, l, mean, ok := p.meanLines.within(mk.expr, from, to); ok {
+			if rest := float64(lines) - l; rest > 0 {
+				return int64(math.Round(b + rest*mean)), true
+			}
+			return int64(math.Round(mean * float64(lines))), true
+		}
+	}
+	mean, ok := p.meanLines.mean(mk)
 	if !ok {
 		return 0, false
 	}

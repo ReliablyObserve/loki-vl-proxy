@@ -58,6 +58,22 @@ why: |
   _time`, `keep _msg` and label_format of these names read VictoriaLogs' own
   fields (open; not part of this change).
 
+  A stage that unwraps one of these names, reads one as the key of a json
+  expression (`json x="_time" | x="1"`: the string translator filters the key
+  `_time`, not x), writes one (`json _time="a"`) or renames from or to one
+  (`label_format x=_stream`: the translator writes `format if (_stream:*)` and
+  `delete _stream`, VictoriaLogs reads `_stream:*` as its stream filter and
+  rejects it) is left to the string translator under the construct `LogSelect
+  stage names a reserved field` (`RangeAgg` and `VectorAgg` for an unwrap): the
+  label may be a key the parser wrote over VictoriaLogs' own field, or the tag
+  of the stream, and no filter or copy of the field means the label Loki reads.
+  The query plan used to lower them with the translator's text, which
+  VictoriaLogs rejects (the VictoriaLogs oracle found 19 such rows per version
+  in the corpus: unwrap, json expression and label_format of `_time`, `_stream`
+  and `_stream_id`); lowering them from the tag, as the label filters are, is
+  open. A name in another case (`_TIME`) is a plain field there and is lowered
+  (the outbound guard writes its filters).
+
   Not reachable from the proxy: a structured metadata `_time`, `_stream` or
   `_stream_id` that Loki filters is gone in VictoriaLogs, and a line whose
   stream label or metadata `_msg` replaced it is that value to a line filter.

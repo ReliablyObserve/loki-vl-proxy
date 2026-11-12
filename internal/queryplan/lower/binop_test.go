@@ -47,6 +47,15 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 	if physical.Evaluated(op) {
 		return "", legacy, false, "proxy-evaluated", true
 	}
+	if EmptyWithoutOperand(p.Root) {
+		// The translator reads `without ()` as no clause and writes the operand ungrouped; the lowering keeps every
+		// series, as Loki does (semantics/binary-operand-without-empty-collapses): held to the lowering of the same
+		// query with a label in each clause, the label taken out of the folds, not to the translator or the route.
+		if same, compared := emptyWithoutLikeLabelled(t, q, p, op, prof); compared {
+			return physical.Encode(op), "", same, "", true
+		}
+		return "", "", false, "", false
+	}
 	if RoutedBinary(p.Root) {
 		// A binary operation with an operand that has a without clause, or a vector(n), is held to the proxy's binary
 		// route: each operand is what the translator writes for its printed LogQL alone (the corpus shadow holds it to
@@ -170,32 +179,33 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 		rate + ` unless ` + rate:                 "BinOp set operator",
 		rate + ` > bool 1`:                       "BinOp bool",
 		`1 + 2`:                                  "BinOp scalar operands",
-		`sum without () (` + rate + `) / 2`:      "BinOp operand without empty",
-		`2 * max(sum without () (` + rate + `))`: "BinOp operand without empty",
-		`label_replace(sum without (pod) (` + rate + `) / 2, "a", "b", "c", "d")`: "LabelReplace operand BinOp",
-		rate + ` / (` + rate + ` + 1)`:                                            "BinOp operand BinOp",
-		`topk(2, ` + rate + `) / 2`:                                               "BinOp operand Rank",
-		`{app="a"} > 1`:                                                           "BinOp operand LogSelect",
-		`label_replace(` + rate + `, "a", "b", "c", "d") / 2`:                     "BinOp operand LabelReplace",
-		`stddev(` + rate + `) / 2`:                                                "BinOp operand VectorAgg",
-		`rate({app="a"} |~ "(?i)x" [5m]) / 2`:                                     "BinOp quoted text",
-		`rate({app="a"} |= "a  b" [5m]) / 2`:                                      "BinOp quoted text",
-		`rate({app="a"} |= "@@@" [5m]) / 2`:                                       "BinOp quoted text",
-		`sum by ( hos ) (` + rate + `)  / 2`:                                      "BinOp spelling",
-		rate + `  / 2`:                                                            "BinOp spelling",
-		rate + ` / on(app,env) ` + rate:                                           "BinOp vector matching spelling",
-		rate + ` / on(app) group_left ` + rate:                                    "BinOp vector matching spelling",
-		rate + `/2`:                                                               "BinOp operator spelling",
-		rate + "\n/ 2":                                                            "BinOp operator spelling",
-		rate + ` / 1e3`:                                                           "BinOp number spelling",
-		rate + ` / 2.50`:                                                          "BinOp number spelling",
-		`(` + rate + `) / 2`:                                                      "BinOp operand spelling",
-		`sum( ` + rate + `) / 2`:                                                  "BinOp operand spelling",
-		`label_replace(topk(2, ` + rate + ` > 1), "a", "b", "c", "d")`:            "LabelReplace operand Rank",
-		`label_replace(vector(1), "a", "b", "c", "d")`:                            "LabelReplace operand VectorLit",
-		`label_replace(` + rate + ` and ` + rate + `, "a", "b", "c", "d")`:        "LabelReplace operand BinOp",
-		`label_replace(sum by (service_name) (` + rate + `), "a", "b", "c", "d")`:                 "LabelReplace service_name grouping",
-		`label_replace(` + rate + `, "a", "\x00", "c", "d")`:                                      "LabelReplace argument with NUL",
+		`2 * max(sum without () (` + rate + `))`: "BinOp operand without empty nest",
+		`sum without () (sum_over_time({app="a"} | unwrap n [5m])) / 2`:                "BinOp operand without empty unwrap",
+		`sum without () (` + rate + `) / sum by (app) (sum without () (` + rate + `))`: "BinOp operand without empty nest",
+		`label_replace(sum without (pod) (` + rate + `) / 2, "a", "b", "c", "d")`:      "LabelReplace operand BinOp",
+		rate + ` / (` + rate + ` + 1)`:                                                 "BinOp operand BinOp",
+		`topk(2, ` + rate + `) / 2`:                                                    "BinOp operand Rank",
+		`{app="a"} > 1`:                                                                "BinOp operand LogSelect",
+		`label_replace(` + rate + `, "a", "b", "c", "d") / 2`:                          "BinOp operand LabelReplace",
+		`stddev(` + rate + `) / 2`:                                                     "BinOp operand VectorAgg",
+		`rate({app="a"} |~ "(?i)x" [5m]) / 2`:                                          "BinOp quoted text",
+		`rate({app="a"} |= "a  b" [5m]) / 2`:                                           "BinOp quoted text",
+		`rate({app="a"} |= "@@@" [5m]) / 2`:                                            "BinOp quoted text",
+		`sum by ( hos ) (` + rate + `)  / 2`:                                           "BinOp spelling",
+		rate + `  / 2`:                                                                 "BinOp spelling",
+		rate + ` / on(app,env) ` + rate:                                                "BinOp vector matching spelling",
+		rate + ` / on(app) group_left ` + rate:                                         "BinOp vector matching spelling",
+		rate + `/2`:                                                                    "BinOp operator spelling",
+		rate + "\n/ 2":                                                                 "BinOp operator spelling",
+		rate + ` / 1e3`:                                                                "BinOp number spelling",
+		rate + ` / 2.50`:                                                               "BinOp number spelling",
+		`(` + rate + `) / 2`:                                                           "BinOp operand spelling",
+		`sum( ` + rate + `) / 2`:                                                       "BinOp operand spelling",
+		`label_replace(topk(2, ` + rate + ` > 1), "a", "b", "c", "d")`:                 "LabelReplace operand Rank",
+		`label_replace(vector(1), "a", "b", "c", "d")`:                                 "LabelReplace operand VectorLit",
+		`label_replace(` + rate + ` and ` + rate + `, "a", "b", "c", "d")`:             "LabelReplace operand BinOp",
+		`label_replace(sum by (service_name) (` + rate + `), "a", "b", "c", "d")`:      "LabelReplace service_name grouping",
+		`label_replace(` + rate + `, "a", "\x00", "c", "d")`:                           "LabelReplace argument with NUL",
 		strings.Repeat(`label_replace(`, 17) + rate + strings.Repeat(`, "a", "b", "c", "d")`, 17): "LabelReplace nesting",
 		`label_replace (` + rate + `, "a", "b", "c", "d")`:                                        "LabelReplace spelling",
 		`label_replace((` + rate + `), "a", "b", "c", "d")`:                                       "LabelReplace operand spelling",
@@ -273,6 +283,16 @@ func FuzzBinOpLowering(f *testing.F) {
 	f.Add("a", "x", "app", "$1", uint8(15), uint8(72), uint8(9), uint8(0))
 	f.Add("a", "x", "app", "$1", uint8(12), uint8(72), uint8(24), uint8(4))
 	f.Add("a", "x", "app", "$1", uint8(1), uint8(80), uint8(69), uint8(0x80))
+	// a clause with no label (a fold that keeps every series): the head and tail spellings, every aggregation, beside a
+	// number, a vector(n), a clause with labels and a nest.
+	f.Add("a", "x", "app", "$1", uint8(0), uint8(112), uint8(14), uint8(0))
+	f.Add("a", "x", "app", "$1", uint8(1), uint8(232), uint8(104), uint8(0x24))
+	f.Add("a", "x", "app", "$1", uint8(2), uint8(112), uint8(2), uint8(0x30))
+	f.Add("a", "x", "app", "$1", uint8(3), uint8(0), uint8(89), uint8(0x80))
+	f.Add("a", "x", "app", "$1", uint8(0), uint8(112), uint8(6), uint8(0))
+	f.Add("a", "x", "app", "$1", uint8(0), uint8(112), uint8(179), uint8(0))
+	f.Add("a", "x", "app", "$1", uint8(7), uint8(8), uint8(194), uint8(8))
+	f.Add("a", "x", "app", "$1", uint8(0), uint8(112), uint8(239), uint8(0))
 	f.Fuzz(func(t *testing.T, sel, line, label, arg string, opSel, left, right, mod uint8) {
 		ident := func(s string) string {
 			var b strings.Builder
@@ -322,7 +342,18 @@ func FuzzBinOpLowering(f *testing.F) {
 			case 13:
 				return `sum without (` + lbl + `) (sum by (` + lbl + `, app) (` + inner + `))`
 			case 14:
-				return `sum without () (` + inner + `)`
+				// A clause with no label, in the head and the tail spelling, over every aggregation; with the blanks
+				// the translator reads unlike the plan, and next to a clause with a label or a nest the lowering names.
+				agg := []string{"sum", "max", "count", "min", "avg"}[k/15%5]
+				switch k / 75 % 4 {
+				case 1:
+					return agg + `(` + inner + `) without ()`
+				case 2:
+					return agg + ` without ( ) (` + inner + `)`
+				case 3:
+					return agg + ` without () (sum by (` + lbl + `, app) (` + inner + `))`
+				}
+				return agg + ` without () (` + inner + `)`
 			}
 			return `stddev(` + inner + `)`
 		}

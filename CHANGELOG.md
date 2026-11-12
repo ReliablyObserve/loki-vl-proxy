@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan now writes `=`, `==` and `!=` against a number, a duration or a
+  bytes size after a `| json` or `| logfmt` parser (`| status == 200`,
+  `| latency != 5s`, `| size = 1KB`) as Loki compares them, by value: `200`,
+  `200.0` and `2e2` are equal, a duration or a size is compared in nanoseconds or
+  bytes, and `!=` drops an entry without the label. The string translator keeps
+  the exact text of the literal, which matches `200` alone and keeps the entries
+  without the label under `!=`. Against Loki's answers on 81 queries, each run over
+  5 to 62 lines, read by VictoriaLogs v1.49.0 and v1.53.0 (7,286 query and line
+  decisions), the plan differs from Loki on 438 and the translator on 988;
+  what remains is the values VictoriaLogs reads as a number that Loki marks with
+  `__error__` (`0xC8`, `1KB` against `m == 1000`) and a few spellings Loki reads
+  that VictoriaLogs does not (`100us`, a size in lower case or with a space). A
+  literal with no single reading in both (hexadecimal, separators, days, weeks
+  or years, a fractional byte count) stays with the string translator. Nothing is
+  served from the plan for these queries yet: no request to VictoriaLogs and no
+  answer changes.
+
 ### Fixed
 
 - Bounds checks for request times and offsets. A `query` or `query_range`
@@ -21,6 +40,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   steps with checked arithmetic. Loki has no stable answer for these windows
   (wrapped timestamps, a `500`); the answers it gave are recorded and replayed
   in the tests.
+
+## [2.189.0] - 2026-11-12
+
+### Fixed
+
+- The `totalBytesProcessed` of the `data.stats` of a metric query (`-query-stats-mode=loki`, the default) follows the
+  window it was asked for. It was the metric's lines times the mean line size of the last log answer of the
+  selector, a figure of whatever window or filter that answer had, so on a sparse stream it could miss the
+  metric window's bytes by more than half. The proxy now keeps each log answer with the window its lines cover,
+  per log expression: a metric query of the same expression takes the bytes of that part of its window
+  exactly and prices its other lines at that answer's mean line size. No VictoriaLogs request is added. The
+  one-range lookback before a metric query's start is covered by no log answer and is still estimated.
+
+## [2.188.0] - 2026-11-12
+
+### Changed
+
+- The query plan lowers a binary operation whose operand has a `without ()` clause
+  (`sum without () (rate({app="a"}[5m])) / 2`, `sum(rate({app="a"}[5m])) without () + on() vector(0)`) the way
+  Loki reads it: the clause removes no label, so every series of the operand stays its own.
+  The string translator reads the clause as none and writes the operand ungrouped, which on a
+  range query whose step equals its range reaches VictoriaLogs as one series; that difference
+  is recorded (`semantics/binary-operand-without-empty-collapses`, open) and these queries are
+  not counted as served from the plan. A `without ()` on its own, under a ranking, `stddev` or
+  `label_replace`, in a nest of aggregations, or over an unwrapped label stays with the string
+  translator. No answer changes; the plan does not serve these queries yet.
+
+## [2.187.0] - 2026-11-12
+
+### Changed
+
+- The query plan leaves to the string translator a stage that unwraps, reads as a json
+  expression's key, writes, or renames from or to a label called `_time`, `_stream`,
+  `_stream_id` or `_msg` (`unwrap _stream`, `json x="_time"`, `label_format x=_stream`): the text
+  it used to write for them, the translator's, is a filter VictoriaLogs rejects or reads as its
+  own time, stream or stream id filter
+  (`semantics/translator-writes-reserved-field-names`). No answer changes; the plan does not
+  serve metric queries or queries with a parser yet.
+- The VictoriaLogs parse oracle holds the plan to the string translator on the log queries it
+  lowers, and no longer finds a selector that VictoriaLogs reads unlike the translator's except
+  the five rows the translator writes wrongly or Loki rejects, now listed with their cases
+  (`semantics/translator-writes-signed-number-with-blank`,
+  `semantics/parser-reads-unicode-blank-as-white-space`). The latter records that the proxy's
+  parser reads a blank that is no ASCII one (U+2003, U+3000, U+00A0) as white space where Loki
+  answers 400; the parser is unchanged.
+
+### Fixed
+
+- A log query with a label filter that names a label VictoriaLogs cannot read bare
+  (`{app="a"} | status = "200" and ³ = "x"`, a name with punctuation, a symbol, a combining mark,
+  an emoji or a zero-width space; Loki answers these) now answers with the lines of that label
+  instead of failing with a VictoriaLogs parse error. The query plan, which serves log queries
+  that have only line and label filters, quotes the name; the string translator writes it bare
+  (`semantics/translator-writes-exotic-field-names-bare`). A name of letters, digits and
+  underscores in any script, and the names with a dot or a hyphen that were quoted already, are
+  written as before.
+
+## [2.186.0] - 2026-11-12
+
+### Fixed
+
+- The `shards` of the `data.stats` of a repeated log query follow Loki's: a repeat answered from the
+  proxy's response cache reports the 1h pieces that hold a returned entry, wherever they lie in the
+  window, as Loki does (it keeps the pieces in which a query found nothing in its results cache). A
+  window of five pieces with entries in three of them, separated by empty pieces, reported 5 shards
+  on the repeat and Loki 3. The first answer of a query text still reports every piece it ran.
+
+## [2.185.0] - 2026-11-12
+
+### Changed
+
+- The query plan now decides how the handlers answer `sum`, `avg`, `min`, `max` and `count` (with
+  `by`, `without` or neither) over `sum_over_time`, `avg_over_time`, `min_over_time` and
+  `max_over_time` of an unwrapped label, instead of leaving them to the handlers: whether the
+  series keep their stream's identity, whether the empty-input guard counts the input, the level
+  probe, the conversion-error flag and the fold of a `without` clause, on every window. Three
+  decisions follow what the handlers do today: the maximum of `max_over_time` (or the minimum of
+  `min_over_time`) by labels is taken per bucket and group in VictoriaLogs on a sliding window, an
+  ungrouped `sum` adds all lines up only over `sum_over_time` (over an average, minimum or maximum it
+  keeps the series), and a `without` clause over an unwrapped value is folded by the proxy. The
+  lowering of these queries now hands back its stats typed, with the same query text. No answer or
+  request changes: no handler reads the rule yet. Route parity: 470 more of 24,970 runs are decided
+  (5,706 native, 0 mismatches, the routes and statuses unchanged); the other 900 runs of the former
+  "unwrap operand" group are now named by what keeps them delegated (a parser before the unwrap, an
+  offset). A vector level that groups by the line (`_msg`) stays delegated.
+
+## [2.184.0] - 2026-11-12
+
+### Fixed
+
 - `stdvar_over_time` with a grouping (`stdvar_over_time(... | unwrap n [5m]) by (app)`,
   `sum by (app) (stdvar_over_time(...))`) or without a parser no longer fails: it
   was answered with an error (400), where Loki answers 200. VictoriaLogs has no
@@ -33,6 +142,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query whose range equals the step (`[5m]` at step 5m) answer the window ending
   at each timestamp, as Loki does; each point was the window one step later.
   A range that is not the step keeps its answer.
+
+## [2.183.0] - 2026-11-12
 
 ### Changed
 

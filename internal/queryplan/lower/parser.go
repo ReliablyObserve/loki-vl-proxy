@@ -39,6 +39,9 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 	for i, st := range sel.Stages {
 		var ps []logsql.Pipe
 		names.note(defs, i)
+		if stageNamesReservedField(st) {
+			return nil, nil, &NotLoweredError{Construct: reservedStageConstruct}
+		}
 		switch st := st.(type) {
 		case *queryplan.LineFilter:
 			err = lineFilterAfter(sel, i)
