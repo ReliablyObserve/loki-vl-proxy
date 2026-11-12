@@ -616,6 +616,9 @@ services:
       # tests compare answers rather than two different limits.
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
+      # The opt-in exact lines of a limit-filled log query (one count per
+      # log query cache miss), asserted by TestDrilldown_QueryStatsLikeLoki.
+      - "-query-stats-exact-log-lines=true"
       - "-log-level=info"
       - "-cache-ttl=5s"
       - "-label-style=underscores"

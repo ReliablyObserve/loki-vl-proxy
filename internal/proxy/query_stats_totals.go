@@ -71,7 +71,8 @@ type totalsShape struct {
 // it cannot be (a text check before the parse).
 func totalsShapeOf(ctx context.Context, query string) (totalsShape, bool) {
 	q := strings.TrimSpace(query)
-	if !strings.HasPrefix(q, "{") && !strings.Contains(q, "count_over_time") && !strings.Contains(q, "bytes_over_time") {
+	if !strings.HasPrefix(q, "{") && !strings.Contains(q, "count_over_time") && !strings.Contains(q, "bytes_over_time") &&
+		!strings.Contains(q, "rate") {
 		return totalsShape{}, false
 	}
 	expr, ok := sharedLogQLExpr(q)
@@ -95,7 +96,8 @@ func totalsShapeOf(ctx context.Context, query string) (totalsShape, bool) {
 	case *logqlpkg.RangeAggregation:
 		lq, ok := e.Inner.(*logqlpkg.LogQuery)
 		if !ok || e.Grouping != nil || e.Offset != "" || e.RangeDuration <= 0 ||
-			(e.Op != logqlpkg.RangeCountOverTime && e.Op != logqlpkg.RangeBytesOverTime) {
+			(e.Op != logqlpkg.RangeCountOverTime && e.Op != logqlpkg.RangeBytesOverTime &&
+				e.Op != logqlpkg.RangeRate && e.Op != logqlpkg.RangeBytesRate) {
 			return totalsShape{}, false
 		}
 		shape.op, shape.expr, shape.rangeDur = e.Op, lq, e.RangeDuration
@@ -149,21 +151,55 @@ func (p *Proxy) statsTotalsScopeOf(r *http.Request) statsTotalsScope {
 
 // key is the companion key of a log expression in the scope.
 func (sc statsTotalsScope) key(kind, expr string) string {
-	h := sha256.New()
+	bufp := statsTotalsKeyBufs.Get().(*[]byte)
+	buf := (*bufp)[:0]
 	for _, part := range [...]string{sc[0], sc[1], sc[2], kind, expr} {
-		h.Write([]byte(part))
-		h.Write([]byte{0})
+		buf = append(append(buf, part...), 0)
 	}
-	var sum [sha256.Size]byte
-	key := make([]byte, len(statsTotalsKeyPrefix)+hex.EncodedLen(len(sum)))
-	copy(key, statsTotalsKeyPrefix)
-	hex.Encode(key[len(statsTotalsKeyPrefix):], h.Sum(sum[:0]))
-	return string(key)
+	sum := sha256.Sum256(buf)
+	*bufp = buf[:0]
+	statsTotalsKeyBufs.Put(bufp)
+	var key [len(statsTotalsKeyPrefix) + 2*sha256.Size]byte
+	copy(key[:], statsTotalsKeyPrefix)
+	hex.Encode(key[len(statsTotalsKeyPrefix):], sum[:])
+	return string(key[:])
 }
 
-// statsTotalsKey is the companion key of a log expression in r's tenant scope.
-func (p *Proxy) statsTotalsKey(r *http.Request, kind string, expr string) string {
-	return p.statsTotalsScopeOf(r).key(kind, expr)
+// statsTotalsKeyBufs keeps the buffers the companion keys are hashed from.
+var statsTotalsKeyBufs = sync.Pool{New: func() any { b := make([]byte, 0, 256); return &b }}
+
+// totalsKeys is what the companion keys of one request are made of, each
+// part read on first use and once: its tenant scope, its log expression and
+// that expression's stream selector (an instant answer, which keeps no
+// companion, reads none of them).
+type totalsKeys struct {
+	p              *Proxy
+	r              *http.Request
+	shape          totalsShape
+	scopeRead      bool
+	scopeV         statsTotalsScope
+	expr, selector string
+}
+
+func (k *totalsKeys) scope() statsTotalsScope {
+	if !k.scopeRead {
+		k.scopeV, k.scopeRead = k.p.statsTotalsScopeOf(k.r), true
+	}
+	return k.scopeV
+}
+
+func (k *totalsKeys) exprKey(kind string) string {
+	if k.expr == "" {
+		k.expr = k.shape.expr.String()
+	}
+	return k.scope().key(kind, k.expr)
+}
+
+func (k *totalsKeys) selectorKey(kind string) string {
+	if k.selector == "" {
+		k.selector = (&logqlpkg.LogQuery{Selector: k.shape.expr.Selector}).String()
+	}
+	return k.scope().key(kind, k.selector)
 }
 
 // statsTotalsSteps is a companion: the per-step totals of one answer, over
@@ -358,9 +394,9 @@ func (p *Proxy) deriveQueryStatsTotals(r *http.Request, endpoint string, body []
 		return
 	}
 	rt.mu.Lock()
-	active, vlCalls := rt.statsWriter != nil, rt.flow.vlCalls
+	sw, vlCalls, reused := rt.statsWriter, rt.flow.vlCalls, rt.flow.reusedCachedAnswers()
 	rt.mu.Unlock()
-	if !active || vlCalls == 0 {
+	if sw == nil || vlCalls == 0 {
 		return
 	}
 	shape, ok := totalsShapeOf(r.Context(), r.FormValue("query"))
@@ -368,10 +404,33 @@ func (p *Proxy) deriveQueryStatsTotals(r *http.Request, endpoint string, body []
 		return
 	}
 	var t statsTotals
+	if shape.op == "" && (!sw.lokiMode || endpoint != "query_range") {
+		return // victorialogs mode reports the rows read, not the panel's volume answer
+	}
+	keys := &totalsKeys{p: p, r: r, shape: shape}
 	if shape.op == "" {
-		t, ok = p.logQueryTotals(r, endpoint, shape)
+		p.meanLines.store(p.meanLineKey(r, shape.expr.Selector), sw.entries.lineBytes, sw.entries.n)
+		run := sw.lokiLogRun()
+		t, ok = p.logQueryTotals(r, keys, shape, run.from, run.to)
+		if !t.hasLines && p.exactLogLinesWanted(r, sw, shape) {
+			if n, counted := p.countSelectorLines(r.Context(), shape.expr.Selector, run.from, run.to); counted {
+				t.lines, t.hasLines, ok = n, true, true
+				if !shape.filtered {
+					t.postFilter, t.hasPostFilter = n, true
+				}
+			}
+		}
 	} else {
-		t, ok = p.metricQueryTotals(r, endpoint, shape, body)
+		// The answer's steps are right whichever cache served them, so they
+		// are kept as the companion; but an answer partly served from cached
+		// steps or extents was not all processed by this request (Loki counts
+		// only the part it computed), so it gives this request no totals.
+		t, ok = p.metricQueryTotals(r, keys, endpoint, shape, body, sw.lokiMode)
+		ok = ok && !reused
+		if ok && sw.lokiMode && (t.hasLines || t.hasPostFilter) && !t.hasBytes {
+			// The lines read are at least the post-filter lines counted.
+			t.bytes, t.hasBytes = p.metricQueryBytes(r, keys, sw, max(t.lines, t.postFilter))
+		}
 	}
 	if !ok {
 		return
@@ -381,31 +440,65 @@ func (p *Proxy) deriveQueryStatsTotals(r *http.Request, endpoint string, body []
 	rt.mu.Unlock()
 }
 
-func (p *Proxy) metricQueryTotals(r *http.Request, endpoint string, shape totalsShape, body []byte) (statsTotals, bool) {
+// reusedCachedAnswers reports whether the request found any cached answer
+// or part of one (Loki's result, statsResult, volumeResult or
+// instantMetricResult sections).
+func (f *flowCounters) reusedCachedAnswers() bool {
+	for _, c := range f.lokiCache {
+		if c.found > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// metricQueryTotals reads a metric answer's lines (count_over_time, rate)
+// or bytes (bytes_over_time, bytes_rate) over Loki's window: the sum of its
+// samples (a rate times its range in seconds). On sliding windows (range
+// other than the step) a line is counted in about range/step samples; Loki's
+// accounting (lokiMode) then estimates the window's total as the sum scaled
+// by step/range, the measured accounting gives none.
+func (p *Proxy) metricQueryTotals(r *http.Request, keys *totalsKeys, endpoint string, shape totalsShape, body []byte, lokiMode bool) (statsTotals, bool) {
 	if len(body) == 0 {
 		return statsTotals{}, false
 	}
 	start, end, step, ok := requestWindow(r, endpoint, shape.rangeDur)
-	if !ok || (endpoint == "query_range" && step != int64(shape.rangeDur)) {
-		return statsTotals{}, false // sliding windows count a line in several steps
+	sliding := endpoint == "query_range" && step != int64(shape.rangeDur)
+	if !ok || (sliding && !lokiMode) || step <= 0 {
+		return statsTotals{}, false
 	}
 	ts, vals, ok := answerStepSums(body)
 	if !ok || len(ts) > statsTotalsMaxSteps {
 		return statsTotals{}, false
+	}
+	scale := 1.0
+	if shape.op == logqlpkg.RangeRate || shape.op == logqlpkg.RangeBytesRate {
+		scale = shape.rangeDur.Seconds()
+	}
+	if scale != 1 {
+		for i := range vals {
+			vals[i] *= scale
+		}
 	}
 	steps := statsTotalsSteps{step: step, start: start - step, end: end, ts: ts, vals: vals}
 	var total float64
 	for _, v := range vals {
 		total += v
 	}
+	if sliding {
+		total *= float64(step) / float64(shape.rangeDur)
+	}
 	kind := "lines"
-	if shape.op == logqlpkg.RangeBytesOverTime {
+	if shape.op == logqlpkg.RangeBytesOverTime || shape.op == logqlpkg.RangeBytesRate {
 		kind = "bytes"
 	}
-	if endpoint == "query_range" {
+	if endpoint == "query_range" && !sliding {
 		// An instant answer is one step of its range: too coarse to stand
 		// for another window, so it is not kept.
-		p.storeStatsTotals(r, kind, shape.expr.String(), steps)
+		// Kept in memory and pushed to the key's replicas (an asynchronous
+		// push of a small entry), so the logs query of the panel finds it on
+		// whichever replica it reaches first.
+		p.cache.SetReplicatedWithTTL(keys.exprKey(kind), steps.encode(), statsTotalsTTL)
 	}
 	n := int64(math.Round(total))
 	var t statsTotals
@@ -416,7 +509,7 @@ func (p *Proxy) metricQueryTotals(r *http.Request, endpoint string, shape totals
 		t.lines, t.hasLines, t.postFilter, t.hasPostFilter = n, true, n, true
 	case kind == "lines":
 		t.postFilter, t.hasPostFilter = n, true
-		if all, ok := p.statsTotalsWithin(r, p.statsTotalsKey(r, "lines", (&logqlpkg.LogQuery{Selector: shape.expr.Selector}).String()), start-step, end); ok {
+		if all, ok := p.statsTotalsWithin(r, keys.selectorKey("lines"), start-step, end); ok {
 			t.lines, t.hasLines = int64(math.Round(all)), true
 		}
 	default:
@@ -425,32 +518,136 @@ func (p *Proxy) metricQueryTotals(r *http.Request, endpoint string, shape totals
 	return t, true
 }
 
-func (p *Proxy) logQueryTotals(r *http.Request, endpoint string, shape totalsShape) (statsTotals, bool) {
-	if endpoint != "query_range" {
-		return statsTotals{}, false
-	}
-	start, end, _, ok := requestWindow(r, endpoint, 0)
-	if !ok {
-		return statsTotals{}, false
-	}
+// logQueryTotals reads a log query's lines over [from, to] (the part of its
+// window Loki reads) from the count answers of the panel the proxy holds.
+// Its bytes are those lines times the mean size of the lines it returned:
+// within 1-2% of Loki's line bytes on the test stack, where a volume_range
+// answer's whole steps would leave out up to a tenth of the window.
+func (p *Proxy) logQueryTotals(r *http.Request, keys *totalsKeys, shape totalsShape, from, to int64) (statsTotals, bool) {
 	var t statsTotals
-	scope := p.statsTotalsScopeOf(r)
-	selector := (&logqlpkg.LogQuery{Selector: shape.expr.Selector}).String()
-	if lines, ok := p.statsTotalsWithin(r, scope.key("lines", shape.expr.String()), start, end); ok {
+	if lines, ok := p.statsTotalsWithin(r, keys.exprKey("lines"), from, to); ok {
 		t.postFilter, t.hasPostFilter = int64(math.Round(lines)), true
 		if !shape.filtered {
 			t.lines, t.hasLines = t.postFilter, true
 		}
 	}
 	if shape.filtered {
-		if lines, ok := p.statsTotalsWithin(r, scope.key("lines", selector), start, end); ok {
+		if lines, ok := p.statsTotalsWithin(r, keys.selectorKey("lines"), from, to); ok {
 			t.lines, t.hasLines = int64(math.Round(lines)), true
 		}
 	}
-	if bytes, ok := p.statsTotalsWithin(r, scope.key("bytes", selector), start, end); ok {
-		t.bytes, t.hasBytes = int64(math.Round(bytes)), true
+	return t, t.hasLines || t.hasPostFilter
+}
+
+// The mean line size a log answer measured, kept for the metric queries of
+// the same selector (and of the tenant, when the selector has none): Loki
+// counts the bytes of the lines a metric query reads, which VictoriaLogs'
+// aggregated answer does not tell. Each replica keeps the means of the log
+// answers it computed (a statistic that changes slowly, so no peer copy),
+// in a bounded table keyed by a hash of the tenant scope and the selector:
+// reading and writing it allocates nothing.
+type meanLineTable struct {
+	mu sync.Mutex
+	m  map[[sha256.Size]byte]meanLine
+}
+
+type meanLine struct {
+	bytes, lines int64
+	expires      int64 // unix ns
+}
+
+const (
+	meanLineTTL       = time.Hour
+	meanLineTableSize = 4096
+)
+
+func (t *meanLineTable) store(keys [2][sha256.Size]byte, lineBytes, lines int64) {
+	if lines <= 0 || lineBytes <= 0 {
+		return
 	}
-	return t, t.hasLines || t.hasPostFilter || t.hasBytes
+	v := meanLine{bytes: lineBytes, lines: lines, expires: time.Now().Add(meanLineTTL).UnixNano()}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.m == nil {
+		t.m = make(map[[sha256.Size]byte]meanLine, 64)
+	}
+	for _, k := range keys {
+		if _, ok := t.m[k]; !ok && len(t.m) >= meanLineTableSize {
+			for old := range t.m { // a full table drops one entry
+				delete(t.m, old)
+				break
+			}
+		}
+		t.m[k] = v
+	}
+}
+
+// mean is the mean line size kept for the selector, else its tenant.
+func (t *meanLineTable) mean(keys [2][sha256.Size]byte) (float64, bool) {
+	now := time.Now().UnixNano()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, k := range keys {
+		if v, ok := t.m[k]; ok && v.expires > now {
+			return float64(v.bytes) / float64(v.lines), true
+		}
+	}
+	return 0, false
+}
+
+// meanLineKey is the table keys of a selector and of its tenant: hashes of
+// the tenant org, routing namespace and auth fingerprint, and the selector's
+// matchers, built in a pooled buffer.
+func (p *Proxy) meanLineKey(r *http.Request, sel *logqlpkg.StreamSelector) (keys [2][sha256.Size]byte) {
+	routing := p.routingForContext(r.Context())
+	namespace := routing.namespace
+	if namespace == "" {
+		namespace = p.buildRoutingNamespace(routing)
+	}
+	var org string
+	if v := r.Header["X-Scope-Orgid"]; len(v) > 0 {
+		org = v[0]
+	}
+	bufp := statsTotalsKeyBufs.Get().(*[]byte)
+	buf := (*bufp)[:0]
+	for _, part := range [...]string{statsMeanLineKind, org, namespace, p.fingerprintFromCtx(r.Context(), r)} {
+		buf = append(append(buf, part...), 0)
+	}
+	keys[1] = sha256.Sum256(buf)
+	if sel != nil {
+		for _, m := range sel.Matchers {
+			buf = append(append(append(buf, m.Name...), 1, byte(m.Op)), m.Value...)
+			buf = append(buf, 0)
+		}
+	}
+	keys[0] = sha256.Sum256(buf)
+	*bufp = buf[:0]
+	statsTotalsKeyBufs.Put(bufp)
+	return keys
+}
+
+const statsMeanLineKind = "meanline"
+
+// metricQueryBytes is a metric query's bytes processed in Loki's
+// accounting: exact from VictoriaLogs (-query-stats-exact-metric-bytes, the
+// selector's line bytes over the query's window), else its lines times the
+// selector's mean line size.
+func (p *Proxy) metricQueryBytes(r *http.Request, keys *totalsKeys, sw *queryStatsWriter, lines int64) (int64, bool) {
+	if sw.exactBytes != nil {
+		select {
+		case b := <-sw.exactBytes:
+			if b >= 0 {
+				return b, true
+			}
+		case <-r.Context().Done():
+			return 0, false
+		}
+	}
+	mean, ok := p.meanLines.mean(p.meanLineKey(r, keys.shape.expr.Selector))
+	if !ok {
+		return 0, false
+	}
+	return int64(math.Round(mean * float64(lines))), true
 }
 
 func (p *Proxy) statsTotalsWithin(r *http.Request, key string, start, end int64) (float64, bool) {
@@ -465,113 +662,6 @@ func (p *Proxy) statsTotalsWithin(r *http.Request, key string, start, end int64)
 		return 0, false
 	}
 	return steps.within(start, end)
-}
-
-// storeStatsTotals keeps a companion in memory and on the key's replicas
-// (an asynchronous push of a small entry), so the logs query of the panel
-// finds it on whichever replica it reaches first.
-func (p *Proxy) storeStatsTotals(r *http.Request, kind, expr string, steps statsTotalsSteps) {
-	p.cache.SetReplicatedWithTTL(p.statsTotalsKey(r, kind, expr), steps.encode(), statsTotalsTTL)
-}
-
-// recordVolumeStatsTotals keeps a volume_range answer computed from
-// VictoriaLogs as the bytes companion of its selector (Logs Drilldown asks
-// for it with the logs query of the same selector). Only an answer that holds
-// every line of the selector is kept: grouped by nothing but labels every
-// stream has (the selector's own, service_name, detected_level), and not cut
-// by the limit. A bucket stamped at its end minus 1ms covers
-// (stamp+1ms-step, stamp+1ms].
-func (p *Proxy) recordVolumeStatsTotals(r *http.Request, req volumeRequest, result map[string]interface{}) {
-	if p.cache == nil || req.stepNs <= 0 || req.byLabels {
-		return
-	}
-	for _, t := range req.targets {
-		if t != "service_name" && t != "detected_level" {
-			return
-		}
-	}
-	sums, ok := volumeStepSums(result, req.limit)
-	if !ok {
-		return
-	}
-	expr, ok := sharedLogQLExpr(req.query)
-	if !ok {
-		return
-	}
-	lq, ok := expr.(*logqlpkg.LogQuery)
-	if !ok || lq.Selector == nil || len(lq.Pipeline) != 0 || (len(req.targets) == 0 && !selectorRequiresEveryLabel(lq.Selector)) {
-		return
-	}
-	steps := statsTotalsSteps{step: req.stepNs, start: req.startNs, end: req.endNs + int64(time.Millisecond)}
-	steps.ts = make([]int64, 0, len(sums))
-	for ts := range sums {
-		steps.ts = append(steps.ts, ts)
-	}
-	slices.Sort(steps.ts)
-	steps.vals = make([]float64, len(steps.ts))
-	for i, ts := range steps.ts {
-		steps.vals[i] = sums[ts]
-	}
-	p.storeStatsTotals(r, "bytes", lq.String(), steps)
-}
-
-// selectorRequiresEveryLabel: grouped by the selector's labels, a stream
-// without one of them is left out of a volume, so only matchers every
-// matching stream carries a value for keep every line.
-func selectorRequiresEveryLabel(sel *logqlpkg.StreamSelector) bool {
-	for _, m := range sel.Matchers {
-		eq := m.Op == logqlpkg.MatchEq && m.Value != ""
-		anyValue := m.Op == logqlpkg.MatchRe && m.Value == ".+"
-		if !eq && !anyValue {
-			return false
-		}
-	}
-	return true
-}
-
-// volumeStepSums sums a volume_range result's samples per bucket end
-// (stamp + 1ms), across series; false for a vector, an answer cut by its
-// limit, or any sample it cannot read.
-func volumeStepSums(result map[string]interface{}, limit int) (map[int64]float64, bool) {
-	data, _ := result["data"].(map[string]interface{})
-	var series []map[string]interface{}
-	switch v := data["result"].(type) {
-	case []map[string]interface{}:
-		series = v
-	case []interface{}:
-		for _, item := range v {
-			m, ok := item.(map[string]interface{})
-			if !ok {
-				return nil, false
-			}
-			series = append(series, m)
-		}
-	default:
-		return nil, false
-	}
-	if limit > 0 && len(series) >= limit {
-		return nil, false
-	}
-	sums := map[int64]float64{}
-	for _, m := range series {
-		values, ok := m["values"].([][]interface{})
-		if !ok {
-			return nil, false // a vector (one step) is too coarse
-		}
-		for _, pair := range values {
-			if len(pair) != 2 {
-				return nil, false
-			}
-			sec, okT := pair[0].(float64)
-			str, okV := pair[1].(string)
-			v, err := strconv.ParseFloat(str, 64)
-			if !okT || !okV || err != nil {
-				return nil, false
-			}
-			sums[int64(math.Round(sec*1e3))*int64(time.Millisecond)+int64(time.Millisecond)] += v
-		}
-	}
-	return sums, len(sums) > 0 && len(sums) <= statsTotalsMaxSteps
 }
 
 // deriveQueryStatsTotalsFromCapture runs deriveQueryStatsTotals for a query

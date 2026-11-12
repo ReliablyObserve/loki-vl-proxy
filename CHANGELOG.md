@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Query statistics follow Loki's accounting on every route and on cache
+  hits, and a new `-query-stats-mode` setting chooses between Loki's
+  numbers (`loki`, the default) and what the proxy measured
+  (`victorialogs`). The `data.stats` object of `query`, `query_range` and now
+  also `index/volume` and `index/volume_range` answers has all five of
+  Loki's sections (`summary`, `querier`, `ingester`, `cache`, `index`) with
+  Loki's keys, order and types, so Grafana's query inspector lists the same
+  "Summary:" and "Ingester:" rows as for Loki. In the default mode the
+  numbers emulate Loki's, with rules read off Loki's answers:
+  - `splits` and `shards` are Loki's 1h pieces (a metric query runs every
+    piece, an instant query splits its range, a log query stops after the
+    piece in which its limit was filled, `volume_range` counts its step
+    buckets);
+  - a log query reports the lines of the pieces Loki reads (from the panel's
+    count answer, else estimated from its entries and capped at the entries
+    times the pieces read) and their bytes as lines times its returned
+    lines' mean size, no longer the rows read and VictoriaLogs' NDJSON size,
+    which stayed the same on every refresh; the new opt-in
+    `-query-stats-exact-log-lines` counts the pieces read with one
+    VictoriaLogs count per log query miss that fills its limit;
+  - a metric query's lines come from its own counts (`rate` too, sliding
+    windows estimated) and its bytes are estimated from the selector's mean
+    line size, or read exactly from VictoriaLogs with the new opt-in
+    `-query-stats-exact-metric-bytes` (one volume request per metric query
+    miss, about six times a count's VictoriaLogs time);
+  - `querier.querierExecTime` is the time spent in VictoriaLogs calls;
+  - a response-cache hit of a non-empty log query or an instant query
+    replays the stored computation (Loki computes those again), so the Stats
+    tab and the Logs Drilldown footer no longer drop to 0 B on a refresh
+    and a split long range keeps the bytes of its cached pieces; a metric
+    `query_range` hit is Loki's results-cache hit, with the window served
+    as `queryLengthServed`.
+  Volume answers report the series returned and no processed lines or
+  bytes, as Loki's. Query and query_range response-cache entries are read
+  once more from VictoriaLogs after the upgrade (new `qs3:` key fence). The
+  log query no longer takes its bytes from a `volume_range` answer of its
+  selector (whole steps left up to a tenth of the window out).
+
 ## [2.171.0] - 2026-11-11
 
 ### Security

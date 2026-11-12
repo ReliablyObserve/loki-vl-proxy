@@ -29,6 +29,8 @@ var lokiStatsSummaryKeys = []string{
 	"totalPostFilterLines", "totalStructuredMetadataBytesProcessed",
 }
 
+var lokiStatsSections = []string{"summary", "querier", "ingester", "cache", "index"}
+
 var lokiStatsCacheKeys = []string{
 	"chunk", "index", "result", "statsResult", "volumeResult", "seriesResult", "labelResult", "instantMetricResult",
 }
@@ -102,8 +104,8 @@ func assertLokiStatsShape(t *testing.T, body []byte) (queryStatsAnswer, parsedQu
 	if ans.Status != "success" {
 		t.Fatalf("status %q: %s", ans.Status, body)
 	}
-	if got := objectKeys(t, ans.Data.Stats); !reflect.DeepEqual(got, []string{"summary", "cache"}) {
-		t.Fatalf("stats sections %v, want [summary cache]: %s", got, ans.Data.Stats)
+	if got := objectKeys(t, ans.Data.Stats); !reflect.DeepEqual(got, lokiStatsSections) {
+		t.Fatalf("stats sections %v, want %v: %s", got, lokiStatsSections, ans.Data.Stats)
 	}
 	var sections map[string]json.RawMessage
 	_ = json.Unmarshal(ans.Data.Stats, &sections)
@@ -179,7 +181,13 @@ func (s *statsStubVL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func newQueryStatsTestProxy(t *testing.T, backendURL, compression string) http.Handler {
 	t.Helper()
+	return newQueryStatsTestProxyMode(t, backendURL, compression, "")
+}
+
+func newQueryStatsTestProxyMode(t *testing.T, backendURL, compression, mode string) http.Handler {
+	t.Helper()
 	p, err := New(Config{
+		QueryStatsMode:                    mode,
 		BackendURL:                        backendURL,
 		Cache:                             cache.New(60*time.Second, 1000),
 		CompatCache:                       cache.New(60*time.Second, 100),
@@ -224,6 +232,28 @@ func serveQueryStats(t *testing.T, h http.Handler, path string, params url.Value
 	return body
 }
 
+// answerLineBytes sums the bytes of the lines of a streams result.
+func answerLineBytes(t *testing.T, result json.RawMessage) int64 {
+	t.Helper()
+	var streams []struct {
+		Values [][]json.RawMessage `json:"values"`
+	}
+	if err := json.Unmarshal(result, &streams); err != nil {
+		t.Fatal(err)
+	}
+	var n int64
+	for _, s := range streams {
+		for _, v := range s.Values {
+			var line string
+			if err := json.Unmarshal(v[1], &line); err != nil {
+				t.Fatal(err)
+			}
+			n += int64(len(line))
+		}
+	}
+	return n
+}
+
 func countStreamEntries(t *testing.T, result json.RawMessage) int64 {
 	t.Helper()
 	var streams []struct {
@@ -252,8 +282,8 @@ func TestQueryStats_LogQueryNumbersAreMeasured(t *testing.T) {
 			stub := &statsStubVL{rows: rows}
 			vl := httptest.NewServer(stub)
 			defer vl.Close()
-			h := newQueryStatsTestProxy(t, vl.URL, "")
-			now := time.Now()
+			h := newQueryStatsTestProxyMode(t, vl.URL, "", QueryStatsModeVictoriaLogs)
+			now := statsTestNow()
 			params := url.Values{
 				"query": {`{app="api"}`}, "limit": {"1000"}, "direction": {"backward"},
 				"start": {fmt.Sprint(now.Add(-5 * time.Minute).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())},
@@ -264,8 +294,10 @@ func TestQueryStats_LogQueryNumbersAreMeasured(t *testing.T) {
 			if st.Summary.Splits != int64(requests) {
 				t.Errorf("splits %d, VictoriaLogs received %d requests", st.Summary.Splits, requests)
 			}
-			if st.Summary.TotalBytesProcessed != sentBytes {
-				t.Errorf("totalBytesProcessed %d, VictoriaLogs sent %d bytes", st.Summary.TotalBytesProcessed, sentBytes)
+			// Loki's totalBytesProcessed counts line bytes: the lines the
+			// answer returns (unescaped), not VictoriaLogs' NDJSON bytes.
+			if lineBytes := answerLineBytes(t, ans.Data.Result); st.Summary.TotalBytesProcessed != lineBytes || lineBytes >= sentBytes {
+				t.Errorf("totalBytesProcessed %d, the answer's lines hold %d bytes (VictoriaLogs sent %d)", st.Summary.TotalBytesProcessed, lineBytes, sentBytes)
 			}
 			if st.Summary.TotalLinesProcessed != int64(sentRows) {
 				t.Errorf("totalLinesProcessed %d, VictoriaLogs sent %d rows", st.Summary.TotalLinesProcessed, sentRows)
@@ -281,15 +313,17 @@ func TestQueryStats_LogQueryNumbersAreMeasured(t *testing.T) {
 				t.Errorf("first request: cache.result %+v, want a lookup that missed and a store", miss)
 			}
 
-			// The same request again is answered from the response cache: no
-			// VictoriaLogs work, the entry found, as Loki's results cache reports.
+			// The same request again is answered from the response cache, with
+			// no VictoriaLogs work: its own execTime and the entry found.
 			again := serveQueryStats(t, h, "/loki/api/v1/query_range", params, nil)
 			_, hit := assertLokiStatsShape(t, again)
 			if requests2, _, _ := stub.snapshot(); requests2 != requests {
 				t.Fatalf("repeat reached VictoriaLogs (%d -> %d requests)", requests, requests2)
 			}
+			// victorialogs mode reports what this request measured: a hit read
+			// nothing (Loki's accounting replays it: TestQueryStats_LokiAccountingPerRouteAndCacheTier).
 			if hit.Summary.TotalBytesProcessed != 0 || hit.Summary.TotalLinesProcessed != 0 || hit.Summary.Splits != 0 {
-				t.Errorf("cache hit replays processing: %+v", hit.Summary)
+				t.Errorf("cache hit %+v, want nothing measured", hit.Summary)
 			}
 			if hit.Summary.TotalEntriesReturned != int64(rows) {
 				t.Errorf("cache hit totalEntriesReturned %d, want %d", hit.Summary.TotalEntriesReturned, rows)
@@ -314,7 +348,7 @@ func TestQueryStats_EveryAnswerShape(t *testing.T) {
 	vl := httptest.NewServer(stub)
 	defer vl.Close()
 	h := newQueryStatsTestProxy(t, vl.URL, "")
-	now := time.Now().Truncate(time.Minute)
+	now := statsTestNow().Truncate(time.Minute)
 	rangeParams := func(q string) url.Values {
 		return url.Values{"query": {q}, "step": {"60"},
 			"start": {fmt.Sprint(now.Add(-10 * time.Minute).Unix())}, "end": {fmt.Sprint(now.Unix())}}
@@ -353,7 +387,7 @@ func TestQueryStats_CategorizedAndMultiTenantAnswers(t *testing.T) {
 	vl := httptest.NewServer(stub)
 	defer vl.Close()
 	_, _, mux := newTwoTenantProxy(t, vl.URL)
-	now := time.Now()
+	now := statsTestNow()
 	logParams := url.Values{"query": {`{app="api"}`}, "limit": {"1000"}, "direction": {"backward"},
 		"start": {fmt.Sprint(now.Add(-5 * time.Minute).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())}}
 	metricParams := url.Values{"query": {`sum(count_over_time({app="api"}[1m]))`}, "step": {"60"},
@@ -410,13 +444,13 @@ func TestQueryStats_CompressedCacheHitCarriesStats(t *testing.T) {
 	vl := httptest.NewServer(stub)
 	defer vl.Close()
 	h := newQueryStatsTestProxy(t, vl.URL, "gzip")
-	now := time.Now()
+	now := statsTestNow()
 	params := url.Values{"query": {`{app="api"}`}, "limit": {"100"},
 		"start": {fmt.Sprint(now.Add(-5 * time.Minute).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())}}
 	gz := map[string]string{"Accept-Encoding": "gzip"}
 	_, first := assertLokiStatsShape(t, serveQueryStats(t, h, "/loki/api/v1/query_range", params, gz))
 	_, hit := assertLokiStatsShape(t, serveQueryStats(t, h, "/loki/api/v1/query_range", params, gz))
-	if first.Summary.TotalLinesProcessed != 40 || hit.Summary.TotalLinesProcessed != 0 || hit.Cache["result"].EntriesFound != 1 {
+	if first.Summary.TotalLinesProcessed != 40 || hit.Summary.TotalLinesProcessed != 40 || hit.Cache["result"].EntriesFound != 1 {
 		t.Fatalf("miss lines %d, hit lines %d found %d", first.Summary.TotalLinesProcessed,
 			hit.Summary.TotalLinesProcessed, hit.Cache["result"].EntriesFound)
 	}
@@ -441,7 +475,7 @@ func TestQueryStats_GzipCacheHitIsOneMember(t *testing.T) {
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 	h := mw.CompressionHandlerWithOptions(mux, mw.CompressionOptions{Mode: "gzip", MinBytes: 64})
-	now := time.Now()
+	now := statsTestNow()
 	params := url.Values{"query": {`{app="api"}`}, "limit": {"1000"},
 		"start": {fmt.Sprint(now.Add(-5 * time.Minute).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())}}
 	target := "/loki/api/v1/query_range?" + params.Encode()
@@ -494,7 +528,8 @@ func TestQueryStats_GzipCacheHitIsOneMember(t *testing.T) {
 	}
 	captured, ok := decodeStatsSidecar(raw)
 	value, _ := p.compatCache.Get(cacheKey)
-	stored, entries, hasTrailer := splitStatsTrailer(value)
+	stored, trailer, hasTrailer := splitStatsTrailer(value)
+	entries := trailer.entries
 	built, _ := buildStatsSidecar(stored)
 	if !ok || !hasTrailer || entries != 300 || captured.crc != built.crc || !bytes.Equal(captured.tail, built.tail) || captured.bodyLen != built.bodyLen {
 		t.Fatalf("captured sidecar %d/%x, built %d/%x; trailer %t entries %d", captured.bodyLen, captured.crc, built.bodyLen, built.crc, hasTrailer, entries)
@@ -516,7 +551,9 @@ func TestQueryStats_GzipCacheHitIsOneMember(t *testing.T) {
 		if !bytes.Equal(stripQueryStats(plain), stripQueryStats(identity)) {
 			t.Fatalf("%s: the gzip hit's answer differs from the identity answer", step)
 		}
-		if hit.Summary.TotalEntriesReturned != 300 || hit.Summary.TotalBytesProcessed != 0 || hit.Cache["result"].EntriesFound != 1 {
+		// A log answer's hit replays the computation's totals (Loki computes
+		// log queries on every request).
+		if hit.Summary.TotalEntriesReturned != 300 || hit.Summary.TotalLinesProcessed != 300 || hit.Cache["result"].EntriesFound != 1 {
 			t.Fatalf("%s: hit stats %+v cache %+v", step, hit.Summary, hit.Cache["result"])
 		}
 		if _, ok := p.compatCache.Get(statsSidecarKey(cacheKey)); !ok {
@@ -543,7 +580,7 @@ func TestQueryStats_SmallAnswersStayUncompressed(t *testing.T) {
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 	gz := mw.CompressionHandlerWithOptions(mux, mw.CompressionOptions{Mode: "gzip", MinBytes: 1024})
-	now := time.Now().Truncate(time.Minute)
+	now := statsTestNow().Truncate(time.Minute)
 	target := "/loki/api/v1/query?" + url.Values{"query": {`sum(count_over_time({app="api"}[5m]))`}, "time": {fmt.Sprint(now.Unix())}}.Encode()
 	for _, step := range []string{"miss", "hit"} {
 		req := httptest.NewRequest(http.MethodGet, target, nil)
@@ -568,9 +605,16 @@ func TestQueryStats_SmallAnswersStayUncompressed(t *testing.T) {
 func TestStatsTrailerRoundTrip(t *testing.T) {
 	for _, body := range []string{"", `{}`, `{"status":"success","data":{"resultType":"streams","result":[],"stats":{}}}`} {
 		for _, n := range []int64{0, 1, 127, 128, 1 << 40} {
-			got, entries, ok := splitStatsTrailer(appendStatsTrailer([]byte(body), n))
-			if !ok || entries != n || string(got) != body {
-				t.Fatalf("%q %d: %q %d %t", body, n, got, entries, ok)
+			for _, want := range []statsTrailer{
+				{entries: n},
+				{entries: n, logs: true},
+				{entries: n, replay: true, replayed: statsReplay{bytes: n * 3, lines: n, postFilter: n / 2, exec: time.Duration(n) + 1}},
+				{entries: n, logs: true, replay: true, replayed: statsReplay{bytes: n * 3, lines: n, postFilter: n / 2, exec: time.Duration(n) + 1}},
+			} {
+				got, tr, ok := splitStatsTrailer(appendStatsTrailer([]byte(body), want))
+				if !ok || tr != want || string(got) != body {
+					t.Fatalf("%q %+v: %q %+v %t", body, want, got, tr, ok)
+				}
 			}
 		}
 		if got, _, ok := splitStatsTrailer([]byte(body)); ok || string(got) != body {
@@ -867,7 +911,13 @@ func FuzzEntryCounter(f *testing.F) {
 
 // BenchmarkQueryStatsWriter measures the layer on a log answer of 1000
 // entries written in 32 KiB chunks, as the streams writer does.
-func BenchmarkQueryStatsWriter(b *testing.B) {
+func BenchmarkQueryStatsWriter(b *testing.B) { benchmarkQueryStatsWriter(b, false) }
+
+// BenchmarkQueryStatsWriterLokiMode is the same with the timestamp tracking
+// of Loki's accounting (-query-stats-mode=loki, the default).
+func BenchmarkQueryStatsWriterLokiMode(b *testing.B) { benchmarkQueryStatsWriter(b, true) }
+
+func benchmarkQueryStatsWriter(b *testing.B, lokiMode bool) {
 	var body bytes.Buffer
 	body.WriteString(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[`)
 	for i := 0; i < 1000; i++ {
@@ -887,6 +937,7 @@ func BenchmarkQueryStatsWriter(b *testing.B) {
 		rec := discardResponseWriter{h: http.Header{"Content-Type": {"application/json"}}}
 		w := queryStatsWriterPool.Get().(*queryStatsWriter)
 		w.reset(&rec, rt)
+		w.entries.trackTS = lokiMode
 		for off := 0; off < len(raw); off += 32 << 10 {
 			_, _ = w.Write(raw[off:min(off+32<<10, len(raw))])
 		}
@@ -900,3 +951,15 @@ type discardResponseWriter struct{ h http.Header }
 func (d *discardResponseWriter) Header() http.Header         { return d.h }
 func (d *discardResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
 func (d *discardResponseWriter) WriteHeader(int)             {}
+
+// statsTestNow is now, unless the ten minutes before it cross an hour
+// boundary: then a minute before that boundary. Loki splits a range at the
+// hour, so a test window ending at the wall clock would have 2 pieces for the
+// first ten minutes of every hour.
+func statsTestNow() time.Time {
+	now := time.Now()
+	if hour := now.Truncate(time.Hour); now.Sub(hour) < 15*time.Minute {
+		return hour.Add(-time.Minute)
+	}
+	return now
+}

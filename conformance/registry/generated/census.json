@@ -1373,6 +1373,9 @@
     "internal/proxy/query_range_steps_test.go | tenant-numeric-routing",
     "internal/proxy/query_range_window_lead_test.go | semantics/query-range-window-lead-window",
     "internal/proxy/query_semantics_compat_handlers_test.go | semantics/absent-over-time-semantics",
+    "internal/proxy/query_stats_loki_meaning_test.go | drilldown/logs-footer-query-stats",
+    "internal/proxy/query_stats_loki_meaning_test.go | query-stats-envelope",
+    "internal/proxy/query_stats_loki_test.go | query-stats-envelope",
     "internal/proxy/query_stats_test.go | drilldown/logs-footer-query-stats",
     "internal/proxy/query_stats_test.go | query-stats-envelope",
     "internal/proxy/query_stats_totals_test.go | drilldown/logs-footer-query-stats",
@@ -2220,7 +2223,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 504,
+      "go": 506,
       "playwright": 1
     },
     "page_kinds": {
