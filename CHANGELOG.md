@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window of five pieces with entries in three of them, separated by empty pieces, reported 5 shards
   on the repeat and Loki 3. The first answer of a query text still reports every piece it ran.
 
+## [2.185.0] - 2026-11-12
+
 ### Changed
 
 - The query plan now decides how the handlers answer `sum`, `avg`, `min`, `max` and `count` (with
