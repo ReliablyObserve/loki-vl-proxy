@@ -41,7 +41,7 @@ var lateValidation = map[string]bool{}
 // cache lookup, plan, translation or VictoriaLogs call: the queries that once stopped the parser from returning,
 // on every route that takes a query. The fake VictoriaLogs counts its requests.
 //
-// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma
+// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma, semantics/stage-name-followed-by-more-of-stage
 func TestRejectedQueryNeverReachesVictoriaLogs(t *testing.T) {
 	var upstream atomic.Int64
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +58,9 @@ func TestRejectedQueryNeverReachesVictoriaLogs(t *testing.T) {
 		{"{app=\"a\"} | drop a,", "sum by (a,) (rate({app=\"a\"}[5m]))", "expecting IDENTIFIER"},
 		{"{app=\"a\"} | keep ,a", "sum(rate({app=\"a\"}[5m])) / on(a,) sum(rate({app=\"a\"}[5m]))", "expecting IDENTIFIER"},
 		{"{app=\"a\"} | json a,,b", "sum without (a,,b) (rate({app=\"a\"}[5m]))", "expecting IDENTIFIER"},
+		// A stage name followed by more of the stage (semantics/stage-name-followed-by-more-of-stage).
+		{"{app=\"a\"} | keep a | a, b", "rate({app=\"a\"} | keep a | a, b [1m])", "syntax error: unexpected ,"},
+		{"{app=\"a\"} | keep a | a .5", "rate({app=\"a\"} | keep a | a .0000! [1m])", "syntax error: unexpected NUMBER"},
 	} {
 		for _, rt := range failFastRoutes {
 			query := tc.log
@@ -101,7 +104,7 @@ func TestRejectedQueryNeverReachesVictoriaLogs(t *testing.T) {
 // followed by a character that starts no token), is not served the answer an older binary cached: the compat edge key
 // of a rejected query carries a version, and the key of a valid query does not change.
 //
-// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma, cache-response-key-versions
+// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma, semantics/stage-name-followed-by-more-of-stage, cache-response-key-versions
 func TestCompatEdgeDoesNotServeAnAnswerCachedBeforeTheRuneFix(t *testing.T) {
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -120,6 +123,7 @@ func TestCompatEdgeDoesNotServeAnAnswerCachedBeforeTheRuneFix(t *testing.T) {
 			{"{app=\"a\"} | x $", true},
 			{"sum by (a,) (count_over_time({app=\"a\"}[1m]))", true},
 			{"{app=\"a\"} | drop a,", true},
+			{"{app=\"a\"} | keep a | a .5", true},
 			{"sum by (a) (count_over_time({app=\"a\"}[1m]))", false},
 			{"{app=\"a\"} |= \"x\u00b2\"", false},
 		} {

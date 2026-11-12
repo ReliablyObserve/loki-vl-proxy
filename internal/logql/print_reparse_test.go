@@ -253,6 +253,7 @@ func FuzzPrintReparse(f *testing.F) {
 		`{app="nginx"} | label_format new=old`,
 		`{app="nginx"} | line_format "{{.msg}}"`,
 		`{app="nginx"} | drop a, b | keep c`,
+		`{app="nginx"} | keep a , b | a > - .5 or b <= .5KB`, // white space around numbers after keep
 		`rate({app="api"}[5m])`,
 		`sum by (app) (rate({app="api"}[5m]))`,
 		`quantile_over_time(0.99, {app="api"} | unwrap latency [5m])`,

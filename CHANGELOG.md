@@ -16,6 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query no longer has a plan built for it only to be handed back to the
   string translator; answers were already correct.
 
+- A pipeline stage that opens with a name and goes on with more than a comparison operator (`| a, b`, `| a .5`,
+  `| a:b`, `| a "v"`) is Loki's 400 with Loki's text, where the proxy passed the stage to VictoriaLogs and
+  answered the query. Loki reads such a stage as a label filter and rejects the token after the name
+  (`rate({app="x"} | keep a | a, b [1m])` is `parse error at line 1, col 28: syntax error: unexpected ,`). The proxy
+  printed the stage again from its tokens without the white space between them, so the keep series grouping rewrite
+  turned `| A .0000!` into `| A.0000!`, a query that does not parse (found by the `FuzzKeepSeriesGrouping` fuzz target).
+  The query is rejected at the first parse of the route, before the response cache, the rewrite, the plan or any
+  VictoriaLogs request; 105 queries recorded with the Loki oracle (white space around numbers, dots and names inside
+  label filters and after `keep` and `drop`) answer with Loki's status and text. A stage that is a bare name alone
+  (`| foo`) and the proxy's dotted names (`| k8s.pod.name="x"`, `| custom . x = "v"`) are still accepted, and a
+  stage kept as text prints with the space before a dot that did not touch the token before it (`| a .b, c`), so
+  the rewrite keeps its tokens. **Breaking:** a client that sent
+  such a stage now gets Loki's 400, as it would from Loki. Answers cached for these queries are not served (the compat
+  edge key of a rejected query carries a version).
+
 ### Changed
 
 - Query statistics follow Loki's accounting on every route and on cache

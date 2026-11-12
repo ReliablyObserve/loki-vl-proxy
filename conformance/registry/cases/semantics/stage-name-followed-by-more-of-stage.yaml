@@ -1,0 +1,75 @@
+id: semantics/stage-name-followed-by-more-of-stage
+title: A stage that opens with a name followed by more of the stage (`| a, b`, `| a .5`, `| a:b`) is Loki's 400 with Loki's text (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  A pipeline stage that opens with a name Loki has no stage for is a label
+  filter in Loki's grammar, so the token after the name must be a comparison
+  operator: `{app="x"} | keep a | a, b` is `parse error at line 1, col 23:
+  syntax error: unexpected ,`, `| a .5` is `unexpected NUMBER`, `| a :b` and
+  `| a:b` are `unexpected IDENTIFIER`, `| a "v"`
+  is `unexpected STRING`, and a keyword after the name is named as itself
+  (`unexpected by`, `unexpected or`). The proxy's parser (internal/logql
+  parseNameStage) kept such a stage as text for the backend: it answered the
+  query, and printed the stage from its tokens without the white space of the
+  source, so `| A .0000!` printed as `| A.0000!`, which reads as other tokens.
+  The keep series grouping rewrite prints the query again, and the fuzz target
+  FuzzKeepSeriesGrouping found `rAte({A=""}|keep  A, A |A, A | A .0000![0y])`
+  rewritten to a query that does not parse. Loki rejects the input at col 26
+  (`unexpected ,`); the proxy answered the empty-matcher error instead, and
+  with a non-empty selector it rewrote and answered the query.
+
+  Fixed in internal/logql: a name that is no filter and no stage of its own is
+  rejected at the token after it, with Loki's text, unless that token ends the
+  stage (the end of the query, a pipe, a range bracket or a closing
+  parenthesis) or is a dot (the proxy's dotted names), and the stage text
+  keeps the space before a dot that did not touch the token before it, so a
+  stage the proxy keeps (`| a .b, c`) prints as the same tokens and the
+  rewrite reads it back. Recorded with the Loki
+  oracle (check command) on 105 queries: white space around numbers, dots,
+  colons, strings, keywords and names after a stage name, inside label filters
+  and after keep and drop, in log and metric queries; 48 answered other than
+  Loki before the change, every status and text is Loki's after it, and 31 of
+  the 33 printed forms of the accepted queries mean the same to Loki (the other
+  two are keep/drop lists the printer orders names before matchers, `| keep
+  a="v", b` printing `| keep b, a="v"`, a separate printer difference).
+  The Unicode grid (semantics/logql-unicode-runes) agrees on 48 more queries.
+
+  Not changed: a stage that is a bare name alone (`| foo`, `| foo | json`),
+  which passes through to the backend, and the proxy's dotted names
+  (`| k8s.x.y="v"`, `| a.0000`, and the spaced `| custom . x = "v"` the
+  translation joins into one name, which Loki rejects with `unexpected .`); see
+  docs/logql-parser.md.
+
+  Breaking for a client that sent such a stage: Loki never accepted it.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'rate({app="api-gateway"} | keep level | level, msg [5m])'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, errorType, error]
+  expect: |
+    400, errorType bad_data, Loki's `parse error at line 1, col 46: syntax
+    error: unexpected ,`.
+gap:
+  status: fixed
+  fixed_by: "this change"
+  impact: api-only
+  effort: S
+  area: 'internal/logql parser.go parseNameStage (atStageEnd), appendStageToken (opaqueText)'
+  loki: 'the label filter grammar: a stage name is a label filter, IDENTIFIER followed by a comparison operator; recorded with the Loki oracle'
+  proxy: 'rejected with Loki''s text at parse time, before the response cache, the keep series grouping rewrite, the plan or any VictoriaLogs call'
+  planned_test: 'TestStageNameFollowersMatchLoki and TestUnicodeRunesMatchLoki (internal/logql, recorded Loki answers); TestKeepSeriesGrouping_StageSpacing, FuzzKeepSeriesGrouping (seed keep_label_filter_number_spacing), TestRejectedQueryNeverReachesVictoriaLogs and TestCompatEdgeDoesNotServeAnAnswerCachedBeforeTheRuneFix (internal/proxy: zero VictoriaLogs requests on every route, no cached 200 served)'
+  visual: none
+  visual_reason: 'a parse error; no Grafana panel writes such a stage'
+  clusters: []
