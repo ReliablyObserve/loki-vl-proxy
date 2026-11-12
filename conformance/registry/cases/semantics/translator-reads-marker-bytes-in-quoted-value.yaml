@@ -51,9 +51,14 @@ why: |
   `_extracted` filter, line filters, drop and keep matchers. Queries with a
   parser are served by the string translator, so the proxy answers the cut
   filter for them today; filter-only queries, served from the plan, are not
-  affected. The same marker also reads a \x02 byte of a stream selector value
-  under an `_extracted` filter (a range aggregation, found by an earlier step,
-  not recorded here).
+  affected. A range aggregation over such a query is cut the same way
+  (`rate({app="a"} | o="\x02\x02" | json | K_extracted!~"p|q" [5m])`: the
+  translator writes `filter o:=""` and copies the stream aside ahead of it, the
+  plan keeps the value; found by the VictoriaLogs oracle over the corpus, where
+  the two texts mean different queries), so the recogniser looks through the
+  range and vector aggregations to the log query. The same marker also reads a
+  \x02 byte of a stream selector value under an `_extracted` filter (not
+  recorded here).
 
   FuzzLabelFilterAfterParserLowering recognises the shape by content
   (translatorReadsStageMarker, in internal/queryplan/lower, and the same function in internal/querycorpus for the plan shadow, which counts the case's own request as a known divergence): the decoded values
