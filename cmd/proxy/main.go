@@ -265,6 +265,8 @@ type proxyRuntimeConfig struct {
 	slowUpstreamThreshold               time.Duration
 	slowQueryLogRawQueries              bool
 	slowQueryLogLevel                   string
+	logUserHeader                       string
+	logUserHeaderTrustedCIDRs           string
 	metadataDefaultLookback             time.Duration
 	metadataCacheFreshness              time.Duration
 	maxStatsCacheFreshness              time.Duration
@@ -468,6 +470,8 @@ func run(
 	slowQueryThreshold := fs.Duration("slow-query-threshold", proxy.DefaultSlowQueryThreshold, "A client request taking at least this long is slow: counted in loki_vl_proxy_slow_requests_total{system=\"loki\"} and logged at WARN (slow_request, whatever the request-log sampling) with its LogQL and its steps: every VictoriaLogs call with its LogsQL, window, status, bytes and time, every proxy-side operation and route decision, every rewrite of the LogQL, each with its offset from the request's start. Live tail is exempt. 0 turns it off")
 	slowUpstreamThreshold := fs.Duration("slow-upstream-threshold", proxy.DefaultSlowUpstreamThreshold, "One VictoriaLogs call taking at least this long to the end of its body is slow: counted in loki_vl_proxy_slow_requests_total{system=\"vl\"} and logged at WARN (slow_upstream_request) with its LogsQL, window, bytes and the client route it served. 0 turns it off")
 	slowQueryLogLevel := fs.String("slow-query-log-level", "warn", "Level the slow_request and slow_upstream_request lines are logged at: warn, info or debug (logged only when the logger level lets them through), or off: no slow lines and no per-request trace; loki_vl_proxy_slow_requests_total still counts slow requests")
+	logUserHeader := fs.String("log-user-header", "", "Header naming the end user who ran a query (X-Grafana-User with Grafana's [dataproxy] send_user_header=true), logged as enduser.id on the request, upstream_request, slow_request and slow_upstream_request lines and shown in /debug/queries. Logs and the admin view only: never a metric label, never sent to VictoriaLogs, never part of a cache key. The header is client-sent and spoofable: restrict it with -log-user-header-trusted-cidrs. A header that carries credentials (Authorization, Cookie, or a name with token, secret, password, key, session or credential) is refused at startup. Empty: the user is the tenant (or the -metrics.trust-proxy-headers identity)")
+	logUserHeaderTrustedCIDRs := fs.String("log-user-header-trusted-cidrs", "", "Comma-separated CIDRs or addresses of the TCP peers (Grafana, or the load balancer in front of the proxy) allowed to name the user through -log-user-header; a request from any other peer is logged under its tenant. Matches the connection's address, never X-Forwarded-For. Empty trusts every peer")
 	slowQueryLogRawQueries := fs.Bool("slow-query-log-raw-queries", true, "Slow lines carry the LogQL and LogsQL text (capped at 8 KB each); false carries their sha256 and length instead, as debug logs do without -debug-log-raw-queries")
 	metadataCacheFreshness := fs.Duration("max-metadata-cache-freshness", 24*time.Hour, "Loki max_metadata_cache_freshness, applied to all tenants: a /labels, /label/{name}/values or /series request that ends within this window of now does not reuse a cached answer older than -recent-tail-refresh-max-staleness, so streams written in the window appear like in Loki. Sealed non-empty inventory buckets still come from the cache; the newest minute, buckets due for revalidation and a row count over each run of empty buckets (stream and field filters only; cheap for * and stream filters, but with a field filter it reads the filtered column of every row in the run's range) are read live. A bucket stored empty with rows that lack the listed field follows the normal schedule. 0 keeps the previous caching for every range.")
 	maxStatsCacheFreshness := fs.Duration("max-stats-cache-freshness", proxy.DefaultMaxStatsCacheFreshness, "Loki max_stats_cache_freshness, applied to all tenants. An instant /index/volume over at least 10 minutes is summed from UTC-aligned day, hour, 5-minute and minute segments kept in the read cache (memory, disk and peers), so a window moved by seconds reads only its edges from VictoriaLogs; segments that end within this window of now are read from VictoriaLogs on every request, like Loki, which does not cache a volume ending within it. 0 caches every segment but the newest minute. -metadata-inventory-parallelism=0 turns the segments off.")
@@ -1089,6 +1093,8 @@ func run(
 			slowUpstreamThreshold:               *slowUpstreamThreshold,
 			slowQueryLogRawQueries:              *slowQueryLogRawQueries,
 			slowQueryLogLevel:                   *slowQueryLogLevel,
+			logUserHeader:                       *logUserHeader,
+			logUserHeaderTrustedCIDRs:           *logUserHeaderTrustedCIDRs,
 			metadataDefaultLookback:             *metadataDefaultLookback,
 			metadataCacheFreshness:              *metadataCacheFreshness,
 			maxStatsCacheFreshness:              *maxStatsCacheFreshness,
@@ -2392,6 +2398,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		SlowUpstreamThreshold:               cfg.slowUpstreamThreshold,
 		SlowQueryLogRawQueries:              cfg.slowQueryLogRawQueries,
 		SlowQueryLogLevel:                   cfg.slowQueryLogLevel,
+		LogUserHeader:                       cfg.logUserHeader,
+		LogUserHeaderTrustedCIDRs:           cfg.logUserHeaderTrustedCIDRs,
 		MetadataDefaultLookback:             cfg.metadataDefaultLookback,
 		MetadataCacheFreshness:              cfg.metadataCacheFreshness,
 		MaxStatsCacheFreshness:              cfg.maxStatsCacheFreshness,

@@ -19,6 +19,9 @@ type QueryTracker struct {
 	maxSize int
 
 	TotalQueries atomic.Int64
+
+	// callers holds who ran the requests and what they cost (callertracker.go).
+	callers *CallerTracker
 }
 
 // QueryStats tracks per-query statistics.
@@ -40,7 +43,13 @@ func NewQueryTracker(maxSize int) *QueryTracker {
 	return &QueryTracker{
 		queries: make(map[string]*QueryStats),
 		maxSize: maxSize,
+		callers: NewCallerTracker(),
 	}
+}
+
+// RecordRequest adds a finished client request to the callers view.
+func (qt *QueryTracker) RecordRequest(req CallerRequest) {
+	qt.callers.Record(req)
 }
 
 // Record tracks a query execution.
@@ -135,15 +144,18 @@ func (qt *QueryTracker) evictOldest() {
 	delete(qt.queries, oldest)
 }
 
-// Handler serves query analytics at /debug/queries.
+// Handler serves query analytics at /debug/queries: the top queries, and the callers view (top callers by
+// VictoriaLogs time and bytes, recent requests with their caller and cost) filtered by ?tenant= and ?user=.
 func (qt *QueryTracker) Handler(w http.ResponseWriter, r *http.Request) {
 	n := 20
+	q := r.URL.Query()
 	result := map[string]interface{}{
 		"total_queries":    qt.TotalQueries.Load(),
 		"unique_queries":   qt.size(),
 		"top_by_frequency": qt.TopByFrequency(n),
 		"top_by_latency":   qt.TopByLatency(n),
 		"top_by_errors":    qt.TopByErrors(n),
+		"callers":          qt.callers.View(q.Get("tenant"), q.Get("user"), n),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)

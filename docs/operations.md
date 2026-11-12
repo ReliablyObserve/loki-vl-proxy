@@ -118,6 +118,18 @@ Critical defaults to reduce incident frequency:
 
 Tenant map strategies (inline JSON, a hot-reloaded file, tenant label routing), `-require-tenant-header` and `-auth.enabled`: see [Tenancy and authentication](tenancy-and-auth.md). Tenancy is off by default.
 
+### Who is loading the proxy or VictoriaLogs
+
+Every `slow_request` and `slow_upstream_request` line names its tenant (with the
+VictoriaLogs account and project it goes to), its user and Grafana app, and what
+it cost VictoriaLogs. `/debug/queries` lists the heaviest callers by
+VictoriaLogs time and bytes, and `loki_vl_proxy_tenant_vl_*_total` count each
+tenant's VictoriaLogs cost. To name Grafana users set Grafana's
+`[dataproxy] send_user_header = true` and `-log-user-header=X-Grafana-User`
+(Helm `observability.queryUser.header`). Every identity option, its default and
+the spoofing caveat: [Grafana user identity](observability.md#grafana-user-identity)
+and [Who is loading the proxy or VictoriaLogs](observability.md#who-is-loading-the-proxy-or-victorialogs).
+
 ---
 
 ## Health Check Endpoints

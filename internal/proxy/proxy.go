@@ -578,6 +578,13 @@ type Config struct {
 	// SlowQueryLogLevel is the level slow lines are logged at: warn (also when empty), info, debug, or off, which
 	// logs none and still counts the slow requests (ParseSlowQueryLogLevel).
 	SlowQueryLogLevel string
+	// LogUserHeader names the header that names the end user in the request and slow lines and /debug/queries
+	// (X-Grafana-User with Grafana's send_user_header). It never labels a metric, reaches VictoriaLogs or splits a
+	// cache key. Empty: the user is the tenant, or the trusted headers of MetricsTrustProxyHeaders.
+	LogUserHeader string
+	// LogUserHeaderTrustedCIDRs (comma-separated CIDRs or addresses) limits LogUserHeader to requests whose TCP
+	// peer is in one of them; empty trusts it from any peer.
+	LogUserHeaderTrustedCIDRs string
 
 	// MetadataCacheFreshness is Loki's max_metadata_cache_freshness: a /labels,
 	// /label/{name}/values or /series request ending within it of now does not
@@ -870,6 +877,7 @@ type Proxy struct {
 	slowQueryLogRawQueries               bool
 	slowLogLevel                         slog.Level
 	slowLogOff                           bool
+	logUser                              logUserHeader // -log-user-header and its trusted peers
 	metadataCacheFreshness               time.Duration // Loki max_metadata_cache_freshness: labels/label_values/series ending within it of now skip stale cache hits; 0 disables
 	maxStatsCacheFreshness               time.Duration // Loki max_stats_cache_freshness: instant volume segments ending within it of now are read live
 	metadataDefaultLookback              time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
@@ -1036,6 +1044,10 @@ func New(cfg Config) (*Proxy, error) {
 		}
 	}
 	slowLogLevel, slowLogOff, err := ParseSlowQueryLogLevel(cfg.SlowQueryLogLevel)
+	if err != nil {
+		return nil, err
+	}
+	logUser, err := parseLogUserHeader(cfg.LogUserHeader, cfg.LogUserHeaderTrustedCIDRs)
 	if err != nil {
 		return nil, err
 	}
@@ -1511,6 +1523,7 @@ func New(cfg Config) (*Proxy, error) {
 		slowQueryLogRawQueries:                cfg.SlowQueryLogRawQueries,
 		slowLogLevel:                          slowLogLevel,
 		slowLogOff:                            slowLogOff,
+		logUser:                               logUser,
 		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
 		metadataCacheFreshness:                max(cfg.MetadataCacheFreshness, 0),
 		maxStatsCacheFreshness:                max(cfg.MaxStatsCacheFreshness, 0),
