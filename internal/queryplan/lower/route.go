@@ -54,12 +54,15 @@ type MetricRoute struct {
 	// Bucket is the stats_query_range step of a range request: the step for WindowTumbling and WindowPhase,
 	// gcd(step, range) for WindowBuckets.
 	Bucket time.Duration
-	// Identity is a range aggregation at the root: Loki keeps every stream's series, so VictoriaLogs groups by the
-	// stream, its level and the detected_level Loki derives.
+	// Identity is a range aggregation at the root, or a without clause over stats that group by nothing: Loki keeps
+	// every stream's series (the proxy folds them under a without), so VictoriaLogs groups by the stream, its level
+	// and the detected_level Loki derives.
 	Identity bool
 	// LevelProbe is a request holding the derived detected_level chain: on a range request the handlers first
 	// probe which level fields the window holds, so the chain reads only those.
 	LevelProbe bool
+	// Fold is how the handlers fold the series of a without clause.
+	Fold WithoutFold
 	// Ungrouped is a lowered query whose last stats pipe groups by nothing: VictoriaLogs answers it with one row
 	// even over no input, so the instant route counts the input rows beside it (Loki answers no series then).
 	Ungrouped bool
@@ -102,6 +105,10 @@ func Route(p *queryplan.Plan, prof Profile, req RouteRequest) (MetricRoute, erro
 		return MetricRoute{}, err
 	}
 	r := MetricRoute{Op: rng.Op, Range: rng.Range}
+	// A without clause writes no grouping of its own: a query whose stats group by nothing keeps the stream's
+	// identity, as a range aggregation at the root does, for the proxy to fold the series.
+	unkeyed := false
+	var built builtVector
 	switch v := p.Root.(type) {
 	case *queryplan.RangeAgg:
 		op, err := rangeAgg(v, prof)
@@ -119,15 +126,25 @@ func Route(p *queryplan.Plan, prof Profile, req RouteRequest) (MetricRoute, erro
 		if err != nil {
 			return MetricRoute{}, err
 		}
+		built = b
 		chain, _ := b.derives()
 		r.Text, r.LevelProbe = b.text(prof, b.stats), chain
 		if last, ok := b.stats[len(b.stats)-1].(logsql.PipeStats); ok {
 			r.Ungrouped = len(last.By) == 0
 		}
 		r.SumAll = v.Op == logql.VectorSum && (v.By == nil || len(v.By.Labels) == 0) && v.In == queryplan.Node(rng)
+		unkeyed = !groupsByAny(b.stats)
 	}
 	r.Window, r.Bucket, err = routeWindow(kind, r.Range, req)
-	return r, err
+	if err != nil {
+		return r, err
+	}
+	if v, ok := p.Root.(*queryplan.VectorAgg); ok {
+		if r.Fold = routeFold(v, rng, r.Window, built, prof); r.Fold != FoldNone && unkeyed {
+			r.Identity, r.LevelProbe, r.Ungrouped = true, true, false
+		}
+	}
+	return r, nil
 }
 
 // routeVector is the lowering of the vector aggregations va over rng up to their stats (vectorAgg).
@@ -168,9 +185,6 @@ func routeRange(n queryplan.Node, kind string) (*queryplan.RangeAgg, error) {
 		case *queryplan.VectorAgg:
 			if !routeOps[v.Op] {
 				return nil, routeError(kind, "evaluated level")
-			}
-			if v.By != nil && v.By.Without {
-				return nil, routeError(kind, "without")
 			}
 			n = v.In
 			continue

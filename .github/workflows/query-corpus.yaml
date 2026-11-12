@@ -43,7 +43,8 @@ jobs:
           LVP_QUERY_CORPUS_DIR: /tmp/query-corpus-capture
         run: |
           mkdir -p "$LVP_QUERY_CORPUS_DIR"
-          go test -tags corpuscapture ./... -count=1
+          # internal/proxy alone runs about 10 minutes on a hosted runner, Go's default per-binary timeout.
+          go test -tags corpuscapture ./... -count=1 -timeout=30m
 
       - name: Build the corpus
         env:

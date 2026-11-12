@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -39,6 +40,17 @@ var routeLoweringProfile = sync.OnceValue(func() lower.Profile {
 	caps := p.logsqlCapabilities()
 	caps.NoDetectedLevelBodyScan = !p.detectedLevelBodyScan
 	return loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, nil), p.streamFieldsMap, caps, false)
+})
+
+// routeLabelFns are the label translations of the route parity proxy, to Loki's names and back: the pushdown of a
+// without clause reads both (translator.PushDownWithout).
+var routeLabelFns = sync.OnceValues(func() (toVL, toLoki translator.LabelTranslateFunc) {
+	p, err := New(Config{BackendURL: "http://vl.invalid", Cache: cache.New(time.Minute, 10), LogLevel: "error"})
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = p.Shutdown(context.Background()) }()
+	return p.labelTranslator.ToVL, p.labelTranslator.ToLoki
 })
 
 // routeTimeout is the timeout every VictoriaLogs request of the route parity proxy carries.
@@ -154,8 +166,12 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 	steps := []string{"operation prefer_working_parser bypass", "operation translate_query translated"}
 	if rp.instant {
 		t := routeEnd
+		text, err := routeStatsQuery(q, route, "", time.Time{}, 0)
+		if err != nil {
+			return routeRecord{}, err
+		}
 		form := url.Values{
-			"query":   {routeQueryShape(routeStatsQuery(route, "", time.Time{}, 0))},
+			"query":   {routeQueryShape(text)},
 			"start":   {routeTime(t.Add(-route.Range + 1))},
 			"end":     {routeTime(t.Add(1))},
 			"time":    {strconv.FormatInt(t.Unix(), 10)},
@@ -192,7 +208,11 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 		setSlidingStatsRangeParams(params, fetchStart, end, route.Bucket)
 		phase = "phase"
 	}
-	params.Set("query", routeQueryShape(routeStatsQuery(route, phase, start, req.Step)))
+	text, err := routeStatsQuery(q, route, phase, start, req.Step)
+	if err != nil {
+		return routeRecord{}, err
+	}
+	params.Set("query", routeQueryShape(text))
 	out.Calls = append(out.Calls, "/select/logsql/stats_query_range?"+params.Encode())
 	if route.LevelProbe {
 		probe := url.Values{"query": {routeShapeFilters(route.Text) + routeLevelProbeShape}, "start": {routeTime(fetchStart)}, "end": {routeTime(end.Add(2))}, "timeout": {routeTimeout}}
@@ -202,39 +222,58 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 	return out, nil
 }
 
-// routeStatsQuery is the stats request of route, as far as its shape goes: the lowered text with the stream
-// identity grouping of a range aggregation at the root, and on a windowed route the window pipes (the phase filter)
-// and the bucket stats of the range function, grouped like the lowered query's first stats pipe.
-func routeStatsQuery(route lower.MetricRoute, phase string, start time.Time, step time.Duration) string {
+// routeStatsQuery is the stats request of route for the query q, as far as its shape goes: the lowered text with the
+// stream identity grouping of a range aggregation at the root or of a without clause, and on a windowed route the
+// window pipes (the phase filter) and the bucket stats of the range function, grouped like the lowered query's first
+// stats pipe. A without clause VictoriaLogs folds (lower.FoldPushed, lower.FoldCut) is written by the handlers'
+// builders (translator.PushDownWithout, translator.WithoutStreamCut), which refuse a query the route should not have
+// pushed down: that is an error, a mismatch for the harness.
+func routeStatsQuery(q string, route lower.MetricRoute, phase string, start time.Time, step time.Duration) (string, error) {
 	text := route.Text
 	if route.Identity && !strings.Contains(text, "| stats by (") {
 		// The grouping text is the handlers' builder; that the series keep their identity is the route's.
 		text = addStatsByStreamClause(text, nil)
 	}
+	toVL, toLoki := routeLabelFns()
 	switch route.Window {
 	case lower.WindowInstant:
 		if route.Ungrouped {
 			text += ", count() as " + emptyInputGuardAlias
 		}
-		return text
+		return text, nil
 	case lower.WindowTumbling:
-		return text
+		if route.Fold == lower.FoldPushed {
+			pushed, ok := translator.PushDownWithout(q, text, toVL, toLoki)
+			if !ok {
+				return "", fmt.Errorf("route pushes the without of %q down; the handlers' builder does not", q)
+			}
+			return pushed, nil
+		}
+		return text, nil
 	}
 	at := strings.Index(text, "| stats ")
 	by := ""
 	if rest := text[at+len("| stats "):]; strings.HasPrefix(rest, "by (") && !route.SumAll {
 		by = rest[:strings.Index(rest, ")")+2]
 	}
-	agg := "count() as c"
+	agg, folded := "count() as c", "sum(c) as c"
 	if route.Op == logql.RangeBytesOverTime || route.Op == logql.RangeBytesRate {
-		agg = "sum_len(_msg) as c, count() as __sample_count"
+		agg, folded = "sum_len(_msg) as c, count() as __sample_count", "sum(c) as c, sum(__sample_count) as __sample_count"
 	}
 	base := strings.TrimRight(text[:at], " ")
 	if phase != "" {
 		// Where the filter goes is the handlers' text placement (withWindowPhaseFilter); that it goes is the route's.
 		base = withWindowPhaseFilter(context.Background(), base, start, step, route.Range)
 	}
-	return base + " | stats " + by + agg
+	out := base + " | stats " + by + agg
+	if route.Fold == lower.FoldCut {
+		cut, ok := translator.WithoutStreamCut(q, toVL, toLoki)
+		if !ok {
+			return "", fmt.Errorf("route cuts the without of %q out of the stream; the handlers' builder does not", q)
+		}
+		out += " " + cut + "| stats " + by + folded
+	}
+	return out, nil
 }
 
 // routeLabelsOutcome is how the instant stats answer's labels are rewritten (translate_stats_response_labels) when
@@ -258,6 +297,43 @@ func routeTrimOutcome(p *queryplan.Plan, route lower.MetricRoute, span time.Dura
 	return "folded"
 }
 
+// routeWithoutRows are up to n corpus rows with a without clause for each way the handlers fold one under some request
+// profile (the proxy folds the rows, VictoriaLogs folds the range, a sliding window reads the cut buckets).
+func routeWithoutRows(t *testing.T, n int) []routeRow {
+	t.Helper()
+	var out []routeRow
+	count := map[lower.WithoutFold]int{}
+	for _, row := range routeRows(t, filepath.Join("..", ".."), 0) {
+		kinds := map[lower.WithoutFold]bool{}
+		for _, rp := range routeProfiles() {
+			req := lower.RouteRequest{Instant: rp.instant}
+			if !rp.instant {
+				req.Step, req.Span = rp.step(row.rangeDur), rp.window(row.rangeDur)
+			}
+			if route, err := lower.Route(row.plan, routeLoweringProfile(), req); err == nil && route.Fold != lower.FoldNone {
+				kinds[route.Fold] = true
+			}
+		}
+		take := false
+		for k := range kinds {
+			take = take || count[k] < n
+		}
+		if !take {
+			continue
+		}
+		for k := range kinds {
+			count[k]++
+		}
+		out = append(out, row)
+	}
+	for _, k := range []lower.WithoutFold{lower.FoldRows, lower.FoldPushed, lower.FoldCut} {
+		if count[k] == 0 {
+			t.Fatalf("no corpus row is folded the way %d", k)
+		}
+	}
+	return out
+}
+
 // Each decision of the route rule is held by the harness: a route with one decision changed mispredicts every run
 // of the native rows it changes, and the unchanged rule predicts them all.
 //
@@ -276,6 +352,7 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 	if len(rows) < 25 {
 		t.Fatalf("%d native metric rows, want 25", len(rows))
 	}
+	rows = append(rows, routeWithoutRows(t, 6)...)
 	native := func(mutate func(*lower.MetricRoute)) routePrediction {
 		return func(q string, p *queryplan.Plan, rp routeProfile, data bool, _ routeRecord) (routeRecord, error) {
 			return predictMetricRoute(q, p, rp, data, mutate)
@@ -315,6 +392,26 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 				r.Ungrouped = !r.Ungrouped
 			}
 		}},
+		{"pushed fold read as the proxy's", func(r *lower.MetricRoute) {
+			if r.Fold == lower.FoldPushed {
+				r.Fold = lower.FoldRows
+			}
+		}},
+		{"proxy fold read as pushed", func(r *lower.MetricRoute) {
+			if r.Window == lower.WindowTumbling && r.Fold == lower.FoldRows {
+				r.Fold = lower.FoldPushed
+			}
+		}},
+		{"cut buckets read as the proxy's fold", func(r *lower.MetricRoute) {
+			if r.Fold == lower.FoldCut {
+				r.Fold = lower.FoldRows
+			}
+		}},
+		{"proxy fold read as cut buckets", func(r *lower.MetricRoute) {
+			if (r.Window == lower.WindowBuckets || r.Window == lower.WindowPhase) && r.Fold == lower.FoldRows {
+				r.Fold = lower.FoldCut
+			}
+		}},
 		{"sum of all streams flipped", func(r *lower.MetricRoute) {
 			if r.Window == lower.WindowBuckets || r.Window == lower.WindowPhase {
 				r.SumAll = !r.SumAll
@@ -340,6 +437,92 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 			bad, _ := runRouteParity(t, rows, native(c.mutate))
 			if changed == 0 || bad.Mismatches != changed {
 				t.Fatalf("a changed decision went unseen: %d predictions changed, %d runs mispredicted (%+v)", changed, bad.Mismatches, bad)
+			}
+		})
+	}
+}
+
+// The without clauses the corpus does not hold: each is held to the handlers' route on every request profile, and the
+// fold the rule decides is pinned per profile (instant, step = range, step < range, step > range, 24h chunk): n none,
+// r the proxy folds the rows, p VictoriaLogs folds the range (pushed), c a sliding window reads the cut buckets.
+//
+// conformance: architecture-syntax-package-layering
+func TestMetricRouteWithoutEdges(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	for _, c := range []struct{ q, folds string }{
+		// the pushdown and the cut: plain labels, any of the five operators, count and byte functions
+		{`sum without (pod) (count_over_time({app="uw"}[1m]))`, "rpccp"},
+		{`sum without (pod) (bytes_over_time({app="uw"}[1m]))`, "rpccp"},
+		{`avg without (pod) (count_over_time({app="uw"}[1m]))`, "rprrp"},
+		{`count without (pod) (rate({app="uw"}[1m]))`, "rprrp"},
+		{`sum(count_over_time({app="uw"}[1m])) without (pod, zone)`, "rpccp"},
+		{`sum without (Pod1, pod) (count_over_time({app="uw"}[30s]))`, "rpccc"},
+		// a rate keeps the per-stream route on a sliding window; so does a bytes rate
+		{`sum without (pod) (rate({app="uw"}[1m]))`, "rprrp"},
+		{`sum without (pod) (bytes_rate({app="uw"}[1m]))`, "rprrp"},
+		// filters: a line filter keeps the rule; a label filter ends the cut (not the push); a pattern filter and a
+		// line that names _msg or an unpack pipe end the push (not the cut)
+		{`sum without (pod) (count_over_time({app="uw"} |~ "a.*b" [1m]))`, "rpccp"},
+		{`sum without (pod) (count_over_time({app="uw"} != "a" or "b" [1m]))`, "rpccp"},
+		{`sum without (pod) (count_over_time({app="uw"} |= ip("1.2.3.4") [1m]))`, "rpccp"},
+		{`sum without (pod) (count_over_time({app="uw"} | env="b" [1m]))`, "rprrp"},
+		{`avg without (pod) (count_over_time({app="uw"} | env=~"b.*" |= "x" [1m]))`, "rprrp"},
+		{`sum without (pod) (count_over_time({app="uw"} |> "<_> x <_>" [1m]))`, "rrccr"},
+		{`sum without (pod) (count_over_time({app="uw"} !> "<_> x <_>" [1m]))`, "rrccr"},
+		{`sum without (pod) (count_over_time({app="uw"} |= "_msg" [1m]))`, "rrccr"},
+		{`sum without (pod) (count_over_time({app="uw"} |= "unpack_json" [1m]))`, "rrccr"},
+		{`sum without (pod) (count_over_time({app="uw", env="_msg"}[1m]))`, "rrccr"},
+		{`sum without (pod) (count_over_time({app="uw"} |= "sum by (x) (" [1m]))`, "rpccp"},
+		// labels the cut cannot name: derived, with an underscore, or a stream key
+		{`sum without (service_name) (count_over_time({app="uw"}[1m]))`, "rrrrr"},
+		{`sum without (detected_level) (count_over_time({app="uw"}[1m]))`, "rrrrr"},
+		{`sum without (level) (rate({app="uw"}[1m]))`, "rrrrr"},
+		{`sum without (pod_name) (count_over_time({app="uw"}[1m]))`, "rrrrr"},
+		{`sum without (pod, k8s_pod) (count_over_time({app="uw"}[1m]))`, "rrrrr"},
+		{`sum without (_stream) (count_over_time({app="uw"}[1m]))`, "rrrrr"},
+		// levels above a without: by columns push down, derived labels and a second without do not, and only a single
+		// sum cuts a sliding window
+		{`sum by (zone) (sum without (pod) (count_over_time({app="uw"}[1m])))`, "rprrp"},
+		{`sum(sum without (pod) (count_over_time({app="uw"}[1m])))`, "rprrp"},
+		{`min by () (sum without (node) (count_over_time({app="uw"}[1m])))`, "rprrp"},
+		{`sum by (zone) (sum by (pod) (sum without (node) (count_over_time({app="uw"}[1m]))))`, "rprrp"},
+		{`sum by (level) (sum without (pod) (count_over_time({app="uw"}[1m])))`, "rrrrr"},
+		{`sum by (service_name) (sum without (pod) (count_over_time({app="uw"}[1m])))`, "rrrrr"},
+		{`sum by (detected_level) (sum without (pod) (count_over_time({app="uw"}[1m])))`, "rrrrr"},
+		{`sum without (zone) (sum without (pod) (count_over_time({app="uw"}[1m])))`, "rrrrr"},
+		{`sum without (zone) (sum by (pod) (count_over_time({app="uw"}[1m])))`, "rrrrr"},
+		{`sum by (zone) (sum without (node) (sum by (pod) (count_over_time({app="uw"}[1m]))))`, "rrrrr"},
+		// no without clause
+		{`sum by (pod) (count_over_time({app="uw"}[1m]))`, "nnnnn"},
+	} {
+		t.Run(c.q, func(t *testing.T) {
+			expr, msg := logql.ValidateLogQLExpr(c.q)
+			if msg != "" || expr == nil {
+				t.Fatalf("%q: %s", c.q, msg)
+			}
+			plan, err := queryplan.Build(expr, queryplan.Inputs{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			queryplan.Resolve(plan)
+			row := routeRow{q: c.q, plan: plan, construct: lower.Construct(plan.Root), rangeDur: firstRange(plan.Root)}
+			folds := ""
+			for _, rp := range routeProfiles() {
+				req := lower.RouteRequest{Instant: rp.instant}
+				if !rp.instant {
+					req.Step, req.Span = rp.step(row.rangeDur), rp.window(row.rangeDur)
+				}
+				route, err := lower.Route(plan, routeLoweringProfile(), req)
+				if err != nil {
+					t.Fatalf("%s: %v", rp.name, err)
+				}
+				folds += string("nrpc"[route.Fold])
+			}
+			if folds != c.folds {
+				t.Errorf("folds %s, want %s", folds, c.folds)
+			}
+			if sec, problems := runRouteParity(t, []routeRow{row}, nativeRoute); sec.Mismatches != 0 || sec.Native != sec.Runs {
+				t.Fatalf("%+v\n%s", sec, joinFirstRoute(problems, 4))
 			}
 		})
 	}

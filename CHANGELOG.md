@@ -22,6 +22,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `bool`, a `vector (1)` spelled with a blank, and an operand that is itself a binary
   operation stay with the string translator.
 
+- The query plan now decides how a `without` clause is folded when it answers a
+  `count_over_time`, `bytes_over_time`, `rate` or `bytes_rate` aggregation under
+  `sum`, `avg`, `min`, `max` and `count`, instead of leaving it to the string
+  translator: the series keep their stream's identity for the proxy to fold; a
+  range request whose range equals its step is folded by VictoriaLogs (the
+  excluded labels cut out of the stream text, one stats pipe for each level above
+  the `without`) when every excluded label is a plain stream label and every
+  level above groups by a column; a sliding window of a single `sum without` over
+  a count or a byte sum reads the same cut buckets; every other `without` (an
+  instant request, a derived label such as `level` or `service_name`, a label with
+  an underscore, a pattern filter, a rate on a sliding window) is folded by the
+  proxy. Route parity holds the plan's decision to the handlers on every corpus
+  row under five request profiles, with and without data: 4,540 of 24,700 runs
+  are now predicted from the plan (2,110 before), 0 mismatches, the recorded
+  routes and statuses unchanged. Nothing is served from the plan for metric
+  queries yet: no request to VictoriaLogs and no answer changes.
+
+- The query plan now writes `count_over_time`, `rate` and `absent_over_time`
+  over a `| unpack` followed only by `drop` and `keep` the way the proxy sends
+  them, byte for byte under every translation profile. Loki's `| unpack`
+  promotes the keys of a packed line and replaces the line with its `_entry`;
+  VictoriaLogs has no pipe with that rule, so a log query with an unpack, a
+  label filter, a line filter, a parser or a formatting stage after it, the
+  bytes of the line, and an unwrapped value stay with the string translator
+  under a name that says what they read. Nothing is served from the plan for
+  these queries yet: no request to VictoriaLogs and no answer changes.
+
+## [2.181.1] - 2026-11-12
+
+### Fixed
+
+- A backend URL with a path keeps it: with `-backend=https://o11y.example.com/logs`
+  (VictoriaLogs behind a reverse proxy or vmauth that shares one hostname),
+  queries, label lookups, the `/ready` health probe and the version and load
+  probes went to `https://o11y.example.com/select/...` and `/health` without
+  the `/logs` prefix, so every query failed and `/ready` stayed 503; only live
+  tail kept the prefix. Every request now keeps the path of its URL, for
+  `-backend`, `-ruler-backend`, `-alerts-backend` and `-cold-backend`, and a
+  trailing slash is ignored (#1340).
+
 ## [2.181.0] - 2026-11-12
 
 ### Changed

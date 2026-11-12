@@ -45,6 +45,9 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 		case *queryplan.LabelFilter:
 		case *queryplan.Parse:
 			ps, err = parserPipes(st)
+			if err != nil && st.Type == logql.ParserUnpack && !prof.metric {
+				err = &NotLoweredError{Construct: unpackLineConstruct}
+			}
 			if err == nil && len(ps) == 0 && len(read) > 0 {
 				// A wildcard pattern writes no pipe, and the string translator then copies the stream labels
 				// aside without the fill that follows a parser's pipe.
@@ -165,7 +168,7 @@ func parserPipes(st *queryplan.Parse) ([]logsql.Pipe, error) {
 		}
 		return nil, nil // a wildcard-only pattern writes no pipe
 	}
-	return nil, &NotLoweredError{Construct: "LogSelect unpack parser"}
+	return nil, &NotLoweredError{Construct: unpackParserConstruct}
 }
 
 // dropPipes are the pipes of a drop stage: none for a drop of matchers, whose values the string translator's

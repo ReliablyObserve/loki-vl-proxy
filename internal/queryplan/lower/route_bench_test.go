@@ -17,8 +17,24 @@ var routeBenchRequests = []RouteRequest{
 	{Step: 15 * time.Minute, Span: time.Hour},
 }
 
-// routedPlans are the plan corpus's plans the route rule routes for every request shape.
-func routedPlans(tb testing.TB) []*queryplan.Plan {
+// holdsWithout reports whether a vector aggregation of the plan has a without clause.
+func holdsWithout(p *queryplan.Plan) bool {
+	for n := p.Root; ; {
+		v, ok := n.(*queryplan.VectorAgg)
+		if !ok {
+			return false
+		}
+		if v.By != nil && v.By.Without {
+			return true
+		}
+		n = v.In
+	}
+}
+
+// routedPlans are the plan corpus's plans the route rule routes for every request shape: with a without clause
+// (the plans routed since the rule folds them), or without one (the plans the rule has routed from the start, so
+// the benchmarks of that set compare with the tree before the without clauses).
+func routedPlans(tb testing.TB, withoutClause bool) []*queryplan.Plan {
 	tb.Helper()
 	qs, err := plancorpus.Queries("../../..")
 	if err != nil {
@@ -30,7 +46,7 @@ func routedPlans(tb testing.TB) []*queryplan.Plan {
 		if p == nil {
 			continue
 		}
-		routed := true
+		routed := holdsWithout(p) == withoutClause
 		for _, req := range routeBenchRequests {
 			if _, err := Route(p, Profile{}, req); err != nil {
 				routed = false
@@ -46,9 +62,8 @@ func routedPlans(tb testing.TB) []*queryplan.Plan {
 	return out
 }
 
-// The lowering the route rule replaces on the routed plans: Plan, once per request.
-func BenchmarkRoutedPlansLowered(b *testing.B) {
-	plans := routedPlans(b)
+func benchRoutedPlansLowered(b *testing.B, withoutClause bool) {
+	plans := routedPlans(b, withoutClause)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -62,9 +77,8 @@ func BenchmarkRoutedPlansLowered(b *testing.B) {
 	}
 }
 
-// The route rule on the same plans and requests: the lowering plus the route's decisions.
-func BenchmarkRoutedPlansRoute(b *testing.B) {
-	plans := routedPlans(b)
+func benchRoutedPlansRoute(b *testing.B, withoutClause bool) {
+	plans := routedPlans(b, withoutClause)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -78,6 +92,16 @@ func BenchmarkRoutedPlansRoute(b *testing.B) {
 	}
 }
 
+// The lowering the route rule replaces on the routed plans with no without clause: Plan, once per request.
+func BenchmarkRoutedPlansLowered(b *testing.B) { benchRoutedPlansLowered(b, false) }
+
+// The route rule on the same plans and requests: the lowering plus the route's decisions.
+func BenchmarkRoutedPlansRoute(b *testing.B) { benchRoutedPlansRoute(b, false) }
+
+// The same two on the plans with a without clause, which the rule routes since it folds them.
+func BenchmarkRoutedWithoutPlansLowered(b *testing.B) { benchRoutedPlansLowered(b, true) }
+func BenchmarkRoutedWithoutPlansRoute(b *testing.B)   { benchRoutedPlansRoute(b, true) }
+
 // The route rule allocates no more than the lowering it decides over, on every routed plan and request: its
 // decisions read the typed plan and the lowered stats pipes and allocate nothing of their own.
 //
@@ -86,12 +110,14 @@ func TestRouteAllocatesNoMoreThanTheLowering(t *testing.T) {
 	if raceDetectorEnabled {
 		t.Skip("the race detector changes allocations")
 	}
-	for _, p := range routedPlans(t) {
-		for _, req := range routeBenchRequests {
-			lowered := testing.AllocsPerRun(20, func() { _, _ = Plan(p, Profile{}) })
-			routed := testing.AllocsPerRun(20, func() { _, _ = Route(p, Profile{}, req) })
-			if routed > lowered {
-				t.Fatalf("%s %+v: Route allocates %.0f, Plan %.0f", p.Key, req, routed, lowered)
+	for _, withoutClause := range []bool{false, true} {
+		for _, p := range routedPlans(t, withoutClause) {
+			for _, req := range routeBenchRequests {
+				lowered := testing.AllocsPerRun(20, func() { _, _ = Plan(p, Profile{}) })
+				routed := testing.AllocsPerRun(20, func() { _, _ = Route(p, Profile{}, req) })
+				if routed > lowered {
+					t.Fatalf("%s %+v: Route allocates %.0f, Plan %.0f", p.Key, req, routed, lowered)
+				}
 			}
 		}
 	}

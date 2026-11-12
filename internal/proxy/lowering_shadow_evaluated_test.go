@@ -96,6 +96,12 @@ func newEvaluatedShadowProxyMode(t *testing.T, sample float64, backend string, s
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	if p.loweringShadow != nil {
+		// These tests read which outcome each comparison reaches, not its speed: on a loaded runner the heaviest
+		// query (stddev over a logfmt rate) passed the production budget and was counted as "budget" instead.
+		// TestLoweringShadow_BudgetIsEnforced holds the budget itself.
+		p.loweringShadow.budget = time.Minute
+	}
 	return p
 }
 
