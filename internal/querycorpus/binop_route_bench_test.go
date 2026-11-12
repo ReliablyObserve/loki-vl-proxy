@@ -12,8 +12,22 @@ import (
 )
 
 // loweredRoutedBinaries are the binary operations with an operand that has a without clause (lower.RoutedBinary) of
-// the plan corpus and the bool and without grid that the lowering answers, as the handlers receive them.
+// the plan corpus and the bool and without grid that the lowering answers, as the handlers receive them. The ones with
+// a `without ()` operand are loweredEmptyWithoutBinaries': they are measured apart, so these keep the inputs they
+// were measured on.
 func loweredRoutedBinaries(b *testing.B) []string {
+	b.Helper()
+	return loweredBinaries(b, func(root queryplan.Node) bool { return lower.RoutedBinary(root) && !lower.EmptyWithoutOperand(root) })
+}
+
+// loweredEmptyWithoutBinaries are the binary operations with a `without ()` operand that the lowering answers.
+func loweredEmptyWithoutBinaries(b *testing.B) []string {
+	b.Helper()
+	return loweredBinaries(b, lower.EmptyWithoutOperand)
+}
+
+// loweredBinaries are the corpus and grid queries whose root keep accepts and the lowering answers.
+func loweredBinaries(b *testing.B, keep func(queryplan.Node) bool) []string {
 	b.Helper()
 	var qs []string
 	seen := map[string]bool{}
@@ -36,7 +50,7 @@ func loweredRoutedBinaries(b *testing.B) []string {
 			continue
 		}
 		queryplan.Resolve(plan)
-		if !lower.RoutedBinary(plan.Root) {
+		if !keep(plan.Root) {
 			continue
 		}
 		if _, err := lower.PlanQuery(rq, plan, lower.Profile{}); err != nil {
@@ -45,9 +59,9 @@ func loweredRoutedBinaries(b *testing.B) []string {
 		qs = append(qs, rq)
 	}
 	if len(qs) == 0 {
-		b.Fatal("no lowered binary operation with a without operand")
+		b.Fatal("no lowered binary operation of the kind")
 	}
-	b.Logf("%d binary operations with a without operand", len(qs))
+	b.Logf("%d binary operations", len(qs))
 	return qs
 }
 
@@ -86,4 +100,28 @@ func BenchmarkBinaryWithoutTranslator(b *testing.B) {
 func BenchmarkBinaryWithoutLowered(b *testing.B) { benchLowered(b, loweredRoutedBinaries(b), nil) }
 func BenchmarkBinaryWithoutLoweredStreamLabels(b *testing.B) {
 	benchLowered(b, loweredRoutedBinaries(b), rankStreamLabels)
+}
+
+// The binary operations with a `without ()` operand, which the lowering writes as Loki reads them (every series
+// kept): the proxy's binary route for them reads the clause as none, and the plan on the same queries.
+func BenchmarkBinaryEmptyWithoutRoute(b *testing.B) {
+	qs := loweredEmptyWithoutBinaries(b)
+	translate := func(q string) (string, error) {
+		return translator.TranslateLogQLWithLabels(logql.CanonicalizeLogRanges(q), nil)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, _, routed, err := proxy.BinaryOperandsPhysical(qs[i%len(qs)], translate); err != nil || !routed {
+			b.Fatal(routed, err)
+		}
+	}
+}
+
+func BenchmarkBinaryEmptyWithoutLowered(b *testing.B) {
+	benchLowered(b, loweredEmptyWithoutBinaries(b), nil)
+}
+
+func BenchmarkBinaryEmptyWithoutLoweredStreamLabels(b *testing.B) {
+	benchLowered(b, loweredEmptyWithoutBinaries(b), rankStreamLabels)
 }

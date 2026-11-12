@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan lowers a binary operation whose operand has a `without ()` clause
+  (`sum without () (rate({app="a"}[5m])) / 2`, `sum(rate({app="a"}[5m])) without () + on() vector(0)`) the way
+  Loki reads it: the clause removes no label, so every series of the operand stays its own.
+  The string translator reads the clause as none and writes the operand ungrouped, which on a
+  range query whose step equals its range reaches VictoriaLogs as one series; that difference
+  is recorded (`semantics/binary-operand-without-empty-collapses`, open) and these queries are
+  not counted as served from the plan. A `without ()` on its own, under a ranking, `stddev` or
+  `label_replace`, in a nest of aggregations, or over an unwrapped label stays with the string
+  translator. No answer changes; the plan does not serve these queries yet.
+
 ## [2.182.0] - 2026-11-12
 
 ### Changed
