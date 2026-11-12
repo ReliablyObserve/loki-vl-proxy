@@ -145,7 +145,7 @@
       "step\u003erange",
       "24h chunk"
     ],
-    "native": 2110,
+    "native": 4540,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp (route rule)": 2090,
@@ -192,13 +192,12 @@
       "VectorAgg parser extracted label": 20,
       "VectorAgg parser label cost": 150,
       "VectorAgg route evaluated level": 1720,
-      "VectorAgg route function": 1440,
+      "VectorAgg route function": 1920,
       "VectorAgg route level filter": 120,
       "VectorAgg route no bucket grid": 6,
-      "VectorAgg route offset": 40,
+      "VectorAgg route offset": 50,
       "VectorAgg route operand": 80,
-      "VectorAgg route pipeline": 1710,
-      "VectorAgg route without": 3370,
+      "VectorAgg route pipeline": 2160,
       "VectorAgg stddev parsed label operand": 10,
       "VectorAgg without empty": 10,
       "VectorLit": 10

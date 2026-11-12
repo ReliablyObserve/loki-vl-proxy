@@ -26,6 +26,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   served from the plan for these queries yet: no request to VictoriaLogs and no
   answer changes.
 
+- The query plan now decides how a `without` clause is folded when it answers a
+  `count_over_time`, `bytes_over_time`, `rate` or `bytes_rate` aggregation under
+  `sum`, `avg`, `min`, `max` and `count`, instead of leaving it to the string
+  translator: the series keep their stream's identity for the proxy to fold; a
+  range request whose range equals its step is folded by VictoriaLogs (the
+  excluded labels cut out of the stream text, one stats pipe for each level above
+  the `without`) when every excluded label is a plain stream label and every
+  level above groups by a column; a sliding window of a single `sum without` over
+  a count or a byte sum reads the same cut buckets; every other `without` (an
+  instant request, a derived label such as `level` or `service_name`, a label with
+  an underscore, a pattern filter, a rate on a sliding window) is folded by the
+  proxy. Route parity holds the plan's decision to the handlers on every corpus
+  row under five request profiles, with and without data: 4,540 of 24,700 runs
+  are now predicted from the plan (2,110 before), 0 mismatches, the recorded
+  routes and statuses unchanged. Nothing is served from the plan for metric
+  queries yet: no request to VictoriaLogs and no answer changes.
+
 - The query plan now writes `count_over_time`, `rate` and `absent_over_time`
   over a `| unpack` followed only by `drop` and `keep` the way the proxy sends
   them, byte for byte under every translation profile. Loki's `| unpack`
@@ -35,6 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bytes of the line, and an unwrapped value stay with the string translator
   under a name that says what they read. Nothing is served from the plan for
   these queries yet: no request to VictoriaLogs and no answer changes.
+
+## [2.181.1] - 2026-11-12
 
 ### Fixed
 
