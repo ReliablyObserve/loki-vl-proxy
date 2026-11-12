@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-backend`, `-ruler-backend`, `-alerts-backend` and `-cold-backend`, and a
   trailing slash is ignored (#1340).
 
+## [2.181.0] - 2026-11-12
+
 ### Changed
 
 - The query plan now writes the label filters on `detected_level` that Grafana

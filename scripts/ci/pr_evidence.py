@@ -63,7 +63,8 @@ def source_semantics_snapshot(api, commit):
             raw = base64.b64decode(item["content"].replace("\n", "").replace("\r", ""), validate=True)
             # Git's object ID is SHA-1 in this repository; this verifies the
             # API payload's stated blob identity, not a security signature.
-            if len(raw) != item["size"] or hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() != item["sha"]:
+            blob_id = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw, usedforsecurity=False)  # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
+            if len(raw) != item["size"] or blob_id.hexdigest() != item["sha"]:
                 raise ValueError("catalog source blob differs from metadata")
             (target / name).write_bytes(raw)
         result = query_semantics_snapshot(directory)
