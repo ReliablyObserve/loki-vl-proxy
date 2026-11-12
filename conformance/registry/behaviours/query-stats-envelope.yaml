@@ -524,8 +524,18 @@ decisions:
       VictoriaLogs' count over the pieces read.
     code: [internal/proxy/query_stats_loki.go, internal/proxy/query_stats_totals.go, internal/proxy/proxy.go, cmd/proxy/main.go, internal/config/limits.go, charts/loki-vl-proxy/values.yaml]
     tests: [TestLokiRunLinesEstimate_Table, FuzzLokiRunLinesEstimate, TestLokiLogSummary_EstimatesTheRunFromTheAnswer, TestLokiStats_ExactLogLinesOnlyWhenTheAnswerCannotTell, TestDrilldown_QueryStatsLikeLoki]
+    history:
+      - date: '2026-11-12'
+        what: 'TestDrilldown_QueryStatsLikeLoki required the lines of an answer under its limit to equal Loki''s'
+        measured: 'CI on two pull requests: a 5m log answer of 18 entries reported 18 lines, Loki 24 for the same 18 entries (and 4 against 14); Loki''s own count_over_time of the window was the proxy''s figure'
+        cause: 'Loki counts every line of the blocks it opens; on a sparse stream its head block spans the window''s edge'
+        effect: 'the e2e failed whenever the fixture''s lines fell across the window''s edge'
+        fixed_by: 'test/query-stats-window-lines: the proxy''s lines must equal Loki''s count of the window, and Loki''s figure must not be lower; equal to Loki''s when Loki''s is the window''s'
+        after: 'documented in KNOWN_ISSUES and the API reference'
     quality: |
-      Lines of answers under their limit equal Loki's (e2e, exact); a
+      Lines of answers under their limit equal Loki's count of the window
+      (e2e, exact), which is Loki's own figure whenever its blocks lie in the
+      window, and Loki's figure is never lower; a
       limit-filled answer's lines lie between its entries and the window's
       lines, with Loki's splits and shards; the opt-in count equals
       VictoriaLogs' count of the pieces read (e2e on the vmauth proxy, which
