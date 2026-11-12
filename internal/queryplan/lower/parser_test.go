@@ -217,7 +217,7 @@ func TestPlanDelegatesParserShapes(t *testing.T) {
 	for q, construct := range map[string]string{
 		`{app="a"} | json a_b="a_b" | a_b="1"`:        "LogSelect label filter json extraction label",
 		`{app="a"} | json a="service_name" | a="1"`:   "LogSelect label filter json extraction label",
-		`{app="a"} | json | a_b=5`:                    "LogSelect label filter numeric equality after parser",
+		`{app="a"} | json | a_b=0x10`:                 "LogSelect label filter numeric equality literal form",
 		`{app="a"} | json | extract ="x"`:             "LogSelect label filter extract name",
 		"{app=\"a\"} | regexp `(?P<a>\\d+)` != \"y\"": "LogSelect line filter after parser arguments",
 		"{app=\"a\"} | pattern `<a> <b>` !~ \"y\"":    "LogSelect line filter after parser arguments",

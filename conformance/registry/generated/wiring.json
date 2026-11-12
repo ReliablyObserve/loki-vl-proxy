@@ -1265,6 +1265,10 @@
       "internal/logql/label_filter_number_literal_loki_test.go",
       "test/e2e-compat/label_filter_number_literal_test.go"
     ],
+    "semantics/label-filter-numeric-equality": [
+      "internal/queryplan/lower/label_filter_numeric_eq_oracle_test.go",
+      "internal/queryplan/lower/label_filter_numeric_eq_test.go"
+    ],
     "semantics/label-filter-regex-parse-error": [
       "internal/logql/stage_parse_validate_loki_test.go"
     ],
@@ -3294,6 +3298,12 @@
     "internal/queryplan/lower/keyword_field_names_test.go": [
       "semantics/translator-writes-keyword-field-names-bare"
     ],
+    "internal/queryplan/lower/label_filter_numeric_eq_oracle_test.go": [
+      "semantics/label-filter-numeric-equality"
+    ],
+    "internal/queryplan/lower/label_filter_numeric_eq_test.go": [
+      "semantics/label-filter-numeric-equality"
+    ],
     "internal/queryplan/lower/label_filter_parsed_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -4236,7 +4246,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 511,
+  "tests_with_markers": 513,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4296,7 +4306,6 @@
     "semantics/ip-filter-keeps-parser-error-lines",
     "semantics/json-empty-value-label-series",
     "semantics/label-filter-before-parser-reads-ingest-json-key",
-    "semantics/label-filter-numeric-equality",
     "semantics/label-filter-numeric-error-label",
     "semantics/label-replace-aggregation-over-transform",
     "semantics/label-replace-around-ranking-and-vector",
@@ -4344,5 +4353,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 291
+  "wired_items": 292
 }

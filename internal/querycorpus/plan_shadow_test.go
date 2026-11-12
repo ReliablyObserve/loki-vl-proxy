@@ -149,6 +149,11 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 				// translator a field VictoriaLogs rejects or reads as its own filter.
 				caseID, ok = "semantics/translator-writes-reserved-field-names", true
 			}
+			if !ok && lower.WritesNumericEquality(plan) {
+				// A numeric, duration or bytes equality after a json or logfmt parser: the plan compares the value as
+				// a number as Loki does, the translator writes the exact text of the literal.
+				caseID, ok = "semantics/label-filter-numeric-equality", true
+			}
 			if ok {
 				// The translator is the wrong one here (knownTypedDivergencesPath, with its registry case):
 				// not a mismatch of the lowering, and not native until the plan serves it.

@@ -1676,6 +1676,8 @@
     "internal/queryplan/lower/format_loki_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/format_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/keyword_field_names_test.go | semantics/translator-writes-keyword-field-names-bare",
+    "internal/queryplan/lower/label_filter_numeric_eq_oracle_test.go | semantics/label-filter-numeric-equality",
+    "internal/queryplan/lower/label_filter_numeric_eq_test.go | semantics/label-filter-numeric-equality",
     "internal/queryplan/lower/label_filter_parsed_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
@@ -2232,7 +2234,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 510,
+      "go": 512,
       "playwright": 1
     },
     "page_kinds": {
@@ -2251,8 +2253,8 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 104,
-    "wired_items": 291
+    "unwired_items": 103,
+    "wired_items": 292
   },
   "gates": [
     "A/B shape selection",

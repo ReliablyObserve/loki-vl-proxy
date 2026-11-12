@@ -305,6 +305,12 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		// field VictoriaLogs rejects or reads as its own filter: they do not mean the same, by design.
 		return "", "", false
 	}
+	if lower.WritesNumericEquality(plan) {
+		// The plan compares the value as a number as Loki does, the translator writes the exact text of the
+		// literal: the two do not mean the same, by design (semantics/label-filter-numeric-equality; the
+		// VictoriaLogs answers to both are recorded in internal/queryplan/lower).
+		return "", "", false
+	}
 	caps := logsql.CapabilitiesFor(strings.TrimPrefix(v, "v"))
 	// A spelling the translator reads as a phrase (ScreenText) is left to it: nothing to hold the plan to.
 	op, err := lower.PlanQuery(q, plan, lower.Profile{Caps: caps, Label: identity})

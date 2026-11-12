@@ -5,14 +5,35 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
-// parsedLowering is parserLowering held to the string translator byte for byte, the text a flipped query serves.
+// parsedLowering is parserLowering held to the string translator byte for byte, the text a flipped query serves. A
+// query with a numeric equality the lowering writes as a numeric comparison is not compared: the translator writes the
+// exact text of the literal (semantics/label-filter-numeric-equality; TestPlanLowersNumericEquality).
 func parsedLowering(t testing.TB, q string, prof parserProfile) (lowered, legacy, construct string, delegated, ok bool) {
 	t.Helper()
 	lowered, legacy, construct, _, delegated, ok = parserLowering(t, q, prof)
+	if ok && !delegated && queryWritesNumericEquality(q) {
+		return "", "", "", false, false
+	}
 	return lowered, legacy, construct, delegated, ok
+}
+
+// queryWritesNumericEquality is WritesNumericEquality for a query text.
+func queryWritesNumericEquality(q string) bool {
+	expr, err := logql.Parse(q)
+	if err != nil {
+		return false
+	}
+	p, err := queryplan.Build(expr, queryplan.Inputs{})
+	if err != nil {
+		return false
+	}
+	queryplan.Resolve(p)
+	return WritesNumericEquality(p)
 }
 
 // A label filter after a json or logfmt parser lowers to the query the string translator writes, byte for byte,
@@ -56,6 +77,9 @@ func TestPlanLowersLabelFiltersAfterParser(t *testing.T) {
 		`{app="a"} | json | a=~".*"`,
 		`{app="a"} | json | a=~"a.*"`,
 		`{app="a"} | json | d>5s and b<=1KB`,
+		// a regexp or pattern parser's labels and the stream labels read after them are text: the translator's exact text
+		"{app=\"a\"} | regexp `(?P<m>\\d+)` | m == 5 | pod != 5s",
+		"{app=\"a\"} | pattern `<m> <_>` | pod = 1KB | m != 2",
 		`{app="a"} | json x="y.z" | x="e"`,
 		`{app="a"} | json x="y.z" | x ="e"`,
 		`{app="a"} | json x="y.z" | x="e" and y_z="r"`,
@@ -99,12 +123,11 @@ func TestPlanLowersLabelFiltersAfterParser(t *testing.T) {
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesLabelFiltersAfterParser(t *testing.T) {
 	for q, construct := range map[string]string{
-		// translator defects: numeric equality is written as the string form.
-		`{app="a"} | json | status=5`:      "LogSelect label filter numeric equality after parser",
-		`{app="a"} | json | status==5`:     "LogSelect label filter numeric equality after parser",
-		`{app="a"} | json | d!=5s`:         "LogSelect label filter numeric equality after parser",
-		`{app="a"} | logfmt | b=1KB`:       "LogSelect label filter numeric equality after parser",
-		`{app="a"} | json | a="1" and b=2`: "LogSelect label filter numeric equality after parser",
+		// a numeric equality literal with no single reading in Loki and VictoriaLogs.
+		`{app="a"} | json | status=0x10`:     numericEqualityConstruct,
+		`{app="a"} | json | d!=1d`:           numericEqualityConstruct,
+		`{app="a"} | logfmt | b=0.0005KB`:    numericEqualityConstruct,
+		`{app="a"} | json | a="1" and b=1_0`: numericEqualityConstruct,
 		// the string translator reads the stage text.
 		`{app="a"} | json a_b="a_b" | a_b="1"`:      "LogSelect label filter json extraction label",
 		`{app="a"} | json a_b | a_b="1"`:            "LogSelect label filter json extraction label",

@@ -10,7 +10,8 @@ why: |
   `| m==5`, `| m!=5`) as a numeric comparison: the label's value is parsed as
   a number, so `5.0` and `5` are equal. The proxy writes `=` and `!=` with a
   number as an exact text match (`m:="5"`, `-m:="5"`), so `5.0` is not equal
-  to `5`. The ordering comparisons (`>`, `>=`, `<`, `<=`) are numeric on both.
+  to `5`, and `!=` also keeps the entries that have no `m`. The ordering
+  comparisons (`>`, `>=`, `<`, `<=`) are numeric on both.
 
   Stack (Loki 3.7.9, VictoriaLogs v1.53.0, 2026-11-09), one stream with
   m="5.0" (line one) and one with m="5" (line two):
@@ -20,19 +21,51 @@ why: |
     | m>=5   Loki both lines        proxy both lines
 
   Recorded with the Loki oracle (Loki's exported pipeline run on a label set
-  and a line, Loki 3.7.9, every operator against 26 values): Loki
-  parses the value as a Go float, so `5`, `5.0`, `05`, `5e0`, `+5`, `5.`
-  and `5_0` are all 5; a missing or empty label is dropped under `=` and
-  `!=`; a value that is not a number is kept with
-  `__error__=LabelFilterErr` (semantics/label-filter-numeric-error-label).
+  and a line, Loki 3.7.9): Loki parses the value as a Go float, so `5`,
+  `5.0`, `05`, `5e0`, `+5`, `5.` and `5_0` are all 5; a missing or empty
+  label is dropped under `=` and `!=`; a value that is not a number is kept
+  with `__error__=LabelFilterErr` (semantics/label-filter-numeric-error-label).
+  A duration (`d == 5s`) is read with Go's duration syntax and a bytes size
+  (`b == 1KB`) with a size parser that takes units in any case and a space
+  before the unit.
 
-  Why it is open: no exact VictoriaLogs filter exists. The values Go float
-  parsing reads as 5 are not a regular language a regexp could match, and
-  VictoriaLogs' own number parsing (range and the numeric comparisons,
-  v1.53.0 source) rejects leading zeros, `+`, exponents and edge dots. An
-  exact answer needs the value parsed per row, which the metric rules do
-  not allow for raw rows; a design decision is needed (for example a
-  bounded proxy-side filter on log queries only).
+  VictoriaLogs can compare numerically: its range filters (`m:>=5 m:<=5`)
+  read the field's value as a plain number (with a sign, a fraction, an
+  exponent, leading zeros, separators and a leading or trailing dot), as a
+  duration (5s, 1m30s) and as a bytes size (1KB, 1MiB), the same on v1.49.0
+  and v1.53.0 (the VictoriaLogs oracle, store, over 7,286 query and line
+  decisions). The query plan therefore writes `=`, `==` and `!=` with a
+  number, duration or bytes literal after a json or logfmt parser as that
+  pair of range filters (and for `!=` the same pair negated on the entries
+  that have the field), with the bound as the plain number of the literal, of
+  nanoseconds or of bytes. The lowering keeps the same lines Loki keeps for
+  every value of the grid except the differences below; the string translator
+  differs from Loki on 988 of the same decisions, the plan on 438. A literal
+  with no single reading in both (hexadecimal, octal, separators, whole days,
+  weeks or years, a fractional byte count) stays with the string translator.
+
+  What remains different, for the plan and for the order comparisons alike
+  (VictoriaLogs reads the one value space): a value Loki marks with
+  `__error__` that VictoriaLogs reads as a number, so `m == 200` also keeps
+  `0xC8`, `0b11001000` and `0o310`, `m == 1000` keeps `1KB`, `1K`, `1000B`,
+  `1µs` and `1000ns`, `d == 1s` keeps `1GB`, `1G` and `1000000000`, and
+  `b == 1KB` keeps `1000ns`; spellings Loki reads that VictoriaLogs does not
+  (`100us` and the Greek mu in a duration, `+5s`, `05s`, a size in lower case,
+  with a space, a trailing space, a thousands separator or a leading zero); and
+  an empty json value, which Loki keeps with `__error__` under `!=`. A value
+  that is not a number is dropped under `=` and `==` where Loki keeps it with
+  `__error__=LabelFilterErr`, and kept under `!=` as Loki keeps it but without
+  the label (semantics/label-filter-numeric-error-label).
+
+  Why it is still open: the query plan holds the numeric comparison for the
+  log queries it lowers after a json or logfmt parser (the shadows record it
+  as a known divergence of the string translator), but the proxy serves only
+  filter-only log queries without a parser from the plan. A query after a
+  parser, a regexp or pattern parser's label, and a label filter with no
+  parser (`{app="x"} | m=5`, served from the plan in the translator's text)
+  are written as the exact text until the plan serves them. A change to the
+  served text needs the speed and memory comparison against Loki: the cost of
+  a range pair against an exact match in VictoriaLogs is not measured yet.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -51,8 +84,8 @@ gap:
   status: open
   impact: explore-visible
   effort: L
-  area: 'internal/translator translateSingleLabelFilter (= and != with a number written as an exact text match)'
+  area: 'internal/translator translateSingleLabelFilter (= and != with a number written as an exact text match); the plan (internal/queryplan/lower/label_filter_numeric_eq.go) writes the numeric comparison after a json or logfmt parser'
   loki: 'label filters against a number literal compare numerically'
-  proxy: 'exact text match for = and !=; ordering comparisons numeric'
-  planned_test: 'e2e vs Loki with 5 / 5.0 / non-numeric values (test/e2e-compat, group semantics); Loki oracle answers for non-numeric values'
+  proxy: 'exact text match for = and !=; ordering comparisons numeric; the plan compares numerically after a json or logfmt parser, not served yet'
+  planned_test: 'e2e vs Loki with 5 / 5.0 / non-numeric values (test/e2e-compat, group semantics) once the plan serves a parser query; recorded Loki and VictoriaLogs answers in internal/queryplan/lower TestNumericEqualityAfterParserMatchesLoki'
   clusters: []

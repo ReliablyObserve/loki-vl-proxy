@@ -19,7 +19,9 @@ import (
 //
 // The lowering leaves to the string translator the label filters whose text it reads in ways the typed filter
 // does not carry, or writes in ways that are defects the lowering must not copy:
-//   - a numeric, duration or bytes value compared with =, == or != (the translator writes the string form);
+//   - a numeric, duration or bytes literal compared with =, == or != that has no single reading in Loki and
+//     VictoriaLogs (numericEqualityBound; the translator writes the text of the literal, which the lowering does
+//     not copy);
 //   - a json extraction label whose name is written both ways the translator tells apart by text (`| json a_b`
 //     and `| json a_b="a_b"`), and an expression the rewrite below cannot write;
 //   - a name_extracted label in a query whose json or logfmt parsers have flags or an extraction list (the
@@ -35,10 +37,9 @@ func checkParsedLabelFilterExpr(e *logql.LabelFilterExpr, sel *queryplan.LogSele
 		}
 		return checkParsedLabelFilterExpr(e.Right, sel)
 	}
-	switch e.Kind {
-	case logql.LabelFilterValueNumber, logql.LabelFilterValueDuration, logql.LabelFilterValueBytes:
-		if e.Cmp == "=" || e.Cmp == "==" || e.Cmp == "!=" {
-			return "LogSelect label filter numeric equality after parser"
+	if isNumericEquality(e) {
+		if _, ok := numericEqualityBound(e); !ok {
+			return numericEqualityConstruct
 		}
 	}
 	label := translate.SanitizeFieldIdentifier(e.Name)
@@ -138,7 +139,7 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 			}
 			se := *e
 			se.Name = translate.StreamValueScratch + label
-			return labelFilterLeaf(&se, nil, lb.caps), ""
+			return lb.leafFilter(&se, nil), ""
 		}
 	}
 	if key, ok := lb.rewrite(e.Leaf); ok {
@@ -158,7 +159,7 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 				return logsql.FieldFilter{}, "LogSelect label filter json extraction label"
 			}
 		}
-		return labelFilterLeaf(&re, lb.label, lb.caps), ""
+		return lb.leafFilter(&re, lb.label), ""
 	}
 	if !lb.keyParsed {
 		return labelFilterLeaf(e, lb.label, lb.caps), "" // a regexp or pattern names its labels itself
@@ -173,7 +174,7 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 		keys = translate.ParsedKeysOf(label, translated)
 	}
 	if keys == nil {
-		return labelFilterLeaf(e, lb.label, lb.caps), ""
+		return lb.leafFilter(e, lb.label), ""
 	}
 	op, _ := translate.LookupLabelFilterOp(e.Cmp) // the operator is known
 	isIP := e.Kind == logql.LabelFilterValueIP
@@ -188,16 +189,18 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 		} else {
 			field = logsql.QuoteKeywordField(field) // a key called not, in or the like
 		}
-		filters[i], _ = translate.LabelFilterLeaf(field, e.Cmp, e.Value, isIP, lb.caps)
+		filters[i] = parsedFieldLeaf(field, e, lb.caps)
 	}
-	f, ok := translate.ParsedKeyFilter(filters, translate.ParsedKeyMatchesEmpty(e.Value, op, isIP))
+	// A numeric equality drops an entry without the label under both operators, as a comparison does.
+	matchesEmpty := !isNumericEquality(e) && translate.ParsedKeyMatchesEmpty(e.Value, op, isIP)
+	f, ok := translate.ParsedKeyFilter(filters, matchesEmpty)
 	if !ok {
 		return logsql.FieldFilter{}, "LogSelect label filter parsed keys"
 	}
 	if base, collision := translate.ExtractedBase(label); collision && lb.keyParsers > 0 {
 		// A parsed label Loki renamed name_extracted where the stream has the label: its value is in a scratch
 		// field the parsers unpack the key into.
-		parsed, _ := translate.LabelFilterLeaf(translate.ExtractedScratch+"_"+base, e.Cmp, e.Value, isIP, lb.caps)
+		parsed := parsedFieldLeaf(translate.ExtractedScratch+"_"+base, e, lb.caps)
 		if f, ok = translate.ExtractedFilter(base, parsed, f); !ok {
 			return logsql.FieldFilter{}, "LogSelect label filter _extracted"
 		}
