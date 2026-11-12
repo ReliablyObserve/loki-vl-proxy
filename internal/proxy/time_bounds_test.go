@@ -597,7 +597,7 @@ func TestBuildAbsentOverTimeMatrixNearTheLimits(t *testing.T) {
 		{"step of 1 over a short window at the top", math.MaxInt64 - 2, math.MaxInt64, 1, 3, nil},
 		{"window around zero", -2 * step, 2 * step, step, 5, nil},
 		{"a present step", 0, 2 * step, step, 2, map[int64]bool{step: true}},
-		{"bottom to top with a step of one nanosecond", math.MinInt64, math.MaxInt64, 1, maxMetricEvalSamples, nil},
+		{"bottom to top with a step of one nanosecond", math.MinInt64, math.MaxInt64, 1, absentMaxPoints, nil},
 		{"inverted window", 10, 5, 1, 0, nil},
 		{"no step", 0, 10, 0, 0, nil},
 	} {

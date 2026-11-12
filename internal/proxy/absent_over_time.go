@@ -337,6 +337,10 @@ func (p *Proxy) proxyAbsentOverTimeQueryRange(w http.ResponseWriter, r *http.Req
 	p.finishAbsent(w, "query_range", originalQuery, start, buildAbsentOverTimeMatrix(spec, presenceSteps(body, spec.unwrapped()), startNs, endNs, step.Nanoseconds()))
 }
 
+// absentMaxPoints bounds the points of one absent_over_time answer to twice
+// Loki's resolution limit.
+const absentMaxPoints = 2 * lokiMaxPointsPerSeries
+
 // buildAbsentOverTimeMatrix is the matrix of the steps start, start+step, ...
 // end that are not in present. A presence point is matched to its step by
 // index, not by its exact nanosecond: it reaches here as float seconds, which at
@@ -349,9 +353,10 @@ func buildAbsentOverTimeMatrix(spec absentOverTimeCompatSpec, present map[int64]
 			has[int64(math.Round(float64(ts-startNs)/float64(stepNs)))] = true
 		}
 		var values [][]any
-		// The request layer holds a range to Loki's 11,000 points per series; a caller
-		// that reaches this builder otherwise gets the first maxMetricEvalSamples.
-		for i, n := int64(0), min64(stepCount(startNs, endNs, stepNs), maxMetricEvalSamples); i < n; i++ {
+		// The handlers hold a range to Loki's 11,000 points per series, plus one for
+		// the step alignment; a caller that reaches this builder otherwise gets the
+		// first absentMaxPoints.
+		for i, n := int64(0), min64(stepCount(startNs, endNs, stepNs), absentMaxPoints); i < n; i++ {
 			if !has[i] {
 				values = append(values, []any{lokiSampleSeconds(startNs + i*stepNs), value})
 			}
