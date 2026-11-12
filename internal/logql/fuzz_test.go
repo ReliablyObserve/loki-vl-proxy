@@ -62,6 +62,11 @@ func FuzzParse(f *testing.F) {
 		`*`,
 		// unknown stages
 		`{app="nginx"} | custom_stage`,
+		// a stage name followed by more of the stage (semantics/stage-name-followed-by-more-of-stage)
+		"rAte({A=\"\"}|keep  A, A |A, A | A .0000![0y])   ",
+		`{app="nginx"} | a .5`,
+		`{app="nginx"} | a .b`,
+		`{app="nginx"} | a:b .5`,
 		// partial inputs
 		`rate(`,
 		`sum by (`,

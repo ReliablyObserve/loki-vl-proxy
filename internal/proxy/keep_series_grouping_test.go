@@ -445,6 +445,9 @@ func FuzzKeepSeriesGrouping(f *testing.F) {
 		`rate({app="x"} | keep level="error" [1m])`,
 		`{app="x"} | json | keep level`,
 		`topk(2, bytes_rate({app="x"} | json | keep __error__ [1m]))`,
+		`rate({app="x"} | keep a | a .b, c [1m])`,
+		`rate({app="x"} | keep a | a .b "v" [1m])`,
+		`rate({app="x"} | keep a | a .b c [1m])`,
 	} {
 		f.Add(seed)
 	}
@@ -463,6 +466,52 @@ func FuzzKeepSeriesGrouping(f *testing.F) {
 			t.Fatalf("%q rewritten twice: %q then %q", query, out, again)
 		}
 	})
+}
+
+// White space around numbers, dots and names in the label filters after a keep: a query Loki rejects (a stage name
+// followed by more of the stage, the fuzz input `| A, A | A .0000!`) is not parsed and so not rewritten, and a query
+// Loki accepts, or the proxy keeps (a spaced dotted name), is rewritten to a query whose stages keep their tokens.
+// conformance: semantics/stage-name-followed-by-more-of-stage, semantics/keep-leaves-labels-loki-drops
+func TestKeepSeriesGrouping_StageSpacing(t *testing.T) {
+	for _, q := range []string{
+		"rAte({A=\"\"}|keep  A, A |A, A | A .0000![0y])   ",
+		`rate({app="x"} | keep a | a, b [1m])`,
+		`rate({app="x"} | keep a | a .5 [1m])`,
+		`rate({app="x"} | keep a | a .0000! [1m])`,
+		`rate({app="x"} | keep a | a :b [1m])`,
+		`rate({app="x"} | keep a | a "v" [1m])`,
+		`bytes_rate({app="x"} | keep a .5 [1m])`,
+		`rate({app="x"} | drop b | keep a, b .c [1m])`,
+	} {
+		if _, err := logqlpkg.Parse(q); err == nil {
+			t.Errorf("%q parses; Loki rejects it", q)
+		}
+		if out, changed := keepSeriesGrouping(q); changed || out != q {
+			t.Errorf("%q rewritten to %q", q, out)
+		}
+	}
+	for _, tc := range []struct{ in, want string }{
+		{`rate({app="x"} | keep a | a > .5 [1m])`, `sum by (a) (rate({app="x"} | keep a | a>.5[1m]))`},
+		{`rate({app="x"} | keep a , b | a > - .5 or b < .5KB [1m])`, `sum by (a, b) (rate({app="x"} | keep a, b | a>-.5 or b<.5KB[1m]))`},
+		{`rate({app="x"} | keep a | a >= .5 , a <= 1 [1m])`, `sum by (a) (rate({app="x"} | keep a | a>=.5, a<=1[1m]))`},
+		{`bytes_rate({app="x"} | drop b | keep a | a == .0000 [5m])`, `sum by (a) (bytes_rate({app="x"} | drop b | keep a | a==.0000[5m]))`},
+		{`count_over_time({app="x"} | keep a | a = "v" , a != "w" [1m])`, `sum by (a) (count_over_time({app="x"} | keep a | a="v", a!="w"[1m]))`},
+		// A dot after a stage name, spaced, is the proxy's dotted name (Loki rejects it): the dot keeps its space.
+		{`rate({app="x"} | keep a | a .b, c [1m])`, `sum by (a) (rate({app="x"} | keep a | a .b, c[1m]))`},
+		{`rate({app="x"} | keep a | a .b "v" [1m])`, `sum by (a) (rate({app="x"} | keep a | a .b"v"[1m]))`},
+		{`rate({app="x"} | keep a | a .b .5 [1m])`, `sum by (a) (rate({app="x"} | keep a | a .b .5[1m]))`},
+		{"rate({app=\"x\"} | keep a | custom . `p.q.` = `v` [1m])", "sum by (a) (rate({app=\"x\"} | keep a | custom .`p.q.`=`v`[1m]))"},
+	} {
+		got, changed := keepSeriesGrouping(tc.in)
+		if !changed || got != tc.want {
+			t.Errorf("%s\n got: %s (changed=%v)\nwant: %s", tc.in, got, changed, tc.want)
+			continue
+		}
+		e, err := logqlpkg.Parse(got)
+		if err != nil || e.String() != got {
+			t.Errorf("%s: the rewrite %s does not read back: %v", tc.in, got, err)
+		}
+	}
 }
 
 // A Grafana range that moves keeps the settled-steps cache for a count over
@@ -512,5 +561,22 @@ func TestKeepSeriesGrouping_JSONFoldKeepsSettledSteps(t *testing.T) {
 		// The answer's buckets are stored off the request path: wait for the store, as a client's next refresh
 		// does by arriving later, before the next request looks them up.
 		p.statsExtentStores.wait()
+	}
+}
+
+// BenchmarkKeepSeriesGrouping runs the keep series grouping rewrite on a query it rewrites, one it leaves alone and
+// the fuzz input it rewrote into a query that did not parse.
+func BenchmarkKeepSeriesGrouping(b *testing.B) {
+	for _, bc := range []struct{ name, query string }{
+		{"rewritten", `rate({app="x"} | keep a , b | a > - .5 or b < .5KB [1m])`},
+		{"no_keep", `sum by (app) (rate({app="x"} | json | a > .5 [1m]))`},
+		{"fuzz_input", `rate({A="x"}|keep  A, A |A, A | A .0000![0y])`},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_, _ = keepSeriesGrouping(bc.query)
+			}
+		})
 	}
 }

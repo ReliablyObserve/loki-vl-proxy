@@ -32,8 +32,8 @@ why: |
   because of a character but white space the scanner still skips (the white space fix,
   semantics/logql-loki-whitespace) and a stage that is a bare name (the proxy passes it to the backend, with an
   ASCII name as well); it rejects the 1,463 queries where Loki takes a character that starts no token as a label
-  name, because the translation to LogsQL cannot write such a name; and 16,785 answers are identical in status and
-  text, the other 201 differ in text only (143 hold white space the scanner still skips, 38 an ASCII symbol the
+  name, because the translation to LogsQL cannot write such a name; and 16,839 answers are identical in status and
+  text, the other 206 differ in text only (154 hold white space the scanner still skips, 32 an ASCII symbol the
   scanner reports as an error, 13 a lone '!', 7 a quote). Those limits are counted and bounded by the test. A fuzz target (FuzzParseTerminates, in fuzz-smoke) holds every entry point of the package to return within
   200 ms and to allocate at most a mebibyte per input byte; the 80 probe queries and the first, a middle and the
   last digit of every Nd block, in 22 positions, are a unit test.

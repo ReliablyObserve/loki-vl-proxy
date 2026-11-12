@@ -1490,6 +1490,11 @@
       "internal/proxy/sliding_window_stats_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
+    "semantics/stage-name-followed-by-more-of-stage": [
+      "internal/logql/stage_name_follower_loki_test.go",
+      "internal/proxy/fail_fast_unicode_test.go",
+      "internal/proxy/keep_series_grouping_test.go"
+    ],
     "semantics/stddev-stdvar-grouped-values": [
       "internal/proxy/stddev_grouped_differential_test.go",
       "internal/proxy/stddev_grouped_test.go",
@@ -1889,7 +1894,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 468,
+  "registry_items": 469,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -1991,6 +1996,9 @@
     ],
     "internal/logql/selector_value_test.go": [
       "semantics/selector-values-are-strings"
+    ],
+    "internal/logql/stage_name_follower_loki_test.go": [
+      "semantics/stage-name-followed-by-more-of-stage"
     ],
     "internal/logql/stage_parse_validate_loki_test.go": [
       "semantics/label-filter-regex-parse-error"
@@ -2289,7 +2297,8 @@
     "internal/proxy/fail_fast_unicode_test.go": [
       "cache-response-key-versions",
       "semantics/label-list-trailing-comma",
-      "semantics/logql-unicode-runes"
+      "semantics/logql-unicode-runes",
+      "semantics/stage-name-followed-by-more-of-stage"
     ],
     "internal/proxy/first_last_range_timestamps_test.go": [
       "loki_api_v1_query_range",
@@ -2335,7 +2344,8 @@
     "internal/proxy/keep_series_grouping_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
-      "semantics/keep-leaves-labels-loki-drops"
+      "semantics/keep-leaves-labels-loki-drops",
+      "semantics/stage-name-followed-by-more-of-stage"
     ],
     "internal/proxy/label_cache_behavior_test.go": [
       "loki_api_v1_labels"
@@ -4214,7 +4224,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 507,
+  "tests_with_markers": 508,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4322,5 +4332,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 290
+  "wired_items": 291
 }

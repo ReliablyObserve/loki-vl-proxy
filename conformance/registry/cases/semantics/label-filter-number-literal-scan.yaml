@@ -51,8 +51,8 @@ why: |
   grid (53,000 queries: literals, operators, keywords, characters, NUL and
   the metric and line filter positions) now answers like Loki, status and
   text. Breaking: the forms Loki rejects answer its 400 instead of being
-  accepted. Not changed: the content of a `[range]`, a stage that starts with
-  a bare name (it passes through to the backend), an unclosed selector after
+  accepted. Not changed: the content of a `[range]`, a stage that is a bare
+  name alone (it passes through to the backend), an unclosed selector after
   a binary operator, and dotted names (the proxy's own, `DottedNameError` for
   the Loki profile); see docs/logql-parser.md.
 request:
