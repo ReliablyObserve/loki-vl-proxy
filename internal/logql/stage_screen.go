@@ -34,29 +34,9 @@ func MayHaveNonFilterStage(query string) bool {
 			for i++; i < len(query) && query[i] != '`'; i++ {
 			}
 		case '|':
-			j := i + 1
-			for j < len(query) && isStageSpace(query[j]) {
-				j++
+			if barOpensStage(query, i+1) {
+				return true
 			}
-			if j < len(query) && (query[j] >= utf8.RuneSelf || query[j] == '#' || query[j] == '\v' || query[j] == '\f') {
-				j = skipStageSpace(query, j)
-			}
-			k := j
-			for k < len(query) && isStageWordByte(query[k]) {
-				k++
-			}
-			if k == j || !isNonFilterStageWord(query[j:k]) {
-				continue
-			}
-			m := k
-			for m < len(query) && isStageSpace(query[m]) {
-				m++
-			}
-			// `| drop = "x"` and the like compare a label that has a stage's name.
-			if m < len(query) && (query[m] == '=' || query[m] == '!' || query[m] == '<' || query[m] == '>') {
-				continue
-			}
-			return true
 		case '#':
 			// A comment runs to the end of its line, as the scanner reads it: a quote in it opens no string.
 			for i < len(query) && query[i] != '\n' {
@@ -78,6 +58,29 @@ func MayHaveNonFilterStage(query string) bool {
 		}
 	}
 	return false
+}
+
+// barOpensStage reports whether the text after a `|` (from j) names a parser or formatting stage.
+func barOpensStage(query string, j int) bool {
+	for j < len(query) && isStageSpace(query[j]) {
+		j++
+	}
+	if j < len(query) && (query[j] >= utf8.RuneSelf || query[j] == '#' || query[j] == '\v' || query[j] == '\f') {
+		j = skipStageSpace(query, j)
+	}
+	k := j
+	for k < len(query) && isStageWordByte(query[k]) {
+		k++
+	}
+	if k == j || !isNonFilterStageWord(query[j:k]) {
+		return false
+	}
+	m := k
+	for m < len(query) && isStageSpace(query[m]) {
+		m++
+	}
+	// `| drop = "x"` and the like compare a label that has a stage's name.
+	return m >= len(query) || query[m] != '=' && query[m] != '!' && query[m] != '<' && query[m] != '>'
 }
 
 func isStageSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
