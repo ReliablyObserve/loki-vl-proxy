@@ -7,22 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- The query plan now decides how the handlers answer a range aggregation or a `sum`, `avg`, `min`, `max`
-  or `count` over one when the range carries an `offset` (a negative one too), instead of leaving it to
-  the handlers: the handlers cut the clause out, read the windows that much earlier (later for a negative
-  offset) and stamp the samples at the times asked for, so the route is the one the same query has without
-  the clause, for every window kind. The rule asks for the request's end, because it only decides offsets
-  that keep the moved bounds between September 2001 and the end of int64 nanoseconds (2262), less the
-  steps the handlers take past the end: a larger move stays delegated as "offset bounds". The query text
-  the handlers read the clause from is not copied: a comment or an upper-case `OFFSET` (the request
-  rewrite), and a line filter that looks like a clause or a range bracket (the handlers cut it, or answer
-  400), are delegated as "route rewrite" and "route offset text". No answer or request changes: no handler
-  reads the rule yet. Route parity: 510 more of 25,070 runs are decided (6,226 native, 0 mismatches, the
-  routes and statuses unchanged); the other 620 runs that carry an offset are now named by what else keeps
-  them delegated (a parser, an unwrap pipeline).
-
 ### Fixed
 
 - Bounds checks for request times and offsets. A `query` or `query_range`
@@ -43,6 +27,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or is not VictoriaLogs JSON each answer the same status and text the other routes give that failure (500
   `Internal Server Error` for a failed backend). An empty `data` array now means the range holds no
   patterns, not that the read failed, so Logs Drilldown shows the outage instead of an empty pattern list.
+
+## [2.191.0] - 2026-11-12
+
+### Changed
+
+- The query plan now decides how the handlers answer a range aggregation or a `sum`, `avg`, `min`, `max`
+  or `count` over one when the range carries an `offset` (a negative one too), instead of leaving it to
+  the handlers: the handlers cut the clause out, read the windows that much earlier (later for a negative
+  offset) and stamp the samples at the times asked for, so the route is the one the same query has without
+  the clause, for every window kind. The rule asks for the request's end, because it only decides offsets
+  that keep the moved bounds between September 2001 and the end of int64 nanoseconds (2262), less the
+  steps the handlers take past the end: a larger move stays delegated as "offset bounds". The query text
+  the handlers read the clause from is not copied: a comment or an upper-case `OFFSET` (the request
+  rewrite), and a line filter that looks like a clause or a range bracket (the handlers cut it, or answer
+  400), are delegated as "route rewrite" and "route offset text". No answer or request changes: no handler
+  reads the rule yet. Route parity: 510 more of 25,070 runs are decided (6,226 native, 0 mismatches, the
+  routes and statuses unchanged); the other 620 runs that carry an offset are now named by what else keeps
+  them delegated (a parser, an unwrap pipeline).
 
 ## [2.190.0] - 2026-11-12
 
