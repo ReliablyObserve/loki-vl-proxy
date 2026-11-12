@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.182.0] - 2026-11-12
+
 ### Changed
 
 - The query plan lowers a binary operation with a `vector(n)` operand next to a range or
