@@ -41,7 +41,7 @@ export default function VictoriaLogsKubernetesLoki(): ReactNode {
       description="Replace Loki with VictoriaLogs on Kubernetes while keeping Grafana Explore, Logs Drilldown, and the native Loki datasource fully working — using loki-vl-proxy and Helm."
       eyebrow="Kubernetes deployment"
       headline="Replace Loki with VictoriaLogs on Kubernetes, keep Grafana working"
-      lede="Switch your Kubernetes log stack from Loki to VictoriaLogs without touching Grafana dashboards, datasources, or alert rules. Loki-VL-proxy sits between your Grafana deployment and VictoriaLogs, translating the Loki read API transparently — no custom plugin, no dashboard rewrites."
+      lede="Switch your Kubernetes log stack from Loki to VictoriaLogs without touching Grafana dashboards or datasources. Loki-VL-proxy sits between your Grafana deployment and VictoriaLogs, translating the Loki read API transparently — no custom plugin, no dashboard rewrites. Alerting is not finished yet: alert rules run in vmalert and the proxy shows them read-only."
       primaryCta={{label: 'Read the getting started guide', to: '/docs/getting-started/'}}
       secondaryCta={{label: 'See resource sizing', to: '/victorialogs-vs-loki-cost-and-performance/'}}
       highlights={[
@@ -150,7 +150,7 @@ export default function VictoriaLogsKubernetesLoki(): ReactNode {
               <li>Native Loki datasource — no plugin swap required.</li>
               <li>Explore with label discovery, <code>detected_fields</code>, and <code>query_range</code>.</li>
               <li>Logs Drilldown with patterns, volume, and field browsing.</li>
-              <li>Alert rules bridged through optional vmalert integration.</li>
+              <li>Alert rules bridged read-only through optional vmalert integration (alerting is not finished; full support is planned).</li>
               <li>Multi-tenant dashboards via the <code>X-Scope-OrgID</code> header, once tenancy is enabled.</li>
             </ul>
           </div>

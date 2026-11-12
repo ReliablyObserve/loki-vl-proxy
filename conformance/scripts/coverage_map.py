@@ -113,9 +113,13 @@ def render_api_status(rows):
         lines += ["", "`cache/generation_numbers` is not implemented; manual cache flush and",
                   "eviction do not provide a distributed deletion generation."]
     lines += ["",
-              "Rules reads under `/loki/api/v1/rules` and `/api/prom/rules`, including namespace",
-              "and group lookups, are already routed. Configure `-ruler-backend` for vmalert;",
-              "routing these reads does not implement rule writes or prove full ruler parity."]
+              "**Alerting is not finished.** The proxy does not evaluate alerting or recording rules and",
+              "does not implement Loki's ruler API. What ships today is a read bridge: the rules routes",
+              "(`/loki/api/v1/rules`, `/api/prom/rules`, `/prometheus/api/v1/rules`, with namespace and",
+              "group lookups) and the alerts routes pass reads through to a vmalert configured with",
+              "`-ruler-backend` / `-alerts-backend`, and vmalert evaluates its own rules against",
+              "VictoriaLogs. Everything beyond that bridge (Loki-compatible rule evaluation, rule writes and",
+              "full ruler parity) is planned work, not shipped."]
     return "\n".join(lines)
 
 
