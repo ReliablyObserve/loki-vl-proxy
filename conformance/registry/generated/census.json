@@ -652,6 +652,9 @@
     "semantics/repeated-label-filter-replaced-across-label-format | compare:observed",
     "semantics/repeated-label-filter-replaced-across-label-format | gap:fixed",
     "semantics/repeated-label-filter-replaced-across-label-format | query",
+    "semantics/request-time-bounds | applies_to",
+    "semantics/request-time-bounds | compare:exact",
+    "semantics/request-time-bounds | query",
     "semantics/reserved-field-name-case-outbound | compare:observed",
     "semantics/reserved-field-name-case-outbound | gap:fixed",
     "semantics/reserved-field-name-case-outbound | query",
@@ -1368,6 +1371,7 @@
     "internal/proxy/pattern_loki_answers_test.go | patterns-loki-mining",
     "internal/proxy/pattern_miner_answers_test.go | loki_api_v1_patterns",
     "internal/proxy/pattern_tokenizer_test.go | loki_api_v1_patterns",
+    "internal/proxy/patterns_backend_failure_test.go | semantics/error-layer-silent-success",
     "internal/proxy/patterns_counts_test.go | drilldown/patterns-full-range-counts",
     "internal/proxy/patterns_counts_test.go | drilldown/patterns-mined-differently",
     "internal/proxy/patterns_counts_test.go | drilldown/patterns-one-series-per-level",
@@ -1387,6 +1391,7 @@
     "internal/proxy/patterns_state_test.go | patterns-loki-mining",
     "internal/proxy/patterns_state_test.go | peer-cache-patterns",
     "internal/proxy/peer_push_identity_test.go | peer-cache-replication",
+    "internal/proxy/perf_hardening_test.go | semantics/error-layer-silent-success",
     "internal/proxy/physical_sites_test.go | loki_api_v1_query",
     "internal/proxy/physical_sites_test.go | loki_api_v1_query_range",
     "internal/proxy/physical_sites_test.go | semantics/label-replace-new-label",
@@ -1398,6 +1403,7 @@
     "internal/proxy/plan_route_parity_test.go | architecture-syntax-package-layering",
     "internal/proxy/post_aggregation_physical_test.go | architecture-syntax-package-layering",
     "internal/proxy/proxy_helpers_test.go | semantics/absent-over-time-semantics",
+    "internal/proxy/proxy_test.go | semantics/error-layer-silent-success",
     "internal/proxy/quantile_histogram_test.go | quality/query-range-settled-steps",
     "internal/proxy/quantile_histogram_test.go | semantics/unwrap-quantile-response-limit",
     "internal/proxy/quantile_slider_harden_test.go | quality/query-range-settled-steps",
@@ -1562,6 +1568,7 @@
     "internal/proxy/tenant_query_limits_test.go | series-limits-and-partial-results",
     "internal/proxy/tenant_query_limits_test.go | tenant-query-limits",
     "internal/proxy/tenant_routing_test.go | tenant-numeric-routing",
+    "internal/proxy/time_bounds_test.go | semantics/request-time-bounds",
     "internal/proxy/top_value_series_limit_test.go | limits/series-limit-error",
     "internal/proxy/top_value_series_limit_test.go | semantics/unwrap-sum-without-collapses",
     "internal/proxy/topk_fuzz_test.go | semantics/topk-bottomk-range-series",
@@ -2295,14 +2302,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 65,
+      "api": 66,
       "drilldown": 50,
       "explore": 169,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 529,
+      "go": 533,
       "playwright": 1
     },
     "page_kinds": {
@@ -2322,7 +2329,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 108,
-    "wired_items": 301
+    "wired_items": 302
   },
   "gates": [
     "A/B shape selection",

@@ -300,6 +300,14 @@ func integerBoundUnixNano(raw string) (int64, bool) {
 	if err != nil {
 		return 0, false
 	}
+	return integerNanosIfHeld(n)
+}
+
+// integerNanosIfHeld reads an integer time by its magnitude (seconds below
+// 1e11, then milliseconds, then microseconds, then nanoseconds), or reports
+// false when that reading is outside int64 nanoseconds, which
+// normalizeLokiIntTimeToUnixNano would wrap.
+func integerNanosIfHeld(n int64) (int64, bool) {
 	if n == math.MinInt64 {
 		return 0, false // its absolute value overflows, so its magnitude cannot be read
 	}
@@ -320,6 +328,33 @@ func integerBoundUnixNano(raw string) (int64, bool) {
 		return 0, false
 	}
 	return normalizeLokiIntTimeToUnixNano(n), true
+}
+
+// floatNanosIfHeld reads a decimal time by its magnitude as
+// normalizeLokiNumericTimeToUnixNano does, or reports false for one that int64
+// nanoseconds cannot hold (the conversion of such a float is undefined and
+// differs between architectures).
+func floatNanosIfHeld(v float64) (int64, bool) {
+	abs := math.Abs(v)
+	if math.IsNaN(v) {
+		return 0, false
+	}
+	unit := 1.0
+	switch {
+	case abs < 1e11:
+		if !lokiFloatSecondsFitNanos(v) {
+			return 0, false
+		}
+		return lokiFloatSecondsToNanos(v), true
+	case abs < 1e14:
+		unit = float64(time.Millisecond)
+	case abs < 1e17:
+		unit = float64(time.Microsecond)
+	}
+	if abs*unit >= float64(math.MaxInt64) {
+		return 0, false
+	}
+	return normalizeLokiNumericTimeToUnixNano(v), true
 }
 
 // isIntegerBound reports whether raw is a decimal integer with an optional

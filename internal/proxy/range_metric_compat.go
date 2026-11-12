@@ -2601,7 +2601,8 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 		// [t-window, t), present[pLo] the first present bucket from t-window.
 		var sampleWindow, countWindow windowCursor
 		pLo := 0
-		for tNS := startNS; tNS <= endNS; tNS += stepNS {
+		for i, n := int64(0), stepCount(startNS, endNS, stepNS); i < n; i++ {
+			tNS := startNS + i*stepNS
 			windowStartNS := tNS - windowNS
 			lo, hi := sampleWindow.span(samples, windowStartNS, tNS)
 			var sum float64
@@ -2627,7 +2628,8 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 				if !more {
 					break
 				}
-				tNS = next
+				// next is a step of the range at or after tNS: continue from it.
+				i = int64((uint64(next) - uint64(startNS)) / uint64(stepNS))
 				continue
 			}
 			value := sum
@@ -2727,7 +2729,8 @@ func nextHitsStep(tNS, startNS, endNS, stepNS int64, samples []rangeMetricSample
 	if next == math.MaxInt64 || next >= endNS {
 		return 0, false
 	}
-	return startNS + ((next-startNS)/stepNS)*stepNS, true // the step at or before next
+	// The step at or before next, on the unsigned distance from the start.
+	return int64(uint64(startNS) + (uint64(next)-uint64(startNS))/uint64(stepNS)*uint64(stepNS)), true
 }
 
 // windowCursor holds the bounds [lo, hi) of the ascending samples labelled in

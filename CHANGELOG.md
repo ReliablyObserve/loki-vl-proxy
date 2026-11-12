@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Bounds checks for request times and offsets. A `query` or `query_range`
+  request whose window, moved by the query's `offset` and widened by its range,
+  leaves the span the proxy holds times in (1677-09-21 to 2262-04-11, less 15
+  minutes at either end) is answered with `400` and a message that names the
+  limit, before the handler reads it. An integer `start`, `end` or `time`
+  beyond 64 bits gets Loki's own `400` (`could not parse 'end' parameter:
+  strconv.ParseInt: ... value out of range`). A time written as RFC 3339
+  outside those dates is no longer read as a time at the other end of the span.
+  Every loop that steps through the evaluation times of a range counts its
+  steps with checked arithmetic. Loki has no stable answer for these windows
+  (wrapped timestamps, a `500`); the answers it gave are recorded and replayed
+  in the tests.
+- `/loki/api/v1/patterns` answers a failed VictoriaLogs call as an error, as Loki does, and no longer as an
+  empty result. A refused or reset connection, a reply after `-backend-timeout` (504), a request the client
+  cancelled (499), a full VictoriaLogs queue (429), a VictoriaLogs error status, and a body that broke off
+  or is not VictoriaLogs JSON each answer the same status and text the other routes give that failure (500
+  `Internal Server Error` for a failed backend). An empty `data` array now means the range holds no
+  patterns, not that the read failed, so Logs Drilldown shows the outage instead of an empty pattern list.
+- `/loki/api/v1/detected_fields`, `/loki/api/v1/detected_field/{name}/values` and `/loki/api/v1/detected_labels`
+  answer a failed VictoriaLogs call as an error, as Loki does, and no longer as an empty or a partial result. A
+  reply after `-backend-timeout` (504), a request the client cancelled (499), a refused or reset connection, a
+  body that broke off, a body that is not VictoriaLogs JSON, and a label whose values could not be read each
+  answer the same status and text the other routes give that failure (500 `Internal Server Error` for a failed
+  backend), so Logs Drilldown shows the outage and not an empty field list. A scan that outlasts
+  `-drilldown-scan-timeout` while VictoriaLogs and the request are still alive keeps its documented answer of
+  no fields.
+
+## [2.191.0] - 2026-11-12
+
 ### Changed
 
 - The query plan now decides how the handlers answer a range aggregation or a `sum`, `avg`, `min`, `max`
@@ -22,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads the rule yet. Route parity: 510 more of 25,070 runs are decided (6,226 native, 0 mismatches, the
   routes and statuses unchanged); the other 620 runs that carry an offset are now named by what else keeps
   them delegated (a parser, an unwrap pipeline).
+
+## [2.190.0] - 2026-11-12
+
+### Changed
+
 - The query plan now writes `=`, `==` and `!=` against a number, a duration or a
   bytes size after a `| json` or `| logfmt` parser (`| status == 200`,
   `| latency != 5s`, `| size = 1KB`) as Loki compares them, by value: `200`,
@@ -38,17 +74,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or years, a fractional byte count) stays with the string translator. Nothing is
   served from the plan for these queries yet: no request to VictoriaLogs and no
   answer changes.
-
-### Fixed
-
-- `/loki/api/v1/detected_fields`, `/loki/api/v1/detected_field/{name}/values` and `/loki/api/v1/detected_labels`
-  answer a failed VictoriaLogs call as an error, as Loki does, and no longer as an empty or a partial result. A
-  reply after `-backend-timeout` (504), a request the client cancelled (499), a refused or reset connection, a
-  body that broke off, a body that is not VictoriaLogs JSON, and a label whose values could not be read each
-  answer the same status and text the other routes give that failure (500 `Internal Server Error` for a failed
-  backend), so Logs Drilldown shows the outage and not an empty field list. A scan that outlasts
-  `-drilldown-scan-timeout` while VictoriaLogs and the request are still alive keeps its documented answer of
-  no fields.
 
 ## [2.189.0] - 2026-11-12
 
