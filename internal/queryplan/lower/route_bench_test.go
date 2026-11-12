@@ -199,6 +199,71 @@ func BenchmarkRoutedVectorUnwrapPlansRoute(b *testing.B) { benchRoutedPlansRoute
 func BenchmarkRoutedOffsetPlansLowered(b *testing.B) { benchRoutedPlansLowered(b, setOffset) }
 func BenchmarkRoutedOffsetPlansRoute(b *testing.B)   { benchRoutedPlansRoute(b, setOffset) }
 
+// routedBinaryPlans are the plan corpus's binary operations that RouteQuery routes for every request shape, with the
+// end an offset needs.
+func routedBinaryPlans(tb testing.TB) []*queryplan.Plan {
+	tb.Helper()
+	qs, err := plancorpus.Queries("../../..")
+	if err != nil {
+		tb.Fatal(err)
+	}
+	var out []*queryplan.Plan
+	for _, q := range qs {
+		p := routeQueryPlan(q)
+		if p == nil {
+			continue
+		}
+		if _, ok := p.Root.(*queryplan.BinOp); !ok {
+			continue
+		}
+		routed := true
+		for _, req := range routeBenchOffsetRequests {
+			if _, err := RouteQuery(p, Profile{}, req); err != nil {
+				routed = false
+			}
+		}
+		if routed {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		tb.Fatal("no routed binary operation in the corpus")
+	}
+	return out
+}
+
+// And on the binary operations, which the rule routes since it routes their operands. These plans were not routed
+// before, so they are timed apart from the sets above.
+func BenchmarkRoutedBinaryPlansLowered(b *testing.B) {
+	plans := routedBinaryPlans(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, p := range plans {
+			for range routeBenchOffsetRequests {
+				if _, err := Plan(p, Profile{}); err != nil {
+					b.Fatal(err)
+				}
+			}
+		}
+	}
+}
+
+func BenchmarkRoutedBinaryPlansRoute(b *testing.B) {
+	plans := routedBinaryPlans(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, p := range plans {
+			for _, req := range routeBenchOffsetRequests {
+				if _, err := RouteQuery(p, Profile{}, req); err != nil {
+					b.Fatal(err)
+				}
+			}
+		}
+	}
+}
+
 // The route rule allocates no more than the lowering it decides over, on every routed plan and request: its
 // decisions read the typed plan and the stats the lowering hands back and allocate nothing of their own.
 //
@@ -215,6 +280,24 @@ func TestRouteAllocatesNoMoreThanTheLowering(t *testing.T) {
 				if routed > lowered {
 					t.Fatalf("%s %+v: Route allocates %.0f, Plan %.0f", p.Key, req, routed, lowered)
 				}
+			}
+		}
+	}
+}
+
+// The same holds for a binary operation: routing its operands allocates no more than lowering the operation.
+//
+// conformance: architecture-syntax-package-layering
+func TestRouteQueryAllocatesNoMoreThanTheLowering(t *testing.T) {
+	if raceDetectorEnabled {
+		t.Skip("the race detector changes allocations")
+	}
+	for _, p := range routedBinaryPlans(t) {
+		for _, req := range routeBenchOffsetRequests {
+			lowered := testing.AllocsPerRun(20, func() { _, _ = Plan(p, Profile{}) })
+			routed := testing.AllocsPerRun(20, func() { _, _ = RouteQuery(p, Profile{}, req) })
+			if routed > lowered {
+				t.Fatalf("%s %+v: RouteQuery allocates %.0f, Plan %.0f", p.Key, req, routed, lowered)
 			}
 		}
 	}
