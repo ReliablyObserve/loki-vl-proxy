@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the other 1,318 runs of the "BinOp (route rule)" and "BinOp operand VectorAgg" groups are now named by
   what keeps them delegated.
 
+### Fixed
+
+- `/loki/api/v1/tail` surfaces a failed VictoriaLogs call as Loki's tail does. A live tail whose VictoriaLogs
+  stream ends, breaks off or carries a line above 1 MiB, and a polled tail whose query fails or answers
+  something that is not JSON, now close the websocket with `1011` and Loki's text
+  (`Internal Server Error`, cut to the 123 bytes a close frame holds). Before, the connection was dropped with
+  no close frame, which clients read as their library's `unexpected EOF`, and a failed poll was retried
+  silently without end. A first VictoriaLogs probe that takes longer than `-backend-timeout` is answered
+  before the upgrade with `504` and Loki's deadline text.
+
 ## [2.193.0] - 2026-11-12
 
 ### Fixed
