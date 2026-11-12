@@ -2,6 +2,8 @@ package lower
 
 import (
 	"errors"
+	"math"
+	"math/big"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +13,19 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
+)
+
+// routeTestEnd is the end of the requests the offset rows move: in the past, with room both ways.
+var routeTestEnd = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+// The earliest time an offset may move a bound to, and the latest for a 5m range on an instant request (a second and
+// the range stay below int64 nanoseconds), as times.
+var (
+	// routeBoundsRangeCeiling is the latest end a range request of step 5m over a 5m range may have after an offset of
+	// -1h: a second, the step and the range short of int64 nanoseconds, less the hour the offset adds.
+	routeBoundsRangeCeiling = time.Unix(0, math.MaxInt64-int64(time.Second)-int64(10*time.Minute)-int64(time.Hour))
+	routeBoundsFloor        = time.Unix(0, 1e18)
+	routeBoundsCeiling      = time.Unix(0, math.MaxInt64-int64(time.Second)-int64(5*time.Minute))
 )
 
 // The route rule decides, from the plan and the request, how the handlers read a range metric's windows from
@@ -35,6 +50,7 @@ func TestRouteDecidesTheWindows(t *testing.T) {
 		stepBkts  bool
 		pushed    bool
 		fold      WithoutFold
+		offset    time.Duration
 		construct string
 		textHolds string
 		textLacks string
@@ -146,6 +162,39 @@ func TestRouteDecidesTheWindows(t *testing.T) {
 		{q: `max without (pod) (max_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: 5 * time.Minute, Span: hour}, window: WindowTumbling, bucket: 5 * time.Minute, counted: true, fold: FoldRows},
 		{q: `avg without (pod) (min_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, counted: true, fold: FoldRows},
 		{q: `sum without (pod) (avg_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: 15 * time.Minute, Span: hour}, window: WindowPhase, bucket: 15 * time.Minute, counted: true, stepBkts: true, fold: FoldRows},
+		// an offset: the handlers strip the clause and read the windows that much earlier (later when negative), so the
+		// route is the one without it on every window kind; the request's end bounds how far it may move them
+		{q: `rate({app="a"}[5m] offset 1h)`, req: RouteRequest{Instant: true, End: routeTestEnd}, window: WindowInstant, identity: true, probe: true, offset: hour},
+		{q: `rate({app="a"}[5m] offset 1h)`, req: RouteRequest{Step: 5 * time.Minute, Span: hour, End: routeTestEnd}, window: WindowTumbling, bucket: 5 * time.Minute, identity: true, probe: true, offset: hour},
+		{q: `rate({app="a"}[5m] offset 7m)`, req: RouteRequest{Step: time.Minute, Span: hour, End: routeTestEnd}, window: WindowBuckets, bucket: time.Minute, identity: true, probe: true, offset: 7 * time.Minute},
+		{q: `rate({app="a"}[5m] offset -1h)`, req: RouteRequest{Step: 15 * time.Minute, Span: hour, End: routeTestEnd}, window: WindowPhase, bucket: 15 * time.Minute, identity: true, probe: true, offset: -hour},
+		{q: `count_over_time({app="a"}[5m] offset 1500ms)`, req: RouteRequest{Instant: true, End: routeTestEnd}, window: WindowInstant, identity: true, probe: true, offset: 1500 * time.Millisecond},
+		{q: `sum_over_time({app="a"} | unwrap n [5m] offset 1h)`, req: RouteRequest{Instant: true, End: routeTestEnd}, window: WindowInstant, identity: true, probe: true, counted: true, offset: hour},
+		{q: `max_over_time({app="a"} | unwrap n [1m] offset 1h) by (pod)`, req: RouteRequest{Step: 15 * time.Minute, Span: hour, End: routeTestEnd}, window: WindowPhase, bucket: 15 * time.Minute, counted: true, stepBkts: true, offset: hour},
+		{q: `absent_over_time({app="a"}[5m] offset 1h)`, req: RouteRequest{Instant: true, End: routeTestEnd}, window: WindowInstant, ungrouped: true, offset: hour},
+		{q: `sum by (pod) (sum_over_time({app="a"} | unwrap n [5m] offset 1h))`, req: RouteRequest{Instant: true, End: routeTestEnd}, window: WindowInstant, counted: true, offset: hour},
+		{q: `max by (pod) (max_over_time({app="a"} | unwrap n [5m] offset -1h))`, req: RouteRequest{Step: time.Minute, Span: hour, End: routeTestEnd}, window: WindowBuckets, bucket: time.Minute, probe: true, counted: true, pushed: true, offset: -hour},
+		{q: `sum(count_over_time({app="a"}[5m] offset 1h))`, req: RouteRequest{Step: time.Minute, Span: hour, End: routeTestEnd}, window: WindowBuckets, bucket: time.Minute, ungrouped: true, sumAll: true, offset: hour},
+		{q: `sum without (pod) (rate({app="a"}[5m] offset 1h))`, req: RouteRequest{Step: 5 * time.Minute, Span: hour, End: routeTestEnd}, window: WindowTumbling, bucket: 5 * time.Minute, probe: true, fold: FoldPushed, offset: hour},
+		// a zero offset moves nothing, so no end is asked for
+		{q: `rate({app="a"}[5m] offset 0s)`, req: RouteRequest{Instant: true}, window: WindowInstant, identity: true, probe: true},
+		// an offset that leaves the times the handlers read back as written: no end, an end before 2001, a start moved to
+		// before it (instant and range), an end moved past int64 nanoseconds (a second is left for the bounds' own moves)
+		{q: `rate({app="a"}[5m] offset 1h)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route offset bounds"},
+		{q: `rate({app="a"}[5m] offset 1h)`, req: RouteRequest{Instant: true, End: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)}, construct: "RangeAgg route offset bounds"},
+		{q: `rate({app="a"}[5m] offset 1h)`, req: RouteRequest{Instant: true, End: routeBoundsFloor.Add(time.Hour - time.Nanosecond)}, construct: "RangeAgg route offset bounds"},
+		{q: `rate({app="a"}[5m] offset 1h)`, req: RouteRequest{Instant: true, End: routeBoundsFloor.Add(time.Hour)}, window: WindowInstant, identity: true, probe: true, offset: hour},
+		{q: `rate({app="a"}[5m] offset 1h)`, req: RouteRequest{Step: 5 * time.Minute, Span: 30 * time.Minute, End: routeBoundsFloor.Add(90 * time.Minute)}, window: WindowTumbling, bucket: 5 * time.Minute, identity: true, probe: true, offset: hour},
+		{q: `rate({app="a"}[5m] offset 1h)`, req: RouteRequest{Step: 5 * time.Minute, Span: 30 * time.Minute, End: routeBoundsFloor.Add(90*time.Minute - time.Nanosecond)}, construct: "RangeAgg route offset bounds"},
+		{q: `rate({app="a"}[5m] offset 1h)`, req: RouteRequest{Step: 5 * time.Minute, Span: -time.Minute, End: routeTestEnd}, construct: "RangeAgg route offset bounds"},
+		{q: `rate({app="a"}[5m] offset -1h)`, req: RouteRequest{Instant: true, End: routeBoundsCeiling.Add(-time.Hour)}, window: WindowInstant, identity: true, probe: true, offset: -hour},
+		{q: `rate({app="a"}[5m] offset -1h)`, req: RouteRequest{Instant: true, End: routeBoundsCeiling.Add(-time.Hour + time.Nanosecond)}, construct: "RangeAgg route offset bounds"},
+		{q: `rate({app="a"}[5m] offset -1h)`, req: RouteRequest{Step: 5 * time.Minute, Span: time.Hour, End: routeBoundsRangeCeiling}, window: WindowTumbling, bucket: 5 * time.Minute, identity: true, probe: true, offset: -hour},
+		{q: `rate({app="a"}[5m] offset -1h)`, req: RouteRequest{Step: 5 * time.Minute, Span: time.Hour, End: routeBoundsRangeCeiling.Add(time.Nanosecond)}, construct: "RangeAgg route offset bounds"},
+		{q: `sum by (pod) (sum_over_time({app="a"} | unwrap n [5m] offset 1h))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route offset bounds"},
+		// the lowering's own delegation keeps its name under an offset
+		{q: `rate({app="a"} | json [5m] offset 1h)`, req: RouteRequest{Instant: true, End: routeTestEnd}, construct: "RangeAgg route pipeline"},
+		{q: `sum(rate({app="a"} | json [5m] offset 1h))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route pipeline"},
 		// outside the rule: each named after what it holds.
 		{q: `sum without (pod) (rate({app="a"} | json [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route pipeline"},
 		{q: `stddev(rate({app="a"}[5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route evaluated level"},
@@ -161,8 +210,6 @@ func TestRouteDecidesTheWindows(t *testing.T) {
 		{q: `sum_over_time({app="a"} | unwrap n | n > 5 [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap filter"},
 		{q: `sum_over_time({app="a"} | unwrap n | __error__="" [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap filter"},
 		{q: `sum_over_time({app="a"} | json | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap pipeline"},
-		{q: `sum_over_time({app="a"} | unwrap n [5m] offset 1h)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route offset"},
-		{q: `absent_over_time({app="a"}[5m] offset 1h)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route offset"},
 		{q: `avg_over_time({app="a"} | unwrap n [5m]) by (level)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap grouping"},
 		{q: `avg_over_time({app="a"} | unwrap n [5m]) by (detected_level, pod)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap grouping"},
 		{q: `avg_over_time({app="a"} | unwrap n [5m]) by (service_name)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap grouping"},
@@ -172,7 +219,6 @@ func TestRouteDecidesTheWindows(t *testing.T) {
 		{q: `sum by (pod) (absent_over_time({app="a"}[5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route absent operand"},
 		{q: `sum(avg_over_time({app="a"} | json | unwrap n [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route unwrap pipeline"},
 		{q: `sum by (pod) (sum_over_time({app="a"} | unwrap n | n > 5 [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route unwrap filter"},
-		{q: `sum by (pod) (sum_over_time({app="a"} | unwrap n [5m] offset 1h))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route offset"},
 		{q: `sum(sum by (pod) (sum_over_time({app="a"} | unwrap n [5m])))`, req: RouteRequest{Instant: true}, construct: "VectorAgg nested unwrap"},
 		{q: `sum(sum_over_time({app="a"} | unwrap n [1001ms]))`, req: RouteRequest{Step: time.Second, Span: hour}, construct: "VectorAgg route no bucket grid"},
 		{q: `stddev(sum_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route evaluated level"},
@@ -181,7 +227,6 @@ func TestRouteDecidesTheWindows(t *testing.T) {
 		{q: `max(first_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route unwrap first"},
 		{q: `sum(quantile_over_time(0.5, {app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route unwrap quantile"},
 		{q: `rate({app="a"} | json [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route pipeline"},
-		{q: `rate({app="a"}[5m] offset 1h)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route offset"},
 		{q: `sum(count_over_time({app="a"}[5m]) > 1)`, req: RouteRequest{Instant: true}, construct: "VectorAgg operand"},
 		{q: `sum by (level) (rate({app="a"} | json | detected_level="x" [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg " + levelAfterStageConstruct},
 		{q: `sum by (level) (rate({app="a"} | detected_level="x" [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route level filter"},
@@ -199,8 +244,8 @@ func TestRouteDecidesTheWindows(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if r.Fold != c.fold || r.Window != c.window || r.Bucket != c.bucket || r.Identity != c.identity || r.LevelProbe != c.probe || r.Ungrouped != c.ungrouped || r.SumAll != c.sumAll || r.Counted != c.counted || r.StepBuckets != c.stepBkts || r.GroupPushed != c.pushed {
-				t.Fatalf("Route = window %d bucket %v identity %v probe %v ungrouped %v sumAll %v counted %v stepBuckets %v pushed %v fold %d", r.Window, r.Bucket, r.Identity, r.LevelProbe, r.Ungrouped, r.SumAll, r.Counted, r.StepBuckets, r.GroupPushed, r.Fold)
+			if r.Fold != c.fold || r.Window != c.window || r.Bucket != c.bucket || r.Identity != c.identity || r.LevelProbe != c.probe || r.Ungrouped != c.ungrouped || r.SumAll != c.sumAll || r.Counted != c.counted || r.StepBuckets != c.stepBkts || r.GroupPushed != c.pushed || r.Offset != c.offset {
+				t.Fatalf("Route = window %d bucket %v identity %v probe %v ungrouped %v sumAll %v counted %v stepBuckets %v pushed %v fold %d offset %v", r.Window, r.Bucket, r.Identity, r.LevelProbe, r.Ungrouped, r.SumAll, r.Counted, r.StepBuckets, r.GroupPushed, r.Fold, r.Offset)
 			}
 			if c.textHolds != "" && !strings.Contains(r.Text, c.textHolds) || c.textLacks != "" && strings.Contains(r.Text, c.textLacks) {
 				t.Fatalf("text %q", r.Text)
@@ -224,7 +269,7 @@ func TestRouteTextIsTheLowering(t *testing.T) {
 		if p == nil {
 			continue
 		}
-		for _, req := range []RouteRequest{{Instant: true}, {Step: time.Minute, Span: time.Hour}} {
+		for _, req := range []RouteRequest{{Instant: true, End: routeTestEnd}, {Step: time.Minute, Span: time.Hour, End: routeTestEnd}} {
 			r, err := Route(p, Profile{}, req)
 			if err != nil {
 				// A delegation of the lowering's keeps its name.
@@ -262,31 +307,38 @@ func TestRouteTextIsTheLowering(t *testing.T) {
 // FuzzRoute: the route rule never panics and either routes a plan, with a window that fits the request and a fold
 // that fits the window, or names the delegation.
 func FuzzRoute(f *testing.F) {
-	f.Add(`sum by (app) (rate({app="a"} |= "x" [5m]))`, int64(time.Minute), int64(time.Hour), false)
-	f.Add(`count_over_time({app="a"}[90s])`, int64(18*time.Second), int64(24*time.Hour), false)
-	f.Add(`max(sum by (pod) (bytes_over_time({app="a"}[1m])))`, int64(0), int64(0), true)
-	f.Add(`sum without (pod) (rate({app="a"}[5m]))`, int64(time.Millisecond), int64(time.Hour), false)
-	f.Add(`sum without (pod, zone) (count_over_time({app="a"} |= "x" [5m]))`, int64(5*time.Minute), int64(time.Hour), false)
-	f.Add(`sum by (zone) (avg without (pod) (bytes_over_time({app="a"} | env="b" [1m])))`, int64(time.Minute), int64(24*time.Hour), false)
-	f.Add(`max(sum without (pod_name, level) (count_over_time({app="a"} |> "<_> x" [90s])))`, int64(30*time.Second), int64(time.Hour), false)
-	f.Add(`avg(sum(count_over_time({app="a"}[1m])) without (pod)) without (svc)`, int64(0), int64(0), true)
-	f.Add(`sum_over_time({app="a"} | unwrap bytes(n) [1m])`, int64(15*time.Minute), int64(time.Hour), false)
-	f.Add(`avg_over_time({app="a"} |= "x" | env="b" | unwrap duration(n) [90s]) by (pod)`, int64(time.Minute), int64(24*time.Hour), false)
-	f.Add(`max_over_time({app="a"} | unwrap n [5m]) by ()`, int64(0), int64(0), true)
-	f.Add(`min_over_time({app="a"} | unwrap n | __error__="" [5m])`, int64(5*time.Minute), int64(time.Hour), false)
-	f.Add(`count_over_time({unwrap="unwrap"} |= "unwrap" [5m])`, int64(time.Minute), int64(time.Hour), false)
-	f.Add(`absent_over_time({app="a"} != "x" [90s])`, int64(30*time.Second), int64(time.Hour), false)
-	f.Add(`absent_over_time({app="a"}[5m] offset 1h)`, int64(0), int64(0), true)
-	f.Add(`sum(avg_over_time({app="a"} | unwrap n [5m]))`, int64(0), int64(0), true)
-	f.Add(`max by (pod) (max_over_time({app="a"} | unwrap n [5m]))`, int64(time.Minute), int64(time.Hour), false)
-	f.Add(`min(min_over_time({app="a"} |= "x" | unwrap duration(n) [90s]))`, int64(30*time.Second), int64(24*time.Hour), false)
-	f.Add(`max by (pod, pod) (max_over_time({app="a"} | unwrap n [5m]))`, int64(time.Minute), int64(time.Hour), false)
-	f.Add(`max by (level) (max_over_time({app="a"} | unwrap n [5m]))`, int64(time.Minute), int64(time.Hour), false)
-	f.Add(`sum(sum_over_time({app="a"} | unwrap bytes(n) [1m]))`, int64(15*time.Minute), int64(time.Hour), false)
-	f.Add(`avg without (pod) (min_over_time({app="a"} | unwrap n [5m]))`, int64(5*time.Minute), int64(time.Hour), false)
-	f.Add(`count by (pod) (sum_over_time({app="a"} | unwrap n | __error__="" [5m]))`, int64(0), int64(0), true)
-	f.Add(`sum(sum by (pod) (avg_over_time({app="a"} | unwrap n [5m])))`, int64(0), int64(0), true)
-	f.Fuzz(func(t *testing.T, q string, step, span int64, instant bool) {
+	f.Add(`sum by (app) (rate({app="a"} |= "x" [5m]))`, int64(time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`count_over_time({app="a"}[90s])`, int64(18*time.Second), int64(24*time.Hour), int64(1767225600e9), false)
+	f.Add(`max(sum by (pod) (bytes_over_time({app="a"}[1m])))`, int64(0), int64(0), int64(1767225600e9), true)
+	f.Add(`sum without (pod) (rate({app="a"}[5m]))`, int64(time.Millisecond), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`sum without (pod, zone) (count_over_time({app="a"} |= "x" [5m]))`, int64(5*time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`sum by (zone) (avg without (pod) (bytes_over_time({app="a"} | env="b" [1m])))`, int64(time.Minute), int64(24*time.Hour), int64(1767225600e9), false)
+	f.Add(`max(sum without (pod_name, level) (count_over_time({app="a"} |> "<_> x" [90s])))`, int64(30*time.Second), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`avg(sum(count_over_time({app="a"}[1m])) without (pod)) without (svc)`, int64(0), int64(0), int64(1767225600e9), true)
+	f.Add(`sum_over_time({app="a"} | unwrap bytes(n) [1m])`, int64(15*time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`avg_over_time({app="a"} |= "x" | env="b" | unwrap duration(n) [90s]) by (pod)`, int64(time.Minute), int64(24*time.Hour), int64(1767225600e9), false)
+	f.Add(`max_over_time({app="a"} | unwrap n [5m]) by ()`, int64(0), int64(0), int64(1767225600e9), true)
+	f.Add(`min_over_time({app="a"} | unwrap n | __error__="" [5m])`, int64(5*time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`count_over_time({unwrap="unwrap"} |= "unwrap" [5m])`, int64(time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`absent_over_time({app="a"} != "x" [90s])`, int64(30*time.Second), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`absent_over_time({app="a"}[5m] offset 1h)`, int64(0), int64(0), int64(1767225600e9), true)
+	f.Add(`sum(avg_over_time({app="a"} | unwrap n [5m]))`, int64(0), int64(0), int64(1767225600e9), true)
+	f.Add(`max by (pod) (max_over_time({app="a"} | unwrap n [5m]))`, int64(time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`min(min_over_time({app="a"} |= "x" | unwrap duration(n) [90s]))`, int64(30*time.Second), int64(24*time.Hour), int64(1767225600e9), false)
+	f.Add(`max by (pod, pod) (max_over_time({app="a"} | unwrap n [5m]))`, int64(time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`max by (level) (max_over_time({app="a"} | unwrap n [5m]))`, int64(time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`sum(sum_over_time({app="a"} | unwrap bytes(n) [1m]))`, int64(15*time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`avg without (pod) (min_over_time({app="a"} | unwrap n [5m]))`, int64(5*time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`count by (pod) (sum_over_time({app="a"} | unwrap n | __error__="" [5m]))`, int64(0), int64(0), int64(1767225600e9), true)
+	f.Add(`sum(sum by (pod) (avg_over_time({app="a"} | unwrap n [5m])))`, int64(0), int64(0), int64(1767225600e9), true)
+	f.Add(`rate({app="a"}[5m] offset 1h)`, int64(time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`sum by (pod) (sum_over_time({app="a"} | unwrap n [5m] offset -1h))`, int64(0), int64(0), int64(1767225600e9), true)
+	f.Add(`max by (pod) (max_over_time({app="a"} | unwrap n [1m] offset 90s))`, int64(time.Minute), int64(24*time.Hour), int64(1767225600e9), false)
+	f.Add(`sum without (pod) (count_over_time({app="a"}[5m] offset 1500ms))`, int64(5*time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`count_over_time({app="a"}[5m] offset 175200h)`, int64(time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`count_over_time({app="a"}[5m] offset -175200h)`, int64(0), int64(0), int64(math.MaxInt64-3600e9), true)
+	f.Add(`absent_over_time({app="a"}[5m] offset 0s)`, int64(0), int64(0), int64(0), true)
+	f.Fuzz(func(t *testing.T, q string, step, span, end int64, instant bool) {
 		if len(q) > 512 {
 			return
 		}
@@ -294,7 +346,7 @@ func FuzzRoute(f *testing.F) {
 		if p == nil {
 			return
 		}
-		req := RouteRequest{Instant: instant, Step: time.Duration(step), Span: time.Duration(span)}
+		req := RouteRequest{Instant: instant, Step: time.Duration(step), Span: time.Duration(span), End: time.Unix(0, end)}
 		r, err := Route(p, Profile{}, req)
 		if err != nil {
 			if !errors.Is(err, ErrNotLowered) {
@@ -309,6 +361,10 @@ func FuzzRoute(f *testing.F) {
 			t.Fatalf("%q: range routed as %d with bucket %v", q, r.Window, r.Bucket)
 		case !instant && (r.Window == WindowTumbling) != (r.Range == req.Step):
 			t.Fatalf("%q: range %v step %v routed as %d", q, r.Range, req.Step, r.Window)
+		case r.Offset != rangeOf(p).Offset:
+			t.Fatalf("%q: offset %v", q, r.Offset)
+		case r.Offset != 0 && !offsetFits(r.Offset, r.Range, req):
+			t.Fatalf("%q: offset %v routed with end %v, span %v, instant %v", q, r.Offset, req.End, req.Span, instant)
 		case r.Text == "":
 			t.Fatalf("%q: routed without a query", q)
 		case r.Counted != unwrapsLabel(p):
@@ -327,6 +383,40 @@ func FuzzRoute(f *testing.F) {
 			t.Fatalf("%q: fold %d on window %d", q, r.Fold, r.Window)
 		}
 	})
+}
+
+// rangeOf is the range aggregation of the plan, or an empty one.
+func rangeOf(p *queryplan.Plan) *queryplan.RangeAgg {
+	for n := p.Root; ; {
+		switch v := n.(type) {
+		case *queryplan.VectorAgg:
+			n = v.In
+		case *queryplan.RangeAgg:
+			return v
+		default:
+			return &queryplan.RangeAgg{}
+		}
+	}
+}
+
+// offsetFits reports whether the bounds of req moved back by off stay within the times the handlers read back as
+// written: from September 2001 (1e18 nanoseconds) to a second, a range and a step short of int64 nanoseconds, in big
+// integers so that no step of the check can wrap.
+func offsetFits(off, rng time.Duration, req RouteRequest) bool {
+	end := new(big.Int).SetInt64(req.End.UnixNano())
+	start := new(big.Int).Set(end)
+	if !req.Instant {
+		start.Sub(start, big.NewInt(int64(req.Span)))
+	}
+	d := big.NewInt(int64(off))
+	start.Sub(start, d)
+	end.Sub(end, d)
+	reach := big.NewInt(int64(rng))
+	if !req.Instant {
+		reach.Add(reach, big.NewInt(int64(req.Step)))
+	}
+	latest := new(big.Int).Sub(big.NewInt(math.MaxInt64-int64(time.Second)), reach)
+	return start.Cmp(big.NewInt(1e18)) >= 0 && end.Cmp(latest) <= 0
 }
 
 // unwrapsLabel reports whether the range aggregation of the plan unwraps a label.

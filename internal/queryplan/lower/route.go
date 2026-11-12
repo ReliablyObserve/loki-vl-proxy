@@ -1,6 +1,7 @@
 package lower
 
 import (
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -24,6 +25,9 @@ type RouteRequest struct {
 	Instant bool
 	// Step is the evaluation step of a range request, and Span its end minus its start.
 	Step, Span time.Duration
+	// End is the end of a range request, or the evaluation time of an instant one. A query with an offset needs it:
+	// the handlers move the bounds back by the offset and read them again.
+	End time.Time
 }
 
 // Window is how VictoriaLogs' stats answer the windows of a range metric.
@@ -84,6 +88,9 @@ type MetricRoute struct {
 	// none: VictoriaLogs takes the extreme per bucket and per group of the labels, and the proxy merges the buckets
 	// of each window, so the stats keep no stream identity (the groups are the series of the answer).
 	GroupPushed bool
+	// Offset is the shift of the request's time, or of its start and end: the handlers strip the offset clause and
+	// read the windows Offset earlier, then stamp the samples at the times asked for.
+	Offset time.Duration
 	// Text is the lowered stats query the route sends (the plan's text, before the route's own pipes).
 	Text string
 }
@@ -126,7 +133,7 @@ func Route(p *queryplan.Plan, prof Profile, req RouteRequest) (MetricRoute, erro
 		}
 		return MetricRoute{}, err
 	}
-	r := MetricRoute{Op: rng.Op, Range: rng.Range}
+	r := MetricRoute{Op: rng.Op, Range: rng.Range, Offset: rng.Offset}
 	// A without clause writes no grouping of its own: a query whose stats group by nothing keeps the stream's
 	// identity, as a range aggregation at the root does, for the proxy to fold the series.
 	unkeyed := false
@@ -168,6 +175,9 @@ func Route(p *queryplan.Plan, prof Profile, req RouteRequest) (MetricRoute, erro
 	}
 	r.Window, r.Bucket, err = routeWindow(kind, r.Range, req)
 	if err != nil {
+		return r, err
+	}
+	if err := routeOffset(kind, rng.Offset, rng.Range, req); err != nil {
 		return r, err
 	}
 	r.StepBuckets = r.Counted && r.Window == WindowPhase
@@ -250,6 +260,48 @@ func routeWindow(kind string, rng time.Duration, req RouteRequest) (Window, time
 	return w, bucket, nil
 }
 
+// The times, in Unix nanoseconds, between which the handlers read a bound back as it was written after an offset moved
+// it. They write the moved bound as an integer, which the readers take for nanoseconds only from 1e18 on (a smaller one
+// reads as seconds, milliseconds or microseconds: the earliest is September 2001); int64 holds up to April 2262, and the
+// evaluation steps and windows past the end (a step and a range, and a second for the bounds' own moves) must fit too,
+// or the handlers' step loops wrap.
+const (
+	offsetEarliest = int64(1e18)
+	offsetReserve  = int64(time.Second)
+)
+
+// routeOffset is why the rule does not route the offset off of a query with the range rng for req, or nil. The
+// handlers strip the clause and move the request's bounds back by it, so the moved bounds must be times they read
+// back as they were written.
+func routeOffset(kind string, off, rng time.Duration, req RouteRequest) error {
+	if off == 0 {
+		return nil
+	}
+	// The latest time a moved end may have: what the end reaches past itself is a step (a range request) and a range.
+	reach := int64(rng)
+	if !req.Instant {
+		reach += int64(req.Step)
+	}
+	latest := math.MaxInt64 - offsetReserve - reach
+	if req.Span < 0 || reach < 0 || rng > math.MaxInt64/4 || req.Step > math.MaxInt64/4 ||
+		req.End.Before(time.Unix(0, offsetEarliest)) || req.End.After(time.Unix(0, latest)) {
+		return routeError(kind, "offset bounds")
+	}
+	high := req.End.UnixNano()
+	low := high
+	if !req.Instant {
+		if int64(req.Span) > high-offsetEarliest {
+			return routeError(kind, "offset bounds")
+		}
+		low -= int64(req.Span)
+	}
+	// Back: the start must stay at the earliest time or after it. Forward: the end must stay within the latest.
+	if d := int64(off); d > 0 && d > low-offsetEarliest || d < 0 && d < high-latest {
+		return routeError(kind, "offset bounds")
+	}
+	return nil
+}
+
 // routeRange is the range aggregation under the vector aggregations of n, or the reason the rule does not route n.
 func routeRange(n queryplan.Node, kind string) (*queryplan.RangeAgg, error) {
 	vector, byLine := false, false
@@ -290,8 +342,6 @@ func routeFunction(v *queryplan.RangeAgg, kind string, vector bool) error {
 		return routeError(kind, unwrapName(v.Op))
 	case !unwrapped && !routeRangeOps[v.Op] && v.Op != logql.RangeAbsentOverTime:
 		return routeError(kind, "function")
-	case v.HasOffset:
-		return routeError(kind, "offset")
 	case v.By != nil && !unwrapped:
 		return routeError(kind, "grouping")
 	case v.By != nil && !routeGroups(v.By):
