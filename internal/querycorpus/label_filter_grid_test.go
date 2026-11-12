@@ -240,6 +240,12 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				problems = append(problems, fmt.Sprintf("%s: %q: lowering failed: %v", prof.name, q, lerr))
 				continue
 			}
+			if lower.WritesNumericEquality(plan) {
+				// A numeric equality after a json or logfmt parser: the plan compares the value as a number as Loki
+				// does, the translator writes the exact text of the literal (semantics/label-filter-numeric-equality).
+				delegated["known divergence semantics/label-filter-numeric-equality"]++
+				continue
+			}
 			if emptyWithoutDiffers(q, plan, prof) {
 				// Loki keeps every series of a `without ()` operand, the translator writes it ungrouped
 				// (TestEmptyWithoutOperandsKeepEverySeries holds the lowering).

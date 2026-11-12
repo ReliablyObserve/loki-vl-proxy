@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan now writes `=`, `==` and `!=` against a number, a duration or a
+  bytes size after a `| json` or `| logfmt` parser (`| status == 200`,
+  `| latency != 5s`, `| size = 1KB`) as Loki compares them, by value: `200`,
+  `200.0` and `2e2` are equal, a duration or a size is compared in nanoseconds or
+  bytes, and `!=` drops an entry without the label. The string translator keeps
+  the exact text of the literal, which matches `200` alone and keeps the entries
+  without the label under `!=`. Against Loki's answers on 81 queries, each run over
+  5 to 62 lines, read by VictoriaLogs v1.49.0 and v1.53.0 (7,286 query and line
+  decisions), the plan differs from Loki on 438 and the translator on 988;
+  what remains is the values VictoriaLogs reads as a number that Loki marks with
+  `__error__` (`0xC8`, `1KB` against `m == 1000`) and a few spellings Loki reads
+  that VictoriaLogs does not (`100us`, a size in lower case or with a space). A
+  literal with no single reading in both (hexadecimal, separators, days, weeks
+  or years, a fractional byte count) stays with the string translator. Nothing is
+  served from the plan for these queries yet: no request to VictoriaLogs and no
+  answer changes.
+
 ## [2.189.0] - 2026-11-12
 
 ### Fixed
