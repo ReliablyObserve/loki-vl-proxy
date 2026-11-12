@@ -468,8 +468,15 @@ decisions:
         effect: 'a repeat over a sparse stream reported pieces that hold no entry; the e2e failed when Loki had run the text before'
         fixed_by: 'fix/query-stats-shards-pieces-with-data (case semantics/query-stats-shards-empty-pieces: the hit replays the pieces that hold a returned entry; the first answer keeps the pieces run; the recording is internal/proxy/testdata/loki_stats_shards.jsonl)'
         after: 'documented in KNOWN_ISSUES and the API reference: a text Loki already ran over another window, limit or direction reports fewer shards than the proxy''s first answer'
+      - date: '2026-11-12'
+        what: 'TestDrilldown_QueryStatsLikeLoki compared the proxy''s metric bytes with the bytes of the lines the metric window holds, within 25%'
+        measured: 'CI, sparse stream: 5m metric bytes 1,488 for 24 lines, the window''s lines hold 2,428 bytes (62 bytes a line estimated, 101 held)'
+        cause: 'the estimate was the lines times the mean line size of the last log answer of the selector, a figure with no window attached: it follows whichever answer ran last (another window, another filter) and cannot tell the metric window'' lookback; on a sparse stream whose lines differ in size from one minute to the next that mean is far from the metric window''s'
+        effect: 'a metric query''s totalBytesProcessed off by more than the documented tolerance whenever the selector''s last log answer did not show the metric window''s lines'
+        fixed_by: 'fix/query-stats-metric-bytes-window (a log answer is kept with the window its lines cover, per log expression: a metric query of that expression takes its bytes over that part exactly and the rest of its lines at that mean; the selector''s last mean stays the estimate when neither is held)'
+        after: 'documented in KNOWN_ISSUES and the API reference: the metric window''s lookback (one range before the start), which no log answer covers, is priced at the mean of the lines that were read, so a sparse stream whose lookback lines differ in size is off by that difference (39% low in the case above, which the unit table reproduces); an exact figure needs the lines'' bytes from VictoriaLogs (the opt-in -query-stats-exact-metric-bytes, or a sum_len(_msg) in the count''s own stats pipe, which reads the message column a count does not and so costs VictoriaLogs time on every metric query)'
     code: [internal/proxy/query_stats_loki.go, internal/proxy/query_stats.go, internal/proxy/query_stats_cache.go, internal/proxy/query_stats_totals.go, internal/proxy/proxy.go, cmd/proxy/main.go, internal/config/limits.go]
-    tests: [TestLokiStatsEmulation_MatchesRecordedLokiAnswers, TestLokiStatsShards_MatchesRecordedLokiAnswers, TestLokiLogHitShards_Table, TestLokiLogHitShards_AnswerWrittenInChunks, TestQueryStats_LogRepeatShardsOfALargeAnswer, TestEntryPieces_Table, TestParseTS19_Table, FuzzEntryPieces, TestQueryStats_LogRepeatShardsAreThePiecesWithEntries, TestLokiStats_ExactMetricBytesOnlyOnAMiss, TestMeanLineTable_NoAllocationAndBounded, TestLokiLogQueryRun_Table, TestLokiLogSummary_EstimatesTheRunFromTheAnswer, TestLokiStats_SplitsShardsAndQuerierTimePerRoute, TestLokiStats_MetricBytesFromTheSelectorsMeanLine, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStatsTotals_MetricAnswerSumsToLokisWindow, TestDrilldown_QueryStatsLikeLoki]
+    tests: [TestLokiStatsEmulation_MatchesRecordedLokiAnswers, TestLokiStatsShards_MatchesRecordedLokiAnswers, TestLokiLogHitShards_Table, TestLokiLogHitShards_AnswerWrittenInChunks, TestQueryStats_LogRepeatShardsOfALargeAnswer, TestEntryPieces_Table, TestParseTS19_Table, FuzzEntryPieces, TestQueryStats_LogRepeatShardsAreThePiecesWithEntries, TestLokiStats_ExactMetricBytesOnlyOnAMiss, TestMeanLineTable_NoAllocationAndBounded, TestMeanLineTable_WindowRecord, TestEntriesWindow_Table, FuzzMeanLineWindow, TestLokiStats_MetricBytesUseTheQueriedWindow, TestLokiLogQueryRun_Table, TestLokiLogSummary_EstimatesTheRunFromTheAnswer, TestLokiStats_SplitsShardsAndQuerierTimePerRoute, TestLokiStats_MetricBytesFromTheSelectorsMeanLine, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStatsTotals_MetricAnswerSumsToLokisWindow, TestDrilldown_QueryStatsLikeLoki]
     quality: |
       Every rule is checked against the recorded Loki answers, every row;
       the e2e test compares each figure with Loki's live answer for the same
@@ -488,7 +495,7 @@ decisions:
       forward queries; structured-metadata bytes.
     performance:
       tracked: ['BenchmarkQueryAnswerPaths', 'BenchmarkQueryStatsWriter']
-      bound: 'no VictoriaLogs request added by default; with -query-stats-exact-metric-bytes the volume of the selector read once per metric query cache miss, started where the response cache misses (after validation and limits: a rejected request or a hit sends nothing), next to the query and ending with it; per answer one timestamp comparison per log entry (the 19-digit text), one parse of the query for an instant range; the mean line size kept per replica in a bounded table (4,096 entries, 1 hour) keyed by a hash of tenant scope and selector, written per log miss and read per metric miss without allocating; the companion keys of a request read lazily and once'
+      bound: 'no VictoriaLogs request added by default; with -query-stats-exact-metric-bytes the volume of the selector read once per metric query cache miss, started where the response cache misses (after validation and limits: a rejected request or a hit sends nothing), next to the query and ending with it; per answer one timestamp comparison per log entry (the 19-digit text), one parse of the query for an instant range; the mean line size kept per replica in a bounded table (4,096 entries, 1 hour) keyed by a hash of tenant scope and selector, and per log expression with the window its lines cover (a metric query of that expression prices its bytes from it; the expression is looked for only once a replica has kept one), written per log miss and read per metric miss without allocating; the companion keys of a request read lazily and once'
       measured: |
         Apple M5 Pro, GOMAXPROCS=4, benchstat of 10 interleaved runs, base
         origin/main 59dfecb29, default mode (loki), the stub of
@@ -507,6 +514,14 @@ decisions:
         run (round 1 measured 7.9 -> 11.8 us), plus about 1 us with the
         timestamp tracking of the default mode
         (BenchmarkQueryStatsWriterLokiMode); no allocation of its own.
+        Metric bytes from the log answer's window (2026-11-12), benchstat of 9
+        interleaved runs (10 for the extra row), base 93ac9e58f, same
+        machine: allocs/op equal on every path of BenchmarkQueryAnswerPaths
+        and both BenchmarkQueryStatsWriter rows, B/op equal (p >= 0.06), no
+        sec/op row slower (log shifted 796 -> 707 us and log miss 744 -> 714
+        us are noise on a busy machine), and metric/miss/afterlog (a metric
+        query after the log answer of its selector, the new path) 91.8 ->
+        92.4 us (p=0.44), 540 allocs both.
   - id: query-stats-limit-filled-log-lines
     pending: true
     chosen: 'A log query that fills its limit reports the lines of the whole pieces it read: the panel''s count answer when held (at most the window''s lines), else its entries'' density over the time they cover scaled to the pieces read and capped at the entries times the pieces read; no VictoriaLogs request added. Opt-in -query-stats-exact-log-lines (default off): one timestamp-only VictoriaLogs count of the stream selector over the pieces read, on a log query cache miss that fills its limit or is filtered'
