@@ -1197,7 +1197,7 @@ func parseLokiTimeToUnixNano(raw string) (int64, bool) {
 	// an RFC 3339 time, so the order does not change any answer.
 	if isDecimalInteger(raw) {
 		if nInt, err := strconv.ParseInt(raw, 10, 64); err == nil {
-			return normalizeLokiIntTimeToUnixNano(nInt), true
+			return integerNanosIfHeld(nInt)
 		}
 	}
 	if parsed, err := time.Parse(time.RFC3339Nano, raw); err == nil {
@@ -1220,13 +1220,13 @@ func parseLokiTimeToUnixNano(raw string) (int64, bool) {
 		}
 	}
 	if nInt, err := strconv.ParseInt(raw, 10, 64); err == nil {
-		return normalizeLokiIntTimeToUnixNano(nInt), true
+		return integerNanosIfHeld(nInt)
 	}
 	n, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
 		return 0, false
 	}
-	return normalizeLokiNumericTimeToUnixNano(n), true
+	return floatNanosIfHeld(n)
 }
 
 // unixNanoIfHeld is t as Unix nanoseconds, or false for a time before 1677-09-21

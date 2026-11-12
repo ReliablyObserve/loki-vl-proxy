@@ -349,7 +349,9 @@ func buildAbsentOverTimeMatrix(spec absentOverTimeCompatSpec, present map[int64]
 			has[int64(math.Round(float64(ts-startNs)/float64(stepNs)))] = true
 		}
 		var values [][]any
-		for i, n := int64(0), stepCount(startNs, endNs, stepNs); i < n; i++ {
+		// The request layer holds a range to Loki's 11,000 points per series; a caller
+		// that reaches this builder otherwise gets the first maxMetricEvalSamples.
+		for i, n := int64(0), min64(stepCount(startNs, endNs, stepNs), maxMetricEvalSamples); i < n; i++ {
 			if !has[i] {
 				values = append(values, []any{lokiSampleSeconds(startNs + i*stepNs), value})
 			}

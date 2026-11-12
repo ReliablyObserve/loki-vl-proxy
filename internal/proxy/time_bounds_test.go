@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"math"
 	"math/big"
 	"net/http"
@@ -114,21 +113,30 @@ func timeBoundsErrorText(t testing.TB, rec *httptest.ResponseRecorder) string {
 	return readErrorRec(t, rec).Error
 }
 
-// The families the issue names: a log query, count_over_time, rate and
-// absent_over_time. Offsets are written into the selector.
+// The function families the check and the loops are held to: count_over_time,
+// rate, absent_over_time (alone, under an aggregation and under label_replace),
+// the same functions over a parser, a function over an unwrapped label, a
+// constant expression and a log query. Offsets are written into the selector.
 var timeBoundsQueries = map[string]string{
-	"absent": `absent_over_time({app="x"}[1m]%s)`,
-	"count":  `count_over_time({app="x"}[1m]%s)`,
-	"rate":   `rate({app="x"}[1m]%s)`,
-	"sum":    `sum by (app) (count_over_time({app="x"}[1m]%s))`,
-	"label":  `label_replace(absent_over_time({app="x"}[1m]%s), "dst", "$1", "app", "(.*)")`,
+	"absent":   `absent_over_time({app="x"}[1m]%s)`,
+	"count":    `count_over_time({app="x"}[1m]%s)`,
+	"rate":     `rate({app="x"}[1m]%s)`,
+	"sum":      `sum by (app) (count_over_time({app="x"}[1m]%s))`,
+	"label":    `label_replace(absent_over_time({app="x"}[1m]%s), "dst", "$1", "app", "(.*)")`,
+	"json":     `count_over_time({app="x"} | json [1m]%s)`,
+	"logfmt":   `rate({app="x"} | logfmt | level="error" [1m]%s)`,
+	"unwrap":   `sum_over_time({app="x"} | logfmt | unwrap n [1m]%s)`,
+	"unwrapby": `sum by (app) (avg_over_time({app="x"} | logfmt | unwrap n [1m]%s))`,
+	"binary":   `count_over_time({app="x"}[1m]%s) + 1`,
+	"constant": `1 + 1`,
+	"log":      `{app="x"}`,
 }
 
 func timeBoundsQuery(family, offset string) string {
 	if offset != "" {
 		offset = " offset " + offset
 	}
-	return fmt.Sprintf(timeBoundsQueries[family], offset)
+	return strings.ReplaceAll(timeBoundsQueries[family], "%s", offset)
 }
 
 // The request layer refuses a window outside the range and answers one inside
@@ -171,7 +179,7 @@ func TestQueryRangeRefusesWindowsOutsideTheTimeRange(t *testing.T) {
 		{name: "offset -2562047h, zero", offset: "-2562047h", start: 0, end: hour, refused: true},
 		{name: "offset -7456146435854775806ns, now", offset: "-7456146435854775806ns", start: now - hour, end: now, refused: true},
 		{name: "offset -7456146435854775806ns, zero", offset: "-7456146435854775806ns", start: 0, end: hour},
-		{name: "offset -7456146435854775806ns moves the end to one nanosecond under the top", offset: "-7456146435854775806ns", start: 1767225601000000000 - hour, end: 1767225601000000000, refused: true},
+		{name: "offset -7456146435854775806ns, end 2026-01-01T00:00:01Z", offset: "-7456146435854775806ns", start: 1767225601000000000 - hour, end: 1767225601000000000, refused: true},
 		{name: "offset -9223372036854775807ns, zero", offset: "-9223372036854775807ns", start: 0, end: hour, refused: true},
 		{name: "offset 1h, end at the top", offset: "1h", start: maxNs - hour, end: maxNs, refused: true},
 		{name: "offset -1h moves the end past the top of the range", offset: "-1h", start: reqMax - 2*hour, end: reqMax - 30*minute, refused: true},
@@ -180,14 +188,18 @@ func TestQueryRangeRefusesWindowsOutsideTheTimeRange(t *testing.T) {
 		{name: "offset 1h keeps the start inside the range", offset: "1h", start: reqMin + 2*hour, end: reqMin + 3*hour},
 	}
 	for family := range timeBoundsQueries {
+		noSelector := family == "constant" || family == "log" // nothing for an offset to move
 		for _, tc := range cases {
+			if noSelector && tc.offset != "" {
+				continue
+			}
 			t.Run(family+"/range/"+tc.name, func(t *testing.T) {
 				rec := answerWithinBudget(t, p, timeBoundsTarget("query_range", map[string]string{
 					"query": timeBoundsQuery(family, tc.offset), "start": timeParam(tc.start), "end": timeParam(tc.end), "step": "60s",
 				}))
 				assertTimeBoundsAnswer(t, rec, tc.refused)
 			})
-			if tc.rangeOnly {
+			if tc.rangeOnly || family == "log" { // Loki refuses a log query at the instant endpoint
 				continue
 			}
 			t.Run(family+"/instant/"+tc.name, func(t *testing.T) {
@@ -200,12 +212,11 @@ func TestQueryRangeRefusesWindowsOutsideTheTimeRange(t *testing.T) {
 	}
 }
 
-// The handlers also end on their own, without the request layer in front of
-// them: a caller that reaches them with a window outside the range gets an
-// answer, whatever it is, within the budget.
+// The handlers answer a window outside the range within the budget when they
+// are called without the request layer in front of them.
 //
 // conformance: semantics/request-time-bounds
-func TestHandlersEndWithoutTheRequestLayer(t *testing.T) {
+func TestHandlersAnswerWindowsOutsideTheTimeRange(t *testing.T) {
 	p, _ := timeBoundsProxy(t)
 	maxNs := int64(math.MaxInt64)
 	for _, tc := range []struct {
@@ -213,12 +224,21 @@ func TestHandlersEndWithoutTheRequestLayer(t *testing.T) {
 		start, end  int64
 		step        string
 	}{
-		{"absent, shifted end one step under the top", `absent_over_time({app="x"}[1m] offset -7456146435854775806ns)`, 1767225601000000000 - int64(time.Hour), 1767225601000000000, "60s"},
+		{"absent, offset -7456146435854775806ns, end 2026-01-01T00:00:01Z", `absent_over_time({app="x"}[1m] offset -7456146435854775806ns)`, 1767225601000000000 - int64(time.Hour), 1767225601000000000, "60s"},
 		{"absent, end at the top", `absent_over_time({app="x"}[1m])`, maxNs - int64(time.Hour), maxNs, "60s"},
 		{"absent, end at the top, step 1ns", `absent_over_time({app="x"}[1m])`, maxNs - 100, maxNs, "1ns"},
 		{"absent, bottom to top", `absent_over_time({app="x"}[1m])`, math.MinInt64, maxNs, "9223372036s"},
-		{"count, shifted end under the top", `count_over_time({app="x"}[1m] offset -7456146435854775806ns)`, 1767225601000000000 - int64(time.Hour), 1767225601000000000, "60s"},
+		{"count, offset -7456146435854775806ns, end 2026-01-01T00:00:01Z", `count_over_time({app="x"}[1m] offset -7456146435854775806ns)`, 1767225601000000000 - int64(time.Hour), 1767225601000000000, "60s"},
 		{"rate, end at the top", `rate({app="x"}[1m])`, maxNs - int64(time.Hour), maxNs, "60s"},
+		{"json parser, end at the top", `count_over_time({app="x"} | json [1m])`, maxNs - int64(time.Hour), maxNs, "60s"},
+		{"json parser, bottom to top, step 1s", `rate({app="x"} | json | level="error" [1m])`, math.MinInt64, maxNs, "1s"},
+		{"unwrap, end at the top", `sum_over_time({app="x"} | logfmt | unwrap n [1m])`, maxNs - int64(time.Hour), maxNs, "60s"},
+		{"unwrap, offset -7456146435854775806ns, end 2026-01-01T00:00:01Z", `avg_over_time({app="x"} | logfmt | unwrap n [1m] offset -7456146435854775806ns)`, 1767225601000000000 - int64(time.Hour), 1767225601000000000, "60s"},
+		{"unwrap under sum, bottom to top", `sum by (app) (max_over_time({app="x"} | logfmt | unwrap n [1m]))`, math.MinInt64, maxNs, "9223372036s"},
+		{"binary with a constant, end at the top", `count_over_time({app="x"}[1m]) + 1`, maxNs - int64(time.Hour), maxNs, "60s"},
+		{"constant, bottom to top", `1 + 1`, math.MinInt64, maxNs, "1s"},
+		{"constant, end at the top", `1 + 1`, maxNs - int64(time.Hour), maxNs, "1ns"},
+		{"log query, bottom to top", `{app="x"}`, math.MinInt64, maxNs, "60s"},
 		{"absent under sum, most negative offset", `sum(absent_over_time({app="x"}[1m] offset -9223372036854775807ns))`, 1767225601000000000 - int64(time.Hour), 1767225601000000000, "60s"},
 	} {
 		for _, endpoint := range []string{"query_range", "query"} {
@@ -242,6 +262,83 @@ func TestHandlersEndWithoutTheRequestLayer(t *testing.T) {
 					t.Fatalf("no answer within %s", timeBoundsBudget)
 				}
 			})
+		}
+	}
+}
+
+// Behind the tenant limits, the step alignment and the response caches, the
+// check still gives the answers recorded for Loki: the limits layers read the
+// times first and must not turn an unrepresentable one into another.
+//
+// conformance: semantics/request-time-bounds
+func TestRequestTimeBoundsBehindTenantLimits(t *testing.T) {
+	backend := &timeBoundsBackend{}
+	server := httptest.NewServer(backend.handler())
+	t.Cleanup(server.Close)
+	p, err := New(Config{
+		BackendURL:           server.URL,
+		Cache:                cache.New(60*time.Second, 1000),
+		CompatCache:          cache.New(60*time.Second, 1000),
+		LogLevel:             "error",
+		AlignQueriesWithStep: true,
+		TenantDefaultLimits: map[string]any{
+			"max_query_length":            "720h",
+			"max_query_lookback":          "8760h",
+			"max_query_range":             "24h",
+			"max_entries_limit_per_query": 5000,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	now := time.Now().UnixNano()
+	const q = `count_over_time({app="x"}[1m])`
+	for _, tc := range []struct {
+		name, start, end string
+		want             string
+	}{
+		{"integer beyond int64", "1", "9223372036854775808", `could not parse 'end' parameter: strconv.ParseInt: parsing "9223372036854775808": value out of range`},
+		{"integer far beyond int64", "99999999999999999999", strconv.FormatInt(now, 10), `could not parse 'start' parameter: strconv.ParseInt: parsing "99999999999999999999": value out of range`},
+		{"decimal beyond int64", "1e30", "1e30", ""},
+		{"decimal seconds beyond int64", "9223372036.855", "9223372040.855", errRequestTimeOutOfRange},
+		{"rfc3339 past 2262", "2262-04-12T00:00:00Z", "2262-04-12T01:00:00Z", errRequestTimeOutOfRange},
+		{"nanoseconds at the top", strconv.FormatInt(math.MaxInt64-int64(time.Hour), 10), strconv.FormatInt(math.MaxInt64, 10), errRequestTimeOutOfRange},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := answerWithinBudget(t, p, timeBoundsTarget("query_range", map[string]string{"query": q, "start": tc.start, "end": tc.end, "step": "60s"}))
+			if tc.want == "" { // not a number: the handlers' own answer, within the budget
+				return
+			}
+			if rec.Code != http.StatusBadRequest || timeBoundsErrorText(t, rec) != tc.want {
+				t.Fatalf("got %d %s, want 400 %q", rec.Code, rec.Body, tc.want)
+			}
+		})
+	}
+}
+
+// A time that int64 nanoseconds cannot hold is not a time: the shared reader
+// says so for every form instead of returning a wrapped one.
+//
+// conformance: semantics/request-time-bounds
+func TestParseLokiTimeRefusesTimesInt64CannotHold(t *testing.T) {
+	for _, raw := range []string{
+		"9223372036854775808", "-9223372036854775809", "99999999999999999999", "-9223372036854775808",
+		"1e30", "-1e30", "1.5e19", "9223372036.855", "-9223372036.855", "99999999999.5", "NaN", "Inf", "-Inf",
+		"2262-04-12T00:00:00Z", "1677-09-20T00:00:00Z", "9999-12-31T23:59:59Z", "0001-01-01T00:00:00Z",
+		"now+2600000h", "now-2600000h",
+	} {
+		if ns, ok := parseLokiTimeToUnixNano(raw); ok {
+			t.Errorf("%q was read as %d", raw, ns)
+		}
+	}
+	for raw, want := range map[string]int64{
+		"9223372036854775807": math.MaxInt64, "-9223372036854775807": -math.MaxInt64,
+		"2262-04-11T23:47:16.854775807Z": math.MaxInt64, "1677-09-21T00:12:43.145224192Z": math.MinInt64,
+		"0": 0, "1": int64(time.Second), "1794490620.5": 1794490620500000000,
+	} {
+		if ns, ok := parseLokiTimeToUnixNano(raw); !ok || ns != want {
+			t.Errorf("%q: got (%d, %v), want %d", raw, ns, ok, want)
 		}
 	}
 }
@@ -477,11 +574,11 @@ func vlSeconds(raw string) (float64, bool) {
 	return 0, false
 }
 
-// The absent_over_time evaluation steps through its window without wrapping,
-// whatever the caller passes.
+// The absent_over_time evaluation counts the steps of its window with checked
+// arithmetic, whatever the caller passes.
 //
 // conformance: semantics/request-time-bounds
-func TestBuildAbsentOverTimeMatrixStepsWithoutWrapping(t *testing.T) {
+func TestBuildAbsentOverTimeMatrixNearTheLimits(t *testing.T) {
 	spec, ok := parseAbsentOverTimeCompatSpec(`absent_over_time({app="x"}[1m])`)
 	if !ok {
 		t.Fatal("spec")
@@ -500,6 +597,7 @@ func TestBuildAbsentOverTimeMatrixStepsWithoutWrapping(t *testing.T) {
 		{"step of 1 over a short window at the top", math.MaxInt64 - 2, math.MaxInt64, 1, 3, nil},
 		{"window around zero", -2 * step, 2 * step, step, 5, nil},
 		{"a present step", 0, 2 * step, step, 2, map[int64]bool{step: true}},
+		{"bottom to top with a step of one nanosecond", math.MinInt64, math.MaxInt64, 1, maxMetricEvalSamples, nil},
 		{"inverted window", 10, 5, 1, 0, nil},
 		{"no step", 0, 10, 0, 0, nil},
 	} {
@@ -857,15 +955,15 @@ func FuzzRequestTimeBounds(f *testing.F) {
 	f.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
-	allowed := regexp.MustCompile(`^(strconv\.ParseInt: parsing .*|could not parse .*|exceeded maximum resolution.*|end timestamp must not be before.*|cannot parse .*|parse error.*|invalid .*)$`)
+	allowed := regexp.MustCompile(`^(strconv\.ParseInt: parsing .*|could not parse .*|exceeded maximum resolution.*|end timestamp must not be before.*|cannot parse .*|parse error.*|invalid .*|log queries are not supported.*)$`)
 	f.Fuzz(func(t *testing.T, start, end, stepSeconds, offsetNs int64) {
 		step := strconv.FormatInt(stepSeconds, 10) + "s"
 		offsetClause := ""
 		if offsetNs != 0 && offsetNs != math.MinInt64 {
 			offsetClause = " offset " + strconv.FormatInt(offsetNs, 10) + "ns"
 		}
-		for _, family := range []string{"absent", "count", "rate"} {
-			query := fmt.Sprintf(timeBoundsQueries[family], offsetClause)
+		for _, family := range []string{"absent", "count", "rate", "json", "unwrap", "binary", "constant", "log"} {
+			query := strings.ReplaceAll(timeBoundsQueries[family], "%s", offsetClause)
 			for _, target := range []string{
 				timeBoundsTarget("query_range", map[string]string{"query": query, "start": strconv.FormatInt(start, 10), "end": strconv.FormatInt(end, 10), "step": step}),
 				timeBoundsTarget("query", map[string]string{"query": query, "time": strconv.FormatInt(end, 10)}),
@@ -899,4 +997,98 @@ func FuzzRequestTimeBounds(f *testing.F) {
 			}
 		}
 	})
+}
+
+// The hits-folded range metric builder jumps over the steps that hold no line;
+// its points are those of a walk over every step, on sparse and dense samples
+// and for a window shorter, equal and longer than the step.
+//
+// conformance: semantics/request-time-bounds
+func TestHitsRangeMetricMatrixSkipsEmptyStepsWithoutChangingPoints(t *testing.T) {
+	start := time.Unix(1_700_000_000, 0)
+	for _, tc := range []struct {
+		name         string
+		step, window time.Duration
+		samples      []int64 // offsets from start, in seconds
+	}{
+		{"sparse, window below step", 60 * time.Second, 30 * time.Second, []int64{5, 4000, 4001, 9000}},
+		{"sparse, window equal to step", 60 * time.Second, 60 * time.Second, []int64{0, 61, 3600, 7199}},
+		{"sparse, window above step", 60 * time.Second, 5 * time.Minute, []int64{100, 3700, 3701}},
+		{"dense", 15 * time.Second, 30 * time.Second, []int64{0, 10, 20, 30, 45, 60, 61, 62, 200, 201, 202, 203}},
+		{"one sample at the end", 60 * time.Second, 60 * time.Second, []int64{7200}},
+		{"no sample", 60 * time.Second, 60 * time.Second, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			end := start.Add(2 * time.Hour)
+			var samples []rangeMetricSample
+			for _, s := range tc.samples {
+				samples = append(samples, rangeMetricSample{ts: start.Add(time.Duration(s) * time.Second).UnixNano(), value: 1})
+			}
+			series := map[string]manualSeriesSamples{"a": {Metric: map[string]string{"app": "a"}, Samples: samples}}
+			body := mustBuildHitsRangeMetricMatrix(t, "count_over_time", series, start, end, tc.step, tc.window)
+			var resp struct {
+				Data struct {
+					Result []struct {
+						Values [][]any `json:"values"`
+					} `json:"result"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(body, &resp); err != nil {
+				t.Fatal(err)
+			}
+			got := map[int64]string{}
+			for _, r := range resp.Data.Result {
+				for _, v := range r.Values {
+					got[int64(math.Round(v[0].(float64)))] = v[1].(string)
+				}
+			}
+			// The reference walks every step: the samples in [t-window, t).
+			want := map[int64]string{}
+			for ts := start.UnixNano(); ts <= end.UnixNano(); ts += tc.step.Nanoseconds() {
+				n := 0
+				for _, s := range samples {
+					if s.ts >= ts-tc.window.Nanoseconds() && s.ts < ts {
+						n++
+					}
+				}
+				if n > 0 {
+					want[ts/int64(time.Second)] = strconv.Itoa(n)
+				}
+			}
+			if len(got) != len(want) {
+				t.Fatalf("points: got %d want %d\n got=%v\nwant=%v", len(got), len(want), got, want)
+			}
+			for ts, v := range want {
+				if got[ts] != v {
+					t.Fatalf("at %d: got %q want %q", ts, got[ts], v)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkHitsRangeMetricMatrixSparse is the hits-folded builder over a day at
+// 15 s steps with a handful of lines, where the jump over empty steps decides
+// the cost, and over dense lines, where it does not apply.
+func BenchmarkHitsRangeMetricMatrixSparse(b *testing.B) {
+	start := time.Unix(1_700_000_000, 0)
+	end := start.Add(24 * time.Hour)
+	for _, tc := range []struct {
+		name  string
+		every time.Duration
+	}{{"sparse", 3 * time.Hour}, {"dense", time.Minute}} {
+		var samples []rangeMetricSample
+		for ts := start; ts.Before(end); ts = ts.Add(tc.every) {
+			samples = append(samples, rangeMetricSample{ts: ts.UnixNano(), value: 1})
+		}
+		series := map[string]manualSeriesSamples{"a": {Metric: map[string]string{"app": "a"}, Samples: samples}}
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if _, err := buildHitsRangeMetricMatrix("count_over_time", series, start, end, 15*time.Second, 30*time.Second, 1<<30); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }
