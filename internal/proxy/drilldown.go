@@ -1040,6 +1040,7 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 		if err != nil {
 			lastErr = err
+			hadScanFailure = true
 			continue
 		}
 
@@ -1060,8 +1061,15 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 			return nil, nil, p.redactedBackendStatusError("", resp.StatusCode, errBody)
 		}
 		// Stream the NDJSON response line-by-line without buffering the full body.
-		scanFieldList, scanFieldValues, scanStreamLabels = p.detectFieldSummariesStream(resp.Body)
+		scanList, scanValues, scanLabels, scanErr := p.detectFieldSummariesStream(resp.Body)
 		_ = resp.Body.Close()
+		if scanErr != nil {
+			// A body that broke off or is not VictoriaLogs JSON is a failed scan, like a 5xx.
+			lastErr = scanErr
+			hadScanFailure = true
+			continue
+		}
+		scanFieldList, scanFieldValues, scanStreamLabels = scanList, scanValues, scanLabels
 		break
 	}
 
@@ -1348,7 +1356,7 @@ func formatDetectedValueFJ(v *fj.Value) string {
 // passed to filterNativeDetectedFields.
 //
 //nolint:gocyclo // streaming JSON scanner with per-line OTel/non-OTel detection, exposure caching, and label/field accumulation; branching is inherent to detected_fields parity.
-func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{}, map[string][]string, map[string]string) {
+func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{}, map[string][]string, map[string]string, error) {
 	scanner := bufio.NewScanner(r)
 	bufPtr := detectedFieldsScanBufPool.Get().(*[]byte)
 	scanner.Buffer(*bufPtr, detectedFieldsScannerLineBytes)
@@ -1360,6 +1368,7 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	anyOTelWithServiceName := false
 	rowLevels := p.newLogRowLevels()
+	badRows := 0
 
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
@@ -1372,6 +1381,7 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		fjVal, err := fjParser.ParseBytes(line)
 		if err != nil {
 			vlFJParserPool.Put(fjParser)
+			badRows++
 			continue
 		}
 
@@ -1641,11 +1651,30 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		fieldList = append(fieldList, field)
 	}
 
-	return fieldList, fieldValues, streamLabelSet
+	if err := scanBodyError(scanner, badRows); err != nil {
+		return nil, nil, nil, err
+	}
+	return fieldList, fieldValues, streamLabelSet, nil
+}
+
+// errDetectScanBodyNotJSON marks a VictoriaLogs 200 body with a row that is not JSON: the body is broken.
+var errDetectScanBodyNotJSON = errors.New("detected fields scan body is not VictoriaLogs JSON")
+
+// scanBodyError is the error that makes a scanned VictoriaLogs body unusable: a read that failed (a body cut off,
+// a connection reset) or a row that is not JSON. A row longer than the scan buffer is a limit of the scan and not
+// a failed call, so it stays a partial read as before.
+func scanBodyError(scanner *bufio.Scanner, badRows int) error {
+	if err := scanner.Err(); err != nil && !errors.Is(err, bufio.ErrTooLong) {
+		return err
+	}
+	if badRows > 0 {
+		return errDetectScanBodyNotJSON
+	}
+	return nil
 }
 
 // scanDetectedLabelSummariesStream is the streaming equivalent of scanDetectedLabelSummaries.
-func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) map[string]*detectedLabelSummary {
+func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) (map[string]*detectedLabelSummary, error) {
 	summaries := map[string]*detectedLabelSummary{}
 
 	labelBuf := detectedLabelsBufPool.Get().(map[string]string)
@@ -1659,6 +1688,7 @@ func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) map[stri
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), detectedFieldsScannerLineBytes)
 
+	badRows := 0
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 {
@@ -1669,6 +1699,7 @@ func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) map[stri
 		fjVal, err := fjParser.ParseBytes(line)
 		if err != nil {
 			vlFJParserPool.Put(fjParser)
+			badRows++
 			continue
 		}
 
@@ -1691,7 +1722,10 @@ func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) map[stri
 			summary.values[value] = struct{}{}
 		}
 	}
-	return summaries
+	if err := scanBodyError(scanner, badRows); err != nil {
+		return nil, err
+	}
+	return summaries, nil
 }
 
 func (p *Proxy) detectLabels(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string]*detectedLabelSummary, error) {
@@ -2283,6 +2317,8 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 	resultsCh := make(chan labelResult, len(labelNames))
 
 	var wg sync.WaitGroup
+	var failMu sync.Mutex
+	var firstErr error
 	sem := make(chan struct{}, 8)
 	for _, name := range labelNames {
 		lokiLabel := p.labelTranslator.ToLoki(name)
@@ -2297,7 +2333,15 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 			queryParams := cloneURLValues(baseParams)
 			queryParams.Set("field", vlName)
 			vals, err := p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
-			if err != nil || len(vals) == 0 {
+			if err != nil {
+				failMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				failMu.Unlock()
+				return
+			}
+			if len(vals) == 0 {
 				return
 			}
 			resultsCh <- labelResult{lokiLabel: lokiName, values: vals}
@@ -2305,6 +2349,11 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 	}
 	wg.Wait()
 	close(resultsCh)
+	if firstErr != nil {
+		// A label whose values could not be read is a failed call, not a label without values: answering the
+		// others would list part of the labels as the whole. The caller reads the streams instead.
+		return nil, firstErr
+	}
 
 	summaries := make(map[string]*detectedLabelSummary, len(labelNames))
 	for r := range resultsCh {
@@ -2424,8 +2473,16 @@ func (p *Proxy) detectScannedLabels(ctx context.Context, query, start, end strin
 			continue
 		}
 
-		summaries := scanDetectedLabelSummariesStream(resp.Body, p.labelTranslator)
+		summaries, scanErr := scanDetectedLabelSummariesStream(resp.Body, p.labelTranslator)
 		_ = resp.Body.Close()
+		if scanErr != nil {
+			// A body that broke off or is not VictoriaLogs JSON is a failed call, not a short answer.
+			lastErr = scanErr
+			if i+1 < len(candidates) {
+				p.observeInternalOperation(ctx, "discovery_fallback", "detected_labels_relaxed_after_error", 0)
+			}
+			continue
+		}
 		if len(summaries) == 0 && i+1 < len(candidates) {
 			p.observeInternalOperation(ctx, "discovery_fallback", "detected_labels_empty_primary", 0)
 		}

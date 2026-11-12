@@ -1,41 +1,11 @@
 {
-  "ceiling": 31,
+  "ceiling": 21,
   "leaks": {
     "alerts malformed": [
       "semantics/error-layer-backend-text",
       "semantics/error-layer-silent-success"
     ],
     "alerts truncated": [
-      "semantics/error-layer-silent-success"
-    ],
-    "detected_field_values client_cancel": [
-      "semantics/error-layer-silent-success"
-    ],
-    "detected_field_values malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "detected_field_values timeout": [
-      "semantics/error-layer-silent-success"
-    ],
-    "detected_field_values truncated": [
-      "semantics/error-layer-silent-success"
-    ],
-    "detected_fields client_cancel": [
-      "semantics/error-layer-silent-success"
-    ],
-    "detected_fields malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "detected_fields timeout": [
-      "semantics/error-layer-silent-success"
-    ],
-    "detected_fields truncated": [
-      "semantics/error-layer-silent-success"
-    ],
-    "detected_labels malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "detected_labels truncated": [
       "semantics/error-layer-silent-success"
     ],
     "index_stats oversize": [
