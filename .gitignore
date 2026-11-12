@@ -27,3 +27,6 @@ bench/visual/test-results/
 
 # Local scratch output (logs, drafts, tool builds); never committed.
 /scratchpad/
+
+# The grammar sweep's nightly-size recordings (written by LVP_GRAMMAR_SWEEP_SIZE=full LVP_RUN_ORACLES=1; the default size is committed).
+/internal/querycorpus/testdata/grammar-sweep-full-*

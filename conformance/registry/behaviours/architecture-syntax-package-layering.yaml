@@ -1583,3 +1583,31 @@ decisions:
     performance:
       tracked: ['BenchmarkRoutedBinaryPlansRoute / BenchmarkRoutedBinaryPlansLowered (the new set, branch only) and BenchmarkRoutedPlans*, BenchmarkRoutedWithoutPlans*, BenchmarkRoutedFunctionPlans*, BenchmarkRoutedVectorUnwrapPlans*, BenchmarkRoutedOffsetPlans* (the same plans in both trees) (internal/queryplan/lower) ns/op, B/op, allocs/op; TestRouteAllocatesNoMoreThanTheLowering over the five sets and TestRouteQueryAllocatesNoMoreThanTheLowering over the binary operations']
       bound: 'M5 Pro, GOMAXPROCS=4, 9 runs interleaved base/branch (base db3e52abd), 2026-11-12, the same plans in both trees: every set within noise (p between 0.22 and 0.86), bytes per op equal, allocations equal: Route 1.618 ms -> 1.626 ms, 32,580 allocs both; the without plans 1.505 ms -> 1.485 ms, 25,570 allocs; the function plans 473.7 us -> 466.3 us, 6,113 allocs; the vector unwrap plans 457.8 us -> 452.2 us, 6,474 allocs; the offset plans 282.8 us -> 284.5 us, 4,042 allocs. The new set (branch only): RouteQuery 1.041 ms ± 11 %, 3.447 MiB, 18,700 allocs per op against Plan 1.050 ms ± 33 %, 3.529 MiB, 20,380 allocs (fewer allocations than the lowering, time within noise). The run''s spread is the machine''s; allocations are exact. No request path calls RouteQuery yet.'
+  - id: grammar-sweep-against-loki-and-victorialogs
+    chosen: |
+      The LogQL grammar is enumerated as short parts (selector, stage, range function, range, offset, grouping,
+      aggregation, binary operator and modifier) joined by templates, and combined by a covering design: every value
+      alone, and every pair of classes of two parts (three-way draws in the larger size), with a seeded generator
+      (internal/querycorpus/grammar_sweep_gen_test.go). Loki's answers (the Loki oracle: check for acceptance and
+      error text, facts for the tree) and VictoriaLogs' (the VictoriaLogs oracle roundtrip, v1.49.0 and v1.53.0, of
+      every LogsQL text the plan and the translator write for them) are recorded under the query set's hash. The
+      proxy's answers are computed. A difference falls into a class (the kind, the two answers without numbers and
+      names, and the grammar element all its queries hold); conformance/registry/grammar-sweep.json lists each class
+      with the registry case that holds it open, and the test fails for a class not listed, a class without a case,
+      a class that grew, and a class that shrank until the file is rewritten. Rewriting keeps the case of each class and gives a regrouped class the one case its kind and answer had, or the first of the file's case rules that matches; it refuses to write while a LogsQL text has no recorded VictoriaLogs answer.
+    over: [a hand-written list of queries (the existing grids each cover one construct), the full product of the grammar (millions of queries), running the oracles in every test run (they build Loki and VictoriaLogs)]
+    why: |
+      Owner 2026-11-12: growing assurance that everything matches Loki and VictoriaLogs. The grids check one
+      construct at a time; a difference that needs two constructs (a negated line filter after a regexp parser, a
+      sort with a grouping, a tab before an unwrap) is found only by combining them. Recording the oracles' answers
+      keeps the unit test fast and offline, the hash of the query set fails a recording made for another set, and
+      LVP_RUN_ORACLES=1 records them again (the query-corpus workflow does, on main, with the full size too). Rows hold
+      at most one odd value (a stage Loki rejects, a typo), so an error names the value under test and not whichever
+      of two defects the parser reaches first. Mismatches are counted by class, not listed by query, so a fix lowers a
+      count and a new defect cannot hide inside an old class.
+    evidence: 'LVP_RUN_ORACLES=1 go test ./internal/querycorpus -run TestGrammarSweep (2026-11-13): 25,824 queries, Loki accepts 16,982 and rejects 8,842, 57,996 LogsQL texts checked on v1.49.0 and v1.53.0 (texts of the queries Loki rejects too: 108 rejections counted, no clone failure), 1,264 differences in 160 classes held by 25 registry cases (20 new, 5 existing)'
+    code: [internal/querycorpus/grammar_sweep_gen_test.go, internal/querycorpus/grammar_sweep_test.go, conformance/registry/grammar-sweep.json]
+    tests: [TestGrammarSweep]
+    quality: 'The default size replays in about 1 s (6 s under -race) from 460 KB of recordings; the known differences only shrink, and every one is a registry case.'
+    performance:
+      tracked: ['not applicable: test-only code; no product code, no request path']

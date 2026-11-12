@@ -1,0 +1,31 @@
+id: semantics/set-operation-folded-literal-operand
+title: "A set operation with a literal operand that is an arithmetic expression (`and 1 + 2`) is accepted; Loki folds it and rejects the literal (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki folds `1 + 2` to 3 before it checks the operands of the set operation and answers
+  "parse error : unexpected literal for right leg of logical/set binary operation (and): 3.000000". The proxy rejects `and 1` but accepts `and 1 + 2`.
+  For `1 + 2 and -1` both reject, Loki on the left leg (3.000000) and the proxy on the right leg (-1.000000).
+
+  Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
+request:
+  scope: query-grammar
+  entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/set-operation-folded-literal-operand"
+  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now, step 60s): rate({app=\"x\"}[5m]) and 1 + 2 . The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: "Loki's 400 naming the folded literal."
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: "internal/logql validateSemantics (set operation operands)"
+  loki: "operands are folded before the check"
+  proxy: "the check sees the unfolded operand"
+  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  visual: none
+  visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
+  clusters: []
