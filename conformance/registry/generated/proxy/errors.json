@@ -2353,6 +2353,18 @@
       "writer": "writeErr"
     },
     {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": "bad_data",
+      "expression": "msg",
+      "kind": "literal",
+      "message": "multi-tenant sub-request failed",
+      "status": 400,
+      "status_token": "http.StatusBadRequest",
+      "where": "internal/proxy/time_bounds.go requestTimeBounds",
+      "writer": "writeError"
+    },
+    {
       "dynamic": true,
       "error_text": true,
       "error_type": "bad_data",
@@ -2404,12 +2416,12 @@
   "summary": {
     "by_status": {
       "400": {
-        "count": 90,
+        "count": 91,
         "dynamic_sites": 59,
         "error_text_sites": 43,
         "error_type": "bad_data",
         "layer_sites": 0,
-        "literal_sites": 31,
+        "literal_sites": 32,
         "messages": [
           "both start and end parameters required for delete",
           "delete requires X-Delete-Confirmation: true header for safety",
@@ -2544,6 +2556,6 @@
         "no_body_sites": 0
       }
     },
-    "call_sites": 200
+    "call_sites": 201
   }
 }

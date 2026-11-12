@@ -46,7 +46,7 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 
 | Status | call sites | literal message | through the error layer | formatted at run time | of those, an error's own text | no body |
 |---|---:|---:|---:|---:|---:|---:|
-| 400 | 90 | 31 | 0 | 59 | 43 | 0 |
+| 400 | 91 | 32 | 0 | 59 | 43 | 0 |
 | 401 | 5 | 5 | 0 | 0 | 0 | 0 |
 | 403 | 2 | 2 | 0 | 0 | 0 | 0 |
 | 404 | 1 | 1 | 0 | 0 | 0 | 0 |

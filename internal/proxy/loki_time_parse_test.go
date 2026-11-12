@@ -8,29 +8,30 @@ import (
 )
 
 // parseLokiTimeLayoutsFirst is parseLokiTimeToUnixNano as it was before the integer fast path: the time layouts
-// first, then now/now±d, then integers and floats. The fast path must answer the same for every input.
+// first, then now/now±d, then integers and floats; a time int64 nanoseconds cannot hold is false in both. The fast
+// path must answer the same for every input.
 func parseLokiTimeLayoutsFirst(raw string) (int64, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return 0, false
 	}
 	if parsed, err := time.Parse(time.RFC3339Nano, raw); err == nil {
-		return parsed.UnixNano(), true
+		return unixNanoIfHeld(parsed)
 	}
 	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
-		return parsed.UnixNano(), true
+		return unixNanoIfHeld(parsed)
 	}
 	if raw == "now" || strings.HasPrefix(raw, "now-") || strings.HasPrefix(raw, "now+") {
 		return 0, false // time-dependent; not compared
 	}
 	if nInt, err := strconv.ParseInt(raw, 10, 64); err == nil {
-		return normalizeLokiIntTimeToUnixNano(nInt), true
+		return integerNanosIfHeld(nInt)
 	}
 	n, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
 		return 0, false
 	}
-	return normalizeLokiNumericTimeToUnixNano(n), true
+	return floatNanosIfHeld(n)
 }
 
 func TestParseLokiTimeIntegerFastPathMatchesLayoutsFirst(t *testing.T) {

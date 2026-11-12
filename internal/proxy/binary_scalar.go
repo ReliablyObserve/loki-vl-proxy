@@ -94,24 +94,21 @@ func binaryConstantResponse(r *http.Request, value float64, resultType string) (
 	start, startOK := parseLokiTimeToUnixNano(r.FormValue("start"))
 	end, endOK := parseLokiTimeToUnixNano(r.FormValue("end"))
 	step, stepOK := parsePositiveStepDuration(r.FormValue("step"))
-	if !startOK || !endOK || !stepOK || end < start || (end-start)/int64(step) >= 1000000 {
+	evaluations := stepCount(start, end, int64(step))
+	if !startOK || !endOK || !stepOK || end < start || evaluations > 1000000 {
 		return nil, fmt.Errorf("invalid or excessive scalar evaluation range")
 	}
 	ctx := binaryEvaluationContext(r.Context())
-	count := int(1 + (end-start)/int64(step))
+	count := int(evaluations)
 	if count > ctx.Value(binaryEvaluationKey{}).(binaryEvaluationState).budget.outputSamples {
 		return nil, fmt.Errorf("binary expression output sample budget exceeded")
 	}
 	points := make([][]any, 0, count)
-	for ts := start; ts <= end; {
+	for i := int64(0); i < evaluations; i++ {
 		if err := checkBinaryOutputSample(ctx); err != nil {
 			return nil, err
 		}
-		points = append(points, []any{lokiSampleSeconds(ts), encoded})
-		if end-ts < int64(step) {
-			break
-		}
-		ts += int64(step)
+		points = append(points, []any{lokiSampleSeconds(start + i*int64(step)), encoded})
 	}
 	return encodeBinarySeriesContext(ctx, map[string]*binaryMatchedSeries{"{}": {labels: map[string]string{}, points: points}}, "matrix", executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 }

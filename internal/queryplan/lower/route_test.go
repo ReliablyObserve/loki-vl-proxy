@@ -22,10 +22,10 @@ var routeTestEnd = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 // the range stay below int64 nanoseconds), as times.
 var (
 	// routeBoundsRangeCeiling is the latest end a range request of step 5m over a 5m range may have after an offset of
-	// -1h: a second, the step and the range short of int64 nanoseconds, less the hour the offset adds.
-	routeBoundsRangeCeiling = time.Unix(0, math.MaxInt64-int64(time.Second)-int64(10*time.Minute)-int64(time.Hour))
+	// -1h: 15 minutes (the request time bounds), the step and the range short of int64 nanoseconds, less the hour the offset adds.
+	routeBoundsRangeCeiling = time.Unix(0, math.MaxInt64-int64(15*time.Minute)-int64(10*time.Minute)-int64(time.Hour))
 	routeBoundsFloor        = time.Unix(0, 1e18)
-	routeBoundsCeiling      = time.Unix(0, math.MaxInt64-int64(time.Second)-int64(5*time.Minute))
+	routeBoundsCeiling      = time.Unix(0, math.MaxInt64-int64(15*time.Minute)-int64(5*time.Minute))
 )
 
 // The route rule decides, from the plan and the request, how the handlers read a range metric's windows from
@@ -415,7 +415,7 @@ func offsetFits(off, rng time.Duration, req RouteRequest) bool {
 	if !req.Instant {
 		reach.Add(reach, big.NewInt(int64(req.Step)))
 	}
-	latest := new(big.Int).Sub(big.NewInt(math.MaxInt64-int64(time.Second)), reach)
+	latest := new(big.Int).Sub(big.NewInt(math.MaxInt64-int64(15*time.Minute)), reach)
 	return start.Cmp(big.NewInt(1e18)) >= 0 && end.Cmp(latest) <= 0
 }
 
