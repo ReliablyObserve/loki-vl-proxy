@@ -737,6 +737,9 @@
     "semantics/translator-reads-quoted-text-as-syntax | compare:observed",
     "semantics/translator-reads-quoted-text-as-syntax | gap:open",
     "semantics/translator-reads-quoted-text-as-syntax | query",
+    "semantics/translator-reads-vector-operand-as-text | compare:observed",
+    "semantics/translator-reads-vector-operand-as-text | gap:open",
+    "semantics/translator-reads-vector-operand-as-text | query",
     "semantics/translator-writes-keyword-field-names-bare | compare:observed",
     "semantics/translator-writes-keyword-field-names-bare | gap:open",
     "semantics/translator-writes-keyword-field-names-bare | query",
@@ -852,6 +855,9 @@
     "semantics/vector-aggregation-over-log-selector-status | gap:fixed",
     "semantics/vector-aggregation-over-log-selector-status | perf",
     "semantics/vector-aggregation-over-log-selector-status | query",
+    "semantics/vector-call-blank-before-parenthesis-as-query | compare:observed",
+    "semantics/vector-call-blank-before-parenthesis-as-query | gap:open",
+    "semantics/vector-call-blank-before-parenthesis-as-query | query",
     "semantics/window-edge-float64-nanoseconds | compare:observed",
     "semantics/window-edge-float64-nanoseconds | gap:documented",
     "semantics/window-edge-float64-nanoseconds | query",
@@ -1028,6 +1034,7 @@
     "internal/proxy/binary_matching_test.go | loki_api_v1_query",
     "internal/proxy/binary_matching_test.go | semantics/scalar-sample-time-units",
     "internal/proxy/binary_operand_test.go | architecture-syntax-package-layering",
+    "internal/proxy/binary_physical_test.go | architecture-syntax-package-layering",
     "internal/proxy/capture_error_replay_test.go | limits/series-limit-error",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-backend-text",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-body-shape",
@@ -1670,6 +1677,8 @@
     "internal/querycorpus/vector_agg_nested_grid_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_alloc_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/binop_vector_loki_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/binop_vector_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/detected_level_ast_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/detected_level_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/extract_test.go | architecture-syntax-package-layering",
@@ -2225,14 +2234,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 59,
+      "api": 61,
       "drilldown": 50,
       "explore": 162,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 510,
+      "go": 513,
       "playwright": 1
     },
     "page_kinds": {
@@ -2251,7 +2260,7 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 104,
+    "unwired_items": 106,
     "wired_items": 291
   },
   "gates": [

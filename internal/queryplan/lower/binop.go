@@ -26,11 +26,17 @@ import (
 // the query again and evaluates each operand as a query of its own, so such a binary operation is held to the
 // proxy's route (proxy.BinaryOperandsPhysical), the text screen does not read it, and RoutedBinary tells it apart.
 //
+// A vector(n) operand next to a range or vector aggregation is lowered to the physical.VectorOp the proxy's binary
+// route answers it from (binop_vector.go), and such a binary operation is held to that route too (RoutedBinary): the
+// translator reads the operand as a phrase to search for or drops it.
+//
 // Left to the string translator under a construct name:
 //   - and, or and unless (the translator writes the left operand alone), and a bool modifier (it drops it);
-//   - two numbers, an operand that is a binary operation, vector(), label_replace, a ranking or a log query, a
-//     without clause with no label (BinOp operand without empty), an operand the range or vector aggregation
-//     lowering leaves to the translator;
+//   - two numbers, or numbers and vector(n) only (BinOp constant operands: the proxy folds an instant query of
+//     constants itself, before any binary route, and the route's answer for a range query is a constant, which costs
+//     less than the plan), an operand that is a binary
+//     operation, label_replace, a ranking or a log query, a without clause with no label (BinOp operand without
+//     empty), an operand the range or vector aggregation lowering leaves to the translator;
 //   - a spelling the translator reads unlike the plan (screenBinOp, before the lowering).
 func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
 	if err := binOpShape(n); err != nil {
@@ -62,6 +68,7 @@ var (
 	errBinMatchingSpell   = &NotLoweredError{Construct: "BinOp vector matching spelling"}
 	errBinNumberSpelling  = &NotLoweredError{Construct: "BinOp number spelling"}
 	errBinOperandSpelling = &NotLoweredError{Construct: "BinOp operand spelling"}
+	errBinConstants       = &NotLoweredError{Construct: "BinOp constant operands"}
 )
 
 // binOpShape answers the NotLoweredError of a binary operation the lowering does not write, judged on the plan
@@ -78,9 +85,12 @@ func binOpShape(n *queryplan.BinOp) error {
 	if ls && rs {
 		return errBinScalarOperands
 	}
+	if constantOperand(n.L) && constantOperand(n.R) {
+		return errBinConstants
+	}
 	for _, x := range [2]queryplan.Node{n.L, n.R} {
 		switch v := x.(type) {
-		case *queryplan.Scalar, *queryplan.RangeAgg:
+		case *queryplan.Scalar, *queryplan.RangeAgg, *queryplan.VectorLit:
 		case *queryplan.VectorAgg:
 			// The translator needs a label to read a without clause: `without ()` stays in its text.
 			for lv := v; lv != nil; lv, _ = lv.In.(*queryplan.VectorAgg) {
@@ -95,8 +105,14 @@ func binOpShape(n *queryplan.BinOp) error {
 	return nil
 }
 
-// withoutOperand reports whether an operand of n is a vector aggregation with a without clause at one of its levels.
+// withoutOperand reports whether an operand of n is one the proxy's binary route evaluates alone and the translator's
+// text for the whole query does not describe: a vector aggregation with a without clause at one of its levels, or a
+// vector(n), which the route answers from a constant. The label_replace lowering leaves such a binary operation
+// under its calls to the translator for the same reason.
 func withoutOperand(n *queryplan.BinOp) bool {
+	if vectorOperand(n) {
+		return true
+	}
 	for _, x := range [2]queryplan.Node{n.L, n.R} {
 		for lv, _ := x.(*queryplan.VectorAgg); lv != nil; lv, _ = lv.In.(*queryplan.VectorAgg) {
 			if lv.By != nil && lv.By.Without {
@@ -108,21 +124,24 @@ func withoutOperand(n *queryplan.BinOp) bool {
 }
 
 // RoutedBinary reports whether root is a binary operation with an operand that has a without clause (at any level
-// of its vector aggregations): the lowering writes each operand alone, which the string translator's text for the
-// whole query does not describe, so it is held to the proxy's binary route (proxy.BinaryOperandsPhysical), not to
-// that text (see binOp).
+// of its vector aggregations) or is a vector(n): the lowering writes each operand alone, which the string translator's
+// text for the whole query does not describe, so it is held to the proxy's binary route
+// (proxy.BinaryOperandsPhysical), not to that text (see binOp).
 func RoutedBinary(root queryplan.Node) bool {
 	n, ok := root.(*queryplan.BinOp)
 	return ok && withoutOperand(n)
 }
 
-// binOperand lowers one operand binOpShape accepted: a number, or the query of a range or vector aggregation.
+// binOperand lowers one operand binOpShape accepted: a number, a vector(n), or the query of a range or vector
+// aggregation.
 func binOperand(x queryplan.Node, prof Profile) (physical.Op, error) {
 	var op physical.Op
 	var err error
 	switch v := x.(type) {
 	case *queryplan.Scalar:
 		return physical.ScalarOp{V: v.V, Text: binNumber(v.V)}, nil
+	case *queryplan.VectorLit:
+		return physical.VectorOp{V: v.V, Text: vectorText(v.V)}, nil
 	case *queryplan.RangeAgg:
 		if op, err = rangeAgg(v, prof); err != nil {
 			return nil, operandError(err, errBinOperandRange)
@@ -219,10 +238,17 @@ func appendMatchingModifier(dst []byte, keyword string, labels []string) []byte 
 //     screens turn away (ScreenText): BinOp operand spelling.
 //
 // A binary operation the lowering does not write (binOpShape) is left to it to name, and one with an operand that
-// has a without clause is not screened (RoutedBinary: the proxy's route does not read the query's text).
+// has a without clause or is a vector(n) is not screened for the translator's reading (RoutedBinary: the proxy's
+// route does not read the query's text); a vector(n) operand's own spelling is (screenVectorOperands).
 func screenBinOp(query string, n *queryplan.BinOp) error {
 	if binOpShape(n) != nil {
 		return nil
+	}
+	if vectorOperand(n) {
+		// The route answers a vector(n) from the constant only when it reads the operand's text as one.
+		if err := screenVectorOperands(query, n); err != nil {
+			return err
+		}
 	}
 	if withoutOperand(n) {
 		// The proxy's binary route translates each operand alone, as its printed LogQL (logql.Expr.String), which

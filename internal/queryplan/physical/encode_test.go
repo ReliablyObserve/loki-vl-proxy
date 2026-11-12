@@ -13,6 +13,8 @@ func TestEncodeWritesTheLegacyText(t *testing.T) {
 	}{
 		{"query", q, `app:="x"`},
 		{"scalar", ScalarOp{V: 100, Text: "100"}, "100"},
+		{"vector", VectorOp{V: 2, Text: "vector(2)"}, "vector(2)"},
+		{"binary with a vector", Binary{Op: "+", L: q, R: VectorOp{V: 2, Text: "vector(2)"}}, `__binary__:+:app:="x"|||vector(2)`},
 		{"verbatim", Verbatim{Text: "kept", In: q}, "kept"},
 		{"fold", Fold{Levels: []FoldLevel{{Op: "sum", Labels: []string{"pod", "node"}, Without: true}}, In: q}, `app:="x"__without__:sum:pod,node`},
 		{"fold without labels", Fold{Levels: []FoldLevel{{Without: true}}, In: q}, `app:="x"`},
@@ -33,5 +35,38 @@ func TestEncodeWritesTheLegacyText(t *testing.T) {
 	}
 	if got := string(AppendLabelReplaceMarker(nil, lr)); got[:len(LabelReplacePrefix)] != LabelReplacePrefix || got[len(got)-2:] != "__" {
 		t.Fatalf("label_replace marker = %q", got)
+	}
+}
+
+// A vector(n) operand has a form of its own: it never equals the number n (a vector takes part in vector matching, a
+// number does not), only its value is compared, not the text it was written as, and the matching around it is.
+func TestCanonOfAVectorOperand(t *testing.T) {
+	q := VLQuery{Text: `app:="x"`}
+	bin := func(r Op, m *Matching) Op { return Binary{Op: "+", L: q, R: r, Match: m} }
+	equal := [][2]Op{
+		{VectorOp{V: 2}, VectorOp{V: 2, Text: "vector(2)"}},
+		{bin(VectorOp{V: 0.5}, nil), bin(VectorOp{V: 0.5, Text: "vector(0.5)"}, nil)},
+	}
+	for i, c := range equal {
+		if !Equal(c[0], c[1]) {
+			t.Errorf("equal pair %d differs", i)
+		}
+	}
+	on := &Matching{MatchOn: true}
+	differ := [][2]Op{
+		{VectorOp{V: 2}, ScalarOp{V: 2}},
+		{VectorOp{V: 2}, VectorOp{V: 3}},
+		{VectorOp{V: 0}, VectorOp{V: -1}},
+		{bin(VectorOp{V: 2}, nil), bin(ScalarOp{V: 2}, nil)},
+		{bin(VectorOp{V: 2}, nil), bin(VectorOp{V: 2}, on)},
+		{VectorOp{V: 2}, q},
+	}
+	for i, c := range differ {
+		if Equal(c[0], c[1]) {
+			t.Errorf("differing pair %d is equal", i)
+		}
+	}
+	if Evaluated(bin(VectorOp{V: 1}, nil)) {
+		t.Error("a vector(n) operand is not a level the proxy evaluates")
 	}
 }

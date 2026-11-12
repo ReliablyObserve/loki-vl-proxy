@@ -26,6 +26,9 @@ type (
 		L, R  any
 	}
 	canonScalar struct{ V float64 }
+	// canonVector is a vector(n) operand: its own form, so a vector(2) never equals the number 2 (a vector takes part in
+	// vector matching, a number does not).
+	canonVector struct{ V float64 }
 	// canonLevel is a RankStep (K set) or a SeriesAgg; By is nil for no clause and for `by ()`.
 	canonLevel struct {
 		Rank bool
@@ -55,6 +58,8 @@ func Canon(op Op, unparsed *bool) any {
 		return canonBin{v.Op, v.Bool, v.Match, Canon(v.L, unparsed), Canon(v.R, unparsed)}
 	case ScalarOp:
 		return canonScalar{v.V}
+	case VectorOp:
+		return canonVector{v.V}
 	case RankStep:
 		return canonLevel{true, v.Op, v.K, canonClause(v.By), Canon(v.In, unparsed)}
 	case SeriesAgg:

@@ -57,6 +57,8 @@ func Encode(op Op) string {
 		return v.Text
 	case ScalarOp:
 		return v.Text
+	case VectorOp:
+		return v.Text
 	case Verbatim:
 		return v.Text
 	case RankStep:

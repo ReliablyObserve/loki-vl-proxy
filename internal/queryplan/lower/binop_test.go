@@ -48,8 +48,8 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 		return "", legacy, false, "proxy-evaluated", true
 	}
 	if RoutedBinary(p.Root) {
-		// A binary operation with an operand that has a without clause is held to the proxy's binary route: each
-		// operand is what the translator writes for its printed LogQL alone (the corpus shadow holds it to
+		// A binary operation with an operand that has a without clause, or a vector(n), is held to the proxy's binary
+		// route: each operand is what the translator writes for its printed LogQL alone (the corpus shadow holds it to
 		// proxy.BinaryOperandsPhysical), and the whole is not the translator's text for the query.
 		lowered, routed, same := routeOperands(t, q, op.(physical.Binary), prof)
 		return lowered, routed, same && physical.Encode(op) != legacy, "", true
@@ -60,8 +60,8 @@ func binOpLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy s
 }
 
 // routeOperands holds the operands of a lowered binary operation to the proxy's binary route under prof: each operand
-// that is not a number is the translator's text for its printed LogQL (logql.Expr.String) alone, byte for byte and
-// operator for operator. It returns both sides' texts joined by " ||| " for a failure message.
+// that is not a number or a vector(n) is the translator's text for its printed LogQL (logql.Expr.String) alone, byte
+// for byte and operator for operator. It returns both sides' texts joined by " ||| " for a failure message.
 func routeOperands(t testing.TB, q string, op physical.Binary, prof rangeProfile) (lowered, routed string, same bool) {
 	t.Helper()
 	expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
@@ -80,6 +80,13 @@ func routeOperands(t testing.TB, q string, op physical.Binary, prof rangeProfile
 			got = op.R
 		}
 		if _, lit := side.(*logql.LiteralExpr); lit {
+			lt, rt = append(lt, physical.Encode(got)), append(rt, side.String())
+			continue
+		}
+		if v, vector := VectorLiteral(side.String()); vector {
+			// A vector(n) is answered from the constant: no translation, a VectorOp of its number.
+			vo, isVector := got.(physical.VectorOp)
+			same = same && isVector && vo.V == v
 			lt, rt = append(lt, physical.Encode(got)), append(rt, side.String())
 			continue
 		}
@@ -167,7 +174,6 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 		`2 * max(sum without () (` + rate + `))`: "BinOp operand without empty",
 		`label_replace(sum without (pod) (` + rate + `) / 2, "a", "b", "c", "d")`: "LabelReplace operand BinOp",
 		rate + ` / (` + rate + ` + 1)`:                                            "BinOp operand BinOp",
-		`vector(1) + ` + rate:                                                     "BinOp operand VectorLit",
 		`topk(2, ` + rate + `) / 2`:                                               "BinOp operand Rank",
 		`{app="a"} > 1`:                                                           "BinOp operand LogSelect",
 		`label_replace(` + rate + `, "a", "b", "c", "d") / 2`:                     "BinOp operand LabelReplace",
@@ -257,6 +263,16 @@ func FuzzBinOpLowering(f *testing.F) {
 	f.Add("a", "x", "app", "$1", uint8(0), uint8(0), uint8(0), uint8(0x20))
 	f.Add("a", "x", "app", "$1", uint8(1), uint8(8), uint8(0x80), uint8(0x40))
 	f.Add("a", "x", "app", "$1", uint8(2), uint8(6), uint8(0), uint8(0xe0))
+	// vector(n) operands: on either side and both, with the matching modifiers, every operator class, and the
+	// spellings the route does not read as one.
+	f.Add("a", "x", "app", "$1", uint8(0), uint8(72), uint8(9), uint8(0))
+	f.Add("a", "x", "app", "$1", uint8(2), uint8(0), uint8(24), uint8(12))
+	f.Add("a", "x", "app", "$1", uint8(0), uint8(72), uint8(5), uint8(16))
+	f.Add("a", "x", "app", "$1", uint8(10), uint8(72), uint8(39), uint8(20))
+	f.Add("a", "x", "app", "$1", uint8(6), uint8(8), uint8(54), uint8(8))
+	f.Add("a", "x", "app", "$1", uint8(15), uint8(72), uint8(9), uint8(0))
+	f.Add("a", "x", "app", "$1", uint8(12), uint8(72), uint8(24), uint8(4))
+	f.Add("a", "x", "app", "$1", uint8(1), uint8(80), uint8(69), uint8(0x80))
 	f.Fuzz(func(t *testing.T, sel, line, label, arg string, opSel, left, right, mod uint8) {
 		ident := func(s string) string {
 			var b strings.Builder
@@ -296,7 +312,9 @@ func FuzzBinOpLowering(f *testing.F) {
 			case 8:
 				return `sum without (` + lbl + `) (` + inner + `)`
 			case 9:
-				return `vector(` + strconv.Itoa(int(k)) + `)`
+				// The spellings the proxy's route reads as a vector(n) and the ones it sends on as a query.
+				n := strconv.Itoa(int(k))
+				return []string{`vector(` + n + `)`, `vector (` + n + `)`, `vector( ` + n + ` )`, `vector(` + n + ` )`}[k/15%4]
 			case 10:
 				return `(` + inner + ` * 2)`
 			case 12:

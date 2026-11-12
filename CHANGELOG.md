@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan lowers a binary operation with a `vector(n)` operand next to a range or
+  vector aggregation (`sum by (app) (rate({app="a"}[5m])) + on() vector(0)`,
+  `rate({app="a"}[5m]) > vector(1)`) the way Loki and the proxy's binary route treat it: one
+  series without labels with the value n at every step, answered from the constant and never
+  sent to VictoriaLogs, and a vector that takes part in vector matching (unlike a plain
+  number). The string translator's text for such a query searches for the call as a phrase or
+  drops the operand, a text the proxy never sends, so the shadows hold these queries to the
+  binary route instead (it now describes the constant the handler answers with): 99 more
+  shadow rows match, with 0 mismatches. No answer changes; the plan does not serve binary
+  operations yet. A query of constants only (`vector(1) + vector(2)`), the set operators,
+  `bool`, a `vector (1)` spelled with a blank, and an operand that is itself a binary
+  operation stay with the string translator.
+
 ## [2.181.0] - 2026-11-12
 
 ### Changed

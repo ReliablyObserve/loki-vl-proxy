@@ -123,6 +123,16 @@ type ScalarOp struct {
 	Text string
 }
 
+// VectorOp is vector(n) as an operand of a Binary: one series without labels, V at every step. Unlike a ScalarOp it is
+// a vector, so it takes part in vector matching (on, ignoring, group_left, group_right) and a comparison with it
+// filters. The proxy answers it from the constant and sends nothing to VictoriaLogs for it; the legacy text encoding
+// has no form for it, so DecodePhysical never produces it.
+type VectorOp struct {
+	V float64
+	// Text is the operand as the lowering writes it (`vector(2)`), which Encode writes back.
+	Text string
+}
+
 // Post is the post-processing of a decoded query that runs after VictoriaLogs answers: the fold of a `without`
 // aggregation the proxy combines itself, then the label_replace calls.
 type Post struct {
@@ -151,6 +161,7 @@ func (Fold) op()      {}
 func (LabelMap) op()  {}
 func (Binary) op()    {}
 func (ScalarOp) op()  {}
+func (VectorOp) op()  {}
 func (Verbatim) op()  {}
 
 // Split separates the post-processing of a decoded query from the operator it applies to. The core is what the
