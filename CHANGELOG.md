@@ -7,20 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan now decides how the handlers answer a binary operation whose operands are range or vector
+  aggregations, numbers or `vector(n)`, instead of leaving it to the handlers: the handlers translate the
+  operation, then evaluate each aggregation operand as a query of its own over the same request, so the route
+  is the operands' routes together (each with its own range, windows and level probe), and a number or
+  `vector(n)` adds none. Shapes the handlers read another way stay delegated, by name: operands whose
+  offsets differ or only some carry one ("route mixed offsets"), operands that read one log selector over
+  different windows and so share a level probe ("route shared level probe"), an `absent_over_time` operand,
+  and an offset the step does not divide on any operation but an aggregation against a number ("route
+  offset step"); an operand the rule does not route delegates the operation as "BinOp operand" followed by
+  the operand's own reason. No answer or request changes: no handler reads the rule yet. Route parity:
+  1,312 more of 25,070 runs are decided (7,538 native, 0 mismatches, the routes and statuses unchanged);
+  the other 1,318 runs of the "BinOp (route rule)" and "BinOp operand VectorAgg" groups are now named by
+  what keeps them delegated.
+
 ### Fixed
 
-- Bounds checks for request times and offsets. A `query` or `query_range`
-  request whose window, moved by the query's `offset` and widened by its range,
-  leaves the span the proxy holds times in (1677-09-21 to 2262-04-11, less 15
-  minutes at either end) is answered with `400` and a message that names the
-  limit, before the handler reads it. An integer `start`, `end` or `time`
-  beyond 64 bits gets Loki's own `400` (`could not parse 'end' parameter:
-  strconv.ParseInt: ... value out of range`). A time written as RFC 3339
-  outside those dates is no longer read as a time at the other end of the span.
-  Every loop that steps through the evaluation times of a range counts its
-  steps with checked arithmetic. Loki has no stable answer for these windows
-  (wrapped timestamps, a `500`); the answers it gave are recorded and replayed
-  in the tests.
+- `/loki/api/v1/tail` surfaces a failed VictoriaLogs call as Loki's tail does. A live tail whose VictoriaLogs
+  stream ends, breaks off or carries a line above 1 MiB, and a polled tail whose query fails or answers
+  something that is not JSON, now close the websocket with `1011` and Loki's text
+  (`Internal Server Error`, cut to the 123 bytes a close frame holds). Before, the connection was dropped with
+  no close frame, which clients read as their library's `unexpected EOF`, and a failed poll was retried
+  silently without end. A first VictoriaLogs probe that takes longer than `-backend-timeout` is answered
+  before the upgrade with `504` and Loki's deadline text.
+- `query_range`, `query`, `series` and the `index/volume` and `index/volume_range` routes answer a VictoriaLogs
+  reply that is not VictoriaLogs JSON as Loki answers a failed backend, `500` `Internal Server Error`, and no
+  longer as `200` with an empty result. That covers a body that cannot be read as JSON and a log, stats or
+  volume body that holds a row or a trailing part that is not JSON, for log queries, rate and other metric
+  queries, `rate_counter` over `unwrap`, Logs Drilldown's stats calls and the windowed log query. A reply with
+  nothing in it is still an empty result. The windowed log query also fails, and does not cache, a window whose
+  body broke off or held such a row.
+
+## [2.193.0] - 2026-11-12
+
+### Fixed
 - `/loki/api/v1/patterns` answers a failed VictoriaLogs call as an error, as Loki does, and no longer as an
   empty result. A refused or reset connection, a reply after `-backend-timeout` (504), a request the client
   cancelled (499), a full VictoriaLogs queue (429), a VictoriaLogs error status, and a body that broke off
@@ -35,13 +57,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   backend), so Logs Drilldown shows the outage and not an empty field list. A scan that outlasts
   `-drilldown-scan-timeout` while VictoriaLogs and the request are still alive keeps its documented answer of
   no fields.
-- `query_range`, `query`, `series` and the `index/volume` and `index/volume_range` routes answer a VictoriaLogs
-  reply that is not VictoriaLogs JSON as Loki answers a failed backend, `500` `Internal Server Error`, and no
-  longer as `200` with an empty result. That covers a body that cannot be read as JSON and a log, stats or
-  volume body that holds a row or a trailing part that is not JSON, for log queries, rate and other metric
-  queries, `rate_counter` over `unwrap`, Logs Drilldown's stats calls and the windowed log query. A reply with
-  nothing in it is still an empty result. The windowed log query also fails, and does not cache, a window whose
-  body broke off or held such a row.
+
+## [2.192.0] - 2026-11-12
+
+### Fixed
+
+- Bounds checks for request times and offsets. A `query` or `query_range`
+  request whose window, moved by the query's `offset` and widened by its range,
+  leaves the span the proxy holds times in (1677-09-21 to 2262-04-11, less 15
+  minutes at either end) is answered with `400` and a message that names the
+  limit, before the handler reads it. An integer `start`, `end` or `time`
+  beyond 64 bits gets Loki's own `400` (`could not parse 'end' parameter:
+  strconv.ParseInt: ... value out of range`). A time written as RFC 3339
+  outside those dates is no longer read as a time at the other end of the span.
+  Every loop that steps through the evaluation times of a range counts its
+  steps with checked arithmetic. Loki has no stable answer for these windows
+  (wrapped timestamps, a `500`); the answers it gave are recorded and replayed
+  in the tests.
 
 ## [2.191.0] - 2026-11-12
 

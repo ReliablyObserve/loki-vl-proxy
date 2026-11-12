@@ -356,9 +356,9 @@
     "semantics/error-layer-backend-text | gap:open",
     "semantics/error-layer-body-shape | compare:exact",
     "semantics/error-layer-cancel-deadline | compare:exact",
-    "semantics/error-layer-cancel-deadline | gap:open",
+    "semantics/error-layer-cancel-deadline | gap:fixed",
     "semantics/error-layer-internal-go-text | compare:exact",
-    "semantics/error-layer-internal-go-text | gap:open",
+    "semantics/error-layer-internal-go-text | gap:fixed",
     "semantics/error-layer-proxy-limit-status | compare:exact",
     "semantics/error-layer-proxy-limit-status | gap:open",
     "semantics/error-layer-silent-success | compare:exact",
@@ -1548,6 +1548,11 @@
     "internal/proxy/sum_without_extraction_list_test.go | semantics/unwrap-sum-without-collapses",
     "internal/proxy/sum_without_label_collision_test.go | metric-series-identity",
     "internal/proxy/sum_without_label_collision_test.go | semantics/unwrap-sum-without-extracted-label-collision",
+    "internal/proxy/tail_backend_errors_test.go | backend-deadlines-and-cancellation",
+    "internal/proxy/tail_backend_errors_test.go | loki_api_v1_tail",
+    "internal/proxy/tail_backend_errors_test.go | semantics/error-layer-cancel-deadline",
+    "internal/proxy/tail_backend_errors_test.go | semantics/error-layer-internal-go-text",
+    "internal/proxy/tail_backend_errors_test.go | semantics/error-layer-silent-success",
     "internal/proxy/tail_pipeline_test.go | loki_api_v1_tail",
     "internal/proxy/tenant_auth_parity_test.go | tenant-auth-follows-loki",
     "internal/proxy/tenant_auth_parity_test.go | tenant-numeric-routing",
@@ -1764,6 +1769,7 @@
     "internal/queryplan/lower/reserved_field_case_test.go | semantics/reserved-field-name-case-outbound",
     "internal/queryplan/lower/reserved_field_test.go | semantics/translator-writes-reserved-field-names",
     "internal/queryplan/lower/route_bench_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/route_query_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/route_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/series_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
@@ -2312,7 +2318,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 535,
+      "go": 537,
       "playwright": 1
     },
     "page_kinds": {

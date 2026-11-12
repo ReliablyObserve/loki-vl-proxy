@@ -6,10 +6,11 @@ proves:
   - status-derived
 consumer: any
 why: |
-  The alerts route decodes a malformed 200 body as empty; native tail closes
-  normally. Patterns now answers each of the 14 backend failure modes with the
-  error the other routes give it (500, 504, 499, 429, 400) when it has no
-  earlier answer to serve. detected_fields, detected_field values and
+  The alerts route decodes a malformed 200 body as empty. The tail no longer
+  closes normally: a native stream that ends or fails and a failed poll close
+  with 1011 and Loki's text. Patterns now answers each of the 14 backend failure
+  modes with the error the other routes give it (500, 504, 499, 429, 400) when
+  it has no earlier answer to serve. detected_fields, detected_field values and
   detected_labels now answer each failed call (a timeout, a cancelled request,
   a body that broke off or is not VictoriaLogs JSON, a label whose values could
   not be read) with the error the other routes give it, apart from the
@@ -50,7 +51,7 @@ gap:
   status: open
   impact: explore-visible
   effort: M
-  area: 'internal/proxy alerting.go, tail.go'
+  area: 'internal/proxy alerting.go'
   loki: 'pkg/querier/queryrange/limits.go:441-524; pkg/util/server/error.go:124-128'
   proxy: '200 with an empty result or a warning'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

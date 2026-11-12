@@ -1,5 +1,5 @@
 {
-  "ceiling": 11,
+  "ceiling": 4,
   "leaks": {
     "alerts malformed": [
       "semantics/error-layer-backend-text",
@@ -10,23 +10,6 @@
     ],
     "index_stats oversize": [
       "semantics/error-layer-proxy-limit-status"
-    ],
-    "tail client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-silent-success"
-    ],
-    "tail malformed": [
-      "semantics/error-layer-internal-go-text"
-    ],
-    "tail oversize": [
-      "semantics/error-layer-internal-go-text"
-    ],
-    "tail timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-silent-success"
-    ],
-    "tail truncated": [
-      "semantics/error-layer-internal-go-text"
     ]
   }
 }

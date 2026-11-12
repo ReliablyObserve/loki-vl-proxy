@@ -55,7 +55,7 @@ Held by at least one test that declares it.
 | Item | Consumers | Cases written / named | Tests | Why |
 |---|---|---:|---:|---|
 | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | — | 9 / 9 | 8 | Every case is wired to a test: limiter saturation, fairness, the shared per-request queue budget, metadata staying unque |
-| `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | — | 4 / 4 | 10 | The timeout argument and the cancellation propagation are covered by TestBackendRequests_PassRemainingBudgetAsVLTimeout  |
+| `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | — | 4 / 4 | 11 | The timeout argument and the cancellation propagation are covered by TestBackendRequests_PassRemainingBudgetAsVLTimeout  |
 | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | — | 0 / 0 | 1 | internal/proxy/credential_passthrough_test.go: basic auth, forwarded OAuth (access and ID token), a custom header, cooki |
 | `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | — | 0 / 0 | 2 | internal/proxy/delete_route_test.go: proxy.New refuses -delete-api-enabled with an empty or blank delete token (an admin |
 | `instrumentation-reveals-no-secrets` — /metrics and /config reveal no secret and no more than Loki's | — | 0 / 0 | 1 | internal/proxy/instrumentation_secrets_test.go configures an admin token, a delete token, a peer token and peers, backen |
@@ -71,7 +71,7 @@ No file under `conformance/registry/state/` gives these a state yet.
 
 | Item | Consumers | Cases written / named | Tests | Why |
 |---|---|---:|---:|---|
-| `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 78 | — |
+| `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 79 | — |
 | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | — | 0 / 0 | 1 | — |
 | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 4 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 3 | — |

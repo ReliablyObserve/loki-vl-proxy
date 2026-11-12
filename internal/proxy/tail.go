@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -119,13 +120,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	p.log.Debug("tail connected", "logql", redactQuery(logqlQuery, p.debugLogRawQueries), "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "native", nativeTail, "fallback", fallbackErr)
 	if !nativeTail {
 		if p.tailMode == TailModeNative {
-			// Loki closes with its error text (pkg/querier/tail/http.go:69); the
-			// proxy's is the error layer's, cut to a control frame's 123 bytes.
-			_, _, reason := lokiClientError(wsCtx, fallbackErr)
-			if len(reason) > maxTailCloseReasonBytes {
-				reason = reason[:maxTailCloseReasonBytes]
-			}
-			_ = p.writeTailControl(conn, websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, reason))
+			p.closeTailWithError(wsCtx, conn, fallbackErr)
 			return
 		}
 		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, tp, r.FormValue("start"))
@@ -186,8 +181,15 @@ func (p *Proxy) forwardNativeTail(wsCtx context.Context, conn tailConn, tp *tail
 					return
 				}
 			}
-			if err != nil && wsCtx.Err() == nil {
-				p.log.Debug("tail stream ended with error", "error", err)
+			// A VictoriaLogs tail has no end of its own: a stream that stops,
+			// cleanly or not, while the client is still connected is a failed
+			// call, and the client is told so rather than left with a bare
+			// disconnect it would read as a normal close.
+			if wsCtx.Err() == nil {
+				if err == nil {
+					err = errTailStreamEnded
+				}
+				p.closeTailWithError(wsCtx, conn, err)
 			}
 			return
 		case line := <-lineCh:
@@ -211,6 +213,30 @@ func (p *Proxy) forwardNativeTail(wsCtx context.Context, conn tailConn, tp *tail
 	}
 }
 
+// errTailStreamEnded is a native tail stream that ended without an error.
+var errTailStreamEnded = errors.New("native tail stream ended")
+
+// tailClientWriteError is a failed write to the tail client, as opposed to a
+// failed VictoriaLogs call: nothing more can be sent to a client that is gone.
+type tailClientWriteError struct{ err error }
+
+func (e *tailClientWriteError) Error() string { return e.err.Error() }
+func (e *tailClientWriteError) Unwrap() error { return e.err }
+
+// closeTailWithError ends an upgraded tail whose VictoriaLogs call failed. Loki
+// closes the connection with 1011 and its error text; the proxy's text is the
+// error layer's (Loki's fixed text for the status, never the backend's or a Go
+// error), cut to the 123 bytes a close frame holds. The full error goes to the
+// log only.
+func (p *Proxy) closeTailWithError(ctx context.Context, conn tailConn, err error) {
+	_, _, reason := lokiClientError(ctx, err)
+	p.log.Debug("tail ended with a backend error", "error", err)
+	if len(reason) > maxTailCloseReasonBytes {
+		reason = reason[:maxTailCloseReasonBytes]
+	}
+	_ = p.writeTailControl(conn, websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, reason))
+}
+
 // writeTailRows writes the tail frames of a batch of VictoriaLogs rows. Only
 // a failed write is returned: a batch the pipeline cannot convert is logged
 // and skipped, as a failed row was before.
@@ -222,7 +248,7 @@ func (p *Proxy) writeTailRows(ctx context.Context, conn tailConn, tp *tailPipeli
 	}
 	for _, frame := range frames {
 		if err := p.writeTailMessage(conn, websocket.TextMessage, frame); err != nil {
-			return err
+			return &tailClientWriteError{err}
 		}
 	}
 	return nil
@@ -245,6 +271,12 @@ func (p *Proxy) preflightTailAccess(parent context.Context, logsqlQuery, startHi
 
 	resp, err := p.vlGet(ctx, "/select/logsql/query", params)
 	if err != nil {
+		// The probe is best effort: its own 2 s cap, or a client that went
+		// away, skips it. A backend that exceeded -backend-timeout inside that
+		// cap is a timed out call, answered before the upgrade as Loki's 504.
+		if parent.Err() == nil && ctx.Err() == nil && statusFromUpstreamErr(err) == http.StatusGatewayTimeout {
+			return err
+		}
 		p.log.Debug("tail preflight skipped", "error", err)
 		return nil
 	}
@@ -322,7 +354,13 @@ func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQu
 
 	for {
 		if err := p.writeSyntheticTailBatch(ctx, conn, logsqlQuery, tp, &windowStart, lastSeen); err != nil {
-			p.log.Debug("synthetic tail batch failed", "error", err)
+			var writeErr *tailClientWriteError
+			if !errors.As(err, &writeErr) {
+				// A failed VictoriaLogs call ends the tail like a native stream
+				// that fails: Loki's tail does not retry.
+				p.closeTailWithError(ctx, conn, err)
+			}
+			return
 		}
 
 		select {
@@ -347,7 +385,7 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return fmt.Errorf("synthetic tail query failed: status=%d body=%s", resp.StatusCode, p.redactedBackendErrorMessage(resp.StatusCode, body))
+		return p.redactedBackendStatusError("synthetic tail query failed", resp.StatusCode, body)
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -362,7 +400,8 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 
 		var vlLine map[string]interface{}
 		if err := json.Unmarshal(line, &vlLine); err != nil {
-			continue
+			// A row that is not JSON is a broken body, not a row to skip.
+			return fmt.Errorf("synthetic tail row is not JSON: %w", err)
 		}
 		timeStr, _ := stringifyEntryValue(vlLine["_time"])
 		msgStr, _ := stringifyEntryValue(vlLine["_msg"])
