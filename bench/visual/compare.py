@@ -132,6 +132,9 @@ def records(path, raw=None, gaps=None):
             if "/resources/patterns" in r["url"] and isinstance(body, dict):
                 # mined from a sample of the rows: compare the pattern set, not the sample counts
                 body = sorted(p.get("pattern", "") for p in body.get("data", []))
+            if isinstance(body, dict) and isinstance(body.get("data"), dict) and "stats" in body["data"]:
+                # Loki's query statistics (index/volume, like query_range) carry each run's timings: compare the answer
+                body = {**body, "data": {k: v for k, v in body["data"].items() if k != "stats"}}
             lists = [body.get(k) for k in ("data", "fields", "detectedLabels")] if isinstance(body, dict) else [body]
             rows = next((len(x) for x in lists if isinstance(x, list)), 0)
             if missing_body:

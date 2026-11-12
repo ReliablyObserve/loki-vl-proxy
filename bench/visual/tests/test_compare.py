@@ -185,6 +185,15 @@ class CompareTest(unittest.TestCase):
         _, row = self.run_compare(resources(("index/stats?q=1", {"streams": 1})), resources(("index/stats?q=1", {"streams": 2})))
         self.assertEqual((len(row["main_pr_diffs"]), row["main_pr_qids"]), (1, [None]))
 
+    def test_query_statistics_of_a_resource_answer_are_not_its_data(self):
+        def volume(n, ms):
+            return ("index/volume?q=1", {"status": "success", "data": {"resultType": "vector", "result": [{"metric": {"app": "a"}, "value": [1, str(n)]}],
+                                                                        "stats": {"summary": {"execTime": ms}}}})
+        _, row = self.run_compare(resources(volume(5, 0.012)), resources(volume(5, 0.034)))
+        self.assertEqual(row["main_pr_diffs"], [])
+        _, row = self.run_compare(resources(volume(5, 0.012)), resources(volume(6, 0.012)))
+        self.assertEqual(len(row["main_pr_diffs"]), 1)
+
     def test_loki_difference_the_base_has_is_not_new(self):
         _, row = self.run_compare(capture([1, 2]), capture([1, 2]), capture([5, 5]))
         self.assertEqual(len(row["loki_diffs"]), 1)
