@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"context"
+	"encoding/binary"
+	"math/bits"
 	"net/http"
 	"strconv"
 	"strings"
@@ -198,10 +200,29 @@ func maxRangeOf(expr logqlpkg.Expr) time.Duration {
 }
 
 // lokiLogHitShards is the shards of a repeat of a log query Loki computes
-// again: Loki serves the pieces that held no line from its results cache
-// (an empty piece is cached), so only the pieces between the answer's oldest
-// and newest entries count.
-func lokiLogHitShards(start, end, tMin, tMax int64) int64 {
+// again. Loki keeps a piece in which a query found no entry in its results
+// cache (after the filters, so a piece the query's filters emptied counts as
+// well) and answers it from there, so the repeat runs only the pieces that
+// hold a returned entry: measured on Loki 3.7.9, entries in the hours 09, 12
+// and 13 of a window of five hours repeat as 3 shards (the first answer 5).
+// The answer's own entries tell which pieces those are; when they cannot (an
+// entry timestamp that is not 19 digits, an answer spread over more than 21
+// days) the pieces between its oldest and newest entries are counted, which
+// is exact for entries in every piece between them.
+func (w *queryStatsWriter) lokiLogHitShards() int64 {
+	e := &w.entries
+	if e.pieces.set && !e.pieces.lost && e.tsKept == e.logs {
+		if n := e.pieces.count(); n > 0 {
+			return n
+		}
+	}
+	q := w.request()
+	return lokiLogSpanShards(q.start, q.end, e.tsMin, e.tsMax)
+}
+
+// lokiLogSpanShards is the pieces between the oldest and newest entry,
+// inside the window.
+func lokiLogSpanShards(start, end, tMin, tMax int64) int64 {
 	from, to := max(start, tMin), tMax+1
 	if to > end {
 		to = end
@@ -212,19 +233,10 @@ func lokiLogHitShards(start, end, tMin, tMax int64) int64 {
 	return lokiPieces(from, to, lokiSplitInterval)
 }
 
-// parseTS19 reads a 19-digit nanosecond timestamp.
-func parseTS19(b [19]byte) int64 {
-	var v int64
-	for _, c := range b {
-		v = v*10 + int64(c-'0')
-	}
-	return v
-}
-
 // lokiLogRun is the run of this writer's log answer.
 func (w *queryStatsWriter) lokiLogRun() lokiLogRun {
 	q := w.request()
-	tMin, tMax := parseTS19(w.entries.tsMin), parseTS19(w.entries.tsMax)
+	tMin, tMax := w.entries.tsMin, w.entries.tsMax
 	return lokiLogQueryRun(q.start, q.end, q.limit, q.backward, w.entries.n, tMin, tMax, w.entries.hasTS)
 }
 
@@ -245,7 +257,7 @@ func (w *queryStatsWriter) lokiLogSummary(totals *statsTotals, filtered bool) (s
 	run := w.lokiLogRun()
 	q, entries := w.request(), w.entries.n
 	post := lokiRunLinesEstimate(entries, q.limit, q.backward, q.start, q.end,
-		parseTS19(w.entries.tsMin), parseTS19(w.entries.tsMax), w.entries.hasTS, run)
+		w.entries.tsMin, w.entries.tsMax, w.entries.hasTS, run)
 	var s statsSummary
 	s.postFilter, s.lines = post, post
 	if totals.hasPostFilter {
@@ -492,4 +504,72 @@ func (p *Proxy) countSelectorLines(ctx context.Context, sel *logqlpkg.StreamSele
 		return err == nil
 	})
 	return lines, err == nil && lines >= 0
+}
+
+// entryPiecesWords is the size of an entryPieces map: 512 hourly pieces
+// (21 days) in eight words.
+const entryPiecesWords = 8
+
+// entryPieces is the set of 1h pieces (aligned to the epoch, Loki's split
+// interval) that hold an entry a log answer returned: a bitmap anchored half
+// its width before the piece of the first entry, so it needs neither the
+// request's window nor an allocation. An entry beyond its width marks it
+// lost. Entries of one stream are consecutive and sorted, so the bounds of
+// the last piece seen answer almost every entry with two comparisons.
+type entryPieces struct {
+	base   int64 // the piece index of bit 0
+	bits   [entryPiecesWords]uint64
+	lo, hi int64 // the last piece seen: [lo, hi)
+	set    bool
+	lost   bool
+}
+
+// mark records the piece of a nanosecond timestamp (small enough to inline:
+// the entries of the piece seen last cost two comparisons).
+func (p *entryPieces) mark(ts int64) {
+	if !p.set || ts < p.lo || ts >= p.hi {
+		p.markPiece(ts)
+	}
+}
+
+// markPiece records the piece of a timestamp outside the last piece seen.
+func (p *entryPieces) markPiece(ts int64) {
+	idx := floorDiv(ts, lokiSplitInterval)
+	if !p.set {
+		p.set, p.base = true, idx-entryPiecesWords*32
+	}
+	p.lo, p.hi = idx*lokiSplitInterval, (idx+1)*lokiSplitInterval
+	off := idx - p.base
+	if off < 0 || off >= entryPiecesWords*64 {
+		p.lost = true
+		return
+	}
+	p.bits[off>>6] |= 1 << (off & 63)
+}
+
+// count is the pieces marked.
+func (p *entryPieces) count() int64 {
+	var n int
+	for _, w := range p.bits {
+		n += bits.OnesCount64(w)
+	}
+	return int64(n)
+}
+
+// parseTS19 reads a 19-digit nanosecond timestamp (the caller checked the
+// digits) as two eight-digit groups and three digits.
+func parseTS19(b []byte) int64 {
+	_ = b[18]
+	hi := parse8Digits(binary.LittleEndian.Uint64(b))
+	mid := parse8Digits(binary.LittleEndian.Uint64(b[8:]))
+	tail := int64(b[16]-'0')*100 + int64(b[17]-'0')*10 + int64(b[18]-'0')
+	return int64(hi)*100_000_000_000 + int64(mid)*1000 + tail
+}
+
+// parse8Digits is the value of eight ASCII digits loaded little-endian (the
+// first digit in the lowest byte).
+func parse8Digits(v uint64) uint64 {
+	v = (v & 0x0F0F0F0F0F0F0F0F) * 2561 >> 8
+	v = (v & 0x00FF00FF00FF00FF) * 6553601 >> 16
+	return (v & 0x0000FFFF0000FFFF) * 42949672960001 >> 32
 }

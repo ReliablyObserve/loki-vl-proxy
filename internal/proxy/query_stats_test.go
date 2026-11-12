@@ -891,20 +891,29 @@ func FuzzPatchStatsTailAnyBytes(f *testing.F) {
 	})
 }
 
-// FuzzEntryCounter: cutting a body into writes never changes the count.
+// FuzzEntryCounter: cutting a body into writes never changes the count, nor
+// the oldest and newest timestamp and the pieces of the timestamps read.
 // conformance: query-stats-envelope
 func FuzzEntryCounter(f *testing.F) {
 	f.Add([]byte(`{"result":[{"metric":{},"values":[["1","x"],["2","y"]]}]}`), uint8(3))
+	f.Add([]byte(`{"data":{"resultType":"streams","result":[{"stream":{},"values":[["1794232419000000000","x \\"q\\""],["1794232420000000000","y"]]}]}}`), uint8(5))
 	f.Fuzz(func(t *testing.T, body []byte, chunk uint8) {
 		var whole entryCounter
+		whole.trackTS = true
 		whole.add(body)
 		size := int(chunk)%31 + 1
 		var split entryCounter
+		split.trackTS = true
 		for i := 0; i < len(body); i += size {
 			split.add(body[i:min(i+size, len(body))])
 		}
 		if whole.n != split.n {
 			t.Fatalf("whole %d, split by %d: %d (%q)", whole.n, size, split.n, body)
+		}
+		if whole.tsKept != split.tsKept || whole.hasTS != split.hasTS || whole.tsMin != split.tsMin || whole.tsMax != split.tsMax ||
+			whole.pieces.count() != split.pieces.count() || whole.pieces.lost != split.pieces.lost {
+			t.Fatalf("whole read %d timestamps (%d..%d, %d pieces), split by %d read %d (%d..%d, %d pieces) (%q)",
+				whole.tsKept, whole.tsMin, whole.tsMax, whole.pieces.count(), size, split.tsKept, split.tsMin, split.tsMax, split.pieces.count(), body)
 		}
 	})
 }

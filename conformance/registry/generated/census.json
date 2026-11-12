@@ -641,7 +641,7 @@
     "semantics/query-range-window-lead-window | perf",
     "semantics/query-range-window-lead-window | query",
     "semantics/query-stats-shards-empty-pieces | compare:observed",
-    "semantics/query-stats-shards-empty-pieces | gap:open",
+    "semantics/query-stats-shards-empty-pieces | gap:fixed",
     "semantics/query-stats-shards-empty-pieces | query",
     "semantics/regexp-chain-led-by-ip | compare:observed",
     "semantics/regexp-chain-led-by-ip | gap:open",
@@ -1421,6 +1421,8 @@
     "internal/proxy/query_stats_loki_meaning_test.go | drilldown/logs-footer-query-stats",
     "internal/proxy/query_stats_loki_meaning_test.go | query-stats-envelope",
     "internal/proxy/query_stats_loki_test.go | query-stats-envelope",
+    "internal/proxy/query_stats_shards_test.go | query-stats-envelope",
+    "internal/proxy/query_stats_shards_test.go | semantics/query-stats-shards-empty-pieces",
     "internal/proxy/query_stats_test.go | drilldown/logs-footer-query-stats",
     "internal/proxy/query_stats_test.go | query-stats-envelope",
     "internal/proxy/query_stats_totals_test.go | drilldown/logs-footer-query-stats",
@@ -2284,14 +2286,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 63,
+      "api": 64,
       "drilldown": 50,
-      "explore": 170,
+      "explore": 169,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 522,
+      "go": 523,
       "playwright": 1
     },
     "page_kinds": {
