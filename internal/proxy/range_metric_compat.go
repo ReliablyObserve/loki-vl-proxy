@@ -371,6 +371,9 @@ func parseOriginalByLabels(logql string) []string {
 }
 
 func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, originalLogql string, stats physical.VLStats) bool {
+	if statsNative(r.Context()) {
+		return false
+	}
 	// Queries containing | math are multi-stage VL rate pipelines built by the translator
 	// (e.g. sum(rate({...} | json [w]))). For tumbling windows (range == step), VL can
 	// execute them natively — no manual decomposition needed. For any other range, fall
@@ -489,6 +492,9 @@ func (p *Proxy) extractionListNeedsRawLevelRows(baseQuery string, groupBy []stri
 }
 
 func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request, originalLogql string, stats physical.VLStats) bool {
+	if statsNative(r.Context()) {
+		return false
+	}
 	spec, ok := statsSpecOf(stats)
 	if !ok {
 		return false
