@@ -1033,6 +1033,10 @@
       "internal/proxy/reprint_translation_test.go",
       "test/e2e-compat/binary_operand_literals_test.go"
     ],
+    "semantics/binary-operand-without-empty-collapses": [
+      "internal/querycorpus/binop_without_empty_test.go",
+      "internal/queryplan/lower/binop_without_empty_test.go"
+    ],
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
     ],
@@ -1938,7 +1942,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 482,
+  "registry_items": 483,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3228,6 +3232,9 @@
     "internal/querycorpus/binop_route_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/binop_without_empty_test.go": [
+      "semantics/binary-operand-without-empty-collapses"
+    ],
     "internal/querycorpus/detected_level_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3348,6 +3355,9 @@
     ],
     "internal/queryplan/lower/binop_vector_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/binop_without_empty_test.go": [
+      "semantics/binary-operand-without-empty-collapses"
     ],
     "internal/queryplan/lower/detected_level_ast_test.go": [
       "architecture-syntax-package-layering"
@@ -4328,7 +4338,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 524,
+  "tests_with_markers": 526,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4441,5 +4451,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 299
+  "wired_items": 300
 }
