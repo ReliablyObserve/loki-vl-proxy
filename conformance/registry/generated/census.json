@@ -1424,6 +1424,7 @@
     "internal/proxy/query_stats_loki_meaning_test.go | drilldown/logs-footer-query-stats",
     "internal/proxy/query_stats_loki_meaning_test.go | query-stats-envelope",
     "internal/proxy/query_stats_loki_test.go | query-stats-envelope",
+    "internal/proxy/query_stats_mean_window_test.go | query-stats-envelope",
     "internal/proxy/query_stats_shards_test.go | query-stats-envelope",
     "internal/proxy/query_stats_shards_test.go | semantics/query-stats-shards-empty-pieces",
     "internal/proxy/query_stats_test.go | drilldown/logs-footer-query-stats",
@@ -2298,7 +2299,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 525,
+      "go": 526,
       "playwright": 1
     },
     "page_kinds": {

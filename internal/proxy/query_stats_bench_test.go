@@ -108,6 +108,21 @@ func BenchmarkQueryAnswerPaths(b *testing.B) {
 				"start": {fmt.Sprint(e.Add(-time.Hour).UnixNano())}, "end": {fmt.Sprint(e.UnixNano())}}.Encode(), false)
 		}
 	})
+	// A metric query after the log answer of its selector over a wider window:
+	// the stats layer finds the log answer's record and prices the metric's
+	// bytes from it. Each iteration moves the metric's window by a millisecond
+	// (a new response-cache key).
+	b.Run("metric/miss/afterlog/identity", func(b *testing.B) {
+		h := newHandler(b, false)
+		do(b, h, target("log", 0), false)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			e := end.Add(-time.Duration(i+1) * time.Millisecond)
+			do(b, h, "/loki/api/v1/query_range?"+url.Values{"query": {`sum by (app) (count_over_time({app="api"}[1m]))`}, "step": {"60"},
+				"start": {fmt.Sprint(e.Add(-3 * time.Minute).UnixNano())}, "end": {fmt.Sprint(e.UnixNano())}}.Encode(), false)
+		}
+	})
 	for _, kind := range []string{"log", "metric", "instant"} {
 		for _, gzip := range []bool{false, true} {
 			enc := "identity"
