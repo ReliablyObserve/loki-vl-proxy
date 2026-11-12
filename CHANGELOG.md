@@ -22,8 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at each timestamp, as Loki does; each point was the window one step later.
   A range that is not the step keeps its answer.
 
-## [2.183.0] - 2026-11-12
-
 ### Changed
 
 - The query plan now decides how the handlers answer `sum`, `avg`, `min`, `max` and `count` (with
@@ -40,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (5,706 native, 0 mismatches, the routes and statuses unchanged); the other 900 runs of the former
   "unwrap operand" group are now named by what keeps them delegated (a parser before the unwrap, an
   offset). A vector level that groups by the line (`_msg`) stays delegated.
+
+## [2.183.0] - 2026-11-12
+
+### Changed
 
 - The query plan now decides how `absent_over_time` and `sum_over_time`,
   `avg_over_time`, `min_over_time` and `max_over_time` over an unwrapped label
