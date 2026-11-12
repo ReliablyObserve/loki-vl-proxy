@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   such a stage now gets Loki's 400, as it would from Loki. Answers cached for these queries are not served (the compat
   edge key of a rejected query carries a version).
 
+## [2.173.0] - 2026-11-12
+
 ### Changed
 
 - Query statistics follow Loki's accounting on every route and on cache
