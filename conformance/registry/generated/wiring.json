@@ -106,6 +106,9 @@
       "internal/proxy/ordered_json_result_cache_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
+    "backend-url-path-prefix": [
+      "internal/proxy/backend_url_test.go"
+    ],
     "cache-response-key-versions": [
       "internal/proxy/fail_fast_unicode_test.go",
       "internal/proxy/reserved_field_case_fence_test.go",
@@ -1573,6 +1576,9 @@
       "internal/queryplan/lower/vl_clone_roundtrip_test.go",
       "test/e2e-compat/reserved_field_labels_test.go"
     ],
+    "semantics/translator-writes-unpack-as-unpack-json": [
+      "internal/queryplan/lower/unpack_test.go"
+    ],
     "semantics/tumbling-window-single-grid": [
       "internal/proxy/sliding_window_stats_test.go"
     ],
@@ -1897,7 +1903,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 469,
+  "registry_items": 471,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2107,6 +2113,9 @@
       "backend-deadlines-and-cancellation",
       "semantics/json-metric-detected-level-derivation",
       "semantics/live-request-not-cancelled-by-sibling"
+    ],
+    "internal/proxy/backend_url_test.go": [
+      "backend-url-path-prefix"
     ],
     "internal/proxy/bare_instant_detected_level_gap_test.go": [
       "semantics/instant-bare-range-detected-level-unknown"
@@ -3348,6 +3357,9 @@
     "internal/queryplan/lower/spelling_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/lower/unpack_test.go": [
+      "semantics/translator-writes-unpack-as-unpack-json"
+    ],
     "internal/queryplan/lower/unwrap_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -4236,7 +4248,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 511,
+  "tests_with_markers": 513,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4344,5 +4356,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 291
+  "wired_items": 293
 }

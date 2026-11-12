@@ -743,6 +743,9 @@
     "semantics/translator-writes-reserved-field-names | compare:observed",
     "semantics/translator-writes-reserved-field-names | gap:open",
     "semantics/translator-writes-reserved-field-names | query",
+    "semantics/translator-writes-unpack-as-unpack-json | compare:observed",
+    "semantics/translator-writes-unpack-as-unpack-json | gap:open",
+    "semantics/translator-writes-unpack-as-unpack-json | query",
     "semantics/tumbling-window-single-grid | compare:exact",
     "semantics/tumbling-window-single-grid | query",
     "semantics/two-parsers-keep-one | compare:observed",
@@ -1006,6 +1009,7 @@
     "internal/proxy/backend_stale_cancel_test.go | backend-deadlines-and-cancellation",
     "internal/proxy/backend_stale_cancel_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/backend_stale_cancel_test.go | semantics/live-request-not-cancelled-by-sibling",
+    "internal/proxy/backend_url_test.go | backend-url-path-prefix",
     "internal/proxy/bare_instant_detected_level_gap_test.go | semantics/instant-bare-range-detected-level-unknown",
     "internal/proxy/binary_aggregation_differential_test.go | loki_api_v1_query",
     "internal/proxy/binary_aggregation_differential_test.go | loki_api_v1_query_range",
@@ -1696,6 +1700,7 @@
     "internal/queryplan/lower/route_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/series_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/unpack_test.go | semantics/translator-writes-unpack-as-unpack-json",
     "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vector_agg_nested_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vector_agg_test.go | architecture-syntax-package-layering",
@@ -2227,12 +2232,12 @@
       "any": 28,
       "api": 59,
       "drilldown": 50,
-      "explore": 162,
+      "explore": 163,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 510,
+      "go": 512,
       "playwright": 1
     },
     "page_kinds": {
@@ -2252,7 +2257,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 104,
-    "wired_items": 291
+    "wired_items": 293
   },
   "gates": [
     "A/B shape selection",
