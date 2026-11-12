@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not counted as served from the plan. A `without ()` on its own, under a ranking, `stddev` or
   `label_replace`, in a nest of aggregations, or over an unwrapped label stays with the string
   translator. No answer changes; the plan does not serve these queries yet.
+
+## [2.187.0] - 2026-11-12
+
+### Changed
+
 - The query plan leaves to the string translator a stage that unwraps, reads as a json
   expression's key, writes, or renames from or to a label called `_time`, `_stream`,
   `_stream_id` or `_msg` (`unwrap _stream`, `json x="_time"`, `label_format x=_stream`): the text
