@@ -106,6 +106,8 @@ export default function LokiProxyForVictoriaLogs(): ReactNode {
             <p>
               Read views for rules and alerts can be bridged through vmalert so
               Grafana does not lose those operational screens during the move.
+              Alerting itself is not finished: vmalert runs the rules, and
+              Loki-compatible rule evaluation is planned work.
             </p>
           </div>
           <div className={styles.card}>
