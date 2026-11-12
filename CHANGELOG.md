@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under a name that says what they read. Nothing is served from the plan for
   these queries yet: no request to VictoriaLogs and no answer changes.
 
+### Fixed
+
+- A backend URL with a path keeps it: with `-backend=https://o11y.example.com/logs`
+  (VictoriaLogs behind a reverse proxy or vmauth that shares one hostname),
+  queries, label lookups, the `/ready` health probe and the version and load
+  probes went to `https://o11y.example.com/select/...` and `/health` without
+  the `/logs` prefix, so every query failed and `/ready` stayed 503; only live
+  tail kept the prefix. Every request now keeps the path of its URL, for
+  `-backend`, `-ruler-backend`, `-alerts-backend` and `-cold-backend`, and a
+  trailing slash is ignored (#1340).
+
 ## [2.181.0] - 2026-11-12
 
 ### Changed

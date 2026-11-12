@@ -375,8 +375,7 @@ func (p *Proxy) alertingBackendGetWithParams(r *http.Request, backend *url.URL, 
 		return nil, fmt.Errorf("alerting backend not configured")
 	}
 
-	u := *backend
-	u.Path = path
+	u := backendRequestURL(backend, path)
 	u.RawQuery = params.Encode()
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
