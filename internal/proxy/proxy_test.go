@@ -922,8 +922,9 @@ func TestContract_Patterns_StripsPipelineAndUsesLabelScope(t *testing.T) {
 	}
 }
 
-// A rejected query (VL 400) is Loki's 400 bad_data instead; see
-// TestUpstreamBadRequest_MapsToLokiBadData/patterns.
+// A query endpoint that is unavailable is a failed call: Loki's 500, never an empty success. (A rejected query
+// (VL 400) is Loki's 400 bad_data instead; see TestUpstreamBadRequest_MapsToLokiBadData/patterns.)
+// conformance: semantics/error-layer-silent-success
 func TestContract_Patterns_FallsBackToQueryRangeWhenQueryUnavailable(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/query" {
@@ -940,14 +941,8 @@ func TestContract_Patterns_FallsBackToQueryRangeWhenQueryUnavailable(t *testing.
 	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=1&end=2", nil)
 	p.handlePatterns(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
-	}
-	var resp map[string]interface{}
-	mustUnmarshal(t, w.Body.Bytes(), &resp)
-	data, _ := resp["data"].([]interface{})
-	if len(data) != 0 {
-		t.Fatalf("expected empty patterns response when query backend is unavailable, got %v", resp)
+	if w.Code != http.StatusInternalServerError || w.Body.String() != lokiErrInternal {
+		t.Fatalf("expected Loki's 500 %q when the query backend is unavailable, got %d body=%q", lokiErrInternal, w.Code, w.Body.String())
 	}
 }
 

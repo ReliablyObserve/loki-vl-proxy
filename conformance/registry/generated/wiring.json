@@ -1117,6 +1117,9 @@
     "semantics/error-layer-silent-success": [
       "internal/proxy/error_body_shape_test.go",
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/patterns_backend_failure_test.go",
+      "internal/proxy/perf_hardening_test.go",
+      "internal/proxy/proxy_test.go",
       "internal/proxy/stats_error_body_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
@@ -2717,6 +2720,9 @@
     "internal/proxy/pattern_tokenizer_test.go": [
       "loki_api_v1_patterns"
     ],
+    "internal/proxy/patterns_backend_failure_test.go": [
+      "semantics/error-layer-silent-success"
+    ],
     "internal/proxy/patterns_counts_test.go": [
       "drilldown/patterns-full-range-counts",
       "drilldown/patterns-mined-differently",
@@ -2750,6 +2756,9 @@
     "internal/proxy/peer_push_identity_test.go": [
       "peer-cache-replication"
     ],
+    "internal/proxy/perf_hardening_test.go": [
+      "semantics/error-layer-silent-success"
+    ],
     "internal/proxy/physical_sites_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -2774,6 +2783,9 @@
     ],
     "internal/proxy/proxy_helpers_test.go": [
       "semantics/absent-over-time-semantics"
+    ],
+    "internal/proxy/proxy_test.go": [
+      "semantics/error-layer-silent-success"
     ],
     "internal/proxy/quantile_histogram_test.go": [
       "quality/query-range-settled-steps",
@@ -4358,7 +4370,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 530,
+  "tests_with_markers": 533,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

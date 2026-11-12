@@ -396,7 +396,8 @@ func TestPatternsIncompleteWindowReadIsNotCached(t *testing.T) {
 		url := fmt.Sprintf("/loki/api/v1/patterns?query=%%7Bapp%%3D%%22web%%22%%7D&start=%s&end=%s&step=30s", from.Format(time.RFC3339Nano), from.Add(6*time.Hour).Format(time.RFC3339Nano))
 		rec := httptest.NewRecorder()
 		p.handlePatterns(rec, httptest.NewRequest(http.MethodGet, url, nil))
-		if rec.Code != http.StatusOK {
+		// A body that ends before its Content-Length is a failed read: Loki's 500, not an answer.
+		if rec.Code != http.StatusInternalServerError || rec.Body.String() != lokiErrInternal {
 			t.Fatalf("patterns request status %d: %s", rec.Code, rec.Body.String())
 		}
 	}

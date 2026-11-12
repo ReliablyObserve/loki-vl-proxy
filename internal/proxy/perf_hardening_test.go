@@ -633,7 +633,9 @@ func TestHandlePatterns_InvalidQueryReturnsBadData(t *testing.T) {
 	}
 }
 
-func TestHandlePatterns_BackendFailureReturnsEmptySuccess(t *testing.T) {
+// A backend nothing listens on is a failed call: Loki's 500 Internal Server Error, never an empty success.
+// conformance: semantics/error-layer-silent-success
+func TestHandlePatterns_BackendFailureReturnsLokisError(t *testing.T) {
 	backend := httptest.NewServer(http.NotFoundHandler())
 	backendURL := backend.URL
 	backend.Close()
@@ -644,18 +646,8 @@ func TestHandlePatterns_BackendFailureReturnsEmptySuccess(t *testing.T) {
 
 	p.handlePatterns(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
-	}
-	var resp struct {
-		Status string        `json:"status"`
-		Data   []interface{} `json:"data"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if resp.Status != "success" || len(resp.Data) != 0 {
-		t.Fatalf("expected empty success response, got %#v", resp)
+	if w.Code != http.StatusInternalServerError || w.Body.String() != lokiErrInternal {
+		t.Fatalf("expected Loki's 500 %q, got %d body=%q", lokiErrInternal, w.Code, w.Body.String())
 	}
 }
 

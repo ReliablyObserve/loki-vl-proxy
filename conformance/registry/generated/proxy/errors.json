@@ -1299,6 +1299,18 @@
     {
       "dynamic": false,
       "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), diag.failure",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/patterns.go handlePatterns",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
       "error_type": "internal",
       "expression": "lokiErrInternal",
       "kind": "literal",
@@ -2544,11 +2556,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 90,
+        "count": 91,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 87,
+        "layer_sites": 88,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2556,6 +2568,6 @@
         "no_body_sites": 0
       }
     },
-    "call_sites": 201
+    "call_sites": 202
   }
 }
