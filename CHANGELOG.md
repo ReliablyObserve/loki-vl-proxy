@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The query plan now decides how the handlers answer a range aggregation or a `sum`, `avg`, `min`, `max`
+  or `count` over one when the range carries an `offset` (a negative one too), instead of leaving it to
+  the handlers: the handlers cut the clause out, read the windows that much earlier (later for a negative
+  offset) and stamp the samples at the times asked for, so the route is the one the same query has without
+  the clause, for every window kind. The rule asks for the request's end, because it only decides offsets
+  that keep the moved bounds between September 2001 and the end of int64 nanoseconds (2262), less the
+  steps the handlers take past the end: a larger move stays delegated as "offset bounds". The query text
+  the handlers read the clause from is not copied: a comment or an upper-case `OFFSET` (the request
+  rewrite), and a line filter that looks like a clause or a range bracket (the handlers cut it, or answer
+  400), are delegated as "route rewrite" and "route offset text". No answer or request changes: no handler
+  reads the rule yet. Route parity: 510 more of 25,070 runs are decided (6,226 native, 0 mismatches, the
+  routes and statuses unchanged); the other 620 runs that carry an offset are now named by what else keeps
+  them delegated (a parser, an unwrap pipeline).
 - The query plan now writes `=`, `==` and `!=` against a number, a duration or a
   bytes size after a `| json` or `| logfmt` parser (`| status == 200`,
   `| latency != 5s`, `| size = 1KB`) as Loki compares them, by value: `200`,

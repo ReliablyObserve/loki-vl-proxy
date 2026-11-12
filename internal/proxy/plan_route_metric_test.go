@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -57,6 +58,26 @@ var routeLabelFns = sync.OnceValues(func() (toVL, toLoki translator.LabelTransla
 const routeTimeout = "120000ms"
 
 func routeTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+
+// routeTextDelegation is the delegation of a plan the handlers read by its text another way ("<kind> route <what>"),
+// or the lowering's own delegation when it names one.
+func routeTextDelegation(p *queryplan.Plan, what string) error {
+	if _, err := lower.Plan(p, routeLoweringProfile()); err != nil {
+		return err
+	}
+	kind := lower.Construct(p.Root)
+	if _, ok := p.Root.(*queryplan.RangeAgg); ok {
+		kind = "RangeAgg"
+	}
+	return &lower.NotLoweredError{Construct: kind + " route " + what}
+}
+
+// offsetReadsAsPlan reports whether the handlers' offset extraction finds the plan's offset clause, and no other.
+func offsetReadsAsPlan(q string, p *queryplan.Plan) bool {
+	_, _, err := extractLogQLOffset(q)
+	found := len(logqlOffsetRE.FindAllStringIndex(q, -1))
+	return err == nil && found == map[bool]int{false: 0, true: 1}[p.Sem.OffsetKind != queryplan.OffsetNone]
+}
 
 // routeLevelProbeShape is the query shape of the detected_level presence probe.
 const routeLevelProbeShape = "level presence probe"
@@ -128,28 +149,31 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 	// The handlers read a range aggregation at the root by its spelling: one spelled otherwise ("rate (", a
 	// parenthesised query) takes another route there (a misreading the plan does not copy).
 	if ra, ok := p.Root.(*queryplan.RangeAgg); ok && !strings.HasPrefix(strings.TrimSpace(q), string(ra.Op)+"(") {
-		if _, err := lower.Plan(p, routeLoweringProfile()); err != nil {
-			return routeRecord{}, err
-		}
-		return routeRecord{}, &lower.NotLoweredError{Construct: "RangeAgg route spelling"}
+		return routeRecord{}, routeTextDelegation(p, "spelling")
+	}
+	// A query the handlers' request rewrite changes (a comment, a keyword spelled in upper case) is recorded as a
+	// rewrite step: the spelling is not the plan's.
+	if logql.LowercaseKeywords(logql.StripParserFlags(logql.StripComments(q))) != q {
+		return routeRecord{}, routeTextDelegation(p, "rewrite")
+	}
+	// The handlers read the offset clause with a regular expression over the query text: a text with the
+	// expression's shape where the plan has no offset (a line filter), or whose range brackets it counts another
+	// way, is read wrong, and a line filter the clause's removal cuts is not the plan's.
+	if !offsetReadsAsPlan(q, p) {
+		return routeRecord{}, routeTextDelegation(p, "offset text")
 	}
 	// The handlers send the string translator's filter on a label called _time, _stream, _stream_id or _msg
 	// (semantics/translator-writes-reserved-field-names): the plan's stream filter is the fix, not their request.
 	if lower.ReadsReservedField(p, routeLoweringProfile()) {
-		if _, err := lower.Plan(p, routeLoweringProfile()); err != nil {
-			return routeRecord{}, err
-		}
-		return routeRecord{}, &lower.NotLoweredError{Construct: lower.Construct(p.Root) + " route reserved field"}
+		return routeRecord{}, routeTextDelegation(p, "reserved field")
 	}
-	req := lower.RouteRequest{Instant: rp.instant}
+	req := lower.RouteRequest{Instant: rp.instant, End: routeEnd}
 	var start, end time.Time
 	sent := time.Duration(0)
 	if !rp.instant {
-		end = routeEnd
-		start = end.Add(-rp.window(rangeDur))
 		// The step as runRoute sends it, then as Loki evaluates it: in whole milliseconds.
 		sent, _ = parsePositiveStepDuration(strconv.FormatFloat(rp.step(rangeDur).Seconds(), 'f', -1, 64))
-		req.Step, req.Span = sent.Truncate(time.Millisecond), end.Sub(start)
+		req.Step, req.Span = sent.Truncate(time.Millisecond), rp.window(rangeDur)
 	}
 	route, err := lower.Route(p, routeLoweringProfile(), req)
 	if err != nil {
@@ -158,6 +182,11 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 	if mutate != nil {
 		mutate(&route)
 	}
+	if !rp.instant {
+		// The handlers read the windows the offset earlier (and stamp the samples at the times asked for).
+		end = routeEnd.Add(-route.Offset)
+		start = end.Add(-rp.window(rangeDur))
+	}
 	// Loki's resolution limit, checked before anything else.
 	if !rp.instant && req.Span/sent > lokiMaxPointsPerSeries {
 		return routeRecord{Status: 400, queryShape: true}, nil
@@ -165,7 +194,7 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 	out := routeRecord{Status: 200, queryShape: true}
 	steps := []string{"operation prefer_working_parser bypass", "operation translate_query translated"}
 	if rp.instant {
-		t := routeEnd
+		t := routeEnd.Add(-route.Offset)
 		text, err := routeStatsQuery(q, route, "", time.Time{}, 0)
 		if err != nil {
 			return routeRecord{}, err
@@ -174,7 +203,7 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 			"query":   {routeQueryShape(text)},
 			"start":   {routeTime(t.Add(-route.Range + 1))},
 			"end":     {routeTime(t.Add(1))},
-			"time":    {strconv.FormatInt(t.Unix(), 10)},
+			"time":    {nanosToVLTimestamp(t.UnixNano())},
 			"timeout": {routeTimeout},
 		}
 		out.Calls = []string{"/select/logsql/stats_query?" + form.Encode()}
@@ -354,7 +383,7 @@ func routeWithoutRows(t *testing.T, n int) []routeRow {
 	for _, row := range routeRows(t, filepath.Join("..", ".."), 0) {
 		kinds := map[lower.WithoutFold]bool{}
 		for _, rp := range routeProfiles() {
-			req := lower.RouteRequest{Instant: rp.instant}
+			req := lower.RouteRequest{Instant: rp.instant, End: routeEnd}
 			if !rp.instant {
 				req.Step, req.Span = rp.step(row.rangeDur), rp.window(row.rangeDur)
 			}
@@ -390,7 +419,7 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	var rows []routeRow
 	for _, row := range routeRows(t, filepath.Join("..", ".."), 0) {
-		if _, err := lower.Route(row.plan, routeLoweringProfile(), lower.RouteRequest{Instant: true}); err == nil {
+		if _, err := lower.Route(row.plan, routeLoweringProfile(), lower.RouteRequest{Instant: true, End: routeEnd}); err == nil {
 			rows = append(rows, row)
 		}
 		if len(rows) == 25 {
@@ -403,6 +432,7 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 	rows = append(rows, routeWithoutRows(t, 6)...)
 	rows = append(rows, routeRangeFunctionRows(t, 8)...)
 	rows = append(rows, routeVectorUnwrapRows(t, 6)...)
+	rows = append(rows, routeOffsetRows(t, 6)...)
 	native := func(mutate func(*lower.MetricRoute)) routePrediction {
 		return func(q string, p *queryplan.Plan, rp routeProfile, data bool, _ routeRecord) (routeRecord, error) {
 			return predictMetricRoute(q, p, rp, data, mutate)
@@ -490,6 +520,8 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 				r.SumAll = true
 			}
 		}},
+		{"offset dropped", func(r *lower.MetricRoute) { r.Offset = 0 }},
+		{"offset read the other way", func(r *lower.MetricRoute) { r.Offset = -r.Offset }},
 		{"sum of all streams flipped", func(r *lower.MetricRoute) {
 			if r.Window == lower.WindowBuckets || r.Window == lower.WindowPhase {
 				r.SumAll = !r.SumAll
@@ -586,7 +618,7 @@ func TestMetricRouteWithoutEdges(t *testing.T) {
 			row := routeRow{q: c.q, plan: plan, construct: lower.Construct(plan.Root), rangeDur: firstRange(plan.Root)}
 			folds := ""
 			for _, rp := range routeProfiles() {
-				req := lower.RouteRequest{Instant: rp.instant}
+				req := lower.RouteRequest{Instant: rp.instant, End: routeEnd}
 				if !rp.instant {
 					req.Step, req.Span = rp.step(row.rangeDur), rp.window(row.rangeDur)
 				}
@@ -639,7 +671,7 @@ func routeRangeFunctionRows(t *testing.T, n int) []routeRow {
 		case ra.By != nil:
 			kind = "unwrap by"
 		}
-		if _, err := lower.Route(row.plan, routeLoweringProfile(), lower.RouteRequest{Instant: true}); err != nil || count[kind] == n || kind == "unwrap" && ra.Op != logql.RangeSumOverTime && count[kind] >= n/2 {
+		if _, err := lower.Route(row.plan, routeLoweringProfile(), lower.RouteRequest{Instant: true, End: routeEnd}); err != nil || count[kind] == n || kind == "unwrap" && ra.Op != logql.RangeSumOverTime && count[kind] >= n/2 {
 			continue
 		}
 		count[kind]++
@@ -666,7 +698,7 @@ func routeVectorUnwrapRows(t *testing.T, n int) []routeRow {
 		}
 		kinds := map[string]bool{}
 		for _, rp := range routeProfiles() {
-			req := lower.RouteRequest{Instant: rp.instant}
+			req := lower.RouteRequest{Instant: rp.instant, End: routeEnd}
 			if !rp.instant {
 				req.Step, req.Span = rp.step(row.rangeDur), rp.window(row.rangeDur)
 			}
@@ -710,6 +742,40 @@ func routeVectorUnwrapRows(t *testing.T, n int) []routeRow {
 	return out
 }
 
+// routeOffsetRows are up to n corpus rows with an offset of each kind: a range aggregation at the root, a vector
+// aggregation over one, and either with a negative offset where the corpus holds one.
+func routeOffsetRows(t *testing.T, n int) []routeRow {
+	t.Helper()
+	var out []routeRow
+	count := map[string]int{}
+	for _, row := range routeRows(t, filepath.Join("..", ".."), 0) {
+		if row.plan.Sem.OffsetKind != queryplan.OffsetUniform || row.plan.Sem.Offset == 0 {
+			continue
+		}
+		if _, err := lower.Route(row.plan, routeLoweringProfile(), lower.RouteRequest{Instant: true, End: routeEnd}); err != nil {
+			continue
+		}
+		kind := "range"
+		if _, ok := row.plan.Root.(*queryplan.VectorAgg); ok {
+			kind = "vector"
+		}
+		if row.plan.Sem.Offset < 0 {
+			kind += " negative"
+		}
+		if count[kind] == n {
+			continue
+		}
+		count[kind]++
+		out = append(out, row)
+	}
+	for _, k := range []string{"range", "vector"} {
+		if count[k] == 0 {
+			t.Fatalf("no corpus row of kind %s", k)
+		}
+	}
+	return out
+}
+
 // The range functions the corpus does not hold: each is held to the handlers' route on every request profile, or,
 // where the rule delegates it, to the name of its delegation and to no mismatch. The conversions, the filters before
 // the unwrap, the groupings, the ranges that divide the span and the ones that do not.
@@ -728,7 +794,7 @@ func TestMetricRouteRangeFunctionEdges(t *testing.T) {
 		{q: `absent_over_time({app="ra"} | detected_level="error" [1m])`, delegated: "RangeAgg route level filter"},
 		{q: `absent_over_time({app="ra"} | json [1m])`, delegated: "RangeAgg route pipeline"},
 		{q: `absent_over_time({app="ra"} | unwrap n [1m])`, delegated: "RangeAgg route unwrap absent"},
-		{q: `absent_over_time({app="ra"}[1m] offset 5m)`, delegated: "RangeAgg route offset"},
+		{q: `absent_over_time({app="ra"}[1m] offset 5m)`},
 		// the four functions over an unwrapped label, with every conversion
 		{q: `sum_over_time({app="ra"} | unwrap n [1m])`},
 		{q: `sum_over_time({app="ra"} | unwrap n [7m])`},
@@ -752,13 +818,13 @@ func TestMetricRouteRangeFunctionEdges(t *testing.T) {
 		{q: `sum_over_time({app="ra"} | status >= 500 | unwrap n [1m])`},
 		{q: `sum_over_time({app="ra"} | env=~"p.*" | env!="pp" | unwrap n [1m])`},
 		{q: `sum_over_time({app="ra"} | detected_level="error" | unwrap n [1m])`, delegated: "RangeAgg LogSelect level filter unwrap"},
-		// a stage after the unwrap, a parser, an offset
+		// a stage after the unwrap, a parser, an offset (routed: the handlers read the windows that much earlier)
 		{q: `sum_over_time({app="ra"} | unwrap n | n > 5 [1m])`, delegated: "RangeAgg route unwrap filter"},
 		{q: `sum_over_time({app="ra"} | unwrap n | __error__="" [1m])`, delegated: "RangeAgg route unwrap filter"},
 		{q: `sum_over_time({app="ra"} | unwrap n | env="prod" [1m])`, delegated: "RangeAgg route unwrap filter"},
 		{q: `sum_over_time({app="ra"} | unwrap duration(n) | __error__!="" [1m])`, delegated: "RangeAgg route unwrap filter"},
 		{q: `sum_over_time({app="ra"} | logfmt | unwrap n [1m])`, delegated: "RangeAgg route unwrap pipeline"},
-		{q: `sum_over_time({app="ra"} | unwrap n [1m] offset 5m)`, delegated: "RangeAgg route offset"},
+		{q: `sum_over_time({app="ra"} | unwrap n [1m] offset 5m)`},
 		// the groupings: plain labels, none, several, dotted, translated; derived labels stay delegated
 		{q: `max_over_time({app="ra"} | unwrap n [1m]) by (pod)`},
 		{q: `avg_over_time({app="ra"} | unwrap n [1m]) by (pod, zone)`},
@@ -875,7 +941,7 @@ func TestMetricRouteVectorUnwrapEdges(t *testing.T) {
 		{q: `sum by (service_name) (avg_over_time({app="va"} | unwrap n [1m]))`},
 		{q: `avg by (level) (sum_over_time({app="va"} | unwrap n [1m]))`},
 		{q: `sum by (detected_level) (sum_over_time({app="va"} | unwrap n [1m]))`},
-		// delegated by name: a parser, keep or drop ahead of the stage, a filter after it, an offset, a nest, a range
+		// delegated by name: a parser, keep or drop ahead of the stage, a filter after it, a nest, a range
 		// grouping, a level filter, a range with no bucket grid
 		{q: `sum(sum_over_time({app="va"} | json | unwrap n [1m]))`, delegated: "VectorAgg route unwrap pipeline"},
 		{q: `max by (pod) (max_over_time({app="va"} | logfmt | unwrap n [1m]))`, delegated: "VectorAgg route unwrap pipeline"},
@@ -883,7 +949,7 @@ func TestMetricRouteVectorUnwrapEdges(t *testing.T) {
 		{q: `avg(avg_over_time({app="va"} | drop pod | unwrap n [1m]))`, delegated: "VectorAgg route unwrap pipeline"},
 		{q: `sum(sum_over_time({app="va"} | unwrap n | n > 5 [1m]))`, delegated: "VectorAgg route unwrap filter"},
 		{q: `max(max_over_time({app="va"} | unwrap n | __error__="" [1m]))`, delegated: "VectorAgg route unwrap filter"},
-		{q: `sum(sum_over_time({app="va"} | unwrap n [1m] offset 5m))`, delegated: "VectorAgg route offset"},
+		{q: `sum(sum_over_time({app="va"} | unwrap n [1m] offset 5m))`},
 		{q: `sum(sum by (pod) (sum_over_time({app="va"} | unwrap n [1m])))`, delegated: "VectorAgg nested unwrap"},
 		{q: `max by (pod) (max_over_time({app="va"} | unwrap n [1m]) by (zone))`, delegated: "VectorAgg grouping"},
 		{q: `sum(sum_over_time({app="va"} | detected_level="error" | unwrap n [1m]))`, delegated: "VectorAgg LogSelect level filter unwrap"},
@@ -916,7 +982,7 @@ func TestMetricRouteVectorUnwrapEdges(t *testing.T) {
 			}
 			// The group pushdown is the sliding windows' (a step under the range): the decision is pinned there.
 			for _, rp := range routeProfiles() {
-				req := lower.RouteRequest{Instant: rp.instant}
+				req := lower.RouteRequest{Instant: rp.instant, End: routeEnd}
 				if !rp.instant {
 					req.Step, req.Span = rp.step(row.rangeDur), rp.window(row.rangeDur)
 				}
@@ -931,3 +997,168 @@ func TestMetricRouteVectorUnwrapEdges(t *testing.T) {
 		})
 	}
 }
+
+// The offsets the corpus does not hold: each is held to the handlers' route on every request profile, or, where the
+// rule delegates it, to the name of its delegation and to no mismatch. The handlers strip the clause and read the
+// windows that much earlier (later for a negative offset), so a shape's route is the one it has without the clause on
+// shifted bounds.
+//
+// conformance: architecture-syntax-package-layering
+func TestMetricRouteOffsetEdges(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	for _, c := range []struct{ q, delegated string }{
+		// every window kind on a count, a rate and the byte functions, an offset that is, and is not, a step multiple
+		{q: `count_over_time({app="of"}[1m] offset 5m)`},
+		{q: `rate({app="of"}[1m] offset 7m)`},
+		{q: `bytes_over_time({app="of"}[90s] offset 1h)`},
+		{q: `bytes_rate({app="of"}[7m] offset 90s)`},
+		{q: `count_over_time({app="of"} |= "x" != "y" [5m] offset 1d)`},
+		{q: `rate({app="of"} | env="p" [5m] offset 1w)`},
+		// zero, negative and fractional-unit offsets
+		{q: `count_over_time({app="of"}[1m] offset 0s)`},
+		{q: `count_over_time({app="of"}[1m] offset -2m)`},
+		{q: `rate({app="of"}[5m] offset -1h)`},
+		{q: `count_over_time({app="of"}[1m] offset 1500ms)`},
+		{q: `count_over_time({app="of"}[1m] offset 1h30m)`},
+		{q: `count_over_time({app="of"}[1m] offset 1.5h)`},
+		{q: `count_over_time({app="of"}[1m] offset 100ms)`},
+		{q: `count_over_time({app="of"}[1m] offset 1ns)`},
+		// absent_over_time and the functions over an unwrapped label
+		{q: `absent_over_time({app="of"}[5m] offset 1h)`},
+		{q: `sum_over_time({app="of"} | unwrap n [1m] offset 5m)`},
+		{q: `avg_over_time({app="of"} | unwrap duration(n) [7m] offset 90s)`},
+		{q: `max_over_time({app="of"} | unwrap n [5m] offset -5m) by (pod)`},
+		{q: `min_over_time({app="of"} | unwrap bytes(n) [30s] offset 1h) by ()`},
+		// vector aggregations over them
+		{q: `sum(count_over_time({app="of"}[1m] offset 5m))`},
+		{q: `sum by (pod) (rate({app="of"}[1m] offset 7m))`},
+		{q: `avg by (pod, zone) (bytes_over_time({app="of"}[90s] offset 1h))`},
+		{q: `max(count_over_time({app="of"}[1m] offset -2m))`},
+		{q: `sum(count_over_time({app="of"}[1m] offset 5m)) by (pod)`},
+		{q: `sum without (pod) (count_over_time({app="of"}[1m] offset 5m))`},
+		{q: `sum without (pod) (rate({app="of"}[1m] offset 1h))`},
+		{q: `min by (zone) (sum without (pod) (count_over_time({app="of"}[1m] offset 5m)))`},
+		{q: `sum(sum_over_time({app="of"} | unwrap n [1m] offset 5m))`},
+		{q: `max by (pod) (max_over_time({app="of"} | unwrap n [7m] offset 1h))`},
+		{q: `sum by (pod) (sum_over_time({app="of"} | unwrap duration(n) [1m] offset -90s))`},
+		{q: `sum without (pod) (avg_over_time({app="of"} | unwrap n [1m] offset 5m))`},
+		{q: `sum by (pod) (absent_over_time({app="of"}[1m] offset 5m))`, delegated: "VectorAgg route absent operand"},
+		// an offset on a shape the rule does not route keeps that shape's delegation, not an offset one
+		{q: `rate({app="of"} | json [1m] offset 5m)`, delegated: "RangeAgg route pipeline"},
+		{q: `sum_over_time({app="of"} | json | unwrap n [1m] offset 5m)`, delegated: "RangeAgg route unwrap pipeline"},
+		{q: `quantile_over_time(0.5, {app="of"} | unwrap n [1m] offset 5m)`, delegated: "RangeAgg route unwrap quantile"},
+		{q: `sum_over_time({app="of"} | unwrap n | n > 5 [1m] offset 5m)`, delegated: "RangeAgg route unwrap filter"},
+		{q: `count_over_time({app="of"} | detected_level="error" [1m] offset 5m)`, delegated: "RangeAgg route level filter"},
+		{q: `stddev(rate({app="of"}[1m] offset 5m))`, delegated: "VectorAgg route evaluated level"},
+		{q: `sum(rate({app="of"} | json [1m] offset 5m))`, delegated: "VectorAgg route pipeline"},
+		// a range with no bucket grid keeps that delegation for the windowed profiles, the instant one is routed
+		{q: `rate({app="of"}[1001ms] offset 5m)`},
+		// far offsets: 20 years back and 190 years forward stay readable; 34 years back and 250 years forward do not
+		{q: `count_over_time({app="of"}[1m] offset 175200h)`},
+		{q: `sum by (pod) (rate({app="of"}[1m] offset -1700000h))`},
+		{q: `count_over_time({app="of"}[1m] offset 300000h)`, delegated: "RangeAgg route offset bounds"},
+		{q: `sum by (pod) (rate({app="of"}[1m] offset -2200000h))`, delegated: "VectorAgg route offset bounds"},
+		{q: `absent_over_time({app="of"}[1m] offset 500000h)`, delegated: "RangeAgg route offset bounds"},
+		// the handlers read the clause from the query text: a comment or an upper-case keyword is rewritten first, a
+		// line filter that looks like a clause is cut and moves the window, one that looks like a range makes the
+		// offset an error: the plan copies none of these
+		{q: `count_over_time({app="of"}[1m] offset 5m) # last hour`, delegated: "RangeAgg route rewrite"},
+		{q: `sum(count_over_time({app="of"}[1m] OFFSET 5m))`, delegated: "VectorAgg route rewrite"},
+		{q: `count_over_time({app="of"} |= "] offset 5m" [1m])`, delegated: "RangeAgg route offset text"},
+		{q: `count_over_time({app="of"} |= "] offset 5m" [1m] offset 5m)`, delegated: "RangeAgg route offset text"},
+		{q: `count_over_time({app="of"} |= "x[5m]" [1m] offset 5m)`, delegated: "RangeAgg route offset text"},
+		{q: `sum(rate({app="of"} != "y[1m]" [1m] offset 5m))`, delegated: "VectorAgg route offset text"},
+	} {
+		t.Run(c.q, func(t *testing.T) {
+			row := routeRowOf(t, c.q)
+			sec, problems := runRouteParity(t, []routeRow{row}, nativeRoute)
+			if sec.Mismatches != 0 {
+				t.Fatalf("%+v\n%s", sec, joinFirstRoute(problems, 4))
+			}
+			switch {
+			case c.delegated == "" && sec.Native == 0:
+				t.Fatalf("routed no run, delegated %v", sec.DelegatedByConstruct)
+			case c.delegated != "" && (sec.Native != 0 || sec.DelegatedByConstruct[c.delegated] != sec.Runs):
+				t.Fatalf("want every run delegated as %q: %+v", c.delegated, sec.DelegatedByConstruct)
+			}
+		})
+	}
+}
+
+// An offset that moves a bound to the edge of the times the handlers read back as written (they write the moved
+// bound as integer nanoseconds, which the readers take as such from 1e18 on, and int64 ends in 2262, with the steps
+// the handlers take past the end): one nanosecond inside the early edge is routed and held to the handlers, one
+// outside is delegated as "offset bounds"; ten minutes inside the late edge every profile is routed, ten minutes
+// outside none is, on every route shape. The early edge depends on the request's span, so each profile is pinned by
+// the runs of its own span.
+//
+// conformance: architecture-syntax-package-layering
+func TestMetricRouteOffsetBounds(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	endNs := routeEnd.UnixNano()
+	latest := int64(math.MaxInt64) - int64(time.Second)
+	bounds := func(sec routeSection) (n int) {
+		for k, c := range sec.DelegatedByConstruct {
+			if strings.HasSuffix(k, " route offset bounds") {
+				n += c
+			}
+		}
+		return n
+	}
+	for _, shape := range []string{
+		`count_over_time({app="ob"}[1m] offset %dns)`,
+		`sum by (pod) (rate({app="ob"}[1m] offset %dns))`,
+		`sum(count_over_time({app="ob"}[1m] offset %dns))`,
+		`sum without (pod) (count_over_time({app="ob"}[1m] offset %dns))`,
+		`sum_over_time({app="ob"} | unwrap n [1m] offset %dns)`,
+		`max by (pod) (max_over_time({app="ob"} | unwrap n [1m] offset %dns))`,
+		`absent_over_time({app="ob"}[1m] offset %dns)`,
+	} {
+		// The outside of the late edge is not run for absent_over_time: the handler does not answer a request that ends there.
+		late := []struct {
+			d      int64
+			routed bool
+		}{{endNs - latest + int64(10*time.Minute), true}}
+		if !strings.HasPrefix(shape, "absent") {
+			late = append(late, struct {
+				d      int64
+				routed bool
+			}{endNs - latest - int64(10*time.Minute), false})
+		}
+		for _, c := range late {
+			q := fmt.Sprintf(shape, c.d)
+			t.Run(q, func(t *testing.T) {
+				sec, problems := runRouteParity(t, []routeRow{routeRowOf(t, q)}, nativeRoute)
+				if sec.Mismatches != 0 {
+					t.Fatalf("%+v\n%s", sec, joinFirstRoute(problems, 4))
+				}
+				if n := bounds(sec); c.routed && n != 0 || !c.routed && n != sec.Runs {
+					t.Fatalf("routed %v: %d of %d runs delegated as offset bounds (%v)", c.routed, n, sec.Runs, sec.DelegatedByConstruct)
+				}
+			})
+		}
+		for _, span := range []time.Duration{0, time.Hour, 24 * time.Hour} {
+			back := endNs - int64(span) - offsetEarliestNs
+			for _, c := range []struct {
+				d      int64
+				routed bool
+			}{{back - 1, true}, {back, true}, {back + 1, false}} {
+				q := fmt.Sprintf(shape, c.d)
+				t.Run(fmt.Sprintf("%s span %v", q, span), func(t *testing.T) {
+					sec, problems := runRouteParity(t, []routeRow{routeRowOf(t, q)}, nativeRoute)
+					if sec.Mismatches != 0 {
+						t.Fatalf("%+v\n%s", sec, joinFirstRoute(problems, 4))
+					}
+					// the other spans' edges are elsewhere, so only this one's runs tell
+					if n := bounds(sec); c.routed && n == sec.Runs || !c.routed && n == 0 {
+						t.Fatalf("routed %v: %d of %d runs delegated as offset bounds (%v)", c.routed, n, sec.Runs, sec.DelegatedByConstruct)
+					}
+				})
+			}
+		}
+	}
+}
+
+// offsetEarliestNs is the earliest time an offset may move a bound to, in Unix nanoseconds (the route rule's bound,
+// spelled out here to hold it).
+const offsetEarliestNs = int64(1e18)
