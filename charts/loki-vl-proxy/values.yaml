@@ -239,6 +239,8 @@ extraArgs:
   # slow-query-log-raw-queries: "true" # "false": slow lines carry the queries' sha256 and length instead of their text
   # translate-shadow-sample: "0"      # share (0-1) of translation cache misses the typed query-plan lowering also translates in the background and compares (loki_vl_proxy_lowering_shadow_total); observe-only, never changes an answer; "0" off
   # slow-query-log-level: "warn"      # level of the slow lines: warn, info, debug, or off (no lines; the metric still counts)
+  # log-user-header: ""               # header naming the user who ran a query in the logs and /debug/queries only (see observability.queryUser)
+  # log-user-header-trusted-cidrs: "" # peers (CIDRs/addresses) allowed to send log-user-header; empty trusts every peer
 
   # --- HTTP server hardening ---
   http-read-timeout: "30s"
@@ -495,6 +497,17 @@ observability:
     maxClients: 256
     trustProxyHeaders: false
     exportSensitiveLabels: false
+  # Who ran a query: the Grafana user on the request, upstream_request, slow_request and
+  # slow_upstream_request lines (enduser.id) and in /debug/queries. Turn on Grafana's
+  # [dataproxy] send_user_header = true (GF_DATAPROXY_SEND_USER_HEADER=true) and set
+  # header: X-Grafana-User. Logs and the admin view only: never a metric label, never
+  # sent to VictoriaLogs, never part of a cache key (unlike metrics.trustProxyHeaders,
+  # which also labels client metrics, forwards the header and caches per user).
+  # The header is client-sent: set trustedCIDRs to the addresses Grafana (or the load
+  # balancer in front of the proxy) connects from, so other clients cannot name a user.
+  queryUser:
+    header: ""
+    trustedCIDRs: ""
   server:
     registerInstrumentation: true
     metricsMaxConcurrency: 1

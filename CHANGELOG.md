@@ -47,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   log query no longer takes its bytes from a `volume_range` answer of its
   selector (whole steps left up to a tenth of the window out).
 
+## [2.171.0] - 2026-11-11
+
 ### Security
 
 - **Breaking: tenancy is off by default.** After upgrading, a deployment that

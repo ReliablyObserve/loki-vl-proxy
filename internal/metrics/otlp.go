@@ -687,6 +687,23 @@ func (p *OTLPPusher) tenantMetrics(now int64) []map[string]interface{} {
 	if len(durPoints) > 0 {
 		metrics = append(metrics, p.histogramMetric("loki_vl_proxy_tenant_request_duration_seconds", "Per-tenant request duration.", "s", durPoints...))
 	}
+	p.metrics.mu.RLock()
+	costTenants := sortedKeys(p.metrics.tenantVLCost)
+	costs := make([]*tenantVLCost, len(costTenants))
+	for i, tenant := range costTenants {
+		costs[i] = p.metrics.tenantVLCost[tenant]
+	}
+	p.metrics.mu.RUnlock()
+	if len(costTenants) == 0 {
+		return metrics
+	}
+	for _, family := range tenantVLCostMetrics {
+		points := make([]map[string]interface{}, 0, len(costTenants))
+		for i, tenant := range costTenants {
+			points = append(points, p.gaugeDP(family.name, family.value(costs[i]), now, attr("loki.tenant.id", tenant)))
+		}
+		metrics = append(metrics, p.sumMetric(family.name, family.help, family.unit, points...))
+	}
 	return metrics
 }
 

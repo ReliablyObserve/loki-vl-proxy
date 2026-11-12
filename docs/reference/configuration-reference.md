@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (256), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (258), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -186,6 +186,8 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-log-rate-threshold` | int | `10` | `extraArgs.log-rate-threshold` | When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged. |
 | `-log-request-sample-rate` | int | `0` | `extraArgs.log-request-sample-rate` | Sample rate for per-request access logs on successful (2xx) responses. 0 or 1 logs every request. N&gt;1 logs 1 in every N requests. 4xx/5xx are always logged. |
 | `-log-stats-interval` | duration | `10s` | `extraArgs.log-stats-interval` | How often to print a request statistics summary (total, errors, latency, cache rate) |
+| `-log-user-header` | string | (empty) | `extraArgs.log-user-header` | Header naming the end user who ran a query (X-Grafana-User with Grafana's [dataproxy] send_user_header=true), logged as enduser.id on the request, upstream_request, slow_request and slow_upstream_request lines and shown in /debug/queries. Logs and the admin view only: never a metric label, never sent to VictoriaLogs, never part of a cache key. The header is client-sent and spoofable: restrict it with -log-user-header-trusted-cidrs. A header that carries credentials (Authorization, Cookie, or a name with token, secret, password, key, session or credential) is refused at startup. Empty: the user is the tenant (or the -metrics.trust-proxy-headers identity) |
+| `-log-user-header-trusted-cidrs` | string | (empty) | `extraArgs.log-user-header-trusted-cidrs` | Comma-separated CIDRs or addresses of the TCP peers (Grafana, or the load balancer in front of the proxy) allowed to name the user through -log-user-header; a request from any other peer is logged under its tenant. Matches the connection's address, never X-Forwarded-For. Empty trusts every peer |
 | `-metrics-listen` | string | (empty) | `extraArgs.metrics-listen` | Optional dedicated address for the /metrics endpoint. When empty AND --server.register-instrumentation=true, /metrics is served on --listen (back-compat). When non-empty AND --server.register-instrumentation=true, /metrics is served on this dedicated listener. |
 | `-metrics.export-sensitive-labels` | bool | `false` | `extraArgs.metrics.export-sensitive-labels` | Export per-tenant and per-client identity metrics on /metrics and OTLP |
 | `-metrics.max-clients` | int | `256` | `extraArgs.metrics.max-clients` | Maximum unique client labels retained in exported metrics before collapsing into __overflow__ |

@@ -33,14 +33,14 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		start := time.Now()
 		tenant := r.Header.Get("X-Scope-OrgID")
 		query := r.FormValue("query")
-		clientID, clientSource := metrics.ResolveClientContext(r, p.metricsTrustProxyHeaders)
+		clientID := metrics.ResolveClientID(r, p.metricsTrustProxyHeaders)
 		p.metrics.RecordClientInflight(clientID, 1)
 		defer p.metrics.RecordClientInflight(clientID, -1)
 
 		rt := newRequestTelemetry()
 		rt.start, rt.traceOn = start, p.slowTraceOn()
 		ctx := context.WithValue(r.Context(), requestTelemetryKey, rt)
-		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route})
+		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route, req: r})
 		grafanaProfile := detectGrafanaClientProfile(r, endpoint, route)
 		ctx = context.WithValue(ctx, requestGrafanaClientKey, grafanaProfile)
 		ctx = withExecutionLimits(ctx, p.execLimits)
@@ -60,6 +60,8 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 
 		// Per-tenant metrics
 		p.metrics.RecordTenantRequestWithRoute(tenant, endpoint, route, sc.code, elapsed)
+		p.recordCallerCost(reqWithTelemetry.Context(), tenant, query, sc.code, elapsed,
+			vlCost{telemetry.flow.vlCalls, telemetry.flow.vlDur, telemetry.flow.vlBytes, telemetry.flow.vlRows})
 
 		// Per-client identity metrics (Grafana user > tenant > IP)
 		p.metrics.RecordClientIdentityWithRoute(clientID, endpoint, route, elapsed, int64(sc.bytesWritten))
@@ -139,8 +141,6 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		authUser, authSource := metrics.ResolveAuthContext(r)
 		clientAddr := forwardedClientAddress(r, p.metricsTrustProxyHeaders)
 		peerAddr, _ := splitHostPortValue(r.RemoteAddr)
-		grafanaSurface := grafanaProfile.surface
-		grafanaSourceTag := grafanaProfile.sourceTag
 		grafanaVersion := grafanaProfile.version
 		upstreamDurationByTypeMs := make(map[string]int64, len(telemetry.upstreamDurationByType))
 		for key, value := range telemetry.upstreamDurationByType {
@@ -162,8 +162,6 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"event.duration", elapsed.Nanoseconds(),
 			"loki.tenant.id", tenant,
 			"loki.query", truncateQuery(query, 200),
-			"enduser.id", clientID,
-			"enduser.source", clientSource,
 			"cache.result", telemetry.cacheResult,
 			"proxy.duration_ms", elapsed.Milliseconds(),
 			"proxy.overhead_ms", proxyOverhead.Milliseconds(),
@@ -173,6 +171,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.error", telemetry.upstreamErrorSeen,
 		)
 		logAttrs = append(logAttrs, telemetry.flow.logAttrs(elapsed)...)
+		logAttrs = append(logAttrs, p.callerLogAttrs(reqCtx)...)
 		if len(telemetry.upstreamCallsByType) > 0 {
 			logAttrs = append(logAttrs, "upstream.call_types", len(telemetry.upstreamCallsByType))
 		}
@@ -211,12 +210,6 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		if grafanaVersion != "" {
 			logAttrs = append(logAttrs, "grafana.version", grafanaVersion)
 		}
-		if grafanaSourceTag != "" {
-			logAttrs = append(logAttrs, "grafana.client.source_tag", grafanaSourceTag)
-		}
-		if grafanaSurface != "unknown" {
-			logAttrs = append(logAttrs, "grafana.client.surface", grafanaSurface)
-		}
 		if grafanaProfile.runtimeFamily != "" {
 			logAttrs = append(logAttrs, "grafana.runtime.family", grafanaProfile.runtimeFamily)
 		}
@@ -225,9 +218,6 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		}
 		if grafanaProfile.datasourceProfile != "" {
 			logAttrs = append(logAttrs, "grafana.datasource.profile", grafanaProfile.datasourceProfile)
-		}
-		if enduserName := deriveEnduserName(clientID, clientSource); enduserName != "" {
-			logAttrs = append(logAttrs, "enduser.name", enduserName)
 		}
 		if authUser != "" {
 			// authUser is the Basic-Auth username, read from the Authorization
@@ -380,7 +370,7 @@ func parseGrafanaRuntimeMajor(version string) int {
 
 func deriveEnduserName(clientID, clientSource string) string {
 	switch clientSource {
-	case "grafana_user", "forwarded_user", "webauth_user", "auth_request_user":
+	case "grafana_user", "forwarded_user", "webauth_user", "auth_request_user", "user_header":
 		return clientID
 	default:
 		return ""
