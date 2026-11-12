@@ -46,7 +46,7 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 
 | Status | call sites | literal message | through the error layer | formatted at run time | of those, an error's own text | no body |
 |---|---:|---:|---:|---:|---:|---:|
-| 400 | 87 | 28 | 0 | 59 | 43 | 0 |
+| 400 | 90 | 31 | 0 | 59 | 43 | 0 |
 | 401 | 5 | 5 | 0 | 0 | 0 | 0 |
 | 403 | 2 | 2 | 0 | 0 | 0 | 0 |
 | 404 | 1 | 1 | 0 | 0 | 0 | 0 |
@@ -54,7 +54,7 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 | 413 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 429 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 500 | 6 | 6 | 0 | 0 | 0 | 0 |
-| set at run time | 89 | 1 | 86 | 2 | 1 | 0 |
+| set at run time | 90 | 1 | 87 | 2 | 1 | 0 |
 
 The registry holds one item per status (12 under `conformance/registry/loki/errors/`), not one per message: no check yet compares a formatted message with Loki's text.
 
@@ -105,7 +105,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `tenant-label-isolation` — Tenant-label mode confines every request to its org | 4 | 4 | proven |
 | semantics | `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | 4 | 13 | proven |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 3 | proven |
-| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 11 | 26 | partial |
+| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 11 | 28 | partial |
 
 ## LogQL surface (v3.7.7)
 

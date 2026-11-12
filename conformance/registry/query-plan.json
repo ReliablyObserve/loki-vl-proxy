@@ -1,9 +1,9 @@
 {
   "description": "Ratchets of the query plan (internal/queryplan), one section per gate; a count may only fall, and LVP_QUERY_PLAN_UPDATE=1 rewrites the section of the test that ran. `logical` is the logical plan built from every query of the plan corpus (the curated sources and the capture sample): how many rows parse and build (all of them), and the spots the plan still holds as text, per construct (typing them lowers the count). `logical_key_sound` is, per profile, how the logical keys group the corpus and what the string translator wrote for the queries of a group: no group may differ in structure. `predicate_parity` is, per attribute of the resolver (queryplan.Resolve), the text predicate it replaces and every corpus row where the two differ, each with its reason (internal/proxy TestPlanPredicateParity: an unexplained or stale row fails).",
   "logical": {
-    "rows": 2597,
-    "parsed": 2522,
-    "built": 2522,
+    "rows": 2600,
+    "parsed": 2525,
+    "built": 2525,
     "untyped_by_construct": {
       "labelfilter_untyped": 0,
       "line_format_raw": 3,
@@ -16,8 +16,8 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2522,
-      "keys": 2470,
+      "rows": 2525,
+      "keys": 2473,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -25,8 +25,8 @@
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2522,
-      "keys": 2470,
+      "rows": 2525,
+      "keys": 2473,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -34,8 +34,8 @@
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2522,
-      "keys": 2470,
+      "rows": 2525,
+      "keys": 2473,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -43,8 +43,8 @@
       "unsound": 0
     },
     "v1.53 identity": {
-      "rows": 2522,
-      "keys": 2470,
+      "rows": 2525,
+      "keys": 2473,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -52,8 +52,8 @@
       "unsound": 0
     },
     "v1.53 no body scan": {
-      "rows": 2522,
-      "keys": 2470,
+      "rows": 2525,
+      "keys": 2473,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -61,8 +61,8 @@
       "unsound": 0
     },
     "v1.53 no body scan, stream fields, keepLine": {
-      "rows": 2522,
-      "keys": 2470,
+      "rows": 2525,
+      "keys": 2473,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 0,
@@ -70,8 +70,8 @@
       "unsound": 0
     },
     "v1.53 stream fields": {
-      "rows": 2522,
-      "keys": 2470,
+      "rows": 2525,
+      "keys": 2473,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -79,8 +79,8 @@
       "unsound": 0
     },
     "v1.53 stream fields and labels": {
-      "rows": 2522,
-      "keys": 2470,
+      "rows": 2525,
+      "keys": 2473,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -88,8 +88,8 @@
       "unsound": 0
     },
     "v1.53 stream labels": {
-      "rows": 2522,
-      "keys": 2470,
+      "rows": 2525,
+      "keys": 2473,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -97,8 +97,8 @@
       "unsound": 0
     },
     "v1.53 stream labels keepLine": {
-      "rows": 2522,
-      "keys": 2470,
+      "rows": 2525,
+      "keys": 2473,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 0,
@@ -106,8 +106,8 @@
       "unsound": 0
     },
     "v1.53 underscores": {
-      "rows": 2522,
-      "keys": 2470,
+      "rows": 2525,
+      "keys": 2473,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 5,
@@ -115,8 +115,8 @@
       "unsound": 0
     },
     "v1.53 underscores keepLine": {
-      "rows": 2522,
-      "keys": 2470,
+      "rows": 2525,
+      "keys": 2473,
       "shared_texts": 52,
       "text_only": 0,
       "phrase_text": 0,
@@ -136,8 +136,8 @@
     }
   },
   "route_parity": {
-    "rows": 2482,
-    "runs": 24820,
+    "rows": 2485,
+    "runs": 24850,
     "profiles": [
       "instant",
       "step=range",
@@ -175,7 +175,7 @@
       "RangeAgg LogSelect unpack line read": 20,
       "RangeAgg LogSelect unpack parser order": 10,
       "RangeAgg parser label cost": 10,
-      "RangeAgg route function": 3870,
+      "RangeAgg route function": 3880,
       "RangeAgg route level filter": 20,
       "RangeAgg route no bucket grid": 64,
       "RangeAgg route offset": 80,
@@ -194,7 +194,7 @@
       "VectorAgg parser extracted label": 20,
       "VectorAgg parser label cost": 150,
       "VectorAgg route evaluated level": 1720,
-      "VectorAgg route function": 1440,
+      "VectorAgg route function": 1460,
       "VectorAgg route level filter": 120,
       "VectorAgg route no bucket grid": 6,
       "VectorAgg route offset": 40,
@@ -206,56 +206,56 @@
       "VectorLit": 10
     },
     "statuses": {
-      "200": 24231,
-      "400": 589
+      "200": 24237,
+      "400": 613
     },
     "routes": {
       "24h chunk/BinOp": "26ddc675c6d64814",
       "24h chunk/LabelReplace": "a6ccb94704141f22",
       "24h chunk/LogSelect": "27e5d9713c6e1a4c",
-      "24h chunk/RangeAgg": "e689a595a8f2d5e4",
-      "24h chunk/Rank": "a601a8b1ac9993eb",
+      "24h chunk/RangeAgg": "07ee98f50f60c68f",
+      "24h chunk/Rank": "398eb1e3b5e691f6",
       "24h chunk/Scalar": "b01ddfee0a162681",
-      "24h chunk/VectorAgg": "13e079bc8cec49b2",
+      "24h chunk/VectorAgg": "0f816e227dffb735",
       "24h chunk/VectorLit": "fafe78111335aec9",
       "instant/BinOp": "682cfa20bb83848f",
       "instant/LabelReplace": "50c680b356a6c4c8",
       "instant/LogSelect": "3891bdc49f7c382a",
-      "instant/RangeAgg": "5a045cf7e951b0c4",
+      "instant/RangeAgg": "d34461173fb6657e",
       "instant/Rank": "9aece6687f25348a",
       "instant/Scalar": "058ee94c303a0c46",
-      "instant/VectorAgg": "ff236d7360d68db8",
+      "instant/VectorAgg": "1c8fac64805b5d9f",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "0606afb77a5ded47",
       "step\u003crange/LabelReplace": "c8581a1704ba3fa9",
       "step\u003crange/LogSelect": "27e5d9713c6e1a4c",
-      "step\u003crange/RangeAgg": "4afc49c7eb14768f",
-      "step\u003crange/Rank": "7353cbdb05594ad6",
+      "step\u003crange/RangeAgg": "8a2462fa044e3ab0",
+      "step\u003crange/Rank": "994152e9889a89d8",
       "step\u003crange/Scalar": "b01ddfee0a162681",
-      "step\u003crange/VectorAgg": "1b7507453314ec2f",
+      "step\u003crange/VectorAgg": "8a3a7ee4dcdb88a7",
       "step\u003crange/VectorLit": "fafe78111335aec9",
       "step=range/BinOp": "6b90959e5cb61314",
       "step=range/LabelReplace": "4cdea3d606ece059",
       "step=range/LogSelect": "27e5d9713c6e1a4c",
-      "step=range/RangeAgg": "11ef5c3ac1df0ef1",
-      "step=range/Rank": "80f0f944e2304e4a",
+      "step=range/RangeAgg": "5b65be9a7357f1cf",
+      "step=range/Rank": "fa6b8aa9c9e467b9",
       "step=range/Scalar": "b01ddfee0a162681",
-      "step=range/VectorAgg": "c5a752130f836893",
+      "step=range/VectorAgg": "396bfd90a7acc74c",
       "step=range/VectorLit": "fafe78111335aec9",
       "step\u003erange/BinOp": "c1967697a18f90b3",
       "step\u003erange/LabelReplace": "2cdc35010867f604",
       "step\u003erange/LogSelect": "27e5d9713c6e1a4c",
-      "step\u003erange/RangeAgg": "cf90178e90abcbff",
-      "step\u003erange/Rank": "18272ab1bf0c6dea",
+      "step\u003erange/RangeAgg": "06ec0b427c23ecd4",
+      "step\u003erange/Rank": "ee88e3d04ba0460a",
       "step\u003erange/Scalar": "b01ddfee0a162681",
-      "step\u003erange/VectorAgg": "b214056b6ccb5a4b",
+      "step\u003erange/VectorAgg": "c96a5be1a9cf8e0a",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     }
   },
   "shadow": {
-    "rows": 23376,
+    "rows": 23403,
     "profiles": 12,
-    "native": 21088,
+    "native": 21115,
     "native_proxy_evaluated": 3834,
     "mismatches": 0,
     "delegated_by_construct": {

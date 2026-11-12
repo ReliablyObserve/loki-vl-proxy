@@ -1,0 +1,54 @@
+id: semantics/stddev-stdvar-over-time-step-bucket
+title: stddev and stdvar over time with unwrap and range == step are the window ending at T, like Loki (fixed)
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `stddev_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]) by (app)`
+  on a query_range with step 5m answered, at each timestamp T, the value Loki has at
+  T+5m: the point was one step late. At 1794480300 Loki 550.51 and the proxy 528.90,
+  the value Loki has at 1794480600 (Loki 3.7.9, VictoriaLogs v1.53.0).
+
+  Root cause: sum, avg, min, max, first and last over time with unwrap are fetched
+  from start-step on anchored buckets (edge, edge+step] and relabelled to the
+  evaluation time each closes (statsRateRangeEqualsStepShift, logRangeFunctions).
+  stddev and stdvar over time were not in that list, so the request went to
+  VictoriaLogs' stats_query_range unshifted and the bucket labelled T, which holds
+  [T, T+step), was answered as the sample at T. With the range equal to the step the
+  bucket is exactly Loki's window (T-range, T].
+
+  Fixed: logRangeFunctions classifies stddev and stdvar over time with unwrap as log
+  range functions that need range == step for the shift (they are not of the kind
+  whose native bucket is the step whatever the range). The request is fetched from
+  start-step and relabelled, so the samples and the values are Loki's; stdvar
+  (the standard deviation squared, semantics/stdvar-grouped-binary-marker) is shifted
+  the same way. No change to the query sent to VictoriaLogs.
+
+  A range that is not the step keeps its answer: see
+  semantics/stddev-stdvar-over-time-range-window.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'stddev_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]) by (app)'
+    start: 'now-1h'
+    end: 'now'
+    step: '300'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [timestamps, values]
+  expect: |
+    Loki's samples at every step, the values equal to 1e-9 relative.
+gap:
+  status: fixed
+  fixed_by: "this change"
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy metric_binary.go (statsRateRangeEqualsStepShift, logRangeFunctions)'
+  loki: 'pkg/logql/range_vector.go:102-189 batchRangeVectorIterator window (t-range, t]'
+  proxy: 'anchored step buckets fetched from start-step and relabelled onto the evaluation times, for range == step'
+  planned_test: 'TestStddevStdvarOverTimeTumblingReadsTheWindowEndingAtT and TestLogRangeFunctionsStddevStdvar (internal/proxy); TestCompat_StddevOverTimeTumblingMatchesLoki (test/e2e-compat, group core)'
+  clusters: []
