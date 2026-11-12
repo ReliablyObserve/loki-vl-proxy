@@ -112,14 +112,15 @@ jobs:
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
 
       - name: Run release validation tests
-        run: go test ./... -count=1
+        # internal/proxy alone takes 7 to 10 minutes on a hosted runner, at Go's default 10m timeout.
+        run: go test ./... -count=1 -timeout=30m
 
       - name: Collect validation metrics
         id: metrics
         run: |
           set -euo pipefail
           # One run gives both numbers; a failing test is named instead of failing the step silently.
-          if ! go test ./... -count=1 -json -coverprofile=coverage.out > test-results.json 2> test-stderr.log; then
+          if ! go test ./... -count=1 -timeout=30m -json -coverprofile=coverage.out > test-results.json 2> test-stderr.log; then
             echo "::error::unit tests failed while collecting release metrics"
             jq -r 'select(.Action=="fail" and .Test != null) | "\(.Package) \(.Test)"' test-results.json | sort -u
             jq -r 'select(.Action=="output" and .Test != null) | .Output' test-results.json | grep -E -- '--- FAIL|_test\.go:[0-9]+:' | head -50 || true
