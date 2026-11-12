@@ -64,7 +64,8 @@ jobs:
 
           # --- Impact label ---
           TITLE="$PR_TITLE"
-          if echo "$TITLE" | grep -qE "^feat.*(!:|BREAKING)"; then
+          # Any type marks a breaking change (fix(scope)!: as much as feat!:), as the release plan reads a subject.
+          if echo "$TITLE" | grep -qE "^[a-z]+(\([^)]*\))?!:|BREAKING CHANGE"; then
             gh pr edit "$PR_NUMBER" --add-label "breaking-change" 2>/dev/null || true
           fi
           if echo "$TITLE" | grep -qE "^feat(\(|:)"; then
