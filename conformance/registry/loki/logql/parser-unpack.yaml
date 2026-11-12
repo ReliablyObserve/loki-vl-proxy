@@ -9,13 +9,29 @@ generated:
     - internal/translator/translator.go
 
 semantics: |
-  TODO: Loki's exact semantics, including how it treats missing labels,
-  parse errors, ordering and empty input.
+  Loki's unpack reads a line written by a packing agent: a JSON object with an
+  `_entry` key holding a string. Only on such a line it promotes the object's
+  string keys to labels (keys are sanitized like json's; a key named like an
+  existing label gets the _extracted suffix; the last value of a repeated key
+  wins), and it replaces the line with the value of `_entry` (an empty string
+  too). A line without a string `_entry` (no key, a number, an object), an
+  empty line and `{}` go on unchanged and get no label; a line that is not a
+  JSON object also gets __error__="JSONParserErr". Values that are not strings
+  (numbers, booleans, null, objects, arrays) are not promoted.
+  Recorded answers: internal/queryplan/lower/testdata/unpack-oracles.json (the
+  Loki oracle, 13 lines x 20 stage families).
 victorialogs: |
-  TODO: the native LogsQL construct used, or the proxy-side
-  transformation and the VictoriaLogs limitation that forces it.
-consumers: []   # explore, drilldown, datasource, api
-cases: []       # case ids proving the semantics match
+  VictoriaLogs has no pipe with that rule. `unpack_json` promotes every key of
+  every JSON line (non-string values as text), never changes the line, and
+  reads an empty value as a missing one, so a packed-line test, the line
+  replacement and the string-only promotion cannot be written exactly. The
+  query plan writes the translator's `unpack_json` where the lines counted do not
+  depend on what the unpack made (count_over_time, rate and absent_over_time with
+  drops and keeps after the unpack) and delegates the rest under the name of
+  what it reads.
+consumers: [explore]
+cases:
+  - semantics/translator-writes-unpack-as-unpack-json
 victorialogs_candidates:
   - id: pipe-unpack-json
     since: v1.40.0
