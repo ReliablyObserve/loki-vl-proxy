@@ -1716,6 +1716,7 @@
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unpack_test.go | semantics/translator-writes-unpack-as-unpack-json",
     "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/unwrap_test.go | semantics/translator-writes-keyword-field-names-bare",
     "internal/queryplan/lower/vector_agg_nested_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vector_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vl_clone_roundtrip_test.go | semantics/reserved-field-name-case-outbound",

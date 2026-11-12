@@ -1573,6 +1573,7 @@
     "semantics/translator-writes-keyword-field-names-bare": [
       "internal/logsql/keyword_fields_test.go",
       "internal/queryplan/lower/keyword_field_names_test.go",
+      "internal/queryplan/lower/unwrap_test.go",
       "internal/queryplan/lower/vl_clone_roundtrip_test.go",
       "test/e2e-compat/keyword_label_names_test.go"
     ],
@@ -3383,7 +3384,8 @@
       "semantics/translator-writes-unpack-as-unpack-json"
     ],
     "internal/queryplan/lower/unwrap_test.go": [
-      "architecture-syntax-package-layering"
+      "architecture-syntax-package-layering",
+      "semantics/translator-writes-keyword-field-names-bare"
     ],
     "internal/queryplan/lower/vector_agg_nested_test.go": [
       "architecture-syntax-package-layering"
