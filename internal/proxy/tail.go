@@ -282,7 +282,9 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 	// (e.g. "0s"), not a bare integer.
 
 	params := guardOutboundQuery(p.scopedTenantParams(parent, url.Values{"query": {logsqlQuery}, "offset": {"0s"}}))
-	vlURL := p.backend.String() + "/select/logsql/tail?" + params.Encode()
+	tailURL := backendRequestURL(p.backend, "/select/logsql/tail")
+	tailURL.RawQuery = params.Encode()
+	vlURL := tailURL.String()
 	querycorpus.RecordBackend("/select/logsql/tail", params.Get("query"))
 	req, err := http.NewRequestWithContext(parent, "GET", vlURL, nil)
 	if err != nil {

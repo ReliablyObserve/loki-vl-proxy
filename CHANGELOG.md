@@ -26,6 +26,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   served from the plan for these queries yet: no request to VictoriaLogs and no
   answer changes.
 
+- The query plan now writes `count_over_time`, `rate` and `absent_over_time`
+  over a `| unpack` followed only by `drop` and `keep` the way the proxy sends
+  them, byte for byte under every translation profile. Loki's `| unpack`
+  promotes the keys of a packed line and replaces the line with its `_entry`;
+  VictoriaLogs has no pipe with that rule, so a log query with an unpack, a
+  label filter, a line filter, a parser or a formatting stage after it, the
+  bytes of the line, and an unwrapped value stay with the string translator
+  under a name that says what they read. Nothing is served from the plan for
+  these queries yet: no request to VictoriaLogs and no answer changes.
+
+### Fixed
+
+- A backend URL with a path keeps it: with `-backend=https://o11y.example.com/logs`
+  (VictoriaLogs behind a reverse proxy or vmauth that shares one hostname),
+  queries, label lookups, the `/ready` health probe and the version and load
+  probes went to `https://o11y.example.com/select/...` and `/health` without
+  the `/logs` prefix, so every query failed and `/ready` stayed 503; only live
+  tail kept the prefix. Every request now keeps the path of its URL, for
+  `-backend`, `-ruler-backend`, `-alerts-backend` and `-cold-backend`, and a
+  trailing slash is ignored (#1340).
+
+## [2.181.0] - 2026-11-12
+
+### Changed
+
 - The query plan now writes the label filters on `detected_level` that Grafana
   Explore and Logs Drilldown send (`| detected_level="error"`, `!="info"`,
   `=~"error|warn"`, `unknown`, several in a row, under `count_over_time`, `rate`

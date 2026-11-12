@@ -72,7 +72,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 
 | Flag | Type | Default | Helm value | Description |
 |---|---|---|---|---|
-| `-cold-backend` | string | (empty) | `extraArgs.cold-backend` | Cold storage backend URL (Victoria Lakehouse). Empty disables cold routing. |
+| `-cold-backend` | string | (empty) | `extraArgs.cold-backend` | Cold storage backend URL (Victoria Lakehouse); a path is kept as a prefix. Empty disables cold routing. |
 | `-cold-boundary` | duration | `168h0m0s` | `extraArgs.cold-boundary` | Data older than this boundary routes to cold backend |
 | `-cold-enabled` | bool | `false` | `extraArgs.cold-enabled` | Enable cold storage backend routing |
 | `-cold-manifest-refresh` | duration | `5m0s` | `extraArgs.cold-manifest-refresh` | How often to refresh cold backend manifest range |
@@ -267,8 +267,8 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | Flag | Type | Default | Helm value | Description |
 |---|---|---|---|---|
 | `-admin-listen` | string | `"127.0.0.1:3101"` | `extraArgs.admin-listen` | Address for admin/debug endpoints (/admin/*, /debug/*) when --server.admin-auth-token is empty. Loopback by default so the binary boots safely with no flags. Ignored when --server.admin-auth-token is set — admin endpoints then ride the main --listen address. |
-| `-alerts-backend` | string | (empty) | `extraArgs.alerts-backend` | Optional alert backend URL for /alerts passthrough (defaults to -ruler-backend when unset) |
-| `-backend` | string | `"http://localhost:9428"` | `extraArgs.backend` | VictoriaLogs backend URL |
+| `-alerts-backend` | string | (empty) | `extraArgs.alerts-backend` | Optional alert backend URL for /alerts passthrough (defaults to -ruler-backend when unset); a path is kept as a prefix |
+| `-backend` | string | `"http://localhost:9428"` | `extraArgs.backend` | VictoriaLogs backend URL; a path is kept as a prefix of every request (for example https://o11y.example.com/logs behind a reverse proxy) |
 | `-backend-basic-auth` | string | (empty) | `extraArgs.backend-basic-auth` | Basic auth for VL backend (user:password) |
 | `-backend-compression` | string | `"auto"` | `extraArgs.backend-compression` | Backend HTTP compression preference: auto, gzip, zstd, none |
 | `-backend-default-msg-value` | string | (empty) | `extraArgs.backend-default-msg-value` | VictoriaLogs -defaultMsgValue when it is customized. Rows whose _msg is empty, starts with VictoriaLogs' default "missing _msg field" text, or equals this value get their log line rebuilt as a JSON object of the row's non-stream fields |
@@ -280,7 +280,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-response-compression` | string | (empty) | `extraArgs.response-compression` | Response compression codec: auto, gzip, none (default: auto) |
 | `-response-compression-min-bytes` | int | `defaultResponseCompressionMinBytes` | `extraArgs.response-compression-min-bytes` | Minimum response size before frontend compression starts (0 compresses any size) |
 | `-response-gzip` | bool | `true` | `extraArgs.response-gzip` | Deprecated: enable compressed responses for clients that accept them; prefer -response-compression |
-| `-ruler-backend` | string | (empty) | `extraArgs.ruler-backend` | Optional alert/ruler backend URL for /rules passthrough (for example vmalert) |
+| `-ruler-backend` | string | (empty) | `extraArgs.ruler-backend` | Optional alert/ruler backend URL for /rules passthrough (for example vmalert); a path is kept as a prefix |
 | `-stream-response` | bool | `false` | `extraArgs.stream-response` | Stream log responses via chunked transfer encoding |
 | `-warmup-max-jitter` | duration | `0` | `extraArgs.warmup-max-jitter` | Maximum random delay before label cache warmup starts. Spread this across a fleet (e.g. 10s for ≥3 instances) to prevent all proxies hammering VL simultaneously on restart. |
 
