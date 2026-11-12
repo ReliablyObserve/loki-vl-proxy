@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.185.0] - 2026-11-12
+
 ### Changed
 
 - The query plan now decides how the handlers answer `sum`, `avg`, `min`, `max` and `count` (with
