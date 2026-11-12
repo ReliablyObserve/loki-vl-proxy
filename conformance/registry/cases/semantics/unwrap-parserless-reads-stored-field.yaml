@@ -1,0 +1,42 @@
+id: semantics/unwrap-parserless-reads-stored-field
+title: An unwrap with no parser reads the field VictoriaLogs stored for the line where Loki has no label (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum_over_time({app="api-gateway"} | unwrap duration_ms [5m])` on a JSON line
+  that no parser reads: Loki has no label `duration_ms` and answers no series
+  (every line is a sample extraction error). The proxy answers 522 series (the
+  stream labels plus the stored fields of each line) and
+  `sum by (app) (sum_over_time(...))` one series with the sum of the stored
+  values (Loki 3.7.9, VictoriaLogs v1.53.0, generator data). The same holds for
+  every unwrap function, stddev_over_time and stdvar_over_time included, because
+  VictoriaLogs ingests a JSON line's keys as fields and the unwrap gate reads
+  that field.
+
+  Fix to make: without a parser stage before the unwrap, the unwrapped label must
+  be one of the stream labels or structured metadata of the line, not a stored
+  field of the line body.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (app) (sum_over_time({app="api-gateway"} | unwrap duration_ms [5m]))'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series]
+  expect: |
+    No series, as Loki.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator unwrap gate and series grouping for a query with no parser stage; the plan lowering of the unwrap'
+  loki: 'a label that no stage extracted does not exist: the unwrap makes a conversion error per line'
+  proxy: 'the stored field of the line body'
+  planned_test: 'a parser-less row of TestCompat_UnwrapMissingAndNonNumeric (test/e2e-compat) once fixed'
+  clusters: []

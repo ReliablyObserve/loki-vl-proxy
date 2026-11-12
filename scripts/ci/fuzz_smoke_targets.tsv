@@ -17,6 +17,7 @@ smoke	internal/proxy	FuzzNormalizeMetadataPairsFromJSON	12s	-	structured metadat
 smoke	internal/proxy	FuzzMergeLokiQueryResponsesStructuredMetadataContract	12s	-	merged categorized stream contract
 smoke	internal/proxy	FuzzParseLokiDuration	12s	-	parse Loki duration
 smoke	internal/proxy	FuzzParseTimestamp	12s	-	parse timestamp
+smoke	internal/proxy	FuzzScalarStatsBinaryOf	12s	-	a stats query joined to a number is read back to the same operator and number
 smoke	internal/proxy	FuzzSeriesKeyFromMetric	20s	60s	series key from metric
 smoke	internal/proxy	FuzzTenantHeader	12s	-	X-Scope-OrgID check: Loki's tenant ID rules, own-tenant routing
 smoke	internal/proxy	FuzzParseValueToFloat	12s	-	parse value to float

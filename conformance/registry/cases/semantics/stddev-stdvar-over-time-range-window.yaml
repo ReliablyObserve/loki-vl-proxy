@@ -1,0 +1,44 @@
+id: semantics/stddev-stdvar-over-time-range-window
+title: stddev and stdvar over time with unwrap and a range that is not the step answer the step bucket, not the window (open)
+pending: true
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Residual of semantics/stddev-stdvar-over-time-step-bucket. With a range longer or
+  shorter than the step, `stddev_over_time(... | unwrap duration_ms [5m]) by (app)`
+  at step 60 answers the step-sized bucket that VictoriaLogs labels T, so the [5m]
+  window is ignored: the answer equals the [1m] one (measured: the proxy's [5m] and
+  [1m] answers are the same series; Loki's differ), and it is still the bucket
+  [T, T+step) at T, one step late. The proxy keeps this answer on purpose until the
+  window is computed from partials.
+
+  Fix to make: the plan reads the window from per-bucket partials, the count, the
+  sum and the sum of squares (population variance s2/n-(s/n)^2, standard deviation
+  its square root), merged over the buckets of (T-range, T], as it does for sum, avg,
+  min and max over time (unwrapWindowBuckets).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'stddev_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]) by (app)'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [timestamps, values]
+  expect: |
+    Loki's samples at every step, the values equal to 1e-9 relative.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/queryplan/lower unwrap.go (window partials: count, sum, sum of squares); internal/proxy unwrap_samples.go unwrapBucketAgg and unwrapWindowBuckets'
+  loki: 'pkg/logql/range_vector.go:102-189 batchRangeVectorIterator window (t-range, t]'
+  proxy: 'the step-sized bucket VictoriaLogs labels T, the range ignored'
+  planned_test: 'a range-window row of TestCompat_StddevOverTimeTumblingMatchesLoki once the plan serves the window'
+  clusters: []
