@@ -7,42 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- Slow and request lines now say who ran a query, for which tenant and from
-  which Grafana app, and what it cost. `slow_request` and
-  `slow_upstream_request` (and `request`, `upstream_request`) carry
-  `enduser.id`, `enduser.source` and `enduser.name`, the tenant with the
-  VictoriaLogs `vl.account_id`/`vl.project_id` (or `vl.tenant_label`) its
-  queries go to, and the Grafana app (`grafana.client.source_tag` and
-  `grafana.client.surface`, plus all of `X-Query-Tags` as `grafana.query_tags`
-  when it holds more than the Source tag); `slow_request` adds `flow.vl.rows`
-  to `flow.vl.calls`, `flow.vl.ms` and `flow.vl.bytes`. Before, the slow lines
-  named the tenant only. Client-sent values are capped at 128 bytes (tags 256)
-  and their control characters, U+2028/U+2029 and invalid UTF-8 escaped, so a
-  header cannot forge a log line.
-- `-log-user-header` (for example `X-Grafana-User` with Grafana's
-  `[dataproxy] send_user_header = true`) names the end user in the logs and
-  `/debug/queries` only: never a metric label, never sent to VictoriaLogs,
-  never part of a cache key. `-metrics.trust-proxy-headers` also forwards the
-  user headers to VictoriaLogs and keys the caches by user, so each user's
-  identical requests are cached and sent separately.
-  `-log-user-header-trusted-cidrs` accepts the header only from listed peers
-  (the TCP peer, never `X-Forwarded-For`); both flags are validated at startup,
-  and a header that carries credentials (`Authorization`, `Cookie`, or a name with
-  token, secret, password, key, session or credential) is refused, so no
-  credential can reach the log.
-  Helm: `observability.queryUser.header` and `observability.queryUser.trustedCIDRs`.
-- `/debug/queries` (with `-server.enable-query-analytics`) shows the heaviest
-  callers: the top 20 tenant and user pairs of the last 15 to 30 minutes by
-  VictoriaLogs time and by bytes, and the 256 most recent requests with their
-  caller, query and cost, filterable by `?tenant=` and `?user=`. Bounded: 1000
-  callers per half-window (the rest summed under `__overflow__`), per replica,
-  in memory.
-- `loki_vl_proxy_tenant_vl_calls_total`, `..._duration_seconds_total`,
-  `..._response_bytes_total` and `..._rows_total` count the VictoriaLogs work
-  each tenant's requests caused (with `-metrics.export-sensitive-labels`, like
-  the other tenant metrics; also over OTLP). No metric is labelled by user.
+## [2.171.0] - 2026-11-11
 
 ### Security
 
