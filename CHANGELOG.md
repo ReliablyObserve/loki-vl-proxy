@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under a name that says what they read. Nothing is served from the plan for
   these queries yet: no request to VictoriaLogs and no answer changes.
 
+## [2.181.1] - 2026-11-12
+
 ### Fixed
 
 - A backend URL with a path keeps it: with `-backend=https://o11y.example.com/logs`
