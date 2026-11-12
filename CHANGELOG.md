@@ -23,20 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `semantics/parser-reads-unicode-blank-as-white-space`). The latter records that the proxy's
   parser reads a blank that is no ASCII one (U+2003, U+3000, U+00A0) as white space where Loki
   answers 400; the parser is unchanged.
-- The query plan now decides how the handlers answer `sum`, `avg`, `min`, `max` and `count` (with
-  `by`, `without` or neither) over `sum_over_time`, `avg_over_time`, `min_over_time` and
-  `max_over_time` of an unwrapped label, instead of leaving them to the handlers: whether the
-  series keep their stream's identity, whether the empty-input guard counts the input, the level
-  probe, the conversion-error flag and the fold of a `without` clause, on every window. Three
-  decisions follow what the handlers do today: the maximum of `max_over_time` (or the minimum of
-  `min_over_time`) by labels is taken per bucket and group in VictoriaLogs on a sliding window, an
-  ungrouped `sum` adds all lines up only over `sum_over_time` (over an average, minimum or maximum it
-  keeps the series), and a `without` clause over an unwrapped value is folded by the proxy. The
-  lowering of these queries now hands back its stats typed, with the same query text. No answer or
-  request changes: no handler reads the rule yet. Route parity: 470 more of 24,970 runs are decided
-  (5,706 native, 0 mismatches, the routes and statuses unchanged); the other 900 runs of the former
-  "unwrap operand" group are now named by what keeps them delegated (a parser before the unwrap, an
-  offset). A vector level that groups by the line (`_msg`) stays delegated.
 
 ### Fixed
 
@@ -53,6 +39,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window, as Loki does (it keeps the pieces in which a query found nothing in its results cache). A
   window of five pieces with entries in three of them, separated by empty pieces, reported 5 shards
   on the repeat and Loki 3. The first answer of a query text still reports every piece it ran.
+
+## [2.185.0] - 2026-11-12
+
+### Changed
+
+- The query plan now decides how the handlers answer `sum`, `avg`, `min`, `max` and `count` (with
+  `by`, `without` or neither) over `sum_over_time`, `avg_over_time`, `min_over_time` and
+  `max_over_time` of an unwrapped label, instead of leaving them to the handlers: whether the
+  series keep their stream's identity, whether the empty-input guard counts the input, the level
+  probe, the conversion-error flag and the fold of a `without` clause, on every window. Three
+  decisions follow what the handlers do today: the maximum of `max_over_time` (or the minimum of
+  `min_over_time`) by labels is taken per bucket and group in VictoriaLogs on a sliding window, an
+  ungrouped `sum` adds all lines up only over `sum_over_time` (over an average, minimum or maximum it
+  keeps the series), and a `without` clause over an unwrapped value is folded by the proxy. The
+  lowering of these queries now hands back its stats typed, with the same query text. No answer or
+  request changes: no handler reads the rule yet. Route parity: 470 more of 24,970 runs are decided
+  (5,706 native, 0 mismatches, the routes and statuses unchanged); the other 900 runs of the former
+  "unwrap operand" group are now named by what keeps them delegated (a parser before the unwrap, an
+  offset). A vector level that groups by the line (`_msg`) stays delegated.
 
 ## [2.184.0] - 2026-11-12
 
