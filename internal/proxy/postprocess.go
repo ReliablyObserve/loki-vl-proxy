@@ -1090,7 +1090,8 @@ func (m *patternMiner) zeroFill(c *patternBucket) {
 			last = bucket
 		}
 	}
-	for bucket := first + m.fillStep; bucket < last; bucket += m.fillStep {
+	for i, n := int64(1), halfOpenStepCount(first, last, m.fillStep); i < n; i++ {
+		bucket := first + i*m.fillStep
 		if _, ok := c.buckets[bucket]; !ok {
 			c.buckets[bucket] = 0
 		}

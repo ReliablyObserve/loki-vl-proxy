@@ -150,10 +150,12 @@ func validateLogQLSyntax(query string) string {
 
 // queryValidation is the validationCache entry of a raw query: Loki's error
 // for it, or "" and whether it is a metric (sample) expression, which
-// stepAlignMiddleware reads before the handler validates the same string.
+// stepAlignMiddleware reads before the handler validates the same string, and
+// the offsets and ranges of its range selectors (requestTimeBounds).
 type queryValidation struct {
 	msg    string
 	sample bool
+	shift  queryShift
 }
 
 // cachedQueryValidation validates query once per distinct string: it parses
@@ -170,6 +172,9 @@ func cachedQueryValidation(query string) queryValidation {
 	}
 	expr, msg := logql.ValidateLogQLExpr(query)
 	result := queryValidation{msg: msg, sample: msg == "" && isSampleExpr(expr)}
+	if msg == "" && expr != nil {
+		result.shift = queryShiftOf(expr)
+	}
 	if cacheable {
 		storeValidationResult(query, result)
 	}
