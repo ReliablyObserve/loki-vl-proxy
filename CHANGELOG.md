@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The text screen that keeps log queries with a parser or formatting stage out
+  of the typed filter path now skips what the parser skips between `|` and the
+  stage name: any Unicode white space (a vertical tab, a no-break space) and
+  `#` comments, and it reads a quote inside a comment as comment text. Such a
+  query no longer has a plan built for it only to be handed back to the
+  string translator; answers were already correct.
+
 - A pipeline stage that opens with a name and goes on with more than a comparison operator (`| a, b`, `| a .5`,
   `| a:b`, `| a "v"`) is Loki's 400 with Loki's text, where the proxy passed the stage to VictoriaLogs and
   answered the query. Loki reads such a stage as a label filter and rejects the token after the name
