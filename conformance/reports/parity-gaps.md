@@ -244,6 +244,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/label-filter-regex-parse-error` — A label filter, drop or keep regex Loki cannot parse is Loki's 400, reported in Loki's order (fixed) | #1242 | 0 | 0 |
 | `semantics/label-list-trailing-comma` — A label list with a trailing, doubled or leading comma, an empty drop or keep, or two names without a comma is Loki's 400 with Loki's tex... | this change | 0 | 0 |
 | `semantics/logql-unicode-runes` — LogQL reads the characters of every Unicode category as Loki's lexer does: only an ASCII digit starts a number, and the parser returns on... | this change | 0 | 0 |
+| `semantics/stage-name-followed-by-more-of-stage` — A stage that opens with a name followed by more of the stage (`\| a, b`, `\| a .5`, `\| a:b`) is Loki's 400 with Loki's text (fixed) | this change | 0 | 0 |
 | `semantics/ip-filter-ipv4-after-dot-run` — An IPv4 ip() filter does not match an address after a run of dots that a digit or a dot precedes (fixed) | #1273 | 0 | 0 |
 | `semantics/line-filter-invalid-utf8` — A \|= or != line filter whose text is not UTF-8 answers like Loki (fixed) | #1236 | 0 | 0 |
 | `semantics/loki-keyword-label-names` — A label cannot be called after a word Loki's lexer reads as a keyword (of, bool, offset, unwrap, json, regexp, logfmt, unpack, pattern, l... | this change | 0 | 0 |
