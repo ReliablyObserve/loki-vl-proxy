@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan now writes the label filters on `detected_level` that Grafana
+  Explore and Logs Drilldown send (`| detected_level="error"`, `!="info"`,
+  `=~"error|warn"`, `unknown`, several in a row, under `count_over_time`, `rate`
+  and `sum by (detected_level)` or `by (service_name)`) the way the proxy sends
+  them: the derivation of Loki's ingest-time level plus the filter, byte for byte
+  under every translation profile. A filter after a parser, drop, keep or
+  formatting stage, `detected_level=""` and `!=""`, comparisons, `and`/`or`
+  trees and an unwrap over such a filter stay with the string translator. Nothing
+  is served from the plan for these queries yet: no request to VictoriaLogs and
+  no answer changes.
+
 ### Fixed
 
 - The text screen that keeps log queries with a parser or formatting stage out

@@ -86,6 +86,9 @@ func loweredQueries(b *testing.B, kind int) []string {
 			continue
 		}
 		queryplan.Resolve(p)
+		if holdsLevelFilter(p.Root) {
+			continue // the detected_level filters have benchmarks of their own (BenchmarkDetectedLevelFilter*)
+		}
 		if _, err := Plan(p, Profile{}); err == nil && filterKind(sel) == kind {
 			out = append(out, q)
 		}

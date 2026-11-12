@@ -152,16 +152,17 @@ func TestPlanLowersLabelFilters(t *testing.T) {
 	}
 }
 
-// What the lowering leaves to the string translator: the labels it derives (detected_level, service_name), a
-// value that is not a valid literal, and a label that names several parsed keys.
+// What the lowering leaves to the string translator: a filter on service_name, which it derives, the filters on
+// detected_level it does not write (detected_level.go), a value that is not a valid literal, and a label that names
+// several parsed keys.
 //
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesLabelFilters(t *testing.T) {
 	for q, construct := range map[string]string{
-		`{app="a"} | detected_level="error"`:         "LogSelect label filter detected_level",
-		`{app="a"} | a="1" and service_name="s"`:     "LogSelect label filter service_name",
-		`{app="a"} | a=~"x\d"`:                       "LogSelect label filter value",
-		`{app="a"} | level="x" | detected_level="y"`: "LogSelect label filter detected_level",
+		`{app="a"} | detected_level=""`:            levelPresenceConstruct,
+		`{app="a"} | a="1" and service_name="s"`:   "LogSelect label filter service_name",
+		`{app="a"} | a=~"x\d"`:                     "LogSelect label filter value",
+		`{app="a"} | level="x" | detected_level>5`: levelFormConstruct,
 	} {
 		expr, err := logql.Parse(q)
 		if err != nil {

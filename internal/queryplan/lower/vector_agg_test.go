@@ -113,7 +113,7 @@ func TestPlanDelegatesVectorAggregations(t *testing.T) {
 		`sum by (a) (rate({app="a"} | drop a="| json" | keep x [5m]))`:             "VectorAgg quoted clause",
 		`count(count_over_time({app="a"} | drop a="| json" [5m]))`:                 "VectorAgg quoted clause",
 		`sum without (x) (count_over_time({app="a"} | drop a="without (x)" [5m]))`: "VectorAgg quoted clause",
-		`sum(rate({app="a"} | detected_level="e" [5m]))`:                           "VectorAgg LogSelect label filter detected_level",
+		`sum(rate({app="a"} | detected_level="" [5m]))`:                            "VectorAgg " + levelPresenceConstruct,
 		`sum(rate({app="a"} | line_format "{{.a | upper}}" [5m]))`:                 "VectorAgg LogSelect line format function",
 		`sum(rate({app="a"}[0s]))`:                                                 "VectorAgg range",
 		`sum without () (rate({app="a"}[5m]))`:                                     "VectorAgg without empty",

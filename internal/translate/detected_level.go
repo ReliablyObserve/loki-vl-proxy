@@ -1139,9 +1139,14 @@ func (m detectedLevelMatcher) prefilter(existingFields, targets []string) string
 // unchanged): an equality on such a word, or the literal alternatives of a
 // regexp. anyRaw is set when a regexp's words cannot be listed.
 func (m detectedLevelMatcher) rawStoredValues() (raws []string, anyRaw bool) {
-	values := []string{m.value}
-	if m.re != nil {
-		reg, err := syntax.Parse(LokiLabelFilterPattern(m.value), syntax.Perl)
+	return rawLevelValues(m.value, m.re != nil)
+}
+
+// rawLevelValues is rawStoredValues of a matcher on value, a regexp when isRegexp is set.
+func rawLevelValues(value string, isRegexp bool) (raws []string, anyRaw bool) {
+	values := []string{value}
+	if isRegexp {
+		reg, err := syntax.Parse(LokiLabelFilterPattern(value), syntax.Perl)
 		if err != nil {
 			return nil, true
 		}

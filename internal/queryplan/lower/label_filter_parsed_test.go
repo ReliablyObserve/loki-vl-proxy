@@ -81,7 +81,7 @@ func TestPlanLowersLabelFiltersAfterParser(t *testing.T) {
 			}
 			if delegated {
 				// A stream-labels profile leaves a service_name filter (derived) to the string translator.
-				if strings.Contains(q, "service_name") && (construct == "LogSelect label filter service_name" || construct == "LogSelect label filter detected_level") {
+				if strings.Contains(q, "service_name") && (construct == "LogSelect label filter service_name" || strings.HasPrefix(construct, "LogSelect level filter")) {
 					continue
 				}
 				t.Errorf("%s: %s: not lowered (%s)", prof.name, q, construct)
@@ -117,7 +117,7 @@ func TestPlanDelegatesLabelFiltersAfterParser(t *testing.T) {
 		`{app="a"} | json a | a_extracted="1"`:                     "LogSelect label filter _extracted with parser arguments",
 		`{app="a"} | json | logfmt --keep-empty | a_extracted="1"`: "LogSelect label filter _extracted with parser arguments",
 		// derived labels.
-		`{app="a"} | json | detected_level="e"`: "LogSelect label filter detected_level",
+		`{app="a"} | json | detected_level="e"`: levelAfterStageConstruct,
 		`{app="a"} | json | service_name="s"`:   "LogSelect label filter service_name",
 	} {
 		lowered, _, construct2, delegated, ok := parsedLowering(t, q, parserProfiles()[0])

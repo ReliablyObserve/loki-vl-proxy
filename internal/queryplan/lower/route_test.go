@@ -66,7 +66,9 @@ func TestRouteDecidesTheWindows(t *testing.T) {
 		{q: `rate({app="a"} | json [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route pipeline"},
 		{q: `rate({app="a"}[5m] offset 1h)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route offset"},
 		{q: `sum(count_over_time({app="a"}[5m]) > 1)`, req: RouteRequest{Instant: true}, construct: "VectorAgg operand"},
-		{q: `sum by (level) (rate({app="a"} | json | detected_level="x" [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg LogSelect label filter detected_level"},
+		{q: `sum by (level) (rate({app="a"} | json | detected_level="x" [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg " + levelAfterStageConstruct},
+		{q: `sum by (level) (rate({app="a"} | detected_level="x" [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route level filter"},
+		{q: `count_over_time({app="a"} |= "y" | detected_level!="info" [1m])`, req: RouteRequest{Step: time.Minute, Span: hour}, construct: "RangeAgg route level filter"},
 	} {
 		t.Run(c.q, func(t *testing.T) {
 			r, err := Route(planOf(t, c.q), Profile{}, c.req)

@@ -123,6 +123,11 @@ func unwrapLog(sel *queryplan.LogSelect, prof Profile, owner string) (metricLog,
 	if err != nil {
 		return metricLog{}, nil, err
 	}
+	// The pipes that derive detected_level for a filter on it hold unpack pipes, which the translator reads as the
+	// parser of the unwrapped label: left to it.
+	if log.levelChain {
+		return metricLog{}, nil, &NotLoweredError{Construct: owner + " " + levelUnwrapConstruct}
+	}
 	// The translator reads the unwrap and the parsers out of the text of the query, quoted strings included.
 	if textReadAsClause(log) || !log.parser && textHas(log, "| unpack_") || readsUnwrapOrParser(&rest, log, true, !log.parser) {
 		return metricLog{}, nil, quotedClauseError(owner)

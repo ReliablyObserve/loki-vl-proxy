@@ -184,8 +184,14 @@ func routeRange(n queryplan.Node, kind string) (*queryplan.RangeAgg, error) {
 				return nil, routeError(kind, "grouping")
 			}
 			for _, st := range v.In.Stages {
-				switch st.(type) {
-				case *queryplan.LineFilter, *queryplan.LabelFilter:
+				switch s := st.(type) {
+				case *queryplan.LineFilter:
+				case *queryplan.LabelFilter:
+					// A filter on detected_level writes the level chain the handlers probe the window for first
+					// (DetectedLevelProbeBase over its prefilter): not decided by the rule yet.
+					if isLevelLeaf(s.Expr) {
+						return nil, routeError(kind, "level filter")
+					}
 				default:
 					return nil, routeError(kind, "pipeline")
 				}

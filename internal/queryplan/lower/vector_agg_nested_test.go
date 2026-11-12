@@ -95,7 +95,7 @@ func TestPlanDelegatesNestedVectorAggregations(t *testing.T) {
 		`sum(sum by (app) (avg_over_time({app="a"} | unwrap n [5m]) by (x)))`:                "VectorAgg nested unwrap",
 		`sum by (app) (sum by (app) (absent_over_time({app="a"} | unwrap n [5m]) by (x)))`:   "VectorAgg grouping",
 		`sum(sum by (app) (count_over_time({app="a"} | line_format "{{.a | upper}}" [5m])))`: "VectorAgg LogSelect line format function",
-		`sum(sum by (app) (count_over_time({app="a"} | detected_level="error" [5m])))`:       "VectorAgg LogSelect label filter detected_level",
+		`sum(sum by (app) (count_over_time({app="a"} | detected_level="" [5m])))`:            "VectorAgg " + levelPresenceConstruct,
 		`sum(sum by (app) (sum(rate({app="a"}[5m])) by (app)) )`:                             "",
 	} {
 		p := rangeAggPlan(q)

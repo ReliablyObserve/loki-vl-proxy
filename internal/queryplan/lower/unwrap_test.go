@@ -111,7 +111,7 @@ func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 		`avg_over_time({app="a"} | unwrap n [5m]) without (pod)`:                "RangeAgg grouping",
 		`sum_over_time({app="a"} | unwrap n | unwrap m [5m])`:                   "RangeAgg unwrap stages",
 		`sum_over_time({app="a"} | line_format "{{upper .a}}" | unwrap n [5m])`: "RangeAgg LogSelect line format function",
-		`sum_over_time({app="a"} | detected_level="e" | unwrap n [5m])`:         "RangeAgg LogSelect label filter detected_level",
+		`sum_over_time({app="a"} | detected_level="e" | unwrap n [5m])`:         "RangeAgg " + levelUnwrapConstruct,
 		`sum_over_time({app="a"} |~ "\x41b" | unwrap n [5m])`:                   "RangeAgg LogSelect escaped spelling",
 		`sum by (app) (avg_over_time({app="a"} | unwrap n [5m]) by (x))`:        "VectorAgg grouping",
 		`sum(rate({app="a"} | unwrap n [0s]))`:                                  "VectorAgg range",

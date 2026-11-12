@@ -14,6 +14,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -247,6 +248,31 @@ func TestQueryPlanLowering_ShadowCountsOnlyWhatStaysOnTheTranslator(t *testing.T
 				t.Fatalf("shadow counts = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// A log query with a filter on detected_level is lowered natively (held to the string translator by the shadows),
+// and not served from the plan before its flip: the screen turns it away, so the string translator answers it.
+// conformance: architecture-syntax-package-layering
+func TestQueryPlanLowering_LeavesDetectedLevelFiltersToTheTranslator(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	for _, caps := range []logsql.Capabilities{{}, {NoDetectedLevelBodyScan: true}} {
+		prof := loweringProfile(nil, nil, caps, false)
+		for _, q := range []string{
+			`{a="b"} | detected_level="error"`, `{a="b"} | detected_level!="info"`, `{a="b"} | detected_level=~"error|warn"`,
+			`{a="b"} |= "x" | detected_level="unknown" | c="d"`, `{a="b"} | (detected_level="warn")`,
+		} {
+			plan, err := loweringPlan(context.Background(), q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := lower.Plan(plan, prof); err != nil {
+				t.Fatalf("%q is not lowered: %v", q, err)
+			}
+			if got, ok := p.lowerLogSelect(context.Background(), q, prof); ok {
+				t.Errorf("lowerLogSelect(%q) = %q, want the translator to answer", q, got)
+			}
+		}
 	}
 }
 

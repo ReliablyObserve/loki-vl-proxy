@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/grafana/loki/v3/pkg/logql/log"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
 )
 
@@ -58,6 +59,8 @@ type Facts struct {
 	Matchers []Matcher `json:"matchers"`
 	// LineFilters are that log query's line filters, left to right (Loki merges consecutive ones into one stage).
 	LineFilters []LineFilterFact `json:"line_filters"`
+	// LabelFilters are that log query's label filter stages, left to right.
+	LabelFilters []LabelFilterFact `json:"label_filters"`
 	// Binary is the binary operation under any label_replace, nil for any other shape.
 	Binary *BinaryFact `json:"binary,omitempty"`
 	// LabelReplace are the label_replace calls around the expression, outermost first.
@@ -100,6 +103,46 @@ type LineFilterFact struct {
 	Match string           `json:"match"`
 	Op    string           `json:"op,omitempty"`
 	Or    []LineFilterFact `json:"or,omitempty"`
+}
+
+// LabelFilterFact is one label filter stage as Loki's tree holds it: whether it is an and/or tree, and its leaves left
+// to right, each the label, the operator and, for a string matcher, the unquoted value (Kind names the filter type
+// for a number, duration, bytes or ip() comparison).
+type LabelFilterFact struct {
+	Tree   bool              `json:"tree"`
+	Leaves []LabelFilterLeaf `json:"leaves"`
+}
+
+// LabelFilterLeaf is one comparison of a label filter stage.
+type LabelFilterLeaf struct {
+	Name  string `json:"name"`
+	Op    string `json:"op"`
+	Value string `json:"value,omitempty"`
+	Kind  string `json:"kind"`
+}
+
+// labelFilterFact reads a label filter of Loki's tree through its exported types.
+func labelFilterFact(f log.LabelFilterer, out *LabelFilterFact) {
+	switch v := f.(type) {
+	case *log.BinaryLabelFilter:
+		out.Tree = true
+		labelFilterFact(v.Left, out)
+		labelFilterFact(v.Right, out)
+	case *log.StringLabelFilter:
+		out.Leaves = append(out.Leaves, LabelFilterLeaf{Name: v.Name, Op: v.Type.String(), Value: v.Value, Kind: "string"})
+	case *log.LineFilterLabelFilter:
+		out.Leaves = append(out.Leaves, LabelFilterLeaf{Name: v.Name, Op: v.Type.String(), Value: v.Value, Kind: "string"})
+	case *log.NumericLabelFilter:
+		out.Leaves = append(out.Leaves, LabelFilterLeaf{Name: v.Name, Op: v.Type.String(), Kind: "number"})
+	case *log.DurationLabelFilter:
+		out.Leaves = append(out.Leaves, LabelFilterLeaf{Name: v.Name, Op: v.Type.String(), Kind: "duration"})
+	case *log.BytesLabelFilter:
+		out.Leaves = append(out.Leaves, LabelFilterLeaf{Name: v.Name, Op: v.Type.String(), Kind: "bytes"})
+	case *log.IPLabelFilter:
+		out.Leaves = append(out.Leaves, LabelFilterLeaf{Name: v.Label, Op: v.Ty.String(), Kind: "ip"})
+	default:
+		out.Leaves = append(out.Leaves, LabelFilterLeaf{Kind: fmt.Sprintf("%T", f)})
+	}
 }
 
 // lineFilterFacts flattens a line filter expression: its Left chain first, then itself with its Or chain.
@@ -201,11 +244,17 @@ func factsOf(x FactsInput) (r Facts) {
 			r.Matchers = append(r.Matchers, Matcher{Name: m.Name, Op: m.Type.String(), Value: m.Value})
 		}
 		r.LineFilters = []LineFilterFact{}
+		r.LabelFilters = []LabelFilterFact{}
 		if p, ok := sel.(*syntax.PipelineExpr); ok {
 			for _, st := range p.MultiStages {
 				r.Pipeline = append(r.Pipeline, stageOf(st))
-				if lf, ok := st.(*syntax.LineFilterExpr); ok {
-					lineFilterFacts(lf, &r.LineFilters)
+				switch v := st.(type) {
+				case *syntax.LineFilterExpr:
+					lineFilterFacts(v, &r.LineFilters)
+				case *syntax.LabelFilterExpr:
+					var lf LabelFilterFact
+					labelFilterFact(v.LabelFilterer, &lf)
+					r.LabelFilters = append(r.LabelFilters, lf)
 				}
 			}
 		}

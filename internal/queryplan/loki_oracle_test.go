@@ -49,7 +49,85 @@ type lokiFacts struct {
 		Op    string `json:"op"`
 		Value string `json:"value"`
 	} `json:"matchers"`
-	LineFilters []lokiLineFilter `json:"line_filters"`
+	LineFilters  []lokiLineFilter  `json:"line_filters"`
+	LabelFilters []lokiLabelFilter `json:"label_filters"`
+}
+
+type lokiLabelFilter struct {
+	Tree   bool `json:"tree"`
+	Leaves []struct {
+		Name  string `json:"name"`
+		Op    string `json:"op"`
+		Value string `json:"value"`
+		Kind  string `json:"kind"`
+	} `json:"leaves"`
+}
+
+// ourLevelFilters and lokiLevelFilters write the label filter stages that name detected_level the same way: a stage
+// of one string comparison as the label, the operator and the unquoted value (what the lowering builds the level
+// filter from), any other stage as the kind of each leaf and whether it is a tree (what the lowering delegates).
+// Loki's tree holds `==` as `=`.
+func ourLevelFilters(sel *LogSelect) []string {
+	var out []string
+	for _, st := range sel.Stages {
+		lf, ok := st.(*LabelFilter)
+		if !ok || lf.Expr == nil || !levelNamed(lf.Expr) {
+			continue
+		}
+		if e := lf.Expr; e.IsLeaf() && e.Kind == logql.LabelFilterValueString && e.Cmp != "<" && e.Cmp != ">" && e.Cmp != "<=" && e.Cmp != ">=" {
+			op := e.Cmp
+			if op == "==" {
+				op = "="
+			}
+			out = append(out, e.Name+op+strconv.Quote(string([]rune(e.Value))))
+			continue
+		}
+		out = append(out, fmt.Sprintf("other tree=%v", !lf.Expr.IsLeaf()))
+	}
+	return out
+}
+
+// levelNamed reports whether a leaf of e names a label holding detected_level.
+func levelNamed(e *logql.LabelFilterExpr) bool {
+	if !e.IsLeaf() {
+		return levelNamed(e.Left) || levelNamed(e.Right)
+	}
+	return strings.Contains(e.Name, "detected_level")
+}
+
+func lokiLevelFilters(fs []lokiLabelFilter) []string {
+	var out []string
+	for _, lf := range fs {
+		named := false
+		for _, l := range lf.Leaves {
+			named = named || strings.Contains(l.Name, "detected_level")
+		}
+		if !named {
+			continue
+		}
+		if l := lf.Leaves; !lf.Tree && len(l) == 1 && l[0].Kind == "string" {
+			out = append(out, l[0].Name+l[0].Op+strconv.Quote(l[0].Value))
+			continue
+		}
+		out = append(out, fmt.Sprintf("other tree=%v", lf.Tree))
+	}
+	return out
+}
+
+// lokiOracleLevelQueries are the label filters on detected_level held to Loki's tree on top of the plan corpus: every
+// operator, the empty value in both quotings, escapes, a tree, and the stages before and after.
+var lokiOracleLevelQueries = []string{
+	`{a="b"} | detected_level="error"`, `{a="b"} | detected_level!="info"`, `{a="b"} | detected_level=~"error|warn"`,
+	`{a="b"} | detected_level!~"debug|trace"`, `{a="b"} | detected_level=""`, `{a="b"} | detected_level!=""`,
+	"{a=\"b\"} | detected_level=``", "{a=\"b\"} | detected_level=`ERROR`", `{a="b"} | detected_level="\x65rror"`,
+	`{a="b"} | detected_level="a\"b"`, `{a="b"} | detected_level="é"`, `{a="b"} | (detected_level="warn")`,
+	`{a="b"} | detected_level = "unknown"`, `{a="b"} | detected_level="error" or detected_level="warn"`,
+	`{a="b"} | detected_level="error", a="x"`, `{a="b"} | detected_level>5`, `{a="b"} | detected_level=ip("10.0.0.1")`,
+	`{a="b"} |= "x" | detected_level="error" | detected_level!="x"`, `{a="b"} | drop __error__ | detected_level="warn"`,
+	`{a="b"} | json | detected_level="error"`, `{a="b"} | detected_level="info" | logfmt | drop __error__`,
+	`sum by (detected_level) (count_over_time({a="b"} | detected_level!="info" [1m]))`,
+	`sum by (service_name) (rate({a="b"} | detected_level="error" [5m]))`,
+	`topk(5, sum by (service_name) (count_over_time({a="b"} | detected_level=~"error|warn" [5m])))`,
 }
 
 type lokiLineFilter struct {
@@ -293,7 +371,7 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := bufio.NewWriter(f)
-	for _, q := range rows {
+	for _, q := range append(rows, lokiOracleLevelQueries...) {
 		expr, msg := logql.ValidateLogQLExpr(q)
 		if msg != "" || expr == nil {
 			continue
@@ -320,7 +398,7 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 		t.Fatal(err)
 	}
 	var problems []string
-	compared, lokiRejects, ambiguous, selectors, lineFilterPipelines := 0, 0, 0, 0, 0
+	compared, lokiRejects, ambiguous, selectors, lineFilterPipelines, levelFilterPipelines := 0, 0, 0, 0, 0, 0
 	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
 		var lf lokiFacts
 		if err := json.Unmarshal([]byte(line), &lf); err != nil {
@@ -372,6 +450,15 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 				continue
 			}
 		}
+		// The label filters on detected_level the lowering reads: the label, the operator and the value of one
+		// comparison, Loki's (the leaf the lowering builds the filter on Loki's ingest-time value from).
+		if ours, lokis := ourLevelFilters(sel), lokiLevelFilters(lf.LabelFilters); len(ours)+len(lokis) > 0 {
+			levelFilterPipelines++
+			if !reflect.DeepEqual(ours, lokis) {
+				problems = append(problems, fmt.Sprintf("%q: detected_level filters %v, Loki's tree %v", r.q, ours, lokis))
+				continue
+			}
+		}
 		mine, loki := ourStages(sel), significant(lf.Pipeline)
 		if !reflect.DeepEqual(mine, loki) {
 			problems = append(problems, fmt.Sprintf("%q: parser and drop stages %+v, Loki's tree %+v", r.q, mine, loki))
@@ -392,7 +479,7 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 			problems = append(problems, fmt.Sprintf("%q: %d parsers, error policy %d; Loki's tree: %d parsers, error label dropped %v", r.q, sel.Sem.Parsers, sel.Sem.ErrorPolicy, parsers, dropped))
 		}
 	}
-	t.Logf("%d queries compared with Loki's tree (%d stream selectors, %d with line filters), %d the proxy accepts and Loki rejects (the parse oracle reports them), %d conditional drops of __error__ left out", compared, selectors, lineFilterPipelines, lokiRejects, ambiguous)
+	t.Logf("%d queries compared with Loki's tree (%d stream selectors, %d with line filters, %d with detected_level filters), %d the proxy accepts and Loki rejects (the parse oracle reports them), %d conditional drops of __error__ left out", compared, selectors, lineFilterPipelines, levelFilterPipelines, lokiRejects, ambiguous)
 	if compared < 1000 {
 		t.Fatalf("only %d queries compared", compared)
 	}

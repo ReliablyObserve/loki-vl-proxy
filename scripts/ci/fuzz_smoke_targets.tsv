@@ -114,6 +114,8 @@ smoke	internal/queryplan	FuzzKeyDecode	12s	-	logical key decodes to the fields o
 smoke	internal/queryplan	FuzzKeyDistinctMutations	12s	-	semantic mutations change the logical key, spelling ones keep it
 smoke	internal/queryplan/lower	FuzzPatternLineFilterLowering	12s	-	pattern line filters lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzLabelFilterLowering	12s	-	label filters lower to the query the string translator writes
+smoke	internal/queryplan/lower	FuzzDetectedLevelLowering	12s	-	label filters on detected_level lower to the query the string translator writes
+smoke	internal/queryplan/lower	FuzzDetectedLevelNodes	12s	-	the typed detected_level builders print the text builders' text
 smoke	internal/queryplan/lower	FuzzRangeAggLowering	12s	-	range aggregations lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzVectorAggLowering	12s	-	vector aggregations lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzBinOpLowering	12s	-	binary operations and label_replace calls lower to the operators and text the string translator writes (an operand with a without clause: each operand to its own translation, the proxy's binary route)

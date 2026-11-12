@@ -16,6 +16,13 @@ func TestFilterNodeString_Extended(t *testing.T) {
 		want string
 	}{
 		{"anycase_phrase", logsql.AnyCasePhrase{Value: "Error"}, `i("Error")`},
+		{"anycase_word", logsql.AnyCaseWord{Value: "Error"}, `i(Error)`},
+		{"anycase_word_quoted", logsql.AnyCaseWord{Value: "a b"}, `i("a b")`},
+		{"anycase_word_keyword", logsql.AnyCaseWord{Value: "or"}, `i("or")`},
+		{"bang_group", logsql.Bang{Expr: logsql.Group{Expr: logsql.FieldFilter{Field: "a", Op: logsql.FieldOpAny}}}, `!(a:*)`},
+		{"bang_and", logsql.Bang{Expr: logsql.AllOf{logsql.Word{Value: "a"}, logsql.Word{Value: "b"}}}, `!(a b)`},
+		{"backquoted_regexp", logsql.FieldFilter{Field: "a", Op: logsql.FieldOpRegexp, Value: `^x\d$`, Backquoted: true}, "a:~`^x\\d$`"},
+		{"backquoted_regexp_with_backquote", logsql.FieldFilter{Field: "a", Op: logsql.FieldOpRegexp, Value: "a`b", Backquoted: true}, "a:~\"a`b\""},
 		{"anycase_prefix", logsql.AnyCasePrefix{Value: "err"}, `i(err*)`},
 		{"exact_prefix", logsql.ExactPrefix{Value: "200"}, `="200"*`},
 		{"day_range_no_offset", logsql.DayRange{Bracket: "[08:00, 18:00]"}, "_time:day_range[08:00, 18:00]"},
