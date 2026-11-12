@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads the rule yet. Route parity: 510 more of 25,070 runs are decided (6,226 native, 0 mismatches, the
   routes and statuses unchanged); the other 620 runs that carry an offset are now named by what else keeps
   them delegated (a parser, an unwrap pipeline).
+
+## [2.190.0] - 2026-11-12
+
+### Changed
+
 - The query plan now writes `=`, `==` and `!=` against a number, a duration or a
   bytes size after a `| json` or `| logfmt` parser (`| status == 200`,
   `| latency != 5s`, `| size = 1KB`) as Loki compares them, by value: `200`,
