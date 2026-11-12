@@ -10,6 +10,10 @@ from the names `go test -list` prints:
     their measured seconds; an optional third column names the package, internal/proxy
     when it is left out) are placed longest first on the shard with the least
     work so far;
+  * with --joint (the split packages together), the weighted tests of all of them
+    are placed in one longest-first pass, so a shard never receives the slowest test
+    of every package at once; the placement is a function of the weights file alone
+    and the same in every invocation;
   * every other test, and any test added later, goes to the shard its name hashes
     to. A new test therefore always lands in exactly one shard without the weights
     file being edited, and a shard keeps the same tests when unrelated tests are
@@ -67,25 +71,48 @@ def parse_weights(text, package=DEFAULT_PACKAGE):
     return weights
 
 
-def assign(names, shards, weights):
-    """test -> shard (0-based). Total, deterministic and independent of the order of names."""
+def place_heavy(weights_by_package, shards):
+    """{(package, test): shard} (0-based) for every weighted test of the packages, longest first on the least loaded
+    shard. Reads the weights only (a row naming a test that is gone still takes its place: harmless), so every
+    invocation, and every package, sees the same placement."""
+    if shards < 1:
+        raise SystemExit("test_shards: --shards must be at least 1")
+    loads = [0.0] * shards
+    rows = sorted(((seconds, package, name) for package, weights in weights_by_package.items()
+                   for name, seconds in weights.items() if seconds >= HEAVY_SECONDS),
+                  key=lambda r: (-r[0], r[1], r[2]))
+    placed = {}
+    for seconds, package, name in rows:
+        shard = min(range(shards), key=lambda i: (loads[i], i))
+        loads[shard] += seconds
+        placed[(package, name)] = shard
+    return placed
+
+
+def assign(names, shards, weights, package=DEFAULT_PACKAGE, joint=None):
+    """test -> shard (0-based). Total, deterministic and independent of the order of names.
+
+    joint, when given, is the {package: weights} of every split package: the heavy tests are placed with theirs
+    (place_heavy) instead of on their own."""
     if shards < 1:
         raise SystemExit("test_shards: --shards must be at least 1")
     placed = {}
-    loads = [0.0] * shards
-    heavy = sorted((n for n in names if weights.get(n, 0.0) >= HEAVY_SECONDS), key=lambda n: (-weights[n], n))
-    for name in heavy:
-        shard = min(range(shards), key=lambda i: (loads[i], i))
-        loads[shard] += weights[name]
-        placed[name] = shard
+    if joint is not None:
+        together = place_heavy({**joint, package: weights}, shards)
+        for name in names:
+            if (package, name) in together:
+                placed[name] = together[(package, name)]
+    else:
+        listed = {n: weights[n] for n in names if n in weights}
+        placed = {name: shard for (_, name), shard in place_heavy({package: listed}, shards).items()}
     for name in names:
         if name not in placed:
             placed[name] = zlib.crc32((SALT + name).encode()) % shards
     return placed
 
 
-def partition(names, shards, weights):
-    placed = assign(names, shards, weights)
+def partition(names, shards, weights, package=DEFAULT_PACKAGE, joint=None):
+    placed = assign(names, shards, weights, package, joint)
     return [[n for n in names if placed[n] == i] for i in range(shards)]
 
 
@@ -117,8 +144,10 @@ def pattern(part):
 
 
 def weights_from_events(lines, package_suffix):
-    """Seconds of each top-level test of the package, from `go test -json` events."""
-    seconds = {}
+    """Seconds of each top-level test of the package, from `go test -json` events. A test that appears more than
+    once (the events of several runs, concatenated) gets the mean of its runs: one run's timing varies by up to
+    2x with the runner."""
+    samples = {}
     for line in lines:
         try:
             event = json.loads(line)
@@ -127,8 +156,8 @@ def weights_from_events(lines, package_suffix):
         test = event.get("Test")
         if (event.get("Action") in OUTCOMES and test and "/" not in test
                 and event.get("Package", "").endswith(package_suffix)):
-            seconds[test] = float(event.get("Elapsed", 0.0))
-    return seconds
+            samples.setdefault(test, []).append(float(event.get("Elapsed", 0.0)))
+    return {test: sum(values) / len(values) for test, values in samples.items()}
 
 
 def render_weights(seconds, minimum=HEAVY_SECONDS, package=DEFAULT_PACKAGE):
@@ -181,6 +210,8 @@ def main(argv=None):
     parser.add_argument("--results", help="go test -json events (weights, verify)")
     parser.add_argument("--package", action="append", help=f"directory of the package in the module (default {DEFAULT_PACKAGE}); "
                         "repeat for weights; selects the weight rows of assign, regex and check")
+    parser.add_argument("--joint", action="append", help="directory of a split package whose heavy tests are placed together "
+                        "with this one's (repeat; name every split package)")
     parser.add_argument("--assigned", nargs="*", default=[], help="files of assigned test names (verify)")
     args = parser.parse_args(argv)
     packages = [p.strip("/") for p in args.package or [DEFAULT_PACKAGE]]
@@ -208,7 +239,11 @@ def main(argv=None):
     names = parse_list(Path(args.list).read_text() if args.list else sys.stdin.read())
     weights_path = Path(args.weights_file)
     weights = parse_weights(weights_path.read_text(), package) if weights_path.exists() else {}
-    parts = partition(names, args.shards, weights)
+    joint = None
+    if args.joint:
+        joint = {p.strip("/"): parse_weights(weights_path.read_text(), p.strip("/")) if weights_path.exists() else {}
+                 for p in args.joint if p.strip("/") != package}
+    parts = partition(names, args.shards, weights, package, joint)
     if args.command == "assign":
         for index, part in enumerate(parts, 1):
             for name in part:
@@ -216,7 +251,8 @@ def main(argv=None):
     elif args.command == "regex":
         if not args.shard or not 1 <= args.shard <= args.shards:
             parser.error("regex needs --shard in 1..--shards")
-        print(pattern(parts[args.shard - 1]))
+        # A shard can hold none of a small package's tests: an empty pattern tells the runner to skip that package.
+        print(pattern(parts[args.shard - 1]) if parts[args.shard - 1] else "")
     else:
         problems = check(names, parts)
         for problem in problems:

@@ -720,7 +720,10 @@ decisions:
       - internal/queryplan/lower/parser.go
     tests:
       - TestPlanShadow
-      - TestMetricStagesGridShadow
+      - TestMetricStagesGridShadowPart1
+      - TestMetricStagesGridShadowPart2
+      - TestMetricStagesGridShadowPart3
+      - TestMetricStagesGridShadowPart4
       - TestPlanLowersMetricStages
       - TestPlanDelegatesMetricStages
       - TestPlanRegexpParserResolvesNoLabels

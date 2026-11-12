@@ -9,12 +9,16 @@ permissions:
   contents: read
 
 # The report runs as parallel jobs that meet in `report` (the required check):
-#   plan  - what this pull request needs measured (perf smoke, query corpus);
-#   head  - the PR's tests, coverage, compatibility scores and query corpus;
-#   base  - the base commit's tests, coverage and compatibility scores;
-#   perf  - the benchmarks and the load test of both trees, on one runner, because
-#           throughput and CPU timings are only comparable on the same machine;
-#   report - merges the snapshots, renders the report, enforces the gate and comments.
+#   plan           - what this pull request needs measured (perf smoke, query corpus) and which test jobs run;
+#   snapshot-tests - the unit tests with coverage of both trees, sharded like the CI test shards (the
+#                    base tree's only when its saved count is missing);
+#   snapshot-compat - the compatibility scores of both trees, one compose stack each;
+#   head           - the PR's snapshot: merges its test shards, adds the compatibility scores and builds the
+#                    query corpus and runs the oracles over it;
+#   base           - the base commit's snapshot: its saved test count or merged test shards, and its scores;
+#   perf           - the benchmarks and the load test of both trees, on one runner, because
+#                    throughput and CPU timings are only comparable on the same machine;
+#   report         - merges the snapshots, renders the report, enforces the gate and comments.
 jobs:
   scope:
     name: scope
@@ -32,6 +36,10 @@ jobs:
     outputs:
       run_perf: ${{ steps.perf-scope.outputs.run_perf }}
       query_corpus: ${{ steps.perf-scope.outputs.query_corpus }}
+      tests_matrix: ${{ steps.tests-plan.outputs.matrix }}
+      base_sharded: ${{ steps.tests-plan.outputs.base_sharded }}
+      test_shards: ${{ steps.tests-plan.outputs.shards }}
+      test_shard_count: ${{ steps.tests-plan.outputs.count }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -54,9 +62,9 @@ jobs:
           fi
           echo "run_perf=${RUN_PERF}" >> "$GITHUB_OUTPUT"
           # A PR that changes query code (the query plan included) or the tests and specs that send
-          # queries gets the query corpus built from its uncached test run, and the oracles run.
+          # queries (or the collection of the corpus itself) gets the query corpus built from its uncached test run, and the oracles run.
           QUERY_CORPUS=false
-          if echo "$FILES" | grep -Eq '^(internal/(logql|logsql|translator|translate|proxy|querycorpus|queryplan|rulesmigrate)/|test/|conformance/registry/|bench/(ab|visual)/)'; then
+          if echo "$FILES" | grep -Eq '^(internal/(logql|logsql|translator|translate|proxy|querycorpus|queryplan|rulesmigrate)/|test/|conformance/registry/|bench/(ab|visual)/|scripts/ci/(collect_quality_metrics\.sh|go_test_unit\.sh|merge_unit_shards\.py|merge_coverprofile\.py|test_shards\.py|test-shard-weights\.tsv)$|\.github/workflows/pr-quality-report\.yaml$)'; then
             QUERY_CORPUS=true
           fi
           echo "query_corpus=${QUERY_CORPUS}" >> "$GITHUB_OUTPUT"
@@ -74,12 +82,221 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-  head:
+      # The base commit's test count and coverage depend only on that commit, so a later run of this pull request
+      # against the same base reads them back from the cache (the base job). Only when they are not there is the
+      # base tree's test suite run, in shards beside the PR's.
+      - name: Look for the base commit's saved test count and coverage
+        id: base-tests
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
+        with:
+          path: /tmp/pr-base-tests.json
+          key: pr-quality-base-tests-${{ hashFiles('scripts/ci/collect_quality_metrics.sh', 'scripts/ci/pr_evidence.py') }}-${{ github.event.pull_request.base.sha }}
+          lookup-only: true
+
+      # Shards 1-N each run a share of the top-level tests of internal/proxy and internal/querycorpus (the packages that
+      # are nearly all of the time, split by scripts/ci/test_shards.py as in the CI test shards); `rest` runs every
+      # other package. The snapshot jobs read the shard names from this job's output.
+      - name: Plan the test shards
+        id: tests-plan
+        env:
+          BASE_TESTS_CACHED: ${{ steps.base-tests.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          count=6
+          trees='["head","base"]'
+          base_sharded=true
+          if [ "$BASE_TESTS_CACHED" = "true" ]; then
+            trees='["head"]'
+            base_sharded=false
+          fi
+          shards="rest $(seq -s ' ' 1 "$count")"
+          {
+            echo "count=${count}"
+            echo "shards=${shards}"
+            echo "base_sharded=${base_sharded}"
+            echo "matrix=$(jq -nc --argjson trees "$trees" --arg shards "$shards" \
+              '{include: [$trees[] as $t | ($shards | split(" "))[] as $s | {tree: $t, shard: $s}]}')"
+          } >> "$GITHUB_OUTPUT"
+          echo "- test shards: ${count} + rest; trees: ${trees}" >> "$GITHUB_STEP_SUMMARY"
+
+  # The unit tests with coverage of a tree, in parallel jobs. Each job runs a share of the top-level tests of
+  # internal/proxy and internal/querycorpus (or, for `rest`, every other package) through scripts/ci/go_test_unit.sh,
+  # the runner of the CI test shards, without -race and with -count=1. The base tree's jobs run only when its saved
+  # test count is missing (plan). A job does not fail when its tests do: it records the exit status of its `go test`
+  # and the head and base jobs report the failure as the single collection did.
+  snapshot-tests:
+    name: snapshot-tests (${{ matrix.tree }} ${{ matrix.shard }})
     needs: [scope, plan]
     if: ${{ !cancelled() && needs.plan.result == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.tests_matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          cache: true  # zizmor: ignore[cache-poisoning] test run only, nothing from this job is published
+
+      - name: Check out the base commit
+        if: matrix.tree == 'base'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+          git worktree add /tmp/loki-vl-proxy-base "$BASE_SHA"
+
+      # The query corpus (the PR's tree only) is recorded by the same run: the corpuscapture build records every query
+      # a test sends in, to one file per test binary, which the head job joins and builds the corpus from.
+      - name: Run this shard's tests
+        id: tests
+        shell: bash
+        env:
+          TREE: ${{ matrix.tree }}
+          UNIT_SHARD: ${{ matrix.shard }}
+          UNIT_SHARDS: ${{ needs.plan.outputs.test_shard_count }}
+          UNIT_RACE: "0"
+          UNIT_COUNT1: "1"
+          UNIT_TIMEOUT: 18m
+          UNIT_TAGS: ${{ matrix.tree == 'head' && needs.plan.outputs.query_corpus == 'true' && 'corpuscapture' || '' }}
+          # absolute: the runner changes into the tree under test
+          UNIT_SHARD_DIR: ${{ github.workspace }}/shard-out
+          COVERPROFILE: ${{ github.workspace }}/shard-out/coverage.out
+          RECORD_CORPUS: ${{ matrix.tree == 'head' && needs.plan.outputs.query_corpus == 'true' && 'true' || 'false' }}
+        run: |
+          set -uo pipefail
+          mkdir -p shard-out
+          if [ "$TREE" = base ]; then export UNIT_ROOT=/tmp/loki-vl-proxy-base; fi
+          if [ "$RECORD_CORPUS" = true ]; then
+            mkdir -p shard-out/recordings
+            export LVP_QUERY_CORPUS_DIR="$PWD/shard-out/recordings"
+          fi
+          status=0
+          scripts/ci/go_test_unit.sh > events-full.json || status=$?
+          echo "$status" > shard-out/test-exit-code
+          # The outcome of every test (and every failed package), without the output.
+          jq -cR 'fromjson? | select(.Action == "fail" or (.Test != null and (.Action == "pass" or .Action == "skip")))
+                  | {Action, Package, Test, Elapsed}' events-full.json > shard-out/unit-results.json
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::the tests of ${TREE} shard ${UNIT_SHARD} failed (exit ${status}); the report shows the failure"
+            echo "::group::failing tests"
+            jq -rR 'fromjson? | select(.Action == "fail") | "\(.Package)\t\(.Test // "")"' events-full.json | sort -u | tee failed.tsv
+            echo "::endgroup::"
+            jq -Rn '[inputs] | map({(.): true}) | add // {}' failed.tsv > failed.json
+            jq -rR --slurpfile failed failed.json \
+              'fromjson? | select(.Action == "output") | select($failed[0][.Package + "\t" + (.Test // "")]) | .Output | rtrimstr("\n")' \
+              events-full.json | head -400
+          fi
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload this shard's results
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: pr-quality-tests-${{ matrix.tree }}-${{ matrix.shard }}
+          path: shard-out/
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload failed test diagnostics
+        if: steps.tests.outputs.status != '0'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: pr-quality-diagnostics-tests-${{ matrix.tree }}-${{ matrix.shard }}
+          path: events-full.json
+          if-no-files-found: ignore
+
+      - name: Clean up base worktree
+        if: always() && matrix.tree == 'base'
+        run: git worktree remove --force /tmp/loki-vl-proxy-base || true
+
+  # The compatibility scores of a tree: each against its own compose stack (the proxy image is built from the PR's
+  # Dockerfile for both, as before).
+  snapshot-compat:
+    name: snapshot-compat (${{ matrix.tree }})
+    needs: [scope, plan]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        tree: [head, base]
     env:
       PROXY_IMAGE: loki-vl-proxy:pr-quality
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
+
+      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.PROXY_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=pr-quality-proxy
+          cache-to: type=gha,mode=max,scope=pr-quality-proxy
+
+      - name: Check out the base commit
+        if: matrix.tree == 'base'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+          git worktree add /tmp/loki-vl-proxy-base "$BASE_SHA"
+
+      - name: Measure the compatibility scores
+        env:
+          WORKSPACE: ${{ github.workspace }}
+          TREE: ${{ matrix.tree }}
+          PROXY_IMAGE: ${{ env.PROXY_IMAGE }}
+          QUALITY_COMPAT_ONLY: "1"
+          QUALITY_DIAGNOSTICS_DIR: /tmp/pr-quality-diagnostics/compat-${{ matrix.tree }}
+        run: |
+          set -euo pipefail
+          root="$WORKSPACE"
+          if [ "$TREE" = base ]; then root=/tmp/loki-vl-proxy-base; fi
+          (cd "$root" && bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" "/tmp/pr-${TREE}-compat.json")
+
+      - name: Upload the compatibility scores
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: pr-quality-compat-${{ matrix.tree }}
+          if-no-files-found: error
+          path: /tmp/pr-${{ matrix.tree }}-compat.json
+
+      - name: Upload quality diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: pr-quality-diagnostics-compat-${{ matrix.tree }}
+          if-no-files-found: ignore
+          path: /tmp/pr-quality-diagnostics/
+
+      - name: Clean up base worktree
+        if: always() && matrix.tree == 'base'
+        run: git worktree remove --force /tmp/loki-vl-proxy-base || true
+
+  head:
+    needs: [scope, plan, snapshot-tests, snapshot-compat]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -97,18 +314,6 @@ jobs:
             test/oracle/vl/go.v*.sum
             test/oracle/loki/go.sum
 
-      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
-
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
-        with:
-          context: .
-          file: ./Dockerfile
-          tags: ${{ env.PROXY_IMAGE }}
-          load: true
-          cache-from: type=gha,scope=pr-quality-proxy
-          cache-to: type=gha,mode=max,scope=pr-quality-proxy
-
-
       # The corpus main's push run built for the base commit (query-corpus.yaml): the PR's corpus is compared
       # with it. A miss (main has not built it yet) compares and gates nothing; the counts are still shown.
       - name: Restore the base commit's query corpus
@@ -118,12 +323,31 @@ jobs:
           path: /tmp/query-corpus
           key: query-corpus-v1-${{ github.event.pull_request.base.sha }}
 
+      # A shard that left nothing (its job failed) is a collection that failed: the snapshot job below reads what is
+      # there, and the report fails with the snapshot-tests job.
+      - name: Download the PR's test shards
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: pr-quality-tests-head-*
+          path: /tmp/head-tests
+
+      - name: Download the PR's compatibility scores
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: pr-quality-compat-head
+          path: /tmp/head-compat
+
       - name: Collect the PR quality snapshot
         env:
           WORKSPACE: ${{ github.workspace }}
-          PROXY_IMAGE: ${{ env.PROXY_IMAGE }}
           # The perf job measures the benchmarks and the load test of both trees together.
           QUALITY_SKIP_PERF: "1"
+          QUALITY_TESTS_FROM: /tmp/head-tests
+          QUALITY_TESTS_PREFIX: pr-quality-tests-head-
+          QUALITY_TESTS_SHARDS: ${{ needs.plan.outputs.test_shards }}
+          QUALITY_COMPAT_FROM: /tmp/head-compat/pr-head-compat.json
           QUALITY_QUERY_CORPUS_OUT: ${{ needs.plan.outputs.query_corpus == 'true' && '/tmp/pr-head-query-corpus.jsonl.gz' || '' }}
           QUALITY_QUERY_CORPUS_BASE: /tmp/query-corpus/query-corpus.jsonl.gz
           QUALITY_DIAGNOSTICS_DIR: /tmp/pr-quality-diagnostics/head
@@ -160,11 +384,9 @@ jobs:
           path: /tmp/pr-quality-diagnostics/
 
   base:
-    needs: [scope, plan]
+    needs: [scope, plan, snapshot-tests, snapshot-compat]
     if: ${{ !cancelled() && needs.plan.result == 'success' }}
     runs-on: ubuntu-latest
-    env:
-      PROXY_IMAGE: loki-vl-proxy:pr-quality
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -182,18 +404,6 @@ jobs:
             test/oracle/vl/go.v*.sum
             test/oracle/loki/go.sum
 
-      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
-
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
-        with:
-          context: .
-          file: ./Dockerfile
-          tags: ${{ env.PROXY_IMAGE }}
-          load: true
-          cache-from: type=gha,scope=pr-quality-proxy
-          cache-to: type=gha,mode=max,scope=pr-quality-proxy
-
-
       # The base commit's test count and coverage depend only on that commit, so
       # a later run of this pull request against the same base reads them back
       # instead of running every test again. (Timings are not cached: see the perf job.)
@@ -203,6 +413,22 @@ jobs:
         with:
           path: /tmp/pr-base-tests.json
           key: pr-quality-base-tests-${{ hashFiles('scripts/ci/collect_quality_metrics.sh', 'scripts/ci/pr_evidence.py') }}-${{ github.event.pull_request.base.sha }}
+
+      # Without a saved count the snapshot-tests jobs ran the base tree's tests in shards (plan).
+      - name: Download the base tree's test shards
+        if: needs.plan.outputs.base_sharded == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: pr-quality-tests-base-*
+          path: /tmp/base-tests
+
+      - name: Download the base tree's compatibility scores
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: pr-quality-compat-base
+          path: /tmp/base-compat
 
       - name: Check out the base commit
         env:
@@ -215,8 +441,11 @@ jobs:
       - name: Collect the base quality snapshot
         env:
           WORKSPACE: ${{ github.workspace }}
-          PROXY_IMAGE: ${{ env.PROXY_IMAGE }}
           BASE_TESTS_CACHE_HIT: ${{ steps.base-tests.outputs.cache-hit }}
+          QUALITY_TESTS_FROM: ${{ needs.plan.outputs.base_sharded == 'true' && '/tmp/base-tests' || '' }}
+          QUALITY_TESTS_PREFIX: pr-quality-tests-base-
+          QUALITY_TESTS_SHARDS: ${{ needs.plan.outputs.test_shards }}
+          QUALITY_COMPAT_FROM: /tmp/base-compat/pr-base-compat.json
         run: |
           set -euo pipefail
           (
@@ -317,7 +546,7 @@ jobs:
         run: git worktree remove --force /tmp/loki-vl-proxy-base || true
 
   report:
-    needs: [scope, plan, head, base, perf]
+    needs: [scope, plan, snapshot-tests, snapshot-compat, head, base, perf]
     if: ${{ !cancelled() && (needs.scope.outputs.evidence == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',pr-quality-report/report,')) }}
     runs-on: ubuntu-latest
     permissions:
@@ -335,12 +564,14 @@ jobs:
       - name: Require the snapshot jobs
         env:
           PLAN_RESULT: ${{ needs.plan.result }}
+          TESTS_RESULT: ${{ needs.snapshot-tests.result }}
+          COMPAT_RESULT: ${{ needs.snapshot-compat.result }}
           HEAD_RESULT: ${{ needs.head.result }}
           BASE_RESULT: ${{ needs.base.result }}
           PERF_RESULT: ${{ needs.perf.result }}
         run: |
           set -euo pipefail
-          for r in "plan=$PLAN_RESULT" "head=$HEAD_RESULT" "base=$BASE_RESULT"; do
+          for r in "plan=$PLAN_RESULT" "snapshot-tests=$TESTS_RESULT" "snapshot-compat=$COMPAT_RESULT" "head=$HEAD_RESULT" "base=$BASE_RESULT"; do
             [ "${r#*=}" = "success" ] || { echo "::error::job ${r%%=*} ended ${r#*=}"; exit 1; }
           done
           case "$PERF_RESULT" in success|skipped) ;; *) echo "::error::job perf ended $PERF_RESULT"; exit 1 ;; esac
