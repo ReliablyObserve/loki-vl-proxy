@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.183.0] - 2026-11-12
+
 ### Changed
 
 - The query plan now decides how `absent_over_time` and `sum_over_time`,
