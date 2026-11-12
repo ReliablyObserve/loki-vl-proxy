@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.186.0] - 2026-11-12
+
 ### Fixed
 
 - The `shards` of the `data.stats` of a repeated log query follow Loki's: a repeat answered from the
