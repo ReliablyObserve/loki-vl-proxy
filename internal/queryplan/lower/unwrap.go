@@ -272,8 +272,10 @@ func (q *unwrapQuery) noteFirst(by []string, empty bool) {
 func (q *unwrapQuery) stats(by []string, empty bool, fn logsql.StatsFunc, alias string) {
 	q.noteFirst(by, empty)
 	var keyBuf [4]logsql.GroupKey
-	keys := keyBuf[:len(by):len(keyBuf)]
-	if len(by) >= len(keyBuf) {
+	var keys []logsql.GroupKey
+	if len(by) < len(keyBuf) {
+		keys = keyBuf[:len(by):len(keyBuf)]
+	} else {
 		keys = make([]logsql.GroupKey, len(by), len(by)+1)
 	}
 	for i, f := range by {

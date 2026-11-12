@@ -30,6 +30,10 @@ func TestUnwrapVectorReturnsTypedStats(t *testing.T) {
 		// the others read a value per series: the stream and its level (and the derived level) next to the clause
 		{q: `count by (pod) (min_over_time({app="a"} | unwrap n [5m]))`, grouped: true, chain: true},
 		{q: `max by (pod, zone) (max_over_time({app="a"} | unwrap n [5m]))`, grouped: true, chain: true},
+		// more grouping keys than the stats pipe's inline buffer holds (FuzzRoute found the slice taken before the
+		// length check)
+		{q: `count by (a, b, c, d, e) (min_over_time({app="a"} | unwrap n [5m]))`, grouped: true, chain: true},
+		{q: `max by (a, b, c, d, e, f) (max_over_time({app="a"} | unwrap n [5m]))`, grouped: true, chain: true},
 		// a without clause keeps a row per stream for the proxy to fold
 		{q: `max without (pod) (max_over_time({app="a"} | unwrap n [5m]))`, grouped: true},
 		{q: `sum without (pod) (sum_over_time({app="a"} | unwrap n [5m]))`, grouped: true},
