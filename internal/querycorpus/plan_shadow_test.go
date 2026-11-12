@@ -144,6 +144,11 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			if !ok && translatorReadsStageMarker(q) {
 				caseID, ok = "semantics/translator-reads-marker-bytes-in-quoted-value", true
 			}
+			if !ok && emptyWithoutDiffers(q, plan, prof) {
+				// A `without ()` operand: Loki keeps every series of it, the translator writes it ungrouped, and the
+				// route's reference is that text (TestEmptyWithoutOperandsKeepEverySeries holds the lowering).
+				caseID, ok = knownEmptyWithoutOperand, true
+			}
 			if !ok && lower.ReadsReservedField(plan, prof.lowerProfile()) {
 				// A label called _time, _stream, _stream_id or _msg: the plan filters the stream tag, the
 				// translator a field VictoriaLogs rejects or reads as its own filter.

@@ -1,0 +1,47 @@
+id: semantics/stdvar-grouped-pooled-variance
+title: sum by over stdvar_over_time is the variance of the group's pooled samples, not the sum of the series' variances (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Residual of semantics/stdvar-grouped-binary-marker. After a `| json`, every
+  line is a series of its own in Loki when the line holds a unique value, so
+  `sum by (app) (stdvar_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]))`
+  is the sum of one-sample variances: 0 here (Loki 3.7.9, VictoriaLogs v1.53.0,
+  generator data). The proxy answers the standard deviation of the pooled samples
+  of the app squared (249373.46 at the same instant), because VictoriaLogs has no
+  variance function and the translator groups the stats by the outer labels.
+
+  The form with its own grouping, `stdvar_over_time(...) by (app)`, is not affected:
+  Loki pools the samples by that grouping and the proxy's value is the same to every
+  printed digit, on a range and an instant query. Only the outer aggregation over
+  the function differs.
+
+  Fix to make: the plan lowers the variance per series (population variance
+  s2/n-(s/n)^2 over partials of the sum, the sum of squares and the count) and the
+  aggregation then sums the series, with the series identity of the other
+  per-series functions.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (app) (stdvar_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]))'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [values]
+  expect: |
+    Loki's values.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/queryplan/lower unwrap.go (varianceVector, the per-series identity of a function taken per series); the translator text for stdvar_over_time (translator.go, frozen)'
+  loki: 'stdvar_over_time is evaluated per series (range_vector.go); the vector aggregation then folds the series'
+  proxy: 'the stddev of the group''s pooled samples, squared'
+  planned_test: 'a row of TestCompat_StdvarOverTimeGroupedAnswers200 (test/e2e-compat) comparing values once the plan serves the variance'
+  clusters: []

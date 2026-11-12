@@ -184,11 +184,7 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 	filters := make([]logsql.FilterExpr, len(keys))
 	for i, key := range keys {
 		field := translate.SanitizeFieldIdentifier(key)
-		if strings.ContainsAny(field, ".-") {
-			field = `"` + field + `"`
-		} else {
-			field = logsql.QuoteKeywordField(field) // a key called not, in or the like
-		}
+		field = logsql.QuoteFieldName(field) // a dot or a hyphen, a key called not, in or the like, an exotic name
 		filters[i] = parsedFieldLeaf(field, e, lb.caps)
 	}
 	// A numeric equality drops an entry without the label under both operators, as a comparison does.

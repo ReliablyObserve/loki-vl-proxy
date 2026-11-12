@@ -1,0 +1,83 @@
+id: semantics/translator-reads-vector-operand-as-text
+title: The string translator's text for a binary operation with a vector(n) operand searches for the call as a phrase or drops it (open; the proxy's binary route answers the operand from a constant, and so does the query plan)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki evaluates `vector(n)` as one series without labels with the value n at
+  every step, and a binary operation takes part in vector matching with it:
+  `sum by (app) (rate(..[5m])) + on() vector(0)` adds 0 to the single series the
+  empty `on()` leaves, `rate(..[5m]) > vector(1)` keeps the series above 1
+  (pkg/logql/evaluator.go evalVector, newBinOpStepEvaluator; the Loki oracle
+  `facts` reads the operand as a vector expression, not a number).
+
+  The string translator does not read vector(n) in a binary operation. It splits
+  the text at the operator and sends each side to its metric translation, which
+  has no form for the call: `vector(1) + vector(2)` becomes the phrase search
+  `"vector(1) + vector(2)"`, and `sum by () (..) + on() vector(0)` is only the
+  count of the left side, the operator and the operand dropped
+  (`app:="a" | stats count()`).
+
+  The proxy does not send that text. The query_range and query handlers route a
+  binary operation by its LogQL (binaryExprForRequest, proxyBinaryLogQL), and
+  evaluateBinaryLogQLOperand answers a vector(n) operand from the constant
+  without translating it or asking VictoriaLogs; it then joins the operands with
+  the matching modifiers. The answer users see is Loki's today.
+
+  The query plan lowers the operand to physical.VectorOp (a vector, so it takes
+  part in matching, unlike the number a ScalarOp is) and the shadows hold the
+  root to the binary route (proxy.BinaryOperandsPhysical, which describes the
+  handler: no translation for a vector(n)), not to the translator's text, which
+  internal/querycorpus checkBinaryRoute rejects as a lowering. A spelling the
+  route does not read as a vector(n) (`vector (1)`) stays with the translator
+  (semantics/vector-call-blank-before-parenthesis-as-query). A binary
+  operation of constants only (`2 * vector(3)`, `vector(1) + vector(2)`) stays
+  with the translator by name (BinOp constant operands): an instant query of
+  constants is folded by the proxy before any binary route
+  (evaluateConstantInstantQuery), and the route's answer for a range query is a
+  constant, which costs less than the plan. The set operators and
+  bool stay delegated by name with every other operand.
+corpus:
+  size: 12
+  dimensions:
+    shapes:
+      - query: 'rate({env="production"}[5m]) + vector(1)'
+      - query: 'vector(2) * on(app) sum by (app) (count_over_time({env="production"}[5m]))'
+      - query: 'sum by (app) (rate({env="production"}[5m])) > ignoring(pod) vector(0.5)'
+      - query: 'rate({env="production"}[5m]) / on(app) group_left(pod) vector(2)'
+      - query: 'bytes_rate({env="production"}[5m] offset 1h) - vector(1)'
+      - query: 'vector(1) <= on() sum(count_over_time({env="production"}[5m]))'
+      - query: 'vector(0.25) % sum(rate({env="production"}[5m]))'
+      - query: '2 * vector(3)'
+      - query: 'sum without (pod) (rate({env="production"}[5m])) + vector(1)'
+      - query: 'rate({env="production"}[5m]) * vector(1e3)'
+      - query: 'rate({env="production"}[5m]) and vector(1)'
+      - query: 'rate({env="production"}[5m]) > bool vector(1)'
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (app) (rate({env="production"}[5m])) + on() vector(0)'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series labels, values]
+  expect: |
+    Loki's series and values: the rate summed per app with 0 added.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator (the whole-query text of a binary operation with a vector(n) operand, which the proxy does not send); fixed when the string translator is removed'
+  loki: 'pkg/logql/evaluator.go evalVector and newBinOpStepEvaluator: vector(n) is a one-series vector that takes part in matching'
+  proxy: 'the translator''s text searches for the call as a phrase or drops the operand; the binary route answers the operand from a constant, as Loki does'
+  planned_test: 'TestPlanShadow and TestPlanRouteParity (internal/querycorpus, internal/proxy) hold the plan to proxy.BinaryOperandsPhysical, which TestBinaryOperandsPhysicalReadsVectorLiteralLikeTheHandler pins to evaluateBinaryLogQLOperand; an e2e row against Loki when the plan serves binary operations'
+  visual: none
+  visual_reason: 'the answer users see is Loki''s; the difference is in text the proxy does not send'
+  clusters: []

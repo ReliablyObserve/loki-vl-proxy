@@ -2,6 +2,7 @@ package lower
 
 import (
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -40,6 +41,59 @@ import (
 
 // reservedAfterStageConstruct names a label filter on a reserved field name after a stage that can change labels.
 const reservedAfterStageConstruct = "LogSelect label filter reserved field after a stage"
+
+// reservedStageConstruct names a stage that reads or writes a label called like a field VictoriaLogs keeps for itself
+// (logsql.ReservedFieldName): an unwrapped label, the key a json expression reads or the label it writes, and a
+// label_format source or target. After a parser the label may be a key the parser wrote (VictoriaLogs' unpack_json
+// and unpack_logfmt write a key called _time over the entry's own _time), and without one it is the stream's tag, so
+// no field of the entry holds the value Loki reads; and a filter on the field is VictoriaLogs' own time, stream or
+// stream id filter even quoted (`filter "_time":~...` is rejected, `_time:="1"` is a duration it cannot parse). The
+// string translator writes that field filter, which VictoriaLogs rejects, and the lowering leaves the stage to it
+// until the stages read the tag as the label filters do (semantics/translator-writes-reserved-field-names).
+const reservedStageConstruct = "LogSelect stage names a reserved field"
+
+// namesReservedField reports a name called after a field VictoriaLogs keeps for itself, in lower case.
+func namesReservedField(names ...string) bool {
+	for _, n := range names {
+		if logsql.ReservedFieldName(n) {
+			return true
+		}
+	}
+	return false
+}
+
+// namesReservedFieldFor is namesReservedField for a label that the profile's label function may map to such a name.
+func namesReservedFieldFor(name string, labelFn func(string) string) bool {
+	if logsql.ReservedFieldName(name) {
+		return true
+	}
+	if labelFn == nil {
+		return false
+	}
+	// What SanitizeFieldIdentifier leaves of the translated name (quotes and backquotes dropped, blanks and dots at its
+	// ends trimmed), without its allocations.
+	return logsql.ReservedFieldName(strings.Trim(labelFn(name), " \t\n\r.\"`"))
+}
+
+// stageNamesReservedField reports a json stage whose expressions read, or whose labels are, a reserved field name,
+// and a label_format stage that renames from, or writes to, one.
+func stageNamesReservedField(st queryplan.Stage) bool {
+	switch st := st.(type) {
+	case *queryplan.Parse:
+		for _, f := range st.Fields {
+			if namesReservedField(f.Name, f.Expression) {
+				return true
+			}
+		}
+	case *queryplan.LabelFormat:
+		for _, f := range st.Formats {
+			if namesReservedField(f.Name) || f.Rename && namesReservedField(f.Value) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // reservedScratch prefixes the scratch field a comparison on a reserved field reads its tag's value into.
 const reservedScratch = "__lxrf"

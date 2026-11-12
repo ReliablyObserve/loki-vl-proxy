@@ -3,7 +3,6 @@ package lower
 import (
 	"math"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -208,12 +207,8 @@ func parsedLabelLeaf(e *logql.LabelFilterExpr, labelFn func(string) string, caps
 	if labelFn != nil {
 		label = translate.SanitizeFieldIdentifier(labelFn(label))
 	}
-	if strings.ContainsAny(label, ".-") {
-		label = `"` + label + `"`
-	} else {
-		label = logsql.QuoteKeywordField(label)
-	}
-	return numericEqualityFilter(label, e)
+	// A dot or a hyphen, a keyword, or a rune VictoriaLogs does not join into a word: quoted.
+	return numericEqualityFilter(logsql.QuoteFieldName(label), e)
 }
 
 // WritesNumericEquality reports a plan with a numeric, duration or bytes equality label filter after a json or

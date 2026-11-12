@@ -190,7 +190,7 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 	level.flush(&q)
 	q.flush()
 	q.pipes = appendScratchDeletes(q.pipes, lf, len(read) > 0)
-	f, err := translate.StreamSelectorFilterNamed(sel.Matchers, prof.Label, prof.StreamFields, logsql.QuoteKeywordField)
+	f, err := translate.StreamSelectorFilterNamed(sel.Matchers, prof.Label, prof.StreamFields, logsql.QuoteFieldName)
 	if err != nil {
 		return logsql.Query{}, false, err
 	}
@@ -507,8 +507,8 @@ func (lb *leafBuilder) leaf(e *logql.LabelFilterExpr) logsql.FilterExpr {
 }
 
 // labelFilterLeaf is translateSingleLabelFilter's generic path for one leaf: the label named like the selector
-// names it, quoted where LogsQL needs it (a dot or dash in it, or a keyword: logsql.QuoteKeywordFields), and the
-// filter translate.LabelFilterLeaf builds for its value.
+// names it, quoted where LogsQL needs it (logsql.QuoteFieldName), and the filter translate.LabelFilterLeaf builds for
+// its value.
 func labelFilterLeaf(e *logql.LabelFilterExpr, labelFn func(string) string, caps logsql.Capabilities) logsql.FilterExpr {
 	label := translate.SanitizeFieldIdentifier(e.Name)
 	if labelFn != nil {
@@ -519,11 +519,8 @@ func labelFilterLeaf(e *logql.LabelFilterExpr, labelFn func(string) string, caps
 
 // fieldFilterLeaf is labelFilterLeaf for the field the leaf's label translates to.
 func fieldFilterLeaf(e *logql.LabelFilterExpr, label string, caps logsql.Capabilities) logsql.FilterExpr {
-	if strings.ContainsAny(label, ".-") {
-		label = `"` + label + `"`
-	} else {
-		label = logsql.QuoteKeywordField(label)
-	}
+	// A dot or a hyphen, a keyword, or a rune VictoriaLogs does not join into a word: quoted.
+	label = logsql.QuoteFieldName(label)
 	f, _ := translate.LabelFilterLeaf(label, e.Cmp, e.Value, e.Kind == logql.LabelFilterValueIP, caps) // the operator is known
 	return f
 }

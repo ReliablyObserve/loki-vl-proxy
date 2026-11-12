@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Fan in the artifacts of the parallel `test-shard` jobs into what one `test` run produced.
 
-Usage: merge_unit_shards.py --shards-dir DIR --out-dir DIR [--require-complete] [--packages "P ..."]
+Usage: merge_unit_shards.py --shards-dir DIR --out-dir DIR [--require-complete] [--packages "P ..."] [--no-cache-profile]
 
-Each shard uploaded a directory DIR/unit-shard-<shard>/ with
+Each shard uploaded a directory DIR/<prefix><shard>/ (prefix unit-shard-) with
   unit-results.json    the outcome events of its tests under ./internal/...
   coverage.out         its coverage profile
-  coverage-cache.out   (shard "rest") the internal/cache profile for the coverage guard
+  coverage-cache.out   (shard "rest") the internal/cache profile for the coverage guard (a caller without
+                       that guard passes --no-cache-profile)
   assigned.txt, all-tests.txt   (numbered shards) its tests and the full `go test -list` of each split
                        package, one "<package directory>:<test>" line per test
 
@@ -33,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import merge_coverprofile  # noqa: E402
 import test_shards  # noqa: E402
 
-NUMBERED_SHARDS = ("1", "2", "3", "4")
+NUMBERED_SHARDS = tuple(str(i) for i in range(1, 13))  # keep equal to the test-shard matrix of ci.yaml
 # The packages whose tests the numbered shards split; keep equal to UNIT_SHARD_PACKAGES in go_test_unit.sh.
 PACKAGES = ("internal/proxy", "internal/querycorpus")
 REST = "rest"
@@ -50,14 +51,14 @@ def read_names(path):
     return by_package
 
 
-def merge(shards_dir, out_dir, shard_ids, require_complete, packages=PACKAGES):
+def merge(shards_dir, out_dir, shard_ids, require_complete, packages=PACKAGES, cache_profile_required=True, prefix="unit-shard-"):
     shards_dir, out_dir = Path(shards_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     problems = []
     events, profiles, assigned, lists = [], [], {}, {}
     cache_profile = None
     for shard in shard_ids:
-        d = shards_dir / f"unit-shard-{shard}"
+        d = shards_dir / f"{prefix}{shard}"
         results, coverage = d / "unit-results.json", d / "coverage.out"
         if results.is_file():
             events.extend(line for line in results.read_text().splitlines() if line.strip())
@@ -82,7 +83,7 @@ def merge(shards_dir, out_dir, shard_ids, require_complete, packages=PACKAGES):
         (out_dir / "coverage.out").write_text(merge_coverprofile.merge(profiles))
     if cache_profile is not None:
         (out_dir / "coverage-cache.out").write_text(cache_profile)
-    elif require_complete:
+    elif require_complete and cache_profile_required:
         problems.append("no coverage-cache.out from the rest shard")
 
     if require_complete:
@@ -117,8 +118,11 @@ def main(argv=None):
     parser.add_argument("--shards", default=" ".join((REST,) + NUMBERED_SHARDS), help="space-separated shard ids")
     parser.add_argument("--packages", default=" ".join(PACKAGES), help="space-separated directories of the split packages")
     parser.add_argument("--require-complete", action="store_true")
+    parser.add_argument("--no-cache-profile", action="store_true", help="the shards ran no internal/cache coverage guard")
+    parser.add_argument("--dir-prefix", default="unit-shard-", help="the artifact directories are <prefix><shard>")
     args = parser.parse_args(argv)
-    problems, count = merge(args.shards_dir, args.out_dir, args.shards.split(), args.require_complete, args.packages.split())
+    problems, count = merge(args.shards_dir, args.out_dir, args.shards.split(), args.require_complete, args.packages.split(),
+                            not args.no_cache_profile, args.dir_prefix)
     for problem in problems:
         print(f"merge_unit_shards: {problem}", file=sys.stderr)
     print(f"merge_unit_shards: {count} events merged from {len(args.shards.split())} shards, {len(problems)} problems")

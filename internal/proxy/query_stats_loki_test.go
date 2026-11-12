@@ -121,11 +121,12 @@ func TestLokiStatsEmulation_MatchesRecordedLokiAnswers(t *testing.T) {
 		// Loki computes a non-empty log query again: the repeat is the same
 		// (the proxy's cache hit replays the computation).
 		// Loki serves the pieces that held no line from its results cache on
-		// the repeat, so its shards are the pieces between the oldest and
-		// newest entries.
-		if r.HitSplits != r.Splits || r.HitLines != r.Lines || r.HitShards != lokiLogHitShards(r.Start, r.End, r.TMin, r.TMax) {
+		// the repeat, so its shards are the pieces that hold an entry; these
+		// rows come from a dense stream, where those are the pieces between
+		// the oldest and newest entries (sparse streams: loki_stats_shards.jsonl).
+		if span := lokiLogSpanShards(r.Start, r.End, r.TMin, r.TMax); r.HitSplits != r.Splits || r.HitLines != r.Lines || r.HitShards != span {
 			t.Errorf("%s: Loki's repeat %d/%d/%d lines; first answer %d/%d/%d, entries' pieces %d", name, r.HitSplits, r.HitShards, r.HitLines,
-				r.Splits, r.Shards, r.Lines, lokiLogHitShards(r.Start, r.End, r.TMin, r.TMax))
+				r.Splits, r.Shards, r.Lines, span)
 		}
 		var lines int64
 		for _, p := range r.Pieces {
@@ -309,10 +310,6 @@ func TestLokiLogSummary_EstimatesTheRunFromTheAnswer(t *testing.T) {
 	h := lokiSplitInterval
 	base := int64(1_800_000_000) * int64(time.Second) / h * h
 	m := int64(time.Minute)
-	ts19 := func(v int64) (b [19]byte) {
-		copy(b[:], fmt.Sprintf("%019d", v))
-		return b
-	}
 	for _, tc := range []struct {
 		name                string
 		start, end, limit   int64
@@ -333,7 +330,7 @@ func TestLokiLogSummary_EstimatesTheRunFromTheAnswer(t *testing.T) {
 	} {
 		w := &queryStatsWriter{route: statsRouteRange, lokiMode: true,
 			sreq: statsRequest{start: tc.start, end: tc.end, limit: tc.limit, backward: true, ok: true}, sreqRead: true}
-		w.entries = entryCounter{n: tc.entries, lineBytes: 30 * tc.entries, hasTS: true, tsMin: ts19(tc.tMin), tsMax: ts19(tc.tMax)}
+		w.entries = entryCounter{n: tc.entries, lineBytes: 30 * tc.entries, hasTS: true, tsMin: tc.tMin, tsMax: tc.tMax}
 		s, _ := w.lokiLogSummary(&tc.totals, false)
 		if s.lines != tc.wantLines || s.postFilter != tc.wantPost || s.bytes != tc.wantBytesPerLine*tc.wantLines {
 			t.Errorf("%s: %+v, want lines %d post %d bytes %d", tc.name, s, tc.wantLines, tc.wantPost, tc.wantBytesPerLine*tc.wantLines)
@@ -454,26 +451,26 @@ func TestMeanLineTable_NoAllocationAndBounded(t *testing.T) {
 		return &logqlpkg.StreamSelector{Matchers: []logqlpkg.LabelMatcher{{Name: "app", Op: logqlpkg.MatchEq, Value: app}}}
 	}
 	a := req("tenant-a")
-	p.meanLines.store(p.meanLineKey(a, sel("api")), 3000, 10)
-	if m, ok := p.meanLines.mean(p.meanLineKey(a, sel("api"))); !ok || m != 300 {
+	p.meanLines.store(p.meanLineKey(a, sel("api"), ""), 3000, 10, 0, 0)
+	if m, ok := p.meanLines.mean(p.meanLineKey(a, sel("api"), "")); !ok || m != 300 {
 		t.Fatalf("selector mean %v %t, want 300", m, ok)
 	}
-	if m, ok := p.meanLines.mean(p.meanLineKey(a, sel("web"))); !ok || m != 300 {
+	if m, ok := p.meanLines.mean(p.meanLineKey(a, sel("web"), "")); !ok || m != 300 {
 		t.Fatalf("another selector of the tenant: %v %t, want the tenant's 300", m, ok)
 	}
-	if _, ok := p.meanLines.mean(p.meanLineKey(req("tenant-b"), sel("api"))); ok {
+	if _, ok := p.meanLines.mean(p.meanLineKey(req("tenant-b"), sel("api"), "")); ok {
 		t.Fatal("tenant-b read tenant-a's mean line size")
 	}
 	api := sel("api")
 	if allocs := testing.AllocsPerRun(100, func() {
-		k := p.meanLineKey(a, api)
-		p.meanLines.store(k, 3000, 10)
+		k := p.meanLineKey(a, api, "")
+		p.meanLines.store(k, 3000, 10, 0, 0)
 		_, _ = p.meanLines.mean(k)
 	}); allocs != 0 {
 		t.Fatalf("store and read allocate %v times", allocs)
 	}
 	for i := 0; i < 3*meanLineTableSize; i++ {
-		p.meanLines.store(p.meanLineKey(a, sel(fmt.Sprint(i))), 10, 1)
+		p.meanLines.store(p.meanLineKey(a, sel(fmt.Sprint(i)), ""), 10, 1, 0, 0)
 	}
 	if n := len(p.meanLines.m); n > meanLineTableSize {
 		t.Fatalf("table holds %d entries, bound %d", n, meanLineTableSize)
@@ -484,7 +481,7 @@ func TestMeanLineTable_NoAllocationAndBounded(t *testing.T) {
 		p.meanLines.m[k] = v
 	}
 	p.meanLines.mu.Unlock()
-	if _, ok := p.meanLines.mean(p.meanLineKey(a, sel("api"))); ok {
+	if _, ok := p.meanLines.mean(p.meanLineKey(a, sel("api"), "")); ok {
 		t.Fatal("an expired mean was read")
 	}
 }

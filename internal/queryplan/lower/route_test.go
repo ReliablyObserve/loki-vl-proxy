@@ -31,6 +31,9 @@ func TestRouteDecidesTheWindows(t *testing.T) {
 		probe     bool
 		ungrouped bool
 		sumAll    bool
+		counted   bool
+		stepBkts  bool
+		pushed    bool
 		fold      WithoutFold
 		construct string
 		textHolds string
@@ -90,10 +93,93 @@ func TestRouteDecidesTheWindows(t *testing.T) {
 		{q: `sum without (pod) (count_over_time({app="a"} |> "<_> x" [5m]))`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, identity: true, probe: true, fold: FoldCut},
 		{q: `sum without (pod) (count_over_time({app="a"} | env="b" [5m]))`, req: RouteRequest{Step: 5 * time.Minute, Span: hour}, window: WindowTumbling, bucket: 5 * time.Minute, identity: true, probe: true, fold: FoldPushed},
 		{q: `sum without (pod) (count_over_time({app="a"} | env="b" [5m]))`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, identity: true, probe: true, fold: FoldRows},
+		// absent_over_time keeps no series: one ungrouped count says whether the window holds a line, with no stream
+		// identity and no level probe, on every window.
+		{q: `absent_over_time({app="a"}[5m])`, req: RouteRequest{Instant: true}, window: WindowInstant, ungrouped: true},
+		{q: `absent_over_time({app="a"} |= "x" [5m])`, req: RouteRequest{Step: 5 * time.Minute, Span: hour}, window: WindowTumbling, bucket: 5 * time.Minute, ungrouped: true},
+		{q: `absent_over_time({app="a"} | env="b" [5m])`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, ungrouped: true},
+		{q: `absent_over_time({app="a"}[1m])`, req: RouteRequest{Step: 15 * time.Minute, Span: hour}, window: WindowPhase, bucket: 15 * time.Minute, ungrouped: true},
+		// a function over an unwrapped label keeps the stream's series like a count and counts the rows its conversion
+		// rejects; a range up to the step is read from VictoriaLogs' own step buckets (a shorter one under a phase
+		// filter), a longer one merges the partial aggregate of each bucket.
+		{q: `sum_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, window: WindowInstant, identity: true, probe: true, counted: true},
+		{q: `max_over_time({app="a"} | unwrap bytes(n) [5m])`, req: RouteRequest{Step: 5 * time.Minute, Span: hour}, window: WindowTumbling, bucket: 5 * time.Minute, identity: true, probe: true, counted: true},
+		{q: `avg_over_time({app="a"} | unwrap duration(n) [5m])`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, identity: true, probe: true, counted: true},
+		{q: `min_over_time({app="a"} |= "x" | env="b" | unwrap duration_seconds(n) [1m])`, req: RouteRequest{Step: 15 * time.Minute, Span: hour}, window: WindowPhase, bucket: 15 * time.Minute, identity: true, probe: true, counted: true, stepBkts: true},
+		// a count over the same short range is not read from step buckets
+		{q: `count_over_time({app="a"}[1m])`, req: RouteRequest{Step: 15 * time.Minute, Span: hour}, window: WindowPhase, bucket: 15 * time.Minute, identity: true, probe: true},
+		// a grouping by labels the stats keep as they are: no stream identity, no level chain, no probe
+		{q: `avg_over_time({app="a"} | unwrap n [5m]) by (pod)`, req: RouteRequest{Step: 5 * time.Minute, Span: hour}, window: WindowTumbling, bucket: 5 * time.Minute, counted: true},
+		{q: `max_over_time({app="a"} | unwrap n [5m]) by ()`, req: RouteRequest{Instant: true}, window: WindowInstant, ungrouped: true, counted: true},
+		{q: `max_over_time({app="a"} | unwrap n [1m]) by (pod, zone)`, req: RouteRequest{Step: 15 * time.Minute, Span: hour}, window: WindowPhase, bucket: 15 * time.Minute, counted: true, stepBkts: true},
+		// a vector aggregation over a function of an unwrapped label: the stats group by the clause's labels, or by the
+		// series first (the stream and its level, so the chain is probed) for count, min, max and avg; the conversion
+		// flag counts on every window.
+		{q: `sum by (pod) (sum_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, window: WindowInstant, counted: true},
+		{q: `sum by (pod) (sum_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: 5 * time.Minute, Span: hour}, window: WindowTumbling, bucket: 5 * time.Minute, counted: true},
+		{q: `sum by (pod) (sum_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, counted: true},
+		{q: `sum by (pod) (sum_over_time({app="a"} | unwrap bytes(n) [5m]))`, req: RouteRequest{Step: 15 * time.Minute, Span: hour}, window: WindowPhase, bucket: 15 * time.Minute, counted: true, stepBkts: true},
+		{q: `count by (pod) (min_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, window: WindowInstant, probe: true, counted: true},
+		{q: `avg by (pod, zone) (avg_over_time({app="a"} |= "x" | env="b" | unwrap duration(n) [5m]))`, req: RouteRequest{Step: 5 * time.Minute, Span: hour}, window: WindowTumbling, bucket: 5 * time.Minute, probe: true, counted: true},
+		// an ungrouped aggregation: the last stats pipe groups by nothing, and the guard counts the input beside it
+		{q: `avg(avg_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, window: WindowInstant, ungrouped: true, counted: true},
+		{q: `sum by () (max_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, window: WindowInstant, ungrouped: true, counted: true},
+		// the sum of the lines of every stream is the sum of their sums, and of nothing else: a sliding window of the sum
+		// of a sum reads the lines as one series, the sum of an average, a minimum or a maximum keeps the series
+		{q: `sum(sum_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, window: WindowInstant, ungrouped: true, sumAll: true, counted: true},
+		{q: `sum(sum_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, ungrouped: true, sumAll: true, counted: true},
+		{q: `sum(avg_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, ungrouped: true, counted: true},
+		{q: `sum by () (min_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, ungrouped: true, counted: true},
+		// the extreme of the same function by labels (or none) on a sliding window is taken per group in VictoriaLogs:
+		// no series identity; any other pair, a level, a repeated label or a without clause reads the series first
+		{q: `max by (pod) (max_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, probe: true, counted: true, pushed: true},
+		{q: `min(min_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, ungrouped: true, counted: true, pushed: true},
+		{q: `max by (pod) (max_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: 5 * time.Minute, Span: hour}, window: WindowTumbling, bucket: 5 * time.Minute, probe: true, counted: true},
+		{q: `max by (pod) (max_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, window: WindowInstant, probe: true, counted: true},
+		{q: `min by (pod) (max_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, probe: true, counted: true},
+		{q: `max by (level) (max_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, probe: true, counted: true},
+		{q: `max by (pod, pod) (max_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, probe: true, counted: true},
+		{q: `max(max_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: 15 * time.Minute, Span: hour}, window: WindowPhase, bucket: 15 * time.Minute, ungrouped: true, counted: true, stepBkts: true},
+		// a without clause: the stats keep a row per stream for the proxy to fold, on every window; the pushdown that cuts
+		// the stream text reads the stats of counts and rates only
+		{q: `sum without (pod) (sum_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, window: WindowInstant, counted: true, fold: FoldRows},
+		{q: `max without (pod) (max_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: 5 * time.Minute, Span: hour}, window: WindowTumbling, bucket: 5 * time.Minute, counted: true, fold: FoldRows},
+		{q: `avg without (pod) (min_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, counted: true, fold: FoldRows},
+		{q: `sum without (pod) (avg_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Step: 15 * time.Minute, Span: hour}, window: WindowPhase, bucket: 15 * time.Minute, counted: true, stepBkts: true, fold: FoldRows},
 		// outside the rule: each named after what it holds.
 		{q: `sum without (pod) (rate({app="a"} | json [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route pipeline"},
 		{q: `stddev(rate({app="a"}[5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route evaluated level"},
-		{q: `sum_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route function"},
+		{q: `count_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg unwrap count_over_time"},
+		{q: `rate({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap rate"},
+		{q: `quantile_over_time(0.9, {app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap quantile"},
+		{q: `stddev_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap stddev"},
+		{q: `stdvar_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap stdvar"},
+		{q: `first_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap first"},
+		{q: `last_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap last"},
+		{q: `rate_counter({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap rate_counter"},
+		{q: `absent_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap absent"},
+		{q: `sum_over_time({app="a"} | unwrap n | n > 5 [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap filter"},
+		{q: `sum_over_time({app="a"} | unwrap n | __error__="" [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap filter"},
+		{q: `sum_over_time({app="a"} | json | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap pipeline"},
+		{q: `sum_over_time({app="a"} | unwrap n [5m] offset 1h)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route offset"},
+		{q: `absent_over_time({app="a"}[5m] offset 1h)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route offset"},
+		{q: `avg_over_time({app="a"} | unwrap n [5m]) by (level)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap grouping"},
+		{q: `avg_over_time({app="a"} | unwrap n [5m]) by (detected_level, pod)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap grouping"},
+		{q: `avg_over_time({app="a"} | unwrap n [5m]) by (service_name)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap grouping"},
+		{q: `rate({app="a"}[5m]) by (pod)`, req: RouteRequest{Instant: true}, construct: "RangeAgg grouping"},
+		{q: `sum_over_time({app="a"} | unwrap n [1001ms])`, req: RouteRequest{Step: time.Second, Span: hour}, construct: "RangeAgg route no bucket grid"},
+		{q: `absent_over_time({app="a"}[1001ms])`, req: RouteRequest{Step: time.Second, Span: hour}, construct: "RangeAgg route no bucket grid"},
+		{q: `sum by (pod) (absent_over_time({app="a"}[5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route absent operand"},
+		{q: `sum(avg_over_time({app="a"} | json | unwrap n [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route unwrap pipeline"},
+		{q: `sum by (pod) (sum_over_time({app="a"} | unwrap n | n > 5 [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route unwrap filter"},
+		{q: `sum by (pod) (sum_over_time({app="a"} | unwrap n [5m] offset 1h))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route offset"},
+		{q: `sum(sum by (pod) (sum_over_time({app="a"} | unwrap n [5m])))`, req: RouteRequest{Instant: true}, construct: "VectorAgg nested unwrap"},
+		{q: `sum(sum_over_time({app="a"} | unwrap n [1001ms]))`, req: RouteRequest{Step: time.Second, Span: hour}, construct: "VectorAgg route no bucket grid"},
+		{q: `stddev(sum_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route evaluated level"},
+		{q: `sum by (_msg) (sum_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route unwrap grouping"},
+		{q: `sum(rate({app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route unwrap rate"},
+		{q: `max(first_over_time({app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route unwrap first"},
+		{q: `sum(quantile_over_time(0.5, {app="a"} | unwrap n [5m]))`, req: RouteRequest{Instant: true}, construct: "VectorAgg route unwrap quantile"},
 		{q: `rate({app="a"} | json [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route pipeline"},
 		{q: `rate({app="a"}[5m] offset 1h)`, req: RouteRequest{Instant: true}, construct: "RangeAgg route offset"},
 		{q: `sum(count_over_time({app="a"}[5m]) > 1)`, req: RouteRequest{Instant: true}, construct: "VectorAgg operand"},
@@ -113,8 +199,8 @@ func TestRouteDecidesTheWindows(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if r.Fold != c.fold || r.Window != c.window || r.Bucket != c.bucket || r.Identity != c.identity || r.LevelProbe != c.probe || r.Ungrouped != c.ungrouped || r.SumAll != c.sumAll {
-				t.Fatalf("Route = window %d bucket %v identity %v probe %v ungrouped %v sumAll %v fold %d", r.Window, r.Bucket, r.Identity, r.LevelProbe, r.Ungrouped, r.SumAll, r.Fold)
+			if r.Fold != c.fold || r.Window != c.window || r.Bucket != c.bucket || r.Identity != c.identity || r.LevelProbe != c.probe || r.Ungrouped != c.ungrouped || r.SumAll != c.sumAll || r.Counted != c.counted || r.StepBuckets != c.stepBkts || r.GroupPushed != c.pushed {
+				t.Fatalf("Route = window %d bucket %v identity %v probe %v ungrouped %v sumAll %v counted %v stepBuckets %v pushed %v fold %d", r.Window, r.Bucket, r.Identity, r.LevelProbe, r.Ungrouped, r.SumAll, r.Counted, r.StepBuckets, r.GroupPushed, r.Fold)
 			}
 			if c.textHolds != "" && !strings.Contains(r.Text, c.textHolds) || c.textLacks != "" && strings.Contains(r.Text, c.textLacks) {
 				t.Fatalf("text %q", r.Text)
@@ -184,6 +270,22 @@ func FuzzRoute(f *testing.F) {
 	f.Add(`sum by (zone) (avg without (pod) (bytes_over_time({app="a"} | env="b" [1m])))`, int64(time.Minute), int64(24*time.Hour), false)
 	f.Add(`max(sum without (pod_name, level) (count_over_time({app="a"} |> "<_> x" [90s])))`, int64(30*time.Second), int64(time.Hour), false)
 	f.Add(`avg(sum(count_over_time({app="a"}[1m])) without (pod)) without (svc)`, int64(0), int64(0), true)
+	f.Add(`sum_over_time({app="a"} | unwrap bytes(n) [1m])`, int64(15*time.Minute), int64(time.Hour), false)
+	f.Add(`avg_over_time({app="a"} |= "x" | env="b" | unwrap duration(n) [90s]) by (pod)`, int64(time.Minute), int64(24*time.Hour), false)
+	f.Add(`max_over_time({app="a"} | unwrap n [5m]) by ()`, int64(0), int64(0), true)
+	f.Add(`min_over_time({app="a"} | unwrap n | __error__="" [5m])`, int64(5*time.Minute), int64(time.Hour), false)
+	f.Add(`count_over_time({unwrap="unwrap"} |= "unwrap" [5m])`, int64(time.Minute), int64(time.Hour), false)
+	f.Add(`absent_over_time({app="a"} != "x" [90s])`, int64(30*time.Second), int64(time.Hour), false)
+	f.Add(`absent_over_time({app="a"}[5m] offset 1h)`, int64(0), int64(0), true)
+	f.Add(`sum(avg_over_time({app="a"} | unwrap n [5m]))`, int64(0), int64(0), true)
+	f.Add(`max by (pod) (max_over_time({app="a"} | unwrap n [5m]))`, int64(time.Minute), int64(time.Hour), false)
+	f.Add(`min(min_over_time({app="a"} |= "x" | unwrap duration(n) [90s]))`, int64(30*time.Second), int64(24*time.Hour), false)
+	f.Add(`max by (pod, pod) (max_over_time({app="a"} | unwrap n [5m]))`, int64(time.Minute), int64(time.Hour), false)
+	f.Add(`max by (level) (max_over_time({app="a"} | unwrap n [5m]))`, int64(time.Minute), int64(time.Hour), false)
+	f.Add(`sum(sum_over_time({app="a"} | unwrap bytes(n) [1m]))`, int64(15*time.Minute), int64(time.Hour), false)
+	f.Add(`avg without (pod) (min_over_time({app="a"} | unwrap n [5m]))`, int64(5*time.Minute), int64(time.Hour), false)
+	f.Add(`count by (pod) (sum_over_time({app="a"} | unwrap n | __error__="" [5m]))`, int64(0), int64(0), true)
+	f.Add(`sum(sum by (pod) (avg_over_time({app="a"} | unwrap n [5m])))`, int64(0), int64(0), true)
 	f.Fuzz(func(t *testing.T, q string, step, span int64, instant bool) {
 		if len(q) > 512 {
 			return
@@ -209,12 +311,36 @@ func FuzzRoute(f *testing.F) {
 			t.Fatalf("%q: range %v step %v routed as %d", q, r.Range, req.Step, r.Window)
 		case r.Text == "":
 			t.Fatalf("%q: routed without a query", q)
+		case r.Counted != unwrapsLabel(p):
+			t.Fatalf("%q: counted %v", q, r.Counted)
+		case r.StepBuckets && (!r.Counted || r.Window != WindowPhase):
+			t.Fatalf("%q: step buckets on window %d, counted %v", q, r.Window, r.Counted)
+		case r.Counted && r.Op != logql.RangeSumOverTime && r.Op != logql.RangeAvgOverTime && r.Op != logql.RangeMinOverTime && r.Op != logql.RangeMaxOverTime:
+			t.Fatalf("%q: counted %s", q, r.Op)
+		case r.GroupPushed && (!r.Counted || r.Window != WindowBuckets || r.Op != logql.RangeMaxOverTime && r.Op != logql.RangeMinOverTime):
+			t.Fatalf("%q: group pushed on window %d, counted %v, %s", q, r.Window, r.Counted, r.Op)
+		case r.SumAll && r.Counted && r.Op != logql.RangeSumOverTime:
+			t.Fatalf("%q: sum of all streams over %s", q, r.Op)
 		case r.Fold != FoldNone && !strings.Contains(strings.ToLower(q), "without"):
 			t.Fatalf("%q: folded as %d without a clause", q, r.Fold)
 		case r.Fold == FoldPushed && r.Window != WindowTumbling, r.Fold == FoldCut && r.Window != WindowBuckets && r.Window != WindowPhase:
 			t.Fatalf("%q: fold %d on window %d", q, r.Fold, r.Window)
 		}
 	})
+}
+
+// unwrapsLabel reports whether the range aggregation of the plan unwraps a label.
+func unwrapsLabel(p *queryplan.Plan) bool {
+	for n := p.Root; ; {
+		switch v := n.(type) {
+		case *queryplan.VectorAgg:
+			n = v.In
+		case *queryplan.RangeAgg:
+			return unwrapStage(v.In) != nil
+		default:
+			return false
+		}
+	}
 }
 
 // routePlan is the resolved plan of a query the route rule may be asked about, nil for another.

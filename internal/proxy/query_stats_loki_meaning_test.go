@@ -163,6 +163,7 @@ type lokiSummary struct {
 	ExecTime       float64 `json:"execTime"`
 	Entries        int64   `json:"totalEntriesReturned"`
 	Splits         int64   `json:"splits"`
+	Shards         int64   `json:"shards"`
 	PostFilter     int64   `json:"totalPostFilterLines"`
 }
 

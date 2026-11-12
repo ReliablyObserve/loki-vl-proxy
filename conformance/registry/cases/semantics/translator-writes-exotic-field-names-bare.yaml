@@ -1,0 +1,61 @@
+id: semantics/translator-writes-exotic-field-names-bare
+title: A label filter on a label whose name VictoriaLogs' lexer does not join into a word (punctuation, a symbol, a combining mark, an emoji, a zero-width space) is written bare by the string translator and rejected by VictoriaLogs (open for the translator; the query plan quotes it)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's lexer reads a label name in a label filter as a name of its own for
+  characters that are no letters or digits: the Loki oracle (Loki 3.7.9, check
+  command) answers 200 for `{a="b"} | x = "y" and 、 = "z"`, `{a="b"} | (; =
+  "z")`, `... and ³ = "z"`, `... and 😀 = "z"` and the other names of the grid
+  (testdata/odd-spellings-loki.jsonl). VictoriaLogs reads a bare token as a run
+  of letters, digits and underscores (lib/logstorage isTokenRune: unicode.IsLetter,
+  unicode.IsDigit, `_`); any other character ends the token, so the filter that
+  names the label bare is rejected (`unexpected token`, v1.49.0 and v1.53.0), in
+  a filter, after a filter pipe, and in a copy, fields, delete, stats, sort or
+  unpack pipe alike. Quoted, every name is read as the field it is. The string
+  translator writes the name bare:
+    string translator  =>  a:="b" (x:="y" and 、:="z")     (rejected by both versions)
+    query plan         =>  a:="b" (x:="y" and "、":="z")    (accepted by both)
+  The grid of verdicts is internal/logsql/testdata/exotic-field-names-vl.jsonl
+  (520 queries, 20 names, 13 places, both versions): every bare spelling of an
+  exotic name is rejected and every quoted one is read; a name of letters,
+  digits and underscores (`é`, `日本`, `x1`) is read either way, so the plan
+  leaves it as it is.
+
+  The proxy's LogQL parser accepts such a name only inside a parenthesis or
+  after `and` / `or` (a bare `| ; = "z"` is its error, Loki's is 200): that is a
+  difference of the parser, not of this case.
+
+  The shadows hold the plan to the translator's text made right
+  (lower.QuoteKeywordFieldText quotes these names as it does the keywords of
+  semantics/translator-writes-keyword-field-names-bare), and the VictoriaLogs
+  oracle reads the plan's text against it.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} | status = "200" and ³ = "z"'
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, streams]
+  expect: |
+    200 with the lines whose label `³` is "z" (none in the stack data), never
+    VictoriaLogs' parse error.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator (writes the name bare); fixed when the query plan serves the remaining queries. internal/logsql QuoteFieldName, internal/queryplan/lower'
+  loki: 'a label filter may name any label; the oracle answers 200'
+  proxy: 'filter-only log queries quote the name (the plan); every other query still fails in VictoriaLogs with the translator'
+  planned_test: 'TestPlanQuotesExoticFieldNames, TestPlanKeepsWordFieldNamesBare and TestQuoteKeywordFieldTextExoticNames (internal/queryplan/lower), TestQuoteFieldName, TestParseReadsQuotedFieldNames, TestParseFieldNamesMatchVictoriaLogs and FuzzQuoteFieldName (internal/logsql), TestOddSpellingsMatchLoki and TestRecordExoticFieldNameVerdicts (internal/querycorpus)'
+  visual: none
+  visual_reason: 'no Grafana panel names such a label; found by the VictoriaLogs oracle over the parser termination tests'
+  clusters: []

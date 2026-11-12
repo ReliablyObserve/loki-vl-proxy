@@ -1,10 +1,17 @@
 {
+  "q-2c0161cef4ed": "semantics/translator-reads-quoted-text-as-syntax",
   "q-416ed374da85": "semantics/pattern-capture-before-bracket-text",
   "q-471dd27188a0": "semantics/pattern-capture-before-bracket-text",
   "q-63ccc3e60bac": "semantics/pattern-capture-before-bracket-text",
   "q-640a79bad53a": "semantics/translator-reads-quoted-text-as-syntax",
+  "q-68c4b4f0193e": "semantics/parser-reads-unicode-blank-as-white-space",
   "q-74130bb26b09": "semantics/pattern-capture-before-bracket-text",
+  "q-7718ee991cc8": "semantics/parser-reads-unicode-blank-as-white-space",
   "q-8224a467eecd": "semantics/translator-reads-quoted-text-as-syntax",
+  "q-b1ccf303106a": "semantics/translator-reads-quoted-text-as-syntax",
+  "q-b58c2a1339fd": "semantics/translator-writes-signed-number-with-blank",
   "q-d9c5c8b25e5e": "semantics/translator-reads-quoted-text-as-syntax",
-  "q-e1d1c6e571a4": "semantics/pattern-capture-before-bracket-text"
+  "q-e1d1c6e571a4": "semantics/pattern-capture-before-bracket-text",
+  "q-e4c72463d1c3": "semantics/translator-writes-signed-number-with-blank",
+  "q-e61200801c33": "semantics/parser-reads-unicode-blank-as-white-space"
 }

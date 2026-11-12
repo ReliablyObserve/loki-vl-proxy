@@ -26,6 +26,9 @@ type (
 		L, R  any
 	}
 	canonScalar struct{ V float64 }
+	// canonVector is a vector(n) operand: its own form, so a vector(2) never equals the number 2 (a vector takes part in
+	// vector matching, a number does not).
+	canonVector struct{ V float64 }
 	// canonLevel is a RankStep (K set) or a SeriesAgg; By is nil for no clause and for `by ()`.
 	canonLevel struct {
 		Rank bool
@@ -48,13 +51,15 @@ func Canon(op Op, unparsed *bool) any {
 	case Verbatim:
 		return Canon(v.In, unparsed)
 	case Fold:
-		return canonFold{v.Levels, Canon(v.In, unparsed)}
+		return canonFold{canonLevels(v.Levels), Canon(v.In, unparsed)}
 	case LabelMap:
 		return canonLabel{v.Replace, Canon(v.In, unparsed)}
 	case Binary:
 		return canonBin{v.Op, v.Bool, v.Match, Canon(v.L, unparsed), Canon(v.R, unparsed)}
 	case ScalarOp:
 		return canonScalar{v.V}
+	case VectorOp:
+		return canonVector{v.V}
 	case RankStep:
 		return canonLevel{true, v.Op, v.K, canonClause(v.By), Canon(v.In, unparsed)}
 	case SeriesAgg:
@@ -69,6 +74,23 @@ func Canon(op Op, unparsed *bool) any {
 		return q
 	}
 	return op
+}
+
+// canonLevels are the levels of a fold with an empty label list read as none: the `without ()` level keeps every
+// series, and an empty list and no list are the same clause. The levels are copied only when one has an empty list.
+func canonLevels(levels []FoldLevel) []FoldLevel {
+	for i, lv := range levels {
+		if lv.Labels != nil && len(lv.Labels) == 0 {
+			out := append([]FoldLevel(nil), levels...)
+			for j := i; j < len(out); j++ {
+				if len(out[j].Labels) == 0 {
+					out[j].Labels = nil
+				}
+			}
+			return out
+		}
+	}
+	return levels
 }
 
 // canonClause is the clause of a level the proxy evaluates: `by ()` is no clause (it groups every series together,
