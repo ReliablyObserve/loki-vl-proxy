@@ -133,20 +133,37 @@ func TestVectorAggGroupingMatchesLoki(t *testing.T) {
 			}
 			continue
 		}
-		if without && len(want) > 0 {
+		sa, evaluated := core.(physical.SeriesAgg)
+		if without && len(want) > 0 && !evaluated {
 			t.Errorf("%s: Loki reads a without clause %v, the lowering writes no fold", r.q, want)
 			continue
 		}
-		parsed, err := logsql.Parse(core.(physical.VLQuery).Text)
-		if err != nil {
-			t.Fatalf("%s: %v", r.q, err)
-		}
-		last, ok := parsed.Pipes[len(parsed.Pipes)-1].(logsql.PipeStats)
-		if !ok {
-			t.Fatalf("%s: the last pipe is %T", r.q, parsed.Pipes[len(parsed.Pipes)-1])
-		}
-		for _, k := range last.By {
-			got = append(got, k.Field)
+		if evaluated {
+			// A level the proxy evaluates (stddev, stdvar, a ranking) carries its clause on the operator.
+			if sa.By != nil {
+				// A label named twice groups as once, as Loki's tree reads it.
+				for _, l := range sa.By.Labels {
+					if !slices.Contains(got, l) {
+						got = append(got, l)
+					}
+				}
+			}
+			if (sa.By != nil && sa.By.Without) != without {
+				t.Errorf("%s: series aggregation %+v, Loki's without %v %v", r.q, sa.By, without, want)
+				continue
+			}
+		} else {
+			parsed, err := logsql.Parse(core.(physical.VLQuery).Text)
+			if err != nil {
+				t.Fatalf("%s: %v", r.q, err)
+			}
+			last, ok := parsed.Pipes[len(parsed.Pipes)-1].(logsql.PipeStats)
+			if !ok {
+				t.Fatalf("%s: the last pipe is %T", r.q, parsed.Pipes[len(parsed.Pipes)-1])
+			}
+			for _, k := range last.By {
+				got = append(got, k.Field)
+			}
 		}
 		var uniq []string
 		for _, l := range want {

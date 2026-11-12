@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `stdvar_over_time` with a grouping (`stdvar_over_time(... | unwrap n [5m]) by (app)`,
+  `sum by (app) (stdvar_over_time(...))`) or without a parser no longer fails: it
+  was answered with an error (400), where Loki answers 200. VictoriaLogs has no
+  variance function, so the proxy asks for the standard deviation squared, and
+  that request was sent to VictoriaLogs with an internal marker in its text.
+  `stdvar_over_time(...) by (app)` now has Loki's values; under an outer
+  `sum by` the value is still the variance of the group's pooled samples, not
+  the sum of the series' own variances that Loki takes.
+- `stddev_over_time` and `stdvar_over_time` over an unwrapped label on a range
+  query whose range equals the step (`[5m]` at step 5m) answer the window ending
+  at each timestamp, as Loki does; each point was the window one step later.
+  A range that is not the step keeps its answer.
+
 ### Changed
 
 - The query plan now decides how the handlers answer `sum`, `avg`, `min`, `max` and `count` (with
@@ -24,10 +39,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "unwrap operand" group are now named by what keeps them delegated (a parser before the unwrap, an
   offset). A vector level that groups by the line (`_msg`) stays delegated.
 
-## [2.182.0] - 2026-11-12
-
-### Changed
-
+- The query plan now decides how `absent_over_time` and `sum_over_time`,
+  `avg_over_time`, `min_over_time` and `max_over_time` over an unwrapped label
+  (with or without a `by` clause of plain labels) are answered from
+  VictoriaLogs, instead of leaving it to the string translator: `absent_over_time`
+  is one ungrouped count on every window; an unwrap function keeps the stream's
+  series, counts the rows whose value the conversion rejects, and a range up to
+  the step is read from VictoriaLogs' own step buckets while a longer one merges
+  the partial aggregate of each bucket. Route parity holds the plan's decision to
+  the handlers on every corpus row under five request profiles, with and without
+  data: 5,236 of 24,700 runs are now predicted from the plan (4,540 before), 0
+  mismatches, the recorded routes and statuses unchanged. Quantile, stddev,
+  stdvar, first, last and rate_counter over an unwrapped label, a stage after the
+  unwrap, offsets and parsers stay with the string translator. Nothing is served
+  from the plan for metric queries yet: no request to VictoriaLogs and no answer
+  changes.
 - The query plan lowers a binary operation with a `vector(n)` operand next to a range or
   vector aggregation (`sum by (app) (rate({app="a"}[5m])) + on() vector(0)`,
   `rate({app="a"}[5m]) > vector(1)`) the way Loki and the proxy's binary route treat it: one
@@ -40,6 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operations yet. A query of constants only (`vector(1) + vector(2)`), the set operators,
   `bool`, a `vector (1)` spelled with a blank, and an operand that is itself a binary
   operation stay with the string translator.
+
+## [2.182.0] - 2026-11-12
+
+### Changed
 
 - The query plan now decides how a `without` clause is folded when it answers a
   `count_over_time`, `bytes_over_time`, `rate` or `bytes_rate` aggregation under

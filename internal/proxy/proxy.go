@@ -2832,6 +2832,13 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if p.proxyBinaryAggregation(sc, r, parsedForRouting, "matrix") {
 		withoutLabels = nil // folded by the aggregation itself
+	} else if translatedBin, isBin := binaryOfStats(stats, isStats); isBin {
+		if scalarStats, ok := scalarStatsBinaryOf(translatedBin); ok {
+			stepsRun.arm()
+			p.proxyScalarStatsBinary(sc, r, scalarStats, "matrix")
+		} else {
+			p.writeError(sc, http.StatusBadRequest, unsupportedBinaryMarkerMessage)
+		}
 	} else if isStats {
 		stepsRun.arm()
 		p.proxyStatsQueryRange(sc, r, stats)
@@ -3138,6 +3145,12 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if p.proxyBinaryAggregation(sc, r, parsedForRoutingQ, "vector") {
 		withoutLabels = nil // folded by the aggregation itself
+	} else if translatedBin, isBin := binaryOfStats(stats, isStats); isBin {
+		if scalarStats, ok := scalarStatsBinaryOf(translatedBin); ok {
+			p.proxyScalarStatsBinary(sc, r, scalarStats, "vector")
+		} else {
+			p.writeError(sc, http.StatusBadRequest, unsupportedBinaryMarkerMessage)
+		}
 	} else if isStats {
 		p.proxyStatsQuery(sc, r, stats)
 	} else {

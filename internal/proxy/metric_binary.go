@@ -26,6 +26,9 @@ import (
 // --- Stats query proxying ---
 
 func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, stats physical.VLStats) {
+	if p.rejectBinaryMarker(w, stats) {
+		return
+	}
 	logsqlQuery := stats.Text
 	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual).
 	// proxyStatsQueryRange is the entry for every drilldown high-cardinality metric
@@ -839,7 +842,8 @@ func allRangeWindowsEqual(logql string) (time.Duration, bool) {
 // start-W and relabel buckets onto Loki's evaluation timestamps: a log range
 // function (rate, bytes_rate, count_over_time, bytes_over_time) with range==step,
 // or sum, avg, min, max, first or last over time with unwrap, whose native bucket is the step
-// whatever the range. The returned spec's Window is that bucket width.
+// whatever the range, or stddev or stdvar over time with unwrap with range==step
+// (the bucket is their window only then). The returned spec's Window is that bucket width.
 // The parsed expression is walked, so outer aggregations like
 // sum by(x)(count_over_time(...)) are detected, grouped or not, and function
 // names inside string literals are not.
@@ -878,9 +882,12 @@ func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origS
 // aggregation, hasRate a rate or bytes_rate, logRangeOnly that every range
 // aggregation is rate, bytes_rate, count_over_time or bytes_over_time over a
 // log query, or sum, avg, min, max, first or last over time over an unwrapped
-// label (first and last read one row per series and step bucket), and every
-// other node is an aggregation, binary operation or literal. unwrapOnly reports
-// that every range aggregation is of the unwrap kind.
+// label (first and last read one row per series and step bucket), or stddev or
+// stdvar over time over an unwrapped label (a step bucket is their window only
+// when the range equals the step, so they are not of the unwrap kind below), and
+// every other node is an aggregation, binary operation or literal. unwrapOnly
+// reports that every range aggregation is of the unwrap kind: its native bucket
+// is the step whatever the range.
 func logRangeFunctions(expr logqlpkg.Expr) (found, hasRate, logRangeOnly, unwrapOnly bool) {
 	switch e := expr.(type) {
 	case *logqlpkg.RangeAggregation:
@@ -897,6 +904,8 @@ func logRangeFunctions(expr logqlpkg.Expr) (found, hasRate, logRangeOnly, unwrap
 			logqlpkg.RangeFirstOverTime, logqlpkg.RangeLastOverTime:
 			unwrapped := hasUnwrapStage(lq)
 			return true, false, unwrapped, unwrapped
+		case logqlpkg.RangeStddevOverTime, logqlpkg.RangeStdvarOverTime:
+			return true, false, hasUnwrapStage(lq), false
 		}
 		return true, false, false, false
 	case *logqlpkg.VectorAggregation:
@@ -1677,6 +1686,9 @@ func statsQueryRangePointUnixNano(point []interface{}) int64 {
 }
 
 func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, stats physical.VLStats) {
+	if p.rejectBinaryMarker(w, stats) {
+		return
+	}
 	logsqlQuery := stats.Text
 	originalLogql := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	if p.handleStatsCompatInstant(w, r, originalLogql, stats) {
