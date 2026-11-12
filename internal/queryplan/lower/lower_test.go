@@ -19,7 +19,7 @@ func TestPlanDelegatesEveryConstruct(t *testing.T) {
 	for construct, q := range map[string]string{
 		"LogSelect pipeline": `{app="a"} | json | unwrap x`,
 		"LogSelect label filter numeric equality after parser": `{app="a"} | json | status=5`,
-		"LogSelect unpack parser":                              `{app="a"} | unpack`,
+		"LogSelect unpack line":                                `{app="a"} | unpack`,
 		"RangeAgg grouping":                                    `avg_over_time({app="a"} | unwrap n [5m]) without (x)`,
 		"VectorAgg operand":                                    `sum by (app) (rate({app="a"}[5m]) > 1)`,
 		"Rank operand BinOp":                                   `topk(3, sum by (app) (rate({app="a"}[5m])) > 1)`,

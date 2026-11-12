@@ -1,0 +1,2933 @@
+[
+ {
+  "q": "{app=\"s\"} | unpack",
+  "text": "app:=\"s\" | unpack_json",
+  "loki": [
+   {
+    "keep": true,
+    "line": "hello world",
+    "labels": {
+     "a": "1",
+     "app": "s",
+     "b": "x"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"b\":\"x\"}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "L",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "not json",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":5}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "only",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "say \"hi\" {x}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "hello again",
+    "labels": {
+     "a": "2",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "bye",
+    "labels": {
+     "a": "hello",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"z\":\"2\"}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "v1.53.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ]
+  },
+  "vl_line": [
+   "{\"a\":\"1\",\"b\":\"x\",\"_entry\":\"hello world\"}",
+   "{\"a\":\"1\",\"b\":\"x\"}",
+   "{\"a\":\"1\",\"_entry\":\"\"}",
+   "{\"a\":1,\"b\":true,\"c\":null,\"d\":{\"e\":\"f\"},\"_entry\":\"L\"}",
+   "not json",
+   "{\"a\":\"1\",\"_entry\":5}",
+   "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+   "{\"_entry\":\"only\"}",
+   "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+   "{}",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"say \\\"hi\\\" {x}\"}",
+   "{\"a\":\"2\",\"_entry\":\"hello again\"}",
+   "{\"a\":\"hello\",\"_entry\":\"bye\"}",
+   "{\"a\":\"1\",\"_entry\":\"{\\\"z\\\":\\\"2\\\"}\"}"
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | drop a",
+  "text": "app:=\"s\" | unpack_json | delete a",
+  "loki": [
+   {
+    "keep": true,
+    "line": "hello world",
+    "labels": {
+     "app": "s",
+     "b": "x"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"b\":\"x\"}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "L",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "not json",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":5}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "only",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "say \"hi\" {x}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "hello again",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "bye",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"z\":\"2\"}",
+    "labels": {
+     "app": "s"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "v1.53.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ]
+  },
+  "vl_line": [
+   "{\"a\":\"1\",\"b\":\"x\",\"_entry\":\"hello world\"}",
+   "{\"a\":\"1\",\"b\":\"x\"}",
+   "{\"a\":\"1\",\"_entry\":\"\"}",
+   "{\"a\":1,\"b\":true,\"c\":null,\"d\":{\"e\":\"f\"},\"_entry\":\"L\"}",
+   "not json",
+   "{\"a\":\"1\",\"_entry\":5}",
+   "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+   "{\"_entry\":\"only\"}",
+   "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+   "{}",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"say \\\"hi\\\" {x}\"}",
+   "{\"a\":\"2\",\"_entry\":\"hello again\"}",
+   "{\"a\":\"hello\",\"_entry\":\"bye\"}",
+   "{\"a\":\"1\",\"_entry\":\"{\\\"z\\\":\\\"2\\\"}\"}"
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | drop a, b",
+  "text": "app:=\"s\" | unpack_json | delete a, b",
+  "loki": [
+   {
+    "keep": true,
+    "line": "hello world",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"b\":\"x\"}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "L",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "not json",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":5}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "only",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "say \"hi\" {x}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "hello again",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "bye",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"z\":\"2\"}",
+    "labels": {
+     "app": "s"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "v1.53.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ]
+  },
+  "vl_line": [
+   "{\"a\":\"1\",\"b\":\"x\",\"_entry\":\"hello world\"}",
+   "{\"a\":\"1\",\"b\":\"x\"}",
+   "{\"a\":\"1\",\"_entry\":\"\"}",
+   "{\"a\":1,\"b\":true,\"c\":null,\"d\":{\"e\":\"f\"},\"_entry\":\"L\"}",
+   "not json",
+   "{\"a\":\"1\",\"_entry\":5}",
+   "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+   "{\"_entry\":\"only\"}",
+   "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+   "{}",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"say \\\"hi\\\" {x}\"}",
+   "{\"a\":\"2\",\"_entry\":\"hello again\"}",
+   "{\"a\":\"hello\",\"_entry\":\"bye\"}",
+   "{\"a\":\"1\",\"_entry\":\"{\\\"z\\\":\\\"2\\\"}\"}"
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | drop a=\"1\"",
+  "text": "app:=\"s\" | unpack_json",
+  "loki": [
+   {
+    "keep": true,
+    "line": "hello world",
+    "labels": {
+     "app": "s",
+     "b": "x"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"b\":\"x\"}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "L",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "not json",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":5}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "only",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "say \"hi\" {x}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "hello again",
+    "labels": {
+     "a": "2",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "bye",
+    "labels": {
+     "a": "hello",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"z\":\"2\"}",
+    "labels": {
+     "app": "s"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "v1.53.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ]
+  },
+  "vl_line": [
+   "{\"a\":\"1\",\"b\":\"x\",\"_entry\":\"hello world\"}",
+   "{\"a\":\"1\",\"b\":\"x\"}",
+   "{\"a\":\"1\",\"_entry\":\"\"}",
+   "{\"a\":1,\"b\":true,\"c\":null,\"d\":{\"e\":\"f\"},\"_entry\":\"L\"}",
+   "not json",
+   "{\"a\":\"1\",\"_entry\":5}",
+   "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+   "{\"_entry\":\"only\"}",
+   "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+   "{}",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"say \\\"hi\\\" {x}\"}",
+   "{\"a\":\"2\",\"_entry\":\"hello again\"}",
+   "{\"a\":\"hello\",\"_entry\":\"bye\"}",
+   "{\"a\":\"1\",\"_entry\":\"{\\\"z\\\":\\\"2\\\"}\"}"
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | keep a",
+  "text": "app:=\"s\" | unpack_json | fields _time, _msg, _stream, a",
+  "loki": [
+   {
+    "keep": true,
+    "line": "hello world",
+    "labels": {
+     "a": "1"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"b\":\"x\"}"
+   },
+   {
+    "keep": true,
+    "labels": {
+     "a": "1"
+    }
+   },
+   {
+    "keep": true,
+    "line": "L"
+   },
+   {
+    "keep": true,
+    "line": "not json",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":5}"
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}"
+   },
+   {
+    "keep": true,
+    "line": "only"
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}"
+   },
+   {
+    "keep": true,
+    "line": "{}"
+   },
+   {
+    "keep": true
+   },
+   {
+    "keep": true,
+    "line": "say \"hi\" {x}",
+    "labels": {
+     "a": "1"
+    }
+   },
+   {
+    "keep": true,
+    "line": "hello again",
+    "labels": {
+     "a": "2"
+    }
+   },
+   {
+    "keep": true,
+    "line": "bye",
+    "labels": {
+     "a": "hello"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"z\":\"2\"}",
+    "labels": {
+     "a": "1"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "v1.53.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ]
+  },
+  "vl_line": [
+   "{\"a\":\"1\",\"b\":\"x\",\"_entry\":\"hello world\"}",
+   "{\"a\":\"1\",\"b\":\"x\"}",
+   "{\"a\":\"1\",\"_entry\":\"\"}",
+   "{\"a\":1,\"b\":true,\"c\":null,\"d\":{\"e\":\"f\"},\"_entry\":\"L\"}",
+   "not json",
+   "{\"a\":\"1\",\"_entry\":5}",
+   "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+   "{\"_entry\":\"only\"}",
+   "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+   "{}",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"say \\\"hi\\\" {x}\"}",
+   "{\"a\":\"2\",\"_entry\":\"hello again\"}",
+   "{\"a\":\"hello\",\"_entry\":\"bye\"}",
+   "{\"a\":\"1\",\"_entry\":\"{\\\"z\\\":\\\"2\\\"}\"}"
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | keep a, b",
+  "text": "app:=\"s\" | unpack_json | fields _time, _msg, _stream, a, b",
+  "loki": [
+   {
+    "keep": true,
+    "line": "hello world",
+    "labels": {
+     "a": "1",
+     "b": "x"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"b\":\"x\"}"
+   },
+   {
+    "keep": true,
+    "labels": {
+     "a": "1"
+    }
+   },
+   {
+    "keep": true,
+    "line": "L"
+   },
+   {
+    "keep": true,
+    "line": "not json",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":5}"
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}"
+   },
+   {
+    "keep": true,
+    "line": "only"
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}"
+   },
+   {
+    "keep": true,
+    "line": "{}"
+   },
+   {
+    "keep": true
+   },
+   {
+    "keep": true,
+    "line": "say \"hi\" {x}",
+    "labels": {
+     "a": "1"
+    }
+   },
+   {
+    "keep": true,
+    "line": "hello again",
+    "labels": {
+     "a": "2"
+    }
+   },
+   {
+    "keep": true,
+    "line": "bye",
+    "labels": {
+     "a": "hello"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"z\":\"2\"}",
+    "labels": {
+     "a": "1"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "v1.53.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ]
+  },
+  "vl_line": [
+   "{\"a\":\"1\",\"b\":\"x\",\"_entry\":\"hello world\"}",
+   "{\"a\":\"1\",\"b\":\"x\"}",
+   "{\"a\":\"1\",\"_entry\":\"\"}",
+   "{\"a\":1,\"b\":true,\"c\":null,\"d\":{\"e\":\"f\"},\"_entry\":\"L\"}",
+   "not json",
+   "{\"a\":\"1\",\"_entry\":5}",
+   "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+   "{\"_entry\":\"only\"}",
+   "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+   "{}",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"say \\\"hi\\\" {x}\"}",
+   "{\"a\":\"2\",\"_entry\":\"hello again\"}",
+   "{\"a\":\"hello\",\"_entry\":\"bye\"}",
+   "{\"a\":\"1\",\"_entry\":\"{\\\"z\\\":\\\"2\\\"}\"}"
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | a=\"1\"",
+  "text": "app:=\"s\" | unpack_json | filter a:=\"1\"",
+  "loki": [
+   {
+    "keep": true,
+    "line": "hello world",
+    "labels": {
+     "a": "1",
+     "app": "s",
+     "b": "x"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "say \"hi\" {x}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "{\"z\":\"2\"}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    true,
+    true,
+    true,
+    false,
+    true,
+    true,
+    false,
+    true,
+    false,
+    false,
+    true,
+    false,
+    false,
+    true
+   ],
+   "v1.53.0": [
+    true,
+    true,
+    true,
+    true,
+    false,
+    true,
+    true,
+    false,
+    true,
+    false,
+    false,
+    true,
+    false,
+    false,
+    true
+   ]
+  },
+  "vl_line": [
+   "{\"a\":\"1\",\"b\":\"x\",\"_entry\":\"hello world\"}",
+   "{\"a\":\"1\",\"b\":\"x\"}",
+   "{\"a\":\"1\",\"_entry\":\"\"}",
+   "{\"a\":1,\"b\":true,\"c\":null,\"d\":{\"e\":\"f\"},\"_entry\":\"L\"}",
+   "",
+   "{\"a\":\"1\",\"_entry\":5}",
+   "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+   "",
+   "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+   "",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"say \\\"hi\\\" {x}\"}",
+   "",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"{\\\"z\\\":\\\"2\\\"}\"}"
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | a!=\"1\"",
+  "text": "app:=\"s\" | unpack_json | filter -a:=\"1\"",
+  "loki": [
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"b\":\"x\"}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "L",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "not json",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":5}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "only",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "hello again",
+    "labels": {
+     "a": "2",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "bye",
+    "labels": {
+     "a": "hello",
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    false,
+    false,
+    false,
+    false,
+    true,
+    false,
+    false,
+    true,
+    false,
+    true,
+    true,
+    false,
+    true,
+    true,
+    false
+   ],
+   "v1.53.0": [
+    false,
+    false,
+    false,
+    false,
+    true,
+    false,
+    false,
+    true,
+    false,
+    true,
+    true,
+    false,
+    true,
+    true,
+    false
+   ]
+  },
+  "vl_line": [
+   "",
+   "",
+   "",
+   "",
+   "not json",
+   "",
+   "",
+   "{\"_entry\":\"only\"}",
+   "",
+   "{}",
+   "",
+   "",
+   "{\"a\":\"2\",\"_entry\":\"hello again\"}",
+   "{\"a\":\"hello\",\"_entry\":\"bye\"}",
+   ""
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | a=~\"1|2\"",
+  "text": "app:=\"s\" | unpack_json | filter (a:=\"1\" OR a:=\"2\")",
+  "loki": [
+   {
+    "keep": true,
+    "line": "hello world",
+    "labels": {
+     "a": "1",
+     "app": "s",
+     "b": "x"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "say \"hi\" {x}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "hello again",
+    "labels": {
+     "a": "2",
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "{\"z\":\"2\"}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    true,
+    true,
+    true,
+    false,
+    true,
+    true,
+    false,
+    true,
+    false,
+    false,
+    true,
+    true,
+    false,
+    true
+   ],
+   "v1.53.0": [
+    true,
+    true,
+    true,
+    true,
+    false,
+    true,
+    true,
+    false,
+    true,
+    false,
+    false,
+    true,
+    true,
+    false,
+    true
+   ]
+  },
+  "vl_line": [
+   "{\"a\":\"1\",\"b\":\"x\",\"_entry\":\"hello world\"}",
+   "{\"a\":\"1\",\"b\":\"x\"}",
+   "{\"a\":\"1\",\"_entry\":\"\"}",
+   "{\"a\":1,\"b\":true,\"c\":null,\"d\":{\"e\":\"f\"},\"_entry\":\"L\"}",
+   "",
+   "{\"a\":\"1\",\"_entry\":5}",
+   "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+   "",
+   "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+   "",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"say \\\"hi\\\" {x}\"}",
+   "{\"a\":\"2\",\"_entry\":\"hello again\"}",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"{\\\"z\\\":\\\"2\\\"}\"}"
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | a=\"\"",
+  "text": "app:=\"s\" | unpack_json | filter a:=\"\"",
+  "loki": [
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"b\":\"x\"}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "L",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "not json",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":5}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "only",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    false,
+    false,
+    false,
+    false,
+    true,
+    false,
+    false,
+    true,
+    false,
+    true,
+    true,
+    false,
+    false,
+    false,
+    false
+   ],
+   "v1.53.0": [
+    false,
+    false,
+    false,
+    false,
+    true,
+    false,
+    false,
+    true,
+    false,
+    true,
+    true,
+    false,
+    false,
+    false,
+    false
+   ]
+  },
+  "vl_line": [
+   "",
+   "",
+   "",
+   "",
+   "not json",
+   "",
+   "",
+   "{\"_entry\":\"only\"}",
+   "",
+   "{}",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | a\u003e=1",
+  "text": "app:=\"s\" | unpack_json | filter a:\u003e=1",
+  "loki": [
+   {
+    "keep": true,
+    "line": "hello world",
+    "labels": {
+     "a": "1",
+     "app": "s",
+     "b": "x"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "say \"hi\" {x}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "hello again",
+    "labels": {
+     "a": "2",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "bye",
+    "labels": {
+     "__error__": "LabelFilterErr",
+     "__error_details__": "strconv.ParseFloat: parsing \"hello\": invalid syntax",
+     "a": "hello",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"z\":\"2\"}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    true,
+    true,
+    true,
+    false,
+    true,
+    true,
+    false,
+    true,
+    false,
+    false,
+    true,
+    true,
+    false,
+    true
+   ],
+   "v1.53.0": [
+    true,
+    true,
+    true,
+    true,
+    false,
+    true,
+    true,
+    false,
+    true,
+    false,
+    false,
+    true,
+    true,
+    false,
+    true
+   ]
+  },
+  "vl_line": [
+   "{\"a\":\"1\",\"b\":\"x\",\"_entry\":\"hello world\"}",
+   "{\"a\":\"1\",\"b\":\"x\"}",
+   "{\"a\":\"1\",\"_entry\":\"\"}",
+   "{\"a\":1,\"b\":true,\"c\":null,\"d\":{\"e\":\"f\"},\"_entry\":\"L\"}",
+   "",
+   "{\"a\":\"1\",\"_entry\":5}",
+   "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+   "",
+   "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+   "",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"say \\\"hi\\\" {x}\"}",
+   "{\"a\":\"2\",\"_entry\":\"hello again\"}",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"{\\\"z\\\":\\\"2\\\"}\"}"
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | __error__=\"\"",
+  "text": "app:=\"s\" | unpack_json | filter __error__:=\"\"",
+  "loki": [
+   {
+    "keep": true,
+    "line": "hello world",
+    "labels": {
+     "a": "1",
+     "app": "s",
+     "b": "x"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"b\":\"x\"}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "L",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":5}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "only",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "say \"hi\" {x}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "hello again",
+    "labels": {
+     "a": "2",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "bye",
+    "labels": {
+     "a": "hello",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"z\":\"2\"}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "v1.53.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ]
+  },
+  "vl_line": [
+   "{\"a\":\"1\",\"b\":\"x\",\"_entry\":\"hello world\"}",
+   "{\"a\":\"1\",\"b\":\"x\"}",
+   "{\"a\":\"1\",\"_entry\":\"\"}",
+   "{\"a\":1,\"b\":true,\"c\":null,\"d\":{\"e\":\"f\"},\"_entry\":\"L\"}",
+   "not json",
+   "{\"a\":\"1\",\"_entry\":5}",
+   "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+   "{\"_entry\":\"only\"}",
+   "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+   "{}",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"say \\\"hi\\\" {x}\"}",
+   "{\"a\":\"2\",\"_entry\":\"hello again\"}",
+   "{\"a\":\"hello\",\"_entry\":\"bye\"}",
+   "{\"a\":\"1\",\"_entry\":\"{\\\"z\\\":\\\"2\\\"}\"}"
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | __error__!=\"\"",
+  "text": "app:=\"s\" | unpack_json | filter __error__:!\"\"",
+  "loki": [
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "not json",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "v1.53.0": [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ]
+  },
+  "vl_line": [
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack |= \"hello\"",
+  "text": "app:=\"s\" | unpack_json | filter ~\"hello\"",
+  "loki": [
+   {
+    "keep": true,
+    "line": "hello world",
+    "labels": {
+     "a": "1",
+     "app": "s",
+     "b": "x"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "hello again",
+    "labels": {
+     "a": "2",
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    true,
+    true,
+    false
+   ],
+   "v1.53.0": [
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    true,
+    true,
+    false
+   ]
+  },
+  "vl_line": [
+   "{\"a\":\"1\",\"b\":\"x\",\"_entry\":\"hello world\"}",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "{\"a\":\"2\",\"_entry\":\"hello again\"}",
+   "{\"a\":\"hello\",\"_entry\":\"bye\"}",
+   ""
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack != \"hello\"",
+  "text": "app:=\"s\" | unpack_json | filter NOT ~\"hello\"",
+  "loki": [
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"b\":\"x\"}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "L",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "not json",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":5}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "only",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "say \"hi\" {x}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "bye",
+    "labels": {
+     "a": "hello",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"z\":\"2\"}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    false,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    false,
+    false,
+    true
+   ],
+   "v1.53.0": [
+    false,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    false,
+    false,
+    true
+   ]
+  },
+  "vl_line": [
+   "",
+   "{\"a\":\"1\",\"b\":\"x\"}",
+   "{\"a\":\"1\",\"_entry\":\"\"}",
+   "{\"a\":1,\"b\":true,\"c\":null,\"d\":{\"e\":\"f\"},\"_entry\":\"L\"}",
+   "not json",
+   "{\"a\":\"1\",\"_entry\":5}",
+   "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+   "{\"_entry\":\"only\"}",
+   "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+   "{}",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"say \\\"hi\\\" {x}\"}",
+   "",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"{\\\"z\\\":\\\"2\\\"}\"}"
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack |~ \"hel+o\"",
+  "text": "app:=\"s\" | unpack_json | filter ~\"hel+o\"",
+  "loki": [
+   {
+    "keep": true,
+    "line": "hello world",
+    "labels": {
+     "a": "1",
+     "app": "s",
+     "b": "x"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "hello again",
+    "labels": {
+     "a": "2",
+     "app": "s"
+    }
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    true,
+    true,
+    false
+   ],
+   "v1.53.0": [
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    true,
+    true,
+    false
+   ]
+  },
+  "vl_line": [
+   "{\"a\":\"1\",\"b\":\"x\",\"_entry\":\"hello world\"}",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "{\"a\":\"2\",\"_entry\":\"hello again\"}",
+   "{\"a\":\"hello\",\"_entry\":\"bye\"}",
+   ""
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | json | z=\"2\"",
+  "text": "app:=\"s\" | unpack_json | unpack_json | filter z:=\"2\"",
+  "loki": [
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": false
+   },
+   {
+    "keep": true,
+    "line": "{\"z\":\"2\"}",
+    "labels": {
+     "a": "1",
+     "app": "s",
+     "z": "2"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "v1.53.0": [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ]
+  },
+  "vl_line": [
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | line_format \"{{.a}}\"",
+  "text": "app:=\"s\" | unpack_json | format \"\u003ca\u003e\"",
+  "loki": [
+   {
+    "keep": true,
+    "line": "1",
+    "labels": {
+     "a": "1",
+     "app": "s",
+     "b": "x"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "1",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "1",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "2",
+    "labels": {
+     "a": "2",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "hello",
+    "labels": {
+     "a": "hello",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "1",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "v1.53.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ]
+  },
+  "vl_line": [
+   "1",
+   "1",
+   "1",
+   "1",
+   "",
+   "1",
+   "1",
+   "",
+   "1",
+   "",
+   "",
+   "1",
+   "2",
+   "hello",
+   "1"
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | unpack | decolorize",
+  "text": "app:=\"s\" | unpack_json | decolorize",
+  "loki": [
+   {
+    "keep": true,
+    "line": "hello world",
+    "labels": {
+     "a": "1",
+     "app": "s",
+     "b": "x"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"b\":\"x\"}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "L",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "not json",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":5}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "only",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{}",
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "labels": {
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "say \"hi\" {x}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "hello again",
+    "labels": {
+     "a": "2",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "bye",
+    "labels": {
+     "a": "hello",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "{\"z\":\"2\"}",
+    "labels": {
+     "a": "1",
+     "app": "s"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "v1.53.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ]
+  },
+  "vl_line": [
+   "{\"a\":\"1\",\"b\":\"x\",\"_entry\":\"hello world\"}",
+   "{\"a\":\"1\",\"b\":\"x\"}",
+   "{\"a\":\"1\",\"_entry\":\"\"}",
+   "{\"a\":1,\"b\":true,\"c\":null,\"d\":{\"e\":\"f\"},\"_entry\":\"L\"}",
+   "not json",
+   "{\"a\":\"1\",\"_entry\":5}",
+   "{\"a\":\"1\",\"_entry\":{\"x\":\"y\"}}",
+   "{\"_entry\":\"only\"}",
+   "{\"a\":\"1\",\"n\":{\"_entry\":\"z\"}}",
+   "{}",
+   "",
+   "{\"a\":\"1\",\"_entry\":\"say \\\"hi\\\" {x}\"}",
+   "{\"a\":\"2\",\"_entry\":\"hello again\"}",
+   "{\"a\":\"hello\",\"_entry\":\"bye\"}",
+   "{\"a\":\"1\",\"_entry\":\"{\\\"z\\\":\\\"2\\\"}\"}"
+  ]
+ },
+ {
+  "q": "{app=\"s\"} | line_format \"x\" | unpack",
+  "text": "app:=\"s\" | format \"x\" | unpack_json",
+  "loki": [
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   },
+   {
+    "keep": true,
+    "line": "x",
+    "labels": {
+     "__error__": "JSONParserErr",
+     "__error_details__": "expecting json object(6), but it is not",
+     "app": "s"
+    }
+   }
+  ],
+  "vl_kept": {
+   "v1.49.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "v1.53.0": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ]
+  },
+  "vl_line": [
+   "x",
+   "x",
+   "x",
+   "x",
+   "x",
+   "x",
+   "x",
+   "x",
+   "x",
+   "x",
+   "x",
+   "x",
+   "x",
+   "x",
+   "x"
+  ]
+ }
+]
