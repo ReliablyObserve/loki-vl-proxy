@@ -217,7 +217,7 @@ Loki lexes a query with Go's `text/scanner`, a duration and bytes attempt after 
 | Binary operator after a label filter | `+ - * / % ^ == > >= < <= unless` after a complete filter belong to the query, whose left operand is the pipeline: the query goes on from there and a log query operand is `unexpected type for left leg of binary operation (+): *syntax.PipelineExpr` (`MatchersExpr` for a bare selector, `right leg` for the right operand; the left operand first). Inside parentheses the operator is a syntax error. |
 | Float conversions | A number Go's `ParseFloat` cannot read (`0x1`, `0b1`, `1e999`) is `unable to parse literal as a float: strconv.ParseFloat: parsing ...` for an operand, `unable to parse vectorExpr as a float` in `vector()`, `invalid parameter for operation quantile_over_time: ...` and `invalid parameter topk(0x1,` for a parameter; Loki raises it after the left leg type check. |
 
-Not covered: the content of a `[range]` keeps the scanner's older reading (`[0x1]` names the unit `x` of `0x`), a stage that starts with a bare name (`| x+y=1`) passes through to the backend as an unknown stage, and the content of a stream selector that is not closed (`{app="a"} + {`) keeps the generic error.
+Not covered: the content of a `[range]` keeps the scanner's older reading (`[0x1]` names the unit `x` of `0x`), a stage that is a bare name alone (`| x`) passes through to the backend as an unknown stage (a name followed by more of the stage, `| x+y=1`, `| a, b` or `| a .5`, is Loki's syntax error at the token after the name), and the content of a stream selector that is not closed (`{app="a"} + {`) keeps the generic error.
 
 ## Semantic Validation
 

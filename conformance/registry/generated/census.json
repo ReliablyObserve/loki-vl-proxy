@@ -662,6 +662,9 @@
     "semantics/series-level-aggregation-bounded-memory | query",
     "semantics/sliding-window-recurrence-exact | compare:exact",
     "semantics/sliding-window-recurrence-exact | query",
+    "semantics/stage-name-followed-by-more-of-stage | compare:observed",
+    "semantics/stage-name-followed-by-more-of-stage | gap:fixed",
+    "semantics/stage-name-followed-by-more-of-stage | query",
     "semantics/stddev-stdvar-grouped-values | compare:observed",
     "semantics/stddev-stdvar-grouped-values | gap:fixed",
     "semantics/stddev-stdvar-grouped-values | query",
@@ -945,6 +948,7 @@
     "internal/logql/print_reparse_test.go | semantics/label-filter-expression-syntax",
     "internal/logql/range_rules_test.go | semantics/proxy-accepts-invalid-logql",
     "internal/logql/selector_value_test.go | semantics/selector-values-are-strings",
+    "internal/logql/stage_name_follower_loki_test.go | semantics/stage-name-followed-by-more-of-stage",
     "internal/logql/stage_parse_validate_loki_test.go | semantics/label-filter-regex-parse-error",
     "internal/logql/stage_raw_test.go | semantics/keep-leaves-labels-loki-drops",
     "internal/logql/terminates_test.go | semantics/logql-unicode-runes",
@@ -1110,6 +1114,7 @@
     "internal/proxy/fail_fast_unicode_test.go | cache-response-key-versions",
     "internal/proxy/fail_fast_unicode_test.go | semantics/label-list-trailing-comma",
     "internal/proxy/fail_fast_unicode_test.go | semantics/logql-unicode-runes",
+    "internal/proxy/fail_fast_unicode_test.go | semantics/stage-name-followed-by-more-of-stage",
     "internal/proxy/first_last_range_timestamps_test.go | loki_api_v1_query_range",
     "internal/proxy/first_last_range_timestamps_test.go | semantics/unwrap-first-last-range-timestamps",
     "internal/proxy/first_last_range_timestamps_test.go | semantics/unwrap-first-last-under-aggregation",
@@ -1134,6 +1139,7 @@
     "internal/proxy/keep_series_grouping_test.go | loki_api_v1_query",
     "internal/proxy/keep_series_grouping_test.go | loki_api_v1_query_range",
     "internal/proxy/keep_series_grouping_test.go | semantics/keep-leaves-labels-loki-drops",
+    "internal/proxy/keep_series_grouping_test.go | semantics/stage-name-followed-by-more-of-stage",
     "internal/proxy/label_cache_behavior_test.go | loki_api_v1_labels",
     "internal/proxy/label_empty_run_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/label_filter_expression_test.go | loki_api_v1_query_range",
@@ -2219,14 +2225,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 58,
+      "api": 59,
       "drilldown": 50,
       "explore": 162,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 509,
+      "go": 510,
       "playwright": 1
     },
     "page_kinds": {
@@ -2246,7 +2252,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 104,
-    "wired_items": 290
+    "wired_items": 291
   },
   "gates": [
     "A/B shape selection",

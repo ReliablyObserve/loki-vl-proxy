@@ -222,6 +222,8 @@ type parser struct {
 	// is one more than the offset of the first unwrap stage outside one: Loki's parser stops at that token whatever
 	// follows it.
 	rangeDepth, plainUnwrapAt int32
+	// opaqueText is set while the text of a stage kept as text is read: a dot in it keeps the space before it.
+	opaqueText bool
 }
 
 // keep marks as read over the characters that start no token between offset start and the current token: the tokens
@@ -872,7 +874,26 @@ func (p *parser) parseNameStage(stageStart int, kw string) (Stage, error) {
 	if isLabelFilterOperator(p.cur.Typ) || p.cur.Typ == TokError && p.cur.Val == "!" {
 		return p.parseLabelFilterStage(stageStart, kw, TokIdent)
 	}
-	return &LabelFilterStage{Raw: p.consumeRestOfStage(kw, TokIdent)}, nil
+	if dotted := p.cur.Typ == TokError && p.cur.Val == "."; !dotted && !p.atStageEnd() {
+		// A name that is no filter and no stage of its own, followed by more of the stage (`| a, b`, `| a .5`,
+		// `| a:b`): Loki's grammar has no place for the token after the name. Only a dot goes on, the proxy's dotted
+		// name (`| a.b`, and the spaced `| custom . x = "v"` the translator joins into one name).
+		return nil, p.syntaxErrorAt("")
+	}
+	p.opaqueText = true
+	raw := p.consumeRestOfStage(kw, TokIdent)
+	p.opaqueText = false
+	return &LabelFilterStage{Raw: raw}, nil
+}
+
+// atStageEnd reports whether the current token ends a stage the way consumeRestOfStage stops: the end of the query,
+// the next pipeline operator, a range bracket or a closing parenthesis.
+func (p *parser) atStageEnd() bool {
+	switch p.cur.Typ {
+	case TokEOF, TokPipe, TokPipeEq, TokPipeTilde, TokPipeGt, TokBangGt, TokLBracket, TokRParen:
+		return true
+	}
+	return false
 }
 
 // stageNameFollower reports the characters that may follow the name that opens a stage although they start no token:
@@ -1571,9 +1592,12 @@ func zeroLineToken(name string) bool {
 //	(a) alphanumeric, `.` or non-ASCII + alphanumeric: `200`+`and` → `200and`,
 //	    `0µ`+`A` → `0µA` (unparseable)
 //	(b) string-end + alphanumeric:   `"error"`+`or` → `"error"or` (ambiguous)
+//	(c) in the text of a stage kept as text, alphanumeric, `.` or non-ASCII + a
+//	    token that starts with `.`: `a`+`.5` → `a.5` and `a`+`.`+`b` → `a.b`
+//	    read as one name
 //
-// Rule (a) does not apply to tokens that touch in the source: the scanner cuts
-// one literal into several (`1h5m` is `1h` `5m`, `1e3` is `1e` `3`), and a
+// Rules (a) and (c) do not apply to tokens that touch in the source: the scanner
+// cuts one literal into several (`1h5m` is `1h` `5m`, `1e3` is `1e` `3`), and a
 // space there would change it (`1h 5m`).
 func (p *parser) appendStageToken(b *strings.Builder) {
 	touches := p.prevEnd == p.pos()
@@ -1586,6 +1610,10 @@ func (p *parser) appendStageToken(b *strings.Builder) {
 	if b.Len() > 0 && raw != "" && isAlphanumeric(raw[0]) {
 		prev := b.String()[b.Len()-1]
 		if ((isAlphanumeric(prev) || prev == '.' || prev >= 0x80) && !touches) || prev == '"' || prev == '`' {
+			b.WriteByte(' ')
+		}
+	} else if p.opaqueText && raw != "" && raw[0] == '.' && !touches && b.Len() > 0 {
+		if prev := b.String()[b.Len()-1]; isAlphanumeric(prev) || prev == '.' || prev >= 0x80 {
 			b.WriteByte(' ')
 		}
 	}
