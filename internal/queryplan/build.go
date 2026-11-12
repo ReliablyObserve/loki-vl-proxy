@@ -402,3 +402,5 @@ func inherit(p *Props, child Node) {
 	p.Lookback = max(p.Lookback, c.Lookback)
 	p.Offset = max(p.Offset, c.Offset)
 }
+
+// (validation only: touches a shipped Go file so the PR quality report runs on the CI sharding branch; drop this commit)
