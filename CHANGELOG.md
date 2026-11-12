@@ -7,17 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- A log query with a label filter that names a label VictoriaLogs cannot read bare
-  (`{app="a"} | status = "200" and ³ = "x"`, a name with punctuation, a symbol, a combining mark,
-  an emoji or a zero-width space; Loki answers these) now answers with the lines of that label
-  instead of failing with a VictoriaLogs parse error. The query plan, which serves log queries
-  that have only line and label filters, quotes the name; the string translator writes it bare
-  (`semantics/translator-writes-exotic-field-names-bare`). A name of letters, digits and
-  underscores in any script, and the names with a dot or a hyphen that were quoted already, are
-  written as before.
-
 ### Changed
 
 - The query plan leaves to the string translator a stage that unwraps, reads as a json
@@ -34,6 +23,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `semantics/parser-reads-unicode-blank-as-white-space`). The latter records that the proxy's
   parser reads a blank that is no ASCII one (U+2003, U+3000, U+00A0) as white space where Loki
   answers 400; the parser is unchanged.
+- The query plan now decides how the handlers answer `sum`, `avg`, `min`, `max` and `count` (with
+  `by`, `without` or neither) over `sum_over_time`, `avg_over_time`, `min_over_time` and
+  `max_over_time` of an unwrapped label, instead of leaving them to the handlers: whether the
+  series keep their stream's identity, whether the empty-input guard counts the input, the level
+  probe, the conversion-error flag and the fold of a `without` clause, on every window. Three
+  decisions follow what the handlers do today: the maximum of `max_over_time` (or the minimum of
+  `min_over_time`) by labels is taken per bucket and group in VictoriaLogs on a sliding window, an
+  ungrouped `sum` adds all lines up only over `sum_over_time` (over an average, minimum or maximum it
+  keeps the series), and a `without` clause over an unwrapped value is folded by the proxy. The
+  lowering of these queries now hands back its stats typed, with the same query text. No answer or
+  request changes: no handler reads the rule yet. Route parity: 470 more of 24,970 runs are decided
+  (5,706 native, 0 mismatches, the routes and statuses unchanged); the other 900 runs of the former
+  "unwrap operand" group are now named by what keeps them delegated (a parser before the unwrap, an
+  offset). A vector level that groups by the line (`_msg`) stays delegated.
+
+### Fixed
+
+- A log query with a label filter that names a label VictoriaLogs cannot read bare
+  (`{app="a"} | status = "200" and ³ = "x"`, a name with punctuation, a symbol, a combining mark,
+  an emoji or a zero-width space; Loki answers these) now answers with the lines of that label
+  instead of failing with a VictoriaLogs parse error. The query plan, which serves log queries
+  that have only line and label filters, quotes the name; the string translator writes it bare
+  (`semantics/translator-writes-exotic-field-names-bare`). A name of letters, digits and
+  underscores in any script, and the names with a dot or a hyphen that were quoted already, are
+  written as before.
+
+## [2.184.0] - 2026-11-12
+
+### Fixed
+
+- `stdvar_over_time` with a grouping (`stdvar_over_time(... | unwrap n [5m]) by (app)`,
+  `sum by (app) (stdvar_over_time(...))`) or without a parser no longer fails: it
+  was answered with an error (400), where Loki answers 200. VictoriaLogs has no
+  variance function, so the proxy asks for the standard deviation squared, and
+  that request was sent to VictoriaLogs with an internal marker in its text.
+  `stdvar_over_time(...) by (app)` now has Loki's values; under an outer
+  `sum by` the value is still the variance of the group's pooled samples, not
+  the sum of the series' own variances that Loki takes.
+- `stddev_over_time` and `stdvar_over_time` over an unwrapped label on a range
+  query whose range equals the step (`[5m]` at step 5m) answer the window ending
+  at each timestamp, as Loki does; each point was the window one step later.
+  A range that is not the step keeps its answer.
 
 ## [2.183.0] - 2026-11-12
 

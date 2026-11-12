@@ -80,6 +80,7 @@
       "internal/queryplan/lower/route_test.go",
       "internal/queryplan/lower/series_agg_test.go",
       "internal/queryplan/lower/spelling_test.go",
+      "internal/queryplan/lower/unwrap_stats_test.go",
       "internal/queryplan/lower/unwrap_test.go",
       "internal/queryplan/lower/vector_agg_nested_test.go",
       "internal/queryplan/lower/vector_agg_test.go",
@@ -3421,6 +3422,9 @@
     "internal/queryplan/lower/unpack_test.go": [
       "semantics/translator-writes-unpack-as-unpack-json"
     ],
+    "internal/queryplan/lower/unwrap_stats_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/queryplan/lower/unwrap_test.go": [
       "architecture-syntax-package-layering",
       "semantics/translator-writes-keyword-field-names-bare"
@@ -4318,7 +4322,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 522,
+  "tests_with_markers": 523,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
