@@ -1,0 +1,520 @@
+{"q":"a:=\"b\" 、:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"、\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" ;:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \";\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" @:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"@\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" ³:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"³\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" Ⅰ:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"Ⅰ\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" 𝛁:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"𝛁\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" 😀:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"😀\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" ा:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"ा\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" ​:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"​\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" ·:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"·\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" ☃:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"☃\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" »:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"»\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" ゠:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"゠\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" ⃝:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"⃝\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" a.b:=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" \"a.b\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" a-b:=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" \"a-b\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" é:=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" é:=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" 日本:=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" 日本:=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" x1:=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" x1:=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" not:=\"z\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" \"not\":=\"z\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and 、:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"、\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and ;:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \";\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and @:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"@\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and ³:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"³\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and Ⅰ:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"Ⅰ\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and 𝛁:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"𝛁\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and 😀:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"😀\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and ा:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"ा\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and ​:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"​\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and ·:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"·\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and ☃:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"☃\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and »:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"»\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and ゠:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"゠\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and ⃝:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"⃝\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and a.b:=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and \"a.b\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and a-b:=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and \"a-b\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and é:=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and é:=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and 日本:=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and 日本:=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and x1:=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and x1:=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" (x:=\"y\" and not:=\"z\")","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" (x:=\"y\" and \"not\":=\"z\")","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -、:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"、\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -;:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\";\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -@:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"@\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -³:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"³\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -Ⅰ:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"Ⅰ\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -𝛁:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"𝛁\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -😀:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"😀\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -ा:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"ा\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -​:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"​\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -·:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"·\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -☃:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"☃\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -»:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"»\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -゠:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"゠\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -⃝:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"⃝\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -a.b:*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -\"a.b\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -a-b:*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -\"a-b\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -é:*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -é:*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -日本:*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -日本:*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -x1:*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -x1:*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" -not:*","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" -\"not\":*","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter 、:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"、\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ;:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \";\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter @:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"@\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ³:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"³\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter Ⅰ:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"Ⅰ\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter 𝛁:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"𝛁\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter 😀:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"😀\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ा:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"ा\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ​:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"​\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ·:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"·\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ☃:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"☃\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter »:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"»\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ゠:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"゠\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ⃝:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"⃝\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter a.b:~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter \"a.b\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter a-b:~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter \"a-b\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter é:~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter é:~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter 日本:~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter 日本:~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter x1:~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter x1:~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter not:~\"x\"","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"not\":~\"x\"","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter 、:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"、\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ;:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \";\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter @:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"@\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ³:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"³\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter Ⅰ:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"Ⅰ\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter 𝛁:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"𝛁\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter 😀:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"😀\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ा:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"ा\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ​:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"​\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ·:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"·\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ☃:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"☃\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter »:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"»\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ゠:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"゠\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter ⃝:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"⃝\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter a.b:>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter \"a.b\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter a-b:>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter \"a-b\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter é:>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter é:>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter 日本:>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter 日本:>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter x1:>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter x1:>5","v1.49.0":true,"v1.53.0":true}
+{"q":"a:=\"b\" | filter not:>5","v1.49.0":false,"v1.53.0":false}
+{"q":"a:=\"b\" | filter \"not\":>5","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy 、 as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \"、\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy ; as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \";\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy @ as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \"@\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy ³ as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \"³\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy Ⅰ as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \"Ⅰ\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy 𝛁 as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \"𝛁\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy 😀 as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \"😀\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy ा as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \"ा\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy ​ as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \"​\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy · as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \"·\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy ☃ as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \"☃\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy » as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \"»\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy ゠ as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \"゠\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy ⃝ as x","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy \"⃝\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy a.b as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy \"a.b\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy a-b as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy \"a-b\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy é as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy é as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy 日本 as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy 日本 as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x1 as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x1 as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy not as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy \"not\" as x","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as 、","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \"、\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as ;","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \";\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as @","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \"@\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as ³","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \"³\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as Ⅰ","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \"Ⅰ\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as 𝛁","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \"𝛁\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as 😀","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \"😀\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as ा","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \"ा\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as ​","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \"​\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as ·","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \"·\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as ☃","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \"☃\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as »","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \"»\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as ゠","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \"゠\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as ⃝","v1.49.0":false,"v1.53.0":false}
+{"q":"* | copy x as \"⃝\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as a.b","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as \"a.b\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as a-b","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as \"a-b\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as é","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as é","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as 日本","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as 日本","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as x1","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as x1","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as not","v1.49.0":true,"v1.53.0":true}
+{"q":"* | copy x as \"not\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields 、","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \"、\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields ;","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \";\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields @","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \"@\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields ³","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \"³\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields Ⅰ","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \"Ⅰ\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields 𝛁","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \"𝛁\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields 😀","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \"😀\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields ा","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \"ा\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields ​","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \"​\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields ·","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \"·\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields ☃","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \"☃\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields »","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \"»\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields ゠","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \"゠\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields ⃝","v1.49.0":false,"v1.53.0":false}
+{"q":"* | fields \"⃝\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields a.b","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields \"a.b\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields a-b","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields \"a-b\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields é","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields é","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields 日本","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields 日本","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields x1","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields x1","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields not","v1.49.0":true,"v1.53.0":true}
+{"q":"* | fields \"not\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete 、","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \"、\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete ;","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \";\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete @","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \"@\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete ³","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \"³\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete Ⅰ","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \"Ⅰ\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete 𝛁","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \"𝛁\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete 😀","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \"😀\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete ा","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \"ा\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete ​","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \"​\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete ·","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \"·\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete ☃","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \"☃\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete »","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \"»\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete ゠","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \"゠\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete ⃝","v1.49.0":false,"v1.53.0":false}
+{"q":"* | delete \"⃝\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete a.b","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete \"a.b\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete a-b","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete \"a-b\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete é","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete é","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete 日本","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete 日本","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete x1","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete x1","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete not","v1.49.0":true,"v1.53.0":true}
+{"q":"* | delete \"not\"","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (、)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\"、\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (;)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\";\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (@)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\"@\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (³)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\"³\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (Ⅰ)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\"Ⅰ\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (𝛁)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\"𝛁\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (😀)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\"😀\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (ा)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\"ा\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (​)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\"​\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (·)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\"·\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (☃)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\"☃\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (»)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\"»\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (゠)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\"゠\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (⃝)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | unpack_json fields (\"⃝\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (a.b)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (\"a.b\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (a-b)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (\"a-b\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (é)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (é)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (日本)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (日本)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (x1)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (x1)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (not)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | unpack_json fields (\"not\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (、) count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\"、\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (;) count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\";\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (@) count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\"@\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (³) count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\"³\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (Ⅰ) count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\"Ⅰ\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (𝛁) count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\"𝛁\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (😀) count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\"😀\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (ा) count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\"ा\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (​) count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\"​\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (·) count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\"·\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (☃) count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\"☃\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (») count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\"»\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (゠) count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\"゠\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (⃝) count()","v1.49.0":false,"v1.53.0":false}
+{"q":"* | stats by (\"⃝\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (a.b) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (\"a.b\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (a-b) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (\"a-b\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (é) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (é) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (日本) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (日本) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (x1) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (x1) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (not) count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | stats by (\"not\") count()","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (、:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"、\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (;:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\";\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (@:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"@\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (³:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"³\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (Ⅰ:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"Ⅰ\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (𝛁:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"𝛁\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (😀:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"😀\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (ा:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"ा\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (​:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"​\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (·:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"·\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (☃:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"☃\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (»:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"»\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (゠:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"゠\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (⃝:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"⃝\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (a.b:*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (\"a.b\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (a-b:*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (\"a-b\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (é:*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (é:*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (日本:*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (日本:*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (x1:*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (x1:*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | format if (not:*) \"<x>\" as y","v1.49.0":false,"v1.53.0":false}
+{"q":"* | format if (\"not\":*) \"<x>\" as y","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (、)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\"、\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (;)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\";\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (@)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\"@\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (³)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\"³\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (Ⅰ)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\"Ⅰ\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (𝛁)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\"𝛁\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (😀)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\"😀\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (ा)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\"ा\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (​)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\"​\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (·)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\"·\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (☃)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\"☃\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (»)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\"»\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (゠)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\"゠\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (⃝)","v1.49.0":false,"v1.53.0":false}
+{"q":"* | sort by (\"⃝\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (a.b)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (\"a.b\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (a-b)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (\"a-b\")","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (é)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (é)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (日本)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (日本)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (x1)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (x1)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (not)","v1.49.0":true,"v1.53.0":true}
+{"q":"* | sort by (\"not\")","v1.49.0":true,"v1.53.0":true}

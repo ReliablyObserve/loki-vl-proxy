@@ -19,7 +19,7 @@
 [![Helm Chart Pulls](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/ghcr-chart-pulls.json)](https://github.com/ReliablyObserve/Loki-VL-proxy/pkgs/container/charts%2Floki-vl-proxy)
 [![Source Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-code.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Test Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-tests.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-42070%20passed-brightgreen)](#tests)
+[![Tests](https://img.shields.io/badge/tests-42090%20passed-brightgreen)](#tests)
 [![Coverage](https://img.shields.io/badge/coverage-88.1%25-green)](#tests)
 [![LogQL Compatibility](https://img.shields.io/badge/LogQL%20compatibility-tested-blue)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
@@ -177,8 +177,8 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 10 proven, 21 partial, 3 gaps |
-| Known differences from Loki (ranked) | **124**: 100 open, 14 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **64 of 100**: 50 Explore, 13 Logs Drilldown, 1 Grafana datasource; 11 API only, 25 edge cases |
+| Known differences from Loki (ranked) | **128**: 104 open, 14 documented, 7 owner-kept, 3 upstream |
+| Open differences visible in Grafana (registry impact) | **64 of 104**: 50 Explore, 13 Logs Drilldown, 1 Grafana datasource; 11 API only, 29 edge cases |
 
 **Readiness by client**
 

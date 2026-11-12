@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan lowers a binary operation whose operand has a `without ()` clause
+  (`sum without () (rate({app="a"}[5m])) / 2`, `sum(rate({app="a"}[5m])) without () + on() vector(0)`) the way
+  Loki reads it: the clause removes no label, so every series of the operand stays its own.
+  The string translator reads the clause as none and writes the operand ungrouped, which on a
+  range query whose step equals its range reaches VictoriaLogs as one series; that difference
+  is recorded (`semantics/binary-operand-without-empty-collapses`, open) and these queries are
+  not counted as served from the plan. A `without ()` on its own, under a ranking, `stddev` or
+  `label_replace`, in a nest of aggregations, or over an unwrapped label stays with the string
+  translator. No answer changes; the plan does not serve these queries yet.
+- The query plan leaves to the string translator a stage that unwraps, reads as a json
+  expression's key, writes, or renames from or to a label called `_time`, `_stream`,
+  `_stream_id` or `_msg` (`unwrap _stream`, `json x="_time"`, `label_format x=_stream`): the text
+  it used to write for them, the translator's, is a filter VictoriaLogs rejects or reads as its
+  own time, stream or stream id filter
+  (`semantics/translator-writes-reserved-field-names`). No answer changes; the plan does not
+  serve metric queries or queries with a parser yet.
+- The VictoriaLogs parse oracle holds the plan to the string translator on the log queries it
+  lowers, and no longer finds a selector that VictoriaLogs reads unlike the translator's except
+  the five rows the translator writes wrongly or Loki rejects, now listed with their cases
+  (`semantics/translator-writes-signed-number-with-blank`,
+  `semantics/parser-reads-unicode-blank-as-white-space`). The latter records that the proxy's
+  parser reads a blank that is no ASCII one (U+2003, U+3000, U+00A0) as white space where Loki
+  answers 400; the parser is unchanged.
+
 ### Fixed
 
 - The `totalBytesProcessed` of the `data.stats` of a metric query (`-query-stats-mode=loki`, the default) follows the
@@ -16,6 +42,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per log expression: a metric query of the same expression takes the bytes of that part of its window
   exactly and prices its other lines at that answer's mean line size. No VictoriaLogs request is added. The
   one-range lookback before a metric query's start is covered by no log answer and is still estimated.
+- A log query with a label filter that names a label VictoriaLogs cannot read bare
+  (`{app="a"} | status = "200" and ³ = "x"`, a name with punctuation, a symbol, a combining mark,
+  an emoji or a zero-width space; Loki answers these) now answers with the lines of that label
+  instead of failing with a VictoriaLogs parse error. The query plan, which serves log queries
+  that have only line and label filters, quotes the name; the string translator writes it bare
+  (`semantics/translator-writes-exotic-field-names-bare`). A name of letters, digits and
+  underscores in any script, and the names with a dot or a hyphen that were quoted already, are
+  written as before.
+
+## [2.186.0] - 2026-11-12
+
+### Fixed
+
 - The `shards` of the `data.stats` of a repeated log query follow Loki's: a repeat answered from the
   proxy's response cache reports the 1h pieces that hold a returned entry, wherever they lie in the
   window, as Loki does (it keeps the pieces in which a query found nothing in its results cache). A

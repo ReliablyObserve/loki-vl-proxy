@@ -1,0 +1,80 @@
+id: semantics/binary-operand-without-empty-collapses
+title: A binary operation with an operand that has a without () clause is translated ungrouped, and a range query whose step equals its range answers one series for the operand; Loki keeps every series (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  A `without ()` clause removes no label, so each series of the operand stays its
+  own: in `sum without () (count_over_time({env="production"}[5m])) / 2` Loki
+  answers one series per stream, halved. The Loki oracle reads the clause the
+  same way (`facts` reports the operand's grouping as a without clause with no
+  label, checked on every lowered grid row by TestBinOpLoweringMatchesLoki), and
+  semantics/without-empty-grouping-range-collapses records the same defect for a
+  vector aggregation on its own.
+
+  The string translator reads a `without` clause only with at least one label
+  (its marker needs one), so `without ()` is no clause: the operand is written as
+  an ungrouped stats (`stats count()`), one series. The proxy folds a without
+  clause only when it has a label. Measured through the handlers
+  (TestPlanRouteParity with LVP_ROUTE_DUMP, 2026-11-12, the four shapes below on
+  the emulated backend): on query_range with the step equal to the range the
+  operand is one stats_query_range request, `stats count()`, so it answers one
+  series; an instant query asks for `stats by (_stream, level, detected_level)
+  count()`, and a step shorter or longer than the range fetches the log rows, so
+  those keep the operand's series. The ungrouped text is also what the shadows'
+  reference for the binary route holds.
+
+  The query plan lowers the operand as Loki reads it: a fold of the operand's
+  per-series rows by no label (physical.Fold, a without level with no labels),
+  over the rows the same operand writes under a `without (pod)` clause (the same
+  builder, which reads the empty clause as a without clause with nothing to
+  name). The text of that fold cannot say so (the marker needs a label), so it
+  encodes as the operand's request alone, the series rows a proxy that folds
+  nothing returns, and the proxy does not serve it yet. The shadows record the
+  rows as this known divergence: not native, and not a mismatch of the lowering.
+  The lowering reads the clause in a binary operation's operand only: on its own,
+  under a ranking, stddev or label_replace, and in the route rule it is still
+  delegated, because the handlers read it as none. A `without ()` in a nest of
+  vector aggregations (`sum by (app) (sum without () (..))`,
+  `count without () (sum without () (..))`) stays with the translator as BinOp
+  operand without empty nest: the fold carries one level, so the levels above an
+  empty clause are not in the operators, and `count without ()` is 1 for every
+  series. A `without ()` over a range aggregation of an unwrapped label stays as
+  BinOp operand without empty unwrap. Not run against a Loki here: the series
+  count is Loki's from its tree and the evaluation its other without clauses use.
+corpus:
+  size: 4
+  dimensions:
+    shapes:
+      - query: 'sum without () (count_over_time({env="production"}[5m])) / 2'
+      - query: 'sum(rate({env="production"}[5m])) without () / 2'
+      - query: 'max without () (rate({env="production"}[5m])) > on(app) group_left sum by (app) (rate({env="production"}[5m]))'
+      - query: 'sum without () (count_over_time({env="production"}[5m])) / sum without (node) (count_over_time({env="production"}[5m]))'
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum without () (count_over_time({env="production"}[5m])) / 2'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series labels, values]
+  expect: |
+    Loki's series and values: one series per stream, halved.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator (the marker of a without clause needs a label); internal/proxy (a fold only for a clause with labels); fixed when the plan serves binary operations'
+  loki: 'a without clause with no label removes none: each series of the operand stays its own (the oracle facts report the clause)'
+  proxy: 'the operand is translated ungrouped; on query_range with the step equal to the range it reaches VictoriaLogs as stats count() and the binary operation is applied to one series (the instant and the other step shapes keep the operand''s series)'
+  planned_test: 'TestEmptyWithoutOperandsKeepEverySeries (internal/querycorpus) holds the lowering to the labelled clause; an e2e row against Loki when the plan serves binary operations'
+  visual: none
+  visual_reason: 'a rarely written clause; no Grafana panel writes it'
+  clusters: []

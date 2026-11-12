@@ -240,6 +240,12 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				problems = append(problems, fmt.Sprintf("%s: %q: lowering failed: %v", prof.name, q, lerr))
 				continue
 			}
+			if emptyWithoutDiffers(q, plan, prof) {
+				// Loki keeps every series of a `without ()` operand, the translator writes it ungrouped
+				// (TestEmptyWithoutOperandsKeepEverySeries holds the lowering).
+				delegated["known divergence "+knownEmptyWithoutOperand]++
+				continue
+			}
 			if routed, divergence := routedRoot(plan); routed {
 				if msg := checkProxyEvaluated(q, prof, got); msg != "" {
 					problems = append(problems, msg)

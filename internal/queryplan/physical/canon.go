@@ -51,7 +51,7 @@ func Canon(op Op, unparsed *bool) any {
 	case Verbatim:
 		return Canon(v.In, unparsed)
 	case Fold:
-		return canonFold{v.Levels, Canon(v.In, unparsed)}
+		return canonFold{canonLevels(v.Levels), Canon(v.In, unparsed)}
 	case LabelMap:
 		return canonLabel{v.Replace, Canon(v.In, unparsed)}
 	case Binary:
@@ -74,6 +74,23 @@ func Canon(op Op, unparsed *bool) any {
 		return q
 	}
 	return op
+}
+
+// canonLevels are the levels of a fold with an empty label list read as none: the `without ()` level keeps every
+// series, and an empty list and no list are the same clause. The levels are copied only when one has an empty list.
+func canonLevels(levels []FoldLevel) []FoldLevel {
+	for i, lv := range levels {
+		if lv.Labels != nil && len(lv.Labels) == 0 {
+			out := append([]FoldLevel(nil), levels...)
+			for j := i; j < len(out); j++ {
+				if len(out[j].Labels) == 0 {
+					out[j].Labels = nil
+				}
+			}
+			return out
+		}
+	}
+	return levels
 }
 
 // canonClause is the clause of a level the proxy evaluates: `by ()` is no clause (it groups every series together,

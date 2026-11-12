@@ -36,9 +36,25 @@ import (
 //     translator as the operand of a binary operation, which the proxy runs as a request of its own;
 //   - an operand that is not a range aggregation (a ranking, a binary), one rangeAgg leaves
 //     out (unwrap functions, parsers, drop and keep, a range-level grouping), and the cases it names there;
-//   - a without clause with no label, a grouping label the label function turns into nothing, and a query whose
-//     text the translator would read as a clause or a stats pipe (a quoted `without`, `| stats`).
+//   - a without clause with no label (the string translator reads `without ()` as no clause, and the handlers
+//     serve that reading; a binary operation's operand lowers it as Loki does, see binOperand and
+//     vectorAggKeepAll), a grouping label the label function turns into nothing, and a query whose text the
+//     translator would read as a clause or a stats pipe (a quoted `without`, `| stats`).
 func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
+	return vectorAggClauses(va, prof, false)
+}
+
+// vectorAggKeepAll is vectorAgg for a caller that lowers an empty `without ()` clause as Loki reads it: the clause
+// removes no label, so the fold keeps every series. The same builder writes it as writes a clause with a label,
+// with a fold of no labels (physical.Fold). The handlers and the route rule still read the clause as none, which
+// is why vectorAgg, the route and the other callers keep delegating it (semantics/binary-operand-without-empty-
+// collapses is the defect on the proxy's side).
+func vectorAggKeepAll(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
+	return vectorAggClauses(va, prof, true)
+}
+
+// vectorAggClauses is vectorAgg; keepEmpty lowers an empty `without ()` clause (vectorAggKeepAll).
+func vectorAggClauses(va *queryplan.VectorAgg, prof Profile, keepEmpty bool) (physical.Op, error) {
 	if _, nested := va.In.(*queryplan.VectorAgg); nested {
 		return nestedVectorAgg(va, prof)
 	}
@@ -58,13 +74,13 @@ func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
 		}
 		ra = stripped
 	}
-	return vectorAggOver(va, ra, src, prof)
+	return vectorAggOver(va, ra, src, prof, keepEmpty)
 }
 
 // vectorAggOver is vectorAgg over the range aggregation ra, the operand of va. src is the log query as the client
 // wrote it, which holds the unwrap stage that ra does not (the translator reads the series from the whole text).
-func vectorAggOver(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *queryplan.LogSelect, prof Profile) (physical.Op, error) {
-	b, err := buildVectorAgg(va, ra, src, prof)
+func vectorAggOver(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *queryplan.LogSelect, prof Profile, keepEmpty bool) (physical.Op, error) {
+	b, err := buildVectorAggClauses(va, ra, src, prof, keepEmpty)
 	if err != nil {
 		return nil, err
 	}
@@ -83,8 +99,16 @@ type builtVector struct {
 }
 
 // buildVectorAgg is the lowering of va over ra: everything vectorAggOver writes except the final text, which a
-// nest of aggregations (nestedVectorAgg) extends with the stats of its outer levels first.
+// nest of aggregations (nestedVectorAgg) extends with the stats of its outer levels first. The route rule and the
+// parsed-label operand build through it, and read an empty `without ()` clause as the handlers do (none): it is
+// delegated there.
 func buildVectorAgg(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *queryplan.LogSelect, prof Profile) (builtVector, error) {
+	return buildVectorAggClauses(va, ra, src, prof, false)
+}
+
+// buildVectorAggClauses is buildVectorAgg; keepEmpty builds an empty `without ()` clause as a fold of no labels over
+// the rows of the series (the clause removes no label, so every series stays its own).
+func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *queryplan.LogSelect, prof Profile, keepEmpty bool) (builtVector, error) {
 	switch va.Op {
 	case logql.VectorSum, logql.VectorCount, logql.VectorMin, logql.VectorMax, logql.VectorAvg:
 	default:
@@ -106,7 +130,7 @@ func buildVectorAgg(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *queryp
 		}
 	}
 	var labelBuf [6]string
-	labels, raw, without, err := vectorClause(va, prof, labelBuf[:0])
+	labels, raw, without, err := vectorClauseOf(va, prof, labelBuf[:0], keepEmpty)
 	if err != nil {
 		return builtVector{}, err
 	}
@@ -154,6 +178,16 @@ func buildVectorAgg(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *queryp
 	// the log query and of the pipes that resolved them.
 	stats = rateVectorPipes(stats, va.Op, labels, log, log.holdsCopy() || keys.copies)
 	return builtVector{log: log, keys: keys.text, stats: stats, without: without, raw: raw}, nil
+}
+
+// vectorClauseOf is vectorClause, reading an empty `without ()` clause as a fold of no labels when keepEmpty is set:
+// a clause that removes no label keeps every series, and its stats are those of any other without clause (the proxy
+// folds the series, none of the labels is named).
+func vectorClauseOf(va *queryplan.VectorAgg, prof Profile, buf []string, keepEmpty bool) (labels, raw []string, without bool, err error) {
+	if g := va.By; keepEmpty && g != nil && g.Without && len(g.Labels) == 0 {
+		return nil, nil, true, nil
+	}
+	return vectorClause(va, prof, buf)
 }
 
 // vectorKeyPipes are the pipes that resolve the labels of the first of the stats pipes: the translator does that

@@ -85,6 +85,31 @@ func binOpMoreGrid() []string {
 			}
 		}
 	}
+	// an empty clause (`without ()`), which removes no label: the lowering keeps every series of the operand, as Loki
+	// does, where the translator folds them (semantics/binary-operand-without-empty-collapses).
+	for i, in := range ranges {
+		for _, agg := range aggs {
+			for k, w := range withouts(agg, ``, in) {
+				if i > 0 && k > 1 {
+					continue
+				}
+				add(fmt.Sprintf(`%s / 2`, w))
+				add(fmt.Sprintf(`100 > %s`, w))
+				add(fmt.Sprintf(`%s - ignoring(pod) %s`, w, w))
+				add(fmt.Sprintf(`sum by (app) (%s) / on(app) group_left(env) %s`, ranges[1], w))
+				add(fmt.Sprintf(`%s * on(app) sum without (pod) (%s)`, w, ranges[0]))
+			}
+		}
+	}
+	for _, in := range []string{
+		`sum by (app) (sum without () (` + ranges[0] + `))`, `count without () (sum without () (` + ranges[0] + `))`,
+		`sum without () (sum without (pod) (` + ranges[0] + `))`, `sum without (pod) (sum without () (` + ranges[0] + `))`,
+		`max without () (sum by (app, pod) (` + ranges[0] + `))`, `sum without () (sum by (app) (sum by (app, pod) (` + ranges[0] + `)))`,
+		`sum without () (` + ranges[5] + `)`, `avg(sum without () (` + ranges[1] + `))`,
+	} {
+		add(in + ` / 2`)
+		add(`2 > ` + in)
+	}
 	// on both sides: the first clause's labels are written, the second's are lost.
 	for _, a := range withouts("sum", `pod`, ranges[0]) {
 		for _, b := range withouts("max", `node`, ranges[1]) {

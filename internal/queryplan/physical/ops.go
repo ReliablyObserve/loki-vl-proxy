@@ -70,7 +70,10 @@ type Fold struct {
 type FoldLevel struct {
 	// Op is the aggregation the proxy folds itself (sum, min, max, avg or count). It is empty when the query's own
 	// aggregation does the fold, which the proxy reads from the LogQL.
-	Op      string
+	Op string
+	// Labels are the labels of the clause. A `without` level with none is `without ()`: it removes no label, so every
+	// series stays its own and the fold combines nothing. Its legacy text has no marker (the marker needs a label):
+	// Encode writes the operand's request alone, the series rows, and Split reports the level with no labels.
 	Labels  []string
 	Without bool
 }

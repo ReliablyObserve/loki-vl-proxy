@@ -1,0 +1,49 @@
+id: semantics/translator-writes-signed-number-with-blank
+title: A label filter number written with a blank after its sign (`a > - .5`) is copied with the blank by the string translator and rejected by VictoriaLogs (open for the translator; the query plan writes the number)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki reads `a > - .5` as it reads `a > -.5`: its pipeline (the Loki oracle,
+  process command, Loki 3.7.9) keeps and drops the same lines for every
+  comparison (>, >=, <, <=, ==, !=) and the values -6, -1, -0.6, -0.4, 0, 0.4,
+  1 and 5, for `- .5`, `- 5`, `+ 5` and `-  0.5` and their spellings without the
+  blank (testdata/odd-spellings-loki.jsonl). The string translator copies the
+  text of the filter, blank included:
+    string translator  =>  a:>- .5      (VictoriaLogs v1.49.0 and v1.53.0 reject it)
+    query plan         =>  a:>-.5       (the number Loki reads)
+  The plan writes the same text for both spellings. A query with such a spelling
+  is a filter-only log query when it has no parser, so it is served from the
+  plan (-query-plan-lowering, on by default) and gets Loki's answer; a metric
+  query or one with a parser is still written by the translator.
+
+  The VictoriaLogs oracle lists the corpus row of the finding in
+  internal/querycorpus/testdata/known-typed-divergences.json.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} | status > - .5'
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, streams]
+  expect: |
+    200 with the lines whose label `status` is greater than -0.5, never
+    VictoriaLogs' parse error.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator (copies the text of the number); fixed when the query plan serves the remaining queries'
+  loki: 'a sign followed by a blank is the signed number; the oracle answers 200 and keeps the lines of the number'
+  proxy: 'filter-only log queries write the number (the plan); every other query still fails in VictoriaLogs with the translator'
+  planned_test: 'TestOddSpellingsMatchLoki (internal/querycorpus: Loki keeps the same lines for both spellings and the plan writes the same text)'
+  visual: none
+  visual_reason: 'a crafted spelling no Grafana panel sends; found by the VictoriaLogs oracle over the corpus'
+  clusters: []
