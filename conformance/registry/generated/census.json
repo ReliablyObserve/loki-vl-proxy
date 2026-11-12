@@ -1710,6 +1710,7 @@
     "internal/queryplan/lower/series_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unpack_test.go | semantics/translator-writes-unpack-as-unpack-json",
+    "internal/queryplan/lower/unwrap_stats_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vector_agg_nested_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vector_agg_test.go | architecture-syntax-package-layering",
@@ -2246,7 +2247,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 515,
+      "go": 516,
       "playwright": 1
     },
     "page_kinds": {

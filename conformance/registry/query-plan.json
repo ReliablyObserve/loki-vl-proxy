@@ -145,7 +145,7 @@
       "step\u003erange",
       "24h chunk"
     ],
-    "native": 5236,
+    "native": 5706,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp (route rule)": 2220,
@@ -205,12 +205,12 @@
       "VectorAgg route evaluated level": 1720,
       "VectorAgg route level filter": 120,
       "VectorAgg route no bucket grid": 6,
-      "VectorAgg route offset": 40,
+      "VectorAgg route offset": 340,
       "VectorAgg route operand": 80,
       "VectorAgg route pipeline": 1970,
       "VectorAgg route unwrap first": 220,
       "VectorAgg route unwrap last": 180,
-      "VectorAgg route unwrap operand": 1370,
+      "VectorAgg route unwrap pipeline": 600,
       "VectorAgg route unwrap quantile": 60,
       "VectorAgg route unwrap rate": 200,
       "VectorAgg route unwrap rate_counter": 10,
