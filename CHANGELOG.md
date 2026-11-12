@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parser reads a blank that is no ASCII one (U+2003, U+3000, U+00A0) as white space where Loki
   answers 400; the parser is unchanged.
 
+
 ### Fixed
 
 - A log query with a label filter that names a label VictoriaLogs cannot read bare
@@ -34,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`semantics/translator-writes-exotic-field-names-bare`). A name of letters, digits and
   underscores in any script, and the names with a dot or a hyphen that were quoted already, are
   written as before.
+
+## [2.186.0] - 2026-11-12
+
+### Fixed
+
 - The `shards` of the `data.stats` of a repeated log query follow Loki's: a repeat answered from the
   proxy's response cache reports the 1h pieces that hold a returned entry, wherever they lie in the
   window, as Loki does (it keeps the pieces in which a query found nothing in its results cache). A
