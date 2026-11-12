@@ -458,12 +458,21 @@ type entryCounter struct {
 	esc       bool  // inside the line: the last byte was an escaping backslash
 	hexLeft   uint8 // inside the line: hex digits of a \u escape still to skip
 	// trackTS: keep the oldest and newest nanosecond timestamp of the log
-	// entries read in one write (tsMin, tsMax as their 19-digit text, which
-	// compares like the numbers; hasTS once one is kept), for Loki's
-	// accounting of a log query that fills its limit (query_stats_loki.go).
+	// entries read in one write (tsMin, tsMax; hasTS once one is kept), for
+	// Loki's accounting of a log query that fills its limit
+	// (query_stats_loki.go).
 	trackTS      bool
 	hasTS        bool
-	tsMin, tsMax [19]byte
+	tsMin, tsMax int64
+	// The 1h pieces holding a returned entry (entryPieces): tsKept is the
+	// timestamps read of the logs entries (one of other than 19 digits is not),
+	// the answer's piece map is complete only when it equals logs.
+	tsKept int64
+	pieces entryPieces
+	// The digits of a timestamp that runs past the end of a write, kept to
+	// its closing quote (tsN digits; -1 once it is not a run of at most 19).
+	tsBuf [19]byte
+	tsN   int8
 }
 
 const (
@@ -551,7 +560,7 @@ func (c *entryCounter) addLogEntries(b []byte) {
 		if b[0] == '"' {
 			c.n++
 			c.logs++
-			c.ls, off = lineScanTimestamp, 1
+			c.ls, c.tsN, off = lineScanTimestamp, 0, 1
 		}
 	}
 	for off < len(b) {
@@ -559,7 +568,14 @@ func (c *entryCounter) addLogEntries(b []byte) {
 		case lineScanTimestamp:
 			i := bytes.IndexByte(b[off:], '"')
 			if i < 0 {
+				c.partTimestamp(b[off:])
 				return
+			}
+			if c.trackTS {
+				c.partTimestamp(b[off : off+i])
+				if c.tsN == 19 {
+					c.keepTimestamp(c.tsBuf[:])
+				}
 			}
 			c.ls, off = lineScanComma, off+i+1
 		case lineScanComma, lineScanQuote:
@@ -616,11 +632,17 @@ func (c *entryCounter) entryInWrite(b []byte, off int, bs *int) int {
 		}
 		if ts == len(b) || b[ts] != '"' {
 			// The timestamp goes on past this write, or is not a digit run:
-			// the state machine reads it.
-			c.ls = lineScanTimestamp
+			// the state machine reads it, from the digits kept so far.
+			c.ls, c.tsN = lineScanTimestamp, 0
+			if c.trackTS {
+				c.partTimestamp(b[off:ts])
+				if ts < len(b) {
+					c.tsN = -1
+				}
+			}
 			return ts
 		}
-		if c.trackTS && ts-off == len(c.tsMin) {
+		if c.trackTS && ts-off == 19 {
 			c.keepTimestamp(b[off:ts])
 		}
 		line := ts + 3 // past `","`
@@ -658,18 +680,33 @@ func (c *entryCounter) entryInWrite(b []byte, off int, bs *int) int {
 	}
 }
 
-// keepTimestamp keeps a 19-digit entry timestamp as the oldest or newest.
-func (c *entryCounter) keepTimestamp(ts []byte) {
+// partTimestamp adds digits of a timestamp split across writes; anything but
+// a run of at most 19 digits leaves it unread (tsN -1).
+func (c *entryCounter) partTimestamp(part []byte) {
+	for _, d := range part {
+		if c.tsN < 0 || c.tsN >= 19 || d < '0' || d > '9' {
+			c.tsN = -1
+			return
+		}
+		c.tsBuf[c.tsN] = d
+		c.tsN++
+	}
+}
+
+// keepTimestamp keeps a 19-digit entry timestamp as the oldest or newest,
+// and its 1h piece among those holding an entry.
+func (c *entryCounter) keepTimestamp(text []byte) {
+	ts := parseTS19(text)
+	c.tsKept++
+	c.pieces.mark(ts)
 	if !c.hasTS {
-		c.hasTS = true
-		copy(c.tsMin[:], ts)
-		copy(c.tsMax[:], ts)
+		c.hasTS, c.tsMin, c.tsMax = true, ts, ts
 		return
 	}
-	if bytes.Compare(ts, c.tsMin[:]) < 0 {
-		copy(c.tsMin[:], ts)
-	} else if bytes.Compare(ts, c.tsMax[:]) > 0 {
-		copy(c.tsMax[:], ts)
+	if ts < c.tsMin {
+		c.tsMin = ts
+	} else if ts > c.tsMax {
+		c.tsMax = ts
 	}
 }
 
