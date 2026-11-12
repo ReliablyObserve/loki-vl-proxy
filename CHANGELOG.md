@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bounds checks for request times and offsets. A `query` or `query_range`
+  request whose window, moved by the query's `offset` and widened by its range,
+  leaves the span the proxy holds times in (1677-09-21 to 2262-04-11, less 15
+  minutes at either end) is answered with `400` and a message that names the
+  limit, before the handler reads it. An integer `start`, `end` or `time`
+  beyond 64 bits gets Loki's own `400` (`could not parse 'end' parameter:
+  strconv.ParseInt: ... value out of range`). A time written as RFC 3339
+  outside those dates is no longer read as a time at the other end of the span.
+  Every loop that steps through the evaluation times of a range now counts its
+  steps without wrapping, so a caller that skips the check still gets an
+  answer. Loki has no stable answer for these windows (wrapped timestamps, a
+  `500`); the answers it gave are recorded and replayed in the tests.
 - `stdvar_over_time` with a grouping (`stdvar_over_time(... | unwrap n [5m]) by (app)`,
   `sum by (app) (stdvar_over_time(...))`) or without a parser no longer fails: it
   was answered with an error (400), where Loki answers 200. VictoriaLogs has no

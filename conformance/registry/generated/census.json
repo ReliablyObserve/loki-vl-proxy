@@ -646,6 +646,9 @@
     "semantics/repeated-label-filter-replaced-across-label-format | compare:observed",
     "semantics/repeated-label-filter-replaced-across-label-format | gap:fixed",
     "semantics/repeated-label-filter-replaced-across-label-format | query",
+    "semantics/request-time-bounds | applies_to",
+    "semantics/request-time-bounds | compare:exact",
+    "semantics/request-time-bounds | query",
     "semantics/reserved-field-name-case-outbound | compare:observed",
     "semantics/reserved-field-name-case-outbound | gap:fixed",
     "semantics/reserved-field-name-case-outbound | query",
@@ -1545,6 +1548,7 @@
     "internal/proxy/tenant_query_limits_test.go | series-limits-and-partial-results",
     "internal/proxy/tenant_query_limits_test.go | tenant-query-limits",
     "internal/proxy/tenant_routing_test.go | tenant-numeric-routing",
+    "internal/proxy/time_bounds_test.go | semantics/request-time-bounds",
     "internal/proxy/top_value_series_limit_test.go | limits/series-limit-error",
     "internal/proxy/top_value_series_limit_test.go | semantics/unwrap-sum-without-collapses",
     "internal/proxy/topk_fuzz_test.go | semantics/topk-bottomk-range-series",
@@ -2266,14 +2270,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 61,
+      "api": 62,
       "drilldown": 50,
       "explore": 169,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 517,
+      "go": 518,
       "playwright": 1
     },
     "page_kinds": {
@@ -2293,7 +2297,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 109,
-    "wired_items": 296
+    "wired_items": 297
   },
   "gates": [
     "A/B shape selection",

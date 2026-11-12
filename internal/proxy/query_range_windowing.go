@@ -1201,10 +1201,10 @@ func parseLokiTimeToUnixNano(raw string) (int64, bool) {
 		}
 	}
 	if parsed, err := time.Parse(time.RFC3339Nano, raw); err == nil {
-		return parsed.UnixNano(), true
+		return unixNanoIfHeld(parsed)
 	}
 	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
-		return parsed.UnixNano(), true
+		return unixNanoIfHeld(parsed)
 	}
 	if raw == "now" {
 		return time.Now().UnixNano(), true
@@ -1214,9 +1214,9 @@ func parseLokiTimeToUnixNano(raw string) (int64, bool) {
 		d, err := time.ParseDuration(raw[4:])
 		if err == nil {
 			if sign == "-" {
-				return time.Now().Add(-d).UnixNano(), true
+				return unixNanoIfHeld(time.Now().Add(-d))
 			}
-			return time.Now().Add(d).UnixNano(), true
+			return unixNanoIfHeld(time.Now().Add(d))
 		}
 	}
 	if nInt, err := strconv.ParseInt(raw, 10, 64); err == nil {
@@ -1227,6 +1227,16 @@ func parseLokiTimeToUnixNano(raw string) (int64, bool) {
 		return 0, false
 	}
 	return normalizeLokiNumericTimeToUnixNano(n), true
+}
+
+// unixNanoIfHeld is t as Unix nanoseconds, or false for a time before 1677-09-21
+// or after 2262-04-11, which int64 nanoseconds cannot hold (UnixNano is
+// undefined there and wraps to the other end of the range).
+func unixNanoIfHeld(t time.Time) (int64, bool) {
+	if t.Before(time.Unix(0, math.MinInt64)) || t.After(time.Unix(0, math.MaxInt64)) {
+		return 0, false
+	}
+	return t.UnixNano(), true
 }
 
 // isDecimalInteger reports whether s is an optional sign and ASCII digits.

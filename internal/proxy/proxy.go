@@ -2033,7 +2033,8 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 					p.queryStatsLayer(endpoint, lowercaseQueryKeywords(p.lokiQueryParamValidation(endpoint,
 						p.tenantLimitsMiddleware(endpoint,
 							p.stepAlignMiddleware(endpoint,
-								p.compatCacheMiddleware(endpoint, route, h)))))))))))
+								p.compatCacheMiddleware(endpoint, route,
+									p.requestTimeBounds(endpoint, h))))))))))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the
@@ -2653,10 +2654,10 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 				// it does not alias the map captured by withOrgID's origRequestKey reference.
 				_ = r.ParseForm()
 				if startNs, ok := parseLokiTimeToUnixNano(r.FormValue("start")); ok {
-					r.Form.Set("start", strconv.FormatInt(startNs-offsetDur.Nanoseconds(), 10))
+					r.Form.Set("start", movedBound(startNs, offsetDur))
 				}
 				if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
-					r.Form.Set("end", strconv.FormatInt(endNs-offsetDur.Nanoseconds(), 10))
+					r.Form.Set("end", movedBound(endNs, offsetDur))
 				}
 				// Samples are evaluated in the shifted range and stamped at Loki's
 				// evaluation times (metricResponseRewriter); the inner cache would
@@ -3022,7 +3023,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 					rawTime = strconv.FormatInt(time.Now().UnixNano(), 10)
 				}
 				if timeNs, ok := parseLokiTimeToUnixNano(rawTime); ok {
-					r.Form.Set("time", strconv.FormatInt(timeNs-offsetDur.Nanoseconds(), 10))
+					r.Form.Set("time", movedBound(timeNs, offsetDur))
 					instantOffset = offsetDur // the sample is stamped at the requested time
 				}
 			}

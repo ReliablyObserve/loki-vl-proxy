@@ -3601,13 +3601,19 @@ func (p *Proxy) orderedJSONBaseLabels(row map[string]string, desc cachedLogQuery
 func orderedJSONSampleVisible(ts, start, end, step, window int64) bool {
 	eval := start
 	if ts > start {
-		delta := ts - start
-		eval += (delta / step) * step
-		if delta%step != 0 {
-			eval += step
+		// The distance and the steps in it are unsigned: ts-start overflows for
+		// a start far below zero and a row far above it.
+		distance := uint64(ts) - uint64(start)
+		eval = int64(uint64(start) + distance/uint64(step)*uint64(step))
+		if distance%uint64(step) != 0 {
+			next, ok := addNs(eval, step)
+			if !ok {
+				return false // the next evaluation is past int64, so past the end
+			}
+			eval = next
 		}
 	}
-	return eval <= end && ts > eval-window && ts <= eval
+	return eval <= end && ts <= eval && uint64(eval)-uint64(ts) < uint64(window)
 }
 
 // orderedJSONResponseLimitError names the flag that bounds the raw rows read.

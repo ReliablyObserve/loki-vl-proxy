@@ -146,3 +146,4 @@ smoke	internal/queryplan/lower	FuzzNestedVectorAggLowering	12s	-	vector aggregat
 smoke	internal/queryplan/lower	FuzzParserLabelsLowering	12s	-	grouping, unwrapped and kept labels a parser extracts, a without fold over a parser and a trailing keep lower to the query the string translator writes
 smoke	internal/logql	FuzzParseTerminates	12s	-	every logql entry point returns within 200 ms and allocates at most a mebibyte per input byte
 smoke	internal/queryplan/lower	FuzzRoute	12s	-	the route rule of a metric query never panics and either routes it with a window that fits the request and a without fold that fits the window or names the delegation
+smoke	internal/proxy	FuzzRequestTimeBounds	12s	-	start, end, step and offset of query and query_range answer within two seconds with 200 or a known 400, never a panic

@@ -319,6 +319,12 @@ Errors answered through the proxy's error layer carry no backend text: not Victo
 
 A few responses are produced before the Loki error writer: per-client rate limiting (`429`, `rate limit exceeded`) and the `-max-concurrent` admission cap (`503`, `too many concurrent queries`), both as the message alone in `text/plain`, and blocked writes (`405`, `/loki/api/v1/push`): the one proxy-only answer that stays JSON (`{"error":"write operations are not supported..."}`), since Loki has no read-only push answer to match.
 
+### Time range of a query
+
+The proxy holds every time of a request as 64-bit nanoseconds since the Unix epoch, which reach from 1677-09-21 to 2262-04-11. A `query` or `query_range` request whose window, moved by the query's `offset` and widened by its range selector, would leave that span (less 15 minutes at either end) is answered with `400` and the message `the time range of the query, moved by its offset, must lie between 1677-09-21 and 2262-04-11`. The step is not part of the check: a step as long as the window answers one point at the start.
+
+An integer `start`, `end` or `time` that does not fit 64 bits gets Loki's own `400`: `strconv.ParseInt: parsing "<value>": value out of range` for `query`, and `could not parse 'end' parameter: strconv.ParseInt: parsing "<value>": value out of range` (`start` when only the start is out of range; `end` is read first) for `query_range`. Loki has no stable answer for the other windows: it keeps times as `time.Time` and, where its own arithmetic reaches the same limits, answers with wrapped timestamps or a `500`. The answers it gave are recorded in `internal/proxy/testdata/loki_time_bounds.jsonl` (Loki 3.7.9) and replayed by `TestRequestTimeBoundsRecordedLokiAnswers`.
+
 ### Partial Results
 
 Some responses are `200` with incomplete data:

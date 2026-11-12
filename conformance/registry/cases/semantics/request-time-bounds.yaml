@@ -1,0 +1,54 @@
+id: semantics/request-time-bounds
+title: A request whose window, moved by its offset, leaves the time range the proxy can hold is refused, and every loop over the steps of a range ends (fixed)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  The proxy holds every time as int64 nanoseconds (1677-09-21 to 2262-04-11). A
+  `query` or `query_range` request whose start, end or time, moved by the offset of
+  its range selectors and widened by their range and the step, left that span was
+  read back wrapped to the other end of it, and the loops that step through the
+  evaluation times of a range (`absent_over_time` and the manual metric paths)
+  could step past the limit and wrap. A bound moved by an offset was written as
+  an integer that a handler reads by its magnitude.
+
+  Loki keeps these times as time.Time. The answers recorded from Loki 3.7.9
+  (internal/proxy/testdata/loki_time_bounds.jsonl) are 200 with wrapped
+  timestamps for a window that overflows, a 500 `unexpected empty result` for
+  some windows that land at the top of the range, and no answer for a range
+  query whose end is at the limit; an integer time beyond int64 is a 400
+  (`could not parse 'end' parameter: strconv.ParseInt: ... value out of range`,
+  `end` read before `start`; the instant endpoint answers the ParseInt text alone).
+
+  Fixed: the request layer (requestTimeBounds, behind the response cache and in
+  front of the handler) reads the offsets and ranges from the parsed query, and
+  refuses a window outside [min+15m, max-15m] with 400 `the time range of the
+  query, moved by its offset, must lie between 1677-09-21 and 2262-04-11`. An
+  integer beyond int64 gets Loki's text. A time written as RFC 3339 outside the
+  span is no longer read as a wrapped one (parseLokiTimeToUnixNano). A step is
+  not part of the check; the evaluation loops use an overflow-checked step count
+  (stepCount), so a step as long as the window answers one point. The offset
+  shift of both handlers saturates and writes the moved bound the handlers read
+  back as the time it is.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'absent_over_time({app="x"}[1m] offset -7456146435854775806ns)'
+    start: '1767225601000000000'
+    end: '1767225601000000000'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  expect: |
+    A window inside the range answers 200 as before. A window that the offset moves
+    outside it answers 400 `the time range of the query, moved by its offset, must
+    lie between 1677-09-21 and 2262-04-11` (a limit of the proxy: Loki has no stable
+    answer), an integer time beyond int64 Loki's `strconv.ParseInt` 400, each within
+    two seconds.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

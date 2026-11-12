@@ -298,7 +298,7 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 		evalNs = time.Now().UnixNano()
 	}
 	r = cloneMetricQueryRequest(r, r.FormValue("query"))
-	r.Form.Set("time", strconv.FormatInt(evalNs, 10))
+	r.Form.Set("time", encodeAlignedBound(evalNs))
 	body, ok := p.presenceAnswer(w, r, spec, p.handleQuery)
 	if !ok {
 		p.queryTracker.Record("query", originalQuery, time.Since(start), true)
@@ -349,9 +349,9 @@ func buildAbsentOverTimeMatrix(spec absentOverTimeCompatSpec, present map[int64]
 			has[int64(math.Round(float64(ts-startNs)/float64(stepNs)))] = true
 		}
 		var values [][]any
-		for i, ts := int64(0), startNs; ts <= endNs; i, ts = i+1, ts+stepNs {
+		for i, n := int64(0), stepCount(startNs, endNs, stepNs); i < n; i++ {
 			if !has[i] {
-				values = append(values, []any{lokiSampleSeconds(ts), value})
+				values = append(values, []any{lokiSampleSeconds(startNs + i*stepNs), value})
 			}
 		}
 		if len(values) > 0 {
