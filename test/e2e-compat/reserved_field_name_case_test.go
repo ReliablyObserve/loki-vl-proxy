@@ -159,12 +159,27 @@ func TestCompat_ReservedFieldNameCaseLikeLoki(t *testing.T) {
 		}
 		// The range query of the same metric reaches VictoriaLogs' stats_query_range: its series reaches the same
 		// highest point as Loki's.
-		rp := url.Values{"query": {tc.query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"60"}}
-		rls, rlb, rlp := queryRangeGET(t, lokiURL, rp, headers)
-		rps, rpb, rpp := queryRangeGET(t, proxyURL, rp, headers)
-		lokiMax, proxyMax := reservedCaseMax(rlp), reservedCaseMax(rpp)
-		if math.IsNaN(lokiMax) {
-			t.Fatalf("%s (range): Loki answered no point after the wait, nothing to compare: %d %s", tc.query, rls, rlb)
+		// Loki can still answer this shape's range empty for a while after the wait; each retry asks another step
+		// (a query Loki has not cached), both sides the same, and past the wait there is no Loki answer to compare.
+		var (
+			rls, rps          int
+			rlb, rpb          string
+			rlp, rpp          map[string]interface{}
+			lokiMax, proxyMax float64
+			rangeDeadline     = time.Now().Add(90 * time.Second)
+		)
+		for step := 60; ; step++ {
+			rp := url.Values{"query": {tc.query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {strconv.Itoa(step)}}
+			rls, rlb, rlp = queryRangeGET(t, lokiURL, rp, headers)
+			rps, rpb, rpp = queryRangeGET(t, proxyURL, rp, headers)
+			lokiMax, proxyMax = reservedCaseMax(rlp), reservedCaseMax(rpp)
+			if !math.IsNaN(lokiMax) {
+				break
+			}
+			if time.Now().After(rangeDeadline) {
+				t.Skipf("%s (range): Loki answered no point for 90s (fresh-stack blank window), nothing to compare: %d %.300s", tc.query, rls, rlb)
+			}
+			time.Sleep(time.Second)
 		}
 		if rls != http.StatusOK || rps != rls || proxyMax != lokiMax {
 			t.Errorf("%s (range):\n proxy %d max %v (%s)\n Loki  %d max %v (%s)", tc.query, rps, reservedCaseMax(rpp), rpb, rls, reservedCaseMax(rlp), rlb)
