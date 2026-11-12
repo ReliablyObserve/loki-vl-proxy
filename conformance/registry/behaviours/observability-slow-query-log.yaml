@@ -28,13 +28,25 @@ proxy: |
   hashes them). 0 turns a threshold off. -slow-query-log-level sets the
   level of the slow lines (warn, info, debug) or turns them off: no lines and
   no per-request trace, while loki_vl_proxy_slow_requests_total still counts.
+  Every slow line (and the request and upstream_request lines) names its
+  caller: enduser.id, enduser.source and enduser.name, the tenant with the
+  VictoriaLogs account/project or tenant label it goes to, and the Grafana
+  app (source tag, surface, X-Query-Tags); slow_request adds flow.vl.rows to
+  the VictoriaLogs calls, time and bytes. -log-user-header names the user for
+  the logs and /debug/queries only, from -log-user-header-trusted-cidrs peers.
+  /debug/queries lists the heaviest callers by VictoriaLogs time and bytes
+  and the recent requests with their caller and cost;
+  loki_vl_proxy_tenant_vl_*_total count each tenant's VictoriaLogs cost.
 
 implementation:
   - internal/proxy/slow_query_log.go
   - internal/proxy/telemetry.go
   - internal/proxy/backend_read_observation.go
   - internal/proxy/query_translation.go
+  - internal/proxy/query_caller.go
   - internal/metrics/metrics.go
+  - internal/metrics/callertracker.go
+  - internal/metrics/querytracker.go
 
 decisions:
   - id: slow-query-log-defaults-from-measurements
@@ -73,3 +85,48 @@ decisions:
     code: [internal/proxy/slow_query_log.go, internal/proxy/proxy.go, cmd/proxy/main.go]
     tests: [TestSlowQueryLogLevelAndOff, TestParseSlowQueryLogLevel]
     quality: 'An invalid level fails at startup with the accepted values; the default stays warn.'
+  - id: slow-lines-name-the-caller
+    pending: true
+    chosen: 'Every line that reports a query (slow_request, slow_upstream_request, request, upstream_request) names its caller: enduser.id, enduser.source and enduser.name; the tenant, with on the slow lines the VictoriaLogs vl.account_id/vl.project_id (or vl.tenant_label) resolveTenant gives it; the Grafana Source tag and surface, and all of X-Query-Tags as grafana.query_tags when it holds more than the Source tag. slow_request adds flow.vl.rows to flow.vl.calls/ms/bytes. The caller is resolved from the client request (kept on the request''s route meta) by the first line that names it and its log fields are shared by the request''s later lines (one upstream_request per VictoriaLogs call). Client-sent values are capped (128 bytes, tags 256) and C0, DEL, C1, U+2028, U+2029 and invalid UTF-8 escaped as \uNNNN / \xNN. A VictoriaLogs call shared by coalesced requests names the caller of the request that started it'
+    over: ['the tenant alone on the slow lines (what main logged: an operator could not tell which user loaded VictoriaLogs)', 'resolving and storing the caller for every request (a 96-byte field moved the request telemetry from the 640 to the 768-byte size class: +128 B per request)', 'resolving the caller again on every upstream_request line (+3 allocations per VictoriaLogs call without a user header, +5 with one)', 'flow.vl.rows on every request line (a field more on every line: +160 B per logged request)', 'logging X-Query-Tags as sent when it is only the Source tag (it repeats grafana.client.source_tag)', 'relying on the log handler to escape values (a text handler, or a pipeline that splits on U+2028, would still let a header forge a field)']
+    why: |
+      Owner 2026-11-11: "we need to know scope of user / tenant ... from the
+      operational side and visibility on who is hurting the proxy or VL". The
+      playground showed the request line naming the Grafana user while the
+      slow_request line did not; a slow line must answer who ran the query,
+      for which tenant, from which Grafana app and what it cost VictoriaLogs.
+    evidence: 'Playground 2026-11-11 (Grafana send_user_header=true, -metrics.trust-proxy-headers): the request line named the user, slow_request did not. TestQueryLinesCarryTheCallerTenantAndCost; TestQueryLinesCallerWithoutTrustedHeaders; TestQueryLinesCallerIsCappedAndEscaped (JSON and text handlers); TestSanitizeCallerValue'
+    code: [internal/proxy/query_caller.go, internal/proxy/slow_query_log.go, internal/proxy/query_translation.go, internal/proxy/backend.go, internal/proxy/telemetry.go]
+    tests: [TestQueryLinesCarryTheCallerTenantAndCost, TestQueryLinesCallerWithoutTrustedHeaders, TestQueryLinesCallerIsCappedAndEscaped, TestSanitizeCallerValue, TestSlowQueryLogCarriesTheQueriesAndTheSteps]
+    quality: 'Untrusted user headers never reach a line; a multi-tenant or refused org names no VictoriaLogs tenant; a clean identity is returned without allocating.'
+    performance:
+      tracked: ['BenchmarkRequestLogger plain / user (internal/proxy) ns/op, B/op, allocs/op']
+      bound: 'M5 Pro, GOMAXPROCS=4, count=10, 2026-11-11, base origin/main a05450c38: allocations equal to main on every variant (plain 33, user 36, 4 VictoriaLogs calls 555 / 559); B/op +1.6% plain (+64 B: the request telemetry moves to the 704-byte size class), +3.8% user, +1.0% / +2.4% with 4 calls (the added fields); sec/op within noise (p >= 0.25)'
+  - id: log-user-header-logs-only
+    pending: true
+    chosen: '-log-user-header names the header that names the user (X-Grafana-User with Grafana''s [dataproxy] send_user_header=true) for the logs and /debug/queries only: never a metric label, never forwarded to VictoriaLogs, never part of the auth fingerprint or a cache key. -log-user-header-trusted-cidrs limits it to connections whose TCP peer (RemoteAddr, never X-Forwarded-For) is listed; empty trusts every peer. Both are parsed at startup and a bad value fails it. Without it, or from another peer, the caller is the -metrics.trust-proxy-headers identity, else the tenant, else the client address. Helm: observability.queryUser.header / trustedCIDRs'
+    over: ['recommending -metrics.trust-proxy-headers (it also forwards the user headers to VictoriaLogs, labels the per-client metrics with the user, and puts the user into forwardedAuthFingerprint, so every user''s identical requests are cached and sent to VictoriaLogs separately)', 'trusting X-Forwarded-For for the peer check (the client writes it)', 'a per-user metric label (users are unbounded; they stay in logs and the admin view)']
+    why: |
+      Owner 2026-11-11: pass users from Grafana and have slow-query info with
+      which user ran it, not only the tenant, without hurting the proxy or
+      VictoriaLogs. X-Grafana-User is client-sent, so it is honoured only when
+      configured and, optionally, only from Grafana's addresses.
+    evidence: 'TestLogUserHeaderNamesTheUserFromTrustedPeersOnly (any peer, CIDR, single address, untrusted peer, spoofed X-Forwarded-For, IPv4-mapped peer, bad values fail New); TestLogUserHeaderNeverSplitsTheCacheReachesVictoriaLogsOrLabelsAMetric (two users: 1 VictoriaLogs call, header not forwarded, neither user in /metrics with -metrics.export-sensitive-labels)'
+    code: [internal/proxy/query_caller.go, internal/proxy/proxy.go, cmd/proxy/main.go, charts/loki-vl-proxy/values.yaml, charts/loki-vl-proxy/templates/deployment.yaml]
+    tests: [TestLogUserHeaderNamesTheUserFromTrustedPeersOnly, TestLogUserHeaderNeverSplitsTheCacheReachesVictoriaLogsOrLabelsAMetric]
+    quality: 'The default is off (empty header): nothing changes for existing installs; -metrics.trust-proxy-headers keeps its behaviour.'
+  - id: debug-queries-top-callers
+    pending: true
+    chosen: '/debug/queries (admin route, -server.enable-query-analytics) gains a callers object: the top 20 callers (tenant, user) by VictoriaLogs ms and by bytes over two 15-minute halves, with requests, errors (status >= 400), slow requests, time, VictoriaLogs calls, ms, bytes and rows, and the 256 most recent requests (caller, route, status, query cut at 512 bytes, cost), newest first, filtered by ?tenant= and ?user= (exact). Bounded: 1000 callers per half, the rest summed under __overflow__; a fixed ring; recorded once per request from the request wrapper, only with analytics on; live tail left out. loki_vl_proxy_tenant_vl_{calls,duration_seconds,response_bytes,rows}_total count each tenant''s VictoriaLogs cost with -metrics.export-sensitive-labels (tenant bounded by -metrics.max-tenants), also over OTLP'
+    over: ['user and tenant columns threaded through the ~25 queryTracker.Record call sites (blast radius; the per-query table stays as it was)', 'an unbounded per-user map or an LRU scan on the hot path', 'per-user metrics', 'a fleet-wide view (the per-tenant metrics give one; the admin view is per replica)']
+    why: |
+      Owner 2026-11-11: an operator view of the heaviest recent callers by
+      cost, bounded, filterable by user and tenant, and per-tenant cost
+      counters; never a per-user metric label.
+    evidence: 'TestCallerTrackerTopCallersAndFilters, TestCallerTrackerIsBounded, TestCallerTrackerWindow, TestCallerTrackerConcurrent (-race), TestQueryTrackerHandlerServesTheCallers, TestTenantVLCostMetrics, TestDebugQueriesShowsCallersAndTheirCost'
+    code: [internal/metrics/callertracker.go, internal/metrics/querytracker.go, internal/metrics/metrics.go, internal/metrics/otlp.go, internal/proxy/query_caller.go]
+    tests: [TestCallerTrackerTopCallersAndFilters, TestCallerTrackerIsBounded, TestCallerTrackerWindow, TestCallerTrackerConcurrent, TestQueryTrackerHandlerServesTheCallers, TestTenantVLCostMetrics, TestDebugQueriesShowsCallersAndTheirCost]
+    quality: 'Memory bounded by construction (2 x 1000 callers + 256 requests per replica); the view merges at read time only.'
+    performance:
+      tracked: ['BenchmarkRequestLogger user (analytics on) ns/op, B/op, allocs/op']
+      bound: 'no allocation per request once a caller is known (one map entry per new caller per half-window)'

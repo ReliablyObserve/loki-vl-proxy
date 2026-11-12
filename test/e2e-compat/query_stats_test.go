@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
@@ -19,6 +18,9 @@ import (
 // The Logs Drilldown footer reads the frame stat "Summary: total bytes
 // processed"; Grafana builds the frame's meta.stats from data.stats.summary.
 const drilldownFooterStat = "Summary: total bytes processed"
+
+// lokiStatsSections are data.stats' sections in Loki's order.
+var lokiStatsSections = []string{"summary", "querier", "ingester", "cache", "index"}
 
 // lokiSummaryKeys is the key order of Loki's data.stats.summary.
 var lokiSummaryKeys = []string{
@@ -129,8 +131,8 @@ func TestDrilldown_QueryStatsEnvelope(t *testing.T) {
 	if len(answer.Data.Result) == 0 {
 		t.Fatalf("the fixture window must answer streams: %s", raw)
 	}
-	if got := jsonObjectKeys(t, answer.Data.Stats); len(got) == 0 || got[0] != "summary" {
-		t.Fatalf("data.stats sections %v: %s", got, answer.Data.Stats)
+	if got := jsonObjectKeys(t, answer.Data.Stats); !reflect.DeepEqual(got, lokiStatsSections) {
+		t.Fatalf("data.stats sections %v, want Loki's %v: %s", got, lokiStatsSections, answer.Data.Stats)
 	}
 	var stats struct {
 		Summary json.RawMessage `json:"summary"`
@@ -168,17 +170,10 @@ func TestDrilldown_QueryStatsEnvelope(t *testing.T) {
 	if !hasFooterStat(proxy) {
 		t.Fatalf("the proxy's frame lacks %q (Loki: %v): %v", drilldownFooterStat, loki, proxy)
 	}
-	summaryStats := func(names []string) []string {
-		var out []string
-		for _, n := range names {
-			if strings.HasPrefix(n, "Summary: ") {
-				out = append(out, n)
-			}
-		}
-		return out
-	}
-	if got, want := summaryStats(proxy), summaryStats(loki); !reflect.DeepEqual(got, want) {
-		t.Fatalf("the proxy's summary stats %v differ from Loki's %v (all: proxy %v, Loki %v)", got, want, proxy, loki)
+	// Every stat Grafana lists for Loki (the "Summary:" and "Ingester:"
+	// entries) is listed for the proxy, in the same order.
+	if !reflect.DeepEqual(proxy, loki) {
+		t.Fatalf("the proxy's frame stats %v differ from Loki's %v", proxy, loki)
 	}
 }
 
@@ -229,7 +224,9 @@ func TestDrilldown_QueryStatsWindowTotalsFromTheVolumeAnswer(t *testing.T) {
 	if want == 0 {
 		t.Skipf("no lines of %s in [%s, %s]", expr, start, end)
 	}
-	logs := url.Values{"query": {expr}, "limit": {"100"}, "direction": {"backward"},
+	// A limit the window does not fill: Loki (and the proxy's Loki-style
+	// accounting) then reads every piece of the window.
+	logs := url.Values{"query": {expr}, "limit": {"5000"}, "direction": {"backward"},
 		"start": {fmt.Sprint(start.UnixNano())}, "end": {fmt.Sprint(end.UnixNano())}}
 	summary := func(base string) map[string]any {
 		status, raw, _ := doJSONGET(t, base+"/loki/api/v1/query_range?"+logs.Encode(), headers)
@@ -251,4 +248,367 @@ func TestDrilldown_QueryStatsWindowTotalsFromTheVolumeAnswer(t *testing.T) {
 		t.Fatalf("the logs query reports %v post-filter lines; the volume answer's steps inside the window hold %d (summary %v)", got["totalPostFilterLines"], want, got)
 	}
 	t.Logf("window lines from the volume answer %d; Loki reports %v lines processed for the same logs query", want, summary(lokiURL)["totalLinesProcessed"])
+}
+
+// statsShape is a JSON value's shape: an object's keys in order with their
+// shapes, or the JSON type of any other value.
+func statsShape(t *testing.T, raw json.RawMessage) any {
+	t.Helper()
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		t.Fatal("empty JSON value")
+	}
+	switch raw[0] {
+	case '{':
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		_, _ = dec.Token()
+		var out []any
+		for dec.More() {
+			tok, _ := dec.Token()
+			var v json.RawMessage
+			if err := dec.Decode(&v); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, tok.(string), statsShape(t, v))
+		}
+		return out
+	case 't', 'f':
+		return "bool"
+	case '"':
+		return "string"
+	}
+	return "number"
+}
+
+// withoutRecvWaitTime removes the ingester's recvWaitTime from a stats shape.
+func withoutRecvWaitTime(shape any) any {
+	sections, _ := shape.([]any)
+	out := make([]any, 0, len(sections))
+	for i := 0; i+1 < len(sections); i += 2 {
+		v := sections[i+1]
+		if fields, ok := v.([]any); ok && sections[i] == "ingester" {
+			var keep []any
+			for j := 0; j+1 < len(fields); j += 2 {
+				if fields[j] != "recvWaitTime" {
+					keep = append(keep, fields[j], fields[j+1])
+				}
+			}
+			v = keep
+		}
+		out = append(out, sections[i], v)
+	}
+	return out
+}
+
+type e2eStats struct {
+	raw json.RawMessage
+	// lineBytes is the bytes of the log lines the answer returned (0 for a metric answer).
+	lineBytes int64
+	Summary   struct {
+		Bytes      int64   `json:"totalBytesProcessed"`
+		Lines      int64   `json:"totalLinesProcessed"`
+		PostFilter int64   `json:"totalPostFilterLines"`
+		ExecTime   float64 `json:"execTime"`
+		Entries    int64   `json:"totalEntriesReturned"`
+		Splits     int64   `json:"splits"`
+		Shards     int64   `json:"shards"`
+
+		StructuredMetadataBytes int64 `json:"totalStructuredMetadataBytesProcessed"`
+	} `json:"summary"`
+	Querier struct {
+		ExecTime float64 `json:"querierExecTime"`
+	} `json:"querier"`
+	Cache map[string]struct {
+		EntriesFound      int64 `json:"entriesFound"`
+		QueryLengthServed int64 `json:"queryLengthServed"`
+	} `json:"cache"`
+}
+
+func getE2EStats(t *testing.T, base, path string, params url.Values, extra map[string]string) e2eStats {
+	t.Helper()
+	headers := map[string]string{"X-Scope-OrgID": "0"}
+	for k, v := range extra {
+		headers[k] = v
+	}
+	status, raw, _ := doJSONGET(t, base+path+"?"+params.Encode(), headers)
+	if status != http.StatusOK {
+		t.Fatalf("%s%s: %d %s", base, path, status, raw)
+	}
+	var a struct {
+		Status string `json:"status"`
+		Data   struct {
+			Stats  json.RawMessage `json:"stats"`
+			Result []struct {
+				Values [][]json.RawMessage `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(raw), &a); err != nil || a.Status != "success" || len(a.Data.Stats) == 0 {
+		t.Fatalf("%s%s: no stats object (%v): %.300s", base, path, err, raw)
+	}
+	st := e2eStats{raw: a.Data.Stats}
+	if err := json.Unmarshal(a.Data.Stats, &st); err != nil {
+		t.Fatal(err)
+	}
+	for _, series := range a.Data.Result {
+		for _, v := range series.Values {
+			var line string
+			if len(v) >= 2 && json.Unmarshal(v[1], &line) == nil {
+				st.lineBytes += int64(len(line))
+			}
+		}
+	}
+	return st
+}
+
+// statsBytesTolerance: Loki's totalBytesProcessed is the line bytes it read
+// plus its structured-metadata bytes (totalStructuredMetadataBytesProcessed;
+// on the test stack total - structured metadata equals the returned lines'
+// bytes exactly), and its structured-metadata bytes depend on how its blocks
+// are laid out (8 bytes a line for detected_level on a steady stream, about 50
+// on the small CI fixture). The proxy counts line bytes only, so it is
+// compared with Loki's line bytes: exactly for a log answer under its limit
+// (the bytes of the lines returned), within 25% for a metric or instant
+// answer (lines times the selector's mean line size, the
+// query-stats-loki-emulation decision).
+const statsBytesTolerance = 0.25
+
+func near(got, want int64, tol float64) bool {
+	if want == 0 {
+		return got == 0
+	}
+	d := float64(got-want) / float64(want)
+	return d >= -tol && d <= tol
+}
+
+// TestDrilldown_QueryStatsLikeLoki: for log, metric, instant and volume
+// answers over 5m and 1h, the proxy's data.stats has exactly the shape Loki
+// answers (every section, key, key order and value type) and, in the
+// default -query-stats-mode=loki, Loki's figures: splits and shards equal to
+// Loki's; lines processed equal to Loki's for an answer under its limit
+// (metric and instant answers read the whole window); for a log answer that
+// fills its limit, lines between the entries returned and the window's lines
+// (Loki's figure depends on its chunk layout, the proxy reports the pieces it
+// read: the query-stats-limit-filled-log-lines decision); bytes equal to
+// Loki's line bytes (its total minus its structured-metadata bytes) for a
+// log answer under its limit, within the documented tolerance of them for a
+// metric or instant answer; a refresh of a log or instant answer served
+// from the proxy's cache reports the computation again (Loki computes those
+// again); a metric query_range repeat is a results-cache hit like Loki's (no
+// processing, Loki's splits, the window served); volume answers process
+// nothing; every request reports its own execTime and a computed answer its
+// time in VictoriaLogs as querier.querierExecTime. On the proxy started with
+// -query-stats-exact-log-lines, a limit-filled log answer reports
+// VictoriaLogs' count of the selector over the pieces it read.
+//
+// conformance: drilldown/logs-footer-query-stats, query-stats-envelope
+func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
+	ensureDataIngested(t)
+	// Loki's window count below needs Loki's range metrics, which a fresh stack answers empty for a few minutes.
+	waitForLokiMetricData(t)
+	end := time.Now().Add(-time.Minute).Truncate(time.Minute)
+	nonce := fmt.Sprintf("qsl-%d", time.Now().UnixNano())
+	for _, rng := range []time.Duration{5 * time.Minute, time.Hour} {
+		start := end.Add(-rng)
+		logqlRange := map[time.Duration]string{5 * time.Minute: "5m", time.Hour: "1h"}[rng]
+		win := func(q string, kv ...string) url.Values {
+			v := url.Values{"query": {q}, "start": {fmt.Sprint(start.Unix())}, "end": {fmt.Sprint(end.Unix())}, "step": {"60"}}
+			for i := 0; i < len(kv); i += 2 {
+				v.Set(kv[i], kv[i+1])
+			}
+			return v
+		}
+		sel := `{app="api-gateway"} != "` + nonce + rng.String() + `"`
+		// windowLines is Loki's count of the selector's lines over the window.
+		windowLines := lokiWindowLines(t, sel, logqlRange, end)
+		likeLoki := func(t *testing.T, loki, miss e2eStats) {
+			if miss.Summary.Splits != loki.Summary.Splits || miss.Summary.Shards != loki.Summary.Shards {
+				t.Errorf("splits/shards %d/%d, Loki %d/%d", miss.Summary.Splits, miss.Summary.Shards, loki.Summary.Splits, loki.Summary.Shards)
+			}
+			if limitFilled := miss.Summary.Entries >= 1000 && loki.Summary.Entries >= 1000; limitFilled {
+				if miss.Summary.Lines < miss.Summary.Entries || miss.Summary.Lines > windowLines || miss.Summary.PostFilter > miss.Summary.Lines {
+					t.Errorf("limit filled: lines %d post-filter %d, want entries %d <= post-filter <= lines <= window lines %d (Loki %d)",
+						miss.Summary.Lines, miss.Summary.PostFilter, miss.Summary.Entries, windowLines, loki.Summary.Lines)
+				}
+			} else if miss.Summary.Lines != loki.Summary.Lines || miss.Summary.PostFilter != loki.Summary.PostFilter {
+				t.Errorf("lines %d post-filter %d, Loki %d %d", miss.Summary.Lines, miss.Summary.PostFilter, loki.Summary.Lines, loki.Summary.PostFilter)
+			}
+			lokiLineBytes := loki.Summary.Bytes - loki.Summary.StructuredMetadataBytes
+			switch {
+			case miss.Summary.Entries >= 1000:
+				// Loki's bytes of a limit-filled answer follow its chunks.
+			case miss.Summary.Entries == miss.Summary.Lines && loki.Summary.Entries == loki.Summary.Lines:
+				// A log answer under its limit processed exactly the lines it returned: the proxy's bytes are those
+				// lines' bytes, the same lines Loki returned. Loki's own total also counts its structured metadata
+				// and, read from chunks, more per entry, so it is logged, not compared.
+				if miss.lineBytes != loki.lineBytes || miss.Summary.Bytes != loki.lineBytes {
+					t.Errorf("bytes %d (returned lines %d bytes), Loki returned %d bytes of lines (Loki's total %d, structured metadata %d)",
+						miss.Summary.Bytes, miss.lineBytes, loki.lineBytes, loki.Summary.Bytes, loki.Summary.StructuredMetadataBytes)
+				}
+			case !near(miss.Summary.Bytes, lokiLineBytes, statsBytesTolerance):
+				t.Errorf("bytes %d, Loki's line bytes %d (total %d - structured metadata %d, tolerance %.0f%%)",
+					miss.Summary.Bytes, lokiLineBytes, loki.Summary.Bytes, loki.Summary.StructuredMetadataBytes, statsBytesTolerance*100)
+			}
+		}
+		replays := func(t *testing.T, loki, lokiAgain, miss, again e2eStats) {
+			likeLoki(t, loki, miss)
+			if miss.Querier.ExecTime <= 0 {
+				t.Errorf("querierExecTime %v: a computed answer reports its time in VictoriaLogs", miss.Querier.ExecTime)
+			}
+			if again.Summary.Lines != miss.Summary.Lines || again.Summary.Bytes != miss.Summary.Bytes || again.Summary.Splits != miss.Summary.Splits {
+				t.Errorf("refresh %+v: Loki computes this query again (%+v); the proxy's hit reports the computation %+v", again.Summary, lokiAgain.Summary, miss.Summary)
+			}
+		}
+		drilldown := map[string]string{"X-Query-Tags": "Source=grafana-lokiexplore-app", "X-Loki-Response-Encoding-Flags": "categorize-labels"}
+		for _, tc := range []struct {
+			name, path string
+			params     url.Values
+			headers    map[string]string
+			check      func(t *testing.T, loki, lokiAgain, miss, again e2eStats)
+		}{
+			{"log", "/loki/api/v1/query_range", win(sel, "limit", "1000", "direction", "backward"), nil, replays},
+			{"log-drilldown", "/loki/api/v1/query_range", win(sel+` != "dd-`+nonce+`"`, "limit", "1000", "direction", "backward"), drilldown, replays},
+			{"metric", "/loki/api/v1/query_range", win(`sum(count_over_time(` + sel + ` [1m]))`), nil, func(t *testing.T, loki, lokiAgain, miss, again e2eStats) {
+				likeLoki(t, loki, miss)
+				if again.Summary.Lines != 0 || again.Summary.Bytes != 0 || again.Summary.Splits != lokiAgain.Summary.Splits ||
+					again.Cache["result"].EntriesFound == 0 || again.Cache["result"].QueryLengthServed <= 0 {
+					t.Errorf("repeat %+v cache %+v: a results-cache hit like Loki's %+v", again.Summary, again.Cache["result"], lokiAgain.Summary)
+				}
+			}},
+			{"instant", "/loki/api/v1/query", url.Values{"query": {`sum(count_over_time(` + sel + ` [` + logqlRange + `]))`}, "time": {fmt.Sprint(end.Unix())}}, nil, replays},
+			{"volume_range", "/loki/api/v1/index/volume_range", win(`{app="api-gateway"}`), nil, func(t *testing.T, loki, _, miss, _ e2eStats) {
+				if miss.Summary.Lines != 0 || miss.Summary.Bytes != 0 || miss.Summary.Entries <= 0 || miss.Summary.Splits != loki.Summary.Splits {
+					t.Errorf("volume %+v: Loki reports the series returned, no processed lines or bytes and splits %d", miss.Summary, loki.Summary.Splits)
+				}
+			}},
+		} {
+			t.Run(rng.String()+"/"+tc.name, func(t *testing.T) {
+				loki := getE2EStats(t, lokiURL, tc.path, tc.params, tc.headers)
+				lokiAgain := getE2EStats(t, lokiURL, tc.path, tc.params, tc.headers)
+				miss := getE2EStats(t, proxyURL, tc.path, tc.params, tc.headers)
+				// Loki omits ingester.recvWaitTime when it is zero; the proxy has
+				// no ingesters, so its ingester section is always that zero form.
+				if got, want := statsShape(t, miss.raw), withoutRecvWaitTime(statsShape(t, loki.raw)); !reflect.DeepEqual(got, want) {
+					t.Fatalf("stats shape differs from Loki's\nproxy %v\nloki  %v", got, want)
+				}
+				again := getE2EStats(t, proxyURL, tc.path, tc.params, tc.headers)
+				if again.Summary.ExecTime == miss.Summary.ExecTime || again.Summary.ExecTime <= 0 {
+					t.Fatalf("refresh execTime %v (first %v): each request reports its own time", again.Summary.ExecTime, miss.Summary.ExecTime)
+				}
+				tc.check(t, loki, lokiAgain, miss, again)
+				t.Logf("loki %+v | proxy %+v | refresh %+v", loki.Summary, miss.Summary, again.Summary)
+			})
+		}
+		t.Run(rng.String()+"/log-exact-lines", func(t *testing.T) {
+			// The proxy behind vmauth runs -query-stats-exact-log-lines.
+			// A small limit fills on any stack the setup fixture has populated.
+			const exactLimit = 20
+			params := win(sel+` != "exact-`+nonce+`"`, "limit", strconv.Itoa(exactLimit), "direction", "backward")
+			miss := getE2EStats(t, proxyVmauthURL, "/loki/api/v1/query_range", params, nil)
+			oldest := oldestEntryNs(t, proxyVmauthURL, params)
+			if miss.Summary.Entries < exactLimit || oldest == 0 {
+				t.Fatalf("entries %d (oldest %d): this row needs an answer that fills its limit", miss.Summary.Entries, oldest)
+			}
+			// Backward, Loki reads its one-hour pieces newest first and stops
+			// after the piece that holds the oldest entry returned.
+			from := oldest / int64(time.Hour) * int64(time.Hour)
+			if from < start.UnixNano() {
+				from = start.UnixNano()
+			}
+			want := vlSelectorLines(t, `app:="api-gateway"`, from, end.UnixNano())
+			// The line filter keeps every line, but the proxy counts the
+			// selector, so post-filter lines stay an estimate under the count.
+			if miss.Summary.Lines != want || miss.Summary.PostFilter < miss.Summary.Entries || miss.Summary.PostFilter > want {
+				t.Errorf("lines %d post-filter %d, want VictoriaLogs' count of the pieces read %d (post-filter between the %d entries and it)",
+					miss.Summary.Lines, miss.Summary.PostFilter, want, miss.Summary.Entries)
+			}
+			t.Logf("exact lines %d over [%d, %d] (window lines %d)", miss.Summary.Lines, from, end.UnixNano(), windowLines)
+		})
+	}
+}
+
+// lokiWindowLines is the value of Loki's instant answer to a count query at t.
+func lokiWindowLines(t *testing.T, sel, logqlRange string, at time.Time) int64 {
+	t.Helper()
+	// On a fresh stack Loki answers a new stream's metrics empty for a while. Each try adds a line filter no line
+	// matches, a query Loki has not cached, and an empty answer past the wait means there is no Loki figure to
+	// compare with: skip rather than fail on Loki's readiness.
+	deadline := time.Now().Add(3 * time.Minute)
+	for try := 0; ; try++ {
+		query := fmt.Sprintf(`sum(count_over_time(%s != "lwl-try-%d" [%s]))`, sel, try, logqlRange)
+		status, raw, _ := doJSONGET(t, lokiURL+"/loki/api/v1/query?"+url.Values{"query": {query}, "time": {fmt.Sprint(at.Unix())}}.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+		var a struct {
+			Data struct {
+				Result []struct {
+					Value [2]json.RawMessage `json:"value"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		if status != http.StatusOK || json.Unmarshal([]byte(raw), &a) != nil {
+			t.Fatalf("Loki window count: %d %.300s", status, raw)
+		}
+		if len(a.Data.Result) == 1 {
+			var v string
+			if err := json.Unmarshal(a.Data.Result[0].Value[1], &v); err != nil {
+				t.Fatal(err)
+			}
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return n
+		}
+		if time.Now().After(deadline) {
+			t.Skipf("Loki's window count stayed empty for 3m (fresh-stack blank window), nothing to compare with: %.300s", raw)
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+// oldestEntryNs is the oldest entry's timestamp in a log answer.
+func oldestEntryNs(t *testing.T, base string, params url.Values) int64 {
+	t.Helper()
+	status, raw, _ := doJSONGET(t, base+"/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+	var a struct {
+		Data struct {
+			Result []struct {
+				Values [][2]string `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if status != http.StatusOK || json.Unmarshal([]byte(raw), &a) != nil {
+		t.Fatalf("log answer: %d %.300s", status, raw)
+	}
+	var oldest int64
+	for _, s := range a.Data.Result {
+		for _, v := range s.Values {
+			if ts, err := strconv.ParseInt(v[0], 10, 64); err == nil && (oldest == 0 || ts < oldest) {
+				oldest = ts
+			}
+		}
+	}
+	return oldest
+}
+
+// vlSelectorLines is VictoriaLogs' count of a filter's rows over [from, to],
+// with the time bounds the proxy sends.
+func vlSelectorLines(t *testing.T, filter string, from, to int64) int64 {
+	t.Helper()
+	form := url.Values{"query": {filter + " | stats count() as c"}, "start": {strconv.FormatInt(from, 10)}, "end": {strconv.FormatInt(to, 10)}}
+	resp, err := http.PostForm(vlURL+"/select/logsql/query", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var row struct {
+		C string `json:"c"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&row); err != nil {
+		t.Fatal(err)
+	}
+	n, err := strconv.ParseInt(row.C, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }

@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"net/http"
 	"strconv"
 	"strings"
@@ -138,9 +139,18 @@ func recordFlowVLRows(ctx context.Context, rows int64) {
 	rt.mu.Unlock()
 }
 
-// queryStatsLayer fills data.stats of query and query_range answers.
+// queryStatsLayer fills data.stats of query, query_range, volume and
+// volume_range answers: every answer Loki writes a stats object into.
 func (p *Proxy) queryStatsLayer(endpoint string, next http.HandlerFunc) http.HandlerFunc {
-	if endpoint != "query" && endpoint != "query_range" {
+	var kind uint8
+	switch endpoint {
+	case "query":
+		kind = statsRouteInstant
+	case "query_range":
+		kind = statsRouteRange
+	case "volume", "volume_range":
+		kind = statsRouteVolume
+	default:
 		return next
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +161,10 @@ func (p *Proxy) queryStatsLayer(endpoint string, next http.HandlerFunc) http.Han
 		}
 		sw := queryStatsWriterPool.Get().(*queryStatsWriter)
 		sw.reset(w, rt)
+		sw.route, sw.req, sw.lokiMode = kind, r, !p.queryStatsVictoriaLogsMode
+		if sw.lokiMode {
+			sw.entries.trackTS = kind == statsRouteRange
+		}
 		rt.mu.Lock()
 		rt.statsWriter = sw
 		rt.mu.Unlock()
@@ -166,6 +180,13 @@ func (p *Proxy) queryStatsLayer(endpoint string, next http.HandlerFunc) http.Han
 
 var queryStatsWriterPool = sync.Pool{New: func() any { return new(queryStatsWriter) }}
 
+// The routes the stats layer fills, each with Loki's accounting for it.
+const (
+	statsRouteRange   = iota // query_range: log or metric answers
+	statsRouteInstant        // query
+	statsRouteVolume         // volume, volume_range: Loki reports no processed lines or bytes
+)
+
 // queryStatsTailHold is how many trailing bytes the writer holds back: enough
 // for the longest answer ending it rewrites (a sorted-key matrix envelope
 // end plus trailing whitespace).
@@ -178,22 +199,39 @@ const queryStatsTailHold = 64
 type queryStatsWriter struct {
 	http.ResponseWriter
 	rt          *requestTelemetry
+	route       uint8
 	wroteHeader bool
 	patch       bool
 	// done: the answer was finished by the response cache (serveCachedAnswer).
 	done         bool
 	entriesKnown bool
+	// hit: a response-cache hit (query_stats_cache.go): replayed holds the
+	// stored computation's totals, queryLength the window it served (ns).
+	hit         bool
+	replayed    statsReplay
+	queryLength int64
+	// lokiMode: Loki's accounting (-query-stats-mode=loki, the default) of
+	// the request req, read as sreq (query_stats_loki.go).
+	lokiMode bool
+	req      *http.Request
+	sreq     statsRequest
+	sreqRead bool
+	// exactBytes delivers the exact bytes of a metric query
+	// (-query-stats-exact-metric-bytes), nil when none was asked for.
+	exactBytes   chan int64
 	headN, tailN int
 	total        int                      // bytes the handler wrote
 	head         [queryStatsTailHold]byte // the first bytes, to check the envelope's start
 	tail         [queryStatsTailHold]byte // the held-back end of the body
 	entries      entryCounter
-	buf          [2560]byte // the stats object, and the gzip block header and trailer
+	buf          [4608]byte // the stats object, and the gzip block header and trailer
 }
 
 func (w *queryStatsWriter) reset(rw http.ResponseWriter, rt *requestTelemetry) {
 	w.ResponseWriter, w.rt = rw, rt
+	w.route, w.req, w.lokiMode, w.sreq, w.sreqRead, w.exactBytes = statsRouteRange, nil, false, statsRequest{}, false, nil
 	w.wroteHeader, w.patch, w.done, w.entriesKnown = false, false, false, false
+	w.hit, w.replayed, w.queryLength = false, statsReplay{}, 0
 	w.headN, w.tailN, w.total = 0, 0, 0
 	w.entries = entryCounter{}
 }
@@ -402,12 +440,30 @@ func sortedEnvelopeEndsWithResultType(body []byte) bool {
 // sequence split across writes is counted once. The answer's first bytes
 // name its result type for the status-first writers, and then only that
 // type's sequence is looked for.
+//
+// For a log entry it also sums the bytes of the entry's line (its second
+// element, unescaped: an escape sequence counts as one byte), the measure
+// Loki's totalBytesProcessed counts: the timestamp string is skipped to its
+// closing quote and the line string read to its unescaped closing quote,
+// carried across writes.
 type entryCounter struct {
-	n       int64
-	carry   [9]byte
-	cn      int
-	pending bool // the last byte was an entry's `[`, its quote not seen yet
-	mode    uint8
+	n         int64
+	logs      int64 // the log entries among n
+	lineBytes int64
+	carry     [9]byte
+	cn        int
+	pending   bool // the last byte was an entry's `[`, its quote not seen yet
+	mode      uint8
+	ls        uint8 // where a log entry's scan is (lineScan*)
+	esc       bool  // inside the line: the last byte was an escaping backslash
+	hexLeft   uint8 // inside the line: hex digits of a \u escape still to skip
+	// trackTS: keep the oldest and newest nanosecond timestamp of the log
+	// entries read in one write (tsMin, tsMax as their 19-digit text, which
+	// compares like the numbers; hasTS once one is kept), for Loki's
+	// accounting of a log query that fills its limit (query_stats_loki.go).
+	trackTS      bool
+	hasTS        bool
+	tsMin, tsMax [19]byte
 }
 
 const (
@@ -415,6 +471,16 @@ const (
 	entryModeAny            // both, for good (the start names no type)
 	entryModeStreams
 	entryModeSeries
+)
+
+// The scan of one log entry: its timestamp string, the comma, the line's
+// opening quote, the line string.
+const (
+	lineScanIdle = iota
+	lineScanTimestamp
+	lineScanComma
+	lineScanQuote
+	lineScanLine
 )
 
 var seriesOpenPrefix = []byte(`"metric":`)
@@ -444,30 +510,8 @@ func (c *entryCounter) add(b []byte) {
 	if len(b) == 0 {
 		return
 	}
-	if c.pending {
-		if b[0] == '"' {
-			c.n++
-		}
-		c.pending = false
-	}
 	if c.mode != entryModeSeries {
-		for off := 0; off < len(b); {
-			i := bytes.IndexByte(b[off:], '[')
-			if i < 0 {
-				break
-			}
-			i += off
-			if prev := c.before(b, i, 1); prev == '[' || prev == ',' {
-				if i+1 < len(b) {
-					if b[i+1] == '"' {
-						c.n++
-					}
-				} else {
-					c.pending = true
-				}
-			}
-			off = i + 1
-		}
+		c.addLogEntries(b)
 	}
 	if c.mode != entryModeStreams {
 		for off := 0; off < len(b); {
@@ -499,16 +543,340 @@ func (c *entryCounter) add(b []byte) {
 	c.cn = keep + copy(c.carry[keep:], b)
 }
 
+// addLogEntries counts the log entries of b and the bytes of their lines.
+func (c *entryCounter) addLogEntries(b []byte) {
+	off, bs := 0, -1 // bs: the write's next backslash at or after the last line read (entryInWrite)
+	if c.pending {
+		c.pending = false
+		if b[0] == '"' {
+			c.n++
+			c.logs++
+			c.ls, off = lineScanTimestamp, 1
+		}
+	}
+	for off < len(b) {
+		switch c.ls {
+		case lineScanTimestamp:
+			i := bytes.IndexByte(b[off:], '"')
+			if i < 0 {
+				return
+			}
+			c.ls, off = lineScanComma, off+i+1
+		case lineScanComma, lineScanQuote:
+			want := byte(',')
+			if c.ls == lineScanQuote {
+				want = '"'
+			}
+			if b[off] != want {
+				c.ls = lineScanIdle
+				continue
+			}
+			c.ls++
+			off++
+		case lineScanLine:
+			off = c.scanLine(b, off)
+		default:
+			i := bytes.IndexByte(b[off:], '[')
+			if i < 0 {
+				return
+			}
+			i += off
+			off = i + 1
+			if prev := c.before(b, i, 1); prev != '[' && prev != ',' {
+				continue
+			}
+			if off == len(b) {
+				c.pending = true
+				return
+			}
+			if b[off] == '"' {
+				c.n++
+				c.logs++
+				off = c.entryInWrite(b, off+1, &bs)
+			}
+		}
+	}
+}
+
+// entryInWrite reads a log entry whose timestamp starts at b[off] when the
+// timestamp and the whole line lie in this write and the line holds no
+// escape (the common case), and then follows it to the next entry of the
+// same stream when that one opens right after it. Any other case is left to
+// the state machine (c.ls set where it is). The next backslash of the write
+// is looked up once and reused (*bs), so a write without escapes costs one
+// IndexByte per entry, as counting entries alone did.
+func (c *entryCounter) entryInWrite(b []byte, off int, bs *int) int {
+	for {
+		ts := off
+		for ts+8 <= len(b) && allDigits8(binary.LittleEndian.Uint64(b[ts:])) {
+			ts += 8
+		}
+		for ts < len(b) && b[ts] >= '0' && b[ts] <= '9' {
+			ts++
+		}
+		if ts == len(b) || b[ts] != '"' {
+			// The timestamp goes on past this write, or is not a digit run:
+			// the state machine reads it.
+			c.ls = lineScanTimestamp
+			return ts
+		}
+		if c.trackTS && ts-off == len(c.tsMin) {
+			c.keepTimestamp(b[off:ts])
+		}
+		line := ts + 3 // past `","`
+		if line > len(b) || b[ts+1] != ',' || b[ts+2] != '"' {
+			c.ls = lineScanComma
+			return ts + 1
+		}
+		end := bytes.IndexByte(b[line:], '"')
+		if end < 0 {
+			c.ls = lineScanLine
+			return line
+		}
+		end += line
+		if *bs < line {
+			if i := bytes.IndexByte(b[line:], '\\'); i < 0 {
+				*bs = len(b)
+			} else {
+				*bs = line + i
+			}
+		}
+		if *bs < end { // an escape in the line
+			c.ls = lineScanLine
+			return line
+		}
+		c.lineBytes += int64(end - line)
+		off = end + 1
+		// `"],["` opens the next entry of the same stream.
+		if off+3 >= len(b) || b[off] != ']' || b[off+1] != ',' || b[off+2] != '[' || b[off+3] != '"' {
+			c.ls = lineScanIdle
+			return off
+		}
+		c.n++
+		c.logs++
+		off += 4
+	}
+}
+
+// keepTimestamp keeps a 19-digit entry timestamp as the oldest or newest.
+func (c *entryCounter) keepTimestamp(ts []byte) {
+	if !c.hasTS {
+		c.hasTS = true
+		copy(c.tsMin[:], ts)
+		copy(c.tsMax[:], ts)
+		return
+	}
+	if bytes.Compare(ts, c.tsMin[:]) < 0 {
+		copy(c.tsMin[:], ts)
+	} else if bytes.Compare(ts, c.tsMax[:]) > 0 {
+		copy(c.tsMax[:], ts)
+	}
+}
+
+// allDigits8 reports whether the 8 bytes of v are all ASCII digits: each
+// byte's high nibble is 3, and stays 3 when 6 is added (0x3A-0x3F become
+// 0x40-0x45); no addition carries into the next byte.
+func allDigits8(v uint64) bool {
+	const high, six = 0xF0F0F0F0F0F0F0F0, 0x0606060606060606
+	return v&high == 0x3030303030303030 && (v+six)&high == 0x3030303030303030
+}
+
+// scanLine reads the line string from b[off:] to its closing quote or b's
+// end, adding its unescaped length, and returns where the scan stopped.
+func (c *entryCounter) scanLine(b []byte, off int) int {
+	for off < len(b) {
+		i := bytes.IndexByte(b[off:], '"')
+		seg := b[off:]
+		if i >= 0 {
+			seg = b[off : off+i]
+		}
+		c.addLineSegment(seg)
+		if i < 0 {
+			return len(b)
+		}
+		off += i + 1
+		if c.esc { // an escaped quote: one byte of the line
+			c.esc = false
+			c.lineBytes++
+			continue
+		}
+		// The line's end; a \u escape cut short (not JSON) ends with it.
+		c.ls, c.hexLeft = lineScanIdle, 0
+		return off
+	}
+	return off
+}
+
+// addLineSegment adds the unescaped length of a line segment that holds no
+// quote: a byte, or an escape sequence (`\x`, `\uXXXX`) as one byte.
+func (c *entryCounter) addLineSegment(seg []byte) {
+	if !c.esc && c.hexLeft == 0 && bytes.IndexByte(seg, '\\') < 0 {
+		c.lineBytes += int64(len(seg))
+		return
+	}
+	for _, ch := range seg {
+		switch {
+		case c.hexLeft > 0:
+			c.hexLeft--
+		case c.esc:
+			c.esc = false
+			c.lineBytes++
+			if ch == 'u' {
+				c.hexLeft = 4
+			}
+		case ch == '\\':
+			c.esc = true
+		default:
+			c.lineBytes++
+		}
+	}
+}
+
 // appendStats renders the request's stats in Loki's shape and key order:
-// summary, then cache. The sections Loki fills from its own components
-// (querier, ingester, index) have no proxy counterpart and are left out:
-// zero-filled they would show as measurements in Grafana's inspector.
+// summary, querier, ingester, cache, index. The querier, ingester and index
+// sections measure Loki's own components; the proxy has none of them, so it
+// writes them as Loki does for a component that did no work (all zero, as
+// Loki's ingester section reads for a window outside its ingesters and its
+// querier section for a results-cache hit). Grafana then lists the same
+// "Ingester:" stats for the proxy as for Loki.
 func (w *queryStatsWriter) appendStats(dst []byte) []byte {
 	rt := w.rt
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	return appendQueryStats(dst, &rt.flow, &rt.statsTotals, time.Since(rt.start), w.entries.n)
+	return appendQueryStats(dst, &rt.flow, w.report(&rt.statsTotals), time.Since(rt.start))
 }
+
+// statsReplay is what a response-cache hit replays of the computation that
+// stored the answer (query_stats_cache.go): its processed totals, splits,
+// shards, time in VictoriaLogs and time.
+type statsReplay struct {
+	bytes, lines, postFilter int64
+	splits, shards           int64
+	querierExec              time.Duration
+	exec                     time.Duration
+}
+
+// statsReport is everything appendQueryStats renders besides the flow.
+type statsReport struct {
+	summary        statsSummary
+	entries        int64
+	splits, shards int64
+	querierExec    time.Duration // querier.querierExecTime: the time in VictoriaLogs calls
+	queryLength    int64         // ns of the window a result-cache hit served
+}
+
+// statsSummary is the summary's processed totals and the time the rates are
+// taken over.
+type statsSummary struct {
+	bytes, lines, postFilter int64
+	rateOver                 time.Duration // 0: this request's execTime
+}
+
+// report gives the summary its meaning. With -query-stats-mode=loki (the
+// default) every field follows Loki's accounting (query_stats_loki.go; the
+// query-stats-loki-emulation decision of the query-stats-envelope registry
+// item):
+//
+//   - volume answers: no processed lines or bytes, as Loki's, and Loki's
+//     splits (the step buckets of the window).
+//   - a response-cache hit of an answer Loki computes on every request (a
+//     non-empty log answer, an instant answer) replays the stored
+//     computation's totals, rates, splits, shards and querier time; a metric
+//     query_range hit is Loki's results-cache hit (no processing, the window
+//     served, its pieces as splits); an empty log answer's hit reports
+//     nothing, as Loki's results cache does.
+//   - a log answer computed now: the lines of the pieces Loki would have
+//     read before its limit was filled, and their bytes.
+//   - a metric answer: the lines and bytes its counts give, the bytes else
+//     estimated from the selector's mean line size (query_stats_totals.go);
+//     splits and shards from Loki's pieces.
+//
+// With -query-stats-mode=victorialogs every field is what the proxy
+// measured for this request: the rows VictoriaLogs returned and their line
+// bytes for a log answer, a metric answer's own counts, VictoriaLogs calls
+// as splits, and nothing processed on a cache hit.
+//
+// A line count is never below the post-filter count it contains.
+func (w *queryStatsWriter) report(totals *statsTotals) statsReport {
+	flow := &w.rt.flow
+	rep := statsReport{entries: w.entries.n, queryLength: w.queryLength, querierExec: flow.vlDur}
+	logs := w.isLogAnswer()
+	switch {
+	case !w.lokiMode:
+		rep.splits = int64(flow.vlCalls)
+		if !w.hit && w.route != statsRouteVolume {
+			measured := totals // a metric answer's own counts
+			if logs {
+				measured = &statsTotals{} // the rows read, not the panel's volume answer
+			}
+			rep.summary = processedSummary(flow, measured, logs, w.entries.n, w.entries.lineBytes)
+		}
+	case w.route == statsRouteVolume:
+		// Loki answers volume from its index: no querier time.
+		rep.splits, rep.querierExec = w.lokiVolumeSplits(), 0
+	case w.hit:
+		w.lokiHitReport(&rep, logs)
+	default:
+		w.lokiReport(&rep, totals, logs)
+	}
+	return rep
+}
+
+var statsStreamsType = []byte(`"resultType":"streams"`)
+
+// isLogAnswer reports whether the answer the writer saw is a log (streams)
+// answer, whatever writer ordered its keys: its start names the type, or it
+// holds log entries, or its held-back end names the type (the sorted-key
+// multi-tenant merge ends with resultType). A Logs Drilldown answer with
+// encodingFlags before resultType is known by its entries; an empty one is
+// not (it then reports as an empty metric answer would: nothing processed).
+func (w *queryStatsWriter) isLogAnswer() bool {
+	return w.entries.mode == entryModeStreams || w.entries.logs > 0 ||
+		bytes.Contains(w.tail[:w.tailN], statsStreamsType)
+}
+
+func processedSummary(flow *flowCounters, totals *statsTotals, logs bool, entries, lineBytes int64) statsSummary {
+	var s statsSummary
+	if logs {
+		// The rows VictoriaLogs returned, or the entries returned when the
+		// answer came from the proxy's own window caches.
+		read := max(flow.vlRows, entries)
+		s.lines, s.postFilter, s.bytes = read, read, lineBytes
+	}
+	if totals.hasLines {
+		s.lines = totals.lines
+		if logs && !totals.hasBytes && entries > 0 {
+			s.bytes = int64(float64(lineBytes) / float64(entries) * float64(totals.lines))
+		}
+	}
+	if totals.hasPostFilter {
+		s.postFilter = totals.postFilter
+	}
+	if totals.hasBytes {
+		s.bytes = totals.bytes
+	}
+	s.lines = max(s.lines, s.postFilter)
+	return s
+}
+
+// The zero sections of Loki's components, in Loki's key order and zero form
+// (recorded in testdata/loki_query_stats_object.json: Loki omits the
+// ingester's recvWaitTime when it is zero).
+const (
+	lokiStoreZero = `"store":{"totalChunksRef":0,"totalChunksDownloaded":0,"chunksDownloadTime":0,` +
+		`"queryReferencedStructuredMetadata":false,"queryUsedV2Engine":false,"chunk":{"headChunkBytes":0,` +
+		`"headChunkLines":0,"decompressedBytes":0,"decompressedLines":0,"compressedBytes":0,"totalDuplicates":0,` +
+		`"postFilterLines":0,"headChunkStructuredMetadataBytes":0,"decompressedStructuredMetadataBytes":0},` +
+		`"chunkRefsFetchTime":0,"congestionControlLatency":0,"pipelineWrapperFilteredLines":0,"dataobj":{` +
+		`"prePredicateDecompressedRows":0,"prePredicateDecompressedBytes":0,` +
+		`"prePredicateDecompressedStructuredMetadataBytes":0,"postPredicateRows":0,"postPredicateDecompressedBytes":0,` +
+		`"postPredicateStructuredMetadataBytes":0,"postFilterRows":0,"pagesScanned":0,"pagesDownloaded":0,` +
+		`"pagesDownloadedBytes":0,"pageBatches":0,"totalRowsAvailable":0,"totalPageDownloadTime":0}}`
+	lokiIngesterZero = `"ingester":{"totalReached":0,` +
+		`"totalChunksMatched":0,"totalBatches":0,"totalLinesSent":0,` + lokiStoreZero + `}`
+	lokiIndexZero = `"index":{"totalChunks":0,"postFilterChunks":0,"shardsDuration":0,"usedBloomFilters":false,` +
+		`"totalStreams":0,"chunkRefsLookupTime":0,"bloomFilterTime":0}`
+)
 
 // lokiCacheZeroSections are the cache sections of a request that did not use
 // them, rendered once.
@@ -520,42 +888,45 @@ var lokiCacheZeroSections = func() (out [lokiCacheClassCount]string) {
 	return out
 }()
 
-func appendQueryStats(b []byte, flow *flowCounters, totals *statsTotals, exec time.Duration, entries int64) []byte {
+func appendQueryStats(b []byte, flow *flowCounters, rep statsReport, exec time.Duration) []byte {
 	execSec := exec.Seconds()
-	bytesProcessed, lines, postFilter := flow.vlBytes, flow.vlRows, int64(0)
-	if totals.hasBytes {
-		bytesProcessed = totals.bytes
-	}
-	if totals.hasLines {
-		lines = totals.lines
-	}
-	if totals.hasPostFilter {
-		postFilter = totals.postFilter
+	s := rep.summary
+	rateSec := execSec
+	if s.rateOver > 0 {
+		rateSec = s.rateOver.Seconds()
 	}
 	var bytesPerSec, linesPerSec int64
-	if execSec > 0 {
-		bytesPerSec = int64(float64(bytesProcessed) / execSec)
-		linesPerSec = int64(float64(lines) / execSec)
+	if rateSec > 0 {
+		bytesPerSec = int64(float64(s.bytes) / rateSec)
+		linesPerSec = int64(float64(s.lines) / rateSec)
 	}
 	b = append(b, `{"summary":{"bytesProcessedPerSecond":`...)
 	b = strconv.AppendInt(b, bytesPerSec, 10)
 	b = append(b, `,"linesProcessedPerSecond":`...)
 	b = strconv.AppendInt(b, linesPerSec, 10)
 	b = append(b, `,"totalBytesProcessed":`...)
-	b = strconv.AppendInt(b, bytesProcessed, 10)
+	b = strconv.AppendInt(b, s.bytes, 10)
 	b = append(b, `,"totalLinesProcessed":`...)
-	b = strconv.AppendInt(b, lines, 10)
+	b = strconv.AppendInt(b, s.lines, 10)
 	b = append(b, `,"execTime":`...)
 	b = strconv.AppendFloat(b, execSec, 'f', -1, 64)
 	b = append(b, `,"queueTime":`...)
 	b = strconv.AppendFloat(b, flow.queueDur.Seconds(), 'f', -1, 64)
 	b = append(b, `,"subqueries":0,"totalEntriesReturned":`...)
-	b = strconv.AppendInt(b, entries, 10)
+	b = strconv.AppendInt(b, rep.entries, 10)
 	b = append(b, `,"splits":`...)
-	b = strconv.AppendInt(b, int64(flow.vlCalls), 10)
-	b = append(b, `,"shards":0,"totalPostFilterLines":`...)
-	b = strconv.AppendInt(b, postFilter, 10)
-	b = append(b, `,"totalStructuredMetadataBytesProcessed":0},"cache":{`...)
+	b = strconv.AppendInt(b, rep.splits, 10)
+	b = append(b, `,"shards":`...)
+	b = strconv.AppendInt(b, rep.shards, 10)
+	b = append(b, `,"totalPostFilterLines":`...)
+	b = strconv.AppendInt(b, s.postFilter, 10)
+	b = append(b, `,"totalStructuredMetadataBytesProcessed":0},"querier":{`...)
+	b = append(b, lokiStoreZero...)
+	b = append(b, `,"querierExecTime":`...)
+	b = strconv.AppendFloat(b, rep.querierExec.Seconds(), 'f', -1, 64)
+	b = append(b, `},`...)
+	b = append(b, lokiIngesterZero...)
+	b = append(b, `,"cache":{`...)
 	for i, slot := range lokiCacheSlots {
 		if i > 0 {
 			b = append(b, ',')
@@ -581,7 +952,15 @@ func appendQueryStats(b []byte, flow *flowCounters, totals *statsTotals, exec ti
 		b = strconv.AppendInt(b, int64(c.requested+c.stored), 10)
 		b = append(b, `,"downloadTime":`...)
 		b = strconv.AppendInt(b, int64(c.dur), 10)
-		b = append(b, `,"queryLengthServed":0}`...)
+		b = append(b, `,"queryLengthServed":`...)
+		var served int64
+		if c.found > 0 && i == lokiCacheResult {
+			served = rep.queryLength
+		}
+		b = strconv.AppendInt(b, served, 10)
+		b = append(b, '}')
 	}
-	return append(b, `}}`...)
+	b = append(b, `},`...)
+	b = append(b, lokiIndexZero...)
+	return append(b, '}')
 }

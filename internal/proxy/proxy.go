@@ -256,6 +256,19 @@ type Config struct {
 	// stream selector, line, pattern and label filters, no parser) from it: they are then translated by the string
 	// translator, as before. Zero value serves them from the lowering (see query_lowering.go).
 	DisableQueryPlanLowering bool
+	// QueryStatsMode chooses the accounting of the data.stats object of query, query_range and volume answers:
+	// "loki" (the default, also for "") emulates Loki's numbers, "victorialogs" reports what the proxy measured
+	// (query_stats_loki.go).
+	QueryStatsMode string
+	// QueryStatsExactMetricBytes makes a metric query's totalBytesProcessed exact: the line bytes of its stream
+	// selector over its window, read from VictoriaLogs with a volume request next to the query (about six times the
+	// VictoriaLogs time of a count). Off by default: the bytes are estimated from the selector's mean line size.
+	QueryStatsExactMetricBytes bool
+	// QueryStatsExactLogLines makes a log query's totalLinesProcessed exact in Loki's accounting: when the panel's
+	// count answer is not held and the query fills its limit or filters lines, the lines of its stream selector over
+	// the pieces Loki reads are counted by VictoriaLogs (one timestamp-only count request per log query cache
+	// miss). Off by default: the lines are estimated from the answer.
+	QueryStatsExactLogLines bool
 	// PatternsEnabled controls /loki/api/v1/patterns availability.
 	// Nil defaults to true for backward compatibility.
 	PatternsEnabled *bool
@@ -578,6 +591,13 @@ type Config struct {
 	// SlowQueryLogLevel is the level slow lines are logged at: warn (also when empty), info, debug, or off, which
 	// logs none and still counts the slow requests (ParseSlowQueryLogLevel).
 	SlowQueryLogLevel string
+	// LogUserHeader names the header that names the end user in the request and slow lines and /debug/queries
+	// (X-Grafana-User with Grafana's send_user_header). It never labels a metric, reaches VictoriaLogs or splits a
+	// cache key. Empty: the user is the tenant, or the trusted headers of MetricsTrustProxyHeaders.
+	LogUserHeader string
+	// LogUserHeaderTrustedCIDRs (comma-separated CIDRs or addresses) limits LogUserHeader to requests whose TCP
+	// peer is in one of them; empty trusts it from any peer.
+	LogUserHeaderTrustedCIDRs string
 
 	// MetadataCacheFreshness is Loki's max_metadata_cache_freshness: a /labels,
 	// /label/{name}/values or /series request ending within it of now does not
@@ -717,6 +737,10 @@ type Proxy struct {
 	tenantMapFileSet                      bool
 	loweringShadow                        *loweringShadow // nil unless -translate-shadow-sample is set
 	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
+	queryStatsVictoriaLogsMode            bool            // -query-stats-mode=victorialogs: measured stats, not Loki's accounting
+	queryStatsExactMetricBytes            bool            // -query-stats-exact-metric-bytes
+	queryStatsExactLogLines               bool            // -query-stats-exact-log-lines
+	meanLines                             meanLineTable   // the mean line size of log answers, for metric bytes (query_stats_totals.go)
 	patternsAutodetectFromQueries         bool
 	patternsCounts                        bool
 	patternsExactMaxLines                 int
@@ -870,6 +894,7 @@ type Proxy struct {
 	slowQueryLogRawQueries               bool
 	slowLogLevel                         slog.Level
 	slowLogOff                           bool
+	logUser                              logUserHeader // -log-user-header and its trusted peers
 	metadataCacheFreshness               time.Duration // Loki max_metadata_cache_freshness: labels/label_values/series ending within it of now skip stale cache hits; 0 disables
 	maxStatsCacheFreshness               time.Duration // Loki max_stats_cache_freshness: instant volume segments ending within it of now are read live
 	metadataDefaultLookback              time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
@@ -1036,6 +1061,10 @@ func New(cfg Config) (*Proxy, error) {
 		}
 	}
 	slowLogLevel, slowLogOff, err := ParseSlowQueryLogLevel(cfg.SlowQueryLogLevel)
+	if err != nil {
+		return nil, err
+	}
+	logUser, err := parseLogUserHeader(cfg.LogUserHeader, cfg.LogUserHeaderTrustedCIDRs)
 	if err != nil {
 		return nil, err
 	}
@@ -1411,6 +1440,9 @@ func New(cfg Config) (*Proxy, error) {
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
 		loweringShadow:                        newLoweringShadow(cfg.TranslateShadowSample),
 		queryPlanLowering:                     !cfg.DisableQueryPlanLowering,
+		queryStatsVictoriaLogsMode:            cfg.QueryStatsMode == QueryStatsModeVictoriaLogs,
+		queryStatsExactMetricBytes:            cfg.QueryStatsExactMetricBytes,
+		queryStatsExactLogLines:               cfg.QueryStatsExactLogLines,
 		patternsEnabled:                       patternsEnabled,
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		deleteAPIAuthToken:                    cfg.DeleteAPIAuthToken,
@@ -1511,6 +1543,7 @@ func New(cfg Config) (*Proxy, error) {
 		slowQueryLogRawQueries:                cfg.SlowQueryLogRawQueries,
 		slowLogLevel:                          slowLogLevel,
 		slowLogOff:                            slowLogOff,
+		logUser:                               logUser,
 		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
 		metadataCacheFreshness:                max(cfg.MetadataCacheFreshness, 0),
 		maxStatsCacheFreshness:                max(cfg.MaxStatsCacheFreshness, 0),
