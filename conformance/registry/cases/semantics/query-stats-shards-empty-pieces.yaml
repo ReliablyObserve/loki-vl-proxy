@@ -1,0 +1,41 @@
+id: semantics/query-stats-shards-empty-pieces
+title: 'A log query whose window spans 1h pieces that hold no lines reports one shard per piece; Loki counts only the pieces that hold data (open)'
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - query-stats-envelope
+consumer: explore
+why: |
+  Loki splits a log query into 1h pieces and reports summary.splits and
+  summary.shards in data.stats. Read off Loki 3.7.9's answers on the e2e
+  stack: when the lines of a 1h window all fall in one of its two pieces
+  (a sparse stream whose lines arrived after the hour started), Loki answers
+  splits 2, shards 1; with lines in both pieces, shards 2. The proxy counts
+  one shard per piece, so the Grafana Stats tab shows Shards 2 where Loki
+  shows 1. Seen on CI in TestDrilldown_QueryStatsLikeLoki (1h log rows,
+  2026-11-12).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="api-gateway"}'
+    start: 'now-1h'
+    end: 'now'
+    limit: '1000'
+    direction: backward
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [stats]
+  expect: |
+    summary.shards equals the number of 1h pieces that hold a line of the
+    window; summary.splits the number of pieces.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy query statistics (shards of a log query)'
+  loki: 'shards counted per piece that holds data (answers recorded on the e2e stack)'
+  proxy: 'one shard per 1h piece'
+  planned_test: 'TestDrilldown_QueryStatsLikeLoki (test/e2e-compat, group drilldown) asserts the proxy lies between Loki and the piece count'

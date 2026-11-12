@@ -637,6 +637,9 @@
     "semantics/query-range-window-lead-window | gap:fixed",
     "semantics/query-range-window-lead-window | perf",
     "semantics/query-range-window-lead-window | query",
+    "semantics/query-stats-shards-empty-pieces | compare:observed",
+    "semantics/query-stats-shards-empty-pieces | gap:open",
+    "semantics/query-stats-shards-empty-pieces | query",
     "semantics/regexp-chain-led-by-ip | compare:observed",
     "semantics/regexp-chain-led-by-ip | gap:open",
     "semantics/regexp-chain-led-by-ip | query",
@@ -2083,6 +2086,7 @@
     "test/e2e-compat/query_semantics_matrix_test.go | range_function-rate",
     "test/e2e-compat/query_stats_test.go | drilldown/logs-footer-query-stats",
     "test/e2e-compat/query_stats_test.go | query-stats-envelope",
+    "test/e2e-compat/query_stats_test.go | semantics/query-stats-shards-empty-pieces",
     "test/e2e-compat/range_metric_offset_series_limit_test.go | limits/drilldown-partial-with-warning",
     "test/e2e-compat/range_metric_offset_series_limit_test.go | limits/series-limit-error",
     "test/e2e-compat/range_metric_offset_series_limit_test.go | loki_api_v1_query",
@@ -2241,7 +2245,7 @@
       "any": 28,
       "api": 61,
       "drilldown": 50,
-      "explore": 163,
+      "explore": 164,
       "grafana-datasource": 2,
       "operator": 4
     },
@@ -2266,7 +2270,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 106,
-    "wired_items": 293
+    "wired_items": 294
   },
   "gates": [
     "A/B shape selection",

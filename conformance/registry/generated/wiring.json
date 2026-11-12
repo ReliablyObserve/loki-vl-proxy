@@ -1467,6 +1467,9 @@
       "internal/proxy/query_range_window_lead_test.go",
       "test/e2e-compat/query_range_lead_window_test.go"
     ],
+    "semantics/query-stats-shards-empty-pieces": [
+      "test/e2e-compat/query_stats_test.go"
+    ],
     "semantics/repeated-label-filter-replaced-across-label-format": [
       "internal/translator/repeated_label_filter_test.go",
       "test/e2e-compat/repeated_label_filters_test.go"
@@ -1906,7 +1909,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 473,
+  "registry_items": 474,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4017,7 +4020,8 @@
     ],
     "test/e2e-compat/query_stats_test.go": [
       "drilldown/logs-footer-query-stats",
-      "query-stats-envelope"
+      "query-stats-envelope",
+      "semantics/query-stats-shards-empty-pieces"
     ],
     "test/e2e-compat/range_metric_offset_series_limit_test.go": [
       "limits/drilldown-partial-with-warning",
@@ -4370,5 +4374,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 293
+  "wired_items": 294
 }
