@@ -1180,8 +1180,8 @@ func TestMetricRouteOffsetEdges(t *testing.T) {
 }
 
 // An offset that moves a bound to the edge of the times the handlers read back as written (they write the moved
-// bound as integer nanoseconds, which the readers take as such from 1e18 on, and int64 ends in 2262, with the steps
-// the handlers take past the end): one nanosecond inside the early edge is routed and held to the handlers, one
+// bound as integer nanoseconds, which the readers take as such from 1e18 on, and int64 ends in 2262, less the request
+// time bounds' margin and the steps the handlers take past the end): one nanosecond inside the early edge is routed and held to the handlers, one
 // outside is delegated as "offset bounds"; ten minutes inside the late edge every profile is routed, ten minutes
 // outside none is, on every route shape. The early edge depends on the request's span, so each profile is pinned by
 // the runs of its own span.
@@ -1190,7 +1190,7 @@ func TestMetricRouteOffsetEdges(t *testing.T) {
 func TestMetricRouteOffsetBounds(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	endNs := routeEnd.UnixNano()
-	latest := int64(math.MaxInt64) - int64(time.Second)
+	latest := int64(math.MaxInt64) - int64(timeBoundsMargin)
 	bounds := func(sec routeSection) (n int) {
 		for k, c := range sec.DelegatedByConstruct {
 			if strings.HasSuffix(k, " route offset bounds") {

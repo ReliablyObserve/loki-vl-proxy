@@ -1662,12 +1662,14 @@ func bareParserMetricWindowValue(funcName string, window []bareParserMetricSampl
 func buildBareParserMetricMatrix(series []bareParserMetricSeries, startNanos, endNanos, stepNanos int64, spec bareParserMetricCompatSpec) map[string]interface{} {
 	result := make([]lokiMatrixResult, 0, len(series))
 	windowNanos := int64(spec.rangeWindow)
+	evaluations := stepCount(startNanos, endNanos, stepNanos)
 	for _, seriesItem := range series {
-		values := make([][]interface{}, 0, int(((endNanos-startNanos)/stepNanos)+1))
+		values := make([][]interface{}, 0, min64(evaluations, maxMetricEvalSamples))
 		samples := seriesItem.samples
 		left := 0
 		right := 0
-		for eval := startNanos; eval <= endNanos; eval += stepNanos {
+		for i := int64(0); i < evaluations; i++ {
+			eval := startNanos + i*stepNanos
 			lower := eval - windowNanos
 			for right < len(samples) && samples[right].tsNanos <= eval {
 				right++

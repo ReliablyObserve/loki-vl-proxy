@@ -381,11 +381,11 @@ func routeWindow(kind string, rng time.Duration, req RouteRequest) (Window, time
 // The times, in Unix nanoseconds, between which the handlers read a bound back as it was written after an offset moved
 // it. They write the moved bound as an integer, which the readers take for nanoseconds only from 1e18 on (a smaller one
 // reads as seconds, milliseconds or microseconds: the earliest is September 2001); int64 holds up to April 2262, and the
-// evaluation steps and windows past the end (a step and a range, and a second for the bounds' own moves) must fit too,
-// or the handlers' step loops wrap.
+// evaluation steps and windows past the end (a step and a range) must fit too, and the handlers refuse with a 400 a
+// window that comes within 15 minutes of either end of int64 (the request time bounds), so the rule keeps that far away.
 const (
 	offsetEarliest = int64(1e18)
-	offsetReserve  = int64(time.Second)
+	offsetReserve  = int64(15 * time.Minute)
 )
 
 // routeOffset is why the rule does not route the offset off of a query with the range rng for req, or nil. The

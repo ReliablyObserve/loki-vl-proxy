@@ -150,3 +150,4 @@ smoke	internal/queryplan/lower	FuzzParserLabelsLowering	12s	-	grouping, unwrappe
 smoke	internal/logql	FuzzParseTerminates	12s	-	every logql entry point returns within 200 ms and allocates at most a mebibyte per input byte
 smoke	internal/queryplan/lower	FuzzRoute	12s	-	the route rule of a metric query never panics and either routes it with a window that fits the request, a without fold that fits the window, a group pushdown and a sum of all streams that fit the function, and an offset that keeps the moved bounds between September 2001 and int64 nanoseconds, and for a binary operation one route per aggregation operand, equal to the operand's alone, that the lowering writes, or names the delegation
 smoke	internal/proxy	FuzzMeanLineWindow	12s	-	query stats metric bytes: the part of a log answer's record inside a window
+smoke	internal/proxy	FuzzRequestTimeBounds	12s	-	start, end, step and offset of query and query_range answer with 200 or a known 400, never a panic
