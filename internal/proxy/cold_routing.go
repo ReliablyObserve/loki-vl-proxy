@@ -156,8 +156,7 @@ func (cr *ColdRouter) refreshLoop(ctx context.Context) {
 const maxColdManifestBytes = 1 << 20
 
 func (cr *ColdRouter) refreshManifest(ctx context.Context) {
-	u := *cr.coldBackend
-	u.Path = "/manifest/range"
+	u := backendRequestURL(cr.coldBackend, "/manifest/range")
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
@@ -266,8 +265,7 @@ func (cr *ColdRouter) ColdBoundaryNs() int64 {
 
 func (cr *ColdRouter) ColdGet(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	params = guardOutboundQuery(params)
-	u := *cr.coldBackend
-	u.Path = path
+	u := backendRequestURL(cr.coldBackend, path)
 	u.RawQuery = params.Encode()
 	querycorpus.RecordBackend(path, params.Get("query"))
 
@@ -284,8 +282,7 @@ func (cr *ColdRouter) ColdPost(ctx context.Context, path string, params url.Valu
 
 func (cr *ColdRouter) coldRequest(ctx context.Context, method, path string, params url.Values, headers func(*http.Request), do func(*http.Request, *http.Client) (*http.Response, error)) (*http.Response, error) {
 	params = guardOutboundQuery(params)
-	u := *cr.coldBackend
-	u.Path = path
+	u := backendRequestURL(cr.coldBackend, path)
 	querycorpus.RecordBackend(path, params.Get("query"))
 
 	req, err := http.NewRequestWithContext(ctx, method, u.String(),

@@ -1229,8 +1229,7 @@ func (l *metadataScanLimiter) backendHealthy(ctx context.Context) bool {
 func (p *Proxy) sampleBackendSignals(ctx context.Context) backendSignals {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
-	u := *p.backend
-	u.Path = "/metrics"
+	u := backendRequestURL(p.backend, "/metrics")
 	u.RawQuery = ""
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {

@@ -1006,6 +1006,7 @@
     "internal/proxy/backend_stale_cancel_test.go | backend-deadlines-and-cancellation",
     "internal/proxy/backend_stale_cancel_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/backend_stale_cancel_test.go | semantics/live-request-not-cancelled-by-sibling",
+    "internal/proxy/backend_url_test.go | backend-url-path-prefix",
     "internal/proxy/bare_instant_detected_level_gap_test.go | semantics/instant-bare-range-detected-level-unknown",
     "internal/proxy/binary_aggregation_differential_test.go | loki_api_v1_query",
     "internal/proxy/binary_aggregation_differential_test.go | loki_api_v1_query_range",
@@ -2232,7 +2233,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 510,
+      "go": 511,
       "playwright": 1
     },
     "page_kinds": {
@@ -2252,7 +2253,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 104,
-    "wired_items": 291
+    "wired_items": 292
   },
   "gates": [
     "A/B shape selection",
