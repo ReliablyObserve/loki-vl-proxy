@@ -19,6 +19,28 @@ var routeBenchRequests = []RouteRequest{
 	{Step: 15 * time.Minute, Span: time.Hour},
 }
 
+// routeBenchOffsetRequests are the same request shapes with the end an offset needs.
+var routeBenchOffsetRequests = func() []RouteRequest {
+	out := slices.Clone(routeBenchRequests)
+	for i := range out {
+		out[i].End = routeTestEnd
+	}
+	return out
+}()
+
+// holdsOffset reports whether the range aggregation of the plan has an offset.
+func holdsOffset(p *queryplan.Plan) bool {
+	return p.Sem.OffsetKind != queryplan.OffsetNone
+}
+
+// requestsOf are the requests a set is timed with.
+func requestsOf(set routeSet) []RouteRequest {
+	if set == setOffset {
+		return routeBenchOffsetRequests
+	}
+	return routeBenchRequests
+}
+
 // holdsWithout reports whether a vector aggregation of the plan has a without clause.
 func holdsWithout(p *queryplan.Plan) bool {
 	for n := p.Root; ; {
@@ -64,11 +86,16 @@ const (
 	// setVectorUnwrap are the vector aggregations over an unwrap function, which the rule routes since the lowering
 	// hands back their stats typed.
 	setVectorUnwrap
+	// setOffset are the plans with an offset, which the rule routes since it moves the request's bounds. They are
+	// timed with a request that holds its end, apart from the sets above, which they leave as they were.
+	setOffset
 )
 
 // setOf is the set a plan belongs to.
 func setOf(p *queryplan.Plan) routeSet {
 	switch {
+	case holdsOffset(p):
+		return setOffset
 	case holdsRangeFunction(p) && !isRangeAggRoot(p):
 		return setVectorUnwrap
 	case holdsRangeFunction(p):
@@ -99,7 +126,7 @@ func routedPlans(tb testing.TB, set routeSet) []*queryplan.Plan {
 			continue
 		}
 		routed := true
-		for _, req := range routeBenchRequests {
+		for _, req := range requestsOf(set) {
 			if _, err := Route(p, Profile{}, req); err != nil {
 				routed = false
 			}
@@ -116,11 +143,12 @@ func routedPlans(tb testing.TB, set routeSet) []*queryplan.Plan {
 
 func benchRoutedPlansLowered(b *testing.B, set routeSet) {
 	plans := routedPlans(b, set)
+	reqs := requestsOf(set)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for _, p := range plans {
-			for range routeBenchRequests {
+			for range reqs {
 				if _, err := Plan(p, Profile{}); err != nil {
 					b.Fatal(err)
 				}
@@ -131,11 +159,12 @@ func benchRoutedPlansLowered(b *testing.B, set routeSet) {
 
 func benchRoutedPlansRoute(b *testing.B, set routeSet) {
 	plans := routedPlans(b, set)
+	reqs := requestsOf(set)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for _, p := range plans {
-			for _, req := range routeBenchRequests {
+			for _, req := range reqs {
 				if _, err := Route(p, Profile{}, req); err != nil {
 					b.Fatal(err)
 				}
@@ -165,6 +194,11 @@ func BenchmarkRoutedVectorUnwrapPlansLowered(b *testing.B) {
 }
 func BenchmarkRoutedVectorUnwrapPlansRoute(b *testing.B) { benchRoutedPlansRoute(b, setVectorUnwrap) }
 
+// And on the plans with an offset, which the rule routes since it moves the request's bounds by it. These plans were
+// not routed before, so they are timed apart from the sets above.
+func BenchmarkRoutedOffsetPlansLowered(b *testing.B) { benchRoutedPlansLowered(b, setOffset) }
+func BenchmarkRoutedOffsetPlansRoute(b *testing.B)   { benchRoutedPlansRoute(b, setOffset) }
+
 // The route rule allocates no more than the lowering it decides over, on every routed plan and request: its
 // decisions read the typed plan and the stats the lowering hands back and allocate nothing of their own.
 //
@@ -173,9 +207,9 @@ func TestRouteAllocatesNoMoreThanTheLowering(t *testing.T) {
 	if raceDetectorEnabled {
 		t.Skip("the race detector changes allocations")
 	}
-	for _, set := range []routeSet{setPlain, setWithout, setFunction, setVectorUnwrap} {
+	for _, set := range []routeSet{setPlain, setWithout, setFunction, setVectorUnwrap, setOffset} {
 		for _, p := range routedPlans(t, set) {
-			for _, req := range routeBenchRequests {
+			for _, req := range requestsOf(set) {
 				lowered := testing.AllocsPerRun(20, func() { _, _ = Plan(p, Profile{}) })
 				routed := testing.AllocsPerRun(20, func() { _, _ = Route(p, Profile{}, req) })
 				if routed > lowered {
