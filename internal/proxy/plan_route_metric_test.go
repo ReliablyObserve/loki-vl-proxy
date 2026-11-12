@@ -198,15 +198,26 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 		fetchStart = fetchStart.Add(1)
 		params.Set("start", routeTime(fetchStart))
 		if data {
-			steps = append(steps, "operation trim_translate_stats_qr "+routeTrimOutcome(p, route, req.Span))
+			steps = append(steps, "operation trim_translate_stats_qr "+routeTrimOutcome(p, route, start, req))
 		}
 	case lower.WindowBuckets:
 		fetchStart = start.Add(-route.Range)
 		setSlidingStatsRangeParams(params, fetchStart, end, route.Bucket)
 	case lower.WindowPhase:
+		if route.StepBuckets {
+			// Lines after the last whole step belong to no sample.
+			end = start.Add(req.Span / req.Step * req.Step)
+		}
 		fetchStart = start.Add(-route.Bucket)
 		setSlidingStatsRangeParams(params, fetchStart, end, route.Bucket)
 		phase = "phase"
+		if route.StepBuckets {
+			fetchStart = fetchStart.Add(1)
+			params.Set("start", routeTime(fetchStart))
+			if data {
+				steps = append(steps, "operation trim_translate_stats_qr "+routeTrimOutcome(p, route, start, req))
+			}
+		}
 	}
 	text, err := routeStatsQuery(q, route, phase, start, req.Step)
 	if err != nil {
@@ -229,6 +240,21 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 // builders (translator.PushDownWithout, translator.WithoutStreamCut), which refuse a query the route should not have
 // pushed down: that is an error, a mismatch for the harness.
 func routeStatsQuery(q string, route lower.MetricRoute, phase string, start time.Time, step time.Duration) (string, error) {
+	text, err := routeStatsText(q, route, phase, start, step)
+	if err != nil || !route.Counted {
+		return text, err
+	}
+	// The VictoriaLogs client flags the rows the conversion rejects in every stats pipe that follows the gate
+	// (the handlers' unwrapCountingRewrite); that it does is the route's.
+	counted, _, _, _, _, ok := unwrapCountingRewrite(text, func(string, string) (bool, bool) { return true, true })
+	if !ok {
+		return "", fmt.Errorf("route counts the conversion errors of %q; the handlers' rewrite does not", q)
+	}
+	return counted, nil
+}
+
+// routeStatsText is routeStatsQuery before the client's rewrite.
+func routeStatsText(q string, route lower.MetricRoute, phase string, start time.Time, step time.Duration) (string, error) {
 	text := route.Text
 	if route.Identity && !strings.Contains(text, "| stats by (") {
 		// The grouping text is the handlers' builder; that the series keep their identity is the route's.
@@ -257,6 +283,15 @@ func routeStatsQuery(q string, route lower.MetricRoute, phase string, start time
 		by = rest[:strings.Index(rest, ")")+2]
 	}
 	agg, folded := "count() as c", "sum(c) as c"
+	if route.Counted {
+		// An unwrap function keeps its stats on a window up to the step; a longer one merges the partial aggregate
+		// of each bucket (unwrapBucketAgg).
+		if route.Window == lower.WindowBuckets {
+			agg = unwrapBucketAgg(strings.TrimSuffix(string(route.Op), "_over_time"))
+		} else {
+			agg, by = text[at+len("| stats "):], ""
+		}
+	}
 	if route.Op == logql.RangeBytesOverTime || route.Op == logql.RangeBytesRate {
 		agg, folded = "sum_len(_msg) as c, count() as __sample_count", "sum(c) as c, sum(__sample_count) as __sample_count"
 	}
@@ -286,10 +321,16 @@ func routeLabelsOutcome(p *queryplan.Plan) string {
 }
 
 // routeTrimOutcome is how a tumbling answer's axis is trimmed and folded (trim_translate_stats_qr) when the stub
-// answers its one sample.
-func routeTrimOutcome(p *queryplan.Plan, route lower.MetricRoute, span time.Duration) string {
+// answers its one sample, 30s before the request's end: a sample after the last whole step the request holds is
+// dropped, which leaves the fold nothing to relabel.
+func routeTrimOutcome(p *queryplan.Plan, route lower.MetricRoute, start time.Time, req lower.RouteRequest) string {
+	step := route.Range
+	if route.Window == lower.WindowPhase {
+		step = req.Step
+	}
+	lastWhole := start.Add(req.Span / step * step)
 	switch {
-	case route.Range > span:
+	case routeEnd.Add(-30 * time.Second).After(lastWhole):
 		return "ok"
 	case routeLabelsOutcome(p) == "noop":
 		return "noop"
@@ -353,6 +394,7 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 		t.Fatalf("%d native metric rows, want 25", len(rows))
 	}
 	rows = append(rows, routeWithoutRows(t, 6)...)
+	rows = append(rows, routeRangeFunctionRows(t, 8)...)
 	native := func(mutate func(*lower.MetricRoute)) routePrediction {
 		return func(q string, p *queryplan.Plan, rp routeProfile, data bool, _ routeRecord) (routeRecord, error) {
 			return predictMetricRoute(q, p, rp, data, mutate)
@@ -410,6 +452,23 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 		{"proxy fold read as cut buckets", func(r *lower.MetricRoute) {
 			if (r.Window == lower.WindowBuckets || r.Window == lower.WindowPhase) && r.Fold == lower.FoldRows {
 				r.Fold = lower.FoldCut
+			}
+		}},
+		{"absent read as a stream series", func(r *lower.MetricRoute) {
+			if r.Op == logql.RangeAbsentOverTime {
+				r.Ungrouped, r.Identity, r.LevelProbe = false, true, true
+			}
+		}},
+		{"conversion flag dropped", func(r *lower.MetricRoute) { r.Counted = false }},
+		{"step buckets read as the proxy's phase", func(r *lower.MetricRoute) { r.StepBuckets = false }},
+		{"count phase read as step buckets", func(r *lower.MetricRoute) {
+			if r.Window == lower.WindowPhase && !r.Counted {
+				r.StepBuckets = true
+			}
+		}},
+		{"grouped unwrap read as the stream's series", func(r *lower.MetricRoute) {
+			if r.Counted && !r.Identity {
+				r.Identity, r.LevelProbe = true, true
 			}
 		}},
 		{"sum of all streams flipped", func(r *lower.MetricRoute) {
@@ -523,6 +582,138 @@ func TestMetricRouteWithoutEdges(t *testing.T) {
 			}
 			if sec, problems := runRouteParity(t, []routeRow{row}, nativeRoute); sec.Mismatches != 0 || sec.Native != sec.Runs {
 				t.Fatalf("%+v\n%s", sec, joinFirstRoute(problems, 4))
+			}
+		})
+	}
+}
+
+// routeRowOf is the plan-corpus row of one query.
+func routeRowOf(t *testing.T, q string) routeRow {
+	t.Helper()
+	expr, msg := logql.ValidateLogQLExpr(q)
+	if msg != "" || expr == nil {
+		t.Fatalf("%q: %s", q, msg)
+	}
+	plan, err := queryplan.Build(expr, queryplan.Inputs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	queryplan.Resolve(plan)
+	return routeRow{q: q, plan: plan, construct: lower.Construct(plan.Root), rangeDur: firstRange(plan.Root)}
+}
+
+// routeRangeFunctionRows are up to n corpus rows of each kind of range function the rule decides beyond the line
+// counts and byte sums: absent_over_time, a function over an unwrapped label, and one with a grouping.
+func routeRangeFunctionRows(t *testing.T, n int) []routeRow {
+	t.Helper()
+	var out []routeRow
+	count := map[string]int{}
+	for _, row := range routeRows(t, filepath.Join("..", ".."), 0) {
+		ra, ok := row.plan.Root.(*queryplan.RangeAgg)
+		if !ok {
+			continue
+		}
+		kind := "unwrap"
+		switch {
+		case ra.Op == logql.RangeAbsentOverTime:
+			kind = "absent"
+		case ra.By != nil:
+			kind = "unwrap by"
+		}
+		if _, err := lower.Route(row.plan, routeLoweringProfile(), lower.RouteRequest{Instant: true}); err != nil || count[kind] == n || kind == "unwrap" && ra.Op != logql.RangeSumOverTime && count[kind] >= n/2 {
+			continue
+		}
+		count[kind]++
+		out = append(out, row)
+	}
+	for _, k := range []string{"absent", "unwrap", "unwrap by"} {
+		if count[k] == 0 {
+			t.Fatalf("no corpus row of kind %s", k)
+		}
+	}
+	return out
+}
+
+// The range functions the corpus does not hold: each is held to the handlers' route on every request profile, or,
+// where the rule delegates it, to the name of its delegation and to no mismatch. The conversions, the filters before
+// the unwrap, the groupings, the ranges that divide the span and the ones that do not.
+//
+// conformance: architecture-syntax-package-layering
+func TestMetricRouteRangeFunctionEdges(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	for _, c := range []struct{ q, delegated string }{
+		// absent_over_time: the filters the rule takes, a range that divides the span and one that does not
+		{q: `absent_over_time({app="ra"}[5m])`},
+		{q: `absent_over_time({app="ra"}[7m])`},
+		{q: `absent_over_time({app="ra"} |= "x" [1m])`},
+		{q: `absent_over_time({app="ra"} != "x" |~ "a.*b" [90s])`},
+		{q: `absent_over_time({app="ra", env=~"p.*"} | zone="z" [1m])`},
+		{q: `absent_over_time({app="ra"} |> "<_> x" [1m])`},
+		{q: `absent_over_time({app="ra"} | detected_level="error" [1m])`, delegated: "RangeAgg route level filter"},
+		{q: `absent_over_time({app="ra"} | json [1m])`, delegated: "RangeAgg route pipeline"},
+		{q: `absent_over_time({app="ra"} | unwrap n [1m])`, delegated: "RangeAgg route unwrap absent"},
+		{q: `absent_over_time({app="ra"}[1m] offset 5m)`, delegated: "RangeAgg route offset"},
+		// the four functions over an unwrapped label, with every conversion
+		{q: `sum_over_time({app="ra"} | unwrap n [1m])`},
+		{q: `sum_over_time({app="ra"} | unwrap n [7m])`},
+		{q: `sum_over_time({app="ra"} | unwrap duration(n) [1m])`},
+		{q: `sum_over_time({app="ra"} | unwrap duration_seconds(n) [1m])`},
+		{q: `sum_over_time({app="ra"} | unwrap bytes(n) [1m])`},
+		{q: `avg_over_time({app="ra"} | unwrap n [1m])`},
+		{q: `avg_over_time({app="ra"} | unwrap bytes(n) [3m])`},
+		{q: `min_over_time({app="ra"} | unwrap duration(n) [45s])`},
+		{q: `max_over_time({app="ra"} | unwrap n [1500ms])`},
+		{q: `max_over_time({app="ra"} | unwrap bytes(n) [5m])`},
+		// the label the unwrap names: dotted, underscored, a name the profile translates, one the proxy derives
+		{q: `sum_over_time({app="ra"} | unwrap http.bytes [1m])`},
+		{q: `sum_over_time({app="ra"} | unwrap k8s_pod_cpu [1m])`},
+		{q: `max_over_time({app="ra"} | unwrap level [1m])`},
+		{q: `max_over_time({app="ra"} | unwrap service_name [1m])`},
+		// filters before the unwrap: lines, a stream label, a line filter on the value's name
+		{q: `sum_over_time({app="ra"} |= "x" | unwrap n [1m])`},
+		{q: `sum_over_time({app="ra"} | env="prod" | unwrap n [1m])`},
+		{q: `sum_over_time({app="ra"} |= "n" != "bad" |~ "a.+" | unwrap n [1m])`},
+		{q: `sum_over_time({app="ra"} | status >= 500 | unwrap n [1m])`},
+		{q: `sum_over_time({app="ra"} | env=~"p.*" | env!="pp" | unwrap n [1m])`},
+		{q: `sum_over_time({app="ra"} | detected_level="error" | unwrap n [1m])`, delegated: "RangeAgg LogSelect level filter unwrap"},
+		// a stage after the unwrap, a parser, an offset
+		{q: `sum_over_time({app="ra"} | unwrap n | n > 5 [1m])`, delegated: "RangeAgg route unwrap filter"},
+		{q: `sum_over_time({app="ra"} | unwrap n | __error__="" [1m])`, delegated: "RangeAgg route unwrap filter"},
+		{q: `sum_over_time({app="ra"} | unwrap n | env="prod" [1m])`, delegated: "RangeAgg route unwrap filter"},
+		{q: `sum_over_time({app="ra"} | unwrap duration(n) | __error__!="" [1m])`, delegated: "RangeAgg route unwrap filter"},
+		{q: `sum_over_time({app="ra"} | logfmt | unwrap n [1m])`, delegated: "RangeAgg route unwrap pipeline"},
+		{q: `sum_over_time({app="ra"} | unwrap n [1m] offset 5m)`, delegated: "RangeAgg route offset"},
+		// the groupings: plain labels, none, several, dotted, translated; derived labels stay delegated
+		{q: `max_over_time({app="ra"} | unwrap n [1m]) by (pod)`},
+		{q: `avg_over_time({app="ra"} | unwrap n [1m]) by (pod, zone)`},
+		{q: `avg_over_time({app="ra"} | unwrap n [7m]) by ()`},
+		{q: `max_over_time({app="ra"} | unwrap n [30s]) by (k8s.pod.name)`},
+		{q: `min_over_time({app="ra"} | unwrap bytes(n) [1m]) by (app)`},
+		{q: `min_over_time({app="ra"} | unwrap duration(n) [1m]) by (pod_name)`},
+		{q: `avg_over_time({app="ra"} | unwrap n [1m]) by (level)`, delegated: "RangeAgg route unwrap grouping"},
+		{q: `min_over_time({app="ra"} | unwrap n [1m]) by (detected_level)`, delegated: "RangeAgg route unwrap grouping"},
+		{q: `max_over_time({app="ra"} | unwrap n [1m]) by (service_name, pod)`, delegated: "RangeAgg route unwrap grouping"},
+		// the functions read another way stay delegated by name
+		{q: `quantile_over_time(0.5, {app="ra"} | unwrap n [1m])`, delegated: "RangeAgg route unwrap quantile"},
+		{q: `stddev_over_time({app="ra"} | unwrap n [1m])`, delegated: "RangeAgg route unwrap stddev"},
+		{q: `first_over_time({app="ra"} | unwrap n [1m])`, delegated: "RangeAgg route unwrap first"},
+		{q: `last_over_time({app="ra"} | unwrap n [1m]) by (pod)`, delegated: "RangeAgg route unwrap last"},
+		{q: `rate_counter({app="ra"} | unwrap n [1m])`, delegated: "RangeAgg route unwrap rate_counter"},
+		{q: `rate({app="ra"} | unwrap n [1m])`, delegated: "RangeAgg route unwrap rate"},
+		{q: `sum by (pod) (sum_over_time({app="ra"} | unwrap n [1m]))`, delegated: "VectorAgg route unwrap operand"},
+		{q: `sum by (pod) (absent_over_time({app="ra"}[1m]))`, delegated: "VectorAgg route absent operand"},
+	} {
+		t.Run(c.q, func(t *testing.T) {
+			row := routeRowOf(t, c.q)
+			sec, problems := runRouteParity(t, []routeRow{row}, nativeRoute)
+			if sec.Mismatches != 0 {
+				t.Fatalf("%+v\n%s", sec, joinFirstRoute(problems, 4))
+			}
+			switch {
+			case c.delegated == "" && sec.Native != sec.Runs:
+				t.Fatalf("routed %d of %d runs, delegated %v", sec.Native, sec.Runs, sec.DelegatedByConstruct)
+			case c.delegated != "" && (sec.Native != 0 || sec.DelegatedByConstruct[c.delegated] != sec.Runs):
+				t.Fatalf("want every run delegated as %q: %+v", c.delegated, sec.DelegatedByConstruct)
 			}
 		})
 	}
