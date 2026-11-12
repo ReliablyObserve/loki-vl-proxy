@@ -1,0 +1,444 @@
+{"kind":"check","q":"rate ({a=\"b\"}[5m])"}
+{"kind":"check","q":"sum by (a) (count_over_time ({a=\"b\"}[5m]))"}
+{"kind":"check","q":"{a=\"b\"} | line_format \"x\""}
+{"kind":"check","q":"{a=\"b\"} | json"}
+{"kind":"check","q":"{a=\"b\"} |= \"x\""}
+{"kind":"check","q":"{a=\"b\"} | json"}
+{"kind":"check","q":"rate({a=\"b\"}[5m])"}
+{"kind":"check","q":"sum by (a) (count_over_time({a=\"b\"}[5m]))"}
+{"kind":"check","q":"{a=\"b\"} | line_format\"x\""}
+{"kind":"check","q":"{a=\"b\"} |json"}
+{"kind":"check","q":"{a=\"b\"} |=\"x\""}
+{"kind":"check","q":"{a=\"b\"}| json"}
+{"kind":"check","q":"rate ({a=\"b\"}[5m])"}
+{"kind":"check","q":"sum by (a) (count_over_time ({a=\"b\"}[5m]))"}
+{"kind":"check","q":"{a=\"b\"} | line_format \"x\""}
+{"kind":"check","q":"{a=\"b\"} | json"}
+{"kind":"check","q":"{a=\"b\"} |= \"x\""}
+{"kind":"check","q":"{a=\"b\"} | json"}
+{"kind":"check","q":"rate　({a=\"b\"}[5m])"}
+{"kind":"check","q":"sum by (a) (count_over_time　({a=\"b\"}[5m]))"}
+{"kind":"check","q":"{a=\"b\"} | line_format　\"x\""}
+{"kind":"check","q":"{a=\"b\"} |　json"}
+{"kind":"check","q":"{a=\"b\"} |=　\"x\""}
+{"kind":"check","q":"{a=\"b\"}　| json"}
+{"kind":"check","q":"{a=\"b\"} | x = \"y\" and 、 = \"z\"","accept":true}
+{"kind":"check","q":"{a=\"b\"} | (、 = \"z\")","accept":true}
+{"kind":"check","q":"{a=\"b\"} | json | x = \"y\" and 、 > 5","accept":true}
+{"kind":"check","q":"{a=\"b\"} | x = \"y\" and ; = \"z\"","accept":true}
+{"kind":"check","q":"{a=\"b\"} | (; = \"z\")","accept":true}
+{"kind":"check","q":"{a=\"b\"} | json | x = \"y\" and ; > 5","accept":true}
+{"kind":"check","q":"{a=\"b\"} | x = \"y\" and @ = \"z\"","accept":true}
+{"kind":"check","q":"{a=\"b\"} | (@ = \"z\")","accept":true}
+{"kind":"check","q":"{a=\"b\"} | json | x = \"y\" and @ > 5","accept":true}
+{"kind":"check","q":"{a=\"b\"} | x = \"y\" and ³ = \"z\"","accept":true}
+{"kind":"check","q":"{a=\"b\"} | (³ = \"z\")","accept":true}
+{"kind":"check","q":"{a=\"b\"} | json | x = \"y\" and ³ > 5","accept":true}
+{"kind":"check","q":"{a=\"b\"} | x = \"y\" and Ⅰ = \"z\"","accept":true}
+{"kind":"check","q":"{a=\"b\"} | (Ⅰ = \"z\")","accept":true}
+{"kind":"check","q":"{a=\"b\"} | json | x = \"y\" and Ⅰ > 5","accept":true}
+{"kind":"check","q":"{a=\"b\"} | x = \"y\" and 𝛁 = \"z\"","accept":true}
+{"kind":"check","q":"{a=\"b\"} | (𝛁 = \"z\")","accept":true}
+{"kind":"check","q":"{a=\"b\"} | json | x = \"y\" and 𝛁 > 5","accept":true}
+{"kind":"check","q":"{a=\"b\"} | x = \"y\" and 😀 = \"z\"","accept":true}
+{"kind":"check","q":"{a=\"b\"} | (😀 = \"z\")","accept":true}
+{"kind":"check","q":"{a=\"b\"} | json | x = \"y\" and 😀 > 5","accept":true}
+{"kind":"check","q":"{a=\"b\"} | x = \"y\" and ा = \"z\"","accept":true}
+{"kind":"check","q":"{a=\"b\"} | (ा = \"z\")","accept":true}
+{"kind":"check","q":"{a=\"b\"} | json | x = \"y\" and ा > 5","accept":true}
+{"kind":"check","q":"{a=\"b\"} | x = \"y\" and ​ = \"z\"","accept":true}
+{"kind":"check","q":"{a=\"b\"} | (​ = \"z\")","accept":true}
+{"kind":"check","q":"{a=\"b\"} | json | x = \"y\" and ​ > 5","accept":true}
+{"kind":"check","q":"{a=\"b\"} | x = \"y\" and · = \"z\"","accept":true}
+{"kind":"check","q":"{a=\"b\"} | (· = \"z\")","accept":true}
+{"kind":"check","q":"{a=\"b\"} | json | x = \"y\" and · > 5","accept":true}
+{"kind":"check","q":"{a=\"b\"} | x = \"y\" and ☃ = \"z\"","accept":true}
+{"kind":"check","q":"{a=\"b\"} | (☃ = \"z\")","accept":true}
+{"kind":"check","q":"{a=\"b\"} | json | x = \"y\" and ☃ > 5","accept":true}
+{"kind":"check","q":"{a=\"b\"} | x = \"y\" and » = \"z\"","accept":true}
+{"kind":"check","q":"{a=\"b\"} | (» = \"z\")","accept":true}
+{"kind":"check","q":"{a=\"b\"} | json | x = \"y\" and » > 5","accept":true}
+{"kind":"process","q":"{app=\"x\"} | a > - .5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > - .5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > - .5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > - .5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > - .5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > - .5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > - .5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > - .5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -.5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > -.5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > -.5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > -.5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -.5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -.5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -.5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -.5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > - 5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > - 5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > - 5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > - 5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > - 5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > - 5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > - 5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > - 5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > -5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > + 5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > + 5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > + 5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > + 5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > + 5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > + 5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > + 5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > + 5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > +5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > +5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > +5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > +5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > +5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > +5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > +5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > +5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > -  0.5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > -  0.5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > -  0.5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > -  0.5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -  0.5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -  0.5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -  0.5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -  0.5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -0.5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > -0.5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > -0.5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a > -0.5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -0.5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -0.5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -0.5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a > -0.5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= - .5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= - .5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= - .5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= - .5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= - .5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= - .5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= - .5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= - .5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -.5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= -.5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= -.5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= -.5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -.5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -.5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -.5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -.5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= - 5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= - 5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= - 5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= - 5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= - 5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= - 5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= - 5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= - 5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= -5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= + 5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= + 5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= + 5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= + 5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= + 5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= + 5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= + 5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= + 5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= +5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= +5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= +5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= +5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= +5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= +5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= +5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= +5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -  0.5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= -  0.5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= -  0.5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= -  0.5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -  0.5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -  0.5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -  0.5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -  0.5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -0.5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= -0.5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= -0.5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a >= -0.5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -0.5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -0.5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -0.5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a >= -0.5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < - .5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < - .5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < - .5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < - .5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < - .5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < - .5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < - .5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < - .5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -.5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < -.5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < -.5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < -.5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -.5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -.5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -.5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -.5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < - 5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < - 5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < - 5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < - 5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < - 5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < - 5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < - 5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < - 5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < -5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < + 5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < + 5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < + 5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < + 5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < + 5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < + 5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < + 5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < + 5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < +5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < +5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < +5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < +5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < +5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < +5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < +5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < +5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -  0.5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < -  0.5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < -  0.5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < -  0.5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -  0.5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -  0.5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -  0.5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -  0.5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -0.5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < -0.5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < -0.5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a < -0.5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -0.5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -0.5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -0.5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a < -0.5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= - .5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= - .5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= - .5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= - .5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= - .5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= - .5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= - .5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= - .5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -.5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= -.5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= -.5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= -.5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -.5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -.5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -.5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -.5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= - 5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= - 5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= - 5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= - 5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= - 5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= - 5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= - 5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= - 5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= -5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= + 5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= + 5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= + 5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= + 5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= + 5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= + 5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= + 5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= + 5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= +5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= +5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= +5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= +5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= +5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= +5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= +5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= +5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= -  0.5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= -  0.5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= -  0.5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= -  0.5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -  0.5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -  0.5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -  0.5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -  0.5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -0.5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= -0.5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= -0.5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a <= -0.5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -0.5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -0.5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -0.5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a <= -0.5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - .5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - .5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - .5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - .5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - .5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - .5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - .5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - .5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -.5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -.5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -.5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -.5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -.5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -.5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -.5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -.5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - 5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - 5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - 5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - 5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - 5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - 5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - 5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == - 5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == + 5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == + 5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == + 5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == + 5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == + 5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == + 5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == + 5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == + 5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a == +5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == +5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == +5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == +5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == +5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == +5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == +5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == +5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a == -  0.5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -  0.5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -  0.5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -  0.5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -  0.5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -  0.5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -  0.5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -  0.5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -0.5","labels":{"a":"-6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -0.5","labels":{"a":"-1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -0.5","labels":{"a":"-0.6","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -0.5","labels":{"a":"-0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -0.5","labels":{"a":"0","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -0.5","labels":{"a":"0.4","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -0.5","labels":{"a":"1","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a == -0.5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a != - .5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - .5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - .5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - .5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - .5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - .5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - .5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - .5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -.5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -.5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -.5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -.5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -.5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -.5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -.5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -.5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - 5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - 5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - 5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - 5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - 5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - 5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - 5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != - 5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != + 5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != + 5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != + 5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != + 5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != + 5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != + 5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != + 5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != + 5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a != +5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != +5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != +5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != +5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != +5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != +5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != +5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != +5","labels":{"a":"5","app":"x"}}
+{"kind":"process","q":"{app=\"x\"} | a != -  0.5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -  0.5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -  0.5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -  0.5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -  0.5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -  0.5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -  0.5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -  0.5","labels":{"a":"5","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -0.5","labels":{"a":"-6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -0.5","labels":{"a":"-1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -0.5","labels":{"a":"-0.6","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -0.5","labels":{"a":"-0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -0.5","labels":{"a":"0","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -0.5","labels":{"a":"0.4","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -0.5","labels":{"a":"1","app":"x"},"keep":true}
+{"kind":"process","q":"{app=\"x\"} | a != -0.5","labels":{"a":"5","app":"x"},"keep":true}

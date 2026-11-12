@@ -338,7 +338,7 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		if !physical.Equal(want, op) {
 			return "", "", false
 		}
-		return vq.Text, ref, true
+		return guardedPair(vq.Text, ref)
 	}
 	// The string translator gets the text the handlers translate: the request rewrite removes comments and
 	// canonicalizes the ranges first.
@@ -348,7 +348,17 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	}
 	// The translator writes a label called not or in bare, which VictoriaLogs rejects; the plan quotes it, and the
 	// pair is the plan's text and the translator's made right.
-	return vq.Text, lower.QuoteKeywordFieldText(built), true
+	built = lower.QuoteKeywordFieldText(built)
+	return guardedPair(vq.Text, built)
+}
+
+// guardedPair is the two texts as the proxy sends them: every query it sends to VictoriaLogs passes the outbound
+// guard (logsql.GuardReservedFieldCase), which rewrites a filter on _time, _stream or _stream_id in another letter
+// case into a copy into a scratch field around it, because VictoriaLogs cannot read back from its own print the
+// filter the translator writes (semantics/reserved-field-name-case-outbound). A text with no such name comes back as
+// it is.
+func guardedPair(typed, built string) (string, string, bool) {
+	return logsql.GuardReservedFieldCase(typed), logsql.GuardReservedFieldCase(built), true
 }
 
 // isEvaluatedOp reports whether op is a ranking, stddev or stdvar, which the proxy evaluates itself.

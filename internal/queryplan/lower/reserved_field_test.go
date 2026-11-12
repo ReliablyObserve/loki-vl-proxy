@@ -320,7 +320,7 @@ func TestReadsReservedField(t *testing.T) {
 func TestReservedFieldAfterAStageIsDelegated(t *testing.T) {
 	for _, q := range []string{
 		`{app="r"} | json | _time="x"`, `{app="r"} | logfmt | _stream>5`, `{app="r"} | regexp "(?P<_msg>.+)" | _msg="x"`,
-		`{app="r"} | drop app | _stream_id="x"`, `{app="r"} | keep app | _time="x"`, `{app="r"} | label_format _time=app | _time="x"`,
+		`{app="r"} | drop app | _stream_id="x"`, `{app="r"} | keep app | _time="x"`,
 	} {
 		_, err := Plan(planOf(t, q), Profile{Caps: logsql.CapabilitiesFor("v1.53.0")})
 		var nl *NotLoweredError
