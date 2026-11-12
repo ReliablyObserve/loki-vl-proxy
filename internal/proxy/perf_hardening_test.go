@@ -450,7 +450,10 @@ func TestDetectedLabelValuesForServiceName_SurviveDetectedLabelsCache(t *testing
 		t.Fatalf("detectLabels returned no labels")
 	}
 
-	values := p.detectedLabelValuesForField(ctx, "service_name", query, start, end, limit)
+	values, err := p.detectedLabelValuesForField(ctx, "service_name", query, start, end, limit)
+	if err != nil {
+		t.Fatalf("detectedLabelValuesForField: %v", err)
+	}
 	if len(values) != 1 || values[0] != "api" {
 		t.Fatalf("expected cached service_name values to contain api, got %v", values)
 	}

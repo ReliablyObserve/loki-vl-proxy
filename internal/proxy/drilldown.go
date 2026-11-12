@@ -514,7 +514,8 @@ func streamSelectorPrefix(query string) string {
 }
 
 func (p *Proxy) serviceNameValuesFromDetectedLabels(ctx context.Context, query, start, end string) ([]string, error) {
-	_, summaries, err := p.detectLabels(ctx, query, start, end, detectedFieldsSampleLimit)
+	// service_name is one of the two labels the scan supplement supplies, so a failed supplement is the error.
+	_, summaries, err := p.detectLabelsFor(ctx, query, start, end, detectedFieldsSampleLimit, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1007,7 +1008,7 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 
 	candidates := fieldDetectionQueryCandidates(query)
 	var lastErr error
-	var hadScanFailure bool
+	var hadScanFailure, scanCompleted bool
 	var (
 		scanFieldList    []map[string]interface{}
 		scanFieldValues  map[string][]string
@@ -1070,10 +1071,15 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 			continue
 		}
 		scanFieldList, scanFieldValues, scanStreamLabels = scanList, scanValues, scanLabels
+		scanCompleted = true
 		break
 	}
 
 	// Collect native fields result (always, to avoid goroutine leak).
+	//
+	// The native lookup is an enrichment next to the scan: it adds the stored fields the sampled lines do not hold.
+	// The scan is the required read and fails the request on any error (below), so a failed lookup leaves the
+	// scan's own fields.
 	nativeResult := <-nativeCh
 	nativeFields := nativeResult.fields
 	if nativeResult.err != nil {
@@ -1160,6 +1166,14 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		return fieldList, fieldValues, nil
 	}
 
+	// No candidate's scan completed: there is no answer, and the stored fields alone are not the fields of the
+	// query's lines, so the failure is the answer. (A scan that outlasts -drilldown-scan-timeout reaches the
+	// handler as this error and keeps its documented native-only reply there.) A relaxed candidate that
+	// completed after a strict one failed is an answer, even with no rows.
+	if !scanCompleted {
+		return nil, nil, lastErr
+	}
+
 	if len(nativeFields) > 0 {
 		if nativeFieldFilterNeedsStreamLabels(nativeFields, p.labelTranslator) {
 			streamLabels, err := p.fetchNativeStreamLabelSet(ctx, query, start, end)
@@ -1186,6 +1200,9 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 // when the strict query returns zero scan results but VL still has index entries for
 // the stream. Avoids the "too many fields" problem that would arise from scanning the
 // entire bare-selector stream.
+//
+// It only runs after a scan that outlasted -drilldown-scan-timeout, whose documented answer is
+// no fields: this read can add to that answer and cannot fail it, so a failed read is no fields.
 func (p *Proxy) detectFieldsNativeOnly(ctx context.Context, query, start, end string) ([]map[string]interface{}, map[string][]string) {
 	nativeFields, err := p.detectNativeFields(ctx, query, start, end)
 	if err != nil || len(nativeFields) == 0 {
@@ -1729,6 +1746,12 @@ func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) (map[str
 }
 
 func (p *Proxy) detectLabels(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string]*detectedLabelSummary, error) {
+	return p.detectLabelsFor(ctx, query, start, end, lineLimit, false)
+}
+
+// detectLabelsFor is detectLabels; supplementRequired makes a failed scan supplement the request's error, for a
+// caller whose answer is the level or service_name label the supplement supplies.
+func (p *Proxy) detectLabelsFor(ctx context.Context, query, start, end string, lineLimit int, supplementRequired bool) ([]map[string]interface{}, map[string]*detectedLabelSummary, error) {
 	if lineLimit > p.limits().DetectedScanLines {
 		lineLimit = p.limits().DetectedScanLines
 	}
@@ -1742,9 +1765,14 @@ func (p *Proxy) detectLabels(ctx context.Context, query, start, end string, line
 			return nil, nil, err
 		}
 	} else if needsDetectedLabelScanSupplement(summaries) {
+		// The scan only supplies level and service_name when the stored labels lack them. The native read above is
+		// the required one and fails the request on any error, so a failed supplement leaves the labels it read
+		// without those two. A caller that asked for level or service_name has nothing else to answer with.
 		scanned, scanErr := p.detectScannedLabels(ctx, query, start, end, lineLimit)
 		if scanErr == nil {
 			mergeDetectedLabelSupplements(summaries, scanned)
+		} else if supplementRequired {
+			return nil, nil, scanErr
 		}
 	}
 	labels := formatDetectedLabelSummaries(summaries)
@@ -2131,31 +2159,11 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 		// No values from native index — field may be inside JSON or logfmt _msg.
 		// Retry once with unpack pipes so VL extracts the field from _msg content.
 		if !unpacksMessage(logsqlQuery) {
-			unpackQuery := logsqlQuery + " " + logsql.PipeUnpackJSON{From: "_msg"}.String() + " " + logsql.PipeUnpackLogfmt{From: "_msg"}.String()
-			params.Set("query", unpackQuery)
-			resp2, err2 := p.vlGet(ctx, "/select/logsql/field_values", params)
-			if err2 == nil {
-				var body2 []byte
-				var readErr2 error
-				if resp2.StatusCode < http.StatusBadRequest {
-					body2, readErr2 = p.readBufferedBackendBody(resp2.Body)
-				}
-				_ = resp2.Body.Close()
-				if errors.Is(readErr2, errBodyTooLarge) {
-					return nil, readErr2
-				}
-				if resp2.StatusCode < http.StatusBadRequest {
-					var parsed2 vlFieldValuesResponse
-					if stdjson.Unmarshal(body2, &parsed2) == nil {
-						for _, item := range parsed2.Values {
-							if item.Hits >= 0 && strings.TrimSpace(item.Value) != "" {
-								values = append(values, item.Value)
-							}
-						}
-						sort.Strings(values)
-					}
-				}
+			unpacked, err := p.fieldValuesViaUnpack(ctx, logsqlQuery, params)
+			if err != nil {
+				return nil, err
 			}
+			values = unpacked
 		}
 		return values, nil
 	}
@@ -2174,9 +2182,7 @@ func (p *Proxy) fetchUnpackedFieldValues(ctx context.Context, query, start, end,
 	if unpacksMessage(logsqlQuery) {
 		return nil, nil
 	}
-	unpackQuery := logsqlQuery + " " + logsql.PipeUnpackJSON{From: "_msg"}.String() + " " + logsql.PipeUnpackLogfmt{From: "_msg"}.String()
 	params := url.Values{}
-	params.Set("query", unpackQuery)
 	params.Set("field", field)
 	if start != "" {
 		params.Set("start", formatVLTimestamp(start))
@@ -2187,22 +2193,44 @@ func (p *Proxy) fetchUnpackedFieldValues(ctx context.Context, query, start, end,
 	if limit > 0 {
 		params.Set("limit", strconv.Itoa(limit))
 	}
+	return p.fieldValuesViaUnpack(ctx, logsqlQuery, params)
+}
+
+// fieldValuesViaUnpack reads the values of params' field from the lines of logsqlQuery unpacked from _msg as JSON
+// and then logfmt: the field is inside the line and no stored column holds it. A call that fails (a transport
+// error, a cancelled or timed out request, an error status, a body that broke off or is not VictoriaLogs JSON) is
+// a failed read, so the request answers Loki's error and never an empty list. VictoriaLogs answers a field no line
+// holds with 200 and no values and every failed query with 400 (httpserver.Errorf), so the one 400 that is not a
+// failure is its parser refusing the extended query: the lines cannot be unpacked, which leaves no values. A body
+// without bytes is no values. It sets params' query, so the caller hands over params it no longer uses.
+func (p *Proxy) fieldValuesViaUnpack(ctx context.Context, logsqlQuery string, params url.Values) ([]string, error) {
+	params.Set("query", logsqlQuery+" "+logsql.PipeUnpackJSON{From: "_msg"}.String()+" "+logsql.PipeUnpackLogfmt{From: "_msg"}.String())
 	resp, err := p.vlGet(ctx, "/select/logsql/field_values", params)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
+		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 		_ = resp.Body.Close()
-		return nil, nil
+		statusErr := p.redactedBackendStatusError("", resp.StatusCode, errBody)
+		if isUpstreamQueryRejected(statusErr) {
+			p.observeInternalOperation(ctx, "discovery_fallback", "unpacked_field_values_rejected", 0)
+			return nil, nil
+		}
+		return nil, statusErr
 	}
 	body, readErr := p.readBufferedBackendBody(resp.Body)
 	_ = resp.Body.Close()
-	if errors.Is(readErr, errBodyTooLarge) {
+	if readErr != nil {
+		// Never decode a partial answer.
 		return nil, readErr
 	}
 	var parsed vlFieldValuesResponse
-	if stdjson.Unmarshal(body, &parsed) != nil {
-		return nil, nil
+	if err := stdjson.Unmarshal(body, &parsed); err != nil {
+		if len(bytes.TrimSpace(body)) == 0 {
+			return nil, nil
+		}
+		return nil, errDetectScanBodyNotJSON
 	}
 	values := make([]string, 0, len(parsed.Values))
 	for _, item := range parsed.Values {

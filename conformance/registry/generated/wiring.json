@@ -1084,6 +1084,7 @@
     ],
     "semantics/error-layer-backend-failure-status": [
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/error_layer_mixed_test.go",
       "internal/proxy/loki_client_error_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
@@ -1091,6 +1092,7 @@
     "semantics/error-layer-backend-text": [
       "internal/proxy/capture_error_replay_test.go",
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/error_layer_mixed_test.go",
       "internal/proxy/loki_client_error_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
@@ -1110,6 +1112,7 @@
     ],
     "semantics/error-layer-internal-go-text": [
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/error_layer_mixed_test.go",
       "internal/proxy/loki_client_error_test.go",
       "internal/proxy/tail_backend_errors_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
@@ -1121,8 +1124,10 @@
     ],
     "semantics/error-layer-silent-success": [
       "internal/proxy/detected_backend_failure_test.go",
+      "internal/proxy/detected_followups_test.go",
       "internal/proxy/error_body_shape_test.go",
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/error_layer_mixed_test.go",
       "internal/proxy/patterns_backend_failure_test.go",
       "internal/proxy/perf_hardening_test.go",
       "internal/proxy/proxy_test.go",
@@ -1133,6 +1138,7 @@
     "semantics/error-layer-transport-text": [
       "internal/proxy/capture_error_replay_test.go",
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/error_layer_mixed_test.go",
       "internal/proxy/loki_client_error_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
@@ -2255,6 +2261,9 @@
     "internal/proxy/detected_fields_logfmt_tokens_test.go": [
       "semantics/detected-fields-no-logfmt-token-fields"
     ],
+    "internal/proxy/detected_followups_test.go": [
+      "semantics/error-layer-silent-success"
+    ],
     "internal/proxy/detected_level_cache_scope_test.go": [
       "semantics/json-metric-detected-level-derivation"
     ],
@@ -2351,6 +2360,13 @@
       "status-500",
       "status-502",
       "status-503"
+    ],
+    "internal/proxy/error_layer_mixed_test.go": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-internal-go-text",
+      "semantics/error-layer-silent-success",
+      "semantics/error-layer-transport-text"
     ],
     "internal/proxy/error_text_utf8_test.go": [
       "semantics/line-filter-invalid-utf8"
@@ -4390,7 +4406,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 535,
+  "tests_with_markers": 538,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
