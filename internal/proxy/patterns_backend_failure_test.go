@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -139,5 +141,48 @@ func TestPatternsBackendFailureAnswersLokisError(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+// A pattern snapshot stands in for a read that succeeded and found nothing, not for a failed one: with a
+// snapshot of the selector warmed, a failing backend still answers Loki's error and never the earlier patterns
+// under a success status.
+// conformance: semantics/error-layer-silent-success
+func TestPatternsFailedReadIsNotAnsweredFromTheSnapshot(t *testing.T) {
+	for _, failure := range []string{"status_500", "broken_body"} {
+		t.Run(failure, func(t *testing.T) {
+			var calls atomic.Int64
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if calls.Add(1) == 1 {
+					// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+					for i := 0; i < lokiPatternMinLines; i++ {
+						_, _ = fmt.Fprintf(w, `{"_time":"2024-01-15T10:30:%02dZ","_msg":"GET /api/users 200 15ms","_stream":"{app=\"api\"}","level":"info"}`+"\n", i)
+					}
+					return
+				}
+				if failure == "status_500" {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Length", "100000")
+				_, _ = w.Write([]byte(`{"_time":"2024-01-15T10:31:00Z","_msg":"GET /api/users 200 15ms"}` + "\n"))
+			}))
+			defer backend.Close()
+			p := newPatternPersistenceProxy(t, backend.URL, filepath.Join(t.TempDir(), "patterns.snapshot.json"), true)
+			t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+
+			get := func(start, end string) *httptest.ResponseRecorder {
+				rec := httptest.NewRecorder()
+				p.handlePatterns(rec, httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"}&start=`+start+`&end=`+end+`&step=60s`, nil))
+				return rec
+			}
+			if first := get("1705314600", "1705314720"); first.Code != http.StatusOK || !strings.Contains(first.Body.String(), `"pattern"`) {
+				t.Fatalf("the warming call must answer patterns, got %d %.200q", first.Code, first.Body.String())
+			}
+			second := get("1705314660", "1705314780")
+			if second.Code != http.StatusInternalServerError || second.Body.String() != lokiErrInternal {
+				t.Fatalf("a failed read must answer Loki's 500 %q, got %d %.200q", lokiErrInternal, second.Code, second.Body.String())
+			}
+		})
 	}
 }

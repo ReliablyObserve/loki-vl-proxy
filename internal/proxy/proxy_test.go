@@ -922,9 +922,8 @@ func TestContract_Patterns_StripsPipelineAndUsesLabelScope(t *testing.T) {
 	}
 }
 
-// A rejected query (VL 400) is Loki's 400 bad_data instead; see
-// TestUpstreamBadRequest_MapsToLokiBadData/patterns.
-// A query endpoint that is unavailable is a failed call: Loki's 500, never an empty success.
+// A query endpoint that is unavailable is a failed call: Loki's 500, never an empty success. (A rejected query
+// (VL 400) is Loki's 400 bad_data instead; see TestUpstreamBadRequest_MapsToLokiBadData/patterns.)
 // conformance: semantics/error-layer-silent-success
 func TestContract_Patterns_FallsBackToQueryRangeWhenQueryUnavailable(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

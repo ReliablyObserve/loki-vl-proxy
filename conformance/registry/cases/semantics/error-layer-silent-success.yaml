@@ -1,5 +1,6 @@
 id: semantics/error-layer-silent-success
 title: A failed backend call is answered 200 with an empty or partial result (open)
+pending: true
 proves:
   - status-500
   - status-derived
@@ -42,7 +43,7 @@ gap:
   status: open
   impact: explore-visible
   effort: M
-  area: 'internal/proxy patterns.go, label_handlers.go detected_*, http_utils.go writeGrafanaStatsFailure, tail.go'
+  area: 'internal/proxy label_handlers.go detected_*, http_utils.go writeGrafanaStatsFailure, tail.go'
   loki: 'pkg/querier/queryrange/limits.go:441-524; pkg/util/server/error.go:124-128'
   proxy: '200 with an empty result or a warning'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

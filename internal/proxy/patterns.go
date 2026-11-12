@@ -384,6 +384,13 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(entries) == 0 && !exactAnswered {
+		if diag.failure != nil {
+			// The backend failed: Loki answers the failure, never an empty result and never an earlier answer
+			// under a success status. (The last snapshot below stands in for a read that succeeded empty.)
+			status := p.writeErr(w, r.Context(), diag.failure)
+			p.metrics.RecordRequest("patterns", status, time.Since(start))
+			return
+		}
 		if fallbackPayload, ok := p.latestPatternSnapshotPayload(cacheWriteKey); ok {
 			p.metrics.RecordPatternsSnapshotHit(true)
 			p.recordPatternFetchDiagnostics(diag)
@@ -392,13 +399,6 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(resultBody)
 			p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
-			return
-		}
-		if diag.failure != nil {
-			// The backend failed and there is no earlier answer to give: Loki answers the failure, never an
-			// empty result.
-			status := p.writeErr(w, r.Context(), diag.failure)
-			p.metrics.RecordRequest("patterns", status, time.Since(start))
 			return
 		}
 		p.metrics.RecordPatternsSnapshotMiss()
