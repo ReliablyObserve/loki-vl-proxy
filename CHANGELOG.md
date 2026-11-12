@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `/loki/api/v1/tail` surfaces a failed VictoriaLogs call as Loki's tail does. A live tail whose VictoriaLogs
+  stream ends, breaks off or carries a line above 1 MiB, and a polled tail whose query fails or answers
+  something that is not JSON, now close the websocket with `1011` and Loki's text
+  (`Internal Server Error`, cut to the 123 bytes a close frame holds). Before, the connection was dropped with
+  no close frame, which clients read as their library's `unexpected EOF`, and a failed poll was retried
+  silently without end. A first VictoriaLogs probe that takes longer than `-backend-timeout` is answered
+  before the upgrade with `504` and Loki's deadline text.
 - Bounds checks for request times and offsets. A `query` or `query_range`
   request whose window, moved by the query's `offset` and widened by its range,
   leaves the span the proxy holds times in (1677-09-21 to 2262-04-11, less 15

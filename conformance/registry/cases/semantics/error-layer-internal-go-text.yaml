@@ -1,5 +1,6 @@
 id: semantics/error-layer-internal-go-text
-title: A native tail stream that breaks after the upgrade closes with the Go reader error (open)
+title: A tail stream that breaks after the upgrade closes with Loki's error, not a bare disconnect or Go reader wording (fixed)
+pending: true
 proves:
   - status-500
   - status-502
@@ -15,10 +16,12 @@ why: |
   merge multi-tenant response: invalid character ...`), the merge of a
   binary aggregation's split halves, and the tenant limits YAML encoder
   (`/config/tenant/v1/limits`, which keeps http.Error's shape) answer
-  `Internal Server Error`, or the limit text naming its flag. 3 cells
-  remain (25 before): a native tail whose VictoriaLogs stream is
-  truncated, malformed or oversized after the websocket upgrade closes with
-  the Go reader error as its reason.
+  `Internal Server Error`, or the limit text naming its flag. No cell remains
+  (3 before). A native tail whose VictoriaLogs stream breaks, ends or carries
+  a line above the scanner's cap after the websocket upgrade used to drop the
+  connection without a close frame, so clients saw their library's
+  `unexpected EOF`; it now closes with 1011 and `Internal Server Error`. The
+  polling tail ends the same way when a poll fails or its body is not JSON.
 request:
   scope: internal
   entry: lokiClientError, (*Proxy).writeErr, writeBackendError, writeGrafanaStatsFailure
@@ -42,10 +45,13 @@ compare:
   expect: |
     No Go decoder, scanner or reader wording; Loki's 500.
 gap:
-  status: open
+  status: fixed
+  fixed_by: TBD-PR
   impact: explore-visible
+  visual: none
+  visual_reason: 'A tail whose VictoriaLogs call fails ends in a websocket close frame, which needs a failing backend and no Grafana panel renders; the gate and the tail failure-mode test assert the close frame.'
   effort: S
-  area: 'internal/proxy/http_utils.go writeError (map unknown errors to one Loki text)'
+  area: 'internal/proxy/http_utils.go writeError (map unknown errors to one Loki text); internal/proxy/tail.go forwardNativeTail, streamSyntheticTail'
   loki: 'pkg/util/server/error.go:124-128'
-  proxy: 'native tail close reason from the stream reader (forwardNativeTail)'
+  proxy: 'tail: any stream end or failed poll closes 1011 with the error layer text (closeTailWithError)'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

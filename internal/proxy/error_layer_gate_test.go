@@ -151,6 +151,13 @@ type errLayerBackend struct {
 	hits   atomic.Int64
 	mu     sync.Mutex
 	cancel context.CancelFunc // client_cancel: cancels the client request once VictoriaLogs is called
+	// tailHit and released serve a tail's client_cancel: the backend closes
+	// tailHit when the tail stream call arrives and released once the proxy
+	// has dropped that call (its request context is done).
+	tailHit     chan struct{}
+	released    chan struct{}
+	hitOnce     sync.Once
+	releaseOnce sync.Once
 }
 
 // errLayerQueryPath reports whether path is a query call of a route, as opposed
@@ -205,6 +212,19 @@ func (b *errLayerBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case <-time.After(10 * time.Second):
 		}
 	case "client_cancel":
+		if b.tailHit != nil {
+			if !strings.HasSuffix(r.URL.Path, "/select/logsql/tail") {
+				w.WriteHeader(http.StatusNoContent) // the preflight probe passes
+				return
+			}
+			b.hitOnce.Do(func() { close(b.tailHit) })
+			select {
+			case <-r.Context().Done():
+				b.releaseOnce.Do(func() { close(b.released) })
+			case <-time.After(5 * time.Second):
+			}
+			return
+		}
 		b.mu.Lock()
 		cancel := b.cancel
 		b.mu.Unlock()
@@ -314,6 +334,9 @@ type errLayerOutcome struct {
 	// connection that was upgraded; status is then 101.
 	closeCode int
 	closeText string
+	// released: a tail's client went away and the proxy dropped its
+	// VictoriaLogs stream.
+	released bool
 }
 
 // errLayerExpect is Loki's answer to a failure mode.
@@ -403,6 +426,14 @@ func errLayerBodyShapeProblem(rt errLayerRoute, o errLayerOutcome) string {
 // errLayerClasses returns the leak classes an outcome fails for a mode.
 func errLayerClasses(rt errLayerRoute, mode string, o errLayerOutcome, backendHost string) []string {
 	classes := map[string]bool{}
+	if rt.name == "tail" && mode == "client_cancel" {
+		// The client is gone, so Loki's 499 text has no reader: what a tail owes
+		// a cancelled client is to stop its VictoriaLogs stream.
+		if !o.released {
+			classes[leakCancelDeadline] = true
+		}
+		return errLayerClassList(classes)
+	}
 	wantStatus, wantText := errLayerExpect(mode)
 	switch rt.shape {
 	case errShapeRuler, errShapeAlerts:
@@ -473,6 +504,10 @@ func errLayerClasses(rt errLayerRoute, mode string, o errLayerOutcome, backendHo
 		// A proxy limit names the flag that sets it.
 		classes[leakLimitStatus] = true
 	}
+	return errLayerClassList(classes)
+}
+
+func errLayerClassList(classes map[string]bool) []string {
 	out := make([]string, 0, len(classes))
 	for c := range classes {
 		out = append(out, c)
@@ -535,7 +570,7 @@ func runErrLayerCell(t *testing.T, rt errLayerRoute, mode string) (errLayerOutco
 	host := strings.TrimPrefix(backendURL, "http://")
 
 	if rt.name == "tail" {
-		return runErrLayerTail(t, mux, rt), host
+		return runErrLayerTail(t, mux, rt, backend), host
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -566,8 +601,12 @@ func runErrLayerCell(t *testing.T, rt errLayerRoute, mode string) (errLayerOutco
 
 // runErrLayerTail opens a real websocket tail (native mode, so a backend
 // failure closes the connection instead of falling back to polling).
-func runErrLayerTail(t *testing.T, mux *http.ServeMux, rt errLayerRoute) errLayerOutcome {
+func runErrLayerTail(t *testing.T, mux *http.ServeMux, rt errLayerRoute, backend *errLayerBackend) errLayerOutcome {
 	t.Helper()
+	if backend.mode == "client_cancel" {
+		backend.tailHit = make(chan struct{})
+		backend.released = make(chan struct{})
+	}
 	front := httptest.NewServer(mux)
 	t.Cleanup(front.Close)
 	wsURL := "ws" + strings.TrimPrefix(front.URL, "http") + rt.path + "?" + rt.params.Encode()
@@ -585,6 +624,21 @@ func runErrLayerTail(t *testing.T, mux *http.ServeMux, rt errLayerRoute) errLaye
 	}
 	defer conn.Close()
 	out := errLayerOutcome{status: http.StatusSwitchingProtocols}
+	if backend.mode == "client_cancel" {
+		// The client goes away once the proxy has called VictoriaLogs' tail.
+		select {
+		case <-backend.tailHit:
+		case <-time.After(3 * time.Second):
+			return out
+		}
+		_ = conn.Close()
+		select {
+		case <-backend.released:
+			out.released = true
+		case <-time.After(3 * time.Second):
+		}
+		return out
+	}
 	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	for {
 		if _, _, err := conn.ReadMessage(); err != nil {
