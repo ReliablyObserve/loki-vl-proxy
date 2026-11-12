@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `stdvar_over_time` with a grouping (`stdvar_over_time(... | unwrap n [5m]) by (app)`,
+  `sum by (app) (stdvar_over_time(...))`) or without a parser no longer fails: it
+  was answered with an error (400), where Loki answers 200. VictoriaLogs has no
+  variance function, so the proxy asks for the standard deviation squared, and
+  that request was sent to VictoriaLogs with an internal marker in its text.
+  `stdvar_over_time(...) by (app)` now has Loki's values; under an outer
+  `sum by` the value is still the variance of the group's pooled samples, not
+  the sum of the series' own variances that Loki takes.
+- `stddev_over_time` and `stdvar_over_time` over an unwrapped label on a range
+  query whose range equals the step (`[5m]` at step 5m) answer the window ending
+  at each timestamp, as Loki does; each point was the window one step later.
+  A range that is not the step keeps its answer.
+
 ## [2.183.0] - 2026-11-12
 
 ### Changed
