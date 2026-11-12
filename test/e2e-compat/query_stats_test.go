@@ -431,15 +431,7 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 		metricBytes := lokiLineBytes(t, sel, start.Add(-time.Minute), end)
 		// likeLoki compares an answer with Loki's. read is the lines its window holds, readBytes their bytes.
 		likeLoki := func(t *testing.T, loki, miss e2eStats, read, readBytes int64) {
-			switch {
-			case miss.Summary.Splits != loki.Summary.Splits:
-				t.Errorf("splits/shards %d/%d, Loki %d/%d", miss.Summary.Splits, miss.Summary.Shards, loki.Summary.Splits, loki.Summary.Shards)
-			case miss.Summary.Shards == loki.Summary.Shards:
-			case loki.Summary.Shards < loki.Summary.Splits && loki.Summary.Shards <= miss.Summary.Shards && miss.Summary.Shards <= miss.Summary.Splits:
-				// Loki counts only the pieces that hold data; the proxy counts every piece
-				// (semantics/query-stats-shards-empty-pieces, open).
-				t.Logf("shards %d, Loki %d of %d pieces: a piece holds no line (open difference)", miss.Summary.Shards, loki.Summary.Shards, loki.Summary.Splits)
-			default:
+			if miss.Summary.Splits != loki.Summary.Splits || miss.Summary.Shards != loki.Summary.Shards {
 				t.Errorf("splits/shards %d/%d, Loki %d/%d", miss.Summary.Splits, miss.Summary.Shards, loki.Summary.Splits, loki.Summary.Shards)
 			}
 			if limitFilled := miss.Summary.Entries >= 1000 && loki.Summary.Entries >= 1000; limitFilled {
@@ -563,11 +555,13 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 }
 
 // lokiLineBytes is the bytes of the selector's lines in (from, to], read from Loki's log answer; 0 when the answer
-// is cut at its limit, as it then does not hold every line.
+// is cut at its limit, as it then does not hold every line. Its query adds a line filter no line matches, so it is
+// not the text of a measured row: Loki's results cache would otherwise answer the measured row as a repeat, whose
+// shards are only the pieces that returned entries (semantics/query-stats-shards-empty-pieces).
 func lokiLineBytes(t *testing.T, sel string, from, to time.Time) int64 {
 	t.Helper()
 	const limit = 5000
-	params := url.Values{"query": {sel}, "start": {fmt.Sprint(from.UnixNano() + 1)}, "end": {fmt.Sprint(to.UnixNano())},
+	params := url.Values{"query": {sel + ` != "line-bytes-probe"`}, "start": {fmt.Sprint(from.UnixNano() + 1)}, "end": {fmt.Sprint(to.UnixNano())},
 		"limit": {strconv.Itoa(limit)}, "direction": {"forward"}}
 	st := getE2EStats(t, lokiURL, "/loki/api/v1/query_range", params, nil)
 	if st.Summary.Entries >= limit {
