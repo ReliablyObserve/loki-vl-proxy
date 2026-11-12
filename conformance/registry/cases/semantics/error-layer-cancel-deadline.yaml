@@ -1,5 +1,6 @@
 id: semantics/error-layer-cancel-deadline
-title: A native tail cancelled or timed out after the upgrade does not close with Loki's texts (open)
+title: A tail whose VictoriaLogs call times out or is cancelled ends the way Loki's does, with Loki's texts (fixed)
+pending: true
 proves:
   - backend-deadlines-and-cancellation
   - status-502
@@ -16,10 +17,14 @@ why: |
   while it waited to retry a failed window batch with 408 and Go's text
   ("context canceled", "context deadline exceeded"); it now answers 499 and
   504 with Loki's texts through the error layer, in both waits (the batch
-  backoff and the single-window retry). 2 cells remain (34 before): a native
-  tail whose VictoriaLogs stream times out or is cancelled after the
-  websocket upgrade closes normally instead of with Loki's error (the
-  deadline text is also longer than a close frame holds).
+  backoff and the single-window retry). No cell remains (2 before). A tail
+  whose first VictoriaLogs probe exceeds -backend-timeout is answered before
+  the upgrade with 504 and the full deadline text (a close frame holds 123
+  bytes, so the full text only fits an HTTP body). A tail whose VictoriaLogs
+  stream call is still waiting for headers after the upgrade closes with 1011
+  and Loki's text cut to the 123 bytes a close frame holds. A client that goes
+  away while the tail's VictoriaLogs call runs gets nothing, because it is
+  gone; the proxy drops the VictoriaLogs stream, which the gate checks.
 request:
   scope: internal
   entry: lokiClientError, (*Proxy).writeErr, writeBackendError, writeGrafanaStatsFailure
@@ -35,6 +40,8 @@ request:
     detected_field values, detected_labels; index stats, volume, volume_range,
     Drilldown volume_range; patterns; tail; rules; alerts). The cells that
     fail this class are listed in conformance/registry/error-layer-known-leaks.json.
+    On the tail route client_cancel closes the websocket once VictoriaLogs'
+    tail is called and waits for the proxy to drop that call.
     TestErrorLayer_WindowRetryCancelDeadline drives the windowed log
     query_range into both retry waits (VictoriaLogs answers every window with
     a retryable 502) and ends the request there, by a client cancel and by the
@@ -47,10 +54,13 @@ compare:
   expect: |
     499 with Loki's cancel text and 504 with Loki's deadline text on every route.
 gap:
-  status: open
+  status: fixed
+  fixed_by: TBD-PR
   impact: explore-visible
+  visual: none
+  visual_reason: 'A tail whose VictoriaLogs call fails ends in a websocket close frame, which needs a failing backend and no Grafana panel renders; the gate and the tail failure-mode test assert the close frame.'
   effort: S
-  area: 'internal/proxy/http_utils.go badRequestStatusOr (route ctx errors through statusFromUpstreamErr) and writeError'
+  area: 'internal/proxy/http_utils.go badRequestStatusOr (route ctx errors through statusFromUpstreamErr) and writeError; internal/proxy/tail.go preflightTailAccess, closeTailWithError'
   loki: 'pkg/util/server/error.go:26-27, :103-107'
-  proxy: 'native tail after the upgrade closes 1000 (forwardNativeTail)'
+  proxy: 'tail: 504 before the upgrade when the probe exceeds -backend-timeout, 1011 with Loki text after it; a cancelled client releases the VictoriaLogs stream'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

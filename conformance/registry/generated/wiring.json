@@ -108,6 +108,7 @@
       "internal/proxy/drilldown_burst_cancel_test.go",
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/ordered_json_result_cache_test.go",
+      "internal/proxy/tail_backend_errors_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "backend-url-path-prefix": [
@@ -631,6 +632,7 @@
     ],
     "loki_api_v1_tail": [
       "internal/proxy/extracted_suffix_collision_test.go",
+      "internal/proxy/tail_backend_errors_test.go",
       "internal/proxy/tail_pipeline_test.go",
       "test/e2e-compat/tail_pipeline_test.go"
     ],
@@ -1102,11 +1104,13 @@
       "internal/proxy/error_body_shape_test.go",
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/loki_client_error_test.go",
+      "internal/proxy/tail_backend_errors_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-internal-go-text": [
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/loki_client_error_test.go",
+      "internal/proxy/tail_backend_errors_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-proxy-limit-status": [
@@ -1122,6 +1126,7 @@
       "internal/proxy/perf_hardening_test.go",
       "internal/proxy/proxy_test.go",
       "internal/proxy/stats_error_body_test.go",
+      "internal/proxy/tail_backend_errors_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-transport-text": [
@@ -3036,6 +3041,13 @@
       "metric-series-identity",
       "semantics/unwrap-sum-without-extracted-label-collision"
     ],
+    "internal/proxy/tail_backend_errors_test.go": [
+      "backend-deadlines-and-cancellation",
+      "loki_api_v1_tail",
+      "semantics/error-layer-cancel-deadline",
+      "semantics/error-layer-internal-go-text",
+      "semantics/error-layer-silent-success"
+    ],
     "internal/proxy/tail_pipeline_test.go": [
       "loki_api_v1_tail"
     ],
@@ -4374,7 +4386,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 534,
+  "tests_with_markers": 535,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
