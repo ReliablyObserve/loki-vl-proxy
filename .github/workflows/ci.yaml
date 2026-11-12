@@ -50,11 +50,11 @@ jobs:
   # packages), and `rest` runs every other
   # package plus the build, vet, govulncheck and the cache coverage guard. The
   # `test` job below fans them in and fails unless every test of both packages
-  # was assigned once and reported. Twelve, because the heaviest single test
-  # (TestMetricStagesGridShadow, about 8 minutes under -race on a hosted runner)
-  # bounds a shard: with the weights balanced over twelve the slowest shard is
-  # within a few percent of that bound, and more shards would only add runner
-  # minutes and Go-cache saves. Regenerate the weights (the command is in the
+  # was assigned once and reported. Sixteen, because the tests of both packages
+  # take about 99 minutes together under -race on a hosted runner: balanced over
+  # sixteen a shard takes about 6 minutes of tests. The heaviest grid test is
+  # split in parts (TestMetricStagesGridShadowPart1-4) so that no single test
+  # bounds a shard above that. Regenerate the weights (the command is in the
   # file) when the slowest shard drifts from the others.
   test-shard:
     name: test-shard (${{ matrix.shard }})
@@ -67,10 +67,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, rest]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, rest]
     env:
       # Keep equal to the numbered entries of the matrix (checked by scripts/ci/tests/test_test_shards.py).
-      UNIT_SHARDS: "12"
+      UNIT_SHARDS: "16"
       UNIT_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -293,7 +293,7 @@ jobs:
         if: always()
         env:
           SHARDS_RESULT: ${{ needs.test-shard.result }}
-          SHARDS: "rest 1 2 3 4 5 6 7 8 9 10 11 12"
+          SHARDS: "rest 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16"
         run: |
           complete=()
           if [ "$SHARDS_RESULT" = success ]; then complete=(--require-complete); fi

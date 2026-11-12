@@ -140,13 +140,22 @@ func metricStagesStride() int {
 	return 32
 }
 
-// TestMetricStagesGridShadow holds the lowering of range and vector aggregations over drop, keep, formatting stages
-// and the regexp and pattern parsers to the string translator on the generated grid under every profile: 0
-// mismatches, and the rows each side answers are counted.
-// conformance: architecture-syntax-package-layering
-func TestMetricStagesGridShadow(t *testing.T) {
+// metricStagesParts is the number of tests the metric stages grid is split across, so that CI can run its parts on
+// different shards: the whole grid takes about 9 minutes under -race on a hosted runner.
+const metricStagesParts = 4
+
+// metricStagesGridShadow holds the lowering of range and vector aggregations over drop, keep, formatting stages
+// and the regexp and pattern parsers to the string translator on part `part` of the generated grid (every
+// metricStagesParts-th query) under every profile: 0 mismatches, and the rows each side answers are counted.
+func metricStagesGridShadow(t *testing.T, part int) {
+	t.Helper()
 	t.Cleanup(querycorpus.PauseRecording())
-	grid := metricStagesGrid(metricStagesStride())
+	var grid []string
+	for i, q := range metricStagesGrid(metricStagesStride()) {
+		if i%metricStagesParts == part {
+			grid = append(grid, q)
+		}
+	}
 	rows, native, delegated, problems := labelFilterShadow(t, grid)
 	var kinds []string
 	for c, n := range delegated {
@@ -161,3 +170,16 @@ func TestMetricStagesGridShadow(t *testing.T) {
 		t.Fatalf("only %d of %d rows lowered", native, rows)
 	}
 }
+
+// The four parts of the metric stages grid (metricStagesGridShadow).
+// conformance: architecture-syntax-package-layering
+func TestMetricStagesGridShadowPart1(t *testing.T) { metricStagesGridShadow(t, 0) }
+
+// conformance: architecture-syntax-package-layering
+func TestMetricStagesGridShadowPart2(t *testing.T) { metricStagesGridShadow(t, 1) }
+
+// conformance: architecture-syntax-package-layering
+func TestMetricStagesGridShadowPart3(t *testing.T) { metricStagesGridShadow(t, 2) }
+
+// conformance: architecture-syntax-package-layering
+func TestMetricStagesGridShadowPart4(t *testing.T) { metricStagesGridShadow(t, 3) }

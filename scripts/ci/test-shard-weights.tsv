@@ -95,7 +95,10 @@ TestAggregationOverBinaryRateCountRatioSlidingWindowWithinBudget	5.3
 TestQueryRangeStepsOnlyPerStepAnswers	5.1
 TestUnwrapOverTimeTumblingMatchesLoki	5.1
 TestTailHardening_UpgradeDoesNotWaitForNativeTailHeaders	5.0
-TestMetricStagesGridShadow	522.6	internal/querycorpus
+TestMetricStagesGridShadowPart1	130.7	internal/querycorpus
+TestMetricStagesGridShadowPart2	130.7	internal/querycorpus
+TestMetricStagesGridShadowPart3	130.7	internal/querycorpus
+TestMetricStagesGridShadowPart4	130.7	internal/querycorpus
 TestVectorAggGridShadow	289.0	internal/querycorpus
 TestDetectedLevelGridShadow	284.1	internal/querycorpus
 TestFormatGridShadow	262.3	internal/querycorpus
