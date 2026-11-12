@@ -777,9 +777,11 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	lineLimit := parseDetectedLineLimit(r)
 	query := r.FormValue("query")
 	// Bound the slow log-scan path so a single Drilldown panel never blocks
-	// past drilldownScanTimeout. On timeout we return an empty fields list
-	// — Drilldown shows "no fields" rather than spinning forever, and the
-	// empty-cache guard prevents the empty result from sticking.
+	// past drilldownScanTimeout. When that budget runs out we return an empty
+	// fields list — Drilldown shows "no fields" rather than spinning forever,
+	// and the empty-cache guard prevents the empty result from sticking. A
+	// cancelled request, a call that hit -backend-timeout and any other failed
+	// call are errors, as on every other route.
 	scanCtx, scanCancel := p.withDrilldownScanTimeout(r.Context())
 	defer scanCancel()
 	fields, _, err := p.detectFields(scanCtx, query, r.FormValue("start"), r.FormValue("end"), lineLimit)
@@ -788,7 +790,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	// read from the scan context itself.
 	scanTimedOut := errors.Is(scanCtx.Err(), context.DeadlineExceeded)
 	if err != nil {
-		if isContextDeadlineErr(err) {
+		if drilldownScanBudgetSpent(r.Context(), scanCtx, err) {
 			p.observeInternalOperation(r.Context(), "drilldown_scan_timeout", "detected_fields_handler", 0)
 			fields = nil
 			scanTimedOut = true

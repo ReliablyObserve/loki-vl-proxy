@@ -1115,6 +1115,7 @@
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-silent-success": [
+      "internal/proxy/detected_backend_failure_test.go",
       "internal/proxy/error_body_shape_test.go",
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/stats_error_body_test.go",
@@ -2231,6 +2232,9 @@
       "delete-api-requires-token",
       "loki_api_v1_delete",
       "semantics/delete-route-disabled-like-loki"
+    ],
+    "internal/proxy/detected_backend_failure_test.go": [
+      "semantics/error-layer-silent-success"
     ],
     "internal/proxy/detected_fields_empty_answer_test.go": [
       "loki_api_v1_detected_fields",
@@ -4352,7 +4356,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 529,
+  "tests_with_markers": 530,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

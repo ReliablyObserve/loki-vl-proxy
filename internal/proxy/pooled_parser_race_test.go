@@ -88,7 +88,11 @@ func TestDetectFieldSummariesStream_ConcurrentScansKeepOwnMessageBytes(t *testin
 			return
 		}
 		defer resp.Body.Close()
-		_, fieldValues, _ := p.detectFieldSummariesStream(resp.Body)
+		_, fieldValues, _, scanErr := p.detectFieldSummariesStream(resp.Body)
+		if scanErr != nil {
+			errs.add("scanner %d: scan: %v", scanner, scanErr)
+			return
+		}
 		want := fmt.Sprintf("s%dx", scanner)
 		if got := fieldValues["owner"]; len(got) != 1 || got[0] != want {
 			errs.add("scanner %d: owner values = %v, want [%s]", scanner, got, want)
@@ -112,7 +116,12 @@ func TestDetectFieldSummariesStream_ConcurrentScansKeepOwnMessageBytes(t *testin
 			return
 		}
 		defer resp.Body.Close()
-		if got := scanDetectedLabelSummariesStream(resp.Body, p.labelTranslator); got["app"] == nil {
+		got, scanErr := scanDetectedLabelSummariesStream(resp.Body, p.labelTranslator)
+		if scanErr != nil {
+			errs.add("labels scanner %d: scan: %v", scanner, scanErr)
+			return
+		}
+		if got["app"] == nil {
 			errs.add("labels scanner %d: app label missing", scanner)
 		}
 	}

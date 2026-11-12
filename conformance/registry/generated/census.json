@@ -1081,6 +1081,7 @@
     "internal/proxy/delete_route_test.go | delete-api-requires-token",
     "internal/proxy/delete_route_test.go | loki_api_v1_delete",
     "internal/proxy/delete_route_test.go | semantics/delete-route-disabled-like-loki",
+    "internal/proxy/detected_backend_failure_test.go | semantics/error-layer-silent-success",
     "internal/proxy/detected_fields_empty_answer_test.go | loki_api_v1_detected_fields",
     "internal/proxy/detected_fields_empty_answer_test.go | semantics/detected-fields-empty-answer",
     "internal/proxy/detected_fields_logfmt_tokens_test.go | semantics/detected-fields-no-logfmt-token-fields",
@@ -2301,7 +2302,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 528,
+      "go": 529,
       "playwright": 1
     },
     "page_kinds": {

@@ -530,7 +530,7 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 			// Keep Drilldown UX non-empty for synthetic/derived labels when native values are empty.
 			values = nil
 		}
-		if isContextDeadlineErr(errVals) {
+		if drilldownScanBudgetSpent(ctx, scanCtx, errVals) {
 			p.observeInternalOperation(ctx, "drilldown_scan_timeout", "detected_field_values_native", 0)
 			return []string{}, nil
 		}
@@ -538,7 +538,7 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 	if values == nil && errVals == nil {
 		_, fieldValues, detectErr := p.detectFields(scanCtx, query, start, end, lineLimit)
 		if detectErr != nil {
-			if isContextDeadlineErr(detectErr) {
+			if drilldownScanBudgetSpent(ctx, scanCtx, detectErr) {
 				p.observeInternalOperation(ctx, "drilldown_scan_timeout", "detected_field_values_detect_fields", 0)
 				return []string{}, nil
 			}
@@ -585,6 +585,13 @@ func (p *Proxy) withDrilldownScanTimeout(ctx context.Context) (context.Context, 
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, p.drilldownScanTimeout)
+}
+
+// drilldownScanBudgetSpent reports whether err is the Drilldown scan budget running out (-drilldown-scan-timeout):
+// the scan context hit its deadline while the request's own context is still alive. A cancelled request and a
+// call that hit -backend-timeout are failures and stay errors.
+func drilldownScanBudgetSpent(reqCtx, scanCtx context.Context, err error) bool {
+	return isContextDeadlineErr(err) && reqCtx.Err() == nil && errors.Is(scanCtx.Err(), context.DeadlineExceeded)
 }
 
 func isContextDeadlineErr(err error) bool {

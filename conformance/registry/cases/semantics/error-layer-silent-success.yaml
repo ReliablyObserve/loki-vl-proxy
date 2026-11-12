@@ -1,14 +1,19 @@
 id: semantics/error-layer-silent-success
 title: A failed backend call is answered 200 with an empty or partial result (open)
+pending: true
 proves:
   - status-500
   - status-derived
 consumer: any
 why: |
-  Patterns answers 200 [] for every backend failure; detected_fields and
-  detected_field values answer 200 for timeouts, cancellations and broken
-  bodies; several routes decode a malformed 200 body as empty, including the
-  Drilldown stats route; native tail closes normally. 36 cells on 16 routes.
+  Patterns answers 200 [] for every backend failure; several routes decode a
+  malformed 200 body as empty, including the Drilldown stats route; native
+  tail closes normally. 26 cells on 13 routes. detected_fields, detected_field
+  values and detected_labels now answer each failed call (a timeout, a cancelled
+  request, a body that broke off or is not VictoriaLogs JSON, a label whose
+  values could not be read) with the error the other routes give it, apart from
+  the Drilldown scan budget (-drilldown-scan-timeout), which still answers no
+  fields when it runs out while the backend and the request are alive.
   Classified Drilldown backend failures now keep their real error status.
   Loki answers the same failures with an error, and Drilldown's partial
   carve-out covers max_query_series only (pkg/querier/queryrange/limits.go:507-512,
@@ -40,7 +45,7 @@ gap:
   status: open
   impact: explore-visible
   effort: M
-  area: 'internal/proxy patterns.go, label_handlers.go detected_*, http_utils.go writeGrafanaStatsFailure, tail.go'
+  area: 'internal/proxy patterns.go, http_utils.go writeGrafanaStatsFailure, tail.go'
   loki: 'pkg/querier/queryrange/limits.go:441-524; pkg/util/server/error.go:124-128'
   proxy: '200 with an empty result or a warning'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

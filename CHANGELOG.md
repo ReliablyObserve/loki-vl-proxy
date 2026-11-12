@@ -39,6 +39,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   served from the plan for these queries yet: no request to VictoriaLogs and no
   answer changes.
 
+### Fixed
+
+- `/loki/api/v1/detected_fields`, `/loki/api/v1/detected_field/{name}/values` and `/loki/api/v1/detected_labels`
+  answer a failed VictoriaLogs call as an error, as Loki does, and no longer as an empty or a partial result. A
+  reply after `-backend-timeout` (504), a request the client cancelled (499), a refused or reset connection, a
+  body that broke off, a body that is not VictoriaLogs JSON, and a label whose values could not be read each
+  answer the same status and text the other routes give that failure (500 `Internal Server Error` for a failed
+  backend), so Logs Drilldown shows the outage and not an empty field list. A scan that outlasts
+  `-drilldown-scan-timeout` while VictoriaLogs and the request are still alive keeps its documented answer of
+  no fields.
+
 ## [2.189.0] - 2026-11-12
 
 ### Fixed
