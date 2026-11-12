@@ -1,0 +1,41 @@
+id: backend-url-path-prefix
+kind: semantics
+title: A backend URL with a path keeps that path on every request the proxy sends
+
+loki: |
+  Not a Loki surface: the backends are the proxy's own configuration.
+
+victorialogs: |
+  VictoriaLogs, vmalert and a cold backend are often served under a path
+  prefix behind a reverse proxy or vmauth that shares one hostname
+  (https://o11y.example.com/logs/select/logsql/query).
+
+proxy: |
+  backendRequestURL appends the request path to the path of the configured
+  URL for -backend, -ruler-backend, -alerts-backend and -cold-backend, on
+  queries, label lookups, live tail, the /health readiness probe, the
+  /metrics version and load probes, the ruler and alerts views and the cold
+  manifest and query routes. A trailing slash on the configured URL is
+  ignored.
+
+implementation:
+  - internal/proxy/backend_url.go
+  - internal/proxy/backend.go
+  - internal/proxy/alerting.go
+  - internal/proxy/cold_routing.go
+  - internal/proxy/metadata_scan_limiter.go
+  - internal/proxy/tail.go
+
+decisions:
+  - id: backend-url-path-appended
+    chosen: 'The request path is appended to the backend URL path (trailing slash ignored)'
+    over: [replacing the path with the request path (before; tail alone kept it), requiring a reverse-proxy sidecar to add the prefix]
+    why: |
+      Issue #1340: with -backend=https://host/logs every query went to
+      https://host/select/... and /ready stayed 503, while live tail kept the
+      prefix. A URL with a path means that path.
+    evidence: 'TestBackendUnderAPathPrefixReceivesEveryRequest and TestColdBackendUnderAPathPrefix fail on main (500, /ready 503, every request outside the prefix) and pass here (2026-11-12)'
+    code: [internal/proxy/backend_url.go]
+    tests: [TestBackendRequestURLKeepsTheConfiguredPath, TestBackendUnderAPathPrefixReceivesEveryRequest, TestColdBackendUnderAPathPrefix]
+    quality: 'No request outside the configured path, with or without a trailing slash.'
+    pending: true

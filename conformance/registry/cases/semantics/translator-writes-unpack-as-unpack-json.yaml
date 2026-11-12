@@ -1,0 +1,97 @@
+id: semantics/translator-writes-unpack-as-unpack-json
+title: The string translator writes `| unpack` as `| unpack_json`, which keeps the packed line and promotes the keys of every JSON line (open; the query plan lowers only what that text answers)
+pending: true
+proves:
+  - parser-unpack
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's `| unpack` reads a line a packing agent wrote, a JSON object with an
+  `_entry` key holding a string: only then it promotes the object's string
+  keys to labels, and it replaces the line with the value of `_entry`. A line
+  that has no string `_entry`, is not an object, or is empty goes on as it is
+  and gets no label; a line that is not a JSON object also gets __error__.
+  The string translator writes `| unpack` as `| unpack_json`, which promotes
+  every key of every JSON line (numbers, booleans and nested values as text),
+  never touches the line, and reads an empty value as a missing one.
+
+  Evidence (the Loki oracle `process` over 15 lines and 20 stage families,
+  the VictoriaLogs oracle `store` in v1.49.0 and v1.53.0, both recorded in
+  internal/queryplan/lower/testdata/unpack-oracles.json):
+    {app="s"} | unpack | a="1"        Loki keeps only the packed lines that hold a=1;
+                                       VictoriaLogs also keeps the JSON lines with no
+                                       `_entry` that hold "a":"1" (5 of 15 lines differ)
+    {app="s"} | unpack | a!="1"       5 of 15 lines differ, the same lines
+    {app="s"} | unpack | __error__="" Loki drops the line that is not a JSON object,
+                                       VictoriaLogs keeps it (1 of 15 lines)
+    {app="s"} | unpack != "hello"     the filter reads the line `_entry` replaced: a line
+                                       {"a":"hello","_entry":"bye"} is kept by Loki and
+                                       dropped by VictoriaLogs (1 of 15 lines)
+    {app="s"} | unpack | json | z="2" the json parser reads the `_entry` text, not the
+                                       packed line (1 of 15 lines)
+    {app="s"} | unpack                the log query returns `_entry` on 8 of the 15 lines
+                                       (the packed ones), VictoriaLogs the packed line
+    {app="s"} | unpack | drop a, or keep a   the same 15 lines kept: the lines a count, a
+                                       rate or an absence check sees per stream are
+                                       Loki's, and a drop or keep changes labels, not lines.
+                                       The split of the count by the labels a packed line
+                                       promotes is not in the text (Loki promotes the string
+                                       keys of a packed line only; unpack_json every key of
+                                       every JSON line): it is the series approximation of
+                                       the json lowering, handled where the proxy reads the
+                                       answer.
+  Not exact in VictoriaLogs for any pipe sequence: a line whose `_entry` is
+  empty (VictoriaLogs reads an empty value as missing), a numeric `_entry`
+  (stored as text), values that are not strings in a packed line (Loki leaves
+  them out, VictoriaLogs promotes them).
+
+  The query plan lowers a count_over_time, rate or absent_over_time over an
+  unpack followed only by drops and keeps (the text equals the translator's,
+  and the lines it counts are Loki's); every other shape is delegated under the name of
+  what it reads (unpack line, unpack line read, unpack label read, unpack
+  parser order) until the stages after an unpack read the promoted labels and
+  the replaced line as Loki does. The proxy's own evaluation of an unwrapped
+  value (internal/proxy ordered_json_metric.go) reads an unpack as a json
+  parser; unwrap_conversion_error.go reads it as Loki does.
+corpus:
+  size: 12
+  dimensions:
+    shapes:
+      - query: 'count_over_time({app="x"} | unpack [5m])'
+      - query: 'count_over_time({app="x"} | unpack | drop a [5m])'
+      - query: 'count_over_time({app="x"} | unpack | keep a, b [5m])'
+      - query: 'count_over_time({app="x"} |= "k" | unpack [5m])'
+      - query: 'rate({app="x"} | unpack [5m])'
+      - query: 'absent_over_time({app="x"} | unpack [5m])'
+      - query: '{app="x"} | unpack'
+      - query: 'count_over_time({app="x"} | unpack | a="1" [5m])'
+      - query: 'count_over_time({app="x"} | unpack |= "k" [5m])'
+      - query: 'count_over_time({app="x"} | unpack | json [5m])'
+      - query: 'bytes_over_time({app="x"} | unpack [5m])'
+      - query: 'sum(count_over_time({app="x"} | unpack [5m]))'
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'count_over_time({app="x"} | unpack | a="1" [5m])'
+    start: 'now-15m'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series labels, values]
+  expect: |
+    The lines of a packed entry that hold a=1, counted per step; lines that are not packed count for nothing.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/translator (`unpack` is written as unpack_json); closed when the query plan lowers the stages after an unpack with a packed-line test and the line replacement, and serves queries with a parser'
+  loki: 'an unpack promotes the string keys of a line holding a string _entry and replaces the line with it'
+  proxy: 'unpack_json promotes the keys of every JSON line and keeps the packed line'
+  planned_test: 'TestUnpackFamiliesMatchLoki (internal/queryplan/lower) holds the families to Loki''s recorded answers; an e2e row against Loki on a packed stream when the plan serves queries with a parser'
+  visual: none
+  visual_reason: 'packed streams only exist where an agent packs them; no Grafana panel of the compose stack sends them'
+  clusters: []
