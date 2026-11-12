@@ -11,21 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The query plan now decides how `absent_over_time` and `sum_over_time`,
-  `avg_over_time`, `min_over_time` and `max_over_time` over an unwrapped label
-  (with or without a `by` clause of plain labels) are answered from
-  VictoriaLogs, instead of leaving it to the string translator: `absent_over_time`
-  is one ungrouped count on every window; an unwrap function keeps the stream's
-  series, counts the rows whose value the conversion rejects, and a range up to
-  the step is read from VictoriaLogs' own step buckets while a longer one merges
-  the partial aggregate of each bucket. Route parity holds the plan's decision to
-  the handlers on every corpus row under five request profiles, with and without
-  data: 5,236 of 24,700 runs are now predicted from the plan (4,540 before), 0
-  mismatches, the recorded routes and statuses unchanged. Quantile, stddev,
-  stdvar, first, last and rate_counter over an unwrapped label, a stage after the
-  unwrap, offsets and parsers stay with the string translator. Nothing is served
-  from the plan for metric queries yet: no request to VictoriaLogs and no answer
-  changes.
+- The query plan lowers a binary operation with a `vector(n)` operand next to a range or
+  vector aggregation (`sum by (app) (rate({app="a"}[5m])) + on() vector(0)`,
+  `rate({app="a"}[5m]) > vector(1)`) the way Loki and the proxy's binary route treat it: one
+  series without labels with the value n at every step, answered from the constant and never
+  sent to VictoriaLogs, and a vector that takes part in vector matching (unlike a plain
+  number). The string translator's text for such a query searches for the call as a phrase or
+  drops the operand, a text the proxy never sends, so the shadows hold these queries to the
+  binary route instead (it now describes the constant the handler answers with): 99 more
+  shadow rows match, with 0 mismatches. No answer changes; the plan does not serve binary
+  operations yet. A query of constants only (`vector(1) + vector(2)`), the set operators,
+  `bool`, a `vector (1)` spelled with a blank, and an operand that is itself a binary
+  operation stay with the string translator.
 
 - The query plan now decides how a `without` clause is folded when it answers a
   `count_over_time`, `bytes_over_time`, `rate` or `bytes_rate` aggregation under

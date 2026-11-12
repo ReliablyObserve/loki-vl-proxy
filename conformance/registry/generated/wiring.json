@@ -18,6 +18,7 @@
       "internal/logsql/parser_typed_test.go",
       "internal/logsql/pipe_math_as_test.go",
       "internal/proxy/binary_operand_test.go",
+      "internal/proxy/binary_physical_test.go",
       "internal/proxy/lowering_shadow_evaluated_test.go",
       "internal/proxy/lowering_shadow_test.go",
       "internal/proxy/plan_predicate_parity_test.go",
@@ -58,6 +59,8 @@
       "internal/querycorpus/vector_agg_nested_grid_test.go",
       "internal/queryplan/lower/binop_alloc_test.go",
       "internal/queryplan/lower/binop_test.go",
+      "internal/queryplan/lower/binop_vector_loki_test.go",
+      "internal/queryplan/lower/binop_vector_test.go",
       "internal/queryplan/lower/detected_level_ast_test.go",
       "internal/queryplan/lower/detected_level_test.go",
       "internal/queryplan/lower/extract_test.go",
@@ -1903,7 +1906,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 471,
+  "registry_items": 473,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2159,6 +2162,9 @@
       "semantics/scalar-sample-time-units"
     ],
     "internal/proxy/binary_operand_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/proxy/binary_physical_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/proxy/capture_error_replay_test.go": [
@@ -3285,6 +3291,12 @@
     "internal/queryplan/lower/binop_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/lower/binop_vector_loki_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/binop_vector_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/queryplan/lower/detected_level_ast_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -4248,7 +4260,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 513,
+  "tests_with_markers": 516,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4334,6 +4346,7 @@
     "semantics/topk-per-step-membership-differs",
     "semantics/translator-folds-binary-by-operand-without",
     "semantics/translator-reads-quoted-text-as-syntax",
+    "semantics/translator-reads-vector-operand-as-text",
     "semantics/two-parsers-keep-one",
     "semantics/unpack-non-string-values",
     "semantics/unwrap-bare-range-exposes-parsed-labels",
@@ -4348,6 +4361,7 @@
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
     "semantics/uppercase-topk-ranks-once",
+    "semantics/vector-call-blank-before-parenthesis-as-query",
     "semantics/window-edge-float64-nanoseconds",
     "semantics/window-wider-than-step-raw-rows",
     "semantics/without-fold-detected-level-unknown",
