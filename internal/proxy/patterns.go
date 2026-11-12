@@ -32,7 +32,21 @@ type patternFetchDiagnostics struct {
 	lowCoverage          bool
 	// badRequest holds the backend's rejection of the pattern source query.
 	badRequest error
+	// failure holds the backend call that failed (a transport error, an error status, a body that broke off or
+	// was not VictoriaLogs JSON), so an answer with no patterns that came from it is the error Loki answers and
+	// not an empty result. The whole-range read that follows the windows clears it when it succeeds.
+	failure error
 }
+
+// fail records err as the failed backend call unless one is recorded already.
+func (d *patternFetchDiagnostics) fail(err error) {
+	if d.failure == nil {
+		d.failure = err
+	}
+}
+
+// errPatternsBodyNotJSON marks a VictoriaLogs 200 body with a row that is not JSON: the body is broken.
+var errPatternsBodyNotJSON = errors.New("patterns source body is not VictoriaLogs JSON")
 
 // patternWindowCacheValue is a Loki-layer mining result, not a raw VL response.
 // Keep the extraction stats so a cached capped sample still takes its normal
@@ -268,23 +282,32 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 			requestedLimit, _ := strconv.Atoi(strings.TrimSpace(queryParams.Get("limit")))
 			resp, err := p.vlPost(r.Context(), endpoint, queryParams)
 			if err != nil {
+				diag.fail(err)
 				return nil, false
 			}
 			defer resp.Body.Close()
 			if resp.StatusCode >= http.StatusBadRequest {
 				body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-				if statusErr := p.redactedBackendStatusError("", resp.StatusCode, body); isUpstreamQueryRejected(statusErr) {
+				statusErr := p.redactedBackendStatusError("", resp.StatusCode, body)
+				if isUpstreamQueryRejected(statusErr) {
 					diag.badRequest = statusErr
 				}
+				diag.fail(statusErr)
 				return nil, false
 			}
 			// Stream the VL NDJSON response directly without io.ReadAll buffering.
 			extracted, stats, readErr := extractLogPatternsStreamFilled(resp.Body, stepParam, patternLimit, p.newLogRowLevels(), true, rangeStartNs, rangeEndNs)
 			diag.recordExtraction(requestedLimit, stats, false)
+			if readErr == nil && stats.badLines > 0 {
+				readErr = errPatternsBodyNotJSON
+			}
 			if readErr != nil {
 				p.log.Debug("patterns source read failed", "error", readErr)
+				diag.fail(readErr)
 				return nil, false
 			}
+			// The whole range was read: a window that failed before is no longer what the answer rests on.
+			diag.failure = nil
 			if len(extracted) == 0 {
 				if stats.hitLimit(requestedLimit) {
 					diag.markLowCoverage()
@@ -329,6 +352,9 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 					if windowDiag.badRequest != nil {
 						diag.badRequest = windowDiag.badRequest
 					}
+					if windowDiag.failure != nil {
+						diag.fail(windowDiag.failure)
+					}
 					if len(windowEntries) > diag.minedPostMerge {
 						diag.minedPostMerge = len(windowEntries)
 					}
@@ -366,6 +392,13 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(resultBody)
 			p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
+			return
+		}
+		if diag.failure != nil {
+			// The backend failed and there is no earlier answer to give: Loki answers the failure, never an
+			// empty result.
+			status := p.writeErr(w, r.Context(), diag.failure)
+			p.metrics.RecordRequest("patterns", status, time.Since(start))
 			return
 		}
 		p.metrics.RecordPatternsSnapshotMiss()
@@ -532,6 +565,9 @@ func (p *Proxy) fetchPatternsFromWindows(
 				"end_ns", window.endNs,
 				"error", err,
 			)
+			mu.Lock()
+			diag.fail(err)
+			mu.Unlock()
 			return nil, patternExtractionStats{}, false, false
 		}
 		defer resp.Body.Close()
@@ -543,16 +579,24 @@ func (p *Proxy) fetchPatternsFromWindows(
 				"status_code", resp.StatusCode,
 			)
 			body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-			if statusErr := p.redactedBackendStatusError("", resp.StatusCode, body); isUpstreamQueryRejected(statusErr) {
-				mu.Lock()
+			statusErr := p.redactedBackendStatusError("", resp.StatusCode, body)
+			mu.Lock()
+			if isUpstreamQueryRejected(statusErr) {
 				diag.badRequest = statusErr
-				mu.Unlock()
 			}
+			diag.fail(statusErr)
+			mu.Unlock()
 			return nil, patternExtractionStats{}, false, false
 		}
 		extracted, stats, readErr := extractLogPatternsStreamWithStatus(resp.Body, stepParam, patternLimit, p.newLogRowLevels())
+		if readErr == nil && stats.badLines > 0 {
+			readErr = errPatternsBodyNotJSON
+		}
 		if readErr != nil {
 			p.log.Debug("patterns window source read failed", "start_ns", window.startNs, "end_ns", window.endNs, "error", readErr)
+			mu.Lock()
+			diag.fail(readErr)
+			mu.Unlock()
 			return nil, stats, false, false
 		}
 		if len(extracted) == 0 {

@@ -1367,6 +1367,7 @@
     "internal/proxy/pattern_loki_answers_test.go | patterns-loki-mining",
     "internal/proxy/pattern_miner_answers_test.go | loki_api_v1_patterns",
     "internal/proxy/pattern_tokenizer_test.go | loki_api_v1_patterns",
+    "internal/proxy/patterns_backend_failure_test.go | semantics/error-layer-silent-success",
     "internal/proxy/patterns_counts_test.go | drilldown/patterns-full-range-counts",
     "internal/proxy/patterns_counts_test.go | drilldown/patterns-mined-differently",
     "internal/proxy/patterns_counts_test.go | drilldown/patterns-one-series-per-level",
@@ -1386,6 +1387,7 @@
     "internal/proxy/patterns_state_test.go | patterns-loki-mining",
     "internal/proxy/patterns_state_test.go | peer-cache-patterns",
     "internal/proxy/peer_push_identity_test.go | peer-cache-replication",
+    "internal/proxy/perf_hardening_test.go | semantics/error-layer-silent-success",
     "internal/proxy/physical_sites_test.go | loki_api_v1_query",
     "internal/proxy/physical_sites_test.go | loki_api_v1_query_range",
     "internal/proxy/physical_sites_test.go | semantics/label-replace-new-label",
@@ -1397,6 +1399,7 @@
     "internal/proxy/plan_route_parity_test.go | architecture-syntax-package-layering",
     "internal/proxy/post_aggregation_physical_test.go | architecture-syntax-package-layering",
     "internal/proxy/proxy_helpers_test.go | semantics/absent-over-time-semantics",
+    "internal/proxy/proxy_test.go | semantics/error-layer-silent-success",
     "internal/proxy/quantile_histogram_test.go | quality/query-range-settled-steps",
     "internal/proxy/quantile_histogram_test.go | semantics/unwrap-quantile-response-limit",
     "internal/proxy/quantile_slider_harden_test.go | quality/query-range-settled-steps",
@@ -2301,7 +2304,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 528,
+      "go": 531,
       "playwright": 1
     },
     "page_kinds": {

@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   served from the plan for these queries yet: no request to VictoriaLogs and no
   answer changes.
 
+### Fixed
+
+- `/loki/api/v1/patterns` answers a failed VictoriaLogs call as an error, as Loki does, and no longer as an
+  empty result. A refused or reset connection, a reply after `-backend-timeout` (504), a request the client
+  cancelled (499), a full VictoriaLogs queue (429), a VictoriaLogs error status, and a body that broke off
+  or is not VictoriaLogs JSON each answer the same status and text the other routes give that failure (500
+  `Internal Server Error` for a failed backend). An empty `data` array now means the range holds no
+  patterns, not that the read failed, so Logs Drilldown shows the outage instead of an empty pattern list.
+
 ## [2.189.0] - 2026-11-12
 
 ### Fixed

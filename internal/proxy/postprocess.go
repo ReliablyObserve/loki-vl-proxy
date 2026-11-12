@@ -69,6 +69,8 @@ type patternExtractionStats struct {
 	scannedLines  int
 	observedLines int
 	patternCount  int
+	// badLines counts the rows that were not JSON: a VictoriaLogs body holds none, so one marks a broken body.
+	badLines int
 }
 
 func (s patternExtractionStats) hitLimit(limit int) bool {
@@ -589,6 +591,7 @@ func extractLogPatternsStreamFilled(r io.Reader, step string, limit int, levels 
 		fjVal, err := fjParser.ParseBytes(line)
 		if err != nil {
 			vlFJParserPool.Put(fjParser)
+			stats.badLines++
 			continue
 		}
 

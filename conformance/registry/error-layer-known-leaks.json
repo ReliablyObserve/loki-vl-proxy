@@ -1,5 +1,5 @@
 {
-  "ceiling": 43,
+  "ceiling": 31,
   "leaks": {
     "alerts malformed": [
       "semantics/error-layer-backend-text",
@@ -48,42 +48,6 @@
       "semantics/error-layer-silent-success"
     ],
     "index_volume_range_drilldown malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "patterns client_cancel": [
-      "semantics/error-layer-silent-success"
-    ],
-    "patterns conn_refused": [
-      "semantics/error-layer-silent-success"
-    ],
-    "patterns conn_reset": [
-      "semantics/error-layer-silent-success"
-    ],
-    "patterns malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "patterns timeout": [
-      "semantics/error-layer-silent-success"
-    ],
-    "patterns truncated": [
-      "semantics/error-layer-silent-success"
-    ],
-    "patterns vl400_limit": [
-      "semantics/error-layer-silent-success"
-    ],
-    "patterns vl422": [
-      "semantics/error-layer-silent-success"
-    ],
-    "patterns vl429": [
-      "semantics/error-layer-silent-success"
-    ],
-    "patterns vl500": [
-      "semantics/error-layer-silent-success"
-    ],
-    "patterns vl502_front": [
-      "semantics/error-layer-silent-success"
-    ],
-    "patterns vl503_front": [
       "semantics/error-layer-silent-success"
     ],
     "query_instant malformed": [
