@@ -1820,7 +1820,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 
-	rows := 0
+	rows, badRows := 0, 0
 	for scanner.Scan() {
 		if err := checkManualMetricRead(ctx, limited); err != nil {
 			return nil, err
@@ -1836,6 +1836,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 
 		v, parseErr := fjp.ParseBytes(line)
 		if parseErr != nil {
+			badRows++
 			continue
 		}
 
@@ -1889,6 +1890,9 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	}
 	if scanErr := scanner.Err(); scanErr != nil {
 		return nil, fmt.Errorf("scanning VL response: %w", scanErr)
+	}
+	if badRows > 0 {
+		return nil, errVLBodyNotJSON
 	}
 	if err := checkManualMetricRead(ctx, limited); err != nil {
 		return nil, err

@@ -32,7 +32,7 @@ func TestStatsJSONSeriesTransformDifferential(t *testing.T) {
 				if !handled {
 					t.Fatal("valid fixture not handled by bounded path")
 				}
-				want := p.trimAndTranslateStatsQRFJFull(context.Background(), []byte(body), keep, query)
+				want, _ := p.trimAndTranslateStatsQRFJFull(context.Background(), []byte(body), keep, query)
 				if !statsJSONEquivalent(got, want) {
 					t.Fatalf("fused mismatch\ngot %s\nwant %s", got, want)
 				}
@@ -96,7 +96,7 @@ func TestStatsJSONSeriesTransformEdgeCases(t *testing.T) {
 func assertStatsJSONSeriesMatchesReference(t *testing.T, p *Proxy, body []byte, query string) {
 	t.Helper()
 	for _, keep := range []func(int64) bool{nil, func(int64) bool { return true }, func(ts int64) bool { return ts > 1700000000_000000000 }} {
-		want := p.trimAndTranslateStatsQRFJFull(context.Background(), body, keep, query)
+		want, _ := p.trimAndTranslateStatsQRFJFull(context.Background(), body, keep, query)
 		got, _, handled := p.trimAndTranslateStatsQRBySeries(body, keep, query)
 		if handled && !statsJSONEquivalent(got, want) {
 			t.Fatalf("fused mismatch\ninput %s\ngot %s\nwant %s", body, got, want)
@@ -229,7 +229,8 @@ func TestLargeStatsJSONAllocationBudget(t *testing.T) {
 				run    func([]byte) []byte
 			}{
 				{"fused", fixture.fusedBudget, func(body []byte) []byte {
-					return p.trimAndTranslateStatsQRFJ(context.Background(), body, nil, query)
+					out, _ := p.trimAndTranslateStatsQRFJ(context.Background(), body, nil, query)
+					return out
 				}},
 				{"trim", 5000, func(body []byte) []byte {
 					return trimStatsQRByTimeFJShifted(body, func(ts int64) bool { return ts > 1700000000_000000000 }, nil)
@@ -269,9 +270,9 @@ func BenchmarkStatsJSONSeriesCompare(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					if mode == "full_tree" {
-						_ = p.trimAndTranslateStatsQRFJFull(b.Context(), body, nil, query)
+						_, _ = p.trimAndTranslateStatsQRFJFull(b.Context(), body, nil, query)
 					} else {
-						_ = p.trimAndTranslateStatsQRFJ(b.Context(), body, nil, query)
+						_, _ = p.trimAndTranslateStatsQRFJ(b.Context(), body, nil, query)
 					}
 				}
 			})

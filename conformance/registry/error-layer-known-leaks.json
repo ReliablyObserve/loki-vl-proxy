@@ -1,5 +1,5 @@
 {
-  "ceiling": 21,
+  "ceiling": 11,
   "leaks": {
     "alerts malformed": [
       "semantics/error-layer-backend-text",
@@ -10,36 +10,6 @@
     ],
     "index_stats oversize": [
       "semantics/error-layer-proxy-limit-status"
-    ],
-    "index_volume malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "index_volume_range malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "index_volume_range_drilldown malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "query_instant malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "query_range_log malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "query_range_rate malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "query_range_stats malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "query_range_stats_drilldown malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "query_range_unwrap_rate_counter malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "series malformed": [
-      "semantics/error-layer-silent-success"
     ],
     "tail client_cancel": [
       "semantics/error-layer-cancel-deadline",

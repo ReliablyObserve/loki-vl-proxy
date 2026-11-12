@@ -393,7 +393,7 @@ func TestStatsResponseKeepsRequestedLevelLabel(t *testing.T) {
 		{`sum by (service_name, level, detected_level) (count_over_time({app="a"}[5m]))`, map[string]string{"service_name": "api", "level": "info", "detected_level": "info"}},
 	}
 	for _, tc := range cases {
-		out := p.translateStatsResponseLabelsWithContext(context.Background(), body, tc.query)
+		out, _ := p.translateStatsResponseLabelsWithContext(context.Background(), body, tc.query)
 		var resp struct {
 			Data struct {
 				Result []struct {
@@ -420,7 +420,7 @@ func TestStatsQueryRangeResponseKeepsRequestedLevelLabel(t *testing.T) {
 		`sum by (level) (count_over_time({app="a"}[1m]))`:          `{"level":"info"}`,
 		`sum by (detected_level) (count_over_time({app="a"}[1m]))`: `{"detected_level":"info"}`,
 	} {
-		out := p.trimAndTranslateStatsQRFJ(context.Background(), body, nil, query)
+		out, _ := p.trimAndTranslateStatsQRFJ(context.Background(), body, nil, query)
 		var resp struct {
 			Data struct {
 				Result []struct {
