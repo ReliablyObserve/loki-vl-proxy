@@ -234,6 +234,30 @@ type unwrapQuery struct {
 	firstBy    []string
 	firstEmpty bool
 	firstSet   bool
+	// shape is what the pipes written so far say of their stats (statsShape).
+	shape statsShape
+}
+
+// statsShape is what the route rule reads of the stats pipes of a lowered query besides its text: the typed
+// facts buildVectorAgg's stats give it (builtVector.shape).
+type statsShape struct {
+	// grouped says a stats pipe groups by a key, and ungrouped that the last one groups by nothing (VictoriaLogs
+	// then answers one row even over no input).
+	grouped, ungrouped bool
+}
+
+// statsView is a lowered vector aggregation as the route rule reads it besides its text: the log query it
+// filters with, whether its stats group by detected_level (which the query then derives) and the shape of its stats.
+type statsView struct {
+	log   metricLog
+	chain bool
+	shape statsShape
+}
+
+// note records a stats pipe that groups by keys keys.
+func (s *statsShape) note(keys int) {
+	s.grouped = s.grouped || keys > 0
+	s.ungrouped = keys == 0
 }
 
 // noteFirst records the grouping of the stats pipe that follows the gate.
@@ -248,8 +272,10 @@ func (q *unwrapQuery) noteFirst(by []string, empty bool) {
 func (q *unwrapQuery) stats(by []string, empty bool, fn logsql.StatsFunc, alias string) {
 	q.noteFirst(by, empty)
 	var keyBuf [4]logsql.GroupKey
-	keys := keyBuf[:len(by):len(keyBuf)]
-	if len(by) >= len(keyBuf) {
+	var keys []logsql.GroupKey
+	if len(by) < len(keyBuf) {
+		keys = keyBuf[:len(by):len(keyBuf)]
+	} else {
 		keys = make([]logsql.GroupKey, len(by), len(by)+1)
 	}
 	for i, f := range by {
@@ -261,6 +287,7 @@ func (q *unwrapQuery) stats(by []string, empty bool, fn logsql.StatsFunc, alias 
 		keys = append(keys, logsql.GroupKey{Field: translate.DetectedLevelLabel})
 		q.chain = true
 	}
+	q.shape.note(len(keys))
 	text := logsql.PipeStats{By: keys, Funcs: []logsql.StatsFuncAlias{{Func: fn, Alias: alias}}}.String()
 	if empty {
 		text = "| stats by () " + strings.TrimPrefix(text, "| stats ")
@@ -555,13 +582,20 @@ func rangeByLabels(ra *queryplan.RangeAgg, prof Profile) (by []string, empty boo
 // unwrapVector lowers sum, count, min, max and avg, with or without a by or without clause, over a range aggregation
 // of an unwrapped label (see the top of this file for the shapes).
 func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
+	out, _, err := unwrapVectorStats(va, ra, prof)
+	return out, err
+}
+
+// unwrapVectorStats is unwrapVector with the stats it writes, typed the way buildVectorAgg's are (statsView): the
+// route rule reads them next to the text.
+func unwrapVectorStats(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile) (physical.Op, statsView, error) {
 	switch va.Op {
 	case logql.VectorSum, logql.VectorCount, logql.VectorMin, logql.VectorMax, logql.VectorAvg:
 	default:
-		return nil, &NotLoweredError{Construct: "VectorAgg " + string(va.Op)}
+		return nil, statsView{}, &NotLoweredError{Construct: "VectorAgg " + string(va.Op)}
 	}
 	if ra.By != nil {
-		return nil, &NotLoweredError{Construct: "VectorAgg grouping"}
+		return nil, statsView{}, &NotLoweredError{Construct: "VectorAgg grouping"}
 	}
 	rate := ra.Op == logql.RangeRate
 	op, ok := unwrapFunc(ra)
@@ -569,38 +603,38 @@ func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile)
 	case rate:
 		op, ok = unwrapOp{fn: logsql.Sum{Field: translate.UnwrapValueAlias}}, true
 	case !ok:
-		return nil, &NotLoweredError{Construct: "VectorAgg unwrap " + string(ra.Op)}
+		return nil, statsView{}, &NotLoweredError{Construct: "VectorAgg unwrap " + string(ra.Op)}
 	}
 	seconds := 0.0
 	if rate {
 		if seconds = ra.Range.Seconds(); seconds <= 0 {
-			return nil, &NotLoweredError{Construct: "VectorAgg range"}
+			return nil, statsView{}, &NotLoweredError{Construct: "VectorAgg range"}
 		}
 	}
 	labels, raw, without, err := vectorClause(va, prof, nil)
 	if err != nil {
-		return nil, err
+		return nil, statsView{}, err
 	}
 	log, u, err := unwrapLog(ra.In, prof, "VectorAgg")
 	if err != nil {
-		return nil, err
+		return nil, statsView{}, err
 	}
 	conv, ok := unwrapConv(u)
 	if !ok {
-		return nil, &NotLoweredError{Construct: "VectorAgg unwrap conversion"}
+		return nil, statsView{}, &NotLoweredError{Construct: "VectorAgg unwrap conversion"}
 	}
 	// The translator reads a clause and a stats pipe out of the text of the query, quoted strings included.
 	if (without || len(labels) > 0) && textReadAsClause(log) {
-		return nil, &NotLoweredError{Construct: "VectorAgg quoted clause"}
+		return nil, statsView{}, &NotLoweredError{Construct: "VectorAgg quoted clause"}
 	}
 	// Stripping a without clause, the translator also folds every run of blanks in the query into one.
 	if without && (textHas(log, "  ") || selectionHas(ra.In, "  ")) {
-		return nil, &NotLoweredError{Construct: "VectorAgg quoted clause"}
+		return nil, statsView{}, &NotLoweredError{Construct: "VectorAgg quoted clause"}
 	}
 	// A fold over a parser, with a label filter or a drop after it, costs more allocations to write than the
 	// translator spends on the same text (the stage's own lowering does).
 	if without && log.parser && log.afterParser {
-		return nil, &NotLoweredError{Construct: "VectorAgg" + costConstruct}
+		return nil, statsView{}, &NotLoweredError{Construct: "VectorAgg" + costConstruct}
 	}
 	// The pipes start in room a query rarely outgrows.
 	var pipeBuf [4]string
@@ -609,7 +643,7 @@ func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile)
 		// The unwrap stage stands where it was written: the translator takes a keep after it to decide the series.
 		ident, err := seriesIdent(ra.In, log.parser, without, "VectorAgg", prof)
 		if err != nil {
-			return nil, err
+			return nil, statsView{}, err
 		}
 		q.vectorRate(va.Op, op.fn, seconds, labels, without, log, ident)
 	} else {
@@ -624,12 +658,12 @@ func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile)
 	}
 	out, err := q.op(op, log, u.Label, conv, prof, "VectorAgg")
 	if err != nil {
-		return nil, err
+		return nil, statsView{}, err
 	}
 	if without {
 		out = physical.Fold{Levels: []physical.FoldLevel{{Op: string(va.Op), Labels: raw, Without: true}}, In: out}
 	}
-	return out, nil
+	return out, statsView{log: log, chain: q.chain, shape: q.shape}, nil
 }
 
 // vectorClause reads the by or without clause of a vector aggregation: the labels as VictoriaLogs names them (for a
@@ -673,6 +707,7 @@ func (q *unwrapQuery) vectorRate(op logql.VectorOp, fn logsql.StatsFunc, seconds
 		if st, ok := p.(logsql.PipeStats); ok {
 			q.chain = q.chain || groupsBy(st, translate.DetectedLevelLabel)
 			q.service = q.service || groupsBy(st, "service_name")
+			q.shape.note(len(st.By))
 			if i == 0 {
 				by := make([]string, len(st.By))
 				for k, key := range st.By {

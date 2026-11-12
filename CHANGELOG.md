@@ -15,6 +15,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window of five pieces with entries in three of them, separated by empty pieces, reported 5 shards
   on the repeat and Loki 3. The first answer of a query text still reports every piece it ran.
 
+### Changed
+
+- The query plan now decides how the handlers answer `sum`, `avg`, `min`, `max` and `count` (with
+  `by`, `without` or neither) over `sum_over_time`, `avg_over_time`, `min_over_time` and
+  `max_over_time` of an unwrapped label, instead of leaving them to the handlers: whether the
+  series keep their stream's identity, whether the empty-input guard counts the input, the level
+  probe, the conversion-error flag and the fold of a `without` clause, on every window. Three
+  decisions follow what the handlers do today: the maximum of `max_over_time` (or the minimum of
+  `min_over_time`) by labels is taken per bucket and group in VictoriaLogs on a sliding window, an
+  ungrouped `sum` adds all lines up only over `sum_over_time` (over an average, minimum or maximum it
+  keeps the series), and a `without` clause over an unwrapped value is folded by the proxy. The
+  lowering of these queries now hands back its stats typed, with the same query text. No answer or
+  request changes: no handler reads the rule yet. Route parity: 470 more of 24,970 runs are decided
+  (5,706 native, 0 mismatches, the routes and statuses unchanged); the other 900 runs of the former
+  "unwrap operand" group are now named by what keeps them delegated (a parser before the unwrap, an
+  offset). A vector level that groups by the line (`_msg`) stays delegated.
+
+## [2.184.0] - 2026-11-12
+
+### Fixed
+
+- `stdvar_over_time` with a grouping (`stdvar_over_time(... | unwrap n [5m]) by (app)`,
+  `sum by (app) (stdvar_over_time(...))`) or without a parser no longer fails: it
+  was answered with an error (400), where Loki answers 200. VictoriaLogs has no
+  variance function, so the proxy asks for the standard deviation squared, and
+  that request was sent to VictoriaLogs with an internal marker in its text.
+  `stdvar_over_time(...) by (app)` now has Loki's values; under an outer
+  `sum by` the value is still the variance of the group's pooled samples, not
+  the sum of the series' own variances that Loki takes.
+- `stddev_over_time` and `stdvar_over_time` over an unwrapped label on a range
+  query whose range equals the step (`[5m]` at step 5m) answer the window ending
+  at each timestamp, as Loki does; each point was the window one step later.
+  A range that is not the step keeps its answer.
+
 ## [2.183.0] - 2026-11-12
 
 ### Changed
