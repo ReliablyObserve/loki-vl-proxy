@@ -423,8 +423,14 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 		// read; metricLines adds the metric row's one-minute lookback before the start, (start - 1m, end].
 		windowLines := lokiWindowLines(t, sel, logqlRange, end)
 		metricLines := lokiWindowLines(t, sel, fmt.Sprintf("%dm", int((rng+time.Minute)/time.Minute)), end)
-		// likeLoki compares an answer with Loki's. read is the lines its window holds.
-		likeLoki := func(t *testing.T, loki, miss e2eStats, read int64) {
+		// windowBytes and metricBytes are the bytes of the lines those windows hold, from Loki's own log answer
+		// (0 when the answer would not hold them all): the bytes a metric or instant estimate is compared with.
+		// Loki's total minus its structured metadata is not that figure: read from chunks it also counts about
+		// 20 bytes an entry, more than the tolerance on short lines.
+		windowBytes := lokiLineBytes(t, sel, end.Add(-rng), end)
+		metricBytes := lokiLineBytes(t, sel, start.Add(-time.Minute), end)
+		// likeLoki compares an answer with Loki's. read is the lines its window holds, readBytes their bytes.
+		likeLoki := func(t *testing.T, loki, miss e2eStats, read, readBytes int64) {
 			if miss.Summary.Splits != loki.Summary.Splits || miss.Summary.Shards != loki.Summary.Shards {
 				t.Errorf("splits/shards %d/%d, Loki %d/%d", miss.Summary.Splits, miss.Summary.Shards, loki.Summary.Splits, loki.Summary.Shards)
 			}
@@ -455,15 +461,21 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 					t.Errorf("bytes %d (returned lines %d bytes), Loki returned %d bytes of lines (Loki's total %d, structured metadata %d)",
 						miss.Summary.Bytes, miss.lineBytes, loki.lineBytes, loki.Summary.Bytes, loki.Summary.StructuredMetadataBytes)
 				}
+			case readBytes > 0 && miss.Summary.Lines == read:
+				// The proxy's estimate (its lines times the selector's mean line size) against the bytes of the
+				// lines the window holds.
+				if !near(miss.Summary.Bytes, readBytes, statsBytesTolerance) {
+					t.Errorf("bytes %d for %d lines, the window's lines hold %d bytes (Loki's total %d - structured metadata %d, tolerance %.0f%%)",
+						miss.Summary.Bytes, miss.Summary.Lines, readBytes, loki.Summary.Bytes, loki.Summary.StructuredMetadataBytes, statsBytesTolerance*100)
+				}
 			case loki.Summary.Lines > 0 && !near(miss.Summary.Bytes, lokiLineBytes*miss.Summary.Lines/loki.Summary.Lines, statsBytesTolerance):
-				// Compared at Loki's mean line size over the lines the proxy counted: the same bytes when both count
-				// the same lines.
+				// Without the window's bytes, compared at Loki's mean line size over the lines the proxy counted.
 				t.Errorf("bytes %d for %d lines, Loki's line bytes %d for %d lines (total %d - structured metadata %d, tolerance %.0f%%)",
 					miss.Summary.Bytes, miss.Summary.Lines, lokiLineBytes, loki.Summary.Lines, loki.Summary.Bytes, loki.Summary.StructuredMetadataBytes, statsBytesTolerance*100)
 			}
 		}
 		replays := func(t *testing.T, loki, lokiAgain, miss, again e2eStats) {
-			likeLoki(t, loki, miss, windowLines)
+			likeLoki(t, loki, miss, windowLines, windowBytes)
 			if miss.Querier.ExecTime <= 0 {
 				t.Errorf("querierExecTime %v: a computed answer reports its time in VictoriaLogs", miss.Querier.ExecTime)
 			}
@@ -481,7 +493,7 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 			{"log", "/loki/api/v1/query_range", win(sel, "limit", "1000", "direction", "backward"), nil, replays},
 			{"log-drilldown", "/loki/api/v1/query_range", win(sel+` != "dd-`+nonce+`"`, "limit", "1000", "direction", "backward"), drilldown, replays},
 			{"metric", "/loki/api/v1/query_range", win(`sum(count_over_time(` + sel + ` [1m]))`), nil, func(t *testing.T, loki, lokiAgain, miss, again e2eStats) {
-				likeLoki(t, loki, miss, metricLines)
+				likeLoki(t, loki, miss, metricLines, metricBytes)
 				if again.Summary.Lines != 0 || again.Summary.Bytes != 0 || again.Summary.Splits != lokiAgain.Summary.Splits ||
 					again.Cache["result"].EntriesFound == 0 || again.Cache["result"].QueryLengthServed <= 0 {
 					t.Errorf("repeat %+v cache %+v: a results-cache hit like Loki's %+v", again.Summary, again.Cache["result"], lokiAgain.Summary)
@@ -515,6 +527,9 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 			// The proxy behind vmauth runs -query-stats-exact-log-lines.
 			// A small limit fills on any stack the setup fixture has populated.
 			const exactLimit = 20
+			if windowLines < exactLimit {
+				t.Skipf("the window holds %d lines, fewer than the limit %d: no answer fills its limit to check", windowLines, exactLimit)
+			}
 			params := win(sel+` != "exact-`+nonce+`"`, "limit", strconv.Itoa(exactLimit), "direction", "backward")
 			miss := getE2EStats(t, proxyVmauthURL, "/loki/api/v1/query_range", params, nil)
 			oldest := oldestEntryNs(t, proxyVmauthURL, params)
@@ -537,6 +552,20 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 			t.Logf("exact lines %d over [%d, %d] (window lines %d)", miss.Summary.Lines, from, end.UnixNano(), windowLines)
 		})
 	}
+}
+
+// lokiLineBytes is the bytes of the selector's lines in (from, to], read from Loki's log answer; 0 when the answer
+// is cut at its limit, as it then does not hold every line.
+func lokiLineBytes(t *testing.T, sel string, from, to time.Time) int64 {
+	t.Helper()
+	const limit = 5000
+	params := url.Values{"query": {sel}, "start": {fmt.Sprint(from.UnixNano() + 1)}, "end": {fmt.Sprint(to.UnixNano())},
+		"limit": {strconv.Itoa(limit)}, "direction": {"forward"}}
+	st := getE2EStats(t, lokiURL, "/loki/api/v1/query_range", params, nil)
+	if st.Summary.Entries >= limit {
+		return 0
+	}
+	return st.lineBytes
 }
 
 // lokiWindowLines is the value of Loki's instant answer to a count query at t.

@@ -1,0 +1,59 @@
+id: semantics/vector-call-blank-before-parenthesis-as-query
+title: A vector(n) operand spelled with a blank before its parenthesis is sent on as a query by the proxy's binary route and answered by Loki as a vector (open; the query plan leaves it to the translator)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  LogQL allows blanks between tokens, so `rate({app="a"}[5m]) + vector (1)` is
+  the same binary operation as `rate({app="a"}[5m]) + vector(1)`: Loki's parser
+  reads a VectorExpr for both (the Loki oracle `facts`, 2026-11-12, which also
+  accepts `vector( 1 )`).
+
+  The proxy's parser reads both as vector(1) too, but the binary route
+  recognises the operand by its text: evaluateBinaryLogQLOperand matches
+  `vector(` followed by a number (vectorLiteralRE), answers that from the
+  constant, and sends any other operand through the query handlers as a query.
+  `vector (1)` is the second kind: the handlers translate the text as a phrase
+  search, which is not a metric query. With the route-parity harness's stub
+  VictoriaLogs (internal/proxy runRoute, 2026-11-12) `rate(..) + vector(1)`
+  answers 200 under every request profile and `rate(..) + vector (1)` answers
+  400 on an instant request and 500 or 200 (by the stub's data) on a range
+  request.
+
+  The query plan reads the call as Loki does, and its lowering of a binary
+  operation turns this spelling away (lower.screenVectorOperands, BinOp operand
+  spelling) so it never differs from the route; the same blank before a range
+  function's parenthesis is semantics/translator-reads-blank-before-range-call-as-text.
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: 'rate({env="production"}[5m]) + vector (1)'
+      - query: 'vector ( 2 ) * sum by (app) (rate({env="production"}[5m]))'
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'rate({env="production"}[5m]) + vector (1)'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series labels, values]
+  expect: |
+    The series of rate({env="production"}[5m]) with 1 added, as for vector(1).
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/proxy binary_logql.go evaluateBinaryLogQLOperand (reads the operand by its text, vectorLiteralRE); fixed when binary operations are served from the plan'
+  loki: 'blanks between the tokens of a call do not change it'
+  proxy: 'the binary route sends the operand on as a query where Loki reads a vector'
+  planned_test: 'TestPlanDelegatesVectorLiteralOperands (the screen) and TestBinaryOperandsPhysicalReadsVectorLiteralLikeTheHandler (the route); TestVectorOperandLoweringMatchesLoki records that Loki accepts the spelling; an e2e row against Loki when the plan serves binary operations'
+  visual: none
+  visual_reason: 'Grafana writes no blank before a function parenthesis; hand-written queries can'
+  clusters: []

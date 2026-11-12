@@ -7,18 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- The query plan now writes `count_over_time`, `rate` and `absent_over_time`
-  over a `| unpack` followed only by `drop` and `keep` the way the proxy sends
-  them, byte for byte under every translation profile. Loki's `| unpack`
-  promotes the keys of a packed line and replaces the line with its `_entry`;
-  VictoriaLogs has no pipe with that rule, so a log query with an unpack, a
-  label filter, a line filter, a parser or a formatting stage after it, the
-  bytes of the line, and an unwrapped value stay with the string translator
-  under a name that says what they read. Nothing is served from the plan for
-  these queries yet: no request to VictoriaLogs and no answer changes.
-
 ### Fixed
 
 - `stdvar_over_time` with a grouping (`stdvar_over_time(... | unwrap n [5m]) by (app)`,
@@ -33,6 +21,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query whose range equals the step (`[5m]` at step 5m) answer the window ending
   at each timestamp, as Loki does; each point was the window one step later.
   A range that is not the step keeps its answer.
+
+## [2.182.0] - 2026-11-12
+
+### Changed
+
+- The query plan lowers a binary operation with a `vector(n)` operand next to a range or
+  vector aggregation (`sum by (app) (rate({app="a"}[5m])) + on() vector(0)`,
+  `rate({app="a"}[5m]) > vector(1)`) the way Loki and the proxy's binary route treat it: one
+  series without labels with the value n at every step, answered from the constant and never
+  sent to VictoriaLogs, and a vector that takes part in vector matching (unlike a plain
+  number). The string translator's text for such a query searches for the call as a phrase or
+  drops the operand, a text the proxy never sends, so the shadows hold these queries to the
+  binary route instead (it now describes the constant the handler answers with): 99 more
+  shadow rows match, with 0 mismatches. No answer changes; the plan does not serve binary
+  operations yet. A query of constants only (`vector(1) + vector(2)`), the set operators,
+  `bool`, a `vector (1)` spelled with a blank, and an operand that is itself a binary
+  operation stay with the string translator.
+
+- The query plan now decides how a `without` clause is folded when it answers a
+  `count_over_time`, `bytes_over_time`, `rate` or `bytes_rate` aggregation under
+  `sum`, `avg`, `min`, `max` and `count`, instead of leaving it to the string
+  translator: the series keep their stream's identity for the proxy to fold; a
+  range request whose range equals its step is folded by VictoriaLogs (the
+  excluded labels cut out of the stream text, one stats pipe for each level above
+  the `without`) when every excluded label is a plain stream label and every
+  level above groups by a column; a sliding window of a single `sum without` over
+  a count or a byte sum reads the same cut buckets; every other `without` (an
+  instant request, a derived label such as `level` or `service_name`, a label with
+  an underscore, a pattern filter, a rate on a sliding window) is folded by the
+  proxy. Route parity holds the plan's decision to the handlers on every corpus
+  row under five request profiles, with and without data: 4,540 of 24,700 runs
+  are now predicted from the plan (2,110 before), 0 mismatches, the recorded
+  routes and statuses unchanged. Nothing is served from the plan for metric
+  queries yet: no request to VictoriaLogs and no answer changes.
+
+- The query plan now writes `count_over_time`, `rate` and `absent_over_time`
+  over a `| unpack` followed only by `drop` and `keep` the way the proxy sends
+  them, byte for byte under every translation profile. Loki's `| unpack`
+  promotes the keys of a packed line and replaces the line with its `_entry`;
+  VictoriaLogs has no pipe with that rule, so a log query with an unpack, a
+  label filter, a line filter, a parser or a formatting stage after it, the
+  bytes of the line, and an unwrapped value stay with the string translator
+  under a name that says what they read. Nothing is served from the plan for
+  these queries yet: no request to VictoriaLogs and no answer changes.
+
+## [2.181.1] - 2026-11-12
+
+### Fixed
+
 - A backend URL with a path keeps it: with `-backend=https://o11y.example.com/logs`
   (VictoriaLogs behind a reverse proxy or vmauth that shares one hostname),
   queries, label lookups, the `/ready` health probe and the version and load
