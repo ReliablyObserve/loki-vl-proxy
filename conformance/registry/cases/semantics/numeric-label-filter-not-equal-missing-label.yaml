@@ -1,0 +1,41 @@
+id: semantics/numeric-label-filter-not-equal-missing-label
+title: A numeric != label filter keeps the lines that do not have the label; Loki drops them (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Recorded 2026-11-12 by TestPlanMatchesLokiOnLogQueries (internal/querycorpus): Loki's pipeline through the Loki oracle (test/oracle/loki process, Loki's exported packages), VictoriaLogs v1.53.0 and v1.49.0 through the store oracle (rows as the Loki push API hands them over), the rows through the proxy's query_range handler (default label style and metadata mode).
+
+  | query | Loki | proxy |
+  |---|---|---|
+  | `{app="a"} \| m!=5` | keeps only the two lines whose structured metadata holds a number other than 5 (`m=6`, `m=4`) | keeps those and every line without `m` (38 of 39) |
+
+  The plan writes `-m:="5"`, which VictoriaLogs reads as "m is not exactly 5"
+  and so matches a missing field. Loki compares numbers: a line without the
+  label has no number and is not kept.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="a"} | m!=5'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, streams.values]
+  expect: |
+    Loki's lines: only lines whose label is a number other than the literal.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/queryplan/lower (numeric label filter with !=, no parser)'
+  loki: 'the recorded answers above (Loki oracle, 2026-11-12)'
+  proxy: 'keeps the lines without the label'
+  planned_test: 'TestPlanMatchesLokiOnLogQueries (internal/querycorpus), listed in testdata/loki-differential-known.json'
+  clusters: []

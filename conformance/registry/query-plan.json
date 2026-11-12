@@ -124,6 +124,136 @@
       "unsound": 0
     }
   },
+  "loki_differential": {
+    "queries": 236,
+    "lines": 9020,
+    "profiles": {
+      "v1.49 loki profile": {
+        "compared": 213,
+        "not_comparable": {
+          "Loki rejects the query": 6,
+          "reads detected_level, which Loki derives at ingest": 14,
+          "the handler's options are not reproduced": 3
+        },
+        "plan_matches_loki": 142,
+        "plan_matches_loki_plain": 143,
+        "plan_matches_loki_categorized": 142,
+        "translator_matches_loki": 132,
+        "vl_rejects_plan": 1,
+        "vl_rejects_translator": 8,
+        "weak_fixture": 22,
+        "plan_differs_by_class": {
+          "VictoriaLogs rejects the text": 1,
+          "adds a label Loki does not have": 9,
+          "categorized: drops a line Loki keeps": 14,
+          "categorized: keeps a line Loki drops": 7,
+          "categorized: parsed: adds a label Loki does not have": 9,
+          "categorized: parsed: adds a structured metadata label": 2,
+          "categorized: parsed: misses __error__": 48,
+          "categorized: parsed: misses __error_details__": 45,
+          "categorized: parsed: misses a parsed label with an empty value": 21,
+          "categorized: parsed: misses an _extracted label": 19,
+          "categorized: parsed: writes another value of an _extracted label": 1,
+          "categorized: structured metadata: misses a structured metadata label": 2,
+          "drops a line Loki keeps": 14,
+          "keeps a line Loki drops": 7,
+          "misses __error__": 48,
+          "misses __error_details__": 45,
+          "misses a parsed label with an empty value": 21,
+          "misses an _extracted label": 19,
+          "writes another value of an _extracted label": 1
+        },
+        "translator_differs_by_class": {
+          "VictoriaLogs rejects the text": 8,
+          "adds a label Loki does not have": 9,
+          "categorized: drops a line Loki keeps": 15,
+          "categorized: keeps a line Loki drops": 12,
+          "categorized: parsed: adds a label Loki does not have": 9,
+          "categorized: parsed: adds a structured metadata label": 2,
+          "categorized: parsed: misses __error__": 47,
+          "categorized: parsed: misses __error_details__": 44,
+          "categorized: parsed: misses a parsed label with an empty value": 21,
+          "categorized: parsed: misses an _extracted label": 19,
+          "categorized: parsed: writes another value of an _extracted label": 1,
+          "categorized: structured metadata: misses a structured metadata label": 2,
+          "drops a line Loki keeps": 15,
+          "keeps a line Loki drops": 12,
+          "misses __error__": 47,
+          "misses __error_details__": 44,
+          "misses a parsed label with an empty value": 21,
+          "misses an _extracted label": 19,
+          "writes another value of an _extracted label": 1
+        },
+        "handler_serves": {
+          "both": 197,
+          "plan": 11,
+          "translator": 5
+        }
+      },
+      "v1.53 loki profile": {
+        "compared": 213,
+        "not_comparable": {
+          "Loki rejects the query": 6,
+          "reads detected_level, which Loki derives at ingest": 14,
+          "the handler's options are not reproduced": 3
+        },
+        "plan_matches_loki": 142,
+        "plan_matches_loki_plain": 143,
+        "plan_matches_loki_categorized": 142,
+        "translator_matches_loki": 132,
+        "vl_rejects_plan": 1,
+        "vl_rejects_translator": 8,
+        "weak_fixture": 22,
+        "plan_differs_by_class": {
+          "VictoriaLogs rejects the text": 1,
+          "adds a label Loki does not have": 9,
+          "categorized: drops a line Loki keeps": 14,
+          "categorized: keeps a line Loki drops": 7,
+          "categorized: parsed: adds a label Loki does not have": 9,
+          "categorized: parsed: adds a structured metadata label": 2,
+          "categorized: parsed: misses __error__": 48,
+          "categorized: parsed: misses __error_details__": 45,
+          "categorized: parsed: misses a parsed label with an empty value": 21,
+          "categorized: parsed: misses an _extracted label": 19,
+          "categorized: parsed: writes another value of an _extracted label": 1,
+          "categorized: structured metadata: misses a structured metadata label": 2,
+          "drops a line Loki keeps": 14,
+          "keeps a line Loki drops": 7,
+          "misses __error__": 48,
+          "misses __error_details__": 45,
+          "misses a parsed label with an empty value": 21,
+          "misses an _extracted label": 19,
+          "writes another value of an _extracted label": 1
+        },
+        "translator_differs_by_class": {
+          "VictoriaLogs rejects the text": 8,
+          "adds a label Loki does not have": 9,
+          "categorized: drops a line Loki keeps": 15,
+          "categorized: keeps a line Loki drops": 12,
+          "categorized: parsed: adds a label Loki does not have": 9,
+          "categorized: parsed: adds a structured metadata label": 2,
+          "categorized: parsed: misses __error__": 47,
+          "categorized: parsed: misses __error_details__": 44,
+          "categorized: parsed: misses a parsed label with an empty value": 21,
+          "categorized: parsed: misses an _extracted label": 19,
+          "categorized: parsed: writes another value of an _extracted label": 1,
+          "categorized: structured metadata: misses a structured metadata label": 2,
+          "drops a line Loki keeps": 15,
+          "keeps a line Loki drops": 12,
+          "misses __error__": 47,
+          "misses __error_details__": 44,
+          "misses a parsed label with an empty value": 21,
+          "misses an _extracted label": 19,
+          "writes another value of an _extracted label": 1
+        },
+        "handler_serves": {
+          "both": 197,
+          "plan": 11,
+          "translator": 5
+        }
+      }
+    }
+  },
   "predicate_parity": {
     "rows": 2548,
     "validated": 2439,
