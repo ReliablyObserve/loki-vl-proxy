@@ -56,15 +56,15 @@ func prefixedBackend(t *testing.T, prefix string) (*httptest.Server, func() (see
 			http.NotFound(w, r)
 			return
 		}
-		switch {
-		case path == "/health":
+		switch path {
+		case "/health":
 			_, _ = io.WriteString(w, "OK")
-		case path == "/select/logsql/query":
+		case "/select/logsql/query":
 			_, _ = io.WriteString(w, `{"_time":"2026-11-12T08:00:00Z","_msg":"under the prefix","_stream":"{app=\"x\"}","app":"x"}`+"\n")
-		case path == "/api/v1/rules":
+		case "/api/v1/rules":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, `{"status":"success","data":{"groups":[]}}`)
-		case path == "/manifest/range":
+		case "/manifest/range":
 			_, _ = io.WriteString(w, `{"minTime":0,"maxTime":0}`)
 		default:
 			w.Header().Set("Content-Type", "application/json")
