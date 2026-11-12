@@ -1,0 +1,86 @@
+id: semantics/query-stats-shards-empty-pieces
+title: A repeated log query reports as shards only the 1h pieces that hold a returned entry, like Loki; the first answer of a query text reports every piece it ran (fixed; a text Loki already ran over another window stays a documented difference)
+proves:
+  - query-stats-envelope
+  - loki_api_v1_query_range
+pending: true
+consumer: api
+why: |
+  summary.shards of a log query_range answer is the number of 1h pieces Loki
+  ran for the query. Measured on Loki 3.7.9 (recorded in
+  internal/proxy/testdata/loki_stats_shards.jsonl, a stream whose 15 lines lie
+  in three separate hours, windows of 1 to 5 pieces, both directions, limits
+  that stop early, a filter that empties every piece), Loki keeps a piece in
+  which a query text found no entry in its results cache and skips it the
+  next time it runs that text:
+    - the first run of a query text runs every piece it reads, whether the
+      piece holds lines or not (a window of three pieces with lines only in the
+      middle one: splits 3, shards 3);
+    - the identical repeat runs only the pieces that hold a returned entry
+      (the same window: shards 1; entries in the hours 09, 12 and 13 of a
+      window of five pieces: shards 3), and a query whose filters left no
+      entry in any piece is answered whole from the cache (shards 0, no
+      lines processed);
+    - the same text over another limit, direction or window also skips the
+      pieces it found empty before (a window slid by three minutes: shards 1
+      instead of 3);
+    - a metric query_range runs every piece on its first run and its repeat is
+      the results-cache hit (shards 0); an instant query runs every piece of
+      its range every time.
+  Line placement alone never decides shards: it matters only through that
+  cache. A test that asks Loki the same query text twice (a helper query for
+  line bytes, then the measured one) therefore sees fewer shards from Loki on
+  the second request than a proxy that never saw the first.
+
+  The proxy reported, on the response-cache hit of a log query, the pieces
+  between the oldest and newest returned entries. That equals the pieces with
+  an entry on a dense stream, which is all the earlier recordings held, and
+  over-counted whenever empty pieces lay between entries (5 shards where Loki
+  reports 3).
+
+  Fixed: the stats layer marks the 1h piece of every returned entry (a bitmap
+  anchored at the first entry, 512 pieces wide, no allocation, two integer
+  comparisons per entry in the piece last seen) and a hit replays the number
+  of pieces marked; an answer it cannot map (a timestamp that is not 19
+  digits, entries over more than 21 days) keeps the span rule; a timestamp cut
+  by a write boundary is read all the same (the digits are carried). The first answer keeps
+  the pieces run.
+
+  Not changed, documented: the proxy keeps no memory of pieces it saw empty,
+  so a query text that Loki already ran over another window, limit or
+  direction (a refresh that slides the window, Drilldown changing the limit,
+  a helper query) reports fewer shards from Loki than the proxy's first answer
+  for that request, which is the figure of Loki's first run. Loki never
+  reports more than the proxy's first answer (the recorded rows hold that
+  bound). Grafana does not display shards.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="api-gateway"}'
+    start: 'now-5h'
+    end: 'now'
+    limit: '1000'
+    direction: 'backward'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data.stats.summary.splits, data.stats.summary.shards]
+  expect: |
+    The first answer of a query text: splits and shards both the pieces Loki
+    ran (every piece of the window unless the limit was filled earlier). The
+    identical repeat: splits as before, shards the pieces that hold a
+    returned entry (0 for an answer with no entry, which Loki serves from its
+    results cache).
+gap:
+  status: fixed
+  fixed_by: 'fix/query-stats-shards-pieces-with-data'
+  impact: api-only
+  effort: M
+  area: 'internal/proxy entryPieces, queryStatsWriter.lokiLogHitShards (query_stats_loki.go), entryCounter.keepTimestamp (query_stats.go), the stats trailer of a cached answer (query_stats_cache.go)'
+  loki: 'a log query text keeps its empty pieces in the results cache: first run shards = pieces run, repeat shards = pieces with a returned entry (0 for an empty answer); recorded in internal/proxy/testdata/loki_stats_shards.jsonl'
+  proxy: 'first answer shards = pieces run; a response-cache hit replays the pieces that hold a returned entry (bitmap of the answer''s entries), the span between the oldest and newest entry when the answer cannot be mapped (entries over more than 21 days); no memory of pieces seen empty'
+  planned_test: 'TestLokiLogHitShards_Table, TestLokiLogHitShards_AnswerWrittenInChunks, TestEntryPieces_Table, TestParseTS19_Table, FuzzEntryPieces, TestLokiStatsShards_MatchesRecordedLokiAnswers, TestQueryStats_LogRepeatShardsAreThePiecesWithEntries, TestQueryStats_LogRepeatShardsOfALargeAnswer, FuzzEntryCounter (internal/proxy)'
+  clusters: []
+  note: 'Remaining difference: a query text Loki already ran over another window, limit or direction reports fewer shards than the proxy''s first answer; test/e2e-compat TestDrilldown_QueryStatsLikeLoki primes Loki with a helper query of the same text before the measured one, so its shards comparison must tolerate Loki reporting fewer.'

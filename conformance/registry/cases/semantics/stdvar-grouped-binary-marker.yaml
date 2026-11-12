@@ -1,0 +1,67 @@
+id: semantics/stdvar-grouped-binary-marker
+title: stdvar_over_time under a grouping or without a parser answers 200, and with its own by() has Loki's values (fixed)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum by (app) (stdvar_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]))`,
+  `stdvar_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]) by (app)`
+  and `stdvar_over_time({app="api-gateway"} | unwrap duration_ms [5m])` were
+  answered with an error status (400 on the stack measured, on an instant and on a
+  range query); Loki answers 200.
+
+  Root cause: VictoriaLogs has no variance function, so a stdvar_over_time that is
+  grouped, or has no parser, is translated to the standard deviation raised to the
+  power 2, written as a binary expression
+  (`__binary__:^:<stats query>|||2`). The handlers route on the client's query,
+  which is no binary operation, so the text was taken for a stats query and sent to
+  VictoriaLogs as it was, marker included, which rejects it.
+
+  Fixed: a translated query that is a stats query and a number, whose client query
+  is no binary expression, is answered by the stats handler as translated
+  (scalarStatsBinaryOf, proxyScalarStatsBinary), so the series carry the labels the
+  stats handler gives them and the unwrap conversion checks apply, and the binary
+  route's scalar evaluation applies the power to its answer, instant and range. No
+  text that starts with the binary marker reaches a stats handler any more:
+  proxyStatsQuery and proxyStatsQueryRange refuse it, and a marker the route cannot
+  evaluate is answered as an unsupported metric query. With range equal to the step
+  the stats query is fetched on the shifted buckets
+  (semantics/stddev-stdvar-over-time-step-bucket).
+
+  `stdvar_over_time(...) by (app)` has Loki's values too, on an instant query and on
+  a range query at step 5m (Loki 3.7.9, VictoriaLogs v1.53.0, generator data:
+  306144.336 at the first step, 249373.463 at the second, 305250.915 at the
+  instant): Loki pools the samples by the range aggregation's own grouping, which
+  is the standard deviation of the group's pooled samples, squared. The outer
+  `sum by (app) (stdvar_over_time(...))` form answers the same pooled value where
+  Loki sums the variances of the series' own samples
+  (semantics/stdvar-grouped-pooled-variance, open). The form without a parser
+  reads the field VictoriaLogs stores for the line where Loki has no label to
+  unwrap (semantics/unwrap-parserless-reads-stored-field, open).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (app) (stdvar_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '300'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series labels, values of the by() form]
+  expect: |
+    Status 200 with one series per app, on a range and an instant query; the values of
+    stdvar_over_time(...) by (app) are Loki's.
+gap:
+  status: fixed
+  fixed_by: "this change"
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy scalar_binary_stats.go (scalarStatsBinaryOf, proxyScalarStatsBinary, rejectBinaryMarker) and the dispatch of handleQueryRange and handleQuery'
+  loki: 'stdvar_over_time is a range aggregation: any grouping or none answers 200'
+  proxy: 'the stats query as translated, then the power applied to its answer; the binary marker never reaches VictoriaLogs'
+  planned_test: 'TestStdvarOverTimeGroupedAnswersAsScalarBinary and TestStatsHandlersNeverSendTheBinaryMarker (internal/proxy); TestCompat_StdvarOverTimeGroupedAnswers200 and TestCompat_StdvarOverTimeByMatchesLoki (test/e2e-compat, group core)'
+  clusters: []

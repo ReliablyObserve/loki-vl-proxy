@@ -401,7 +401,7 @@ func near(got, want int64, tol float64) bool {
 // -query-stats-exact-log-lines, a limit-filled log answer reports
 // VictoriaLogs' count of the selector over the pieces it read.
 //
-// conformance: drilldown/logs-footer-query-stats, query-stats-envelope
+// conformance: drilldown/logs-footer-query-stats, query-stats-envelope, semantics/query-stats-shards-empty-pieces
 func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 	ensureDataIngested(t)
 	// Loki's window count below needs Loki's range metrics, which a fresh stack answers empty for a few minutes.
@@ -555,11 +555,13 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 }
 
 // lokiLineBytes is the bytes of the selector's lines in (from, to], read from Loki's log answer; 0 when the answer
-// is cut at its limit, as it then does not hold every line.
+// is cut at its limit, as it then does not hold every line. Its query adds a line filter no line matches, so it is
+// not the text of a measured row: Loki's results cache would otherwise answer the measured row as a repeat, whose
+// shards are only the pieces that returned entries (semantics/query-stats-shards-empty-pieces).
 func lokiLineBytes(t *testing.T, sel string, from, to time.Time) int64 {
 	t.Helper()
 	const limit = 5000
-	params := url.Values{"query": {sel}, "start": {fmt.Sprint(from.UnixNano() + 1)}, "end": {fmt.Sprint(to.UnixNano())},
+	params := url.Values{"query": {sel + ` != "line-bytes-probe"`}, "start": {fmt.Sprint(from.UnixNano() + 1)}, "end": {fmt.Sprint(to.UnixNano())},
 		"limit": {strconv.Itoa(limit)}, "direction": {"forward"}}
 	st := getE2EStats(t, lokiURL, "/loki/api/v1/query_range", params, nil)
 	if st.Summary.Entries >= limit {

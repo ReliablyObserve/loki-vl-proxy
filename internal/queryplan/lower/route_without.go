@@ -4,7 +4,6 @@ import (
 	"slices"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
@@ -31,8 +30,8 @@ const (
 )
 
 // routeFold is how the handlers fold the `without` of the vector aggregations va over rng for the windows w. b is
-// the lowering of va: the text the pushdown refuses to rewrite is read from it.
-func routeFold(va *queryplan.VectorAgg, rng *queryplan.RangeAgg, w Window, b builtVector, prof Profile) WithoutFold {
+// the log query of va's lowering: the text the pushdown refuses to rewrite is read from it.
+func routeFold(va *queryplan.VectorAgg, rng *queryplan.RangeAgg, w Window, log metricLog, prof Profile) WithoutFold {
 	var buf [6]*queryplan.VectorAgg
 	levels := buf[:0]
 	for n := queryplan.Node(va); ; {
@@ -50,7 +49,7 @@ func routeFold(va *queryplan.VectorAgg, rng *queryplan.RangeAgg, w Window, b bui
 	switch {
 	case !hasWithout:
 		return FoldNone
-	case w == WindowTumbling && pushable(levels, rng, b, prof):
+	case w == WindowTumbling && pushable(levels, rng, log, prof):
 		return FoldPushed
 	case (w == WindowBuckets || w == WindowPhase) && len(levels) == 1 && va.Op == logql.VectorSum && cuttable(va, rng, prof):
 		return FoldCut
@@ -60,11 +59,13 @@ func routeFold(va *queryplan.VectorAgg, rng *queryplan.RangeAgg, w Window, b bui
 
 // pushable reports whether VictoriaLogs can fold the series of levels (outermost first) by cutting the excluded
 // labels out of the stream text: the innermost level is a `without` of labels the cut can name, every level above
-// groups `by` columns of the stats pipes, and the query holds no text the rewrite would misread: the stats pipes
-// are rewritten between the series' own, and a line filter or a value that names _msg or an unpack pipe reads as a
-// parser.
-func pushable(levels []*queryplan.VectorAgg, rng *queryplan.RangeAgg, b builtVector, prof Profile) bool {
-	if !withoutCut(levels[len(levels)-1], prof) {
+// groups `by` columns of the stats pipes, the function reads no unwrapped value, and the query holds no text the
+// rewrite would misread: the stats pipes are rewritten between the series' own, and a line filter or a value that
+// names _msg or an unpack pipe reads as a parser.
+func pushable(levels []*queryplan.VectorAgg, rng *queryplan.RangeAgg, log metricLog, prof Profile) bool {
+	// The rewrite reads the series of a count, a byte sum or a rate (two stats pipes over the stream and its level);
+	// the stats of an unwrapped value, behind the gate that converts it, are not that shape.
+	if unwrapStage(rng.In) != nil || !withoutCut(levels[len(levels)-1], prof) {
 		return false
 	}
 	for _, lv := range levels[:len(levels)-1] {
@@ -72,7 +73,7 @@ func pushable(levels []*queryplan.VectorAgg, rng *queryplan.RangeAgg, b builtVec
 			return false
 		}
 	}
-	return !textHas(b.log, "_msg") && !textHas(b.log, "unpack_")
+	return !textHas(log, "_msg") && !textHas(log, "unpack_")
 }
 
 // cuttable reports whether the buckets of a sliding window can be read with the labels cut: a single `sum without`
@@ -135,14 +136,4 @@ func groupLabel(name string) bool {
 		}
 	}
 	return true
-}
-
-// groupsByAny reports whether any stats pipe of pipes names a grouping key.
-func groupsByAny(pipes []logsql.Pipe) bool {
-	for _, p := range pipes {
-		if st, ok := p.(logsql.PipeStats); ok && len(st.By) > 0 {
-			return true
-		}
-	}
-	return false
 }

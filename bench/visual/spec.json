@@ -1454,6 +1454,21 @@
    ]
   },
   {
+   "id": "explore-unwrap-stddev-over-time-step-bucket",
+   "kind": "explore",
+   "query": "stddev_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [$__auto]) by (app)",
+   "covers": [
+    "semantics/stddev-stdvar-over-time-step-bucket",
+    "semantics/stdvar-grouped-binary-marker",
+    "window-bounds-and-step-alignment",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/stddev-stdvar-over-time-step-bucket",
+    "semantics/stdvar-grouped-binary-marker"
+   ]
+  },
+  {
    "id": "explore-unwrap-first-last-under-sum",
    "kind": "explore",
    "query": "sum by (service_name) (last_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [$__auto]))",

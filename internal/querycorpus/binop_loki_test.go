@@ -214,6 +214,11 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 				if kind != "*syntax.RangeAggregationExpr" && kind != "*syntax.VectorAggregationExpr" {
 					t.Errorf("%s: operand %d is a query, Loki's %s", r.q, side, kind)
 				}
+			case physical.VectorOp:
+				// vector(n): Loki's tree has a vector expression, not a number.
+				if kind != "*syntax.VectorExpr" {
+					t.Errorf("%s: operand %d is vector(%v), Loki's %s", r.q, side, v.V, kind)
+				}
 			default:
 				t.Errorf("%s: operand %d is %T", r.q, side, o)
 			}

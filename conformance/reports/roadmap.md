@@ -46,7 +46,7 @@ Proven in part; the rest is named in the item's cases.
 | `service-name-derivation` — service_name follows Loki's discovery order | — | 0 / 0 | 0 | The derivation matches Loki's 13-entry discover_service_name order and is used by selectors, label filters, grouping, la |
 | `severity-detected-level-derivation` — detected_level is derived on the read path | — | 3 / 10 | 15 | detected_level is derived per returned row from what VictoriaLogs stored: a stored detected_level field, then the first  |
 | `severity-exposure-surfaces` — Where detected_level and level must appear | — | 0 / 6 | 5 | Log responses, /tail, /patterns and /detected_fields carry the derived detected_level; categorize-labels puts it and a s |
-| `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | — | 6 / 11 | 28 | semantics/offset-sample-timestamps is written and wired: an offset modifier moves the window and leaves the sample times |
+| `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | — | 6 / 11 | 30 | semantics/offset-sample-timestamps is written and wired: an offset modifier moves the window and leaves the sample times |
 
 ## Proven
 
@@ -71,12 +71,12 @@ No file under `conformance/registry/state/` gives these a state yet.
 
 | Item | Consumers | Cases written / named | Tests | Why |
 |---|---|---:|---:|---|
-| `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 77 | — |
+| `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 78 | — |
 | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | — | 0 / 0 | 1 | — |
 | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 4 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 3 | — |
 | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | — | 0 / 0 | 4 | — |
-| `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | — | 0 / 0 | 5 | — |
+| `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | — | 0 / 0 | 6 | — |
 | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | — | 0 / 0 | 2 | — |
 
 Tests counts the test files that declare the item or one of its cases (`// conformance:` in Go, `@cov:` in Playwright); a case is written when its file exists under `conformance/registry/cases/`.

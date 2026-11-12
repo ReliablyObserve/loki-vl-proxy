@@ -17,6 +17,7 @@ smoke	internal/proxy	FuzzNormalizeMetadataPairsFromJSON	12s	-	structured metadat
 smoke	internal/proxy	FuzzMergeLokiQueryResponsesStructuredMetadataContract	12s	-	merged categorized stream contract
 smoke	internal/proxy	FuzzParseLokiDuration	12s	-	parse Loki duration
 smoke	internal/proxy	FuzzParseTimestamp	12s	-	parse timestamp
+smoke	internal/proxy	FuzzScalarStatsBinaryOf	12s	-	a stats query joined to a number is read back to the same operator and number
 smoke	internal/proxy	FuzzSeriesKeyFromMetric	20s	60s	series key from metric
 smoke	internal/proxy	FuzzTenantHeader	12s	-	X-Scope-OrgID check: Loki's tenant ID rules, own-tenant routing
 smoke	internal/proxy	FuzzParseValueToFloat	12s	-	parse value to float
@@ -85,6 +86,7 @@ smoke	internal/logsql	FuzzCapabilitiesFor	12s	-	capabilities for
 smoke	internal/logsql	FuzzFieldFilterString	12s	-	field filter string
 smoke	internal/logsql	FuzzParseRoundTrip	12s	-	parse round trip
 smoke	internal/logsql	FuzzOutboundGuard	12s	-	outbound guard
+smoke	internal/logsql	FuzzQuoteFieldName	12s	-	quote field name
 smoke	internal/logsql	FuzzQueryString	12s	-	query string
 smoke	internal/proxy	FuzzMergeLabelsIntoCache	12s	-	label merge is sorted and deduplicated
 smoke	internal/proxy	FuzzTwiceGateIsASupersetOfTheKeyPatterns	12s	-	twice gate is a superset of the key patterns
@@ -131,6 +133,7 @@ smoke	internal/proxy	FuzzPatchStatsTailAnyBytes	12s	-	query stats writer on any 
 smoke	internal/proxy	FuzzEntryCounter	12s	-	query stats entry count over split writes
 smoke	internal/proxy	FuzzEntryCounterLineBytes	12s	-	query stats line bytes over split writes
 smoke	internal/proxy	FuzzLokiRunLinesEstimate	12s	-	query stats limit-filled log lines estimate bounds
+smoke	internal/proxy	FuzzEntryPieces	12s	-	query stats pieces holding a returned log entry
 smoke	internal/logql	FuzzMayHaveNonFilterStage	12s	-	the stage screen the lowering flip asks never misses a parser stage and never panics
 smoke	internal/queryplan/lower	FuzzParserLowering	12s	-	json, logfmt, drop and keep lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzUnpackLowering	12s	-	an unpack under a range aggregation lowers to the query the string translator writes only where the result reads neither its labels nor its line
@@ -144,4 +147,4 @@ smoke	internal/querycorpus	FuzzProxyEvaluatedLowering	12s	-	topk, bottomk, sort,
 smoke	internal/queryplan/lower	FuzzNestedVectorAggLowering	12s	-	vector aggregations over vector aggregations lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzParserLabelsLowering	12s	-	grouping, unwrapped and kept labels a parser extracts, a without fold over a parser and a trailing keep lower to the query the string translator writes
 smoke	internal/logql	FuzzParseTerminates	12s	-	every logql entry point returns within 200 ms and allocates at most a mebibyte per input byte
-smoke	internal/queryplan/lower	FuzzRoute	12s	-	the route rule of a metric query never panics and either routes it with a window that fits the request and a without fold that fits the window or names the delegation
+smoke	internal/queryplan/lower	FuzzRoute	12s	-	the route rule of a metric query never panics and either routes it with a window that fits the request, a without fold that fits the window, and a group pushdown and a sum of all streams that fit the function, or names the delegation

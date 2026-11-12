@@ -441,8 +441,10 @@ decisions:
       rules, first answer and repeat
       (TestLokiStatsEmulation_MatchesRecordedLokiAnswers): a repeated log or
       instant query is computed again (same lines and splits; a log repeat's
-      shards are only the pieces between its oldest and newest entries, the
-      empty pieces coming from Loki's results cache), a repeated empty log
+      shards are only the pieces that hold a returned entry, the empty pieces
+      coming from Loki's results cache; the 56 rows of that recording came from
+      a dense stream, where those are the pieces between the oldest and newest
+      entries, the sparse stream of loki_stats_shards.jsonl separates them), a repeated empty log
       answer is a results-cache hit (0 lines, the pieces as splits, no
       shards), a repeated volume_range keeps its splits; the lines of the
       pieces the rule reads equal Loki's totalLinesProcessed on all 36
@@ -458,8 +460,16 @@ decisions:
       splits 2 | 2; 24h metric splits 25 | 25; instant 1h 59,512 | 59,465,
       6h and 24h splits 6, 24 | 6, 24; volume_range splits 5, 60, 300, 301 |
       the same; querierExecTime 0.013-0.06 s on misses, 0 on hits.
+    history:
+      - date: '2026-11-12'
+        what: 'TestDrilldown_QueryStatsLikeLoki compared the proxy''s shards with Loki''s on a 1h log window whose lines all fall in one of its two pieces'
+        measured: 'CI: Loki splits 2 shards 1, the proxy splits 2 shards 2; on the test stack a never-run text gives Loki shards 3 for a window of three pieces with lines in the middle one, and 1 once the same text has run; entries in the hours 09, 12 and 13 of a window of five pieces: Loki repeat shards 3, the proxy 5'
+        cause: 'Loki keeps the pieces in which a query text found nothing in its results cache and skips them when it runs the text again (the e2e''s helper log query primed it); the rule was recorded from a dense stream, where the pieces between the oldest and newest entries are the pieces with an entry, so the proxy''s hit replayed that span'
+        effect: 'a repeat over a sparse stream reported pieces that hold no entry; the e2e failed when Loki had run the text before'
+        fixed_by: 'fix/query-stats-shards-pieces-with-data (case semantics/query-stats-shards-empty-pieces: the hit replays the pieces that hold a returned entry; the first answer keeps the pieces run; the recording is internal/proxy/testdata/loki_stats_shards.jsonl)'
+        after: 'documented in KNOWN_ISSUES and the API reference: a text Loki already ran over another window, limit or direction reports fewer shards than the proxy''s first answer'
     code: [internal/proxy/query_stats_loki.go, internal/proxy/query_stats.go, internal/proxy/query_stats_cache.go, internal/proxy/query_stats_totals.go, internal/proxy/proxy.go, cmd/proxy/main.go, internal/config/limits.go]
-    tests: [TestLokiStatsEmulation_MatchesRecordedLokiAnswers, TestLokiStats_ExactMetricBytesOnlyOnAMiss, TestMeanLineTable_NoAllocationAndBounded, TestLokiLogQueryRun_Table, TestLokiLogSummary_EstimatesTheRunFromTheAnswer, TestLokiStats_SplitsShardsAndQuerierTimePerRoute, TestLokiStats_MetricBytesFromTheSelectorsMeanLine, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStatsTotals_MetricAnswerSumsToLokisWindow, TestDrilldown_QueryStatsLikeLoki]
+    tests: [TestLokiStatsEmulation_MatchesRecordedLokiAnswers, TestLokiStatsShards_MatchesRecordedLokiAnswers, TestLokiLogHitShards_Table, TestLokiLogHitShards_AnswerWrittenInChunks, TestQueryStats_LogRepeatShardsOfALargeAnswer, TestEntryPieces_Table, TestParseTS19_Table, FuzzEntryPieces, TestQueryStats_LogRepeatShardsAreThePiecesWithEntries, TestLokiStats_ExactMetricBytesOnlyOnAMiss, TestMeanLineTable_NoAllocationAndBounded, TestLokiLogQueryRun_Table, TestLokiLogSummary_EstimatesTheRunFromTheAnswer, TestLokiStats_SplitsShardsAndQuerierTimePerRoute, TestLokiStats_MetricBytesFromTheSelectorsMeanLine, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStatsTotals_MetricAnswerSumsToLokisWindow, TestDrilldown_QueryStatsLikeLoki]
     quality: |
       Every rule is checked against the recorded Loki answers, every row;
       the e2e test compares each figure with Loki's live answer for the same

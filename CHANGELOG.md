@@ -18,18 +18,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not counted as served from the plan. A `without ()` on its own, under a ranking, `stddev` or
   `label_replace`, in a nest of aggregations, or over an unwrapped label stays with the string
   translator. No answer changes; the plan does not serve these queries yet.
+- The query plan leaves to the string translator a stage that unwraps, reads as a json
+  expression's key, writes, or renames from or to a label called `_time`, `_stream`,
+  `_stream_id` or `_msg` (`unwrap _stream`, `json x="_time"`, `label_format x=_stream`): the text
+  it used to write for them, the translator's, is a filter VictoriaLogs rejects or reads as its
+  own time, stream or stream id filter
+  (`semantics/translator-writes-reserved-field-names`). No answer changes; the plan does not
+  serve metric queries or queries with a parser yet.
+- The VictoriaLogs parse oracle holds the plan to the string translator on the log queries it
+  lowers, and no longer finds a selector that VictoriaLogs reads unlike the translator's except
+  the five rows the translator writes wrongly or Loki rejects, now listed with their cases
+  (`semantics/translator-writes-signed-number-with-blank`,
+  `semantics/parser-reads-unicode-blank-as-white-space`). The latter records that the proxy's
+  parser reads a blank that is no ASCII one (U+2003, U+3000, U+00A0) as white space where Loki
+  answers 400; the parser is unchanged.
 
-- The query plan quotes an unwrapped label that VictoriaLogs reads, bare, as a filter function
-  (`contains_all`, `contains_any`, `contains_common_case`, `equals_common_case`, `not`, `in`, `and`,
-  `or`, `options`, in any letter case) in the filter that drops the lines without it, as it does
-  for every other filter on such a name. The string translator writes it bare, which VictoriaLogs
-  reads differently (`semantics/translator-writes-keyword-field-names-bare`). No answer changes;
-  the plan does not serve these queries yet.
+### Fixed
 
-## [2.182.0] - 2026-11-12
+- A log query with a label filter that names a label VictoriaLogs cannot read bare
+  (`{app="a"} | status = "200" and ³ = "x"`, a name with punctuation, a symbol, a combining mark,
+  an emoji or a zero-width space; Loki answers these) now answers with the lines of that label
+  instead of failing with a VictoriaLogs parse error. The query plan, which serves log queries
+  that have only line and label filters, quotes the name; the string translator writes it bare
+  (`semantics/translator-writes-exotic-field-names-bare`). A name of letters, digits and
+  underscores in any script, and the names with a dot or a hyphen that were quoted already, are
+  written as before.
+
+## [2.186.0] - 2026-11-12
+
+### Fixed
+
+- The `shards` of the `data.stats` of a repeated log query follow Loki's: a repeat answered from the
+  proxy's response cache reports the 1h pieces that hold a returned entry, wherever they lie in the
+  window, as Loki does (it keeps the pieces in which a query found nothing in its results cache). A
+  window of five pieces with entries in three of them, separated by empty pieces, reported 5 shards
+  on the repeat and Loki 3. The first answer of a query text still reports every piece it ran.
+
+## [2.185.0] - 2026-11-12
 
 ### Changed
 
+- The query plan now decides how the handlers answer `sum`, `avg`, `min`, `max` and `count` (with
+  `by`, `without` or neither) over `sum_over_time`, `avg_over_time`, `min_over_time` and
+  `max_over_time` of an unwrapped label, instead of leaving them to the handlers: whether the
+  series keep their stream's identity, whether the empty-input guard counts the input, the level
+  probe, the conversion-error flag and the fold of a `without` clause, on every window. Three
+  decisions follow what the handlers do today: the maximum of `max_over_time` (or the minimum of
+  `min_over_time`) by labels is taken per bucket and group in VictoriaLogs on a sliding window, an
+  ungrouped `sum` adds all lines up only over `sum_over_time` (over an average, minimum or maximum it
+  keeps the series), and a `without` clause over an unwrapped value is folded by the proxy. The
+  lowering of these queries now hands back its stats typed, with the same query text. No answer or
+  request changes: no handler reads the rule yet. Route parity: 470 more of 24,970 runs are decided
+  (5,706 native, 0 mismatches, the routes and statuses unchanged); the other 900 runs of the former
+  "unwrap operand" group are now named by what keeps them delegated (a parser before the unwrap, an
+  offset). A vector level that groups by the line (`_msg`) stays delegated.
+
+## [2.184.0] - 2026-11-12
+
+### Fixed
+
+- `stdvar_over_time` with a grouping (`stdvar_over_time(... | unwrap n [5m]) by (app)`,
+  `sum by (app) (stdvar_over_time(...))`) or without a parser no longer fails: it
+  was answered with an error (400), where Loki answers 200. VictoriaLogs has no
+  variance function, so the proxy asks for the standard deviation squared, and
+  that request was sent to VictoriaLogs with an internal marker in its text.
+  `stdvar_over_time(...) by (app)` now has Loki's values; under an outer
+  `sum by` the value is still the variance of the group's pooled samples, not
+  the sum of the series' own variances that Loki takes.
+- `stddev_over_time` and `stdvar_over_time` over an unwrapped label on a range
+  query whose range equals the step (`[5m]` at step 5m) answer the window ending
+  at each timestamp, as Loki does; each point was the window one step later.
+  A range that is not the step keeps its answer.
+
+## [2.183.0] - 2026-11-12
+
+### Changed
+
+- The query plan now decides how `absent_over_time` and `sum_over_time`,
+  `avg_over_time`, `min_over_time` and `max_over_time` over an unwrapped label
+  (with or without a `by` clause of plain labels) are answered from
+  VictoriaLogs, instead of leaving it to the string translator: `absent_over_time`
+  is one ungrouped count on every window; an unwrap function keeps the stream's
+  series, counts the rows whose value the conversion rejects, and a range up to
+  the step is read from VictoriaLogs' own step buckets while a longer one merges
+  the partial aggregate of each bucket. Route parity holds the plan's decision to
+  the handlers on every corpus row under five request profiles, with and without
+  data: 5,236 of 24,700 runs are now predicted from the plan (4,540 before), 0
+  mismatches, the recorded routes and statuses unchanged. Quantile, stddev,
+  stdvar, first, last and rate_counter over an unwrapped label, a stage after the
+  unwrap, offsets and parsers stay with the string translator. Nothing is served
+  from the plan for metric queries yet: no request to VictoriaLogs and no answer
+  changes.
 - The query plan lowers a binary operation with a `vector(n)` operand next to a range or
   vector aggregation (`sum by (app) (rate({app="a"}[5m])) + on() vector(0)`,
   `rate({app="a"}[5m]) > vector(1)`) the way Loki and the proxy's binary route treat it: one
@@ -42,6 +121,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operations yet. A query of constants only (`vector(1) + vector(2)`), the set operators,
   `bool`, a `vector (1)` spelled with a blank, and an operand that is itself a binary
   operation stay with the string translator.
+
+## [2.182.0] - 2026-11-12
+
+### Changed
 
 - The query plan now decides how a `without` clause is folded when it answers a
   `count_over_time`, `bytes_over_time`, `rate` or `bytes_rate` aggregation under
