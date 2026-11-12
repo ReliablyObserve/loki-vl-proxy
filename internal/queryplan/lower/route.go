@@ -1,6 +1,8 @@
 package lower
 
 import (
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -69,6 +71,14 @@ type MetricRoute struct {
 	// SumAll is an ungrouped sum right over the range aggregation: its series add up whatever their identity, so
 	// a windowed route reads the lines of every stream as one series.
 	SumAll bool
+	// StepBuckets is a range shorter than the step answered from VictoriaLogs' own step buckets (an unwrap function
+	// with its window phase filter): the request start moves one nanosecond and the answer is trimmed and relabelled
+	// like a tumbling window's. A count or a rate with such a range is evaluated by the proxy (WindowPhase alone).
+	StepBuckets bool
+	// Counted is a range aggregation over an unwrapped label: the VictoriaLogs client flags the rows whose value the
+	// conversion rejects, so every stats pipe also groups by the flag (the proxy takes that group out of the answer
+	// and reads Loki's conversion error from it).
+	Counted bool
 	// Text is the lowered stats query the route sends (the plan's text, before the route's own pipes).
 	Text string
 }
@@ -82,6 +92,13 @@ var routeOps = map[logql.VectorOp]bool{
 // routeRangeOps are the range functions the stats routes answer from line counts and byte sums.
 var routeRangeOps = map[logql.RangeOp]bool{
 	logql.RangeCountOverTime: true, logql.RangeRate: true, logql.RangeBytesOverTime: true, logql.RangeBytesRate: true,
+}
+
+// routeUnwrapOps are the functions over an unwrapped label whose stats the rule decides: the partial aggregates
+// VictoriaLogs keeps per bucket (the sum, the extremes, the average from a sum and a count) that merge into a longer
+// window. The others (quantile, stddev, stdvar, first, last, rate_counter) are read another way and stay delegated.
+var routeUnwrapOps = map[logql.RangeOp]bool{
+	logql.RangeSumOverTime: true, logql.RangeAvgOverTime: true, logql.RangeMinOverTime: true, logql.RangeMaxOverTime: true,
 }
 
 // Route decides the route of a plan whose root is a range aggregation, or vector aggregations over one, for req.
@@ -119,8 +136,17 @@ func Route(p *queryplan.Plan, prof Profile, req RouteRequest) (MetricRoute, erro
 		if !ok {
 			return MetricRoute{}, routeError(kind, "operator")
 		}
-		// The series keep their stream's identity, whose grouping holds the derived detected_level.
-		r.Text, r.Identity, r.LevelProbe = q.Text, true, true
+		r.Text = q.Text
+		if v.Op == logql.RangeAbsentOverTime {
+			// No series to keep: one ungrouped count says whether the window holds a line.
+			r.Ungrouped = true
+		} else {
+			// The series keep their stream's identity, whose grouping holds the derived detected_level.
+			r.Identity, r.LevelProbe = v.By == nil, v.By == nil
+			// A grouping by no label leaves the stats ungrouped.
+			r.Ungrouped = v.By != nil && len(v.By.Labels) == 0
+		}
+		r.Counted = routeUnwrapOps[v.Op]
 	case *queryplan.VectorAgg:
 		b, err := routeVector(v, rng, prof)
 		if err != nil {
@@ -139,6 +165,7 @@ func Route(p *queryplan.Plan, prof Profile, req RouteRequest) (MetricRoute, erro
 	if err != nil {
 		return r, err
 	}
+	r.StepBuckets = r.Counted && r.Window == WindowPhase
 	if v, ok := p.Root.(*queryplan.VectorAgg); ok {
 		if r.Fold = routeFold(v, rng, r.Window, built, prof); r.Fold != FoldNone && unkeyed {
 			r.Identity, r.LevelProbe, r.Ungrouped = true, true, false
@@ -180,40 +207,87 @@ func routeWindow(kind string, rng time.Duration, req RouteRequest) (Window, time
 
 // routeRange is the range aggregation under the vector aggregations of n, or the reason the rule does not route n.
 func routeRange(n queryplan.Node, kind string) (*queryplan.RangeAgg, error) {
+	vector := false
 	for {
 		switch v := n.(type) {
 		case *queryplan.VectorAgg:
 			if !routeOps[v.Op] {
 				return nil, routeError(kind, "evaluated level")
 			}
-			n = v.In
+			n, vector = v.In, true
 			continue
 		case *queryplan.RangeAgg:
-			switch {
-			case !routeRangeOps[v.Op]:
-				return nil, routeError(kind, "function")
-			case v.HasOffset:
-				return nil, routeError(kind, "offset")
-			case v.By != nil:
-				return nil, routeError(kind, "grouping")
-			}
-			for _, st := range v.In.Stages {
-				switch s := st.(type) {
-				case *queryplan.LineFilter:
-				case *queryplan.LabelFilter:
-					// A filter on detected_level writes the level chain the handlers probe the window for first
-					// (DetectedLevelProbeBase over its prefilter): not decided by the rule yet.
-					if isLevelLeaf(s.Expr) {
-						return nil, routeError(kind, "level filter")
-					}
-				default:
-					return nil, routeError(kind, "pipeline")
-				}
+			if err := routeFunction(v, kind, vector); err != nil {
+				return nil, err
 			}
 			return v, nil
 		}
 		return nil, routeError(kind, "operand")
 	}
+}
+
+// routeFunction is why the rule does not route the range aggregation v (under vector aggregations when vector), or
+// nil: the function, its offset and grouping, and the stages of its log query.
+func routeFunction(v *queryplan.RangeAgg, kind string, vector bool) error {
+	// The vector aggregations over absent_over_time and the unwrap functions have routes of their own.
+	if vector && v.Op == logql.RangeAbsentOverTime {
+		return routeError(kind, "absent operand")
+	}
+	if vector && routeUnwrapOps[v.Op] {
+		return routeError(kind, "unwrap operand")
+	}
+	unwrapped := slices.ContainsFunc(v.In.Stages, func(st queryplan.Stage) bool { _, ok := st.(*queryplan.Unwrap); return ok })
+	switch {
+	case unwrapped && !routeUnwrapOps[v.Op]:
+		return routeError(kind, unwrapName(v.Op))
+	case !unwrapped && !routeRangeOps[v.Op] && v.Op != logql.RangeAbsentOverTime:
+		return routeError(kind, "function")
+	case v.HasOffset:
+		return routeError(kind, "offset")
+	case v.By != nil && !unwrapped:
+		return routeError(kind, "grouping")
+	case v.By != nil && !routeGroups(v.By):
+		return routeError(kind, "unwrap grouping")
+	}
+	afterUnwrap := false
+	for _, st := range v.In.Stages {
+		switch s := st.(type) {
+		case *queryplan.LineFilter:
+		case *queryplan.Unwrap:
+			afterUnwrap = true
+			continue
+		case *queryplan.LabelFilter:
+			// A filter on detected_level writes the level chain the handlers probe the window for first
+			// (DetectedLevelProbeBase over its prefilter): not decided by the rule yet.
+			if isLevelLeaf(s.Expr) {
+				return routeError(kind, "level filter")
+			}
+		default:
+			// A parser ahead of the unwrap derives the value (and the series) another way.
+			if unwrapped {
+				return routeError(kind, "unwrap pipeline")
+			}
+			return routeError(kind, "pipeline")
+		}
+		// The rows a filter after the unwrap drops may be the ones whose value the conversion rejects: the
+		// handlers then read the conversion error from the surviving rows (not decided by the rule yet).
+		if afterUnwrap {
+			return routeError(kind, "unwrap filter")
+		}
+	}
+	return nil
+}
+
+// unwrapName is the delegation of a function over an unwrapped label the rule does not decide: "unwrap quantile",
+// "unwrap rate", "unwrap absent".
+func unwrapName(op logql.RangeOp) string {
+	return "unwrap " + strings.TrimSuffix(string(op), "_over_time")
+}
+
+// routeGroups reports whether the grouping of an unwrap function is labels the stats group by as they stand: not
+// a `without`, and no label the proxy derives per row (the series would then hold the derived level chain).
+func routeGroups(g *logql.Grouping) bool {
+	return !g.Without && !slices.ContainsFunc(g.Labels, func(name string) bool { return !groupLabel(name) })
 }
 
 func routeError(kind, what string) error { return &NotLoweredError{Construct: kind + " route " + what} }
