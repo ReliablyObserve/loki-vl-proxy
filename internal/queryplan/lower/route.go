@@ -1,6 +1,8 @@
 package lower
 
 import (
+	"bytes"
+	"errors"
 	"math"
 	"slices"
 	"strings"
@@ -190,6 +192,122 @@ func Route(p *queryplan.Plan, prof Profile, req RouteRequest) (MetricRoute, erro
 		}
 	}
 	return r, nil
+}
+
+// QueryRoute is the route of a metric query: the routes of the range and vector aggregations the handlers evaluate
+// for it, in operand order.
+type QueryRoute struct {
+	// Binary is a binary operation: the handlers translate it, then evaluate each aggregation operand as a query of
+	// its own over the same request (the operand's lowered text, its window and offset), and combine the answers.
+	Binary bool
+	// operands holds the routes of the aggregations, n of them: one for an aggregation at the root, one per
+	// aggregation operand of a binary operation (a number or vector(n) operand has none).
+	operands [2]MetricRoute
+	n        int
+}
+
+// Operands are the routes of the aggregations, in operand order.
+func (q *QueryRoute) Operands() []MetricRoute { return q.operands[:q.n] }
+
+// RouteQuery decides the route of a plan whose root is a range or vector aggregation (Route), or a binary operation
+// over such aggregations and numbers, for req. A binary operation the lowering does not write keeps the lowering's
+// delegation (set operators, a bool modifier, constant operands, an operand that is not an aggregation or a number);
+// one of its aggregation operands the rule does not route delegates it as "BinOp operand <what the operand's route
+// answers>" (the lowering's own name for an operand it cannot write is replaced by the operand's route reason). The
+// operands are lowered once, by the routes of their own; Plan lowers every operation the rule routes
+// (TestRouteQueryIsWhatTheLoweringLowers).
+func RouteQuery(p *queryplan.Plan, prof Profile, req RouteRequest) (QueryRoute, error) {
+	var out QueryRoute
+	b, ok := p.Root.(*queryplan.BinOp)
+	if !ok {
+		r, err := Route(p, prof, req)
+		out.operands[0], out.n = r, 1
+		return out, err
+	}
+	// The operation the lowering does not write keeps its delegation.
+	if err := binOpShape(b); err != nil {
+		return out, err
+	}
+	// The handlers shift a query's bounds by one offset: operands with offsets that differ, or only some with one,
+	// are not read that way (they take routes of their own, and the operands that share a stream selector may share
+	// its probes).
+	if k := p.Sem.OffsetKind; k == queryplan.OffsetMixed || k == queryplan.OffsetDistinct {
+		return out, routeError("BinOp", "mixed offsets")
+	}
+	out.Binary = true
+	var logs [2][]byte
+	for _, n := range [2]queryplan.Node{b.L, b.R} {
+		switch v := n.(type) {
+		case *queryplan.Scalar, *queryplan.VectorLit:
+			continue
+		case *queryplan.RangeAgg:
+			// absent_over_time has a route of its own, with its own steps.
+			if v.Op == logql.RangeAbsentOverTime {
+				return QueryRoute{}, routeError("BinOp", "absent operand")
+			}
+		case *queryplan.VectorAgg:
+		default:
+			return QueryRoute{}, routeError("BinOp", "operand "+Construct(n))
+		}
+		// The operand is routed as the query it is: the aggregation under the plan's inputs.
+		operand := *p
+		operand.Root = n
+		r, err := Route(&operand, prof, req)
+		if err != nil {
+			var nl *NotLoweredError
+			if errors.As(err, &nl) {
+				err = &NotLoweredError{Construct: "BinOp operand " + nl.Construct}
+			}
+			return QueryRoute{}, err
+		}
+		// Operands that read one log selector share the probe of the levels its lines hold (a window covered by an
+		// answer already cached is not probed again), so which operand's probe reaches VictoriaLogs depends on which
+		// is asked first: decided only when their windows are the same, and the probes the same requests. An instant
+		// request probes nothing.
+		if r.LevelProbe && r.Window != WindowInstant {
+			key := operandSelector(n)
+			for i := 0; i < out.n; i++ {
+				if out.operands[i].LevelProbe && bytes.Equal(logs[i], key) && !sameWindows(out.operands[i], r) {
+					return QueryRoute{}, routeError("BinOp", "shared level probe")
+				}
+			}
+			logs[out.n] = key
+		}
+		out.operands[out.n] = r
+		out.n++
+	}
+	// The handlers answer an aggregation against a number from its own stats; every other binary operation they
+	// evaluate operand by operand, aligning the bounds of each operand's request to the step after the offset moved
+	// them (a query on its own is not aligned again), so a moved bound that is not on the step's grid reads another
+	// window.
+	_, ls := b.L.(*queryplan.Scalar)
+	_, rs := b.R.(*queryplan.Scalar)
+	if off := out.operands[0].Offset; off != 0 && !req.Instant && !ls && !rs {
+		high := req.End.UnixNano() - int64(off)
+		if high%int64(req.Step) != 0 || (high-int64(req.Span))%int64(req.Step) != 0 {
+			return QueryRoute{}, routeError("BinOp", "offset step")
+		}
+	}
+	return out, nil
+}
+
+// operandSelector is the canonical key of the log selector of the range aggregation under the aggregation n.
+func operandSelector(n queryplan.Node) []byte {
+	for {
+		switch v := n.(type) {
+		case *queryplan.VectorAgg:
+			n = v.In
+			continue
+		case *queryplan.RangeAgg:
+			return v.In.Props().Key
+		}
+		return nil
+	}
+}
+
+// sameWindows reports whether two operands read the same windows of VictoriaLogs' stats.
+func sameWindows(a, b MetricRoute) bool {
+	return a.Window == b.Window && a.Range == b.Range && a.Bucket == b.Bucket && a.Offset == b.Offset
 }
 
 // routeVector is the lowering of the vector aggregations va over rng up to their stats: the text it writes and the

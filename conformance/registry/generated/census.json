@@ -1761,6 +1761,7 @@
     "internal/queryplan/lower/reserved_field_case_test.go | semantics/reserved-field-name-case-outbound",
     "internal/queryplan/lower/reserved_field_test.go | semantics/translator-writes-reserved-field-names",
     "internal/queryplan/lower/route_bench_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/route_query_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/route_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/series_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,9 +75,14 @@ func routeTextDelegation(p *queryplan.Plan, what string) error {
 
 // offsetReadsAsPlan reports whether the handlers' offset extraction finds the plan's offset clause, and no other.
 func offsetReadsAsPlan(q string, p *queryplan.Plan) bool {
+	return offsetReadsAs(q, map[bool]int{false: 0, true: 1}[p.Sem.OffsetKind != queryplan.OffsetNone])
+}
+
+// offsetReadsAs reports whether the handlers' offset extraction reads q without error and finds the n offset clauses
+// the plan has.
+func offsetReadsAs(q string, n int) bool {
 	_, _, err := extractLogQLOffset(q)
-	found := len(logqlOffsetRE.FindAllStringIndex(q, -1))
-	return err == nil && found == map[bool]int{false: 0, true: 1}[p.Sem.OffsetKind != queryplan.OffsetNone]
+	return err == nil && len(logqlOffsetRE.FindAllStringIndex(q, -1)) == n
 }
 
 // routeLevelProbeShape is the query shape of the detected_level presence probe.
@@ -142,7 +148,7 @@ func metricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool) (route
 	return predictMetricRoute(q, p, rp, data, nil)
 }
 
-// predictMetricRoute is metricRoute with the route lower.Route decided changed by mutate first (nil changes
+// predictMetricRoute is metricRoute with the route lower.RouteQuery decided changed by mutate first (nil changes
 // nothing): the mutation test changes one decision to show the harness sees it.
 func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool, mutate func(*lower.MetricRoute)) (routeRecord, error) {
 	rangeDur := firstRange(p.Root)
@@ -158,9 +164,11 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 	}
 	// The handlers read the offset clause with a regular expression over the query text: a text with the
 	// expression's shape where the plan has no offset (a line filter), or whose range brackets it counts another
-	// way, is read wrong, and a line filter the clause's removal cuts is not the plan's.
-	if !offsetReadsAsPlan(q, p) {
-		return routeRecord{}, routeTextDelegation(p, "offset text")
+	// way, is read wrong, and a line filter the clause's removal cuts is not the plan's. A binary operation hands
+	// each operand's text to the handlers again, so the operands' texts are read, each against its own offset.
+	texts, err := routeOperandTexts(q, p)
+	if err != nil {
+		return routeRecord{}, err
 	}
 	// The handlers send the string translator's filter on a label called _time, _stream, _stream_id or _msg
 	// (semantics/translator-writes-reserved-field-names): the plan's stream filter is the fix, not their request.
@@ -168,24 +176,15 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 		return routeRecord{}, routeTextDelegation(p, "reserved field")
 	}
 	req := lower.RouteRequest{Instant: rp.instant, End: routeEnd}
-	var start, end time.Time
 	sent := time.Duration(0)
 	if !rp.instant {
 		// The step as runRoute sends it, then as Loki evaluates it: in whole milliseconds.
 		sent, _ = parsePositiveStepDuration(strconv.FormatFloat(rp.step(rangeDur).Seconds(), 'f', -1, 64))
 		req.Step, req.Span = sent.Truncate(time.Millisecond), rp.window(rangeDur)
 	}
-	route, err := lower.Route(p, routeLoweringProfile(), req)
+	route, err := lower.RouteQuery(p, routeLoweringProfile(), req)
 	if err != nil {
 		return routeRecord{}, err
-	}
-	if mutate != nil {
-		mutate(&route)
-	}
-	if !rp.instant {
-		// The handlers read the windows the offset earlier (and stamp the samples at the times asked for).
-		end = routeEnd.Add(-route.Offset)
-		start = end.Add(-rp.window(rangeDur))
 	}
 	// Loki's resolution limit, checked before anything else.
 	if !rp.instant && req.Span/sent > lokiMaxPointsPerSeries {
@@ -193,11 +192,108 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 	}
 	out := routeRecord{Status: 200, queryShape: true}
 	steps := []string{"operation prefer_working_parser bypass", "operation translate_query translated"}
+	if route.Binary {
+		// The operation is translated once for the whole query and read again for each operand.
+		steps = append(steps, "operation translate_query cache_hit")
+	}
+	if !rp.instant {
+		steps = append(steps, "operation query_steps_eligibility disabled")
+	}
+	for i, operand := range route.Operands() {
+		if mutate != nil {
+			mutate(&operand)
+		}
+		op := texts[i]
+		calls, opSteps, err := routeOperandRun(op.text, op.plan, operand, rp, data, req)
+		if err != nil {
+			return routeRecord{}, err
+		}
+		out.Calls, steps = append(out.Calls, calls...), append(steps, opSteps...)
+	}
+	out.Calls, out.Steps = uniqueSorted(out.Calls), uniqueSorted(steps)
+	return out, nil
+}
+
+// routeOperandText is the query a route operand is evaluated as: the text the handlers read and the plan of the
+// aggregation it holds.
+type routeOperandText struct {
+	text string
+	plan *queryplan.Plan
+}
+
+// routeOperandTexts are the queries the handlers evaluate for p: the query itself, or for a binary operation the
+// text of each aggregation operand as the handlers hand it on (the operand's own printed form). A text the
+// handlers' offset reading takes another way than the plan (a line filter shaped like a clause, brackets it counts
+// otherwise) is delegated as "route offset text", and a vector(n) operand the handlers do not read as one (the
+// lowering's own text screen) under that screen's name.
+func routeOperandTexts(q string, p *queryplan.Plan) ([]routeOperandText, error) {
+	b, ok := p.Root.(*queryplan.BinOp)
+	if !ok {
+		if !offsetReadsAsPlan(q, p) {
+			return nil, routeTextDelegation(p, "offset text")
+		}
+		return []routeOperandText{{q, p}}, nil
+	}
+	expr, msg := logql.ValidateLogQLExpr(q)
+	bin, isBin := expr.(*logql.BinOpExpr)
+	if msg != "" || !isBin {
+		return nil, fmt.Errorf("route: %q does not parse as the binary operation its plan is", q)
+	}
+	// The offset is read once, from the whole text, whatever the operands carry; operands the rule does not route
+	// for their offsets (mixed or distinct) are read another way, which the rule names.
+	if k := p.Sem.OffsetKind; k != queryplan.OffsetMixed && k != queryplan.OffsetDistinct && !offsetReadsAs(q, routeOffsets(p.Root)) {
+		return nil, routeTextDelegation(p, "offset text")
+	}
+	var out []routeOperandText
+	for i, n := range [2]queryplan.Node{b.L, b.R} {
+		text := [2]string{bin.Left.String(), bin.Right.String()}[i]
+		switch n.(type) {
+		case *queryplan.Scalar:
+			continue
+		case *queryplan.VectorLit:
+			// The handlers answer a vector(n) from its constant only when they read its text as one.
+			if err := lower.ScreenText(q, p); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		operand := *p
+		operand.Root = n
+		out = append(out, routeOperandText{text, &operand})
+	}
+	return out, nil
+}
+
+// routeOffsets is the number of range aggregations under n that carry an offset clause.
+func routeOffsets(n queryplan.Node) int {
+	switch v := n.(type) {
+	case *queryplan.RangeAgg:
+		if v.HasOffset {
+			return 1
+		}
+	case *queryplan.VectorAgg:
+		return routeOffsets(v.In)
+	case *queryplan.BinOp:
+		return routeOffsets(v.L) + routeOffsets(v.R)
+	}
+	return 0
+}
+
+// routeOperandRun is the VictoriaLogs requests and the route steps the handlers record for one aggregation (the
+// query, or one operand of a binary operation) on route, besides the steps every request records.
+func routeOperandRun(q string, p *queryplan.Plan, route lower.MetricRoute, rp routeProfile, data bool, req lower.RouteRequest) (calls, steps []string, err error) {
+	rangeDur := firstRange(p.Root)
+	var start, end time.Time
+	if !rp.instant {
+		// The handlers read the windows the offset earlier (and stamp the samples at the times asked for).
+		end = routeEnd.Add(-route.Offset)
+		start = end.Add(-rp.window(rangeDur))
+	}
 	if rp.instant {
 		t := routeEnd.Add(-route.Offset)
 		text, err := routeStatsQuery(q, route, "", time.Time{}, 0)
 		if err != nil {
-			return routeRecord{}, err
+			return nil, nil, err
 		}
 		form := url.Values{
 			"query":   {routeQueryShape(text)},
@@ -206,15 +302,12 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 			"time":    {nanosToVLTimestamp(t.UnixNano())},
 			"timeout": {routeTimeout},
 		}
-		out.Calls = []string{"/select/logsql/stats_query?" + form.Encode()}
 		outcome := "no_results"
 		if data {
 			outcome = routeLabelsOutcome(p)
 		}
-		out.Steps = uniqueSorted(append(steps, "operation translate_stats_response_labels "+outcome))
-		return out, nil
+		return []string{"/select/logsql/stats_query?" + form.Encode()}, []string{"operation translate_stats_response_labels " + outcome}, nil
 	}
-	steps = append(steps, "operation query_steps_eligibility disabled")
 	params := url.Values{"timeout": {routeTimeout}}
 	var fetchStart time.Time
 	var phase string
@@ -250,16 +343,15 @@ func predictMetricRoute(q string, p *queryplan.Plan, rp routeProfile, data bool,
 	}
 	text, err := routeStatsQuery(q, route, phase, start, req.Step)
 	if err != nil {
-		return routeRecord{}, err
+		return nil, nil, err
 	}
 	params.Set("query", routeQueryShape(text))
-	out.Calls = append(out.Calls, "/select/logsql/stats_query_range?"+params.Encode())
+	calls = append(calls, "/select/logsql/stats_query_range?"+params.Encode())
 	if route.LevelProbe {
 		probe := url.Values{"query": {routeShapeFilters(route.Text) + routeLevelProbeShape}, "start": {routeTime(fetchStart)}, "end": {routeTime(end.Add(2))}, "timeout": {routeTimeout}}
-		out.Calls = append(out.Calls, "/select/logsql/query?"+probe.Encode())
+		calls = append(calls, "/select/logsql/query?"+probe.Encode())
 	}
-	out.Calls, out.Steps = uniqueSorted(out.Calls), uniqueSorted(steps)
-	return out, nil
+	return calls, steps, nil
 }
 
 // routeStatsQuery is the stats request of route for the query q, as far as its shape goes: the lowered text with the
@@ -350,7 +442,8 @@ func routeStatsText(q string, route lower.MetricRoute, phase string, start time.
 // routeLabelsOutcome is how the instant stats answer's labels are rewritten (translate_stats_response_labels) when
 // the stub answers its series ({app, level}).
 func routeLabelsOutcome(p *queryplan.Plan) string {
-	if v, ok := p.Root.(*queryplan.VectorAgg); ok && v.By != nil && !v.By.Without && len(v.By.Labels) == 1 && v.By.Labels[0] == "level" {
+	// The stub's series carry level, which a grouping by level keeps as it is.
+	if v, ok := p.Root.(*queryplan.VectorAgg); ok && v.By != nil && !v.By.Without && slices.Contains(v.By.Labels, "level") {
 		return "noop"
 	}
 	return "translated"
@@ -433,6 +526,7 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 	rows = append(rows, routeRangeFunctionRows(t, 8)...)
 	rows = append(rows, routeVectorUnwrapRows(t, 6)...)
 	rows = append(rows, routeOffsetRows(t, 6)...)
+	rows = append(rows, routeBinaryRows(t, 6)...)
 	native := func(mutate func(*lower.MetricRoute)) routePrediction {
 		return func(q string, p *queryplan.Plan, rp routeProfile, data bool, _ routeRecord) (routeRecord, error) {
 			return predictMetricRoute(q, p, rp, data, mutate)
@@ -1162,3 +1256,278 @@ func TestMetricRouteOffsetBounds(t *testing.T) {
 // offsetEarliestNs is the earliest time an offset may move a bound to, in Unix nanoseconds (the route rule's bound,
 // spelled out here to hold it).
 const offsetEarliestNs = int64(1e18)
+
+// routeBinaryRows are up to n corpus rows of each kind of binary operation the rule routes: an aggregation against a
+// number, against vector(n), and two aggregations, with and without a vector matching modifier, or an offset.
+func routeBinaryRows(t *testing.T, n int) []routeRow {
+	t.Helper()
+	var out []routeRow
+	count := map[string]int{}
+	for _, row := range routeRows(t, filepath.Join("..", ".."), 0) {
+		b, ok := row.plan.Root.(*queryplan.BinOp)
+		if !ok {
+			continue
+		}
+		if q, err := lower.RouteQuery(row.plan, routeLoweringProfile(), lower.RouteRequest{Instant: true, End: routeEnd}); err != nil || len(q.Operands()) == 0 {
+			continue
+		}
+		kind := "two aggregations"
+		switch {
+		case b.Match != nil && b.Match.Card != "":
+			kind = "matched"
+		case routeLiteral(b.L) || routeLiteral(b.R):
+			kind = "number"
+			if _, ok := b.L.(*queryplan.VectorLit); ok {
+				kind = "vector(n)"
+			} else if _, ok := b.R.(*queryplan.VectorLit); ok {
+				kind = "vector(n)"
+			}
+		}
+		if row.plan.Sem.OffsetKind != queryplan.OffsetNone {
+			kind += " offset"
+		}
+		if count[kind] == n {
+			continue
+		}
+		count[kind]++
+		out = append(out, row)
+	}
+	for _, k := range []string{"number", "vector(n)", "two aggregations", "matched"} {
+		if count[k] == 0 {
+			t.Fatalf("no corpus row of kind %s", k)
+		}
+	}
+	return out
+}
+
+// routeLiteral reports whether n is a number or vector(n).
+func routeLiteral(n queryplan.Node) bool {
+	switch n.(type) {
+	case *queryplan.Scalar, *queryplan.VectorLit:
+		return true
+	}
+	return false
+}
+
+// The binary operations the corpus does not hold: each is held to the handlers' route on every request profile, or,
+// where the rule delegates it, to the name of its delegation and to no mismatch. A binary operation is read as its
+// operands are: the handlers translate it, then evaluate each aggregation operand as a query of its own over the same
+// request, so the route is the operands' routes together, a number or vector(n) adds none, and operands that read one
+// log selector over different windows share a probe whose request depends on which is asked first (delegated on a
+// range request; an instant request probes nothing, so `partly` rows are routed there and delegated elsewhere).
+//
+// conformance: architecture-syntax-package-layering
+func TestMetricRouteBinaryEdges(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	for _, c := range []struct {
+		q, delegated string
+		partly       bool
+	}{
+		// every operator against a number on either side, counts, rates and byte functions, every window kind
+		{q: `count_over_time({app="bi"}[1m]) > 0`},
+		{q: `rate({app="bi"}[5m]) >= 0.5`},
+		{q: `bytes_over_time({app="bi"}[90s]) < 1e6`},
+		{q: `bytes_rate({app="bi"}[7m]) <= 100`},
+		{q: `count_over_time({app="bi"}[1m]) == 0`},
+		{q: `count_over_time({app="bi"}[1m]) != 1`},
+		{q: `rate({app="bi"}[5m]) + 1`},
+		{q: `rate({app="bi"}[5m]) - 1`},
+		{q: `rate({app="bi"}[5m]) * 60`},
+		{q: `rate({app="bi"}[5m]) / 60`},
+		{q: `rate({app="bi"}[5m]) % 7`},
+		{q: `rate({app="bi"}[5m]) ^ 2`},
+		{q: `2 ^ rate({app="bi"}[5m])`},
+		{q: `100 * rate({app="bi"}[5m])`},
+		{q: `1 - rate({app="bi"}[5m])`},
+		{q: `rate({app="bi"}[5m]) * -1`},
+		{q: `rate({app="bi"}[5m]) * 0.5`},
+		{q: `rate({app="bi"}[5m]) > 1e3`},
+		// vector aggregations against a number, and the groupings they keep
+		{q: `sum(rate({app="bi"}[5m])) / 60`},
+		{q: `sum by (pod) (count_over_time({app="bi"}[1m])) > 10`},
+		{q: `sum by (level) (count_over_time({app="bi"}[1m])) > 0`},
+		{q: `sum by (app, level) (count_over_time({app="bi"}[1m])) > 0`},
+		{q: `sum by (detected_level) (rate({app="bi"}[5m])) * 60`},
+		{q: `avg by () (rate({app="bi"}[5m])) > 1`},
+		{q: `max by (pod, zone) (bytes_over_time({app="bi"}[1m])) / 1024`},
+		{q: `min(count_over_time({app="bi"} |= "x" != "y" [1m])) > 0`},
+		{q: `count(rate({app="bi"}[5m])) without (pod) * 100`},
+		{q: `sum by (zone) (sum by (pod, zone) (count_over_time({app="bi"}[1m]))) > 1`},
+		// a without clause on an operand is folded by the handlers per operand
+		{q: `sum without (pod) (count_over_time({app="bi"}[1m])) / 2`},
+		{q: `avg without (pod) (rate({app="bi"}[5m])) > 1`},
+		{q: `sum without (pod) (count_over_time({app="bi"}[1m])) / sum without (pod) (count_over_time({app="bi"}[5m]))`, partly: true, delegated: "BinOp route shared level probe"},
+		{q: `sum without (pod) (count_over_time({app="bi"}[1m])) / sum without (pod) (count_over_time({app="bj"}[5m]))`},
+		{q: `sum without (pod) (count_over_time({app="bi"}[1m])) / sum by (pod) (count_over_time({app="bj"}[5m]))`},
+		// vector(n) on either side, with and without a matching modifier
+		{q: `sum by (app) (rate({app="bi"}[5m])) + on() vector(0)`},
+		{q: `vector(2) * sum by (app) (rate({app="bi"}[5m]))`},
+		{q: `rate({app="bi"}[5m]) / ignoring(pod) vector(2)`},
+		{q: `sum(rate({app="bi"}[5m])) > on() vector(0.5)`},
+		{q: `vector(1) - sum(count_over_time({app="bi"}[1m]))`},
+		// two aggregations: ranges equal to, under and over each other, so the one request reads each its own way
+		{q: `sum by (pod) (rate({app="bi"}[5m])) / sum by (pod) (rate({app="bj"}[5m]))`},
+		{q: `sum by (pod) (rate({app="bi"}[5m])) / sum by (pod) (rate({app="bj"}[1m]))`},
+		{q: `sum by (pod) (rate({app="bi"}[1m])) / sum by (pod) (rate({app="bj"}[15m]))`},
+		{q: `rate({app="bi"}[5m]) - rate({app="bj"}[90s])`},
+		{q: `count_over_time({app="bi"}[1m]) / bytes_over_time({app="bj"}[7m])`},
+		{q: `sum(rate({app="bi"}[5m])) / sum(rate({app="bj"}[5m]))`},
+		{q: `sum by (app) (rate({app="bi",env="a"}[5m])) / sum by (app) (rate({app="bi",env="b"}[5m]))`},
+		{q: `sum by (pod) (rate({app="bi"}[5m])) / sum by (pod) (rate({app="bi"}[5m]))`},
+		// the same selector, the same windows: one probe, asked twice
+		{q: `rate({app="bi"}[5m]) / bytes_rate({app="bi"}[5m])`},
+		{q: `rate({app="bi"}[5m]) - rate({app="bi"}[5m])`},
+		// the same selector over windows that differ shares a probe: delegated on a range request
+		{q: `sum(rate({app="bi"}[5m])) / sum(rate({app="bi"}[1m]))`, partly: true, delegated: "BinOp route shared level probe"},
+		{q: `rate({app="bi"}[5m]) / rate({app="bi"}[90s])`, partly: true, delegated: "BinOp route shared level probe"},
+		// ... except where no operand probes, or the selectors differ
+		{q: `sum by (pod) (rate({app="bi"}[5m])) / sum by (pod) (rate({app="bi"}[1m]))`},
+		{q: `sum(rate({app="bi"}[5m])) / sum(rate({app="bi"} |= "x" [1m]))`},
+		// vector matching modifiers
+		{q: `rate({app="bi",pod="p1"}[5m]) / ignoring(pod) rate({app="bi",pod="p2"}[5m])`},
+		{q: `sum by (app, pod) (count_over_time({app="bi"}[1m])) * on(app) group_left(level) sum by (app, level) (count_over_time({app="bj"}[1m]))`},
+		{q: `sum by (app, level) (count_over_time({app="bi"}[1m])) * on(app) group_right sum by (app, pod) (count_over_time({app="bj"}[1m]))`},
+		{q: `sum by (pod) (rate({app="bi"}[5m])) / on(pod) sum by (pod) (rate({app="bj"}[5m]))`},
+		// functions over an unwrapped label, absent_over_time, on either side
+		{q: `sum_over_time({app="bi"} | unwrap n [1m]) / 60`},
+		{q: `max by (pod) (max_over_time({app="bi"} | unwrap duration(n) [5m])) > 1`},
+		{q: `sum by (pod) (sum_over_time({app="bi"} | unwrap n [5m])) / sum by (pod) (count_over_time({app="bi"}[5m]))`},
+		{q: `avg_over_time({app="bi"} | unwrap n [5m]) by (pod) * 2`},
+		{q: `absent_over_time({app="bi"}[5m]) + 1`, delegated: "BinOp route absent operand"},
+		{q: `2 * absent_over_time({app="bi"}[5m] offset 1h)`, delegated: "BinOp route absent operand"},
+		{q: `sum by (pod) (rate({app="bi"}[5m])) / sum by (pod) (absent_over_time({app="bi"}[5m]))`, delegated: "BinOp operand VectorAgg route absent operand"},
+		// an offset: one for the whole query
+		{q: `rate({app="bi"}[5m] offset 1h) > 1`},
+		{q: `rate({app="bi"}[5m] offset -1h) * 2`},
+		// an offset the step does not divide: an aggregation against a number is read from its own stats, any other
+		// operation aligns the moved bounds to the step, which only the profiles whose step divides the offset leave as
+		// they are
+		{q: `count_over_time({app="bi"}[1m] offset 5m) > 1`},
+		{q: `sum by (pod) (sum_over_time({app="bi"} | unwrap n [45s] offset 2m)) * 2`},
+		{q: `2 / rate({app="bi"}[7m] offset 90s)`},
+		{q: `sum by (pod) (count_over_time({app="bi"}[1m] offset 5m)) / on() vector(2)`, partly: true, delegated: "BinOp route offset step"},
+		{q: `count_over_time({app="bi"}[1m] offset 5m) / count_over_time({app="bj"}[1m] offset 5m)`, partly: true, delegated: "BinOp route offset step"},
+		{q: `rate({app="bi"}[7m] offset 90s) - rate({app="bj"}[7m] offset 90s)`, partly: true, delegated: "BinOp route offset step"},
+		{q: `sum by (pod) (rate({app="bi"}[1m] offset 1h)) / on() vector(2)`},
+		{q: `sum by (pod) (rate({app="bi"}[5m] offset 1h)) / sum by (pod) (rate({app="bj"}[1m] offset 1h))`},
+		{q: `rate({app="bi"}[5m] offset 1h) / rate({app="bj"}[5m] offset 1h)`},
+		{q: `rate({app="bi"}[5m] offset 1h) / rate({app="bj"}[5m])`, delegated: "BinOp route mixed offsets"},
+		{q: `rate({app="bi"}[5m]) / rate({app="bj"}[5m] offset 1h)`, delegated: "BinOp route mixed offsets"},
+		{q: `rate({app="bi"}[5m] offset 1h) / rate({app="bj"}[5m] offset 2h)`, delegated: "BinOp route mixed offsets"},
+		{q: `rate({app="bi"}[5m] offset 1h) / rate({app="bi"}[5m])`, delegated: "BinOp route mixed offsets"},
+		{q: `count_over_time({app="bi"}[1m] offset 300000h) > 1`, delegated: "BinOp operand RangeAgg route offset bounds"},
+		{q: `sum by (pod) (rate({app="bi"}[1m] offset -2200000h)) > 1`, delegated: "BinOp operand VectorAgg route offset bounds"},
+		// an operand the rule does not route delegates the operation, with the operand's reason
+		{q: `rate({app="bi"} | json [5m]) > 1`, delegated: "BinOp operand RangeAgg route pipeline"},
+		{q: `sum(rate({app="bi"} | logfmt [5m])) / 2`, delegated: "BinOp operand VectorAgg route pipeline"},
+		{q: `stddev(rate({app="bi"}[5m])) / 2`, delegated: "BinOp operand VectorAgg route evaluated level"},
+		{q: `sum(rate({app="bi"} | unwrap n [5m])) / 2`, delegated: "BinOp operand VectorAgg route unwrap rate"},
+		{q: `quantile_over_time(0.5, {app="bi"} | unwrap n [5m]) > 1`, delegated: "BinOp operand RangeAgg route unwrap quantile"},
+		{q: `rate({app="bi"}[5m]) / sum(rate({app="bj"} | unwrap n [5m]))`, delegated: "BinOp operand VectorAgg route unwrap rate"},
+		{q: `count_over_time({app="bi"} | detected_level="error" [1m]) > 1`, delegated: "BinOp operand RangeAgg route level filter"},
+		{q: `sum without () (count_over_time({app="bi"}[1m])) / 2`, delegated: "BinOp operand VectorAgg without empty"},
+		{q: `rate({app="bi"}[1001ms]) > 1`, partly: true, delegated: "BinOp operand RangeAgg route no bucket grid"},
+		// what the lowering leaves to the string translator keeps its name
+		{q: `rate({app="bi"}[5m]) and rate({app="bj"}[5m])`, delegated: "BinOp set operator"},
+		{q: `rate({app="bi"}[5m]) or on() vector(1)`, delegated: "BinOp set operator"},
+		{q: `rate({app="bi"}[5m]) > bool 1`, delegated: "BinOp bool"},
+		{q: `1 + 2`, delegated: "BinOp scalar operands"},
+		{q: `vector(1) + 2`, delegated: "BinOp constant operands"},
+		{q: `label_replace(rate({app="bi"}[5m]), "x", "$1", "app", "(.*)") + 1`, delegated: "BinOp operand LabelReplace"},
+		{q: `topk(1, rate({app="bi"}[5m])) + 1`, delegated: "BinOp operand Rank"},
+		{q: `(rate({app="bi"}[5m]) + 1) / 2`, delegated: "BinOp operand BinOp"},
+		// the handlers read the text: a comment or keyword they rewrite, a vector(n) spelled so that they search for it,
+		// a line filter that looks like a clause
+		{q: `rate({app="bi"}[5m]) + 1 # last hour`, delegated: "BinOp route rewrite"},
+		{q: `rate({app="bi"}[5m]) + 1 # c`, delegated: "BinOp route rewrite"},
+		{q: `sum(rate({app="bi"}[5m])) + vector (1)`, delegated: "BinOp operand spelling"},
+		{q: `rate({app="bi"} |= "] offset 5m" [5m]) > 1`, delegated: "BinOp route offset text"},
+	} {
+		t.Run(c.q, func(t *testing.T) {
+			row := routeRowOf(t, c.q)
+			sec, problems := runRouteParity(t, []routeRow{row}, nativeRoute)
+			if sec.Mismatches != 0 {
+				t.Fatalf("%+v\n%s", sec, joinFirstRoute(problems, 4))
+			}
+			switch {
+			case c.delegated == "" && sec.Native != sec.Runs:
+				t.Fatalf("routed %d of %d runs, delegated %v", sec.Native, sec.Runs, sec.DelegatedByConstruct)
+			case c.delegated != "" && c.partly && (sec.Native == 0 || sec.DelegatedByConstruct[c.delegated] == 0 || sec.Native+sec.DelegatedByConstruct[c.delegated] != sec.Runs):
+				t.Fatalf("want some runs routed and the rest delegated as %q: native %d, %+v", c.delegated, sec.Native, sec.DelegatedByConstruct)
+			case c.delegated != "" && !c.partly && (sec.Native != 0 || sec.DelegatedByConstruct[c.delegated] != sec.Runs):
+				t.Fatalf("want every run delegated as %q: native %d, %+v", c.delegated, sec.Native, sec.DelegatedByConstruct)
+			}
+		})
+	}
+}
+
+// The binary route is held by the harness: a prediction that drops an operand's requests, adds one, or forgets the
+// translation the operation reads again, mispredicts every run of the binary rows it changes; the unchanged rule
+// predicts them all.
+//
+// conformance: architecture-syntax-package-layering
+func TestMetricRouteCatchesAWrongBinaryRoute(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	var rows []routeRow
+	for _, row := range routeBinaryRows(t, 8) {
+		if q, err := lower.RouteQuery(row.plan, routeLoweringProfile(), lower.RouteRequest{Instant: true, End: routeEnd}); err == nil && len(q.Operands()) == 2 {
+			rows = append(rows, row)
+		}
+	}
+	if len(rows) == 0 {
+		t.Fatal("no binary row with two aggregation operands")
+	}
+	predict := func(change func(*routeRecord)) routePrediction {
+		return func(q string, p *queryplan.Plan, rp routeProfile, data bool, _ routeRecord) (routeRecord, error) {
+			r, err := predictMetricRoute(q, p, rp, data, nil)
+			if err == nil && change != nil {
+				change(&r)
+			}
+			return r, err
+		}
+	}
+	if sec, problems := runRouteParity(t, rows, predict(nil)); sec.Native == 0 || sec.Mismatches != 0 {
+		t.Fatalf("the rule: %+v\n%s", sec, joinFirstRoute(problems, 5))
+	}
+	for _, c := range []struct {
+		name   string
+		change func(*routeRecord)
+	}{
+		{"an operand's requests dropped", func(r *routeRecord) {
+			if len(r.Calls) > 1 {
+				r.Calls = r.Calls[:1]
+			}
+		}},
+		{"the translation read again forgotten", func(r *routeRecord) {
+			r.Steps = slices.DeleteFunc(slices.Clone(r.Steps), func(s string) bool { return s == "operation translate_query cache_hit" })
+		}},
+		{"a request more", func(r *routeRecord) {
+			r.Calls = append(slices.Clone(r.Calls), "/select/logsql/stats_query?query=%2A")
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			// An operand whose request the other repeats (the same operand twice) has one request to drop.
+			want := 0
+			for _, row := range rows {
+				for _, rp := range routeProfiles() {
+					for _, data := range []bool{true, false} {
+						base, err := predictMetricRoute(row.q, row.plan, rp, data, nil)
+						if err != nil {
+							continue
+						}
+						changed := base
+						changed.Calls, changed.Steps = slices.Clone(base.Calls), slices.Clone(base.Steps)
+						c.change(&changed)
+						if !changed.equal(base) {
+							want++
+						}
+					}
+				}
+			}
+			bad, _ := runRouteParity(t, rows, predict(c.change))
+			if want == 0 || bad.Mismatches != want {
+				t.Fatalf("a wrong route went unseen: %d predictions changed, %d runs mispredicted (%+v)", want, bad.Mismatches, bad)
+			}
+		})
+	}
+}

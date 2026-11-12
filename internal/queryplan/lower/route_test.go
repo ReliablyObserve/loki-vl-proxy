@@ -1,6 +1,7 @@
 package lower
 
 import (
+	"bytes"
 	"errors"
 	"math"
 	"math/big"
@@ -338,51 +339,109 @@ func FuzzRoute(f *testing.F) {
 	f.Add(`count_over_time({app="a"}[5m] offset 175200h)`, int64(time.Minute), int64(time.Hour), int64(1767225600e9), false)
 	f.Add(`count_over_time({app="a"}[5m] offset -175200h)`, int64(0), int64(0), int64(math.MaxInt64-3600e9), true)
 	f.Add(`absent_over_time({app="a"}[5m] offset 0s)`, int64(0), int64(0), int64(0), true)
+	// binary operations: each aggregation operand is routed as the query it is, under one request
+	f.Add(`sum by (level) (count_over_time({app="a"}[5m])) > 0`, int64(time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`rate({app="a"}[5m]) / rate({app="b"}[1m])`, int64(5*time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`2 * rate({app="a"}[5m])`, int64(0), int64(0), int64(1767225600e9), true)
+	f.Add(`sum by (app) (rate({app="a"}[5m])) + on() vector(0)`, int64(15*time.Minute), int64(24*time.Hour), int64(1767225600e9), false)
+	f.Add(`rate({app="a"}[5m]) - bytes_rate({app="a"}[1m])`, int64(5*time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`rate({app="a"}[5m] offset 1h) / rate({app="b"}[5m] offset 1h)`, int64(time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`rate({app="a"}[5m] offset 1h) / rate({app="b"}[5m])`, int64(0), int64(0), int64(1767225600e9), true)
+	f.Add(`count_over_time({app="a"}[5m] offset -175200h) % 2`, int64(0), int64(0), int64(math.MaxInt64-3600e9), true)
+	f.Add(`sum(sum_over_time({app="a"} | unwrap n [5m])) / sum(rate({app="a"}[5m]))`, int64(time.Minute), int64(time.Hour), int64(1767225600e9), false)
+	f.Add(`sum without (pod) (count_over_time({app="a"}[1m])) / 2`, int64(time.Minute), int64(time.Hour), int64(1767225600e9), false)
 	f.Fuzz(func(t *testing.T, q string, step, span, end int64, instant bool) {
 		if len(q) > 512 {
 			return
 		}
-		p := routePlan(q)
+		p := routeQueryPlan(q)
 		if p == nil {
 			return
 		}
 		req := RouteRequest{Instant: instant, Step: time.Duration(step), Span: time.Duration(span), End: time.Unix(0, end)}
-		r, err := Route(p, Profile{}, req)
+		got, err := RouteQuery(p, Profile{}, req)
 		if err != nil {
 			if !errors.Is(err, ErrNotLowered) {
 				t.Fatalf("%q: %v is not a delegation", q, err)
 			}
 			return
 		}
-		switch {
-		case instant && r.Window != WindowInstant:
-			t.Fatalf("%q: instant routed as %d", q, r.Window)
-		case !instant && (r.Bucket < time.Millisecond || r.Window == WindowInstant):
-			t.Fatalf("%q: range routed as %d with bucket %v", q, r.Window, r.Bucket)
-		case !instant && (r.Window == WindowTumbling) != (r.Range == req.Step):
-			t.Fatalf("%q: range %v step %v routed as %d", q, r.Range, req.Step, r.Window)
-		case r.Offset != rangeOf(p).Offset:
-			t.Fatalf("%q: offset %v", q, r.Offset)
-		case r.Offset != 0 && !offsetFits(r.Offset, r.Range, req):
-			t.Fatalf("%q: offset %v routed with end %v, span %v, instant %v", q, r.Offset, req.End, req.Span, instant)
-		case r.Text == "":
-			t.Fatalf("%q: routed without a query", q)
-		case r.Counted != unwrapsLabel(p):
-			t.Fatalf("%q: counted %v", q, r.Counted)
-		case r.StepBuckets && (!r.Counted || r.Window != WindowPhase):
-			t.Fatalf("%q: step buckets on window %d, counted %v", q, r.Window, r.Counted)
-		case r.Counted && r.Op != logql.RangeSumOverTime && r.Op != logql.RangeAvgOverTime && r.Op != logql.RangeMinOverTime && r.Op != logql.RangeMaxOverTime:
-			t.Fatalf("%q: counted %s", q, r.Op)
-		case r.GroupPushed && (!r.Counted || r.Window != WindowBuckets || r.Op != logql.RangeMaxOverTime && r.Op != logql.RangeMinOverTime):
-			t.Fatalf("%q: group pushed on window %d, counted %v, %s", q, r.Window, r.Counted, r.Op)
-		case r.SumAll && r.Counted && r.Op != logql.RangeSumOverTime:
-			t.Fatalf("%q: sum of all streams over %s", q, r.Op)
-		case r.Fold != FoldNone && !strings.Contains(strings.ToLower(q), "without"):
-			t.Fatalf("%q: folded as %d without a clause", q, r.Fold)
-		case r.Fold == FoldPushed && r.Window != WindowTumbling, r.Fold == FoldCut && r.Window != WindowBuckets && r.Window != WindowPhase:
-			t.Fatalf("%q: fold %d on window %d", q, r.Fold, r.Window)
+		bin, isBin := p.Root.(*queryplan.BinOp)
+		if isBin != got.Binary {
+			t.Fatalf("%q: binary %v", q, got.Binary)
+		}
+		if !isBin {
+			checkRouted(t, q, p, got.Operands()[0], req)
+			return
+		}
+		// A routed binary operation is one the lowering writes, and holds one route per aggregation operand, which
+		// is the route of the operand alone; operands that share a probe read the same windows.
+		if _, err := Plan(p, Profile{}); err != nil {
+			t.Fatalf("%q: routed, but Plan: %v", q, err)
+		}
+		if k := p.Sem.OffsetKind; k == queryplan.OffsetMixed || k == queryplan.OffsetDistinct {
+			t.Fatalf("%q: routed with offsets of kind %d", q, k)
+		}
+		ops := got.Operands()
+		i := 0
+		for _, n := range [2]queryplan.Node{bin.L, bin.R} {
+			switch n.(type) {
+			case *queryplan.RangeAgg, *queryplan.VectorAgg:
+			default:
+				continue
+			}
+			operand := *p
+			operand.Root = n
+			alone, err := Route(&operand, Profile{}, req)
+			if err != nil || i >= len(ops) || ops[i] != alone {
+				t.Fatalf("%q: operand %d routed as %+v, alone %+v, %v", q, i, ops, alone, err)
+			}
+			checkRouted(t, q, &operand, ops[i], req)
+			i++
+		}
+		if i != len(ops) || len(ops) == 0 {
+			t.Fatalf("%q: %d routes for %d aggregation operands", q, len(ops), i)
+		}
+		if len(ops) == 2 && !instant && ops[0].LevelProbe && ops[1].LevelProbe && !sameWindows(ops[0], ops[1]) && bytes.Equal(operandSelector(bin.L), operandSelector(bin.R)) {
+			t.Fatalf("%q: operands with one selector probe different windows", q)
 		}
 	})
+}
+
+// checkRouted holds a route of the aggregation p (at the root of the query, or an operand of a binary operation) to the
+// request req: a window that fits the request, a fold that fits the window, and an offset that keeps the moved bounds
+// where the handlers read them back.
+func checkRouted(t *testing.T, q string, p *queryplan.Plan, r MetricRoute, req RouteRequest) {
+	t.Helper()
+	instant := req.Instant
+	switch {
+	case instant && r.Window != WindowInstant:
+		t.Fatalf("%q: instant routed as %d", q, r.Window)
+	case !instant && (r.Bucket < time.Millisecond || r.Window == WindowInstant):
+		t.Fatalf("%q: range routed as %d with bucket %v", q, r.Window, r.Bucket)
+	case !instant && (r.Window == WindowTumbling) != (r.Range == req.Step):
+		t.Fatalf("%q: range %v step %v routed as %d", q, r.Range, req.Step, r.Window)
+	case r.Offset != rangeOf(p).Offset:
+		t.Fatalf("%q: offset %v", q, r.Offset)
+	case r.Offset != 0 && !offsetFits(r.Offset, r.Range, req):
+		t.Fatalf("%q: offset %v routed with end %v, span %v, instant %v", q, r.Offset, req.End, req.Span, instant)
+	case r.Text == "":
+		t.Fatalf("%q: routed without a query", q)
+	case r.Counted != unwrapsLabel(p):
+		t.Fatalf("%q: counted %v", q, r.Counted)
+	case r.StepBuckets && (!r.Counted || r.Window != WindowPhase):
+		t.Fatalf("%q: step buckets on window %d, counted %v", q, r.Window, r.Counted)
+	case r.Counted && r.Op != logql.RangeSumOverTime && r.Op != logql.RangeAvgOverTime && r.Op != logql.RangeMinOverTime && r.Op != logql.RangeMaxOverTime:
+		t.Fatalf("%q: counted %s", q, r.Op)
+	case r.GroupPushed && (!r.Counted || r.Window != WindowBuckets || r.Op != logql.RangeMaxOverTime && r.Op != logql.RangeMinOverTime):
+		t.Fatalf("%q: group pushed on window %d, counted %v, %s", q, r.Window, r.Counted, r.Op)
+	case r.SumAll && r.Counted && r.Op != logql.RangeSumOverTime:
+		t.Fatalf("%q: sum of all streams over %s", q, r.Op)
+	case r.Fold != FoldNone && !strings.Contains(strings.ToLower(q), "without"):
+		t.Fatalf("%q: folded as %d without a clause", q, r.Fold)
+	case r.Fold == FoldPushed && r.Window != WindowTumbling, r.Fold == FoldCut && r.Window != WindowBuckets && r.Window != WindowPhase:
+		t.Fatalf("%q: fold %d on window %d", q, r.Fold, r.Window)
+	}
 }
 
 // rangeOf is the range aggregation of the plan, or an empty one.

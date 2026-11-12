@@ -305,13 +305,13 @@ func firstRange(n queryplan.Node) time.Duration {
 type routePrediction func(q string, p *queryplan.Plan, rp routeProfile, data bool, got routeRecord) (routeRecord, error)
 
 // errRouteRulePending is a lowered plan whose route the physical route rules do not predict yet: it is delegated,
-// counted under "<construct> (route rule)". Range and vector aggregations have a route rule (lower.Route,
-// metricRoute).
+// counted under "<construct> (route rule)". Range and vector aggregations and binary operations over them have a
+// route rule (lower.RouteQuery, metricRoute).
 var errRouteRulePending = errors.New("route parity: no route rule for the lowered plan yet")
 
 func nativeRoute(q string, p *queryplan.Plan, rp routeProfile, data bool, _ routeRecord) (routeRecord, error) {
 	switch p.Root.(type) {
-	case *queryplan.RangeAgg, *queryplan.VectorAgg:
+	case *queryplan.RangeAgg, *queryplan.VectorAgg, *queryplan.BinOp:
 		return metricRoute(q, p, rp, data)
 	}
 	if _, err := lower.Plan(p, lower.Profile{}); err != nil {

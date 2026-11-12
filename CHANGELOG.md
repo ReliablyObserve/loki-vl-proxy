@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan now decides how the handlers answer a binary operation whose operands are range or vector
+  aggregations, numbers or `vector(n)`, instead of leaving it to the handlers: the handlers translate the
+  operation, then evaluate each aggregation operand as a query of its own over the same request, so the route
+  is the operands' routes together (each with its own range, windows and level probe), and a number or
+  `vector(n)` adds none. Shapes the handlers read another way stay delegated, by name: operands whose
+  offsets differ or only some carry one ("route mixed offsets"), operands that read one log selector over
+  different windows and so share a level probe ("route shared level probe"), an `absent_over_time` operand,
+  and an offset the step does not divide on any operation but an aggregation against a number ("route
+  offset step"); an operand the rule does not route delegates the operation as "BinOp operand" followed by
+  the operand's own reason. No answer or request changes: no handler reads the rule yet. Route parity:
+  1,312 more of 25,070 runs are decided (7,538 native, 0 mismatches, the routes and statuses unchanged);
+  the other 1,318 runs of the "BinOp (route rule)" and "BinOp operand VectorAgg" groups are now named by
+  what keeps them delegated.
+
 ### Fixed
 
 - Bounds checks for request times and offsets. A `query` or `query_range`

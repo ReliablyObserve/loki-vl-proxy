@@ -77,6 +77,7 @@
       "internal/queryplan/lower/range_agg_test.go",
       "internal/queryplan/lower/rank_test.go",
       "internal/queryplan/lower/route_bench_test.go",
+      "internal/queryplan/lower/route_query_test.go",
       "internal/queryplan/lower/route_test.go",
       "internal/queryplan/lower/series_agg_test.go",
       "internal/queryplan/lower/spelling_test.go",
@@ -3460,6 +3461,9 @@
       "semantics/translator-writes-reserved-field-names"
     ],
     "internal/queryplan/lower/route_bench_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/route_query_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/route_test.go": [
