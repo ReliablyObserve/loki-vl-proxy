@@ -1,0 +1,49 @@
+id: semantics/parser-reads-unicode-blank-as-white-space
+title: The proxy's LogQL parser reads a blank that is no ASCII one (U+00A0, U+0085, U+2003, U+3000) between two tokens as white space; Loki reads it as part of a name and answers 400 (open for the parser)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki's lexer skips ASCII white space only; any other white space is a character
+  of a name. The Loki oracle (Loki 3.7.9, check command) answers 400 for
+  `rate\u2003({a="b"}[5m])` ("unexpected IDENTIFIER, expecting ("), `{a="b"} |
+  line_format\u3000"x"` ("unexpected IDENTIFIER, expecting STRING"), `{a="b"} |\u00a0json`,
+  `{a="b"} |=\u3000"x"`, `sum by (a) (count_over_time\u2003({a="b"}[5m]))` and the
+  same with U+0085 and U+00A0 (testdata/odd-spellings-loki.jsonl, 24 queries).
+  The proxy's parser reads each of them as white space and answers the query:
+  the string translator writes the whole text as a phrase (`"rate\u2003({a=\"b\"}[5m])"`)
+  or as an unparsed stage (`| line_format\u3000"x"`) and VictoriaLogs rejects it
+  or answers a phrase search, where Loki answers 400. The query plan reads the
+  query as the parser does, so its text differs from the translator's for the
+  two rows of the corpus that spell a query so; there is no text to hold the plan
+  to, since Loki has no answer. Both rows are listed in
+  internal/querycorpus/testdata/known-typed-divergences.json and go when the
+  parser rejects the spelling.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: "rate\u2003({service_name=\"api-gateway\"}[5m])"
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    400 with Loki's parse error, as for any query with a character that is no
+    ASCII white space between two tokens.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/logql (the scanner skips every Unicode white space); not changed by the query plan'
+  loki: 'a non-ASCII blank is part of a name; the oracle answers 400'
+  proxy: 'the parser reads it as white space and the query is answered'
+  planned_test: 'TestOddSpellingsMatchLoki (internal/querycorpus: Loki rejects the 24 spellings, the proxy accepts them until the parser follows)'
+  visual: none
+  visual_reason: 'a crafted spelling no Grafana panel sends; found by the VictoriaLogs oracle over the parser termination tests'
+  clusters: []

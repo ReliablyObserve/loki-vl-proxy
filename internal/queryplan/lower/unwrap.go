@@ -119,6 +119,9 @@ func unwrapLog(sel *queryplan.LogSelect, prof Profile, owner string) (metricLog,
 	if err != nil {
 		return metricLog{}, nil, err
 	}
+	if namesReservedFieldFor(u.Label, prof.Label) {
+		return metricLog{}, nil, &NotLoweredError{Construct: owner + " " + reservedStageConstruct}
+	}
 	log, err := metricLogQuery(&rest, prof, owner)
 	if err != nil {
 		return metricLog{}, nil, err
@@ -423,6 +426,12 @@ func (q *unwrapQuery) op(op unwrapOp, log metricLog, field, conv string, prof Pr
 	keys, err := pre.keyPipes(q.firstBy, op.fn, field, owner, false)
 	if err != nil {
 		return nil, err
+	}
+	if logsql.KeywordFieldName(field) {
+		// The filter that drops the lines without the unwrapped label names it bare, and VictoriaLogs reads a name
+		// like contains_any or equals_common_case, bare, as a filter function (semantics/translator-writes-keyword-field-names-bare):
+		// quoted, it is the field.
+		keys.text = QuoteKeywordFieldText(keys.text)
 	}
 	if narrowed {
 		log.pipes = narrowedUnpack(log.pipes[:log.bareLogfmt], names)

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan leaves to the string translator a stage that unwraps, reads as a json
+  expression's key, writes, or renames from or to a label called `_time`, `_stream`,
+  `_stream_id` or `_msg` (`unwrap _stream`, `json x="_time"`, `label_format x=_stream`): the text
+  it used to write for them, the translator's, is a filter VictoriaLogs rejects or reads as its
+  own time, stream or stream id filter
+  (`semantics/translator-writes-reserved-field-names`). No answer changes; the plan does not
+  serve metric queries or queries with a parser yet.
+- The VictoriaLogs parse oracle holds the plan to the string translator on the log queries it
+  lowers, and no longer finds a selector that VictoriaLogs reads unlike the translator's except
+  the five rows the translator writes wrongly or Loki rejects, now listed with their cases
+  (`semantics/translator-writes-signed-number-with-blank`,
+  `semantics/parser-reads-unicode-blank-as-white-space`). The latter records that the proxy's
+  parser reads a blank that is no ASCII one (U+2003, U+3000, U+00A0) as white space where Loki
+  answers 400; the parser is unchanged.
+
+
+### Fixed
+
+- A log query with a label filter that names a label VictoriaLogs cannot read bare
+  (`{app="a"} | status = "200" and ³ = "x"`, a name with punctuation, a symbol, a combining mark,
+  an emoji or a zero-width space; Loki answers these) now answers with the lines of that label
+  instead of failing with a VictoriaLogs parse error. The query plan, which serves log queries
+  that have only line and label filters, quotes the name; the string translator writes it bare
+  (`semantics/translator-writes-exotic-field-names-bare`). A name of letters, digits and
+  underscores in any script, and the names with a dot or a hyphen that were quoted already, are
+  written as before.
+
 ## [2.186.0] - 2026-11-12
 
 ### Fixed
