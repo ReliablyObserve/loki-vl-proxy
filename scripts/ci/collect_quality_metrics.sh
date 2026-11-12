@@ -98,6 +98,50 @@ capture_async() {
   printf -v "$pid_var" '%s' "$!"
 }
 
+# The tests, run by parallel jobs (scripts/ci/go_test_unit.sh with UNIT_RACE=0 UNIT_COUNT1=1, one artifact directory
+# $QUALITY_TESTS_PREFIX<shard> per entry of QUALITY_TESTS_SHARDS under $QUALITY_TESTS_FROM), instead of one `go test ./...`:
+# the outcome events go to $events_file, the merged coverage profile to $cover_file and, when the corpus is on, the
+# shards' recordings into $LVP_QUERY_CORPUS_DIR. A shard job does not fail when its tests do; it records the exit status
+# of its `go test` (test-exit-code). Returns that status (the first non-zero one) when tests failed, 0 when every shard
+# passed and together they ran every test of the split packages exactly once, and 99 when there is no usable result
+# (a shard left nothing, or the shards disagree): the caller reports that like a collection that timed out.
+fetch_shard_results() {
+  local from="$QUALITY_TESTS_FROM" prefix="${QUALITY_TESTS_PREFIX:-pr-quality-tests-}" shards="${QUALITY_TESTS_SHARDS:-}"
+  local shard code status=0 f
+  if [ -z "$shards" ]; then
+    log_step "QUALITY_TESTS_SHARDS is empty"
+    return 99
+  fi
+  for shard in $shards; do
+    if [ ! -f "$from/$prefix$shard/test-exit-code" ]; then
+      log_step "test shard ${shard} left no result"
+      return 99
+    fi
+    code="$(tr -d '[:space:]' <"$from/$prefix$shard/test-exit-code")"
+    case "$code" in ''|*[!0-9]*) log_step "test shard ${shard} left an unreadable exit status"; return 99 ;; esac
+    if [ "$code" != "0" ] && [ "$status" -eq 0 ]; then status="$code"; fi
+  done
+  # Completeness (every test in exactly one shard, each with an outcome) is required of a passing run only: a run
+  # that failed is reported with the outcomes it has.
+  local complete=()
+  if [ "$status" -eq 0 ]; then complete=(--require-complete); fi
+  if ! python3 "$SCRIPT_DIR/merge_unit_shards.py" --shards-dir "$from" --dir-prefix "$prefix" --out-dir "$TMP_DIR/merged-tests" \
+      --shards "$shards" --no-cache-profile ${complete[@]+"${complete[@]}"} >&2; then
+    log_step "the test shards do not hold every test exactly once"
+    return 99
+  fi
+  cp "$TMP_DIR/merged-tests/unit-results.json" "$events_file"
+  if [ -f "$TMP_DIR/merged-tests/coverage.out" ]; then cp "$TMP_DIR/merged-tests/coverage.out" "$cover_file"; else : >"$cover_file"; fi
+  if [ -n "${LVP_QUERY_CORPUS_DIR:-}" ]; then
+    for shard in $shards; do
+      for f in "$from/$prefix$shard"/recordings/*.jsonl; do
+        [ -f "$f" ] && cp "$f" "$LVP_QUERY_CORPUS_DIR/${shard}-$(basename "$f")"
+      done
+    done
+  fi
+  return "$status"
+}
+
 collect_tests_and_coverage() {
   # A snapshot of this commit's count and coverage taken by an earlier run of this
   # script (the PR quality workflow caches the base commit's): the numbers depend
@@ -122,7 +166,14 @@ collect_tests_and_coverage() {
   # The package timeout stays under the collection's own budget (capture_async tests_and_coverage) so a hang
   # still fails with its goroutine dump. Go's 10m default was too tight: internal/proxy runs about 10 minutes
   # here with coverage and the corpus capture on a busy runner.
-  if go test "${tags[@]}" ./... -coverprofile="$cover_file" -count=1 -timeout="$QUALITY_TEST_PACKAGE_TIMEOUT" -json >"$events_file"; then
+  local test_status=0
+  if [ -n "${QUALITY_TESTS_FROM:-}" ]; then
+    fetch_shard_results || test_status=$?
+    if [ "$test_status" -eq 99 ]; then return 99; fi
+  else
+    go test "${tags[@]}" ./... -coverprofile="$cover_file" -count=1 -timeout="$QUALITY_TEST_PACKAGE_TIMEOUT" -json >"$events_file" || test_status=$?
+  fi
+  if [ "$test_status" -eq 0 ]; then
     if [ -n "${QUALITY_QUERY_CORPUS_OUT:-}" ]; then
       # A corpus that fails to build must not cost the report its test count.
       # The checks on the corpus run after this timed collection (check_query_corpus).
@@ -130,7 +181,6 @@ collect_tests_and_coverage() {
         || log_step "query corpus build failed; the report continues without it"
     fi
   else
-    local test_status=$?
     if [ -n "${QUALITY_DIAGNOSTICS_DIR:-}" ]; then
       mkdir -p "$QUALITY_DIAGNOSTICS_DIR"
       cp "$events_file" "$QUALITY_DIAGNOSTICS_DIR/go-test-events.json"
@@ -348,6 +398,13 @@ fi
 
 TESTS_DEFAULT='{"count":0,"coverage_pct":0}'
 COMPAT_DEFAULT='{"loki":{"passed":0,"total":0,"pct":0},"drilldown":{"passed":0,"total":0,"pct":0},"vl":{"passed":0,"total":0,"pct":0}}'
+if [ "${QUALITY_COMPAT_ONLY:-0}" = "1" ]; then
+  # The PR quality workflow measures the compatibility scores in a job of its own (they need the compose stack and
+  # nothing else); the snapshot job reads the result back (QUALITY_COMPAT_FROM).
+  log_step "collecting the compatibility scores only (QUALITY_COMPAT_ONLY=1)"
+  capture_or_default compat "$COMPAT_DEFAULT" 1800 collect_compat >"$OUTPUT_JSON"
+  exit 0
+fi
 if [ "${QUALITY_PERF_ONLY:-0}" = "1" ]; then
   # The PR quality workflow measures performance in a job of its own, for both trees on one runner;
   # this snapshot carries only .performance, and the tests and compatibility come from the other jobs.
@@ -358,10 +415,21 @@ else
   tests_pid=""
   compat_pid=""
   capture_async tests_and_coverage "$TESTS_DEFAULT" "$QUALITY_TESTS_BUDGET_SECONDS" "$tests_file" tests_pid collect_tests_and_coverage
-  capture_async compat "$COMPAT_DEFAULT" 1800 "$compat_file" compat_pid collect_compat
+  if [ -n "${QUALITY_COMPAT_FROM:-}" ]; then
+    # Measured by an earlier job. A missing or unusable file counts as a collection that failed.
+    if jq -e '.loki.total != null and .drilldown.total != null and .vl.total != null' "$QUALITY_COMPAT_FROM" >/dev/null 2>&1; then
+      log_step "using the compatibility scores in ${QUALITY_COMPAT_FROM}"
+      cp "$QUALITY_COMPAT_FROM" "$compat_file"
+    else
+      log_step "no usable compatibility scores in ${QUALITY_COMPAT_FROM}; using fallback"
+      printf '%s' "$COMPAT_DEFAULT" >"$compat_file"
+    fi
+  else
+    capture_async compat "$COMPAT_DEFAULT" 1800 "$compat_file" compat_pid collect_compat
+  fi
 
   for pid in "$tests_pid" "$compat_pid"; do
-    wait "$pid"
+    [ -z "$pid" ] || wait "$pid"
   done
 fi
 
@@ -394,10 +462,21 @@ check_query_corpus() {
   fi
   # Both parse oracles (test/oracle/vl and test/oracle/loki, modules of their own) write their verdicts beside the
   # corpus; the report below reads them. An oracle that does not run leaves its section out.
-  LVP_RUN_ORACLES=1 LVP_QUERY_CORPUS_OUT="$corpus" go test ./internal/querycorpus -run '^TestVLOracle$' -count=1 -v >&2 \
-    || log_step "the VictoriaLogs parse oracle did not run; the report continues without it"
-  LVP_RUN_ORACLES=1 LVP_QUERY_CORPUS_OUT="$corpus" go test ./internal/proxy -run '^TestLokiOracle$' -count=1 -v >&2 \
-    || log_step "the Loki parse oracle did not run; the report continues without it"
+  # The two oracles write different files, so they run side by side (the VictoriaLogs one takes minutes); each one's
+  # log is shown whole when it ends.
+  (
+    LVP_RUN_ORACLES=1 LVP_QUERY_CORPUS_OUT="$corpus" go test ./internal/querycorpus -run '^TestVLOracle$' -count=1 -v >"$TMP_DIR/oracle-vl.log" 2>&1 \
+      || log_step "the VictoriaLogs parse oracle did not run; the report continues without it"
+    cat "$TMP_DIR/oracle-vl.log" >&2
+  ) &
+  local vl_oracle=$!
+  (
+    LVP_RUN_ORACLES=1 LVP_QUERY_CORPUS_OUT="$corpus" go test ./internal/proxy -run '^TestLokiOracle$' -count=1 -v >"$TMP_DIR/oracle-loki.log" 2>&1 \
+      || log_step "the Loki parse oracle did not run; the report continues without it"
+    cat "$TMP_DIR/oracle-loki.log" >&2
+  ) &
+  local loki_oracle=$!
+  wait "$vl_oracle" "$loki_oracle"
   LVP_QUERY_CORPUS_OUT="$corpus" LVP_QUERY_CORPUS_REPORT="$QUERY_CORPUS_REPORT" \
     LVP_QUERY_CORPUS_BASE="${QUALITY_QUERY_CORPUS_BASE:-}" \
     go test ./internal/querycorpus -run '^TestQueryCorpusReport$' -count=1 -v >&2 \

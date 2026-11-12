@@ -161,7 +161,7 @@ Test, security and quality jobs defined under `.github/workflows/` (release, doc
 
 | Workflow | Job | What it runs |
 |---|---|---|
-| `ci.yaml` | `test` | observability asset sync check, CI script unit tests, `go build`, `go vet`, `govulncheck` v1.8.0, `go test ./... -race` with coverage, `internal/cache` coverage guard (79%) |
+| `ci.yaml` | `test` (fan-in of the `test-shard (1..12, rest)` matrix) | observability asset sync check, CI script unit tests, `go build`, `go vet`, `govulncheck` v1.8.0, `go test ./... -race` with coverage, `internal/cache` coverage guard (79%); shards 1-12 split the top-level tests of `internal/proxy` and `internal/querycorpus` (`scripts/ci/test_shards.py`, weights in `scripts/ci/test-shard-weights.tsv`), `rest` runs the other packages, and `test` fails unless every test ran exactly once |
 | `ci.yaml` | `lint` | `gofmt -s` check and `golangci-lint` v2.14.0 |
 | `ci.yaml` | `tuple-contract` | `go test ./internal/proxy -run '^TestTupleContract_'` |
 | `ci.yaml` | `tuple-smoke` | compose stack, `TestSetup_IngestLogs`, then `scripts/smoke-test.sh` |
@@ -191,7 +191,7 @@ Test, security and quality jobs defined under `.github/workflows/` (release, doc
 | `scorecard.yaml` | `analysis` | pushes to `main`, weekly and manual: OpenSSF Scorecard through `ossf/scorecard-action`, published to the public Scorecard API for the README badge; the result is kept as an artifact |
 | `e2e-pipeline.yml` | `e2e-pipeline` | `test/e2e-pipeline` stack, `go test -tags=e2e ./test/e2e-pipeline/` |
 | `changelog-pr.yaml` | `changelog` | pull requests only: `scripts/ci/check_changelog_pr.py` changelog gate |
-| `pr-quality-report.yaml` | `report` | pull requests only: test count, coverage, compatibility, benchmark and load deltas against the base branch |
+| `pr-quality-report.yaml` | `report` (waits for `snapshot-tests (tree shard)`, `snapshot-compat (tree)`, `head`, `base` and `perf`) | pull requests only: test count, coverage, compatibility, benchmark and load deltas against the base branch; the unit tests of both trees run as shards through `scripts/ci/go_test_unit.sh` (the base tree's only when its saved count is missing), the compatibility scores in a job per tree |
 | `visual-smoke.yaml`, `visual-smoke-cleanup.yaml` | `visual-plan`, `visual-smoke-shard (N)`, `visual-smoke` (fan-in, the check name), `visual-publish`, `visual-comment`, `cleanup` | pull requests only: Grafana (Explore, Logs Drilldown) through the base build, the PR build and Loki; a fixed core set plus the pages near the changed code (`bench/visual/plan.py`), one sticky comment with the montages, fails on a base-vs-PR data difference that Loki does not settle in the PR's favour (label `visual-change-expected` accepts an intended one), a panel that went empty or an error only the PR shows; a PR that fixes a registry case gets a "Fix proof" section with the captures of that exact case (`fixes` in `bench/visual/spec.json`; `plan.py --check` requires one for every fixed explore-, drilldown-visible or grafana-datasource case, or `visual: none` with a reason in its gap block) (see `bench/visual/README.md`); the capture runs in parallel shards, one stack each, about a dozen captures per shard, joined by the `visual-smoke` job |
 
 ## Test Coverage by Category

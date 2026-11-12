@@ -174,7 +174,10 @@ class ExampleChanges(unittest.TestCase):
     def test_scripts_run_the_jobs_that_use_them(self):
         self.assertEqual(select_jobs(["scripts/ci/fuzz_smoke.py"]), ci("fuzz-smoke-shard", "fuzz-smoke"))
         self.assertEqual(select_jobs(["scripts/ci/fuzz_smoke_targets.tsv"]), ci("fuzz-smoke-shard", "fuzz-smoke"))
-        self.assertEqual(select_jobs(["scripts/ci/go_test_unit.sh"]), ci("test-shard", "test", "conformance"))
+        # the PR quality report runs its tests through the same runner and shard merge
+        self.assertEqual(select_jobs(["scripts/ci/go_test_unit.sh"]),
+                         ci("test-shard", "test", "conformance") | frozenset({"pr-quality-report/report"}))
+        self.assertEqual(select_jobs(["scripts/ci/unit_test_mode.sh"]), ci("test-shard", "test", "conformance"))
         self.assertEqual(select_jobs(["scripts/ci/race_sensitive_tests.sh"]), ci("conformance", "test", "test-shard"))
         self.assertEqual(select_jobs(["scripts/ci/pr_quality_report.py"]), frozenset({"pr-quality-report/report"}))
         self.assertEqual(select_jobs(["test/e2e-ui/package-lock.json"]), ci("e2e-ui", "image"))

@@ -42,14 +42,20 @@ jobs:
     uses: ./.github/workflows/change-scope.yaml  # zizmor: ignore[self-repository] the $/ form is rejected by the pinned actionlint
 
   # The unit tests run as parallel shards, because internal/proxy and
-  # internal/querycorpus are nearly all of the time under -race: shards 1-4 each
+  # internal/querycorpus are nearly all of the time under -race: shards 1-12 each
   # run a share of the top-level tests of both packages (scripts/ci/test_shards.py
   # puts every test of a package in exactly one shard; the packages are listed in
   # UNIT_SHARD_PACKAGES of go_test_unit.sh, with their slow tests'
-  # weights in scripts/ci/test-shard-weights.tsv), and `rest` runs every other
+  # weights in scripts/ci/test-shard-weights.tsv, placed together over both
+  # packages), and `rest` runs every other
   # package plus the build, vet, govulncheck and the cache coverage guard. The
   # `test` job below fans them in and fails unless every test of both packages
-  # was assigned once and reported.
+  # was assigned once and reported. Twelve, because the heaviest single test
+  # (TestMetricStagesGridShadow, about 8 minutes under -race on a hosted runner)
+  # bounds a shard: with the weights balanced over twelve the slowest shard is
+  # within a few percent of that bound, and more shards would only add runner
+  # minutes and Go-cache saves. Regenerate the weights (the command is in the
+  # file) when the slowest shard drifts from the others.
   test-shard:
     name: test-shard (${{ matrix.shard }})
     needs: [scope]
@@ -61,10 +67,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, rest]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, rest]
     env:
       # Keep equal to the numbered entries of the matrix (checked by scripts/ci/tests/test_test_shards.py).
-      UNIT_SHARDS: "4"
+      UNIT_SHARDS: "12"
       UNIT_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -144,7 +150,7 @@ jobs:
 
       # internal/proxy can exceed 35 minutes and internal/querycorpus 45 under -race
       # with coverage on a slower hosted runner as one job (internal/querycorpus hit
-      # the 50m package timeout inside `rest`); the shards each take a quarter of
+      # the 50m package timeout inside `rest`); the shards each take a twelfth of
       # each. The tests of both read no CI variable and are not run with -short,
       # so a shard needs no environment beyond what `rest` had.
       #
@@ -287,7 +293,7 @@ jobs:
         if: always()
         env:
           SHARDS_RESULT: ${{ needs.test-shard.result }}
-          SHARDS: "rest 1 2 3 4"
+          SHARDS: "rest 1 2 3 4 5 6 7 8 9 10 11 12"
         run: |
           complete=()
           if [ "$SHARDS_RESULT" = success ]; then complete=(--require-complete); fi

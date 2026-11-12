@@ -59,6 +59,9 @@ case "$*" in
   "test -v -tags=e2e "*)
     cat "$STUB_SCORE"
     ;;
+  "test ./internal/querycorpus -run ^TestBuildQueryCorpus$"*)
+    echo "recordings: $(ls "$LVP_QUERY_CORPUS_DIR" | tr '\\n' ' ')" >> "$STUB_LOG"
+    ;;
   *)
     echo "unexpected go call: $*" >&2
     exit 97
@@ -218,6 +221,96 @@ class CollectQualityMetricsTest(unittest.TestCase):
         self.assertIn("| Coverage | 83.4% | unavailable | n/a |", report)
         self.assertIn("Test count and coverage could not be collected", report)
 
+    # --- the tests run by parallel jobs (QUALITY_TESTS_FROM) and the compatibility scores measured by another job ---
+
+    PKG = "x/internal/proxy"
+    QC = "x/internal/querycorpus"
+
+    @classmethod
+    def shard_dir(cls, name, shard, exit_code=0, events=None, assigned=None, listed=None, profile="mode: set\nf.go:1.1,2.2 1 1\n"):
+        d = cls.dir / name / f"pr-quality-tests-head-{shard}"
+        d.mkdir(parents=True)
+        (d / "test-exit-code").write_text(f"{exit_code}\n")
+        (d / "unit-results.json").write_text("".join(json.dumps(e) + "\n" for e in events or []))
+        (d / "coverage.out").write_text(profile)
+        if shard != "rest":
+            (d / "assigned.txt").write_text("".join(f"{a}\n" for a in assigned or []))
+            (d / "all-tests.txt").write_text("".join(f"{a}\n" for a in listed or []))
+        return d
+
+    @classmethod
+    def sharded(cls, name, drop=None, exit_codes=None, skip_outcome=None):
+        """Three shards holding every test of both split packages once; returns the run of the script over them."""
+        listed = ["internal/proxy:TestA", "internal/proxy:TestB", "internal/querycorpus:TestQ"]
+        parts = {"1": ["internal/proxy:TestA", "internal/querycorpus:TestQ"], "2": ["internal/proxy:TestB"]}
+        for shard, tests in parts.items():
+            events = [{"Action": "pass", "Package": cls.PKG if t.startswith("internal/proxy") else cls.QC, "Test": t.split(":")[1]}
+                      for t in tests if t != skip_outcome]
+            if shard == "1":
+                events.append({"Action": "pass", "Package": cls.PKG, "Test": "TestA/sub"})
+            if drop != shard:
+                cls.shard_dir(name, shard, (exit_codes or {}).get(shard, 0), events, tests, listed)
+        if drop != "rest":
+            cls.shard_dir(name, "rest", (exit_codes or {}).get("rest", 0), [{"Action": "pass", "Package": "x/cmd", "Test": "TestRest"},
+                                                                       {"Action": "fail", "Package": "x/cmd"}])
+        return cls.run_script(name, extra_env={"QUALITY_TESTS_FROM": str(cls.dir / name), "QUALITY_TESTS_PREFIX": "pr-quality-tests-head-",
+                                               "QUALITY_TESTS_SHARDS": "rest 1 2", "QUALITY_DIAGNOSTICS_DIR": str(cls.dir / f"{name}-diag")})
+
+    def test_tests_run_by_parallel_jobs_are_merged_and_counted_without_running_go_test(self):
+        run = self.sharded("shards-ok")
+        self.assertEqual(run["test_runs"], [])
+        tests = run["result"]["tests"]
+        # TestA, TestA/sub, TestB, TestQ, TestRest
+        self.assertEqual((tests["count"], tests["coverage_pct"], tests["execution_state"]), (5, 83.4, "complete"))
+        self.assertEqual(tests["outcomes"]["x/internal/proxy\tTestA/sub"], "pass")
+        self.assertEqual(tests["outcomes"]["x/cmd\tTestRest"], "pass")
+
+    def test_a_failing_test_in_one_shard_is_reported_as_a_failed_collection_with_its_exit_status(self):
+        run = self.sharded("shards-fail", exit_codes={"2": 1})
+        tests = run["result"]["tests"]
+        self.assertEqual((tests["count"], tests["coverage_pct"], tests["execution_state"], tests["test_exit_code"]), (0, 0, "failed", 1))
+        self.assertIn("x/internal/proxy\tTestA", tests["outcomes"])
+        self.assertIn("tests_and_coverage failed (exit=1)", run["stderr"])
+
+    def test_a_shard_that_left_no_result_or_dropped_a_test_is_a_collection_that_failed_not_a_partial_count(self):
+        for name, kw in (("shards-missing", {"drop": "2"}), ("shards-lost-test", {"skip_outcome": "internal/querycorpus:TestQ"})):
+            with self.subTest(name):
+                run = self.sharded(name, **kw)
+                self.assertEqual(run["result"]["tests"], {"count": 0, "coverage_pct": 0})
+                self.assertEqual(run["test_runs"], [])
+
+    def test_a_shard_run_with_the_corpus_collects_the_recordings_of_every_shard(self):
+        name = "shards-corpus"
+        run_dir = self.dir / name
+        self.sharded(name)  # the shards of a run without the corpus; add the recordings the corpus run would have left
+        for shard in ("1", "2"):
+            rec = run_dir / f"pr-quality-tests-head-{shard}" / "recordings"
+            rec.mkdir()
+            (rec / "100.jsonl").write_text("{}\n")
+        run = self.run_script(name + "-run", extra_env={
+            "QUALITY_TESTS_FROM": str(run_dir), "QUALITY_TESTS_PREFIX": "pr-quality-tests-head-", "QUALITY_TESTS_SHARDS": "rest 1 2",
+            "QUALITY_QUERY_CORPUS_OUT": str(self.dir / "corpus.jsonl.gz")})
+        self.assertEqual(run["test_runs"], [])
+        self.assertIn("recordings: 1-100.jsonl 2-100.jsonl ", run["calls"])
+
+    def test_compatibility_scores_measured_by_another_job_are_read_back(self):
+        scores = {k: {"passed": 3, "total": 4, "pct": 75.0, "components": {}} for k in ("loki", "drilldown", "vl")}
+        path = self.dir / "scores.json"
+        path.write_text(json.dumps(scores))
+        run = self.run_script("compat-from", extra_env={"QUALITY_COMPAT_FROM": str(path)})
+        self.assertEqual(run["result"]["compatibility"], scores)
+        self.assertEqual([c for c in run["calls"] if c.startswith("go test -v -tags=e2e") or " up " in c], [])
+        path.write_text("oops")
+        run = self.run_script("compat-from-garbage", extra_env={"QUALITY_COMPAT_FROM": str(path)})
+        self.assertEqual(run["result"]["compatibility"]["loki"], {"passed": 0, "total": 0, "pct": 0})
+
+    def test_compat_only_measures_the_scores_and_nothing_else(self):
+        run = self.run_script("compat-only", extra_env={"QUALITY_COMPAT_ONLY": "1"})
+        self.assertEqual(run["test_runs"], [])
+        self.assertEqual(set(run["result"]), {"loki", "drilldown", "vl"})
+        self.assertEqual((run["result"]["loki"]["passed"], run["result"]["loki"]["total"]), (3, 4))
+        self.assertEqual(len([c for c in run["calls"] if c.startswith("go test -v -tags=e2e")]), 3)
+
 
 class WorkflowWiringTest(unittest.TestCase):
     TEXT = (REPO / ".github" / "workflows" / "pr-quality-report.yaml").read_text()
@@ -231,11 +324,56 @@ class WorkflowWiringTest(unittest.TestCase):
         return self.jobs[name]["body"]
 
     def test_the_snapshots_and_the_performance_run_in_parallel_and_meet_in_report(self):
-        for name in ("head", "base", "perf"):
+        for name in ("snapshot-tests", "snapshot-compat", "perf"):
             with self.subTest(name):
                 self.assertEqual(self.jobs[name]["needs"], ["scope", "plan"])
-        self.assertEqual(self.jobs["report"]["needs"], ["scope", "plan", "head", "base", "perf"])
+        # the snapshots wait for the jobs that measure their parts; the report waits for every one of them
+        for name in ("head", "base"):
+            with self.subTest(name):
+                self.assertEqual(self.jobs[name]["needs"], ["scope", "plan", "snapshot-tests", "snapshot-compat"])
+        self.assertEqual(self.jobs["report"]["needs"], ["scope", "plan", "snapshot-tests", "snapshot-compat", "head", "base", "perf"])
         self.assertIn("needs.plan.outputs.run_perf == 'true'", self.jobs["perf"]["if"])
+
+    def test_report_fails_with_a_measuring_job_whose_snapshot_could_still_be_uploaded(self):
+        report = self.body("report")
+        for result in ("TESTS_RESULT: ${{ needs.snapshot-tests.result }}", "COMPAT_RESULT: ${{ needs.snapshot-compat.result }}"):
+            self.assertIn(result, report)
+        self.assertIn('"snapshot-tests=$TESTS_RESULT" "snapshot-compat=$COMPAT_RESULT"', report)
+
+    def test_the_tests_run_in_shards_through_the_runner_of_the_ci_shards_with_the_flags_of_the_single_run(self):
+        job = self.body("snapshot-tests")
+        self.assertIn("matrix: ${{ fromJSON(needs.plan.outputs.tests_matrix) }}", job)
+        self.assertIn("scripts/ci/go_test_unit.sh", job)
+        # the flags of `go test ./... -count=1 -timeout=18m` with the coverage, and the race detector off
+        for env in ('UNIT_RACE: "0"', 'UNIT_COUNT1: "1"', "UNIT_TIMEOUT: 18m", "UNIT_SHARDS: ${{ needs.plan.outputs.test_shard_count }}"):
+            self.assertIn(env, job)
+        # the corpus build tag, and the recordings, only on the PR's tree and when the plan wants the corpus
+        self.assertIn("UNIT_TAGS: ${{ matrix.tree == 'head' && needs.plan.outputs.query_corpus == 'true' && 'corpuscapture' || '' }}", job)
+        # the base commit's tests run in its own checkout, with these scripts
+        self.assertIn("UNIT_ROOT=/tmp/loki-vl-proxy-base", job)
+        # a failing test is recorded for the report, not a failed job; a missing artifact is
+        self.assertIn('echo "$status" > shard-out/test-exit-code', job)
+        self.assertIn("if-no-files-found: error", job)
+        self.assertNotIn("docker", job)
+
+    def test_the_plan_runs_the_base_tests_only_without_a_saved_count_and_keeps_the_shard_names_in_one_place(self):
+        plan = self.body("plan")
+        self.assertIn("lookup-only: true", plan)
+        self.assertIn("hashFiles('scripts/ci/collect_quality_metrics.sh', 'scripts/ci/pr_evidence.py')", plan)
+        self.assertIn("trees='[\"head\"]'", plan)
+        self.assertEqual(self.TEXT.count("count=6"), 1)
+        for env in ("QUALITY_TESTS_SHARDS: ${{ needs.plan.outputs.test_shards }}", "QUALITY_TESTS_PREFIX: pr-quality-tests-"):
+            self.assertIn(env, self.body("head") + self.body("base"))
+
+    def test_the_compatibility_scores_are_measured_in_jobs_of_their_own_and_only_they_need_the_stack(self):
+        compat = self.body("snapshot-compat")
+        self.assertIn('QUALITY_COMPAT_ONLY: "1"', compat)
+        self.assertIn("docker/build-push-action", compat)
+        self.assertIn("matrix.tree == 'base'", compat)
+        for name in ("head", "base"):
+            body = self.body(name)
+            self.assertNotIn("docker/", body)
+            self.assertIn("QUALITY_COMPAT_FROM: /tmp/%s-compat/pr-%s-compat.json" % (name, name), body)
 
     def test_only_the_base_collection_reads_the_snapshot(self):
         self.assertEqual(self.TEXT.count("QUALITY_TESTS_SNAPSHOT"), 1)
