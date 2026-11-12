@@ -1037,7 +1037,14 @@ func FuzzSubSecondStepAndTimestamps(f *testing.F) {
 			}
 		}
 		if strings.Contains(ts, ".") && len(ts) < 24 && !strings.ContainsAny(ts, "eEnNiIxXpP_+-") {
-			if f, err := strconv.ParseFloat(ts, 64); err == nil && f >= 0 && f < 1e10 {
+			// Up to 9.2e9 s int64 nanoseconds hold the time and the proxy reads it as Loki does; from 9.3e9 s on
+			// Loki wraps it to another time and the proxy refuses it (the request time bounds).
+			if f, err := strconv.ParseFloat(ts, 64); err == nil && f >= 9.3e9 && f < 1e10 {
+				if got, ok := parseLokiTimeToUnixNano(ts); ok {
+					t.Fatalf("time %q: parseLokiTimeToUnixNano = %d, want refused", ts, got)
+				}
+			}
+			if f, err := strconv.ParseFloat(ts, 64); err == nil && f >= 0 && f < 9.2e9 {
 				want, _ := lokiTimestamp(ts)
 				if got, ok := parseLokiTimeToUnixNano(ts); !ok || got != want {
 					t.Fatalf("time %q: parseLokiTimeToUnixNano = %d, Loki reads %d", ts, got, want)
