@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `label_replace`, in a nest of aggregations, or over an unwrapped label stays with the string
   translator. No answer changes; the plan does not serve these queries yet.
 
+- The query plan quotes an unwrapped label that VictoriaLogs reads, bare, as a filter function
+  (`contains_all`, `contains_any`, `contains_common_case`, `equals_common_case`, `not`, `in`, `and`,
+  `or`, `options`, in any letter case) in the filter that drops the lines without it, as it does
+  for every other filter on such a name. The string translator writes it bare, which VictoriaLogs
+  reads differently (`semantics/translator-writes-keyword-field-names-bare`). No answer changes;
+  the plan does not serve these queries yet.
+
 ## [2.182.0] - 2026-11-12
 
 ### Changed

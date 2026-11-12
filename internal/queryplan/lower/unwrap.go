@@ -397,6 +397,12 @@ func (q *unwrapQuery) op(op unwrapOp, log metricLog, field, conv string, prof Pr
 	if err != nil {
 		return nil, err
 	}
+	if logsql.KeywordFieldName(field) {
+		// The filter that drops the lines without the unwrapped label names it bare, and VictoriaLogs reads a name
+		// like contains_any or equals_common_case, bare, as a filter function (semantics/translator-writes-keyword-field-names-bare):
+		// quoted, it is the field.
+		keys.text = QuoteKeywordFieldText(keys.text)
+	}
 	if narrowed {
 		log.pipes = narrowedUnpack(log.pipes[:log.bareLogfmt], names)
 	}

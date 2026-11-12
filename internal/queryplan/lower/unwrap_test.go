@@ -333,3 +333,45 @@ func TestPlanMetricStreamValuesMemo(t *testing.T) {
 		t.Errorf("copies %d restores %d", len(sv.copies), len(sv.restores))
 	}
 }
+
+// The filter that drops the lines without the unwrapped label names it quoted when VictoriaLogs reads the name bare as
+// a filter function (contains_all, contains_any, contains_common_case, equals_common_case, in any case), as every other
+// filter the plan writes does, and the text is the translator's made right. The plan's text never holds the bare
+// filter, with a parser or without, in a range aggregation, a vector aggregation, a nest and a binary operation.
+//
+// conformance: semantics/translator-writes-keyword-field-names-bare
+func TestUnwrapOfAKeywordFieldNameQuotesTheLabel(t *testing.T) {
+	checked := 0
+	for _, name := range []string{"contains_all", "Contains_Any", "CONTAINS_COMMON_CASE", "equals_common_case", "not", "in", "options"} {
+		for _, q := range []string{
+			`sum_over_time({app="a"} | json | unwrap ` + name + ` [1m])`,
+			`avg_over_time({app="a"} | logfmt | unwrap bytes(` + name + `) [1m])`,
+			`max_over_time({app="a"} | logfmt | unwrap duration(` + name + `) [1m]) by (app)`,
+			`quantile_over_time(0.5, {app="a"} | logfmt | unwrap ` + name + ` [1m])`,
+			`rate({app="a"} | json | unwrap ` + name + ` [1m])`,
+			`sum by (app) (sum_over_time({app="a"} | json | unwrap ` + name + ` [1m]))`,
+			`sum without (pod) (max_over_time({app="a"} | logfmt | unwrap ` + name + ` [1m]))`,
+			`sum_over_time({app="a"} | json | unwrap ` + name + ` [1m]) / 2`,
+		} {
+			p := rangeAggPlan(q)
+			for _, prof := range rangeProfiles() {
+				op, err := PlanQuery(q, p, prof.lowerProfile())
+				if err != nil {
+					continue
+				}
+				checked++
+				text := physical.Encode(op)
+				if strings.Contains(text, "| filter "+name+":") || strings.Contains(text, "| filter "+strings.ToLower(name)+":") {
+					t.Errorf("%s: %s: the filter names the label bare: %s", prof.name, q, text)
+				}
+				legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps)
+				if terr == nil && !physical.Evaluated(op) && !RoutedBinary(p.Root) && QuoteKeywordFieldText(legacy) != text {
+					t.Errorf("%s: %s:\n lowered %s\n string  %s", prof.name, q, text, QuoteKeywordFieldText(legacy))
+				}
+			}
+		}
+	}
+	if checked < 100 {
+		t.Fatalf("only %d lowered queries checked", checked)
+	}
+}
