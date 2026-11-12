@@ -652,8 +652,7 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 // enforces the guard before fn is called).
 func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params)))
-	u := *p.backend
-	u.Path = path
+	u := backendRequestURL(p.backend, path)
 	u.RawQuery = params.Encode()
 	querycorpus.RecordBackend(path, params.Get("query"))
 
@@ -769,8 +768,7 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 	}
 	params, witness := p.pruneLevelChain(ctx, path, params)
 	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params)))
-	u := *p.backend
-	u.Path = path
+	u := backendRequestURL(p.backend, path)
 	querycorpus.RecordBackend(path, params.Get("query"))
 	p.log.Debug("VL request", "method", "POST", "url", u.String(), "params", redactQuery(params.Encode(), p.debugLogRawQueries))
 	req, err := http.NewRequestWithContext(ctx, "POST", u.String(), strings.NewReader(params.Encode()))
