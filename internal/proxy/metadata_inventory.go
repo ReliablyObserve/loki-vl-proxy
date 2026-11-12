@@ -930,7 +930,8 @@ func (p *Proxy) composeInventoryEntry(ctx context.Context, path, base string, se
 	parts := make([][]vlValueHits, 0, (seg.end-seg.start)/size)
 	rows := int64(0)
 	checked := cache.Now().UnixNano()
-	for start := seg.start; start < seg.end; start += size {
+	for i, n := int64(0), halfOpenStepCount(seg.start, seg.end, size); i < n; i++ {
+		start := seg.start + i*size
 		c := inventorySegment{start: start, end: start + size, level: child}
 		raw, _, ok := p.cacheGetWithTTL(ctx, p.cache, inventoryBucketKey(base, c))
 		if !ok {
