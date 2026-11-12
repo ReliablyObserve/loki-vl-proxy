@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The `totalBytesProcessed` of the `data.stats` of a metric query (`-query-stats-mode=loki`, the default) follows the
+  window it was asked for. It was the metric's lines times the mean line size of the last log answer of the
+  selector, a figure of whatever window or filter that answer had, so on a sparse stream it could miss the
+  metric window's bytes by more than half. The proxy now keeps each log answer with the window its lines cover,
+  per log expression: a metric query of the same expression takes the bytes of that part of its window
+  exactly and prices its other lines at that answer's mean line size. No VictoriaLogs request is added. The
+  one-range lookback before a metric query's start is covered by no log answer and is still estimated.
 - The `shards` of the `data.stats` of a repeated log query follow Loki's: a repeat answered from the
   proxy's response cache reports the 1h pieces that hold a returned entry, wherever they lie in the
   window, as Loki does (it keeps the pieces in which a query found nothing in its results cache). A
