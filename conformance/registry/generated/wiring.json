@@ -134,6 +134,7 @@
       "internal/proxy/volume_test.go"
     ],
     "drilldown/logs-footer-query-stats": [
+      "internal/proxy/query_stats_loki_meaning_test.go",
       "internal/proxy/query_stats_test.go",
       "internal/proxy/query_stats_totals_test.go",
       "test/e2e-compat/query_stats_test.go"
@@ -672,6 +673,8 @@
       "internal/proxy/query_flow_test.go"
     ],
     "observability-slow-query-log": [
+      "internal/metrics/callertracker_test.go",
+      "internal/proxy/query_caller_test.go",
       "internal/proxy/query_flow_test.go",
       "internal/proxy/slow_query_log_test.go"
     ],
@@ -971,6 +974,8 @@
       "test/e2e-compat/unwrap_extent_cache_test.go"
     ],
     "query-stats-envelope": [
+      "internal/proxy/query_stats_loki_meaning_test.go",
+      "internal/proxy/query_stats_loki_test.go",
       "internal/proxy/query_stats_test.go",
       "internal/proxy/query_stats_totals_test.go",
       "test/e2e-compat/query_stats_test.go"
@@ -2026,6 +2031,9 @@
     "internal/logsql/reserved_fields_test.go": [
       "semantics/translator-writes-reserved-field-names"
     ],
+    "internal/metrics/callertracker_test.go": [
+      "observability-slow-query-log"
+    ],
     "internal/metrics/request_flow_test.go": [
       "observability-query-flow"
     ],
@@ -2703,6 +2711,9 @@
       "quality/query-range-settled-steps",
       "semantics/unwrap-quantile-response-limit"
     ],
+    "internal/proxy/query_caller_test.go": [
+      "observability-slow-query-log"
+    ],
     "internal/proxy/query_flow_test.go": [
       "observability-query-flow",
       "observability-slow-query-log"
@@ -2735,6 +2746,13 @@
     ],
     "internal/proxy/query_semantics_compat_handlers_test.go": [
       "semantics/absent-over-time-semantics"
+    ],
+    "internal/proxy/query_stats_loki_meaning_test.go": [
+      "drilldown/logs-footer-query-stats",
+      "query-stats-envelope"
+    ],
+    "internal/proxy/query_stats_loki_test.go": [
+      "query-stats-envelope"
     ],
     "internal/proxy/query_stats_test.go": [
       "drilldown/logs-footer-query-stats",
@@ -4208,7 +4226,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 506,
+  "tests_with_markers": 510,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

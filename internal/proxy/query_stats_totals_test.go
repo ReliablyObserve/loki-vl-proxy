@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -67,7 +68,13 @@ func (s *totalsStubVL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func newTotalsTestProxy(t *testing.T, backendURL string) http.Handler {
 	t.Helper()
-	p, err := New(Config{BackendURL: backendURL, Cache: cache.New(time.Hour, 10000), CompatCache: cache.New(time.Hour, 1000), LogLevel: "error"})
+	return newTotalsTestProxyMode(t, backendURL, "")
+}
+
+func newTotalsTestProxyMode(t *testing.T, backendURL, mode string) http.Handler {
+	t.Helper()
+	p, err := New(Config{BackendURL: backendURL, Cache: cache.New(time.Hour, 10000), CompatCache: cache.New(time.Hour, 1000), LogLevel: "error",
+		QueryStatsMode: mode})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +148,7 @@ func TestQueryStatsTotals_MetricAnswerSumsToLokisWindow(t *testing.T) {
 	vl := httptest.NewServer(stub)
 	defer vl.Close()
 	h := newTotalsTestProxy(t, vl.URL)
+	measured := newTotalsTestProxyMode(t, vl.URL, QueryStatsModeVictoriaLogs)
 	base := time.Now().Add(-2 * time.Hour).Truncate(time.Hour).Unix()
 	for i := 0; i < 12; i++ {
 		step := []int64{15, 60, 300}[rng.Intn(3)]
@@ -160,10 +168,18 @@ func TestQueryStatsTotals_MetricAnswerSumsToLokisWindow(t *testing.T) {
 		if s := filtered.Data.Stats.Summary; s.TotalPostFilterLines != wantF || s.TotalLinesProcessed != want {
 			t.Fatalf("filtered: post-filter %d want %d, lines %d want the selector's %d", s.TotalPostFilterLines, wantF, s.TotalLinesProcessed, want)
 		}
-		sliding := getTotals(t, h, "/loki/api/v1/query_range", url.Values{"query": {`sum(count_over_time({app="api"}[` + fmt.Sprintf("%ds", 2*step) + `]))`},
-			"start": {fmt.Sprint(start)}, "end": {fmt.Sprint(end)}, "step": {fmt.Sprint(step)}})
-		if s := sliding.Data.Stats.Summary; s.TotalPostFilterLines != 0 {
-			t.Fatalf("sliding window took totals from its answer: %+v", s)
+		// Sliding windows count a line in about range/step samples: Loki's
+		// accounting estimates the window's lines as the sum scaled by
+		// step/range; the measured accounting takes none from the answer.
+		slidingParams := url.Values{"query": {`sum(count_over_time({app="api"}[` + fmt.Sprintf("%ds", 2*step) + `]))`},
+			"start": {fmt.Sprint(start)}, "end": {fmt.Sprint(end)}, "step": {fmt.Sprint(step)}}
+		sliding := getTotals(t, h, "/loki/api/v1/query_range", slidingParams)
+		est := int64(math.Round(float64(sliding.sum(t, step, start, end, false)) / 2))
+		if s := sliding.Data.Stats.Summary; s.TotalPostFilterLines != est || s.TotalLinesProcessed != est {
+			t.Fatalf("sliding window: %+v, want the estimate %d (the sum times step/range)", s, est)
+		}
+		if s := getTotals(t, measured, "/loki/api/v1/query_range", slidingParams).Data.Stats.Summary; s.TotalPostFilterLines != 0 {
+			t.Fatalf("victorialogs mode: a sliding window took totals from its answer: %+v", s)
 		}
 	}
 }
@@ -201,8 +217,10 @@ func TestQueryStatsTotals_LogQueryFromItsVolumeAnswer(t *testing.T) {
 	if want == 0 || got.TotalPostFilterLines != want {
 		t.Fatalf("post-filter lines %d, the volume answer's steps inside the window sum to %d", got.TotalPostFilterLines, want)
 	}
-	if got.TotalLinesProcessed != 9 {
-		t.Fatalf("lines processed %d: with a filter and no selector-only count it is the 9 rows read", got.TotalLinesProcessed)
+	// With a filter and no selector-only count, the lines processed are at
+	// least the post-filter lines they hold.
+	if got.TotalLinesProcessed != want {
+		t.Fatalf("lines processed %d: with a filter and no selector-only count it is the %d post-filter lines", got.TotalLinesProcessed, want)
 	}
 	// A refresh 5 minutes later: the covered 55 minutes (92%) are reported.
 	if g := logs(`{app="api"} |= "x"`, start+300, end+300, "0").Data.Stats.Summary; g.TotalPostFilterLines != volume.sum(t, step, start+300, end, true) {
@@ -216,8 +234,10 @@ func TestQueryStatsTotals_LogQueryFromItsVolumeAnswer(t *testing.T) {
 		{"other expression", `{app="api"} |= "y"`, "0", start, end},
 		{"other tenant", `{app="api"} |= "x"`, "1", start, end},
 	} {
-		if g := logs(tc.query, tc.s, tc.e, tc.org).Data.Stats.Summary; g.TotalPostFilterLines != 0 {
-			t.Fatalf("%s: took %d post-filter lines from a companion", tc.name, g.TotalPostFilterLines)
+		// No companion: the post-filter lines are the 9 rows VictoriaLogs
+		// returned for the filter.
+		if g := logs(tc.query, tc.s, tc.e, tc.org).Data.Stats.Summary; g.TotalPostFilterLines != 9 {
+			t.Fatalf("%s: %d post-filter lines, want the 9 rows read (no companion)", tc.name, g.TotalPostFilterLines)
 		}
 	}
 }
@@ -313,51 +333,6 @@ func TestQueryStatsTotals_CompanionCoverage(t *testing.T) {
 	}
 }
 
-// TestQueryStatsTotals_LogQueryBytesFromVolumeRange: the logs query of a Logs
-// Drilldown service page takes its window's line bytes from the volume_range
-// answer of its selector (the steps wholly inside the window), its lines
-// from the count answer, and a volume cut by its limit is never used.
-//
-// conformance: drilldown/logs-footer-query-stats, query-stats-envelope
-func TestQueryStatsTotals_LogQueryBytesFromVolumeRange(t *testing.T) {
-	stub := &totalsStubVL{rows: 9}
-	vl := httptest.NewServer(stub)
-	defer vl.Close()
-	h := newTotalsTestProxy(t, vl.URL)
-	end := time.Now().Add(-5 * time.Hour).Truncate(time.Minute).Unix()
-	start := end - 1800
-	vol := getTotals(t, h, "/loki/api/v1/index/volume_range", url.Values{"query": {`{app="api"}`}, "targetLabels": {"detected_level"},
-		"start": {fmt.Sprint(start)}, "end": {fmt.Sprint(end)}, "step": {"60"}})
-	var want int64
-	for _, s := range vol.Data.Result {
-		for _, v := range s.Values {
-			ts, _ := strconv.ParseFloat(string(v[0]), 64)
-			var str string
-			_ = json.Unmarshal(v[1], &str)
-			x, _ := strconv.ParseInt(str, 10, 64)
-			if bucketEnd := int64(ts*1000) + 1; bucketEnd-60000 >= start*1000 && bucketEnd <= end*1000 {
-				want += x
-			}
-		}
-	}
-	if want == 0 {
-		t.Fatalf("the volume answer holds no bytes: %+v", vol.Data.Result)
-	}
-	logs := getTotals(t, h, "/loki/api/v1/query_range", url.Values{"query": {`{app="api"} |= "x"`}, "limit": {"100"},
-		"start": {fmt.Sprint(start * 1e9)}, "end": {fmt.Sprint(end * 1e9)}})
-	if got := logs.Data.Stats.Summary.TotalBytesProcessed; got != want {
-		t.Fatalf("totalBytesProcessed %d, the volume steps inside the window hold %d", got, want)
-	}
-	cut := getTotals(t, h, "/loki/api/v1/index/volume_range", url.Values{"query": {`{app="other"}`}, "targetLabels": {"detected_level"}, "limit": {"1"},
-		"start": {fmt.Sprint(start)}, "end": {fmt.Sprint(end)}, "step": {"60"}})
-	_ = cut
-	other := getTotals(t, h, "/loki/api/v1/query_range", url.Values{"query": {`{app="other"}`}, "limit": {"100"},
-		"start": {fmt.Sprint(start * 1e9)}, "end": {fmt.Sprint(end * 1e9)}})
-	if got := other.Data.Stats.Summary.TotalBytesProcessed; got == want {
-		t.Fatalf("a volume answer cut by its limit gave the bytes %d", got)
-	}
-}
-
 // TestStatsTotalsStepsWithin: a window is summed from the companion's whole
 // steps inside it, and refused when those span under 90% of it: a coarse
 // companion never answers a short window with 0.
@@ -418,25 +393,11 @@ func TestQueryStatsTotals_CompanionsStayInTheirTenant(t *testing.T) {
 	vol := get("/loki/api/v1/query_range", "tenant-a", url.Values{"query": {`sum(count_over_time({app="api"} | drop __error__ [60s]))`},
 		"start": {fmt.Sprint(start)}, "end": {fmt.Sprint(end)}, "step": {"60"}})
 	want := vol.sum(t, 60, start, end, true)
-	bytesVol := get("/loki/api/v1/index/volume_range", "tenant-a", url.Values{"query": {`{app="api"}`}, "targetLabels": {"detected_level"},
-		"start": {fmt.Sprint(start)}, "end": {fmt.Sprint(end)}, "step": {"60"}})
-	var wantBytes int64
-	for _, s := range bytesVol.Data.Result {
-		for _, v := range s.Values {
-			ts, _ := strconv.ParseFloat(string(v[0]), 64)
-			var str string
-			_ = json.Unmarshal(v[1], &str)
-			x, _ := strconv.ParseInt(str, 10, 64)
-			if e := int64(ts*1000) + 1; e-60000 >= start*1000 && e <= end*1000 {
-				wantBytes += x
-			}
-		}
-	}
 	get("/loki/api/v1/query", "tenant-a", url.Values{"query": {`sum(count_over_time({app="api"}[30m]))`}, "time": {fmt.Sprint(end)}})
 	logs := url.Values{"query": {`{app="api"}`}, "limit": {"100"}, "start": {fmt.Sprint(start * 1e9)}, "end": {fmt.Sprint(end * 1e9)}}
 	own := get("/loki/api/v1/query_range", "tenant-a", logs).Data.Stats.Summary
-	if want == 0 || own.TotalLinesProcessed != want || wantBytes == 0 || own.TotalBytesProcessed != wantBytes {
-		t.Fatalf("tenant-a: lines %d (want %d), bytes %d (want %d)", own.TotalLinesProcessed, want, own.TotalBytesProcessed, wantBytes)
+	if want == 0 || own.TotalLinesProcessed != want || own.TotalBytesProcessed <= 0 {
+		t.Fatalf("tenant-a: lines %d (want %d), bytes %d", own.TotalLinesProcessed, want, own.TotalBytesProcessed)
 	}
 	other := get("/loki/api/v1/query_range", "tenant-b", logs).Data.Stats.Summary
 	if other.TotalLinesProcessed != 9 || other.TotalBytesProcessed == own.TotalBytesProcessed {

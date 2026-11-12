@@ -37,6 +37,25 @@ why: |
   accounting (structured-metadata bytes, the early stop) and the first-load
   order, which the proxy cannot change without delaying the answer or
   querying VictoriaLogs again.
+
+  Since query-stats-loki-accounting (2026-11-11): the object has all five of
+  Loki's sections in Loki's order and types, so Grafana lists the same
+  "Summary:" and "Ingester:" stats as for Loki; the footer's bytes are the
+  bytes of the lines read (335 bytes a line on the test stack, as Loki's
+  line bytes), no longer VictoriaLogs' NDJSON size (about 3.5 times more);
+  a refresh answered from the proxy's response cache shows the stored
+  computation's bytes (Loki computes log queries on every request) instead
+  of 0 B; when Grafana loads a range over one day in pieces and sums their
+  "total bytes processed", cached pieces keep their bytes.
+
+  Since query-stats-loki-emulation (owner, 2026-11-11), by default
+  (-query-stats-mode=loki) the footer's bytes are Loki's emulated: the lines
+  of the 1h pieces Loki reads for the logs query (it stops after the piece
+  in which its limit was filled) times the returned lines' mean size; on the
+  stack 1,784,230 against Loki's 1,799,470 for 5m and 8,207,051 against
+  8,282,888 for 1h (Loki adds structured-metadata bytes). With
+  -query-stats-mode=victorialogs the footer shows the bytes of the lines the
+  proxy read.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -52,9 +71,12 @@ request:
     X-Loki-Response-Encoding-Flags: categorize-labels
 compare:
   mode: observed
-  fields: [data.stats.summary, data.stats.cache]
+  fields: [data.stats.summary, data.stats.querier, data.stats.ingester, data.stats.cache, data.stats.index]
   expect: |
-    A stats object with Loki's summary and cache keys in Loki's order;
+    A stats object with Loki's five sections, keys, key order and value
+    types (ingester.recvWaitTime aside: Loki omits it when zero, the
+    proxy's ingester section is always zero); a refresh reports its own
+    execTime and, for a non-empty log answer, the same lines and bytes;
     totalBytesProcessed and totalLinesProcessed above 0 for a non-empty
     answer read from VictoriaLogs; Grafana's frame "Summary:" stats equal
     Loki's.
@@ -64,6 +86,6 @@ gap:
   effort: M
   area: 'internal/proxy/stream_processing.go (stats envelope of log query_range answers)'
   loki: 'pkg/util/marshal/query.go:323-324 stats field; pkg/logqlmodel/stats/stats.pb.go:205-211 Summary.totalBytesProcessed'
-  proxy: 'data.stats summary and cache from the request flow (internal/proxy/query_stats.go); lines and bytes processed from the answer itself or the panel''s volume answer (internal/proxy/query_stats_totals.go), else what the proxy read'
-  planned_test: 'TestDrilldown_QueryStatsEnvelope (test/e2e-compat, drilldown group); TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStatsTotals_LogQueryBytesFromVolumeRange (internal/proxy)'
+  proxy: 'data.stats in Loki''s five sections from the request flow (internal/proxy/query_stats.go); lines and bytes processed from the answer itself or the panel''s volume answer (internal/proxy/query_stats_totals.go), else the rows read and their line bytes; cache hits replay the computation of answers Loki computes on every request (internal/proxy/query_stats_cache.go)'
+  planned_test: 'TestDrilldown_QueryStatsEnvelope, TestDrilldown_QueryStatsLikeLoki (test/e2e-compat, drilldown group); TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStats_ObjectHasLokisRecordedShape, TestQueryStats_LokiAccountingPerRouteAndCacheTier, TestLokiStatsEmulation_MatchesRecordedLokiAnswers (internal/proxy)'
   clusters: []

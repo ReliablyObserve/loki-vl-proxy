@@ -111,6 +111,9 @@ type proxyRuntimeConfig struct {
 	detectedLevelBodyScan               bool
 	translateShadowSample               float64
 	queryPlanLowering                   bool
+	queryStatsMode                      string
+	queryStatsExactMetricBytes          bool
+	queryStatsExactLogLines             bool
 	patternsEnabled                     bool
 	deleteAPIEnabled                    bool
 	deleteAPIAuthToken                  string
@@ -265,6 +268,8 @@ type proxyRuntimeConfig struct {
 	slowUpstreamThreshold               time.Duration
 	slowQueryLogRawQueries              bool
 	slowQueryLogLevel                   string
+	logUserHeader                       string
+	logUserHeaderTrustedCIDRs           string
 	metadataDefaultLookback             time.Duration
 	metadataCacheFreshness              time.Duration
 	maxStatsCacheFreshness              time.Duration
@@ -468,6 +473,8 @@ func run(
 	slowQueryThreshold := fs.Duration("slow-query-threshold", proxy.DefaultSlowQueryThreshold, "A client request taking at least this long is slow: counted in loki_vl_proxy_slow_requests_total{system=\"loki\"} and logged at WARN (slow_request, whatever the request-log sampling) with its LogQL and its steps: every VictoriaLogs call with its LogsQL, window, status, bytes and time, every proxy-side operation and route decision, every rewrite of the LogQL, each with its offset from the request's start. Live tail is exempt. 0 turns it off")
 	slowUpstreamThreshold := fs.Duration("slow-upstream-threshold", proxy.DefaultSlowUpstreamThreshold, "One VictoriaLogs call taking at least this long to the end of its body is slow: counted in loki_vl_proxy_slow_requests_total{system=\"vl\"} and logged at WARN (slow_upstream_request) with its LogsQL, window, bytes and the client route it served. 0 turns it off")
 	slowQueryLogLevel := fs.String("slow-query-log-level", "warn", "Level the slow_request and slow_upstream_request lines are logged at: warn, info or debug (logged only when the logger level lets them through), or off: no slow lines and no per-request trace; loki_vl_proxy_slow_requests_total still counts slow requests")
+	logUserHeader := fs.String("log-user-header", "", "Header naming the end user who ran a query (X-Grafana-User with Grafana's [dataproxy] send_user_header=true), logged as enduser.id on the request, upstream_request, slow_request and slow_upstream_request lines and shown in /debug/queries. Logs and the admin view only: never a metric label, never sent to VictoriaLogs, never part of a cache key. The header is client-sent and spoofable: restrict it with -log-user-header-trusted-cidrs. A header that carries credentials (Authorization, Cookie, or a name with token, secret, password, key, session or credential) is refused at startup. Empty: the user is the tenant (or the -metrics.trust-proxy-headers identity)")
+	logUserHeaderTrustedCIDRs := fs.String("log-user-header-trusted-cidrs", "", "Comma-separated CIDRs or addresses of the TCP peers (Grafana, or the load balancer in front of the proxy) allowed to name the user through -log-user-header; a request from any other peer is logged under its tenant. Matches the connection's address, never X-Forwarded-For. Empty trusts every peer")
 	slowQueryLogRawQueries := fs.Bool("slow-query-log-raw-queries", true, "Slow lines carry the LogQL and LogsQL text (capped at 8 KB each); false carries their sha256 and length instead, as debug logs do without -debug-log-raw-queries")
 	metadataCacheFreshness := fs.Duration("max-metadata-cache-freshness", 24*time.Hour, "Loki max_metadata_cache_freshness, applied to all tenants: a /labels, /label/{name}/values or /series request that ends within this window of now does not reuse a cached answer older than -recent-tail-refresh-max-staleness, so streams written in the window appear like in Loki. Sealed non-empty inventory buckets still come from the cache; the newest minute, buckets due for revalidation and a row count over each run of empty buckets (stream and field filters only; cheap for * and stream filters, but with a field filter it reads the filtered column of every row in the run's range) are read live. A bucket stored empty with rows that lack the listed field follows the normal schedule. 0 keeps the previous caching for every range.")
 	maxStatsCacheFreshness := fs.Duration("max-stats-cache-freshness", proxy.DefaultMaxStatsCacheFreshness, "Loki max_stats_cache_freshness, applied to all tenants. An instant /index/volume over at least 10 minutes is summed from UTC-aligned day, hour, 5-minute and minute segments kept in the read cache (memory, disk and peers), so a window moved by seconds reads only its edges from VictoriaLogs; segments that end within this window of now are read from VictoriaLogs on every request, like Loki, which does not cache a volume ending within it. 0 caches every segment but the newest minute. -metadata-inventory-parallelism=0 turns the segments off.")
@@ -614,6 +621,9 @@ func run(
 	alignQueriesWithStep := fs.Bool("align-queries-with-step", true, "Move the start and end of a metric query_range request down to a multiple of its step before evaluating it, as Loki's query frontend does with query_range.align_queries_with_step (-querier.align-querier-with-step; false in Loki's flag defaults, true in its example configuration and Helm chart). On by default: answers share that Loki's evaluation grid, and a refresh that moves the window by less than a step maps onto the same request and is served from the caches. Log queries, instant queries, step-less requests, /loki/api/v1/patterns and Grafana Logs Drilldown query-split residual chunks are not changed. Set false to evaluate at the start the client sent")
 	translateShadowSample := fs.Float64("translate-shadow-sample", 0, "Share (0-1) of the queries the string translator translates (cache misses) that the typed query-plan lowering also translates, in the background, to compare the two translations: counted in loki_vl_proxy_lowering_shadow_total by result and construct, a mismatch logged (the query redacted), at most 1 line per second. At most 2 comparisons run at once, each within 100 ms; the answer, the caches and the VictoriaLogs requests are never affected. 0 turns it off")
 	queryPlanLowering := fs.Bool("query-plan-lowering", true, "Translate the queries the typed query-plan lowering covers natively with it instead of the string translator: log queries with a stream selector, line filters, pattern filters (|> and !>) and label filters, no parser stage. The lowering writes the same VictoriaLogs query, byte for byte, under every translator option (held by the corpus shadow in CI), so answers, caches and VictoriaLogs requests do not change, except that a label called not, in, options, and, or, contains_all, contains_any, contains_common_case or equals_common_case is written quoted, which VictoriaLogs needs and the string translator leaves out; every other query, and any query the lowering cannot translate, goes to the string translator. Counted as result=flipped in loki_vl_proxy_lowering_shadow_total. false is the rollback: every query is translated by the string translator")
+	queryStatsMode := fs.String("query-stats-mode", "loki", "Accounting of the data.stats object of query, query_range, volume and volume_range answers (the Stats of Grafana's query inspector and the Logs Drilldown footer). loki (the default) emulates Loki's numbers: the lines and bytes of the pieces Loki would have read (a log query that fills its limit stops after the piece holding its last entry; lines estimated from the answer's entries when no volume answer of the panel is known; bytes as lines times the mean line size), Loki's splits and shards (1h pieces), cache hits as Loki reports them (log and instant answers replay the computation; metric query_range hits are results-cache hits). victorialogs reports what the proxy measured: the rows VictoriaLogs returned and their line bytes, a metric answer's own counts, VictoriaLogs calls as splits, nothing processed on a cache hit")
+	queryStatsExactMetricBytes := fs.Bool("query-stats-exact-metric-bytes", false, "With -query-stats-mode=loki, read a metric query's totalBytesProcessed from VictoriaLogs: the line bytes of its stream selector over its window, with a volume request sent next to the query (about six times the VictoriaLogs time of a count over the same window; cached like volume answers). Off by default: the bytes are estimated as the lines counted times the selector's mean line size, taken from its log answers")
+	queryStatsExactLogLines := fs.Bool("query-stats-exact-log-lines", false, "With -query-stats-mode=loki, count a log query's totalLinesProcessed with VictoriaLogs when its answer cannot give it (it filled its limit, or it filters lines) and the panel's count answer is not held: one timestamp-only count of its stream selector over the 1h pieces Loki reads, per log query cache miss. Off by default: the lines are estimated from the answer, capped at its entries times the pieces read. Loki's own figure for a limit-filled query depends on its chunk layout; this reports the pieces read, whole")
 	patternsAutodetectFromQueries := fs.Bool("patterns-autodetect-from-queries", false, "Warm /loki/api/v1/patterns cache from successful query/query_range log responses (opt-in global autodetect)")
 	patternsExactMaxLines := fs.Int("patterns-exact-max-lines", proxy.DefaultPatternsExactMaxLines, "Read at most this many lines from VictoriaLogs to answer /loki/api/v1/patterns for a stream selector with the patterns Loki mines from them: each stream and level mined apart, oldest line first, with Loki's cluster limits. A range with more lines is answered from VictoriaLogs' counts (-patterns-counts) instead, which mines the lines of a level's streams together. Reading costs about 200 bytes per line of transfer and a sort in VictoriaLogs' memory; 0 turns the exact reading off")
 	patternsStateMaxBytes := fs.Int64("patterns-state-max-bytes", proxy.DefaultPatternsStateMaxBytes, "Memory the /loki/api/v1/patterns state of all tenants may hold: each stream's clusters at each level trained on every line read since the state was built from Loki's pattern retention (3h), as Loki's pattern ingester keeps them, so a refresh reads only the lines after what was read and templates come from every line; past it the least recently used tenant's state is dropped. A selector whose lines over the retention exceed -patterns-exact-max-lines is answered without the state; 0 turns the state off")
@@ -934,6 +944,9 @@ func run(
 			detectedLevelBodyScan:               *detectedLevelBodyScan,
 			translateShadowSample:               *translateShadowSample,
 			queryPlanLowering:                   *queryPlanLowering,
+			queryStatsMode:                      *queryStatsMode,
+			queryStatsExactMetricBytes:          *queryStatsExactMetricBytes,
+			queryStatsExactLogLines:             *queryStatsExactLogLines,
 			patternsEnabled:                     *patternsEnabled,
 			deleteAPIEnabled:                    *deleteAPIEnabled,
 			deleteAPIAuthToken:                  *deleteAPIAuthToken,
@@ -1089,6 +1102,8 @@ func run(
 			slowUpstreamThreshold:               *slowUpstreamThreshold,
 			slowQueryLogRawQueries:              *slowQueryLogRawQueries,
 			slowQueryLogLevel:                   *slowQueryLogLevel,
+			logUserHeader:                       *logUserHeader,
+			logUserHeaderTrustedCIDRs:           *logUserHeaderTrustedCIDRs,
 			metadataDefaultLookback:             *metadataDefaultLookback,
 			metadataCacheFreshness:              *metadataCacheFreshness,
 			maxStatsCacheFreshness:              *maxStatsCacheFreshness,
@@ -2160,6 +2175,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	if err != nil {
 		return proxy.Config{}, err
 	}
+	if cfg.queryStatsMode != "" && cfg.queryStatsMode != proxy.QueryStatsModeLoki && cfg.queryStatsMode != proxy.QueryStatsModeVictoriaLogs {
+		return proxy.Config{}, fmt.Errorf("invalid -query-stats-mode: %q (must be 'loki' or 'victorialogs')", cfg.queryStatsMode)
+	}
 	derivedFields, err := parseDerivedFieldsJSON(cfg.derivedFieldsJSON)
 	if err != nil {
 		return proxy.Config{}, fmt.Errorf("parse derived fields: %w", err)
@@ -2256,6 +2274,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DisableDetectedLevelBodyScan:       !cfg.detectedLevelBodyScan,
 		TranslateShadowSample:              cfg.translateShadowSample,
 		DisableQueryPlanLowering:           !cfg.queryPlanLowering,
+		QueryStatsMode:                     cfg.queryStatsMode,
+		QueryStatsExactMetricBytes:         cfg.queryStatsExactMetricBytes,
+		QueryStatsExactLogLines:            cfg.queryStatsExactLogLines,
 		PatternsEnabled:                    boolPointer(cfg.patternsEnabled),
 		DeleteAPIEnabled:                   cfg.deleteAPIEnabled,
 		DeleteAPIAuthToken:                 cfg.deleteAPIAuthToken,
@@ -2392,6 +2413,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		SlowUpstreamThreshold:               cfg.slowUpstreamThreshold,
 		SlowQueryLogRawQueries:              cfg.slowQueryLogRawQueries,
 		SlowQueryLogLevel:                   cfg.slowQueryLogLevel,
+		LogUserHeader:                       cfg.logUserHeader,
+		LogUserHeaderTrustedCIDRs:           cfg.logUserHeaderTrustedCIDRs,
 		MetadataDefaultLookback:             cfg.metadataDefaultLookback,
 		MetadataCacheFreshness:              cfg.metadataCacheFreshness,
 		MaxStatsCacheFreshness:              cfg.maxStatsCacheFreshness,

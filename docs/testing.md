@@ -729,6 +729,7 @@ Logs Drilldown family assertions are explicit in the contract matrix:
 - `1.0.x` checks service-selection volume buckets, detected-fields filtering, and labels-field parsing behavior
 - `2.x` and `3.x` check detected-level default columns, field-values breakdown scenes, and additional label-tab wiring
 - `3.1.0` and later also check that the logs footer reads the `Summary: total bytes processed` frame stat
+- the `drilldown` e2e-compat group also checks the query statistics against Loki (`TestDrilldown_QueryStatsLikeLoki`): the `data.stats` shape of log, metric, instant and `volume_range` answers over 5m and 1h equals Loki's; in the default `-query-stats-mode=loki` the splits and shards equal Loki's and lines and bytes processed are within 10% and 25% of Loki's (the tolerances of an estimate against Loki's own numbers); each refresh reports its own `execTime`, a log or instant refresh answered from the proxy's cache replays the computation, and a metric repeat reports a results-cache hit with Loki's splits; Grafana lists the same "Summary:" and "Ingester:" frame stats for the proxy as for Loki (`TestDrilldown_QueryStatsEnvelope`). The emulation rules are also pinned by unit tests against Loki answers recorded from the stack (`internal/proxy/testdata/loki_query_stats_splits.json`, `TestLokiStatsEmulation_MatchesRecordedLokiAnswers`)
 
 The stack is version-parameterized through compose environment variables:
 
