@@ -1,6 +1,7 @@
 package querycorpus_test
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -175,6 +176,40 @@ func TestLokiDifferentialCatchesAWrongAnswer(t *testing.T) {
 	for _, class := range []string{"drops a line Loki keeps", "writes another line", "adds a label Loki does not have", "keeps a line Loki drops"} {
 		if tried[class] == 0 {
 			t.Errorf("no query to try %q on", class)
+		}
+	}
+}
+
+// The recorded rows are stored under the tenant diffTenant gives their query and label spelling, so a row added
+// to the curated sources (which moves every later query's place in the corpus) leaves the recording as it is: the
+// live oracles, which VictoriaLogs writes the tenant into every row's _stream_id of, answer what is committed.
+//
+// conformance: architecture-syntax-package-layering
+func TestLokiDifferentialTenantsDoNotMove(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	seen := map[uint32]string{}
+	for _, dq := range diffQueries(t) {
+		rec := readDiffAnswers(t)[dq.q]
+		if rec == nil {
+			t.Fatalf("no recorded answer for %s", dq.q)
+		}
+		for key, vl := range rec.VL {
+			tenant := diffTenant(dq.q, key)
+			if tenant == 0 {
+				t.Errorf("%s under %s: tenant 0 is the default tenant", dq.q, key)
+			}
+			if other, dup := seen[tenant]; dup && other != dq.q+" under "+key {
+				t.Errorf("%s under %s takes the tenant of %s", dq.q, key, other)
+			}
+			seen[tenant] = dq.q + " under " + key
+			want := fmt.Sprintf("_stream_id=%08x", tenant)
+			for i, row := range vl.Stored {
+				for _, f := range row {
+					if strings.HasPrefix(f, "_stream_id=") && !strings.HasPrefix(f, want) {
+						t.Errorf("%s under %s: row %d is stored as %s, tenant %d wants %s...", dq.q, key, i, f, tenant, want)
+					}
+				}
+			}
 		}
 	}
 }
