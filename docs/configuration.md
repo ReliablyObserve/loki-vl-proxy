@@ -754,7 +754,7 @@ See [Performance — Go Runtime Tuning](performance.md#go-runtime-tuning) for gu
 | `-backend-min-version` | — | `v1.49.0` | Minimum VictoriaLogs version considered fully supported at startup compatibility gate (`v1.49.0`, the latest `v1.4x` release; every `v1.5x` release is supported; the proxy refuses to start below it unless `-backend-allow-unsupported-version=true`) |
 | `-backend-allow-unsupported-version` | — | `false` | Allow startup when detected backend version is lower than `-backend-min-version` (unsafe override; the version is unsupported and untested, and the proxy keeps no fallbacks for it) |
 | `-backend-version-check-timeout` | — | `5s` | Timeout for startup backend version compatibility check (`/health`) |
-| `-stream-response` | — | `false` | Stream via chunked transfer |
+| `-stream-response` | — | `false` | Stream via chunked transfer. The status line goes out with the first row, so a VictoriaLogs body that is broken before it (not JSON, cut off, a row above 8 MiB) is answered with Loki's `500`; one that breaks after it ends the response abnormally (the connection is aborted, no closing JSON, counted in `loki_vl_proxy_internal_operation_total{operation="stream_response",outcome="aborted"}`), never as a complete-looking partial result |
 | `-response-compression` | — | `auto` | Response compression codec: `auto`, `gzip`, `none` |
 | `-response-compression-min-bytes` | — | `1024` | Minimum response size before frontend compression starts; smaller responses stay identity |
 | `-response-gzip` | — | `true` | Deprecated compatibility switch; `false` disables response compression when `-response-compression` is unset |

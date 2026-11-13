@@ -39,7 +39,7 @@ smoke	internal/proxy	FuzzJSONErrorSplitPredicate	12s	-	json parser error count s
 smoke	internal/proxy	FuzzOrderedJSONStepWiderThanRange	12s	-	json metric with a range shorter than the step against the Loki-semantics reference
 smoke	internal/proxy	FuzzStatsJSONSeriesTransformDifferential	12s	-	stats series JSON compatibility
 smoke	internal/proxy	FuzzVLStatsErrorBodyDifferential	12s	-	stats error body check against the decoding
-smoke	internal/proxy	FuzzVLRowDecodersFailTheSameBodies	12s	-	log and window row decoders fail a body with a row that is not JSON
+smoke	internal/proxy	FuzzVLRowDecodersFailTheSameBodies	12s	-	log, window and -stream-response row decoders fail a body with a row that is not JSON
 smoke	internal/proxy	FuzzStatsFoldRelabelDifferential	12s	-	one-pass stats translation and tumbling relabel
 smoke	internal/proxy	FuzzStatsFoldRelabelOneParseDifferential	12s	-	one-parse stats translation and tumbling relabel
 smoke	internal/proxy	FuzzStatsExtentOwnedEncoding	12s	-	owned stats extent encoding

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- With `-stream-response`, a broken VictoriaLogs answer to a log query is no longer sent as a partial success.
+  A body that is broken before its first row (not JSON, cut off, or a row above 8 MiB) now answers Loki's `500`
+  `Internal Server Error` (`504` or `499` for a timeout or a cancel), as it does without the flag. A body that
+  breaks after the first row, or holds a row that is not JSON, ends the response abnormally, so the client reads
+  a failed response and not a complete-looking result that is missing rows; the aborts are counted in
+  `loki_vl_proxy_internal_operation_total{operation="stream_response",outcome="aborted"}`. A body with no rows is
+  still an empty result, and a healthy answer is unchanged.
 - A VictoriaLogs call that fails for a moment no longer fails the query. A read that meets a refused or reset
   connection, a connection closed before any answer, or a `429`, `502`, `503` or `504` answer (a full select
   queue, a node restarting, a proxy in front of VictoriaLogs that lost its backend) is sent again, once for every

@@ -1601,6 +1601,13 @@
     "internal/proxy/stream_metadata_test.go | loki_api_v1_query_range",
     "internal/proxy/stream_metadata_test.go | profiles/keep-removes-derived-service-name",
     "internal/proxy/stream_metadata_test.go | profiles/keep-structured-metadata-key",
+    "internal/proxy/stream_response_broken_body_test.go | backend-deadlines-and-cancellation",
+    "internal/proxy/stream_response_broken_body_test.go | semantics/error-layer-backend-failure-status",
+    "internal/proxy/stream_response_broken_body_test.go | semantics/error-layer-backend-text",
+    "internal/proxy/stream_response_broken_body_test.go | semantics/error-layer-cancel-deadline",
+    "internal/proxy/stream_response_broken_body_test.go | semantics/error-layer-internal-go-text",
+    "internal/proxy/stream_response_broken_body_test.go | semantics/error-layer-silent-success",
+    "internal/proxy/stream_response_broken_body_test.go | status-500",
     "internal/proxy/stream_tag_restore_test.go | loki_api_v1_query_range",
     "internal/proxy/stream_tag_restore_test.go | semantics/stream-label-shadowed-by-ingest-json-key",
     "internal/proxy/stream_tag_restore_test.go | severity/detected-level-filter-json-level",
@@ -2426,7 +2433,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 546,
+      "go": 547,
       "playwright": 1
     },
     "page_kinds": {

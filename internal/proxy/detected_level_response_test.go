@@ -195,7 +195,7 @@ func TestDetectedLevelStreamingResponseEncoding(t *testing.T) {
 			p := newDetectedLevelTestProxy(t, LabelStyleUnderscores, false)
 			rec := httptest.NewRecorder()
 			resp := &http.Response{Body: io.NopCloser(strings.NewReader(detectedLevelRows))}
-			p.streamLogQuery(rec, resp, `{app="api"}`, categorized, categorized)
+			p.streamLogQuery(context.Background(), rec, resp, `{app="api"}`, categorized, categorized)
 			var out struct {
 				Data struct {
 					Result []map[string]interface{} `json:"result"`
