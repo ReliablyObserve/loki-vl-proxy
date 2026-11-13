@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `/loki/api/v1/detected_fields` and `/loki/api/v1/detected_field/{name}/values` answer a failed later
+  VictoriaLogs call as an error, as Loki does, where the first read had already worked. A field that lives
+  inside the log line (the last read of its values), a value held by a stream label (the labels read), and a
+  field list whose line scan failed while the stored-field lookup worked now answer the status and text the
+  other routes give that failure (500 `Internal Server Error` for a failed backend, 504 and 499 for a
+  timeout and a cancel), and no longer an empty list of values or the stored fields alone. A field no line
+  holds, and a query VictoriaLogs cannot unpack, still answer an empty list. The lookups that only add to an
+  answer that already has its required read (extra stored fields, the sampled `level` and `service_name`
+  labels on `detected_labels`, the relaxed query after a strict one fails) keep that answer.
+
+## [2.194.0] - 2026-11-12
+
 ### Changed
 
 - The query plan now decides how the handlers answer a binary operation whose operands are range or vector
@@ -32,16 +46,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no close frame, which clients read as their library's `unexpected EOF`, and a failed poll was retried
   silently without end. A first VictoriaLogs probe that takes longer than `-backend-timeout` is answered
   before the upgrade with `504` and Loki's deadline text.
-
-- `/loki/api/v1/detected_fields` and `/loki/api/v1/detected_field/{name}/values` answer a failed later
-  VictoriaLogs call as an error, as Loki does, where the first read had already worked. A field that lives
-  inside the log line (the last read of its values), a value held by a stream label (the labels read), and a
-  field list whose line scan failed while the stored-field lookup worked now answer the status and text the
-  other routes give that failure (500 `Internal Server Error` for a failed backend, 504 and 499 for a
-  timeout and a cancel), and no longer an empty list of values or the stored fields alone. A field no line
-  holds, and a query VictoriaLogs cannot unpack, still answer an empty list. The lookups that only add to an
-  answer that already has its required read (extra stored fields, the sampled `level` and `service_name`
-  labels on `detected_labels`, the relaxed query after a strict one fails) keep that answer.
 
 ## [2.193.0] - 2026-11-12
 
