@@ -6,10 +6,7 @@
       "e2e": false,
       "e2e_rows": [],
       "kind": "backend_failure",
-      "known_difference_ids": [
-        "semantics/error-layer-backend-text",
-        "semantics/error-layer-silent-success"
-      ],
+      "known_difference_ids": [],
       "matching_rows": 0,
       "messages": [],
       "modes": {
@@ -26,17 +23,12 @@
         "malformed": {
           "e2e": false,
           "gate_cells": 1,
-          "leaks": [
-            "semantics/error-layer-backend-text",
-            "semantics/error-layer-silent-success"
-          ]
+          "leaks": []
         },
         "truncated": {
           "e2e": false,
           "gate_cells": 1,
-          "leaks": [
-            "semantics/error-layer-silent-success"
-          ]
+          "leaks": []
         },
         "vl400_limit": {
           "e2e": false,
@@ -74,12 +66,12 @@
           "leaks": []
         }
       },
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
       "recorded": false,
       "route": "alerts",
       "rows": 0,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -5101,7 +5093,7 @@
   "summary": {
     "cells": 124,
     "cells_e2e": 71,
-    "cells_matching": 94,
+    "cells_matching": 95,
     "cells_recorded": 65,
     "check_order_rows": 33,
     "comparable_rows": 219,

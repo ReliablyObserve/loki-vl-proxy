@@ -88,7 +88,19 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
-      "expression": "r.Context(), errors.New(\"invalid alerting backend response\"), shape",
+      "expression": "r.Context(), alertingBackendFailure(err), shape",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/alerting.go proxyAlertingRead",
+      "writer": "writeErrShaped"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), alertingBackendFailure(err), shape",
       "kind": "layer",
       "message": null,
       "status": null,
@@ -124,7 +136,19 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
-      "expression": "r.Context(), fmt.Errorf(\"invalid ruler backend response: %w\", err), writeLokiHTTPError",
+      "expression": "r.Context(), alertingBackendFailure(fmt.Errorf(\"invalid ruler backend response: %w\", err)), writeLokiHTTPError",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/alerting.go handleLegacyRules",
+      "writer": "writeErrShaped"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), alertingBackendFailure(errAlertingErrorBody), writeLokiHTTPError",
       "kind": "layer",
       "message": null,
       "status": null,
@@ -1121,6 +1145,18 @@
       "error_text": false,
       "error_type": null,
       "expression": "r.Context(), rightErr",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/metric_binary.go proxyBinaryMetric",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), err",
       "kind": "layer",
       "message": null,
       "status": null,
@@ -2416,13 +2452,25 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
-      "expression": "ctx, msg",
+      "expression": "ctx, statsErrorBodyFailure(msg)",
       "kind": "layer",
       "message": null,
       "status": null,
       "status_token": null,
       "where": "internal/proxy/stream_processing.go wrapStatsOrFail",
-      "writer": "writeVLStatsErrorBody"
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "ctx, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/stream_processing.go wrapStatsOrFail",
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -2647,11 +2695,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 157,
+        "count": 161,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 153,
+        "layer_sites": 157,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2659,6 +2707,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 211
+    "call_sites": 215
   }
 }

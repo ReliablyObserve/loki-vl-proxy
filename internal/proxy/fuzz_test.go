@@ -166,7 +166,10 @@ func FuzzCombineBinaryMetricResultsScalarPath(f *testing.F) {
 			rightQL = strconv.FormatFloat(scalarValue, 'f', -1, 64)
 		}
 
-		out := combineBinaryMetricResults(leftBody, rightBody, op, "matrix", leftScalar, rightScalar, leftQL, rightQL)
+		out, err := combineBinaryMetricResults(leftBody, rightBody, op, "matrix", leftScalar, rightScalar, leftQL, rightQL)
+		if err != nil {
+			t.Fatalf("valid operands must combine: %v", err)
+		}
 		var payload map[string]interface{}
 		if err := json.Unmarshal(out, &payload); err != nil {
 			t.Fatalf("combined output must stay valid JSON: %v; body=%s", err, string(out))

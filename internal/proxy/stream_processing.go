@@ -23,6 +23,7 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -2063,35 +2064,48 @@ func appendLabelPair(pair string, dst map[string]string) {
 	dst[k] = v
 }
 
-func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
+// wrapAsLokiResponse is a stats body as Loki's answer envelope. A body that is
+// not one JSON document, or that is VictoriaLogs' error under a success status,
+// is not an answer: it fails as Loki fails a call it could not complete (a
+// typed backend failure; the body's words are for the log line only). The two
+// fast paths take a body the proxy's own passes already wrapped, and return it
+// unchecked.
+func wrapAsLokiResponse(vlBody []byte, resultType string) ([]byte, error) {
 	// Fast path A: body is already a complete Loki success response
 	// {"status":"success","data":{"resultType":"...","result":[...]}}
 	// This is the common case after trimStatsQRByTimeFJ / translateStatsResponseLabels
 	// which reconstruct the outer envelope. Return as-is — zero allocations.
 	if hasPrefix(vlBody, `{"status":"success","data":{"resultType":`) {
-		return vlBody
+		return vlBody, nil
 	}
 
 	// Fast path B: VL returns {"data":{"resultType":"...","result":[...]}} without status.
 	// normalizeLokiResultDataShape is a no-op when both "result" and "resultType" are present,
 	// so just prepend the status field via a byte splice.
 	if hasPrefix(vlBody, `{"data":{"resultType":`) {
-		return append([]byte(`{"status":"success",`), vlBody[1:]...)
+		return append([]byte(`{"status":"success",`), vlBody[1:]...), nil
 	}
 
 	// VL stats endpoints return Prometheus-compatible format already.
 	// Try to parse and re-wrap in Loki envelope.
+	// A body with nothing in it is an empty result, as every route reading a
+	// VictoriaLogs body answers it.
+	if len(bytes.TrimSpace(vlBody)) == 0 {
+		return lokiEmptyResultResponse(resultType), nil
+	}
 	var promResp map[string]interface{}
 	if err := stdjson.Unmarshal(vlBody, &promResp); err != nil {
-		// If we can't parse, return as-is with wrapper
-		return lokiEmptyResultResponse(resultType)
+		return nil, statsBodyNotJSONFailure(err)
+	}
+	if promResp == nil {
+		return nil, statsBodyNotJSONFailure(errors.New("null"))
 	}
 
 	// A VL error body with no writer to answer it (callers that have one
-	// check vlStatsErrorBody first): Loki's text, not VictoriaLogs' message.
-	// VL may return: {"error":"message"} or {"status":"error","msg":"message"}
-	if _, isErr := vlStatsErrorBody(vlBody); isErr {
-		return lokiInternalErrorResponse()
+	// check vlStatsErrorBody first): VL may return {"error":"message"} or
+	// {"status":"error","msg":"message"}.
+	if msg, isErr := vlStatsErrorBody(vlBody); isErr {
+		return nil, statsErrorBodyFailure(msg)
 	}
 
 	// If VL already returned status/data format, pass through
@@ -2099,15 +2113,15 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 		if dataMap, ok := rawData.(map[string]interface{}); ok {
 			normalizeLokiResultDataShape(dataMap, resultType)
 			dataBytes, _ := stdjson.Marshal(dataMap)
-			return appendLokiSuccessEnvelope(dataBytes)
+			return appendLokiSuccessEnvelope(dataBytes), nil
 		}
-		return lokiEmptyResultResponse(resultType)
+		return lokiEmptyResultResponse(resultType), nil
 	}
 
 	normalizeLokiResultDataShape(promResp, resultType)
 
 	dataBytes, _ := stdjson.Marshal(promResp)
-	return appendLokiSuccessEnvelope(dataBytes)
+	return appendLokiSuccessEnvelope(dataBytes), nil
 }
 
 // lokiEmptyResultResponse builds {"status":"success","data":{"resultType":"<resultType>","result":[]}}
@@ -2184,33 +2198,39 @@ func vlStatsErrorBodyDecoded(body []byte) (string, bool) {
 	return "", false
 }
 
-// writeVLStatsErrorBody answers a stats body that is VictoriaLogs' error under a
-// success status as Loki answers a failed call (500). The message is for the
-// log line only: it is never part of the error the layer maps, so it cannot be
-// mistaken for a proxy limit text.
-func (p *Proxy) writeVLStatsErrorBody(w http.ResponseWriter, ctx context.Context, msg string) {
-	status, _, text := lokiClientError(ctx, errVLStatsErrorBody)
-	p.writeErrorCause(w, status, text, fmt.Errorf("%w: %s", errVLStatsErrorBody, msg))
+// statsErrorBodyFailure is the failure of a stats body that is VictoriaLogs'
+// error under a success status: Loki's failed-call 500. The message is the
+// cause, for the log line only: it is never part of the text the client reads.
+func statsErrorBodyFailure(msg string) *lokierr.Error {
+	return lokierr.BackendFailed(fmt.Errorf("%w: %s", errVLStatsErrorBody, msg))
+}
+
+// statsBodyNotJSONFailure is the failure of a stats body, answered with a
+// success status, that is empty, broken off or not JSON.
+func statsBodyNotJSONFailure(cause error) *lokierr.Error {
+	return lokierr.BackendFailed(fmt.Errorf("%w: %w", errStatsBodyNotJSON, cause))
 }
 
 // wrapStatsOrFail wraps a stats body as a Loki response, or answers a body that
-// is VictoriaLogs' error under a success status through the error layer.
+// is not an answer (VictoriaLogs' error under a success status, or a body that
+// is not JSON) through the error layer.
 func (p *Proxy) wrapStatsOrFail(w http.ResponseWriter, ctx context.Context, body []byte, resultType string) ([]byte, bool) {
 	if msg, isErr := vlStatsErrorBody(body); isErr {
-		p.writeVLStatsErrorBody(w, ctx, msg)
+		p.writeErr(w, ctx, statsErrorBodyFailure(msg))
 		return nil, false
 	}
-	return wrapAsLokiResponse(body, resultType), true
+	out, err := wrapAsLokiResponse(body, resultType)
+	if err != nil {
+		p.writeErr(w, ctx, err)
+		return nil, false
+	}
+	return out, true
 }
 
-var errVLStatsErrorBody = errors.New("backend answered a stats error body")
-
-// lokiInternalErrorResponse is the fallback body of wrapAsLokiResponse for a
-// VictoriaLogs error body with no response writer to answer it: Loki's text for
-// a failed call, never VictoriaLogs' message.
-func lokiInternalErrorResponse() []byte {
-	return []byte(`{"status":"error","errorType":"internal","error":"` + lokiErrInternal + `"}`)
-}
+var (
+	errVLStatsErrorBody = errors.New("backend answered a stats error body")
+	errStatsBodyNotJSON = errors.New("backend answered a stats body that is not JSON")
+)
 
 // appendJSONString appends s as a JSON-encoded string to dst and returns the
 // extended slice. Mirrors appendJSONStringToBuilder semantics (HTML-safe escapes

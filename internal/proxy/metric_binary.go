@@ -1933,16 +1933,18 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op s
 		return
 	}
 
-	var result []byte
+	var (
+		result []byte
+		err    error
+	)
 	if leftIsScalar || rightIsScalar {
-		result = combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, operandText(left), operandText(right))
+		result, err = combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, operandText(left), operandText(right))
 	} else {
-		var err error
 		result, err = matchBinaryMetricResultsContext(r.Context(), leftBody, rightBody, op, resultType, vm, false)
-		if err != nil {
-			p.writeErr(w, r.Context(), err)
-			return
-		}
+	}
+	if err != nil {
+		p.writeErr(w, r.Context(), err)
+		return
 	}
 
 	if origStartNs > 0 {
@@ -2075,7 +2077,11 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op str
 	}
 
 	// Combine results with arithmetic at proxy level
-	result := combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
+	result, err := combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
+	if err != nil {
+		p.writeErr(w, r.Context(), err)
+		return
+	}
 	if origStartNs > 0 {
 		endNs, _ := parseLokiTimeToUnixNano(r.FormValue("end"))
 		result = relabelTumblingStatsQueryRange(result, origStartNs, endNs, shiftNs)
@@ -2129,7 +2135,7 @@ func (p *Proxy) evalBinary(r *http.Request, b physical.Binary, vlEndpoint, resul
 	if !leftScalar && !rightScalar {
 		return matchBinaryMetricResultsContext(r.Context(), leftBody, rightBody, b.Op, resultType, binaryMatching(b.Match), false)
 	}
-	return combineBinaryMetricResults(leftBody, rightBody, b.Op, resultType, leftScalar, rightScalar, operandText(b.L), operandText(b.R)), nil
+	return combineBinaryMetricResults(leftBody, rightBody, b.Op, resultType, leftScalar, rightScalar, operandText(b.L), operandText(b.R))
 }
 
 // binaryOperand is a translated operand of a binary expression as its physical operator: a number, a nested
@@ -2157,8 +2163,10 @@ func binaryMatching(m *physical.Matching) *translator.VectorMatchInfo {
 	return &translator.VectorMatchInfo{MatchOn: m.MatchOn, GroupSide: m.GroupSide, On: m.On, Ignoring: m.Ignoring, GroupLeft: m.GroupLeft, GroupRight: m.GroupRight}
 }
 
-// combineBinaryMetricResults applies arithmetic op to two VL stats results.
-func combineBinaryMetricResults(leftBody, rightBody []byte, op, resultType string, leftScalar, rightScalar bool, leftQL, rightQL string) []byte {
+// combineBinaryMetricResults applies arithmetic op to two VL stats results. An
+// operand that is not an answer (not JSON, or VictoriaLogs' error under a
+// success status) fails the request instead of becoming an empty one.
+func combineBinaryMetricResults(leftBody, rightBody []byte, op, resultType string, leftScalar, rightScalar bool, leftQL, rightQL string) ([]byte, error) {
 	// For scalar operations (e.g., rate(...) * 100), apply to each value
 	if rightScalar {
 		scalar := parseScalar(rightQL)
@@ -2180,10 +2188,10 @@ func parseScalar(s string) float64 {
 	return f
 }
 
-func applyScalarOp(body []byte, op string, scalar float64, resultType string) []byte {
-	var vlResp map[string]interface{}
-	if err := json.Unmarshal(body, &vlResp); err != nil {
-		return wrapAsLokiResponse(body, resultType)
+func applyScalarOp(body []byte, op string, scalar float64, resultType string) ([]byte, error) {
+	vlResp, err := decodeStatsOperand(body)
+	if err != nil {
+		return nil, err
 	}
 
 	results, _ := extractMetricResults(vlResp)
@@ -2196,10 +2204,10 @@ func applyScalarOp(body []byte, op string, scalar float64, resultType string) []
 	return wrapAsLokiResponse(result, resultType)
 }
 
-func applyScalarOpReverse(body []byte, op string, scalar float64, resultType string) []byte {
-	var vlResp map[string]interface{}
-	if err := json.Unmarshal(body, &vlResp); err != nil {
-		return wrapAsLokiResponse(body, resultType)
+func applyScalarOpReverse(body []byte, op string, scalar float64, resultType string) ([]byte, error) {
+	vlResp, err := decodeStatsOperand(body)
+	if err != nil {
+		return nil, err
 	}
 
 	results, _ := extractMetricResults(vlResp)
@@ -2210,6 +2218,26 @@ func applyScalarOpReverse(body []byte, op string, scalar float64, resultType str
 
 	result, _ := json.Marshal(vlResp)
 	return wrapAsLokiResponse(result, resultType)
+}
+
+// decodeStatsOperand decodes one operand of a binary metric expression. An
+// operand that is not a JSON object, or that is VictoriaLogs' error under a
+// success status, is not an answer: it fails as a backend failure.
+func decodeStatsOperand(body []byte) (map[string]interface{}, error) {
+	if len(bytes.TrimSpace(body)) == 0 {
+		return map[string]interface{}{}, nil // nothing in it: an empty result
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, statsBodyNotJSONFailure(err)
+	}
+	if resp == nil {
+		return nil, statsBodyNotJSONFailure(errors.New("null"))
+	}
+	if msg, isErr := vlStatsErrorBody(body); isErr {
+		return nil, statsErrorBodyFailure(msg)
+	}
+	return resp, nil
 }
 
 func parsePointValue(raw interface{}) float64 {
@@ -2224,11 +2252,16 @@ func parsePointValue(raw interface{}) float64 {
 	}
 }
 
-func combineMetricResults(leftBody, rightBody []byte, op, resultType string) []byte {
+func combineMetricResults(leftBody, rightBody []byte, op, resultType string) ([]byte, error) {
 	// Parse both results
-	var leftResp, rightResp map[string]interface{}
-	json.Unmarshal(leftBody, &leftResp)
-	json.Unmarshal(rightBody, &rightResp)
+	leftResp, err := decodeStatsOperand(leftBody)
+	if err != nil {
+		return nil, err
+	}
+	rightResp, err := decodeStatsOperand(rightBody)
+	if err != nil {
+		return nil, err
+	}
 
 	leftResults, _ := extractMetricResults(leftResp)
 	rightResults, _ := extractMetricResults(rightResp)

@@ -22,7 +22,11 @@ func foldRelabelReference(p *Proxy, body []byte, keep func(int64) bool, query st
 	if !handled {
 		return nil, nil, false
 	}
-	wrapped := wrapAsLokiResponse(translated, "matrix")
+	wrapped, err := wrapAsLokiResponse(translated, "matrix")
+	if err != nil {
+		// A body that is no answer: the comparison reports it as a translated error body.
+		wrapped = []byte(`{"error":"not an answer"}`)
+	}
 	want, handled = trimStatsQRBySeries(wrapped, relabelKeep, relabel)
 	return wrapped, want, handled
 }

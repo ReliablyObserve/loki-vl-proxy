@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A ruler or alerts backend that answers with a body the proxy cannot pass on now fails the request instead of
+  answering `200`. Before, `/prometheus/api/v1/alerts`, `/loki/api/v1/alerts`, `/prometheus/api/v1/rules` and the
+  legacy rules views sent the backend's body on as it came: a body cut off mid-answer, a body that is not JSON or
+  is empty, and the ruler's own error under a `200` all reached the client as a success (and a malformed body
+  carried the backend's text). They now answer what Loki answers for a ruler call that could not complete: `500`
+  in the route's error shape with `Internal Server Error`, and the backend's words in the proxy log line only.
+- A binary metric query (`sum(rate({app="x"}[1m])) * 2`, `a + b`) or a stats answer whose VictoriaLogs body is not
+  JSON, is `null`, or is VictoriaLogs' error under a `200` no longer answers an empty or error-looking success. It
+  fails with `500 Internal Server Error` and the backend's words in the log line only; the right-hand operand of
+  `a + b` used to be ignored when it was an error body.
 - A query the proxy accepts but cannot serve no longer answers with the proxy's own wording. The client read the
   translator's text (`unknown pipeline stage "foo" — not a valid LogQL parser or label filter`, `sum() requires a
   range metric inside ...`, `invalid range metric query`, `loki-vl-proxy requires a uniform offset ...`, `unsupported

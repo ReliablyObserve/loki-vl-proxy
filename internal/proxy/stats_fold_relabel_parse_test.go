@@ -17,7 +17,11 @@ import (
 // caller make when the one parse does not answer.
 func foldParseReference(p *Proxy, body []byte, keep func(int64) bool, query string, relabelKeep func(int64) bool, relabel func(int64) int64) (translated, want []byte) {
 	trimmed, _ := p.trimAndTranslateStatsQRFJ(context.Background(), body, keep, query)
-	translated = wrapAsLokiResponse(trimmed, "matrix")
+	translated, err := wrapAsLokiResponse(trimmed, "matrix")
+	if err != nil {
+		// A body that is no answer: the comparison below reports it as a translated error body.
+		translated = []byte(`{"error":"not an answer"}`)
+	}
 	return translated, trimStatsQRByTimeFJShifted(translated, relabelKeep, relabel)
 }
 
