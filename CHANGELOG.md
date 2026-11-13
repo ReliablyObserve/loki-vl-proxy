@@ -7,15 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- The proxy's error answers now come from one typed error layer: each Loki error message has its own
-  constructor that writes Loki's exact status and text from typed inputs (the parameter name and value, the
-  parser's position, the configured limit, the kind of backend failure), and one writer picks the body shape
-  Loki uses on each route. Every constructor's text is checked byte for byte against real Loki answers
-  recorded over HTTP. Nothing a client sees changes: every status, header and body the error writers send is
-  the same as before.
-
 ### Fixed
 
 - Requests Loki's router refuses are now answered as Loki answers them, before any other check. A method a read
@@ -33,6 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The answer to a write to `/loki/api/v1/push` no longer names the backend. A method other than `POST` is Loki's
   `405` with no body; a `POST` is `405` with `write operations are not supported, this is a read-only proxy` as
   plain text, in the shape Loki writes its push errors in, where it was a JSON body.
+
+## [2.198.0] - 2026-11-13
+
+### Changed
+
+- The proxy's error answers now come from one typed error layer: each Loki error message has its own
+  constructor that writes Loki's exact status and text from typed inputs (the parameter name and value, the
+  parser's position, the configured limit, the kind of backend failure), and one writer picks the body shape
+  Loki uses on each route. Every constructor's text is checked byte for byte against real Loki answers
+  recorded over HTTP. Nothing a client sees changes: every status, header and body the error writers send is
+  the same as before.
+
+### Fixed
+
 - With `-stream-response`, a broken VictoriaLogs answer to a log query is no longer sent as a partial success.
   A body that is broken before its first row (not JSON, cut off, or a row above 8 MiB) now answers Loki's `500`
   `Internal Server Error` (`504` or `499` for a timeout or a cancel), as it does without the flag. A body that
