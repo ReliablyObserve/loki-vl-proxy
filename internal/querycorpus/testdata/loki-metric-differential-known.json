@@ -1,0 +1,58 @@
+{
+  "q-0ed90399228e": {
+    "classes": {
+      "adds a series Loki does not have": "semantics/outer-by-over-without-reads-level-as-label",
+      "series: adds a label": "semantics/outer-by-over-without-reads-level-as-label"
+    },
+    "q": "count(max(count(rate({app=\"uw\"} [90s])) without (pod_name, abc)) by (rack, baz)) by (node, svc, rack)"
+  },
+  "q-226a42da2d60": {
+    "classes": {
+      "adds a series Loki does not have": "semantics/outer-by-over-without-reads-level-as-label",
+      "series: adds a label": "semantics/outer-by-over-without-reads-level-as-label"
+    },
+    "q": "min(min(count_over_time({app=\"uw\"} [90s])) without (svc)) by (pod, rack, baz)"
+  },
+  "q-4422191ce85f": {
+    "classes": {
+      "adds a series Loki does not have": "semantics/outer-by-over-without-reads-level-as-label",
+      "series: adds a label": "semantics/outer-by-over-without-reads-level-as-label"
+    },
+    "q": "max by (pod, zone, rack, pod_name) (count without (baz) (rate({app=\"uw\"} [30s])))"
+  },
+  "q-7bbe2c221d60": {
+    "classes": {
+      "adds a series Loki does not have": "semantics/outer-by-over-without-reads-level-as-label",
+      "series: adds a label": "semantics/outer-by-over-without-reads-level-as-label"
+    },
+    "q": "min(sum(rate({app=\"uw\"} [30s])) without (baz, rack)) by (pod, baz, pod_name)"
+  },
+  "q-872928f309ed": {
+    "classes": {
+      "adds a series Loki does not have": "semantics/outer-by-over-without-reads-level-as-label",
+      "series: adds a label": "semantics/outer-by-over-without-reads-level-as-label"
+    },
+    "q": "avg(min(count(rate({app=\"uw\"} [30s])) without (baz, container, pod_name)) by (pod, rack, baz, pod_name)) by (pod, svc, rack, baz, pod_name, app)"
+  },
+  "q-9b8f814f7928": {
+    "classes": {
+      "adds a series Loki does not have": "semantics/outer-by-over-without-reads-level-as-label",
+      "series: adds a label": "semantics/outer-by-over-without-reads-level-as-label"
+    },
+    "q": "avg by (pod, zone, baz) (count without (rack, node) (rate({app=\"uw\"} [1m])))"
+  },
+  "q-c3df1d1f4321": {
+    "classes": {
+      "adds a series Loki does not have": "semantics/outer-by-over-without-reads-level-as-label",
+      "misses a series Loki has": "semantics/outer-by-over-without-reads-level-as-label"
+    },
+    "q": "avg(avg(rate({app=\"uw\"} [90s])) without (pod)) by (zone, rack, app)"
+  },
+  "q-f86c9dcfccd5": {
+    "classes": {
+      "adds a series Loki does not have": "semantics/outer-by-over-without-reads-level-as-label",
+      "misses a series Loki has": "semantics/outer-by-over-without-reads-level-as-label"
+    },
+    "q": "count by (rack, pod_name, app) (count by (zone, svc, app) (sum without (rack, svc) (count_over_time({app=\"uw\"} [30s]))))"
+  }
+}

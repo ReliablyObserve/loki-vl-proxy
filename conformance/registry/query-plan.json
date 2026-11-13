@@ -254,6 +254,201 @@
       }
     }
   },
+  "loki_metric_differential": {
+    "queries": 762,
+    "entries": 29688,
+    "excluded": {
+      "the plan does not route it: BinOp bool": 9,
+      "the plan does not route it: BinOp constant operands": 2,
+      "the plan does not route it: BinOp operand BinOp": 20,
+      "the plan does not route it: BinOp operand LabelReplace": 5,
+      "the plan does not route it: BinOp operand RangeAgg route unwrap pipeline": 1,
+      "the plan does not route it: BinOp operand VectorAgg": 4,
+      "the plan does not route it: BinOp operand VectorAgg route pipeline": 2,
+      "the plan does not route it: BinOp operand VectorAgg route unwrap pipeline": 48,
+      "the plan does not route it: BinOp operand VectorAgg route unwrap rate": 29,
+      "the plan does not route it: BinOp operand VectorAgg without empty": 36,
+      "the plan does not route it: BinOp operand spelling": 2,
+      "the plan does not route it: BinOp route mixed offsets": 7,
+      "the plan does not route it: BinOp route rewrite": 1,
+      "the plan does not route it: BinOp scalar operands": 2,
+      "the plan does not route it: BinOp set operator": 8,
+      "the plan does not route it: BinOp spelling": 1,
+      "the plan does not route it: LabelReplace operand BinOp": 2,
+      "the plan does not route it: LabelReplace operand VectorAgg": 3,
+      "the plan does not route it: LabelReplace operand spelling": 5,
+      "the plan does not route it: LabelReplace route operand": 121,
+      "the plan does not route it: LabelReplace service_name grouping": 4,
+      "the plan does not route it: RangeAgg LogSelect level filter after stage": 1,
+      "the plan does not route it: RangeAgg LogSelect line format function": 1,
+      "the plan does not route it: RangeAgg LogSelect unpack label read": 25,
+      "the plan does not route it: RangeAgg LogSelect unpack line read": 2,
+      "the plan does not route it: RangeAgg LogSelect unpack parser order": 1,
+      "the plan does not route it: RangeAgg parser label cost": 1,
+      "the plan does not route it: RangeAgg route level filter": 2,
+      "the plan does not route it: RangeAgg route offset bounds": 1,
+      "the plan does not route it: RangeAgg route pipeline": 114,
+      "the plan does not route it: RangeAgg route reserved field": 1,
+      "the plan does not route it: RangeAgg route spelling": 3,
+      "the plan does not route it: RangeAgg route unwrap absent": 9,
+      "the plan does not route it: RangeAgg route unwrap first": 10,
+      "the plan does not route it: RangeAgg route unwrap last": 12,
+      "the plan does not route it: RangeAgg route unwrap pipeline": 146,
+      "the plan does not route it: RangeAgg route unwrap quantile": 64,
+      "the plan does not route it: RangeAgg route unwrap rate": 2,
+      "the plan does not route it: RangeAgg route unwrap rate_counter": 7,
+      "the plan does not route it: RangeAgg route unwrap stddev": 9,
+      "the plan does not route it: RangeAgg route unwrap stdvar": 4,
+      "the plan does not route it: RangeAgg unwrap quantile spelling": 1,
+      "the plan does not route it: Rank operand BinOp": 3,
+      "the plan does not route it: Rank route operand": 182,
+      "the plan does not route it: Rank route rewrite": 1,
+      "the plan does not route it: VectorAgg LogSelect json extraction": 2,
+      "the plan does not route it: VectorAgg LogSelect level filter after stage": 2,
+      "the plan does not route it: VectorAgg LogSelect unpack parser": 1,
+      "the plan does not route it: VectorAgg grouping": 1,
+      "the plan does not route it: VectorAgg nested unwrap": 4,
+      "the plan does not route it: VectorAgg operand": 22,
+      "the plan does not route it: VectorAgg operand spelling": 8,
+      "the plan does not route it: VectorAgg parser extracted label": 2,
+      "the plan does not route it: VectorAgg parser label cost": 14,
+      "the plan does not route it: VectorAgg route absent operand": 8,
+      "the plan does not route it: VectorAgg route evaluated level": 172,
+      "the plan does not route it: VectorAgg route level filter": 12,
+      "the plan does not route it: VectorAgg route operand": 8,
+      "the plan does not route it: VectorAgg route pipeline": 196,
+      "the plan does not route it: VectorAgg route rewrite": 1,
+      "the plan does not route it: VectorAgg route unwrap first": 22,
+      "the plan does not route it: VectorAgg route unwrap last": 18,
+      "the plan does not route it: VectorAgg route unwrap pipeline": 69,
+      "the plan does not route it: VectorAgg route unwrap quantile": 6,
+      "the plan does not route it: VectorAgg route unwrap rate": 20,
+      "the plan does not route it: VectorAgg route unwrap rate_counter": 1,
+      "the plan does not route it: VectorAgg route unwrap stdvar": 1,
+      "the plan does not route it: VectorAgg stddev parsed label operand": 1,
+      "the plan does not route it: VectorAgg without empty": 1
+    },
+    "profiles": {
+      "v1.49 loki profile": {
+        "instant": {
+          "runs": 762,
+          "plan_runs": 762,
+          "plan_matches_loki": 762,
+          "translator_matches_loki": 762,
+          "float_tolerance": 1
+        },
+        "step\u003crange": {
+          "runs": 762,
+          "plan_runs": 724,
+          "not_plan": {
+            "the route rule delegates the request": 38
+          },
+          "plan_matches_loki": 716,
+          "translator_matches_loki": 754,
+          "float_tolerance": 0,
+          "plan_differs_by_class": {
+            "adds a series Loki does not have": 8,
+            "misses a series Loki has": 2,
+            "series: adds a label": 6
+          },
+          "translator_differs_by_class": {
+            "adds a series Loki does not have": 8,
+            "misses a series Loki has": 2,
+            "series: adds a label": 6
+          }
+        },
+        "step=range": {
+          "runs": 762,
+          "plan_runs": 761,
+          "not_plan": {
+            "the route rule delegates the request": 1
+          },
+          "plan_matches_loki": 761,
+          "translator_matches_loki": 762,
+          "float_tolerance": 3
+        },
+        "step\u003erange": {
+          "runs": 762,
+          "plan_runs": 746,
+          "not_plan": {
+            "the route rule delegates the request": 16
+          },
+          "plan_matches_loki": 738,
+          "translator_matches_loki": 754,
+          "float_tolerance": 0,
+          "plan_differs_by_class": {
+            "adds a series Loki does not have": 8,
+            "misses a series Loki has": 2,
+            "series: adds a label": 6
+          },
+          "translator_differs_by_class": {
+            "adds a series Loki does not have": 8,
+            "misses a series Loki has": 2,
+            "series: adds a label": 6
+          }
+        }
+      },
+      "v1.53 loki profile": {
+        "instant": {
+          "runs": 762,
+          "plan_runs": 762,
+          "plan_matches_loki": 762,
+          "translator_matches_loki": 762,
+          "float_tolerance": 1
+        },
+        "step\u003crange": {
+          "runs": 762,
+          "plan_runs": 724,
+          "not_plan": {
+            "the route rule delegates the request": 38
+          },
+          "plan_matches_loki": 716,
+          "translator_matches_loki": 754,
+          "float_tolerance": 0,
+          "plan_differs_by_class": {
+            "adds a series Loki does not have": 8,
+            "misses a series Loki has": 2,
+            "series: adds a label": 6
+          },
+          "translator_differs_by_class": {
+            "adds a series Loki does not have": 8,
+            "misses a series Loki has": 2,
+            "series: adds a label": 6
+          }
+        },
+        "step=range": {
+          "runs": 762,
+          "plan_runs": 761,
+          "not_plan": {
+            "the route rule delegates the request": 1
+          },
+          "plan_matches_loki": 761,
+          "translator_matches_loki": 762,
+          "float_tolerance": 3
+        },
+        "step\u003erange": {
+          "runs": 762,
+          "plan_runs": 746,
+          "not_plan": {
+            "the route rule delegates the request": 16
+          },
+          "plan_matches_loki": 738,
+          "translator_matches_loki": 754,
+          "float_tolerance": 0,
+          "plan_differs_by_class": {
+            "adds a series Loki does not have": 8,
+            "misses a series Loki has": 2,
+            "series: adds a label": 6
+          },
+          "translator_differs_by_class": {
+            "adds a series Loki does not have": 8,
+            "misses a series Loki has": 2,
+            "series: adds a label": 6
+          }
+        }
+      }
+    }
+  },
   "predicate_parity": {
     "rows": 2548,
     "validated": 2439,

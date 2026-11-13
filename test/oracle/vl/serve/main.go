@@ -103,6 +103,12 @@ func run(in string) error {
 			http.NotFound(w, r)
 		}
 	})
+	// The storage's own forced flush (/internal/force_flush), then a wait until every row is found through its
+	// stream: rows added are searchable a little before their streams' index entries are.
+	flush := httptest.NewRecorder()
+	if !vlstorage.RequestHandler(flush, httptest.NewRequest(http.MethodPost, "/internal/force_flush", nil)) || flush.Code != http.StatusOK {
+		return fmt.Errorf("force flush: status %d: %s", flush.Code, flush.Body.String())
+	}
 	if err := waitSearchable(handler, sets); err != nil {
 		return err
 	}
@@ -124,8 +130,8 @@ func run(in string) error {
 	return srv.Close()
 }
 
-// waitSearchable waits until every data set's rows are all searchable (VictoriaLogs makes added rows visible to
-// queries after a short delay).
+// waitSearchable waits until every data set's rows are all found through their streams (VictoriaLogs makes added
+// rows and their stream index entries visible to queries after a short delay).
 func waitSearchable(h http.Handler, sets []DataSet) error {
 	deadline := time.Now().Add(time.Minute)
 	for _, set := range sets {
@@ -149,8 +155,9 @@ func waitSearchable(h http.Handler, sets []DataSet) error {
 	return nil
 }
 
+// countRows counts a tenant's rows by stream: a row whose stream is not indexed yet is not counted.
 func countRows(h http.Handler, tenant uint32) (int, error) {
-	form := url.Values{"query": {"* | count() as n"}}
+	form := url.Values{"query": {"* | stats by (_stream) count() as n"}}
 	req := httptest.NewRequest(http.MethodPost, "/select/logsql/query", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("AccountID", strconv.FormatUint(uint64(tenant), 10))
@@ -159,13 +166,28 @@ func countRows(h http.Handler, tenant uint32) (int, error) {
 	if rec.Code != http.StatusOK {
 		return 0, fmt.Errorf("count rows: status %d: %s", rec.Code, rec.Body.String())
 	}
-	var row struct {
-		N string `json:"n"`
+	total := 0
+	for _, line := range strings.Split(strings.TrimSpace(rec.Body.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		var row struct {
+			Stream string `json:"_stream"`
+			N      string `json:"n"`
+		}
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			return 0, fmt.Errorf("count rows: %v: %q", err, line)
+		}
+		if row.Stream == "" || row.Stream == "{}" {
+			continue
+		}
+		n, err := strconv.Atoi(row.N)
+		if err != nil {
+			return 0, err
+		}
+		total += n
 	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(rec.Body.String())), &row); err != nil {
-		return 0, fmt.Errorf("count rows: %v: %q", err, rec.Body.String())
-	}
-	return strconv.Atoi(row.N)
+	return total, nil
 }
 
 func readDataSets(in string) ([]DataSet, error) {

@@ -135,14 +135,14 @@ func run(in, out string) error {
 // limits are the engine's per-tenant limits: none that a test data set reaches.
 type limits struct{}
 
-func (limits) MaxQuerySeries(context.Context, string) int                     { return 1 << 30 }
-func (limits) MaxQueryRange(context.Context, string) time.Duration             { return 0 }
-func (limits) QueryTimeout(context.Context, string) time.Duration              { return time.Hour }
+func (limits) MaxQuerySeries(context.Context, string) int                        { return 1 << 30 }
+func (limits) MaxQueryRange(context.Context, string) time.Duration               { return 0 }
+func (limits) QueryTimeout(context.Context, string) time.Duration                { return time.Hour }
 func (limits) BlockedQueries(context.Context, string) []*validation.BlockedQuery { return nil }
-func (limits) EnableMultiVariantQueries(string) bool                            { return false }
-func (limits) MaxScanTaskParallelism(string) int                                { return 1 }
-func (limits) DebugEngineTasks(string) bool                                     { return false }
-func (limits) DebugEngineStreams(string) bool                                   { return false }
+func (limits) EnableMultiVariantQueries(string) bool                             { return false }
+func (limits) MaxScanTaskParallelism(string) int                                 { return 1 }
+func (limits) DebugEngineTasks(string) bool                                      { return false }
+func (limits) DebugEngineStreams(string) bool                                    { return false }
 
 // answer runs one request. A panic of Loki's code is an error answer.
 func answer(q *querier, r Request) (a Answer) {
@@ -158,20 +158,20 @@ func answer(q *querier, r Request) (a Answer) {
 	}
 	httpReq := httptest.NewRequest(http.MethodGet, path+"?"+r.Form, nil)
 	if err := httpReq.ParseForm(); err != nil {
-		return errAnswer(a, err)
+		return badRequest(a, err)
 	}
 	var params logql.LiteralParams
 	var err error
 	if r.Instant {
 		var iq *loghttp.InstantQuery
 		if iq, err = loghttp.ParseInstantQuery(httpReq); err != nil {
-			return errAnswer(a, err)
+			return badRequest(a, err)
 		}
 		params, err = logql.NewLiteralParams(iq.Query, iq.Ts, iq.Ts, 0, 0, iq.Direction, iq.Limit, nil, nil)
 	} else {
 		var rq *loghttp.RangeQuery
 		if rq, err = loghttp.ParseRangeQuery(httpReq); err != nil {
-			return errAnswer(a, err)
+			return badRequest(a, err)
 		}
 		start, end := rq.Start, rq.End
 		// A query frontend with align_queries_with_step moves both bounds down to a multiple of the step, in
@@ -215,6 +215,15 @@ func answer(q *querier, r Request) (a Answer) {
 	return a
 }
 
+// badRequest is the answer to a request Loki's HTTP parameter parser rejects: the query frontend answers it 400
+// with the parser's text before any query runs.
+func badRequest(a Answer, err error) Answer {
+	a.Status = http.StatusBadRequest
+	a.Error = err.Error()
+	return a
+}
+
+// errAnswer is the answer to an error of the engine: Loki's client status and text for it.
 func errAnswer(a Answer, err error) Answer {
 	status, clientErr := server.ClientHTTPStatusAndError(err)
 	a.Status = status
