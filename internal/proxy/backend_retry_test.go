@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -834,4 +836,61 @@ func FuzzBackendRetryDecision(f *testing.F) {
 			t.Fatalf("status %d: transient %v, want %v", status, transient, want)
 		}
 	})
+}
+
+// With warnings logged (the default level), a compressed answer that is
+// dropped is read for the log line and closed through its decoder: its
+// backend permit is given back before the wait, not leaked.
+func TestBackendRetry_CompressedAnswerLoggedAndPermitReleased(t *testing.T) {
+	var logs bytes.Buffer
+	p, fb := retryTestProxy(t, retryConfig())
+	p.log = slog.New(slog.NewTextHandler(&logs, nil))
+	p.backendBudget = newBackendBudget(1)
+	p.backendRetry.initial = 300 * time.Millisecond
+	p.backendRetry.max = 300 * time.Millisecond
+	fb.path = "/select/logsql/query"
+	fb.step = func(n int, req *http.Request) (*http.Response, error) {
+		if n != 1 {
+			return nil, nil
+		}
+		var z bytes.Buffer
+		zw := gzip.NewWriter(&z)
+		_, _ = zw.Write([]byte("couldn't start executing the request in 10 seconds"))
+		_ = zw.Close()
+		resp := statusAnswer(req, 503, "", "Content-Encoding", "gzip")
+		resp.Body = io.NopCloser(&z)
+		return resp, nil
+	}
+	first := make(chan error, 1)
+	go func() {
+		resp, err := callBackend(p, context.Background(), http.MethodGet)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+		first <- err
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for fb.count() < 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(30 * time.Millisecond)
+	start := time.Now()
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, p.backend.String()+"/select/logsql/other", nil)
+	other, err := p.doBackendRequest(req, p.client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = other.Body.Close()
+	if waited := time.Since(start); waited > 140*time.Millisecond {
+		t.Fatalf("another call waited %s for the permit of a call that was backing off", waited)
+	}
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if out := logs.String(); !strings.Contains(out, "VictoriaLogs call failed, retrying") || !strings.Contains(out, "couldn't start executing") {
+		t.Fatalf("the dropped answer's text is not in the log: %q", out)
+	}
+	if len(p.backendBudget) != 0 {
+		t.Fatalf("%d permits still held", len(p.backendBudget))
+	}
 }

@@ -212,7 +212,7 @@ func (p *Proxy) doBackendRead(req *http.Request, client *http.Client) (*http.Res
 	}
 	rp.budget.earn()
 	ctx := req.Context()
-	began := time.Now()
+	var began time.Time // the first failure
 	backoff := rp.initial
 	var waited time.Duration
 	for attempt := 0; ; attempt++ {
@@ -230,6 +230,9 @@ func (p *Proxy) doBackendRead(req *http.Request, client *http.Client) (*http.Res
 		tried := time.Now()
 		resp, err := p.doBackendRequest(sent, client)
 		retryAfter, transient := transientBackendFailure(resp, err)
+		if transient && began.IsZero() {
+			began = tried
+		}
 		if !transient {
 			if attempt > 0 {
 				p.observeInternalOperation(ctx, backendRetryOp, backendRetryRecovered, time.Since(began))
