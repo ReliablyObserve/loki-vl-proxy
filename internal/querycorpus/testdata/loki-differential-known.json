@@ -1,0 +1,690 @@
+{
+  "q-024e80516bbe": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines"
+    },
+    "q": "{env=\"production\"} | logfmt"
+  },
+  "q-04aa159d4dcd": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/ip-filter-keeps-parser-error-lines",
+      "drops a line Loki keeps": "semantics/ip-filter-keeps-parser-error-lines"
+    },
+    "q": "{app=\"a\"} | json | duration_ms>1000, t=\"(x)\" Or o=ip(\"1.2.3.4\"), (p!=ip(\"10.0.0.0/8\"))"
+  },
+  "q-06dd008a4ef7": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/partial-parse-before-error",
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "drops a line Loki keeps": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{service_name=\"api-gateway\"} | json | level_extracted=\"error\""
+  },
+  "q-0c9e9289987f": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{env=\"production\"} | json"
+  },
+  "q-108856efd7d4": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"x\"} | json"
+  },
+  "q-1352ff613428": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | line_format \"{{.method}} {{.path}} {{.status}}\""
+  },
+  "q-1554c7394a0c": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | status>=400"
+  },
+  "q-171d5a8634c1": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: drops a line Loki keeps": "semantics/stream-label-shadowed-after-json-parser",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "drops a line Loki keeps": "semantics/stream-label-shadowed-after-json-parser"
+    },
+    "q": "{service_name=\"cache-redis\"} | logfmt | level!=\"debug\""
+  },
+  "q-2168f25d346a": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines"
+    },
+    "q": "{service_name=\"cache-redis\"} | logfmt | level_extracted!=\"\""
+  },
+  "q-22c94c979a7c": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines"
+    },
+    "q": "{app=\"payment-service\",env=\"production\"} | logfmt"
+  },
+  "q-28999e634842": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"api-gateway\",level=\"info\",env=\"production\"} | json | duration_ms>100"
+  },
+  "q-2a824c725d3c": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | path=~\"/api/.*\""
+  },
+  "q-2c4ae642af49": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/ip-filter-keeps-parser-error-lines",
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "drops a line Loki keeps": "semantics/ip-filter-keeps-parser-error-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{service_name=\"api-gateway\"} | json | ip=ip(\"10.2.0.0/16\")"
+  },
+  "q-37ae8f70adb3": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json"
+  },
+  "q-390cd70ae19b": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"api-gateway\"} | json | region=~\"us-.*\""
+  },
+  "q-39b504e03a70": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | label_format m=\"{{.method}}\", s=\"{{.status}}\""
+  },
+  "q-3f89dc7a6b0d": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | label_format method_up=\"{{.method}}\""
+  },
+  "q-4112056e0713": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"a\"} | json | i==4 i==4"
+  },
+  "q-48aa29d604b4": {
+    "classes": {
+      "categorized: keeps a line Loki drops": "semantics/stream-label-shadowed-after-json-parser",
+      "keeps a line Loki drops": "semantics/stream-label-shadowed-after-json-parser"
+    },
+    "q": "{app=\"col\"} | json | level=\"debug\""
+  },
+  "q-4c35d7560dd5": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} |= \"GET\" | json"
+  },
+  "q-4c5822c2433c": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | method=\"GET\""
+  },
+  "q-4e40694933da": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/ip-filter-keeps-parser-error-lines",
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "drops a line Loki keeps": "semantics/ip-filter-keeps-parser-error-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{service_name=\"api-gateway\"} | json | ip=ip(\"10.1.0.0/16\")"
+  },
+  "q-4e652fcef172": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/otel-name-label-filter-after-parser",
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "drops a line Loki keeps": "semantics/otel-name-label-filter-after-parser",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{service_name=\"otel-collector\"} | json | service_version!=\"\""
+  },
+  "q-5073b33e1616": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"matrix-extraction-list\",case=\"json\"} | json | msg=\"hello\""
+  },
+  "q-53b248ab4c5a": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{service_name=\"cache-redis\"} | logfmt --strict"
+  },
+  "q-54c21147a3ff": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | keep method, status"
+  },
+  "q-5b55bd0b1be0": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/otel-name-label-filter-after-parser",
+      "drops a line Loki keeps": "semantics/otel-name-label-filter-after-parser"
+    },
+    "q": "{env=\"production\"} | json | pipeline=`metrics/prometheus` | k8s_namespace_name=`monitoring`"
+  },
+  "q-6193dc2233fb": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | drop trace_id, upstream"
+  },
+  "q-63ccc3e60bac": {
+    "classes": {
+      "VictoriaLogs rejects the text": "semantics/pattern-capture-before-bracket-text"
+    },
+    "q": "{app=\"nginx\"} | pattern \"<_> <a><b\""
+  },
+  "q-6734caf8d431": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/ip-filter-keeps-parser-error-lines",
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "drops a line Loki keeps": "semantics/ip-filter-keeps-parser-error-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{service_name=\"api-gateway\"} | json | ip!=ip(\"10.1.0.0/16\")"
+  },
+  "q-7025642e5b50": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | drop trace_id"
+  },
+  "q-718b49951ac2": {
+    "classes": {
+      "categorized: parsed: adds a structured metadata label": "semantics/metadata-answered-as-parsed-after-extraction-list",
+      "categorized: structured metadata: misses a structured metadata label": "semantics/metadata-answered-as-parsed-after-extraction-list"
+    },
+    "q": "{app=\"matrix-extraction-list\",case=\"logfmt\"} | logfmt op | op=\"read\""
+  },
+  "q-7521ddbc0cd2": {
+    "classes": {
+      "categorized: parsed: adds a structured metadata label": "semantics/metadata-answered-as-parsed-after-extraction-list",
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: structured metadata: misses a structured metadata label": "semantics/metadata-answered-as-parsed-after-extraction-list",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"matrix-extraction-list\",case=\"json\"} | json msg=\"msg\" | msg=\"hello\""
+  },
+  "q-76169a4a79c4": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/partial-parse-before-error",
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "drops a line Loki keeps": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{service_name=\"api-gateway\"} | json | level_extracted!=\"\""
+  },
+  "q-768325dc155a": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | method!=\"DELETE\""
+  },
+  "q-7db84c61aa06": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"a\"} | json | b!=\"2\""
+  },
+  "q-7ed27c929b31": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{namespace=\"prod\"} | logfmt --strict"
+  },
+  "q-8037ecdfd16e": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/label-filter-numeric-error-label",
+      "drops a line Loki keeps": "semantics/label-filter-numeric-error-label"
+    },
+    "q": "{app=\"nginx-ingress\",env=\"production\"} | pattern \"<_> - - <_> \\\"<method> <uri> <_>\\\" <status> <size>\" | status >= 400"
+  },
+  "q-815faf533088": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines"
+    },
+    "q": "{service_name=\"payment-service\"} | logfmt | level_extracted=~\"(?i)err.*\""
+  },
+  "q-8466c180d57d": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"compat-sanitized-<ts>\"} | json | probe_verb=\"GET\""
+  },
+  "q-847c0d05ce9a": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | line_format \"{{.method}} {{.path}}\""
+  },
+  "q-8a9730cb74f6": {
+    "classes": {
+      "categorized: keeps a line Loki drops": "semantics/stream-label-shadowed-after-json-parser",
+      "keeps a line Loki drops": "semantics/stream-label-shadowed-after-json-parser"
+    },
+    "q": "{app=\"payment-service\",env=\"production\"} | logfmt | level=\"error\""
+  },
+  "q-8bae3d6c1443": {
+    "classes": {
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | drop __error__, __error_details__"
+  },
+  "q-8f33268b4964": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | method=\"GET\" | line_format \"{{.status}}\""
+  },
+  "q-927d3ae440a6": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/label-filter-after-regexp-parser-misses-metadata",
+      "drops a line Loki keeps": "semantics/label-filter-after-regexp-parser-misses-metadata"
+    },
+    "q": "{app=\"nginx-ingress\",env=\"production\"} | pattern \"<_> - - <_> \\\"<method> <uri> <_>\\\" <status> <size>\" | method=\"POST\""
+  },
+  "q-9335099b2fa5": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines"
+    },
+    "q": "{service_name=\"payment-service\"} | logfmt | keep level, msg"
+  },
+  "q-9434250a6d9c": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | path=~\"/api/v1/.*\""
+  },
+  "q-94411878e57c": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | label_format method_alias=\"{{.method}}\", status_code=\"{{.status}}\""
+  },
+  "q-96e57f20e083": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/label-filter-after-regexp-parser-misses-metadata",
+      "drops a line Loki keeps": "semantics/label-filter-after-regexp-parser-misses-metadata"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | regexp \"\\\"status\\\":(?P<status>[0-9]+)\" | status >= 500"
+  },
+  "q-996f2ba7c166": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{service_name=\"api-gateway\"} | json"
+  },
+  "q-a26dd1aa34a9": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | status != 200 | status != 404"
+  },
+  "q-a477b34fcb50": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{env=\"production\"} | json | line_format \"{{.message}}\""
+  },
+  "q-aa22ece2a09d": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"x\"} | json | v!~\"api|\""
+  },
+  "q-adaaa907999b": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{probe=\"anchor<ts>\"} | json | svc=~\"api|api-gateway\""
+  },
+  "q-b6872f5bc067": {
+    "classes": {
+      "categorized: keeps a line Loki drops": "semantics/stream-label-shadowed-after-json-parser",
+      "keeps a line Loki drops": "semantics/stream-label-shadowed-after-json-parser"
+    },
+    "q": "{service_name=\"payment-service\"} | logfmt | level=~\"(?i)err.*\""
+  },
+  "q-bafb043af089": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | keep method, path, status"
+  },
+  "q-bc297b498fd9": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/label-filter-after-regexp-parser-misses-metadata",
+      "drops a line Loki keeps": "semantics/label-filter-after-regexp-parser-misses-metadata"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | regexp \"\\\"status\\\":(?P<status>[0-9]+)\" | status=~\"5..\""
+  },
+  "q-bdc49875886e": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"api-gateway\",env=\"production\"} | json | line_format \"{{.method}} {{.path}} {{.status}}\" | pattern \"<method> <path> <code>\""
+  },
+  "q-c11128ed14eb": {
+    "classes": {
+      "categorized: keeps a line Loki drops": "semantics/stream-label-shadowed-after-json-parser",
+      "keeps a line Loki drops": "semantics/stream-label-shadowed-after-json-parser"
+    },
+    "q": "{app=\"x\",level=\"info\"} | json | level=\"debug\""
+  },
+  "q-c1bef2e4b251": {
+    "classes": {
+      "categorized: keeps a line Loki drops": "semantics/numeric-label-filter-not-equal-missing-label",
+      "keeps a line Loki drops": "semantics/numeric-label-filter-not-equal-missing-label"
+    },
+    "q": "{app=\"a\"} | m!=5"
+  },
+  "q-c1ec3a9e78c0": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: writes another value of an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "writes another value of an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{env=\"production\"} | json pipeline, level"
+  },
+  "q-e1221b9ff16a": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series"
+    },
+    "q": "{service_name=\"api-gateway\"} | json | drop level_extracted"
+  },
+  "q-e50021fdd383": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"stage-fields-<ts>-json\"} | json user"
+  },
+  "q-e53183691b74": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{service_name=\"api-gateway\"} | json | level!=\"\""
+  },
+  "q-ebf8c0a95d5b": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"x\"} | o=\"\\x02\\x00\\x02\" | json | K_extracted!~\"p|q\""
+  },
+  "q-f04e92ad5490": {
+    "classes": {
+      "categorized: keeps a line Loki drops": "semantics/stream-label-shadowed-after-json-parser",
+      "keeps a line Loki drops": "semantics/stream-label-shadowed-after-json-parser"
+    },
+    "q": "{service_name=\"api-gateway\"} | json | level=\"info\""
+  },
+  "q-f1acf34c5e97": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"matrix-extraction-list\",case=\"json\"} | json msg=\"msg\""
+  },
+  "q-f1e7703cf1d1": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines"
+    },
+    "q": "{service_name=\"cache-redis\"} | logfmt"
+  },
+  "q-f3c851d86f7f": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "categorized: parsed: misses an _extracted label": "semantics/partial-parse-before-error",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses a parsed label with an empty value": "semantics/json-empty-value-label-series",
+      "misses an _extracted label": "semantics/partial-parse-before-error"
+    },
+    "q": "{app=\"x\",level=\"info\"} | json | drop level"
+  },
+  "q-f83775fbd23c": {
+    "classes": {
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{namespace=\"prod\"} | json | keep level"
+  },
+  "q-fd4350d35f93": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/parse-error-labels-on-log-lines",
+      "categorized: keeps a line Loki drops": "semantics/json-key-named-error-label",
+      "drops a line Loki keeps": "semantics/parse-error-labels-on-log-lines",
+      "keeps a line Loki drops": "semantics/json-key-named-error-label"
+    },
+    "q": "{namespace=\"prod\"} | json | __error__!=\"\""
+  }
+}

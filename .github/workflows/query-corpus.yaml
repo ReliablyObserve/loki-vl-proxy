@@ -65,6 +65,8 @@ jobs:
         run: |
           go test ./internal/querycorpus -run '^TestVLOracle$' -count=1 -v
           go test ./internal/proxy -run '^TestLokiOracle$' -count=1 -v
+          # The Loki differential of log queries: the live oracles must answer what its recorded answers hold.
+          LVP_LOKI_DIFF_CHECK=1 go test ./internal/querycorpus -run '^TestPlanMatchesLokiOnLogQueries$' -count=1 -v
 
       - name: Save the corpus for pull requests based on this commit
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] a gzipped list of test queries read as data by the PR quality report; nothing from this job is published

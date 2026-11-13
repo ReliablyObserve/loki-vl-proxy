@@ -1,0 +1,43 @@
+id: semantics/otel-name-label-filter-after-parser
+title: Under the default label style, a label filter after a parser on a known OpenTelemetry name reads the dotted field, not the line's key (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Recorded 2026-11-12 by TestPlanMatchesLokiOnLogQueries (internal/querycorpus): Loki's pipeline through the Loki oracle (test/oracle/loki process, Loki's exported packages), VictoriaLogs v1.53.0 and v1.49.0 through the store oracle (rows as the Loki push API hands them over), the rows through the proxy's query_range handler (default label style and metadata mode).
+
+  | query | line | Loki | proxy |
+  |---|---|---|---|
+  | `{service_name="otel-collector"} \| json \| service_version!=""` | `{"msg":"harvested","service_version":"z"}` | keeps it | drops it |
+  | `{env="production"} \| json \| pipeline=...\| k8s_namespace_name=...` (the values in back quotes) | `{"pipeline":"metrics/prometheus","k8s_namespace_name":"monitoring"}` | keeps it | drops it |
+
+  With -label-style=underscores (the default) the plan writes the label as
+  VictoriaLogs' OpenTelemetry name (`filter "service.version":!""`), right for
+  the stored attribute but not for the key the parser read from the line, which
+  keeps its underscores.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="otel-collector"} | json | service_version!=""'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, streams.values]
+  expect: |
+    Loki's lines: a label filter after a parser reads the key as the line spells it.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/queryplan/lower (label names after a parser under the underscores label style)'
+  loki: 'the recorded answers above (Loki oracle, 2026-11-12)'
+  proxy: 'drops the line'
+  planned_test: 'TestPlanMatchesLokiOnLogQueries (internal/querycorpus), listed in testdata/loki-differential-known.json'
+  clusters: []
