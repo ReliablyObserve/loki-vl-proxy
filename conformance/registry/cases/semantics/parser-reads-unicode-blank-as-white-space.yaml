@@ -42,7 +42,7 @@ gap:
   effort: S
   area: 'internal/logql (the scanner skips every Unicode white space); not changed by the query plan'
   loki: 'a non-ASCII blank is part of a name; the oracle answers 400'
-  proxy: 'the parser reads it as white space and the query is answered'
+  proxy: 'the parser reads it as white space and the query is answered; where the translator then refuses an unwrap spelled with such a blank (a vertical tab, a form feed), the client reads Loki''s fixed 500 Internal Server Error, where Loki answers 400 with a positioned syntax error'
   planned_test: 'TestOddSpellingsMatchLoki (internal/querycorpus: Loki rejects the 24 spellings, the proxy accepts them until the parser follows)'
   visual: none
   visual_reason: 'a crafted spelling no Grafana panel sends; found by the VictoriaLogs oracle over the parser termination tests'

@@ -189,8 +189,8 @@ func TestStatsHandlersNeverSendTheBinaryMarker(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+url.Values{"query": {`stdvar_over_time({app="x"} | unwrap n [5m]) by (app)`}, "start": {"1800000000"}, "end": {"1800000600"}, "step": {"300"}, "time": {"1800000600"}}.Encode(), nil)
 			rec := httptest.NewRecorder()
 			run(rec, req)
-			if rec.Code != http.StatusBadRequest {
-				t.Fatalf("status %d, want the handler to refuse the marker: %s", rec.Code, rec.Body)
+			if rec.Code != http.StatusInternalServerError || rec.Body.String() != "Internal Server Error" {
+				t.Fatalf("status %d, want the handler to refuse the marker with Loki's 500: %s", rec.Code, rec.Body)
 			}
 			if n := len(stub.statsRequests()); n != 0 {
 				t.Fatalf("%d stats requests reached the backend", n)

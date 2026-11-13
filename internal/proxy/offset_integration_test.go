@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -116,7 +117,10 @@ func TestQueryRange_NoOffsetUnchanged(t *testing.T) {
 	}
 }
 
-func TestQueryRange_MultipleOffsetReturns400(t *testing.T) {
+// Loki evaluates each range vector with its own offset, so a query with different offsets is one it accepts: the
+// proxy, which applies one time shift per request, cannot serve it yet and answers Loki's fixed 500 (semantics/offset-different-per-range-vector).
+// conformance: semantics/offset-different-per-range-vector
+func TestQueryRange_MultipleOffsetIsNotServed(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -132,8 +136,8 @@ func TestQueryRange_MultipleOffsetReturns400(t *testing.T) {
 	rec := httptest.NewRecorder()
 	p.handleQueryRange(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for multiple offsets, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "Internal Server Error") || strings.Contains(rec.Body.String(), "offset") {
+		t.Errorf("expected Loki's 500 for multiple offsets, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -229,7 +233,8 @@ func TestQuery_NoOffsetUnchanged(t *testing.T) {
 	}
 }
 
-func TestQuery_MultipleOffsetReturns400(t *testing.T) {
+// conformance: semantics/offset-different-per-range-vector
+func TestQuery_MultipleOffsetIsNotServed(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -243,8 +248,8 @@ func TestQuery_MultipleOffsetReturns400(t *testing.T) {
 	rec := httptest.NewRecorder()
 	p.handleQuery(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for multiple offsets, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "Internal Server Error") || strings.Contains(rec.Body.String(), "offset") {
+		t.Errorf("expected Loki's 500 for multiple offsets, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

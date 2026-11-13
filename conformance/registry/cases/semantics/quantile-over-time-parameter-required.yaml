@@ -25,7 +25,7 @@ gap:
   effort: S
   area: "internal/logql validation of range aggregations (parameter of quantile_over_time)"
   loki: "400, parameter required for operation quantile_over_time"
-  proxy: "accepted by validation"
+  proxy: "accepted by validation and refused after the translation, with Loki's text (400, parse error : parameter required for operation quantile_over_time)"
   planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'

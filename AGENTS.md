@@ -74,6 +74,15 @@ Every Loki error message is a registry item, every route x error kind is a cell 
   `conformance/registry/error-coverage-spec.json` (its stage in Loki's order of checks, the route or kind it belongs
   to, or the reason and test when Loki cannot be asked), or the conformance gate fails.
 - Record new answers with `go run ./test/errorrecord` against a running Loki; add rows by hand, never edit a recorded answer.
+- The translator's, the plan's and the proxy's own wording never reaches a client. A query that passed validation and
+  that the translation, plan or evaluation then fails is answered through `p.fail` with a typed error built from typed
+  facts (`internal/proxy/error_refusals.go`): Loki's message where Loki rejects the query and the AST or request gives
+  its inputs (`withoutUnwrapError`, `timestampParamError`, `bareMetricRefusal`); Loki's syntax error without a position
+  where Loki's own carries one only the parser has (`unplacedSyntaxError`); and Loki's fixed `500 Internal Server
+  Error` where Loki accepts the query and the proxy cannot serve it yet (`notServed(construct, cause)`, the construct
+  and cause in the log line only, a registry case holding the gap open). Never classify a failure from its text:
+  `queryRefusal` reads the failure's type, and offsets use `offsetError`. `TestErrorLayerSites` holds each file's count
+  of free-text sites (no file may gain one) and `TestClientErrorTextsCarryNoInternalWording` the words of the sites left.
 
 ## Fail fast like Loki (hard rule)
 

@@ -46,7 +46,7 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 
 | Status | call sites | literal message | through the error layer | formatted at run time | of those, an error's own text | no body |
 |---|---:|---:|---:|---:|---:|---:|
-| 400 | 90 | 31 | 0 | 59 | 43 | 0 |
+| 400 | 34 | 8 | 0 | 26 | 17 | 0 |
 | 401 | 5 | 5 | 0 | 0 | 0 | 0 |
 | 403 | 2 | 2 | 0 | 0 | 0 | 0 |
 | 404 | 1 | 1 | 0 | 0 | 0 | 0 |
@@ -54,7 +54,7 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 | 413 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 429 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 500 | 6 | 6 | 0 | 0 | 0 | 0 |
-| set at run time | 99 | 1 | 95 | 2 | 1 | 1 |
+| set at run time | 157 | 1 | 153 | 2 | 1 | 1 |
 
 The registry holds one item per status (12) and one per Loki error message (42) under `conformance/registry/loki/errors/`; the messages are checked against recorded Loki answers, route by route and error kind by error kind, in the generated [error compatibility coverage](../../docs/error-compatibility-coverage.md).
 

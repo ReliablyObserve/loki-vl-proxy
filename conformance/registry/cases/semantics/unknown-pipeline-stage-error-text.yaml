@@ -26,7 +26,7 @@ gap:
   effort: S
   area: "internal/logql parser (a stage that is a lone name) and its validation"
   loki: "a syntax error at the token after the name"
-  proxy: "accepted by validation; the translator fails it with its own text"
+  proxy: "accepted by validation; the translator refuses it and the client reads Loki's syntax error without its position (400, parse error : syntax error: unexpected $end)"
   planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'

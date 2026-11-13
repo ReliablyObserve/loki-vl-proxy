@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
@@ -2553,8 +2555,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// bounds the client sent: a request moved onto the step grid was checked
 	// before it was moved (stepAlignMiddleware).
 	if !requestStepAligned(r) && exceedsLokiRangeResolution(r, start) {
-		p.writeError(w, http.StatusBadRequest, errLokiStepTooSmall)
-		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		status := p.fail(w, r, lokierr.TooManyPoints())
+		p.metrics.RecordRequest("query_range", status, time.Since(start))
 		return
 	}
 	// Loki evaluates a range query on its step in whole milliseconds, after the
@@ -2673,15 +2675,15 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			// Allow mixed-offset binary expressions: bypass only when the failure is
 			// "some range vectors have offset, others do not" AND the query is a
 			// top-level binary op (Loki handles these by evaluating sides independently).
-			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
+			isMixedOffset := isMixedOffsetError(offsetErr)
 			parsedForOffset, _ := parseLogQLExpr(r.Context(), logqlQuery)
 			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
 			if _, _, aggregated := binaryAggregationChain(parsedForOffset); aggregated {
 				isBinaryForOffset = true // an aggregation over one evaluates its sides the same way
 			}
 			if !isMixedOffset || !isBinaryForOffset {
-				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
-				p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+				status := p.fail(w, r, offsetRefusal(offsetErr))
+				p.metrics.RecordRequest("query_range", status, time.Since(start))
 				return
 			}
 			// Mixed-offset binary: proceed without time-shifting; binary routing handles it.
@@ -2763,8 +2765,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if spec, ok := parseBareParserMetricCompatSpec(logqlQuery); ok {
 		resolvedSpec, resolved := resolveBareParserMetricRangeWindow(spec, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 		if !resolved {
-			p.writeError(w, http.StatusBadRequest, "invalid range selector")
-			p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+			status := p.fail(w, r, unplacedSyntaxError(errors.New("unresolved range selector "+strconv.Quote(spec.rangeWindowExpr))))
+			p.metrics.RecordRequest("query_range", status, time.Since(start))
 			return
 		}
 		p.proxyBareParserMetricQueryRange(w, r, start, logqlQuery, resolvedSpec)
@@ -2786,8 +2788,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 
 	logsqlQuery, err := p.translateLogResponseQuery(r.Context(), logqlQuery)
 	if err != nil {
-		p.writeError(w, http.StatusBadRequest, err.Error())
-		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		status := p.fail(w, r, queryRefusal(err))
+		p.metrics.RecordRequest("query_range", status, time.Since(start))
 		return
 	}
 	// Extract without() labels and label_replace markers for post-processing.
@@ -2795,8 +2797,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	withoutOp, foldWithout := withoutFoldOp(markerOp, logqlQuery)
 	for _, spec := range labelReplaceSpecs {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
-			p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err))
-			p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+			status := p.fail(w, r, labelReplaceRegexError(err))
+			p.metrics.RecordRequest("query_range", status, time.Since(start))
 			return
 		}
 	}
@@ -2807,11 +2809,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	stats, isStats := translator.DecodeStats(logsqlQuery)
-	if isBareMetricFunctionQuery(strings.TrimSpace(stripLabelTransforms(logqlQuery))) && !isStats {
-		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
-		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
-		return
-	}
+	bareMetricRefused := isBareMetricFunctionQuery(strings.TrimSpace(stripLabelTransforms(logqlQuery))) && !isStats
 	p.log.Debug("translated query", "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "without", withoutLabels)
 
 	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
@@ -2827,6 +2825,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
 	}
 	parsedForRouting, _ := parseLogQLExpr(r.Context(), routedQuery)
+	if bareMetricRefused {
+		// A bare metric function carries no label transform, so the routed query is the query itself.
+		status := p.fail(w, r, bareMetricRefusal(parsedForRouting))
+		p.metrics.RecordRequest("query_range", status, time.Since(start))
+		return
+	}
 	if _, _, aggregated := binaryAggregationChain(parsedForRouting); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRouting)) {
 		// The label transforms belong to an operand, which applies its own.
 		labelReplaceSpecs = nil
@@ -2863,9 +2867,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
 		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)
 		if leftErr != nil {
-			p.writeError(sc, http.StatusBadRequest, leftErr.Error())
+			p.writeErr(sc, r.Context(), queryRefusal(leftErr))
 		} else if rightErr != nil {
-			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
+			p.writeErr(sc, r.Context(), queryRefusal(rightErr))
 		} else {
 			p.proxyBinaryMetricQueryRangeVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
 		}
@@ -2876,7 +2880,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			stepsRun.arm()
 			p.proxyScalarStatsBinary(sc, r, scalarStats, "matrix")
 		} else {
-			p.writeError(sc, http.StatusBadRequest, unsupportedBinaryMarkerMessage)
+			p.writeErr(sc, r.Context(), notServed("binary-marker", nil))
 		}
 	} else if isStats {
 		stepsRun.arm()
@@ -3037,15 +3041,15 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	{
 		offsetDur, strippedQuery, offsetErr := extractLogQLOffset(logqlQuery)
 		if offsetErr != nil {
-			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
+			isMixedOffset := isMixedOffsetError(offsetErr)
 			parsedForOffset, _ := parseLogQLExpr(r.Context(), logqlQuery)
 			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
 			if _, _, aggregated := binaryAggregationChain(parsedForOffset); aggregated {
 				isBinaryForOffset = true // an aggregation over one evaluates its sides the same way
 			}
 			if !isMixedOffset || !isBinaryForOffset {
-				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
-				p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+				status := p.fail(w, r, offsetRefusal(offsetErr))
+				p.metrics.RecordRequest("query", status, time.Since(start))
 				return
 			}
 		} else {
@@ -3092,8 +3096,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if spec, ok := parseBareParserMetricCompatSpec(logqlQuery); ok {
 		resolvedSpec, resolved := resolveBareParserMetricRangeWindow(spec, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 		if !resolved {
-			p.writeError(w, http.StatusBadRequest, "invalid range selector")
-			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			status := p.fail(w, r, unplacedSyntaxError(errors.New("unresolved range selector "+strconv.Quote(spec.rangeWindowExpr))))
+			p.metrics.RecordRequest("query", status, time.Since(start))
 			return
 		}
 		p.proxyBareParserMetricQuery(w, r, start, logqlQuery, resolvedSpec)
@@ -3111,8 +3115,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	logsqlQuery, err := p.translateLogResponseQuery(r.Context(), logqlQuery)
 	if err != nil {
-		p.writeError(w, http.StatusBadRequest, err.Error())
-		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+		status := p.fail(w, r, queryRefusal(err))
+		p.metrics.RecordRequest("query", status, time.Since(start))
 		return
 	}
 
@@ -3121,18 +3125,14 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	withoutOp, foldWithout := withoutFoldOp(markerOp, logqlQuery)
 	for _, spec := range labelReplaceSpecs {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
-			p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err))
-			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			status := p.fail(w, r, labelReplaceRegexError(err))
+			p.metrics.RecordRequest("query", status, time.Since(start))
 			return
 		}
 	}
 	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
 	stats, isStats := translator.DecodeStats(logsqlQuery)
-	if isBareMetricFunctionQuery(strings.TrimSpace(stripLabelTransforms(logqlQuery))) && !isStats {
-		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
-		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
-		return
-	}
+	bareMetricRefused := isBareMetricFunctionQuery(strings.TrimSpace(stripLabelTransforms(logqlQuery))) && !isStats
 
 	// Wrap writer to capture actual status code for metrics
 	sc := &statusCapture{ResponseWriter: w, code: 200}
@@ -3150,6 +3150,12 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
 	}
 	parsedForRoutingQ, _ := parseLogQLExpr(r.Context(), routedQuery)
+	if bareMetricRefused {
+		// A bare metric function carries no label transform, so the routed query is the query itself.
+		status := p.fail(w, r, bareMetricRefusal(parsedForRoutingQ))
+		p.metrics.RecordRequest("query", status, time.Since(start))
+		return
+	}
 	if _, _, aggregated := binaryAggregationChain(parsedForRoutingQ); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRoutingQ)) {
 		// The label transforms belong to an operand, which applies its own.
 		labelReplaceSpecs = nil
@@ -3176,9 +3182,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
 		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)
 		if leftErr != nil {
-			p.writeError(sc, http.StatusBadRequest, leftErr.Error())
+			p.writeErr(sc, r.Context(), queryRefusal(leftErr))
 		} else if rightErr != nil {
-			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
+			p.writeErr(sc, r.Context(), queryRefusal(rightErr))
 		} else {
 			p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
 		}
@@ -3188,12 +3194,12 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		if scalarStats, ok := scalarStatsBinaryOf(translatedBin); ok {
 			p.proxyScalarStatsBinary(sc, r, scalarStats, "vector")
 		} else {
-			p.writeError(sc, http.StatusBadRequest, unsupportedBinaryMarkerMessage)
+			p.writeErr(sc, r.Context(), notServed("binary-marker", nil))
 		}
 	} else if isStats {
 		p.proxyStatsQuery(sc, r, stats)
 	} else {
-		p.writeError(sc, http.StatusBadRequest, lokiInstantLogQueryError)
+		p.writeErr(sc, r.Context(), lokierr.InstantLogQuery())
 	}
 
 	if bw != nil && needsCapture && sc.code != http.StatusOK {

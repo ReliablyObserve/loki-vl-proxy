@@ -603,6 +603,8 @@
     "semantics/numeric-label-filter-not-equal-missing-label | compare:observed",
     "semantics/numeric-label-filter-not-equal-missing-label | gap:open",
     "semantics/numeric-label-filter-not-equal-missing-label | query",
+    "semantics/offset-different-per-range-vector | compare:observed",
+    "semantics/offset-different-per-range-vector | gap:open",
     "semantics/offset-sample-timestamps | applies_to",
     "semantics/offset-sample-timestamps | compare:structural",
     "semantics/offset-sample-timestamps | query",
@@ -1002,6 +1004,8 @@
     "semantics/without-sliding-sum-folded-buckets | perf",
     "semantics/without-sliding-sum-folded-buckets | perf:locked",
     "semantics/without-sliding-sum-folded-buckets | query",
+    "semantics/zero-range-metric | compare:observed",
+    "semantics/zero-range-metric | gap:open",
     "severity/detected-level-filter-json-level | compare:observed",
     "severity/detected-level-filter-json-level | gap:fixed",
     "severity/detected-level-filter-json-level | perf",
@@ -1253,6 +1257,16 @@
     "internal/proxy/error_layer_sites_test.go | semantics/error-layer-internal-go-text",
     "internal/proxy/error_layer_sites_test.go | semantics/error-layer-proxy-limit-status",
     "internal/proxy/error_layer_sites_test.go | semantics/error-layer-silent-success",
+    "internal/proxy/error_refusals_test.go | semantics/error-layer-internal-go-text",
+    "internal/proxy/error_refusals_test.go | semantics/error-request-validation-parity",
+    "internal/proxy/error_refusals_test.go | semantics/offset-different-per-range-vector",
+    "internal/proxy/error_refusals_test.go | semantics/parse-error-text-parity",
+    "internal/proxy/error_refusals_test.go | semantics/quantile-over-time-parameter-required",
+    "internal/proxy/error_refusals_test.go | semantics/range-duration-grammar-wider-than-loki",
+    "internal/proxy/error_refusals_test.go | semantics/translator-reads-only-space-between-tokens",
+    "internal/proxy/error_refusals_test.go | semantics/unknown-pipeline-stage-error-text",
+    "internal/proxy/error_refusals_test.go | semantics/vector-aggregation-over-scalar-rejected",
+    "internal/proxy/error_refusals_test.go | semantics/zero-range-metric",
     "internal/proxy/error_text_utf8_test.go | semantics/line-filter-invalid-utf8",
     "internal/proxy/error_writer_golden_test.go | semantics/error-layer-backend-failure-status",
     "internal/proxy/error_writer_golden_test.go | semantics/error-layer-backend-text",
@@ -1413,6 +1427,7 @@
     "internal/proxy/nested_vector_aggregation_differential_test.go | semantics/nested-aggregation-outer-by-native-routes",
     "internal/proxy/nested_vector_fold_test.go | metric-series-identity",
     "internal/proxy/nested_vector_fold_test.go | semantics/nested-aggregation-outer-by-native-routes",
+    "internal/proxy/offset_integration_test.go | semantics/offset-different-per-range-vector",
     "internal/proxy/ordered_json_conditional_unpack_test.go | parsed-label-series-identity",
     "internal/proxy/ordered_json_conditional_unpack_test.go | parser-json",
     "internal/proxy/ordered_json_conditional_unpack_test.go | parser-logfmt",
@@ -2498,14 +2513,14 @@
   "counts": {
     "case_consumers": {
       "any": 32,
-      "api": 89,
+      "api": 91,
       "drilldown": 50,
       "explore": 175,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 558,
+      "go": 560,
       "playwright": 1
     },
     "page_kinds": {
@@ -2525,7 +2540,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 107,
-    "wired_items": 338
+    "wired_items": 340
   },
   "gates": [
     "A/B shape selection",

@@ -23,6 +23,7 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -62,6 +63,17 @@ type originalRangeMetricSpec struct {
 	UnwrapConv  string
 	HasUnwrap   bool
 	BaseQuery   string // inner stream selector + pipeline, without range window [T]
+	// WindowText is the range as written ("5m", "0s"), for the client error of a range the proxy cannot read.
+	WindowText string
+}
+
+// windowRefusal is the client error for a range metric whose original spec the proxy cannot read, or whose range
+// is not a positive duration (see rangeWindowRefusal).
+func (s originalRangeMetricSpec) windowRefusal(read bool) *lokierr.Error {
+	if !read {
+		return notServed("range-metric-spec", nil)
+	}
+	return rangeWindowRefusal(s.WindowText)
 }
 
 type rangeMetricSample struct {
@@ -187,7 +199,8 @@ func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) 
 	if bracketOpen < 0 || bracketClose <= bracketOpen {
 		return originalRangeMetricSpec{}, false
 	}
-	spec.Window = parseLokiDuration(strings.TrimSpace(body[bracketOpen+1 : bracketClose]))
+	spec.WindowText = strings.TrimSpace(body[bracketOpen+1 : bracketClose])
+	spec.Window = parseLokiDuration(spec.WindowText)
 	if spec.Window < 0 {
 		return originalRangeMetricSpec{}, false
 	}
@@ -421,11 +434,11 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
-		p.writeError(w, http.StatusBadRequest, "invalid range metric query")
+		p.fail(w, r, origSpec.windowRefusal(hasOrigSpec))
 		return true
 	}
 	if metricFuncRequiresUnwrap(origSpec.Func) && (!origSpec.HasUnwrap || strings.TrimSpace(origSpec.UnwrapField) == "") {
-		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid aggregation %s without unwrap", unwrapErrorFuncName(origSpec.Func)))
+		p.fail(w, r, withoutUnwrapError(unwrapErrorFuncName(origSpec.Func)))
 		return true
 	}
 	if grouped {
@@ -534,11 +547,11 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
-		p.writeError(w, http.StatusBadRequest, "invalid range metric query")
+		p.fail(w, r, origSpec.windowRefusal(hasOrigSpec))
 		return true
 	}
 	if metricFuncRequiresUnwrap(origSpec.Func) && (!origSpec.HasUnwrap || strings.TrimSpace(origSpec.UnwrapField) == "") {
-		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid aggregation %s without unwrap", unwrapErrorFuncName(origSpec.Func)))
+		p.fail(w, r, withoutUnwrapError(unwrapErrorFuncName(origSpec.Func)))
 		return true
 	}
 	// A bare outer aggregation without by() collapses all streams into one empty-label
@@ -643,12 +656,12 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	}
 	startTS, err := parseTimestamp(r.FormValue("start"))
 	if err != nil {
-		p.writeError(w, http.StatusBadRequest, "invalid start timestamp: "+err.Error())
+		p.fail(w, r, timestampParamError("start", r.FormValue("start")))
 		return true
 	}
 	endTS, err := parseTimestamp(r.FormValue("end"))
 	if err != nil {
-		p.writeError(w, http.StatusBadRequest, "invalid end timestamp: "+err.Error())
+		p.fail(w, r, timestampParamError("end", r.FormValue("end")))
 		return true
 	}
 	step := parseLokiDuration(formatVLStep(r.FormValue("step")))
@@ -657,11 +670,11 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	}
 	field, quantile, fieldErr := p.resolveManualMetricField(spec, origSpec, manualFunc)
 	if fieldErr != nil {
-		p.writeError(w, http.StatusBadRequest, fieldErr.Error())
+		p.fail(w, r, fieldErr)
 		return true
 	}
 	if field == "" {
-		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid aggregation %s without unwrap", unwrapErrorFuncName(origSpec.Func)))
+		p.fail(w, r, withoutUnwrapError(unwrapErrorFuncName(origSpec.Func)))
 		return true
 	}
 	forceRawLevelRows := p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, spec.OrigGroupBy)
@@ -1022,11 +1035,11 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 	}
 	field, quantile, fieldErr := p.resolveManualMetricField(spec, origSpec, manualFunc)
 	if fieldErr != nil {
-		p.writeError(w, http.StatusBadRequest, fieldErr.Error())
+		p.fail(w, r, fieldErr)
 		return true
 	}
 	if field == "" {
-		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid aggregation %s without unwrap", unwrapErrorFuncName(origSpec.Func)))
+		p.fail(w, r, withoutUnwrapError(unwrapErrorFuncName(origSpec.Func)))
 		return true
 	}
 
@@ -1246,7 +1259,7 @@ func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec original
 	if manualFunc == "quantile" {
 		phi, field, ok := parseStatsQuantileSpec(spec.Field)
 		if !ok {
-			return "", 0, fmt.Errorf("invalid quantile query")
+			return "", 0, proxyFailure(errors.New("invalid quantile query"))
 		}
 		// The field ends the first stats function: a pipe after it (the outer
 		// aggregation's own stats) is not part of it.
@@ -1258,7 +1271,7 @@ func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec original
 		}
 		field = p.labelTranslator.ToVL(field)
 		if strings.TrimSpace(field) == "" {
-			return "", 0, fmt.Errorf("invalid aggregation %s without unwrap", unwrapErrorFuncName(origSpec.Func))
+			return "", 0, withoutUnwrapError(unwrapErrorFuncName(origSpec.Func))
 		}
 		return field, phi, nil
 	}

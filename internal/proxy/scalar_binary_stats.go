@@ -8,10 +8,6 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// unsupportedBinaryMarkerMessage is the answer to a translated query that is a binary expression the handler cannot
-// evaluate: its text is never sent to VictoriaLogs, which would read the marker as part of a query.
-const unsupportedBinaryMarkerMessage = "unsupported metric query: range aggregations require compatible unwrap or translator support"
-
 // binaryOfStats reads a translated query as a binary expression when it is no stats query a handler can take: it
 // has a stats pipe (isStats) but no stats spec could be read from it (stats.Shaped is false, as the stats readers
 // find no function in `stddev(x)|||2`). Only then is the text decoded (translator.DecodePhysical), so a normal
@@ -32,11 +28,11 @@ func binaryOfStats(stats physical.VLStats, isStats bool) (physical.Binary, bool)
 // rejectBinaryMarker answers a binary expression that reached a stats handler and reports whether it did. The route
 // never lets one through (scalarStatsBinaryOf, the binary routes); this stops one from being sent to VictoriaLogs as a
 // query, where the marker is read as part of the text and the answer is the backend's parse error.
-func (p *Proxy) rejectBinaryMarker(w http.ResponseWriter, stats physical.VLStats) bool {
+func (p *Proxy) rejectBinaryMarker(w http.ResponseWriter, r *http.Request, stats physical.VLStats) bool {
 	if _, isBinary := binaryOfStats(stats, true); !isBinary {
 		return false
 	}
-	p.writeError(w, http.StatusBadRequest, unsupportedBinaryMarkerMessage)
+	p.fail(w, r, notServed("binary-marker", nil))
 	return true
 }
 

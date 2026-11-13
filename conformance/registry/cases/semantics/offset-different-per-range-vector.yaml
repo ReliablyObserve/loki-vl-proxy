@@ -1,0 +1,31 @@
+id: semantics/offset-different-per-range-vector
+title: "A query whose range vectors carry different offsets, or only some of them one, fails where Loki evaluates it (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki gives every range vector its own offset: `rate({a="b"}[5m] offset 1h) / rate({a="b"}[5m] offset 2h)` (distinct offsets) and
+  `topk(1, rate({a="b"}[5m] offset 1h) + rate({a="b"}[5m]))` (an offset on one of two vectors, under an aggregation) parse and evaluate
+  (Loki oracle, check command: both accepted). The proxy applies one time shift per request, so it refuses both. Until the plan evaluates each range
+  vector with its own offset, a client reads Loki's fixed `500 Internal Server Error` (it read a 400 that named the proxy), and the construct is named in the log
+  line (`distinct-offsets`, `mixed-offsets`). A top-level binary expression with an offset on only some of its sides is evaluated side by side already.
+request:
+  scope: query-grammar
+  entry: "internal/proxy extractLogQLOffset and the offset block of handleQueryRange and handleQuery"
+  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now, step 60s): rate({app=\"x\"}[5m] offset 1h) / rate({app=\"x\"}[5m] offset 2h) ."
+compare:
+  mode: observed
+  fields: [status, body]
+  expect: "Loki's 200 answer: each side evaluated at its own offset."
+gap:
+  status: open
+  impact: api-only
+  effort: M
+  area: "internal/proxy extractLogQLOffset (one global time shift); closes when the plan evaluates each range vector with its own offset"
+  loki: "200, each range vector at its own offset"
+  proxy: "500, Loki's fixed Internal Server Error"
+  planned_test: 'TestQueryRefusalAnswersAreLokisNotTheTranslators (internal/proxy: the status and text; the answer of the query is for the e2e proof when the case is promoted)'
+  visual: none
+  visual_reason: 'a query a Grafana panel can send (a week-over-week rate) but the answer is an error body: no panel renders it'
+  clusters: []

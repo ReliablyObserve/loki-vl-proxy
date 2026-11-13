@@ -252,10 +252,14 @@ func TestErrorLayerSites(t *testing.T) {
 	const update = "run LVP_ERROR_LAYER_SITES_UPDATE=1 go test ./internal/proxy -run TestErrorLayerSites and commit conformance/registry/error-layer-sites.json"
 	for _, cat := range errorLayerSiteCategories {
 		have, limit := got.Totals[cat], want.Totals[cat]
+		grown := grownFiles(got.Files[cat], want.Files[cat])
 		switch {
 		case have > limit:
 			t.Errorf("%s grew from %d to %d (write the client error through the typed error layer, p.fail with an internal/lokierr error); files above their committed count: %s",
-				cat, limit, have, grownFiles(got.Files[cat], want.Files[cat]))
+				cat, limit, have, grown)
+		case grown != "":
+			// A site removed in one file does not pay for one added in another.
+			t.Errorf("%s gained sites in %s although its total did not grow: write them through the typed error layer", cat, grown)
 		case have < limit:
 			t.Errorf("%s fell from %d to %d: %s", cat, limit, have, update)
 		}
@@ -313,5 +317,165 @@ func TestErrorLayerSitesMatchTheCensus(t *testing.T) {
 	}
 	if got := counts.total("error_text_sites"); got != errText {
 		t.Errorf("scan finds %d error-text sites, the census %d", got, errText)
+	}
+}
+
+// internalClientWording are words no text written to a client may carry: the
+// translator's and the plan's vocabulary, LogsQL, the backend's name and the
+// proxy's own name.
+var internalClientWording = []string{
+	"loki-vl-proxy", "translator", "translatable", "LogsQL", "not a valid LogQL parser",
+	"requires a range metric", "unsupported metric query", "unsupported aggregation", "unsupported instant",
+	"invalid range metric query", "uniform offset", "distinct offsets", "invalid range selector",
+}
+
+// internalWordingAllowed lists the sites whose text is a proxy-only policy or
+// limit that names its own flag or component (the owner's documented
+// exceptions), by file and the words they may carry. The list only shrinks.
+var internalWordingAllowed = map[string][]string{}
+
+// TestClientErrorTextsCarryNoInternalWording scans the string literals of every
+// client error the proxy writes outside the typed layer (the message argument of
+// a free-text writer) and of the typed constructors that take a text (lokierr.Parse
+// details): none holds the translator's or the plan's wording, LogsQL or the
+// proxy's name. The typed layer builds Loki's own messages; this holds the sites
+// that are left to it.
+// conformance: semantics/error-layer-internal-go-text
+func TestClientErrorTextsCarryNoInternalWording(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	var parsed []*ast.File
+	var names []string
+	consts := map[string]string{}
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed, names = append(parsed, f), append(names, name)
+		collectStringConsts(f, consts)
+	}
+	for i, f := range parsed {
+		name := names[i]
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			enclosing := fn.Name.Name
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				var texts []ast.Expr
+				switch recv := receiverName(sel.X); {
+				case recv == "http" && sel.Sel.Name == "Error" && len(call.Args) > 1:
+					texts = call.Args[1:2]
+				case recv == "p" && freeTextWriters[sel.Sel.Name] > 0 && len(call.Args) > freeTextWriters[sel.Sel.Name]:
+					if _, own := freeTextWriters[enclosing]; !own && !layerWriters[enclosing] {
+						texts = call.Args[freeTextWriters[sel.Sel.Name] : freeTextWriters[sel.Sel.Name]+1]
+					}
+				case recv == "lokierr" && sel.Sel.Name == "Parse" && len(call.Args) == 3:
+					texts = call.Args[2:3]
+				}
+				for _, e := range texts {
+					for _, lit := range stringLiterals(e, consts) {
+						for _, word := range internalClientWording {
+							if strings.Contains(lit, word) && !wordingAllowed(name, word) {
+								t.Errorf("%s: %s writes %q to a client: it carries internal wording %q", name, enclosing, lit, word)
+							}
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
+}
+
+func wordingAllowed(file, word string) bool {
+	for _, w := range internalWordingAllowed[file] {
+		if w == word {
+			return true
+		}
+	}
+	return false
+}
+
+// stringLiterals are the string literals inside an expression (a message, or
+// a fmt.Sprintf format and its arguments), and the values of the package's
+// string constants it names.
+func stringLiterals(e ast.Expr, consts map[string]string) []string {
+	var out []string
+	ast.Inspect(e, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.BasicLit:
+			if v.Kind == token.STRING {
+				if s, err := strconv.Unquote(v.Value); err == nil {
+					out = append(out, s)
+				}
+			}
+		case *ast.Ident:
+			if s, ok := consts[v.Name]; ok {
+				out = append(out, s)
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// collectStringConsts adds the package-level string constants of f whose value
+// is a literal or a concatenation of literals and of constants already read
+// (the values the scan above reads when a message names one).
+func collectStringConsts(f *ast.File, into map[string]string) {
+	var value func(e ast.Expr) (string, bool)
+	value = func(e ast.Expr) (string, bool) {
+		switch v := e.(type) {
+		case *ast.BasicLit:
+			if v.Kind != token.STRING {
+				return "", false
+			}
+			s, err := strconv.Unquote(v.Value)
+			return s, err == nil
+		case *ast.Ident:
+			s, ok := into[v.Name]
+			return s, ok
+		case *ast.ParenExpr:
+			return value(v.X)
+		case *ast.BinaryExpr:
+			l, lok := value(v.X)
+			r, rok := value(v.Y)
+			return l + r, v.Op == token.ADD && lok && rok
+		}
+		return "", false
+	}
+	for _, decl := range f.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			vs, ok := spec.(*ast.ValueSpec)
+			if !ok || len(vs.Names) != len(vs.Values) {
+				continue
+			}
+			for i, name := range vs.Names {
+				if s, ok := value(vs.Values[i]); ok {
+					into[name.Name] = s
+				}
+			}
+		}
 	}
 }

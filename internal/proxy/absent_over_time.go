@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -57,7 +59,10 @@ type absentOverTimeCompatSpec struct {
 // errAbsentGrouping is Loki's rejection of `absent_over_time(...) by (...)`
 // (pkg/logql/syntax/ast.go:1439-1447 RangeAggregationExpr.validate, wrapped as a
 // ParseError at :1409).
-const errAbsentGrouping = "parse error : grouping not allowed for absent_over_time aggregation"
+const (
+	errAbsentGroupingDetail = "grouping not allowed for absent_over_time aggregation"
+	errAbsentGrouping       = "parse error : " + errAbsentGroupingDetail
+)
 
 // parseAbsentOverTimeCompatSpec reads absent_over_time(<log query>[range]),
 // alone or under vector aggregations and label_replace calls.
@@ -114,15 +119,16 @@ func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool
 	return absentOverTimeCompatSpec{baseQuery: baseQuery, rangeWindow: window, rangeWindowStr: matches[2], aggs: aggs, labelReplaces: replaces}, true
 }
 
-// invalid returns the message of the 400 a spec the handlers cannot answer gets.
-func (s absentOverTimeCompatSpec) invalid() string {
+// invalid returns the client error of a spec the handlers cannot answer, nil for one they can: Loki's rejection of
+// a grouping, and a range the spec holds no window for (a query Loki rejects with a position the proxy lacks).
+func (s absentOverTimeCompatSpec) invalid() *lokierr.Error {
 	switch {
 	case s.err != "":
-		return s.err
+		return lokierr.Parse(0, 0, errAbsentGroupingDetail)
 	case s.rangeWindowStr == "":
-		return "absent_over_time: missing range window"
+		return unplacedSyntaxError(errors.New("absent_over_time without a range window"))
 	}
-	return ""
+	return nil
 }
 
 // unwrapped reports whether the log query unwraps a label.
@@ -288,9 +294,9 @@ func (p *Proxy) finishAbsent(w http.ResponseWriter, endpoint, originalQuery stri
 // proxyAbsentOverTimeQuery answers absent_over_time at /query: the series at
 // the evaluation time when no sample is in (time-range, time], nothing otherwise.
 func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec absentOverTimeCompatSpec) {
-	if msg := spec.invalid(); msg != "" {
-		p.writeError(w, http.StatusBadRequest, msg)
-		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+	if invalid := spec.invalid(); invalid != nil {
+		status := p.fail(w, r, invalid)
+		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 	evalNs, ok := parseFlexibleUnixNanos(r.FormValue("time"))
@@ -316,9 +322,9 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 // series valued 1 at each step start, start+step, ... end whose window holds no
 // sample, no series when every window holds one.
 func (p *Proxy) proxyAbsentOverTimeQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec absentOverTimeCompatSpec) {
-	if msg := spec.invalid(); msg != "" {
-		p.writeError(w, http.StatusBadRequest, msg)
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+	if invalid := spec.invalid(); invalid != nil {
+		status := p.fail(w, r, invalid)
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 	body, ok := p.presenceAnswer(w, r, spec, p.handleQueryRange)
@@ -330,8 +336,8 @@ func (p *Proxy) proxyAbsentOverTimeQueryRange(w http.ResponseWriter, r *http.Req
 	endNs, okE := parseLokiTimeToUnixNano(r.FormValue("end"))
 	step, okStep := parsePositiveStepDuration(r.FormValue("step"))
 	if !okS || !okE || !okStep {
-		p.writeError(w, http.StatusBadRequest, "invalid start, end or step")
-		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		status := p.fail(w, r, rangeParamsError(r, okS, okE))
+		p.metrics.RecordRequest("query_range", status, time.Since(start))
 		return
 	}
 	p.finishAbsent(w, "query_range", originalQuery, start, buildAbsentOverTimeMatrix(spec, presenceSteps(body, spec.unwrapped()), startNs, endNs, step.Nanoseconds()))

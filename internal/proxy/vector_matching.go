@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -923,19 +924,19 @@ func splitPostProcessing(translated string) (clean, markerOp string, withoutLabe
 	return clean, markerOp, withoutLabels, post.LabelReplace
 }
 
-// newLabelTransforms holds the label_replace calls of a query. It returns Loki's parse error text when a
-// label_replace regexp does not compile.
-func newLabelTransforms(replaces []translator.LabelReplaceSpec) (labelTransforms, string) {
+// newLabelTransforms holds the label_replace calls of a query. It returns Loki's parse error when a
+// label_replace regexp does not compile, and nil otherwise.
+func newLabelTransforms(replaces []translator.LabelReplaceSpec) (labelTransforms, *lokierr.Error) {
 	for _, spec := range replaces {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
-			return labelTransforms{}, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err)
+			return labelTransforms{}, labelReplaceRegexError(err)
 		}
 	}
-	return labelTransforms{replaces: replaces}, ""
+	return labelTransforms{replaces: replaces}, nil
 }
 
 // parseLabelTransformMarkers reads the label_replace markers the translator left in a query.
-func parseLabelTransformMarkers(translated string) (labelTransforms, string) {
+func parseLabelTransformMarkers(translated string) (labelTransforms, *lokierr.Error) {
 	_, _, _, replaces := splitPostProcessing(translated)
 	return newLabelTransforms(replaces)
 }

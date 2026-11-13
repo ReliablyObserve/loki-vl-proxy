@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 )
 
 // handleLabels returns label names.
@@ -128,7 +129,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	parts := strings.Split(path, "/")
 	if len(parts) < 7 || parts[6] != "values" {
-		p.writeError(w, http.StatusBadRequest, "invalid label values URL")
+		p.fail(w, r, lokierr.NotFound())
 		return
 	}
 	labelName := parts[5]
@@ -328,8 +329,8 @@ func (p *Proxy) handleDetectedLevelLabelValues(w http.ResponseWriter, r *http.Re
 		for _, candidate := range metadataQueryCandidates(r.FormValue("query")) {
 			params, err := p.metadataQueryParams(r.Context(), candidate, lokiLabelStartToVL(r.FormValue("start")), lokiLabelEndToVL(r.FormValue("end")), p.labelLimitParam(r), "")
 			if err != nil {
-				p.writeError(w, http.StatusBadRequest, err.Error())
-				p.metrics.RecordRequest("label_values", http.StatusBadRequest, time.Since(start))
+				status := p.fail(w, r, queryRefusal(err))
+				p.metrics.RecordRequest("label_values", status, time.Since(start))
 				return
 			}
 			params.Set("field", detectedLevelLabel)
@@ -436,8 +437,8 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 	if len(matchQueries) > 0 {
 		translated, err := p.translateQueryWithContext(r.Context(), matchQueries[0])
 		if err != nil {
-			p.writeError(w, http.StatusBadRequest, err.Error())
-			p.metrics.RecordRequest("series", http.StatusBadRequest, time.Since(start))
+			status := p.fail(w, r, queryRefusal(err))
+			p.metrics.RecordRequest("series", status, time.Since(start))
 			return
 		}
 		query = translated
@@ -849,7 +850,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		}
 	}
 	if fieldName == "" {
-		p.writeError(w, http.StatusBadRequest, "missing field name in URL")
+		p.fail(w, r, lokierr.NotFound())
 		return
 	}
 
