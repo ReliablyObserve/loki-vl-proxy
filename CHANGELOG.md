@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The proxy's error answers now come from one typed error layer: each Loki error message has its own
+  constructor that writes Loki's exact status and text from typed inputs (the parameter name and value, the
+  parser's position, the configured limit, the kind of backend failure), and one writer picks the body shape
+  Loki uses on each route. Every constructor's text is checked byte for byte against real Loki answers
+  recorded over HTTP. Nothing a client sees changes: every status, header and body the error writers send is
+  the same as before.
+
 ### Fixed
 
 - With `-stream-response`, a broken VictoriaLogs answer to a log query is no longer sent as a partial success.

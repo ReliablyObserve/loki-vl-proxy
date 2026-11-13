@@ -25,6 +25,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/klauspost/compress/zstd"
@@ -305,9 +306,148 @@ func (p *Proxy) writeErrorShaped(w http.ResponseWriter, code int, msg string, ca
 
 // writeErrShaped is writeErr in the shape of one Loki component.
 func (p *Proxy) writeErrShaped(w http.ResponseWriter, ctx context.Context, err error, shape errorShape) int {
-	status, _, text := lokiClientError(ctx, err)
-	p.writeErrorShaped(w, status, text, err, shape)
+	return p.writeFailure(w, ctx, err, shape)
+}
+
+// fail answers a failed request as Loki does, in the body shape Loki uses on
+// the request's route (routeErrorShapes), and returns the status written. It
+// is the error layer's one writer: a *lokierr.Error is written as it is (its
+// status, its text, its own shape for the messages Loki's router writes); any
+// other error goes through lokiClientError, which answers Loki's text for the
+// failure kinds the proxy types and Loki's fixed 500 for an error it does not
+// know. The error's internal cause goes to the log line only.
+func (p *Proxy) fail(w http.ResponseWriter, r *http.Request, err error) int {
+	return p.writeFailure(w, r.Context(), err, routeErrorShape(r))
+}
+
+// writeFailure writes err in shape (unless err's message has a shape of its
+// own) and logs it; it returns the status written.
+func (p *Proxy) writeFailure(w http.ResponseWriter, ctx context.Context, err error, shape errorShape) int {
+	var (
+		status int
+		text   string
+		typed  *lokierr.Error
+	)
+	if e, ok := lokierr.As(err); ok && (ctx == nil || ctx.Err() == nil) {
+		typed, status, text = e, e.Status(), e.Text()
+		if own := e.Shape(); own != lokierr.ShapeRoute {
+			shape = errorShapeWriter(own)
+		}
+	} else {
+		// A request its client cancelled or that ran out of time is 499 or
+		// 504 whatever error it ended with, typed or not.
+		status, _, text = lokiClientError(ctx, err)
+	}
+	p.logRequestError(ctx, status, text, err, typed)
+	shape(w, status, text)
 	return status
+}
+
+// logRequestError writes the error layer's log line: the status and client
+// text, the internal error behind them, the message and kind of a typed
+// error, the route, and the flag of a limit whose Loki text names none.
+func (p *Proxy) logRequestError(ctx context.Context, status int, text string, err error, typed *lokierr.Error) {
+	level := slog.LevelInfo
+	switch {
+	case status >= http.StatusInternalServerError:
+		level = slog.LevelError
+	case status >= http.StatusBadRequest:
+		level = slog.LevelWarn
+	}
+	if p.log == nil || !p.log.Enabled(context.Background(), level) {
+		return
+	}
+	attrs := []any{"code", status, "error", text}
+	cause := err
+	if typed != nil {
+		attrs = append(attrs, "kind", typed.Kind().String(), "msg_id", typed.Msg().ID())
+		cause = typed.Cause()
+	}
+	if cause != nil {
+		// The full error (VictoriaLogs' message, the transport error, the
+		// flag of a proxy queue) is for operators only.
+		attrs = append(attrs, "upstream_error", cause.Error())
+	}
+	if strings.HasPrefix(text, seriesLimitMessagePrefix) {
+		// Loki's message carries no operator hint; the log says which flag
+		// sets the limit that rejected this query.
+		attrs = append(attrs, "limit_flag", "-max-stats-query-series")
+	}
+	if ctx != nil {
+		if meta := requestRouteMetaFromContext(ctx); meta.endpoint != "" {
+			attrs = append(attrs, "endpoint", meta.endpoint, "route", meta.route)
+		}
+	}
+	p.log.Log(context.Background(), level, "request error", attrs...)
+}
+
+// routeErrorShapes is the body shape Loki answers errors in, per route (the
+// endpoint name the route registers with). A route that is not listed answers
+// as Loki's query frontend does (writeLokiErrorBody).
+var routeErrorShapes = map[string]lokierr.Shape{
+	// format_query answers a query it cannot parse as JSON.
+	"format_query": lokierr.ShapeFormatQuery,
+	// The ruler's legacy YAML views answer with http.Error, its Prometheus
+	// views with the Prometheus JSON.
+	"rules":             lokierr.ShapeHTTPError,
+	"rules_nested":      lokierr.ShapeHTTPError,
+	"rules_prom":        lokierr.ShapeHTTPError,
+	"rules_prom_nested": lokierr.ShapeHTTPError,
+	"rules_prometheus":  lokierr.ShapeRulerJSON,
+	"alerts":            lokierr.ShapeAlertsJSON,
+	"alerts_prom":       lokierr.ShapeAlertsJSON,
+	"alerts_prometheus": lokierr.ShapeAlertsJSON,
+	// The compactor's delete API and the tenant limits view answer with
+	// http.Error.
+	"delete":        lokierr.ShapeHTTPError,
+	"tenant_limits": lokierr.ShapeHTTPError,
+}
+
+// routeErrorShape is the error body shape of r's route.
+func routeErrorShape(r *http.Request) errorShape {
+	if shape, ok := routeErrorShapes[requestRouteMetaFromContext(r.Context()).endpoint]; ok {
+		return errorShapeWriter(shape)
+	}
+	return writeLokiErrorBody
+}
+
+// errorShapeWriter writes the body shape s.
+func errorShapeWriter(s lokierr.Shape) errorShape {
+	switch s {
+	case lokierr.ShapeHTTPError:
+		return writeLokiHTTPError
+	case lokierr.ShapeBodyless:
+		return writeBodylessShape
+	case lokierr.ShapeFormatQuery:
+		return writeLokiFormatQueryError
+	case lokierr.ShapeRulerJSON:
+		return writeLokiRulerError
+	case lokierr.ShapeAlertsJSON:
+		return writeLokiAlertsError
+	}
+	return writeLokiErrorBody
+}
+
+// writeBodylessShape is writeBodylessError as an errorShape: the message is
+// not written.
+func writeBodylessShape(w http.ResponseWriter, code int, _ string) {
+	writeBodylessError(w, code)
+}
+
+// writeLokiFormatQueryError answers format_query's parse failure as Loki
+// does (recorded from Loki 3.7.9): application/json; charset=utf-8, no
+// nosniff, {"status":"invalid-query","error":<message>} and a newline.
+func writeLokiFormatQueryError(w http.ResponseWriter, code int, msg string) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	_ = enc.Encode(struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}{"invalid-query", msg})
+	w.Header().Del("X-Content-Type-Options")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
+	_, _ = w.Write(b.Bytes())
 }
 
 // writeLokiErrorBody answers an error as Loki's query frontend does
@@ -593,9 +733,7 @@ func isOrderedJSONPipelineError(err error) bool {
 // lokiClientError picks Loki's status and text, the full error goes to the
 // request error log line. It returns the status written.
 func (p *Proxy) writeErr(w http.ResponseWriter, ctx context.Context, err error) int {
-	status, _, text := lokiClientError(ctx, err)
-	p.writeErrorCause(w, status, text, err)
-	return status
+	return p.writeFailure(w, ctx, err, writeLokiErrorBody)
 }
 
 // upstreamErrorStatus maps a failed backend call to the status recorded in

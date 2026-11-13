@@ -43,13 +43,14 @@ def error_type(status):
 # the call's arguments. "msg" helpers write the message they are given (internal/proxy/http_utils.go
 # writeError, writeErrorCause and writeErrorShaped, the delete route's writeDeleteError and writeLokiTextError);
 # "layer" helpers pass an error through lokiClientError, which replaces any text the proxy did not write in
-# Loki's words with Loki's fixed text for the status (writeErr, writeErrShaped and the helpers built on them).
+# Loki's words with Loki's fixed text for the status (writeErr, writeErrShaped and the helpers built on them), or
+# write a typed internal/lokierr error as it is (fail).
 WRITERS = {
     "writeError": ("msg", 1, 2), "writeErrorCause": ("msg", 1, 2), "writeErrorShaped": ("msg", 1, 2),
     "writeDeleteError": ("msg", 1, 2), "writeLokiTextError": ("msg", 1, 2),
     "writeErr": ("layer", None, None), "writeErrShaped": ("layer", None, None),
     "writeBackendError": ("layer", None, None), "writeGrafanaStatsFailure": ("layer", None, None),
-    "writeVLStatsErrorBody": ("layer", None, None),
+    "writeVLStatsErrorBody": ("layer", None, None), "fail": ("layer", None, None),
 }
 WRITER_RE = re.compile(r'\bp\.(' + "|".join(WRITERS) + r')\(')
 # Bodies Loki's own handlers write with net/http: http.Error(w, msg, code) and a status with no body.

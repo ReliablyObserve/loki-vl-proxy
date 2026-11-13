@@ -32,6 +32,15 @@ why: |
   with its own cancel and deadline texts. The legacy rule views' store failure
   and empty answer are their own rows (semantics/ruler-store-failure-status,
   semantics/ruler-empty-list-status).
+  Loki's answers to these requests are recorded over HTTP, one row per Loki
+  error class and route (internal/lokierr/testdata/loki_error_answers.jsonl).
+  internal/lokierr renders each recorded message byte for byte from typed
+  inputs (TestConstructorsRenderLokiRecordedAnswers), and
+  TestLokiErrorAnswersReplay replays every row against the proxy; the rows
+  that still differ are listed in
+  conformance/registry/error-layer-known-differences.json, which may only
+  shrink. The tenant rows were recorded with Loki's auth disabled and are
+  not compared yet.
 request:
   method: GET
   path: /loki/api/v1/query_range

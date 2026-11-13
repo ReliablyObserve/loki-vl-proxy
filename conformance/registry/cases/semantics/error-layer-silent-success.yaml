@@ -38,7 +38,7 @@ why: |
   outage from the user.
 request:
   scope: internal
-  entry: (*Proxy).writeError, statusFromUpstreamErr, badRequestStatusOr, writeBackendError
+  entry: (*Proxy).writeError, (*Proxy).fail, statusFromUpstreamErr, badRequestStatusOr, writeBackendError
   setup: |
     TestErrorLayer_NoVictoriaLogsLeak: a fake VictoriaLogs (and ruler) that fails
     every call in one of 14 modes (VictoriaLogs 400 parse and memory-limit

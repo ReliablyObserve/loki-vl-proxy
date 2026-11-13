@@ -6,3 +6,9 @@ description = "intentional secret fixtures for redaction tests"
 paths = [
   '''internal/proxy/redact_test\.go''',
 ]
+
+[[allowlists]]
+description = "RFC 6455 example Sec-WebSocket-Key (base64 of 'the sample nonce') in recorded tail requests, not a credential"
+regexes = [
+  '''dGhlIHNhbXBsZSBub25jZQ==''',
+]

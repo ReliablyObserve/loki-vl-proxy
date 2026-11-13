@@ -1,0 +1,1570 @@
+{
+  "writeBackendError/429": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests",
+    "returned": 429
+  },
+  "writeBackendError/empty 502": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeBackendError/memory 400": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeBackendError/parse 400": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "failed to parse the log query",
+    "returned": 400
+  },
+  "writeBackendError/plain 500": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeBackendError/queue 503": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests",
+    "returned": 429
+  },
+  "writeBackendError/stats 422": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "failed to parse the log query",
+    "returned": 400
+  },
+  "writeBackendError/unsupported path": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErr/aborted": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErr/aborted timed out": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 504
+  },
+  "writeErr/binary budget": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "binary expression exceeds its evaluation budget; narrow the query or increase -binary-evaluation-budget",
+    "returned": 400
+  },
+  "writeErr/body too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes",
+    "returned": 500
+  },
+  "writeErr/ctx canceled": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client",
+    "returned": 499
+  },
+  "writeErr/ctx canceled nil": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client",
+    "returned": 499
+  },
+  "writeErr/ctx expired": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 504
+  },
+  "writeErr/heavy queue full": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests",
+    "returned": 429
+  },
+  "writeErr/label values too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024); raise -label-values-max-response-bytes or narrow the query",
+    "returned": 500
+  },
+  "writeErr/nil": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErr/ordered json pipeline": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "pipeline error: invalid � byte",
+    "returned": 400
+  },
+  "writeErr/proxy limit text": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes",
+    "returned": 500
+  },
+  "writeErr/proxy limit text with quote": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErr/proxy limit wrapped in url error": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErr/row limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "manual range metric row limit exceeded (100 series); the query matches 2000 log lines; narrow the query or increase -manual-range-metric-row-limit",
+    "returned": 400
+  },
+  "writeErr/series limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()",
+    "returned": 400
+  },
+  "writeErr/series limit row budget": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "manual range metric row limit exceeded (1000); narrow the query or increase -manual-range-metric-row-limit",
+    "returned": 400
+  },
+  "writeErr/text context canceled": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client",
+    "returned": 499
+  },
+  "writeErr/text deadline exceeded": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 504
+  },
+  "writeErr/text timeout": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 504
+  },
+  "writeErr/translator parse": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "parse error : syntax error: unexpected $end",
+    "returned": 400
+  },
+  "writeErr/transport refused": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErr/transport timeout": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 504
+  },
+  "writeErr/untyped": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErr/vector match": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "found duplicate series for the match group {a=\"b\"} on the right hand-side of the operation",
+    "returned": 500
+  },
+  "writeErr/vl 400 rejected": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "failed to parse the log query",
+    "returned": 400
+  },
+  "writeErr/vl 400 resource limit": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErr/vl 400 unclassified": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErr/vl 400 unsupported path": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErr/vl 422 rejected": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "failed to parse the log query",
+    "returned": 400
+  },
+  "writeErr/vl 429": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests",
+    "returned": 429
+  },
+  "writeErr/vl 500": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErr/vl 502 front": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErr/vl 503 queue full": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests",
+    "returned": 429
+  },
+  "writeErr/wrapped canceled": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client",
+    "returned": 499
+  },
+  "writeErr/wrapped deadline": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 504
+  },
+  "writeErrShaped/alerts_json/aborted": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/aborted timed out": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
+    "returned": 504
+  },
+  "writeErrShaped/alerts_json/binary budget": {
+    "status": 400,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"binary expression exceeds its evaluation budget; narrow the query or increase -binary-evaluation-budget\"}",
+    "returned": 400
+  },
+  "writeErrShaped/alerts_json/body too large": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/ctx canceled": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"the request was cancelled by the client\"}",
+    "returned": 499
+  },
+  "writeErrShaped/alerts_json/ctx canceled nil": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"the request was cancelled by the client\"}",
+    "returned": 499
+  },
+  "writeErrShaped/alerts_json/ctx expired": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
+    "returned": 504
+  },
+  "writeErrShaped/alerts_json/heavy queue full": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"too many outstanding requests\"}",
+    "returned": 429
+  },
+  "writeErrShaped/alerts_json/label values too large": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024); raise -label-values-max-response-bytes or narrow the query\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/nil": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/ordered json pipeline": {
+    "status": 400,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"pipeline error: invalid � byte\"}",
+    "returned": 400
+  },
+  "writeErrShaped/alerts_json/proxy limit text": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/proxy limit text with quote": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/proxy limit wrapped in url error": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/row limit": {
+    "status": 400,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"manual range metric row limit exceeded (100 series); the query matches 2000 log lines; narrow the query or increase -manual-range-metric-row-limit\"}",
+    "returned": 400
+  },
+  "writeErrShaped/alerts_json/series limit": {
+    "status": 400,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()\"}",
+    "returned": 400
+  },
+  "writeErrShaped/alerts_json/series limit row budget": {
+    "status": 400,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"manual range metric row limit exceeded (1000); narrow the query or increase -manual-range-metric-row-limit\"}",
+    "returned": 400
+  },
+  "writeErrShaped/alerts_json/text context canceled": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"the request was cancelled by the client\"}",
+    "returned": 499
+  },
+  "writeErrShaped/alerts_json/text deadline exceeded": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
+    "returned": 504
+  },
+  "writeErrShaped/alerts_json/text timeout": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
+    "returned": 504
+  },
+  "writeErrShaped/alerts_json/translator parse": {
+    "status": 400,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"parse error : syntax error: unexpected $end\"}",
+    "returned": 400
+  },
+  "writeErrShaped/alerts_json/transport refused": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/transport timeout": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
+    "returned": 504
+  },
+  "writeErrShaped/alerts_json/untyped": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/vector match": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"found duplicate series for the match group {a=\\\"b\\\"} on the right hand-side of the operation\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/vl 400 rejected": {
+    "status": 400,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"failed to parse the log query\"}",
+    "returned": 400
+  },
+  "writeErrShaped/alerts_json/vl 400 resource limit": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/vl 400 unclassified": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/vl 400 unsupported path": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/vl 422 rejected": {
+    "status": 400,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"failed to parse the log query\"}",
+    "returned": 400
+  },
+  "writeErrShaped/alerts_json/vl 429": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"too many outstanding requests\"}",
+    "returned": 429
+  },
+  "writeErrShaped/alerts_json/vl 500": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/vl 502 front": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/vl 503 queue full": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"too many outstanding requests\"}",
+    "returned": 429
+  },
+  "writeErrShaped/alerts_json/wrapped canceled": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"the request was cancelled by the client\"}",
+    "returned": 499
+  },
+  "writeErrShaped/alerts_json/wrapped deadline": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
+    "returned": 504
+  },
+  "writeErrShaped/frontend/aborted": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/aborted timed out": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 504
+  },
+  "writeErrShaped/frontend/binary budget": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "binary expression exceeds its evaluation budget; narrow the query or increase -binary-evaluation-budget",
+    "returned": 400
+  },
+  "writeErrShaped/frontend/body too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/ctx canceled": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client",
+    "returned": 499
+  },
+  "writeErrShaped/frontend/ctx canceled nil": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client",
+    "returned": 499
+  },
+  "writeErrShaped/frontend/ctx expired": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 504
+  },
+  "writeErrShaped/frontend/heavy queue full": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests",
+    "returned": 429
+  },
+  "writeErrShaped/frontend/label values too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024); raise -label-values-max-response-bytes or narrow the query",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/nil": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/ordered json pipeline": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "pipeline error: invalid � byte",
+    "returned": 400
+  },
+  "writeErrShaped/frontend/proxy limit text": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/proxy limit text with quote": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/proxy limit wrapped in url error": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/row limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "manual range metric row limit exceeded (100 series); the query matches 2000 log lines; narrow the query or increase -manual-range-metric-row-limit",
+    "returned": 400
+  },
+  "writeErrShaped/frontend/series limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()",
+    "returned": 400
+  },
+  "writeErrShaped/frontend/series limit row budget": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "manual range metric row limit exceeded (1000); narrow the query or increase -manual-range-metric-row-limit",
+    "returned": 400
+  },
+  "writeErrShaped/frontend/text context canceled": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client",
+    "returned": 499
+  },
+  "writeErrShaped/frontend/text deadline exceeded": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 504
+  },
+  "writeErrShaped/frontend/text timeout": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 504
+  },
+  "writeErrShaped/frontend/translator parse": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "parse error : syntax error: unexpected $end",
+    "returned": 400
+  },
+  "writeErrShaped/frontend/transport refused": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/transport timeout": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 504
+  },
+  "writeErrShaped/frontend/untyped": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/vector match": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "found duplicate series for the match group {a=\"b\"} on the right hand-side of the operation",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/vl 400 rejected": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "failed to parse the log query",
+    "returned": 400
+  },
+  "writeErrShaped/frontend/vl 400 resource limit": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/vl 400 unclassified": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/vl 400 unsupported path": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/vl 422 rejected": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "failed to parse the log query",
+    "returned": 400
+  },
+  "writeErrShaped/frontend/vl 429": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests",
+    "returned": 429
+  },
+  "writeErrShaped/frontend/vl 500": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/vl 502 front": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/vl 503 queue full": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests",
+    "returned": 429
+  },
+  "writeErrShaped/frontend/wrapped canceled": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client",
+    "returned": 499
+  },
+  "writeErrShaped/frontend/wrapped deadline": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 504
+  },
+  "writeErrShaped/http_error/aborted": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/aborted timed out": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\n",
+    "returned": 504
+  },
+  "writeErrShaped/http_error/binary budget": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "binary expression exceeds its evaluation budget; narrow the query or increase -binary-evaluation-budget\n",
+    "returned": 400
+  },
+  "writeErrShaped/http_error/body too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/ctx canceled": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client\n",
+    "returned": 499
+  },
+  "writeErrShaped/http_error/ctx canceled nil": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client\n",
+    "returned": 499
+  },
+  "writeErrShaped/http_error/ctx expired": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\n",
+    "returned": 504
+  },
+  "writeErrShaped/http_error/heavy queue full": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests\n",
+    "returned": 429
+  },
+  "writeErrShaped/http_error/label values too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024); raise -label-values-max-response-bytes or narrow the query\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/nil": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/ordered json pipeline": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body_quoted": "\"pipeline error: invalid \\xff byte\\n\"",
+    "returned": 400
+  },
+  "writeErrShaped/http_error/proxy limit text": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/proxy limit text with quote": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/proxy limit wrapped in url error": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/row limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "manual range metric row limit exceeded (100 series); the query matches 2000 log lines; narrow the query or increase -manual-range-metric-row-limit\n",
+    "returned": 400
+  },
+  "writeErrShaped/http_error/series limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()\n",
+    "returned": 400
+  },
+  "writeErrShaped/http_error/series limit row budget": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "manual range metric row limit exceeded (1000); narrow the query or increase -manual-range-metric-row-limit\n",
+    "returned": 400
+  },
+  "writeErrShaped/http_error/text context canceled": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client\n",
+    "returned": 499
+  },
+  "writeErrShaped/http_error/text deadline exceeded": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\n",
+    "returned": 504
+  },
+  "writeErrShaped/http_error/text timeout": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\n",
+    "returned": 504
+  },
+  "writeErrShaped/http_error/translator parse": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "parse error : syntax error: unexpected $end\n",
+    "returned": 400
+  },
+  "writeErrShaped/http_error/transport refused": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/transport timeout": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\n",
+    "returned": 504
+  },
+  "writeErrShaped/http_error/untyped": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/vector match": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "found duplicate series for the match group {a=\"b\"} on the right hand-side of the operation\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/vl 400 rejected": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "failed to parse the log query\n",
+    "returned": 400
+  },
+  "writeErrShaped/http_error/vl 400 resource limit": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/vl 400 unclassified": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/vl 400 unsupported path": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/vl 422 rejected": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "failed to parse the log query\n",
+    "returned": 400
+  },
+  "writeErrShaped/http_error/vl 429": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests\n",
+    "returned": 429
+  },
+  "writeErrShaped/http_error/vl 500": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/vl 502 front": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/vl 503 queue full": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests\n",
+    "returned": 429
+  },
+  "writeErrShaped/http_error/wrapped canceled": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client\n",
+    "returned": 499
+  },
+  "writeErrShaped/http_error/wrapped deadline": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\n",
+    "returned": 504
+  },
+  "writeErrShaped/ruler_json/aborted": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/aborted timed out": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
+    "returned": 504
+  },
+  "writeErrShaped/ruler_json/binary budget": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"binary expression exceeds its evaluation budget; narrow the query or increase -binary-evaluation-budget\"}",
+    "returned": 400
+  },
+  "writeErrShaped/ruler_json/body too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/ctx canceled": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"the request was cancelled by the client\"}",
+    "returned": 499
+  },
+  "writeErrShaped/ruler_json/ctx canceled nil": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"the request was cancelled by the client\"}",
+    "returned": 499
+  },
+  "writeErrShaped/ruler_json/ctx expired": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
+    "returned": 504
+  },
+  "writeErrShaped/ruler_json/heavy queue full": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"too many outstanding requests\"}",
+    "returned": 429
+  },
+  "writeErrShaped/ruler_json/label values too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024); raise -label-values-max-response-bytes or narrow the query\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/nil": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/ordered json pipeline": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"pipeline error: invalid � byte\"}",
+    "returned": 400
+  },
+  "writeErrShaped/ruler_json/proxy limit text": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/proxy limit text with quote": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/proxy limit wrapped in url error": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/row limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"manual range metric row limit exceeded (100 series); the query matches 2000 log lines; narrow the query or increase -manual-range-metric-row-limit\"}",
+    "returned": 400
+  },
+  "writeErrShaped/ruler_json/series limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()\"}",
+    "returned": 400
+  },
+  "writeErrShaped/ruler_json/series limit row budget": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"manual range metric row limit exceeded (1000); narrow the query or increase -manual-range-metric-row-limit\"}",
+    "returned": 400
+  },
+  "writeErrShaped/ruler_json/text context canceled": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"the request was cancelled by the client\"}",
+    "returned": 499
+  },
+  "writeErrShaped/ruler_json/text deadline exceeded": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
+    "returned": 504
+  },
+  "writeErrShaped/ruler_json/text timeout": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
+    "returned": 504
+  },
+  "writeErrShaped/ruler_json/translator parse": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"parse error : syntax error: unexpected $end\"}",
+    "returned": 400
+  },
+  "writeErrShaped/ruler_json/transport refused": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/transport timeout": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
+    "returned": 504
+  },
+  "writeErrShaped/ruler_json/untyped": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/vector match": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"found duplicate series for the match group {a=\\\"b\\\"} on the right hand-side of the operation\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/vl 400 rejected": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"failed to parse the log query\"}",
+    "returned": 400
+  },
+  "writeErrShaped/ruler_json/vl 400 resource limit": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/vl 400 unclassified": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/vl 400 unsupported path": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/vl 422 rejected": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"failed to parse the log query\"}",
+    "returned": 400
+  },
+  "writeErrShaped/ruler_json/vl 429": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"too many outstanding requests\"}",
+    "returned": 429
+  },
+  "writeErrShaped/ruler_json/vl 500": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/vl 502 front": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/vl 503 queue full": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"too many outstanding requests\"}",
+    "returned": 429
+  },
+  "writeErrShaped/ruler_json/wrapped canceled": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"the request was cancelled by the client\"}",
+    "returned": 499
+  },
+  "writeErrShaped/ruler_json/wrapped deadline": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
+    "returned": 504
+  },
+  "writeGrafanaStatsFailure/aborted": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/aborted timed out": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/binary budget": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "binary expression exceeds its evaluation budget; narrow the query or increase -binary-evaluation-budget",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/body too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/ctx canceled": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/ctx canceled nil": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/ctx expired": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/heavy queue full": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/label values too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024); raise -label-values-max-response-bytes or narrow the query",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/nil": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/ordered json pipeline": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "pipeline error: invalid � byte",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/proxy limit text": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/proxy limit text with quote": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/proxy limit wrapped in url error": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/row limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "manual range metric row limit exceeded (100 series); the query matches 2000 log lines; narrow the query or increase -manual-range-metric-row-limit",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/series limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/series limit row budget": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "manual range metric row limit exceeded (1000); narrow the query or increase -manual-range-metric-row-limit",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/text context canceled": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/text deadline exceeded": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/text timeout": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/translator parse": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "parse error : syntax error: unexpected $end",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/transport refused": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/transport timeout": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/untyped": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/vector match": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "found duplicate series for the match group {a=\"b\"} on the right hand-side of the operation",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/vl 400 rejected": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "failed to parse the log query",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/vl 400 resource limit": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/vl 400 unclassified": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/vl 400 unsupported path": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/vl 422 rejected": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "failed to parse the log query",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/vl 429": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/vl 500": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/vl 502 front": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "Internal Server Error",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/vl 503 queue full": {
+    "status": 429,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "too many outstanding requests",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/wrapped canceled": {
+    "status": 499,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "the request was cancelled by the client",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/wrapped deadline": {
+    "status": 504,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "returned": 0
+  }
+}
