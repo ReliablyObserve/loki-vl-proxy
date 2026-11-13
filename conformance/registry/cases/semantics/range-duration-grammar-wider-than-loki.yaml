@@ -1,0 +1,35 @@
+id: semantics/range-duration-grammar-wider-than-loki
+title: "The proxy reads range durations Loki rejects (`[1.5m]`, `[5m5m]`, `[ 5m ]`, `[1ns]`, `[1us]`, `[9999999999h]`) and rejects `[0]`, which Loki accepts (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki's range duration is a Prometheus-style duration: whole numbers with the units y, w, d, h, m, s and ms, each once, in descending order. The Loki oracle (check command) answers 400 for
+  `rate({a="b"}[1.5m])` ("parse error at line 0, col 13: unknown unit \".\" in duration \"1.5m\""),
+  `[5m5m]` and `[1h1h]` ("not a valid duration string: \"5m5m\""), `[ 5m ]` ("not a valid duration string: \" 5m \""),
+  `[1ns]`, `[1us]` and `[1µs]` ("unknown unit \"ns\" in duration \"1ns\""), and `[9999999999h]` ("duration out of range"),
+  in a range aggregation with and without unwrap. The proxy's validation accepts every one of them and the translator writes a window for it.
+  The other way round, Loki accepts `rate({a="b"}[0])` and answers 200, where the proxy answers
+  "parse error at line 0, col 13: not a valid duration string: \"0\"". Offsets read the same durations and show no difference in the sweep.
+
+  Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
+request:
+  scope: query-grammar
+  entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/range-duration-grammar-wider-than-loki"
+  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now, step 60s): rate({app=\"x\"}[1.5m]) . The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: "Loki's 400 for the durations above, and Loki's 200 for `[0]`."
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: "internal/logql duration scanner (range and offset durations)"
+  loki: "whole-unit durations in descending order; a bare 0 is a duration"
+  proxy: "fractions, repeated units, padding and sub-millisecond units are read; a bare 0 is rejected"
+  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  visual: none
+  visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
+  clusters: []

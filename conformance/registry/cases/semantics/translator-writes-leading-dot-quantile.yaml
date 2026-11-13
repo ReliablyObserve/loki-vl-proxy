@@ -1,0 +1,30 @@
+id: semantics/translator-writes-leading-dot-quantile
+title: "quantile_over_time(.5, ...) is written to VictoriaLogs with the phi `.5`, which it rejects (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki accepts `quantile_over_time(.5, {a="b"} | json | unwrap c[5m])`. The string translator writes `stats ... quantile(.5, ...)`, and VictoriaLogs v1.49.0 and v1.53.0 reject it:
+  `cannot parse "quantile" func: phi arg in 'quantile' must be floating point number; got ".5"`. The query plan writes the phi as a number VictoriaLogs reads (the lowering is checked against the oracle).
+
+  Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
+request:
+  scope: query-grammar
+  entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/translator-writes-leading-dot-quantile"
+  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now, step 60s): quantile_over_time(.5, {app=\"x\"} | unwrap c [5m]) . The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: "The quantile of the unwrapped values, as for 0.5."
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: "internal/translator (frozen): closes when the plan serves quantile_over_time"
+  loki: ".5 is a number"
+  proxy: "the literal is copied into the stats function"
+  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  visual: none
+  visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
+  clusters: []

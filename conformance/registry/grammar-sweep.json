@@ -1,0 +1,2968 @@
+{
+  "description": "Counts of the grammar sweep (internal/querycorpus TestGrammarSweep): the queries enumerated from the LogQL grammar, Loki's answers to them, and every class of difference between the proxy and Loki or VictoriaLogs. A class is the kind of difference, the two answers without their numbers and names, and the grammar element all its queries hold. Each class is held open by a registry case (`case`); a class may only shrink, a new class fails the test, and LVP_QUERY_PLAN_UPDATE=1 rewrites this file keeping the cases of the classes that remain.",
+  "queries": 25824,
+  "query_set_hash": "422826beceb88e3e6456c2f5",
+  "loki_answers": {
+    "accepted": 16982,
+    "rejected": 8842
+  },
+  "differences_by_kind": {
+    "VictoriaLogs rejects the translator text": 393,
+    "accepted, translation fails": 32,
+    "error text differs": 207,
+    "error text differs, rejected at translation": 27,
+    "proxy accepts, Loki rejects": 559,
+    "proxy rejects, Loki accepts": 18,
+    "tree fact differs: binary operation": 17,
+    "tree fact differs: has a log pipeline": 3,
+    "tree fact differs: offsets": 4,
+    "tree fact differs: outermost operation": 4
+  },
+  "logsql_texts_checked": 57996,
+  "logsql_texts_unrecorded": 0,
+  "victorialogs_rejections_for_queries_loki_rejects": 108,
+  "case_rules": [
+    {
+      "match": "^(proxy accepts, Loki rejects|error text differs).*\\| spacing ",
+      "case": "semantics/parser-reads-unicode-blank-as-white-space"
+    },
+    {
+      "match": "^(VictoriaLogs|accepted, translation fails).*\\| spacing ",
+      "case": "semantics/translator-reads-only-space-between-tokens"
+    },
+    {
+      "match": "^VictoriaLogs rejects the translator text \\| .*phi arg",
+      "case": "semantics/translator-writes-leading-dot-quantile"
+    },
+    {
+      "match": "^VictoriaLogs rejects the translator text \\| .*json a=\"b\\[",
+      "case": "semantics/translator-writes-json-path-with-escaped-quote"
+    },
+    {
+      "match": "^VictoriaLogs rejects the translator text \\| .*(log stage|label_format)",
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe"
+    },
+    {
+      "match": "^VictoriaLogs rejects the translator text \\| .*(binary left \\(|vecagg inner \\(|label_replace inner \\(|vecagg inner label_replace)",
+      "case": "semantics/translator-reads-parenthesized-metric-as-text"
+    },
+    {
+      "match": "^VictoriaLogs rejects the translator text \\| .*rangeagg fn rate \\(",
+      "case": "semantics/translator-reads-blank-before-range-call-as-text"
+    },
+    {
+      "match": "^VictoriaLogs rejects the translator text \\| .*approx_topk",
+      "case": "semantics/approx-topk-opaque-plan"
+    },
+    {
+      "match": "^accepted, translation fails \\| .*requires a range metric",
+      "case": "semantics/vector-aggregation-over-scalar-rejected"
+    },
+    {
+      "match": "^accepted, translation fails \\| quantile_over_time requires",
+      "case": "semantics/translator-reads-only-space-between-tokens"
+    },
+    {
+      "match": "^proxy accepts, Loki rejects \\| .*rangeagg .*range ",
+      "case": "semantics/range-duration-grammar-wider-than-loki"
+    },
+    {
+      "match": "^proxy rejects, Loki accepts \\| .*rangeagg .*range ",
+      "case": "semantics/range-duration-grammar-wider-than-loki"
+    },
+    {
+      "match": "^proxy accepts, Loki rejects \\| syntax error at unwrap \\| log stage:unwrap",
+      "case": "semantics/unwrap-in-log-query"
+    },
+    {
+      "match": "^error text differs \\| syntax error at unwrap \\|\\| (syntax error at unwrap|queries require).*log stage",
+      "case": "semantics/unwrap-in-log-query"
+    },
+    {
+      "match": "^proxy accepts, Loki rejects \\| syntax error at \\( \\| rangeagg",
+      "case": "semantics/unwrap-unknown-conversion-function-accepted"
+    },
+    {
+      "match": "^proxy accepts, Loki rejects \\| parameter required for operation quantile_over_time",
+      "case": "semantics/quantile-over-time-parameter-required"
+    },
+    {
+      "match": "^proxy accepts, Loki rejects \\| syntax error at  \\| label_replace",
+      "case": "semantics/label-replace-over-log-selector-accepted"
+    },
+    {
+      "match": "^proxy accepts, Loki rejects \\| sort and sort_desc",
+      "case": "semantics/sort-grouping-accepted"
+    },
+    {
+      "match": "^proxy accepts, Loki rejects \\| unexpected literal for right leg",
+      "case": "semantics/set-operation-folded-literal-operand"
+    },
+    {
+      "match": "^proxy accepts, Loki rejects \\| syntax error at (NUMBER|RATE) \\| binary modifier  on",
+      "case": "semantics/binary-on-without-label-list-accepted"
+    },
+    {
+      "match": "^proxy accepts, Loki rejects \\| syntax error at drop \\| rangeagg",
+      "case": "semantics/stage-after-unwrap-accepted"
+    },
+    {
+      "match": "^proxy accepts, Loki rejects \\| syntax error at ip \\| log stage",
+      "case": "semantics/drop-keep-matcher-ip-value-accepted"
+    },
+    {
+      "match": "^error text differs, rejected at translation \\| .*unknown pipeline stage",
+      "case": "semantics/unknown-pipeline-stage-error-text"
+    },
+    {
+      "match": "^proxy rejects, Loki accepts \\| syntax error at \\+ \\| literal number",
+      "case": "semantics/unary-plus-literal-rejected"
+    },
+    {
+      "match": "^proxy rejects, Loki accepts \\| syntax error at / \\| binary op //",
+      "case": "semantics/go-style-comment-rejected"
+    },
+    {
+      "match": "^proxy rejects, Loki accepts \\| stage .* line_format",
+      "case": "semantics/metric-unread-line-format-template-error"
+    },
+    {
+      "match": "^tree fact differs: .* \\| vecagg agg approx_topk",
+      "case": "semantics/approx-topk-opaque-plan"
+    },
+    {
+      "match": "^tree fact differs: binary operation",
+      "case": "semantics/binary-literal-operation-folded-in-loki"
+    },
+    {
+      "match": "^error text differs \\| grouping not allowed for approx_topk",
+      "case": "semantics/approx-topk-opaque-plan"
+    },
+    {
+      "match": "^error text differs",
+      "case": "semantics/parse-error-text-parity"
+    }
+  ],
+  "classes": {
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse \"S\" func: phi arg in 'S' must be floating point number; got \"S\" [v1.53.0] | rangeagg pairing fn quantile_over_time(.5, %s)": {
+      "count": 2,
+      "case": "semantics/translator-writes-leading-dot-quantile",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "cannot parse \"S\" pipe: cannot parse \"S\" func: phi arg in 'S' must be floating point number; got \"S\" [v1.53.0]",
+      "element": "rangeagg pairing fn quantile_over_time(.5, %s)",
+      "examples": [
+        {
+          "query": "quantile_over_time(.5, {a=\"b\"} | regexp \"(?P\u003cx\u003e.)\" | unwrap x[5m])",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | extract_regexp \"(?P\u003cx\u003e.)\" | filter \"x\":~\"^[+-]?(?:(?:[0-9]+(?:_[0-9]+)*(?:[.](?:[0-9]+(?:_[0-9]+)*)?)?|[.][0-9]+(?:_[0-9]+)*)(?:[eE][+-]?[0-9]+(?:_[0-9]+)*)?|0[xX](?:_?[0-9a-fA-F]+(?:_..."
+        },
+        {
+          "query": "quantile_over_time(.5, {a=\"b\"} | unwrap duration_seconds(x) | __error__=\"\"[5m])",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" __error__:=\"\" | filter \"x\":~\"^[+-]?(?:0|(?:(?:[0-9]+(?:[.][0-9]*)?|[.][0-9]+)(?:ns|us|µs|μs|ms|s|m|h))+)$\" | copy \"x\" as __lvp_d | replace_regexp if (__lvp_d:~\"(^|[^0-9.])0[0-9]\") (\"(^|[..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse \"S\" func: phi arg in 'S' must be floating point number; got \"S\" [v1.53.0] | rangeagg unwrap fn quantile_over_time(.5, %s)": {
+      "count": 10,
+      "case": "semantics/translator-writes-leading-dot-quantile",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "cannot parse \"S\" pipe: cannot parse \"S\" func: phi arg in 'S' must be floating point number; got \"S\" [v1.53.0]",
+      "element": "rangeagg unwrap fn quantile_over_time(.5, %s)",
+      "examples": [
+        {
+          "query": "quantile_over_time(.5, {a=\"b\"} | json | unwrap c[5m])",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | unpack_json | filter \"c\":~\"^[+-]?(?:(?:[0-9]+(?:_[0-9]+)*(?:[.](?:[0-9]+(?:_[0-9]+)*)?)?|[.][0-9]+(?:_[0-9]+)*)(?:[eE][+-]?[0-9]+(?:_[0-9]+)*)?|0[xX](?:_?[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*..."
+        },
+        {
+          "query": "quantile_over_time(.5, {a=\"b\"} | json | unwrap c[5m]) by(a)",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | unpack_json | filter \"c\":~\"^[+-]?(?:(?:[0-9]+(?:_[0-9]+)*(?:[.](?:[0-9]+(?:_[0-9]+)*)?)?|[.][0-9]+(?:_[0-9]+)*)(?:[eE][+-]?[0-9]+(?:_[0-9]+)*)?|0[xX](?:_?[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S' entry: cannot parse \"S\" func: phi arg in 'S' must be floating point nu [v1.49.0] | rangeagg pairing fn quantile_over_time(.5, %s)": {
+      "count": 2,
+      "case": "semantics/translator-writes-leading-dot-quantile",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "cannot parse \"S\" pipe: cannot parse 'S' entry: cannot parse \"S\" func: phi arg in 'S' must be floating point nu [v1.49.0]",
+      "element": "rangeagg pairing fn quantile_over_time(.5, %s)",
+      "examples": [
+        {
+          "query": "quantile_over_time(.5, {a=\"b\"} | regexp \"(?P\u003cx\u003e.)\" | unwrap x[5m])",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | extract_regexp \"(?P\u003cx\u003e.)\" | filter \"x\":~\"^[+-]?(?:(?:[0-9]+(?:_[0-9]+)*(?:[.](?:[0-9]+(?:_[0-9]+)*)?)?|[.][0-9]+(?:_[0-9]+)*)(?:[eE][+-]?[0-9]+(?:_[0-9]+)*)?|0[xX](?:_?[0-9a-fA-F]+(?:_..."
+        },
+        {
+          "query": "quantile_over_time(.5, {a=\"b\"} | unwrap duration_seconds(x) | __error__=\"\"[5m])",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" __error__:=\"\" | filter \"x\":~\"^[+-]?(?:0|(?:(?:[0-9]+(?:[.][0-9]*)?|[.][0-9]+)(?:ns|us|µs|μs|ms|s|m|h))+)$\" | copy \"x\" as __lvp_d | replace_regexp if (__lvp_d:~\"(^|[^0-9.])0[0-9]\") (\"(^|[..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S' entry: cannot parse \"S\" func: phi arg in 'S' must be floating point nu [v1.49.0] | rangeagg unwrap fn quantile_over_time(.5, %s)": {
+      "count": 10,
+      "case": "semantics/translator-writes-leading-dot-quantile",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "cannot parse \"S\" pipe: cannot parse 'S' entry: cannot parse \"S\" func: phi arg in 'S' must be floating point nu [v1.49.0]",
+      "element": "rangeagg unwrap fn quantile_over_time(.5, %s)",
+      "examples": [
+        {
+          "query": "quantile_over_time(.5, {a=\"b\"} | json | unwrap c[5m])",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | unpack_json | filter \"c\":~\"^[+-]?(?:(?:[0-9]+(?:_[0-9]+)*(?:[.](?:[0-9]+(?:_[0-9]+)*)?)?|[.][0-9]+(?:_[0-9]+)*)(?:[eE][+-]?[0-9]+(?:_[0-9]+)*)?|0[xX](?:_?[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*..."
+        },
+        {
+          "query": "quantile_over_time(.5, {a=\"b\"} | json | unwrap c[5m]) by(a)",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | unpack_json | filter \"c\":~\"^[+-]?(?:(?:[0-9]+(?:_[0-9]+)*(?:[.](?:[0-9]+(?:_[0-9]+)*)?)?|[.][0-9]+(?:_[0-9]+)*)(?:[eE][+-]?[0-9]+(?:_[0-9]+)*)?|0[xX](?:_?[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.53.0] | log stage | label_format a=a": {
+      "count": 4,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.53.0]",
+      "element": "log stage | label_format a=a",
+      "examples": [
+        {
+          "query": "{ a = \"b\" } | label_format a=a !~ \"x\" |= \"a\" |= \"b\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | format if (a !~ \"x\":*) \"\u003ca !~ \\\"x\\\"\u003e\" as a skip_empty_results | delete a !~ \"x\" | filter ~\"a\" ~\"b\" -\u003e VictoriaLogs cannot parse \"format\" pipe: cannot parse 'if' filter: missing ':' in ..."
+        },
+        {
+          "query": "{a=\"\\x41\"} |= ip(\"::1\") | label_format a=a != \"x\" != \"y\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"A\" ~\"::1\" | format if (a != \"x\" != \"y\":*) \"\u003ca != \\\"x\\\" != \\\"y\\\"\u003e\" as a skip_empty_results | delete a != \"x\" != \"y\" -\u003e VictoriaLogs cannot parse \"format\" pipe: cannot parse 'if' filter: miss..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.53.0] | log stage | label_format a=b": {
+      "count": 3,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.53.0]",
+      "element": "log stage | label_format a=b",
+      "examples": [
+        {
+          "query": "{a=\"é\"} | label_format a=b != \"a\" or \"b\" | logfmt --strict --keep-empty a",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"é\" | format if (b != \"a\" or \"b\":*) \"\u003cb != \\\"a\\\" or \\\"b\\\"\u003e\" as a skip_empty_results | delete b != \"a\" or \"b\" | unpack_logfmt -\u003e VictoriaLogs cannot parse \"format\" pipe: cannot parse 'if' fil..."
+        },
+        {
+          "query": "{a=\"é\"} | line_format \"{{ __timestamp__ }}\" | label_format a=b != \"a\" or \"b\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"é\" | format \"{{ __timestamp__ }}\" | format if (b != \"a\" or \"b\":*) \"\u003cb != \\\"a\\\" or \\\"b\\\"\u003e\" as a skip_empty_results | delete b != \"a\" or \"b\" -\u003e VictoriaLogs cannot parse \"format\" pipe: cannot..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.53.0] | log stage | label_format a=b, c=d, e=f": {
+      "count": 5,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "cannot parse \"S\" pipe: cannot parse 'S' filter: missing 'S' in front of \"S\" [v1.49.0+v1.53.0]",
+      "element": "log stage | label_format a=b, c=d, e=f",
+      "examples": [
+        {
+          "query": "{a=\"é\"} | unpack | label_format a=b, c=d, e=f != \"x\" != \"y\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"é\" | unpack_json | format if (b:*) \"\u003cb\u003e\" as a skip_empty_results | delete b | format if (d:*) \"\u003cd\u003e\" as c skip_empty_results | delete d | format if (f != \"x\" != \"y\":*) \"\u003cf != \\\"x\\\" != \\\"y\\\"\u003e..."
+        },
+        {
+          "query": "{a=~\".+\"} | a != 1 | label_format a=b, c=d, e=f != ip(\"10.0.0.0/8\")",
+          "loki": "accepted",
+          "proxy": "LogsQL a:~\".+\" -a:=\"1\" | format if (b:*) \"\u003cb\u003e\" as a skip_empty_results | delete b | format if (d:*) \"\u003cd\u003e\" as c skip_empty_results | delete d | format if (f != ip(\"10.0.0.0/8\"):*) \"\u003cf != ip(\\\"10.0.0.0/..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: cannot parse 'S': missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | log stage | json a=\"b[\\\"c\\\"]\"": {
+      "count": 29,
+      "case": "semantics/translator-writes-json-path-with-escaped-quote",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "cannot parse \"S\" pipe: cannot parse 'S': missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0]",
+      "element": "log stage | json a=\"b[\\\"c\\\"]\"",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | json a=\"b[\\\"c\\\"]\" | a\u003e1.5h",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | unpack_json | copy \"b[\\\\\\\"c\\\\\\\"]\" as a | filter b[\\c\\]:\u003e1.5h -\u003e VictoriaLogs cannot parse \"filter\" pipe: cannot parse 'filter': missing whitespace or ':' between \"b\" and \"[\"; probably,..."
+        },
+        {
+          "query": "{a=\"é\"} | json a=\"b[\\\"c\\\"]\" | a\u003e-1s |\u003e \"\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"é\" | unpack_json | copy \"b[\\\\\\\"c\\\\\\\"]\" as a | filter b[\\c\\]:\u003e-1s ~\"^$\" -\u003e VictoriaLogs cannot parse \"filter\" pipe: cannot parse 'filter': missing whitespace or ':' between \"b\" and \"[\"; prob..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: unexpected token: \"S\" [v1.49.0] | log stage | json a": {
+      "count": 3,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "cannot parse \"S\" pipe: unexpected token: \"S\" [v1.49.0]",
+      "element": "log stage | json a",
+      "examples": [
+        {
+          "query": "{a=\"b\", c=\"d\"} | json a != \"x\" | a == 1KB",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" c:=\"d\" | unpack_json | copy \"x\" as a ! | filter a:=\"1KB\" -\u003e VictoriaLogs cannot parse \"copy\" pipe: unexpected token: \"!\"; expecting ',', '|' or ')'; context: [a:=\"b\" c:=\"d\" | unpack_json..."
+        },
+        {
+          "query": "{a=\"\\x41\"} | a!=ip(\"10.0.0.0/8\") | json a != \"x\" != \"y\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"A\" (a:* -((a:value_type(ipv4) a:ipv4_range(10.0.0.0, 10.255.255.255)) OR (-a:value_type(ipv4) a:~\"10\\\\.\" a:~\"(?:(?:(?:[^0-9.:A-Za-z]|^|[A-Za-z])|(?:[^0-9:A-Za-z]|^|[G-Zg-z]):|(?:[^0-9.A-Za-..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: unexpected token: \"S\" [v1.49.0] | log stage | json a, b": {
+      "count": 2,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "cannot parse \"S\" pipe: unexpected token: \"S\" [v1.49.0]",
+      "element": "log stage | json a, b",
+      "examples": [
+        {
+          "query": "{ a = \"b\" } | json a, b != \"a\" or \"b\" | a\u003e=-1",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | unpack_json | copy \"a\\\" or \\\"b\" as b ! | filter a:\u003e=-1 -\u003e VictoriaLogs cannot parse \"copy\" pipe: unexpected token: \"!\"; expecting ',', '|' or ')'; context: [a:=\"b\" | unpack_json | copy..."
+        },
+        {
+          "query": "{a=~\"b.*\"} | pattern `\u003cip\u003e - \u003c_\u003e` | json a, b != \"a\" or \"b\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:~\"^(?s:b.*)$\" | extract \"\u003cip\u003e - \u003c_\u003e\" | unpack_json | copy \"a\\\" or \\\"b\" as b ! -\u003e VictoriaLogs cannot parse \"copy\" pipe: unexpected token: \"!\"; expecting ',', '|' or ')'; context: [p\u003e - \u003c_\u003e\" |..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: unexpected token: \"S\" [v1.53.0] | log stage | json a": {
+      "count": 3,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "cannot parse \"S\" pipe: unexpected token: \"S\" [v1.53.0]",
+      "element": "log stage | json a",
+      "examples": [
+        {
+          "query": "{a=\"b\", c=\"d\"} | json a != \"x\" | a == 1KB",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" c:=\"d\" | unpack_json | copy \"x\" as a ! | filter a:=\"1KB\" -\u003e VictoriaLogs cannot parse \"copy\" pipe: unexpected token: \"!\"; expecting ',', '|', ';' or ')'; context: [a:=\"b\" c:=\"d\" | unpack..."
+        },
+        {
+          "query": "{a=\"\\x41\"} | a!=ip(\"10.0.0.0/8\") | json a != \"x\" != \"y\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"A\" (a:* -((a:value_type(ipv4) a:ipv4_range(10.0.0.0, 10.255.255.255)) OR (-a:value_type(ipv4) a:~\"10\\\\.\" a:~\"(?:(?:(?:[^0-9.:A-Za-z]|^|[A-Za-z])|(?:[^0-9:A-Za-z]|^|[G-Zg-z]):|(?:[^0-9.A-Za-..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | cannot parse \"S\" pipe: unexpected token: \"S\" [v1.53.0] | log stage | json a, b": {
+      "count": 2,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "cannot parse \"S\" pipe: unexpected token: \"S\" [v1.53.0]",
+      "element": "log stage | json a, b",
+      "examples": [
+        {
+          "query": "{ a = \"b\" } | json a, b != \"a\" or \"b\" | a\u003e=-1",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | unpack_json | copy \"a\\\" or \\\"b\" as b ! | filter a:\u003e=-1 -\u003e VictoriaLogs cannot parse \"copy\" pipe: unexpected token: \"!\"; expecting ',', '|', ';' or ')'; context: [a:=\"b\" | unpack_json |..."
+        },
+        {
+          "query": "{a=~\"b.*\"} | pattern `\u003cip\u003e - \u003c_\u003e` | json a, b != \"a\" or \"b\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:~\"^(?s:b.*)$\" | extract \"\u003cip\u003e - \u003c_\u003e\" | unpack_json | copy \"a\\\" or \\\"b\" as b ! -\u003e VictoriaLogs cannot parse \"copy\" pipe: unexpected token: \"!\"; expecting ',', '|', ';' or ')'; context: [p\u003e - \u003c..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | label_replace inner (rate({a=\"b\"}[5m]))": {
+      "count": 3,
+      "case": "semantics/translator-reads-parenthesized-metric-as-text",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0]",
+      "element": "label_replace inner (rate({a=\"b\"}[5m]))",
+      "examples": [
+        {
+          "query": "label_replace((rate({a=\"b\"}[5m])), \"d\", \"$1\", \"a\", \"(.*)\")",
+          "loki": "accepted",
+          "proxy": "LogsQL \"(rate({a=\"b\"}[5m]))\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"(rate({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"(rate({a=\"b]"
+        },
+        {
+          "query": "label_replace((rate({a=\"b\"}[5m])), \"d\", \"x\", \"b\", \"(?P\u003cn\u003ex)\")",
+          "loki": "accepted",
+          "proxy": "LogsQL \"(rate({a=\"b\"}[5m]))\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"(rate({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"(rate({a=\"b]"
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | rangeagg fn rate (%s)": {
+      "count": 3,
+      "case": "semantics/translator-reads-blank-before-range-call-as-text",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0]",
+      "element": "rangeagg fn rate (%s)",
+      "examples": [
+        {
+          "query": "rate ({a=\"b\"}[1w])",
+          "loki": "accepted",
+          "proxy": "LogsQL \"rate ({a=\"b\"}[1w])\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"rate ({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"rate ({a=\"b]"
+        },
+        {
+          "query": "rate ({a=\"b\"}[5m])",
+          "loki": "accepted",
+          "proxy": "LogsQL \"rate ({a=\"b\"}[5m])\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"rate ({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"rate ({a=\"b]"
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | vecagg agg approx_topk|2, ": {
+      "count": 4,
+      "case": "semantics/approx-topk-opaque-plan",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0]",
+      "element": "vecagg agg approx_topk|2, ",
+      "examples": [
+        {
+          "query": "approx_topk(2, rate({a=\"b\"}[5m]))",
+          "loki": "accepted",
+          "proxy": "LogsQL \"approx_topk(2, rate({a=\"b\"}[5m]))\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"approx_topk(2, rate({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"appro..."
+        },
+        {
+          "query": "approx_topk (2, rate({a=\"b\"}[5m]))",
+          "loki": "accepted",
+          "proxy": "LogsQL \"approx_topk (2, rate({a=\"b\"}[5m]))\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"approx_topk (2, rate({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"app..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | vecagg inner (rate({a=\"b\"}[5m]))": {
+      "count": 4,
+      "case": "semantics/translator-reads-parenthesized-metric-as-text",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0]",
+      "element": "vecagg inner (rate({a=\"b\"}[5m]))",
+      "examples": [
+        {
+          "query": "sum ((rate({a=\"b\"}[5m])))",
+          "loki": "accepted",
+          "proxy": "LogsQL \"sum ((rate({a=\"b\"}[5m])))\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"sum ((rate({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"sum ((rate({a=\"b]"
+        },
+        {
+          "query": "avg((rate({a=\"b\"}[5m]))) by ()",
+          "loki": "accepted",
+          "proxy": "LogsQL \"avg((rate({a=\"b\"}[5m]))) by ()\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"avg((rate({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"avg((rate({a=\"b]"
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | vecagg inner label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")": {
+      "count": 2,
+      "case": "semantics/translator-reads-parenthesized-metric-as-text",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0]",
+      "element": "vecagg inner label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")",
+      "examples": [
+        {
+          "query": "sum (label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\"))",
+          "loki": "accepted",
+          "proxy": "LogsQL \"sum (label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\"))\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"sum (label_replace(rate({a=\\\"\" and \"b\"; probably, the whole string must be ..."
+        },
+        {
+          "query": "min(label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")) without ()",
+          "loki": "accepted",
+          "proxy": "LogsQL \"min(label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")) without ()\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"min(label_replace(rate({a=\\\"\" and \"b\"; probably, the whole string..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected pipe \"S\" [v1.49.0] | spacing removed": {
+      "count": 1,
+      "case": "semantics/translator-reads-only-space-between-tokens",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected pipe \"S\" [v1.49.0]",
+      "element": "spacing removed",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | line_format\"{{.a}}\" | label_format x=y | drop z",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | line_format\"{{.a}}\" | format if (y:*) \"\u003cy\u003e\" as x skip_empty_results | delete y | delete z -\u003e VictoriaLogs unexpected pipe \"line_format\"; context: [a:=\"b\" | line_format]"
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected pipe name \"S\" [v1.53.0] | spacing every blank": {
+      "count": 4,
+      "case": "semantics/translator-reads-only-space-between-tokens",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected pipe name \"S\" [v1.53.0]",
+      "element": "spacing every blank",
+      "examples": [
+        {
+          "query": "{a=\"b\"}\t|\tline_format\t\"{{.a}}\"\t|\tlabel_format\tx=y\t|\tdrop\tz",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | line_format\t\"{{.a}}\" | filter label_format\tx:=\"y\" | drop\tz -\u003e VictoriaLogs unexpected pipe name \"line_format\"; probably, 'filter' is missing in front of \"line_format\"; see https://docs..."
+        },
+        {
+          "query": "{a=\"b\"}\n|\nline_format\n\"{{.a}}\"\n|\nlabel_format\nx=y\n|\ndrop\nz",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | line_format\n\"{{.a}}\" | filter label_format\nx:=\"y\" | drop\nz -\u003e VictoriaLogs unexpected pipe name \"line_format\"; probably, 'filter' is missing in front of \"line_format\"; see https://docs..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected pipe name \"S\" [v1.53.0] | spacing one blank": {
+      "count": 4,
+      "case": "semantics/translator-reads-only-space-between-tokens",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected pipe name \"S\" [v1.53.0]",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | line_format\t\"{{.a}}\" | label_format x=y | drop z",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | line_format\t\"{{.a}}\" | format if (y:*) \"\u003cy\u003e\" as x skip_empty_results | delete y | delete z -\u003e VictoriaLogs unexpected pipe name \"line_format\"; probably, 'filter' is missing in front of..."
+        },
+        {
+          "query": "{a=\"b\"} | line_format\n\"{{.a}}\" | label_format x=y | drop z",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | line_format\n\"{{.a}}\" | format if (y:*) \"\u003cy\u003e\" as x skip_empty_results | delete y | delete z -\u003e VictoriaLogs unexpected pipe name \"line_format\"; probably, 'filter' is missing in front of..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected pipe name \"S\" [v1.53.0] | spacing removed": {
+      "count": 1,
+      "case": "semantics/translator-reads-only-space-between-tokens",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected pipe name \"S\" [v1.53.0]",
+      "element": "spacing removed",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | line_format\"{{.a}}\" | label_format x=y | drop z",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | line_format\"{{.a}}\" | format if (y:*) \"\u003cy\u003e\" as x skip_empty_results | delete y | delete z -\u003e VictoriaLogs unexpected pipe name \"line_format\"; probably, 'filter' is missing in front of ..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.49.0] | log stage != \"a\" or \"b\"": {
+      "count": 30,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected token after [S]: \"S\" [v1.49.0]",
+      "element": "log stage != \"a\" or \"b\"",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | regexp \"(?P\u003ca\u003ex)\" != \"a\" or \"b\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | extract_regexp \"(?P\u003ca\u003ex)\" != \"a\" or \"b\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003ex)\"]: \"!=\"; expecting '|' or ')'; context: [a:=\"b\" | extract_regexp \"(?P\u003ca\u003ex)\" !=]"
+        },
+        {
+          "query": "{a=\"b\"} | a == 1 | regexp \"(?P\u003ca\u003ex)\" != \"a\" or \"b\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" a:=\"1\" | extract_regexp \"(?P\u003ca\u003ex)\" != \"a\" or \"b\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003ex)\"]: \"!=\"; expecting '|' or ')'; context: [a:=\"b\" a:=\"1\" | extract_regexp ..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.49.0] | log stage != \"x\"": {
+      "count": 10,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected token after [S]: \"S\" [v1.49.0]",
+      "element": "log stage != \"x\"",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | a=\"\" | keep a=\"b\" != \"x\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" a:=\"\" | fields _time, _msg, _stream, a=\"b\" -\u003e VictoriaLogs unexpected token after [fields _time, _msg, _stream, a]: \"=\"; expecting '|' or ')'; context: [a:=\"b\" a:=\"\" | fields _time, _msg..."
+        },
+        {
+          "query": "{a=\"é\"} | a=\"b\" | regexp `(?P\u003ca\u003e\\d+)` != \"x\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"é\" a:=\"b\" | extract_regexp `(?P\u003ca\u003e\\d+)` != \"x\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003e\\\\d+)\"]: \"!=\"; expecting '|' or ')'; context: [a:=\"é\" a:=\"b\" | extract_regexp `(..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.49.0] | log stage != \"x\" != \"y\"": {
+      "count": 15,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected token after [S]: \"S\" [v1.49.0]",
+      "element": "log stage != \"x\" != \"y\"",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | regexp \"(?P\u003ca\u003ex)\" != \"x\" != \"y\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | extract_regexp \"(?P\u003ca\u003ex)\" != \"x\" != \"y\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003ex)\"]: \"!=\"; expecting '|' or ')'; context: [a:=\"b\" | extract_regexp \"(?P\u003ca\u003ex)\" !=]"
+        },
+        {
+          "query": "{ a = \"b\" } | a \u003e 1s | keep a=\"b\" != \"x\" != \"y\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" a:\u003e1s | fields _time, _msg, _stream, a=\"b\" -\u003e VictoriaLogs unexpected token after [fields _time, _msg, _stream, a]: \"=\"; expecting '|' or ')'; context: [a:=\"b\" a:\u003e1s | fields _time, _msg..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.49.0] | log stage != ip(\"10.0.0.0/8\")": {
+      "count": 38,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected token after [S]: \"S\" [v1.49.0]",
+      "element": "log stage != ip(\"10.0.0.0/8\")",
+      "examples": [
+        {
+          "query": "{a=\"b\\\"c\"} | keep a=\"b\" != ip(\"10.0.0.0/8\")",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\\\"c\" | fields _time, _msg, _stream, a=\"b\" -\u003e VictoriaLogs unexpected token after [fields _time, _msg, _stream, a]: \"=\"; expecting '|' or ')'; context: [a:=\"b\\\"c\" | fields _time, _msg, _str..."
+        },
+        {
+          "query": "{a=\"é\"} | pattern \"\u003ca\u003e \u003c_\u003e \u003cb\u003e\" != ip(\"10.0.0.0/8\")",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"é\" | extract \"\u003ca\u003e \u003c_\u003e \u003cb\u003e\" != ip(\"10.0.0.0/8\") -\u003e VictoriaLogs unexpected token after [extract \"\u003ca\u003e \u003c_\u003e \u003cb\u003e\"]: \"!=\"; expecting '|' or ')'; context: [a:=\"é\" | extract \"\u003ca\u003e \u003c_\u003e \u003cb\u003e\" !=]"
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.49.0] | log stage !~ \"a\" or \"b\"": {
+      "count": 39,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected token after [S]: \"S\" [v1.49.0]",
+      "element": "log stage !~ \"a\" or \"b\"",
+      "examples": [
+        {
+          "query": "{a=\"\\x41\"} | keep a=\"b\" !~ \"a\" or \"b\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"A\" | fields _time, _msg, _stream, a=\"b\" -\u003e VictoriaLogs unexpected token after [fields _time, _msg, _stream, a]: \"=\"; expecting '|' or ')'; context: [a:=\"A\" | fields _time, _msg, _stream, a..."
+        },
+        {
+          "query": "{a=\"b\"} | regexp `(?P\u003ca\u003e\\d+)` !~ \"a\" or \"b\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | extract_regexp `(?P\u003ca\u003e\\d+)` !~ \"a\" or \"b\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003e\\\\d+)\"]: \"!~\"; expecting '|' or ')'; context: [a:=\"b\" | extract_regexp `(?P\u003ca\u003e\\d..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.49.0] | log stage !~ \"x\"": {
+      "count": 14,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected token after [S]: \"S\" [v1.49.0]",
+      "element": "log stage !~ \"x\"",
+      "examples": [
+        {
+          "query": "{a=\"é\"} | regexp \"(?P\u003ca\u003ex)\" !~ \"x\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"é\" | extract_regexp \"(?P\u003ca\u003ex)\" !~ \"x\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003ex)\"]: \"!~\"; expecting '|' or ')'; context: [a:=\"é\" | extract_regexp \"(?P\u003ca\u003ex)\" !~]"
+        },
+        {
+          "query": "{a=\"b\\\"c\"} | a\u003e-1s | regexp `(?P\u003ca\u003e\\d+)` !~ \"x\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\\\"c\" a:\u003e-1s | extract_regexp `(?P\u003ca\u003e\\d+)` !~ \"x\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003e\\\\d+)\"]: \"!~\"; expecting '|' or ')'; context: [a:=\"b\\\"c\" a:\u003e-1s | extract_reg..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.53.0] | log stage != \"a\" or \"b\"": {
+      "count": 30,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected token after [S]: \"S\" [v1.53.0]",
+      "element": "log stage != \"a\" or \"b\"",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | regexp \"(?P\u003ca\u003ex)\" != \"a\" or \"b\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | extract_regexp \"(?P\u003ca\u003ex)\" != \"a\" or \"b\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003ex)\"]: \"!=\"; expecting '|', ';' or ')'; context: [a:=\"b\" | extract_regexp \"(?P\u003ca\u003ex)..."
+        },
+        {
+          "query": "{a=\"b\"} | a == 1 | regexp \"(?P\u003ca\u003ex)\" != \"a\" or \"b\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" a:=\"1\" | extract_regexp \"(?P\u003ca\u003ex)\" != \"a\" or \"b\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003ex)\"]: \"!=\"; expecting '|', ';' or ')'; context: [a:=\"b\" a:=\"1\" | extract_re..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.53.0] | log stage != \"x\"": {
+      "count": 10,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected token after [S]: \"S\" [v1.53.0]",
+      "element": "log stage != \"x\"",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | a=\"\" | keep a=\"b\" != \"x\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" a:=\"\" | fields _time, _msg, _stream, a=\"b\" -\u003e VictoriaLogs unexpected token after [fields _time, _msg, _stream, a]: \"=\"; expecting '|', ';' or ')'; context: [a:=\"b\" a:=\"\" | fields _time,..."
+        },
+        {
+          "query": "{a=\"é\"} | a=\"b\" | regexp `(?P\u003ca\u003e\\d+)` != \"x\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"é\" a:=\"b\" | extract_regexp `(?P\u003ca\u003e\\d+)` != \"x\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003e\\\\d+)\"]: \"!=\"; expecting '|', ';' or ')'; context: [a:=\"é\" a:=\"b\" | extract_rege..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.53.0] | log stage != \"x\" != \"y\"": {
+      "count": 15,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected token after [S]: \"S\" [v1.53.0]",
+      "element": "log stage != \"x\" != \"y\"",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | regexp \"(?P\u003ca\u003ex)\" != \"x\" != \"y\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | extract_regexp \"(?P\u003ca\u003ex)\" != \"x\" != \"y\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003ex)\"]: \"!=\"; expecting '|', ';' or ')'; context: [a:=\"b\" | extract_regexp \"(?P\u003ca\u003ex)..."
+        },
+        {
+          "query": "{ a = \"b\" } | a \u003e 1s | keep a=\"b\" != \"x\" != \"y\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" a:\u003e1s | fields _time, _msg, _stream, a=\"b\" -\u003e VictoriaLogs unexpected token after [fields _time, _msg, _stream, a]: \"=\"; expecting '|', ';' or ')'; context: [a:=\"b\" a:\u003e1s | fields _time,..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.53.0] | log stage != ip(\"10.0.0.0/8\")": {
+      "count": 38,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected token after [S]: \"S\" [v1.53.0]",
+      "element": "log stage != ip(\"10.0.0.0/8\")",
+      "examples": [
+        {
+          "query": "{a=\"b\\\"c\"} | keep a=\"b\" != ip(\"10.0.0.0/8\")",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\\\"c\" | fields _time, _msg, _stream, a=\"b\" -\u003e VictoriaLogs unexpected token after [fields _time, _msg, _stream, a]: \"=\"; expecting '|', ';' or ')'; context: [a:=\"b\\\"c\" | fields _time, _msg,..."
+        },
+        {
+          "query": "{a=\"é\"} | pattern \"\u003ca\u003e \u003c_\u003e \u003cb\u003e\" != ip(\"10.0.0.0/8\")",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"é\" | extract \"\u003ca\u003e \u003c_\u003e \u003cb\u003e\" != ip(\"10.0.0.0/8\") -\u003e VictoriaLogs unexpected token after [extract \"\u003ca\u003e \u003c_\u003e \u003cb\u003e\"]: \"!=\"; expecting '|', ';' or ')'; context: [a:=\"é\" | extract \"\u003ca\u003e \u003c_\u003e \u003cb\u003e\" !=]"
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.53.0] | log stage !~ \"a\" or \"b\"": {
+      "count": 39,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected token after [S]: \"S\" [v1.53.0]",
+      "element": "log stage !~ \"a\" or \"b\"",
+      "examples": [
+        {
+          "query": "{a=\"\\x41\"} | keep a=\"b\" !~ \"a\" or \"b\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"A\" | fields _time, _msg, _stream, a=\"b\" -\u003e VictoriaLogs unexpected token after [fields _time, _msg, _stream, a]: \"=\"; expecting '|', ';' or ')'; context: [a:=\"A\" | fields _time, _msg, _stre..."
+        },
+        {
+          "query": "{a=\"b\"} | regexp `(?P\u003ca\u003e\\d+)` !~ \"a\" or \"b\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\" | extract_regexp `(?P\u003ca\u003e\\d+)` !~ \"a\" or \"b\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003e\\\\d+)\"]: \"!~\"; expecting '|', ';' or ')'; context: [a:=\"b\" | extract_regexp `(?P..."
+        }
+      ]
+    },
+    "VictoriaLogs rejects the translator text | unexpected token after [S]: \"S\" [v1.53.0] | log stage !~ \"x\"": {
+      "count": 14,
+      "case": "semantics/translator-writes-negated-line-filter-after-pipe",
+      "kind": "VictoriaLogs rejects the translator text",
+      "key": "unexpected token after [S]: \"S\" [v1.53.0]",
+      "element": "log stage !~ \"x\"",
+      "examples": [
+        {
+          "query": "{a=\"é\"} | regexp \"(?P\u003ca\u003ex)\" !~ \"x\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"é\" | extract_regexp \"(?P\u003ca\u003ex)\" !~ \"x\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003ex)\"]: \"!~\"; expecting '|', ';' or ')'; context: [a:=\"é\" | extract_regexp \"(?P\u003ca\u003ex)\" !~]"
+        },
+        {
+          "query": "{a=\"b\\\"c\"} | a\u003e-1s | regexp `(?P\u003ca\u003e\\d+)` !~ \"x\"",
+          "loki": "accepted",
+          "proxy": "LogsQL a:=\"b\\\"c\" a:\u003e-1s | extract_regexp `(?P\u003ca\u003e\\d+)` !~ \"x\" -\u003e VictoriaLogs unexpected token after [extract_regexp \"(?P\u003ca\u003e\\\\d+)\"]: \"!~\"; expecting '|', ';' or ')'; context: [a:=\"b\\\"c\" a:\u003e-1s | extrac..."
+        }
+      ]
+    },
+    "accepted, translation fails | count() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({...}[Nm])) | vecagg agg count|": {
+      "count": 1,
+      "case": "semantics/vector-aggregation-over-scalar-rejected",
+      "kind": "accepted, translation fails",
+      "key": "count() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({...}[Nm]))",
+      "element": "vecagg agg count|",
+      "examples": [
+        {
+          "query": "count(1.5) by ()",
+          "loki": "accepted",
+          "proxy": "count() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))"
+        }
+      ]
+    },
+    "accepted, translation fails | max() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({...}[Nm])) | vecagg agg max|": {
+      "count": 1,
+      "case": "semantics/vector-aggregation-over-scalar-rejected",
+      "kind": "accepted, translation fails",
+      "key": "max() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({...}[Nm]))",
+      "element": "vecagg agg max|",
+      "examples": [
+        {
+          "query": "max by () (vector(0))",
+          "loki": "accepted",
+          "proxy": "max() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))"
+        }
+      ]
+    },
+    "accepted, translation fails | quantile_over_time requires \"S\" for range aggregation | spacing every blank": {
+      "count": 6,
+      "case": "semantics/translator-reads-only-space-between-tokens",
+      "kind": "accepted, translation fails",
+      "key": "quantile_over_time requires \"S\" for range aggregation",
+      "element": "spacing every blank",
+      "examples": [
+        {
+          "query": "quantile_over_time(0.5,\t{a=\"b\"}\t|\tunwrap\tc\t[5m])\tby\t(d)",
+          "loki": "accepted",
+          "proxy": "quantile_over_time requires `| unwrap \u003cfield\u003e` for range aggregation"
+        },
+        {
+          "query": "quantile_over_time(0.5,\n{a=\"b\"}\n|\nunwrap\nc\n[5m])\nby\n(d)",
+          "loki": "accepted",
+          "proxy": "quantile_over_time requires `| unwrap \u003cfield\u003e` for range aggregation"
+        }
+      ]
+    },
+    "accepted, translation fails | quantile_over_time requires \"S\" for range aggregation | spacing one blank": {
+      "count": 10,
+      "case": "semantics/translator-reads-only-space-between-tokens",
+      "kind": "accepted, translation fails",
+      "key": "quantile_over_time requires \"S\" for range aggregation",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "quantile_over_time(0.5, {a=\"b\"} |\tunwrap c [5m]) by (d)",
+          "loki": "accepted",
+          "proxy": "quantile_over_time requires `| unwrap \u003cfield\u003e` for range aggregation"
+        },
+        {
+          "query": "quantile_over_time(0.5, {a=\"b\"} |\nunwrap c [5m]) by (d)",
+          "loki": "accepted",
+          "proxy": "quantile_over_time requires `| unwrap \u003cfield\u003e` for range aggregation"
+        }
+      ]
+    },
+    "accepted, translation fails | quantile_over_time requires \"S\" for range aggregation | spacing removed": {
+      "count": 1,
+      "case": "semantics/translator-reads-only-space-between-tokens",
+      "kind": "accepted, translation fails",
+      "key": "quantile_over_time requires \"S\" for range aggregation",
+      "element": "spacing removed",
+      "examples": [
+        {
+          "query": "quantile_over_time(0.5, {a=\"b\"} |unwrap c [5m]) by (d)",
+          "loki": "accepted",
+          "proxy": "quantile_over_time requires `| unwrap \u003cfield\u003e` for range aggregation"
+        }
+      ]
+    },
+    "accepted, translation fails | quantile_over_time requires \"S\" for range aggregation | spacing wide": {
+      "count": 1,
+      "case": "semantics/translator-reads-only-space-between-tokens",
+      "kind": "accepted, translation fails",
+      "key": "quantile_over_time requires \"S\" for range aggregation",
+      "element": "spacing wide",
+      "examples": [
+        {
+          "query": "quantile_over_time(0.5, {a=\"b\"} |   unwrap c [5m]) by (d)",
+          "loki": "accepted",
+          "proxy": "quantile_over_time requires `| unwrap \u003cfield\u003e` for range aggregation"
+        }
+      ]
+    },
+    "accepted, translation fails | sum() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({...}[Nm])) | literal wrap sum(%s)": {
+      "count": 1,
+      "case": "semantics/vector-aggregation-over-scalar-rejected",
+      "kind": "accepted, translation fails",
+      "key": "sum() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({...}[Nm]))",
+      "element": "literal wrap sum(%s)",
+      "examples": [
+        {
+          "query": "sum(1)",
+          "loki": "accepted",
+          "proxy": "sum() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))"
+        }
+      ]
+    },
+    "accepted, translation fails | sum() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({...}[Nm])) | vecagg inner:scalar": {
+      "count": 9,
+      "case": "semantics/vector-aggregation-over-scalar-rejected",
+      "kind": "accepted, translation fails",
+      "key": "sum() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({...}[Nm]))",
+      "element": "vecagg inner:scalar",
+      "examples": [
+        {
+          "query": "sum (1)",
+          "loki": "accepted",
+          "proxy": "sum() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))"
+        },
+        {
+          "query": "SUM (1.5)",
+          "loki": "accepted",
+          "proxy": "sum() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))"
+        }
+      ]
+    },
+    "accepted, translation fails | sum() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({...}[Nm])) | vector wrap sum by (a) (%s)": {
+      "count": 1,
+      "case": "semantics/vector-aggregation-over-scalar-rejected",
+      "kind": "accepted, translation fails",
+      "key": "sum() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({...}[Nm]))",
+      "element": "vector wrap sum by (a) (%s)",
+      "examples": [
+        {
+          "query": "sum by (a) (vector(1))",
+          "loki": "accepted",
+          "proxy": "sum() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))"
+        }
+      ]
+    },
+    "accepted, translation fails | sum() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({...}[Nm])) | vector wrap sum(%s)": {
+      "count": 1,
+      "case": "semantics/vector-aggregation-over-scalar-rejected",
+      "kind": "accepted, translation fails",
+      "key": "sum() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({...}[Nm]))",
+      "element": "vector wrap sum(%s)",
+      "examples": [
+        {
+          "query": "sum(vector(1))",
+          "loki": "accepted",
+          "proxy": "sum() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))"
+        }
+      ]
+    },
+    "error text differs | error parsing regexp: invalid repeat count: \"S\" || parse error : invalid regex: error parsing regexp: invalid repeat count: \"S\" | log selector {a=~\"b{1001}\"}": {
+      "count": 6,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "error parsing regexp: invalid repeat count: \"S\" || parse error : invalid regex: error parsing regexp: invalid repeat count: \"S\"",
+      "element": "log selector {a=~\"b{1001}\"}",
+      "examples": [
+        {
+          "query": "{a=~\"b{1001}\"}",
+          "loki": "parse error : error parsing regexp: invalid repeat count: `{1001}`",
+          "proxy": "parse error at line 1, col 1: parse error : invalid regex: error parsing regexp: invalid repeat count: `{1001}`"
+        },
+        {
+          "query": "{a=~\"b{1001}\"} | json",
+          "loki": "parse error : error parsing regexp: invalid repeat count: `{1001}`",
+          "proxy": "parse error at line 1, col 1: parse error : invalid regex: error parsing regexp: invalid repeat count: `{1001}`"
+        }
+      ]
+    },
+    "error text differs | error parsing regexp: missing closing ): \"S\" || parse error : invalid regex: error parsing regexp: missing closing ): \"S\" | log selector {a=~\"(b\"}": {
+      "count": 4,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "error parsing regexp: missing closing ): \"S\" || parse error : invalid regex: error parsing regexp: missing closing ): \"S\"",
+      "element": "log selector {a=~\"(b\"}",
+      "examples": [
+        {
+          "query": "{a=~\"(b\"}",
+          "loki": "parse error : error parsing regexp: missing closing ): `(b`",
+          "proxy": "parse error at line 1, col 1: parse error : invalid regex: error parsing regexp: missing closing ): `(b`"
+        },
+        {
+          "query": "{a=~\"(b\"} | drop __error__",
+          "loki": "parse error : error parsing regexp: missing closing ): `(b`",
+          "proxy": "parse error at line 1, col 1: parse error : invalid regex: error parsing regexp: missing closing ): `(b`"
+        }
+      ]
+    },
+    "error text differs | error parsing regexp: missing closing ): \"S\" || syntax error at STRING | log selector {a=~\"(b\"}": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "error parsing regexp: missing closing ): \"S\" || syntax error at STRING",
+      "element": "log selector {a=~\"(b\"}",
+      "examples": [
+        {
+          "query": "{a=~\"(b\"} | a==\"b\"",
+          "loki": "parse error : error parsing regexp: missing closing ): `(b`",
+          "proxy": "parse error at line 1, col 16: syntax error: unexpected STRING"
+        }
+      ]
+    },
+    "error text differs | error parsing regexp: missing closing ): \"S\" || syntax error at STRING | log stage | drop a=~\"(\"": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "error parsing regexp: missing closing ): \"S\" || syntax error at STRING",
+      "element": "log stage | drop a=~\"(\"",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | drop a=~\"(\" | a==\"b\"",
+          "loki": "parse error : error parsing regexp: missing closing ): `(`",
+          "proxy": "parse error at line 1, col 28: syntax error: unexpected STRING"
+        }
+      ]
+    },
+    "error text differs | error parsing regexp: missing closing ]: \"S\" || parse error : invalid regex: error parsing regexp: missing closing ]: \"S\" | log selector {a=~\"[\"}": {
+      "count": 6,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "error parsing regexp: missing closing ]: \"S\" || parse error : invalid regex: error parsing regexp: missing closing ]: \"S\"",
+      "element": "log selector {a=~\"[\"}",
+      "examples": [
+        {
+          "query": "{a=~\"[\"}",
+          "loki": "parse error : error parsing regexp: missing closing ]: `[`",
+          "proxy": "parse error at line 1, col 1: parse error : invalid regex: error parsing regexp: missing closing ]: `[`"
+        },
+        {
+          "query": "{a=~\"[\"} |~ \"\"",
+          "loki": "parse error : error parsing regexp: missing closing ]: `[`",
+          "proxy": "parse error at line 1, col 1: parse error : invalid regex: error parsing regexp: missing closing ]: `[`"
+        }
+      ]
+    },
+    "error text differs | grouping not allowed for approx_topk aggregation || syntax error at without | vecagg agg approx_topk|2, ": {
+      "count": 1,
+      "case": "semantics/approx-topk-opaque-plan",
+      "kind": "error text differs",
+      "key": "grouping not allowed for approx_topk aggregation || syntax error at without",
+      "element": "vecagg agg approx_topk|2, ",
+      "examples": [
+        {
+          "query": "approx_topk without (a) (2, rate({a=\"b\"}[5m]))",
+          "loki": "parse error : grouping not allowed for approx_topk aggregation",
+          "proxy": "parse error at line 1, col 13: syntax error: unexpected without, expecting ("
+        }
+      ]
+    },
+    "error text differs | invalid pattern parser: at least one capture is required || 'S' exponent requires hexadecimal mantissa | log stage | a\u003e1PB": {
+      "count": 4,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "invalid pattern parser: at least one capture is required || 'S' exponent requires hexadecimal mantissa",
+      "element": "log stage | a\u003e1PB",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | a\u003e1PB |\u003e \"x\" | pattern \"\u003c_\u003e\"",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 1, col 13: 'P' exponent requires hexadecimal mantissa"
+        },
+        {
+          "query": "{ a = \"b\" } | pattern \"\u003c_\u003e\" | a\u003e1PB | a\u003e=1.5GB",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 1, col 33: 'P' exponent requires hexadecimal mantissa"
+        }
+      ]
+    },
+    "error text differs | invalid pattern parser: at least one capture is required || syntax error at $end | log stage |": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "invalid pattern parser: at least one capture is required || syntax error at $end",
+      "element": "log stage |",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | pattern \"\u003c_\u003e\" |",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 1, col 26: syntax error: unexpected $end"
+        }
+      ]
+    },
+    "error text differs | invalid pattern parser: at least one capture is required || syntax error at FUNCTION_FLAG | log stage | json --keep-empty": {
+      "count": 6,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "invalid pattern parser: at least one capture is required || syntax error at FUNCTION_FLAG",
+      "element": "log stage | json --keep-empty",
+      "examples": [
+        {
+          "query": "{a=\"é\"} | unpack | pattern \"\u003c_\u003e\" | json --keep-empty",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 0, col 41: syntax error: unexpected FUNCTION_FLAG"
+        },
+        {
+          "query": "{a=`b\\d`} | pattern \"\u003c_\u003e\" | a \u003c 1 | json --keep-empty",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 0, col 42: syntax error: unexpected FUNCTION_FLAG"
+        }
+      ]
+    },
+    "error text differs | invalid pattern parser: at least one capture is required || syntax error at FUNCTION_FLAG | log stage | json --strict": {
+      "count": 3,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "invalid pattern parser: at least one capture is required || syntax error at FUNCTION_FLAG",
+      "element": "log stage | json --strict",
+      "examples": [
+        {
+          "query": "{a=\"é\"} | pattern \"\u003c_\u003e\" | json --strict |= \"x\"",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 0, col 32: syntax error: unexpected FUNCTION_FLAG"
+        },
+        {
+          "query": "{a!~\"b\", c=\"d\"} |= \"é\" | pattern \"\u003c_\u003e\" | json --strict",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 0, col 47: syntax error: unexpected FUNCTION_FLAG"
+        }
+      ]
+    },
+    "error text differs | invalid pattern parser: at least one capture is required || syntax error at IDENTIFIER | log stage | pattern \"\u003c_\u003e\"": {
+      "count": 20,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "invalid pattern parser: at least one capture is required || syntax error at IDENTIFIER",
+      "element": "log stage | pattern \"\u003c_\u003e\"",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | pattern \"\u003c_\u003e\" | unpack a",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 1, col 34: syntax error: unexpected IDENTIFIER"
+        },
+        {
+          "query": "{a!~\"b\"} | pattern \"\u003c_\u003e\" | line_format \"{{ .a | default \"x\" }}\" | a != 1s",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 1, col 58: syntax error: unexpected IDENTIFIER"
+        }
+      ]
+    },
+    "error text differs | invalid pattern parser: at least one capture is required || syntax error at NUMBER | log stage | line_format \"{{ .a | toDate \"2006\" }}\"": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "invalid pattern parser: at least one capture is required || syntax error at NUMBER",
+      "element": "log stage | line_format \"{{ .a | toDate \"2006\" }}\"",
+      "examples": [
+        {
+          "query": "{a=\"b\", c=\"d\"} | pattern \"\u003c_\u003e\" | line_format \"{{ .a | toDate \"2006\" }}\"",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 1, col 63: syntax error: unexpected NUMBER"
+        }
+      ]
+    },
+    "error text differs | invalid pattern parser: at least one capture is required || syntax error at STRING | log stage | a==\"b\"": {
+      "count": 4,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "invalid pattern parser: at least one capture is required || syntax error at STRING",
+      "element": "log stage | a==\"b\"",
+      "examples": [
+        {
+          "query": "{ a = \"b\" } | pattern \"\u003c_\u003e\" | a==\"b\"",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 1, col 34: syntax error: unexpected STRING"
+        },
+        {
+          "query": "{a=\"b\", c=\"d\"} | pattern \"\u003c_\u003e\" | a==\"b\"",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 1, col 37: syntax error: unexpected STRING"
+        }
+      ]
+    },
+    "error text differs | invalid pattern parser: at least one capture is required || syntax error at STRING | log stage | keep a, b": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "invalid pattern parser: at least one capture is required || syntax error at STRING",
+      "element": "log stage | keep a, b",
+      "examples": [
+        {
+          "query": "{ a = \"b\" } | pattern \"\u003c_\u003e\" | keep a, b != \"a\" or \"b\"",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 1, col 51: syntax error: unexpected STRING"
+        }
+      ]
+    },
+    "error text differs | invalid pattern parser: at least one capture is required || syntax error at ip | log stage | a\u003eip(\"1.2.3.4\")": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "invalid pattern parser: at least one capture is required || syntax error at ip",
+      "element": "log stage | a\u003eip(\"1.2.3.4\")",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | pattern \"\u003c_\u003e\" | a\u003eip(\"1.2.3.4\")",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 1, col 29: syntax error: unexpected ip"
+        }
+      ]
+    },
+    "error text differs | invalid pattern parser: at least one capture is required || syntax error at |= | log stage | |= \"x\"": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "invalid pattern parser: at least one capture is required || syntax error at |=",
+      "element": "log stage | |= \"x\"",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | pattern \"\u003c_\u003e\" | |= \"x\"",
+          "loki": "parse error : invalid pattern parser: at least one capture is required",
+          "proxy": "parse error at line 0, col 27: syntax error: unexpected |="
+        }
+      ]
+    },
+    "error text differs | not a valid duration string: \"S\" || grouping not allowed for rate_counter aggregation | rangeagg unwrap grouping  by (a)": {
+      "count": 2,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "not a valid duration string: \"S\" || grouping not allowed for rate_counter aggregation",
+      "element": "rangeagg unwrap grouping  by (a)",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[ 5m ]) by (a)",
+          "loki": "parse error at line 0, col 39: not a valid duration string: \" 5m \"",
+          "proxy": "parse error : grouping not allowed for rate_counter aggregation"
+        },
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[5m5m]) by (a)",
+          "loki": "parse error at line 0, col 39: not a valid duration string: \"5m5m\"",
+          "proxy": "parse error : grouping not allowed for rate_counter aggregation"
+        }
+      ]
+    },
+    "error text differs | not a valid duration string: \"S\" || grouping not allowed for rate_counter aggregation | rangeagg unwrap range 1h1h": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "not a valid duration string: \"S\" || grouping not allowed for rate_counter aggregation",
+      "element": "rangeagg unwrap range 1h1h",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[1h1h]) by (a, b)",
+          "loki": "parse error at line 0, col 39: not a valid duration string: \"1h1h\"",
+          "proxy": "parse error : grouping not allowed for rate_counter aggregation"
+        }
+      ]
+    },
+    "error text differs | parameter required for operation quantile_over_time || invalid aggregation quantile_over_time without unwrap | rangeagg pairing fn quantile_over_time(%s)": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "parameter required for operation quantile_over_time || invalid aggregation quantile_over_time without unwrap",
+      "element": "rangeagg pairing fn quantile_over_time(%s)",
+      "examples": [
+        {
+          "query": "quantile_over_time({a=\"b\"}[5m])",
+          "loki": "parse error : parameter required for operation quantile_over_time",
+          "proxy": "parse error : invalid aggregation quantile_over_time without unwrap"
+        }
+      ]
+    },
+    "error text differs | syntax error at  || syntax error at % | literal number 1 % 0": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at  || syntax error at %",
+      "element": "literal number 1 % 0",
+      "examples": [
+        {
+          "query": "topk(1 % 0, rate({a=\"b\"}[5m]))",
+          "loki": "parse error at line 1, col 11: syntax error: unexpected ,",
+          "proxy": "parse error at line 1, col 8: syntax error: unexpected %"
+        }
+      ]
+    },
+    "error text differs | syntax error at  || syntax error at + | literal number 1 + 2": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at  || syntax error at +",
+      "element": "literal number 1 + 2",
+      "examples": [
+        {
+          "query": "topk(1 + 2, rate({a=\"b\"}[5m]))",
+          "loki": "parse error at line 1, col 11: syntax error: unexpected ,",
+          "proxy": "parse error at line 1, col 8: syntax error: unexpected +"
+        }
+      ]
+    },
+    "error text differs | syntax error at  || syntax error at - | vecagg agg topk|-1, ": {
+      "count": 3,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at  || syntax error at -",
+      "element": "vecagg agg topk|-1, ",
+      "examples": [
+        {
+          "query": "topk(-1, rate({a=\"b\"}[5m]))",
+          "loki": "parse error at line 1, col 8: syntax error: unexpected ,",
+          "proxy": "parse error at line 1, col 6: syntax error: unexpected -"
+        },
+        {
+          "query": "topk (-1, rate({a=\"b\"}[5m]))",
+          "loki": "parse error at line 1, col 9: syntax error: unexpected ,",
+          "proxy": "parse error at line 1, col 7: syntax error: unexpected -"
+        }
+      ]
+    },
+    "error text differs | syntax error at  || syntax error at / | literal number 0 / 0": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at  || syntax error at /",
+      "element": "literal number 0 / 0",
+      "examples": [
+        {
+          "query": "topk(0 / 0, rate({a=\"b\"}[5m]))",
+          "loki": "parse error at line 1, col 11: syntax error: unexpected ,",
+          "proxy": "parse error at line 1, col 8: syntax error: unexpected /"
+        }
+      ]
+    },
+    "error text differs | syntax error at  || syntax error at / | literal number 1 / 0": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at  || syntax error at /",
+      "element": "literal number 1 / 0",
+      "examples": [
+        {
+          "query": "topk(1 / 0, rate({a=\"b\"}[5m]))",
+          "loki": "parse error at line 1, col 11: syntax error: unexpected ,",
+          "proxy": "parse error at line 1, col 8: syntax error: unexpected /"
+        }
+      ]
+    },
+    "error text differs | syntax error at  || syntax error at and | literal number 1 and 2": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at  || syntax error at and",
+      "element": "literal number 1 and 2",
+      "examples": [
+        {
+          "query": "topk(1 and 2, rate({a=\"b\"}[5m]))",
+          "loki": "parse error at line 1, col 13: syntax error: unexpected ,",
+          "proxy": "parse error at line 1, col 8: syntax error: unexpected and"
+        }
+      ]
+    },
+    "error text differs | syntax error at ) || syntax error at ) | rangeagg fn rate()": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at ) || syntax error at )",
+      "element": "rangeagg fn rate()",
+      "examples": [
+        {
+          "query": "rate()",
+          "loki": "parse error at line 1, col 6: syntax error: unexpected ), expecting NUMBER or { or (",
+          "proxy": "parse error : syntax error: unexpected ), expecting NUMBER or { or ("
+        }
+      ]
+    },
+    "error text differs | syntax error at - || invalid parameter for quantile_over_time: expected range [N, N] but got -N | rangeagg pairing fn quantile_over_time(-1, %s)": {
+      "count": 3,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at - || invalid parameter for quantile_over_time: expected range [N, N] but got -N",
+      "element": "rangeagg pairing fn quantile_over_time(-1, %s)",
+      "examples": [
+        {
+          "query": "quantile_over_time(-1, {a=\"b\"}[5m])",
+          "loki": "parse error at line 1, col 20: syntax error: unexpected -, expecting NUMBER or { or (",
+          "proxy": "parse error at line 1, col 1: invalid parameter for quantile_over_time: expected range [0, 1] but got -1"
+        },
+        {
+          "query": "quantile_over_time(-1, {a=\"b\"} | unpack[5m])",
+          "loki": "parse error at line 1, col 20: syntax error: unexpected -, expecting NUMBER or { or (",
+          "proxy": "parse error at line 1, col 1: invalid parameter for quantile_over_time: expected range [0, 1] but got -1"
+        }
+      ]
+    },
+    "error text differs | syntax error at - || invalid parameter for quantile_over_time: expected range [N, N] but got -N | rangeagg unwrap fn quantile_over_time(-1, %s)": {
+      "count": 3,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at - || invalid parameter for quantile_over_time: expected range [N, N] but got -N",
+      "element": "rangeagg unwrap fn quantile_over_time(-1, %s)",
+      "examples": [
+        {
+          "query": "quantile_over_time(-1, {a=\"b\"} | json | unwrap c[1d])",
+          "loki": "parse error at line 1, col 20: syntax error: unexpected -, expecting NUMBER or { or (",
+          "proxy": "parse error at line 1, col 1: invalid parameter for quantile_over_time: expected range [0, 1] but got -1"
+        },
+        {
+          "query": "quantile_over_time(-1, {a=\"b\"} | json | unwrap c[5m])",
+          "loki": "parse error at line 1, col 20: syntax error: unexpected -, expecting NUMBER or { or (",
+          "proxy": "parse error at line 1, col 1: invalid parameter for quantile_over_time: expected range [0, 1] but got -1"
+        }
+      ]
+    },
+    "error text differs | syntax error at - || syntax error at - | literal number --1": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at - || syntax error at -",
+      "element": "literal number --1",
+      "examples": [
+        {
+          "query": "topk(--1, rate({a=\"b\"}[5m]))",
+          "loki": "parse error at line 1, col 7: syntax error: unexpected -, expecting NUMBER",
+          "proxy": "parse error at line 1, col 6: syntax error: unexpected -"
+        }
+      ]
+    },
+    "error text differs | syntax error at == || syntax error at == | log selector {a==\"b\"}": {
+      "count": 4,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at == || syntax error at ==",
+      "element": "log selector {a==\"b\"}",
+      "examples": [
+        {
+          "query": "{a==\"b\"}",
+          "loki": "parse error at line 0, col 3: syntax error: unexpected ==, expecting = or =~ or !~ or !=",
+          "proxy": "parse error at line 1, col 3: syntax error: unexpected ==, expecting = or =~ or !~ or !="
+        },
+        {
+          "query": "{a==\"b\"} | pattern \"\u003c_\u003e\"",
+          "loki": "parse error at line 0, col 3: syntax error: unexpected ==, expecting = or =~ or !~ or !=",
+          "proxy": "parse error at line 1, col 3: syntax error: unexpected ==, expecting = or =~ or !~ or !="
+        }
+      ]
+    },
+    "error text differs | syntax error at COUNT_OVER_TIME || syntax error at + | binary right count_over_time({a=\"b\"} | json [1h])": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at COUNT_OVER_TIME || syntax error at +",
+      "element": "binary right count_over_time({a=\"b\"} | json [1h])",
+      "examples": [
+        {
+          "query": " + count_over_time({a=\"b\"} | json [1h])",
+          "loki": "parse error at line 1, col 4: syntax error: unexpected COUNT_OVER_TIME, expecting NUMBER",
+          "proxy": "parse error at line 1, col 2: syntax error: unexpected +"
+        }
+      ]
+    },
+    "error text differs | syntax error at DURATION_CONV || invalid aggregation count_over_time with unwrap | spacing one blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "error text differs",
+      "key": "syntax error at DURATION_CONV || invalid aggregation count_over_time with unwrap",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "count_over_time({a=\"b\"} | logfmt --strict | unwrap\u000bduration(c) [1m] offset 5m)",
+          "loki": "parse error at line 1, col 52: syntax error: unexpected DURATION_CONV, expecting RANGE or |",
+          "proxy": "parse error : invalid aggregation count_over_time with unwrap"
+        },
+        {
+          "query": "count_over_time({a=\"b\"} | logfmt --strict | unwrap\fduration(c) [1m] offset 5m)",
+          "loki": "parse error at line 1, col 52: syntax error: unexpected DURATION_CONV, expecting RANGE or |",
+          "proxy": "parse error : invalid aggregation count_over_time with unwrap"
+        }
+      ]
+    },
+    "error text differs | syntax error at FUNCTION_FLAG || invalid aggregation count_over_time with unwrap | spacing one blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "error text differs",
+      "key": "syntax error at FUNCTION_FLAG || invalid aggregation count_over_time with unwrap",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "count_over_time({a=\"b\"} | logfmt\u000b--strict | unwrap duration(c) [1m] offset 5m)",
+          "loki": "parse error at line 0, col 34: syntax error: unexpected FUNCTION_FLAG",
+          "proxy": "parse error : invalid aggregation count_over_time with unwrap"
+        },
+        {
+          "query": "count_over_time({a=\"b\"} | logfmt\f--strict | unwrap duration(c) [1m] offset 5m)",
+          "loki": "parse error at line 0, col 34: syntax error: unexpected FUNCTION_FLAG",
+          "proxy": "parse error : invalid aggregation count_over_time with unwrap"
+        }
+      ]
+    },
+    "error text differs | syntax error at IDENTIFIER || invalid aggregation count_over_time with unwrap | spacing every blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "error text differs",
+      "key": "syntax error at IDENTIFIER || invalid aggregation count_over_time with unwrap",
+      "element": "spacing every blank",
+      "examples": [
+        {
+          "query": "count_over_time({a=\"b\"}\u000b|\u000blogfmt\u000b--strict\u000b|\u000bunwrap\u000bduration(c)\u000b[1m]\u000boffset\u000b5m)",
+          "loki": "parse error at line 1, col 24: syntax error: unexpected IDENTIFIER",
+          "proxy": "parse error : invalid aggregation count_over_time with unwrap"
+        },
+        {
+          "query": "count_over_time({a=\"b\"}\f|\flogfmt\f--strict\f|\funwrap\fduration(c)\f[1m]\foffset\f5m)",
+          "loki": "parse error at line 1, col 24: syntax error: unexpected IDENTIFIER",
+          "proxy": "parse error : invalid aggregation count_over_time with unwrap"
+        }
+      ]
+    },
+    "error text differs | syntax error at IDENTIFIER || invalid aggregation count_over_time with unwrap | spacing one blank": {
+      "count": 20,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "error text differs",
+      "key": "syntax error at IDENTIFIER || invalid aggregation count_over_time with unwrap",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "count_over_time({a=\"b\"}\u000b| logfmt --strict | unwrap duration(c) [1m] offset 5m)",
+          "loki": "parse error at line 1, col 24: syntax error: unexpected IDENTIFIER",
+          "proxy": "parse error : invalid aggregation count_over_time with unwrap"
+        },
+        {
+          "query": "count_over_time({a=\"b\"}\f| logfmt --strict | unwrap duration(c) [1m] offset 5m)",
+          "loki": "parse error at line 1, col 24: syntax error: unexpected IDENTIFIER",
+          "proxy": "parse error : invalid aggregation count_over_time with unwrap"
+        }
+      ]
+    },
+    "error text differs | syntax error at IDENTIFIER || syntax error at + | literal number +Inf": {
+      "count": 3,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at IDENTIFIER || syntax error at +",
+      "element": "literal number +Inf",
+      "examples": [
+        {
+          "query": "+Inf",
+          "loki": "parse error at line 1, col 2: syntax error: unexpected IDENTIFIER, expecting NUMBER",
+          "proxy": "parse error at line 1, col 1: syntax error: unexpected +"
+        },
+        {
+          "query": "rate({a=\"b\"}[5m]) + +Inf",
+          "loki": "parse error at line 1, col 22: syntax error: unexpected IDENTIFIER, expecting NUMBER",
+          "proxy": "parse error at line 1, col 21: syntax error: unexpected +"
+        }
+      ]
+    },
+    "error text differs | syntax error at IDENTIFIER || syntax error at IDENTIFIER | binary modifier  on a": {
+      "count": 3,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at IDENTIFIER || syntax error at IDENTIFIER",
+      "element": "binary modifier  on a",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"}[5m]) + on a rate({a=\"b\"}[5m])",
+          "loki": "parse error at line 1, col 24: syntax error: unexpected IDENTIFIER, expecting (",
+          "proxy": "parse error at line 1, col 24: syntax error: unexpected IDENTIFIER"
+        },
+        {
+          "query": "sum by (a) (rate({a=\"b\"}[5m])) + on a rate({a=\"b\"}[5m])",
+          "loki": "parse error at line 1, col 37: syntax error: unexpected IDENTIFIER, expecting (",
+          "proxy": "parse error at line 1, col 37: syntax error: unexpected IDENTIFIER"
+        }
+      ]
+    },
+    "error text differs | syntax error at IDENTIFIER || syntax error at IDENTIFIER | spacing every blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "error text differs",
+      "key": "syntax error at IDENTIFIER || syntax error at IDENTIFIER",
+      "element": "spacing every blank",
+      "examples": [
+        {
+          "query": "{a=\"b\"}\u000b|\u000ba\u000b\u003e\u000b1\u000band\u000b(b\u000b=\u000b\"c\"\u000bor\u000bd\u000b=~\u000b\"e\")",
+          "loki": "parse error at line 1, col 8: syntax error: unexpected IDENTIFIER",
+          "proxy": "parse error at line 1, col 12: syntax error: unexpected IDENTIFIER"
+        },
+        {
+          "query": "{a=\"b\"}\f|\fa\f\u003e\f1\fand\f(b\f=\f\"c\"\for\fd\f=~\f\"e\")",
+          "loki": "parse error at line 1, col 8: syntax error: unexpected IDENTIFIER",
+          "proxy": "parse error at line 1, col 12: syntax error: unexpected IDENTIFIER"
+        }
+      ]
+    },
+    "error text differs | syntax error at RANGE || invalid aggregation quantile_over_time without unwrap | spacing removed": {
+      "count": 1,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "error text differs",
+      "key": "syntax error at RANGE || invalid aggregation quantile_over_time without unwrap",
+      "element": "spacing removed",
+      "examples": [
+        {
+          "query": "quantile_over_time(0.5, {a=\"b\"} | unwrapc [5m]) by (d)",
+          "loki": "parse error at line 0, col 43: syntax error: unexpected RANGE",
+          "proxy": "parse error : invalid aggregation quantile_over_time without unwrap"
+        }
+      ]
+    },
+    "error text differs | syntax error at RATE || syntax error at + | binary op +": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at RATE || syntax error at +",
+      "element": "binary op +",
+      "examples": [
+        {
+          "query": " + rate({a=\"b\"}[5m])",
+          "loki": "parse error at line 1, col 4: syntax error: unexpected RATE, expecting NUMBER",
+          "proxy": "parse error at line 1, col 2: syntax error: unexpected +"
+        }
+      ]
+    },
+    "error text differs | syntax error at STRING || syntax error at STRING | rangeagg pairing fn quantile_over_time(\"x\", %s)": {
+      "count": 4,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at STRING || syntax error at STRING",
+      "element": "rangeagg pairing fn quantile_over_time(\"x\", %s)",
+      "examples": [
+        {
+          "query": "quantile_over_time(\"x\", {a=\"b\"}[5m])",
+          "loki": "parse error at line 1, col 20: syntax error: unexpected STRING, expecting NUMBER or { or (",
+          "proxy": "parse error : syntax error: unexpected STRING, expecting NUMBER or { or ("
+        },
+        {
+          "query": "quantile_over_time(\"x\", {a=\"b\", c=~\"d.*\"}[5m])",
+          "loki": "parse error at line 1, col 20: syntax error: unexpected STRING, expecting NUMBER or { or (",
+          "proxy": "parse error : syntax error: unexpected STRING, expecting NUMBER or { or ("
+        }
+      ]
+    },
+    "error text differs | syntax error at STRING || syntax error at STRING | rangeagg unwrap fn quantile_over_time(\"x\", %s)": {
+      "count": 5,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at STRING || syntax error at STRING",
+      "element": "rangeagg unwrap fn quantile_over_time(\"x\", %s)",
+      "examples": [
+        {
+          "query": "quantile_over_time(\"x\", {a=\"b\"} | unwrap c[5m])",
+          "loki": "parse error at line 1, col 20: syntax error: unexpected STRING, expecting NUMBER or { or (",
+          "proxy": "parse error : syntax error: unexpected STRING, expecting NUMBER or { or ("
+        },
+        {
+          "query": "quantile_over_time(\"x\", {a=\"b\"} | json | unwrap c[1d])",
+          "loki": "parse error at line 1, col 20: syntax error: unexpected STRING, expecting NUMBER or { or (",
+          "proxy": "parse error : syntax error: unexpected STRING, expecting NUMBER or { or ("
+        }
+      ]
+    },
+    "error text differs | syntax error at SUM_OVER_TIME || syntax error at + | binary right sum_over_time({a=\"b\"} | unwrap c [5m])": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at SUM_OVER_TIME || syntax error at +",
+      "element": "binary right sum_over_time({a=\"b\"} | unwrap c [5m])",
+      "examples": [
+        {
+          "query": " + sum_over_time({a=\"b\"} | unwrap c [5m])",
+          "loki": "parse error at line 1, col 4: syntax error: unexpected SUM_OVER_TIME, expecting NUMBER",
+          "proxy": "parse error at line 1, col 2: syntax error: unexpected +"
+        }
+      ]
+    },
+    "error text differs | syntax error at bool || syntax error at + | binary modifier  bool": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at bool || syntax error at +",
+      "element": "binary modifier  bool",
+      "examples": [
+        {
+          "query": " + bool rate({a=\"b\"}[5m])",
+          "loki": "parse error at line 1, col 4: syntax error: unexpected bool, expecting NUMBER",
+          "proxy": "parse error at line 1, col 2: syntax error: unexpected +"
+        }
+      ]
+    },
+    "error text differs | syntax error at by || syntax error at IDENTIFIER | vecagg agg sum_over_time|": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at by || syntax error at IDENTIFIER",
+      "element": "vecagg agg sum_over_time|",
+      "examples": [
+        {
+          "query": "sum_over_time by () (rate({a=\"b\"}[5m]))",
+          "loki": "parse error at line 1, col 15: syntax error: unexpected by, expecting (",
+          "proxy": "parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"
+        }
+      ]
+    },
+    "error text differs | syntax error at drop || invalid aggregation count_over_time with unwrap | rangeagg pairing logquery {a=\"b\"} | json | unwrap c | drop __error__": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at drop || invalid aggregation count_over_time with unwrap",
+      "element": "rangeagg pairing logquery {a=\"b\"} | json | unwrap c | drop __error__",
+      "examples": [
+        {
+          "query": "count_over_time({a=\"b\"} | json | unwrap c | drop __error__[5m])",
+          "loki": "parse error at line 1, col 45: syntax error: unexpected drop, expecting IDENTIFIER or (",
+          "proxy": "parse error : invalid aggregation count_over_time with unwrap"
+        }
+      ]
+    },
+    "error text differs | syntax error at drop || syntax error at + | rangeagg unwrap logquery {a=\"b\"} | json | unwrap c | drop __error__": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at drop || syntax error at +",
+      "element": "rangeagg unwrap logquery {a=\"b\"} | json | unwrap c | drop __error__",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c | drop __error__[5m] offset +5m)",
+          "loki": "parse error at line 1, col 42: syntax error: unexpected drop, expecting IDENTIFIER or (",
+          "proxy": "parse error at line 1, col 68: syntax error: unexpected +, expecting DURATION"
+        }
+      ]
+    },
+    "error text differs | syntax error at drop || syntax error at . | rangeagg unwrap grouping  by (a.b)": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at drop || syntax error at .",
+      "element": "rangeagg unwrap grouping  by (a.b)",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c | drop __error__[5m]) by (a.b)",
+          "loki": "parse error at line 1, col 42: syntax error: unexpected drop, expecting IDENTIFIER or (",
+          "proxy": "parse error at line 1, col 67: syntax error: unexpected ., expecting , or )"
+        }
+      ]
+    },
+    "error text differs | syntax error at logfmt || invalid aggregation count_over_time with unwrap | spacing one blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "error text differs",
+      "key": "syntax error at logfmt || invalid aggregation count_over_time with unwrap",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "count_over_time({a=\"b\"} |\u000blogfmt --strict | unwrap duration(c) [1m] offset 5m)",
+          "loki": "parse error at line 1, col 27: syntax error: unexpected logfmt",
+          "proxy": "parse error : invalid aggregation count_over_time with unwrap"
+        },
+        {
+          "query": "count_over_time({a=\"b\"} |\flogfmt --strict | unwrap duration(c) [1m] offset 5m)",
+          "loki": "parse error at line 1, col 27: syntax error: unexpected logfmt",
+          "proxy": "parse error : invalid aggregation count_over_time with unwrap"
+        }
+      ]
+    },
+    "error text differs | syntax error at on || syntax error at on | binary modifier  ignoring on (a)": {
+      "count": 5,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at on || syntax error at on",
+      "element": "binary modifier  ignoring on (a)",
+      "examples": [
+        {
+          "query": "1 + ignoring on (a) rate({a=\"b\"}[5m])",
+          "loki": "parse error at line 1, col 14: syntax error: unexpected on, expecting (",
+          "proxy": "parse error at line 1, col 14: syntax error: unexpected on"
+        },
+        {
+          "query": ".5 + ignoring on (a) rate({a=\"b\"}[5m])",
+          "loki": "parse error at line 1, col 15: syntax error: unexpected on, expecting (",
+          "proxy": "parse error at line 1, col 15: syntax error: unexpected on"
+        }
+      ]
+    },
+    "error text differs | syntax error at unwrap || invalid aggregation count_over_time with unwrap | spacing one blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "error text differs",
+      "key": "syntax error at unwrap || invalid aggregation count_over_time with unwrap",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "count_over_time({a=\"b\"} | logfmt --strict |\u000bunwrap duration(c) [1m] offset 5m)",
+          "loki": "parse error at line 1, col 45: syntax error: unexpected unwrap",
+          "proxy": "parse error : invalid aggregation count_over_time with unwrap"
+        },
+        {
+          "query": "count_over_time({a=\"b\"} | logfmt --strict |\funwrap duration(c) [1m] offset 5m)",
+          "loki": "parse error at line 1, col 45: syntax error: unexpected unwrap",
+          "proxy": "parse error : invalid aggregation count_over_time with unwrap"
+        }
+      ]
+    },
+    "error text differs | syntax error at unwrap || queries require at least one regexp or equality matcher that does not have an empty-compatible value. For inst | log stage | unwrap a": {
+      "count": 1,
+      "case": "semantics/unwrap-in-log-query",
+      "kind": "error text differs",
+      "key": "syntax error at unwrap || queries require at least one regexp or equality matcher that does not have an empty-compatible value. For inst",
+      "element": "log stage | unwrap a",
+      "examples": [
+        {
+          "query": "{a!=\"b\"} | unwrap a",
+          "loki": "parse error at line 1, col 12: syntax error: unexpected unwrap",
+          "proxy": "parse error : queries require at least one regexp or equality matcher that does not have an empty-compatible value. For instance, app=~\".*\" does not meet this requirement, but app=~\".+\" will"
+        }
+      ]
+    },
+    "error text differs | syntax error at unwrap || queries require at least one regexp or equality matcher that does not have an empty-compatible value. For inst | log stage | unwrap a | drop b": {
+      "count": 1,
+      "case": "semantics/unwrap-in-log-query",
+      "kind": "error text differs",
+      "key": "syntax error at unwrap || queries require at least one regexp or equality matcher that does not have an empty-compatible value. For inst",
+      "element": "log stage | unwrap a | drop b",
+      "examples": [
+        {
+          "query": "{a!~\"b\"} | unwrap a | drop b",
+          "loki": "parse error at line 1, col 12: syntax error: unexpected unwrap",
+          "proxy": "parse error : queries require at least one regexp or equality matcher that does not have an empty-compatible value. For instance, app=~\".*\" does not meet this requirement, but app=~\".+\" will"
+        }
+      ]
+    },
+    "error text differs | syntax error at unwrap || syntax error at unwrap | log stage | unwrap a | unwrap b": {
+      "count": 11,
+      "case": "semantics/unwrap-in-log-query",
+      "kind": "error text differs",
+      "key": "syntax error at unwrap || syntax error at unwrap",
+      "element": "log stage | unwrap a | unwrap b",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | unwrap a | unwrap b",
+          "loki": "parse error at line 1, col 11: syntax error: unexpected unwrap",
+          "proxy": "parse error : syntax error: unexpected unwrap"
+        },
+        {
+          "query": "{a=\"é\"} | unwrap a | unwrap b",
+          "loki": "parse error at line 1, col 11: syntax error: unexpected unwrap",
+          "proxy": "parse error : syntax error: unexpected unwrap"
+        }
+      ]
+    },
+    "error text differs | syntax error at unwrap || syntax error at unwrap | rangeagg pairing logquery {a=\"b\"} | unwrap c | unwrap d": {
+      "count": 2,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at unwrap || syntax error at unwrap",
+      "element": "rangeagg pairing logquery {a=\"b\"} | unwrap c | unwrap d",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"} | unwrap c | unwrap d[5m])",
+          "loki": "parse error at line 1, col 27: syntax error: unexpected unwrap, expecting IDENTIFIER or (",
+          "proxy": "parse error : syntax error: unexpected unwrap"
+        },
+        {
+          "query": "quantile_over_time(.5, {a=\"b\"} | unwrap c | unwrap d[5m])",
+          "loki": "parse error at line 1, col 45: syntax error: unexpected unwrap, expecting IDENTIFIER or (",
+          "proxy": "parse error : syntax error: unexpected unwrap"
+        }
+      ]
+    },
+    "error text differs | syntax error at unwrap || syntax error at unwrap | rangeagg unwrap logquery {a=\"b\"} | unwrap c | unwrap d": {
+      "count": 6,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "syntax error at unwrap || syntax error at unwrap",
+      "element": "rangeagg unwrap logquery {a=\"b\"} | unwrap c | unwrap d",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | unwrap c | unwrap d[5m])",
+          "loki": "parse error at line 1, col 35: syntax error: unexpected unwrap, expecting IDENTIFIER or (",
+          "proxy": "parse error : syntax error: unexpected unwrap"
+        },
+        {
+          "query": "rate_counter({a=\"b\"} | unwrap c | unwrap d[90s])",
+          "loki": "parse error at line 1, col 35: syntax error: unexpected unwrap, expecting IDENTIFIER or (",
+          "proxy": "parse error : syntax error: unexpected unwrap"
+        }
+      ]
+    },
+    "error text differs | unexpected literal for left leg of logical/set binary operation (and): N.N || unexpected literal for right leg of logical/set binary operation (and): -N.N | binary left 1 + 2": {
+      "count": 1,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "unexpected literal for left leg of logical/set binary operation (and): N.N || unexpected literal for right leg of logical/set binary operation (and): -N.N",
+      "element": "binary left 1 + 2",
+      "examples": [
+        {
+          "query": "1 + 2 and -1",
+          "loki": "parse error : unexpected literal for left leg of logical/set binary operation (and): 3.000000",
+          "proxy": "parse error : unexpected literal for right leg of logical/set binary operation (and): -1.000000"
+        }
+      ]
+    },
+    "error text differs | unknown unit \"S\" in duration \"S\" || grouping not allowed for rate_counter aggregation | rangeagg unwrap grouping:grp": {
+      "count": 4,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "unknown unit \"S\" in duration \"S\" || grouping not allowed for rate_counter aggregation",
+      "element": "rangeagg unwrap grouping:grp",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[1.5m]) by (a)",
+          "loki": "parse error at line 0, col 39: unknown unit \".\" in duration \"1.5m\"",
+          "proxy": "parse error : grouping not allowed for rate_counter aggregation"
+        },
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[1µs]) by (a)",
+          "loki": "parse error at line 0, col 39: unknown unit \"µs\" in duration \"1µs\"",
+          "proxy": "parse error : grouping not allowed for rate_counter aggregation"
+        }
+      ]
+    },
+    "error text differs | unsupported parameter for operation avg(N, || syntax error at  | vecagg agg avg|2, ": {
+      "count": 4,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "unsupported parameter for operation avg(N, || syntax error at ",
+      "element": "vecagg agg avg|2, ",
+      "examples": [
+        {
+          "query": "avg(2, rate({a=\"b\"}[5m]))",
+          "loki": "parse error : unsupported parameter for operation avg(2,",
+          "proxy": "parse error at line 1, col 6: syntax error: unexpected ,"
+        },
+        {
+          "query": "avg (2, rate({a=\"b\"}[5m]))",
+          "loki": "parse error : unsupported parameter for operation avg(2,",
+          "proxy": "parse error at line 1, col 7: syntax error: unexpected ,"
+        }
+      ]
+    },
+    "error text differs | unsupported parameter for operation sort(N, || syntax error at  | vecagg agg sort|1, ": {
+      "count": 4,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "unsupported parameter for operation sort(N, || syntax error at ",
+      "element": "vecagg agg sort|1, ",
+      "examples": [
+        {
+          "query": "sort (1, 1 + 1)",
+          "loki": "parse error : unsupported parameter for operation sort(1,",
+          "proxy": "parse error at line 1, col 8: syntax error: unexpected ,"
+        },
+        {
+          "query": "sort (1, rate({a=\"b\"}[5m]))",
+          "loki": "parse error : unsupported parameter for operation sort(1,",
+          "proxy": "parse error at line 1, col 8: syntax error: unexpected ,"
+        }
+      ]
+    },
+    "error text differs | unsupported parameter for operation stddev(N, || syntax error at  | vecagg agg stddev|2, ": {
+      "count": 5,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "unsupported parameter for operation stddev(N, || syntax error at ",
+      "element": "vecagg agg stddev|2, ",
+      "examples": [
+        {
+          "query": "stddev (2, 1 + 1)",
+          "loki": "parse error : unsupported parameter for operation stddev(2,",
+          "proxy": "parse error at line 1, col 10: syntax error: unexpected ,"
+        },
+        {
+          "query": "stddev (2, rate({a=\"b\"}[5m]))",
+          "loki": "parse error : unsupported parameter for operation stddev(2,",
+          "proxy": "parse error at line 1, col 10: syntax error: unexpected ,"
+        }
+      ]
+    },
+    "error text differs | unsupported parameter for operation sum(N, || syntax error at  | vecagg agg sum|1, ": {
+      "count": 4,
+      "case": "semantics/parse-error-text-parity",
+      "kind": "error text differs",
+      "key": "unsupported parameter for operation sum(N, || syntax error at ",
+      "element": "vecagg agg sum|1, ",
+      "examples": [
+        {
+          "query": "sum (1, 1.5)",
+          "loki": "parse error : unsupported parameter for operation sum(1,",
+          "proxy": "parse error at line 1, col 7: syntax error: unexpected ,"
+        },
+        {
+          "query": "sum (1, 1 + 1)",
+          "loki": "parse error : unsupported parameter for operation sum(1,",
+          "proxy": "parse error at line 1, col 7: syntax error: unexpected ,"
+        }
+      ]
+    },
+    "error text differs, rejected at translation | syntax error at $end || unknown pipeline stage \"S\" — not a valid LogQL parser or label filter | log stage | foo": {
+      "count": 7,
+      "case": "semantics/unknown-pipeline-stage-error-text",
+      "kind": "error text differs, rejected at translation",
+      "key": "syntax error at $end || unknown pipeline stage \"S\" — not a valid LogQL parser or label filter",
+      "element": "log stage | foo",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | foo",
+          "loki": "parse error at line 1, col 14: syntax error: unexpected $end",
+          "proxy": "translation: unknown pipeline stage \"foo\" — not a valid LogQL parser or label filter"
+        },
+        {
+          "query": "{a_b=\"c\"} | foo",
+          "loki": "parse error at line 1, col 16: syntax error: unexpected $end",
+          "proxy": "translation: unknown pipeline stage \"foo\" — not a valid LogQL parser or label filter"
+        }
+      ]
+    },
+    "error text differs, rejected at translation | syntax error at $end || unknown pipeline stage \"S\" — not a valid LogQL parser or label filter | spacing removed": {
+      "count": 1,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "error text differs, rejected at translation",
+      "key": "syntax error at $end || unknown pipeline stage \"S\" — not a valid LogQL parser or label filter",
+      "element": "spacing removed",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | line_format \"{{.a}}\" | label_format x=y | dropz",
+          "loki": "parse error at line 1, col 58: syntax error: unexpected $end",
+          "proxy": "translation: unknown pipeline stage \"dropz\" — not a valid LogQL parser or label filter"
+        }
+      ]
+    },
+    "error text differs, rejected at translation | syntax error at IDENTIFIER || quantile_over_time requires \"S\" for range aggregation | spacing every blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "error text differs, rejected at translation",
+      "key": "syntax error at IDENTIFIER || quantile_over_time requires \"S\" for range aggregation",
+      "element": "spacing every blank",
+      "examples": [
+        {
+          "query": "quantile_over_time(0.5,\u000b{a=\"b\"}\u000b|\u000bunwrap\u000bc\u000b[5m])\u000bby\u000b(d)",
+          "loki": "parse error at line 1, col 24: syntax error: unexpected IDENTIFIER, expecting { or (",
+          "proxy": "translation: quantile_over_time requires `| unwrap \u003cfield\u003e` for range aggregation"
+        },
+        {
+          "query": "quantile_over_time(0.5,\f{a=\"b\"}\f|\funwrap\fc\f[5m])\fby\f(d)",
+          "loki": "parse error at line 1, col 24: syntax error: unexpected IDENTIFIER, expecting { or (",
+          "proxy": "translation: quantile_over_time requires `| unwrap \u003cfield\u003e` for range aggregation"
+        }
+      ]
+    },
+    "error text differs, rejected at translation | syntax error at IDENTIFIER || quantile_over_time requires \"S\" for range aggregation | spacing one blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "error text differs, rejected at translation",
+      "key": "syntax error at IDENTIFIER || quantile_over_time requires \"S\" for range aggregation",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "quantile_over_time(0.5, {a=\"b\"} | unwrap\u000bc [5m]) by (d)",
+          "loki": "parse error at line 1, col 42: syntax error: unexpected IDENTIFIER, expecting RANGE or |",
+          "proxy": "translation: quantile_over_time requires `| unwrap \u003cfield\u003e` for range aggregation"
+        },
+        {
+          "query": "quantile_over_time(0.5, {a=\"b\"} | unwrap\fc [5m]) by (d)",
+          "loki": "parse error at line 1, col 42: syntax error: unexpected IDENTIFIER, expecting RANGE or |",
+          "proxy": "translation: quantile_over_time requires `| unwrap \u003cfield\u003e` for range aggregation"
+        }
+      ]
+    },
+    "error text differs, rejected at translation | syntax error at unwrap || quantile_over_time requires \"S\" for range aggregation | spacing one blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "error text differs, rejected at translation",
+      "key": "syntax error at unwrap || quantile_over_time requires \"S\" for range aggregation",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "quantile_over_time(0.5, {a=\"b\"} |\u000bunwrap c [5m]) by (d)",
+          "loki": "parse error at line 1, col 35: syntax error: unexpected unwrap",
+          "proxy": "translation: quantile_over_time requires `| unwrap \u003cfield\u003e` for range aggregation"
+        },
+        {
+          "query": "quantile_over_time(0.5, {a=\"b\"} |\funwrap c [5m]) by (d)",
+          "loki": "parse error at line 1, col 35: syntax error: unexpected unwrap",
+          "proxy": "translation: quantile_over_time requires `| unwrap \u003cfield\u003e` for range aggregation"
+        }
+      ]
+    },
+    "error text differs, rejected at translation | syntax error at | || unknown pipeline stage \"S\" — not a valid LogQL parser or label filter | log stage | foo": {
+      "count": 3,
+      "case": "semantics/unknown-pipeline-stage-error-text",
+      "kind": "error text differs, rejected at translation",
+      "key": "syntax error at | || unknown pipeline stage \"S\" — not a valid LogQL parser or label filter",
+      "element": "log stage | foo",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | foo | a=\"b\"",
+          "loki": "parse error at line 1, col 15: syntax error: unexpected |",
+          "proxy": "translation: unknown pipeline stage \"foo\" — not a valid LogQL parser or label filter"
+        },
+        {
+          "query": "{a=\"b\"} | foo | unpack",
+          "loki": "parse error at line 1, col 15: syntax error: unexpected |",
+          "proxy": "translation: unknown pipeline stage \"foo\" — not a valid LogQL parser or label filter"
+        }
+      ]
+    },
+    "error text differs, rejected at translation | syntax error at |\u003e || unknown pipeline stage \"S\" — not a valid LogQL parser or label filter | log stage | foo": {
+      "count": 1,
+      "case": "semantics/unknown-pipeline-stage-error-text",
+      "kind": "error text differs, rejected at translation",
+      "key": "syntax error at |\u003e || unknown pipeline stage \"S\" — not a valid LogQL parser or label filter",
+      "element": "log stage | foo",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | foo |\u003e \"\"",
+          "loki": "parse error at line 0, col 15: syntax error: unexpected |\u003e",
+          "proxy": "translation: unknown pipeline stage \"foo\" — not a valid LogQL parser or label filter"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | duration out of range | rangeagg range 9999999999h": {
+      "count": 5,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "duration out of range",
+      "element": "rangeagg range 9999999999h",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"}[9999999999h])",
+          "loki": "parse error at line 0, col 13: duration out of range",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate({a=\"b\"}[9999999999h] offset 1d)",
+          "loki": "parse error at line 0, col 13: duration out of range",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | duration out of range | rangeagg unwrap range 9999999999h": {
+      "count": 4,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "duration out of range",
+      "element": "rangeagg unwrap range 9999999999h",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | unwrap c[9999999999h])",
+          "loki": "parse error at line 0, col 32: duration out of range",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[9999999999h])",
+          "loki": "parse error at line 0, col 39: duration out of range",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | not a valid duration string: \"S\" | rangeagg range  5m ": {
+      "count": 2,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "not a valid duration string: \"S\"",
+      "element": "rangeagg range  5m ",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"}[ 5m ])",
+          "loki": "parse error at line 0, col 13: not a valid duration string: \" 5m \"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate({a=\"b\", c=~\"d.*\"}[ 5m ])",
+          "loki": "parse error at line 0, col 23: not a valid duration string: \" 5m \"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | not a valid duration string: \"S\" | rangeagg range 1h1h": {
+      "count": 4,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "not a valid duration string: \"S\"",
+      "element": "rangeagg range 1h1h",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"}[1h1h])",
+          "loki": "parse error at line 0, col 13: not a valid duration string: \"1h1h\"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate({a=\"b\"}[1h1h] offset 1ms)",
+          "loki": "parse error at line 0, col 13: not a valid duration string: \"1h1h\"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | not a valid duration string: \"S\" | rangeagg range 5m5m": {
+      "count": 4,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "not a valid duration string: \"S\"",
+      "element": "rangeagg range 5m5m",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"}[5m5m])",
+          "loki": "parse error at line 0, col 13: not a valid duration string: \"5m5m\"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate({a=\"b\"} | drop x[5m5m])",
+          "loki": "parse error at line 0, col 22: not a valid duration string: \"5m5m\"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | not a valid duration string: \"S\" | rangeagg unwrap range  5m ": {
+      "count": 3,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "not a valid duration string: \"S\"",
+      "element": "rangeagg unwrap range  5m ",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[ 5m ])",
+          "loki": "parse error at line 0, col 39: not a valid duration string: \" 5m \"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[ 5m ] offset 0s)",
+          "loki": "parse error at line 0, col 39: not a valid duration string: \" 5m \"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | not a valid duration string: \"S\" | rangeagg unwrap range 1h1h": {
+      "count": 3,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "not a valid duration string: \"S\"",
+      "element": "rangeagg unwrap range 1h1h",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[1h1h])",
+          "loki": "parse error at line 0, col 39: not a valid duration string: \"1h1h\"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "stdvar_over_time({a=\"b\"} | json | unwrap c[1h1h])",
+          "loki": "parse error at line 0, col 43: not a valid duration string: \"1h1h\"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | not a valid duration string: \"S\" | rangeagg unwrap range 5m5m": {
+      "count": 4,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "not a valid duration string: \"S\"",
+      "element": "rangeagg unwrap range 5m5m",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[5m5m])",
+          "loki": "parse error at line 0, col 39: not a valid duration string: \"5m5m\"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "quantile_over_time(.5, {a=\"b\"} | json | unwrap c[5m5m])",
+          "loki": "parse error at line 0, col 49: not a valid duration string: \"5m5m\"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | parameter required for operation quantile_over_time | rangeagg unwrap fn quantile_over_time(%s)": {
+      "count": 4,
+      "case": "semantics/quantile-over-time-parameter-required",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "parameter required for operation quantile_over_time",
+      "element": "rangeagg unwrap fn quantile_over_time(%s)",
+      "examples": [
+        {
+          "query": "quantile_over_time({a=\"b\"} | json | unwrap c[5m])",
+          "loki": "parse error : parameter required for operation quantile_over_time",
+          "proxy": "accepted"
+        },
+        {
+          "query": "quantile_over_time({a=\"b\"} | json | unwrap c[90s])",
+          "loki": "parse error : parameter required for operation quantile_over_time",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | sort and sort_desc doesn't allow grouping by | vecagg agg sort_desc|": {
+      "count": 1,
+      "case": "semantics/sort-grouping-accepted",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "sort and sort_desc doesn't allow grouping by",
+      "element": "vecagg agg sort_desc|",
+      "examples": [
+        {
+          "query": "sort_desc by (a) (rate({a=\"b\"}[5m]))",
+          "loki": "parse error : sort and sort_desc doesn't allow grouping by ",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | stage 'S' : cannot parse expression [ ]: syntax error: unexpected $end, expecting LSB or FIELD | spacing one blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "stage 'S' : cannot parse expression [ ]: syntax error: unexpected $end, expecting LSB or FIELD",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "{a=\"b\"} |= \"x\" | json\u000b| c=\"d\"",
+          "loki": "parse error : stage '| json \u000b=\"\\v\"' : cannot parse expression [\u000b]: syntax error: unexpected $end, expecting LSB or FIELD",
+          "proxy": "accepted"
+        },
+        {
+          "query": "{a=\"b\"} |= \"x\" | json\f| c=\"d\"",
+          "loki": "parse error : stage '| json \f=\"\\f\"' : cannot parse expression [\f]: syntax error: unexpected $end, expecting LSB or FIELD",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at  | label_replace inner {a=\"b\"}": {
+      "count": 3,
+      "case": "semantics/label-replace-over-log-selector-accepted",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at ",
+      "element": "label_replace inner {a=\"b\"}",
+      "examples": [
+        {
+          "query": "label_replace({a=\"b\"}, \"d\", \"x\", \"a\", \"(.*)\")",
+          "loki": "parse error at line 1, col 22: syntax error: unexpected ,",
+          "proxy": "accepted"
+        },
+        {
+          "query": "label_replace({a=\"b\"}, \"d\", \"$1\", \"a\", \"(.*)\")",
+          "loki": "parse error at line 1, col 22: syntax error: unexpected ,",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at  | label_replace inner {a=\"b\"} | json": {
+      "count": 2,
+      "case": "semantics/label-replace-over-log-selector-accepted",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at ",
+      "element": "label_replace inner {a=\"b\"} | json",
+      "examples": [
+        {
+          "query": "label_replace({a=\"b\"} | json, \"d\", \"$1\", \"a\", \".+\")",
+          "loki": "parse error at line 1, col 29: syntax error: unexpected ,",
+          "proxy": "accepted"
+        },
+        {
+          "query": "label_replace({a=\"b\"} | json, \"d\", \"$1\", \"a\", \"(.*)\")",
+          "loki": "parse error at line 1, col 29: syntax error: unexpected ,",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at ( | rangeagg pairing logquery {a=\"b\"} | unwrap foo(c)": {
+      "count": 2,
+      "case": "semantics/unwrap-unknown-conversion-function-accepted",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at (",
+      "element": "rangeagg pairing logquery {a=\"b\"} | unwrap foo(c)",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"} | unwrap foo(c)[5m])",
+          "loki": "parse error at line 1, col 26: syntax error: unexpected (, expecting RANGE or |",
+          "proxy": "accepted"
+        },
+        {
+          "query": "quantile_over_time(0, {a=\"b\"} | unwrap foo(c)[5m])",
+          "loki": "parse error at line 1, col 43: syntax error: unexpected (, expecting RANGE or |",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at ( | rangeagg unwrap logquery {a=\"b\"} | unwrap foo(c)": {
+      "count": 7,
+      "case": "semantics/unwrap-unknown-conversion-function-accepted",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at (",
+      "element": "rangeagg unwrap logquery {a=\"b\"} | unwrap foo(c)",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | unwrap foo(c)[5m])",
+          "loki": "parse error at line 1, col 34: syntax error: unexpected (, expecting RANGE or |",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate_counter({a=\"b\"} | unwrap foo(c)[100ms])",
+          "loki": "parse error at line 1, col 34: syntax error: unexpected (, expecting RANGE or |",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at IDENTIFIER | spacing every blank": {
+      "count": 46,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at IDENTIFIER",
+      "element": "spacing every blank",
+      "examples": [
+        {
+          "query": "vector(1)\u000b+\u000b1",
+          "loki": "parse error at line 1, col 10: syntax error: unexpected IDENTIFIER",
+          "proxy": "accepted"
+        },
+        {
+          "query": "vector(1)\f+\f1",
+          "loki": "parse error at line 1, col 10: syntax error: unexpected IDENTIFIER",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at IDENTIFIER | spacing one blank": {
+      "count": 215,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at IDENTIFIER",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "vector(1)\u000b+ 1",
+          "loki": "parse error at line 1, col 10: syntax error: unexpected IDENTIFIER",
+          "proxy": "accepted"
+        },
+        {
+          "query": "vector(1)\f+ 1",
+          "loki": "parse error at line 1, col 10: syntax error: unexpected IDENTIFIER",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at NUMBER | binary modifier  on": {
+      "count": 1,
+      "case": "semantics/binary-on-without-label-list-accepted",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at NUMBER",
+      "element": "binary modifier  on",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"}[5m]) + on 1",
+          "loki": "parse error at line 1, col 24: syntax error: unexpected NUMBER, expecting (",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at RATE | binary modifier  on": {
+      "count": 4,
+      "case": "semantics/binary-on-without-label-list-accepted",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at RATE",
+      "element": "binary modifier  on",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"}[5m]) % on rate({a=\"b\"}[5m])",
+          "loki": "parse error at line 1, col 24: syntax error: unexpected RATE, expecting (",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate({a=\"b\"}[5m]) + on rate({a=\"b\"}[5m])",
+          "loki": "parse error at line 1, col 24: syntax error: unexpected RATE, expecting (",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at drop | rangeagg pairing logquery {a=\"b\"} | json | unwrap c | drop __error__": {
+      "count": 4,
+      "case": "semantics/stage-after-unwrap-accepted",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at drop",
+      "element": "rangeagg pairing logquery {a=\"b\"} | json | unwrap c | drop __error__",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"} | json | unwrap c | drop __error__[5m])",
+          "loki": "parse error at line 1, col 34: syntax error: unexpected drop, expecting IDENTIFIER or (",
+          "proxy": "accepted"
+        },
+        {
+          "query": "max_over_time({a=\"b\"} | json | unwrap c | drop __error__[5m])",
+          "loki": "parse error at line 1, col 43: syntax error: unexpected drop, expecting IDENTIFIER or (",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at drop | rangeagg unwrap logquery {a=\"b\"} | json | unwrap c | drop __error__": {
+      "count": 4,
+      "case": "semantics/stage-after-unwrap-accepted",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at drop",
+      "element": "rangeagg unwrap logquery {a=\"b\"} | json | unwrap c | drop __error__",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c | drop __error__[1y])",
+          "loki": "parse error at line 1, col 42: syntax error: unexpected drop, expecting IDENTIFIER or (",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c | drop __error__[5m])",
+          "loki": "parse error at line 1, col 42: syntax error: unexpected drop, expecting IDENTIFIER or (",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at drop | spacing one blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at drop",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | line_format \"{{.a}}\" | label_format x=y |\u000bdrop z",
+          "loki": "parse error at line 1, col 53: syntax error: unexpected drop",
+          "proxy": "accepted"
+        },
+        {
+          "query": "{a=\"b\"} | line_format \"{{.a}}\" | label_format x=y |\fdrop z",
+          "loki": "parse error at line 1, col 53: syntax error: unexpected drop",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at ip | log stage != ip(\"10.0.0.0/8\")": {
+      "count": 23,
+      "case": "semantics/drop-keep-matcher-ip-value-accepted",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at ip",
+      "element": "log stage != ip(\"10.0.0.0/8\")",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | keep __error__ != ip(\"10.0.0.0/8\")",
+          "loki": "parse error at line 1, col 29: syntax error: unexpected ip, expecting STRING",
+          "proxy": "accepted"
+        },
+        {
+          "query": "{a=~\".+\"} | a\u003e.5 | keep a != ip(\"10.0.0.0/8\")",
+          "loki": "parse error at line 1, col 30: syntax error: unexpected ip, expecting STRING",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at json | spacing one blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at json",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "{a=\"b\"} |= \"x\" |\u000bjson | c=\"d\"",
+          "loki": "parse error at line 1, col 18: syntax error: unexpected json",
+          "proxy": "accepted"
+        },
+        {
+          "query": "{a=\"b\"} |= \"x\" |\fjson | c=\"d\"",
+          "loki": "parse error at line 1, col 18: syntax error: unexpected json",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at label_format | spacing one blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at label_format",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | line_format \"{{.a}}\" |\u000blabel_format x=y | drop z",
+          "loki": "parse error at line 1, col 34: syntax error: unexpected label_format",
+          "proxy": "accepted"
+        },
+        {
+          "query": "{a=\"b\"} | line_format \"{{.a}}\" |\flabel_format x=y | drop z",
+          "loki": "parse error at line 1, col 34: syntax error: unexpected label_format",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at line_format | spacing one blank": {
+      "count": 5,
+      "case": "semantics/parser-reads-unicode-blank-as-white-space",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at line_format",
+      "element": "spacing one blank",
+      "examples": [
+        {
+          "query": "{a=\"b\"} |\u000bline_format \"{{.a}}\" | label_format x=y | drop z",
+          "loki": "parse error at line 1, col 11: syntax error: unexpected line_format",
+          "proxy": "accepted"
+        },
+        {
+          "query": "{a=\"b\"} |\fline_format \"{{.a}}\" | label_format x=y | drop z",
+          "loki": "parse error at line 1, col 11: syntax error: unexpected line_format",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | syntax error at unwrap | log stage:unwrap": {
+      "count": 159,
+      "case": "semantics/unwrap-in-log-query",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "syntax error at unwrap",
+      "element": "log stage:unwrap",
+      "examples": [
+        {
+          "query": "{a=\"b\"} | unwrap a",
+          "loki": "parse error at line 1, col 11: syntax error: unexpected unwrap",
+          "proxy": "accepted"
+        },
+        {
+          "query": "{a_b=\"c\"} | unwrap a",
+          "loki": "parse error at line 1, col 13: syntax error: unexpected unwrap",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | unexpected literal for right leg of logical/set binary operation (and): N.N | binary right 1 + 2": {
+      "count": 2,
+      "case": "semantics/set-operation-folded-literal-operand",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "unexpected literal for right leg of logical/set binary operation (and): N.N",
+      "element": "binary right 1 + 2",
+      "examples": [
+        {
+          "query": "(rate({a=\"b\"}[5m])) and ignoring () 1 + 2",
+          "loki": "parse error : unexpected literal for right leg of logical/set binary operation (and): 3.000000",
+          "proxy": "accepted"
+        },
+        {
+          "query": "sum_over_time({a=\"b\"} | unwrap c [5m]) and on (a) group_right 1 + 2",
+          "loki": "parse error : unexpected literal for right leg of logical/set binary operation (and): 3.000000",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | unknown unit \"S\" in duration \"S\" | rangeagg range 1.5m": {
+      "count": 4,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "unknown unit \"S\" in duration \"S\"",
+      "element": "rangeagg range 1.5m",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"}[1.5m])",
+          "loki": "parse error at line 0, col 13: unknown unit \".\" in duration \"1.5m\"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "bytes_rate({a=\"b\"}[1.5m])",
+          "loki": "parse error at line 0, col 19: unknown unit \".\" in duration \"1.5m\"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | unknown unit \"S\" in duration \"S\" | rangeagg range 1ns": {
+      "count": 5,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "unknown unit \"S\" in duration \"S\"",
+      "element": "rangeagg range 1ns",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"}[1ns])",
+          "loki": "parse error at line 0, col 13: unknown unit \"ns\" in duration \"1ns\"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate({a=\"b\"} | keep x[1ns])",
+          "loki": "parse error at line 0, col 22: unknown unit \"ns\" in duration \"1ns\"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | unknown unit \"S\" in duration \"S\" | rangeagg range 1us": {
+      "count": 3,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "unknown unit \"S\" in duration \"S\"",
+      "element": "rangeagg range 1us",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"}[1us])",
+          "loki": "parse error at line 0, col 13: unknown unit \"us\" in duration \"1us\"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate({a=\"b\"}[1us] offset 1h30m)",
+          "loki": "parse error at line 0, col 13: unknown unit \"us\" in duration \"1us\"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | unknown unit \"S\" in duration \"S\" | rangeagg range 1µs": {
+      "count": 4,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "unknown unit \"S\" in duration \"S\"",
+      "element": "rangeagg range 1µs",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"}[1µs])",
+          "loki": "parse error at line 0, col 13: unknown unit \"µs\" in duration \"1µs\"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate({a=\"b\"} | keep x[1µs])",
+          "loki": "parse error at line 0, col 22: unknown unit \"µs\" in duration \"1µs\"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | unknown unit \"S\" in duration \"S\" | rangeagg unwrap range 1.5m": {
+      "count": 2,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "unknown unit \"S\" in duration \"S\"",
+      "element": "rangeagg unwrap range 1.5m",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[1.5m])",
+          "loki": "parse error at line 0, col 39: unknown unit \".\" in duration \"1.5m\"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[1.5m] offset 1d)",
+          "loki": "parse error at line 0, col 39: unknown unit \".\" in duration \"1.5m\"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | unknown unit \"S\" in duration \"S\" | rangeagg unwrap range 1ns": {
+      "count": 5,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "unknown unit \"S\" in duration \"S\"",
+      "element": "rangeagg unwrap range 1ns",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[1ns])",
+          "loki": "parse error at line 0, col 39: unknown unit \"ns\" in duration \"1ns\"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "last_over_time({a=\"b\"} | json | unwrap c[1ns])",
+          "loki": "parse error at line 0, col 41: unknown unit \"ns\" in duration \"1ns\"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | unknown unit \"S\" in duration \"S\" | rangeagg unwrap range 1us": {
+      "count": 2,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "unknown unit \"S\" in duration \"S\"",
+      "element": "rangeagg unwrap range 1us",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | unwrap c[1us])",
+          "loki": "parse error at line 0, col 32: unknown unit \"us\" in duration \"1us\"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[1us])",
+          "loki": "parse error at line 0, col 39: unknown unit \"us\" in duration \"1us\"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy accepts, Loki rejects | unknown unit \"S\" in duration \"S\" | rangeagg unwrap range 1µs": {
+      "count": 3,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy accepts, Loki rejects",
+      "key": "unknown unit \"S\" in duration \"S\"",
+      "element": "rangeagg unwrap range 1µs",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | unwrap c[1µs])",
+          "loki": "parse error at line 0, col 32: unknown unit \"µs\" in duration \"1µs\"",
+          "proxy": "accepted"
+        },
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[1µs])",
+          "loki": "parse error at line 0, col 39: unknown unit \"µs\" in duration \"1µs\"",
+          "proxy": "accepted"
+        }
+      ]
+    },
+    "proxy rejects, Loki accepts | not a valid duration string: \"S\" | rangeagg range 0": {
+      "count": 3,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy rejects, Loki accepts",
+      "key": "not a valid duration string: \"S\"",
+      "element": "rangeagg range 0",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"}[0])",
+          "loki": "accepted",
+          "proxy": "parse error at line 0, col 13: not a valid duration string: \"0\""
+        },
+        {
+          "query": "rate({a=\"b\"}[0] offset 5m)",
+          "loki": "accepted",
+          "proxy": "parse error at line 0, col 13: not a valid duration string: \"0\""
+        }
+      ]
+    },
+    "proxy rejects, Loki accepts | not a valid duration string: \"S\" | rangeagg unwrap range 0": {
+      "count": 5,
+      "case": "semantics/range-duration-grammar-wider-than-loki",
+      "kind": "proxy rejects, Loki accepts",
+      "key": "not a valid duration string: \"S\"",
+      "element": "rangeagg unwrap range 0",
+      "examples": [
+        {
+          "query": "rate_counter({a=\"b\"} | unwrap c[0])",
+          "loki": "accepted",
+          "proxy": "parse error at line 0, col 32: not a valid duration string: \"0\""
+        },
+        {
+          "query": "rate_counter({a=\"b\"} | json | unwrap c[0])",
+          "loki": "accepted",
+          "proxy": "parse error at line 0, col 39: not a valid duration string: \"0\""
+        }
+      ]
+    },
+    "proxy rejects, Loki accepts | stage 'S' : invalid line template: template: line:N: unclosed action | rangeagg logquery {a=\"b\"} | line_format \"{{.x\"": {
+      "count": 1,
+      "case": "semantics/metric-unread-line-format-template-error",
+      "kind": "proxy rejects, Loki accepts",
+      "key": "stage 'S' : invalid line template: template: line:N: unclosed action",
+      "element": "rangeagg logquery {a=\"b\"} | line_format \"{{.x\"",
+      "examples": [
+        {
+          "query": "bytes_over_time({a=\"b\"} | line_format \"{{.x\"[5m])",
+          "loki": "accepted",
+          "proxy": "parse error : stage '| line_format \"{{.x\"' : invalid line template: template: line:1: unclosed action"
+        }
+      ]
+    },
+    "proxy rejects, Loki accepts | syntax error at + | literal number + 1": {
+      "count": 2,
+      "case": "semantics/unary-plus-literal-rejected",
+      "kind": "proxy rejects, Loki accepts",
+      "key": "syntax error at +",
+      "element": "literal number + 1",
+      "examples": [
+        {
+          "query": "+ 1",
+          "loki": "accepted",
+          "proxy": "parse error at line 1, col 1: syntax error: unexpected +"
+        },
+        {
+          "query": "+ 1 + rate({a=\"b\"}[5m])",
+          "loki": "accepted",
+          "proxy": "parse error at line 1, col 1: syntax error: unexpected +"
+        }
+      ]
+    },
+    "proxy rejects, Loki accepts | syntax error at + | literal number +1": {
+      "count": 1,
+      "case": "semantics/unary-plus-literal-rejected",
+      "kind": "proxy rejects, Loki accepts",
+      "key": "syntax error at +",
+      "element": "literal number +1",
+      "examples": [
+        {
+          "query": "+1",
+          "loki": "accepted",
+          "proxy": "parse error at line 1, col 1: syntax error: unexpected +"
+        }
+      ]
+    },
+    "proxy rejects, Loki accepts | syntax error at / | binary op //": {
+      "count": 6,
+      "case": "semantics/go-style-comment-rejected",
+      "kind": "proxy rejects, Loki accepts",
+      "key": "syntax error at /",
+      "element": "binary op //",
+      "examples": [
+        {
+          "query": "rate({a=\"b\"}[5m]) // 1",
+          "loki": "accepted",
+          "proxy": "parse error at line 1, col 20: syntax error: unexpected /"
+        },
+        {
+          "query": "rate({a=\"b\"}[5m]) // rate({a=\"b\"}[5m])",
+          "loki": "accepted",
+          "proxy": "parse error at line 1, col 20: syntax error: unexpected /"
+        }
+      ]
+    },
+    "tree fact differs: binary operation | binary operation | binary right:scalar": {
+      "count": 7,
+      "case": "semantics/binary-literal-operation-folded-in-loki",
+      "kind": "tree fact differs: binary operation",
+      "key": "binary operation",
+      "element": "binary right:scalar",
+      "examples": [
+        {
+          "query": "-1 + on () .5",
+          "loki": "",
+          "proxy": "+ on[] []"
+        },
+        {
+          "query": "1 + 2 / on (a, b) 0",
+          "loki": "",
+          "proxy": "+"
+        }
+      ]
+    },
+    "tree fact differs: binary operation | binary operation | label_replace inner 1 + 1": {
+      "count": 2,
+      "case": "semantics/binary-literal-operation-folded-in-loki",
+      "kind": "tree fact differs: binary operation",
+      "key": "binary operation",
+      "element": "label_replace inner 1 + 1",
+      "examples": [
+        {
+          "query": "label_replace(1 + 1, \"a\", \"$1\", \"b\", \"(.*)\")",
+          "loki": "",
+          "proxy": "+"
+        },
+        {
+          "query": "label_replace(1 + 1, \"d\", \"$1\", \"a\", \"(.*)\")",
+          "loki": "",
+          "proxy": "+"
+        }
+      ]
+    },
+    "tree fact differs: binary operation | binary operation | literal wrap %s": {
+      "count": 8,
+      "case": "semantics/binary-literal-operation-folded-in-loki",
+      "kind": "tree fact differs: binary operation",
+      "key": "binary operation",
+      "element": "literal wrap %s",
+      "examples": [
+        {
+          "query": "0 / 0",
+          "loki": "",
+          "proxy": "/"
+        },
+        {
+          "query": "1 % 0",
+          "loki": "",
+          "proxy": "%"
+        }
+      ]
+    },
+    "tree fact differs: has a log pipeline | has a log pipeline | vecagg agg approx_topk|2, ": {
+      "count": 3,
+      "case": "semantics/approx-topk-opaque-plan",
+      "kind": "tree fact differs: has a log pipeline",
+      "key": "has a log pipeline",
+      "element": "vecagg agg approx_topk|2, ",
+      "examples": [
+        {
+          "query": "approx_topk(2, rate({a=\"b\"}[5m]))",
+          "loki": "true",
+          "proxy": "false"
+        },
+        {
+          "query": "approx_topk (2, rate({a=\"b\"}[5m]))",
+          "loki": "true",
+          "proxy": "false"
+        }
+      ]
+    },
+    "tree fact differs: offsets | offsets | vecagg agg approx_topk|2, ": {
+      "count": 4,
+      "case": "semantics/approx-topk-opaque-plan",
+      "kind": "tree fact differs: offsets",
+      "key": "offsets",
+      "element": "vecagg agg approx_topk|2, ",
+      "examples": [
+        {
+          "query": "approx_topk(2, rate({a=\"b\"}[5m]))",
+          "loki": "[0]",
+          "proxy": "[]"
+        },
+        {
+          "query": "approx_topk (2, rate({a=\"b\"}[5m]))",
+          "loki": "[0]",
+          "proxy": "[]"
+        }
+      ]
+    },
+    "tree fact differs: outermost operation | outermost operation | vecagg agg approx_topk|2, ": {
+      "count": 4,
+      "case": "semantics/approx-topk-opaque-plan",
+      "kind": "tree fact differs: outermost operation",
+      "key": "outermost operation",
+      "element": "vecagg agg approx_topk|2, ",
+      "examples": [
+        {
+          "query": "approx_topk(2, rate({a=\"b\"}[5m]))",
+          "loki": "approx_topk",
+          "proxy": ""
+        },
+        {
+          "query": "approx_topk (2, rate({a=\"b\"}[5m]))",
+          "loki": "approx_topk",
+          "proxy": ""
+        }
+      ]
+    }
+  }
+}

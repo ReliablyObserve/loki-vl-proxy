@@ -1,0 +1,32 @@
+id: semantics/quantile-over-time-parameter-required
+title: "quantile_over_time without its quantile is accepted where Loki answers a parse error (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  `quantile_over_time({a="b"} | json | unwrap c[5m])` is "parse error : parameter required for operation quantile_over_time" in Loki (Loki oracle, check command).
+  The proxy's validation accepts it and the translator writes the whole text as a phrase search (`"quantile_over_time({a=\"b\"} | unwrap c[5m])"`),
+  which is a query VictoriaLogs rejects. Without an unwrap (`quantile_over_time({a="b"}[5m])`) both reject, with different text
+  (semantics/parse-error-text-parity).
+
+  Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
+request:
+  scope: query-grammar
+  entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/quantile-over-time-parameter-required"
+  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now, step 60s): quantile_over_time({app=\"x\"} | unwrap c [5m]) . The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: "Loki's 400: parameter required for operation quantile_over_time."
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: "internal/logql validation of range aggregations (parameter of quantile_over_time)"
+  loki: "400, parameter required for operation quantile_over_time"
+  proxy: "accepted by validation"
+  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  visual: none
+  visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
+  clusters: []

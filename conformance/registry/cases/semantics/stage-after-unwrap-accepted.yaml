@@ -1,0 +1,30 @@
+id: semantics/stage-after-unwrap-accepted
+title: "A stage after `unwrap` in a range aggregation (`| unwrap c | drop __error__`) is accepted where Loki answers a syntax error (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki accepts only label filters after an unwrap. The Loki oracle answers "parse error at line 1, col 34: syntax error: unexpected drop, expecting IDENTIFIER or (" for
+  `rate({a="b"} | json | unwrap c | drop __error__[5m])` (also keep, parsers and formats after an unwrap). The proxy's validation accepts it; the plan and the translator write the stage.
+
+  Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
+request:
+  scope: query-grammar
+  entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/stage-after-unwrap-accepted"
+  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now, step 60s): rate({app=\"x\"} | json | unwrap c | drop __error__ [5m]) . The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: "Loki's 400 syntax error at the stage after unwrap."
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: "internal/logql parser parseUnwrap (stages after the unwrap)"
+  loki: "only label filters follow an unwrap"
+  proxy: "any stage follows"
+  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  visual: none
+  visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
+  clusters: []

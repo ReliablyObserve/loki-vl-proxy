@@ -1,0 +1,30 @@
+id: semantics/translator-writes-json-path-with-escaped-quote
+title: "The string translator writes a json extraction path with an escaped quote into a VictoriaLogs filter it rejects (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki accepts `{a="b"} | json a="b[\"c\"]" | a>1.5h`. The string translator writes `copy "b[\\\"c\\\"]" as a | filter b[\c\]:>1.5h`, and VictoriaLogs v1.49.0 and v1.53.0 reject it
+  (`cannot parse 'filter': missing whitespace or ':' between "b" and "["`): the path leaks into the filter's field name unquoted.
+
+  Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
+request:
+  scope: query-grammar
+  entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/translator-writes-json-path-with-escaped-quote"
+  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now, step 60s): {app=\"x\"} | json a=\"b[\\\"c\\\"]\" | a>1.5h . The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: "The lines the filter keeps, as Loki's."
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: "internal/translator (frozen): closes when the plan serves the construct"
+  loki: "the path is the parser's expression"
+  proxy: "the path is written into a later filter unquoted"
+  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  visual: none
+  visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
+  clusters: []
