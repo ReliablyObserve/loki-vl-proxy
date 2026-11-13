@@ -285,11 +285,16 @@ func (b *errLayerBackend) fail(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// errLayerRowsAt is the first timestamp of every shaped body: one instant for
+// the whole run, an hour before it started, so a gate that compares a route's
+// answer with a reference answer reads the same rows both times.
+var errLayerRowsAt = time.Now().Add(-time.Hour).Truncate(time.Minute).Unix()
+
 // errLayerShapedBody is a valid answer of the VictoriaLogs (or ruler) endpoint
 // at path, with n entries.
 func errLayerShapedBody(path string, n int) string {
 	var b strings.Builder
-	ts := time.Now().Add(-time.Hour).Unix()
+	ts := errLayerRowsAt
 	switch {
 	case strings.HasSuffix(path, "/select/logsql/query"), strings.HasSuffix(path, "/select/logsql/tail"):
 		for i := 0; i < n; i++ {
