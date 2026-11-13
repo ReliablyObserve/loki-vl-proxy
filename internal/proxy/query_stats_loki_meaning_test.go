@@ -466,6 +466,8 @@ func unicodeEscapeExtra(encoded string) int64 {
 func FuzzEntryCounterLineBytes(f *testing.F) {
 	f.Add([]byte(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{},"values":[["1","a\"b\\c"],["2","x"]]}]}}`), uint8(3))
 	f.Add([]byte(`{"data":{"result":[{"stream":{},"values":[["1","é"]]}],"resultType":"streams"},"status":"success"}`), uint8(1))
+	// A timestamp holding an escaped quote is not a Loki timestamp (found by fuzzing): not compared.
+	f.Add([]byte(`{"status":"success","data":{"resultType":"streams","result":[{"000000":{},"values":[["0\"0","0"]]}]}}`), uint8(1))
 	f.Fuzz(func(t *testing.T, body []byte, chunk uint8) {
 		if len(body) > 1<<16 {
 			return
@@ -498,8 +500,8 @@ func FuzzEntryCounterLineBytes(f *testing.F) {
 			var entries int64
 			for _, s := range ans.Data.Result {
 				for _, v := range s.Values {
-					if len(v) < 2 || len(v[0]) == 0 || v[0][0] != '"' || len(v[1]) == 0 || v[1][0] != '"' {
-						return // not a Loki entry; nothing to compare
+					if len(v) < 2 || !lokiTimestampJSON(v[0]) || len(v[1]) == 0 || v[1][0] != '"' {
+						return // not a Loki entry (a timestamp is a quoted run of digits); nothing to compare
 					}
 					entries++
 				}
@@ -594,4 +596,17 @@ func TestQueryStats_ValueFromAnotherReplicaReplays(t *testing.T) {
 	if hit.Summary.Lines != miss.Summary.Lines || hit.Summary.Bytes != miss.Summary.Bytes || hit.Cache["result"].EntriesFound != 1 {
 		t.Fatalf("replica B hit %+v, want replica A's computation %+v", hit.Summary, miss.Summary)
 	}
+}
+
+// lokiTimestampJSON reports a JSON string of decimal digits, the only timestamp a Loki entry (and the proxy) writes.
+func lokiTimestampJSON(raw json.RawMessage) bool {
+	if len(raw) < 3 || raw[0] != '"' || raw[len(raw)-1] != '"' {
+		return false
+	}
+	for _, d := range raw[1 : len(raw)-1] {
+		if d < '0' || d > '9' {
+			return false
+		}
+	}
+	return true
 }

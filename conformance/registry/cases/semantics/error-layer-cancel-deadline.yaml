@@ -24,7 +24,11 @@ why: |
   stream call is still waiting for headers after the upgrade closes with 1011
   and Loki's text cut to the 123 bytes a close frame holds. A client that goes
   away while the tail's VictoriaLogs call runs gets nothing, because it is
-  gone; the proxy drops the VictoriaLogs stream, which the gate checks.
+  gone; the proxy drops the VictoriaLogs stream, which the gate checks, and
+  the same when it leaves while the tail waits to retry a failed call
+  (semantics/tail-survives-backend-outage). A timed-out stream or poll is a
+  failure a retry can fix: the close comes when -tail.backend-retry-window
+  (30s) is spent.
 request:
   scope: internal
   entry: lokiClientError, (*Proxy).writeErr, writeBackendError, writeGrafanaStatsFailure

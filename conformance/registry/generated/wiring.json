@@ -636,7 +636,9 @@
     "loki_api_v1_tail": [
       "internal/proxy/extracted_suffix_collision_test.go",
       "internal/proxy/tail_backend_errors_test.go",
+      "internal/proxy/tail_backend_retry_test.go",
       "internal/proxy/tail_pipeline_test.go",
+      "test/e2e-compat/tail_backend_outage_test.go",
       "test/e2e-compat/tail_pipeline_test.go"
     ],
     "metric-series-identity": [
@@ -1122,6 +1124,7 @@
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/loki_client_error_test.go",
       "internal/proxy/tail_backend_errors_test.go",
+      "internal/proxy/tail_backend_retry_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-internal-go-text": [
@@ -1129,6 +1132,7 @@
       "internal/proxy/error_layer_mixed_test.go",
       "internal/proxy/loki_client_error_test.go",
       "internal/proxy/tail_backend_errors_test.go",
+      "internal/proxy/tail_backend_retry_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-proxy-limit-status": [
@@ -1628,6 +1632,10 @@
       "internal/proxy/sub_second_step_test.go",
       "test/e2e-compat/sub_second_step_test.go"
     ],
+    "semantics/tail-survives-backend-outage": [
+      "internal/proxy/tail_backend_retry_test.go",
+      "test/e2e-compat/tail_backend_outage_test.go"
+    ],
     "semantics/tenant-label-default-aliases": [
       "internal/proxy/alerting_tenant_label_test.go",
       "internal/proxy/multitenant_tenant_label_test.go",
@@ -2054,7 +2062,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 509,
+  "registry_items": 510,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3162,6 +3170,12 @@
       "semantics/error-layer-cancel-deadline",
       "semantics/error-layer-internal-go-text",
       "semantics/error-layer-silent-success"
+    ],
+    "internal/proxy/tail_backend_retry_test.go": [
+      "loki_api_v1_tail",
+      "semantics/error-layer-cancel-deadline",
+      "semantics/error-layer-internal-go-text",
+      "semantics/tail-survives-backend-outage"
     ],
     "internal/proxy/tail_pipeline_test.go": [
       "loki_api_v1_tail"
@@ -4385,6 +4399,10 @@
       "semantics/sub-second-step-grid",
       "window-bounds-and-step-alignment"
     ],
+    "test/e2e-compat/tail_backend_outage_test.go": [
+      "loki_api_v1_tail",
+      "semantics/tail-survives-backend-outage"
+    ],
     "test/e2e-compat/tail_pipeline_test.go": [
       "loki_api_v1_tail"
     ],
@@ -4542,7 +4560,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 544,
+  "tests_with_markers": 546,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4653,5 +4671,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 328
+  "wired_items": 329
 }

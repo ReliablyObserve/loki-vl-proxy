@@ -1,0 +1,58 @@
+id: semantics/tail-survives-backend-outage
+title: A live tail rides out a short VictoriaLogs restart and carries on without repeating or skipping a line (fixed)
+pending: true
+proves:
+  - loki_api_v1_tail
+consumer: explore
+why: |
+  Loki's tail keeps running when its storage side restarts: the querier
+  reconnects to its ingesters and the client's websocket stays open. The proxy
+  closed the tail with 1011 on the first failed VictoriaLogs call (the native
+  stream ending or breaking, the first failed poll), and Grafana's live view
+  then froze on the last line with no error and no reconnect.
+  A call that fails for a reason a retry can fix (refused or reset, a timeout,
+  a stream that ends or breaks, a 429 or 5xx answer) now keeps the websocket
+  open, with pings, while the proxy reopens the native stream, or polls
+  again, after a jittered wait doubling from 250 ms to 5 s, for
+  -tail.backend-retry-window (30s; 0 closes on the first failure). The
+  reopened stream reads from the last line sent (VictoriaLogs' start_offset,
+  a second earlier) and drops the lines it sent, so nothing is repeated and
+  the lines written during the outage arrive; the polled tail keeps its
+  cursor. A window that is spent closes with 1011 and Loki's text; a row that
+  is not JSON, a line above 1 MiB and a 4xx answer other than 429 close at
+  once. Rows written with a timestamp older than the last line sent, after it
+  was sent, never reach a live tail, outage or not; the proxy does not report
+  them as dropped_entries, which Loki reserves for a slow client.
+request:
+  method: GET
+  path: /loki/api/v1/tail
+  params:
+    query: '{app="api-gateway"}'
+  headers:
+    X-Scope-OrgID: "0"
+  setup: |
+    TestTailRetry_* (internal/proxy): a fake VictoriaLogs that fails then
+    recovers, native and polling, for an outage shorter and longer than the
+    window, a failure no retry fixes, a client that leaves during a retry and
+    the window at 0. TestFeature_Tail_SurvivesBackendOutage (test/e2e-compat,
+    group tail-multitenancy) tails through the proxy, cuts the stack's
+    VictoriaLogs off behind a fault-injecting forwarder and asserts the tail
+    delivers the lines written during and after the outage once each.
+compare:
+  mode: observed
+  fields: [close frame, streams.values]
+  expect: |
+    The websocket stays open through a backend outage shorter than the window
+    and every line is delivered once; after a longer outage it closes with
+    1011 and Loki's text.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: explore-visible
+  visual: none
+  visual_reason: 'The failure shows in Grafana Explore: a live tail frozen on its last line after a VictoriaLogs restart. The visual harness has no restarting backend under a live view, so no capture is wired here; the unit tests and the e2e assert the lines a client receives across an outage. A fix-proof capture (Grafana live tail across a cut of VictoriaLogs, next to Loki) is owed when this lands.'
+  effort: M
+  area: 'internal/proxy/tail.go streamNativeTail, streamSyntheticTail; internal/proxy/tail_retry.go'
+  loki: 'a querier tail keeps running while its ingesters restart (it reconnects to them)'
+  proxy: 'tail: bounded reconnect with backoff and resume from the last delivered line (-tail.backend-retry-window)'
+  planned_test: 'TestTailRetry_ShortOutageKeepsTailAndLosesNothing (internal/proxy) and TestFeature_Tail_SurvivesBackendOutage (test/e2e-compat, group tail-multitenancy)'
