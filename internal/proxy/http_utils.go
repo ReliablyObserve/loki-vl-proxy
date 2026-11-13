@@ -362,6 +362,10 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 	if typed != nil {
 		attrs = append(attrs, "kind", typed.Kind().String(), "msg_id", typed.Msg().ID())
 		cause = typed.Cause()
+		if construct := constructOf(cause); construct != "" {
+			// A query Loki accepts that the proxy cannot serve yet: which construct, for the operator.
+			attrs = append(attrs, "construct", construct)
+		}
 	}
 	if cause != nil {
 		// The full error (VictoriaLogs' message, the transport error, the
@@ -670,7 +674,8 @@ func lokiClientText(status int, err error) string {
 	case errors.As(err, &seriesErr):
 		return seriesErr.Error()
 	case errors.As(err, &parseErr):
-		return parseErr.Error()
+		// The translator's wording is never sent: Loki's syntax error, without the position only the parser has.
+		return unplacedSyntaxError(err).Text()
 	case errors.As(err, &pipelineErr):
 		return pipelineErr.Error()
 	case errors.As(err, &matchingErr):

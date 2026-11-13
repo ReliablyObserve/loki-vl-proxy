@@ -21,6 +21,7 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -608,10 +609,10 @@ func extractLogQLOffset(logql string) (time.Duration, string, error) {
 	// expression mixes offset and non-offset vectors.
 	allVectors := rangeVectorRE.FindAllString(logql, -1)
 	if len(allVectors) > len(matches) {
-		return 0, logql, fmt.Errorf(
+		return 0, logql, &offsetError{mixed: true, msg: fmt.Sprintf(
 			"offset applied to %d of %d range vectors; loki-vl-proxy requires a uniform offset across all range vectors since it applies a global time shift — use a consistent offset or split into separate queries",
 			len(matches), len(allVectors),
-		)
+		)}
 	}
 
 	seen := map[string]time.Duration{}
@@ -622,7 +623,7 @@ func extractLogQLOffset(logql string) (time.Duration, string, error) {
 		}
 	}
 	if len(seen) > 1 {
-		return 0, logql, fmt.Errorf("found %d distinct offsets while expecting at most 1", len(seen))
+		return 0, logql, &offsetError{msg: fmt.Sprintf("found %d distinct offsets while expecting at most 1", len(seen))}
 	}
 
 	var offset time.Duration
@@ -1796,20 +1797,26 @@ func stripParserStages(baseQuery string) string {
 func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec) {
 	startNanos, ok := parseFlexibleUnixNanos(r.FormValue("start"))
 	if !ok {
-		p.writeError(w, http.StatusBadRequest, "invalid start timestamp")
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+		status := p.fail(w, r, timestampParamError("start", r.FormValue("start")))
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 	endNanos, ok := parseFlexibleUnixNanos(r.FormValue("end"))
 	if !ok || endNanos < startNanos {
-		p.writeError(w, http.StatusBadRequest, "invalid end timestamp")
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+		var err *lokierr.Error
+		if !ok {
+			err = timestampParamError("end", r.FormValue("end"))
+		} else {
+			err = lokierr.EndBeforeStart()
+		}
+		status := p.fail(w, r, err)
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 	stepNanos, ok := parseStepToNanos(r.FormValue("step"))
 	if !ok {
-		p.writeError(w, http.StatusBadRequest, "invalid step")
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+		status := p.fail(w, r, stepParamError(r.FormValue("step")))
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 

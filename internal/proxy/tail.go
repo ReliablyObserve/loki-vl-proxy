@@ -18,6 +18,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 )
 
@@ -28,8 +29,8 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
 	if logqlQuery == "" {
-		p.writeError(w, http.StatusBadRequest, "query parameter required")
-		p.metrics.RecordRequest("tail", http.StatusBadRequest, time.Since(start))
+		status := p.fail(w, r, lokierr.Parse(0, 0, "syntax error: unexpected $end"))
+		p.metrics.RecordRequest("tail", status, time.Since(start))
 		return
 	}
 
@@ -37,8 +38,8 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	// VictoriaLogs cannot run like Loki run on the proxy (tailPipeline).
 	logsqlQuery, err := p.translateLogResponseQuery(r.Context(), logqlQuery)
 	if err != nil {
-		p.writeError(w, http.StatusBadRequest, err.Error())
-		p.metrics.RecordRequest("tail", http.StatusBadRequest, time.Since(start))
+		status := p.fail(w, r, queryRefusal(err))
+		p.metrics.RecordRequest("tail", status, time.Since(start))
 		return
 	}
 	// Loki encodes tail frames like query responses, including the
@@ -51,8 +52,8 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 		// status is a deliberate, documented deviation (conformance case
 		// profiles/tail-line-format-parse-error-status).
 		if _, err := applyLineFormatTemplateWithContext(r.Context(), nil, tp.lineFormat, lineFormatAfter{}); err != nil {
-			p.writeError(w, http.StatusBadRequest, err.Error())
-			p.metrics.RecordRequest("tail", http.StatusBadRequest, time.Since(start))
+			status := p.fail(w, r, err)
+			p.metrics.RecordRequest("tail", status, time.Since(start))
 			return
 		}
 	}

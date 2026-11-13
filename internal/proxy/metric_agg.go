@@ -533,8 +533,8 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 
 	translatedInner, err := p.translatePostAggOperand(r.Context(), postAgg)
 	if err != nil {
-		p.writeError(w, http.StatusBadRequest, err.Error())
-		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+		status := p.fail(w, r, queryRefusal(err))
+		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 	// The live shadow of the whole query (-translate-shadow-sample) sees the operand's request as sent.
@@ -542,9 +542,9 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	translatedInner, markerOp, withoutLabels, replaces := splitPostProcessing(translatedInner)
 	withoutOp, foldWithout := withoutFoldOp(markerOp, originalQuery)
 	transforms, regexErr := newLabelTransforms(replaces)
-	if regexErr != "" {
-		p.writeError(w, http.StatusBadRequest, regexErr)
-		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+	if regexErr != nil {
+		status := p.fail(w, r, regexErr)
+		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
@@ -580,20 +580,20 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		leftLogsql, leftErr := p.translateQueryWithContext(r.Context(), binOp.Left.String())
 		rightLogsql, rightErr := p.translateQueryWithContext(r.Context(), binOp.Right.String())
 		if leftErr != nil {
-			p.writeError(w, http.StatusBadRequest, leftErr.Error())
-			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+			status := p.fail(w, r, queryRefusal(leftErr))
+			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 			return
 		}
 		if rightErr != nil {
-			p.writeError(w, http.StatusBadRequest, rightErr.Error())
-			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+			status := p.fail(w, r, queryRefusal(rightErr))
+			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 			return
 		}
 		left, leftErr := binaryOperand(leftLogsql)
 		right, rightErr := binaryOperand(rightLogsql)
 		if err := errors.Join(leftErr, rightErr); err != nil {
-			p.writeError(w, http.StatusBadRequest, err.Error())
-			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+			status := p.fail(w, r, proxyFailure(err))
+			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 			return
 		}
 		p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, left, right, binOpExprToVMInfo(binOp))
@@ -612,8 +612,8 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 			}
 			p.proxyStatsQuery(sc, statsR, innerStats)
 		} else {
-			p.writeError(w, http.StatusBadRequest, "unsupported instant aggregation target")
-			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+			status := p.fail(w, r, notServed("instant-aggregation-target", nil))
+			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 			return
 		}
 	}
@@ -673,8 +673,8 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	silent := queryStepsSilent(r.Context())
 	translatedInner, err := p.translatePostAggOperand(r.Context(), postAgg)
 	if err != nil {
-		p.writeError(w, http.StatusBadRequest, err.Error())
-		if code := unwrapRecordedStatus(r.Context(), http.StatusBadRequest); !silent {
+		status := p.fail(w, r, queryRefusal(err))
+		if code := unwrapRecordedStatus(r.Context(), status); !silent {
 			p.metrics.RecordRequest("query_range", code, time.Since(start))
 		}
 		return
@@ -684,9 +684,9 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	translatedInner, markerOp, withoutLabels, replaces := splitPostProcessing(translatedInner)
 	withoutOp, foldWithout := withoutFoldOp(markerOp, originalQuery)
 	transforms, regexErr := newLabelTransforms(replaces)
-	if regexErr != "" {
-		p.writeError(w, http.StatusBadRequest, regexErr)
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+	if regexErr != nil {
+		status := p.fail(w, r, regexErr)
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)

@@ -246,8 +246,8 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	logsqlQuery, err := p.translatePatternQuery(r.Context(), query)
 	var parseErr *translator.ParseError
 	if errors.As(err, &parseErr) {
-		p.writeError(w, http.StatusBadRequest, err.Error())
-		p.metrics.RecordRequest("patterns", http.StatusBadRequest, time.Since(start))
+		status := p.fail(w, r, queryRefusal(err))
+		p.metrics.RecordRequest("patterns", status, time.Since(start))
 		return
 	}
 	if err != nil {

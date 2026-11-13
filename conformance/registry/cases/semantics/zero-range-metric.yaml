@@ -1,0 +1,30 @@
+id: semantics/zero-range-metric
+title: "A range metric over a zero range fails where Loki answers an empty result (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  `rate({a="b"}[0s])` parses and evaluates in Loki, which answers 200 with an empty result (Loki oracle, check command). The proxy cannot read a range that is not a
+  positive duration on its manual range metric path, so it refuses the query. A client reads Loki's fixed `500 Internal Server Error` for it (it read `invalid range metric query`,
+  a 400), and the construct is named in the log line (`zero-range`). A range too large for a duration is a query Loki rejects (`parse error at line 0, col 13: duration out of range`);
+  the proxy answers that with Loki's 400 and the same words without the position (semantics/range-duration-grammar-wider-than-loki).
+request:
+  scope: query-grammar
+  entry: "internal/proxy proxyManualRangeMetricRange and its instant sibling (originalRangeMetricSpec.windowRefusal)"
+  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now, step 60s): rate({app=\"x\"}[0s]) ."
+compare:
+  mode: observed
+  fields: [status, body]
+  expect: "Loki's 200 answer: an empty matrix."
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: "internal/proxy manual range metric path (a zero range)"
+  loki: "200, an empty result"
+  proxy: "500, Loki's fixed Internal Server Error"
+  planned_test: 'TestRangeWindowRefusal and TestQueryRefusalAnswersAreLokisNotTheTranslators (internal/proxy)'
+  visual: none
+  visual_reason: 'a zero range is no panel a user builds'
+  clusters: []

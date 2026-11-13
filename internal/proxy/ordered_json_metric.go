@@ -22,6 +22,7 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/grafana/jsonparser"
 )
@@ -155,7 +156,7 @@ func (p *Proxy) handleOrderedJSONMetricUnderTransform(w http.ResponseWriter, r *
 		return false
 	}
 	transforms, invalid := parseLabelTransformMarkers(translated)
-	if invalid != "" || len(transforms.replaces) == 0 {
+	if invalid != nil || len(transforms.replaces) == 0 {
 		return false
 	}
 	buffered := &bufferedResponseWriter{header: make(http.Header)}
@@ -349,7 +350,7 @@ func orderedJSONMetricTimes(r *http.Request, isRange bool) (time.Time, time.Time
 		if raw := r.FormValue("time"); raw != "" {
 			ns, ok := parseFlexibleUnixNanos(raw)
 			if !ok {
-				return time.Time{}, time.Time{}, 0, &orderedJSONPipelineError{"invalid time timestamp"}
+				return time.Time{}, time.Time{}, 0, instantTimeError(raw)
 			}
 			stamp = time.Unix(0, ns)
 		}
@@ -359,10 +360,10 @@ func orderedJSONMetricTimes(r *http.Request, isRange bool) (time.Time, time.Time
 	end, endOK := parseFlexibleUnixNanos(r.FormValue("end"))
 	step, stepOK := parseStepToNanos(r.FormValue("step"))
 	if !startOK || !endOK || !stepOK {
-		return time.Time{}, time.Time{}, 0, &orderedJSONPipelineError{"invalid range timestamps or step"}
+		return time.Time{}, time.Time{}, 0, rangeParamsError(r, startOK, endOK)
 	}
 	if _, err := metricEvalPointCount(time.Unix(0, start), time.Unix(0, end), time.Duration(step)); err != nil {
-		return time.Time{}, time.Time{}, 0, &orderedJSONPipelineError{errLokiStepTooSmall}
+		return time.Time{}, time.Time{}, 0, lokierr.TooManyPoints()
 	}
 	return time.Unix(0, start), time.Unix(0, end), time.Duration(step), nil
 }

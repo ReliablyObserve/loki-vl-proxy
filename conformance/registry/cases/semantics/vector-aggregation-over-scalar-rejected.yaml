@@ -6,7 +6,7 @@ proves:
 consumer: api
 why: |
   Loki accepts a vector aggregation over a literal or vector(n) (`sum(1)`, `max(1 + 1)`, `count(1.5) by ()`, `sum by (a) (vector(1))`; Loki oracle, check command). The proxy's validation accepts them and the translator fails with
-  "sum() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))", so the translation fails where Loki answers (a route may answer the constant before it gets there: for the e2e proof to confirm).
+  "sum() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))", so the translation fails where Loki answers (a route may answer the constant before it gets there: for the e2e proof to confirm). A client reads Loki's fixed `500 Internal Server Error` for it, not the translator's wording; the construct is named in the log line.
 
   Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
 request:
@@ -23,7 +23,7 @@ gap:
   effort: S
   area: "internal/translator and the aggregation route (vector aggregation over a scalar operand)"
   loki: "200"
-  proxy: "an error from the translation"
+  proxy: "500, Loki's fixed Internal Server Error: the translation fails, and its reason is in the log line only"
   planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
