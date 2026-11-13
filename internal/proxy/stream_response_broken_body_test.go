@@ -270,10 +270,76 @@ func TestStreamResponse_HappyPathBytes(t *testing.T) {
 	}
 }
 
+// TestStreamResponse_ForwardsBeforeTheBackendEnds holds the proxy to streaming:
+// the backend sends about 4 MiB of rows and then waits until the client has
+// read 2 MiB of the answer. A proxy that held the body until the backend ended
+// would give the client nothing, and the backend's wait would run out.
+func TestStreamResponse_ForwardsBeforeTheBackendEnds(t *testing.T) {
+	released := make(chan struct{})
+	var waitedOut atomic.Bool
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		if !errLayerQueryPath(r.URL.Path) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		chunk := streamRows(500)
+		flusher, _ := w.(http.Flusher)
+		for i := 0; i < 40; i++ { // 40 x 500 rows, about 4 MiB
+			_, _ = io.WriteString(w, chunk)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		select {
+		case <-released:
+		case <-time.After(20 * time.Second):
+			waitedOut.Store(true)
+		}
+		_, _ = io.WriteString(w, chunk)
+	}))
+	defer backend.Close()
+	front := newStreamProxyServer(t, backend.URL)
+
+	req, _ := http.NewRequest(http.MethodGet, streamLogRequest(front.URL, 1000), nil)
+	req.Header.Set("X-Scope-OrgID", "0")
+	resp, err := (&http.Client{Timeout: 60 * time.Second, Transport: &http.Transport{DisableCompression: true}}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var total int64
+	buf := make([]byte, 64<<10)
+	once := false
+	for {
+		n, rerr := resp.Body.Read(buf)
+		total += int64(n)
+		if !once && total >= 2<<20 {
+			once = true
+			close(released)
+		}
+		if rerr != nil {
+			break
+		}
+	}
+	if !once {
+		close(released)
+	}
+	if waitedOut.Load() || !once {
+		t.Fatalf("the client read %d bytes before the backend ended (waited out: %v); the answer is held, not streamed", total, waitedOut.Load())
+	}
+}
+
 // TestStreamResponse_LargeBodyMemoryFlat streams a body far larger than the
-// memory the proxy may hold: the heap must not grow with the body. The bound
-// leaves room for what other tests of a full run leave on the heap.
+// memory the proxy may hold: the heap must not grow with the body. The heap of
+// a process that has run many other tests (a full package run holds gigabytes
+// and hundreds of thousands of goroutines they left) moves by more than the
+// body between two samples, so the measurement runs only in a quiet process;
+// TestStreamResponse_ForwardsBeforeTheBackendEnds holds streaming everywhere.
 func TestStreamResponse_LargeBodyMemoryFlat(t *testing.T) {
+	if n := runtime.NumGoroutine(); n > 1000 {
+		t.Skipf("the process is not quiet (%d goroutines left by earlier tests); the heap cannot be measured here", n)
+	}
 	const rows = 240000 // about 56 MiB of VictoriaLogs rows
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.ReadAll(r.Body)

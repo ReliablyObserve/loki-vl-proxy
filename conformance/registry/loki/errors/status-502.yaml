@@ -1,16 +1,14 @@
 id: status-502
 status: 502
 error_type: unavailable
-generated:
-  proxy_call_sites: 11
-  dynamic_sites: 4
-  literal_messages:
-    - "VL delete failed: "
-    - "cold backend error: "
-    - "failed to merge hot+cold results"
-    - "failed to read cold response"
-    - "hot backend error: "
-    - "invalid ruler backend response: %v"
+generated:   # rewritten by conformance/scripts/error_registry.py
+  proxy_call_sites: 0
+  dynamic_sites: 0
+  literal_messages: []
+  loki_messages: []
+  recorded_rows: 0
+  comparable_rows: 0
+  matching_rows: 0
 
 loki_behaviour: |
   Loki never answers 502 for a failed backend: a querier or storage failure is
@@ -23,7 +21,7 @@ loki_behaviour: |
   (error-layer-known-leaks.json); the list may only shrink.
 precedence: []   # failure classes Loki evaluates before this one
 consumers: |
-  TODO: how Grafana Explore and Logs Drilldown render it.
+  Grafana shows the proxy limit's text; a 502 that is not a documented limit is a leak the gate lists.
 cases:
   - semantics/error-layer-backend-failure-status
   - semantics/error-layer-transport-text

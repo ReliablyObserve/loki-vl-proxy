@@ -1,13 +1,15 @@
 id: status-400
 status: 400
 error_type: bad_data
-generated:
-  proxy_call_sites: 64
-  dynamic_sites: 34
+generated:   # rewritten by conformance/scripts/error_registry.py
+  proxy_call_sites: 90
+  dynamic_sites: 59
   literal_messages:
-    - "absent_over_time: missing range window"
+    - "both start and end parameters required for delete"
+    - "delete requires X-Delete-Confirmation: true header for safety"
+    - "delete time range too wide: %s exceeds maximum %s"
     - "end must be after start"
-    - "failed to translate query: "
+    - "exceeded maximum resolution of 11,000 points per time series. Try increasing the value of the step parameter"
     - "invalid aggregation %s without unwrap"
     - "invalid end timestamp"
     - "invalid end timestamp: "
@@ -16,15 +18,30 @@ generated:
     - "invalid range selector"
     - "invalid start timestamp"
     - "invalid start timestamp: "
+    - "invalid start, end or step"
     - "invalid step"
+    - "log queries are not supported as an instant query type, please change your query to a range query type"
     - "missing field name in URL"
-    - "multi-tenant fanout exceeds limit of %d tenants"
+    - "multi-tenant fanout exceeds limit of %d tenants; raise -multi-tenant-max-fanout or query fewer tenants"
+    - "multi-tenant sub-request failed"
+    - "not supported value %q"
+    - "parse error : %v"
     - "parse error : invalid regex in label_replace: %v"
-    - "query parameter required"
     - "query parameter required for delete"
     - "unexpected literal for logical/set binary operation"
     - "unsupported instant aggregation target"
     - "unsupported metric query: range aggregations require compatible unwrap or translator support"
+    - "wildcard delete rejected \u2014 query must target specific streams (e.g., {app=\\"
+  loki_messages: ["msg-aggregate-by", "msg-delay-for", "msg-direction", "msg-end-before-start", "msg-instant-log-query",
+  "msg-interval-negative", "msg-limit-lookback", "msg-limit-not-positive", "msg-limit-query-length",
+  "msg-limit-series", "msg-number", "msg-only-label-matchers", "msg-only-log-selector",
+  "msg-param-duration", "msg-param-number", "msg-parse", "msg-parse-input-size", "msg-post-too-large",
+  "msg-step-duration", "msg-step-not-positive", "msg-step-overflow", "msg-step-too-many-points",
+  "msg-tail-not-websocket", "msg-url-escape", "msg-url-semicolon", "unmapped-delete-query-not-set",
+  "unmapped-index-shards-target-bytes", "unmapped-push-snappy-corrupt", "unmapped-ruler-local-store"]
+  recorded_rows: 141
+  comparable_rows: 126
+  matching_rows: 118
 
 loki_behaviour: |
   Loki v3.7.7 answers 400 as `text/plain` with the error's own message for a

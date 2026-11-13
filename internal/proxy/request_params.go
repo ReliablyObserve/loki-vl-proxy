@@ -2,11 +2,8 @@ package proxy
 
 import (
 	"errors"
-	"io"
 	"math"
-	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -35,9 +32,6 @@ import (
 // earlier one. The pairs no recorded request separates keep the order listed
 // below, and are marked unrecorded in conformance case
 // semantics/error-request-validation-parity.
-
-// lokiMaxFormBytes is the largest form body Loki reads.
-const lokiMaxFormBytes = 10 << 20
 
 // lokiDefaultSince is the window a range request without a start covers.
 const lokiDefaultSince = time.Hour
@@ -486,47 +480,6 @@ func promUnit(s string) (unit, width int) {
 		return 5, 1
 	}
 	return 0, 0
-}
-
-// decodeForm parses the request's URL and form body once, before anything else
-// reads a parameter, and returns Loki's 400 for a request it cannot decode: an
-// invalid percent escape, a semicolon, or a form body over 10 MB (the read is
-// bounded). Every later reader of the request uses the form this parse built,
-// so it runs where the request first reads one (requestLogger).
-func decodeForm(w http.ResponseWriter, r *http.Request) *lokierr.Error {
-	if r.Body != nil && r.Body != http.NoBody && (r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch) {
-		r.Body = http.MaxBytesReader(w, r.Body, lokiMaxFormBytes)
-	}
-	if err := r.ParseForm(); err != nil {
-		return formDecodeError(r, err)
-	}
-	return nil
-}
-
-// requestDecodes reports whether a route decodes its request as Loki's query
-// frontend does (the routes that read parameters).
-func requestDecodes(endpoint string) bool {
-	_, checked := requestParamChecks[endpoint]
-	return checked
-}
-
-// formDecodeError is Loki's error for a request whose URL or form body does not
-// decode, from the error of http.Request.ParseForm; nil for an error that is
-// not a decode failure (the client went away mid-body).
-func formDecodeError(r *http.Request, err error) *lokierr.Error {
-	var escape url.EscapeError
-	var tooLarge *http.MaxBytesError
-	var netErr net.Error
-	switch {
-	case errors.As(err, &escape):
-		return lokierr.URLEscape(escape)
-	case errors.As(err, &tooLarge):
-		return lokierr.PostTooLarge()
-	case errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, io.EOF), errors.As(err, &netErr), r.Context().Err() != nil:
-		return nil
-	}
-	// url.ParseQuery fails for an invalid escape or for a semicolon.
-	return lokierr.Semicolon()
 }
 
 // requestParamValidation answers a request whose parameters Loki rejects with

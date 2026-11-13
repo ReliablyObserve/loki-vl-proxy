@@ -218,7 +218,8 @@ curl -X POST 'http://proxy:3100/loki/api/v1/delete' \
 
 | Endpoint | Response |
 |---|---|
-| `POST /loki/api/v1/push` | 405 Method Not Allowed |
+| `POST /loki/api/v1/push` | 405 Method Not Allowed, `text/plain`, `write operations are not supported, this is a read-only proxy` |
+| any other method on `/loki/api/v1/push` | 405 with no body, as Loki answers it |
 
 This is a read-only proxy. Log ingestion should go directly to VictoriaLogs-side ingestion paths, for example:
 
@@ -325,7 +326,9 @@ See [Fixed Execution Limits](configuration.md#fixed-execution-limits) for the li
 
 Errors answered through the proxy's error layer carry no backend text: not VictoriaLogs' message, status or LogsQL, not a transport error with the backend's host and port, not a Go decoder error. The routes that do not yet (the Logs Drilldown stats partial-results reply, a ruler or alerts backend that answers 200 with a malformed or truncated body) are listed in `conformance/registry/error-layer-known-leaks.json`. The proxy's `request error` log line carries the full error as `upstream_error`, with VictoriaLogs' message redacted (potential secrets, label selectors, long quoted literals and long hex strings replaced, truncated to 500 characters; `-debug-log-raw-queries=true` disables this redaction).
 
-A few responses are produced before the Loki error writer: per-client rate limiting (`429`, `rate limit exceeded`) and the `-max-concurrent` admission cap (`503`, `too many concurrent queries`), both as the message alone in `text/plain`, and blocked writes (`405`, `/loki/api/v1/push`): the one proxy-only answer that stays JSON (`{"error":"write operations are not supported..."}`), since Loki has no read-only push answer to match.
+A few responses are produced before the Loki error writer: per-client rate limiting (`429`, `rate limit exceeded`) and the `-max-concurrent` admission cap (`503`, `too many concurrent queries`), both as the message alone in `text/plain`, and blocked writes (`405`, `/loki/api/v1/push`): the proxy-only answer `write operations are not supported, this is a read-only proxy`, written as Go's `http.Error` does (Loki's push errors take that shape), since Loki has no read-only push answer to match.
+
+Loki's router answers before any handler, and the proxy does the same, ahead of tenant, rate-limit and parameter checks: a path Loki would clean (`//`, `/./`, `/../`) is a `301` with no body; a path no route matches (including `/label/a/b/values` and `/detected_field/x`) is `404 page not found`; a method a read route does not serve (anything but `GET` and `POST`; `GET` alone on the rules and alerts routes) is a `405` with no body and no `Content-Type`; an invalid percent escape, a semicolon in the query string and a form body over 10 MiB are `400` with `invalid URL escape "..."`, `invalid semicolon separator in query` and `http: POST too large`. A `POST` body is read only as `application/x-www-form-urlencoded`, and its parameters win over the URL's. `format_query` parses its query and answers one it cannot parse with `400` and `{"status":"invalid-query","error":"<parser message>"}`.
 
 ### Request parameters
 

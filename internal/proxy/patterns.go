@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"gopkg.in/yaml.v3"
 )
@@ -1436,9 +1437,15 @@ func (p *Proxy) maybeAutodetectPatternsFromWindowEntries(orgID, authFP, query, s
 	p.storeAutodetectedPatterns(orgID, authFP, query, start, end, step, patterns)
 }
 
-// handleFormatQuery returns the query as-is (pretty-printing is client-side for LogQL).
+// handleFormatQuery returns the query as-is (pretty-printing is client-side for
+// LogQL). Loki parses the query first and answers a query it cannot parse with
+// 400 and {"status":"invalid-query","error":<the parser's message>}.
 func (p *Proxy) handleFormatQuery(w http.ResponseWriter, r *http.Request) {
 	query := r.FormValue("query")
+	if msg := formatQueryError(query); msg != "" {
+		p.fail(w, r, lokierr.ParserMessage(truncateQueryError(msg)))
+		return
+	}
 	p.writeJSON(w, map[string]interface{}{
 		"status": "success",
 		"data":   query,
@@ -1604,13 +1611,18 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 	p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
 }
 
-// handleWriteBlocked rejects write requests — this is a read-only proxy.
+// handleWriteBlocked answers a request to the push route, which this
+// read-only proxy does not serve. Loki's push accepts POST only: any other
+// method is the router's bodyless 405, as Loki answers it. A POST would be an
+// ingest, which the proxy cannot do and Loki's answers (204, or 400 for a
+// body it cannot read) have no counterpart for, so it is answered 405 in the
+// shape Loki writes its push errors in, with the reason.
 func (p *Proxy) handleWriteBlocked(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusMethodNotAllowed)
-	json.NewEncoder(w).Encode(map[string]string{
-		"error": "write operations are not supported — this is a read-only proxy. Send logs directly to VictoriaLogs.",
-	})
+	if r.Method != http.MethodPost {
+		p.fail(w, r, lokierr.MethodNotAllowed())
+		return
+	}
+	p.fail(w, r, lokierr.WriteNotSupported())
 }
 
 const (
@@ -1765,3 +1777,21 @@ func (p *Proxy) writeDeleteError(w http.ResponseWriter, code int, msg string) {
 // --- Error / JSON helpers ---
 
 // requestLogger wraps a handler with structured logging and route-aware metrics.
+
+// pipelineBuildErrorPrefix starts the message of a stage Loki accepts when it
+// parses a query and rejects when it builds the pipeline to run it (a line
+// filter regexp or a template that does not compile, a repeated label name,
+// an ip() pattern that does not parse). format_query only parses.
+const pipelineBuildErrorPrefix = "parse error : stage '"
+
+// formatQueryError is the parser's message for a query format_query rejects,
+// or "" for one it answers. Loki's format_query parses the query and builds no
+// pipeline, so the stage errors that only a pipeline build raises do not
+// reject it.
+func formatQueryError(query string) string {
+	msg := validateLogQLSyntax(query)
+	if strings.HasPrefix(msg, pipelineBuildErrorPrefix) {
+		return ""
+	}
+	return msg
+}

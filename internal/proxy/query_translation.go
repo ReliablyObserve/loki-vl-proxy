@@ -21,7 +21,6 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -30,16 +29,9 @@ import (
 
 //nolint:gocyclo // middleware wraps every request with telemetry, client/tenant attribution, panic guards and structured logging; complexity is inherent to instrumentation.
 func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) http.Handler {
-	decodes := requestDecodes(endpoint)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		tenant := r.Header.Get("X-Scope-OrgID")
-		// The first read of the form, so the error of a request Loki cannot
-		// decode is not lost to a later FormValue.
-		var decodeErr *lokierr.Error
-		if decodes {
-			decodeErr = decodeForm(w, r)
-		}
 		query := r.FormValue("query")
 		clientID := metrics.ResolveClientID(r, p.metricsTrustProxyHeaders)
 		p.metrics.RecordClientInflight(clientID, 1)
@@ -54,11 +46,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		ctx = withExecutionLimits(ctx, p.execLimits)
 		reqWithTelemetry := r.WithContext(ctx)
 		sc := &statusCapture{ResponseWriter: w, code: 200}
-		if decodeErr != nil {
-			p.metrics.RecordRequest(endpoint, p.fail(sc, reqWithTelemetry, decodeErr), 0)
-		} else {
-			next.ServeHTTP(sc, reqWithTelemetry)
-		}
+		next.ServeHTTP(sc, reqWithTelemetry)
 
 		elapsed := time.Since(start)
 		telemetry := snapshotTelemetry(reqWithTelemetry.Context())

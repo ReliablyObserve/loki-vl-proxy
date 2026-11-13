@@ -2048,10 +2048,11 @@ func (p *Proxy) GetMetrics() *metrics.Metrics { return p.metrics }
 func (p *Proxy) GetQueryTracker() *metrics.QueryTracker { return p.queryTracker }
 
 // routeHandler wraps h with the standard per-route middleware chain:
-// security headers → tenant auth → rate limiter → request logger → query
-// stats → compat cache.
+// Loki's router checks (method, path shape, URL and form decoding) → security
+// headers → tenant auth → rate limiter → request logger → query stats →
+// compat cache.
 func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Handler {
-	return querycorpus.Handler(securityHeaders(
+	return p.routeGate(endpoint, route, querycorpus.Handler(securityHeaders(
 		p.tenantMiddleware(
 			p.limiter.Middleware(
 				p.requestLogger(endpoint, route,
@@ -2059,7 +2060,7 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 						p.tenantLimitsMiddleware(endpoint,
 							p.stepAlignMiddleware(endpoint,
 								p.compatCacheMiddleware(endpoint, route,
-									p.requestTimeBounds(endpoint, h))))))))))))
+									p.requestTimeBounds(endpoint, h)))))))))))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the
@@ -2095,9 +2096,9 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 	// Metadata endpoints — rate-limited but cached
 	mux.Handle("/loki/api/v1/labels", p.routeHandler("labels", "/loki/api/v1/labels", p.handleLabels))
 	mux.Handle("/loki/api/v1/label", p.routeHandler("labels", "/loki/api/v1/label", p.handleLabels))
-	mux.Handle("/loki/api/v1/label/", p.routeHandler("label_values", "/loki/api/v1/label/{name}/values", p.handleLabelValues))
+	mux.Handle("/loki/api/v1/label/{name}/values", p.routeHandler("label_values", "/loki/api/v1/label/{name}/values", p.handleLabelValues))
 	mux.Handle("/loki/api/v1/detected_fields", p.routeHandler("detected_fields", "/loki/api/v1/detected_fields", p.handleDetectedFields))
-	mux.Handle("/loki/api/v1/detected_field/", p.routeHandler("detected_field_values", "/loki/api/v1/detected_field/{name}/values", p.handleDetectedFieldValues))
+	mux.Handle("/loki/api/v1/detected_field/{name}/values", p.routeHandler("detected_field_values", "/loki/api/v1/detected_field/{name}/values", p.handleDetectedFieldValues))
 
 	// Lighter endpoints — still rate-limited
 	mux.Handle("/loki/api/v1/index/stats", p.routeHandler("index_stats", "/loki/api/v1/index/stats", p.handleIndexStats))
@@ -2128,7 +2129,7 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 
 	// Alerting / ruler read endpoints
 	alertRead := func(endpoint, route string, h http.HandlerFunc) http.Handler {
-		return securityHeaders(p.tenantMiddleware(p.limiter.Middleware(p.requestLogger(endpoint, route, h))))
+		return p.routeGate(endpoint, route, securityHeaders(p.tenantMiddleware(p.limiter.Middleware(p.requestLogger(endpoint, route, h)))))
 	}
 	mux.Handle("/loki/api/v1/rules", alertRead("rules", "/loki/api/v1/rules", p.handleRules))
 	mux.Handle("/loki/api/v1/rules/", alertRead("rules_nested", "/loki/api/v1/rules/{namespace}", p.handleRules))

@@ -1,0 +1,5111 @@
+{
+  "cells": [
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [
+        "semantics/error-layer-backend-text",
+        "semantics/error-layer-silent-success"
+      ],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": [
+            "semantics/error-layer-backend-text",
+            "semantics/error-layer-silent-success"
+          ]
+        },
+        "truncated": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": [
+            "semantics/error-layer-silent-success"
+          ]
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": false,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "alerts",
+      "rows": 0,
+      "state": "differs",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "alerts",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "oversize": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "alerts",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "alerts",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "alerts",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "detected_field_values",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "detected_field_values",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1102"
+      ],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "limit-query-length"
+      ],
+      "modes": {
+        "oversize": {
+          "e2e": false,
+          "gate_cells": 3,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_field_values",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0181"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_field_values",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0447"
+      ],
+      "kind": "logql_validation",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "only-log-selector"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_field_values",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "detected_field_values",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 4,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1100",
+        "r1114",
+        "r1115",
+        "r1163"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 4,
+      "messages": [
+        "limit-not-positive",
+        "number",
+        "param-number",
+        "unmapped-path-cleaning-redirect"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_field_values",
+      "rows": 4,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "detected_field_values",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "detected_fields",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "detected_fields",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1062"
+      ],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "limit-query-length"
+      ],
+      "modes": {
+        "oversize": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_fields",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0180"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_fields",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0446"
+      ],
+      "kind": "logql_validation",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "only-log-selector"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_fields",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 5,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1257"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 5,
+      "messages": [
+        "method-not-allowed"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_fields",
+      "rows": 5,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 7,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1060",
+        "r1074",
+        "r1086",
+        "r1089",
+        "r1090",
+        "r1095",
+        "r1097"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 7,
+      "messages": [
+        "end-before-start",
+        "limit-not-positive",
+        "number",
+        "param-duration",
+        "param-number",
+        "step-duration",
+        "step-not-positive"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_fields",
+      "rows": 7,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "detected_fields",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "detected_labels",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "detected_labels",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1124"
+      ],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "limit-query-length"
+      ],
+      "modes": {
+        "oversize": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_labels",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0196"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_labels",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0238",
+        "r0294"
+      ],
+      "kind": "logql_validation",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "only-label-matchers",
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_labels",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 5,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1264"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 5,
+      "messages": [
+        "method-not-allowed"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_labels",
+      "rows": 5,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1122"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "param-number"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "detected_labels",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "detected_labels",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0185"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "format_query",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 5,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1278"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 5,
+      "messages": [
+        "method-not-allowed"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "format_query",
+      "rows": 5,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "format_query",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "index_stats",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "index_stats",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0872"
+      ],
+      "kind": "limits",
+      "known_difference_ids": [
+        "semantics/error-layer-proxy-limit-status"
+      ],
+      "matching_rows": 1,
+      "messages": [
+        "limit-query-length"
+      ],
+      "modes": {
+        "oversize": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": [
+            "semantics/error-layer-proxy-limit-status"
+          ]
+        }
+      },
+      "proxy_matches": false,
+      "reason": "",
+      "recorded": true,
+      "route": "index_stats",
+      "rows": 1,
+      "state": "differs",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0176"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "index_stats",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0288"
+      ],
+      "kind": "logql_validation",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "only-label-matchers"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "index_stats",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 5,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1236"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 5,
+      "messages": [
+        "method-not-allowed"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "index_stats",
+      "rows": 5,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 3,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0868",
+        "r0896",
+        "r0920"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 3,
+      "messages": [
+        "end-before-start",
+        "param-duration",
+        "param-number"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "index_stats",
+      "rows": 3,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "index_stats",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "index_volume",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "index_volume",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0928"
+      ],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "limit-index-series",
+        "limit-query-length"
+      ],
+      "modes": {
+        "oversize": {
+          "e2e": true,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "index_volume",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0177"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "index_volume",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0289"
+      ],
+      "kind": "logql_validation",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "only-label-matchers"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "index_volume",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 5,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1243"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 5,
+      "messages": [
+        "method-not-allowed"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "index_volume",
+      "rows": 5,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 6,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0926",
+        "r0940",
+        "r0952",
+        "r0955",
+        "r0956",
+        "r0962"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 6,
+      "messages": [
+        "aggregate-by",
+        "end-before-start",
+        "limit-not-positive",
+        "number",
+        "param-duration",
+        "param-number"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "index_volume",
+      "rows": 6,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "index_volume",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "index_volume_range",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": false,
+          "gate_cells": 2,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "index_volume_range",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "oversize": {
+          "e2e": true,
+          "gate_cells": 2,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "index_volume_range",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0178"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "index_volume_range",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0290"
+      ],
+      "kind": "logql_validation",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "only-label-matchers"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "index_volume_range",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "index_volume_range",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 9,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0967",
+        "r0969",
+        "r0981",
+        "r0993",
+        "r0996",
+        "r0998",
+        "r1005",
+        "r1006",
+        "r1011"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 9,
+      "messages": [
+        "aggregate-by",
+        "end-before-start",
+        "limit-not-positive",
+        "number",
+        "param-duration",
+        "param-number",
+        "step-duration",
+        "step-not-positive",
+        "step-too-many-points"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "index_volume_range",
+      "rows": 9,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "index_volume_range",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "label_values",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "label_values",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0767"
+      ],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "limit-lookback",
+        "limit-query-length"
+      ],
+      "modes": {
+        "oversize": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "label_values",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0198"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "label_values",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0240",
+        "r0296"
+      ],
+      "kind": "logql_validation",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "only-label-matchers",
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "label_values",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1226"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "method-not-allowed"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "label_values",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 4,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0765",
+        "r0791",
+        "r1151",
+        "r1159"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 4,
+      "messages": [
+        "not-found",
+        "param-duration",
+        "param-number",
+        "unmapped-path-cleaning-redirect"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "label_values",
+      "rows": 4,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "The recorded Loki runs with authentication disabled and ignores the tenant header, so its tenant answers are not recorded and the rows cannot be compared.",
+      "recorded": false,
+      "route": "label_values",
+      "rows": 6,
+      "state": "not-comparable",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": true,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": true,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "labels",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": true,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "labels",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0711"
+      ],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "limit-lookback",
+        "limit-query-length"
+      ],
+      "modes": {
+        "oversize": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "labels",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0197"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "labels",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0239",
+        "r0295"
+      ],
+      "kind": "logql_validation",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "only-label-matchers",
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "labels",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 5,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1219"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 5,
+      "messages": [
+        "method-not-allowed"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "labels",
+      "rows": 5,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 4,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0707",
+        "r0759",
+        "r1370",
+        "r1374"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 4,
+      "messages": [
+        "param-duration",
+        "param-number",
+        "url-escape",
+        "url-semicolon"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "labels",
+      "rows": 4,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "The recorded Loki runs with authentication disabled and ignores the tenant header, so its tenant answers are not recorded and the rows cannot be compared.",
+      "recorded": false,
+      "route": "labels",
+      "rows": 20,
+      "state": "not-comparable",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 11,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1180",
+        "r1187",
+        "r1191",
+        "r1197",
+        "r1200"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [
+        "r1180",
+        "r1187",
+        "r1188",
+        "r1189",
+        "r1200"
+      ],
+      "matching_rows": 6,
+      "messages": [
+        "method-not-allowed",
+        "not-found",
+        "parse",
+        "unmapped-delete-query-not-set",
+        "unmapped-index-shards-target-bytes",
+        "unmapped-push-snappy-corrupt",
+        "unmapped-ruler-local-store"
+      ],
+      "modes": {},
+      "proxy_matches": false,
+      "reason": "",
+      "recorded": true,
+      "route": "other_routes",
+      "rows": 16,
+      "state": "differs",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "patterns",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "patterns",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "oversize": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "patterns",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0179"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "patterns",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0291"
+      ],
+      "kind": "logql_validation",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "only-label-matchers"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "patterns",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 5,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1250"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 5,
+      "messages": [
+        "method-not-allowed"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "patterns",
+      "rows": 5,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 5,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1014",
+        "r1016",
+        "r1040",
+        "r1043",
+        "r1045"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 5,
+      "messages": [
+        "param-duration",
+        "param-number",
+        "step-duration",
+        "step-not-positive",
+        "step-too-many-points"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "patterns",
+      "rows": 5,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "patterns",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "query",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "query",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "oversize": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "query",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0001"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [
+        "r0003"
+      ],
+      "matching_rows": 1,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": false,
+      "reason": "",
+      "recorded": true,
+      "route": "query",
+      "rows": 2,
+      "state": "differs",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0043"
+      ],
+      "kind": "logql_validation",
+      "known_difference_ids": [
+        "r0043"
+      ],
+      "matching_rows": 0,
+      "messages": [
+        "instant-log-query"
+      ],
+      "modes": {},
+      "proxy_matches": false,
+      "reason": "",
+      "recorded": true,
+      "route": "query",
+      "rows": 1,
+      "state": "differs",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 5,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1212"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 5,
+      "messages": [
+        "method-not-allowed"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "query",
+      "rows": 5,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 3,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0654",
+        "r0665",
+        "r0676"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 3,
+      "messages": [
+        "direction",
+        "limit-not-positive",
+        "number"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "query",
+      "rows": 3,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [
+        "instant-log-query"
+      ],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "The recorded Loki runs with authentication disabled and ignores the tenant header, so its tenant answers are not recorded and the rows cannot be compared.",
+      "recorded": false,
+      "route": "query",
+      "rows": 6,
+      "state": "not-comparable",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 7,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": true,
+          "gate_cells": 7,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 7,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": true,
+          "gate_cells": 7,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 7,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 7,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 7,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 7,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 7,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 7,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 7,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "query_range",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 7,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": true,
+          "gate_cells": 7,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "query_range",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [
+        "limit-query-length"
+      ],
+      "modes": {
+        "oversize": {
+          "e2e": true,
+          "gate_cells": 7,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "query_range",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0002"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [
+        "r0004"
+      ],
+      "matching_rows": 1,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": false,
+      "reason": "",
+      "recorded": true,
+      "route": "query_range",
+      "rows": 2,
+      "state": "differs",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1561"
+      ],
+      "kind": "logql_validation",
+      "known_difference_ids": [
+        "r1561"
+      ],
+      "matching_rows": 0,
+      "messages": [
+        "unmapped-evaluator-unexpected-expr",
+        "unmapped-shard-aggregations-disabled"
+      ],
+      "modes": {},
+      "proxy_matches": false,
+      "reason": "",
+      "recorded": true,
+      "route": "query_range",
+      "rows": 2,
+      "state": "differs",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 5,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1205"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 5,
+      "messages": [
+        "method-not-allowed"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "query_range",
+      "rows": 5,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 15,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0535",
+        "r0537",
+        "r0549",
+        "r0561",
+        "r0564",
+        "r0566",
+        "r0573",
+        "r0581",
+        "r0582",
+        "r0590",
+        "r0596",
+        "r1369",
+        "r1373",
+        "r1395",
+        "r1401"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 15,
+      "messages": [
+        "direction",
+        "end-before-start",
+        "interval-negative",
+        "limit-not-positive",
+        "number",
+        "param-duration",
+        "param-number",
+        "parse-input-size",
+        "post-too-large",
+        "step-duration",
+        "step-not-positive",
+        "step-overflow",
+        "step-too-many-points",
+        "url-escape",
+        "url-semicolon"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "query_range",
+      "rows": 15,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "The recorded Loki runs with authentication disabled and ignores the tenant header, so its tenant answers are not recorded and the rows cannot be compared.",
+      "recorded": false,
+      "route": "query_range",
+      "rows": 20,
+      "state": "not-comparable",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "rules",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "rules",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "oversize": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "rules",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "rules",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "rules",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "series",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "series",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0798"
+      ],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "limit-lookback",
+        "limit-query-length"
+      ],
+      "modes": {
+        "oversize": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "series",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0175"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "series",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0287"
+      ],
+      "kind": "logql_validation",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "only-label-matchers"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "series",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 5,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1229"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 5,
+      "messages": [
+        "method-not-allowed"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "series",
+      "rows": 5,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0794",
+        "r0846"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "param-duration",
+        "param-number"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "series",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "The recorded Loki runs with authentication disabled and ignores the tenant header, so its tenant answers are not recorded and the rows cannot be compared.",
+      "recorded": false,
+      "route": "series",
+      "rows": 6,
+      "state": "not-comparable",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "backend_failure",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "conn_refused": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "conn_reset": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "malformed": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "truncated": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_limit": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl400_parse": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl422": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl429": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl500": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl502_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "vl503_front": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "tail",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "cancel_deadline",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "client_cancel": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        },
+        "timeout": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "tail",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "limits",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {
+        "oversize": {
+          "e2e": false,
+          "gate_cells": 1,
+          "leaks": []
+        }
+      },
+      "proxy_matches": true,
+      "reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+      "recorded": false,
+      "route": "tail",
+      "rows": 0,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0186"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "tail",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r0298"
+      ],
+      "kind": "logql_validation",
+      "known_difference_ids": [],
+      "matching_rows": 1,
+      "messages": [
+        "tail-not-websocket"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "tail",
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 5,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1271"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 5,
+      "messages": [
+        "method-not-allowed"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "tail",
+      "rows": 5,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 4,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1138",
+        "r1139",
+        "r1142",
+        "r1144"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 4,
+      "messages": [
+        "delay-for",
+        "limit-not-positive",
+        "number",
+        "param-number"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "tail",
+      "rows": 4,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "tail",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1428"
+      ],
+      "kind": "logql_syntax",
+      "known_difference_ids": [],
+      "matching_rows": 2,
+      "messages": [
+        "parse"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "tail_upgrade",
+      "rows": 2,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "logql_validation",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "",
+      "recorded": false,
+      "route": "tail_upgrade",
+      "rows": 0,
+      "state": "gap",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 2,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1449",
+        "r1451"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [
+        "r1451"
+      ],
+      "matching_rows": 1,
+      "messages": [
+        "tail-not-websocket",
+        "unmapped-upgrade-required"
+      ],
+      "modes": {},
+      "proxy_matches": false,
+      "reason": "",
+      "recorded": true,
+      "route": "tail_upgrade",
+      "rows": 2,
+      "state": "differs",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 4,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1436",
+        "r1437",
+        "r1438",
+        "r1439"
+      ],
+      "kind": "parameters",
+      "known_difference_ids": [],
+      "matching_rows": 4,
+      "messages": [
+        "delay-for",
+        "limit-not-positive",
+        "number",
+        "param-number"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "tail_upgrade",
+      "rows": 4,
+      "state": "match",
+      "unit_gate": true
+    },
+    {
+      "comparable_rows": 0,
+      "covered": false,
+      "e2e": false,
+      "e2e_rows": [],
+      "kind": "tenant",
+      "known_difference_ids": [],
+      "matching_rows": 0,
+      "messages": [],
+      "modes": {},
+      "proxy_matches": null,
+      "reason": "The recorded Loki runs with authentication disabled and ignores the tenant header, so its tenant answers are not recorded and the rows cannot be compared.",
+      "recorded": false,
+      "route": "tail_upgrade",
+      "rows": 2,
+      "state": "not-comparable",
+      "unit_gate": false
+    },
+    {
+      "comparable_rows": 23,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1343",
+        "r1350"
+      ],
+      "kind": "methods_routing",
+      "known_difference_ids": [],
+      "matching_rows": 23,
+      "messages": [
+        "not-found",
+        "unmapped-path-cleaning-redirect"
+      ],
+      "modes": {},
+      "proxy_matches": true,
+      "reason": "",
+      "recorded": true,
+      "route": "unknown_path",
+      "rows": 23,
+      "state": "match",
+      "unit_gate": true
+    }
+  ],
+  "description": "Generated by conformance/scripts/error_registry.py. Do not edit. The error compatibility matrix: every route x error kind with whether Loki's answer is recorded, whether the proxy matches it, the unit gate and the end-to-end comparison that cover it, and the known differences; the items for every Loki error message; the scores.",
+  "e2e_rows": [
+    "r0001",
+    "r0002",
+    "r0043",
+    "r0175",
+    "r0176",
+    "r0177",
+    "r0178",
+    "r0179",
+    "r0180",
+    "r0181",
+    "r0185",
+    "r0186",
+    "r0196",
+    "r0197",
+    "r0198",
+    "r0238",
+    "r0239",
+    "r0240",
+    "r0287",
+    "r0288",
+    "r0289",
+    "r0290",
+    "r0291",
+    "r0294",
+    "r0295",
+    "r0296",
+    "r0298",
+    "r0446",
+    "r0447",
+    "r0535",
+    "r0537",
+    "r0549",
+    "r0561",
+    "r0564",
+    "r0566",
+    "r0573",
+    "r0581",
+    "r0582",
+    "r0590",
+    "r0596",
+    "r0654",
+    "r0665",
+    "r0676",
+    "r0707",
+    "r0711",
+    "r0759",
+    "r0765",
+    "r0767",
+    "r0791",
+    "r0794",
+    "r0798",
+    "r0846",
+    "r0868",
+    "r0872",
+    "r0896",
+    "r0920",
+    "r0926",
+    "r0928",
+    "r0940",
+    "r0952",
+    "r0955",
+    "r0956",
+    "r0962",
+    "r0967",
+    "r0969",
+    "r0981",
+    "r0993",
+    "r0996",
+    "r0998",
+    "r1005",
+    "r1006",
+    "r1011",
+    "r1014",
+    "r1016",
+    "r1040",
+    "r1043",
+    "r1045",
+    "r1060",
+    "r1062",
+    "r1074",
+    "r1086",
+    "r1089",
+    "r1090",
+    "r1095",
+    "r1097",
+    "r1100",
+    "r1102",
+    "r1114",
+    "r1115",
+    "r1122",
+    "r1124",
+    "r1138",
+    "r1139",
+    "r1142",
+    "r1144",
+    "r1151",
+    "r1159",
+    "r1163",
+    "r1180",
+    "r1187",
+    "r1191",
+    "r1197",
+    "r1200",
+    "r1205",
+    "r1212",
+    "r1219",
+    "r1226",
+    "r1229",
+    "r1236",
+    "r1243",
+    "r1250",
+    "r1257",
+    "r1264",
+    "r1271",
+    "r1278",
+    "r1343",
+    "r1350",
+    "r1369",
+    "r1370",
+    "r1373",
+    "r1374",
+    "r1395",
+    "r1401",
+    "r1428",
+    "r1436",
+    "r1437",
+    "r1438",
+    "r1439",
+    "r1449",
+    "r1451",
+    "r1561"
+  ],
+  "kinds": [
+    {
+      "about": "A request parameter, URL or form body Loki cannot read or does not accept (start, end, since, step, limit, direction, interval, delay_for, aggregateBy, URL escapes, oversize bodies).",
+      "id": "parameters",
+      "label": "Parameters"
+    },
+    {
+      "about": "A query Loki cannot parse: empty, unterminated, bad tokens.",
+      "id": "logql_syntax",
+      "label": "LogQL syntax"
+    },
+    {
+      "about": "A query that parses but Loki rejects while checking it: matcher rules, stage compile errors, wrong query type for the route, aggregation and function rules.",
+      "id": "logql_validation",
+      "label": "LogQL validation"
+    },
+    {
+      "about": "A request over a limit Loki enforces: query length, lookback, series, resolution.",
+      "id": "limits",
+      "label": "Limits"
+    },
+    {
+      "about": "The storage behind the proxy fails or answers something the proxy cannot use: Loki answers 500, or its queue-full 429, in its own words.",
+      "id": "backend_failure",
+      "label": "Backend failure"
+    },
+    {
+      "about": "A path Loki's router does not know, a method a route does not serve, a tail request that is no websocket upgrade.",
+      "id": "methods_routing",
+      "label": "Methods and routing"
+    },
+    {
+      "about": "A tenant header Loki or the proxy rejects.",
+      "id": "tenant",
+      "label": "Tenant"
+    },
+    {
+      "about": "The client goes away (499) or the request runs out of time (504).",
+      "id": "cancel_deadline",
+      "label": "Cancel and deadline"
+    }
+  ],
+  "known_differences": {
+    "ceiling": 10,
+    "rows": 10
+  },
+  "messages": {
+    "aggregate-by": {
+      "comparable_rows": 2,
+      "e2e_rows": [
+        "r0962",
+        "r1011"
+      ],
+      "item": "msg-aggregate-by",
+      "kind": "param",
+      "matching_rows": 2,
+      "routes": [
+        "index_volume",
+        "index_volume_range"
+      ],
+      "rows": [
+        "r0962",
+        "r1011"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "matches",
+      "status": 400
+    },
+    "backend-failed": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-backend-failed",
+      "kind": "backend_failed",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "execution",
+      "state": "documented",
+      "status": 500
+    },
+    "canceled": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-canceled",
+      "kind": "canceled",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "execution",
+      "state": "documented",
+      "status": 499
+    },
+    "deadline": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-deadline",
+      "kind": "deadline",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "execution",
+      "state": "documented",
+      "status": 504
+    },
+    "delay-for": {
+      "comparable_rows": 2,
+      "e2e_rows": [
+        "r1139",
+        "r1439"
+      ],
+      "item": "msg-delay-for",
+      "kind": "param",
+      "matching_rows": 2,
+      "routes": [
+        "tail",
+        "tail_upgrade"
+      ],
+      "rows": [
+        "r1139",
+        "r1439"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "matches",
+      "status": 400
+    },
+    "direction": {
+      "comparable_rows": 2,
+      "e2e_rows": [
+        "r0590",
+        "r0676"
+      ],
+      "item": "msg-direction",
+      "kind": "param",
+      "matching_rows": 2,
+      "routes": [
+        "query",
+        "query_range"
+      ],
+      "rows": [
+        "r0590",
+        "r0676"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "matches",
+      "status": 400
+    },
+    "end-before-start": {
+      "comparable_rows": 5,
+      "e2e_rows": [
+        "r0549",
+        "r0896",
+        "r0940",
+        "r0981",
+        "r1074"
+      ],
+      "item": "msg-end-before-start",
+      "kind": "param",
+      "matching_rows": 5,
+      "routes": [
+        "detected_fields",
+        "index_stats",
+        "index_volume",
+        "index_volume_range",
+        "query_range"
+      ],
+      "rows": [
+        "r0549",
+        "r0896",
+        "r0940",
+        "r0981",
+        "r1074"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "matches",
+      "status": 400
+    },
+    "instant-log-query": {
+      "comparable_rows": 1,
+      "e2e_rows": [
+        "r0043"
+      ],
+      "item": "msg-instant-log-query",
+      "kind": "param",
+      "matching_rows": 0,
+      "routes": [
+        "query"
+      ],
+      "rows": [
+        "r0043",
+        "r1286",
+        "r1291",
+        "r1298",
+        "r1303",
+        "r1312",
+        "r1339"
+      ],
+      "source": "lokierr",
+      "stage": "logql_validation",
+      "state": "differs",
+      "status": 400
+    },
+    "internal": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-internal",
+      "kind": "internal",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "execution",
+      "state": "documented",
+      "status": 500
+    },
+    "interval-negative": {
+      "comparable_rows": 1,
+      "e2e_rows": [
+        "r0596"
+      ],
+      "item": "msg-interval-negative",
+      "kind": "param",
+      "matching_rows": 1,
+      "routes": [
+        "query_range"
+      ],
+      "rows": [
+        "r0596"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "matches",
+      "status": 400
+    },
+    "limit-index-series": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-limit-index-series",
+      "kind": "limit",
+      "matching_rows": 0,
+      "routes": [
+        "index_volume"
+      ],
+      "rows": [
+        "r0233"
+      ],
+      "source": "lokierr",
+      "stage": "execution",
+      "state": "recorded-not-comparable",
+      "status": 500
+    },
+    "limit-lookback": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-limit-lookback",
+      "kind": "limit",
+      "matching_rows": 0,
+      "routes": [
+        "label_values",
+        "labels",
+        "series"
+      ],
+      "rows": [
+        "r0735",
+        "r0779",
+        "r0822"
+      ],
+      "source": "lokierr",
+      "stage": "limits",
+      "state": "recorded-not-comparable",
+      "status": 400
+    },
+    "limit-not-positive": {
+      "comparable_rows": 8,
+      "e2e_rows": [
+        "r0581",
+        "r0665",
+        "r0955",
+        "r1005",
+        "r1089",
+        "r1114",
+        "r1142",
+        "r1437"
+      ],
+      "item": "msg-limit-not-positive",
+      "kind": "param",
+      "matching_rows": 8,
+      "routes": [
+        "detected_field_values",
+        "detected_fields",
+        "index_volume",
+        "index_volume_range",
+        "query",
+        "query_range",
+        "tail",
+        "tail_upgrade"
+      ],
+      "rows": [
+        "r0581",
+        "r0665",
+        "r0955",
+        "r1005",
+        "r1089",
+        "r1114",
+        "r1142",
+        "r1437"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "matches",
+      "status": 400
+    },
+    "limit-query-length": {
+      "comparable_rows": 8,
+      "e2e_rows": [
+        "r0711",
+        "r0767",
+        "r0798",
+        "r0872",
+        "r0928",
+        "r1062",
+        "r1102",
+        "r1124"
+      ],
+      "item": "msg-limit-query-length",
+      "kind": "limit",
+      "matching_rows": 8,
+      "routes": [
+        "detected_field_values",
+        "detected_fields",
+        "detected_labels",
+        "index_stats",
+        "index_volume",
+        "label_values",
+        "labels",
+        "query_range",
+        "series"
+      ],
+      "rows": [
+        "r0711",
+        "r0767",
+        "r0798",
+        "r0872",
+        "r0928",
+        "r1062",
+        "r1102",
+        "r1124",
+        "r1387"
+      ],
+      "source": "lokierr",
+      "stage": "limits",
+      "state": "matches",
+      "status": 400
+    },
+    "limit-series": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-limit-series",
+      "kind": "limit",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "execution",
+      "state": "documented",
+      "status": 400
+    },
+    "method-not-allowed": {
+      "comparable_rows": 59,
+      "e2e_rows": [
+        "r1191",
+        "r1205",
+        "r1212",
+        "r1219",
+        "r1226",
+        "r1229",
+        "r1236",
+        "r1243",
+        "r1250",
+        "r1257",
+        "r1264",
+        "r1271",
+        "r1278"
+      ],
+      "item": "msg-method-not-allowed",
+      "kind": "route",
+      "matching_rows": 59,
+      "routes": [
+        "detected_fields",
+        "detected_labels",
+        "format_query",
+        "index_stats",
+        "index_volume",
+        "label_values",
+        "labels",
+        "other_routes",
+        "patterns",
+        "query",
+        "query_range",
+        "series",
+        "tail"
+      ],
+      "rows": [
+        "r1191",
+        "r1199",
+        "r1205",
+        "r1206",
+        "r1207",
+        "r1208",
+        "r1209",
+        "r1212",
+        "r1213",
+        "r1214",
+        "r1215",
+        "r1216",
+        "r1219",
+        "r1220",
+        "r1221",
+        "r1222",
+        "r1223",
+        "r1226",
+        "r1227",
+        "r1229",
+        "r1230",
+        "r1231",
+        "r1232",
+        "r1233",
+        "r1236",
+        "r1237",
+        "r1238",
+        "r1239",
+        "r1240",
+        "r1243",
+        "r1244",
+        "r1245",
+        "r1246",
+        "r1247",
+        "r1250",
+        "r1251",
+        "r1252",
+        "r1253",
+        "r1254",
+        "r1257",
+        "r1258",
+        "r1259",
+        "r1260",
+        "r1261",
+        "r1264",
+        "r1265",
+        "r1266",
+        "r1267",
+        "r1268",
+        "r1271",
+        "r1272",
+        "r1273",
+        "r1274",
+        "r1275",
+        "r1278",
+        "r1279",
+        "r1280",
+        "r1281",
+        "r1282"
+      ],
+      "source": "lokierr",
+      "stage": "routing",
+      "state": "matches",
+      "status": 405
+    },
+    "not-found": {
+      "comparable_rows": 21,
+      "e2e_rows": [
+        "r1159",
+        "r1197",
+        "r1343"
+      ],
+      "item": "msg-not-found",
+      "kind": "route",
+      "matching_rows": 21,
+      "routes": [
+        "label_values",
+        "other_routes",
+        "unknown_path"
+      ],
+      "rows": [
+        "r1159",
+        "r1197",
+        "r1198",
+        "r1343",
+        "r1344",
+        "r1345",
+        "r1346",
+        "r1347",
+        "r1348",
+        "r1349",
+        "r1351",
+        "r1352",
+        "r1353",
+        "r1354",
+        "r1355",
+        "r1356",
+        "r1357",
+        "r1358",
+        "r1363",
+        "r1364",
+        "r1365"
+      ],
+      "source": "lokierr",
+      "stage": "routing",
+      "state": "matches",
+      "status": 404
+    },
+    "number": {
+      "comparable_rows": 8,
+      "e2e_rows": [
+        "r0582",
+        "r0654",
+        "r0956",
+        "r1006",
+        "r1090",
+        "r1115",
+        "r1138",
+        "r1436"
+      ],
+      "item": "msg-number",
+      "kind": "param",
+      "matching_rows": 8,
+      "routes": [
+        "detected_field_values",
+        "detected_fields",
+        "index_volume",
+        "index_volume_range",
+        "query",
+        "query_range",
+        "tail",
+        "tail_upgrade"
+      ],
+      "rows": [
+        "r0582",
+        "r0654",
+        "r0956",
+        "r1006",
+        "r1090",
+        "r1115",
+        "r1138",
+        "r1436"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "matches",
+      "status": 400
+    },
+    "only-label-matchers": {
+      "comparable_rows": 8,
+      "e2e_rows": [
+        "r0287",
+        "r0288",
+        "r0289",
+        "r0290",
+        "r0291",
+        "r0294",
+        "r0295",
+        "r0296"
+      ],
+      "item": "msg-only-label-matchers",
+      "kind": "param",
+      "matching_rows": 8,
+      "routes": [
+        "detected_labels",
+        "index_stats",
+        "index_volume",
+        "index_volume_range",
+        "label_values",
+        "labels",
+        "patterns",
+        "series"
+      ],
+      "rows": [
+        "r0287",
+        "r0288",
+        "r0289",
+        "r0290",
+        "r0291",
+        "r0294",
+        "r0295",
+        "r0296"
+      ],
+      "source": "lokierr",
+      "stage": "logql_validation",
+      "state": "matches",
+      "status": 400
+    },
+    "only-log-selector": {
+      "comparable_rows": 2,
+      "e2e_rows": [
+        "r0446",
+        "r0447"
+      ],
+      "item": "msg-only-log-selector",
+      "kind": "param",
+      "matching_rows": 2,
+      "routes": [
+        "detected_field_values",
+        "detected_fields"
+      ],
+      "rows": [
+        "r0446",
+        "r0447"
+      ],
+      "source": "lokierr",
+      "stage": "logql_validation",
+      "state": "matches",
+      "status": 400
+    },
+    "param-duration": {
+      "comparable_rows": 9,
+      "e2e_rows": [
+        "r0561",
+        "r0759",
+        "r0791",
+        "r0846",
+        "r0920",
+        "r0952",
+        "r0993",
+        "r1040",
+        "r1086"
+      ],
+      "item": "msg-param-duration",
+      "kind": "param",
+      "matching_rows": 9,
+      "routes": [
+        "detected_fields",
+        "index_stats",
+        "index_volume",
+        "index_volume_range",
+        "label_values",
+        "labels",
+        "patterns",
+        "query_range",
+        "series"
+      ],
+      "rows": [
+        "r0561",
+        "r0759",
+        "r0791",
+        "r0846",
+        "r0920",
+        "r0952",
+        "r0993",
+        "r1040",
+        "r1086"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "matches",
+      "status": 400
+    },
+    "param-number": {
+      "comparable_rows": 13,
+      "e2e_rows": [
+        "r0535",
+        "r0707",
+        "r0765",
+        "r0794",
+        "r0868",
+        "r0926",
+        "r0967",
+        "r1014",
+        "r1060",
+        "r1100",
+        "r1122",
+        "r1144",
+        "r1438"
+      ],
+      "item": "msg-param-number",
+      "kind": "param",
+      "matching_rows": 13,
+      "routes": [
+        "detected_field_values",
+        "detected_fields",
+        "detected_labels",
+        "index_stats",
+        "index_volume",
+        "index_volume_range",
+        "label_values",
+        "labels",
+        "patterns",
+        "query_range",
+        "series",
+        "tail",
+        "tail_upgrade"
+      ],
+      "rows": [
+        "r0535",
+        "r0707",
+        "r0765",
+        "r0794",
+        "r0868",
+        "r0926",
+        "r0967",
+        "r1014",
+        "r1060",
+        "r1100",
+        "r1122",
+        "r1144",
+        "r1438"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "matches",
+      "status": 400
+    },
+    "parse": {
+      "comparable_rows": 35,
+      "e2e_rows": [
+        "r0001",
+        "r0002",
+        "r0175",
+        "r0176",
+        "r0177",
+        "r0178",
+        "r0179",
+        "r0180",
+        "r0181",
+        "r0185",
+        "r0186",
+        "r0196",
+        "r0197",
+        "r0198",
+        "r0238",
+        "r0239",
+        "r0240",
+        "r1187",
+        "r1428"
+      ],
+      "item": "msg-parse",
+      "kind": "parse",
+      "matching_rows": 30,
+      "routes": [
+        "detected_field_values",
+        "detected_fields",
+        "detected_labels",
+        "format_query",
+        "index_stats",
+        "index_volume",
+        "index_volume_range",
+        "label_values",
+        "labels",
+        "other_routes",
+        "patterns",
+        "query",
+        "query_range",
+        "series",
+        "tail",
+        "tail_upgrade"
+      ],
+      "rows": [
+        "r0001",
+        "r0002",
+        "r0003",
+        "r0004",
+        "r0175",
+        "r0176",
+        "r0177",
+        "r0178",
+        "r0179",
+        "r0180",
+        "r0181",
+        "r0185",
+        "r0186",
+        "r0189",
+        "r0190",
+        "r0191",
+        "r0192",
+        "r0193",
+        "r0194",
+        "r0195",
+        "r0196",
+        "r0197",
+        "r0198",
+        "r0199",
+        "r0200",
+        "r0238",
+        "r0239",
+        "r0240",
+        "r1187",
+        "r1188",
+        "r1189",
+        "r1202",
+        "r1204",
+        "r1428",
+        "r1429"
+      ],
+      "source": "lokierr",
+      "stage": "logql_syntax",
+      "state": "differs",
+      "status": 400
+    },
+    "parse-input-size": {
+      "comparable_rows": 1,
+      "e2e_rows": [
+        "r1395"
+      ],
+      "item": "msg-parse-input-size",
+      "kind": "parse",
+      "matching_rows": 1,
+      "routes": [
+        "query_range"
+      ],
+      "rows": [
+        "r1395"
+      ],
+      "source": "lokierr",
+      "stage": "logql_syntax",
+      "state": "matches",
+      "status": 400
+    },
+    "post-too-large": {
+      "comparable_rows": 1,
+      "e2e_rows": [
+        "r1401"
+      ],
+      "item": "msg-post-too-large",
+      "kind": "form",
+      "matching_rows": 1,
+      "routes": [
+        "query_range"
+      ],
+      "rows": [
+        "r1401"
+      ],
+      "source": "lokierr",
+      "stage": "request_decoding",
+      "state": "matches",
+      "status": 400
+    },
+    "queue-full": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-queue-full",
+      "kind": "queue_full",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "execution",
+      "state": "documented",
+      "status": 429
+    },
+    "step-duration": {
+      "comparable_rows": 4,
+      "e2e_rows": [
+        "r0566",
+        "r0998",
+        "r1045",
+        "r1097"
+      ],
+      "item": "msg-step-duration",
+      "kind": "param",
+      "matching_rows": 4,
+      "routes": [
+        "detected_fields",
+        "index_volume_range",
+        "patterns",
+        "query_range"
+      ],
+      "rows": [
+        "r0566",
+        "r0998",
+        "r1045",
+        "r1097"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "matches",
+      "status": 400
+    },
+    "step-not-positive": {
+      "comparable_rows": 4,
+      "e2e_rows": [
+        "r0564",
+        "r0996",
+        "r1043",
+        "r1095"
+      ],
+      "item": "msg-step-not-positive",
+      "kind": "param",
+      "matching_rows": 4,
+      "routes": [
+        "detected_fields",
+        "index_volume_range",
+        "patterns",
+        "query_range"
+      ],
+      "rows": [
+        "r0564",
+        "r0996",
+        "r1043",
+        "r1095"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "matches",
+      "status": 400
+    },
+    "step-overflow": {
+      "comparable_rows": 1,
+      "e2e_rows": [
+        "r0573"
+      ],
+      "item": "msg-step-overflow",
+      "kind": "param",
+      "matching_rows": 1,
+      "routes": [
+        "query_range"
+      ],
+      "rows": [
+        "r0573"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "matches",
+      "status": 400
+    },
+    "step-too-many-points": {
+      "comparable_rows": 3,
+      "e2e_rows": [
+        "r0537",
+        "r0969",
+        "r1016"
+      ],
+      "item": "msg-step-too-many-points",
+      "kind": "param",
+      "matching_rows": 3,
+      "routes": [
+        "index_volume_range",
+        "patterns",
+        "query_range"
+      ],
+      "rows": [
+        "r0537",
+        "r0969",
+        "r1016"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "matches",
+      "status": 400
+    },
+    "tail-not-websocket": {
+      "comparable_rows": 2,
+      "e2e_rows": [
+        "r0298",
+        "r1449"
+      ],
+      "item": "msg-tail-not-websocket",
+      "kind": "route",
+      "matching_rows": 2,
+      "routes": [
+        "tail",
+        "tail_upgrade"
+      ],
+      "rows": [
+        "r0298",
+        "r1449"
+      ],
+      "source": "lokierr",
+      "stage": "routing",
+      "state": "matches",
+      "status": 400
+    },
+    "unmapped-delete-query-not-set": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "unmapped-delete-query-not-set",
+      "kind": "unmapped",
+      "matching_rows": 0,
+      "routes": [
+        "other_routes"
+      ],
+      "rows": [
+        "r1201"
+      ],
+      "source": "recorded",
+      "stage": null,
+      "state": "recorded-not-comparable",
+      "status": 400
+    },
+    "unmapped-evaluator-unexpected-expr": {
+      "comparable_rows": 1,
+      "e2e_rows": [
+        "r1561"
+      ],
+      "item": "unmapped-evaluator-unexpected-expr",
+      "kind": "unmapped",
+      "matching_rows": 0,
+      "routes": [
+        "query_range"
+      ],
+      "rows": [
+        "r1561"
+      ],
+      "source": "recorded",
+      "stage": null,
+      "state": "differs",
+      "status": 500
+    },
+    "unmapped-index-shards-target-bytes": {
+      "comparable_rows": 1,
+      "e2e_rows": [
+        "r1180"
+      ],
+      "item": "unmapped-index-shards-target-bytes",
+      "kind": "unmapped",
+      "matching_rows": 0,
+      "routes": [
+        "other_routes"
+      ],
+      "rows": [
+        "r1180"
+      ],
+      "source": "recorded",
+      "stage": null,
+      "state": "differs",
+      "status": 400
+    },
+    "unmapped-path-cleaning-redirect": {
+      "comparable_rows": 7,
+      "e2e_rows": [
+        "r1151",
+        "r1163",
+        "r1350"
+      ],
+      "item": "unmapped-path-cleaning-redirect",
+      "kind": "unmapped",
+      "matching_rows": 7,
+      "routes": [
+        "detected_field_values",
+        "label_values",
+        "unknown_path"
+      ],
+      "rows": [
+        "r1151",
+        "r1163",
+        "r1350",
+        "r1359",
+        "r1360",
+        "r1361",
+        "r1366"
+      ],
+      "source": "recorded",
+      "stage": null,
+      "state": "matches",
+      "status": 301
+    },
+    "unmapped-push-snappy-corrupt": {
+      "comparable_rows": 1,
+      "e2e_rows": [
+        "r1200"
+      ],
+      "item": "unmapped-push-snappy-corrupt",
+      "kind": "unmapped",
+      "matching_rows": 0,
+      "routes": [
+        "other_routes"
+      ],
+      "rows": [
+        "r1200"
+      ],
+      "source": "recorded",
+      "stage": null,
+      "state": "differs",
+      "status": 400
+    },
+    "unmapped-ruler-local-store": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "unmapped-ruler-local-store",
+      "kind": "unmapped",
+      "matching_rows": 0,
+      "routes": [
+        "other_routes"
+      ],
+      "rows": [
+        "r1174",
+        "r1175",
+        "r1176",
+        "r1183"
+      ],
+      "source": "recorded",
+      "stage": null,
+      "state": "recorded-not-comparable",
+      "status": 400
+    },
+    "unmapped-shard-aggregations-disabled": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "unmapped-shard-aggregations-disabled",
+      "kind": "unmapped",
+      "matching_rows": 0,
+      "routes": [
+        "query_range"
+      ],
+      "rows": [
+        "r1563"
+      ],
+      "source": "recorded",
+      "stage": null,
+      "state": "recorded-not-comparable",
+      "status": 500
+    },
+    "unmapped-upgrade-required": {
+      "comparable_rows": 1,
+      "e2e_rows": [
+        "r1451"
+      ],
+      "item": "unmapped-upgrade-required",
+      "kind": "unmapped",
+      "matching_rows": 0,
+      "routes": [
+        "tail_upgrade"
+      ],
+      "rows": [
+        "r1451"
+      ],
+      "source": "recorded",
+      "stage": null,
+      "state": "differs",
+      "status": 426
+    },
+    "url-escape": {
+      "comparable_rows": 2,
+      "e2e_rows": [
+        "r1369",
+        "r1370"
+      ],
+      "item": "msg-url-escape",
+      "kind": "form",
+      "matching_rows": 2,
+      "routes": [
+        "labels",
+        "query_range"
+      ],
+      "rows": [
+        "r1369",
+        "r1370"
+      ],
+      "source": "lokierr",
+      "stage": "request_decoding",
+      "state": "matches",
+      "status": 400
+    },
+    "url-semicolon": {
+      "comparable_rows": 2,
+      "e2e_rows": [
+        "r1373",
+        "r1374"
+      ],
+      "item": "msg-url-semicolon",
+      "kind": "form",
+      "matching_rows": 2,
+      "routes": [
+        "labels",
+        "query_range"
+      ],
+      "rows": [
+        "r1373",
+        "r1374"
+      ],
+      "source": "lokierr",
+      "stage": "request_decoding",
+      "state": "matches",
+      "status": 400
+    },
+    "write-not-supported": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-write-not-supported",
+      "kind": "route",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "routing",
+      "state": "documented",
+      "status": 405
+    }
+  },
+  "summary": {
+    "cells": 124,
+    "cells_e2e": 71,
+    "cells_matching": 94,
+    "cells_recorded": 65,
+    "check_order_rows": 33,
+    "comparable_rows": 215,
+    "coverage_ratio": 0.5726,
+    "covered_cells": 71,
+    "differing_rows": 10,
+    "e2e_rows": 131,
+    "match_ratio": 0.9535,
+    "matching_rows": 205,
+    "messages": 34,
+    "messages_documented": 7,
+    "messages_recorded": 27,
+    "not_comparable_rows": 71,
+    "recorded_loki": "3.7.9",
+    "recorded_on": "2026-11-13",
+    "recorded_rows": 286,
+    "unmapped_items": 8
+  }
+}

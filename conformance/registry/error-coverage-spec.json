@@ -1,0 +1,411 @@
+{
+  "description": "The hand-written input of conformance/scripts/error_registry.py: how recorded rows and error-layer gate cells are classified into the route x error kind matrix, which message has no recorded Loki answer and why, and where Loki checks one error before another. Everything else (the per-message registry items, the status views, conformance/registry/generated/error-coverage.json and docs/error-compatibility-coverage.md) is generated from internal/lokierr, the recorded Loki answers and the gates. A new lokierr message, route or failure mode that this file does not classify fails the conformance gate.",
+  "kinds": [
+    {
+      "id": "parameters",
+      "label": "Parameters",
+      "about": "A request parameter, URL or form body Loki cannot read or does not accept (start, end, since, step, limit, direction, interval, delay_for, aggregateBy, URL escapes, oversize bodies)."
+    },
+    {
+      "id": "logql_syntax",
+      "label": "LogQL syntax",
+      "about": "A query Loki cannot parse: empty, unterminated, bad tokens."
+    },
+    {
+      "id": "logql_validation",
+      "label": "LogQL validation",
+      "about": "A query that parses but Loki rejects while checking it: matcher rules, stage compile errors, wrong query type for the route, aggregation and function rules."
+    },
+    {
+      "id": "limits",
+      "label": "Limits",
+      "about": "A request over a limit Loki enforces: query length, lookback, series, resolution."
+    },
+    {
+      "id": "backend_failure",
+      "label": "Backend failure",
+      "about": "The storage behind the proxy fails or answers something the proxy cannot use: Loki answers 500, or its queue-full 429, in its own words."
+    },
+    {
+      "id": "methods_routing",
+      "label": "Methods and routing",
+      "about": "A path Loki's router does not know, a method a route does not serve, a tail request that is no websocket upgrade."
+    },
+    {
+      "id": "tenant",
+      "label": "Tenant",
+      "about": "A tenant header Loki or the proxy rejects."
+    },
+    {
+      "id": "cancel_deadline",
+      "label": "Cancel and deadline",
+      "about": "The client goes away (499) or the request runs out of time (504)."
+    }
+  ],
+  "all_kinds": [
+    "parameters",
+    "logql_syntax",
+    "logql_validation",
+    "limits",
+    "backend_failure",
+    "methods_routing",
+    "tenant",
+    "cancel_deadline"
+  ],
+  "route_kinds": {
+    "query": "all",
+    "query_range": "all",
+    "labels": "all",
+    "label_values": "all",
+    "series": "all",
+    "index_stats": "all",
+    "index_volume": "all",
+    "index_volume_range": "all",
+    "patterns": "all",
+    "detected_fields": "all",
+    "detected_field_values": "all",
+    "detected_labels": "all",
+    "tail": [
+      "parameters",
+      "logql_syntax",
+      "logql_validation",
+      "methods_routing",
+      "tenant",
+      "backend_failure",
+      "cancel_deadline"
+    ],
+    "tail_upgrade": [
+      "parameters",
+      "logql_syntax",
+      "logql_validation",
+      "methods_routing",
+      "tenant"
+    ],
+    "format_query": [
+      "parameters",
+      "logql_syntax",
+      "methods_routing"
+    ],
+    "rules": [
+      "methods_routing",
+      "tenant",
+      "backend_failure",
+      "cancel_deadline"
+    ],
+    "alerts": [
+      "methods_routing",
+      "tenant",
+      "backend_failure",
+      "cancel_deadline"
+    ],
+    "unknown_path": [
+      "methods_routing"
+    ],
+    "other_routes": [
+      "methods_routing"
+    ]
+  },
+  "route_labels": {
+    "unknown_path": "unknown paths",
+    "other_routes": "other routes (rules views, push, delete, shards, exemplars, aliases)"
+  },
+  "trigger_kinds": [
+    {
+      "prefix": "shape:tenant-",
+      "kind": "tenant"
+    },
+    {
+      "prefix": "shape:upgrade-no-tenant",
+      "kind": "tenant"
+    },
+    {
+      "prefix": "shape:upgrade-multi-tenant",
+      "kind": "tenant"
+    },
+    {
+      "prefix": "params:",
+      "kind": "parameters"
+    },
+    {
+      "prefix": "shape:url-",
+      "kind": "parameters"
+    },
+    {
+      "prefix": "shape:body-",
+      "kind": "parameters"
+    },
+    {
+      "exact": [
+        "logql:empty",
+        "logql:space-only",
+        "logql:unterminated-brace"
+      ],
+      "kind": "logql_syntax"
+    },
+    {
+      "prefix": "logql:",
+      "kind": "logql_validation"
+    },
+    {
+      "prefix": "grammar-sweep:",
+      "kind": "logql_validation"
+    },
+    {
+      "prefix": "shape:method-",
+      "kind": "methods_routing"
+    },
+    {
+      "prefix": "shape:other-route-",
+      "kind": "methods_routing"
+    },
+    {
+      "prefix": "shape:unknown-path",
+      "kind": "methods_routing"
+    },
+    {
+      "prefix": "shape:upgrade-",
+      "kind": "methods_routing"
+    }
+  ],
+  "limit_message_kind": "limits",
+  "gate_route_map": {
+    "query_range_": "query_range",
+    "query_instant": "query",
+    "series": "series",
+    "labels": "labels",
+    "label_values": "label_values",
+    "detected_field_values": "detected_field_values",
+    "detected_fields": "detected_fields",
+    "detected_labels": "detected_labels",
+    "index_stats": "index_stats",
+    "index_volume_range": "index_volume_range",
+    "index_volume": "index_volume",
+    "patterns": "patterns",
+    "tail": "tail",
+    "rules": "rules",
+    "alerts": "alerts"
+  },
+  "gate_mode_kinds": {
+    "vl400_parse": "backend_failure",
+    "vl400_limit": "backend_failure",
+    "vl422": "backend_failure",
+    "vl500": "backend_failure",
+    "vl502_front": "backend_failure",
+    "vl503_front": "backend_failure",
+    "vl429": "backend_failure",
+    "conn_refused": "backend_failure",
+    "conn_reset": "backend_failure",
+    "timeout": "cancel_deadline",
+    "client_cancel": "cancel_deadline",
+    "truncated": "backend_failure",
+    "malformed": "backend_failure",
+    "oversize": "limits"
+  },
+  "backend_cells_reason": "A shared stack's Loki cannot be failed for one request, so there is no recorded Loki answer. The expected status and text are Loki's fixed ones (internal/lokierr constructors), and TestErrorLayer_NoVictoriaLogsLeak holds the proxy's answer to them for every route and failure mode.",
+  "tenant_cells_reason": "The recorded Loki runs with authentication disabled and ignores the tenant header, so its tenant answers are not recorded and the rows cannot be compared.",
+  "e2e_backend": {
+    "test": "TestCompat_ErrorLayerLikeLoki",
+    "markers": [
+      "vl_stopped",
+      "vl_stopped_mid_body",
+      "backend_timeout",
+      "buffered_response_limit",
+      "volume_buffered_response_limit"
+    ],
+    "cells": {
+      "query_range": [
+        "conn_reset",
+        "truncated",
+        "timeout",
+        "oversize"
+      ],
+      "labels": [
+        "conn_reset",
+        "truncated",
+        "timeout"
+      ],
+      "index_volume": [
+        "oversize"
+      ],
+      "index_volume_range": [
+        "oversize"
+      ]
+    }
+  },
+  "unit_gate_test": "TestLokiErrorAnswersReplay",
+  "backend_gate_test": "TestErrorLayer_NoVictoriaLogsLeak",
+  "e2e_test": "TestCompat_ErrorAnswersLikeLoki",
+  "message_stage": {
+    "url-escape": "request_decoding",
+    "url-semicolon": "request_decoding",
+    "post-too-large": "request_decoding",
+    "param-number": "parameters",
+    "param-duration": "parameters",
+    "number": "parameters",
+    "step-duration": "parameters",
+    "step-overflow": "parameters",
+    "step-not-positive": "parameters",
+    "step-too-many-points": "parameters",
+    "end-before-start": "parameters",
+    "limit-not-positive": "parameters",
+    "direction": "parameters",
+    "interval-negative": "parameters",
+    "aggregate-by": "parameters",
+    "delay-for": "parameters",
+    "parse": "logql_syntax",
+    "parse-input-size": "logql_syntax",
+    "instant-log-query": "logql_validation",
+    "only-label-matchers": "logql_validation",
+    "only-log-selector": "logql_validation",
+    "limit-query-length": "limits",
+    "limit-lookback": "limits",
+    "limit-series": "execution",
+    "limit-index-series": "execution",
+    "not-found": "routing",
+    "method-not-allowed": "routing",
+    "tail-not-websocket": "routing",
+    "queue-full": "execution",
+    "canceled": "execution",
+    "deadline": "execution",
+    "backend-failed": "execution",
+    "internal": "execution",
+    "write-not-supported": "routing"
+  },
+  "stage_rank": {
+    "routing": 0,
+    "request_decoding": 1,
+    "parameters": 2,
+    "logql_syntax": 3,
+    "limits": 4,
+    "logql_validation": 5,
+    "execution": 6
+  },
+  "route_stage_rank": {
+    "tail": {
+      "logql_syntax": 1.5
+    },
+    "labels": {
+      "limits": 2.5
+    }
+  },
+  "issue_stage": {
+    "bad-query": "logql_syntax",
+    "bad-selector": "logql_syntax",
+    "bad-match": "logql_syntax",
+    "bad-regex-stage": "logql_validation",
+    "bad-regex": "logql_validation",
+    "empty-matcher": "logql_validation",
+    "instant-log": "logql_validation"
+  },
+  "stage_notes": {
+    "request_decoding": "The URL and form body are decoded first.",
+    "parameters": "Parameters are read next, in the order end, start, limit, step and direction; an end not after the start and the 11,000-point resolution check come before the query is parsed.",
+    "logql_syntax": "The query text is parsed; a syntax error is answered before the query-length limit on query_range, and on tail before the parameters.",
+    "limits": "The query-length limit follows the syntax check on query_range and comes before it on the metadata routes.",
+    "logql_validation": "Checks of a query that parsed (stage compilation, matcher rules, query type) come last."
+  },
+  "no_recorded_answer": {
+    "limit-series": {
+      "reason": "The series limit needs a Loki query that reaches max_query_series; the recorded Loki has a series cap far above any recorded request, so no answer was recorded. The text is Loki's fixed one.",
+      "tests": [
+        "TestErrorLayer_LokiLimitTexts"
+      ]
+    },
+    "queue-full": {
+      "reason": "Loki answers a full query queue only under load; a single recorded request cannot reach it. The status and text are Loki's fixed ones.",
+      "tests": [
+        "TestErrorLayer_NoVictoriaLogsLeak"
+      ]
+    },
+    "canceled": {
+      "reason": "Loki answers 499 only to a request its client cancels, which a recorded request cannot do. The status and text are Loki's fixed ones.",
+      "tests": [
+        "TestErrorLayer_NoVictoriaLogsLeak",
+        "TestErrorLayer_WindowRetryCancelDeadline"
+      ]
+    },
+    "deadline": {
+      "reason": "Loki answers 504 only after its query_timeout, which a recorded request cannot reach. The status and text are Loki's fixed ones.",
+      "tests": [
+        "TestErrorLayer_NoVictoriaLogsLeak",
+        "TestErrorLayer_WindowRetryCancelDeadline"
+      ]
+    },
+    "backend-failed": {
+      "reason": "Loki answers 500 when its storage fails, which cannot be provoked for one recorded request. The status and text are Loki's fixed ones.",
+      "tests": [
+        "TestErrorLayer_NoVictoriaLogsLeak"
+      ]
+    },
+    "internal": {
+      "reason": "Loki answers 500 for a failure of its own work, which cannot be provoked for one recorded request. The status and text are Loki's fixed ones.",
+      "tests": [
+        "TestErrorLayer_NoVictoriaLogsLeak"
+      ]
+    },
+    "write-not-supported": {
+      "reason": "The proxy serves Loki's read API only; Loki accepts a push, so there is no Loki answer to record. A POST to /loki/api/v1/push answers 405 with this proxy text, a documented limit (semantics/push-route-read-only-answer).",
+      "tests": [
+        "TestLokiPushRoute"
+      ]
+    }
+  },
+  "unmapped_messages": [
+    {
+      "id": "path-cleaning-redirect",
+      "status": 301,
+      "body": "",
+      "template": "(empty body) 301 Moved Permanently to the cleaned path",
+      "about": "A path with a double slash, dot segments or an empty segment is redirected to its cleaned form by Loki's router."
+    },
+    {
+      "id": "upgrade-required",
+      "status": 426,
+      "body": "^Upgrade Required",
+      "template": "Upgrade Required",
+      "about": "A tail request that asks to upgrade to a protocol other than websocket."
+    },
+    {
+      "id": "index-shards-target-bytes",
+      "status": 400,
+      "body": "^targetBytesPerShard",
+      "template": "targetBytesPerShard must be a positive value",
+      "about": "index/shards given no positive targetBytesPerShard."
+    },
+    {
+      "id": "push-snappy-corrupt",
+      "status": 400,
+      "body": "^snappy:",
+      "template": "snappy: corrupt input",
+      "about": "A push request with an empty or corrupt body."
+    },
+    {
+      "id": "delete-query-not-set",
+      "status": 400,
+      "body": "^query not set",
+      "template": "query not set",
+      "about": "The delete API without a query."
+    },
+    {
+      "id": "ruler-local-store",
+      "status": 400,
+      "body": "^(unable to read rule dir|error parsing /tmp|GetRuleGroup unsupported)",
+      "template": "unable to read rule dir <path>: <error>",
+      "about": "The rules views answer with the ruler's local-store errors."
+    },
+    {
+      "id": "evaluator-unexpected-expr",
+      "status": 500,
+      "body": "^unexpected expr type",
+      "template": "unexpected expr type (<type>) for Evaluator type (<type>)",
+      "about": "A query the evaluator has no case for."
+    },
+    {
+      "id": "shard-aggregations-disabled",
+      "status": 500,
+      "body": "^approx_topk is not enabled",
+      "template": "approx_topk is not enabled. See -limits.shard_aggregations",
+      "about": "approx_topk without the shard aggregations limit set."
+    }
+  ]
+}
