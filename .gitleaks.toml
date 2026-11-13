@@ -12,3 +12,9 @@ description = "RFC 6455 example Sec-WebSocket-Key (base64 of 'the sample nonce')
 regexes = [
   '''dGhlIHNhbXBsZSBub25jZQ==''',
 ]
+
+[[allowlists]]
+description = "Go module checksum files hold module hashes, not credentials (a module named oauth2 next to its h1: hash reads as an API key)"
+paths = [
+  '''(^|/)go(\.v[0-9.]+)?\.sum$''',
+]
