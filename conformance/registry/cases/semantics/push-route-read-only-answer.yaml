@@ -1,0 +1,39 @@
+id: semantics/push-route-read-only-answer
+title: The push route answers as Loki's router does, and a POST says the proxy is read-only (documented limit)
+pending: true
+proves:
+  - loki_api_v1_push
+  - status-405
+consumer: api
+why: |
+  Loki's push accepts POST (204 on success, 400 `snappy: corrupt input` for an
+  empty body, r1200) and answers any other method with the router's bodyless
+  405 (r1191). The proxy only reads: a push cannot be accepted, and checking
+  its body would pretend it was. The proxy answers every method but POST with
+  Loki's bodyless 405, and a POST with 405 in the shape Loki writes its push
+  errors in (text/plain, nosniff, message and newline):
+  `write operations are not supported, this is a read-only proxy`. The text
+  no longer names the backend, and it is a typed error (lokierr.WriteNotSupported)
+  written by p.fail. r1200 stays in the known differences with this reason.
+  A client that sends logs here gets a non-retryable 4xx, as it does from any
+  push Loki refuses.
+request:
+  method: POST
+  path: /loki/api/v1/push
+  headers:
+    X-Scope-OrgID: "0"
+    Content-Type: application/json
+compare:
+  mode: exact
+  fields: [status, headers, body]
+  expect: |
+    405 text/plain; charset=utf-8, nosniff,
+    `write operations are not supported, this is a read-only proxy` and a newline.
+gap:
+  status: documented
+  impact: api-only
+  effort: S
+  area: 'internal/proxy/patterns.go handleWriteBlocked; internal/lokierr WriteNotSupported'
+  loki: 'recorded Loki 3.7.9 answers r1191 (GET: bodyless 405) and r1200 (POST with an empty body: 400 snappy: corrupt input)'
+  proxy: 'POST: 405 with the read-only text; every other method: bodyless 405'
+  planned_test: 'TestLokiPushRoute (internal/proxy); TestLokiFunctions_WriteBlocked and TestChaining_WriteBlocked (test/e2e-compat)'

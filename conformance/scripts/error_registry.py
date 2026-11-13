@@ -180,6 +180,13 @@ def kind_of(row, spec, limit_msgs):
     raise SystemExit(f"error_registry: row {row['id']} (trigger {trigger!r}) matches no rule of trigger_kinds in {SPEC}")
 
 
+def proxy_test_text():
+    """The Go tests of internal/proxy and internal/lokierr, where a message's documented test lives."""
+    names = sorted(n for d in ("internal/proxy", "internal/lokierr") for n in os.listdir(d) if n.endswith("_test.go"))
+    return "".join(read_text(os.path.join(d, n)) for d in ("internal/proxy", "internal/lokierr")
+                   for n in names if os.path.exists(os.path.join(d, n)))
+
+
 def unmapped_id(row, spec):
     """The Loki message of a recorded error no lokierr constructor renders yet, by the spec's rules; None for a success."""
     status, body = row["loki"]["status"], row["loki"]["body"]
@@ -423,8 +430,7 @@ def build():
             item["state"] = "gap"
         if documented and ident in messages:
             for t in documented["tests"]:
-                if not re.search(rf"^func {t}\(", read_text(GATE_TEST) + read_text("internal/proxy/error_layer_mixed_test.go")
-                                 + read_text("internal/proxy/loki_error_answers_replay_test.go"), re.M):
+                if not re.search(rf"^func {t}\(", proxy_test_text(), re.M):
                     problems.append(f"message {ident}: the test {t} named in no_recorded_answer does not exist")
     for ident in messages:
         if ident not in items:

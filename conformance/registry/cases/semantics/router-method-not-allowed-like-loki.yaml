@@ -1,0 +1,50 @@
+id: semantics/router-method-not-allowed-like-loki
+title: A method a Loki read route does not serve answers 405 with no body (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - status-405
+consumer: any
+why: |
+  Loki's router serves GET and POST on every query, metadata, index, patterns,
+  detected-field, tail and format_query route, and answers any other method
+  (PUT, DELETE, PATCH, HEAD, OPTIONS) with a 405 that has no body, no
+  Content-Type and no nosniff, before tenant, rate limit or parameters. The
+  proxy served those methods as GET (200 data) or answered the parameter error
+  of an empty request (400): 59 rows of the recorded catalogue.
+
+  Fixed (internal/proxy/route_gate.go routeGate, applied by routeHandler and
+  the ruler's read wrapper): the method is checked first, ahead of every other
+  middleware. The ruler's read routes serve GET alone, so POST /rules is
+  Loki's 405 (r1199). Not recorded on Loki: volume_range, detected_field
+  values and the label values route's PATCH, HEAD and OPTIONS (registered
+  beside their recorded siblings); the nested rules routes' POST and DELETE,
+  which Loki serves as rule group writes and the proxy, which only reads,
+  answers 405 (a documented limit). The proxy has no CORS handling, so no
+  OPTIONS preflight is served or lost. The delete API, drilldown limits,
+  tenant limits, health, build info and peer routes keep their own method
+  rules.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="api-gateway"}'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, headers, body]
+  expect: |
+    PUT, DELETE, PATCH, HEAD and OPTIONS: 405, empty body, no Content-Type.
+    GET and POST are served.
+gap:
+  status: fixed
+  fixed_by: 'router checks (internal/proxy/route_gate.go)'
+  impact: api-only
+  effort: S
+  area: 'internal/proxy/route_gate.go lokiRouteMethods, routeGate'
+  loki: 'recorded Loki 3.7.9 answers r1205-r1282 and r1199 (internal/lokierr/testdata/loki_error_answers.jsonl)'
+  proxy: 'bodyless 405 on every method but GET and POST'
+  planned_test: 'TestLokiRouterMethods, TestLokiRouterRulesAreReadOnly, TestRouteGateCoversEveryReadRoute, FuzzLokiRouter, TestLokiErrorAnswersReplay (internal/proxy)'

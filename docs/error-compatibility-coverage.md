@@ -13,10 +13,10 @@ The answers are those of Grafana Loki 3.7.9, recorded over HTTP on 2026-11-13. E
 
 | Score | Value | Meaning |
 |---|---|---|
-| Errors that match Loki | 34.4% (74/215) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
+| Errors that match Loki | 70.2% (151/215) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
 | Matrix coverage | 57.3% (71/124) | route x error kind cells with a recorded or documented Loki answer, a unit gate and an end-to-end comparison |
-| Cells that match | 63/124 | cells where every comparable row matches and no known leak remains |
-| Messages recorded | 27/33 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
+| Cells that match | 77/124 | cells where every comparable row matches and no known leak remains |
+| Messages recorded | 27/34 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
 
 71 recorded rows are not comparable (the recorded Loki ran with authentication disabled, or its answer depends on its own configuration) and are replayed but not counted.
 
@@ -27,24 +27,24 @@ Each cell shows whether the proxy matches (`match` or `differs`), the matching a
 | Route | Parameters | LogQL syntax | LogQL validation | Limits | Backend failure | Methods and routing | Tenant | Cancel and deadline |
 |---|---|---|---|---|---|---|---|---|
 | `alerts` |  |  |  | match gate U | differs gate U | gap | gap | match gate U |
-| `detected_field_values` | differs 0/4 UE | match 2/2 UE | match 1/1 UE | differs 0/1 UE | match gate U | gap | gap | match gate U |
-| `detected_fields` | differs 0/7 UE | match 2/2 UE | match 1/1 UE | differs 0/1 UE | match gate U | differs 0/5 UE | gap | match gate U |
-| `detected_labels` | differs 0/1 UE | match 1/1 UE | match 2/2 UE | match 1/1 UE | match gate U | differs 0/5 UE | gap | match gate U |
-| `format_query` | gap | differs 0/2 UE |  |  |  | differs 0/5 UE |  |  |
-| `index_stats` | differs 0/3 UE | match 2/2 UE | match 1/1 UE | differs 1/1 UE | match gate U | differs 0/5 UE | gap | match gate U |
-| `index_volume` | differs 4/6 UE | match 2/2 UE | match 1/1 UE | differs 0/1 UE | match gate U | differs 0/5 UE | gap | match gate U |
+| `detected_field_values` | differs 1/4 UE | match 2/2 UE | match 1/1 UE | differs 0/1 UE | match gate U | gap | gap | match gate U |
+| `detected_fields` | differs 0/7 UE | match 2/2 UE | match 1/1 UE | differs 0/1 UE | match gate U | match 5/5 UE | gap | match gate U |
+| `detected_labels` | differs 0/1 UE | match 1/1 UE | match 2/2 UE | match 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
+| `format_query` | gap | match 2/2 UE |  |  |  | match 5/5 UE |  |  |
+| `index_stats` | differs 0/3 UE | match 2/2 UE | match 1/1 UE | differs 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
+| `index_volume` | differs 4/6 UE | match 2/2 UE | match 1/1 UE | differs 0/1 UE | match gate U | match 5/5 UE | gap | match gate U |
 | `index_volume_range` | differs 6/9 UE | match 2/2 UE | match 1/1 UE | match gate UE | match gate U | gap | gap | match gate U |
-| `label_values` | differs 0/4 UE | match 1/1 UE | match 2/2 UE | match 1/1 UE | match gate U | differs 0/2 UE | not comparable (6) | match gate U |
-| `labels` | differs 0/4 UE | match 1/1 UE | match 2/2 UE | match 1/1 UE | match gate UE | differs 0/5 UE | not comparable (20) | match gate UE |
-| `patterns` | differs 0/5 UE | match 2/2 UE | match 1/1 UE | match gate U | match gate U | differs 0/5 UE | gap | match gate U |
-| `query` | differs 0/3 UE | differs 1/2 UE | differs 0/1 UE | match gate U | match gate U | differs 0/5 UE | not comparable (6) | match gate U |
-| `query_range` | differs 2/15 UE | differs 1/2 UE | differs 0/1 UE | match gate UE | match gate UE | differs 0/5 UE | not comparable (20) | match gate UE |
+| `label_values` | differs 2/4 UE | match 1/1 UE | match 2/2 UE | match 1/1 UE | match gate U | match 2/2 UE | not comparable (6) | match gate U |
+| `labels` | differs 2/4 UE | match 1/1 UE | match 2/2 UE | match 1/1 UE | match gate UE | match 5/5 UE | not comparable (20) | match gate UE |
+| `patterns` | differs 0/5 UE | match 2/2 UE | match 1/1 UE | match gate U | match gate U | match 5/5 UE | gap | match gate U |
+| `query` | differs 0/3 UE | differs 1/2 UE | differs 0/1 UE | match gate U | match gate U | match 5/5 UE | not comparable (6) | match gate U |
+| `query_range` | differs 5/15 UE | differs 1/2 UE | differs 0/1 UE | match gate UE | match gate UE | match 5/5 UE | not comparable (20) | match gate UE |
 | `rules` |  |  |  | match gate U | match gate U | gap | gap | match gate U |
-| `series` | differs 0/2 UE | match 2/2 UE | match 1/1 UE | match 1/1 UE | match gate U | differs 0/5 UE | not comparable (6) | match gate U |
-| `tail` | differs 0/4 UE | match 2/2 UE | match 1/1 UE | match gate U | match gate U | differs 0/5 UE | gap | match gate U |
+| `series` | differs 0/2 UE | match 2/2 UE | match 1/1 UE | match 1/1 UE | match gate U | match 5/5 UE | not comparable (6) | match gate U |
+| `tail` | differs 0/4 UE | match 2/2 UE | match 1/1 UE | match gate U | match gate U | match 5/5 UE | gap | match gate U |
 | `tail_upgrade` | differs 0/4 UE | match 2/2 UE | gap |  |  | differs 1/2 UE | not comparable (2) |  |
-| other routes (rules views, push, delete, shards, exemplars, aliases) |  |  |  |  |  | differs 4/11 UE |  |  |
-| unknown paths |  |  |  |  |  | differs 15/23 UE |  |  |
+| other routes (rules views, push, delete, shards, exemplars, aliases) |  |  |  |  |  | differs 6/11 UE |  |  |
+| unknown paths |  |  |  |  |  | match 23/23 UE |  |  |
 
 Error kinds:
 
@@ -86,16 +86,16 @@ The order was observed by sending 33 requests that carry two errors each to a re
 | `msg-limit-not-positive` | 400 | param | 8 | 2/8 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-limit-query-length` | 400 | limit | 9 | 5/8 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-limit-series` | 400 | limit | 0 | - | documented | TestErrorLayer_LokiLimitTexts | - |
-| `msg-method-not-allowed` | 405 | route | 59 | 0/59 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
-| `msg-not-found` | 404 | route | 21 | 17/21 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-method-not-allowed` | 405 | route | 59 | 59/59 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-not-found` | 404 | route | 21 | 21/21 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-number` | 400 | param | 8 | 2/8 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-only-label-matchers` | 400 | param | 8 | 8/8 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-only-log-selector` | 400 | param | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-param-duration` | 400 | param | 9 | 0/9 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-param-number` | 400 | param | 13 | 0/13 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
-| `msg-parse` | 400 | parse | 35 | 28/35 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-parse` | 400 | parse | 35 | 30/35 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-parse-input-size` | 400 | parse | 1 | 1/1 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
-| `msg-post-too-large` | 400 | form | 1 | 0/1 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-post-too-large` | 400 | form | 1 | 1/1 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-queue-full` | 429 | queue_full | 0 | - | documented | TestErrorLayer_NoVictoriaLogsLeak | - |
 | `msg-step-duration` | 400 | param | 4 | 0/4 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-step-not-positive` | 400 | param | 4 | 1/4 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
@@ -105,13 +105,14 @@ The order was observed by sending 33 requests that carry two errors each to a re
 | `unmapped-delete-query-not-set` | 400 | unmapped | 1 | - | recorded-not-comparable | - | - |
 | `unmapped-evaluator-unexpected-expr` | 500 | unmapped | 1 | 0/1 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `unmapped-index-shards-target-bytes` | 400 | unmapped | 1 | 0/1 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
-| `unmapped-path-cleaning-redirect` | 301 | unmapped | 7 | 0/7 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `unmapped-path-cleaning-redirect` | 301 | unmapped | 7 | 7/7 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `unmapped-push-snappy-corrupt` | 400 | unmapped | 1 | 0/1 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `unmapped-ruler-local-store` | 400 | unmapped | 4 | - | recorded-not-comparable | - | - |
 | `unmapped-shard-aggregations-disabled` | 500 | unmapped | 1 | - | recorded-not-comparable | - | - |
 | `unmapped-upgrade-required` | 426 | unmapped | 1 | 0/1 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
-| `msg-url-escape` | 400 | form | 2 | 0/2 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
-| `msg-url-semicolon` | 400 | form | 2 | 0/2 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-url-escape` | 400 | form | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-url-semicolon` | 400 | form | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-write-not-supported` | 405 | route | 0 | - | documented | TestLokiPushRoute | - |
 
 A message with no recorded row carries the reason in its registry item (`conformance/registry/loki/errors/`).
 
