@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+## [2.196.0] - 2026-11-13
 
+### Fixed
 - `/loki/api/v1/detected_fields` and `/loki/api/v1/detected_field/{name}/values` answer a failed later
   VictoriaLogs call as an error, as Loki does, where the first read had already worked. A field that lives
   inside the log line (the last read of its values), a value held by a stream label (the labels read), and a
