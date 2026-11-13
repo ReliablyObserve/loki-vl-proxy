@@ -764,8 +764,11 @@ See [Performance — Go Runtime Tuning](performance.md#go-runtime-tuning) for gu
 | `-backend-tls-skip-verify` | — | `false` | Skip TLS on VL connection |
 | `-tail.allowed-origins` | — | — | Comma-separated WebSocket Origin allowlist for `/loki/api/v1/tail` |
 | `-tail.mode` | — | `auto` | `auto`, `native`, or `synthetic` for `/tail` streaming mode |
+| `-tail.backend-retry-window` | — | `30s` | How long a live tail stays open and retries while VictoriaLogs restarts or fails; `0` closes the tail on the first failed call |
 
 `-tail.mode=auto` prefers native backend tailing and falls back to synthetic polling when native streaming is unavailable. `native` disables the fallback, and `synthetic` forces the polling bridge even when the backend can stream natively.
+
+A live tail rides out a short VictoriaLogs outage. While VictoriaLogs refuses or resets the connection, times out, answers 429 or 5xx, or a native stream ends or breaks, the websocket stays open (the proxy keeps pinging the client), and the proxy reopens the native stream, or polls again, after a jittered wait that doubles from 250 ms to 5 s, for at most `-tail.backend-retry-window`. The reopened stream reads from the last line sent and drops the lines it already sent, so no line is repeated and the lines written during the outage arrive; the polled tail keeps its cursor. When the window is spent the tail closes with `1011` and Loki's `Internal Server Error`. A failure no retry fixes closes it at once: a row that is not JSON, a line above 1 MiB, a 4xx answer other than 429. A client that disconnects releases the VictoriaLogs call and the retry at once. `loki_vl_proxy_internal_operation_total{operation="tail_backend_retry"}` counts the waits (`retried`), the outages that ended (`recovered`) and the closes (`exhausted`, `permanent`).
 
 `/loki/api/v1/tail` accepts at most 4 KiB per client WebSocket message and closes the connection with code `1009` when a client sends more. Log frames sent to Grafana are not limited by this.
 

@@ -169,6 +169,7 @@ type proxyRuntimeConfig struct {
 	adminAuthToken                      string
 	tailAllowedOrigins                  string
 	tailMode                            string
+	tailBackendRetryWindow              time.Duration
 	metricsMaxTenants                   int
 	metricsMaxClients                   int
 	metricsTrustProxyHeaders            bool
@@ -696,6 +697,7 @@ func run(
 	adminAuthToken := fs.String("server.admin-auth-token", "", "Bearer token required for admin/debug endpoints when set")
 	tailAllowedOrigins := fs.String("tail.allowed-origins", "", "Comma-separated WebSocket Origin allowlist for /loki/api/v1/tail. Empty denies browser origins.")
 	tailMode := fs.String("tail.mode", "auto", "Tail streaming mode: auto (native with synthetic fallback), native, or synthetic")
+	tailBackendRetryWindow := fs.Duration("tail.backend-retry-window", 30*time.Second, "How long a live tail keeps its websocket open while VictoriaLogs fails for a reason a retry can fix (connection refused or reset, a timeout, a stream that ends or breaks, a 429 or 5xx answer): the proxy reopens the stream, or polls again, with a jittered backoff from 250 ms up to 5 s, and resumes from the last line sent without repeating or skipping one. Past the window, and at once for a failure no retry fixes (a malformed or oversize row, a 4xx VictoriaLogs answer), the tail closes with 1011 and Loki's text. 0 closes on the first failure.")
 	metricsMaxTenants := fs.Int("metrics.max-tenants", 256, "Maximum unique tenant labels retained in exported metrics before collapsing into __overflow__")
 	metricsMaxClients := fs.Int("metrics.max-clients", 256, "Maximum unique client labels retained in exported metrics before collapsing into __overflow__")
 	metricsTrustProxyHeaders := fs.Bool("metrics.trust-proxy-headers", false, "Trust X-Grafana-User and X-Forwarded-For when deriving per-client metrics labels")
@@ -1002,6 +1004,7 @@ func run(
 			adminAuthToken:                      *adminAuthToken,
 			tailAllowedOrigins:                  *tailAllowedOrigins,
 			tailMode:                            *tailMode,
+			tailBackendRetryWindow:              *tailBackendRetryWindow,
 			metricsMaxTenants:                   *metricsMaxTenants,
 			metricsMaxClients:                   *metricsMaxClients,
 			metricsTrustProxyHeaders:            *metricsTrustProxyHeaders,
@@ -2194,6 +2197,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	default:
 		return proxy.Config{}, fmt.Errorf("invalid -tail.mode: %q (must be 'auto', 'native', or 'synthetic')", cfg.tailMode)
 	}
+	if cfg.tailBackendRetryWindow < 0 {
+		return proxy.Config{}, fmt.Errorf("invalid -tail.backend-retry-window: %s (must be >= 0; 0 closes a tail on the first failed VictoriaLogs call)", cfg.tailBackendRetryWindow)
+	}
 	if err := validateHeavyQueryLimits(cfg); err != nil {
 		return proxy.Config{}, err
 	}
@@ -2332,6 +2338,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		AdminAuthToken:                     cfg.adminAuthToken,
 		TailAllowedOrigins:                 parseCSV(cfg.tailAllowedOrigins),
 		TailMode:                           tailMode,
+		TailBackendRetryWindow:             cfg.tailBackendRetryWindow,
 		MetricsMaxTenants:                  cfg.metricsMaxTenants,
 		MetricsMaxClients:                  cfg.metricsMaxClients,
 		MetricsTrustProxyHeaders:           cfg.metricsTrustProxyHeaders,

@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (258), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (259), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -124,6 +124,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-query-stats-mode` | string | `"loki"` | `extraArgs.query-stats-mode` | Accounting of the data.stats object of query, query_range, volume and volume_range answers (the Stats of Grafana's query inspector and the Logs Drilldown footer). loki (the default) emulates Loki's numbers: the lines and bytes of the pieces Loki would have read (a log query that fills its limit stops after the piece holding its last entry; lines estimated from the answer's entries when no volume answer of the panel is known; bytes as lines times the mean line size), Loki's splits and shards (1h pieces), cache hits as Loki reports them (log and instant answers replay the computation; metric query_range hits are results-cache hits). victorialogs reports what the proxy measured: the rows VictoriaLogs returned and their line bytes, a metric answer's own counts, VictoriaLogs calls as splits, nothing processed on a cache hit |
 | `-stream-fields` | string | (empty) | `extraArgs.stream-fields` | app,env,namespace |
 | `-tail.allowed-origins` | string | (empty) | `extraArgs.tail.allowed-origins` | Comma-separated WebSocket Origin allowlist for /loki/api/v1/tail. Empty denies browser origins. |
+| `-tail.backend-retry-window` | duration | `30s` | `extraArgs.tail.backend-retry-window` | How long a live tail keeps its websocket open while VictoriaLogs fails for a reason a retry can fix (connection refused or reset, a timeout, a stream that ends or breaks, a 429 or 5xx answer): the proxy reopens the stream, or polls again, with a jittered backoff from 250 ms up to 5 s, and resumes from the last line sent without repeating or skipping one. Past the window, and at once for a failure no retry fixes (a malformed or oversize row, a 4xx VictoriaLogs answer), the tail closes with 1011 and Loki's text. 0 closes on the first failure. |
 | `-tail.mode` | string | `"auto"` | `extraArgs.tail.mode` | Tail streaming mode: auto (native with synthetic fallback), native, or synthetic |
 | `-translate-otel-attributes` | bool | `true` | `extraArgs.translate-otel-attributes` | Translate known OTel semantic convention labels from underscore to dotted form in upstream queries (set false to preserve client label names) |
 

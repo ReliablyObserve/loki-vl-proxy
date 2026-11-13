@@ -8,7 +8,8 @@ consumer: any
 why: |
   The alerts route decodes a malformed 200 body as empty. The tail no longer
   closes normally: a native stream that ends or fails and a failed poll close
-  with 1011 and Loki's text. Patterns now answers each of the 14 backend failure
+  with 1011 and Loki's text once the retry window
+  (-tail.backend-retry-window) is spent. Patterns now answers each of the 14 backend failure
   modes with the error the other routes give it (500, 504, 499, 429, 400) when
   it has no earlier answer to serve. detected_fields, detected_field values and
   detected_labels now answer each failed call (a timeout, a cancelled request,
