@@ -587,12 +587,21 @@ func runErrLayerBackendCell(t *testing.T, rt errLayerRoute, backend *errLayerBac
 	if mode == "timeout" {
 		cfg.BackendTimeout = 250 * time.Millisecond
 	}
+	if errLayerBackendRetries {
+		cfg.BackendRetryAttempts = DefaultBackendRetryAttempts
+		cfg.BackendRetryMaxWait = DefaultBackendRetryMaxWait
+		cfg.BackendRetryBudgetRatio = DefaultBackendRetryBudgetRatio
+	}
 	if mode == "oversize" {
 		cfg.ExecutionLimits.BackendMaxBufferedResponseBytes = 4096
 	}
 	p, err := New(cfg)
 	if err != nil {
 		t.Fatalf("new proxy: %v", err)
+	}
+	if p.backendRetry != nil {
+		p.backendRetry.initial = time.Millisecond
+		p.backendRetry.max = 4 * time.Millisecond
 	}
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	mux := http.NewServeMux()
@@ -684,6 +693,28 @@ func runErrLayerTail(t *testing.T, mux *http.ServeMux, rt errLayerRoute, backend
 // single Loki-shaped error layer (see the file comment).
 // conformance: semantics/error-layer-transport-text, semantics/error-layer-backend-text, semantics/error-layer-internal-go-text, semantics/error-layer-backend-failure-status, semantics/error-layer-cancel-deadline, semantics/error-layer-silent-success, semantics/error-layer-proxy-limit-status, backend-deadlines-and-cancellation, status-500, status-502, status-503
 func TestErrorLayer_NoVictoriaLogsLeak(t *testing.T) {
+	runErrLayerGate(t)
+}
+
+// errLayerBackendRetries runs the gate's proxies with the shared VictoriaLogs
+// retry on (the gate's other runs send every read once, as the library default
+// does).
+var errLayerBackendRetries bool
+
+// TestErrorLayer_NoVictoriaLogsLeakWithBackendRetries runs the gate again with
+// the backend retries on. Every mode fails every call, so after the last try the
+// client gets the answer it gets without retries: the same cells leak, and no
+// new one does. (A transient failure that recovers is
+// TestBackendRetry_ClientGetsTheAnswerLokiWouldGive.)
+// conformance: semantics/transient-backend-failure-is-retried, semantics/error-layer-backend-failure-status, semantics/error-layer-transport-text, semantics/error-layer-backend-text
+func TestErrorLayer_NoVictoriaLogsLeakWithBackendRetries(t *testing.T) {
+	errLayerBackendRetries = true
+	t.Cleanup(func() { errLayerBackendRetries = false })
+	runErrLayerGate(t)
+}
+
+func runErrLayerGate(t *testing.T) {
+	t.Helper()
 	known := errLayerKnownLeaks(t)
 	recorded := map[string][]string{}
 	var recordMu sync.Mutex

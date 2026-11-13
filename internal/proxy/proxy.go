@@ -472,6 +472,17 @@ type Config struct {
 	// Zero (the library default; the flag defaults to 30s) closes the tail
 	// with Loki's 1011 on the first failed call.
 	TailBackendRetryWindow time.Duration
+	// BackendRetryAttempts (-backend-retry-attempts) is how many times a
+	// VictoriaLogs read that failed for a reason a retry can fix (a refused or
+	// reset connection, a 429, 502, 503 or 504 answer) is sent again before
+	// its answer is returned. Zero (the library default; the flag defaults to
+	// 2) sends every read once. BackendRetryMaxWait bounds the time one call
+	// spends waiting between tries; BackendRetryBudgetRatio is the retries a
+	// replica earns per call (a sustained failure is retried for at most that
+	// fraction of the calls).
+	BackendRetryAttempts    int
+	BackendRetryMaxWait     time.Duration
+	BackendRetryBudgetRatio float64
 
 	// Metrics/export hardening
 	MetricsMaxTenants            int
@@ -782,6 +793,7 @@ type Proxy struct {
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	heavyQueryLimiter                     *heavyQueryLimiter
 	metadataScanLimiter                   *metadataScanLimiter
+	backendRetry                          *backendRetryPolicy
 	labelWarmBackoff                      *labelWarmBackoff  // per preset window retry delay after a failed warm
 	metadataInventoryParallelism          int                // bucket listings in flight per request; 0 = inventory off
 	inventoryGroup                        singleflight.Group // one fill per inventory bucket
@@ -1586,6 +1598,7 @@ func New(cfg Config) (*Proxy, error) {
 	if p.metadataScanLimiter != nil {
 		p.metadataScanLimiter.localCalls = func() int { return int(p.selectCallsInFlight.Load()) }
 	}
+	p.backendRetry = newBackendRetryPolicy(cfg.BackendRetryAttempts, cfg.BackendRetryMaxWait, cfg.BackendRetryBudgetRatio)
 	p.metadataInventoryParallelism = resolveMetadataInventoryParallelism(cfg.MetadataInventoryParallelism)
 	if cfg.LogRequestSampleRate > 1 {
 		p.logSampleN = uint64(cfg.LogRequestSampleRate)

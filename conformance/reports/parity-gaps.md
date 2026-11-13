@@ -216,6 +216,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/tail-survives-backend-outage` — A live tail rides out a short VictoriaLogs restart and carries on without repeating or skipping a line (fixed) | TBD-PR | 0 | 0 |
 | `semantics/topk-bottomk-without-strips-label` — topk without and bottomk without keep every label of the winning series, like Loki (fixed) | #736 | 0 | 0 |
 | `semantics/topk-over-vector-aggregation` — An aggregation around a topk, bottomk or sort folds what the ranking kept at each step (fixed) | #749 | 0 | 0 |
+| `semantics/transient-backend-failure-is-retried` — A transient VictoriaLogs failure is retried and the client gets the answer Loki gives (fixed) | TBD-PR | 0 | 0 |
 | `semantics/unwrap-conversion-error` — An unwrap over a value its conversion rejects fails like Loki, with a 400 SampleExtractionErr (fixed) | #704 | 0 | 0 |
 | `semantics/unwrap-duration-seconds` — `unwrap duration_seconds(label)` is converted like duration(), as Loki does (fixed) | #729 | 0 | 0 |
 | `semantics/unwrap-first-last-range-timestamps` — first_over_time and last_over_time with unwrap answer Loki's query_range timestamps for a range up to the step (fixed) | #1059 | 0 | 0 |

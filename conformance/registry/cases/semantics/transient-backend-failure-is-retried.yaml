@@ -1,0 +1,65 @@
+id: semantics/transient-backend-failure-is-retried
+title: A transient VictoriaLogs failure is retried and the client gets the answer Loki gives (fixed)
+pending: true
+proves:
+  - status-502
+  - status-503
+  - loki_api_v1_query_range
+consumer: any
+why: |
+  A query Loki answers is answered by the proxy even when one VictoriaLogs
+  call fails for a moment: a connection refused or reset, a connection closed
+  before any answer, a 429, 502, 503 or 504 answer (VictoriaLogs' full select
+  queue, a node restarting, a proxy in front of VictoriaLogs that lost its
+  backend). The proxy answered every such failure with an error Loki would
+  not have produced, on every route. The backend client now sends the read
+  again, in one place for every route, after a jittered wait doubling from
+  200 ms to 2 s (and at least a Retry-After a proxy in front sent), at most
+  -backend-retry-attempts times (default 2) and -backend-retry-max-wait (5s)
+  in all. A retry needs budget (-backend-retry-budget-ratio, a tenth of the
+  calls, plus a burst of 20), so a sustained outage adds at most that fraction
+  to the calls a replica sends to VictoriaLogs, and no retry is made while
+  the circuit breaker is not closed, once the client cancelled, after a
+  timeout, when the request deadline would pass during the wait, or for a
+  400, 422, 404 or 500 (VictoriaLogs rejected or failed the query itself).
+  Nothing is repeated once an answer body is being read. After the last try
+  the client gets the error it gets without retries; VictoriaLogs' text stays
+  in the proxy log. The live tail has its own reconnect and the peer cache
+  calls are not retried.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="api-gateway"}'
+  headers:
+    X-Scope-OrgID: "0"
+  setup: |
+    TestBackendRetry_* (internal/proxy): a fake VictoriaLogs that fails once
+    or twice and then answers, for each transient kind (queue-timeout 503,
+    429, 502, 504, connection refused, reset, closed before an answer, a dial
+    failure), through the backend client with GET and POST and through
+    query_range; failures that last (the client answer equals the answer
+    without retries and shows none of VictoriaLogs' text); failures no retry
+    fixes (400, 422, 404, 500, a timeout, a deadline); the delete call; a
+    client that leaves during a wait; a request deadline shorter than the
+    wait; Retry-After; the retry budget under sustained failure; the circuit
+    breaker open; the cold tier. TestErrorLayer_NoVictoriaLogsLeakWithBackendRetries
+    runs the whole error-layer gate with retries on.
+compare:
+  mode: observed
+  fields: [status, body]
+  expect: |
+    One transient failure of a VictoriaLogs call does not change the answer:
+    200 with the data. A failure that lasts answers Loki's error for it
+    (500 for a failed backend, 429 for a full queue), unchanged from before.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: explore-visible
+  visual: none
+  visual_reason: 'The failure is a moment of a failing backend call; the visual harness has no fault-injecting VictoriaLogs under a Grafana panel, so no capture is wired here. The unit tests assert the answers a client receives.'
+  effort: M
+  area: 'internal/proxy/backend_retry.go doBackendRead, used by vlGetInner, vlPostHTTP and coldPost'
+  loki: 'a failed sub-query is retried before the query frontend answers an error (query_frontend.max_retries)'
+  proxy: 'one bounded retry in the backend client: jittered backoff, Retry-After, retry budget, circuit breaker, deadline and cancel aware (-backend-retry-attempts, -backend-retry-max-wait, -backend-retry-budget-ratio)'
+  planned_test: 'TestBackendRetry_TransientFailureRecovers and TestBackendRetry_ClientGetsTheAnswerLokiWouldGive (internal/proxy)'
