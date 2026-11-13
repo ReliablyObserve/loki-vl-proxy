@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.198.0] - 2026-11-13
+
 ### Changed
 
 - The proxy's error answers now come from one typed error layer: each Loki error message has its own
