@@ -254,7 +254,8 @@ func sweepRequestQuery(q string) string {
 }
 
 // sweepValidate is the handlers' validation (Proxy.validateQuery) of a client query in the Loki-compatible profile
-// (the default): Loki's error for a dotted name, then the typed parser's validation.
+// (the default): Loki's error for a dotted name, then the typed parser's validation and the checks on its tree
+// (queryplan.Validate).
 func sweepValidate(q string) (logql.Expr, string) {
 	rq := sweepRequestQuery(q)
 	if msg := logql.InputSizeError(q); msg != "" {
@@ -263,7 +264,13 @@ func sweepValidate(q string) (logql.Expr, string) {
 	if msg := logql.DottedNameError(rq); msg != "" {
 		return nil, msg
 	}
-	return logql.ValidateLogQLExpr(rq)
+	expr, msg := logql.ValidateLogQLExpr(rq)
+	if msg == "" && expr != nil {
+		if rejection := queryplan.Validate(expr); rejection != nil {
+			return nil, rejection.Error()
+		}
+	}
+	return expr, msg
 }
 
 // sweepEval is the proxy's answer for q: the validation the handlers run, the plan's facts, and the LogsQL of the

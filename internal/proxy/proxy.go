@@ -2597,6 +2597,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if p.answerEmptyResult(w, "query_range", logqlQuery, start) {
+		return
+	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, true)
 
 	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual)
@@ -3020,6 +3023,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	querycorpus.RecordRequest(r, logqlQuery)
 	logqlQuery, ok := p.validateQuery(w, logqlQuery, "query")
 	if !ok {
+		return
+	}
+	if p.answerEmptyResult(w, "query", logqlQuery, start) {
 		return
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, false)

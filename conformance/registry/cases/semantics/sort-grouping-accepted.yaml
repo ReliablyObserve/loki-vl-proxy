@@ -1,12 +1,17 @@
 id: semantics/sort-grouping-accepted
-title: "sort and sort_desc with a grouping clause are accepted where Loki rejects them (open)"
+title: "sort and sort_desc with a grouping clause are rejected with Loki's parse error (fixed)"
 pending: true
 proves:
   - loki_api_v1_query_range
 consumer: api
 why: |
   Loki's oracle answers "parse error : sort and sort_desc doesn't allow grouping by " for `sort_desc by (a) (rate({a="b"}[5m]))` (and for sort).
-  The proxy's validation accepts it and the translator writes the aggregation with the grouping.
+  The proxy's validation accepted it and the translator wrote the aggregation with the grouping.
+
+  Fixed: the checks on the parsed tree (internal/queryplan/validate.go Validate), run by the cached query
+  validation of every route before the cache, the plan and any VictoriaLogs call, answer Loki's 400 and text for
+  labels to group by (`sort by ()` and `sort without ()` stay accepted, as in Loki). On the metadata routes the
+  check comes before `only label matchers are supported` (semantics/metadata-routes-validate-before-selector-rule).
 
   Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
 request:
@@ -18,13 +23,14 @@ compare:
   fields: [status, error_text]
   expect: "Loki's 400: sort and sort_desc doesn't allow grouping by."
 gap:
-  status: open
+  status: fixed
+  fixed_by: TBD-PR
   impact: api-only
   effort: S
   area: "internal/logql validation of sort and sort_desc"
   loki: "400 for a grouping clause on sort and sort_desc"
-  proxy: "accepted"
-  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  proxy: "400, Loki's text, before any other work"
+  planned_test: 'TestValidate, TestValidateMatchesLoki (Loki oracle answers), FuzzValidate (internal/queryplan); TestQueryTreeValidationOnEveryRoute, TestLokiErrorAnswersReplay row r1533 (internal/proxy); TestGrammarSweep (internal/querycorpus)'
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
   clusters: []

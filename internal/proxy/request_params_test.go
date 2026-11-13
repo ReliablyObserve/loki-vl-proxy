@@ -54,7 +54,6 @@ func readRequestParamAnswers(t *testing.T) []lokiErrorAnswer {
 // fails, and a listed row that now matches fails until it is removed.
 var requestParamKnownDifferences = map[string]string{
 	"r0610": "the replay proxy keeps max_entries_limit_per_query at its default of 10000; the recorded Loki has no such limit",
-	"r0673": "the replay proxy keeps max_entries_limit_per_query at its default of 10000; the recorded Loki has no such limit",
 	"r0691": "the proxy reads an integer time of 11 to 18 digits by its magnitude (seconds, milliseconds, microseconds) and refuses a year 3000 time; Loki reads it as nanoseconds",
 	"r1597": "a stage that does not compile is reported with the parse error before the parameters; Loki reports it after them (needs the parser's phase of a rejection)",
 	"r1598": "a stage that does not compile is reported with the parse error before the parameters; Loki reports it after them (needs the parser's phase of a rejection)",
@@ -64,7 +63,7 @@ var requestParamKnownDifferences = map[string]string{
 
 // requestParamKnownDifferenceCeiling is the length of requestParamKnownDifferences:
 // a fix removes a row and lowers it, a new difference cannot be added.
-const requestParamKnownDifferenceCeiling = 7
+const requestParamKnownDifferenceCeiling = 6
 
 // TestRequestParamAnswers replays Loki's recorded answers to request-parameter
 // probes against the proxy: a request Loki rejects gets Loki's status,

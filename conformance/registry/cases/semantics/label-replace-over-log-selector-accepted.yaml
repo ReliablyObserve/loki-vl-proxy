@@ -1,5 +1,5 @@
 id: semantics/label-replace-over-log-selector-accepted
-title: "label_replace over a log selector is accepted where Loki answers a syntax error (open)"
+title: "label_replace over a log selector is rejected with Loki's syntax error, without its position (open)"
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -7,7 +7,11 @@ consumer: api
 why: |
   label_replace takes a metric expression. The Loki oracle answers
   "parse error at line 1, col 22: syntax error: unexpected ," for `label_replace({a="b"}, "d", "x", "a", "(.*)")` and the same with a pipeline
-  (`label_replace({a="b"} | json, ...)`). The proxy's validation accepts both and the translator's text is the log query alone.
+  (`label_replace({a="b"} | json, ...)`). The proxy's validation accepted both and the translator's text was the log query alone.
+
+  Now the checks on the parsed tree (internal/queryplan/validate.go Validate) reject it at validation with Loki's
+  status and syntax error, `parse error : syntax error: unexpected ,`, on every route before any other work. The
+  tree holds no position, so Loki's `at line 1, col N` is missing until the parser reports it (the parser rework).
 
   Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
 request:
@@ -24,8 +28,8 @@ gap:
   effort: S
   area: "internal/logql typeOpaqueCall / validation of label_replace operands"
   loki: "the first argument must be a metric expression"
-  proxy: "any expression, log selectors included"
-  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  proxy: "400 and Loki's syntax error without the position"
+  planned_test: 'TestValidate, TestValidateMatchesLoki (Loki oracle answers, position aside) (internal/queryplan); TestQueryTreeValidationOnEveryRoute (internal/proxy); TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries)'
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
   clusters: []

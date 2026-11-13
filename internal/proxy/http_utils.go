@@ -153,9 +153,16 @@ func validateLogQLSyntax(query string) string {
 // stepAlignMiddleware reads before the handler validates the same string, and
 // the offsets and ranges of its range selectors (requestTimeBounds).
 type queryValidation struct {
-	msg    string
+	msg string
+	// tree is set when msg is a rejection of the typed tree's checks (queryplan.Validate), made after the
+	// parser and its semantic pass accepted the query.
+	tree   bool
 	sample bool
-	shift  queryShift
+	// empty is set for a metric query Loki answers with no series whatever the data (emptyWhateverTheData).
+	empty bool
+	// logQuery is set for a valid log query, selector is set when it has no pipeline stage.
+	logQuery, selector bool
+	shift              queryShift
 }
 
 // cachedQueryValidation validates query once per distinct string: it parses
@@ -170,10 +177,14 @@ func cachedQueryValidation(query string) queryValidation {
 			}
 		}
 	}
-	expr, msg := logql.ValidateLogQLExpr(query)
-	result := queryValidation{msg: msg, sample: msg == "" && isSampleExpr(expr)}
+	expr, msg, tree := validateQueryTree(query)
+	result := queryValidation{msg: msg, tree: tree, sample: msg == "" && isSampleExpr(expr)}
 	if msg == "" && expr != nil {
 		result.shift = queryShiftOf(expr)
+		result.empty = result.sample && emptyWhateverTheData(expr)
+		if lq, ok := expr.(*logql.LogQuery); ok {
+			result.logQuery, result.selector = true, len(lq.Pipeline) == 0
+		}
 	}
 	if cacheable {
 		storeValidationResult(query, result)

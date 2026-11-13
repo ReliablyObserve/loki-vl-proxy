@@ -1,0 +1,95 @@
+{"q":"sort by (a) (rate({a=\"b\"}[5m]))","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"sort_desc by (a) (rate({a=\"b\"}[5m]))","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"sort without (a) (rate({a=\"b\"}[5m]))","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"sort (rate({a=\"b\"}[5m])) by (a)","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"sort(vector(1)) by (a)","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"sort by (a) (vector(1))","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"sort by (a) (1)","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"sort by (a) (rate({a=\"b\"}[5m]) + 1)","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"sort_desc by (a) (sort by (b) (rate({a=\"b\"}[5m])))","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"sum by (a) (sort by (b) (rate({a=\"b\"}[5m])))","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"label_replace(sort by (a) (rate({a=\"b\"}[5m])), \"d\", \"$1\", \"a\", \"(.*)\")","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"sort by (a) (label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\"))","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"sort by (a) (quantile_over_time({a=\"b\"} | unwrap c [5m]))","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"sort_desc without () (rate({a=\"b\"}[5m]))","accept":true}
+{"q":"sort by () (rate({a=\"b\"}[5m]))","accept":true}
+{"q":"sort(rate({a=\"b\"}[5m]))","accept":true}
+{"q":"sort_desc(sum by (a) (rate({a=\"b\"}[5m])))","accept":true}
+{"q":"sum by (a) (rate({a=\"b\"}[5m]))","accept":true}
+{"q":"topk by (a) (2, rate({a=\"b\"}[5m]))","accept":true}
+{"q":"quantile_over_time({a=\"b\"} | unwrap c [5m])","accept":false,"error":"parse error : parameter required for operation quantile_over_time"}
+{"q":"quantile_over_time({a=\"b\"} | json | unwrap c [5m]) by (a)","accept":false,"error":"parse error : parameter required for operation quantile_over_time"}
+{"q":"rate({a=\"b\"}[5m]) and quantile_over_time({a=\"b\"} | unwrap c [5m])","accept":false,"error":"parse error : parameter required for operation quantile_over_time"}
+{"q":"rate({a=\"b\"}[5m]) and 1 + quantile_over_time({a=\"b\"} | unwrap c [5m])","accept":false,"error":"parse error : parameter required for operation quantile_over_time"}
+{"q":"quantile_over_time({a=\"b\"} | unwrap c [5m]) + sort by (a) (rate({a=\"b\"}[5m]))","accept":false,"error":"parse error : parameter required for operation quantile_over_time"}
+{"q":"sort by (a) (rate({a=\"b\"}[5m])) + quantile_over_time({a=\"b\"} | unwrap c [5m])","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"quantile_over_time(0.5, {a=\"b\"} | unwrap c [5m])","accept":true}
+{"q":"quantile_over_time(1.5, {a=\"b\"} | unwrap c [5m])","accept":true}
+{"q":"quantile_over_time(0.5, {a=\"b\"} | unwrap c [5m]) by (a)","accept":true}
+{"q":"avg_over_time({a=\"b\"} | unwrap c [5m])","accept":true}
+{"q":"rate({a=\"b\"}[5m]) and 1 + 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 3.000000"}
+{"q":"1 + 2 and rate({a=\"b\"}[5m])","accept":false,"error":"parse error : unexpected literal for left leg of logical/set binary operation (and): 3.000000"}
+{"q":"rate({a=\"b\"}[5m]) or (1 + 2) * 3","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (or): 9.000000"}
+{"q":"(1 + 2) unless rate({a=\"b\"}[5m])","accept":false,"error":"parse error : unexpected literal for left leg of logical/set binary operation (unless): 3.000000"}
+{"q":"1 * 2 or sum(rate({a=\"b\"}[5m]))","accept":false,"error":"parse error : unexpected literal for left leg of logical/set binary operation (or): 2.000000"}
+{"q":"vector(1) and 1 + 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 3.000000"}
+{"q":"rate({a=\"b\"}[5m]) and (1 + 2)","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 3.000000"}
+{"q":"rate({a=\"b\"}[5m]) and on (a) 1 + 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 3.000000"}
+{"q":"(rate({a=\"b\"}[5m])) and ignoring () 1 + 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 3.000000"}
+{"q":"sum(rate({a=\"b\"}[5m])) and 1 * 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 2.000000"}
+{"q":"1 + 2 and 3 + 4","accept":false,"error":"parse error : unexpected literal for left leg of logical/set binary operation (and): 3.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 1 + on (a) 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 3.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 1 + ignoring (a) 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 3.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 1 * on (a) group_left 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 2.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 1 == bool 1","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 1.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 1 \u003e 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 0.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 3 \u003e 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 1.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 2 \u003e 3","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 0.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 3 \u003e bool 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 1.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 1 != 1","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 0.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 2 \u003e= 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 1.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 2 \u003c= 1","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 0.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 1 \u003c 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 1.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 1 == 1","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 1.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 1 / 0","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): NaN"}
+{"q":"rate({a=\"b\"}[5m]) and -1 / 0","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): NaN"}
+{"q":"rate({a=\"b\"}[5m]) and 0 / 0","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): NaN"}
+{"q":"rate({a=\"b\"}[5m]) and 5 % 3","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 2.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 5 % 0","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): NaN"}
+{"q":"rate({a=\"b\"}[5m]) and 2 ^ 3","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 8.000000"}
+{"q":"rate({a=\"b\"}[5m]) and -2 ^ 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 4.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 2 ^ 3 ^ 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 512.000000"}
+{"q":"rate({a=\"b\"}[5m]) and 1e300 * 1e300","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): +Inf"}
+{"q":"rate({a=\"b\"}[5m]) and 0.1 + 0.2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 0.300000"}
+{"q":"rate({a=\"b\"}[5m]) and 1e3","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 1000.000000"}
+{"q":"rate({a=\"b\"}[5m]) and (1 + (2 and 3))","accept":false,"error":"parse error : unexpected literal for left leg of logical/set binary operation (and): 2.000000"}
+{"q":"(1 + 2) + (3 and 4)","accept":false,"error":"parse error : unexpected literal for left leg of logical/set binary operation (and): 3.000000"}
+{"q":"(1 and 2) or (3 and 4)","accept":false,"error":"parse error : unexpected literal for left leg of logical/set binary operation (and): 1.000000"}
+{"q":"quantile_over_time({a=\"b\"} | unwrap c [5m]) + 1 and 2","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 2.000000"}
+{"q":"sort by (a) (rate({a=\"b\"}[5m])) and 1","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 1.000000"}
+{"q":"1 and sort by (a) (rate({a=\"b\"}[5m]))","accept":false,"error":"parse error : unexpected literal for left leg of logical/set binary operation (and): 1.000000"}
+{"q":"quantile_over_time({a=\"b\"} | unwrap c [5m]) and 1","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 1.000000"}
+{"q":"label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\") and 1","accept":false,"error":"parse error : unexpected literal for right leg of logical/set binary operation (and): 1.000000"}
+{"q":"rate({a=\"b\"}[5m]) and vector(1)","accept":true}
+{"q":"rate({a=\"b\"}[5m]) and (vector(1) + 2)","accept":true}
+{"q":"rate({a=\"b\"}[5m]) and rate({a=\"b\"}[1m])","accept":true}
+{"q":"rate({a=\"b\"}[5m]) + 1 + 2","accept":true}
+{"q":"1 + 2","accept":true}
+{"q":"1 \u003e 2","accept":true}
+{"q":"rate({a=\"b\"}[5m]) \u003e bool rate({a=\"b\"}[5m])","accept":true}
+{"q":"rate({a=\"b\"}[5m]) + on (a) group_left (b) 1","accept":true}
+{"q":"vector(1) + on (a) vector(2)","accept":true}
+{"q":"label_replace({a=\"b\"}, \"d\", \"x\", \"a\", \"(.*)\")","accept":false,"error":"parse error at line 1, col 22: syntax error: unexpected ,"}
+{"q":"label_replace({a=\"b\"} | json, \"d\", \"$1\", \"a\", \".+\")","accept":false,"error":"parse error at line 1, col 29: syntax error: unexpected ,"}
+{"q":"label_replace({a=\"b\"} |= \"x\" | logfmt | line_format `{{.c}}`, \"d\", \"$1\", \"a\", \"(.*)\")","accept":false,"error":"parse error at line 1, col 61: syntax error: unexpected ,"}
+{"q":"label_replace({a=\"b\"} |= \"x\" | logfmt | c=\"d\", \"d\", \"$1\", \"a\", \"(.*)\")","accept":false,"error":"parse error at line 1, col 48: syntax error: unexpected STRING, expecting IDENTIFIER or ("}
+{"q":"sum(label_replace({a=\"b\"}, \"d\", \"x\", \"a\", \"(.*)\"))","accept":false,"error":"parse error at line 1, col 26: syntax error: unexpected ,"}
+{"q":"label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")","accept":true}
+{"q":"label_replace(1 + 1, \"d\", \"$1\", \"a\", \"(.*)\")","accept":true}
+{"q":"label_replace(vector(1), \"d\", \"$1\", \"a\", \"(.*)\")","accept":true}
+{"q":"label_replace(rate({a=\"b\"}[5m]), \"1d\", \"$1\", \"a\", \"(.*)\")","accept":true}
+{"q":"1 + 2 and 3","accept":false,"error":"parse error : unexpected literal for left leg of logical/set binary operation (and): 3.000000"}
+{"q":"1 + 2 and -1","accept":false,"error":"parse error : unexpected literal for left leg of logical/set binary operation (and): 3.000000"}
+{"q":"sort by (a) (rate({a=~\".*\"}[5m]))","accept":false,"error":"parse error : sort and sort_desc doesn't allow grouping by "}
+{"q":"quantile_over_time({a=~\".*\"} | unwrap c [5m])","accept":false,"error":"parse error : parameter required for operation quantile_over_time"}
+{"q":"quantile_over_time({a=\"b\"} [5m])","accept":false,"error":"parse error : parameter required for operation quantile_over_time"}

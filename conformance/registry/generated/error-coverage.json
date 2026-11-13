@@ -325,24 +325,26 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 1,
+      "comparable_rows": 2,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
+        "r0433",
         "r0447"
       ],
       "kind": "logql_validation",
       "known_difference_ids": [],
-      "matching_rows": 1,
+      "matching_rows": 2,
       "messages": [
-        "only-log-selector"
+        "only-log-selector",
+        "parse"
       ],
       "modes": {},
       "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "detected_field_values",
-      "rows": 1,
+      "rows": 2,
       "state": "match",
       "unit_gate": true
     },
@@ -564,24 +566,26 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 1,
+      "comparable_rows": 2,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
+        "r0432",
         "r0446"
       ],
       "kind": "logql_validation",
       "known_difference_ids": [],
-      "matching_rows": 1,
+      "matching_rows": 2,
       "messages": [
-        "only-log-selector"
+        "only-log-selector",
+        "parse"
       ],
       "modes": {},
       "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "detected_fields",
-      "rows": 1,
+      "rows": 2,
       "state": "match",
       "unit_gate": true
     },
@@ -813,7 +817,7 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 2,
+      "comparable_rows": 3,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
@@ -822,7 +826,7 @@
       ],
       "kind": "logql_validation",
       "known_difference_ids": [],
-      "matching_rows": 2,
+      "matching_rows": 3,
       "messages": [
         "only-label-matchers",
         "parse"
@@ -832,7 +836,7 @@
       "reason": "",
       "recorded": true,
       "route": "detected_labels",
-      "rows": 2,
+      "rows": 3,
       "state": "match",
       "unit_gate": true
     },
@@ -1118,24 +1122,26 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 1,
+      "comparable_rows": 2,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
-        "r0288"
+        "r0288",
+        "r0428"
       ],
       "kind": "logql_validation",
       "known_difference_ids": [],
-      "matching_rows": 1,
+      "matching_rows": 2,
       "messages": [
-        "only-label-matchers"
+        "only-label-matchers",
+        "parse"
       ],
       "modes": {},
       "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "index_stats",
-      "rows": 1,
+      "rows": 2,
       "state": "match",
       "unit_gate": true
     },
@@ -1360,24 +1366,26 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 1,
+      "comparable_rows": 2,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
-        "r0289"
+        "r0289",
+        "r0429"
       ],
       "kind": "logql_validation",
       "known_difference_ids": [],
-      "matching_rows": 1,
+      "matching_rows": 2,
       "messages": [
-        "only-label-matchers"
+        "only-label-matchers",
+        "parse"
       ],
       "modes": {},
       "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "index_volume",
-      "rows": 1,
+      "rows": 2,
       "state": "match",
       "unit_gate": true
     },
@@ -1603,24 +1611,26 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 1,
+      "comparable_rows": 2,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
-        "r0290"
+        "r0290",
+        "r0430"
       ],
       "kind": "logql_validation",
       "known_difference_ids": [],
-      "matching_rows": 1,
+      "matching_rows": 2,
       "messages": [
-        "only-label-matchers"
+        "only-label-matchers",
+        "parse"
       ],
       "modes": {},
       "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "index_volume_range",
-      "rows": 1,
+      "rows": 2,
       "state": "match",
       "unit_gate": true
     },
@@ -1853,7 +1863,7 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 2,
+      "comparable_rows": 3,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
@@ -1862,7 +1872,7 @@
       ],
       "kind": "logql_validation",
       "known_difference_ids": [],
-      "matching_rows": 2,
+      "matching_rows": 3,
       "messages": [
         "only-label-matchers",
         "parse"
@@ -1872,7 +1882,7 @@
       "reason": "",
       "recorded": true,
       "route": "label_values",
-      "rows": 2,
+      "rows": 3,
       "state": "match",
       "unit_gate": true
     },
@@ -2099,7 +2109,7 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 2,
+      "comparable_rows": 3,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
@@ -2108,7 +2118,7 @@
       ],
       "kind": "logql_validation",
       "known_difference_ids": [],
-      "matching_rows": 2,
+      "matching_rows": 3,
       "messages": [
         "only-label-matchers",
         "parse"
@@ -2118,7 +2128,7 @@
       "reason": "",
       "recorded": true,
       "route": "labels",
-      "rows": 2,
+      "rows": 3,
       "state": "match",
       "unit_gate": true
     },
@@ -2378,24 +2388,26 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 1,
+      "comparable_rows": 2,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
-        "r0291"
+        "r0291",
+        "r0431"
       ],
       "kind": "logql_validation",
       "known_difference_ids": [],
-      "matching_rows": 1,
+      "matching_rows": 2,
       "messages": [
-        "only-label-matchers"
+        "only-label-matchers",
+        "parse"
       ],
       "modes": {},
       "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "patterns",
-      "rows": 1,
+      "rows": 2,
       "state": "match",
       "unit_gate": true
     },
@@ -2669,19 +2681,21 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 3,
+      "comparable_rows": 4,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
         "r0654",
         "r0665",
+        "r0673",
         "r0676"
       ],
       "kind": "parameters",
       "known_difference_ids": [],
-      "matching_rows": 3,
+      "matching_rows": 4,
       "messages": [
         "direction",
+        "instant-log-query",
         "limit-not-positive",
         "number"
       ],
@@ -2690,7 +2704,7 @@
       "reason": "",
       "recorded": true,
       "route": "query",
-      "rows": 3,
+      "rows": 4,
       "state": "match",
       "unit_gate": true
     },
@@ -2868,7 +2882,7 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 3,
+      "comparable_rows": 5,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
@@ -2879,7 +2893,7 @@
       "known_difference_ids": [
         "r1561"
       ],
-      "matching_rows": 2,
+      "matching_rows": 4,
       "messages": [
         "parse",
         "unmapped-evaluator-unexpected-expr",
@@ -2890,7 +2904,7 @@
       "reason": "",
       "recorded": true,
       "route": "query_range",
-      "rows": 4,
+      "rows": 6,
       "state": "differs",
       "unit_gate": true
     },
@@ -3794,6 +3808,12 @@
     "r0295",
     "r0296",
     "r0298",
+    "r0428",
+    "r0429",
+    "r0430",
+    "r0431",
+    "r0432",
+    "r0433",
     "r0446",
     "r0447",
     "r0535",
@@ -3809,6 +3829,7 @@
     "r0596",
     "r0654",
     "r0665",
+    "r0673",
     "r0676",
     "r0707",
     "r0711",
@@ -4083,18 +4104,20 @@
       "status": 400
     },
     "instant-log-query": {
-      "comparable_rows": 1,
+      "comparable_rows": 2,
       "e2e_rows": [
-        "r0043"
+        "r0043",
+        "r0673"
       ],
       "item": "msg-instant-log-query",
       "kind": "param",
-      "matching_rows": 0,
+      "matching_rows": 1,
       "routes": [
         "query"
       ],
       "rows": [
         "r0043",
+        "r0673",
         "r1286",
         "r1291",
         "r1298",
@@ -4644,7 +4667,7 @@
       "status": 400
     },
     "parse": {
-      "comparable_rows": 38,
+      "comparable_rows": 49,
       "e2e_rows": [
         "r0001",
         "r0002",
@@ -4665,12 +4688,18 @@
         "r0238",
         "r0239",
         "r0240",
+        "r0428",
+        "r0429",
+        "r0430",
+        "r0431",
+        "r0432",
+        "r0433",
         "r1187",
         "r1428"
       ],
       "item": "msg-parse",
       "kind": "parse",
-      "matching_rows": 33,
+      "matching_rows": 44,
       "routes": [
         "detected_field_values",
         "detected_fields",
@@ -4720,6 +4749,15 @@
         "r0238",
         "r0239",
         "r0240",
+        "r0428",
+        "r0429",
+        "r0430",
+        "r0431",
+        "r0432",
+        "r0433",
+        "r0434",
+        "r0435",
+        "r0436",
         "r1187",
         "r1188",
         "r1189",
@@ -4727,7 +4765,9 @@
         "r1204",
         "r1428",
         "r1429",
-        "r1532"
+        "r1532",
+        "r1533",
+        "r1551"
       ],
       "source": "lokierr",
       "stage": "logql_syntax",
@@ -5130,20 +5170,20 @@
     "cells_matching": 94,
     "cells_recorded": 65,
     "check_order_rows": 33,
-    "comparable_rows": 219,
+    "comparable_rows": 231,
     "coverage_ratio": 0.5726,
     "covered_cells": 71,
     "differing_rows": 10,
-    "e2e_rows": 133,
-    "match_ratio": 0.9543,
-    "matching_rows": 209,
+    "e2e_rows": 140,
+    "match_ratio": 0.9567,
+    "matching_rows": 221,
     "messages": 36,
     "messages_documented": 9,
     "messages_recorded": 27,
     "not_comparable_rows": 71,
     "recorded_loki": "3.7.9",
     "recorded_on": "2026-11-13",
-    "recorded_rows": 290,
+    "recorded_rows": 302,
     "unmapped_items": 8
   }
 }

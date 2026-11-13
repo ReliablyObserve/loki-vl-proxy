@@ -1,5 +1,5 @@
 id: semantics/quantile-over-time-parameter-required
-title: "quantile_over_time without its quantile is accepted where Loki answers a parse error (open)"
+title: "quantile_over_time without its quantile is rejected with Loki's parse error at validation (fixed)"
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -9,6 +9,12 @@ why: |
   The proxy's validation accepts it and the translator writes the whole text as a phrase search (`"quantile_over_time({a=\"b\"} | unwrap c[5m])"`),
   which is a query VictoriaLogs rejects. Without an unwrap (`quantile_over_time({a="b"}[5m])`) both reject, with different text
   (semantics/parse-error-text-parity).
+
+  Fixed: the checks on the parsed tree (internal/queryplan/validate.go Validate) answer Loki's 400 and text at
+  validation, on every route, before the cache, the plan and any VictoriaLogs call; the refusal after the
+  translation is no longer reached for these queries. A query with no unwrap and no quantile is still answered
+  with the parser's `invalid aggregation quantile_over_time without unwrap`, which the parser reports first (Loki
+  reports the missing quantile first): an order between two checks that waits for the parser rework.
 
   Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
 request:
@@ -20,13 +26,14 @@ compare:
   fields: [status, error_text]
   expect: "Loki's 400: parameter required for operation quantile_over_time."
 gap:
-  status: open
+  status: fixed
+  fixed_by: TBD-PR
   impact: api-only
   effort: S
   area: "internal/logql validation of range aggregations (parameter of quantile_over_time)"
   loki: "400, parameter required for operation quantile_over_time"
-  proxy: "accepted by validation and refused after the translation, with Loki's text (400, parse error : parameter required for operation quantile_over_time)"
-  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  proxy: "400, Loki's text, at validation"
+  planned_test: 'TestValidate, TestValidateMatchesLoki (Loki oracle answers), FuzzValidate (internal/queryplan); TestQueryTreeValidationOnEveryRoute, TestLokiErrorAnswersReplay rows r0111, r0112, r1532 (internal/proxy); TestGrammarSweep (internal/querycorpus)'
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
   clusters: []

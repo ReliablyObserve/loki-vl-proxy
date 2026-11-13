@@ -1420,7 +1420,9 @@
       "test/e2e-compat/label_replace_new_label_test.go"
     ],
     "semantics/label-replace-over-log-selector-accepted": [
-      "internal/querycorpus/grammar_sweep_test.go"
+      "internal/proxy/query_tree_validation_test.go",
+      "internal/querycorpus/grammar_sweep_test.go",
+      "internal/queryplan/validate_test.go"
     ],
     "semantics/label-replace-range-binary-marker": [
       "internal/proxy/without_open_shapes_test.go",
@@ -1487,6 +1489,9 @@
       "internal/proxy/label_metadata_freshness_test.go",
       "internal/proxy/recent_tail_bypass_clamp_test.go",
       "test/e2e-compat/label_freshness_e2e_test.go"
+    ],
+    "semantics/metadata-routes-validate-before-selector-rule": [
+      "internal/proxy/query_tree_validation_test.go"
     ],
     "semantics/metric-unread-line-format-template-error": [
       "internal/querycorpus/grammar_sweep_test.go"
@@ -1596,7 +1601,9 @@
     ],
     "semantics/quantile-over-time-parameter-required": [
       "internal/proxy/error_refusals_test.go",
-      "internal/querycorpus/grammar_sweep_test.go"
+      "internal/proxy/query_tree_validation_test.go",
+      "internal/querycorpus/grammar_sweep_test.go",
+      "internal/queryplan/validate_test.go"
     ],
     "semantics/query-range-step-alignment": [
       "cmd/proxy/main_test.go",
@@ -1664,14 +1671,18 @@
       "test/e2e-compat/series_level_aggregation_fine_step_test.go"
     ],
     "semantics/set-operation-folded-literal-operand": [
-      "internal/querycorpus/grammar_sweep_test.go"
+      "internal/proxy/query_tree_validation_test.go",
+      "internal/querycorpus/grammar_sweep_test.go",
+      "internal/queryplan/validate_test.go"
     ],
     "semantics/sliding-window-recurrence-exact": [
       "internal/proxy/sliding_window_stats_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
     "semantics/sort-grouping-accepted": [
-      "internal/querycorpus/grammar_sweep_test.go"
+      "internal/proxy/query_tree_validation_test.go",
+      "internal/querycorpus/grammar_sweep_test.go",
+      "internal/queryplan/validate_test.go"
     ],
     "semantics/stage-after-unwrap-accepted": [
       "internal/querycorpus/grammar_sweep_test.go"
@@ -1968,7 +1979,8 @@
       "test/e2e-compat/sliding_sum_without_test.go"
     ],
     "semantics/zero-range-metric": [
-      "internal/proxy/error_refusals_test.go"
+      "internal/proxy/error_refusals_test.go",
+      "internal/proxy/zero_range_test.go"
     ],
     "series-limits-and-partial-results": [
       "internal/proxy/backend_heavy_test.go",
@@ -2173,7 +2185,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 565,
+  "registry_items": 566,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3171,6 +3183,13 @@
       "drilldown/logs-footer-query-stats",
       "query-stats-envelope"
     ],
+    "internal/proxy/query_tree_validation_test.go": [
+      "semantics/label-replace-over-log-selector-accepted",
+      "semantics/metadata-routes-validate-before-selector-rule",
+      "semantics/quantile-over-time-parameter-required",
+      "semantics/set-operation-folded-literal-operand",
+      "semantics/sort-grouping-accepted"
+    ],
     "internal/proxy/range_lower_bound_test.go": [
       "semantics/lower-bound-exclusive",
       "window-bounds-and-step-alignment"
@@ -3604,6 +3623,9 @@
       "semantics/without-over-inner-aggregation-collapses",
       "semantics/without-sliding-sum-folded-buckets"
     ],
+    "internal/proxy/zero_range_test.go": [
+      "semantics/zero-range-metric"
+    ],
     "internal/querycorpus/binop_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3895,6 +3917,12 @@
     ],
     "internal/queryplan/physical/eval_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/validate_test.go": [
+      "semantics/label-replace-over-log-selector-accepted",
+      "semantics/quantile-over-time-parameter-required",
+      "semantics/set-operation-folded-literal-operand",
+      "semantics/sort-grouping-accepted"
     ],
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
@@ -4788,7 +4816,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 562,
+  "tests_with_markers": 565,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4899,5 +4927,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 342
+  "wired_items": 343
 }
