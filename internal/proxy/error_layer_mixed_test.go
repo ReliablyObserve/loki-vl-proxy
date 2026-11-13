@@ -48,12 +48,6 @@ var errLayerBestEffort = []errLayerBestEffortCall{
 		reason: "a failed stats read falls back to the per-row evaluator, which answers the same query from the rows",
 	},
 	{
-		routes: []string{"query_range_unwrap_rate_counter"},
-		prefix: "query ", contains: "limit 1000001",
-		reason:   "the rows of the per-row evaluator: a row that is not JSON is skipped there until the row decoder fails it",
-		optional: true,
-	},
-	{
 		routes: []string{"detected_labels", "detected_field_values", "detected_field_values_parser", "detected_field_values_field"},
 		prefix: "streams ",
 		reason: "the stored stream lookup falls back to the sampled scan, which reads the same labels",

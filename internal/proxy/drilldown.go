@@ -1674,9 +1674,6 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 	return fieldList, fieldValues, streamLabelSet, nil
 }
 
-// errDetectScanBodyNotJSON marks a VictoriaLogs 200 body with a row that is not JSON: the body is broken.
-var errDetectScanBodyNotJSON = errors.New("detected fields scan body is not VictoriaLogs JSON")
-
 // scanBodyError is the error that makes a scanned VictoriaLogs body unusable: a read that failed (a body cut off,
 // a connection reset) or a row that is not JSON. A row longer than the scan buffer is a limit of the scan and not
 // a failed call, so it stays a partial read as before.
@@ -1685,7 +1682,7 @@ func scanBodyError(scanner *bufio.Scanner, badRows int) error {
 		return err
 	}
 	if badRows > 0 {
-		return errDetectScanBodyNotJSON
+		return errVLBodyNotJSON
 	}
 	return nil
 }
@@ -2230,7 +2227,7 @@ func (p *Proxy) fieldValuesViaUnpack(ctx context.Context, logsqlQuery string, pa
 		if len(bytes.TrimSpace(body)) == 0 {
 			return nil, nil
 		}
-		return nil, errDetectScanBodyNotJSON
+		return nil, errVLBodyNotJSON
 	}
 	values := make([]string, 0, len(parsed.Values))
 	for _, item := range parsed.Values {

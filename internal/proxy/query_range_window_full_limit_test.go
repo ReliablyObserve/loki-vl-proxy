@@ -125,7 +125,7 @@ func (vl *windowReuseVL) serve(w http.ResponseWriter, r *http.Request) {
 			}
 			n++
 			if row.malformed {
-				_, _ = w.Write([]byte("{malformed}\n"))
+				_, _ = w.Write([]byte(`{"_time":"not-a-time","_msg":"undecodable"}` + "\n"))
 				continue
 			}
 			fields := map[string]string{
