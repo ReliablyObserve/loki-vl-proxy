@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+## [2.197.0] - 2026-11-13
 
+### Fixed
 - A short VictoriaLogs restart no longer ends a live tail. A `/loki/api/v1/tail` whose VictoriaLogs call fails
   for a reason a retry can fix (the connection is refused or reset, a call times out, the stream ends or
   breaks, a `429` or `5xx` answer) now keeps the websocket open, with pings, while the proxy reopens the native
