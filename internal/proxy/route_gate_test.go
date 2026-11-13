@@ -218,6 +218,39 @@ func TestLokiRouterRedirectLocation(t *testing.T) {
 	}
 }
 
+// TestLokiRouterNeverRedirectsOffHost: a path whose cleaned form a browser
+// would read as another host ("//host" or a backslash) is never redirected,
+// whatever its dot and slash elements; every Location the router writes starts
+// with a single slash and holds no backslash.
+// conformance: semantics/router-unknown-paths-and-redirects-like-loki
+func TestLokiRouterNeverRedirectsOffHost(t *testing.T) {
+	handler := SecurityHeadersMiddleware(http.NotFoundHandler())
+	for _, target := range []string{
+		"/./\\evil.example/",
+		"//\\evil.example",
+		"/a/../\\evil.example/x",
+		"/%5C/evil.example/./x",
+		"/\\/evil.example//x",
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.URL = &url.URL{Path: strings.ReplaceAll(target, "%5C", "\\"), RawPath: target}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, r)
+		loc := rec.Header().Get("Location")
+		if rec.Code == http.StatusMovedPermanently && !localRedirectPath(loc) {
+			t.Errorf("%q: 301 to %q, a Location off this host", target, loc)
+		}
+	}
+	for _, tc := range []struct {
+		p    string
+		want bool
+	}{{"/", true}, {"/a/b", true}, {"//evil", false}, {"/\\evil", false}, {"/a\\b", false}, {"", false}, {"evil", false}} {
+		if got := localRedirectPath(tc.p); got != tc.want {
+			t.Errorf("localRedirectPath(%q) = %v, want %v", tc.p, got, tc.want)
+		}
+	}
+}
+
 // TestPathIsCleanMatchesPathClean: pathIsClean agrees with path.Clean (with a
 // trailing slash kept) on every path of a small alphabet up to length 7.
 // conformance: semantics/router-unknown-paths-and-redirects-like-loki

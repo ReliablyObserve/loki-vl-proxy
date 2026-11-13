@@ -169,12 +169,27 @@ func redirectUncleanPath(w http.ResponseWriter, r *http.Request) bool {
 	if p[len(p)-1] == '/' && clean != "/" {
 		clean += "/"
 	}
+	// A Location of "//host" or "/\host" sends a browser to another site.
+	// path.Clean leaves no "//", but a backslash survives it: such a path is
+	// not redirected (the mux answers it, a 404 on every Loki route).
+	if !localRedirectPath(clean) {
+		return false
+	}
 	if r.URL.RawQuery != "" {
 		clean += "?" + r.URL.RawQuery
 	}
 	w.Header().Set("Location", clean)
 	w.WriteHeader(http.StatusMovedPermanently)
 	return true
+}
+
+// localRedirectPath reports whether p is a path on this host: it starts with a
+// single slash and holds no backslash a browser would read as one.
+func localRedirectPath(p string) bool {
+	if p == "" || p[0] != '/' || strings.ContainsRune(p, '\\') {
+		return false
+	}
+	return len(p) == 1 || p[1] != '/'
 }
 
 // pathIsClean reports whether p, which starts with a slash, has no empty
