@@ -138,8 +138,11 @@ def main():
         lines.append(f"| {label} | {value['count']} | {value.get('literal_sites', 0)} | {value.get('layer_sites', 0)} | "
                      f"{value['dynamic_sites']} | {value.get('error_text_sites', 0)} | {value.get('no_body_sites', 0)} |")
     registered = sorted(f[:-5] for f in os.listdir(f"{ROOT}/loki/errors")) if os.path.isdir(f"{ROOT}/loki/errors") else []
-    lines += ["", f"The registry holds one item per status ({len(registered)} under `conformance/registry/loki/errors/`), "
-              "not one per message: no check yet compares a formatted message with Loki's text."]
+    by_status = [i for i in registered if i.startswith("status-")]
+    lines += ["", f"The registry holds one item per status ({len(by_status)}) and one per Loki error message "
+              f"({len(registered) - len(by_status)}) under `conformance/registry/loki/errors/`; the messages are checked "
+              "against recorded Loki answers, route by route and error kind by error kind, in the generated "
+              "[error compatibility coverage](../../docs/error-compatibility-coverage.md)."]
     leaks_path = f"{ROOT}/error-layer-known-leaks.json"
     if os.path.exists(leaks_path):
         leaks = load_json(leaks_path)

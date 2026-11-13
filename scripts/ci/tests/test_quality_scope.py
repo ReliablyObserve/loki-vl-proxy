@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.ci.quality_scope import query_semantics_snapshot, query_text_sites_snapshot, registry_snapshot
+from scripts.ci.quality_scope import error_compat_snapshot, query_semantics_snapshot, query_text_sites_snapshot, registry_snapshot
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -21,6 +21,22 @@ class SnapshotTests(unittest.TestCase):
             self.assertEqual(query_text_sites_snapshot(root), {"state": "available", "totals": {"parse_calls": 64}})
             (root / "conformance/registry/query-text-sites.json").write_text(json.dumps({"totals": {"parse_calls": "x"}}))
             self.assertEqual(query_text_sites_snapshot(root)["state"], "unavailable")
+
+    def test_error_compat_scores_are_read_from_the_generated_file(self):
+        summary = {"recorded_rows": 286, "comparable_rows": 215, "matching_rows": 74, "cells": 124, "covered_cells": 71,
+                   "messages": 33, "messages_recorded": 27, "match_ratio": 0.3442, "coverage_ratio": 0.5726}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertEqual(error_compat_snapshot(root), {"state": "unavailable"})
+            target = root / "conformance/registry/generated"
+            target.mkdir(parents=True)
+            (target / "error-coverage.json").write_text(json.dumps({"summary": summary}))
+            self.assertEqual(error_compat_snapshot(root), {"state": "available", **summary})
+            for bad in ({**summary, "match_ratio": 1.5}, {**summary, "cells": "x"}, {**summary, "cells": True}, {**summary, "coverage_ratio": None}):
+                (target / "error-coverage.json").write_text(json.dumps({"summary": bad}))
+                self.assertEqual(error_compat_snapshot(root), {"state": "unavailable"})
+            (target / "error-coverage.json").write_text("{")
+            self.assertEqual(error_compat_snapshot(root), {"state": "unavailable"})
 
     def test_semantics_catalog_counts_and_rejects_orphan_cases(self):
         with tempfile.TemporaryDirectory() as directory:

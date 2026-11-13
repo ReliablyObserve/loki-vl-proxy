@@ -7,8 +7,11 @@ file per item, so it is easy to read, extend and review:
 conformance/registry/
   loki/endpoints/<id>.yaml       every Loki HTTP endpoint: what it returns, who calls it,
                                  real examples, how the proxy implements it, its edge cases
-  loki/errors/<id>.yaml          every Loki failure class: trigger, status, errorType, message,
-                                 precedence (added in the next phase)
+  loki/errors/status-<code>.yaml  every status the proxy answers: what Loki answers for it (hand-written)
+                                 above a generated head
+  loki/errors/msg-<id>.yaml      one item per Loki error message (internal/lokierr): template, status,
+                                 body shape, routes, place in Loki's check order, recorded rows,
+                                 coverage state (generated, never edited)
   loki/payloads/<id>.yaml        response shapes, stats counters, headers, empty forms
   vl/capabilities/<id>.yaml      VictoriaLogs endpoints, pipes, stats functions and version gates,
                                  with how the proxy uses each one
@@ -193,3 +196,35 @@ repeats the main modes against the stack's VictoriaLogs and compares with Loki.
   cell-case pairs), fails when it grows against `origin/main` where the checkout has it,
   and, given the unit results, fails when the gate did not run, failed, or skipped more
   cells than are listed.
+
+## Errors: one item per message, a coverage matrix and two scores
+
+Errors and status codes are held to the standard of answers. `conformance/scripts/error_registry.py` builds,
+from the typed messages (`internal/lokierr`), the recorded answers of a real Loki
+(`internal/lokierr/testdata/loki_error_answers.jsonl`, replayed by `TestLokiErrorAnswersReplay`) and the
+backend-failure gate (`TestErrorLayer_NoVictoriaLogsLeak`):
+
+- `loki/errors/msg-<id>.yaml`: one item per `lokierr` message, and `unmapped-<id>.yaml` for a Loki message no
+  constructor renders yet. Each holds the message template with its variable parts, status, error type, body
+  shape, the routes Loki answered it on, its place in Loki's order of checks (observed in
+  `loki_check_order.jsonl`: requests carrying two errors), the recorded rows, and its coverage state: `matches`,
+  `differs`, `documented` (no recorded answer, with the reason and the test that holds it) or
+  `recorded-not-comparable`.
+- `generated/error-coverage.json` and `docs/error-compatibility-coverage.md`: the matrix of route x error
+  kind (parameters, LogQL syntax, LogQL validation, limits, backend failure, methods and routing, tenant,
+  cancel and deadline). A cell records whether Loki's answer is recorded, whether the proxy matches it, the
+  unit gate that holds it, the end-to-end comparison that asks a live Loki (`TestCompat_ErrorAnswersLikeLoki`,
+  one representative row per cell and message) and the known-difference row ids.
+- Two scores, held by `baseline.json` (`errors_match_loki`, `error_matrix_coverage`) and shown for the base and
+  the pull request in the quality report, which fails on a drop: the share of comparable recorded rows the proxy
+  reproduces byte for byte, and the share of matrix cells with a recorded or documented answer, a unit gate and
+  an end-to-end comparison.
+- `error-coverage-spec.json` is the one hand-written input: how triggers map to error kinds, which routes
+  expect which kinds, why a message has no recorded answer, and the stage order of Loki's checks. A new
+  message, route or failure mode the file does not classify fails `check_conformance.py`.
+
+`check_conformance.py` fails when a `lokierr` message has no item, an item has neither a recorded answer nor
+a documented reason, a generated file is stale, or a matrix cell lost a check it had on the base branch.
+After a change that flips rows of `error-layer-known-differences.json`, rerun the generator: the scores follow
+the file. `go run ./test/errorrecord -loki <url>` re-records the answers from a running Loki (the
+`error-answers-record` workflow runs it weekly and on demand against the pinned Loki and reports changes).

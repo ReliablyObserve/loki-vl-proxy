@@ -21,6 +21,10 @@ Fails when:
   * a bench/visual entry covers an unknown registry id, or (outside the core
     set) covers nothing that names code, so no change could select it for the
     per-PR visual smoke (bench/visual/plan.py);
+  * the error registry is not true to its sources (conformance/scripts/error_registry.py --check): a lokierr message
+    has no item, an item has neither a recorded Loki answer nor a documented reason, a generated item, the matrix
+    (conformance/registry/generated/error-coverage.json) or its page (docs/error-compatibility-coverage.md) is stale,
+    or a matrix cell lost a check it had on the base branch;
   * a generated report is stale (performance, coverage map and its published copy
     docs/compatibility-coverage.md, gaps, translation map, roadmap, compatibility matrix,
     ranked parity gaps, the matrix-link json and the census) or the "Quality and performance vs Loki" section of README.md and
@@ -190,10 +194,18 @@ def error_layer_problems(go_results=(), leaks_path=ERROR_LAYER_LEAKS, base_text=
     return problems
 
 
-def base_known_leaks(ref="origin/main", path=ERROR_LAYER_LEAKS):
-    """The known-leak list at the base ref, when the checkout has it (a full clone); None otherwise."""
+def base_text(path, ref="origin/main"):
+    """A committed file at the base ref, when the checkout has it (a full clone); None otherwise."""
     shown = subprocess.run(["git", "show", f"{ref}:{path}"], capture_output=True, text=True)
     return shown.stdout if shown.returncode == 0 else None
+
+
+def base_known_leaks(ref="origin/main", path=ERROR_LAYER_LEAKS):
+    """The known-leak list at the base ref, when the checkout has it (a full clone); None otherwise."""
+    return base_text(path, ref)
+
+
+ERROR_COVERAGE = "conformance/registry/generated/error-coverage.json"
 
 
 PROFILE_DRIFT = "conformance/registry/profile-known-drift.json"
@@ -322,6 +334,22 @@ def main():
             if os.path.exists(backup) and not filecmp.cmp(backup, target, shallow=False):
                 print(f"{target} is stale; run python3 {SCRIPTS}/{script}" + (f" {docs_flag} {target}" if docs_flag else ""))
                 failures.append(f"{target} stale")
+
+    # The error registry reads sources the generators above just wrote (the proxy's error sites), so it runs after them.
+    errors_args = ["--check"]
+    base_errors = base_text(ERROR_COVERAGE)
+    errors_base_file = None
+    if base_errors:
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            handle.write(base_errors)
+            errors_base_file = handle.name
+        errors_args += ["--base-text", errors_base_file]
+    error_registry = run("error_registry.py", *errors_args)
+    print(error_registry.stdout.strip() or error_registry.stderr.strip())
+    if errors_base_file:
+        os.unlink(errors_base_file)
+    if error_registry.returncode:
+        failures.append("error registry")
 
     ratchet = run("ratchet.py", "--check")
     print(ratchet.stdout.strip())

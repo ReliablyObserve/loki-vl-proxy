@@ -2100,6 +2100,13 @@
     "test/e2e-compat/drilldown_volume_segments_test.go | quality/index-volume-settled-segments",
     "test/e2e-compat/drop_error_spellings_test.go | loki_api_v1_query_range",
     "test/e2e-compat/drop_error_spellings_test.go | semantics/drop-error-pipeline-spellings",
+    "test/e2e-compat/error_answers_like_loki_test.go | semantics/error-layer-body-shape",
+    "test/e2e-compat/error_answers_like_loki_test.go | semantics/error-request-validation-parity",
+    "test/e2e-compat/error_answers_like_loki_test.go | semantics/parse-error-text-parity",
+    "test/e2e-compat/error_answers_like_loki_test.go | status-400",
+    "test/e2e-compat/error_answers_like_loki_test.go | status-404",
+    "test/e2e-compat/error_answers_like_loki_test.go | status-405",
+    "test/e2e-compat/error_answers_like_loki_test.go | status-500",
     "test/e2e-compat/error_body_like_loki_test.go | semantics/error-layer-body-shape",
     "test/e2e-compat/error_body_like_loki_test.go | status-400",
     "test/e2e-compat/error_body_like_loki_test.go | status-404",
@@ -2489,7 +2496,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 553,
+      "go": 554,
       "playwright": 1
     },
     "page_kinds": {
@@ -2515,6 +2522,7 @@
     "A/B shape selection",
     "compatibility matrix link",
     "endpoint scope",
+    "error registry",
     "error-layer leak ratchet",
     "evidence",
     "flag documentation",

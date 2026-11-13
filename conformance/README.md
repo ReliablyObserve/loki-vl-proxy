@@ -6,7 +6,8 @@ Everything that defines and proves Loki compatibility lives here.
 conformance/
   registry/   the inventory, one file per item:
               loki/endpoints/   Loki HTTP endpoints
-              loki/errors/      failure classes: status, errorType, message, precedence
+              loki/errors/      failure classes: one item per status and one per Loki error message
+                                (generated: error compatibility, see below)
               loki/logql/       the LogQL surface: every operator, range function,
                                 parser, filter and conversion Loki defines
               behaviours/       semantics, severity, identity and data-quality behaviour
@@ -145,6 +146,7 @@ python3 conformance/scripts/sync_loki.py --version v3.7.7
 python3 conformance/scripts/sync_proxy.py --endpoints conformance/registry/generated/loki/v3.7.7/endpoints.json
 python3 conformance/scripts/sync_impl.py --coverage conformance/registry/generated/proxy/coverage.json
 python3 conformance/scripts/sync_errors.py
+python3 conformance/scripts/error_registry.py   # message items, error compatibility matrix and scores, docs/error-compatibility-coverage.md
 python3 conformance/scripts/sync_vl.py
 python3 conformance/scripts/seed_registry.py \
   --endpoints conformance/registry/generated/loki/v3.7.7/endpoints.json \

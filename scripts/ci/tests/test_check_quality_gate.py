@@ -6,7 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from scripts.ci.check_quality_gate import REQUIRED_COMPONENTS, check_component_breakdown, check_samples_threshold, query_corpus_failures, relative_spread_pct
+from scripts.ci.check_quality_gate import REQUIRED_COMPONENTS, check_component_breakdown, check_samples_threshold, error_compat_failures, query_corpus_failures, relative_spread_pct
 
 
 class CheckQualityGateComponentTests(unittest.TestCase):
@@ -308,3 +308,24 @@ class QueryCorpusFailureTests(unittest.TestCase):
         corpus = {"failures": ["query corpus: 2 queries on both the base and the PR turned untyped: q-a, q-b",
                                "Loki: 1 queries whose error text is no longer Loki's: client/q-c"]}
         self.assertEqual(query_corpus_failures(corpus), corpus["failures"])
+
+
+class ErrorCompatGateTests(unittest.TestCase):
+    @staticmethod
+    def snap(match=None, coverage=None):
+        if match is None:
+            return {"quality_inventory": {"error_compat": {"state": "unavailable"}}}
+        return {"quality_inventory": {"error_compat": {"state": "available", "match_ratio": match, "coverage_ratio": coverage}}}
+
+    def test_a_drop_in_either_score_fails(self):
+        self.assertEqual(error_compat_failures(self.snap(0.5, 0.6), self.snap(0.5, 0.6)), [])
+        self.assertEqual(error_compat_failures(self.snap(0.5, 0.6), self.snap(0.7, 0.9)), [])
+        failures = error_compat_failures(self.snap(0.5, 0.6), self.snap(0.4, 0.5))
+        self.assertEqual(len(failures), 2)
+        self.assertIn("errors that match Loki fell from 50.0% to 40.0%", failures[0])
+        self.assertIn("error matrix coverage fell from 60.0% to 50.0%", failures[1])
+
+    def test_no_base_or_no_head_scores_compare_nothing(self):
+        self.assertEqual(error_compat_failures({}, self.snap(0.1, 0.1)), [])
+        self.assertEqual(error_compat_failures(self.snap(0.5, 0.6), {}), [])
+        self.assertEqual(error_compat_failures(self.snap(), self.snap()), [])

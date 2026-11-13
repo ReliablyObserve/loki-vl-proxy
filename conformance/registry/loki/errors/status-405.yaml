@@ -1,16 +1,22 @@
 id: status-405
 status: 405
 error_type: bad_data
-generated:
+generated:   # rewritten by conformance/scripts/error_registry.py
   proxy_call_sites: 4
   dynamic_sites: 0
   literal_messages:
     - "method not allowed"
+  loki_messages: ["msg-method-not-allowed", "msg-write-not-supported"]
+  recorded_rows: 59
+  comparable_rows: 59
+  matching_rows: 59
 
 loki_behaviour: |
-  TODO: when Loki returns this status, with its own message text
-  and errorType, and which errors take precedence over it.
+  Loki answers a method a route does not serve (PUT, DELETE, PATCH, HEAD,
+  OPTIONS on every read route) with 405 and no body and no Content-Type
+  (msg-method-not-allowed; the largest group of recorded rows). POST is accepted
+  on every read route. The proxy writes the status alone for the same methods.
 precedence: []   # failure classes Loki evaluates before this one
 consumers: |
-  TODO: how Grafana Explore and Logs Drilldown render it.
+  Grafana never sends these methods to the read routes; scripts and probes see the empty 405.
 cases: []        # case ids that assert status, errorType, message and headers together
