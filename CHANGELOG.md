@@ -18,6 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Requests Loki's router refuses are now answered as Loki answers them, before any other check. A method a read
+  route does not serve (anything but `GET` and `POST`; `GET` alone on the rules and alerts routes) is a `405` with
+  no body, where the proxy used to serve it as a `GET`. A path no route matches, including
+  `/label/a/b/values`, `/label/` and `/detected_field/x`, is `404 page not found`, where those answered `400`. A
+  path with a repeated slash or a `.` or `..` element is a `301` with no body to the cleaned path, where it was a
+  `307`. An invalid percent escape or a semicolon in the query string, and a form body over 10 MiB, are `400` with
+  `invalid URL escape "%zz"`, `invalid semicolon separator in query` and `http: POST too large`, where the proxy
+  answered a different error or a result for the half-read request. A `POST` body is read only as
+  `application/x-www-form-urlencoded`, as Loki reads it.
+- `format_query` now parses its query, as Loki does. A query it cannot parse is answered `400` with
+  `{"status":"invalid-query","error":"<parser message>"}`; before, every query was echoed back with `200`. A query
+  that parses is answered as before.
+- The answer to a write to `/loki/api/v1/push` no longer names the backend. A method other than `POST` is Loki's
+  `405` with no body; a `POST` is `405` with `write operations are not supported, this is a read-only proxy` as
+  plain text, in the shape Loki writes its push errors in, where it was a JSON body.
 - With `-stream-response`, a broken VictoriaLogs answer to a log query is no longer sent as a partial success.
   A body that is broken before its first row (not JSON, cut off, or a row above 8 MiB) now answers Loki's `500`
   `Internal Server Error` (`504` or `499` for a timeout or a cancel), as it does without the flag. A body that

@@ -83,6 +83,8 @@ const (
 	MsgBackendFailed
 	// MsgInternal: a failure of the proxy's own work.
 	MsgInternal
+	// MsgWriteNotSupported: a push to the read-only proxy.
+	MsgWriteNotSupported
 	msgCount
 )
 
@@ -133,6 +135,7 @@ var messages = [msgCount]message{
 	MsgDeadline:          {"deadline", KindDeadline, http.StatusGatewayTimeout, ShapeRoute},
 	MsgBackendFailed:     {"backend-failed", KindBackendFailed, http.StatusInternalServerError, ShapeRoute},
 	MsgInternal:          {"internal", KindInternal, http.StatusInternalServerError, ShapeRoute},
+	MsgWriteNotSupported: {"write-not-supported", KindRoute, http.StatusMethodNotAllowed, ShapeHTTPError},
 }
 
 // ID is the message's stable name.
@@ -149,6 +152,7 @@ const (
 	textDeadline      = "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed"
 	textQueueFull     = "too many outstanding requests"
 	textInternal      = "Internal Server Error"
+	textWriteBlocked  = "write operations are not supported, this is a read-only proxy"
 	textNotFound      = "404 page not found"
 	textTailNotWS     = "Bad Request"
 	textInstantLog    = "log queries are not supported as an instant query type, please change your query to a range query type"
@@ -307,6 +311,13 @@ func MethodNotAllowed() *Error { return newError(MsgMethodNotAllowed, "", nil) }
 
 // TailNotWebSocket is a tail request that is not a websocket upgrade.
 func TailNotWebSocket() *Error { return newError(MsgTailNotWebSocket, textTailNotWS, nil) }
+
+// WriteNotSupported is a push to the proxy, which only reads. Loki's own push
+// answers (204, or 400 for a body it cannot read) have no read-only
+// counterpart, so the proxy answers the status of a method the route does not
+// serve, in the shape Loki writes its push errors in (http.Error's), and says
+// why.
+func WriteNotSupported() *Error { return newError(MsgWriteNotSupported, textWriteBlocked, nil) }
 
 // QueueFull is a request the query queue has no room for; cause says which
 // queue, for the log.

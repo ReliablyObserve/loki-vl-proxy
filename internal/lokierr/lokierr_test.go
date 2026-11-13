@@ -250,6 +250,7 @@ func TestConstructorTexts(t *testing.T) {
 		{Parse(0, 25, `not a valid duration string: "1h1h"`), KindParse, http.StatusBadRequest, `parse error at line 0, col 25: not a valid duration string: "1h1h"`},
 		{ParserMessage("parse error : queries require at least one regexp or equality matcher"), KindParse, http.StatusBadRequest, "parse error : queries require at least one regexp or equality matcher"},
 		{MethodNotAllowed(), KindRoute, http.StatusMethodNotAllowed, ""},
+		{WriteNotSupported(), KindRoute, http.StatusMethodNotAllowed, "write operations are not supported, this is a read-only proxy"},
 	}
 	for _, tc := range cases {
 		if tc.e.Kind() != tc.kind || tc.e.Status() != tc.status || tc.e.Text() != tc.text || tc.e.Error() != tc.text {
