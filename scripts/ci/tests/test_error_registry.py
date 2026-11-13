@@ -6,8 +6,8 @@ import re
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
-from unittest import mock
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "conformance" / "scripts"))
@@ -112,7 +112,7 @@ class GeneratedFilesTest(InRepo):
         self.assertEqual(s["match_ratio"], round(s["matching_rows"] / s["comparable_rows"], 4))
         self.assertEqual(s["coverage_ratio"], round(s["covered_cells"] / s["cells"], 4))
         self.assertEqual(s["cells"], len(doc["cells"]))
-        self.assertTrue(set(doc["e2e_rows"]) <= {r["id"] for r in error_registry.load_rows(error_registry.ANSWERS)[1]})
+        self.assertLessEqual(set(doc["e2e_rows"]), {r["id"] for r in error_registry.load_rows(error_registry.ANSWERS)[1]})
 
     def test_a_cell_is_covered_only_with_a_unit_gate_and_an_e2e_check(self):
         _, _, doc, _, _ = error_registry.outputs()
@@ -130,7 +130,7 @@ class GeneratedFilesTest(InRepo):
 
 class GateTest(InRepo):
     def run_build(self, **paths):
-        with mock.patch.multiple(error_registry, **paths):
+        with unittest.mock.patch.multiple(error_registry, **paths):
             return error_registry.build()
 
     def test_a_message_without_a_recording_or_a_reason_fails(self):

@@ -183,7 +183,7 @@ def kind_of(row, spec, limit_msgs):
 def unmapped_id(row, spec):
     """The Loki message of a recorded error no lokierr constructor renders yet, by the spec's rules; None for a success."""
     status, body = row["loki"]["status"], row["loki"]["body"]
-    if status < 300 and status != 301:
+    if status < 300:
         return None
     for rule in spec["unmapped_messages"]:
         if rule["status"] == status and re.search(rule["body"], body):

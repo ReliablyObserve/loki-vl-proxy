@@ -254,8 +254,9 @@ def error_compat_details(base, head):
         old, new = before.get(key), after.get(key)
         rows.append([label, f"{old * 100:.1f}%" if numeric(old) else "no base", f"{new * 100:.1f}%" if numeric(new) else "n/a",
                      f"{(new - old) * 100:+.1f} pp" if numeric(old) and numeric(new) else "n/a"])
-    return ["The answer of every Loki error message, route by route and error kind by error kind, against the recorded answers of a real Loki "
-            "(`docs/error-compatibility-coverage.md`). A drop in either percentage fails the quality gate.", "",
+    intro = ("The answer of every Loki error message, route by route and error kind by error kind, against the recorded answers of a real Loki "
+             + "(`docs/error-compatibility-coverage.md`). A drop in either percentage fails the quality gate.")
+    return [intro, "",
             *table(["Signal", "Base", "PR", "Delta"], rows)]
 
 
