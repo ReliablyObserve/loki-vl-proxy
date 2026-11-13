@@ -147,6 +147,9 @@ func errLayerE2EContains(s string, markers []string) bool {
 	return false
 }
 
+// e2eLokiLimitText is Loki's answer for a query that reaches an evaluation limit.
+const e2eLokiLimitText = "limit reached while evaluating the query"
+
 // errLayerE2EClasses names the registry cases an answer fails against Loki's
 // (wantStatus, and wantText when Loki has a fixed text).
 func errLayerE2EClasses(status int, body []byte, header http.Header, wantStatus int, wantText string, timeout, limit bool) []string {
@@ -176,9 +179,10 @@ func errLayerE2EClasses(status int, body []byte, header http.Header, wantStatus 
 	if errLayerE2EContains(visible, e2eErrLayerBackendMarkers) || (!transport && strings.Contains(visible, "logsql")) {
 		classes["semantics/error-layer-backend-text"] = true
 	}
-	if limit && status >= 400 && !e2eMessageSizeText.MatchString(errLayerE2EText(body)) {
-		// A proxy buffer limit answers Loki's message size text; the flag that
-		// sets it is in the log line only.
+	if limit && status >= 400 && !e2eMessageSizeText.MatchString(errLayerE2EText(body)) && errLayerE2EText(body) != e2eLokiLimitText {
+		// A proxy limit answers one of Loki's limit texts: the message size
+		// text for a buffer, Loki's evaluation limit text for a row or series
+		// limit. The flag that sets it is in the log line only.
 		classes["semantics/error-layer-proxy-limit-status"] = true
 	}
 	if wantText != "" && status == wantStatus && errLayerE2EText(body) != wantText {
