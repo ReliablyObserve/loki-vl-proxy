@@ -14,7 +14,9 @@ import (
 // stream: syntax.ParseLogSelector with validation, Pipeline(), ForStream(labels) and Process(line), read through
 // Loki's exported packages only. Keep is whether the line passes every stage; Line and Labels are the line and
 // the labels after the stages, so a stage that keeps a line with an __error__ label shows as keep with the label.
-// The proxy's tests compare its label filters with these answers.
+// The proxy's tests compare its label filters with these answers. Metadata, when set, is the line's structured
+// metadata, handed to Process as Loki's ingester hands it; Stream, StructuredMetadata and Parsed are Loki's
+// categories of the labels after the stages (LabelsResult.Stream, StructuredMetadata and Parsed).
 
 // ProcessInput is one log query, the labels of the stream and one line.
 type ProcessInput struct {
@@ -22,6 +24,10 @@ type ProcessInput struct {
 	Query  string            `json:"q"`
 	Labels map[string]string `json:"labels"`
 	Line   string            `json:"line"`
+	// Metadata is the structured metadata of the line, none when empty.
+	Metadata map[string]string `json:"metadata,omitempty"`
+	// WithCategories asks for the categories of the labels of a kept line.
+	WithCategories bool `json:"categories,omitempty"`
 }
 
 // ProcessVerdict is Loki's answer for one input; Error is set when Loki rejects the query or cannot build its
@@ -34,7 +40,12 @@ type ProcessVerdict struct {
 	Keep     bool              `json:"keep"`
 	Line     string            `json:"line,omitempty"`
 	Labels   map[string]string `json:"labels,omitempty"`
-	Error    string            `json:"error,omitempty"`
+	// Stream, StructuredMetadata and Parsed split Labels into Loki's categories, for a kept line of an input with
+	// WithCategories.
+	Stream             map[string]string `json:"stream,omitempty"`
+	StructuredMetadata map[string]string `json:"structured_metadata,omitempty"`
+	Parsed             map[string]string `json:"parsed,omitempty"`
+	Error              string            `json:"error,omitempty"`
 }
 
 func process(in, out string) error {
@@ -91,11 +102,20 @@ func processOne(x ProcessInput) (v ProcessVerdict) {
 			v.Selected = false
 		}
 	}
-	line, res, keep := pipe.ForStream(labels.FromMap(x.Labels)).Process(0, []byte(x.Line), labels.EmptyLabels())
+	metadata := labels.EmptyLabels()
+	if len(x.Metadata) > 0 {
+		metadata = labels.FromMap(x.Metadata)
+	}
+	line, res, keep := pipe.ForStream(labels.FromMap(x.Labels)).Process(0, []byte(x.Line), metadata)
 	v.Keep = keep
 	if keep {
 		v.Line = string(line)
 		v.Labels = res.Labels().Map()
+		if x.WithCategories {
+			v.Stream = res.Stream().Map()
+			v.StructuredMetadata = res.StructuredMetadata().Map()
+			v.Parsed = res.Parsed().Map()
+		}
 	}
 	return v
 }

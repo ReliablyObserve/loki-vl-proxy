@@ -25,6 +25,10 @@ import (
 //   - Stream unset: jsonline (and the Loki push API with _stream_fields) pass every field and name the stream fields
 //     with the request's _stream_fields (StreamFields; MustAdd with -1). jsonline takes the timestamp out of the
 //     _time field first (insertutil.ExtractTimestampFromFields empties it), which a row with TimeField does.
+//
+// An input's Tenant stores its rows under that tenant's account id and runs its query there, so the inputs of one
+// run can hold several data sets that do not see each other. Row i of an input is stored at the fixed time plus i
+// nanoseconds; Time keeps that _time in the query's answer, so a caller can tell the rows apart.
 
 // StoreRow is one log entry as an ingestion route hands it to VictoriaLogs.
 type StoreRow struct {
@@ -39,6 +43,10 @@ type StoreInput struct {
 	ID    string     `json:"id"`
 	Rows  []StoreRow `json:"rows,omitempty"`
 	Query string     `json:"q,omitempty"`
+	// Tenant is the account id the rows are stored under and the query runs in (0 when unset).
+	Tenant uint32 `json:"tenant,omitempty"`
+	// Time keeps the rows' own _time in the answer.
+	Time bool `json:"time,omitempty"`
 }
 
 // StoreVerdict is VictoriaLogs' answer for one query: an error, or the rows it returns (each a sorted list of
@@ -72,8 +80,8 @@ func store(in, out string) error {
 	defer func() { _ = os.RemoveAll(dir) }()
 	s := logstorage.MustOpenStorage(dir+"/data", &logstorage.StorageConfig{Retention: 100 * 365 * 24 * time.Hour})
 	defer s.MustClose()
-	tenant := logstorage.TenantID{}
 	for _, x := range inputs {
+		tenant := logstorage.TenantID{AccountID: x.Tenant}
 		for i, r := range x.Rows {
 			lr := logstorage.GetLogRows(r.StreamFields, nil, nil, nil, "")
 			fields := make([]logstorage.Field, 0, len(r.Stream)+len(r.Fields))
@@ -110,7 +118,7 @@ func store(in, out string) error {
 		if q == "" {
 			continue
 		}
-		verdicts = append(verdicts, runStoreQuery(s, tenant, x.ID, q))
+		verdicts = append(verdicts, runStoreQuery(s, logstorage.TenantID{AccountID: x.Tenant}, x.ID, q, x.Time))
 	}
 	return writeStoreVerdicts(out, verdicts)
 }
@@ -134,8 +142,9 @@ func readStoreInputs(in string) ([]StoreInput, error) {
 	return inputs, sc.Err()
 }
 
-// runStoreQuery is VictoriaLogs' answer for q over the stored rows. A panic of VictoriaLogs' code is an error.
-func runStoreQuery(s *logstorage.Storage, tenant logstorage.TenantID, id, q string) (v StoreVerdict) {
+// runStoreQuery is VictoriaLogs' answer for q over the rows stored for tenant, with their _time when keepTime is
+// set. A panic of VictoriaLogs' code is an error.
+func runStoreQuery(s *logstorage.Storage, tenant logstorage.TenantID, id, q string, keepTime bool) (v StoreVerdict) {
 	v.ID = id
 	defer func() {
 		if p := recover(); p != nil {
@@ -155,7 +164,7 @@ func runStoreQuery(s *logstorage.Storage, tenant logstorage.TenantID, id, q stri
 		for i := 0; i < db.RowsCount(); i++ {
 			var row []string
 			for _, c := range cols {
-				if c.Name == "_time" && strings.HasPrefix(c.Values[i], storeDay) {
+				if c.Name == "_time" && !keepTime && strings.HasPrefix(c.Values[i], storeDay) {
 					continue // the row's own timestamp
 				}
 				row = append(row, c.Name+"="+c.Values[i])

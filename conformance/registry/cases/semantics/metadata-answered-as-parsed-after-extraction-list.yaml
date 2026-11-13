@@ -1,0 +1,44 @@
+id: semantics/metadata-answered-as-parsed-after-extraction-list
+title: Structured metadata named like a key of a json or logfmt extraction list is answered as a parsed label (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Recorded 2026-11-12 by TestPlanMatchesLokiOnLogQueries (internal/querycorpus): Loki's pipeline through the Loki oracle (test/oracle/loki process, Loki's exported packages), VictoriaLogs v1.53.0 and v1.49.0 through the store oracle (rows as the Loki push API hands them over), the rows through the proxy's query_range handler (default label style and metadata mode).
+
+  | query | line | Loki (categorize-labels) | proxy |
+  |---|---|---|---|
+  | `{app="matrix-extraction-list",case="json"} \| json msg="msg" \| msg="hello"` | `metadata line 35`, structured metadata `msg=hello` | `msg=hello` under structuredMetadata, `__error__` under parsed | `msg=hello` under parsed |
+  | `{app="matrix-extraction-list",case="logfmt"} \| logfmt op \| op="read"` | a line with structured metadata `op=read` | `op` under structuredMetadata | `op` under parsed |
+
+  VictoriaLogs holds structured metadata and unpacked keys as fields alike;
+  the proxy names every field the extraction list lists as parsed. The plain
+  answer (no categorize-labels) is the same as Loki's.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="matrix-extraction-list",case="json"} | json msg="msg" | msg="hello"'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, streams.values]
+  expect: |
+    Loki's categories: a label the line's structured metadata holds stays
+    under structuredMetadata when the parser did not write it.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy log answer shaping (classification of fields named by an extraction list)'
+  loki: 'the recorded answers above (Loki oracle, 2026-11-12)'
+  proxy: 'answers the label under parsed'
+  planned_test: 'TestPlanMatchesLokiOnLogQueries (internal/querycorpus), listed in testdata/loki-differential-known.json'
+  clusters: []
