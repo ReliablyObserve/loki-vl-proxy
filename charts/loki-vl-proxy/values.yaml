@@ -374,6 +374,9 @@ extraArgs:
   # compat-cache-enabled: "true"                # enable Tier0 compatibility-edge cache
   # compat-cache-max-percent: "10"              # Additional Tier0 budget as % of L1 limit (max 50)
   # backend-timeout: "120s"                     # upstream request timeout
+  # backend-retry-attempts: "2"                 # times a VictoriaLogs read that failed for a reason a retry fixes (connection refused or reset, 429/502/503/504 answer) is sent again before the error is returned; 0 sends every read once
+  # backend-retry-max-wait: "5s"                # total wait between the tries of one call; 0 disables retries
+  # backend-retry-budget-ratio: "0.1"           # retries a replica earns per call, so a sustained failure is retried for at most this fraction of the calls (0-1)
   # backend-min-version: "v1.49.0"              # startup minimum supported VictoriaLogs version
   # backend-allow-unsupported-version: "false"  # allow older backend at your own risk
   # backend-version-check-timeout: "5s"         # startup backend version check timeout

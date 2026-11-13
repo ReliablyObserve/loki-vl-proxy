@@ -25,6 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a failed response and not a complete-looking result that is missing rows; the aborts are counted in
   `loki_vl_proxy_internal_operation_total{operation="stream_response",outcome="aborted"}`. A body with no rows is
   still an empty result, and a healthy answer is unchanged.
+- A VictoriaLogs call that fails for a moment no longer fails the query. A read that meets a refused or reset
+  connection, a connection closed before any answer, or a `429`, `502`, `503` or `504` answer (a full select
+  queue, a node restarting, a proxy in front of VictoriaLogs that lost its backend) is sent again, once for every
+  route, so the client gets the answer Loki gives and not an error Loki would not have produced. The proxy waits
+  200 ms, then up to 2 s, with jitter (and at least the `Retry-After` a proxy in front sends), for at most
+  `-backend-retry-attempts` retries (default `2`) and `-backend-retry-max-wait` in all (default `5s`). Retries
+  cannot add to an overload: each call earns `-backend-retry-budget-ratio` of a retry (default `0.1`), so a
+  sustained outage adds at most a tenth to the calls a replica sends to VictoriaLogs, and nothing is retried while
+  the circuit breaker is not closed, after the client cancelled, after a timeout, when the request deadline would
+  pass during the wait, for a `4xx` other than `429`, for a `500`, or once an answer is being read. A failure that
+  lasts answers the error it answered before, with no VictoriaLogs text; the failed tries are in the proxy log, and
+  `loki_vl_proxy_internal_operation_total{operation="backend_retry"}` counts `retried`, `recovered`, `exhausted`,
+  `budget_denied` and `breaker_open`. Before, the first failed call answered an error, `500` for a refused connection.
+  `-backend-retry-attempts=0` sends every read once as before. Helm: `extraArgs.backend-retry-attempts`,
+  `backend-retry-max-wait`, `backend-retry-budget-ratio`.
 
 ## [2.197.0] - 2026-11-13
 

@@ -333,7 +333,7 @@ func (p *Proxy) coldPost(ctx context.Context, path string, params url.Values) (*
 	if err != nil {
 		return nil, err
 	}
-	resp, err := p.coldRouter.coldRequest(ctx, http.MethodPost, path, params, func(req *http.Request) { p.setResolvedTenantHeaders(req, true) }, p.doBackendRequest)
+	resp, err := p.coldRouter.coldRequest(ctx, http.MethodPost, path, params, func(req *http.Request) { p.setResolvedTenantHeaders(req, true) }, p.doBackendRead)
 	admission.observe(ctx, resp, err)
 	if err != nil {
 		admission.Release()
