@@ -703,7 +703,8 @@ func TestCompatCacheResponseAllowedAndBreakerFailure(t *testing.T) {
 		{name: "context canceled", err: context.Canceled, want: false},
 		{name: "deadline exceeded", err: context.DeadlineExceeded, want: false},
 		{name: "net timeout", err: &net.DNSError{IsTimeout: true}, want: false},
-		{name: "string timeout", err: errors.New("upstream timeout"), want: false},
+		// A message that merely says so is not a timeout: only the type is read.
+		{name: "string timeout", err: errors.New("upstream timeout"), want: true},
 		{name: "non-timeout", err: errors.New("connection reset by peer"), want: true},
 	}
 	for _, tc := range cases {

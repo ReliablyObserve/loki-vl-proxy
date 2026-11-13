@@ -529,7 +529,7 @@ func TestOrderedJSONInstantVolumeLimits(t *testing.T) {
 	rangeParams := url.Values{"query": {query}, "start": {strconv.FormatInt(at.UnixNano(), 10)}, "end": {strconv.FormatInt(at.UnixNano(), 10)}, "step": {"60"}}
 	p.handleQueryRange(rangeRec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+rangeParams.Encode(), nil))
 	for name, rec := range map[string]*httptest.ResponseRecorder{"instant": instant, "range": rangeRec} {
-		if rec.Code < 400 || strings.Contains(rec.Body.String(), `"result"`) || !strings.Contains(rec.Body.String(), "-backend-max-buffered-response-bytes") {
+		if rec.Code < 400 || strings.Contains(rec.Body.String(), `"result"`) || !strings.Contains(rec.Body.String(), "ResourceExhausted") {
 			t.Fatalf("%s response size limit: status %d: %s", name, rec.Code, rec.Body)
 		}
 	}

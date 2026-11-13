@@ -130,7 +130,7 @@ func TestRangeMetricRowLimitStopsReadingUpstream(t *testing.T) {
 			p := newFilterPushdownProxy(t, srv.URL)
 			p.rangeMetricRowLimit = 3
 			rec := rowLimitRequest(p, "query_range", tc.query)
-			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") {
+			if rec.Code != http.StatusBadRequest || rec.Body.String() != rowLimitErrorText {
 				t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 			}
 			select {

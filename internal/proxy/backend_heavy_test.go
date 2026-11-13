@@ -33,9 +33,12 @@ func TestHeavyQueryLimiter_SaturatedQueueRejectsWithLokiMessage(t *testing.T) {
 	if waited := time.Since(started); waited < 40*time.Millisecond {
 		t.Fatalf("rejected after %s, expected to queue for the configured wait", waited)
 	}
-	for _, want := range []string{"too many outstanding requests", "-backend-max-concurrent-heavy-queries=1", "-backend-heavy-query-queue-wait=50ms"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error %q does not contain %q", err, want)
+	if err.Error() != "too many outstanding requests" || limitFlagOf(err) != "backend-max-concurrent-heavy-queries" {
+		t.Fatalf("error %q, flag %q: want Loki's text and the heavy-query flag", err, limitFlagOf(err))
+	}
+	for _, want := range []string{"-backend-max-concurrent-heavy-queries=1", "-backend-heavy-query-queue-wait=50ms"} {
+		if !strings.Contains(heavyQueueCause(err).Error(), want) {
+			t.Fatalf("log wording %q does not contain %q", heavyQueueCause(err), want)
 		}
 	}
 	if inUse, queued := l.stats(); inUse != 1 || queued != 0 {

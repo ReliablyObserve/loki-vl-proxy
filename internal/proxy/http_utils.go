@@ -607,9 +607,11 @@ func statusFromUpstreamErr(err error) int {
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return http.StatusGatewayTimeout
 	}
-	// VictoriaLogs' own deadline, a kind it reports in its message and its 503.
+	// A 504 from the backend or the gateway in front of it says the call ran
+	// out of time, and VictoriaLogs' own deadline is a kind it reports in its
+	// message with a 503: both are Loki's deadline answer.
 	var statusErr *upstreamStatusError
-	if errors.As(err, &statusErr) && statusErr.class == vlErrorDeadline {
+	if errors.As(err, &statusErr) && (statusErr.class == vlErrorDeadline || statusErr.status == http.StatusGatewayTimeout) {
 		return http.StatusGatewayTimeout
 	}
 	// Everything else, an open circuit breaker and a guard rejection included,

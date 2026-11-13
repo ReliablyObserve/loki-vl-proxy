@@ -223,7 +223,7 @@ func TestMetadataScanAdmission_BackgroundInventorySkipsInsteadOfWaiting(t *testi
 	if waited := time.Since(started); waited > 500*time.Millisecond {
 		t.Fatalf("background scan waited %s for a slot; it must skip immediately", waited)
 	}
-	if !strings.Contains(err.Error(), metadataScanLimitFlag) {
+	if "-"+limitFlagOf(err) != metadataScanLimitFlag || !strings.Contains(heavyQueueCause(err).Error(), metadataScanLimitFlag) {
 		t.Fatalf("rejection does not name %s: %v", metadataScanLimitFlag, err)
 	}
 
