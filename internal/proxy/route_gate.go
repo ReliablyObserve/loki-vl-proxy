@@ -186,10 +186,13 @@ func redirectUncleanPath(w http.ResponseWriter, r *http.Request) bool {
 // localRedirectPath reports whether p is a path on this host: it starts with a
 // single slash and holds no backslash a browser would read as one.
 func localRedirectPath(p string) bool {
-	if p == "" || p[0] != '/' || strings.ContainsRune(p, '\\') {
+	if p == "" || p[0] != '/' {
 		return false
 	}
-	return len(p) == 1 || p[1] != '/'
+	if len(p) > 1 && (p[1] == '/' || p[1] == '\\') {
+		return false
+	}
+	return !strings.ContainsRune(p, '\\')
 }
 
 // pathIsClean reports whether p, which starts with a slash, has no empty
