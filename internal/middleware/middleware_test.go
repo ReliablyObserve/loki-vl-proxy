@@ -395,7 +395,7 @@ func TestRateLimiter_Middleware_Integration(t *testing.T) {
 	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(50 * time.Millisecond)
 		w.WriteHeader(200)
-	}))
+	}), nil)
 
 	// First request should succeed
 	w1 := httptest.NewRecorder()
@@ -438,12 +438,12 @@ func TestRateLimiter_RejectIsTyped(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			defer tc.rl.Stop()
 			var got *lokierr.Error
-			tc.rl.Reject = func(w http.ResponseWriter, r *http.Request, err *lokierr.Error) {
+			reject := func(w http.ResponseWriter, r *http.Request, err *lokierr.Error) {
 				got = err
 				w.WriteHeader(err.Status())
 			}
 			release := make(chan struct{})
-			handler := tc.rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release }))
+			handler := tc.rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release }), reject)
 			defer close(release)
 			// The first request takes the token or the slot and holds it.
 			go handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/x", nil))
@@ -544,7 +544,7 @@ func TestRateLimiter_Middleware_RateLimitResponse(t *testing.T) {
 
 	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-	}))
+	}), nil)
 
 	// First request — OK
 	w1 := httptest.NewRecorder()

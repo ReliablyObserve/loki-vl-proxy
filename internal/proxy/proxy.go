@@ -1578,9 +1578,6 @@ func New(cfg Config) (*Proxy, error) {
 		drilldownScanTimeout:                  cfg.DrilldownScanTimeout,
 	}
 	p.metrics.SetCacheLayerStatsProvider(p.cacheLayerStats)
-	// The admission limiter answers a turned-away request through the error
-	// layer: Loki's queue-full answer, the limit's flag in the log line.
-	p.limiter.Reject = p.rejectAdmission
 	coalescerStats := func() metrics.CoalescerStats {
 		return metrics.CoalescerStats{
 			Total:     p.coalescer.CoalescedTotal.Load(),
@@ -2080,7 +2077,7 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 						p.tenantLimitsMiddleware(endpoint,
 							p.stepAlignMiddleware(endpoint,
 								p.compatCacheMiddleware(endpoint, route,
-									p.requestTimeBounds(endpoint, h)))))))))))))
+									p.requestTimeBounds(endpoint, h)))))))), p.rejectAdmission)))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the
@@ -2105,7 +2102,7 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 // /admin/*, and /debug/* so callers can host those on dedicated listeners.
 func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 	rlNoTenant := func(endpoint, route string, h http.HandlerFunc) http.Handler {
-		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, route, h)))
+		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, route, h), p.rejectAdmission))
 	}
 
 	// Loki API endpoints — data queries are rate-limited
@@ -2149,7 +2146,7 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 
 	// Alerting / ruler read endpoints
 	alertRead := func(endpoint, route string, h http.HandlerFunc) http.Handler {
-		return p.routeGate(endpoint, route, securityHeaders(p.tenantMiddleware(p.limiter.Middleware(p.requestLogger(endpoint, route, h)))))
+		return p.routeGate(endpoint, route, securityHeaders(p.tenantMiddleware(p.limiter.Middleware(p.requestLogger(endpoint, route, h), p.rejectAdmission))))
 	}
 	mux.Handle("/loki/api/v1/rules", alertRead("rules", "/loki/api/v1/rules", p.handleRules))
 	mux.Handle("/loki/api/v1/rules/", alertRead("rules_nested", "/loki/api/v1/rules/{namespace}", p.handleRules))

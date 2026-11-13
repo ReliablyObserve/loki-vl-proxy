@@ -52,10 +52,9 @@ func TestRateLimiterAnswersQueueFull(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p, logs := logProxy()
 			p.limiter = mw.NewRateLimiter(tc.concurrent, tc.rate, tc.burst)
-			p.limiter.Reject = p.rejectAdmission
 			defer p.limiter.Stop()
 			release := make(chan struct{})
-			h := p.limiter.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release }))
+			h := p.limiter.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release }), p.rejectAdmission)
 			defer close(release)
 			go h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels", nil))
 			time.Sleep(30 * time.Millisecond)

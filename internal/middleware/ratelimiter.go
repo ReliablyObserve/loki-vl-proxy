@@ -41,13 +41,14 @@ type RateLimiter struct {
 	// Stats
 	RejectedTotal  atomic.Int64
 	ThrottledTotal atomic.Int64
-
-	// Reject writes the answer to a request the limiter turned away: Loki's
-	// queue-full error, typed, with the flag that set the limit in its Limit
-	// (for the log line only). The proxy sets it to its error writer; the
-	// default writes the error as Loki's query frontend does.
-	Reject func(w http.ResponseWriter, r *http.Request, err *lokierr.Error)
 }
+
+// RejectFunc writes the answer to a request the limiter turned away: Loki's
+// queue-full error, typed, with the flag that set the limit in its Limit (for
+// the log line only). It is given per wrapped handler, never kept on the
+// limiter: the limiter's cleanup goroutine runs until Stop, and a writer that
+// refers to its owner would keep that owner alive with it.
+type RejectFunc func(w http.ResponseWriter, r *http.Request, err *lokierr.Error)
 
 // Flags behind the two admission limits, for the log line of a rejection.
 const (
@@ -60,13 +61,9 @@ var (
 	errTooManyConcurrent = errors.New("too many concurrent queries")
 )
 
-// reject answers a turned-away request with Loki's queue-full status and text
-// for both limits; which limit it was goes to the log line only.
-func (rl *RateLimiter) reject(w http.ResponseWriter, r *http.Request, err *lokierr.Error) {
-	if rl.Reject != nil {
-		rl.Reject(w, r, err)
-		return
-	}
+// rejectQueueFull answers a turned-away request with Loki's queue-full status
+// and text for both limits, when the caller gives no writer of its own.
+func rejectQueueFull(w http.ResponseWriter, _ *http.Request, err *lokierr.Error) {
 	// The message alone as text/plain, as Loki writes every error
 	// (pkg/util/server/error.go WriteError).
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -172,9 +169,14 @@ func ClientID(r *http.Request) string {
 // Middleware wraps an http.Handler with rate limiting and concurrency control.
 // When both the per-client rate limit and global concurrency limit are disabled
 // (i.e., both are ≤ 0), this returns next directly with zero overhead.
-func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
+// reject writes the answer to a turned-away request (nil: Loki's queue-full
+// answer as text); which limit it was goes to the log line only.
+func (rl *RateLimiter) Middleware(next http.Handler, reject RejectFunc) http.Handler {
 	if rl.maxConcurrent <= 0 && rl.ratePerSecond <= 0 {
 		return next
+	}
+	if reject == nil {
+		reject = rejectQueueFull
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		clientID := ClientID(r)
@@ -183,13 +185,13 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			w.Header().Set("Retry-After", "1")
 			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", rl.ratePerSecond))
 			w.Header().Set("X-RateLimit-Remaining", "0")
-			rl.reject(w, r, lokierr.QueueFullAt(flagRatePerSecond, int64(rl.ratePerSecond), errRateLimited))
+			reject(w, r, lokierr.QueueFullAt(flagRatePerSecond, int64(rl.ratePerSecond), errRateLimited))
 			return
 		}
 
 		if !rl.AcquireConcurrent() {
 			w.Header().Set("Retry-After", "5")
-			rl.reject(w, r, lokierr.QueueFullAt(flagMaxConcurrent, int64(rl.maxConcurrent), errTooManyConcurrent))
+			reject(w, r, lokierr.QueueFullAt(flagMaxConcurrent, int64(rl.maxConcurrent), errTooManyConcurrent))
 			return
 		}
 		defer rl.ReleaseConcurrent()
