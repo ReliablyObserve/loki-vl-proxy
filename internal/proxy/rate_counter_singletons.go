@@ -193,8 +193,10 @@ func (p *Proxy) rateCounterIdentityKeys(ctx context.Context, lines, label string
 	if keys, ok := rateCounterKeyCache.get(cacheKey); ok {
 		return keys
 	}
-	keys := p.discoverRateCounterKeys(ctx, lines, label, from, to)
-	if keys != nil {
+	keys, complete := p.discoverRateCounterKeys(ctx, lines, label, from, to)
+	// A sample that could not be read whole is used for this proof and not remembered: a short key list can only
+	// fail the proof, and caching it would send the next ten minutes of requests to the per-row evaluator.
+	if keys != nil && complete {
 		rateCounterKeyCache.put(cacheKey, keys)
 	}
 	return keys
@@ -240,11 +242,17 @@ func (c *rateCounterKeys) put(key string, keys []string) {
 	c.entries[key] = rateCounterKeysEntry{keys: keys, at: time.Now()}
 }
 
-func (p *Proxy) discoverRateCounterKeys(ctx context.Context, lines, label string, from, to time.Time) []string {
+// discoverRateCounterKeys reads the logfmt keys of a sample of the lines. The proof is an optimisation whose
+// every failed read falls back to the per-row evaluator (errRateCounterProof), and that evaluator reads
+// VictoriaLogs itself and fails the request when the backend fails, so a failed or short key read is not a
+// request error: the keys it did read only make the proof stricter (see the file comment). complete is false
+// when the read failed or held a row that is not JSON.
+func (p *Proxy) discoverRateCounterKeys(ctx context.Context, lines, label string, from, to time.Time) (keys []string, complete bool) {
 	resp, err := p.rateCounterQuery(ctx, lines+" | limit "+strconv.Itoa(rateCounterKeysSample)+" | unpack_logfmt from _msg result_prefix "+strconv.Quote(rateCounterKeyPrefix)+" | field_names", from, to)
 	if err != nil {
-		return nil
+		return nil, false
 	}
+	complete = true
 	defer resp.Body.Close()
 	type named struct {
 		name string
@@ -256,6 +264,7 @@ func (p *Proxy) discoverRateCounterKeys(ctx context.Context, lines, label string
 	for scanner.Scan() {
 		var row map[string]string
 		if json.Unmarshal(scanner.Bytes(), &row) != nil {
+			complete = false
 			continue
 		}
 		name, ok := strings.CutPrefix(row["name"], rateCounterKeyPrefix)
@@ -283,14 +292,19 @@ func (p *Proxy) discoverRateCounterKeys(ctx context.Context, lines, label string
 	if len(names) > rateCounterMaxKeys {
 		names = names[:rateCounterMaxKeys]
 	}
-	keys := make([]string, 0, len(names))
+	if scanner.Err() != nil {
+		complete = false
+	}
+	keys = make([]string, 0, len(names))
 	for _, n := range names {
 		keys = append(keys, n.name)
 	}
-	return keys
+	return keys, complete
 }
 
-// rateCounterStatsRow reads the one row of a stats query.
+// rateCounterStatsRow reads the one row of a stats query. A read that fails or holds no JSON object is no
+// verdict (ok is false): the proof fails and the per-row evaluator answers, with its own error when the backend
+// is down.
 func (p *Proxy) rateCounterStatsRow(ctx context.Context, query string, from, to time.Time) (map[string]string, bool) {
 	resp, err := p.rateCounterQuery(ctx, query, from, to)
 	if err != nil {

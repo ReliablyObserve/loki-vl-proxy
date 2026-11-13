@@ -1487,7 +1487,10 @@ func TestDetectedLabelValuesForField_ResolvesKnownUnderscoreAlias(t *testing.T) 
 		t.Fatalf("failed to create proxy: %v", err)
 	}
 
-	values := p.detectedLabelValuesForField(context.Background(), "k8s_cluster_name", `{app="api"}`, "1", "2", 25)
+	values, err := p.detectedLabelValuesForField(context.Background(), "k8s_cluster_name", `{app="api"}`, "1", "2", 25)
+	if err != nil {
+		t.Fatalf("detectedLabelValuesForField: %v", err)
+	}
 	if len(values) != 1 || values[0] != "prod-cluster" {
 		t.Fatalf("expected known underscore alias to resolve to dotted label values, got %v", values)
 	}

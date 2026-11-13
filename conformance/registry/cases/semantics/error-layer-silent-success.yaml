@@ -21,6 +21,11 @@ why: |
   that holds a row that is not JSON, as Loki's 500; a body with nothing in it
   is still an empty result. Classified Drilldown backend failures now keep
   their real error status.
+  The later reads of the detected routesDrilldown detected routes of those routes (the unpack read of a field inside
+  the line, the label read of a stream-label value, the line scan next to a
+  working stored-field lookup) answer a failure the same way; the lookups that
+  only add to an answer that already has its required read keep it, and the
+  mixed-failure gate names them with the reason.
   Loki answers the same failures with an error, and Drilldown's partial
   carve-out covers max_query_series only (pkg/querier/queryrange/limits.go:507-512,
   pkg/logql/engine.go:536-548). An empty chart instead of an error hides the
@@ -34,12 +39,20 @@ request:
     errors, 422, 500, a 502/503 from a proxy in front, 429 queue full,
     connection refused and reset, a reply after -backend-timeout, a client
     cancellation, a 200 body cut off mid-stream, a malformed 200 body, a valid
-    body above -backend-max-buffered-response-bytes), driven through 21 client
+    body above -backend-max-buffered-response-bytes), driven through 24 client
     routes (query_range log, sliding rate, stats, Drilldown stats, unwrap
     rate_counter, json; query; series; labels; label values; detected_fields,
-    detected_field values, detected_labels; index stats, volume, volume_range,
-    Drilldown volume_range; patterns; tail; rules; alerts). The cells that
-    fail this class are listed in conformance/registry/error-layer-known-leaks.json.
+    detected_fields with a parser filter, detected_field values, with a parser
+    filter and for a field outside the stored ones, detected_labels; index
+    stats, volume, volume_range, Drilldown volume_range; patterns; tail; rules;
+    alerts). The cells that fail this class are listed in
+    conformance/registry/error-layer-known-leaks.json.
+    TestErrorLayer_NoVictoriaLogsLeakMixed fails each distinct call of a route
+    in turn (a 500, a malformed body, a body cut off) while every other call
+    answers with rows or without, so a route that already has one answer and
+    loses a later read is seen. Its cells that still answer 200 are listed in
+    conformance/registry/error-layer-known-leaks.json; the calls whose
+    failure a route keeps on purpose are named, with the reason, in the test.
     TestCompat_ErrorLayerLikeLoki repeats the main modes against the stack's
     VictoriaLogs through a fault-injecting forwarder and compares with Loki.
 compare:
