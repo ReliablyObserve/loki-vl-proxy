@@ -1,6 +1,6 @@
 {
   "description": "Rows of internal/lokierr/testdata/loki_error_answers.jsonl (real Loki 3.7.9 error answers recorded over HTTP) whose proxy answer is not Loki's yet, compared by TestLokiErrorAnswersReplay on status, Content-Type, X-Content-Type-Options and body, byte for byte, against a proxy with its default configuration and Loki's max_query_length of the recorded stack, in front of a VictoriaLogs stand-in that answers every query call with an empty valid answer (so a request the proxy forwards instead of rejecting shows as a 200). The list may only shrink: a row that newly differs fails the test, a listed row that now matches fails until it is removed, and ceiling equals the number of rows. proxy is today's answer, for the reader; the test compares only whether a row matches Loki.",
-  "ceiling": 64,
+  "ceiling": 63,
   "rows": {
     "r0003": {
       "route": "query",
@@ -16,11 +16,6 @@
       "route": "query",
       "loki": "400 text/plain; charset=utf-8 \"log queries are not supported as an instant query type, please change your query to a range query type\"",
       "proxy": "400 text/plain; charset=utf-8 \"parse error : stage '|~ \\\"(\\\"' : error parsing regexp: missing closing ): `(`\""
-    },
-    "r0535": {
-      "route": "query_range",
-      "loki": "400 text/plain; charset=utf-8 \"could not parse 'start' parameter: strconv.ParseInt: parsing \\\"abc\\\": invalid syntax\"",
-      "proxy": "400 text/plain; charset=utf-8 \"invalid start timestamp: unparseable timestamp: \\\"abc\\\"\""
     },
     "r0549": {
       "route": "query_range",
