@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"compress/gzip"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -969,6 +971,15 @@ func recordDiffAnswers(t *testing.T, queries []diffQuery, options []map[string]*
 	t.Logf("recorded %s: %d queries, %d Loki answers", diffAnswersPath, len(recs), len(loki))
 }
 
+// diffTenant is the tenant a query's data set is stored under for one label spelling. VictoriaLogs writes the
+// tenant into every row's _stream_id, so the recorded rows hold it: it is taken from the query and the spelling,
+// never from the query's place in the corpus, which moves whenever a row is added to the curated sources and would
+// make the live oracles answer otherwise than the recording. It is never 0, the default tenant.
+func diffTenant(query, key string) uint32 {
+	sum := sha256.Sum256([]byte(query + "\x00" + key))
+	return binary.BigEndian.Uint32(sum[:4])%(math.MaxUint32-1) + 1
+}
+
 // recordDiffVersion records VictoriaLogs' answers for the profiles of one version.
 func recordDiffVersion(t *testing.T, root string, queries []diffQuery, options []map[string]*diffOptions, recs []*diffRecord, profs []diffProfile) {
 	t.Helper()
@@ -987,12 +998,17 @@ func recordDiffVersion(t *testing.T, root string, queries []diffQuery, options [
 		hash string
 	}
 	refs := map[string]ref{}
+	tenants := map[uint32]string{}
 	for qi, dq := range queries {
 		if len(dq.fix.Entries) == 0 {
 			continue
 		}
 		for ki, key := range keys {
-			tenant := uint32(qi*4 + ki + 1)
+			tenant := diffTenant(dq.q, key)
+			if other, dup := tenants[tenant]; dup {
+				t.Fatalf("the query %q under %s and %s take the same tenant %d: change diffTenant", dq.q, key, other, tenant)
+			}
+			tenants[tenant] = dq.q + " under " + key
 			id := fmt.Sprintf("rows/%d/%d", qi, ki)
 			inputs = append(inputs, diffStoreInput{ID: id, Rows: storeRows(dq.fix, spellings[key].toVL()), Tenant: tenant, Time: true})
 			refs[id] = ref{qi: qi, key: key}
