@@ -927,7 +927,11 @@ func FuzzVolumeSegmentsMergeLikeOneWindow(f *testing.F) {
 		for key, b := range wholeSum {
 			wholePoints[key] = [2]interface{}{nil, []interface{}{float64(end.Unix()), strconv.FormatUint(b, 10)}}
 		}
-		want, _ := json.Marshal(p.volumeResponse(req, plan, body(wholePoints, false)))
+		wholeResp, err := p.volumeResponse(req, plan, body(wholePoints, false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, _ := json.Marshal(wholeResp)
 
 		// The run: one stats_query_range answer whose buckets are the segments.
 		runPoints := map[string][2]interface{}{}

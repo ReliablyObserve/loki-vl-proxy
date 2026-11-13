@@ -617,6 +617,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		metadataMapPool.Put(pfBuf)
 	}()
 
+	badRows := 0
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		for len(line) > 0 && (line[0] == ' ' || line[0] == '\t' || line[0] == '\r') {
@@ -633,11 +634,15 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		fjVal, err := fjParser.ParseBytes(line)
 		if err != nil {
 			vlFJParserPool.Put(fjParser)
+			badRows++
 			continue
 		}
 
 		timeBytes := fjVal.GetStringBytes("_time")
 		if len(timeBytes) == 0 {
+			if fjVal.Type() != fj.TypeObject {
+				badRows++ // a JSON value that is not a row
+			}
 			vlFJParserPool.Put(fjParser)
 			continue
 		}
@@ -727,6 +732,9 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, nil, err
+	}
+	if badRows > 0 {
+		return nil, nil, errVLBodyNotJSON
 	}
 
 	sort.Strings(streamOrder)

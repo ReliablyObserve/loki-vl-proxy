@@ -16,7 +16,8 @@ import (
 // (trimStatsQRByTimeFJShifted), the calls proxyStatsQueryRangeDirect and its
 // caller make when the one parse does not answer.
 func foldParseReference(p *Proxy, body []byte, keep func(int64) bool, query string, relabelKeep func(int64) bool, relabel func(int64) int64) (translated, want []byte) {
-	translated = wrapAsLokiResponse(p.trimAndTranslateStatsQRFJ(context.Background(), body, keep, query), "matrix")
+	trimmed, _ := p.trimAndTranslateStatsQRFJ(context.Background(), body, keep, query)
+	translated = wrapAsLokiResponse(trimmed, "matrix")
 	return translated, trimStatsQRByTimeFJShifted(translated, relabelKeep, relabel)
 }
 

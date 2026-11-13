@@ -214,10 +214,14 @@ func TestCollectRangeMetric_SumOverTime_FloatField(t *testing.T) {
 }
 
 // =============================================================================
-// 6. Malformed JSON lines must be silently skipped
+// 6. A row that is not JSON fails the call; a row that is JSON but not a log
+// row is skipped
 // =============================================================================
 
-func TestCollectRangeMetric_MalformedLines_Skipped(t *testing.T) {
+// collectRangeMetricStatus runs a rate query_range against a VictoriaLogs that
+// answers /select/logsql/query with the given lines and returns the response.
+func collectRangeMetricStatus(t *testing.T, lines func(base time.Time, stream string) []string) *httptest.ResponseRecorder {
+	t.Helper()
 	base := time.Unix(1700000000, 0).UTC()
 	stream := `{app="api"}`
 
@@ -226,14 +230,9 @@ func TestCollectRangeMetric_MalformedLines_Skipped(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		// Good line first.
-		_, _ = fmt.Fprintln(w, vlLineTS(base, "good", stream))
-		// Various malformed entries.
-		_, _ = fmt.Fprintln(w, "not json at all")
-		_, _ = fmt.Fprintln(w, "{bad json}")
-		_, _ = fmt.Fprintln(w, "") // empty line
-		// Another good line.
-		_, _ = fmt.Fprintln(w, vlLineTS(base.Add(time.Second), "also good", stream))
+		for _, line := range lines(base, stream) {
+			_, _ = fmt.Fprintln(w, line)
+		}
 	}))
 	defer vlBackend.Close()
 
@@ -246,10 +245,44 @@ func TestCollectRangeMetric_MalformedLines_Skipped(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
 	rec := httptest.NewRecorder()
 	p.handleQueryRange(rec, req)
+	return rec
+}
 
-	// Must not crash and must return 200.
+// Rewritten from TestCollectRangeMetric_MalformedLines_Skipped, which asserted
+// that lines that are not JSON were skipped and the rest answered with 200.
+// conformance: semantics/error-layer-silent-success
+func TestCollectRangeMetric_MalformedLinesFailTheCall(t *testing.T) {
+	rec := collectRangeMetricStatus(t, func(base time.Time, stream string) []string {
+		return []string{
+			vlLineTS(base, "good", stream),
+			"not json at all",
+			"{bad json}",
+			"", // empty line
+			vlLineTS(base.Add(time.Second), "also good", stream),
+		}
+	})
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for lines that are not JSON, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec.Body.String() != lokiErrInternal {
+		t.Fatalf("expected Loki's %q, got %q", lokiErrInternal, rec.Body.String())
+	}
+}
+
+// Rows that are JSON but hold no usable time are still skipped, and the
+// valid rows answer.
+func TestCollectRangeMetric_RowsWithoutTimeAreSkipped(t *testing.T) {
+	rec := collectRangeMetricStatus(t, func(base time.Time, stream string) []string {
+		return []string{
+			vlLineTS(base, "good", stream),
+			`{"_msg":"no time"}`,
+			`{"_time":"not a time","_msg":"bad time"}`,
+			"", // empty line
+			vlLineTS(base.Add(time.Second), "also good", stream),
+		}
+	})
 	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 despite bad lines, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("expected 200 despite undecodable rows, got %d: %s", rec.Code, rec.Body.String())
 	}
 	var resp lokiMatrixResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {

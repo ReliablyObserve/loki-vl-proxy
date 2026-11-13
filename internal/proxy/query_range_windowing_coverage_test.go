@@ -106,8 +106,7 @@ func TestNormalizeLokiNumericTimeToUnixNano_Thresholds(t *testing.T) {
 func TestVLLogsToLokiWindowEntries_SkipsInvalidAndDerivesFields(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
 	body := []byte(
-		"not-json\n" +
-			`{"_msg":"missing-time","_stream":"{app=\"api\"}"}` + "\n" +
+		`{"_msg":"missing-time","_stream":"{app=\"api\"}"}` + "\n" +
 			`{"_time":"2026-04-01T00:00:00Z","_msg":"ok","_stream":"{app=\"api\",level=\"warn\"}","trace_id":"abc"}` + "\n",
 	)
 

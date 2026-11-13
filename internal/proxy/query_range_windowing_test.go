@@ -205,7 +205,7 @@ func TestQueryRangeWindow_ShiftedRangeDoesNotReuseTruncatedWindow(t *testing.T) 
 				}
 				for i := 0; i < min(available, limit); i++ {
 					if tc.malformed && windowStart == third && i == 1 {
-						_, _ = w.Write([]byte("{malformed}\n"))
+						_, _ = w.Write([]byte(`{"_time":"not-a-time","_msg":"undecodable"}` + "\n"))
 						continue
 					}
 					_, _ = fmt.Fprintf(w, "{\"_time\":%q,\"_msg\":%q,\"_stream\":\"{app=\\\"nginx\\\"}\"}\n",
