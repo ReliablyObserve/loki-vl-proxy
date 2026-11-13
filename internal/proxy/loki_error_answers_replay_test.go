@@ -126,7 +126,9 @@ func (row lokiErrorAnswer) rawRequest() string {
 // replay sends the row's request to the proxy at addr and reads the answer.
 func (row lokiErrorAnswer) replay(t *testing.T, addr string) lokiErrorReply {
 	t.Helper()
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	// addr is the in-process test server on the loopback interface.
+	dialer := net.Dialer{Timeout: 5 * time.Second}
+	conn, err := dialer.Dial("tcp", addr)
 	if err != nil {
 		t.Fatalf("%s: dial: %v", row.ID, err)
 	}
