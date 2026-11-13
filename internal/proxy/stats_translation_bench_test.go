@@ -86,7 +86,7 @@ func BenchmarkStatsTranslation_translateStatsResponseLabels_Small(b *testing.B) 
 	b.ResetTimer()
 	b.SetBytes(int64(len(body)))
 	for i := 0; i < b.N; i++ {
-		_ = p.translateStatsResponseLabelsWithContext(b.Context(), body, q)
+		_, _ = p.translateStatsResponseLabelsWithContext(b.Context(), body, q)
 	}
 }
 
@@ -99,7 +99,7 @@ func BenchmarkStatsTranslation_translateStatsResponseLabels_Large(b *testing.B) 
 	b.ResetTimer()
 	b.SetBytes(int64(len(body)))
 	for i := 0; i < b.N; i++ {
-		_ = p.translateStatsResponseLabelsWithContext(b.Context(), body, q)
+		_, _ = p.translateStatsResponseLabelsWithContext(b.Context(), body, q)
 	}
 }
 
@@ -113,7 +113,7 @@ func BenchmarkStatsTranslation_Coalesced_Small(b *testing.B) {
 	b.ResetTimer()
 	b.SetBytes(int64(len(body)))
 	for i := 0; i < b.N; i++ {
-		_ = p.translateStatsResponseLabelsWithContext(b.Context(), body, q)
+		_, _ = p.translateStatsResponseLabelsWithContext(b.Context(), body, q)
 	}
 }
 
@@ -126,7 +126,7 @@ func BenchmarkStatsTranslation_Coalesced_Large(b *testing.B) {
 	b.ResetTimer()
 	b.SetBytes(int64(len(body)))
 	for i := 0; i < b.N; i++ {
-		_ = p.translateStatsResponseLabelsWithContext(b.Context(), body, q)
+		_, _ = p.translateStatsResponseLabelsWithContext(b.Context(), body, q)
 	}
 }
 

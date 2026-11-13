@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `query_range`, `query`, `series` and the `index/volume` and `index/volume_range` routes answer a VictoriaLogs
+  reply that is not VictoriaLogs JSON as Loki answers a failed backend, `500` `Internal Server Error`, and no
+  longer as `200` with an empty result. That covers a body that cannot be read as JSON and a log, stats or
+  volume body that holds a row or a trailing part that is not JSON, for log queries, rate and other metric
+  queries, `rate_counter` over `unwrap`, Logs Drilldown's stats calls and the windowed log query. A reply with
+  nothing in it is still an empty result. The windowed log query also fails, and does not cache, a window whose
+  body broke off or held such a row.
+
 ## [2.194.0] - 2026-11-12
 
 ### Changed
