@@ -373,6 +373,9 @@
     "semantics/error-layer-silent-success | gap:open",
     "semantics/error-layer-transport-text | compare:exact",
     "semantics/error-layer-transport-text | gap:fixed",
+    "semantics/error-request-parameter-validation-order | compare:observed",
+    "semantics/error-request-parameter-validation-order | gap:open",
+    "semantics/error-request-parameter-validation-order | query",
     "semantics/error-request-validation-parity | compare:observed",
     "semantics/error-request-validation-parity | gap:open",
     "semantics/error-request-validation-parity | query",
@@ -1564,6 +1567,9 @@
     "internal/proxy/recent_tail_bypass_clamp_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/reprint_translation_test.go | semantics/binary-operand-literals-reprint",
     "internal/proxy/reprint_translation_test.go | semantics/label-filter-expression-syntax",
+    "internal/proxy/request_params_rules_test.go | semantics/error-request-parameter-validation-order",
+    "internal/proxy/request_params_test.go | query-stats-envelope",
+    "internal/proxy/request_params_test.go | semantics/error-request-parameter-validation-order",
     "internal/proxy/reserved_field_case_fence_test.go | cache-response-key-versions",
     "internal/proxy/reserved_field_case_fence_test.go | semantics/reserved-field-name-case-outbound",
     "internal/proxy/reserved_field_test.go | cache-response-key-versions",
@@ -1692,6 +1698,7 @@
     "internal/proxy/tenant_query_limits_test.go | series-limits-and-partial-results",
     "internal/proxy/tenant_query_limits_test.go | tenant-query-limits",
     "internal/proxy/tenant_routing_test.go | tenant-numeric-routing",
+    "internal/proxy/time_bounds_test.go | semantics/error-request-parameter-validation-order",
     "internal/proxy/time_bounds_test.go | semantics/request-time-bounds",
     "internal/proxy/top_value_series_limit_test.go | limits/series-limit-error",
     "internal/proxy/top_value_series_limit_test.go | semantics/unwrap-sum-without-collapses",
@@ -2460,7 +2467,7 @@
   ],
   "counts": {
     "case_consumers": {
-      "any": 29,
+      "any": 30,
       "api": 86,
       "drilldown": 50,
       "explore": 175,
@@ -2468,7 +2475,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 552,
+      "go": 554,
       "playwright": 1
     },
     "page_kinds": {
@@ -2488,7 +2495,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 106,
-    "wired_items": 333
+    "wired_items": 334
   },
   "gates": [
     "A/B shape selection",

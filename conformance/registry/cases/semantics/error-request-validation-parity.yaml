@@ -9,21 +9,16 @@ why: |
   A route-by-route capture against Loki v3.7.9 found requests Loki rejects
   that the proxy does not, or rejects with different text. Measured on the
   e2e data with the same request sent to both:
-  query_range accepts `step=0`, `end<=start`, `limit=abc` and
-  `direction=sideways` (Loki: 400 `zero or negative query resolution step
-  widths are not accepted. Try a positive integer`, `end timestamp must not
-  be before or equal to start time`, `strconv.Atoi: parsing "abc": invalid
-  syntax`, `invalid direction 'sideways'`); a malformed `start` is
-  `failed to parse the log query` on the metadata and range routes where Loki
-  says `could not parse 'start' parameter: strconv.ParseInt: ...`; a range
-  over max_query_length is accepted by index/volume, patterns and
-  detected_fields where Loki answers 400 (labels, series and
-  detected_labels already do); any HTTP method is served where Loki's router
+  The request parameters of every read route (start, end, time, since, step,
+  interval, limit, direction, aggregateBy, delay_for, a range over
+  max_query_length, a URL or form Loki cannot decode) are checked in Loki's
+  order before the cache and answered with Loki's text: see
+  semantics/error-request-parameter-validation-order. Still open here: any HTTP
+  method is served where Loki's router
   answers 405 with no body; format_query echoes its query instead of
   parsing it (Loki: 400 `{"status":"invalid-query","error":...}` as
   application/json); the rules API accepts `type=xyz` (Loki: 400 `not
-  supported value "xyz"`); and tail with a bad `limit` answers the websocket
-  upgrader's `Bad Request` where Loki answers the parse text. The success
+  supported value "xyz"`). The success
   bodies of rules, alerts and buildinfo also differ from Loki's.
   Delete (pkg/loki/modules.go:1936-1938): Loki serves PUT and POST (create),
   GET (list) and DELETE (cancel); the proxy implements the create and answers

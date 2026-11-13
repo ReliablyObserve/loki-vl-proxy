@@ -18,6 +18,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A request with an invalid parameter now gets Loki's `400` and Loki's text on every read route, in the order Loki
+  checks them, before the proxy looks in a cache or calls VictoriaLogs. The routes are `query_range`, `query`, `labels`,
+  label values, `series`, `index/stats`, `index/volume`, `index/volume_range`, `patterns`, `detected_fields`,
+  `detected_field/{name}/values`, `detected_labels` and `tail` (before the upgrade). `start`, `end` and `time` are read
+  as Loki reads them (`could not parse 'start' parameter: strconv.ParseInt: parsing "abc": invalid syntax`); `since`,
+  `step`, `interval`, `limit`, `direction`, `aggregateBy` and `delay_for` get Loki's texts (`could not parse 'since'
+  parameter: not a valid duration string: "abc"`, `zero or negative query resolution step widths are not accepted. Try a
+  positive integer`, `exceeded maximum resolution of 11,000 points per time series. Try increasing the value of the step
+  parameter`, `interval must be >= 0`, `limit must be a positive value`, `strconv.Atoi: parsing "abc": invalid syntax`,
+  `invalid direction 'bad'`, `delay_for can't be greater than 5`); an `end` before the `start` is `end timestamp must not
+  be before or equal to start time` where Loki says so (an equal `end` is served, as in Loki); the volume routes,
+  `detected_fields` and `detected_field/{name}/values` now answer `the query time range exceeds the limit` for a
+  range over `max_query_length`, as `labels` and `series` did; a URL or form Loki cannot decode is `invalid
+  URL escape "%zz"`, `invalid semicolon separator in query` or `http: POST too large` (a form body over 10 MB, now read
+  with that bound). A bad `start` or `end` was `failed to parse the log query` or the proxy's own text, a bad `step`,
+  `limit`, `direction` or `since` was served, and a bad parameter beside a bad query answered the query's error; where
+  a request is wrong twice, the check Loki makes first now answers. `since` now sets the window of a request without a
+  `start` for the query statistics too: `data.stats.summary` reported no lines or bytes for a `query_range` sent with
+  `since=1h` and no `start`, and now reports what that hour held. **Breaking:** a `start`, `end` or `time` of `now` or
+  `now-1h` (not times to Loki), a value with a space around it, a `since`, `step` or `interval` such as `1ns`, `1h1h`
+  or `-1h`, and a `limit` that is not a whole number are now `400`, as in Loki.
 - With `-stream-response`, a broken VictoriaLogs answer to a log query is no longer sent as a partial success.
   A body that is broken before its first row (not JSON, cut off, or a row above 8 MiB) now answers Loki's `500`
   `Internal Server Error` (`504` or `499` for a timeout or a cancel), as it does without the flag. A body that
