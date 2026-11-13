@@ -494,7 +494,7 @@ WORKFLOW_JOBS = {
 # releases), so a change to one needs nothing more from the pull request CI.
 NO_JOB_WORKFLOWS = (
     "auto-release.yaml", "cancel-conflicted-pr-runs.yaml", "changelog-pr.yaml", "codeql.yaml",
-    "docs-site.yaml", "ghcr-badges.yaml", "loc-badges.yaml", "parity-refresh.yaml", "perf-daily.yaml",
+    "docs-site.yaml", "error-answers-record.yaml", "ghcr-badges.yaml", "loc-badges.yaml", "parity-refresh.yaml", "perf-daily.yaml",
     "pr-evidence-summary.yaml", "pr-labeler.yaml", "query-corpus.yaml", "release-pr-validation.yaml",
     "release.yaml", "scorecard.yaml", "security-heavy.yaml", "visual-smoke-cleanup.yaml",
 )

@@ -30,6 +30,36 @@ def query_text_sites_snapshot(root):
         return {"state": "unavailable"}
 
 
+ERROR_COMPAT_COUNTS = ("recorded_rows", "comparable_rows", "matching_rows", "cells", "covered_cells", "messages", "messages_recorded")
+
+
+def error_compat_snapshot(root):
+    """The error compatibility scores (conformance/registry/generated/error-coverage.json, written by
+    conformance/scripts/error_registry.py): recorded Loki answers the proxy reproduces, and the share of route x error
+    kind cells checked against Loki."""
+    try:
+        tree = Path(root).resolve()
+        path = tree / "conformance/registry/generated/error-coverage.json"
+        if not path.resolve().is_relative_to(tree) or path.stat().st_size > 4 * 1024 * 1024:
+            raise ValueError("invalid error coverage input")
+        summary = json.loads(path.read_text(encoding="utf-8")).get("summary")
+        if not isinstance(summary, dict):
+            raise ValueError("invalid error coverage summary")
+        out = {"state": "available"}
+        for key in ERROR_COMPAT_COUNTS:
+            if not isinstance(summary.get(key), int) or isinstance(summary[key], bool):
+                raise ValueError("invalid error coverage count")
+            out[key] = summary[key]
+        for key in ("match_ratio", "coverage_ratio"):
+            value = summary.get(key)
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= value <= 1:
+                raise ValueError("invalid error coverage ratio")
+            out[key] = value
+        return out
+    except (OSError, ValueError, TypeError, UnicodeError, AttributeError):
+        return {"state": "unavailable"}
+
+
 def query_semantics_snapshot(root):
     """Count the declared matrix and its references without running PR code."""
     try:
@@ -279,6 +309,7 @@ def registry_snapshot(root):
         return {"state": "available", "surface_version": version, "endpoints": endpoints, "tracks": tracks,
                 "query_semantics": query_semantics_snapshot(tree),
                 "query_text_sites": query_text_sites_snapshot(tree),
+                "error_compat": error_compat_snapshot(tree),
                 "endpoint_scope": "loki-read-api", "deletion_management": deletion,
                 "excluded_write_endpoints": excluded_write_endpoints,
                 "excluded_deprecated_read_endpoints": excluded_deprecated_read_endpoints,

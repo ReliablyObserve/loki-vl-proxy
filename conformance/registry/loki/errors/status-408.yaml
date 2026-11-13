@@ -1,11 +1,14 @@
 id: status-408
 status: 408
 error_type: bad_data
-generated:
+generated:   # rewritten by conformance/scripts/error_registry.py
   proxy_call_sites: 0
   dynamic_sites: 0
-  literal_messages:
-
+  literal_messages: []
+  loki_messages: []
+  recorded_rows: 0
+  comparable_rows: 0
+  matching_rows: 0
 
 loki_behaviour: |
   Loki v3.7.9 never answers a read request with 408: a request that ends

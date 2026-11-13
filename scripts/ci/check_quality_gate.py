@@ -182,6 +182,24 @@ def query_corpus_failures(corpus):
     return [str(f) for f in corpus.get("failures") or []]
 
 
+def error_compat_failures(base, head):
+    """The error compatibility scores (conformance/registry/generated/error-coverage.json, through the quality
+    inventory): the share of recorded Loki error answers the proxy reproduces and the share of route x error kind
+    cells checked against Loki may not drop. Compared only when both trees have the file: a base without it (the pull
+    request that adds it) has nothing to fall from. A re-recording that adds rows can lower a percentage without a
+    regression; then the new floor is accepted in conformance/registry/baseline.json."""
+    before = ((base.get("quality_inventory") or {}).get("error_compat") or {})
+    after = ((head.get("quality_inventory") or {}).get("error_compat") or {})
+    if before.get("state") != "available" or after.get("state") != "available":
+        return []
+    out = []
+    for key, label in (("match_ratio", "errors that match Loki"), ("coverage_ratio", "error matrix coverage")):
+        was, now = before.get(key), after.get(key)
+        if isinstance(was, (int, float)) and isinstance(now, (int, float)) and now + 1e-9 < was:
+            out.append(f"{label} fell from {was * 100:.1f}% to {now * 100:.1f}%")
+    return out
+
+
 def main():
     if len(sys.argv) != 3:
         print("usage: check_quality_gate.py <base-json> <head-json>", file=sys.stderr)
@@ -196,6 +214,7 @@ def main():
         failures.append(f"PR unit tests failed (exit={head['tests'].get('test_exit_code', 'unknown')}); retained outcomes are incomplete")
 
     failures += query_corpus_failures(head.get("query_corpus"))
+    failures += error_compat_failures(base, head)
 
     # Skip test-count and coverage checks when head metrics are zero — this
     # indicates the collection step timed out or failed, not a real regression.
