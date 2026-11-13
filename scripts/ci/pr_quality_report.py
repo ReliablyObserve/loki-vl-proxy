@@ -237,6 +237,29 @@ QUERY_CORPUS_COUNTS = (
 )
 
 
+def error_compat_details(base, head):
+    """Errors and status codes held to the standard of answers: the share of recorded Loki error answers the proxy
+    reproduces and the share of route x error kind cells checked end to end, base versus PR (the registry's
+    conformance/registry/generated/error-coverage.json, from conformance/scripts/error_registry.py)."""
+    before = mapping(mapping(base.get("quality_inventory")).get("error_compat"))
+    after = mapping(mapping(head.get("quality_inventory")).get("error_compat"))
+    rows = []
+    for key, label in (("matching_rows", "Recorded Loki answers matched"), ("comparable_rows", "Recorded Loki answers compared"),
+                       ("covered_cells", "Matrix cells covered"), ("cells", "Matrix cells"),
+                       ("messages_recorded", "Messages with a recorded answer"), ("messages", "Loki error messages")):
+        old, new = before.get(key), after.get(key)
+        rows.append([label, fmt(old) if before.get("state") == "available" else "no base", fmt(new),
+                     f"{new - old:+d}" if numeric(old) and numeric(new) else "n/a"])
+    for key, label in (("match_ratio", "Errors that match Loki"), ("coverage_ratio", "Error matrix coverage")):
+        old, new = before.get(key), after.get(key)
+        rows.append([label, f"{old * 100:.1f}%" if numeric(old) else "no base", f"{new * 100:.1f}%" if numeric(new) else "n/a",
+                     f"{(new - old) * 100:+.1f} pp" if numeric(old) and numeric(new) else "n/a"])
+    intro = ("The answer of every Loki error message, route by route and error kind by error kind, against the recorded answers of a real Loki "
+             + "(`docs/error-compatibility-coverage.md`). A drop in either percentage fails the quality gate.")
+    return [intro, "",
+            *table(["Signal", "Base", "PR", "Delta"], rows)]
+
+
 # The categories of TestQueryTextSites, in order.
 QUERY_TEXT_SITES = (
     ("parse_calls", "LogQL/LogsQL parser calls outside the AST packages"),
@@ -735,6 +758,17 @@ def render(base, head, evidence):
         unstable = sum(any(numeric(scope.get(key)) and scope[key] > 0 for key in ("flaky", "interrupted", "not_run")) for scope in available_scopes)
         target = urgent if bad or unstable else focus
         target.append(f"Broader API/Grafana execution: {len(available_scopes)} scopes with retained test outcomes; {bad} contain failing cases, {skipped} contain skips and {unstable} report flaky/incomplete cases. Candidate-only proof, not a full compatibility percentage.")
+    errors = mapping(mapping(head.get("quality_inventory")).get("error_compat"))
+    if errors.get("state") == "available":
+        before = mapping(mapping(base.get("quality_inventory")).get("error_compat"))
+        was = ""
+        if before.get("state") == "available":
+            for key in ("match_ratio", "coverage_ratio"):
+                if numeric(before.get(key)) and numeric(errors.get(key)) and errors[key] + 1e-9 < before[key]:
+                    urgent.append(f"Error compatibility fell ({key.replace('_', ' ')}: {before[key] * 100:.1f}% → {errors[key] * 100:.1f}%).")
+            was = f" (base {before['match_ratio'] * 100:.1f}%)" if numeric(before.get("match_ratio")) else ""
+        focus.append(f"Errors match Loki: {errors['match_ratio'] * 100:.1f}%{was} of {fmt(errors.get('comparable_rows'))} recorded answers; error matrix coverage "
+                     f"{errors['coverage_ratio'] * 100:.1f}% of {fmt(errors.get('cells'))} route × error kind cells.")
     focus = urgent + focus
     if focus:
         lines += ["Focus signals:", "", *("- " + x for x in focus[:12]), ""]
@@ -755,6 +789,8 @@ def render(base, head, evidence):
         lines += section("Query semantics catalog: base versus PR", details, "no catalog counts")
     if mapping(mapping(head.get("quality_inventory")).get("query_text_sites")).get("state") == "available":
         lines += section("Query text handled as strings: base versus PR", query_text_sites_details(base, head), "no site counts")
+    if errors.get("state") == "available":
+        lines += section("Error compatibility: base versus PR", error_compat_details(base, head), "no error counts")
     corpus = mapping(head.get("query_corpus"))
     if corpus:
         lines += section("Query corpus: base versus PR", query_corpus_details(corpus), "no corpus counts")

@@ -1,0 +1,109 @@
+name: Error answers re-record
+
+# Weekly and on demand: ask the stack's pinned Loki the error requests recorded in
+# internal/lokierr/testdata (loki_error_answers.jsonl and loki_check_order.jsonl) and
+# report the rows whose answer changed. The recorded answers are what the proxy's unit
+# replay and the generated error compatibility matrix compare against, so a Loki bump
+# that changes one of its messages shows here before it shows as a surprise elsewhere.
+#
+# The recorder (test/errorrecord) sends every comparable row over HTTP and rewrites only
+# the answers; it adds and removes no row. A scheduled or manual run that finds a changed
+# answer uploads the rewritten files as an artifact and ends red, which is the notification:
+# commit the files, run conformance/scripts/error_registry.py and
+# `LVP_LOKI_ERROR_ANSWERS_UPDATE=1 go test ./internal/proxy -run TestLokiErrorAnswersReplay`
+# in a pull request. A pull request that edits the recorder or the recorded files runs the
+# same check and shows its result in the job summary without failing.
+
+on:
+  schedule:
+    - cron: "37 5 * * 3"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/error-answers-record.yaml"
+      - "test/errorrecord/**"
+      - "internal/testutil/lokirecorded/**"
+      - "internal/lokierr/testdata/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: error-answers-record-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  record:
+    name: error-answers-record
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          cache: false
+
+      - name: Start the pinned Loki
+        working-directory: test/e2e-compat
+        run: |
+          set -euo pipefail
+          # The pin comes from the compatibility matrix, as in the other compatibility workflows.
+          LOKI_IMAGE="$(jq -er '.stack.loki | select(.image_repo and .pinned_version) | "\(.image_repo):\(.pinned_version)"' compatibility-matrix.json)"
+          export LOKI_IMAGE
+          docker compose up -d --no-deps loki
+          for _ in $(seq 1 90); do
+            if curl -fsS http://localhost:13101/ready >/dev/null 2>&1; then
+              echo "Loki is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Loki did not become ready" >&2
+          docker compose logs loki | tail -50 >&2
+          exit 1
+
+      - name: Ask Loki the recorded requests
+        id: record
+        run: |
+          set -euo pipefail
+          status=0
+          go run ./test/errorrecord -loki http://localhost:13101 -check | tee /tmp/error-answers.txt || status=$?
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Error answers re-record"
+            echo
+            echo '```'
+            tail -c 20000 /tmp/error-answers.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" -ne 0 ]; then
+            # Write the new answers for review; the check above wrote nothing.
+            go run ./test/errorrecord -loki http://localhost:13101 >/dev/null
+          fi
+
+      - name: Upload the re-recorded files
+        if: steps.record.outputs.status != '0'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: error-answers
+          path: |
+            internal/lokierr/testdata/loki_error_answers.jsonl
+            internal/lokierr/testdata/loki_check_order.jsonl
+            /tmp/error-answers.txt
+          if-no-files-found: ignore
+
+      - name: Fail when an answer changed
+        if: github.event_name != 'pull_request' && steps.record.outputs.status != '0'
+        run: |
+          echo "::error title=error answers::the stack's Loki answers differently from the recording for at least one row; see the job summary and the error-answers artifact" >&2
+          exit 1
+
+      - name: Stop Loki
+        if: always()
+        working-directory: test/e2e-compat
+        run: docker compose rm -sfv loki

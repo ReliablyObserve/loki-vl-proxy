@@ -1,16 +1,23 @@
 id: status-413
 status: 413
-error_type: None
-generated:
+error_type: bad_data
+generated:   # rewritten by conformance/scripts/error_registry.py
   proxy_call_sites: 1
   dynamic_sites: 0
   literal_messages:
-    - "multi-tenant merged response exceeds configured safety limit"
+    - "multi-tenant merged response exceeds configured safety limit; raise -multi-tenant-max-merged-response-bytes or query fewer tenants"
+  loki_messages: []
+  recorded_rows: 0
+  comparable_rows: 0
+  matching_rows: 0
 
 loki_behaviour: |
-  TODO: when Loki returns this status, with its own message text
-  and errorType, and which errors take precedence over it.
+  Loki's read API has no 413: an oversize form body is 400 `http: POST too
+  large` (msg-post-too-large) and an oversize query is a 400 parse error
+  (msg-parse-input-size). The proxy writes 413 only when a multi-tenant merged
+  response is over its configured safety limit, a documented proxy limit that
+  names its flag, with no Loki answer to compare.
 precedence: []   # failure classes Loki evaluates before this one
 consumers: |
-  TODO: how Grafana Explore and Logs Drilldown render it.
+  Grafana shows the message in the panel; the operator raises the flag it names.
 cases: []        # case ids that assert status, errorType, message and headers together

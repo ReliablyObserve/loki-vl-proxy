@@ -21,6 +21,7 @@ from registry_io import dump_json, load_json, read_text  # noqa: E402
 ROOT = "conformance/registry"
 BASELINE = os.path.join(ROOT, "baseline.json")
 SUMMARY = os.path.join(ROOT, "generated/summary.json")
+ERRORS = os.path.join(ROOT, "generated/error-coverage.json")
 
 
 def states():
@@ -63,6 +64,12 @@ def main():
     current = {"scores": summary["scores"], "proven": summary["state"].get("proven", 0),
                "endpoints": summary["endpoints"]}
     current["states"] = states()
+    if os.path.exists(ERRORS):
+        # The error compatibility scores (conformance/scripts/error_registry.py): recorded Loki answers the proxy
+        # reproduces, and the share of route x error kind cells that are checked end to end.
+        errors = load_json(ERRORS)["summary"]
+        current["scores"]["errors_match_loki"] = errors["match_ratio"]
+        current["scores"]["error_matrix_coverage"] = errors["coverage_ratio"]
 
     if args.accept or not os.path.exists(BASELINE):
         dump_json(BASELINE, current)

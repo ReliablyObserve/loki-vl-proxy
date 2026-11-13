@@ -56,7 +56,7 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 | 500 | 6 | 6 | 0 | 0 | 0 | 0 |
 | set at run time | 95 | 1 | 91 | 2 | 1 | 1 |
 
-The registry holds one item per status (12 under `conformance/registry/loki/errors/`), not one per message: no check yet compares a formatted message with Loki's text.
+The registry holds one item per status (12) and one per Loki error message (41) under `conformance/registry/loki/errors/`; the messages are checked against recorded Loki answers, route by route and error kind by error kind, in the generated [error compatibility coverage](../../docs/error-compatibility-coverage.md).
 
 The error-layer gate (`TestErrorLayer_NoVictoriaLogsLeak`, every route through every VictoriaLogs failure mode) lists 3 route × failure-mode cells that still leak (4 cell × case pairs, ceiling 4) in `conformance/registry/error-layer-known-leaks.json`; the list may only shrink. Sites outside those routes and modes are not driven by the gate.
 

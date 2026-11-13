@@ -1,12 +1,17 @@
 id: status-500
 status: 500
 error_type: internal
-generated:
+generated:   # rewritten by conformance/scripts/error_registry.py
   proxy_call_sites: 6
-  dynamic_sites: 2
+  dynamic_sites: 0
   literal_messages:
-    - "failed to marshal rules response: %v"
-    - "failed to merge multi-tenant response: "
+    - "Internal Server Error"
+    - "error while processing request: runtime error: integer divide by zero"
+  loki_messages: ["msg-backend-failed", "msg-internal", "msg-limit-index-series", "unmapped-evaluator-unexpected-expr",
+  "unmapped-shard-aggregations-disabled"]
+  recorded_rows: 3
+  comparable_rows: 1
+  matching_rows: 0
 
 loki_behaviour: |
   Loki v3.7.9 answers any failed querier or storage call it cannot classify
@@ -20,7 +25,7 @@ loki_behaviour: |
   holds the cells that do not yet; error-layer-known-leaks.json lists them.
 precedence: []   # failure classes Loki evaluates before this one
 consumers: |
-  TODO: how Grafana Explore and Logs Drilldown render it.
+  Grafana shows `Internal Server Error` or the documented limit text with the flag that raises it.
 cases:
   - semantics/error-layer-backend-failure-status
   - semantics/error-layer-internal-go-text

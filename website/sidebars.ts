@@ -62,6 +62,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'compatibility-matrix',
         'compatibility-loki',
+        'error-compatibility-coverage',
         'compatibility-victorialogs',
         'compatibility-grafana-datasource',
         'compatibility-drilldown',

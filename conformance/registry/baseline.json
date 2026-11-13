@@ -3,6 +3,8 @@
   "proven": 12,
   "scores": {
     "coverage": 0.6786,
+    "error_matrix_coverage": 0.5726,
+    "errors_match_loki": 0.3442,
     "implementation": 0.9286,
     "native_share_of_implemented": 0.2692
   },
