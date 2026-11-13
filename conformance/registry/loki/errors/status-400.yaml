@@ -2,8 +2,8 @@ id: status-400
 status: 400
 error_type: bad_data
 generated:   # rewritten by conformance/scripts/error_registry.py
-  proxy_call_sites: 34
-  dynamic_sites: 26
+  proxy_call_sites: 25
+  dynamic_sites: 18
   literal_messages:
     - "both start and end parameters required for delete"
     - "delete requires X-Delete-Confirmation: true header for safety"
@@ -11,14 +11,13 @@ generated:   # rewritten by conformance/scripts/error_registry.py
     - "end must be after start"
     - "invalid end timestamp: "
     - "invalid start timestamp: "
-    - "multi-tenant fanout exceeds limit of %d tenants; raise -multi-tenant-max-fanout or query fewer tenants"
     - "multi-tenant sub-request failed"
     - "not supported value %q"
     - "query parameter required for delete"
     - "wildcard delete rejected \u2014 query must target specific streams (e.g., {app=\\"
   loki_messages: ["msg-aggregate-by", "msg-delay-for", "msg-direction", "msg-end-before-start", "msg-instant-log-query",
   "msg-interval-negative", "msg-limit-lookback", "msg-limit-not-positive", "msg-limit-query-length",
-  "msg-limit-series", "msg-number", "msg-only-label-matchers", "msg-only-log-selector",
+  "msg-limit-reached", "msg-limit-series", "msg-number", "msg-only-label-matchers", "msg-only-log-selector",
   "msg-param-duration", "msg-param-number", "msg-parse", "msg-parse-input-size", "msg-post-too-large",
   "msg-step-duration", "msg-step-not-positive", "msg-step-overflow", "msg-step-too-many-points",
   "msg-tail-not-websocket", "msg-url-escape", "msg-url-semicolon", "unmapped-delete-query-not-set",

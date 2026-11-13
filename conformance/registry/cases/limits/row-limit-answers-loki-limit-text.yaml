@@ -1,5 +1,6 @@
-id: limits/row-limit-error-names-flag
-title: A metric read past the row limit answers Loki's limit status (400) and names the flag
+id: limits/row-limit-answers-loki-limit-text
+title: A metric read past the row limit answers Loki's limit status (400) and text; the flag is in the log line
+pending: true
 proves:
   - heavy-metric-fetch-bounds
   - status-400
@@ -12,10 +13,13 @@ why: |
   -manual-range-metric-row-limit, stops every proxy-side metric evaluation: the
   ordered JSON and bare-parser raw-row evaluators, the manual range metric and
   quantile evaluators, the sliding-window stats grids and the count precheck.
-  Loki has no equivalent flag, so the text names the proxy's:
-  `manual range metric row limit exceeded (N); narrow the query or increase
-  -manual-range-metric-row-limit`. Every site builds that one error, and one
-  mapping in the error layer answers it 400 (the same as the series limit), as
+  Loki has no equivalent flag, so the client reads Loki's text for the class
+  (`limit reached while evaluating the query`, the text of logqlmodel.ErrLimit;
+  no recorded Loki answer reaches it, so it is a documented nearest class) and
+  the request error log line names the proxy's flag (`limit_flag=-manual-range-metric-row-limit`,
+  `limit_value`, and an `upstream_error` of `manual range metric row limit exceeded (N);
+  narrow the query or increase -manual-range-metric-row-limit`). Every site builds
+  that one typed error, which carries its status (the same 400 as the series limit), as
   text/plain with the message alone, like every Loki error, where two sites used to answer a bare
   `Internal Server Error` and the rest 500. Nothing of VictoriaLogs or Go is in
   the text. The read stops as the limit is hit: the proxy hangs up on
@@ -42,6 +46,6 @@ compare:
   expect:
     status: 400
     content_type: text/plain; charset=utf-8
-    body_contains:
-      - manual range metric row limit exceeded
-      - -manual-range-metric-row-limit
+    body: limit reached while evaluating the query
+    log_contains:
+      - limit_flag=-manual-range-metric-row-limit

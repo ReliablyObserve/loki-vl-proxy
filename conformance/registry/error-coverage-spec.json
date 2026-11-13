@@ -260,6 +260,8 @@
     "limit-query-length": "limits",
     "limit-lookback": "limits",
     "limit-series": "execution",
+    "limit-reached": "execution",
+    "limit-response-size": "execution",
     "limit-index-series": "execution",
     "not-found": "routing",
     "method-not-allowed": "routing",
@@ -309,6 +311,20 @@
       "reason": "The series limit needs a Loki query that reaches max_query_series; the recorded Loki has a series cap far above any recorded request, so no answer was recorded. The text is Loki's fixed one.",
       "tests": [
         "TestErrorLayer_LokiLimitTexts"
+      ]
+    },
+    "limit-reached": {
+      "reason": "Loki answers a query over one of its evaluation limits (logqlmodel.ErrLimit) with 400 and this fixed text, but the recorded stack has no limit that one request can reach, so no answer was recorded. The proxy uses the class for the limits it enforces that Loki has no flag for (the proxy-evaluated metric row limit, the binary evaluation budgets, the multi-tenant fanout); the flag goes to the log line only.",
+      "tests": [
+        "TestLimitAnswersAreLokisTextAndLogTheFlag",
+        "TestErrorLayer_NoVictoriaLogsLeak"
+      ]
+    },
+    "limit-response-size": {
+      "reason": "Loki's querier answers a response above its gRPC message size with 500 and this text, but the recorded stack cannot be made to build such a response for one request. The proxy answers it for every response it refuses to buffer above its configured bound; the flag goes to the log line only.",
+      "tests": [
+        "TestLimitAnswersAreLokisTextAndLogTheFlag",
+        "TestErrorLayer_NoVictoriaLogsLeak"
       ]
     },
     "queue-full": {

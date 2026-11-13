@@ -1063,9 +1063,7 @@
         "r0872"
       ],
       "kind": "limits",
-      "known_difference_ids": [
-        "semantics/error-layer-proxy-limit-status"
-      ],
+      "known_difference_ids": [],
       "matching_rows": 1,
       "messages": [
         "limit-query-length"
@@ -1074,17 +1072,15 @@
         "oversize": {
           "e2e": false,
           "gate_cells": 1,
-          "leaks": [
-            "semantics/error-layer-proxy-limit-status"
-          ]
+          "leaks": []
         }
       },
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "index_stats",
       "rows": 1,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -4251,6 +4247,32 @@
       "state": "matches",
       "status": 400
     },
+    "limit-reached": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-limit-reached",
+      "kind": "limit",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "execution",
+      "state": "documented",
+      "status": 400
+    },
+    "limit-response-size": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-limit-response-size",
+      "kind": "limit",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "execution",
+      "state": "documented",
+      "status": 500
+    },
     "limit-series": {
       "comparable_rows": 0,
       "e2e_rows": [],
@@ -5093,7 +5115,7 @@
   "summary": {
     "cells": 124,
     "cells_e2e": 71,
-    "cells_matching": 95,
+    "cells_matching": 96,
     "cells_recorded": 65,
     "check_order_rows": 33,
     "comparable_rows": 219,
@@ -5103,8 +5125,8 @@
     "e2e_rows": 133,
     "match_ratio": 0.9543,
     "matching_rows": 209,
-    "messages": 34,
-    "messages_documented": 7,
+    "messages": 36,
+    "messages_documented": 9,
     "messages_recorded": 27,
     "not_comparable_rows": 71,
     "recorded_loki": "3.7.9",

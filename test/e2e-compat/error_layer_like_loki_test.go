@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -21,6 +22,10 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
 )
+
+// e2eMessageSizeText is Loki's text for a response above its message size,
+// which the proxy's buffer limits answer.
+var e2eMessageSizeText = regexp.MustCompile(`^rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max \(\d+ vs\. \d+\)$`)
 
 // Loki's fixed answers (v3.7.9 pkg/util/server/error.go:26-27,
 // pkg/querier/queryrange/limits.go:46).
@@ -142,6 +147,9 @@ func errLayerE2EContains(s string, markers []string) bool {
 	return false
 }
 
+// e2eLokiLimitText is Loki's answer for a query that reaches an evaluation limit.
+const e2eLokiLimitText = "limit reached while evaluating the query"
+
 // errLayerE2EClasses names the registry cases an answer fails against Loki's
 // (wantStatus, and wantText when Loki has a fixed text).
 func errLayerE2EClasses(status int, body []byte, header http.Header, wantStatus int, wantText string, timeout, limit bool) []string {
@@ -171,8 +179,10 @@ func errLayerE2EClasses(status int, body []byte, header http.Header, wantStatus 
 	if errLayerE2EContains(visible, e2eErrLayerBackendMarkers) || (!transport && strings.Contains(visible, "logsql")) {
 		classes["semantics/error-layer-backend-text"] = true
 	}
-	if limit && status >= 400 && !strings.Contains(errLayerE2EText(body), "increase -") {
-		// A proxy limit names the flag that sets it.
+	if limit && status >= 400 && !e2eMessageSizeText.MatchString(errLayerE2EText(body)) && errLayerE2EText(body) != e2eLokiLimitText {
+		// A proxy limit answers one of Loki's limit texts: the message size
+		// text for a buffer, Loki's evaluation limit text for a row or series
+		// limit. The flag that sets it is in the log line only.
 		classes["semantics/error-layer-proxy-limit-status"] = true
 	}
 	if wantText != "" && status == wantStatus && errLayerE2EText(body) != wantText {

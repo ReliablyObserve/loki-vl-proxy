@@ -4,7 +4,7 @@ id: msg-queue-full
 message: queue-full
 source: lokierr
 const: MsgQueueFull
-constructors: ["QueueFull"]
+constructors: ["QueueFull", "QueueFullAt"]
 summary: "the query queue is full."
 templates:
   - "too many outstanding requests"

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -53,8 +54,9 @@ func expiredCtx() context.Context {
 
 // errorWriterCases covers every branch of lokiClientError: each typed proxy
 // error, each VictoriaLogs error class, the transport errors, the context
-// first rule, the text fallbacks for timeouts and cancellations, a proxy
-// limit that names its flag, an untyped error and nil.
+// first rule, errors whose text merely says "timeout" or "canceled" (a failed
+// backend call: classification is by type), each typed proxy limit, a limit
+// message with no type behind it, an untyped error and nil.
 func errorWriterCases() []errorWriterCase {
 	refused := &url.Error{Op: "Post", URL: "http://10.0.0.9:9428/select/logsql/query", Err: errors.New("dial tcp 10.0.0.9:9428: connect: connection refused")}
 	return []errorWriterCase{
@@ -81,17 +83,19 @@ func errorWriterCases() []errorWriterCase {
 		{"vl 502 front", liveCtx, &upstreamStatusError{status: 502, msg: "bad gateway", class: vlErrorUnclassified}},
 		{"aborted timed out", liveCtx, &vlResponseAbortedError{elapsed: time.Second, timedOut: true, cause: errors.New("unexpected EOF")}},
 		{"aborted", liveCtx, &vlResponseAbortedError{elapsed: time.Second, cause: errors.New("connection reset by peer")}},
-		{"series limit", liveCtx, &seriesLimitError{limit: 500}},
-		{"series limit row budget", liveCtx, fmt.Errorf("fold: %w", &seriesLimitError{limit: 1000, rowBudget: true})},
+		{"series limit", liveCtx, newSeriesLimitError(context.Background(), 500)},
+		{"series limit row budget", liveCtx, fmt.Errorf("fold: %w", newSeriesLimitError(foldingBudgetContext(1000), 1000))},
 		{"translator parse", liveCtx, &translator.ParseError{Msg: "parse error : syntax error: unexpected $end", Pos: -1}},
 		{"ordered json pipeline", liveCtx, &orderedJSONPipelineError{message: "pipeline error: invalid \xff byte"}},
 		{"vector match", liveCtx, vectorMatchError("found duplicate series for the match group {a=\"b\"} on the right hand-side of the operation")},
-		{"label values too large", liveCtx, &labelValuesResponseTooLargeError{read: 2048, limit: 1024}},
-		{"body too large", liveCtx, &backendBodyTooLargeError{limit: 4096}},
-		{"row limit", liveCtx, &rowLimitError{limit: 100, unit: "series", matches: 2000}},
-		{"binary budget", liveCtx, &binaryBudgetError{flag: "binary-evaluation-budget"}},
-		{"heavy queue full", liveCtx, &heavyQueryQueueFullError{maxConcurrent: 4, queueWait: time.Second}},
-		{"proxy limit text", liveCtx, errors.New("manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes")},
+		{"label values too large", liveCtx, newLabelValuesTooLarge(2048, 1024)},
+		{"body too large", liveCtx, newBackendBodyTooLarge(4096)},
+		{"manual metric response too large", liveCtx, newManualMetricResponseTooLarge(64)},
+		{"row limit", liveCtx, newRowLimitError(100, "series", 2000)},
+		{"binary budget", liveCtx, newBinaryBudgetError("binary-evaluation-budget")},
+		{"heavy queue full", liveCtx, newHeavyQueueFull(&heavyQueryQueueFullError{maxConcurrent: 4, queueWait: time.Second})},
+		{"query length limit", liveCtx, queryLengthLimit(strings.Repeat("x", 600), 512)},
+		{"proxy limit text is no limit", liveCtx, errors.New("manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes")},
 		{"proxy limit text with quote", liveCtx, errors.New("x \"y\"; narrow the query or increase -flag")},
 		{"proxy limit wrapped in url error", liveCtx, &url.Error{Op: "Get", URL: "http://h", Err: errors.New("a; narrow the query or increase -flag")}},
 	}

@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 )
 
 // TestCoalescer_DedupConcurrentRequests verifies that concurrent identical
@@ -393,7 +395,7 @@ func TestRateLimiter_Middleware_Integration(t *testing.T) {
 	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(50 * time.Millisecond)
 		w.WriteHeader(200)
-	}))
+	}), nil)
 
 	// First request should succeed
 	w1 := httptest.NewRecorder()
@@ -408,8 +410,62 @@ func TestRateLimiter_Middleware_Integration(t *testing.T) {
 	r2 := httptest.NewRequest("GET", "/test", nil)
 	handler.ServeHTTP(w2, r2)
 
-	if w2.Code != http.StatusServiceUnavailable {
-		t.Errorf("expected 503, got %d", w2.Code)
+	// Loki's queue-full answer, with no flag in the text and the retry hint kept.
+	if w2.Code != http.StatusTooManyRequests {
+		t.Errorf("expected 429, got %d", w2.Code)
+	}
+	if got := w2.Body.String(); got != "too many outstanding requests" {
+		t.Errorf("body %q, want Loki's queue-full text", got)
+	}
+	if w2.Header().Get("Retry-After") != "5" {
+		t.Errorf("Retry-After %q, want 5", w2.Header().Get("Retry-After"))
+	}
+}
+
+// TestRateLimiter_RejectIsTyped: both limits hand the writer a typed queue-full
+// error that carries the flag for the log line and no flag in its text.
+func TestRateLimiter_RejectIsTyped(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		rl       *RateLimiter
+		flag     string
+		value    int64
+		wantHdrs map[string]string
+	}{
+		{"rate", NewRateLimiter(0, 1, 1), "-rate-limit-per-second", 1, map[string]string{"Retry-After": "1", "X-RateLimit-Limit": "1", "X-RateLimit-Remaining": "0"}},
+		{"concurrent", NewRateLimiter(1, 0, 0), "-max-concurrent", 1, map[string]string{"Retry-After": "5"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer tc.rl.Stop()
+			var got *lokierr.Error
+			reject := func(w http.ResponseWriter, r *http.Request, err *lokierr.Error) {
+				got = err
+				w.WriteHeader(err.Status())
+			}
+			release := make(chan struct{})
+			handler := tc.rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release }), reject)
+			defer close(release)
+			// The first request takes the token or the slot and holds it.
+			go handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/x", nil))
+			time.Sleep(20 * time.Millisecond)
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, httptest.NewRequest("GET", "/x", nil))
+			if got == nil {
+				t.Fatal("limiter did not reject")
+			}
+			if got.Kind() != lokierr.KindQueueFull || got.Status() != http.StatusTooManyRequests || got.Text() != "too many outstanding requests" {
+				t.Fatalf("kind %v status %d text %q", got.Kind(), got.Status(), got.Text())
+			}
+			flag, value, ok := got.Limit()
+			if !ok || flag != tc.flag || value != tc.value {
+				t.Fatalf("limit = %q %d %v, want %q %d", flag, value, ok, tc.flag, tc.value)
+			}
+			for k, v := range tc.wantHdrs {
+				if w.Header().Get(k) != v {
+					t.Errorf("header %s = %q, want %q", k, w.Header().Get(k), v)
+				}
+			}
+		})
 	}
 }
 
@@ -488,7 +544,7 @@ func TestRateLimiter_Middleware_RateLimitResponse(t *testing.T) {
 
 	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-	}))
+	}), nil)
 
 	// First request — OK
 	w1 := httptest.NewRecorder()

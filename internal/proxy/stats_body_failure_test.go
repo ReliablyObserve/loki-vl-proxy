@@ -178,3 +178,47 @@ func TestStatsBodyDefects_RoutesFailAsLokiFails(t *testing.T) {
 		}
 	}
 }
+
+// A coalesced backend answer above the bytes the proxy buffers fails as every
+// buffered read of that size does: Loki's message size error (500), the flag in
+// the log line only. An answer of exactly the limit is served.
+// conformance: semantics/error-layer-proxy-limit-status
+func TestCoalescedBackendAnswer_OverTheBufferLimitFailsLikeLoki(t *testing.T) {
+	const limit = 2048
+	row := `{"entries":"5","streams":"1"}`
+	for _, tc := range []struct {
+		name string
+		pad  int // bytes of trailing whitespace after the row
+		want int
+	}{
+		{"under the limit", 0, http.StatusOK},
+		{"at the limit", limit - len(row), http.StatusOK},
+		{"one byte over", limit - len(row) + 1, http.StatusInternalServerError},
+		{"far over", 10 * limit, http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(row + strings.Repeat(" ", tc.pad)))
+			}))
+			defer vl.Close()
+			p := newTestProxyWithOptions(t, withBackendURL(vl.URL), func(c *Config) {
+				c.ExecutionLimits.BackendMaxBufferedResponseBytes = limit
+			})
+			params := url.Values{"query": {`{app="x"}`}, "start": {"1704067200"}, "end": {"1704070800"}}
+			req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/index/stats?"+params.Encode(), nil)
+			req.Header.Set("X-Scope-OrgID", "0")
+			rec := httptest.NewRecorder()
+			serveProxy(p, rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("status %d, want %d; body %q", rec.Code, tc.want, rec.Body.String())
+			}
+			if tc.want == http.StatusOK {
+				return
+			}
+			if !errLayerMessageSizeRE.MatchString(rec.Body.String()) || strings.Contains(rec.Body.String(), "-backend-max") {
+				t.Fatalf("body %q is not Loki's message size error without a flag", rec.Body.String())
+			}
+		})
+	}
+}

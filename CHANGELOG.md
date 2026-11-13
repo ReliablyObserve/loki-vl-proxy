@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JSON, is `null`, or is VictoriaLogs' error under a `200` no longer answers an empty or error-looking success. It
   fails with `500 Internal Server Error` and the backend's words in the log line only; the right-hand operand of
   `a + b` used to be ignored when it was an error body.
+- `GET /loki/api/v1/index/stats` and the instant metric query now fail a VictoriaLogs answer above
+  `-backend-max-buffered-response-bytes` with Loki's message size error (`500`, `rpc error: code = ResourceExhausted
+  ...`), as the other buffered reads do. Before, an oversize answer reached the decoder and the client read a bare
+  `Internal Server Error` for `index/stats`, or was served in full for the instant query. The flag is in the proxy
+  log line only.
 - A query the proxy accepts but cannot serve no longer answers with the proxy's own wording. The client read the
   translator's text (`unknown pipeline stage "foo" — not a valid LogQL parser or label filter`, `sum() requires a
   range metric inside ...`, `invalid range metric query`, `loki-vl-proxy requires a uniform offset ...`, `unsupported
@@ -41,6 +46,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   malformed internal spec) also answers `500` and no longer `400`. One class moves the other way round: a quantile
   whose `unwrap` follows a vertical tab, a form feed or another blank Loki's lexer rejects is `400` in Loki and was
   `400` here; it is `500` now, because nothing the proxy holds tells it from the same query spelled with a tab.
+
+- **Breaking:** the proxy's limits and queues now answer Loki's text and status for their class, and no flag name
+  reaches a client. The flag that set the limit is in the `request error` log line (`limit_flag`, with its setting
+  in `limit_value`), and the operator wording that names it is the line's `upstream_error`.
+  - The per-client rate limit (`-rate-limit-per-second`) and the `-max-concurrent` cap answer `429`
+    `too many outstanding requests` (Loki's full-queue answer) where they answered `429` `rate limit exceeded` and
+    `503` `too many concurrent queries`. `Retry-After` and `X-RateLimit-*` stay. The log line of a rejection is
+    written at most once a second, so a flood of rejected requests is not a flood of log lines. The heavy-query and
+    metadata-scan queues keep their `429` and Loki's text, which no longer names VictoriaLogs.
+  - A metric that passes `-manual-range-metric-row-limit`, a binary expression over `-binary-metric-max-arrays` or
+    `-binary-metric-max-operand-bytes`, and a multi-tenant request over `-multi-tenant-max-fanout` answer `400`
+    `limit reached while evaluating the query` (the text of Loki's query limits).
+  - A response over `-backend-max-buffered-response-bytes`, `-ordered-json-metric-max-bytes`,
+    `-label-values-max-response-bytes` or `-multi-tenant-max-merged-response-bytes` answers `500`
+    `rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (N vs. LIMIT)`, the
+    text Loki's querier gives a response over its message size. A merged multi-tenant response over its limit
+    answered `413` before.
+  - A query longer than `-max-query-length-bytes` answers `400` `parse error : input size too long (N > M)`, the
+    text Loki gives above its own input limit.
+- A failed backend call is classified by the type of its error, never by the words in its message. An error that
+  only says `timeout`, `deadline exceeded` or `context canceled` in its text is `500` like any failed call, no
+  longer `504` or `499`; a Go timeout (`context.DeadlineExceeded`, a network timeout), a cancellation, and the
+  `503` VictoriaLogs sends when a query outlives `-search.maxQueryDuration` still answer `504` and `499`. A `504`
+  from the backend, or from a gateway in front of it, answers `504` by its status; a `502` or `503` from a gateway
+  stays `500`, as before.
 
 ## [2.200.0] - 2026-11-13
 

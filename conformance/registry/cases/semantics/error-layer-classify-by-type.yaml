@@ -1,0 +1,36 @@
+id: semantics/error-layer-classify-by-type
+title: A failed call is classified by its error's type, never by the words in its message
+pending: true
+proves:
+  - semantics/error-layer-cancel-deadline
+  - semantics/error-layer-internal-go-text
+  - status-500
+consumer: any
+why: |
+  Loki answers a cancelled request with 499, one that ran out of time with 504
+  and every other failed call with 500 and a fixed text. The proxy decided some
+  of those by looking for `timeout`, `deadline exceeded` or `context canceled`
+  in an error's message, so a VictoriaLogs message or a proxy message that
+  merely contained one of those words became a 504 or a 499, and an error that
+  was a real cancellation but carried other words did not. Status, client text
+  and the circuit breaker now read the error's type: context.Canceled and
+  context.DeadlineExceeded through errors.Is, a network timeout through
+  net.Error, the request's own context first, VictoriaLogs' kinds
+  (a 504, its 503 for a query past -search.maxQueryDuration, its aborted body)
+  through the typed VictoriaLogs error. A message with the words and no such
+  type is a failed backend call (500, `Internal Server Error`) and counts for
+  the breaker like any other.
+request:
+  scope: internal
+  entry: statusFromUpstreamErr, isCanceledErr, shouldRecordBreakerFailure, (*Proxy).fail
+  setup: |
+    TestClassificationByTypeNeverByText (15 errors, three decisions each) and
+    TestTransportTimeoutsAreTypedTimeouts (a real client timeout before the
+    headers and during the body read, a request deadline, a request cancel and
+    a cancel during the body read).
+compare:
+  mode: exact
+  expect: |
+    Every typed timeout is 504, every typed cancel is 499 and neither trips the
+    breaker; an error whose text only says timeout, deadline exceeded or context
+    canceled is 500 with Loki's fixed text.

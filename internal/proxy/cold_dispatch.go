@@ -172,7 +172,7 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 		chunkBody, readErr := readBodyLimited(resp.Body, max(budget-accBytes, 1))
 		resp.Body.Close()
 		if errors.Is(readErr, errBodyTooLarge) {
-			return nil, &backendBodyTooLargeError{limit: budget}
+			return nil, newBackendBodyTooLarge(budget)
 		}
 		if readErr != nil {
 			return nil, fmt.Errorf("failed to read cold chunk response: %w", readErr)

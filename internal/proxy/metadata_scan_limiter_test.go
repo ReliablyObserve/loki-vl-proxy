@@ -105,7 +105,7 @@ func TestMetadataScanLimiter_LatencyAndDistressFeedback(t *testing.T) {
 	}
 	if _, err := l.acquire(ctx, sfnPath, params, clock, false); !isHeavyQueryQueueFull(err) {
 		t.Fatalf("second scan at the floor: err = %v, want queue-full", err)
-	} else if msg := err.Error(); !strings.Contains(msg, metadataScanLimitFlag+"=8") || !strings.Contains(msg, "adaptive limit 1") || !strings.Contains(msg, metadataScanMinFloorFlag+"=1") || !strings.Contains(msg, "too many outstanding requests") {
+	} else if msg := heavyQueueCause(err).Error(); err.Error() != "too many outstanding requests" || !strings.Contains(msg, metadataScanLimitFlag+"=8") || !strings.Contains(msg, "adaptive limit 1") || !strings.Contains(msg, metadataScanMinFloorFlag+"=1") {
 		t.Fatalf("rejection does not describe the adaptive state and flags: %s", msg)
 	}
 	l.release(tok)
@@ -151,7 +151,7 @@ func TestMetadataScanLimiter_BackendSaturationSignals(t *testing.T) {
 	measure(l, 24*time.Hour, 0.1*gib)
 	if _, err := l.acquire(context.Background(), sfnPath, scanParams(24*time.Hour), time.Now(), false); !isHeavyQueryQueueFull(err) {
 		t.Fatalf("admitted a scan while VictoriaLogs runs all 16 selects: %v", err)
-	} else if !strings.Contains(err.Error(), "VictoriaLogs running 16 of 16 selects") {
+	} else if !strings.Contains(heavyQueueCause(err).Error(), "VictoriaLogs running 16 of 16 selects") {
 		t.Fatalf("rejection does not name the saturation: %v", err)
 	}
 	mu.Lock()
@@ -420,7 +420,7 @@ func TestMetadataScanLimiter_FleetShareBackgroundAndSilence(t *testing.T) {
 	sig = backendSignals{failed: true}
 	mu.Unlock()
 	l.signals(ctx, 0)
-	if _, err := l.acquire(ctx, sfnPath, params, time.Now(), false); !isHeavyQueryQueueFull(err) || !strings.Contains(err.Error(), "/metrics not answering") {
+	if _, err := l.acquire(ctx, sfnPath, params, time.Now(), false); !isHeavyQueryQueueFull(err) || !strings.Contains(heavyQueueCause(err).Error(), "/metrics not answering") {
 		t.Fatalf("admitted while VictoriaLogs does not answer /metrics: %v", err)
 	}
 	// A /metrics that keeps failing past the silence window (an auth change,

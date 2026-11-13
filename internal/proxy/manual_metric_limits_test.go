@@ -45,7 +45,7 @@ func TestGroupedQuantileCountLimit(t *testing.T) {
 					if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"1.5"`) {
 						t.Fatalf("counts at the limit rejected: %d %s", rec.Code, rec.Body.String())
 					}
-				} else if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") || strings.Contains(rec.Body.String(), `"result"`) {
+				} else if rec.Code != http.StatusBadRequest || rec.Body.String() != "limit reached while evaluating the query" {
 					t.Fatalf("over the limit must return the limit error without partial samples: %d %s", rec.Code, rec.Body.String())
 				}
 				if q := emu.EndpointCalls("/select/logsql/query"); len(q) != 0 {
@@ -81,7 +81,7 @@ func TestManualMetricRowLimitCountsSkippedRows(t *testing.T) {
 	p.rangeMetricRowLimit = 1
 	stamp := time.Now()
 	series, err := p.collectRangeMetricSamples(context.Background(), "*", nil, nil, true, "latency", "", stamp.Add(-time.Minute), stamp, nil)
-	if err == nil || !strings.Contains(err.Error(), "row limit exceeded") || series != nil {
+	if err == nil || !isRowLimitError(err) || series != nil {
 		t.Fatalf("skipped rows must not hide truncation: series=%v err=%v", series, err)
 	}
 }

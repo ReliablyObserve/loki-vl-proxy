@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 )
 
 // newTenantLimitsProxy builds a proxy with two mapped tenants, tenant-a and
@@ -252,7 +253,7 @@ func TestTenantQueryLimits_PublishedEqualsEnforced(t *testing.T) {
 				}
 				fake.lines = seriesLimitFixture(series/tenants+1, base.Add(6*time.Minute))
 				rec := serve("/loki/api/v1/query_range", tumblingRangeParams(`sum by (pod) (count_over_time({app="top"} | json [1m]))`, start, end, time.Minute))
-				if want := (&seriesLimitError{limit: series}).Error(); rec.Code != http.StatusBadRequest || errorText(t, rec) != want {
+				if want := lokierr.SeriesLimit(series).Text(); rec.Code != http.StatusBadRequest || errorText(t, rec) != want {
 					t.Fatalf("max_query_series %d: %d series must fail with Loki's error, got %d %s", series, (series/tenants+1)*tenants, rec.Code, rec.Body.String())
 				}
 				fake.lines = fixture

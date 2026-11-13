@@ -67,6 +67,11 @@ const (
 	MsgSeriesLimit
 	// MsgIndexSeriesLimit: the volume endpoints' series limit (a 500).
 	MsgIndexSeriesLimit
+	// MsgLimitReached: a query over a limit of its own evaluation (a 400).
+	MsgLimitReached
+	// MsgResponseTooLarge: a response above the message size a component
+	// accepts (a 500).
+	MsgResponseTooLarge
 	// MsgNotFound: an unknown path.
 	MsgNotFound
 	// MsgMethodNotAllowed: a method the route does not serve (no body).
@@ -127,6 +132,8 @@ var messages = [msgCount]message{
 	MsgLookback:          {"limit-lookback", KindLimit, http.StatusBadRequest, ShapeRoute},
 	MsgSeriesLimit:       {"limit-series", KindLimit, http.StatusBadRequest, ShapeRoute},
 	MsgIndexSeriesLimit:  {"limit-index-series", KindLimit, http.StatusInternalServerError, ShapeRoute},
+	MsgLimitReached:      {"limit-reached", KindLimit, http.StatusBadRequest, ShapeRoute},
+	MsgResponseTooLarge:  {"limit-response-size", KindLimit, http.StatusInternalServerError, ShapeRoute},
 	MsgNotFound:          {"not-found", KindRoute, http.StatusNotFound, ShapeHTTPError},
 	MsgMethodNotAllowed:  {"method-not-allowed", KindRoute, http.StatusMethodNotAllowed, ShapeBodyless},
 	MsgTailNotWebSocket:  {"tail-not-websocket", KindRoute, http.StatusBadRequest, ShapeHTTPError},
@@ -166,6 +173,7 @@ const (
 	textAggregateBy   = "invalid aggregation option"
 	textSemicolon     = "invalid semicolon separator in query"
 	textPostTooLarge  = "http: POST too large"
+	textLimitReached  = "limit reached while evaluating the query"
 	textSeriesLimit   = "reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()"
 )
 
@@ -292,6 +300,15 @@ func Lookback(limit time.Duration) *Error {
 	return newError(MsgLookback, "this data is no longer available, it is past now - max_query_lookback ("+FormatDuration(limit)+")", nil)
 }
 
+// SeriesLimitOf is SeriesLimit for the proxy's own limit: flag is the proxy
+// flag that sets it, set to limit, and cause says what was counted, both for the
+// log line only. It builds the error in one allocation.
+func SeriesLimitOf(flag string, limit int, cause error) *Error {
+	e := SeriesLimit(limit)
+	e.limitFlag, e.limitValue, e.cause = flag, int64(limit), cause
+	return e
+}
+
 // SeriesLimit is a metric query over max_query_series.
 func SeriesLimit(limit int) *Error {
 	return newError(MsgSeriesLimit, "maximum number of series ("+strconv.Itoa(limit)+") "+textSeriesLimit, nil)
@@ -301,6 +318,28 @@ func SeriesLimit(limit int) *Error {
 // with 500.
 func IndexSeriesLimit(limit int) *Error {
 	return newError(MsgIndexSeriesLimit, "rpc error: code = Unknown desc = the query hit the max number of series limit (limit: "+strconv.Itoa(limit)+" series)", nil)
+}
+
+// LimitReached is a query that went over a limit of its own evaluation: the
+// class of Loki's logqlmodel.ErrLimit, answered 400 with its fixed text. flag
+// is the proxy flag that sets the limit and value its setting, for the log
+// line only; cause says what was counted, for the log line only.
+func LimitReached(flag string, value int64, cause error) *Error {
+	e := newError(MsgLimitReached, textLimitReached, cause)
+	e.limitFlag, e.limitValue = flag, value
+	return e
+}
+
+// ResponseTooLarge is a response above the message size a component accepts,
+// as Loki's querier answers one over its gRPC message limit: 500 with the
+// ResourceExhausted text. read is the size seen when the read stopped (at
+// least limit+1 bytes), limit the bound; flag is the proxy flag that sets it
+// and cause says what was too large, both for the log line only.
+func ResponseTooLarge(flag string, read, limit int64, cause error) *Error {
+	size, bound := strconv.FormatInt(read, 10), strconv.FormatInt(limit, 10)
+	e := newError(MsgResponseTooLarge, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max ("+size+" vs. "+bound+")", cause)
+	e.limitFlag, e.limitValue = flag, limit
+	return e
 }
 
 // NotFound is an unknown path, as Loki's router answers it.
@@ -322,6 +361,15 @@ func WriteNotSupported() *Error { return newError(MsgWriteNotSupported, textWrit
 // QueueFull is a request the query queue has no room for; cause says which
 // queue, for the log.
 func QueueFull(cause error) *Error { return newError(MsgQueueFull, textQueueFull, cause) }
+
+// QueueFullAt is QueueFull for one of the proxy's own queues and rate limits:
+// flag is the proxy flag that sets the limit, set to value, for the log line
+// only. It builds the error in one allocation.
+func QueueFullAt(flag string, value int64, cause error) *Error {
+	e := newError(MsgQueueFull, textQueueFull, cause)
+	e.limitFlag, e.limitValue = flag, value
+	return e
+}
 
 // Canceled is a request its client cancelled.
 func Canceled(cause error) *Error { return newError(MsgCanceled, textCanceled, cause) }

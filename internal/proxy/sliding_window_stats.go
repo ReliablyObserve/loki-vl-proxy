@@ -49,7 +49,7 @@ const (
 // rows' worth of data, and only raising that flag raises the budget. It is the
 // same limit error as the row count.
 func slidingStatsByteBudgetError(rowLimit int) error {
-	return &rowLimitError{limit: rowLimit, unit: fmt.Sprintf("stats rows of up to %d bytes in one bucket grid", slidingStatsMaxRowBytes)}
+	return newRowLimitError(rowLimit, fmt.Sprintf("stats rows of up to %d bytes in one bucket grid", slidingStatsMaxRowBytes), 0)
 }
 
 // slidingStatsMaxRowBytes bounds one stats row: a bucket timestamp, the group
@@ -393,7 +393,7 @@ func (p *Proxy) fetchSlidingStatsGrid(ctx context.Context, stats *slidingStats, 
 			}
 		}
 		if rows++; rows > rowLimit {
-			return &rowLimitError{limit: rowLimit, unit: "stats rows in one bucket grid"}
+			return newRowLimitError(rowLimit, "stats rows in one bucket grid", 0)
 		}
 		stats.records = append(stats.records, rec)
 	}
@@ -677,7 +677,7 @@ func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale flo
 const slidingPointOverheadBytes = 26
 
 func errSlidingResponseTooLarge(maxBytes int) error {
-	return fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", maxBytes)
+	return newManualMetricResponseTooLarge(int64(maxBytes))
 }
 
 type slidingOutputSeries struct {

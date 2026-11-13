@@ -1,8 +1,4 @@
 {
-  "ceiling": 1,
-  "leaks": {
-    "index_stats oversize": [
-      "semantics/error-layer-proxy-limit-status"
-    ]
-  }
+  "ceiling": 0,
+  "leaks": {}
 }

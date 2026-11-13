@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -22,6 +24,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 )
 
 // The error-layer gate drives every client-facing route that reaches
@@ -549,12 +552,16 @@ func errLayerClasses(rt errLayerRoute, mode string, o errLayerOutcome, backendHo
 			classes[leakFailureStatus] = true
 		}
 	}
-	if mode == "oversize" && o.status >= 400 && !strings.Contains(errLayerText(o), "increase -") {
-		// A proxy limit names the flag that sets it.
+	if mode == "oversize" && o.status >= 400 && !errLayerMessageSizeRE.MatchString(errLayerText(o)) {
+		// A proxy buffer limit answers Loki's message size text, which carries
+		// no flag: the flag that sets the limit is in the log line.
 		classes[leakLimitStatus] = true
 	}
 	return errLayerClassList(classes)
 }
+
+// errLayerMessageSizeRE is Loki's text for a response above its message size.
+var errLayerMessageSizeRE = regexp.MustCompile(`^rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max \(\d+ vs\. \d+\)$`)
 
 func errLayerClassList(classes map[string]bool) []string {
 	out := make([]string, 0, len(classes))
@@ -963,5 +970,118 @@ func TestErrorLayer_WindowRetryCancelDeadline(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestLimitAnswersAreLokisTextAndLogTheFlag: every proxy limit and queue answer
+// is the typed error of its Loki class. A client reads Loki's status and text
+// with no flag name in the body; the request error log line carries the flag
+// and its value.
+// conformance: semantics/error-layer-proxy-limit-status, status-400, status-429, status-500
+func TestLimitAnswersAreLokisTextAndLogTheFlag(t *testing.T) {
+	cases := []struct {
+		name      string
+		err       error
+		status    int
+		text      string
+		flag      string // the log line's limit_flag, without its dash
+		value     string // the log line's limit_value, "" when the answer has none
+		retryKind error  // a sentinel the typed error must still match
+	}{
+		{"series limit", newSeriesLimitError(context.Background(), 500), 400, lokierr.SeriesLimit(500).Text(), "max-stats-query-series", "500", nil},
+		{"row limit", manualRowLimitError(3), 400, limitText, "manual-range-metric-row-limit", "3", nil},
+		{"row limit of a count precheck", newRowLimitError(3, "", 5000), 400, limitText, "manual-range-metric-row-limit", "3", nil},
+		{"row limit of a bucket grid", newRowLimitError(3, "stats rows in one bucket grid", 0), 400, limitText, "manual-range-metric-row-limit", "3", nil},
+		{"series budget of a fold", newSeriesLimitError(foldingBudgetContext(7), 7), 400, limitText, "manual-range-metric-row-limit", "7", nil},
+		{"binary arrays budget", newBinaryBudgetError(flagBinaryMetricMaxArrays), 400, limitText, "binary-metric-max-arrays", "", nil},
+		{"binary operand bytes budget", fmt.Errorf("left query: %w", newBinaryBudgetError(flagBinaryMetricMaxOperandBytes)), 400, limitText, "binary-metric-max-operand-bytes", "", nil},
+		{"backend body", fmt.Errorf("stats: %w", newBackendBodyTooLarge(4096)), 500, fmt.Sprintf(grpcSizeText, 4097, 4096), "backend-max-buffered-response-bytes", "4096", errBodyTooLarge},
+		{"manual metric response", newManualMetricResponseTooLarge(64), 500, fmt.Sprintf(grpcSizeText, 65, 64), "backend-max-buffered-response-bytes", "64", errManualMetricResponseTooLarge},
+		{"binary operand response", newBufferLimitError(flagBackendMaxBufferedResponseBytes, 17, 16, causeBinaryOperand), 500, fmt.Sprintf(grpcSizeText, 17, 16), "backend-max-buffered-response-bytes", "16", nil},
+		{"ordered JSON metric output", newBufferLimitError(flagOrderedJSONMetricMaxBytes, 2048, 1024, causeOrderedOutput), 500, fmt.Sprintf(grpcSizeText, 2048, 1024), "ordered-json-metric-max-bytes", "1024", nil},
+		{"label values", newLabelValuesTooLarge(2048, 1024), 500, fmt.Sprintf(grpcSizeText, 2048, 1024), "label-values-max-response-bytes", "1024", nil},
+		{"heavy queue", newHeavyQueueFull(&heavyQueryQueueFullError{maxConcurrent: 4, queueWait: time.Second}), 429, queueText, "backend-max-concurrent-heavy-queries", "4", nil},
+		{"metadata scan queue", newHeavyQueueFull(&heavyQueryQueueFullError{limitFlag: metadataScanLimitFlag, work: metadataScanLimitWork, maxConcurrent: 3, queueWait: time.Second, adaptive: "adaptive limit 2"}), 429, queueText, "backend-max-concurrent-metadata-scans", "3", nil},
+		{"query length", queryLengthLimit(strings.Repeat("x", 600), 512), 400, "parse error : input size too long (600 > 512)", "max-query-length-bytes", "512", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p, logs := logProxy()
+			rec := httptest.NewRecorder()
+			if status := p.fail(rec, requestOnRoute("query_range", "/loki/api/v1/query_range", context.Background()), tc.err); status != tc.status {
+				t.Fatalf("status %d, want %d", status, tc.status)
+			}
+			if rec.Code != tc.status || rec.Body.String() != tc.text {
+				t.Fatalf("answer %d %q, want %d %q", rec.Code, rec.Body.String(), tc.status, tc.text)
+			}
+			if got := rec.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+				t.Errorf("Content-Type %q", got)
+			}
+			if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Errorf("X-Content-Type-Options %q", got)
+			}
+			body := rec.Body.String()
+			for _, leak := range []string{"-" + tc.flag, tc.flag, "VictoriaLogs", "backend", "narrow the query", "increase -", "raise -"} {
+				if strings.Contains(body, leak) {
+					t.Errorf("client body %q carries %q", body, leak)
+				}
+			}
+			line := logs.String()
+			if !strings.Contains(line, "limit_flag=-"+tc.flag) {
+				t.Errorf("log line %q lacks limit_flag=-%s", line, tc.flag)
+			}
+			if tc.value != "" && !strings.Contains(line, "limit_value="+tc.value) {
+				t.Errorf("log line %q lacks limit_value=%s", line, tc.value)
+			}
+			if tc.retryKind != nil && !errors.Is(tc.err, tc.retryKind) {
+				t.Errorf("the typed error no longer matches %v", tc.retryKind)
+			}
+			typed, ok := lokierr.As(tc.err)
+			if !ok {
+				t.Fatalf("%v is not typed", tc.err)
+			}
+			if kind := typed.Kind(); kind != lokierr.KindLimit && kind != lokierr.KindParse && kind != lokierr.KindQueueFull {
+				t.Errorf("kind %v", kind)
+			}
+			if got := statusFromUpstreamErr(tc.err); typed.Kind() != lokierr.KindParse && got != tc.status {
+				t.Errorf("statusFromUpstreamErr = %d, want %d", got, tc.status)
+			}
+		})
+	}
+}
+
+// foldingBudgetContext is the context of a request that folds its series
+// afterwards and reads them under a raw-row budget.
+func foldingBudgetContext(budget int) context.Context {
+	ctx := context.WithValue(context.Background(), foldedSumKey{}, true)
+	return context.WithValue(ctx, seriesLimitScopeKey{}, &seriesLimitScope{foldBudget: budget})
+}
+
+// TestLimitCausesStayInTheLog: the operator wording of each limit, flag and
+// all, is the typed error's cause: it reaches the log line as upstream_error and
+// never the body.
+func TestLimitCausesStayInTheLog(t *testing.T) {
+	for _, tc := range []struct {
+		name, want string
+		err        error
+	}{
+		{"manual metric", "manual metric response exceeds -backend-max-buffered-response-bytes; narrow the query or increase it", newManualMetricResponseTooLarge(64)},
+		{"backend body", "backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes", newBackendBodyTooLarge(4096)},
+		{"row limit", "manual range metric row limit exceeded (3); narrow the query or increase -manual-range-metric-row-limit", manualRowLimitError(3)},
+		{"binary budget", "binary expression exceeds its evaluation budget; narrow the query or increase -binary-metric-max-arrays", newBinaryBudgetError(flagBinaryMetricMaxArrays)},
+		{"label values", "raise -label-values-max-response-bytes", newLabelValuesTooLarge(2048, 1024)},
+		{"heavy queue", "heavy VictoriaLogs queries are limited to -backend-max-concurrent-heavy-queries=4 per replica", newHeavyQueueFull(&heavyQueryQueueFullError{maxConcurrent: 4, queueWait: time.Second})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, logs := logProxy()
+			rec := httptest.NewRecorder()
+			p.fail(rec, requestOnRoute("query", "/x", context.Background()), tc.err)
+			if !strings.Contains(logs.String(), tc.want) {
+				t.Errorf("log %q lacks %q", logs.String(), tc.want)
+			}
+			if strings.Contains(rec.Body.String(), "-") && strings.Contains(rec.Body.String(), "flag") {
+				t.Errorf("body %q", rec.Body.String())
+			}
+		})
 	}
 }

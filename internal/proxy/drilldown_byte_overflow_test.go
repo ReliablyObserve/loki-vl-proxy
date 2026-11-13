@@ -89,7 +89,7 @@ func TestDrilldownBreakdown_ByteOverflowRanking(t *testing.T) {
 				if !strings.Contains(rec.Body.String(), `"pod":"a"`) || !strings.Contains(rec.Body.String(), `"9"`) {
 					t.Errorf("exact busiest sample missing: %s", rec.Body)
 				}
-			} else if !strings.Contains(rec.Body.String(), fmt.Sprintf("manual metric response exceeds %d bytes", boundsTestCap)) {
+			} else if !strings.Contains(rec.Body.String(), fmt.Sprintf("trying to send message larger than max (%d vs. %d)", boundsTestCap+1, boundsTestCap)) {
 				t.Errorf("missing unchanged byte limit error: %s", rec.Body)
 			}
 			mu.Lock()

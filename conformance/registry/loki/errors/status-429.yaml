@@ -16,6 +16,10 @@ loki_behaviour: |
   (msg-queue-full). It needs load to reach, so no single recorded request holds
   it; the text and status are Loki's fixed ones and the error-layer gate holds
   the proxy's answer to them (TestErrorLayer_NoVictoriaLogsLeak, the vl429 mode).
+  The proxy answers the same text and status for its own queues and limits: the
+  heavy-query and metadata-scan queues, the per-client rate limit and the
+  -max-concurrent cap. The flag that closed the door is in the log line only
+  (TestRateLimiterAnswersQueueFull, TestHeavyQueueFullAnswers429OnEveryWriter).
 precedence: []   # failure classes Loki evaluates before this one
 consumers: |
   Grafana shows `too many outstanding requests` and retries the panel when the user refreshes.

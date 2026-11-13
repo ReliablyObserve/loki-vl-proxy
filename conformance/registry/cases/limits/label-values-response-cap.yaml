@@ -1,5 +1,6 @@
 id: limits/label-values-response-cap
 title: A label values answer above the size limit fails with Loki's ResourceExhausted error, not an unbounded read
+pending: true
 proves:
   - operator-configurable-limits
   - tenant-query-limits
@@ -38,9 +39,9 @@ compare:
     reason: |
       Loki's prefix is the contract: HTTP 500 and `rpc error: code =
       ResourceExhausted desc = grpc: trying to send message larger than max (N
-      vs. LIMIT)`. The proxy appends `; raise -label-values-max-response-bytes
-      or narrow the query`; N is the bytes read from VictoriaLogs when the proxy
-      stopped (LIMIT + 1), not the full response size. Both sides are
+      vs. LIMIT)`, word for word; N is the bytes read from VictoriaLogs when the
+      proxy stopped (LIMIT + 1), not the full response size. The flag that sets
+      the limit (-label-values-max-response-bytes) is in the log line only. Both sides are
       compared with limits that the request exceeds; under the limit the
       answer is every value, as Loki returns it.
 applies_to:

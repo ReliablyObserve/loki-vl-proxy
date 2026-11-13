@@ -734,8 +734,8 @@ func TestTenant_MultiTenantQueryRangeRejectsExcessiveTenantCount(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for oversized query_range fanout, got %d body=%s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "fanout exceeds limit") {
-		t.Fatalf("expected fanout limit message, got %s", w.Body.String())
+	if w.Body.String() != "limit reached while evaluating the query" {
+		t.Fatalf("expected Loki's limit text, got %s", w.Body.String())
 	}
 }
 
