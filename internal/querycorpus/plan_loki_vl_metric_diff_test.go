@@ -846,7 +846,10 @@ type metricKindCounts struct {
 	NotPlan  map[string]int `json:"not_plan,omitempty"`
 	// PlanMatchesLoki are the plan's runs that answer as Loki does; TranslatorMatchesLoki every run that does
 	// (reported); FloatTolerance the matching runs with a value equal only within the float tolerance.
-	PlanMatchesLoki       int `json:"plan_matches_loki"`
+	PlanMatchesLoki int `json:"plan_matches_loki"`
+	// PlanMatchesLokiEmpty are the plan's matching runs where Loki answers no series (or an error): both sides
+	// empty is a match the data says little about, counted apart.
+	PlanMatchesLokiEmpty  int `json:"plan_matches_loki_empty"`
 	TranslatorMatchesLoki int `json:"translator_matches_loki"`
 	FloatTolerance        int `json:"float_tolerance"`
 	// PlanDiffersByClass counts, by difference class, the plan's runs that differ from Loki.
@@ -991,6 +994,9 @@ func runMetricDiff(t *testing.T, queries []metricQuery, answers map[string]*metr
 				c.PlanRuns++
 				if matches {
 					c.PlanMatchesLoki++
+					if lokiEmpty(loki) {
+						c.PlanMatchesLokiEmpty++
+					}
 					continue
 				}
 				if differs[mq.id] == nil {
@@ -1005,6 +1011,15 @@ func runMetricDiff(t *testing.T, queries []metricQuery, answers map[string]*metr
 		}
 	}
 	return sec, stale, examples, differs
+}
+
+// lokiEmpty is whether Loki's answer holds no series: an error, or a result without a series.
+func lokiEmpty(a metricLokiAnswer) bool {
+	if a.Status != 200 {
+		return true
+	}
+	r, err := decodeMetricBody(a.Body)
+	return err != nil || len(r.series) == 0
 }
 
 // ---- known differences, the section and the report ----
@@ -1098,8 +1113,8 @@ func reportMetricDiff(t *testing.T, sec metricSection, examples []metricExample)
 	for _, prof := range diffProfiles() {
 		for _, k := range metricKinds() {
 			c := sec.Profiles[prof.name][k.name]
-			t.Logf("%s %s: %d runs, plan routes %d, plan matches Loki %d (%s), translator %d (%s), float tolerance %d, not compared %v, not the plan's %v",
-				prof.name, k.name, c.Runs, c.PlanRuns, c.PlanMatchesLoki, pct(c.PlanMatchesLoki, c.PlanRuns), c.TranslatorMatchesLoki,
+			t.Logf("%s %s: %d runs, plan routes %d, plan matches Loki %d (%s; %d on non-empty answers), translator %d (%s), float tolerance %d, not compared %v, not the plan's %v",
+				prof.name, k.name, c.Runs, c.PlanRuns, c.PlanMatchesLoki, pct(c.PlanMatchesLoki, c.PlanRuns), c.PlanMatchesLoki-c.PlanMatchesLokiEmpty, c.TranslatorMatchesLoki,
 				pct(c.TranslatorMatchesLoki, c.Runs), c.FloatTolerance, c.NotComparable, c.NotPlan)
 			for _, cl := range sortedKeysInt(c.PlanDiffersByClass) {
 				t.Logf("  plan differs: %s: %d", cl, c.PlanDiffersByClass[cl])

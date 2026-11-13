@@ -334,6 +334,7 @@
           "runs": 762,
           "plan_runs": 762,
           "plan_matches_loki": 762,
+          "plan_matches_loki_empty": 366,
           "translator_matches_loki": 762,
           "float_tolerance": 1
         },
@@ -344,6 +345,7 @@
             "the route rule delegates the request": 38
           },
           "plan_matches_loki": 716,
+          "plan_matches_loki_empty": 215,
           "translator_matches_loki": 754,
           "float_tolerance": 0,
           "plan_differs_by_class": {
@@ -364,6 +366,7 @@
             "the route rule delegates the request": 1
           },
           "plan_matches_loki": 761,
+          "plan_matches_loki_empty": 236,
           "translator_matches_loki": 762,
           "float_tolerance": 3
         },
@@ -374,6 +377,7 @@
             "the route rule delegates the request": 16
           },
           "plan_matches_loki": 738,
+          "plan_matches_loki_empty": 226,
           "translator_matches_loki": 754,
           "float_tolerance": 0,
           "plan_differs_by_class": {
@@ -393,6 +397,7 @@
           "runs": 762,
           "plan_runs": 762,
           "plan_matches_loki": 762,
+          "plan_matches_loki_empty": 366,
           "translator_matches_loki": 762,
           "float_tolerance": 1
         },
@@ -403,6 +408,7 @@
             "the route rule delegates the request": 38
           },
           "plan_matches_loki": 716,
+          "plan_matches_loki_empty": 215,
           "translator_matches_loki": 754,
           "float_tolerance": 0,
           "plan_differs_by_class": {
@@ -423,6 +429,7 @@
             "the route rule delegates the request": 1
           },
           "plan_matches_loki": 761,
+          "plan_matches_loki_empty": 236,
           "translator_matches_loki": 762,
           "float_tolerance": 3
         },
@@ -433,6 +440,7 @@
             "the route rule delegates the request": 16
           },
           "plan_matches_loki": 738,
+          "plan_matches_loki_empty": 226,
           "translator_matches_loki": 754,
           "float_tolerance": 0,
           "plan_differs_by_class": {
@@ -562,7 +570,7 @@
       "24h chunk/RangeAgg": "c73a49dbd6ed5f40",
       "24h chunk/Rank": "398eb1e3b5e691f6",
       "24h chunk/Scalar": "b01ddfee0a162681",
-      "24h chunk/VectorAgg": "0f816e227dffb735",
+      "24h chunk/VectorAgg": "5596ceceebda48b6",
       "24h chunk/VectorLit": "fafe78111335aec9",
       "instant/BinOp": "f1bde2c17a62d09e",
       "instant/LabelReplace": "50c680b356a6c4c8",
@@ -570,7 +578,7 @@
       "instant/RangeAgg": "1f74c74e2802e0e1",
       "instant/Rank": "9aece6687f25348a",
       "instant/Scalar": "058ee94c303a0c46",
-      "instant/VectorAgg": "1c8fac64805b5d9f",
+      "instant/VectorAgg": "c9319be2a7b5aa56",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "ce6698e5e264dd58",
       "step\u003crange/LabelReplace": "c8581a1704ba3fa9",
@@ -578,7 +586,7 @@
       "step\u003crange/RangeAgg": "99b77b6f00dd34ca",
       "step\u003crange/Rank": "994152e9889a89d8",
       "step\u003crange/Scalar": "b01ddfee0a162681",
-      "step\u003crange/VectorAgg": "8a3a7ee4dcdb88a7",
+      "step\u003crange/VectorAgg": "1ae999083e3ccbb4",
       "step\u003crange/VectorLit": "fafe78111335aec9",
       "step=range/BinOp": "08cc73530fc81082",
       "step=range/LabelReplace": "4cdea3d606ece059",
@@ -586,7 +594,7 @@
       "step=range/RangeAgg": "2db74d8d6ef833e0",
       "step=range/Rank": "fa6b8aa9c9e467b9",
       "step=range/Scalar": "b01ddfee0a162681",
-      "step=range/VectorAgg": "396bfd90a7acc74c",
+      "step=range/VectorAgg": "295dc630d76c8d49",
       "step=range/VectorLit": "fafe78111335aec9",
       "step\u003erange/BinOp": "bbcda8725e65eb27",
       "step\u003erange/LabelReplace": "2cdc35010867f604",
@@ -594,7 +602,7 @@
       "step\u003erange/RangeAgg": "73b674cd19f3d65b",
       "step\u003erange/Rank": "ee88e3d04ba0460a",
       "step\u003erange/Scalar": "b01ddfee0a162681",
-      "step\u003erange/VectorAgg": "c96a5be1a9cf8e0a",
+      "step\u003erange/VectorAgg": "2328046be2403ee9",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     }
   },
