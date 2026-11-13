@@ -81,7 +81,7 @@ func TestManualMetricRowLimitCountsSkippedRows(t *testing.T) {
 	p.rangeMetricRowLimit = 1
 	stamp := time.Now()
 	series, err := p.collectRangeMetricSamples(context.Background(), "*", nil, nil, true, "latency", "", stamp.Add(-time.Minute), stamp, nil)
-	if err == nil || !strings.Contains(err.Error(), "row limit exceeded") || series != nil {
+	if err == nil || !isRowLimitError(err) || series != nil {
 		t.Fatalf("skipped rows must not hide truncation: series=%v err=%v", series, err)
 	}
 }

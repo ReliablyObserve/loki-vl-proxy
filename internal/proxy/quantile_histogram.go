@@ -673,7 +673,7 @@ func (p *Proxy) fetchQuantileCounts(ctx context.Context, spec statsCompatSpec, s
 	maxBytes := p.limits().BufferedBackendBodyBytes
 	body, err := readBodyLimited(resp.Body, int64(maxBytes))
 	if errors.Is(err, errBodyTooLarge) {
-		return nil, fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", maxBytes)
+		return nil, newManualMetricResponseTooLarge(int64(maxBytes))
 	}
 	if err != nil {
 		return nil, err

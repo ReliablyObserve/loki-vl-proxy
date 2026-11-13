@@ -87,12 +87,16 @@ type binaryOperandResponse struct {
 	body   bytes.Buffer
 	status int
 	err    error
-	limit  int
-	ctx    context.Context
-	budget *binaryExecutionBudget
+	// failure is the error the error layer answered the operand with.
+	failure error
+	limit   int
+	ctx     context.Context
+	budget  *binaryExecutionBudget
 }
 
 func (w *binaryOperandResponse) Header() http.Header { return w.header }
+
+func (w *binaryOperandResponse) recordFailure(err error) { w.failure = err }
 func (w *binaryOperandResponse) WriteHeader(status int) {
 	if w.status == 0 {
 		w.status = status
@@ -109,11 +113,11 @@ func (w *binaryOperandResponse) Write(data []byte) (int, error) {
 		}
 	}
 	if w.budget != nil && len(data) > w.budget.bytes {
-		w.err = &binaryBudgetError{flag: "binary-metric-max-operand-bytes"}
+		w.err = newBinaryBudgetError(flagBinaryMetricMaxOperandBytes)
 		return 0, w.err
 	}
 	if len(data) > w.limit-w.body.Len() {
-		w.err = fmt.Errorf("binary operand response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", w.limit)
+		w.err = newBufferLimitError(flagBackendMaxBufferedResponseBytes, int64(w.limit)+1, int64(w.limit), "binary operand response", nil)
 		return 0, w.err
 	}
 	w.WriteHeader(http.StatusOK)
@@ -293,6 +297,9 @@ func (p *Proxy) proxyBinaryLogQL(w http.ResponseWriter, r *http.Request, expr *l
 			setReplayContentType(w, response.status)
 			w.WriteHeader(response.status)
 			_, _ = w.Write(response.body.Bytes())
+			if rec, ok := w.(failureRecorder); ok {
+				rec.recordFailure(response.failure)
+			}
 			return
 		}
 		bodies[i] = response.body.Bytes()
@@ -314,7 +321,7 @@ func (p *Proxy) proxyBinaryLogQL(w http.ResponseWriter, r *http.Request, expr *l
 		// A union is the only operation that can hold more series than either
 		// operand, each of which the series limit already bounded.
 		if result, err = capSeriesToLimit(r.Context(), result, p.resolvedMaxStatsQuerySeries(r.Context())); err != nil {
-			p.writeError(w, http.StatusBadRequest, err.Error())
+			p.writeErr(w, r.Context(), err)
 			return
 		}
 	}

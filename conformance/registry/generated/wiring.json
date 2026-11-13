@@ -296,7 +296,7 @@
     "limits/raw-metric-row-precheck": [
       "internal/proxy/backend_heavy_test.go"
     ],
-    "limits/row-limit-error-names-flag": [
+    "limits/row-limit-answers-loki-limit-text": [
       "internal/proxy/error_body_shape_test.go",
       "internal/proxy/range_metric_row_limit_error_test.go",
       "test/e2e-compat/row_limit_like_loki_limit_test.go"
@@ -1141,6 +1141,7 @@
       "internal/proxy/error_layer_fail_test.go",
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/error_writer_golden_test.go",
+      "internal/proxy/limit_errors_test.go",
       "internal/proxy/loki_client_error_test.go",
       "internal/proxy/stream_response_broken_body_test.go",
       "internal/proxy/tail_backend_errors_test.go",
@@ -1151,6 +1152,7 @@
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/error_layer_mixed_test.go",
       "internal/proxy/error_layer_sites_test.go",
+      "internal/proxy/limit_errors_test.go",
       "internal/proxy/loki_client_error_test.go",
       "internal/proxy/stream_response_broken_body_test.go",
       "internal/proxy/tail_backend_errors_test.go",
@@ -1158,10 +1160,12 @@
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-proxy-limit-status": [
+      "internal/lokierr/lokierr_test.go",
       "internal/proxy/binary_budget_status_test.go",
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/error_layer_sites_test.go",
       "internal/proxy/error_writer_golden_test.go",
+      "internal/proxy/limit_errors_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-silent-success": [
@@ -1206,9 +1210,6 @@
       "test/e2e-compat/extracted_metric_pushdown_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/json_label_probe_gates_test.go"
-    ],
-    "semantics/format-query-parse-like-loki": [
-      "internal/proxy/route_gate_test.go"
     ],
     "semantics/go-style-comment-rejected": [
       "internal/querycorpus/grammar_sweep_test.go"
@@ -1568,9 +1569,6 @@
       "test/e2e-compat/comments_offsets_test.go",
       "test/e2e-compat/parsed_surface_answers_test.go"
     ],
-    "semantics/push-route-read-only-answer": [
-      "internal/proxy/route_gate_test.go"
-    ],
     "semantics/quantile-over-time-parameter-required": [
       "internal/querycorpus/grammar_sweep_test.go"
     ],
@@ -1602,9 +1600,6 @@
       "internal/translator/repeated_label_filter_test.go",
       "test/e2e-compat/repeated_label_filters_test.go"
     ],
-    "semantics/request-form-decode-like-loki": [
-      "internal/proxy/route_gate_test.go"
-    ],
     "semantics/request-time-bounds": [
       "internal/proxy/time_bounds_test.go"
     ],
@@ -1617,12 +1612,6 @@
       "internal/queryplan/lower/reserved_field_case_test.go",
       "internal/queryplan/lower/vl_clone_roundtrip_test.go",
       "test/e2e-compat/reserved_field_name_case_test.go"
-    ],
-    "semantics/router-method-not-allowed-like-loki": [
-      "internal/proxy/route_gate_test.go"
-    ],
-    "semantics/router-unknown-paths-and-redirects-like-loki": [
-      "internal/proxy/route_gate_test.go"
     ],
     "semantics/scalar-sample-time-units": [
       "internal/proxy/binary_matching_test.go",
@@ -2003,7 +1992,6 @@
       "internal/proxy/loki_client_error_test.go",
       "internal/proxy/loki_error_answers_replay_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
-      "internal/proxy/route_gate_test.go",
       "internal/proxy/selector_value_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/vector_agg_log_selector_test.go",
@@ -2024,7 +2012,6 @@
       "internal/lokierr/lokierr_test.go",
       "internal/proxy/error_layer_fail_test.go",
       "internal/proxy/loki_error_answers_replay_test.go",
-      "internal/proxy/route_gate_test.go",
       "test/e2e-compat/error_answers_like_loki_test.go",
       "test/e2e-compat/error_body_like_loki_test.go"
     ],
@@ -2032,11 +2019,12 @@
       "internal/lokierr/lokierr_test.go",
       "internal/proxy/error_layer_fail_test.go",
       "internal/proxy/loki_error_answers_replay_test.go",
-      "internal/proxy/route_gate_test.go",
       "test/e2e-compat/error_answers_like_loki_test.go"
     ],
     "status-429": [
-      "internal/lokierr/lokierr_test.go"
+      "internal/lokierr/lokierr_test.go",
+      "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/limit_errors_test.go"
     ],
     "status-500": [
       "internal/lokierr/lokierr_test.go",
@@ -2139,7 +2127,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 558,
+  "registry_items": 554,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2290,6 +2278,7 @@
       "semantics/error-layer-backend-text",
       "semantics/error-layer-body-shape",
       "semantics/error-layer-cancel-deadline",
+      "semantics/error-layer-proxy-limit-status",
       "semantics/error-layer-transport-text",
       "semantics/error-request-validation-parity",
       "status-400",
@@ -2533,7 +2522,7 @@
       "loki_api_v1_query_range"
     ],
     "internal/proxy/error_body_shape_test.go": [
-      "limits/row-limit-error-names-flag",
+      "limits/row-limit-answers-loki-limit-text",
       "semantics/error-layer-body-shape",
       "semantics/error-layer-cancel-deadline",
       "semantics/error-layer-silent-success",
@@ -2558,6 +2547,7 @@
       "semantics/error-layer-transport-text",
       "semantics/transient-backend-failure-is-retried",
       "status-400",
+      "status-429",
       "status-500",
       "status-502",
       "status-503"
@@ -2722,6 +2712,13 @@
     ],
     "internal/proxy/lifecycle_leak_test.go": [
       "shutdown-releases-background-work"
+    ],
+    "internal/proxy/limit_errors_test.go": [
+      "semantics/error-layer-cancel-deadline",
+      "semantics/error-layer-internal-go-text",
+      "semantics/error-layer-proxy-limit-status",
+      "status-429",
+      "status-504"
     ],
     "internal/proxy/line_fields_without_parser_test.go": [
       "loki-compatible-profile",
@@ -3117,7 +3114,7 @@
     ],
     "internal/proxy/range_metric_row_limit_error_test.go": [
       "heavy-metric-fetch-bounds",
-      "limits/row-limit-error-names-flag"
+      "limits/row-limit-answers-loki-limit-text"
     ],
     "internal/proxy/ranked_topk_cached_route_test.go": [
       "limits/top-n-ranking-not-silent",
@@ -3151,16 +3148,6 @@
     ],
     "internal/proxy/response_key_fences_test.go": [
       "cache-response-key-versions"
-    ],
-    "internal/proxy/route_gate_test.go": [
-      "semantics/format-query-parse-like-loki",
-      "semantics/push-route-read-only-answer",
-      "semantics/request-form-decode-like-loki",
-      "semantics/router-method-not-allowed-like-loki",
-      "semantics/router-unknown-paths-and-redirects-like-loki",
-      "status-400",
-      "status-404",
-      "status-405"
     ],
     "internal/proxy/sanitized_json_key_filter_test.go": [
       "limits/label-values-response-cap",
@@ -4486,7 +4473,7 @@
     ],
     "test/e2e-compat/row_limit_like_loki_limit_test.go": [
       "heavy-metric-fetch-bounds",
-      "limits/row-limit-error-names-flag",
+      "limits/row-limit-answers-loki-limit-text",
       "status-400"
     ],
     "test/e2e-compat/sanitized_json_key_filter_test.go": [
@@ -4715,7 +4702,11 @@
     ]
   },
   "tests_with_markers": 555,
-  "unknown_ids": {},
+  "unknown_ids": {
+    "internal/proxy/limit_errors_test.go": [
+      "status-504"
+    ]
+  },
   "unwired_items": [
     "api_prom_label",
     "api_prom_label_name_values",
@@ -4824,5 +4815,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 338
+  "wired_items": 333
 }

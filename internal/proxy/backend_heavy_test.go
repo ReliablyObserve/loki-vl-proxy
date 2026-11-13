@@ -407,8 +407,8 @@ func TestRawMetricRowPrecheck_RejectsBeforeFetchingRows(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "manual range metric row limit exceeded (100)") || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") {
-		t.Fatalf("status %d body %s, want the row limit error naming its flag", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusBadRequest || rec.Body.String() != "limit reached while evaluating the query" {
+		t.Fatalf("status %d body %s, want Loki's limit text", rec.Code, rec.Body.String())
 	}
 	if counts.Load() != 1 || rawFetches.Load() != 0 {
 		t.Fatalf("count prechecks=%d raw fetches=%d, want 1 and 0", counts.Load(), rawFetches.Load())
@@ -420,7 +420,7 @@ func TestRawMetricRowPrecheck_RejectsBeforeFetchingRows(t *testing.T) {
 // 503 while VictoriaLogs is healthy.
 // conformance: backend-admission-and-heavy-query-queueing, limits/queue-rejection-not-a-backend-failure
 func TestHeavyQueryAdmission_QueueFullDoesNotOpenCircuitBreaker(t *testing.T) {
-	err := &heavyQueryQueueFullError{maxConcurrent: 2, queueWait: time.Second}
+	err := newHeavyQueueFull(&heavyQueryQueueFullError{maxConcurrent: 2, queueWait: time.Second})
 	if shouldRecordBreakerFailure(context.Background(), err) {
 		t.Fatal("a rejected admission was counted as a backend failure")
 	}
@@ -494,7 +494,7 @@ func TestHeavyQueryAdmission_GrafanaStatsFailureKeeps429(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	rec := httptest.NewRecorder()
-	p.writeGrafanaStatsFailure(rec, &heavyQueryQueueFullError{maxConcurrent: 2, queueWait: 20 * time.Second})
+	p.writeGrafanaStatsFailure(rec, newHeavyQueueFull(&heavyQueryQueueFullError{maxConcurrent: 2, queueWait: 20 * time.Second}))
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("status %d, want 429; body=%s", rec.Code, rec.Body.String())
 	}

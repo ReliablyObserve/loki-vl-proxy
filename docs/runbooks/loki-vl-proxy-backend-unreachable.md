@@ -24,8 +24,8 @@
 4. Check backend saturation and error logs.
 5. Search proxy logs for `request error` entries and read `upstream_error`:
    `dial tcp`, `connection refused` or a VictoriaLogs message mean the backend
-   failed; `limit exceeded` or `increase -<flag>` mean execution-limit
-   rejections for oversized queries, not backend unavailability. Narrow the
+   failed; a `limit_flag` field means an execution-limit
+   rejection for oversized queries, not backend unavailability. Narrow the
    offending queries (selector, range or grouping) rather than failing over
    the backend.
 

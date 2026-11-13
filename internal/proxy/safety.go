@@ -29,7 +29,7 @@ func (e *backendBodyTooLargeError) Is(target error) bool { return target == errB
 func readBackendBody(r io.Reader, limit int64) ([]byte, error) {
 	body, err := readBodyLimited(r, limit)
 	if errors.Is(err, errBodyTooLarge) {
-		return nil, &backendBodyTooLargeError{limit: limit}
+		return nil, newBackendBodyTooLarge(limit)
 	}
 	return body, err
 }

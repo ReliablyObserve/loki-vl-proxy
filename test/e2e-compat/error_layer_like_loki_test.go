@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -21,6 +22,10 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
 )
+
+// e2eMessageSizeText is Loki's text for a response above its message size,
+// which the proxy's buffer limits answer.
+var e2eMessageSizeText = regexp.MustCompile(`^rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max \(\d+ vs\. \d+\)$`)
 
 // Loki's fixed answers (v3.7.9 pkg/util/server/error.go:26-27,
 // pkg/querier/queryrange/limits.go:46).
@@ -171,8 +176,9 @@ func errLayerE2EClasses(status int, body []byte, header http.Header, wantStatus 
 	if errLayerE2EContains(visible, e2eErrLayerBackendMarkers) || (!transport && strings.Contains(visible, "logsql")) {
 		classes["semantics/error-layer-backend-text"] = true
 	}
-	if limit && status >= 400 && !strings.Contains(errLayerE2EText(body), "increase -") {
-		// A proxy limit names the flag that sets it.
+	if limit && status >= 400 && !e2eMessageSizeText.MatchString(errLayerE2EText(body)) {
+		// A proxy buffer limit answers Loki's message size text; the flag that
+		// sets it is in the log line only.
 		classes["semantics/error-layer-proxy-limit-status"] = true
 	}
 	if wantText != "" && status == wantStatus && errLayerE2EText(body) != wantText {

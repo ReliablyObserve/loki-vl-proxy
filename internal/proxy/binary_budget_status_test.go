@@ -18,8 +18,8 @@ import (
 // operation; range and instant) and asserts the limit answer the limits
 // registry documents: 400 bad_data, as Loki answers a query over one of its
 // limits (logqlmodel.ErrLimit, pkg/util/server/error.go:110-118, v3.7.9), with
-// a text naming the flag that sets the budget. The answer is the error
-// layer's, so the client reads Loki's body shape.
+// that class's text and no flag in it. The answer is the error layer's, so the
+// client reads Loki's body shape.
 // conformance: semantics/error-layer-proxy-limit-status, operator-configurable-limits, status-400
 func TestBinaryEvaluationBudget_LokiLimitAnswer(t *testing.T) {
 	now := time.Now().Truncate(time.Minute)
@@ -48,10 +48,8 @@ func TestBinaryEvaluationBudget_LokiLimitAnswer(t *testing.T) {
 		set  func(*ExecutionLimitsConfig)
 		want string
 	}{
-		{"arrays", func(l *ExecutionLimitsConfig) { l.BinaryMetricMaxArrays = 1 },
-			"binary expression exceeds its evaluation budget; narrow the query or increase -binary-metric-max-arrays"},
-		{"operand_bytes", func(l *ExecutionLimitsConfig) { l.BinaryMetricMaxOperandBytes = 16 },
-			"binary expression exceeds its evaluation budget; narrow the query or increase -binary-metric-max-operand-bytes"},
+		{"arrays", func(l *ExecutionLimitsConfig) { l.BinaryMetricMaxArrays = 1 }, "limit reached while evaluating the query"},
+		{"operand_bytes", func(l *ExecutionLimitsConfig) { l.BinaryMetricMaxOperandBytes = 16 }, "limit reached while evaluating the query"},
 	} {
 		c := cache.New(time.Minute, 100)
 		cfg := Config{BackendURL: srv.URL, Cache: c, LogLevel: "error"}

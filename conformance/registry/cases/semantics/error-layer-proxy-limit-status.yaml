@@ -1,34 +1,30 @@
 id: semantics/error-layer-proxy-limit-status
-title: Index stats answers the buffered-response limit without naming the flag (open)
+title: Index stats answers the buffered-response limit with Loki's message size text (open)
 proves:
   - status-502
   - limits/series-limit-error
 consumer: any
 why: |
-  -backend-max-buffered-response-bytes and -manual-range-metric-row-limit
-  are proxy limits. Loki's message-size limit is a 500 ResourceExhausted
-  (pkg/util/server/error.go:93-100), its query limits (logqlmodel.ErrLimit)
-  400 with their own text, which is how the row limit answers
-  (limits/row-limit-error-names-flag). The error layer answers the other
-  proxy limits with 500 and the
-  message naming their flag (`manual metric response exceeds N bytes; narrow
-  the query or increase -backend-max-buffered-response-bytes`), never 502,
-  including bench shape U9 (`sum(rate_counter(... | logfmt | unwrap amount
-  [5m]))`, 502 at 24h before; Loki answers 200 there because it does not read
-  raw rows, a separate parity fix). Volume and volume_range (Explore and
-  Logs Drilldown) now read VictoriaLogs' stats answer within the limit and
-  answer 500 `backend response exceeds N bytes; narrow the query or increase
-  -backend-max-buffered-response-bytes` (they answered `Internal Server
-  Error`, the untyped `body exceeds configured limit` that names no flag).
-  The binary evaluation budgets (-binary-metric-max-arrays,
-  -binary-metric-max-operand-bytes) are query limits, answered as the limits
-  registry documents them: 400 `binary expression exceeds its evaluation
-  budget; narrow the query or increase -<flag>` on every binary route. The
-  arrays budget answered 500 `binary expression sample/series budget
-  exceeded` and the operand-bytes budget 400 `binary expression exceeds
-  aggregate response byte budget`, neither naming its flag. A binary
-  operand or encoded answer above -backend-max-buffered-response-bytes is
-  that buffer limit (500 naming the flag; an operand answered 400 before).
+  The proxy's limits (-backend-max-buffered-response-bytes,
+  -manual-range-metric-row-limit, -binary-metric-max-arrays, the admission
+  queues, the rate limits) are typed errors of the Loki class they belong to.
+  A client reads Loki's status and text for the class and never a flag name;
+  the request error log line carries the flag (`limit_flag`) and its setting
+  (`limit_value`), and its `upstream_error` the operator wording.
+  Loki's message-size limit is a 500 ResourceExhausted
+  (pkg/util/server/error.go:93-100), which is how every buffer limit answers
+  (`rpc error: code = ResourceExhausted desc = grpc: trying to send message
+  larger than max (N vs. LIMIT)`), never 502. Its query limits
+  (logqlmodel.ErrLimit) answer 400, which is how the row limit, the binary
+  evaluation budgets and the multi-tenant fanout answer
+  (`limit reached while evaluating the query`; limits/row-limit-answers-loki-limit-text).
+  Its full queue is 429 `too many outstanding requests`, which is how the
+  heavy-query and metadata-scan queues, the per-client rate limit and the
+  -max-concurrent cap answer. Bench shape U9 (`sum(rate_counter(... | logfmt |
+  unwrap amount [5m]))`, 502 at 24h before; Loki answers 200 there because it
+  does not read raw rows) is a separate parity fix. Volume and volume_range
+  (Explore and Logs Drilldown) read VictoriaLogs' stats answer within the
+  limit and answer the same message size text.
   1 cell remains (7 before): index stats reads its one-row stats answer
   through the request coalescer, which does not apply the limit, so a body
   that is not that row fails to decode and answers `Internal Server Error`.
@@ -39,8 +35,9 @@ request:
     TestBinaryEvaluationBudget_LokiLimitAnswer: binary expressions (a join, a
     join under sum, a comparison with a scalar, a set operation; query and
     query_range) over -binary-metric-max-arrays=1 and
-    -binary-metric-max-operand-bytes=16 answer 400 with the text naming the
-    flag. TestErrorLayer_NoVictoriaLogsLeak: a fake VictoriaLogs (and ruler) that fails
+    -binary-metric-max-operand-bytes=16 answer 400 with Loki's limit text.
+    TestLimitAnswersAreLokisTextAndLogTheFlag: every limit and queue class
+    answers Loki's text with no flag, and the log line names the flag. TestErrorLayer_NoVictoriaLogsLeak: a fake VictoriaLogs (and ruler) that fails
     every call in one of 14 modes (VictoriaLogs 400 parse and memory-limit
     errors, 422, 500, a 502/503 from a proxy in front, 429 queue full,
     connection refused and reset, a reply after -backend-timeout, a client
@@ -57,14 +54,16 @@ compare:
   mode: exact
   fields: [status, errorType, body, headers]
   expect: |
-    A documented proxy buffer limit answers 500 internal, a query limit
-    (the raw-row limit, the binary evaluation budgets) 400 bad_data, each
-    with a message naming its flag; never 502.
+    A documented proxy buffer limit answers 500 with Loki's message size text,
+    a query limit (the raw-row limit, the binary evaluation budgets) 400 with
+    Loki's `limit reached while evaluating the query`, a full queue or a rate
+    limit 429 `too many outstanding requests`; never 502, and no flag in the
+    body. The log line names the flag.
 gap:
   status: open
   impact: explore-visible
   effort: S
   area: 'internal/proxy/label_handlers.go computeIndexStatsResult (vlPostCoalesced)'
   loki: 'pkg/util/server/error.go:93-100'
-  proxy: '500 Internal Server Error without the flag on index stats (coalesced read, no buffered-bytes bound)'
+  proxy: '500 Internal Server Error on index stats (coalesced read, no buffered-bytes bound)'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

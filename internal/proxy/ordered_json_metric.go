@@ -1775,7 +1775,7 @@ func buildStatsInstantVector(plan *orderedJSONMetricPlan, series map[string]manu
 			encodedBytes += len(k) + len(v) + 6
 		}
 		if encodedBytes += len(formatted) + 26; encodedBytes > maxBytes {
-			return nil, fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", maxBytes)
+			return nil, newManualMetricResponseTooLarge(int64(maxBytes))
 		}
 		results = append(results, map[string]interface{}{"metric": entry.Metric, "value": []interface{}{stamp, formatted}})
 	}
@@ -3618,7 +3618,7 @@ func orderedJSONSampleVisible(ts, start, end, step, window int64) bool {
 
 // orderedJSONResponseLimitError names the flag that bounds the raw rows read.
 func orderedJSONResponseLimitError(maxBytes int64) error {
-	return fmt.Errorf("ordered JSON metric response exceeds %d bytes; narrow the query or increase -ordered-json-metric-max-bytes", maxBytes)
+	return newBufferLimitError(flagOrderedJSONMetricMaxBytes, maxBytes+1, maxBytes, "ordered JSON metric response", nil)
 }
 
 func buildOrderedJSONMetric(ctx context.Context, plan *orderedJSONMetricPlan, series map[string]manualSeriesSamples, start, end time.Time, step time.Duration, isRange bool, maxBytes int64) ([]byte, error) {
@@ -3679,7 +3679,7 @@ func buildOrderedJSONMetric(ctx context.Context, plan *orderedJSONMetricPlan, se
 	}
 	body := marshalManualMetricResponse(resultType, result)
 	if int64(len(body)) > maxBytes {
-		return nil, fmt.Errorf("ordered JSON metric output exceeds %d bytes; narrow the query or increase -ordered-json-metric-max-bytes", maxBytes)
+		return nil, newBufferLimitError(flagOrderedJSONMetricMaxBytes, int64(len(body)), maxBytes, "ordered JSON metric output", nil)
 	}
 	return body, nil
 }

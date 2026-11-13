@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -25,8 +26,12 @@ func TestStatusFromUpstreamErr(t *testing.T) {
 		{name: "context canceled", err: context.Canceled, want: 499},
 		{name: "deadline exceeded", err: context.DeadlineExceeded, want: http.StatusGatewayTimeout},
 		{name: "net timeout", err: timeoutErr{}, want: http.StatusGatewayTimeout},
-		{name: "wrapped canceled", err: errors.New("upstream: context canceled"), want: 499},
-		{name: "wrapped timeout", err: errors.New("upstream deadline exceeded"), want: http.StatusGatewayTimeout},
+		{name: "wrapped canceled", err: fmt.Errorf("upstream: %w", context.Canceled), want: 499},
+		{name: "wrapped timeout", err: fmt.Errorf("upstream: %w", context.DeadlineExceeded), want: http.StatusGatewayTimeout},
+		// Classification is by type: a message that merely says so is a failed backend call.
+		{name: "text canceled", err: errors.New("upstream: context canceled"), want: http.StatusInternalServerError},
+		{name: "text timeout", err: errors.New("upstream deadline exceeded"), want: http.StatusInternalServerError},
+		{name: "VictoriaLogs deadline", err: &upstreamStatusError{status: http.StatusServiceUnavailable, msg: "the request couldn't be executed in 30.000 seconds", class: vlErrorDeadline}, want: http.StatusGatewayTimeout},
 		// Loki answers any other failed backend call with 500
 		// (pkg/util/server/error.go:124-128), never 502.
 		{name: "generic", err: errors.New("connection refused"), want: http.StatusInternalServerError},

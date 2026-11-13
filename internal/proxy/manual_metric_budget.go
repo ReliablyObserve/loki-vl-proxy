@@ -17,6 +17,7 @@ import (
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	fj "github.com/valyala/fastjson"
 )
 
@@ -51,7 +52,7 @@ func (p *Proxy) precheckRawMetricRows(ctx context.Context, baseQuery string, fet
 		return nil
 	}
 	if rows, convErr := strconv.ParseInt(row.Rows, 10, 64); convErr == nil && rows > int64(rowLimit) {
-		return &rowLimitError{limit: rowLimit, matches: rows}
+		return newRowLimitError(rowLimit, "", rows)
 	}
 	return nil
 }
@@ -68,7 +69,7 @@ type rowLimitError struct {
 
 // manualRowLimitError is the error of an evaluator that read more rows than
 // -manual-range-metric-row-limit allows.
-func manualRowLimitError(limit int) error { return &rowLimitError{limit: limit} }
+func manualRowLimitError(limit int) error { return newRowLimitError(limit, "", 0) }
 
 func (e *rowLimitError) Error() string {
 	var b strings.Builder
@@ -89,13 +90,15 @@ func isRowLimitError(err error) bool {
 	return errors.As(err, &limitErr)
 }
 
-// seriesLimitMessagePrefix opens Loki's series limit message; writeError uses it
-// to name the proxy flag in the log without changing what the client reads.
+// seriesLimitMessagePrefix opens Loki's series limit message and its Drilldown
+// partial-result warning; seriesLimitWarningLimit reads the warning by it.
 const seriesLimitMessagePrefix = "maximum number of series ("
 
-// seriesLimitError is Loki's answer to a metric query over its series limit
-// (logqlmodel.NewSeriesLimitError, HTTP 400), word for word: Grafana shows the
-// message to the user, so it stays Loki's. The proxy's limit is set by
+// seriesLimitError is the cause of Loki's answer to a metric query over its
+// series limit (logqlmodel.NewSeriesLimitError, HTTP 400), word for word:
+// Grafana shows the message to the user, so it stays Loki's. It is the typed
+// error's cause (newSeriesLimitError builds it), which tells the series
+// limit apart for the callers that degrade on it; the proxy's limit is set by
 // -max-stats-query-series, which the log line names.
 type seriesLimitError struct {
 	limit int
@@ -113,10 +116,10 @@ type seriesLimitError struct {
 func newSeriesLimitError(ctx context.Context, limit int) error {
 	if folding, _ := ctx.Value(foldedSumKey{}).(bool); folding {
 		if scope, _ := ctx.Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil && scope.foldBudget > 0 {
-			return &seriesLimitError{limit: limit, rowBudget: true}
+			return lokierr.LimitReached(flagManualRangeMetricRowLimit, int64(limit), &seriesLimitError{limit: limit, rowBudget: true})
 		}
 	}
-	return &seriesLimitError{limit: limit}
+	return lokierr.SeriesLimit(limit).WithLimit(flagMaxStatsQuerySeries, int64(limit)).WithCause(&seriesLimitError{limit: limit})
 }
 
 // tenantSeriesLimitContext is ctx for a check against the tenant's own series
@@ -127,9 +130,9 @@ func tenantSeriesLimitContext(ctx context.Context) context.Context {
 
 func (e *seriesLimitError) Error() string {
 	if e.rowBudget {
-		return manualRowLimitError(e.limit).Error()
+		return (&rowLimitError{limit: e.limit}).Error()
 	}
-	return fmt.Sprintf("%s%d) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()", seriesLimitMessagePrefix, e.limit)
+	return lokierr.SeriesLimit(e.limit).Text()
 }
 
 func isSeriesLimitError(err error) bool {
@@ -449,7 +452,7 @@ func checkManualMetricRead(ctx context.Context, limited *io.LimitedReader) error
 		return err
 	}
 	if limited.N <= 0 {
-		return fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", executionLimitsFrom(ctx).BufferedBackendBodyBytes)
+		return newManualMetricResponseTooLarge(int64(executionLimitsFrom(ctx).BufferedBackendBodyBytes))
 	}
 	return nil
 }

@@ -469,13 +469,13 @@ func (l *metadataScanLimiter) wasShed(t *scanToken) bool {
 func (l *metadataScanLimiter) shedError() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return &heavyQueryQueueFullError{
+	return newHeavyQueueFull(&heavyQueryQueueFullError{
 		limitFlag:     metadataScanLimitFlag,
 		work:          metadataScanLimitWork,
 		maxConcurrent: l.ceiling,
 		queueWait:     l.queueWait,
 		adaptive:      l.adaptiveNoteLocked(l.sig) + ", the scan was stopped to keep VictoriaLogs' memory inside the headroom",
-	}
+	})
 }
 
 // metadataScanSilenceWindow is how long a VictoriaLogs that answered
@@ -944,13 +944,13 @@ func (l *metadataScanLimiter) pollWhileInFlight() {
 }
 
 func (l *metadataScanLimiter) queueFullErrorLocked(s backendSignals) error {
-	return &heavyQueryQueueFullError{
+	return newHeavyQueueFull(&heavyQueryQueueFullError{
 		limitFlag:     metadataScanLimitFlag,
 		work:          metadataScanLimitWork,
 		maxConcurrent: l.ceiling,
 		queueWait:     l.queueWait,
 		adaptive:      l.adaptiveNoteLocked(s),
-	}
+	})
 }
 
 // adaptiveNoteLocked describes the limiter's state for the 429 body: the

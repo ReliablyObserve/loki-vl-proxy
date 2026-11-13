@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -61,8 +62,8 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"status":"success","data":{"result":[VLSENTINEL`), new(any)); err != nil {
 		syntaxErr = fmt.Errorf("decode VL stats response: %w", err)
 	}
-	rowLimit := "manual range metric row limit exceeded (3); narrow the query or increase -manual-range-metric-row-limit"
-	seriesLimit := (&seriesLimitError{limit: 1}).Error()
+	const rowLimit = "limit reached while evaluating the query"
+	seriesLimit := lokierr.SeriesLimit(1).Text()
 
 	for _, tc := range []struct {
 		name   string
@@ -80,7 +81,7 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 		{"net timeout", context.Background(), mapperTimeoutErr{}, http.StatusGatewayTimeout, lokiErrDeadlineExceeded},
 		{"VictoriaLogs aborted at its deadline", context.Background(), &vlResponseAbortedError{elapsed: time.Minute, timedOut: true}, http.StatusGatewayTimeout, lokiErrDeadlineExceeded},
 		// pkg/queue/queue.go:21: a full queue is 429 "too many outstanding requests".
-		{"proxy heavy-query queue", context.Background(), &heavyQueryQueueFullError{maxConcurrent: 2, queueWait: time.Second}, http.StatusTooManyRequests, lokiTooManyOutstandingRequests},
+		{"proxy heavy-query queue", context.Background(), newHeavyQueueFull(&heavyQueryQueueFullError{maxConcurrent: 2, queueWait: time.Second}), http.StatusTooManyRequests, lokiTooManyOutstandingRequests},
 		// VictoriaLogs v1.49.0-v1.53.0 answer a query that waited
 		// -search.maxQueueDuration for a slot with 503 (app/vlselect/main.go:268
 		// in v1.49.0, :313-318 in v1.53.0): Loki's full queue.
@@ -95,7 +96,7 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 		{"translator parse error", context.Background(), &translator.ParseError{Msg: "unmatched '{' in stream selector", Pos: -1}, http.StatusBadRequest, ""},
 		{"ordered JSON pipeline error", context.Background(), &orderedJSONPipelineError{errLokiStepTooSmall}, http.StatusBadRequest, ""},
 		// pkg/querier/queryrange/limits.go:46, :448: max_query_series is 400 with limitErrTmpl.
-		{"series limit", context.Background(), fmt.Errorf("fold: %w", &seriesLimitError{limit: 1}), http.StatusBadRequest, seriesLimit},
+		{"series limit", context.Background(), fmt.Errorf("fold: %w", newSeriesLimitError(context.Background(), 1)), http.StatusBadRequest, seriesLimit},
 		// error.go:124-128: every other failed backend call is 500, with no backend text.
 		{"connection refused", context.Background(), refused, http.StatusInternalServerError, lokiErrInternal},
 		{"VictoriaLogs 500", context.Background(), vl(http.StatusInternalServerError, `{"error":"unexpected error at lib/logstorage/storage.go:123"}`), http.StatusInternalServerError, lokiErrInternal},
@@ -111,26 +112,31 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 		{"guard rejection", context.Background(), mw.ErrGuardRejected, http.StatusInternalServerError, lokiErrInternal},
 		{"translator unsupported", context.Background(), &translator.UnsupportedError{Msg: "unsupported"}, http.StatusInternalServerError, lokiErrInternal},
 		{"nil error", context.Background(), nil, http.StatusInternalServerError, lokiErrInternal},
-		// A limit text wrapping a transport error is the transport error's.
-		{"limit text around a transport error", context.Background(), fmt.Errorf("%s: %w", rowLimit, refused), http.StatusInternalServerError, lokiErrInternal},
+		// A message that merely reads like a proxy limit is no limit: only a typed error answers as one.
+		{"limit text with no type", context.Background(), errors.New("manual metric response exceeds 64 bytes; narrow the query or increase -backend-max-buffered-response-bytes"), http.StatusInternalServerError, lokiErrInternal},
+		{"limit text around a transport error", context.Background(), fmt.Errorf("x; narrow the query or increase -flag: %w", refused), http.StatusInternalServerError, lokiErrInternal},
+		// A text that merely says timeout, deadline exceeded or canceled is a failed backend call.
+		{"text says timeout", context.Background(), errors.New("vl said: read timeout while scanning"), http.StatusInternalServerError, lokiErrInternal},
+		{"text says deadline exceeded", context.Background(), errors.New("rpc: deadline exceeded"), http.StatusInternalServerError, lokiErrInternal},
+		{"text says context canceled", context.Background(), errors.New("post: context canceled"), http.StatusInternalServerError, lokiErrInternal},
 		// Loki's own 500 texts the proxy writes in Loki's words: a matching
 		// error (pkg/logql/engine.go vectorBinop), the gRPC size limit
-		// (error.go:93-100) and the proxy's limits, which name their flag.
+		// (error.go:93-100) and the proxy's limits, in the text of their Loki class.
 		{"vector matching", context.Background(), vectorMatchError("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)"), http.StatusInternalServerError, ""},
-		{"label values too large", context.Background(), &labelValuesResponseTooLargeError{read: 10, limit: 5}, http.StatusInternalServerError, ""},
-		{"buffered response limit", context.Background(), fmt.Errorf("stats: %w", &backendBodyTooLargeError{limit: 4096}), http.StatusInternalServerError, (&backendBodyTooLargeError{limit: 4096}).Error()},
-		// A proxy buffer limit that names its flag stays Loki's failed call (500) with its own text.
-		{"buffer limit", context.Background(), errors.New("manual metric response exceeds 64 bytes; narrow the query or increase -backend-max-buffered-response-bytes"), http.StatusInternalServerError, "manual metric response exceeds 64 bytes; narrow the query or increase -backend-max-buffered-response-bytes"},
-		// error.go:110-118 (logqlmodel.ErrLimit): a query over a limit is 400. The raw-row limit has no Loki flag, so the text names the proxy's.
+		{"label values too large", context.Background(), newLabelValuesTooLarge(10, 5), http.StatusInternalServerError, ""},
+		{"buffered response limit", context.Background(), fmt.Errorf("stats: %w", newBackendBodyTooLarge(4096)), http.StatusInternalServerError, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (4097 vs. 4096)"},
+		// A proxy buffer limit is Loki's message size answer (500), with no flag in it.
+		{"buffer limit", context.Background(), newManualMetricResponseTooLarge(64), http.StatusInternalServerError, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (65 vs. 64)"},
+		// error.go:110-118 (logqlmodel.ErrLimit): a query over a limit is 400. The raw-row limit has no Loki flag, so the text is the class's.
 		{"row limit", context.Background(), manualRowLimitError(3), http.StatusBadRequest, rowLimit},
 		{"row limit wrapped", context.Background(), fmt.Errorf("fold: %w", manualRowLimitError(3)), http.StatusBadRequest, rowLimit},
-		{"row limit of a bucket grid", context.Background(), &rowLimitError{limit: 3, unit: "stats rows in one bucket grid"}, http.StatusBadRequest, "manual range metric row limit exceeded (3 stats rows in one bucket grid); narrow the query or increase -manual-range-metric-row-limit"},
-		{"row limit of a count precheck", context.Background(), &rowLimitError{limit: 3, matches: 5000}, http.StatusBadRequest, "manual range metric row limit exceeded (3); the query matches 5000 log lines; narrow the query or increase -manual-range-metric-row-limit"},
-		{"row limit of a without fold", context.Background(), &seriesLimitError{limit: 3, rowBudget: true}, http.StatusBadRequest, ""},
-		// The binary evaluation budgets are query limits too (400, naming the flag).
-		{"binary arrays budget", context.Background(), &binaryBudgetError{flag: "binary-metric-max-arrays"}, http.StatusBadRequest, "binary expression exceeds its evaluation budget; narrow the query or increase -binary-metric-max-arrays"},
-		{"binary operand bytes budget wrapped", context.Background(), fmt.Errorf("left query: %w", &binaryBudgetError{flag: "binary-metric-max-operand-bytes"}), http.StatusBadRequest, "binary expression exceeds its evaluation budget; narrow the query or increase -binary-metric-max-operand-bytes"},
-		{"binary budget of a cancelled request", canceled, &binaryBudgetError{flag: "binary-metric-max-arrays"}, 499, lokiErrClientCanceled},
+		{"row limit of a bucket grid", context.Background(), newRowLimitError(3, "stats rows in one bucket grid", 0), http.StatusBadRequest, rowLimit},
+		{"row limit of a count precheck", context.Background(), newRowLimitError(3, "", 5000), http.StatusBadRequest, rowLimit},
+		{"row limit of a without fold", context.Background(), newSeriesLimitError(foldingBudgetContext(3), 3), http.StatusBadRequest, rowLimit},
+		// The binary evaluation budgets are query limits too (400, the class's text).
+		{"binary arrays budget", context.Background(), newBinaryBudgetError(flagBinaryMetricMaxArrays), http.StatusBadRequest, rowLimit},
+		{"binary operand bytes budget wrapped", context.Background(), fmt.Errorf("left query: %w", newBinaryBudgetError(flagBinaryMetricMaxOperandBytes)), http.StatusBadRequest, rowLimit},
+		{"binary budget of a cancelled request", canceled, newBinaryBudgetError(flagBinaryMetricMaxArrays), 499, lokiErrClientCanceled},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			status, errorType, text := lokiClientError(tc.ctx, tc.err)
@@ -208,7 +214,7 @@ func FuzzLokiClientError(f *testing.F) {
 		case 4: // a transport error whose text looks like a proxy limit
 			err = &url.Error{Op: "Get", URL: target, Err: errors.New(body)}
 		case 5: // a binary evaluation budget: a query limit naming its flag
-			budget = &binaryBudgetError{flag: []string{"binary-metric-max-arrays", "binary-metric-max-operand-bytes"}[status&1]}
+			budget = newBinaryBudgetError([]string{flagBinaryMetricMaxArrays, flagBinaryMetricMaxOperandBytes}[status&1])
 			err = budget
 		}
 		switch wrap % 3 {

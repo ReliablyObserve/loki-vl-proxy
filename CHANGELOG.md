@@ -24,6 +24,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The answer to a write to `/loki/api/v1/push` no longer names the backend. A method other than `POST` is Loki's
   `405` with no body; a `POST` is `405` with `write operations are not supported, this is a read-only proxy` as
   plain text, in the shape Loki writes its push errors in, where it was a JSON body.
+- **Breaking:** the proxy's limits and queues now answer Loki's text and status for their class, and no flag name
+  reaches a client. The flag that set the limit is in the `request error` log line (`limit_flag`, with its setting
+  in `limit_value`), and the operator wording that names it is the line's `upstream_error`.
+  - The per-client rate limit (`-rate-limit-per-second`) and the `-max-concurrent` cap answer `429`
+    `too many outstanding requests` (Loki's full-queue answer) where they answered `429` `rate limit exceeded` and
+    `503` `too many concurrent queries`. `Retry-After` and `X-RateLimit-*` stay. The heavy-query and metadata-scan
+    queues keep their `429` and Loki's text, which no longer names VictoriaLogs.
+  - A metric that passes `-manual-range-metric-row-limit`, a binary expression over `-binary-metric-max-arrays` or
+    `-binary-metric-max-operand-bytes`, and a multi-tenant request over `-multi-tenant-max-fanout` answer `400`
+    `limit reached while evaluating the query` (the text of Loki's query limits).
+  - A response over `-backend-max-buffered-response-bytes`, `-ordered-json-metric-max-bytes`,
+    `-label-values-max-response-bytes` or `-multi-tenant-max-merged-response-bytes` answers `500`
+    `rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (N vs. LIMIT)`, the
+    text Loki's querier gives a response over its message size. A merged multi-tenant response over its limit
+    answered `413` before.
+  - A query longer than `-max-query-length-bytes` answers `400` `parse error : input size too long (N > M)`, the
+    text Loki gives above its own input limit.
+- A failed backend call is classified by the type of its error, never by the words in its message. An error that
+  only says `timeout`, `deadline exceeded` or `context canceled` in its text is `500` like any failed call, no
+  longer `504` or `499`; a Go timeout (`context.DeadlineExceeded`, a network timeout), a cancellation, and the
+  `503` VictoriaLogs sends when a query outlives `-search.maxQueryDuration` still answer `504` and `499`.
 
 ## [2.198.0] - 2026-11-13
 

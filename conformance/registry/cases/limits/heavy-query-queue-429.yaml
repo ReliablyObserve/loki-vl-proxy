@@ -1,5 +1,5 @@
 id: limits/heavy-query-queue-429
-title: A saturated admission queue answers with Loki's 429, naming both flags
+title: A saturated admission queue answers with Loki's 429; the log line names the flag
 proves:
   - backend-admission-and-heavy-query-queueing
   - loki_api_v1_query_range
@@ -8,9 +8,11 @@ why: |
   Loki's scheduler answers HTTP 429 with "too many outstanding requests" when a
   query cannot be admitted. A proxy that instead runs the query anyway is the
   reason VictoriaLogs died; one that answers 500, or 429 with a different body,
-  breaks the datasource's retry and the operator's alerting. The message must
-  name -backend-max-concurrent-heavy-queries and
-  -backend-heavy-query-queue-wait, because those are what an operator raises.
+  breaks the datasource's retry and the operator's alerting. The client reads
+  Loki's text alone; the request error log line names
+  -backend-max-concurrent-heavy-queries (`limit_flag`) and its upstream_error
+  names -backend-heavy-query-queue-wait, because those are what an operator
+  raises.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -30,9 +32,8 @@ compare:
   fields: [status]
   expect:
     status: 429
-    body_contains:
-      - too many outstanding requests
-      - -backend-max-concurrent-heavy-queries
-      - -backend-heavy-query-queue-wait
+    body: too many outstanding requests
+    log_contains:
+      - limit_flag=-backend-max-concurrent-heavy-queries
 loki_parity: |
   pkg/queue/queue.go ErrTooManyRequests, returned as 429 by the query frontend.

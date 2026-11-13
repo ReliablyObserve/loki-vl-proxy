@@ -269,7 +269,7 @@ func TestQueryLength_ConfiguredLimitRejectsWhatLokiWouldParse(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = limited.Shutdown(context.Background()) })
 	msg := queryLengthError(large, limited.limits().QueryLengthBytes)
-	if !strings.Contains(msg, "query exceeds max length (70008 > 65536)") || !strings.Contains(msg, "-max-query-length-bytes") {
+	if msg != "parse error : input size too long (70008 > 65536)" {
 		t.Fatalf("configured limit error = %q", msg)
 	}
 }

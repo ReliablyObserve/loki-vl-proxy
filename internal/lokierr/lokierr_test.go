@@ -251,6 +251,8 @@ func TestConstructorTexts(t *testing.T) {
 		{ParserMessage("parse error : queries require at least one regexp or equality matcher"), KindParse, http.StatusBadRequest, "parse error : queries require at least one regexp or equality matcher"},
 		{MethodNotAllowed(), KindRoute, http.StatusMethodNotAllowed, ""},
 		{WriteNotSupported(), KindRoute, http.StatusMethodNotAllowed, "write operations are not supported, this is a read-only proxy"},
+		{LimitReached("some-flag", 7, cause), KindLimit, http.StatusBadRequest, "limit reached while evaluating the query"},
+		{ResponseTooLarge("some-flag", 65, 64, cause), KindLimit, http.StatusInternalServerError, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (65 vs. 64)"},
 	}
 	for _, tc := range cases {
 		if tc.e.Kind() != tc.kind || tc.e.Status() != tc.status || tc.e.Text() != tc.text || tc.e.Error() != tc.text {
@@ -371,5 +373,42 @@ func TestPackageIsALeaf(t *testing.T) {
 				t.Errorf("%s imports %s: lokierr imports the standard library only", name, path)
 			}
 		}
+	}
+}
+
+// TestLimitCarriesItsFlagForTheLogOnly: a limit or queue error keeps the flag
+// that sets the limit and its value apart from the client text, whichever
+// constructor built it, and WithLimit never changes the text.
+// conformance: semantics/error-layer-proxy-limit-status
+func TestLimitCarriesItsFlagForTheLogOnly(t *testing.T) {
+	cause := errors.New("flag text: narrow the query or increase -some-flag")
+	for _, tc := range []struct {
+		name string
+		e    *Error
+	}{
+		{"limit reached", LimitReached("some-flag", 7, cause)},
+		{"response too large", ResponseTooLarge("some-flag", 8, 7, cause)},
+		{"series", SeriesLimit(7).WithLimit("some-flag", 7)},
+		{"input too long", InputTooLong(9, 7).WithLimit("some-flag", 7)},
+		{"queue full", QueueFull(cause).WithLimit("some-flag", 7)},
+	} {
+		flag, value, ok := tc.e.Limit()
+		if !ok || flag != "some-flag" || value != 7 {
+			t.Errorf("%s: Limit() = %q %d %v", tc.name, flag, value, ok)
+		}
+		if strings.Contains(tc.e.Text(), "some-flag") || strings.Contains(tc.e.Error(), "some-flag") {
+			t.Errorf("%s: the flag reached the client text %q", tc.name, tc.e.Text())
+		}
+	}
+	plain := SeriesLimit(7)
+	withLimit := plain.WithLimit("some-flag", 7)
+	if _, _, ok := plain.Limit(); ok {
+		t.Error("WithLimit changed the error it was called on")
+	}
+	if withLimit.Text() != plain.Text() || withLimit.Msg() != plain.Msg() {
+		t.Errorf("WithLimit changed the answer: %q vs %q", withLimit.Text(), plain.Text())
+	}
+	if _, _, ok := StepNotPositive().Limit(); ok {
+		t.Error("an error with no limit reports one")
 	}
 }

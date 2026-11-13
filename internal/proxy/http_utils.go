@@ -16,7 +16,6 @@ import (
 	"net"
 	"net/http"
 	"net/textproto"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -100,8 +99,8 @@ func setRequestQuery(r *http.Request, query string) {
 // validateQuery checks query string length and returns a sanitized version.
 // It also rewrites queries that Loki accepts but VL would reject (e.g. phi>1).
 func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint string) (string, bool) {
-	if msg := queryLengthError(query, p.limits().QueryLengthBytes); msg != "" {
-		p.writeError(w, http.StatusBadRequest, msg)
+	if err := queryLengthLimit(query, p.limits().QueryLengthBytes); err != nil {
+		p.writeErr(w, context.Background(), err)
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
@@ -275,11 +274,6 @@ type errorShape func(w http.ResponseWriter, code int, msg string)
 // another shape than its query frontend does: the ruler's Prometheus JSON, and
 // the http.Error text of the compactor and ruler.
 func (p *Proxy) writeErrorShaped(w http.ResponseWriter, code int, msg string, cause error, shape errorShape) {
-	// Call sites that map backend failures to a fixed 5xx still surface the
-	// heavy-query queue rejection with Loki's queue-full status.
-	if code != http.StatusTooManyRequests && strings.HasPrefix(msg, lokiTooManyOutstandingRequests+": heavy VictoriaLogs queries") {
-		code = http.StatusTooManyRequests
-	}
 	level := slog.LevelInfo
 	switch {
 	case code >= http.StatusInternalServerError:
@@ -293,11 +287,6 @@ func (p *Proxy) writeErrorShaped(w http.ResponseWriter, code int, msg string, ca
 			// The full error (VictoriaLogs' message, the transport error, the
 			// flag of a proxy queue) is for operators only.
 			attrs = append(attrs, "upstream_error", cause.Error())
-		}
-		if strings.HasPrefix(msg, seriesLimitMessagePrefix) {
-			// Loki's message carries no operator hint; the log says which flag
-			// sets the limit that rejected this query.
-			attrs = append(attrs, "limit_flag", "-max-stats-query-series")
 		}
 		p.log.Log(context.Background(), level, "request error", attrs...)
 	}
@@ -340,8 +329,16 @@ func (p *Proxy) writeFailure(w http.ResponseWriter, ctx context.Context, err err
 	}
 	p.logRequestError(ctx, status, text, err, typed)
 	shape(w, status, text)
+	if rec, ok := w.(failureRecorder); ok {
+		rec.recordFailure(err)
+	}
 	return status
 }
+
+// failureRecorder is a writer that keeps the error behind the answer written
+// to it, for callers that decide on the failure's type (errors.Is) and never on
+// the client text.
+type failureRecorder interface{ recordFailure(err error) }
 
 // logRequestError writes the error layer's log line: the status and client
 // text, the internal error behind them, the message and kind of a typed
@@ -368,10 +365,15 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 		// flag of a proxy queue) is for operators only.
 		attrs = append(attrs, "upstream_error", cause.Error())
 	}
-	if strings.HasPrefix(text, seriesLimitMessagePrefix) {
-		// Loki's message carries no operator hint; the log says which flag
-		// sets the limit that rejected this query.
-		attrs = append(attrs, "limit_flag", "-max-stats-query-series")
+	if typed != nil {
+		if flag, value, ok := typed.Limit(); ok {
+			// Loki's text carries no operator hint; the log says which flag
+			// sets the limit that rejected this request.
+			attrs = append(attrs, "limit_flag", "-"+flag)
+			if value > 0 {
+				attrs = append(attrs, "limit_value", value)
+			}
+		}
 	}
 	if ctx != nil {
 		if meta := requestRouteMetaFromContext(ctx); meta.endpoint != "" {
@@ -576,15 +578,16 @@ func statusFromUpstreamErr(err error) int {
 		}
 		return http.StatusInternalServerError
 	}
-	// Loki's querier fails a label values response above
-	// grpc_server_max_send_msg_size with 500 ResourceExhausted.
-	if isLabelValuesResponseTooLarge(err) {
-		return http.StatusInternalServerError
+	// A proxy limit or a full queue carries Loki's status in its typed error:
+	// 400 for a query over a limit, 500 for a response over a message size,
+	// 429 for a full queue.
+	if typed, ok := lokierr.As(err); ok && (typed.Kind() == lokierr.KindLimit || typed.Kind() == lokierr.KindQueueFull) {
+		return typed.Status()
 	}
-	if isUpstreamQueryRejected(err) || isOrderedJSONPipelineError(err) || isRowLimitError(err) || isBinaryBudgetError(err) {
+	if isUpstreamQueryRejected(err) || isOrderedJSONPipelineError(err) {
 		return http.StatusBadRequest
 	}
-	if isHeavyQueryQueueFull(err) || isUpstreamQueueFull(err) {
+	if isUpstreamQueueFull(err) {
 		return http.StatusTooManyRequests
 	}
 	var matchingErr vectorMatchError
@@ -604,8 +607,9 @@ func statusFromUpstreamErr(err error) int {
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return http.StatusGatewayTimeout
 	}
-	lower := strings.ToLower(err.Error())
-	if strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "timeout") {
+	// VictoriaLogs' own deadline, a kind it reports in its message and its 503.
+	var statusErr *upstreamStatusError
+	if errors.As(err, &statusErr) && statusErr.class == vlErrorDeadline {
 		return http.StatusGatewayTimeout
 	}
 	// Everything else, an open circuit breaker and a guard rejection included,
@@ -626,8 +630,9 @@ const (
 	lokiErrInternal = "Internal Server Error"
 )
 
-// proxyLimitMarker ends every proxy limit message that names its flag
-// ("...; narrow the query or increase -<flag>").
+// proxyLimitMarker ends the operator wording of a proxy limit that names its
+// flag ("...; narrow the query or increase -<flag>"). The wording is the log
+// line's, never a client's text, and no code reads it back.
 const proxyLimitMarker = "; narrow the query or increase -"
 
 // lokiClientError is the proxy's ClientHTTPStatusAndError: the status,
@@ -656,71 +661,38 @@ func lokiClientText(status int, err error) string {
 	if err == nil {
 		return lokiErrInternal
 	}
+	// A typed error (a proxy limit, a full queue) answers its own text.
+	if typed, ok := lokierr.As(err); ok && typed.Status() == status {
+		return typed.Text()
+	}
 	var (
-		seriesErr   *seriesLimitError
 		parseErr    *translator.ParseError
 		pipelineErr *orderedJSONPipelineError
 		matchingErr vectorMatchError
-		tooLarge    *labelValuesResponseTooLargeError
-		bodyLimit   *backendBodyTooLargeError
-		rowLimitErr *rowLimitError
-		budgetErr   *binaryBudgetError
 	)
 	switch {
-	case errors.As(err, &seriesErr):
-		return seriesErr.Error()
 	case errors.As(err, &parseErr):
 		return parseErr.Error()
 	case errors.As(err, &pipelineErr):
 		return pipelineErr.Error()
 	case errors.As(err, &matchingErr):
 		return matchingErr.Error()
-	case errors.As(err, &tooLarge):
-		return tooLarge.Error()
-	case errors.As(err, &bodyLimit):
-		return bodyLimit.Error()
-	case errors.As(err, &rowLimitErr):
-		return rowLimitErr.Error()
-	case errors.As(err, &budgetErr):
-		return budgetErr.Error()
 	case status == http.StatusBadRequest:
 		return lokiErrParse
 	}
-	if msg, ok := proxyLimitText(err); ok {
-		return msg
-	}
 	return lokiErrInternal
-}
-
-// proxyLimitText returns the message of a proxy limit error that names its
-// flag, built by the proxy with no backend or transport error inside it.
-func proxyLimitText(err error) (string, bool) {
-	var (
-		statusErr *upstreamStatusError
-		urlErr    *url.Error
-		netErr    net.Error
-		aborted   *vlResponseAbortedError
-	)
-	if errors.As(err, &statusErr) || errors.As(err, &urlErr) || errors.As(err, &netErr) || errors.As(err, &aborted) {
-		return "", false
-	}
-	msg := err.Error()
-	i := strings.Index(msg, proxyLimitMarker)
-	if i < 0 || strings.ContainsAny(msg, "\n\"`{") {
-		return "", false
-	}
-	// The flag is the last word: nothing but its name follows the marker.
-	flag := msg[i+len(proxyLimitMarker):]
-	if flag == "" || strings.ContainsAny(flag, " ;:/") {
-		return "", false
-	}
-	return msg, true
 }
 
 // vlQueueTimeoutPrefix starts the 503 VictoriaLogs answers when a query waited
 // -search.maxQueueDuration for one of -search.maxConcurrentRequests slots
 // (app/vlselect/main.go:268 in v1.49.0, :313-318 in v1.53.0).
 const vlQueueTimeoutPrefix = "couldn't start executing the request in "
+
+// vlQueryDeadlinePrefix starts the 503 VictoriaLogs answers when a query ran
+// past -search.maxQueryDuration before its headers were sent
+// (app/vlselect/main.go:236 in v1.49.0, :276-278 in v1.53.0). A failure after
+// the headers is a vlResponseAbortedError instead.
+const vlQueryDeadlinePrefix = "the request couldn't be executed in "
 
 // isUpstreamQueueFull reports a full VictoriaLogs (or front proxy) queue: a
 // 429, or VictoriaLogs' 503 for a request that never got a slot. Loki answers
@@ -758,14 +730,12 @@ func upstreamErrorStatus(ctx context.Context, err error) int {
 	return statusFromUpstreamErr(err)
 }
 
+// isCanceledErr reports a cancellation by type: context.Canceled anywhere in
+// the chain. A request's own context is checked first by the callers that have
+// one (upstreamErrorStatus), which also covers a cancellation with a cause that
+// does not wrap context.Canceled.
 func isCanceledErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.Canceled) {
-		return true
-	}
-	return strings.Contains(strings.ToLower(err.Error()), "context canceled")
+	return err != nil && errors.Is(err, context.Canceled)
 }
 
 // httpStatusCoder is implemented by errors that carry an upstream HTTP status
@@ -799,6 +769,9 @@ const (
 	// vlErrorQueueFull: the query never got one of VictoriaLogs'
 	// -search.maxConcurrentRequests slots (Loki: 429).
 	vlErrorQueueFull
+	// vlErrorDeadline: the query ran past -search.maxQueryDuration before
+	// VictoriaLogs sent its headers (Loki: 504).
+	vlErrorDeadline
 )
 
 // vlQueryRejectedPrefixes start VictoriaLogs messages for invalid queries and
@@ -855,6 +828,9 @@ var vlResourceLimitMarkers = []string{
 func classifyVLError(status int, rawMsg string) vlErrorClass {
 	if strings.HasPrefix(strings.TrimSpace(rawMsg), vlQueueTimeoutPrefix) {
 		return vlErrorQueueFull
+	}
+	if strings.HasPrefix(strings.TrimSpace(rawMsg), vlQueryDeadlinePrefix) {
+		return vlErrorDeadline
 	}
 	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
 		return vlErrorUnclassified
@@ -1020,12 +996,6 @@ func shouldRecordBreakerFailure(ctx context.Context, err error) bool {
 	}
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		return false
-	}
-	lower := strings.ToLower(err.Error())
-	if strings.Contains(lower, "context canceled") ||
-		strings.Contains(lower, "deadline exceeded") ||
-		strings.Contains(lower, "timeout") {
 		return false
 	}
 	return true
@@ -1554,7 +1524,7 @@ func (d *decodedLimit) read(r io.Reader, b []byte) (int, error) {
 	}
 	n, err := r.Read(b)
 	if int64(n) > d.remaining {
-		d.err = &backendBodyTooLargeError{limit: d.limit}
+		d.err = newBackendBodyTooLarge(d.limit)
 		return int(d.remaining), d.err
 	}
 	d.remaining -= int64(n)

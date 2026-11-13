@@ -24,7 +24,7 @@ import (
 // a metric that always scans raw rows (rate_counter), on query_range.
 // The body is the message alone as text/plain, as Loki writes it; the text
 // must name the proxy's flag since Loki has none.
-// conformance: heavy-metric-fetch-bounds, limits/row-limit-error-names-flag, status-400
+// conformance: heavy-metric-fetch-bounds, limits/row-limit-answers-loki-limit-text, status-400
 func TestCompat_RowLimitAnswersLikeLokiLimit(t *testing.T) {
 	ensureDataIngested(t)
 	waitForLokiMetricData(t)
@@ -80,8 +80,8 @@ func TestCompat_RowLimitAnswersLikeLokiLimit(t *testing.T) {
 			if strings.HasPrefix(text, "{") || strings.HasSuffix(text, "\n") {
 				t.Fatalf("body is not the message alone: %.300s", body)
 			}
-			if !strings.HasPrefix(text, "manual range metric row limit exceeded (1") || !strings.HasSuffix(text, "; narrow the query or increase -manual-range-metric-row-limit") {
-				t.Fatalf("error %q does not name the row limit flag", text)
+			if text != "limit reached while evaluating the query" {
+				t.Fatalf("error %q is not Loki's limit text (the flag belongs in the log line only)", text)
 			}
 			got := errLayerE2EClasses(status, body, nil, lokiStatus, "", false, true)
 			errLayerE2EVerdict(t, got, nil, status, body)

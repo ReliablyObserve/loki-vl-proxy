@@ -1,12 +1,16 @@
 package middleware
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 )
 
 var (
@@ -37,6 +41,38 @@ type RateLimiter struct {
 	// Stats
 	RejectedTotal  atomic.Int64
 	ThrottledTotal atomic.Int64
+
+	// Reject writes the answer to a request the limiter turned away: Loki's
+	// queue-full error, typed, with the flag that set the limit in its Limit
+	// (for the log line only). The proxy sets it to its error writer; the
+	// default writes the error as Loki's query frontend does.
+	Reject func(w http.ResponseWriter, r *http.Request, err *lokierr.Error)
+}
+
+// Flags behind the two admission limits, for the log line of a rejection.
+const (
+	flagRatePerSecond = "rate-limit-per-second"
+	flagMaxConcurrent = "max-concurrent"
+)
+
+var (
+	errRateLimited       = errors.New("per-client rate limit exceeded")
+	errTooManyConcurrent = errors.New("too many concurrent queries")
+)
+
+// reject answers a turned-away request with Loki's queue-full status and text
+// for both limits; which limit it was goes to the log line only.
+func (rl *RateLimiter) reject(w http.ResponseWriter, r *http.Request, err *lokierr.Error) {
+	if rl.Reject != nil {
+		rl.Reject(w, r, err)
+		return
+	}
+	// The message alone as text/plain, as Loki writes every error
+	// (pkg/util/server/error.go WriteError).
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(err.Status())
+	_, _ = io.WriteString(w, err.Text())
 }
 
 type tokenBucket struct {
@@ -144,24 +180,16 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		clientID := ClientID(r)
 
 		if !rl.AllowClient(clientID) {
-			// The message alone as text/plain, as Loki writes every error
-			// (pkg/util/server/error.go WriteError).
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("Retry-After", "1")
 			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", rl.ratePerSecond))
 			w.Header().Set("X-RateLimit-Remaining", "0")
-			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte("rate limit exceeded"))
+			rl.reject(w, r, lokierr.QueueFull(errRateLimited).WithLimit(flagRatePerSecond, int64(rl.ratePerSecond)))
 			return
 		}
 
 		if !rl.AcquireConcurrent() {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("Retry-After", "5")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte("too many concurrent queries"))
+			rl.reject(w, r, lokierr.QueueFull(errTooManyConcurrent).WithLimit(flagMaxConcurrent, int64(rl.maxConcurrent)))
 			return
 		}
 		defer rl.ReleaseConcurrent()

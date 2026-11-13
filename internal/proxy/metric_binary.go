@@ -261,12 +261,12 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 		}
 		return
 	case errors.Is(err, errSeriesCountExceeded):
-		p.writeError(w, http.StatusBadRequest, newSeriesLimitError(ctx, limit).Error())
+		p.writeErr(w, ctx, newSeriesLimitError(ctx, limit))
 		return
 	case errors.Is(err, errBodyTooLarge):
 		// The binary aggregation split (binaryAggregationResponse) retries a
-		// 500 carrying this text over two half ranges.
-		p.writeErr(w, ctx, fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", p.limits().BufferedBackendBodyBytes))
+		// failure of this type over two half ranges.
+		p.writeErr(w, ctx, newManualMetricResponseTooLarge(int64(p.limits().BufferedBackendBodyBytes)))
 		return
 	default:
 		p.writeErr(w, r.Context(), err)
@@ -323,7 +323,7 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	}
 	if (read <= 0 || read > limit) && lokiResultSeriesCount(out) > limit {
 		if err := seriesLimitReached(ctx, limit); err != nil {
-			p.writeError(w, http.StatusBadRequest, err.Error())
+			p.writeErr(w, ctx, err)
 			return
 		}
 		out = limitLokiResultSeries(out, limit)

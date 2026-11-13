@@ -140,7 +140,7 @@ func (g *backendBodyGuard) Read(b []byte) (int, error) {
 	g.read += int64(n)
 	g.keepTail(b[:n])
 	if g.limit > 0 && g.read > g.limit {
-		g.err = &labelValuesResponseTooLargeError{read: g.read, limit: g.limit}
+		g.err = newLabelValuesTooLarge(g.read, g.limit)
 		g.p.observeInternalOperation(g.ctx, "label_values_response_cap", "rejected", time.Since(g.start))
 		g.p.log.Warn("label values response exceeds -label-values-max-response-bytes",
 			"backend.route", g.path, "bytes_read", g.read, "limit", g.limit, "limit_flag", "-label-values-max-response-bytes")

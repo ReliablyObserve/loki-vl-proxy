@@ -275,7 +275,8 @@ func ingestHeavyRankFixture(t *testing.T, app, vlRows string, streams map[string
 }
 
 // isDocumentedLimitError accepts the errors the proxy documents for heavy
-// queries: the heavy-query queue (429) and execution limits naming their flag.
+// queries: the heavy-query queue (429) and execution limits, each answered with
+// Loki's text for its class (the flag is in the proxy's log line only).
 func isDocumentedLimitError(status int, body string) bool {
 	switch {
 	case status == http.StatusTooManyRequests:
@@ -287,7 +288,9 @@ func isDocumentedLimitError(status int, body string) bool {
 		// deadline text (pkg/util/server/error.go:27).
 		return strings.Contains(body, "request timed out")
 	case status >= 400:
-		return strings.Contains(body, "-manual-range-metric-row-limit") || strings.Contains(body, "-max-stats-query-series")
+		return strings.Contains(body, "limit reached while evaluating the query") ||
+			strings.HasPrefix(body, "maximum number of series (") ||
+			strings.HasPrefix(body, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (")
 	}
 	return false
 }

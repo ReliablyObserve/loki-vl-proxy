@@ -420,7 +420,7 @@ func TestMetadataScanLimiter_FleetShareBackgroundAndSilence(t *testing.T) {
 	sig = backendSignals{failed: true}
 	mu.Unlock()
 	l.signals(ctx, 0)
-	if _, err := l.acquire(ctx, sfnPath, params, time.Now(), false); !isHeavyQueryQueueFull(err) || !strings.Contains(err.Error(), "/metrics not answering") {
+	if _, err := l.acquire(ctx, sfnPath, params, time.Now(), false); !isHeavyQueryQueueFull(err) || !strings.Contains(heavyQueueCause(err).Error(), "/metrics not answering") {
 		t.Fatalf("admitted while VictoriaLogs does not answer /metrics: %v", err)
 	}
 	// A /metrics that keeps failing past the silence window (an auth change,

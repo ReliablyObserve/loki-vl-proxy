@@ -13,9 +13,10 @@ generated:   # rewritten by conformance/scripts/error_registry.py
 loki_behaviour: |
   Loki never answers 502 for a failed backend: a querier or storage failure is
   500 (pkg/util/server/error.go:124-128). A 502 from the proxy is a leak unless
-  it is a registry-listed, documented proxy limit naming its flag. The error
-  layer (lokiClientError, writeErr) answers every failed backend call with 500
-  and the proxy's limits with 500 naming their flag, on the rules, alerts and
+  it is a registry-listed, documented proxy limit. The error layer
+  (lokiClientError, writeErr) answers every failed backend call with 500
+  and the proxy's buffer limits with 500 and Loki's message size text (the flag
+  in the log line only), on the rules, alerts and
   delete routes too (the ruler's JSON and http.Error shapes, never the
   backend's status or body). TestErrorLayer_NoVictoriaLogsLeak lists the cells
   (error-layer-known-leaks.json); the list may only shrink.

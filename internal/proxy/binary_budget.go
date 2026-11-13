@@ -66,7 +66,7 @@ func checkBinaryDecodeBudget(ctx context.Context, body []byte) error {
 		return err
 	}
 	if limit := executionLimitsFrom(ctx).BufferedBackendBodyBytes; len(body) > limit {
-		return fmt.Errorf("binary operand exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", limit)
+		return newBufferLimitError(flagBackendMaxBufferedResponseBytes, int64(len(body)), int64(limit), "binary operand", nil)
 	}
 	state, _ := ctx.Value(binaryEvaluationKey{}).(binaryEvaluationState)
 	budget := state.budget
@@ -96,7 +96,7 @@ func checkBinaryDecodeBudget(ctx context.Context, body []byte) error {
 		}
 		if c == '[' {
 			if budget.arrays <= 0 {
-				return &binaryBudgetError{flag: "binary-metric-max-arrays"}
+				return newBinaryBudgetError(flagBinaryMetricMaxArrays)
 			}
 			budget.arrays--
 		}

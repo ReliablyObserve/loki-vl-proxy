@@ -15,11 +15,12 @@ loki_behaviour: |
   failed query; a full queue is 429 "too many outstanding requests"
   (pkg/queue/queue.go:21). The error layer answers an open circuit breaker,
   a guard rejection and VictoriaLogs' or a front proxy's 503 with Loki's 500,
-  and a cancelled stats slot wait with 499. What still answers 503 is the
-  -max-concurrent admission cap of the rate limiter and the ruler's own
-  status passed through; TestErrorLayer_NoVictoriaLogsLeak lists the cells.
+  and a cancelled stats slot wait with 499. The -max-concurrent admission cap of
+  the rate limiter answers Loki's full-queue 429 too (msg-queue-full), the flag
+  in the log line only; only the ruler's own status passes through.
+  TestErrorLayer_NoVictoriaLogsLeak lists the cells.
 precedence: []   # failure classes Loki evaluates before this one
 consumers: |
-  Grafana shows the text; the -max-concurrent admission cap is the only 503 the proxy still writes.
+  Grafana shows the text; the proxy writes no 503 of its own.
 cases:
   - semantics/error-layer-backend-failure-status
