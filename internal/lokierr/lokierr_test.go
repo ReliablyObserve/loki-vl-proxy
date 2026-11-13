@@ -301,6 +301,19 @@ func TestWithCauseKeepsTheText(t *testing.T) {
 	if !ok || got != e {
 		t.Fatalf("As(%v) = %v %v", wrapped, got, ok)
 	}
+	joined := errors.Join(errors.New("first"), fmt.Errorf("second: %w", e))
+	if got, ok := As(joined); !ok || got != e {
+		t.Fatalf("As(errors.Join(...)) = %v %v", got, ok)
+	}
+	if _, ok := As(errors.Join(cause, errors.New("x"))); ok {
+		t.Fatal("As found a lokierr.Error in a joined plain error")
+	}
+	if allocs := testing.AllocsPerRun(100, func() { _, _ = As(wrapped) }); allocs != 0 {
+		t.Fatalf("As allocates %.0f times", allocs)
+	}
+	if allocs := testing.AllocsPerRun(100, func() { _, _ = As(cause) }); allocs != 0 {
+		t.Fatalf("As of a plain error allocates %.0f times", allocs)
+	}
 	if _, ok := As(cause); ok {
 		t.Fatal("As found a lokierr.Error in a plain error")
 	}

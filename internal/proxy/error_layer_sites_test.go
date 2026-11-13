@@ -194,18 +194,18 @@ type errorLayerSitesFile struct {
 	Description string                    `json:"description"`
 	Totals      map[string]int            `json:"totals"`
 	Files       map[string]map[string]int `json:"files"`
-	// KnownLeakCells is the pair count of error-layer-known-leaks.json, the
-	// route x failure-mode cells of TestErrorLayer_NoVictoriaLogsLeak that
-	// still leak.
-	KnownLeakCells int `json:"known_leak_cells"`
+	// KnownLeakPairs is the ceiling of error-layer-known-leaks.json: the
+	// (route x failure-mode cell, registry case) pairs of
+	// TestErrorLayer_NoVictoriaLogsLeak that still leak.
+	KnownLeakPairs int `json:"known_leak_pairs"`
 }
 
 // TestErrorLayerSites holds the client errors written outside the typed error
 // layer to the counts committed in conformance/registry/error-layer-sites.json:
 // a category that grows fails, naming the files that grew; one that falls
 // fails until the file holds the new count (LVP_ERROR_LAYER_SITES_UPDATE=1
-// rewrites it). The known-leak cells of the error-layer gate are held the
-// same way. Every category goes to 0 as call sites move to the typed layer.
+// rewrites it). The error-layer gate's known leaks (cell and case pairs) are
+// held the same way. Every category goes to 0 as call sites move to the typed layer.
 // conformance: semantics/error-layer-internal-go-text, semantics/error-layer-backend-text, semantics/error-layer-silent-success, semantics/error-layer-proxy-limit-status, architecture-syntax-package-layering
 func TestErrorLayerSites(t *testing.T) {
 	counts := countErrorLayerSites(t)
@@ -221,7 +221,7 @@ func TestErrorLayerSites(t *testing.T) {
 	for _, ids := range errLayerKnownLeaks(t) {
 		leaks += len(ids)
 	}
-	got.KnownLeakCells = leaks
+	got.KnownLeakPairs = leaks
 
 	var want errorLayerSitesFile
 	raw, err := os.ReadFile(errorLayerSitesPath)
@@ -237,7 +237,7 @@ func TestErrorLayerSites(t *testing.T) {
 		if err := os.WriteFile(errorLayerSitesPath, append(out, '\n'), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("wrote %s: %v, known leak cells %d", errorLayerSitesPath, got.Totals, got.KnownLeakCells)
+		t.Logf("wrote %s: %v, known leak pairs %d", errorLayerSitesPath, got.Totals, got.KnownLeakPairs)
 		return
 	}
 	if err != nil {
@@ -255,10 +255,10 @@ func TestErrorLayerSites(t *testing.T) {
 		}
 	}
 	switch {
-	case got.KnownLeakCells > want.KnownLeakCells:
-		t.Errorf("the error-layer gate's known leak cells grew from %d to %d", want.KnownLeakCells, got.KnownLeakCells)
-	case got.KnownLeakCells < want.KnownLeakCells:
-		t.Errorf("the error-layer gate's known leak cells fell from %d to %d: %s", want.KnownLeakCells, got.KnownLeakCells, update)
+	case got.KnownLeakPairs > want.KnownLeakPairs:
+		t.Errorf("the error-layer gate's known leak pairs grew from %d to %d", want.KnownLeakPairs, got.KnownLeakPairs)
+	case got.KnownLeakPairs < want.KnownLeakPairs:
+		t.Errorf("the error-layer gate's known leak pairs fell from %d to %d: %s", want.KnownLeakPairs, got.KnownLeakPairs, update)
 	}
 }
 

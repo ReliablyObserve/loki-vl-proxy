@@ -22,7 +22,7 @@ why: |
   with no body on every route, as Loki's router writes them.
 request:
   scope: internal
-  entry: writeLokiErrorBody, writeLokiHTTPError, writeLokiRulerError, writeLokiFormatQueryError, writeBodylessError; routeErrorShapes (internal/proxy/http_utils.go: the shape (*Proxy).fail writes per route, and the router messages internal/lokierr gives one shape on every route)
+  entry: 'writeLokiErrorBody, writeLokiHTTPError, writeLokiRulerError, writeLokiFormatQueryError, writeBodylessError; routeErrorShapes in internal/proxy/http_utils.go (the shape (*Proxy).fail writes per route; internal/lokierr gives the router messages one shape on every route)'
   setup: |
     TestErrorLayer_NoVictoriaLogsLeak drives every route through every
     failure mode and checks the body shape of each answer

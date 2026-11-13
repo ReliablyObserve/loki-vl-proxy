@@ -13,10 +13,6 @@
 // packages, the query plan and the proxy can all build its errors.
 package lokierr
 
-import (
-	"errors"
-)
-
 // Kind is the class of a failure: what went wrong, independent of the text.
 type Kind uint8
 
@@ -131,11 +127,28 @@ func (e *Error) WithCause(cause error) *Error {
 	return &c
 }
 
-// As reports the first *Error in err's chain.
+// As reports the first *Error in err's tree, walked as errors.As walks it
+// (Unwrap() error and Unwrap() []error, depth first). It does not call As
+// methods, and it allocates nothing, which errors.As with a pointer target
+// does: every failed request goes through it.
 func As(err error) (*Error, bool) {
-	var e *Error
-	if errors.As(err, &e) {
-		return e, true
+	for err != nil {
+		if e, ok := err.(*Error); ok {
+			return e, true
+		}
+		switch u := err.(type) {
+		case interface{ Unwrap() error }:
+			err = u.Unwrap()
+		case interface{ Unwrap() []error }:
+			for _, inner := range u.Unwrap() {
+				if e, ok := As(inner); ok {
+					return e, true
+				}
+			}
+			return nil, false
+		default:
+			return nil, false
+		}
 	}
 	return nil, false
 }

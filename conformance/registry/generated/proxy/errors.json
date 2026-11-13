@@ -496,6 +496,18 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
+      "expression": "",
+      "kind": "no_body",
+      "message": null,
+      "status": null,
+      "status_token": "code",
+      "where": "internal/proxy/http_utils.go writeBodylessShape",
+      "writer": "writeBodylessError"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
       "expression": "r.Context(), err",
       "kind": "layer",
       "message": null,
@@ -2592,7 +2604,7 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 94,
+        "count": 95,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
@@ -2601,9 +2613,9 @@
         "messages": [
           "multi-tenant sub-request failed"
         ],
-        "no_body_sites": 0
+        "no_body_sites": 1
       }
     },
-    "call_sites": 205
+    "call_sites": 206
   }
 }
