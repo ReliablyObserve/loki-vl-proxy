@@ -60,6 +60,9 @@ type lokiErrorReply struct {
 	ContentType string `json:"content_type"`
 	Nosniff     string `json:"nosniff"`
 	Body        string `json:"body"`
+	// BodyTruncated marks a success body of a row that is not compared,
+	// cut to keep the file small.
+	BodyTruncated bool `json:"body_truncated,omitempty"`
 }
 
 func readLokiErrorAnswers(t *testing.T) []lokiErrorAnswer {
@@ -281,8 +284,8 @@ func TestLokiErrorAnswersReplay(t *testing.T) {
 	}
 }
 
-// TestLokiErrorAnswersAreWellFormed: every row is a Loki error answer with a
-// request the replay can send, and ids are unique.
+// TestLokiErrorAnswersAreWellFormed: every comparable row is a Loki error
+// answer, every row has a request the replay can send, and ids are unique.
 // conformance: semantics/error-request-validation-parity
 func TestLokiErrorAnswersAreWellFormed(t *testing.T) {
 	seen := map[string]bool{}
@@ -291,7 +294,9 @@ func TestLokiErrorAnswersAreWellFormed(t *testing.T) {
 			t.Errorf("%s: duplicate id", row.ID)
 		}
 		seen[row.ID] = true
-		if row.Loki.Status < 300 || row.Method == "" || row.Target == "" || !strings.HasPrefix(row.Target, "/") {
+		// A row Loki answered without an error is kept only as a probe that
+		// cannot be compared yet (the tenant probes).
+		if (row.Loki.Status < 300 && row.NotComparable == "") || row.Method == "" || row.Target == "" || !strings.HasPrefix(row.Target, "/") {
 			t.Errorf("%s: not a replayable error row: %+v", row.ID, row)
 		}
 	}

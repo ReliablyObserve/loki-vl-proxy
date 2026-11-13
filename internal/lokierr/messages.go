@@ -188,7 +188,8 @@ func Parse(line, col int, detail string) *Error {
 // ParserMessage is a parse error the LogQL parser has already rendered in
 // Loki's words at the failing token (internal/logql's ParseError). It keeps
 // the parser's text as it is; it is the bridge until the parser hands over
-// the position and the detail apart.
+// the position and the detail apart. Only the parser's own message may be
+// passed: never another error's text.
 func ParserMessage(rendered string) *Error {
 	return newError(MsgParse, rendered, nil)
 }

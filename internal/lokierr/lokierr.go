@@ -6,8 +6,13 @@
 // Errors are built where the failure happens, by the code that holds the facts
 // (the parser's position, the raw request parameter, the configured limit, the
 // classified backend failure), through one typed constructor per Loki message
-// (messages.go). No constructor takes a sentence: each renders Loki's message
-// from typed arguments, and no constructor reads another error's text.
+// (messages.go). Each renders Loki's message from typed arguments, and no
+// constructor reads another error's text. Two take text from the LogQL parser
+// only: Parse takes the parser's detail for the failing token, and
+// ParserMessage takes a message the parser has already rendered in Loki's
+// words; ParserMessage is the bridge until the parser hands over the position
+// and the detail apart, and nothing else may call it (internal/proxy's
+// TestErrorLayerSites counts its calls).
 //
 // The package is a leaf: it imports only the standard library, so the syntax
 // packages, the query plan and the proxy can all build its errors.

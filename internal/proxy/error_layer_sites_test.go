@@ -67,8 +67,11 @@ var successStatuses = map[string]bool{
 //   - error_text_sites: those whose text holds an error's own text (a call of
 //     an Error method), the widest path for text the proxy did not write;
 //   - raw_error_status_writes: WriteHeader with a constant status of 400 or
-//     more outside the error shape functions.
-var errorLayerSiteCategories = []string{"free_text_sites", "error_text_sites", "raw_error_status_writes"}
+//     more outside the error shape functions;
+//   - parser_message_calls: calls of lokierr.ParserMessage, the bridge for the
+//     LogQL parser's own rendered message, which must not carry any other
+//     error's text.
+var errorLayerSiteCategories = []string{"free_text_sites", "error_text_sites", "raw_error_status_writes", "parser_message_calls"}
 
 type siteCounts map[string]map[string]int
 
@@ -129,6 +132,9 @@ func countFuncSites(counts siteCounts, rel string, fn *ast.FuncDecl) {
 		}
 		recv := receiverName(sel.X)
 		msgAt := -1
+		if recv == "lokierr" && sel.Sel.Name == "ParserMessage" {
+			counts.add("parser_message_calls", rel)
+		}
 		switch {
 		case recv == "http" && sel.Sel.Name == "Error":
 			msgAt = 1
