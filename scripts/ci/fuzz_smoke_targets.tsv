@@ -45,6 +45,7 @@ smoke	internal/proxy	FuzzStatsFoldRelabelOneParseDifferential	12s	-	one-parse st
 smoke	internal/proxy	FuzzStatsExtentOwnedEncoding	12s	-	owned stats extent encoding
 smoke	internal/proxy	FuzzStatsExtentLargeAnswerSplits	12s	-	stats extent answers larger than one cache entry
 smoke	internal/proxy	FuzzLokiClientError	12s	-	Loki client error mapping
+smoke	internal/proxy	FuzzFail	12s	-	error layer writer: a status in Loki's set, a typed error written with its own status and text, an untyped one as its route writes it today, no cause in the body
 smoke	internal/proxy	FuzzErrorBodyShapes	12s	-	Loki error body shapes
 smoke	internal/proxy	FuzzProxyLifecycleNoGoroutineLeak	12s	-	proxy lifecycle leaves no goroutines
 smoke	internal/proxy	FuzzTopKPerStep	20s	60s	topk and bottomk per step

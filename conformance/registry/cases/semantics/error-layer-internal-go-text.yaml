@@ -28,7 +28,7 @@ why: |
   (semantics/tail-survives-backend-outage).
 request:
   scope: internal
-  entry: lokiClientError, (*Proxy).writeErr, writeBackendError, writeGrafanaStatsFailure
+  entry: (*Proxy).fail and writeFailure (internal/proxy/http_utils.go, the error layer's one writer; internal/lokierr typed errors), lokiClientError, (*Proxy).writeErr, writeBackendError, writeGrafanaStatsFailure
   setup: |
     TestErrorLayer_NoVictoriaLogsLeak: a fake VictoriaLogs (and ruler) that fails
     every call in one of 14 modes (VictoriaLogs 400 parse and memory-limit
