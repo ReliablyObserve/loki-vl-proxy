@@ -29,8 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in `limit_value`), and the operator wording that names it is the line's `upstream_error`.
   - The per-client rate limit (`-rate-limit-per-second`) and the `-max-concurrent` cap answer `429`
     `too many outstanding requests` (Loki's full-queue answer) where they answered `429` `rate limit exceeded` and
-    `503` `too many concurrent queries`. `Retry-After` and `X-RateLimit-*` stay. The heavy-query and metadata-scan
-    queues keep their `429` and Loki's text, which no longer names VictoriaLogs.
+    `503` `too many concurrent queries`. `Retry-After` and `X-RateLimit-*` stay. The log line of a rejection is
+    written at most once a second, so a flood of rejected requests is not a flood of log lines. The heavy-query and
+    metadata-scan queues keep their `429` and Loki's text, which no longer names VictoriaLogs.
   - A metric that passes `-manual-range-metric-row-limit`, a binary expression over `-binary-metric-max-arrays` or
     `-binary-metric-max-operand-bytes`, and a multi-tenant request over `-multi-tenant-max-fanout` answer `400`
     `limit reached while evaluating the query` (the text of Loki's query limits).
@@ -44,7 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A failed backend call is classified by the type of its error, never by the words in its message. An error that
   only says `timeout`, `deadline exceeded` or `context canceled` in its text is `500` like any failed call, no
   longer `504` or `499`; a Go timeout (`context.DeadlineExceeded`, a network timeout), a cancellation, and the
-  `503` VictoriaLogs sends when a query outlives `-search.maxQueryDuration` still answer `504` and `499`.
+  `503` VictoriaLogs sends when a query outlives `-search.maxQueryDuration` still answer `504` and `499`. A `504`
+  from the backend, or from a gateway in front of it, answers `504` by its status; a `502` or `503` from a gateway
+  stays `500`, as before.
 
 ## [2.198.0] - 2026-11-13
 

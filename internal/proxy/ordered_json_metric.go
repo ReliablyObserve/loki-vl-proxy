@@ -3618,7 +3618,7 @@ func orderedJSONSampleVisible(ts, start, end, step, window int64) bool {
 
 // orderedJSONResponseLimitError names the flag that bounds the raw rows read.
 func orderedJSONResponseLimitError(maxBytes int64) error {
-	return newBufferLimitError(flagOrderedJSONMetricMaxBytes, maxBytes+1, maxBytes, "ordered JSON metric response", nil)
+	return newBufferLimitError(flagOrderedJSONMetricMaxBytes, maxBytes+1, maxBytes, causeOrderedResponse)
 }
 
 func buildOrderedJSONMetric(ctx context.Context, plan *orderedJSONMetricPlan, series map[string]manualSeriesSamples, start, end time.Time, step time.Duration, isRange bool, maxBytes int64) ([]byte, error) {
@@ -3679,7 +3679,7 @@ func buildOrderedJSONMetric(ctx context.Context, plan *orderedJSONMetricPlan, se
 	}
 	body := marshalManualMetricResponse(resultType, result)
 	if int64(len(body)) > maxBytes {
-		return nil, newBufferLimitError(flagOrderedJSONMetricMaxBytes, int64(len(body)), maxBytes, "ordered JSON metric output", nil)
+		return nil, newBufferLimitError(flagOrderedJSONMetricMaxBytes, int64(len(body)), maxBytes, causeOrderedOutput)
 	}
 	return body, nil
 }

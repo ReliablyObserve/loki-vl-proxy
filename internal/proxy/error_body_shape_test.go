@@ -305,7 +305,7 @@ func TestSlidingStatsByteBudgetIsTheRowLimitError(t *testing.T) {
 	err := slidingStatsByteBudgetError(1000)
 	status, _, text := lokiClientError(context.Background(), err)
 	const want = "limit reached while evaluating the query"
-	if status != http.StatusBadRequest || text != want || limitFlagOf(err) != "manual-range-metric-row-limit" {
+	if status != http.StatusBadRequest || text != want || limitFlagOf(err) != "-manual-range-metric-row-limit" {
 		t.Fatalf("got %d %q, want 400 %q", status, text, want)
 	}
 }

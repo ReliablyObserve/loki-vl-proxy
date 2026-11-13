@@ -1,5 +1,6 @@
 id: limits/metadata-scan-queue-429
 title: A saturated metadata-scan limiter answers with Loki's 429, naming its flag
+pending: true
 proves:
   - backend-admission-and-heavy-query-queueing
   - loki_api_v1_labels

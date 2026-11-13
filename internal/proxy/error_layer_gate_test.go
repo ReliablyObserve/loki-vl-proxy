@@ -992,8 +992,8 @@ func TestLimitAnswersAreLokisTextAndLogTheFlag(t *testing.T) {
 		{"binary operand bytes budget", fmt.Errorf("left query: %w", newBinaryBudgetError(flagBinaryMetricMaxOperandBytes)), 400, limitText, "binary-metric-max-operand-bytes", "", nil},
 		{"backend body", fmt.Errorf("stats: %w", newBackendBodyTooLarge(4096)), 500, fmt.Sprintf(grpcSizeText, 4097, 4096), "backend-max-buffered-response-bytes", "4096", errBodyTooLarge},
 		{"manual metric response", newManualMetricResponseTooLarge(64), 500, fmt.Sprintf(grpcSizeText, 65, 64), "backend-max-buffered-response-bytes", "64", errManualMetricResponseTooLarge},
-		{"binary operand response", newBufferLimitError(flagBackendMaxBufferedResponseBytes, 17, 16, "binary operand", nil), 500, fmt.Sprintf(grpcSizeText, 17, 16), "backend-max-buffered-response-bytes", "16", nil},
-		{"ordered JSON metric output", newBufferLimitError(flagOrderedJSONMetricMaxBytes, 2048, 1024, "ordered JSON metric output", nil), 500, fmt.Sprintf(grpcSizeText, 2048, 1024), "ordered-json-metric-max-bytes", "1024", nil},
+		{"binary operand response", newBufferLimitError(flagBackendMaxBufferedResponseBytes, 17, 16, causeBinaryOperand), 500, fmt.Sprintf(grpcSizeText, 17, 16), "backend-max-buffered-response-bytes", "16", nil},
+		{"ordered JSON metric output", newBufferLimitError(flagOrderedJSONMetricMaxBytes, 2048, 1024, causeOrderedOutput), 500, fmt.Sprintf(grpcSizeText, 2048, 1024), "ordered-json-metric-max-bytes", "1024", nil},
 		{"label values", newLabelValuesTooLarge(2048, 1024), 500, fmt.Sprintf(grpcSizeText, 2048, 1024), "label-values-max-response-bytes", "1024", nil},
 		{"heavy queue", newHeavyQueueFull(&heavyQueryQueueFullError{maxConcurrent: 4, queueWait: time.Second}), 429, queueText, "backend-max-concurrent-heavy-queries", "4", nil},
 		{"metadata scan queue", newHeavyQueueFull(&heavyQueryQueueFullError{limitFlag: metadataScanLimitFlag, work: metadataScanLimitWork, maxConcurrent: 3, queueWait: time.Second, adaptive: "adaptive limit 2"}), 429, queueText, "backend-max-concurrent-metadata-scans", "3", nil},
@@ -1060,7 +1060,7 @@ func TestLimitCausesStayInTheLog(t *testing.T) {
 		name, want string
 		err        error
 	}{
-		{"manual metric", "manual metric response exceeds 64 bytes; narrow the query or increase -backend-max-buffered-response-bytes", newManualMetricResponseTooLarge(64)},
+		{"manual metric", "manual metric response exceeds -backend-max-buffered-response-bytes; narrow the query or increase it", newManualMetricResponseTooLarge(64)},
 		{"backend body", "backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes", newBackendBodyTooLarge(4096)},
 		{"row limit", "manual range metric row limit exceeded (3); narrow the query or increase -manual-range-metric-row-limit", manualRowLimitError(3)},
 		{"binary budget", "binary expression exceeds its evaluation budget; narrow the query or increase -binary-metric-max-arrays", newBinaryBudgetError(flagBinaryMetricMaxArrays)},

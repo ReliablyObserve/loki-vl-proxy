@@ -129,9 +129,9 @@ func (e *Error) Status() int { return messages[e.msg].status }
 // when the answering route decides.
 func (e *Error) Shape() Shape { return messages[e.msg].shape }
 
-// Limit is the operator flag behind a limit or queue answer (without its
-// leading dash) and the value it is set to; ok is false when the answer has
-// none. It is for the log line only.
+// Limit is the operator flag behind a limit or queue answer, as the operator
+// types it (with its leading dash), and the value it is set to; ok is false when
+// the answer has none. It is for the log line only.
 func (e *Error) Limit() (flag string, value int64, ok bool) {
 	return e.limitFlag, e.limitValue, e.limitFlag != ""
 }

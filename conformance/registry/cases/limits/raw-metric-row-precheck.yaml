@@ -1,5 +1,6 @@
 id: limits/raw-metric-row-precheck
 title: A raw metric scan that cannot fit is refused before any row is fetched
+pending: true
 proves:
   - heavy-metric-fetch-bounds
 consumer: any

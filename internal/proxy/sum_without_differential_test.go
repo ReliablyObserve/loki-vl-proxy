@@ -936,16 +936,16 @@ func TestWithoutFoldRowBudgetError(t *testing.T) {
 		ctx := context.WithValue(context.Background(), foldedSumKey{}, true)
 		return context.WithValue(ctx, seriesLimitScopeKey{}, &seriesLimitScope{foldBudget: foldBudget})
 	}
-	if err := newSeriesLimitError(folding(7), 7); limitFlagOf(err) != "manual-range-metric-row-limit" {
+	if err := newSeriesLimitError(folding(7), 7); limitFlagOf(err) != "-manual-range-metric-row-limit" {
 		t.Fatalf("a request reading under the budget: %v", err)
 	}
-	if err := newSeriesLimitError(folding(7), 3); limitFlagOf(err) != "manual-range-metric-row-limit" {
+	if err := newSeriesLimitError(folding(7), 3); limitFlagOf(err) != "-manual-range-metric-row-limit" {
 		t.Fatalf("a request reading under the budget, whatever the limit it reports: %v", err)
 	}
-	if err := newSeriesLimitError(folding(0), 7); limitFlagOf(err) != "max-stats-query-series" || !strings.Contains(err.Error(), "maximum number of series (7)") {
+	if err := newSeriesLimitError(folding(0), 7); limitFlagOf(err) != "-max-stats-query-series" || !strings.Contains(err.Error(), "maximum number of series (7)") {
 		t.Fatalf("a request the tenant's limit bounds: %v", err)
 	}
-	if err := seriesLimitReached(tenantSeriesLimitContext(folding(7)), 7); limitFlagOf(err) != "max-stats-query-series" || !strings.Contains(err.Error(), "maximum number of series (7)") {
+	if err := seriesLimitReached(tenantSeriesLimitContext(folding(7)), 7); limitFlagOf(err) != "-max-stats-query-series" || !strings.Contains(err.Error(), "maximum number of series (7)") {
 		t.Fatalf("the tenant's own limit, equal to the budget: %v", err)
 	}
 }

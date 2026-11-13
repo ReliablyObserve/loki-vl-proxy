@@ -432,8 +432,8 @@ func TestRateLimiter_RejectIsTyped(t *testing.T) {
 		value    int64
 		wantHdrs map[string]string
 	}{
-		{"rate", NewRateLimiter(0, 1, 1), "rate-limit-per-second", 1, map[string]string{"Retry-After": "1", "X-RateLimit-Limit": "1", "X-RateLimit-Remaining": "0"}},
-		{"concurrent", NewRateLimiter(1, 0, 0), "max-concurrent", 1, map[string]string{"Retry-After": "5"}},
+		{"rate", NewRateLimiter(0, 1, 1), "-rate-limit-per-second", 1, map[string]string{"Retry-After": "1", "X-RateLimit-Limit": "1", "X-RateLimit-Remaining": "0"}},
+		{"concurrent", NewRateLimiter(1, 0, 0), "-max-concurrent", 1, map[string]string{"Retry-After": "5"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			defer tc.rl.Stop()

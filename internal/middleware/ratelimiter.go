@@ -51,8 +51,8 @@ type RateLimiter struct {
 
 // Flags behind the two admission limits, for the log line of a rejection.
 const (
-	flagRatePerSecond = "rate-limit-per-second"
-	flagMaxConcurrent = "max-concurrent"
+	flagRatePerSecond = "-rate-limit-per-second"
+	flagMaxConcurrent = "-max-concurrent"
 )
 
 var (

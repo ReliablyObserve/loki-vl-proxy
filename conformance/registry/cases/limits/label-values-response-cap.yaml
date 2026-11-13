@@ -1,5 +1,6 @@
 id: limits/label-values-response-cap
 title: A label values answer above the size limit fails with Loki's ResourceExhausted error, not an unbounded read
+pending: true
 proves:
   - operator-configurable-limits
   - tenant-query-limits

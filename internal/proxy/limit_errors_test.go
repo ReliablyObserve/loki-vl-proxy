@@ -34,7 +34,7 @@ func logProxy() (*Proxy, *bytes.Buffer) {
 // TestRateLimiterAnswersQueueFull: the per-client rate limit and the
 // -max-concurrent cap both answer Loki's 429 "too many outstanding requests"
 // through the error layer, with the retry hints kept and the flag in the log.
-// conformance: semantics/error-layer-proxy-limit-status, status-429
+// conformance: semantics/error-layer-proxy-limit-status, limits/admission-limits-answer-queue-full, status-429
 func TestRateLimiterAnswersQueueFull(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
@@ -127,7 +127,7 @@ func TestHeavyQueueFullAnswers429OnEveryWriter(t *testing.T) {
 // decisions read the error's type (errors.Is, errors.As, net.Error.Timeout),
 // never its text. A message that merely says "timeout", "deadline exceeded" or
 // "context canceled" is a failed backend call.
-// conformance: semantics/error-layer-cancel-deadline, semantics/error-layer-internal-go-text, status-500
+// conformance: semantics/error-layer-cancel-deadline, semantics/error-layer-internal-go-text, semantics/error-layer-classify-by-type, status-500
 func TestClassificationByTypeNeverByText(t *testing.T) {
 	type outcome struct {
 		status   int
@@ -180,7 +180,7 @@ func TestClassificationByTypeNeverByText(t *testing.T) {
 // a slow backend are recognised by type: a client timeout before the headers, a
 // client timeout while the body is read, a request context deadline and a
 // cancellation. None needs its text read.
-// conformance: semantics/error-layer-cancel-deadline, status-500
+// conformance: semantics/error-layer-cancel-deadline, semantics/error-layer-classify-by-type, status-500
 func TestTransportTimeoutsAreTypedTimeouts(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -217,12 +217,33 @@ func TestTransportTimeoutsAreTypedTimeouts(t *testing.T) {
 	time.AfterFunc(50*time.Millisecond, ccancel)
 	_, ctxCancelErr := http.DefaultClient.Do(req)
 
+	// A cancel while the body is read, as the windowed and tail retries meet it
+	// with no request context at hand: the type alone says it was a cancel.
+	bctx, bcancel := context.WithCancel(context.Background())
+	req, _ = http.NewRequestWithContext(bctx, http.MethodGet, srv.URL+"/body", nil)
+	var bodyCancelErr error
+	if resp, err := http.DefaultClient.Do(req); err != nil {
+		bodyCancelErr = err
+	} else {
+		time.AfterFunc(50*time.Millisecond, bcancel)
+		_, bodyCancelErr = io.ReadAll(resp.Body)
+		resp.Body.Close()
+	}
+	bcancel()
+	if bodyCancelErr == nil || !isCanceledErr(bodyCancelErr) || isCanceledErr(headerErr) {
+		t.Errorf("a cancel during the body read must be recognised by type: err=%v canceled=%v; a client timeout must not be one: %v", bodyCancelErr, isCanceledErr(bodyCancelErr), isCanceledErr(headerErr))
+	}
+	if tailRetryable(bodyCancelErr) {
+		t.Errorf("a cancel during the body read must not be retried: %v", bodyCancelErr)
+	}
+
 	for _, tc := range []struct {
 		name string
 		err  error
 		want int
 	}{
 		{"client timeout before headers", headerErr, 504},
+		{"cancel during the body read", bodyCancelErr, 499},
 		{"client timeout during the body read", bodyErr, 504},
 		{"request deadline", ctxDeadlineErr, 504},
 		{"request cancel", ctxCancelErr, 499},
@@ -262,7 +283,7 @@ func heavyQueueCause(err error) error {
 
 // TestAdmissionRejectionsLogOncePerSecond: a flood of rejected requests gets
 // the same answer each but one log line a second; the next second logs again.
-// conformance: semantics/error-layer-proxy-limit-status
+// conformance: semantics/error-layer-proxy-limit-status, limits/admission-limits-answer-queue-full
 func TestAdmissionRejectionsLogOncePerSecond(t *testing.T) {
 	var g logGate
 	t0 := time.Unix(1_700_000_000, 0)

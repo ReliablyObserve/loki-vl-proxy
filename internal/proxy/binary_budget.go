@@ -16,7 +16,7 @@ type binaryExecutionBudget struct {
 
 // binaryBudgetError is a binary expression over one of the evaluation
 // budgets an operator sets (-binary-metric-max-arrays,
-// -binary-metric-max-operand-bytes): 400 bad_data naming the flag, as Loki
+// -binary-metric-max-operand-bytes): 400 bad_data, as Loki
 // answers a query over one of its limits (logqlmodel.ErrLimit,
 // pkg/util/server/error.go:110-118, v3.7.9).
 type binaryBudgetError struct {
@@ -24,7 +24,7 @@ type binaryBudgetError struct {
 }
 
 func (e *binaryBudgetError) Error() string {
-	return "binary expression exceeds its evaluation budget" + proxyLimitMarker + e.flag
+	return "binary expression exceeds its evaluation budget; narrow the query or increase " + e.flag
 }
 
 func isBinaryBudgetError(err error) bool {
@@ -66,7 +66,7 @@ func checkBinaryDecodeBudget(ctx context.Context, body []byte) error {
 		return err
 	}
 	if limit := executionLimitsFrom(ctx).BufferedBackendBodyBytes; len(body) > limit {
-		return newBufferLimitError(flagBackendMaxBufferedResponseBytes, int64(len(body)), int64(limit), "binary operand", nil)
+		return newBufferLimitError(flagBackendMaxBufferedResponseBytes, int64(len(body)), int64(limit), causeBinaryOperand)
 	}
 	state, _ := ctx.Value(binaryEvaluationKey{}).(binaryEvaluationState)
 	budget := state.budget

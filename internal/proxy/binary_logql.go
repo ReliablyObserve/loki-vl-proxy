@@ -117,7 +117,7 @@ func (w *binaryOperandResponse) Write(data []byte) (int, error) {
 		return 0, w.err
 	}
 	if len(data) > w.limit-w.body.Len() {
-		w.err = newBufferLimitError(flagBackendMaxBufferedResponseBytes, int64(w.limit)+1, int64(w.limit), "binary operand response", nil)
+		w.err = newBufferLimitError(flagBackendMaxBufferedResponseBytes, int64(w.limit)+1, int64(w.limit), causeBinaryOperandWriter)
 		return 0, w.err
 	}
 	w.WriteHeader(http.StatusOK)

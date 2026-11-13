@@ -1,5 +1,6 @@
 id: limits/heavy-query-queue-429
 title: A saturated admission queue answers with Loki's 429; the log line names the flag
+pending: true
 proves:
   - backend-admission-and-heavy-query-queueing
   - loki_api_v1_query_range

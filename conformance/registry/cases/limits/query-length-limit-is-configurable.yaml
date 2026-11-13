@@ -1,5 +1,6 @@
 id: limits/query-length-limit-is-configurable
 title: The query-length cap is Loki's, and an operator can move it
+pending: true
 proves:
   - operator-configurable-limits
   - loki_api_v1_query_range

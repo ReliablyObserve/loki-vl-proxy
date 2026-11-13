@@ -72,7 +72,7 @@ func TestBinaryGroupedLabelAmplificationBound(t *testing.T) {
 			left, right = one, many
 		}
 		body, err := matchBinaryMetricResultsContext(ctx, left, right, "+", "matrix", vm, false)
-		if err == nil || limitFlagOf(err) != "backend-max-buffered-response-bytes" || body != nil {
+		if err == nil || limitFlagOf(err) != "-backend-max-buffered-response-bytes" || body != nil {
 			t.Fatalf("%s amplification accepted: %s %v", side, body, err)
 		}
 	}

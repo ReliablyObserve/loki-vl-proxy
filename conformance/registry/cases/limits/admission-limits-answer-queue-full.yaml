@@ -1,0 +1,40 @@
+id: limits/admission-limits-answer-queue-full
+title: The per-client rate limit and the -max-concurrent cap answer Loki's full-queue 429; the log line names the flag
+pending: true
+proves:
+  - backend-admission-and-heavy-query-queueing
+  - status-429
+consumer: any
+why: |
+  Loki answers a request its query queue cannot take with 429 and the text
+  `too many outstanding requests`. The proxy's two admission limits are queues
+  in front of the same work: -rate-limit-per-second turns away a client that
+  asks too often and -max-concurrent a request that finds every slot taken.
+  They answered 429 `rate limit exceeded` and 503 `too many concurrent
+  queries`, texts and a status Loki never sends, so a client written for Loki
+  would not retry the 503 as it retries a full queue. Both answer Loki's 429
+  through the error layer now, with text/plain and nosniff like every Loki
+  error, and `Retry-After` (and `X-RateLimit-*` for the rate limit) as before.
+  The flag that closed the door (`limit_flag=-rate-limit-per-second` or
+  `-max-concurrent`, with `limit_value`) is in the request error log line only,
+  which is written at most once a second so a flood does not become a log flood.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The client's token bucket is empty (-rate-limit-per-second), or every
+    -max-concurrent slot is held by an in-flight request.
+compare:
+  mode: exact
+  fields: [status, headers, body]
+  expect:
+    status: 429
+    content_type: text/plain; charset=utf-8
+    body: too many outstanding requests
+    headers: Retry-After 1 (rate limit) or 5 (-max-concurrent)
+    log_contains:
+      - limit_flag=-rate-limit-per-second or limit_flag=-max-concurrent
+loki_parity: |
+  pkg/queue/queue.go ErrTooManyRequests, returned as 429 by the query frontend.

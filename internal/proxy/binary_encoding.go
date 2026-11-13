@@ -59,7 +59,7 @@ func checkBinaryOutputLabels(ctx context.Context, labels map[string]string) erro
 			}
 			if size > state.budget.outputLabels {
 				limit := int64(executionLimitsFrom(ctx).BufferedBackendBodyBytes)
-				return newBufferLimitError(flagBackendMaxBufferedResponseBytes, limit+1, limit, "binary expression output labels", nil)
+				return newBufferLimitError(flagBackendMaxBufferedResponseBytes, limit+1, limit, causeBinaryOutputLabels)
 			}
 			state.budget.outputLabels -= size
 		}
@@ -87,7 +87,7 @@ func (e *binaryJSONEncoder) quoted(value string) {
 		return
 	}
 	if size > e.w.limit-e.w.body.Len() {
-		e.w.err = newBufferLimitError(flagBackendMaxBufferedResponseBytes, int64(e.w.limit)+1, int64(e.w.limit), "binary encoded response", nil)
+		e.w.err = newBufferLimitError(flagBackendMaxBufferedResponseBytes, int64(e.w.limit)+1, int64(e.w.limit), causeBinaryEncoded)
 		return
 	}
 	encoded, err := json.Marshal(value)

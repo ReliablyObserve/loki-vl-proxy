@@ -699,7 +699,7 @@ func TestOrderedJSONMetricMaxBytesFlag(t *testing.T) {
 		p := newTestProxy(t, backend.URL)
 		p.orderedJSONMaxBytes = tc.limit
 		_, err := p.collectOrderedJSONMetric(t.Context(), plan, stamp.Add(time.Second), stamp.Add(time.Second), time.Second)
-		if (err != nil) != tc.fails || (err != nil && limitFlagOf(err) != "ordered-json-metric-max-bytes") {
+		if (err != nil) != tc.fails || (err != nil && limitFlagOf(err) != "-ordered-json-metric-max-bytes") {
 			t.Fatalf("limit %d: err=%v, want failure %v carrying the flag", tc.limit, err, tc.fails)
 		}
 	}

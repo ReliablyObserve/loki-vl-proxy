@@ -14,7 +14,7 @@ func TestBinaryBudgetChecksBeforeDecodeAndAcrossChildren(t *testing.T) {
 	if err := checkBinaryDecodeBudget(ctx, []byte(`{"value":"[[[", "result":[]}`)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := matchBinaryMetricResultsContext(ctx, []byte(`[[[`), nil, "+", "matrix", nil, false); !isBinaryBudgetError(err) || limitFlagOf(err) != "binary-metric-max-arrays" {
+	if _, err := matchBinaryMetricResultsContext(ctx, []byte(`[[[`), nil, "+", "matrix", nil, false); !isBinaryBudgetError(err) || limitFlagOf(err) != "-binary-metric-max-arrays" {
 		t.Fatalf("expected budget rejection before malformed JSON decoding: %v", err)
 	}
 	state.budget.bytes = 5

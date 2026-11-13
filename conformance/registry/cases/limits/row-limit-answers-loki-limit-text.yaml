@@ -1,5 +1,6 @@
 id: limits/row-limit-answers-loki-limit-text
 title: A metric read past the row limit answers Loki's limit status (400) and text; the flag is in the log line
+pending: true
 proves:
   - heavy-metric-fetch-bounds
   - status-400

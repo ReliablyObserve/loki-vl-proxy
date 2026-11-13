@@ -48,6 +48,7 @@
     "drilldown/volume-detected-level-not-normalised | compare:observed",
     "drilldown/volume-detected-level-not-normalised | gap:open",
     "drilldown/volume-detected-level-not-normalised | query",
+    "limits/admission-limits-answer-queue-full | compare:exact",
     "limits/concurrent-full-retention-scans-exhaust-backend | compare:exact",
     "limits/concurrent-full-retention-scans-exhaust-backend | perf",
     "limits/concurrent-full-retention-scans-exhaust-backend | perf:locked",
@@ -365,6 +366,7 @@
     "semantics/error-layer-body-shape | compare:exact",
     "semantics/error-layer-cancel-deadline | compare:exact",
     "semantics/error-layer-cancel-deadline | gap:fixed",
+    "semantics/error-layer-classify-by-type | compare:exact",
     "semantics/error-layer-internal-go-text | compare:exact",
     "semantics/error-layer-internal-go-text | gap:fixed",
     "semantics/error-layer-proxy-limit-status | compare:exact",
@@ -1335,7 +1337,9 @@
     "internal/proxy/labels_post_form_cache_test.go | loki_api_v1_label",
     "internal/proxy/labels_post_form_cache_test.go | loki_api_v1_labels",
     "internal/proxy/lifecycle_leak_test.go | shutdown-releases-background-work",
+    "internal/proxy/limit_errors_test.go | limits/admission-limits-answer-queue-full",
     "internal/proxy/limit_errors_test.go | semantics/error-layer-cancel-deadline",
+    "internal/proxy/limit_errors_test.go | semantics/error-layer-classify-by-type",
     "internal/proxy/limit_errors_test.go | semantics/error-layer-internal-go-text",
     "internal/proxy/limit_errors_test.go | semantics/error-layer-proxy-limit-status",
     "internal/proxy/limit_errors_test.go | status-429",
@@ -2495,7 +2499,7 @@
   ],
   "counts": {
     "case_consumers": {
-      "any": 32,
+      "any": 34,
       "api": 88,
       "drilldown": 50,
       "explore": 175,
@@ -2523,7 +2527,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 106,
-    "wired_items": 338
+    "wired_items": 340
   },
   "gates": [
     "A/B shape selection",

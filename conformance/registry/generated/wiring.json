@@ -186,6 +186,9 @@
     "instrumentation-reveals-no-secrets": [
       "internal/proxy/instrumentation_secrets_test.go"
     ],
+    "limits/admission-limits-answer-queue-full": [
+      "internal/proxy/limit_errors_test.go"
+    ],
     "limits/concurrent-full-retention-scans-exhaust-backend": [
       "internal/proxy/metadata_inventory_test.go",
       "internal/proxy/metadata_scan_admission_test.go",
@@ -1147,6 +1150,9 @@
       "internal/proxy/tail_backend_errors_test.go",
       "internal/proxy/tail_backend_retry_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
+    ],
+    "semantics/error-layer-classify-by-type": [
+      "internal/proxy/limit_errors_test.go"
     ],
     "semantics/error-layer-internal-go-text": [
       "internal/proxy/error_layer_gate_test.go",
@@ -2146,7 +2152,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 560,
+  "registry_items": 562,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2733,7 +2739,9 @@
       "shutdown-releases-background-work"
     ],
     "internal/proxy/limit_errors_test.go": [
+      "limits/admission-limits-answer-queue-full",
       "semantics/error-layer-cancel-deadline",
+      "semantics/error-layer-classify-by-type",
       "semantics/error-layer-internal-go-text",
       "semantics/error-layer-proxy-limit-status",
       "status-429",
@@ -4840,5 +4848,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 338
+  "wired_items": 340
 }

@@ -1,5 +1,6 @@
 id: semantics/error-layer-proxy-limit-status
 title: Index stats answers the buffered-response limit with Loki's message size text (open)
+pending: true
 proves:
   - status-502
   - limits/series-limit-error

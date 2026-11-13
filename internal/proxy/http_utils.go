@@ -354,7 +354,9 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 	if p.log == nil || !p.log.Enabled(context.Background(), level) {
 		return
 	}
-	attrs := []any{"code", status, "error", text}
+	// Sized for every field the line can carry, so appending never regrows it.
+	attrs := make([]any, 0, 20)
+	attrs = append(attrs, "code", status, "error", text)
 	cause := err
 	if typed != nil {
 		attrs = append(attrs, "kind", typed.Kind().String(), "msg_id", typed.Msg().ID())
@@ -369,7 +371,7 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 		if flag, value, ok := typed.Limit(); ok {
 			// Loki's text carries no operator hint; the log says which flag
 			// sets the limit that rejected this request.
-			attrs = append(attrs, "limit_flag", "-"+flag)
+			attrs = append(attrs, "limit_flag", flag)
 			if value > 0 {
 				attrs = append(attrs, "limit_value", value)
 			}
