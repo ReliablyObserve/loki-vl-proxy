@@ -2259,6 +2259,18 @@
     {
       "dynamic": false,
       "error_text": false,
+      "error_type": null,
+      "expression": "r, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/request_params.go requestParamValidation",
+      "writer": "fail"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
       "error_type": "bad_data",
       "expression": "unsupportedBinaryMarkerMessage",
       "kind": "literal",
@@ -2389,18 +2401,6 @@
       "writer": "writeVLStatsErrorBody"
     },
     {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": "bad_data",
-      "expression": "\"query parameter required\"",
-      "kind": "literal",
-      "message": "query parameter required",
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/tail.go handleTail",
-      "writer": "writeError"
-    },
-    {
       "dynamic": true,
       "error_text": true,
       "error_type": "bad_data",
@@ -2512,12 +2512,12 @@
   "summary": {
     "by_status": {
       "400": {
-        "count": 91,
+        "count": 90,
         "dynamic_sites": 59,
         "error_text_sites": 43,
         "error_type": "bad_data",
         "layer_sites": 0,
-        "literal_sites": 32,
+        "literal_sites": 31,
         "messages": [
           "both start and end parameters required for delete",
           "delete requires X-Delete-Confirmation: true header for safety",
@@ -2541,7 +2541,6 @@
           "not supported value %q",
           "parse error : %v",
           "parse error : invalid regex in label_replace: %v",
-          "query parameter required",
           "query parameter required for delete",
           "unexpected literal for logical/set binary operation",
           "unsupported instant aggregation target",
@@ -2640,11 +2639,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 98,
+        "count": 99,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 94,
+        "layer_sites": 95,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"

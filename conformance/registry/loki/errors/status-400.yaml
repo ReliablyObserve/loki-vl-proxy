@@ -2,7 +2,7 @@ id: status-400
 status: 400
 error_type: bad_data
 generated:   # rewritten by conformance/scripts/error_registry.py
-  proxy_call_sites: 91
+  proxy_call_sites: 90
   dynamic_sites: 59
   literal_messages:
     - "both start and end parameters required for delete"
@@ -27,7 +27,6 @@ generated:   # rewritten by conformance/scripts/error_registry.py
     - "not supported value %q"
     - "parse error : %v"
     - "parse error : invalid regex in label_replace: %v"
-    - "query parameter required"
     - "query parameter required for delete"
     - "unexpected literal for logical/set binary operation"
     - "unsupported instant aggregation target"
@@ -42,7 +41,7 @@ generated:   # rewritten by conformance/scripts/error_registry.py
   "unmapped-index-shards-target-bytes", "unmapped-push-snappy-corrupt", "unmapped-ruler-local-store"]
   recorded_rows: 141
   comparable_rows: 126
-  matching_rows: 64
+  matching_rows: 118
 
 loki_behaviour: |
   Loki v3.7.7 answers 400 as `text/plain` with the error's own message for a

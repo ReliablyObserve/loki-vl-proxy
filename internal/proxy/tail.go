@@ -26,12 +26,9 @@ import (
 // VL:   GET /select/logsql/tail?query=...
 func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	// The route's query rule (lokiTailQuery) answered an empty query with
+	// Loki's parse error before this handler ran.
 	logqlQuery := r.FormValue("query")
-	if logqlQuery == "" {
-		p.writeError(w, http.StatusBadRequest, "query parameter required")
-		p.metrics.RecordRequest("tail", http.StatusBadRequest, time.Since(start))
-		return
-	}
 
 	// The VictoriaLogs query of a query_range request: the stages
 	// VictoriaLogs cannot run like Loki run on the proxy (tailPipeline).
