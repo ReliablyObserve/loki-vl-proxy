@@ -115,6 +115,7 @@ func (p *Proxy) filterLineFieldPage(page io.Reader, seen map[string]struct{}, bo
 		ts   time.Time
 	}
 	var rows []rowTime
+	badRows := 0
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 {
@@ -125,6 +126,7 @@ func (p *Proxy) filterLineFieldPage(page io.Reader, seen map[string]struct{}, bo
 		value, perr := parser.ParseBytes(line)
 		if perr != nil {
 			vlFJParserPool.Put(parser)
+			badRows++
 			continue
 		}
 		ts, terr := time.Parse(time.RFC3339Nano, string(value.GetStringBytes("_time")))
@@ -170,6 +172,9 @@ func (p *Proxy) filterLineFieldPage(page io.Reader, seen map[string]struct{}, bo
 	}
 	if err = scanner.Err(); err != nil {
 		return 0, 0, time.Time{}, time.Time{}, nil, err
+	}
+	if badRows > 0 {
+		return 0, 0, time.Time{}, time.Time{}, nil, errVLBodyNotJSON
 	}
 	// The next page starts at the boundary row's timestamp; remember the rows
 	// read there (and one nanosecond past it) so they are not counted twice.

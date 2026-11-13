@@ -570,7 +570,7 @@ func TestWindowEntries_ExtractionListHidesStoredLineLevel(t *testing.T) {
 		{`{app="levlogfmt"} | logfmt op`, stageLogfmtLevelRow},
 	} {
 		for _, categorized := range []bool{false, true} {
-			entries := p.vlLogsToLokiWindowEntriesStream(bytes.NewBufferString(tc.row+"}\n"), newLogQueryShape(tc.query), categorized, categorized)
+			entries, _ := p.vlLogsToLokiWindowEntriesStream(bytes.NewBufferString(tc.row+"}\n"), newLogQueryShape(tc.query), categorized, categorized)
 			if len(entries) != 1 {
 				t.Fatalf("%s categorized=%v: got %d window entries", tc.query, categorized, len(entries))
 			}

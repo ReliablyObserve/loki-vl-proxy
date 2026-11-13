@@ -592,6 +592,18 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
+      "expression": "r.Context(), errVLBodyNotJSON",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/label_handlers.go handleSeries",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
       "expression": "r.Context(), err",
       "kind": "layer",
       "message": null,
@@ -913,6 +925,18 @@
       "writer": "writeErr"
     },
     {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "ctx, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/metric_binary.go proxyStatsQueryRangeDirectAnchored",
+      "writer": "writeErr"
+    },
+    {
       "dynamic": true,
       "error_text": true,
       "error_type": "bad_data",
@@ -947,6 +971,18 @@
       "status_token": null,
       "where": "internal/proxy/metric_binary.go proxyStatsQuery",
       "writer": "writeBackendError"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/metric_binary.go proxyStatsQuery",
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -2556,11 +2592,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 91,
+        "count": 94,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 88,
+        "layer_sites": 91,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2568,6 +2604,6 @@
         "no_body_sites": 0
       }
     },
-    "call_sites": 202
+    "call_sites": 205
   }
 }

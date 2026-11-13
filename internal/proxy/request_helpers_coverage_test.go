@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -75,17 +76,20 @@ func TestTranslateStatsResponseLabelsWithContext_Coverage(t *testing.T) {
 	p.labelTranslator = NewLabelTranslator(LabelStyleUnderscores, nil)
 
 	invalid := []byte(`{not-json`)
-	if got := p.translateStatsResponseLabelsWithContext(context.Background(), invalid, `{app="api"}`); string(got) != string(invalid) {
-		t.Fatalf("expected invalid body to pass through unchanged")
+	if got, err := p.translateStatsResponseLabelsWithContext(context.Background(), invalid, `{app="api"}`); !errors.Is(err, errVLBodyNotJSON) || got != nil {
+		t.Fatalf("an invalid body is a failed call, got %q, %v", got, err)
+	}
+	if got, err := p.translateStatsResponseLabelsWithContext(context.Background(), nil, `{app="api"}`); err != nil || len(got) != 0 {
+		t.Fatalf("a body with nothing in it is no series, got %q, %v", got, err)
 	}
 
 	noResults := []byte(`{"status":"success","data":{}}`)
-	if got := p.translateStatsResponseLabelsWithContext(context.Background(), noResults, `{app="api"}`); string(got) != string(noResults) {
+	if got, _ := p.translateStatsResponseLabelsWithContext(context.Background(), noResults, `{app="api"}`); string(got) != string(noResults) {
 		t.Fatalf("expected empty results body to pass through unchanged")
 	}
 
 	body := []byte(`{"result":[{"metric":{"__name__":"hits","service.name":"api","level":"warn"}}]}`)
-	got := p.translateStatsResponseLabelsWithContext(context.Background(), body, `{app="api"} |= "x" | stats count() by (detected_level)`)
+	got, _ := p.translateStatsResponseLabelsWithContext(context.Background(), body, `{app="api"} |= "x" | stats count() by (detected_level)`)
 
 	var resp struct {
 		Result []struct {
@@ -109,7 +113,7 @@ func TestTranslateStatsResponseLabelsWithContext_Coverage(t *testing.T) {
 	}
 
 	noServiceBody := []byte(`{"result":[{"metric":{"k8s_cluster_name":"ops-sand"}}]}`)
-	noServiceGot := p.translateStatsResponseLabelsWithContext(context.Background(), noServiceBody, `sum by(k8s_cluster_name) (rate({deployment_environment="dev"}[1m]))`)
+	noServiceGot, _ := p.translateStatsResponseLabelsWithContext(context.Background(), noServiceBody, `sum by(k8s_cluster_name) (rate({deployment_environment="dev"}[1m]))`)
 
 	var noServiceResp struct {
 		Result []struct {

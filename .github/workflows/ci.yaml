@@ -447,10 +447,12 @@ jobs:
     # derivedFields + autodetect combination.
     #
     # internal/proxy alone takes well over 30 minutes of -race test time, so its
-    # top-level tests are split into five shards by scripts/ci/test_shards.py (the
+    # top-level tests are split into eight shards by scripts/ci/test_shards.py (the
     # measured -race weights of the slow tests) that run in parallel, each with its own 12m
-    # budget. Five, not more: the heaviest single test (TestQueryRangeStepsMatchUncached,
-    # about 380 s under -race) bounds a shard, and a sixth shard would not shorten it.
+    # budget. Eight: five put about 570 s of weighted tests on each shard, plus the
+    # unweighted ones, which left shard 2 at its 12m budget and timing out; eight put
+    # about 360 s on each, still above the heaviest single test
+    # (TestQueryRangeStepsMatchUncached, about 380 s under -race).
     # The `other` entry carries the remaining packages and the verbose
     # concurrent-regression step so no proxy shard does.
     name: race-stress-shard (${{ matrix.shard }})
@@ -460,7 +462,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, other]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, other]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -518,8 +520,8 @@ jobs:
           # -race, are spread longest first over the shards; every other test goes
           # to the shard its name hashes to, so each test is in exactly one shard.
           go test -list '.*' ./internal/proxy/ > shard-list.txt
-          python3 scripts/ci/test_shards.py check --shards 5 --list shard-list.txt
-          python3 scripts/ci/test_shards.py regex --shards 5 --shard "$SHARD" --list shard-list.txt > shard-run.txt
+          python3 scripts/ci/test_shards.py check --shards 8 --list shard-list.txt
+          python3 scripts/ci/test_shards.py regex --shards 8 --shard "$SHARD" --list shard-list.txt > shard-run.txt
           test -s shard-run.txt
 
       - name: Race-detector tests (internal/proxy shard)

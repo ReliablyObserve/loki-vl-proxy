@@ -50,7 +50,7 @@ func BenchmarkLogLineRows(b *testing.B) {
 			shape := newLogQueryShape(query)
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				_ = p.vlLogsToLokiWindowEntriesStream(bytes.NewReader(body), shape, false, false)
+				_, _ = p.vlLogsToLokiWindowEntriesStream(bytes.NewReader(body), shape, false, false)
 			}
 		})
 	}

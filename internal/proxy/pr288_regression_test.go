@@ -192,7 +192,7 @@ func TestTranslateStatsResponseLabels_LevelPreservedWithStream(t *testing.T) {
 
 	// Metric result where VL returns _stream (all stream labels) AND explicit level
 	body := []byte(`{"results":[{"metric":{"_stream":"{app=\"api\",level=\"warn\"}","level":"warn"}}]}`)
-	got := p.translateStatsResponseLabelsWithContext(
+	got, _ := p.translateStatsResponseLabelsWithContext(
 		context.Background(), body,
 		`sum by (level) (count_over_time({app="api"}[5m]))`,
 	)
@@ -230,7 +230,7 @@ func TestTranslateStatsResponseLabels_LevelRemovedWithoutStream(t *testing.T) {
 	p.labelTranslator = NewLabelTranslator(LabelStyleUnderscores, nil)
 
 	body := []byte(`{"results":[{"metric":{"level":"error"}}]}`)
-	got := p.translateStatsResponseLabelsWithContext(
+	got, _ := p.translateStatsResponseLabelsWithContext(
 		context.Background(), body,
 		`sum by (detected_level) (count_over_time({app="api"}[5m]))`,
 	)

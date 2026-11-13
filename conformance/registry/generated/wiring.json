@@ -1125,9 +1125,12 @@
       "internal/proxy/detected_backend_failure_test.go",
       "internal/proxy/error_body_shape_test.go",
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/malformed_backend_body_test.go",
       "internal/proxy/patterns_backend_failure_test.go",
       "internal/proxy/perf_hardening_test.go",
+      "internal/proxy/perf_regression_test.go",
       "internal/proxy/proxy_test.go",
+      "internal/proxy/query_semantics_compat_handlers_test.go",
       "internal/proxy/stats_error_body_test.go",
       "internal/proxy/tail_backend_errors_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
@@ -2551,6 +2554,9 @@
     "internal/proxy/lowering_shadow_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/proxy/malformed_backend_body_test.go": [
+      "semantics/error-layer-silent-success"
+    ],
     "internal/proxy/manual_metric_encoding_test.go": [
       "numeric-and-response-formatting",
       "quality/query-range-extent-cache"
@@ -2786,6 +2792,9 @@
     "internal/proxy/perf_hardening_test.go": [
       "semantics/error-layer-silent-success"
     ],
+    "internal/proxy/perf_regression_test.go": [
+      "semantics/error-layer-silent-success"
+    ],
     "internal/proxy/physical_sites_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -2856,7 +2865,8 @@
       "semantics/query-range-window-lead-window"
     ],
     "internal/proxy/query_semantics_compat_handlers_test.go": [
-      "semantics/absent-over-time-semantics"
+      "semantics/absent-over-time-semantics",
+      "semantics/error-layer-silent-success"
     ],
     "internal/proxy/query_stats_loki_meaning_test.go": [
       "drilldown/logs-footer-query-stats",
@@ -4418,7 +4428,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 538,
+  "tests_with_markers": 540,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
