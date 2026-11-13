@@ -45,6 +45,10 @@ func BenchmarkStatsUnwrapDispatch(b *testing.B) {
 		{"stddev_over_time_longer_range", "query_range", `stddev_over_time({app="x"} | json | unwrap n [10m]) by (app)`},
 		{"count_over_time_tumbling", "query_range", `sum by (app) (count_over_time({app="x"}[5m]))`},
 		{"stddev_over_time_instant", "query", `stddev_over_time({app="x"} | json | unwrap n [5m]) by (app)`},
+		{"stddev_over_time_shorter_range", "query_range", `stddev_over_time({app="x"} | json | unwrap n [1m]) by (app)`},
+		{"stdvar_over_time_tumbling", "query_range", `stdvar_over_time({app="x"} | json | unwrap n [5m]) by (app)`},
+		{"stdvar_over_time_longer_range", "query_range", `stdvar_over_time({app="x"} | json | unwrap n [10m]) by (app)`},
+		{"avg_over_time_longer_range", "query_range", `avg_over_time({app="x"} | json | unwrap n [10m]) by (app)`},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			b.ReportAllocs()

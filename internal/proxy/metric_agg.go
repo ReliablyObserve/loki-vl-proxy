@@ -600,6 +600,17 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		dispatched = true
 	}
 
+	if bin, isBin := binaryOfStats(innerStats, innerIsStats); !dispatched && isBin {
+		// The operand is a stats query and a number (stdvar_over_time, the
+		// deviation squared), answered as the instant route answers it.
+		if scalarStats, ok := scalarStatsBinaryOf(bin); ok {
+			p.proxyScalarStatsBinary(sc, cloneMetricQueryRequest(r, postAgg.inner), scalarStats, "vector")
+		} else {
+			p.writeErr(sc, r.Context(), notServed("binary-marker", nil))
+		}
+		dispatched = true
+	}
+
 	if !dispatched {
 		if innerIsStats {
 			statsR := r
@@ -690,7 +701,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		return
 	}
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
-	innerStats, _ := translator.DecodeStats(translatedInner)
+	innerStats, innerIsStats := translator.DecodeStats(translatedInner)
 
 	r = p.withRequestScope(r)
 	if parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner); parsedInner != nil {
@@ -725,8 +736,15 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	// Native VL buckets are timestamped at their left edge; ranking those
 	// directly can select the next window's winner and omit the first point.
 	// The manual range adapter still uses VL pre-aggregation when available.
-	handled := p.proxyRankedTopKRange(sc, innerR, innerStats, postAgg)
-	if !handled {
+	if bin, isBin := binaryOfStats(innerStats, innerIsStats); isBin {
+		// The operand is a stats query and a number (stdvar_over_time, the
+		// deviation squared), answered as the range route answers it.
+		if scalarStats, ok := scalarStatsBinaryOf(bin); ok {
+			p.proxyScalarStatsBinary(sc, innerR, scalarStats, "matrix")
+		} else {
+			p.writeErr(sc, r.Context(), notServed("binary-marker", nil))
+		}
+	} else if !p.proxyRankedTopKRange(sc, innerR, innerStats, postAgg) {
 		p.proxyStatsQueryRange(sc, innerR, innerStats)
 	}
 

@@ -31,6 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   malformed internal spec) also answers `500` and no longer `400`. One class moves the other way round: a quantile
   whose `unwrap` follows a vertical tab, a form feed or another blank Loki's lexer rejects is `400` in Loki and was
   `400` here; it is `500` now, because nothing the proxy holds tells it from the same query spelled with a tab.
+- `stddev_over_time` and `stdvar_over_time` over an unwrapped label on `query_range` now answer Loki's window when
+  the range is not the step. With a range longer than the step (for example `[5m]` in Grafana's 1-minute step) every
+  point was the step-sized bucket after it, so the range was ignored and the chart matched the `[1m]` one. The proxy
+  now asks VictoriaLogs for the mean, the sample count and the standard deviation of each bucket and merges the
+  buckets of each window `(T-range, T]` exactly. With a range shorter than the step every point covered the whole
+  step after it; it now covers the range that ends at `T`, as for `sum_over_time` and `avg_over_time`.
+- `topk`, `bottomk`, `sort` and `sort_desc` around `stdvar_over_time` with a grouping or without a parser answered
+  `500` on `query` and `query_range`; they now answer `200` with Loki's values.
 
 ## [2.200.0] - 2026-11-13
 

@@ -1,5 +1,5 @@
 id: semantics/stdvar-grouped-pooled-variance
-title: sum by over stdvar_over_time is the variance of the group's pooled samples, not the sum of the series' variances (open)
+title: an aggregation by labels over stdvar_over_time takes the variance of the group's pooled samples, not of each series (open)
 pending: true
 proves:
   - metric-series-identity
@@ -20,10 +20,27 @@ why: |
   printed digit, on a range and an instant query. Only the outer aggregation over
   the function differs.
 
+  The same holds under max by and avg by (Loki engine oracle and VictoriaLogs
+  v1.53.0 and v1.49.0, two streams per app, TestStddevStdvarMatchLoki):
+  `max by (app) (stdvar_over_time({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`
+  answers 2024632.03 where Loki answers 2055850.18, and the avg by form 2024632.03
+  where Loki answers 2021404.92, on every request kind. stddev_over_time under max by
+  and avg by matches Loki: the translator takes the deviation per series there, and
+  under sum by groups it by the outer labels (semantics/unwrap-per-series-identity-raw-rows).
+  The window of each series, with any range and step, is Loki's
+  (semantics/stddev-stdvar-over-time-range-window); only the series the variance is
+  taken over differ.
+
   Fix to make: the plan lowers the variance per series (population variance
   s2/n-(s/n)^2 over partials of the sum, the sum of squares and the count) and the
   aggregation then sums the series, with the series identity of the other
   per-series functions.
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: 'max by (app) (stdvar_over_time({app="api-gateway"} | logfmt | unwrap duration_ms [5m]))'
+      - query: 'avg by (app) (stdvar_over_time({app="api-gateway"} | logfmt | unwrap duration_ms [5m]))'
 request:
   method: GET
   path: /loki/api/v1/query
@@ -43,5 +60,5 @@ gap:
   area: 'internal/queryplan/lower unwrap.go (varianceVector, the per-series identity of a function taken per series); the translator text for stdvar_over_time (translator.go, frozen)'
   loki: 'stdvar_over_time is evaluated per series (range_vector.go); the vector aggregation then folds the series'
   proxy: 'the stddev of the group''s pooled samples, squared'
-  planned_test: 'a row of TestCompat_StdvarOverTimeGroupedAnswers200 (test/e2e-compat) comparing values once the plan serves the variance'
+  planned_test: 'TestStddevStdvarMatchLoki (internal/querycorpus) lists the sum by, max by and avg by forms as known differences; a row of TestCompat_StdvarOverTimeGroupedAnswers200 (test/e2e-compat) comparing values once the plan serves the variance'
   clusters: []

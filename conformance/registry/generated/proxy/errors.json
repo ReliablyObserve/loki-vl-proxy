@@ -808,6 +808,18 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
+      "expression": "r.Context(), notServed(\"binary-marker\", nil)",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
       "expression": "r, notServed(\"instant-aggregation-target\", nil)",
       "kind": "layer",
       "message": null,
@@ -851,6 +863,18 @@
       "status_token": null,
       "where": "internal/proxy/metric_agg.go handleRangeMetricPostAggregation",
       "writer": "fail"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), notServed(\"binary-marker\", nil)",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/metric_agg.go handleRangeMetricPostAggregation",
+      "writer": "writeErr"
     },
     {
       "dynamic": true,
@@ -2647,11 +2671,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 157,
+        "count": 159,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 153,
+        "layer_sites": 155,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2659,6 +2683,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 211
+    "call_sites": 213
   }
 }

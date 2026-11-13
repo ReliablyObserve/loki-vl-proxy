@@ -905,11 +905,9 @@ func logRangeFunctions(expr logqlpkg.Expr) (found, hasRate, logRangeOnly, unwrap
 		case logqlpkg.RangeCountOverTime, logqlpkg.RangeBytesOverTime:
 			return true, false, true, false
 		case logqlpkg.RangeSumOverTime, logqlpkg.RangeAvgOverTime, logqlpkg.RangeMinOverTime, logqlpkg.RangeMaxOverTime,
-			logqlpkg.RangeFirstOverTime, logqlpkg.RangeLastOverTime:
+			logqlpkg.RangeFirstOverTime, logqlpkg.RangeLastOverTime, logqlpkg.RangeStddevOverTime, logqlpkg.RangeStdvarOverTime:
 			unwrapped := hasUnwrapStage(lq)
 			return true, false, unwrapped, unwrapped
-		case logqlpkg.RangeStddevOverTime, logqlpkg.RangeStdvarOverTime:
-			return true, false, hasUnwrapStage(lq), false
 		}
 		return true, false, false, false
 	case *logqlpkg.VectorAggregation:

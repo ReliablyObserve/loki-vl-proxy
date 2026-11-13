@@ -384,9 +384,11 @@ func parseOriginalByLabels(logql string) []string {
 }
 
 func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, originalLogql string, stats physical.VLStats) bool {
-	if statsNative(r.Context()) {
-		return false
-	}
+	// A stats query answered as translated (statsNative: a stdvar_over_time's
+	// standard deviation, squared by the caller) takes only the window
+	// evaluator, for the function the stats compute: its windows merge from
+	// buckets like the client's function would.
+	native := statsNative(r.Context())
 	// Queries containing | math are multi-stage VL rate pipelines built by the translator
 	// (e.g. sum(rate({...} | json [w]))). For tumbling windows (range == step), VL can
 	// execute them natively — no manual decomposition needed. For any other range, fall
@@ -407,17 +409,21 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if !isManualRangeStatsFunc(spec.Func) {
 		return false
 	}
+	origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
+	step, _ := parsePositiveStepDuration(r.FormValue("step"))
+	if native && !windowLongerThanStep(origSpec, step) {
+		// Only a window longer than the step is evaluated here (unwrapWindowRoute).
+		return false
+	}
 	// Capture original Loki by-labels so we can translate VL label names back
 	// in the metric response (e.g. VL "level" → Loki "detected_level").
 	spec.OrigGroupBy = parseOriginalByLabels(originalLogql)
-	origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
 	forceRawLevelRows := hasOrigSpec && p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, spec.OrigGroupBy)
 
-	manualFunc := normalizeManualMetricFunction(spec, origSpec)
+	manualFunc := manualFunctionOf(spec, origSpec, native)
 	if manualFunc == "" {
 		return false
 	}
-	step, _ := parsePositiveStepDuration(r.FormValue("step"))
 	rangeEqualsStep := statsRangeIsTumbling(origSpec.Window, step)
 	// For tumbling windows, an explicit "| drop __error__" in the original LogQL opts in to
 	// VL's count-all semantics (parse failures counted). The query's plan finds the
@@ -430,6 +436,16 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// for a range up to the step; a longer range merges its windows from
 	// anchored buckets (unwrapWindowBuckets).
 	unwrapSpec, grouped, unwrapWindows := p.unwrapWindowRoute(r, spec, origSpec, hasOrigSpec, manualFunc, originalLogql, step)
+	if native {
+		// Only the window evaluator, for a window longer than the step (checked
+		// above, so the range is read and holds an unwrap). The caller squares the
+		// deviation; no aggregation folds before it (the stats already group by
+		// the outer labels).
+		if !unwrapWindows {
+			return false
+		}
+		return p.proxyManualRangeMetricRange(w, r, unwrapSpec, origSpec, manualFunc)
+	}
 	if !forceRawLevelRows && !unwrapWindows && !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep) {
 		return false
 	}
@@ -461,6 +477,21 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	return foldVectorAggregations(p, w, r, r.FormValue("query"), func(w http.ResponseWriter, r *http.Request) bool {
 		return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
 	})
+}
+
+// windowLongerThanStep reports an unwrap range function whose range is longer
+// than the step: the windows the evaluator merges from buckets.
+func windowLongerThanStep(origSpec originalRangeMetricSpec, step time.Duration) bool {
+	return origSpec.HasUnwrap && origSpec.Window > step
+}
+
+// manualFunctionOf is the function the evaluator computes: the client's, or,
+// for a stats query answered as translated (native), the one the stats compute.
+func manualFunctionOf(spec statsCompatSpec, origSpec originalRangeMetricSpec, native bool) string {
+	if native {
+		return normalizeManualMetricFunction(spec, originalRangeMetricSpec{})
+	}
+	return normalizeManualMetricFunction(spec, origSpec)
 }
 
 func (p *Proxy) nativeMathTumblingStatsCompatible(r *http.Request, originalLogql string, stats physical.VLStats) bool {
@@ -922,6 +953,9 @@ func shiftSeriesSamples(series map[string]manualSeriesSamples, shift time.Durati
 		}
 		for i := range entry.Counts {
 			entry.Counts[i].ts += int64(shift)
+		}
+		for i := range entry.Deviations {
+			entry.Deviations[i].ts += int64(shift)
 		}
 		series[key] = entry
 	}
@@ -1499,7 +1533,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 
 	limit := p.resolvedMaxStatsQuerySeries(ctx)
 	withPresence := strings.Contains(statsAggFunc, " as __sample_count")
-	body, err := p.readStatsBucketBody(ctx, resp.Body, limit, statsResultsPerSeries(withPresence, aux != ""))
+	body, err := p.readStatsBucketBody(ctx, resp.Body, limit, statsResultsPerSeries(withPresence, aux != "")+deviationResults(statsAggFunc))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1534,6 +1568,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	streamGrouped := slices.Contains(groupBy, "_stream")
 	streamGroupedByDetectedLevel := streamGrouped && slices.Contains(groupBy, "detected_level")
 	seriesMap := make(map[string]manualSeriesSamples)
+	devs := newDeviationPartials(statsAggFunc)
 	var auxEdges []int64
 	var resultErr error
 	_, _ = jsonparser.ArrayEach(body, func(res []byte, _ jsonparser.ValueType, _ int, _ error) {
@@ -1573,6 +1608,10 @@ func (p *Proxy) collectRangeMetricHitsAux(
 			metric = p.statsGroupMetric(metricObj, vlToLoki)
 		}
 		seriesKey := canonicalLabelsKey(metric)
+		if devs != nil {
+			devs.add(seriesKey, statsGroupID(metricObj), metric, name, values, start, hitStep)
+			return
+		}
 		if withPresence && name == "__sample_count" {
 			entry := seriesMap[seriesKey]
 			entry.Metric = metric
@@ -1594,6 +1633,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	if resultErr != nil {
 		return nil, nil, resultErr
 	}
+	devs.fold(seriesMap)
 	series, err := capHitSeries(ctx, seriesMap, limit, aux)
 	return series, auxEdges, err
 }
@@ -2303,8 +2343,12 @@ type manualSeriesSamples struct {
 	// for byte sums; raw log samples retain their compact shape.
 	PresentBuckets []int64
 	// Counts holds the sample count of every present bucket, ascending, for
-	// avg over time, which divides a window's sum by them.
+	// avg over time, which divides a window's sum by them, and for stddev and
+	// stdvar over time, which weigh the buckets' means and deviations by them.
 	Counts []rangeMetricSample
+	// Deviations holds the population standard deviation of every present
+	// bucket, ascending, for stddev and stdvar over time (deviationBucketStats).
+	Deviations []rangeMetricSample
 }
 
 func buildManualMetricLabels(streamLabels map[string]string, groupBy []string, byExplicit bool) map[string]string {
@@ -2600,7 +2644,8 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 			}
 		}
 		present := seriesEntry.PresentBuckets // ascending; nil without presence data
-		counts := seriesEntry.Counts          // ascending; avg over time only
+		counts := seriesEntry.Counts          // ascending; avg, stddev and stdvar over time only
+		devs := seriesEntry.Deviations        // ascending; stddev and stdvar over time only
 
 		encodedBytes += hitsSeriesLabelBytes(seriesEntry.Metric)
 		var points []byte
@@ -2616,7 +2661,7 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 		// The windows move forward with t, so each bound only moves forward:
 		// samples[lo:hi] (and counts[cLo:cHi]) are the buckets labelled in
 		// [t-window, t), present[pLo] the first present bucket from t-window.
-		var sampleWindow, countWindow windowCursor
+		var sampleWindow, countWindow, devWindow windowCursor
 		pLo := 0
 		for i, n := int64(0), stepCount(startNS, endNS, stepNS); i < n; i++ {
 			tNS := startNS + i*stepNS
@@ -2627,8 +2672,9 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 				// Unwrap values are floats: one infinity would turn every later
 				// prefix difference into NaN, and large values lose precision to
 				// cancellation, so each window is merged on its own.
-				if cLo, cHi := countWindow.span(counts, windowStartNS, tNS); lo < hi {
-					sum = mergeUnwrapBuckets(manualFunc, samples[lo:hi], counts[cLo:cHi])
+				cLo, cHi := countWindow.span(counts, windowStartNS, tNS)
+				if dLo, dHi := devWindow.span(devs, windowStartNS, tNS); lo < hi {
+					sum = mergeUnwrapBuckets(manualFunc, samples[lo:hi], counts[cLo:cHi], devs[dLo:dHi])
 				}
 			} else {
 				sum = prefix[hi] - prefix[lo]
