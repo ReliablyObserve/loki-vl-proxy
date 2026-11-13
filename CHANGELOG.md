@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+
 - A VictoriaLogs call that fails for a moment no longer fails the query. A read that meets a refused or reset
   connection, a connection closed before any answer, or a `429`, `502`, `503` or `504` answer (a full select
   queue, a node restarting, a proxy in front of VictoriaLogs that lost its backend) is sent again, once for every
@@ -24,18 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-backend-retry-attempts=0` sends every read once as before. Helm: `extraArgs.backend-retry-attempts`,
   `backend-retry-max-wait`, `backend-retry-budget-ratio`.
 
-## [2.196.0] - 2026-11-13
+## [2.197.0] - 2026-11-13
 
 ### Fixed
-- `/loki/api/v1/detected_fields` and `/loki/api/v1/detected_field/{name}/values` answer a failed later
-  VictoriaLogs call as an error, as Loki does, where the first read had already worked. A field that lives
-  inside the log line (the last read of its values), a value held by a stream label (the labels read), and a
-  field list whose line scan failed while the stored-field lookup worked now answer the status and text the
-  other routes give that failure (500 `Internal Server Error` for a failed backend, 504 and 499 for a
-  timeout and a cancel), and no longer an empty list of values or the stored fields alone. A field no line
-  holds, and a query VictoriaLogs cannot unpack, still answer an empty list. The lookups that only add to an
-  answer that already has its required read (extra stored fields, the sampled `level` and `service_name`
-  labels on `detected_labels`, the relaxed query after a strict one fails) keep that answer.
 - A short VictoriaLogs restart no longer ends a live tail. A `/loki/api/v1/tail` whose VictoriaLogs call fails
   for a reason a retry can fix (the connection is refused or reset, a call times out, the stream ends or
   breaks, a `429` or `5xx` answer) now keeps the websocket open, with pings, while the proxy reopens the native
@@ -48,6 +40,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with no error and no reconnect. `-tail.backend-retry-window=0` closes on the first failed call as before.
   `loki_vl_proxy_internal_operation_total{operation="tail_backend_retry"}` counts the waits, the recoveries and
   the closes.
+
+## [2.196.0] - 2026-11-13
+
+### Fixed
+- `/loki/api/v1/detected_fields` and `/loki/api/v1/detected_field/{name}/values` answer a failed later
+  VictoriaLogs call as an error, as Loki does, where the first read had already worked. A field that lives
+  inside the log line (the last read of its values), a value held by a stream label (the labels read), and a
+  field list whose line scan failed while the stored-field lookup worked now answer the status and text the
+  other routes give that failure (500 `Internal Server Error` for a failed backend, 504 and 499 for a
+  timeout and a cancel), and no longer an empty list of values or the stored fields alone. A field no line
+  holds, and a query VictoriaLogs cannot unpack, still answer an empty list. The lookups that only add to an
+  answer that already has its required read (extra stored fields, the sampled `level` and `service_name`
+  labels on `detected_labels`, the relaxed query after a strict one fails) keep that answer.
 
 ## [2.195.0] - 2026-11-13
 
