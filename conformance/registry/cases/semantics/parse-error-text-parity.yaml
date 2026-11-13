@@ -8,8 +8,7 @@ why: |
   Both sides reject the query, but the proxy's message is its own parser's
   (`parse error : logql: expected duration ...`, `unexpected token ...`), a
   VictoriaLogs message (`cannot parse query arg ...`, `missing | stats pipe`,
-  422) or a proxy-specific one (`unsupported instant aggregation target`,
-  `sum() requires a range metric inside`) where Loki writes `parse error at
+  422) or a proxy-specific one where Loki writes `parse error at
   line N, col M: syntax error: unexpected ...`. Grafana shows the error text
   to the user (cases profiles/grafana-shows-loki-error-text).
 request:

@@ -58,11 +58,11 @@ func (p *Proxy) proxyBinaryAggregation(w http.ResponseWriter, r *http.Request, r
 	if !ok {
 		// The request's own query does not parse as the routed one did: answer
 		// Loki's parse error for it.
-		msg := "unsupported aggregation over a binary expression"
 		if err := validateLogQLSyntax(binaryRequestQuery(r)); err != "" {
-			msg = truncateQueryError(err)
+			p.writeError(w, http.StatusBadRequest, truncateQueryError(err))
+			return true
 		}
-		p.writeError(w, http.StatusBadRequest, msg)
+		p.fail(w, r, notServed("aggregation-over-binary", nil))
 		return true
 	}
 	if fast := sumRateScalarDivision(chain, binary); fast != nil {

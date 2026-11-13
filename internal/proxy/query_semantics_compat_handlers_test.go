@@ -493,6 +493,7 @@ func TestContract_Query_AbsentOverTimeUsesCurrentTimeWhenTimeIsMissing(t *testin
 	}
 }
 
+// A spec with no range window is a query Loki rejects: its status, and its syntax error without the position.
 func TestContract_Query_AbsentOverTimeCompatTranslateErrorReturnsBadRequest(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
 	req := httptest.NewRequest("GET", "/loki/api/v1/query?query=ignored&time=1704067200000000000", nil)
@@ -505,8 +506,8 @@ func TestContract_Query_AbsentOverTimeCompatTranslateErrorReturnsBadRequest(t *t
 		rangeWindowStr: "",
 	})
 
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("expected translate error to return 400, got %d body=%s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusBadRequest || resp.Body.String() != "parse error : syntax error: unexpected $end" {
+		t.Fatalf("expected translate error to return Loki's 400 syntax error, got %d body=%s", resp.Code, resp.Body.String())
 	}
 }
 

@@ -209,7 +209,7 @@ The following Loki semantics are implemented in the proxy to bridge gaps where V
 
 | LogQL feature | Proxy behavior |
 |---|---|
-| `offset 1h` on range vectors | Supported: proxy strips the offset clause and shifts `start`/`end` (or `time` for instant queries) backward by the offset duration before backend dispatch; multiple distinct offsets in the same query return HTTP 400 |
+| `offset 1h` on range vectors | Supported: proxy strips the offset clause and shifts `start`/`end` (or `time` for instant queries) backward by the offset duration before backend dispatch; a query whose range vectors carry different offsets (or an offset on only some of them under an aggregation) is one Loki evaluates and the proxy cannot serve yet: it answers Loki's fixed `500 Internal Server Error`, with the construct in the log line only (`semantics/offset-different-per-range-vector`) |
 | `@ <timestamp>` modifier | Normalized/stripped in translation for VictoriaLogs backend requests |
 | Subquery `max_over_time(rate(...)[1h:5m])` | Not LogQL: Loki's grammar has no `[range:step]` form. Rejected with Loki's HTTP 400 parse error (`syntax error: unexpected RATE, expecting NUMBER or { or (`) before any backend call |
 | Range-vector metric windows (`*_over_time`, `rate`, `count_over_time`, `bytes_*`, `rate_counter`) | Proxy applies Loki-compatible sliding-window evaluation over step-aligned timestamps and emits matrix/vector responses |

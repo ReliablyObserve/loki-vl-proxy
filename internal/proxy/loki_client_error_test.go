@@ -93,7 +93,8 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 		// error.go:110-117 (logqlmodel.ErrParse, pkg/logqlmodel/error.go:13): a rejected query is 400.
 		{"VictoriaLogs 400 parse error", context.Background(), vl(http.StatusBadRequest, vlBodyParsePattern), http.StatusBadRequest, lokiErrParse},
 		{"VictoriaLogs 422 parse error", context.Background(), fmt.Errorf("left query: %w", vl(http.StatusUnprocessableEntity, vlBodyParseRegexStats)), http.StatusBadRequest, lokiErrParse},
-		{"translator parse error", context.Background(), &translator.ParseError{Msg: "unmatched '{' in stream selector", Pos: -1}, http.StatusBadRequest, ""},
+		// The translator's wording never reaches a client: Loki's syntax error without a position.
+		{"translator parse error", context.Background(), &translator.ParseError{Msg: "unmatched '{' in stream selector", Pos: -1}, http.StatusBadRequest, "parse error : syntax error: unexpected $end"},
 		{"ordered JSON pipeline error", context.Background(), &orderedJSONPipelineError{errLokiStepTooSmall}, http.StatusBadRequest, ""},
 		// pkg/querier/queryrange/limits.go:46, :448: max_query_series is 400 with limitErrTmpl.
 		{"series limit", context.Background(), fmt.Errorf("fold: %w", newSeriesLimitError(context.Background(), 1)), http.StatusBadRequest, seriesLimit},

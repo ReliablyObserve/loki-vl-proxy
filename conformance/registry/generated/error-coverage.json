@@ -2621,26 +2621,28 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 1,
+      "comparable_rows": 2,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
-        "r0043"
+        "r0043",
+        "r0111"
       ],
       "kind": "logql_validation",
       "known_difference_ids": [
         "r0043"
       ],
-      "matching_rows": 0,
+      "matching_rows": 1,
       "messages": [
-        "instant-log-query"
+        "instant-log-query",
+        "parse"
       ],
       "modes": {},
       "proxy_matches": false,
       "reason": "",
       "recorded": true,
       "route": "query",
-      "rows": 1,
+      "rows": 2,
       "state": "differs",
       "unit_gate": true
     },
@@ -2866,18 +2868,20 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 1,
+      "comparable_rows": 3,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
+        "r0112",
         "r1561"
       ],
       "kind": "logql_validation",
       "known_difference_ids": [
         "r1561"
       ],
-      "matching_rows": 0,
+      "matching_rows": 2,
       "messages": [
+        "parse",
         "unmapped-evaluator-unexpected-expr",
         "unmapped-shard-aggregations-disabled"
       ],
@@ -2886,7 +2890,7 @@
       "reason": "",
       "recorded": true,
       "route": "query_range",
-      "rows": 2,
+      "rows": 4,
       "state": "differs",
       "unit_gate": true
     },
@@ -2913,7 +2917,7 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 15,
+      "comparable_rows": 16,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
@@ -2935,7 +2939,7 @@
       ],
       "kind": "parameters",
       "known_difference_ids": [],
-      "matching_rows": 15,
+      "matching_rows": 16,
       "messages": [
         "direction",
         "end-before-start",
@@ -2958,7 +2962,7 @@
       "reason": "",
       "recorded": true,
       "route": "query_range",
-      "rows": 15,
+      "rows": 16,
       "state": "match",
       "unit_gate": true
     },
@@ -3764,6 +3768,8 @@
     "r0001",
     "r0002",
     "r0043",
+    "r0111",
+    "r0112",
     "r0175",
     "r0176",
     "r0177",
@@ -4582,7 +4588,7 @@
       "status": 400
     },
     "param-number": {
-      "comparable_rows": 13,
+      "comparable_rows": 14,
       "e2e_rows": [
         "r0535",
         "r0707",
@@ -4600,7 +4606,7 @@
       ],
       "item": "msg-param-number",
       "kind": "param",
-      "matching_rows": 13,
+      "matching_rows": 14,
       "routes": [
         "detected_field_values",
         "detected_fields",
@@ -4618,6 +4624,7 @@
       ],
       "rows": [
         "r0535",
+        "r0547",
         "r0707",
         "r0765",
         "r0794",
@@ -4637,10 +4644,12 @@
       "status": 400
     },
     "parse": {
-      "comparable_rows": 35,
+      "comparable_rows": 38,
       "e2e_rows": [
         "r0001",
         "r0002",
+        "r0111",
+        "r0112",
         "r0175",
         "r0176",
         "r0177",
@@ -4661,7 +4670,7 @@
       ],
       "item": "msg-parse",
       "kind": "parse",
-      "matching_rows": 30,
+      "matching_rows": 33,
       "routes": [
         "detected_field_values",
         "detected_fields",
@@ -4685,6 +4694,8 @@
         "r0002",
         "r0003",
         "r0004",
+        "r0111",
+        "r0112",
         "r0175",
         "r0176",
         "r0177",
@@ -4715,7 +4726,8 @@
         "r1202",
         "r1204",
         "r1428",
-        "r1429"
+        "r1429",
+        "r1532"
       ],
       "source": "lokierr",
       "stage": "logql_syntax",
@@ -5118,20 +5130,20 @@
     "cells_matching": 94,
     "cells_recorded": 65,
     "check_order_rows": 33,
-    "comparable_rows": 215,
+    "comparable_rows": 219,
     "coverage_ratio": 0.5726,
     "covered_cells": 71,
     "differing_rows": 10,
-    "e2e_rows": 131,
-    "match_ratio": 0.9535,
-    "matching_rows": 205,
+    "e2e_rows": 133,
+    "match_ratio": 0.9543,
+    "matching_rows": 209,
     "messages": 36,
     "messages_documented": 9,
     "messages_recorded": 27,
     "not_comparable_rows": 71,
     "recorded_loki": "3.7.9",
     "recorded_on": "2026-11-13",
-    "recorded_rows": 286,
+    "recorded_rows": 290,
     "unmapped_items": 8
   }
 }

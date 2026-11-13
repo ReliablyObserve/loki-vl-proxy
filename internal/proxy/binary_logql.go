@@ -10,6 +10,7 @@ import (
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -141,7 +142,7 @@ func (p *Proxy) evaluateBinaryLogQLOperand(r *http.Request, expr logqlpkg.Expr, 
 		if value, err := strconv.ParseFloat(matches[1], 64); err == nil {
 			body, err := binaryConstantVectorResponse(child, value, resultType)
 			if err != nil {
-				p.writeError(w, http.StatusBadRequest, err.Error())
+				p.writeErr(w, child.Context(), err)
 			} else {
 				_, _ = w.Write(body)
 			}
@@ -273,14 +274,18 @@ func (p *Proxy) proxyBinaryLogQL(w http.ResponseWriter, r *http.Request, expr *l
 	// Share the total work budget across siblings as well as nested children.
 	r = r.WithContext(binaryEvaluationContext(r.Context()))
 	if (leftScalar || rightScalar) && (expr.Op == "and" || expr.Op == "or" || expr.Op == "unless") {
-		p.writeError(w, http.StatusBadRequest, "unexpected literal for logical/set binary operation")
+		leg, literal := "right", rightValue
+		if leftScalar {
+			leg, literal = "left", leftValue
+		}
+		p.writeErr(w, r.Context(), lokierr.Parse(0, 0, "unexpected literal for "+leg+" leg of logical/set binary operation ("+expr.Op+"): "+strconv.FormatFloat(literal, 'f', 6, 64)))
 		return
 	}
 	if leftScalar && rightScalar {
 		value, _ := binarySampleValue(leftValue, rightValue, expr.Op, true)
 		body, err := binaryConstantResponse(r, value, resultType)
 		if err != nil {
-			p.writeError(w, http.StatusBadRequest, err.Error())
+			p.writeErr(w, r.Context(), err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

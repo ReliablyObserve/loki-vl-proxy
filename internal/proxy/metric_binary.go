@@ -26,7 +26,7 @@ import (
 // --- Stats query proxying ---
 
 func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, stats physical.VLStats) {
-	if p.rejectBinaryMarker(w, stats) {
+	if p.rejectBinaryMarker(w, r, stats) {
 		return
 	}
 	logsqlQuery := stats.Text
@@ -1694,7 +1694,7 @@ func statsQueryRangePointUnixNano(point []interface{}) int64 {
 }
 
 func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, stats physical.VLStats) {
-	if p.rejectBinaryMarker(w, stats) {
+	if p.rejectBinaryMarker(w, r, stats) {
 		return
 	}
 	logsqlQuery := stats.Text

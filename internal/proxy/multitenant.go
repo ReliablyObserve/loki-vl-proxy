@@ -37,18 +37,18 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	}
 	filteredReq, filteredTenants, err := p.applyTenantSelectorFilter(r, tenantIDs)
 	if err != nil {
-		p.writeError(w, http.StatusBadRequest, err.Error())
+		p.fail(w, r, queryRefusal(err))
 		return true
 	}
 	if len(filteredTenants) == 0 {
 		if endpoint == "query" {
 			// No tenant left to ask is no reason to answer `streams`: a log query is no instant query.
 			if _, err := parseLogQLExpr(r.Context(), r.FormValue("query")); err != nil {
-				p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : %v", err))
+				p.failUnparseableQuery(w, r, err)
 				return true
 			}
 			if !logQLProducesSamples(r.FormValue("query")) {
-				p.writeError(w, http.StatusBadRequest, lokiInstantLogQueryError)
+				p.fail(w, r, lokierr.InstantLogQuery())
 				return true
 			}
 		}

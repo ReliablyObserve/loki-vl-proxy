@@ -24,6 +24,7 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 )
 
 var (
@@ -229,9 +230,11 @@ func lineFormatAfterStages(query string) lineFormatAfter {
 	return after
 }
 
-// lineFormatParseError is Loki's answer to a template its parser rejects.
+// lineFormatParseError is Loki's answer to a template its parser rejects:
+// `parse error : stage '| line_format "<template>"' : invalid line template:
+// <the template package's error>`, from parsing the same template Loki does.
 func lineFormatParseError(tmplStr string, err error) error {
-	return fmt.Errorf("parse error : stage '| line_format %s' : invalid line template: %w", strconv.Quote(tmplStr), err)
+	return lokierr.Parse(0, 0, fmt.Sprintf("stage '| line_format %s' : invalid line template: %v", strconv.Quote(tmplStr), err)).WithCause(err)
 }
 
 // applyLineFormatTemplateWithContext renders tmplStr into the line of every

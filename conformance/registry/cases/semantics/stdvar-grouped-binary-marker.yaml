@@ -25,7 +25,7 @@ why: |
   route's scalar evaluation applies the power to its answer, instant and range. No
   text that starts with the binary marker reaches a stats handler any more:
   proxyStatsQuery and proxyStatsQueryRange refuse it, and a marker the route cannot
-  evaluate is answered as an unsupported metric query. With range equal to the step
+  evaluate is answered with Loki's fixed 500 Internal Server Error (a failed call), the construct in the log line only. With range equal to the step
   the stats query is fetched on the shifted buckets
   (semantics/stddev-stdvar-over-time-step-bucket).
 

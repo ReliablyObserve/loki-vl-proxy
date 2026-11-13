@@ -23,7 +23,7 @@ func (p *Proxy) handleEmptySumWithout(w http.ResponseWriter, r *http.Request, qu
 		var err error
 		body, err = sumWithoutMetricName(child.ctx, body)
 		if err != nil {
-			p.writeError(w, http.StatusBadRequest, err.Error())
+			p.writeErr(w, child.ctx, proxyFailure(err))
 			return true
 		}
 	}

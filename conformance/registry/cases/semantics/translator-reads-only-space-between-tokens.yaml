@@ -24,7 +24,7 @@ gap:
   effort: M
   area: "internal/translator (frozen): closes when the plan serves the construct"
   loki: "any ASCII white space separates tokens"
-  proxy: "the translator matches a single space"
+  proxy: "the translator matches a single space; the failed translation answers Loki's fixed 500 Internal Server Error, with the translator's reason in the log line only"
   planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'

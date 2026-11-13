@@ -151,9 +151,12 @@ func errLayerCallsOf(t *testing.T, rt errLayerRoute) []string {
 	} {
 		b.seen = map[string]struct{}{}
 		runErrLayerBackendCell(t, rt, b)
+		// A call that reaches the backend after the route has answered records under b.mu.
+		b.mu.Lock()
 		for sig := range b.seen {
 			union[sig] = struct{}{}
 		}
+		b.mu.Unlock()
 	}
 	calls := make([]string, 0, len(union))
 	for sig := range union {

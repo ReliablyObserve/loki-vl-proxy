@@ -354,35 +354,40 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 	if p.log == nil || !p.log.Enabled(context.Background(), level) {
 		return
 	}
-	// Sized for every field the line can carry, so appending never regrows it.
-	attrs := make([]any, 0, 20)
-	attrs = append(attrs, "code", status, "error", text)
+	// slog.Attr values carry no interface boxing, and the buffer holds every field
+	// the line can carry: the line costs no allocation of its own.
+	var buf [10]slog.Attr
+	attrs := append(buf[:0], slog.Int("code", status), slog.String("error", text))
 	cause := err
 	if typed != nil {
-		attrs = append(attrs, "kind", typed.Kind().String(), "msg_id", typed.Msg().ID())
+		attrs = append(attrs, slog.String("kind", typed.Kind().String()), slog.String("msg_id", typed.Msg().ID()))
 		cause = typed.Cause()
+		if construct := constructOf(cause); construct != "" {
+			// A query Loki accepts that the proxy cannot serve yet: which construct, for the operator.
+			attrs = append(attrs, slog.String("construct", construct))
+		}
 	}
 	if cause != nil {
 		// The full error (VictoriaLogs' message, the transport error, the
 		// flag of a proxy queue) is for operators only.
-		attrs = append(attrs, "upstream_error", cause.Error())
+		attrs = append(attrs, slog.String("upstream_error", cause.Error()))
 	}
 	if typed != nil {
 		if flag, value, ok := typed.Limit(); ok {
 			// Loki's text carries no operator hint; the log says which flag
 			// sets the limit that rejected this request.
-			attrs = append(attrs, "limit_flag", flag)
+			attrs = append(attrs, slog.String("limit_flag", flag))
 			if value > 0 {
-				attrs = append(attrs, "limit_value", value)
+				attrs = append(attrs, slog.Int64("limit_value", value))
 			}
 		}
 	}
 	if ctx != nil {
 		if meta := requestRouteMetaFromContext(ctx); meta.endpoint != "" {
-			attrs = append(attrs, "endpoint", meta.endpoint, "route", meta.route)
+			attrs = append(attrs, slog.String("endpoint", meta.endpoint), slog.String("route", meta.route))
 		}
 	}
-	p.log.Log(context.Background(), level, "request error", attrs...)
+	p.log.LogAttrs(context.Background(), level, "request error", attrs...)
 }
 
 // routeErrorShapes is the body shape Loki answers errors in, per route (the
@@ -676,7 +681,8 @@ func lokiClientText(status int, err error) string {
 	)
 	switch {
 	case errors.As(err, &parseErr):
-		return parseErr.Error()
+		// The translator's wording is never sent: Loki's syntax error, without the position only the parser has.
+		return unplacedSyntaxError(err).Text()
 	case errors.As(err, &pipelineErr):
 		return pipelineErr.Error()
 	case errors.As(err, &matchingErr):
