@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
+	"github.com/grafana/jsonparser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -196,7 +197,7 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 	// breaks off, is not JSON or is the ruler's error under a success status
 	// fails as Loki fails a ruler call it could not complete, instead of
 	// reaching the client as a 200.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAlertingResponseBytes+1))
+	body, err := readAlertingBody(resp)
 	if err == nil && len(body) > maxAlertingResponseBytes {
 		err = errors.New("alerting backend answer over the buffered limit")
 	}
@@ -210,6 +211,17 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 	copyBackendHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(body)
+}
+
+// readAlertingBody reads an answer, at most one byte past the limit, into one
+// buffer sized from the announced length when there is one.
+func readAlertingBody(resp *http.Response) ([]byte, error) {
+	var buf bytes.Buffer
+	if n := resp.ContentLength; n > 0 && n <= maxAlertingResponseBytes {
+		buf.Grow(int(n))
+	}
+	_, err := buf.ReadFrom(io.LimitReader(resp.Body, maxAlertingResponseBytes+1))
+	return buf.Bytes(), err
 }
 
 // alertingBackendFailure is the client error for a ruler or alerts backend
@@ -236,6 +248,15 @@ var (
 func alertingAnswerDefect(body []byte) error {
 	if !json.Valid(body) || !bytes.HasPrefix(bytes.TrimSpace(body), []byte("{")) {
 		return errAlertingBodyNotJSON
+	}
+	// The ruler's error carries its status first; reading that one key costs
+	// nothing on an answer of any size. A body without a status is checked as
+	// a backend error body, which reads its top-level keys.
+	if status, err := jsonparser.GetString(body, "status"); err == nil {
+		if status == "error" {
+			return errAlertingErrorBody
+		}
+		return nil
 	}
 	if _, isErr := vlStatsErrorBody(body); isErr {
 		return errAlertingErrorBody

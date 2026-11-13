@@ -207,7 +207,9 @@ func TestAlertingAnswerDefect_Table(t *testing.T) {
 		{"null", `null`, errAlertingBodyNotJSON},
 		{"text", `internal error`, errAlertingBodyNotJSON},
 		{"status error", `{"status":"error","error":"x"}`, errAlertingErrorBody},
-		{"error key", `{"error":"x"}`, errAlertingErrorBody},
+		{"error key without a status", `{"error":"x"}`, errAlertingErrorBody},
+		{"status first decides", `{"status":"success","error":"x"}`, nil},
+		{"status error with data", `{"status":"error","data":{"alerts":[]}}`, errAlertingErrorBody},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := alertingAnswerDefect([]byte(tc.body)); !errors.Is(got, tc.want) {
@@ -233,10 +235,8 @@ func FuzzAlertingAnswerDefect(f *testing.F) {
 		if err == nil && !isObject {
 			t.Fatalf("%q passed on but is not one JSON object", body)
 		}
-		if err != nil && isObject {
-			if _, isErr := vlStatsErrorBody(body); !isErr {
-				t.Fatalf("%q is an object that is no error, but failed: %v", body, err)
-			}
+		if err != nil && errors.Is(err, errAlertingBodyNotJSON) && isObject {
+			t.Fatalf("%q is one JSON object but failed as not JSON", body)
 		}
 		if err != nil {
 			failure := alertingBackendFailure(err)

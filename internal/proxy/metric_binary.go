@@ -2224,11 +2224,11 @@ func applyScalarOpReverse(body []byte, op string, scalar float64, resultType str
 // operand that is not a JSON object, or that is VictoriaLogs' error under a
 // success status, is not an answer: it fails as a backend failure.
 func decodeStatsOperand(body []byte) (map[string]interface{}, error) {
-	if len(bytes.TrimSpace(body)) == 0 {
-		return map[string]interface{}{}, nil // nothing in it: an empty result
-	}
 	var resp map[string]interface{}
 	if err := json.Unmarshal(body, &resp); err != nil {
+		if len(bytes.TrimSpace(body)) == 0 {
+			return map[string]interface{}{}, nil // nothing in it: an empty result
+		}
 		return nil, statsBodyNotJSONFailure(err)
 	}
 	if resp == nil {

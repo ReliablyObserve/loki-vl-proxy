@@ -2088,13 +2088,13 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) ([]byte, error) {
 
 	// VL stats endpoints return Prometheus-compatible format already.
 	// Try to parse and re-wrap in Loki envelope.
-	// A body with nothing in it is an empty result, as every route reading a
-	// VictoriaLogs body answers it.
-	if len(bytes.TrimSpace(vlBody)) == 0 {
-		return lokiEmptyResultResponse(resultType), nil
-	}
 	var promResp map[string]interface{}
 	if err := stdjson.Unmarshal(vlBody, &promResp); err != nil {
+		if len(bytes.TrimSpace(vlBody)) == 0 {
+			// A body with nothing in it is an empty result, as every route
+			// reading a VictoriaLogs body answers it.
+			return lokiEmptyResultResponse(resultType), nil
+		}
 		return nil, statsBodyNotJSONFailure(err)
 	}
 	if promResp == nil {
