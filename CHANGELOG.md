@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.199.0] - 2026-11-13
+
 ### Fixed
 
 - Requests Loki's router refuses are now answered as Loki answers them, before any other check. A method a read
