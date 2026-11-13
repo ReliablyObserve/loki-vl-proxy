@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.220.0] - 2026-11-13
+
 ### Fixed
 
 - **Breaking:** the proxy's limits and queues now answer Loki's text and status for their class, and no flag name
