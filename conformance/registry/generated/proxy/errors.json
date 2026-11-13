@@ -1371,6 +1371,18 @@
     {
       "dynamic": false,
       "error_text": false,
+      "error_type": null,
+      "expression": "r, lokierr.ParserMessage(truncateQueryError(msg))",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/patterns.go handleFormatQuery",
+      "writer": "fail"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
       "error_type": "internal",
       "expression": "lokiErrInternal",
       "kind": "literal",
@@ -1391,6 +1403,30 @@
       "status_token": null,
       "where": "internal/proxy/patterns.go handleDetectedLabels",
       "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r, lokierr.MethodNotAllowed()",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/patterns.go handleWriteBlocked",
+      "writer": "fail"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r, lokierr.WriteNotSupported()",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/patterns.go handleWriteBlocked",
+      "writer": "fail"
     },
     {
       "dynamic": false,
@@ -2615,11 +2651,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 107,
+        "count": 110,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 103,
+        "layer_sites": 106,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2627,6 +2663,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 208
+    "call_sites": 211
   }
 }

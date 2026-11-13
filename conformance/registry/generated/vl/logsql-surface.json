@@ -838,7 +838,6 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/absent_over_time.go",
-        "internal/proxy/manual_metric_budget.go",
         "internal/proxy/metric_agg.go",
         "internal/proxy/nested_vector_fold.go",
         "internal/proxy/query_translation.go",

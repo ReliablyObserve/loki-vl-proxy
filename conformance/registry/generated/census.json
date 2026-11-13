@@ -1339,7 +1339,7 @@
     "internal/proxy/limit_errors_test.go | semantics/error-layer-internal-go-text",
     "internal/proxy/limit_errors_test.go | semantics/error-layer-proxy-limit-status",
     "internal/proxy/limit_errors_test.go | status-429",
-    "internal/proxy/limit_errors_test.go | status-504",
+    "internal/proxy/limit_errors_test.go | status-500",
     "internal/proxy/line_fields_without_parser_test.go | loki-compatible-profile",
     "internal/proxy/line_fields_without_parser_test.go | loki_api_v1_query_range",
     "internal/proxy/line_fields_without_parser_test.go | profiles/parsed-fields-without-parser",
@@ -2503,7 +2503,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 554,
+      "go": 555,
       "playwright": 1
     },
     "page_kinds": {

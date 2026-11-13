@@ -380,10 +380,9 @@
       "known_difference_ids": [
         "r1100",
         "r1114",
-        "r1115",
-        "r1163"
+        "r1115"
       ],
-      "matching_rows": 0,
+      "matching_rows": 1,
       "messages": [
         "limit-not-positive",
         "number",
@@ -602,24 +601,18 @@
         "r1257"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1257",
-        "r1258",
-        "r1259",
-        "r1260",
-        "r1261"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 5,
       "messages": [
         "method-not-allowed"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "detected_fields",
       "rows": 5,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -867,24 +860,18 @@
         "r1264"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1264",
-        "r1265",
-        "r1266",
-        "r1267",
-        "r1268"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 5,
       "messages": [
         "method-not-allowed"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "detected_labels",
       "rows": 5,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -937,21 +924,18 @@
         "r0185"
       ],
       "kind": "logql_syntax",
-      "known_difference_ids": [
-        "r0185",
-        "r0199"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 2,
       "messages": [
         "parse"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "format_query",
       "rows": 2,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -962,24 +946,18 @@
         "r1278"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1278",
-        "r1279",
-        "r1280",
-        "r1281",
-        "r1282"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 5,
       "messages": [
         "method-not-allowed"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "format_query",
       "rows": 5,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -1187,24 +1165,18 @@
         "r1236"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1236",
-        "r1237",
-        "r1238",
-        "r1239",
-        "r1240"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 5,
       "messages": [
         "method-not-allowed"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "index_stats",
       "rows": 5,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -1441,24 +1413,18 @@
         "r1243"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1243",
-        "r1244",
-        "r1245",
-        "r1246",
-        "r1247"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 5,
       "messages": [
         "method-not-allowed"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "index_volume",
       "rows": 5,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -1949,21 +1915,18 @@
         "r1226"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1226",
-        "r1227"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 2,
       "messages": [
         "method-not-allowed"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "label_values",
       "rows": 2,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -1979,11 +1942,9 @@
       "kind": "parameters",
       "known_difference_ids": [
         "r0765",
-        "r0791",
-        "r1151",
-        "r1159"
+        "r0791"
       ],
-      "matching_rows": 0,
+      "matching_rows": 2,
       "messages": [
         "not-found",
         "param-duration",
@@ -2203,24 +2164,18 @@
         "r1219"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1219",
-        "r1220",
-        "r1221",
-        "r1222",
-        "r1223"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 5,
       "messages": [
         "method-not-allowed"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "labels",
       "rows": 5,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -2236,11 +2191,9 @@
       "kind": "parameters",
       "known_difference_ids": [
         "r0707",
-        "r0759",
-        "r1370",
-        "r1374"
+        "r0759"
       ],
-      "matching_rows": 0,
+      "matching_rows": 2,
       "messages": [
         "param-duration",
         "param-number",
@@ -2291,11 +2244,9 @@
         "r1187",
         "r1188",
         "r1189",
-        "r1191",
-        "r1199",
         "r1200"
       ],
-      "matching_rows": 4,
+      "matching_rows": 6,
       "messages": [
         "method-not-allowed",
         "not-found",
@@ -2493,24 +2444,18 @@
         "r1250"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1250",
-        "r1251",
-        "r1252",
-        "r1253",
-        "r1254"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 5,
       "messages": [
         "method-not-allowed"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "patterns",
       "rows": 5,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -2750,24 +2695,18 @@
         "r1212"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1212",
-        "r1213",
-        "r1214",
-        "r1215",
-        "r1216"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 5,
       "messages": [
         "method-not-allowed"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "query",
       "rows": 5,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -3006,24 +2945,18 @@
         "r1205"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1205",
-        "r1206",
-        "r1207",
-        "r1208",
-        "r1209"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 5,
       "messages": [
         "method-not-allowed"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "query_range",
       "rows": 5,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -3058,12 +2991,9 @@
         "r0581",
         "r0582",
         "r0590",
-        "r0596",
-        "r1369",
-        "r1373",
-        "r1401"
+        "r0596"
       ],
-      "matching_rows": 2,
+      "matching_rows": 5,
       "messages": [
         "direction",
         "end-before-start",
@@ -3455,24 +3385,18 @@
         "r1229"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1229",
-        "r1230",
-        "r1231",
-        "r1232",
-        "r1233"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 5,
       "messages": [
         "method-not-allowed"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "series",
       "rows": 5,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -3699,24 +3623,18 @@
         "r1271"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1271",
-        "r1272",
-        "r1273",
-        "r1274",
-        "r1275"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 5,
       "messages": [
         "method-not-allowed"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "tail",
       "rows": 5,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -3896,28 +3814,19 @@
         "r1350"
       ],
       "kind": "methods_routing",
-      "known_difference_ids": [
-        "r1349",
-        "r1350",
-        "r1357",
-        "r1358",
-        "r1359",
-        "r1360",
-        "r1361",
-        "r1366"
-      ],
-      "matching_rows": 15,
+      "known_difference_ids": [],
+      "matching_rows": 23,
       "messages": [
         "not-found",
         "unmapped-path-cleaning-redirect"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "unknown_path",
       "rows": 23,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     }
   ],
@@ -4098,8 +4007,8 @@
     }
   ],
   "known_differences": {
-    "ceiling": 141,
-    "rows": 141
+    "ceiling": 64,
+    "rows": 64
   },
   "messages": {
     "aggregate-by": {
@@ -4473,7 +4382,7 @@
       ],
       "item": "msg-method-not-allowed",
       "kind": "route",
-      "matching_rows": 0,
+      "matching_rows": 59,
       "routes": [
         "detected_fields",
         "detected_labels",
@@ -4552,7 +4461,7 @@
       ],
       "source": "lokierr",
       "stage": "routing",
-      "state": "differs",
+      "state": "matches",
       "status": 405
     },
     "not-found": {
@@ -4564,7 +4473,7 @@
       ],
       "item": "msg-not-found",
       "kind": "route",
-      "matching_rows": 17,
+      "matching_rows": 21,
       "routes": [
         "label_values",
         "other_routes",
@@ -4595,7 +4504,7 @@
       ],
       "source": "lokierr",
       "stage": "routing",
-      "state": "differs",
+      "state": "matches",
       "status": 404
     },
     "number": {
@@ -4823,7 +4732,7 @@
       ],
       "item": "msg-parse",
       "kind": "parse",
-      "matching_rows": 28,
+      "matching_rows": 30,
       "routes": [
         "detected_field_values",
         "detected_fields",
@@ -4910,7 +4819,7 @@
       ],
       "item": "msg-post-too-large",
       "kind": "form",
-      "matching_rows": 0,
+      "matching_rows": 1,
       "routes": [
         "query_range"
       ],
@@ -4919,7 +4828,7 @@
       ],
       "source": "lokierr",
       "stage": "request_decoding",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "queue-full": {
@@ -5121,7 +5030,7 @@
       ],
       "item": "unmapped-path-cleaning-redirect",
       "kind": "unmapped",
-      "matching_rows": 0,
+      "matching_rows": 7,
       "routes": [
         "detected_field_values",
         "label_values",
@@ -5138,7 +5047,7 @@
       ],
       "source": "recorded",
       "stage": null,
-      "state": "differs",
+      "state": "matches",
       "status": 301
     },
     "unmapped-push-snappy-corrupt": {
@@ -5224,7 +5133,7 @@
       ],
       "item": "msg-url-escape",
       "kind": "form",
-      "matching_rows": 0,
+      "matching_rows": 2,
       "routes": [
         "labels",
         "query_range"
@@ -5235,7 +5144,7 @@
       ],
       "source": "lokierr",
       "stage": "request_decoding",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "url-semicolon": {
@@ -5246,7 +5155,7 @@
       ],
       "item": "msg-url-semicolon",
       "kind": "form",
-      "matching_rows": 0,
+      "matching_rows": 2,
       "routes": [
         "labels",
         "query_range"
@@ -5257,25 +5166,38 @@
       ],
       "source": "lokierr",
       "stage": "request_decoding",
-      "state": "differs",
+      "state": "matches",
       "status": 400
+    },
+    "write-not-supported": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-write-not-supported",
+      "kind": "route",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "routing",
+      "state": "documented",
+      "status": 405
     }
   },
   "summary": {
     "cells": 124,
     "cells_e2e": 71,
-    "cells_matching": 63,
+    "cells_matching": 77,
     "cells_recorded": 65,
     "check_order_rows": 33,
     "comparable_rows": 215,
     "coverage_ratio": 0.5726,
     "covered_cells": 71,
-    "differing_rows": 141,
+    "differing_rows": 64,
     "e2e_rows": 131,
-    "match_ratio": 0.3442,
-    "matching_rows": 74,
-    "messages": 35,
-    "messages_documented": 8,
+    "match_ratio": 0.7023,
+    "matching_rows": 151,
+    "messages": 36,
+    "messages_documented": 9,
     "messages_recorded": 27,
     "not_comparable_rows": 71,
     "recorded_loki": "3.7.9",

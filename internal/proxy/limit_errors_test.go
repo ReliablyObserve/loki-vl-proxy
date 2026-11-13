@@ -127,7 +127,7 @@ func TestHeavyQueueFullAnswers429OnEveryWriter(t *testing.T) {
 // decisions read the error's type (errors.Is, errors.As, net.Error.Timeout),
 // never its text. A message that merely says "timeout", "deadline exceeded" or
 // "context canceled" is a failed backend call.
-// conformance: semantics/error-layer-cancel-deadline, semantics/error-layer-internal-go-text, status-504
+// conformance: semantics/error-layer-cancel-deadline, semantics/error-layer-internal-go-text, status-500
 func TestClassificationByTypeNeverByText(t *testing.T) {
 	type outcome struct {
 		status   int
@@ -180,7 +180,7 @@ func TestClassificationByTypeNeverByText(t *testing.T) {
 // a slow backend are recognised by type: a client timeout before the headers, a
 // client timeout while the body is read, a request context deadline and a
 // cancellation. None needs its text read.
-// conformance: semantics/error-layer-cancel-deadline, status-504
+// conformance: semantics/error-layer-cancel-deadline, status-500
 func TestTransportTimeoutsAreTypedTimeouts(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

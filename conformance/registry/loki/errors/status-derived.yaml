@@ -2,7 +2,7 @@ id: status-derived
 status: derived
 error_type: null
 generated:   # rewritten by conformance/scripts/error_registry.py
-  proxy_call_sites: 98
+  proxy_call_sites: 110
   dynamic_sites: 2
   literal_messages:
     - "multi-tenant sub-request failed"
