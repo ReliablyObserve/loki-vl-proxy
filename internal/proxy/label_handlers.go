@@ -482,6 +482,13 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 	// goes back to the pool only after the response has been built.
 	fjp := vlFJParserPool.Get()
 	fjRoot, err := fjp.ParseBytes(body)
+	if err != nil && len(bytes.TrimSpace(body)) > 0 {
+		// A body that is not VictoriaLogs JSON is a failed call; only a body with nothing in it is no streams.
+		vlFJParserPool.Put(fjp)
+		httpStatus := p.writeErr(w, r.Context(), errVLBodyNotJSON)
+		p.metrics.RecordRequest("series", httpStatus, time.Since(start))
+		return
+	}
 
 	sb := jsonBuilderPool.Get().(*strings.Builder)
 	sb.Reset()

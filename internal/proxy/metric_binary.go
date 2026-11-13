@@ -308,7 +308,11 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 			return
 		}
 	}
-	body = p.trimAndTranslateStatsQRFJ(ctx, body, keepFn, r.FormValue("query"))
+	body, err = p.trimAndTranslateStatsQRFJ(ctx, body, keepFn, r.FormValue("query"))
+	if err != nil {
+		p.writeErr(w, ctx, err)
+		return
+	}
 	// Over the limit, Logs Drilldown keeps the busiest series (by total count,
 	// not VictoriaLogs' label order, which would keep the count==1 noise floor
 	// of a churning field) with Loki's warning; every other client has already
@@ -1235,21 +1239,21 @@ type trimTranslateResult struct {
 //
 // keep may be nil (no time filtering). If neither filtering nor label translation
 // is needed, the original body is returned unchanged with no allocation.
-func (p *Proxy) trimAndTranslateStatsQRFJ(ctx context.Context, body []byte, keep func(int64) bool, originalQuery string) []byte {
+func (p *Proxy) trimAndTranslateStatsQRFJ(ctx context.Context, body []byte, keep func(int64) bool, originalQuery string) ([]byte, error) {
 	if len(body) > maxPooledStatsParserInputSize {
 		start := time.Now()
 		if out, operation, handled := p.trimAndTranslateStatsQRBySeries(body, keep, originalQuery); handled {
 			if operation != "" {
 				p.observeInternalOperation(ctx, "trim_translate_stats_qr", operation, time.Since(start))
 			}
-			return out
+			return out, nil
 		}
 	}
 	return p.trimAndTranslateStatsQRFJFull(ctx, body, keep, originalQuery)
 }
 
 //nolint:gocyclo // preserves the reference traversal across the three stats envelopes and label/point transformations.
-func (p *Proxy) trimAndTranslateStatsQRFJFull(ctx context.Context, body []byte, keep func(int64) bool, originalQuery string) []byte {
+func (p *Proxy) trimAndTranslateStatsQRFJFull(ctx context.Context, body []byte, keep func(int64) bool, originalQuery string) ([]byte, error) {
 	start := time.Now()
 
 	parser := statsTranslateFJPool.Get()
@@ -1257,7 +1261,11 @@ func (p *Proxy) trimAndTranslateStatsQRFJFull(ctx context.Context, body []byte, 
 
 	v, err := parser.ParseBytes(body)
 	if err != nil {
-		return body
+		// Not one JSON document: the call failed, unless there is no body at all.
+		if len(bytes.TrimSpace(body)) > 0 {
+			return nil, errVLBodyNotJSON
+		}
+		return body, nil
 	}
 
 	// Locate result series across all three JSON shapes the VL stats endpoints emit:
@@ -1292,7 +1300,7 @@ func (p *Proxy) trimAndTranslateStatsQRFJFull(ctx context.Context, body []byte, 
 	}
 
 	if len(slots) == 0 {
-		return body
+		return body, nil
 	}
 
 	// Allocate per-item result state.
@@ -1340,7 +1348,7 @@ func (p *Proxy) trimAndTranslateStatsQRFJFull(ctx context.Context, body []byte, 
 
 	if !needsRebuild {
 		p.observeInternalOperation(ctx, "trim_translate_stats_qr", "noop", time.Since(start))
-		return body
+		return body, nil
 	}
 
 	// Rebuild the JSON response once, applying both filtering and translation.
@@ -1421,7 +1429,7 @@ func (p *Proxy) trimAndTranslateStatsQRFJFull(ctx context.Context, body []byte, 
 	copy(result, buf.Bytes())
 	p.observeInternalOperation(ctx, "trim_translate_stats_qr", "ok", time.Since(start))
 	_ = translatedCount
-	return result
+	return result, nil
 }
 
 // writeTrimmedTranslatedStatsFJ writes a JSON array of stats items, applying
@@ -1739,7 +1747,11 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, stats ph
 	if guarded {
 		body = dropEmptyInputGuard(body)
 	}
-	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
+	body, err = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
+	if err != nil {
+		p.writeErr(w, r.Context(), err)
+		return
+	}
 	body, ok := p.wrapStatsOrFail(w, r.Context(), body, "vector")
 	if !ok {
 		return

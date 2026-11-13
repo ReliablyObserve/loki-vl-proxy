@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	fj "github.com/valyala/fastjson"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -554,8 +555,11 @@ func (p *Proxy) fetchQueryRangeWindow(
 				}
 				body = bytes.NewReader(filled)
 			}
-			entries := p.vlLogsToLokiWindowEntriesStream(body, shape, categorizedLabels, emitStructuredMetadata)
+			entries, convErr := p.vlLogsToLokiWindowEntriesStream(body, shape, categorizedLabels, emitStructuredMetadata)
 			_ = resp.Body.Close()
+			if convErr != nil {
+				return queryRangeWindowCacheEntry{}, convErr
+			}
 			cacheEntry := queryRangeWindowCacheEntry{Entries: entries}
 			if ttl := p.queryRangeWindowTTL(window.endNs); ttl > 0 {
 				if data, encErr := json.Marshal(cacheEntry); encErr == nil {
@@ -887,7 +891,8 @@ func (p *Proxy) queryRangeWindowCacheKey(
 // Hot-path callers should use vlLogsToLokiWindowEntriesStream to avoid the
 // io.ReadAll allocation entirely.
 func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) []queryRangeWindowEntry {
-	return p.vlLogsToLokiWindowEntriesStream(bytes.NewReader(body), newLogQueryShape(originalQuery), categorizedLabels, emitStructuredMetadata)
+	entries, _ := p.vlLogsToLokiWindowEntriesStream(bytes.NewReader(body), newLogQueryShape(originalQuery), categorizedLabels, emitStructuredMetadata)
+	return entries
 }
 
 // vlLogsToLokiWindowEntriesStream streams a VL NDJSON response line-by-line,
@@ -897,7 +902,7 @@ func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, cat
 // and translation across entries from the same stream.
 //
 //nolint:gocyclo // line-by-line VL→Loki window entry conversion with categorized labels, structured metadata, the Loki-profile row filter and stream merging; branching is inherent to the conversion contract, as in vlReaderToLokiStreams.
-func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape, categorizedLabels bool, emitStructuredMetadata bool) []queryRangeWindowEntry {
+func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape, categorizedLabels bool, emitStructuredMetadata bool) ([]queryRangeWindowEntry, error) {
 	entries := make([]queryRangeWindowEntry, 0, 64)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	streamDescriptorCache := make(map[string]cachedLogQueryStreamDescriptor, 16)
@@ -941,6 +946,7 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 		}
 	}()
 
+	badRows := 0
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		for len(line) > 0 && (line[0] == ' ' || line[0] == '\t' || line[0] == '\r') {
@@ -957,11 +963,15 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 		fjVal, err := fjParser.ParseBytes(line)
 		if err != nil {
 			vlFJParserPool.Put(fjParser)
+			badRows++
 			continue
 		}
 
 		timeBytes := fjVal.GetStringBytes("_time")
 		if len(timeBytes) == 0 {
+			if fjVal.Type() != fj.TypeObject {
+				badRows++ // a JSON value that is not a row
+			}
 			vlFJParserPool.Put(fjParser)
 			continue
 		}
@@ -1025,7 +1035,15 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 		entries = append(entries, entry)
 		vlFJParserPool.Put(fjParser)
 	}
-	return entries
+	// A body that broke off or holds a row that is not JSON is a failed window, not a short one.
+	// A row above windowEntryScannerLineBytes is a limit of this scan and ends the window as before.
+	if err := scanner.Err(); err != nil && !errors.Is(err, bufio.ErrTooLong) {
+		return nil, err
+	}
+	if badRows > 0 {
+		return nil, errVLBodyNotJSON
+	}
+	return entries, nil
 }
 
 // windowEntryDetectedLevel returns an entry's derived detected_level, carried

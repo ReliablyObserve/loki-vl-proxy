@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -340,8 +341,10 @@ func parseVolumeSegmentRows(body []byte, index map[int64]int) ([][]volumeSegment
 	defer releaseFJParser(&volumeSegmentFJPool, parser, len(body))
 	v, err := parser.ParseBytes(body)
 	if err != nil {
-		// The whole-window path ignores an unreadable body (an empty answer);
-		// so does a segment.
+		if len(bytes.TrimSpace(body)) > 0 {
+			// Not VictoriaLogs JSON: a failed call, which is never stored as an empty segment.
+			return nil, errVLBodyNotJSON
+		}
 		return out, nil
 	}
 	for _, item := range v.GetArray("data", "result") {

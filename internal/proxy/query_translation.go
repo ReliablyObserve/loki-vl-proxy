@@ -1170,7 +1170,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	// the parser, so they are kept whatever the pipeline looks like.
 	captureLabels := logqlpkg.ParserCaptureLabels(spec.baseQuery)
 
-	rows := 0
+	rows, badRows := 0, 0
 	for scanner.Scan() {
 		if err := checkManualMetricRead(ctx, limited); err != nil {
 			return nil, err
@@ -1190,6 +1190,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		}
 		if err := stdjson.Unmarshal(line, &entry); err != nil {
 			vlEntryPool.Put(entry)
+			badRows++
 			continue
 		}
 
@@ -1235,6 +1236,9 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
+	}
+	if badRows > 0 {
+		return nil, errVLBodyNotJSON
 	}
 	if err := checkManualMetricRead(ctx, limited); err != nil {
 		return nil, err
@@ -2064,7 +2068,7 @@ func requestedLevelGrouping(logql string) levelGroupingRequest {
 // Uses fastjson for in-place manipulation — lower allocation than encoding/json with typed structs.
 //
 //nolint:gocyclo // walks VL stats JSON shape variants and remaps field/label names to Loki conventions across many edge cases; branching is inherent to schema translation.
-func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, body []byte, originalQuery string) []byte {
+func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, body []byte, originalQuery string) ([]byte, error) {
 	start := time.Now()
 
 	parser := statsTranslateFJPool.Get()
@@ -2073,7 +2077,11 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 	v, err := parser.ParseBytes(body)
 	if err != nil {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "decode_error", time.Since(start))
-		return body
+		// Not one JSON document: the call failed, unless there is no body at all.
+		if len(bytes.TrimSpace(body)) > 0 {
+			return nil, errVLBodyNotJSON
+		}
+		return body, nil
 	}
 
 	// Locate all result arrays: data.result, result, results.
@@ -2104,7 +2112,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 
 	if len(slots) == 0 {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "no_results", time.Since(start))
-		return body
+		return body, nil
 	}
 
 	levelGrouping := requestedLevelGrouping(originalQuery)
@@ -2214,7 +2222,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 
 	if translatedCount == 0 {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "noop", time.Since(start))
-		return body
+		return body, nil
 	}
 
 	// Rebuild the response JSON, substituting changed metric objects.
@@ -2290,7 +2298,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 	result := make([]byte, buf.Len())
 	copy(result, buf.Bytes())
 	p.observeInternalOperation(ctx, "translate_stats_response_labels", "translated", time.Since(start))
-	return result
+	return result, nil
 }
 
 // writeTranslatedStatsItemsFJ writes a JSON array of stats items, substituting

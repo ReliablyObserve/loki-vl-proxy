@@ -157,10 +157,12 @@ func TestStatsJSONOutputIndependentOfPoolReuse(t *testing.T) {
 			return trimStatsQRByTimeFJShifted(body, keep, nil)
 		},
 		"translate": func(body []byte) []byte {
-			return p.translateStatsResponseLabelsWithContext(context.Background(), body, query)
+			out, _ := p.translateStatsResponseLabelsWithContext(context.Background(), body, query)
+			return out
 		},
 		"trim_translate": func(body []byte) []byte {
-			return p.trimAndTranslateStatsQRFJ(context.Background(), body, keep, query)
+			out, _ := p.trimAndTranslateStatsQRFJ(context.Background(), body, keep, query)
+			return out
 		},
 	}
 	for name, transform := range transforms {
@@ -199,6 +201,6 @@ func BenchmarkStatsJSONOversizedParserInput(b *testing.B) {
 	b.SetBytes(int64(len(body)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = p.translateStatsResponseLabelsWithContext(b.Context(), body, query)
+		_, _ = p.translateStatsResponseLabelsWithContext(b.Context(), body, query)
 	}
 }

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"math"
@@ -457,7 +458,7 @@ func (p *Proxy) computeVolume(ctx context.Context, req volumeRequest) (map[strin
 			return nil, err
 		}
 	}
-	return p.volumeResponse(req, plan, body), nil
+	return p.volumeResponse(req, plan, body)
 }
 
 func (p *Proxy) fetchVolumeStats(ctx context.Context, req volumeRequest, statsQuery string) ([]byte, error) {
@@ -623,12 +624,17 @@ func (p *Proxy) volumeNamesForRow(req volumeRequest, plan volumePlan, row map[st
 	return []string{name}
 }
 
-func (p *Proxy) volumeResponse(req volumeRequest, plan volumePlan, body []byte) map[string]interface{} {
+func (p *Proxy) volumeResponse(req volumeRequest, plan volumePlan, body []byte) (map[string]interface{}, error) {
 	buckets := map[int64]map[string]uint64{}
 	metrics := map[string]map[string]string{}
 
 	var parser fj.Parser
-	if v, err := parser.ParseBytes(body); err == nil {
+	v, err := parser.ParseBytes(body)
+	if err != nil && len(bytes.TrimSpace(body)) > 0 {
+		// A body that is not VictoriaLogs JSON is a failed call, not a volume of nothing.
+		return nil, errVLBodyNotJSON
+	}
+	if err == nil {
 		row := map[string]string{}
 		var names []string
 		add := func(point *fj.Value) {
@@ -677,7 +683,7 @@ func (p *Proxy) volumeResponse(req volumeRequest, plan volumePlan, body []byte) 
 		}
 	}
 
-	return volumeResult(req, buckets, metrics)
+	return volumeResult(req, buckets, metrics), nil
 }
 
 // volumeResult renders the Loki answer from the volume of every name per

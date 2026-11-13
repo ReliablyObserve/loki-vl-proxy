@@ -361,7 +361,7 @@ func TestContract_Query_BareParserMetricCompatPropagatesBackendError(t *testing.
 	}
 }
 
-func TestProxyHelpers_FetchBareParserMetricSeries_SkipsMalformedEntriesAndSortsSeries(t *testing.T) {
+func TestProxyHelpers_FetchBareParserMetricSeries_SkipsUndecodableEntriesAndSortsSeries(t *testing.T) {
 	startNanos := int64(1704067200 * 1e9)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/select/logsql/query" {
@@ -369,7 +369,7 @@ func TestProxyHelpers_FetchBareParserMetricSeries_SkipsMalformedEntriesAndSortsS
 		}
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		_, _ = w.Write([]byte(strings.Join([]string{
-			`not-json`,
+			`{"_msg":"no time"}`,
 			`{"_time":"bad","_stream":"{app=\"api-gateway\"}","_msg":"{\"status\":500}","status":"500"}`,
 			`{"_time":"` + strconv.FormatInt(startNanos, 10) + `","_stream":"{app=\"api-gateway\"}","_msg":"{\"status\":500}","status":"500"}`,
 			`{"_time":"` + strconv.FormatInt(startNanos+int64(time.Second), 10) + `","_stream":"{app=\"worker\"}","_msg":"{\"status\":404}","status":"404"}`,
@@ -387,10 +387,33 @@ func TestProxyHelpers_FetchBareParserMetricSeries_SkipsMalformedEntriesAndSortsS
 		t.Fatalf("expected successful bare parser series fetch, got %v", err)
 	}
 	if len(series) != 2 {
-		t.Fatalf("expected two valid series after skipping malformed entries, got %d", len(series))
+		t.Fatalf("expected two valid series after skipping undecodable entries, got %d", len(series))
 	}
 	if series[0].metric["app"] != "api-gateway" || series[1].metric["app"] != "worker" {
 		t.Fatalf("expected canonical app ordering, got %+v", series)
+	}
+}
+
+// Replaces the `not-json` line of the test above, which was skipped: a row that is not JSON fails the fetch.
+// conformance: semantics/error-layer-silent-success
+func TestProxyHelpers_FetchBareParserMetricSeries_RowThatIsNotJSONFailsTheFetch(t *testing.T) {
+	startNanos := int64(1704067200 * 1e9)
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`{"_time":"` + strconv.FormatInt(startNanos, 10) + `","_stream":"{app=\"api-gateway\"}","_msg":"{\"status\":500}","status":"500"}`,
+			`not-json`,
+		}, "\n")))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	series, err := p.fetchBareParserMetricSeries(t.Context(), `count_over_time({app="api-gateway"} | json | status >= 400 [5m])`, bareParserMetricCompatSpec{
+		funcName:    "count_over_time",
+		baseQuery:   `{app="api-gateway"} | json | status >= 400`,
+		rangeWindow: 5 * time.Minute,
+	}, strconv.FormatInt(startNanos, 10), strconv.FormatInt(startNanos+int64(2*time.Minute), 10))
+	if !errors.Is(err, errVLBodyNotJSON) || series != nil {
+		t.Fatalf("expected errVLBodyNotJSON and no series, got %v, %+v", err, series)
 	}
 }
 

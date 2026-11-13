@@ -94,7 +94,7 @@ func (f *leadWindowFakeVL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/stream+json")
 		for _, ts := range picked {
 			if f.undecodable[ts] {
-				_, _ = w.Write([]byte("{\"_time\":\"not a time\n"))
+				_, _ = w.Write([]byte("{\"_time\":\"not a time\"}\n"))
 				continue
 			}
 			_, _ = fmt.Fprintf(w, "{\"_time\":%q,\"_msg\":\"line %d\",\"_stream\":\"{app=\\\"svc\\\"}\",\"app\":\"svc\"}\n",
