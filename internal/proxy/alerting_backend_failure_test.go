@@ -235,6 +235,9 @@ func FuzzAlertingAnswerDefect(f *testing.F) {
 		if err == nil && !isObject {
 			t.Fatalf("%q passed on but is not one JSON object", body)
 		}
+		if errors.Is(err, errAlertingErrorBody) && !bytes.Contains(body, []byte("error")) {
+			t.Fatalf("%q failed as an error body but holds no error", body)
+		}
 		if err != nil && errors.Is(err, errAlertingBodyNotJSON) && isObject {
 			t.Fatalf("%q is one JSON object but failed as not JSON", body)
 		}

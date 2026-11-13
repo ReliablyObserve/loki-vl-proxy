@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ...`), as the other buffered reads do. Before, an oversize answer reached the decoder and the client read a bare
   `Internal Server Error` for `index/stats`, or was served in full for the instant query. The flag is in the proxy
   log line only.
+
+  **Breaking:** an instant metric query whose VictoriaLogs answer is above that limit used to be served in full and
+  now answers `500`; raise `-backend-max-buffered-response-bytes` if such answers are expected.
 - A query the proxy accepts but cannot serve no longer answers with the proxy's own wording. The client read the
   translator's text (`unknown pipeline stage "foo" — not a valid LogQL parser or label filter`, `sum() requires a
   range metric inside ...`, `invalid range metric query`, `loki-vl-proxy requires a uniform offset ...`, `unsupported

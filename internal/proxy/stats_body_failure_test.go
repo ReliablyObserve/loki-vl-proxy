@@ -185,40 +185,44 @@ func TestStatsBodyDefects_RoutesFailAsLokiFails(t *testing.T) {
 // conformance: semantics/error-layer-proxy-limit-status
 func TestCoalescedBackendAnswer_OverTheBufferLimitFailsLikeLoki(t *testing.T) {
 	const limit = 2048
-	row := `{"entries":"5","streams":"1"}`
-	for _, tc := range []struct {
-		name string
-		pad  int // bytes of trailing whitespace after the row
-		want int
-	}{
-		{"under the limit", 0, http.StatusOK},
-		{"at the limit", limit - len(row), http.StatusOK},
-		{"one byte over", limit - len(row) + 1, http.StatusInternalServerError},
-		{"far over", 10 * limit, http.StatusInternalServerError},
+	for _, rt := range []struct{ name, path, query, answer string }{
+		{"index_stats", "/loki/api/v1/index/stats", `{app="x"}`, `{"entries":"5","streams":"1"}`},
+		{"instant_stats", "/loki/api/v1/query", `sum(count_over_time({app="x"}[5m]))`, `{"status":"success","data":{"resultType":"vector","result":[]}}`},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(row + strings.Repeat(" ", tc.pad)))
-			}))
-			defer vl.Close()
-			p := newTestProxyWithOptions(t, withBackendURL(vl.URL), func(c *Config) {
-				c.ExecutionLimits.BackendMaxBufferedResponseBytes = limit
+		for _, tc := range []struct {
+			name string
+			pad  int // bytes of trailing whitespace after the answer
+			want int
+		}{
+			{"under the limit", 0, http.StatusOK},
+			{"at the limit", limit - len(rt.answer), http.StatusOK},
+			{"one byte over", limit - len(rt.answer) + 1, http.StatusInternalServerError},
+			{"far over", 10 * limit, http.StatusInternalServerError},
+		} {
+			t.Run(rt.name+"/"+tc.name, func(t *testing.T) {
+				vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(rt.answer + strings.Repeat(" ", tc.pad)))
+				}))
+				defer vl.Close()
+				p := newTestProxyWithOptions(t, withBackendURL(vl.URL), func(c *Config) {
+					c.ExecutionLimits.BackendMaxBufferedResponseBytes = limit
+				})
+				params := url.Values{"query": {rt.query}, "start": {"1704067200"}, "end": {"1704070800"}, "time": {"1704070800"}}
+				req := httptest.NewRequest(http.MethodGet, rt.path+"?"+params.Encode(), nil)
+				req.Header.Set("X-Scope-OrgID", "0")
+				rec := httptest.NewRecorder()
+				serveProxy(p, rec, req)
+				if rec.Code != tc.want {
+					t.Fatalf("status %d, want %d; body %q", rec.Code, tc.want, rec.Body.String())
+				}
+				if tc.want == http.StatusOK {
+					return
+				}
+				if !errLayerMessageSizeRE.MatchString(rec.Body.String()) || strings.Contains(rec.Body.String(), "-backend-max") {
+					t.Fatalf("body %q is not Loki's message size error without a flag", rec.Body.String())
+				}
 			})
-			params := url.Values{"query": {`{app="x"}`}, "start": {"1704067200"}, "end": {"1704070800"}}
-			req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/index/stats?"+params.Encode(), nil)
-			req.Header.Set("X-Scope-OrgID", "0")
-			rec := httptest.NewRecorder()
-			serveProxy(p, rec, req)
-			if rec.Code != tc.want {
-				t.Fatalf("status %d, want %d; body %q", rec.Code, tc.want, rec.Body.String())
-			}
-			if tc.want == http.StatusOK {
-				return
-			}
-			if !errLayerMessageSizeRE.MatchString(rec.Body.String()) || strings.Contains(rec.Body.String(), "-backend-max") {
-				t.Fatalf("body %q is not Loki's message size error without a flag", rec.Body.String())
-			}
-		})
+		}
 	}
 }

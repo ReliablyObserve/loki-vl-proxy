@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
@@ -197,7 +198,8 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 	// breaks off, is not JSON or is the ruler's error under a success status
 	// fails as Loki fails a ruler call it could not complete, instead of
 	// reaching the client as a 200.
-	body, err := readAlertingBody(resp)
+	body, release, err := readAlertingBody(resp)
+	defer release()
 	if err == nil && len(body) > maxAlertingResponseBytes {
 		err = errors.New("alerting backend answer over the buffered limit")
 	}
@@ -213,15 +215,25 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 	_, _ = w.Write(body)
 }
 
-// readAlertingBody reads an answer, at most one byte past the limit, into one
-// buffer sized from the announced length when there is one.
-func readAlertingBody(resp *http.Response) ([]byte, error) {
-	var buf bytes.Buffer
+// alertingBodyPool holds the buffers that alerting answers are read into.
+var alertingBodyPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
+// readAlertingBody reads an answer, at most one byte past the limit, into a
+// pooled buffer sized from the announced length when there is one. The bytes
+// are valid until release is called.
+func readAlertingBody(resp *http.Response) (body []byte, release func(), err error) {
+	buf := alertingBodyPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	release = func() {
+		if buf.Cap() <= 4<<20 {
+			alertingBodyPool.Put(buf)
+		}
+	}
 	if n := resp.ContentLength; n > 0 && n <= maxAlertingResponseBytes {
 		buf.Grow(int(n))
 	}
-	_, err := buf.ReadFrom(io.LimitReader(resp.Body, maxAlertingResponseBytes+1))
-	return buf.Bytes(), err
+	_, err = buf.ReadFrom(io.LimitReader(resp.Body, maxAlertingResponseBytes+1))
+	return buf.Bytes(), release, err
 }
 
 // alertingBackendFailure is the client error for a ruler or alerts backend
