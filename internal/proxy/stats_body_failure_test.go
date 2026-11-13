@@ -249,7 +249,9 @@ func TestBinaryOperand_OverTheBufferLimitFailsLikeLoki(t *testing.T) {
 		return b.String()
 	}
 	small, big := rows(3), rows(2000)
-	query := func(app string) physical.Op { return physical.VLQuery{Text: `{app="` + app + `"} | stats count() hits`} }
+	query := func(app string) physical.Op {
+		return physical.VLQuery{Text: `{app="` + app + `"} | stats count() hits`}
+	}
 	scalar := physical.ScalarOp{V: 2, Text: "2"}
 	for _, shape := range []struct {
 		name        string
