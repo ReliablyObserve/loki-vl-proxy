@@ -142,9 +142,8 @@ func readStatsRequest(r *http.Request, route uint8) statsRequest {
 		q.start, q.end, q.ok = t, t, true
 		return q
 	}
-	start, okS := parseLokiTimeToUnixNano(r.FormValue("start"))
-	end, okE := parseLokiTimeToUnixNano(r.FormValue("end"))
-	q.start, q.end, q.ok = start, end, okS && okE && end >= start
+	start, end, okWindow := requestRangeWindowNs(r)
+	q.start, q.end, q.ok = start, end, okWindow && end >= start
 	q.step = statsStepNanos(r.FormValue("step"))
 	q.limit = 100 // Loki's default limit
 	if raw := strings.TrimSpace(r.FormValue("limit")); raw != "" {

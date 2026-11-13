@@ -25,14 +25,13 @@ check_order:
 recorded:
   rows: 14
   comparable_rows: 14
-  matching_rows: 2
+  matching_rows: 14
   row_ids: ["r0535", "r0547", "r0707", "r0765", "r0794", "r0868", "r0926", "r0967", "r1014", "r1060", "r1100",
     "r1122", "r1144", "r1438"]
-  known_difference_ids: ["r0707", "r0765", "r0794", "r0868", "r0926", "r0967", "r1014", "r1060", "r1100", "r1122", "r1144",
-    "r1438"]
+  known_difference_ids: []
   e2e_rows: ["r0535", "r0707", "r0765", "r0794", "r0868", "r0926", "r0967", "r1014", "r1060", "r1100", "r1122",
     "r1144", "r1438"]
 coverage:
-  state: differs
+  state: matches
   unit: ["TestLokiErrorAnswersReplay"]
   e2e: ["TestCompat_ErrorAnswersLikeLoki"]

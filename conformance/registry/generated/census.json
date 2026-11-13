@@ -611,6 +611,9 @@
     "semantics/otel-name-label-filter-after-parser | compare:observed",
     "semantics/otel-name-label-filter-after-parser | gap:open",
     "semantics/otel-name-label-filter-after-parser | query",
+    "semantics/outer-by-over-without-reads-level-as-label | compare:observed",
+    "semantics/outer-by-over-without-reads-level-as-label | gap:open",
+    "semantics/outer-by-over-without-reads-level-as-label | query",
     "semantics/parenthesized-log-range | compare:observed",
     "semantics/parenthesized-log-range | gap:fixed",
     "semantics/parenthesized-log-range | perf",
@@ -1592,6 +1595,9 @@
     "internal/proxy/recent_tail_bypass_clamp_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/reprint_translation_test.go | semantics/binary-operand-literals-reprint",
     "internal/proxy/reprint_translation_test.go | semantics/label-filter-expression-syntax",
+    "internal/proxy/request_params_rules_test.go | semantics/error-request-validation-parity",
+    "internal/proxy/request_params_test.go | query-stats-envelope",
+    "internal/proxy/request_params_test.go | semantics/error-request-validation-parity",
     "internal/proxy/reserved_field_case_fence_test.go | cache-response-key-versions",
     "internal/proxy/reserved_field_case_fence_test.go | semantics/reserved-field-name-case-outbound",
     "internal/proxy/reserved_field_test.go | cache-response-key-versions",
@@ -1728,6 +1734,7 @@
     "internal/proxy/tenant_query_limits_test.go | series-limits-and-partial-results",
     "internal/proxy/tenant_query_limits_test.go | tenant-query-limits",
     "internal/proxy/tenant_routing_test.go | tenant-numeric-routing",
+    "internal/proxy/time_bounds_test.go | semantics/error-request-validation-parity",
     "internal/proxy/time_bounds_test.go | semantics/request-time-bounds",
     "internal/proxy/top_value_series_limit_test.go | limits/series-limit-error",
     "internal/proxy/top_value_series_limit_test.go | semantics/unwrap-sum-without-collapses",
@@ -1905,6 +1912,8 @@
     "internal/querycorpus/plan_loki_vl_diff_test.go | semantics/metadata-answered-as-parsed-after-extraction-list",
     "internal/querycorpus/plan_loki_vl_diff_test.go | semantics/numeric-label-filter-not-equal-missing-label",
     "internal/querycorpus/plan_loki_vl_diff_test.go | semantics/otel-name-label-filter-after-parser",
+    "internal/querycorpus/plan_loki_vl_metric_diff_harness_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/plan_loki_vl_metric_diff_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/plan_shadow_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/range_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/range_agg_oracle_test.go | architecture-syntax-package-layering",
@@ -2504,14 +2513,14 @@
   "counts": {
     "case_consumers": {
       "any": 32,
-      "api": 90,
+      "api": 91,
       "drilldown": 50,
       "explore": 175,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 556,
+      "go": 560,
       "playwright": 1
     },
     "page_kinds": {
@@ -2530,7 +2539,7 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 106,
+    "unwired_items": 107,
     "wired_items": 340
   },
   "gates": [

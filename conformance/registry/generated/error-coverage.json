@@ -282,10 +282,8 @@
         "r1102"
       ],
       "kind": "limits",
-      "known_difference_ids": [
-        "r1102"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 1,
       "messages": [
         "limit-query-length"
       ],
@@ -296,12 +294,12 @@
           "leaks": []
         }
       },
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "detected_field_values",
       "rows": 1,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -377,12 +375,8 @@
         "r1163"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r1100",
-        "r1114",
-        "r1115"
-      ],
-      "matching_rows": 1,
+      "known_difference_ids": [],
+      "matching_rows": 4,
       "messages": [
         "limit-not-positive",
         "number",
@@ -390,12 +384,12 @@
         "unmapped-path-cleaning-redirect"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "detected_field_values",
       "rows": 4,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -527,10 +521,8 @@
         "r1062"
       ],
       "kind": "limits",
-      "known_difference_ids": [
-        "r1062"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 1,
       "messages": [
         "limit-query-length"
       ],
@@ -541,12 +533,12 @@
           "leaks": []
         }
       },
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "detected_fields",
       "rows": 1,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -629,16 +621,8 @@
         "r1097"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r1060",
-        "r1074",
-        "r1086",
-        "r1089",
-        "r1090",
-        "r1095",
-        "r1097"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 7,
       "messages": [
         "end-before-start",
         "limit-not-positive",
@@ -649,12 +633,12 @@
         "step-not-positive"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "detected_fields",
       "rows": 7,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -882,20 +866,18 @@
         "r1122"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r1122"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 1,
       "messages": [
         "param-number"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "detected_labels",
       "rows": 1,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -1189,24 +1171,20 @@
         "r0920"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r0868",
-        "r0896",
-        "r0920"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 3,
       "messages": [
         "end-before-start",
         "param-duration",
         "param-number"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "index_stats",
       "rows": 3,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -1338,10 +1316,8 @@
         "r0928"
       ],
       "kind": "limits",
-      "known_difference_ids": [
-        "r0928"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 1,
       "messages": [
         "limit-index-series",
         "limit-query-length"
@@ -1353,12 +1329,12 @@
           "leaks": []
         }
       },
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "index_volume",
       "rows": 2,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -1440,11 +1416,8 @@
         "r0962"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r0926",
-        "r0952"
-      ],
-      "matching_rows": 4,
+      "known_difference_ids": [],
+      "matching_rows": 6,
       "messages": [
         "aggregate-by",
         "end-before-start",
@@ -1454,12 +1427,12 @@
         "param-number"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "index_volume",
       "rows": 6,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -1685,12 +1658,8 @@
         "r1011"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r0967",
-        "r0993",
-        "r0998"
-      ],
-      "matching_rows": 6,
+      "known_difference_ids": [],
+      "matching_rows": 9,
       "messages": [
         "aggregate-by",
         "end-before-start",
@@ -1703,12 +1672,12 @@
         "step-too-many-points"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "index_volume_range",
       "rows": 9,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -1940,11 +1909,8 @@
         "r1159"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r0765",
-        "r0791"
-      ],
-      "matching_rows": 2,
+      "known_difference_ids": [],
+      "matching_rows": 4,
       "messages": [
         "not-found",
         "param-duration",
@@ -1952,12 +1918,12 @@
         "unmapped-path-cleaning-redirect"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "label_values",
       "rows": 4,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -2189,11 +2155,8 @@
         "r1374"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r0707",
-        "r0759"
-      ],
-      "matching_rows": 2,
+      "known_difference_ids": [],
+      "matching_rows": 4,
       "messages": [
         "param-duration",
         "param-number",
@@ -2201,12 +2164,12 @@
         "url-semicolon"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "labels",
       "rows": 4,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -2470,14 +2433,8 @@
         "r1045"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r1014",
-        "r1016",
-        "r1040",
-        "r1043",
-        "r1045"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 5,
       "messages": [
         "param-duration",
         "param-number",
@@ -2486,12 +2443,12 @@
         "step-too-many-points"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "patterns",
       "rows": 5,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -2721,24 +2678,20 @@
         "r0676"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r0654",
-        "r0665",
-        "r0676"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 3,
       "messages": [
         "direction",
         "limit-not-positive",
         "number"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "query",
       "rows": 3,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -2985,18 +2938,8 @@
         "r1401"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r0549",
-        "r0561",
-        "r0564",
-        "r0566",
-        "r0573",
-        "r0581",
-        "r0582",
-        "r0590",
-        "r0596"
-      ],
-      "matching_rows": 7,
+      "known_difference_ids": [],
+      "matching_rows": 16,
       "messages": [
         "direction",
         "end-before-start",
@@ -3015,12 +2958,12 @@
         "url-semicolon"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "query_range",
       "rows": 16,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -3411,22 +3354,19 @@
         "r0846"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r0794",
-        "r0846"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 2,
       "messages": [
         "param-duration",
         "param-number"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "series",
       "rows": 2,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -3651,13 +3591,8 @@
         "r1144"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r1138",
-        "r1139",
-        "r1142",
-        "r1144"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 4,
       "messages": [
         "delay-for",
         "limit-not-positive",
@@ -3665,12 +3600,12 @@
         "param-number"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "tail",
       "rows": 4,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -3768,13 +3703,8 @@
         "r1439"
       ],
       "kind": "parameters",
-      "known_difference_ids": [
-        "r1436",
-        "r1437",
-        "r1438",
-        "r1439"
-      ],
-      "matching_rows": 0,
+      "known_difference_ids": [],
+      "matching_rows": 4,
       "messages": [
         "delay-for",
         "limit-not-positive",
@@ -3782,12 +3712,12 @@
         "param-number"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "tail_upgrade",
       "rows": 4,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -4012,8 +3942,8 @@
     }
   ],
   "known_differences": {
-    "ceiling": 63,
-    "rows": 63
+    "ceiling": 10,
+    "rows": 10
   },
   "messages": {
     "aggregate-by": {
@@ -4085,7 +4015,7 @@
       ],
       "item": "msg-delay-for",
       "kind": "param",
-      "matching_rows": 0,
+      "matching_rows": 2,
       "routes": [
         "tail",
         "tail_upgrade"
@@ -4096,7 +4026,7 @@
       ],
       "source": "lokierr",
       "stage": "parameters",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "direction": {
@@ -4107,7 +4037,7 @@
       ],
       "item": "msg-direction",
       "kind": "param",
-      "matching_rows": 0,
+      "matching_rows": 2,
       "routes": [
         "query",
         "query_range"
@@ -4118,7 +4048,7 @@
       ],
       "source": "lokierr",
       "stage": "parameters",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "end-before-start": {
@@ -4132,7 +4062,7 @@
       ],
       "item": "msg-end-before-start",
       "kind": "param",
-      "matching_rows": 2,
+      "matching_rows": 5,
       "routes": [
         "detected_fields",
         "index_stats",
@@ -4149,7 +4079,7 @@
       ],
       "source": "lokierr",
       "stage": "parameters",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "instant-log-query": {
@@ -4197,7 +4127,7 @@
       ],
       "item": "msg-interval-negative",
       "kind": "param",
-      "matching_rows": 0,
+      "matching_rows": 1,
       "routes": [
         "query_range"
       ],
@@ -4206,7 +4136,7 @@
       ],
       "source": "lokierr",
       "stage": "parameters",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "limit-index-series": {
@@ -4261,7 +4191,7 @@
       ],
       "item": "msg-limit-not-positive",
       "kind": "param",
-      "matching_rows": 2,
+      "matching_rows": 8,
       "routes": [
         "detected_field_values",
         "detected_fields",
@@ -4284,7 +4214,7 @@
       ],
       "source": "lokierr",
       "stage": "parameters",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "limit-query-length": {
@@ -4301,7 +4231,7 @@
       ],
       "item": "msg-limit-query-length",
       "kind": "limit",
-      "matching_rows": 5,
+      "matching_rows": 8,
       "routes": [
         "detected_field_values",
         "detected_fields",
@@ -4326,7 +4256,7 @@
       ],
       "source": "lokierr",
       "stage": "limits",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "limit-series": {
@@ -4500,7 +4430,7 @@
       ],
       "item": "msg-number",
       "kind": "param",
-      "matching_rows": 2,
+      "matching_rows": 8,
       "routes": [
         "detected_field_values",
         "detected_fields",
@@ -4523,7 +4453,7 @@
       ],
       "source": "lokierr",
       "stage": "parameters",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "only-label-matchers": {
@@ -4603,7 +4533,7 @@
       ],
       "item": "msg-param-duration",
       "kind": "param",
-      "matching_rows": 0,
+      "matching_rows": 9,
       "routes": [
         "detected_fields",
         "index_stats",
@@ -4628,7 +4558,7 @@
       ],
       "source": "lokierr",
       "stage": "parameters",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "param-number": {
@@ -4650,7 +4580,7 @@
       ],
       "item": "msg-param-number",
       "kind": "param",
-      "matching_rows": 2,
+      "matching_rows": 14,
       "routes": [
         "detected_field_values",
         "detected_fields",
@@ -4684,7 +4614,7 @@
       ],
       "source": "lokierr",
       "stage": "parameters",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "parse": {
@@ -4839,7 +4769,7 @@
       ],
       "item": "msg-step-duration",
       "kind": "param",
-      "matching_rows": 0,
+      "matching_rows": 4,
       "routes": [
         "detected_fields",
         "index_volume_range",
@@ -4854,7 +4784,7 @@
       ],
       "source": "lokierr",
       "stage": "parameters",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "step-not-positive": {
@@ -4867,7 +4797,7 @@
       ],
       "item": "msg-step-not-positive",
       "kind": "param",
-      "matching_rows": 1,
+      "matching_rows": 4,
       "routes": [
         "detected_fields",
         "index_volume_range",
@@ -4882,7 +4812,7 @@
       ],
       "source": "lokierr",
       "stage": "parameters",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "step-overflow": {
@@ -4892,7 +4822,7 @@
       ],
       "item": "msg-step-overflow",
       "kind": "param",
-      "matching_rows": 0,
+      "matching_rows": 1,
       "routes": [
         "query_range"
       ],
@@ -4901,7 +4831,7 @@
       ],
       "source": "lokierr",
       "stage": "parameters",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "step-too-many-points": {
@@ -4913,7 +4843,7 @@
       ],
       "item": "msg-step-too-many-points",
       "kind": "param",
-      "matching_rows": 2,
+      "matching_rows": 3,
       "routes": [
         "index_volume_range",
         "patterns",
@@ -4926,7 +4856,7 @@
       ],
       "source": "lokierr",
       "stage": "parameters",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "tail-not-websocket": {
@@ -5171,16 +5101,16 @@
   "summary": {
     "cells": 124,
     "cells_e2e": 71,
-    "cells_matching": 77,
+    "cells_matching": 94,
     "cells_recorded": 65,
     "check_order_rows": 33,
     "comparable_rows": 219,
     "coverage_ratio": 0.5726,
     "covered_cells": 71,
-    "differing_rows": 63,
+    "differing_rows": 10,
     "e2e_rows": 133,
-    "match_ratio": 0.7123,
-    "matching_rows": 156,
+    "match_ratio": 0.9543,
+    "matching_rows": 209,
     "messages": 34,
     "messages_documented": 7,
     "messages_recorded": 27,

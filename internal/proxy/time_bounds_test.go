@@ -440,12 +440,31 @@ func TestRequestTimeBoundsOtherTimeForms(t *testing.T) {
 		{"fractional seconds past int64", "9223372036.855", "9223372040.855", true},
 		{"huge fractional seconds", "1.5e18", "1.5e18", false},
 		{"seconds beyond int64 nanoseconds", "99999999999", "99999999999", true},
-		{"now moved forward by 290 years", "now+2540000h", "now+2540001h", true},
-		{"now", "now-1h", "now", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := answerWithinBudget(t, p, timeBoundsTarget("query_range", map[string]string{"query": q, "start": tc.start, "end": tc.end, "step": "60s"}))
 			assertTimeBoundsAnswer(t, rec, tc.refused)
+		})
+	}
+}
+
+// now and now-1h are not times to Loki: it answers its parse error for them
+// (recorded, r0544), so the proxy does too, before the cache and the time bounds.
+//
+// conformance: semantics/request-time-bounds, semantics/error-request-validation-parity
+func TestRequestTimeBoundsRelativeTimesAreNotTimes(t *testing.T) {
+	p, _ := timeBoundsProxy(t)
+	const q = `count_over_time({app="x"}[1m])`
+	for _, tc := range []struct{ name, start, end, want string }{
+		{"now as the end", "now-1h", "now", `could not parse 'end' parameter: strconv.ParseInt: parsing "now": invalid syntax`},
+		{"now moved forward by 290 years", "now+2540000h", "now+2540001h", `could not parse 'end' parameter: strconv.ParseInt: parsing "now+2540001h": invalid syntax`},
+		{"now as the start", "now", "1794494220", `could not parse 'start' parameter: strconv.ParseInt: parsing "now": invalid syntax`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := answerWithinBudget(t, p, timeBoundsTarget("query_range", map[string]string{"query": q, "start": tc.start, "end": tc.end, "step": "60s"}))
+			if rec.Code != http.StatusBadRequest || rec.Body.String() != tc.want {
+				t.Fatalf("got %d %q, want 400 %q", rec.Code, rec.Body.String(), tc.want)
+			}
 		})
 	}
 }
@@ -955,7 +974,7 @@ func FuzzRequestTimeBounds(f *testing.F) {
 	f.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
-	allowed := regexp.MustCompile(`^(strconv\.ParseInt: parsing .*|could not parse .*|exceeded maximum resolution.*|end timestamp must not be before.*|cannot parse .*|parse error.*|invalid .*|log queries are not supported.*)$`)
+	allowed := regexp.MustCompile(`^(strconv\.ParseInt: parsing .*|could not parse .*|exceeded maximum resolution.*|end timestamp must not be before.*|cannot parse .*|parse error.*|invalid .*|log queries are not supported.*|zero or negative query resolution step widths are not accepted.*)$`)
 	f.Fuzz(func(t *testing.T, start, end, stepSeconds, offsetNs int64) {
 		step := strconv.FormatInt(stepSeconds, 10) + "s"
 		offsetClause := ""

@@ -2284,6 +2284,18 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
+      "expression": "r, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/request_params.go requestParamValidation",
+      "writer": "fail"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
       "expression": "r, notServed(\"binary-marker\", nil)",
       "kind": "layer",
       "message": null,
@@ -2411,18 +2423,6 @@
       "status_token": null,
       "where": "internal/proxy/stream_processing.go wrapStatsOrFail",
       "writer": "writeVLStatsErrorBody"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": null,
-      "expression": "r, lokierr.Parse(0, 0, \"syntax error: unexpected $end\")",
-      "kind": "layer",
-      "message": null,
-      "status": null,
-      "status_token": null,
-      "where": "internal/proxy/tail.go handleTail",
-      "writer": "fail"
     },
     {
       "dynamic": false,

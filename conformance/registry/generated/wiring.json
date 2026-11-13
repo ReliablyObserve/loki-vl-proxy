@@ -47,6 +47,8 @@
       "internal/querycorpus/parser_metric_grid_test.go",
       "internal/querycorpus/plan_loki_vl_diff_harness_test.go",
       "internal/querycorpus/plan_loki_vl_diff_test.go",
+      "internal/querycorpus/plan_loki_vl_metric_diff_harness_test.go",
+      "internal/querycorpus/plan_loki_vl_metric_diff_test.go",
       "internal/querycorpus/plan_shadow_test.go",
       "internal/querycorpus/range_agg_grid_test.go",
       "internal/querycorpus/range_agg_oracle_test.go",
@@ -999,6 +1001,7 @@
       "internal/proxy/query_stats_shards_test.go",
       "internal/proxy/query_stats_test.go",
       "internal/proxy/query_stats_totals_test.go",
+      "internal/proxy/request_params_test.go",
       "test/e2e-compat/query_stats_test.go"
     ],
     "range_function-count-over-time": [
@@ -1197,6 +1200,9 @@
       "internal/lokierr/lokierr_test.go",
       "internal/proxy/error_refusals_test.go",
       "internal/proxy/loki_error_answers_replay_test.go",
+      "internal/proxy/request_params_rules_test.go",
+      "internal/proxy/request_params_test.go",
+      "internal/proxy/time_bounds_test.go",
       "test/e2e-compat/error_answers_like_loki_test.go"
     ],
     "semantics/extracted-metric-known-differences": [
@@ -2154,7 +2160,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 560,
+  "registry_items": 561,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3171,6 +3177,13 @@
       "semantics/binary-operand-literals-reprint",
       "semantics/label-filter-expression-syntax"
     ],
+    "internal/proxy/request_params_rules_test.go": [
+      "semantics/error-request-validation-parity"
+    ],
+    "internal/proxy/request_params_test.go": [
+      "query-stats-envelope",
+      "semantics/error-request-validation-parity"
+    ],
     "internal/proxy/reserved_field_case_fence_test.go": [
       "cache-response-key-versions",
       "semantics/reserved-field-name-case-outbound"
@@ -3390,6 +3403,7 @@
       "tenant-numeric-routing"
     ],
     "internal/proxy/time_bounds_test.go": [
+      "semantics/error-request-validation-parity",
       "semantics/request-time-bounds"
     ],
     "internal/proxy/top_value_series_limit_test.go": [
@@ -3683,6 +3697,12 @@
       "semantics/metadata-answered-as-parsed-after-extraction-list",
       "semantics/numeric-label-filter-not-equal-missing-label",
       "semantics/otel-name-label-filter-after-parser"
+    ],
+    "internal/querycorpus/plan_loki_vl_metric_diff_harness_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/plan_loki_vl_metric_diff_test.go": [
+      "architecture-syntax-package-layering"
     ],
     "internal/querycorpus/plan_shadow_test.go": [
       "architecture-syntax-package-layering"
@@ -4744,7 +4764,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 557,
+  "tests_with_markers": 561,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4811,6 +4831,7 @@
     "semantics/logfmt-malformed-lines",
     "semantics/logfmt-over-json-line-reads-stored-fields",
     "semantics/nested-aggregation-query-length",
+    "semantics/outer-by-over-without-reads-level-as-label",
     "semantics/parse-error-labels-on-log-lines",
     "semantics/pattern-capture-before-bracket-text",
     "semantics/quantile-over-time-out-of-range",

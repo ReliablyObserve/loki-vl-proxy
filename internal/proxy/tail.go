@@ -18,7 +18,6 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 )
 
@@ -27,12 +26,9 @@ import (
 // VL:   GET /select/logsql/tail?query=...
 func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	// The route's query rule (lokiTailQuery) answered an empty query with
+	// Loki's parse error before this handler ran.
 	logqlQuery := r.FormValue("query")
-	if logqlQuery == "" {
-		status := p.fail(w, r, lokierr.Parse(0, 0, "syntax error: unexpected $end"))
-		p.metrics.RecordRequest("tail", status, time.Since(start))
-		return
-	}
 
 	// The VictoriaLogs query of a query_range request: the stages
 	// VictoriaLogs cannot run like Loki run on the proxy (tailPipeline).
