@@ -208,6 +208,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/stddev-stdvar-over-time-step-bucket` — stddev and stdvar over time with unwrap and range == step are the window ending at T, like Loki (fixed) | this change | 0 | 0 |
 | `semantics/stdvar-grouped-binary-marker` — stdvar_over_time under a grouping or without a parser answers 200, and with its own by() has Loki's values (fixed) | this change | 0 | 0 |
 | `semantics/sub-second-step-grid` — a query_range step under a second answers a point every step at Loki's millisecond times, a step under a millisecond is Loki's 500 (fixed) | #1004 | 0 | 0 |
+| `semantics/tail-survives-backend-outage` — A live tail rides out a short VictoriaLogs restart and carries on without repeating or skipping a line (fixed) | TBD-PR | 0 | 0 |
 | `semantics/topk-bottomk-without-strips-label` — topk without and bottomk without keep every label of the winning series, like Loki (fixed) | #736 | 0 | 0 |
 | `semantics/topk-over-vector-aggregation` — An aggregation around a topk, bottomk or sort folds what the ranking kept at each step (fixed) | #749 | 0 | 0 |
 | `semantics/unwrap-conversion-error` — An unwrap over a value its conversion rejects fails like Loki, with a 400 SampleExtractionErr (fixed) | #704 | 0 | 0 |

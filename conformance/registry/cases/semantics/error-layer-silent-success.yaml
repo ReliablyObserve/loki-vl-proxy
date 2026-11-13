@@ -8,7 +8,7 @@ consumer: any
 why: |
   Several routes decode a malformed 200 body as empty, including the Drilldown
   stats route. The tail no longer closes normally: a native stream that
-  ends or fails and a failed poll close with 1011 and Loki's text. Patterns now answers each of the 14
+  ends or fails and a failed poll close with 1011 and Loki's text (a native stream that ends or a poll that fails after the retry window, -tail.backend-retry-window, when a retry can fix it). Patterns now answers each of the 14
   backend failure modes with the error the other routes give it (500, 504, 499,
   429, 400) when it has no earlier answer to serve. detected_fields,
   detected_field values and detected_labels now answer each failed call (a

@@ -466,6 +466,12 @@ type Config struct {
 	// Tail/WebSocket hardening
 	TailAllowedOrigins []string
 	TailMode           TailMode
+	// TailBackendRetryWindow (-tail.backend-retry-window) is how long a live
+	// tail keeps its client connected while VictoriaLogs fails for a reason a
+	// retry can fix, reopening the stream or polling again with a backoff.
+	// Zero (the library default; the flag defaults to 30s) closes the tail
+	// with Loki's 1011 on the first failed call.
+	TailBackendRetryWindow time.Duration
 
 	// Metrics/export hardening
 	MetricsMaxTenants            int
@@ -787,6 +793,9 @@ type Proxy struct {
 	drilldownCoalescer                    *DrilldownBurstCoalescer
 	tailAllowedOrigins                    map[string]struct{}
 	tailMode                              TailMode
+	tailBackendRetryWindow                time.Duration // -tail.backend-retry-window; 0 = no retry
+	tailRetryInitialBackoff               time.Duration // first wait between retries (tests shorten it)
+	tailRetryMaxBackoff                   time.Duration // longest wait between retries
 	metricsTrustProxyHeaders              bool
 	tenantLimitsAllowPublish              []string
 	tenantDefaultLimits                   map[string]any
@@ -1472,6 +1481,9 @@ func New(cfg Config) (*Proxy, error) {
 		metricsConcurrencyLimiter:             buildConcurrencyLimiter(cfg.MetricsMaxConcurrency),
 		tailAllowedOrigins:                    tailAllowedOrigins,
 		tailMode:                              tailMode,
+		tailBackendRetryWindow:                max(cfg.TailBackendRetryWindow, 0),
+		tailRetryInitialBackoff:               tailRetryInitialBackoff,
+		tailRetryMaxBackoff:                   tailRetryMaxBackoff,
 		metricsTrustProxyHeaders:              cfg.MetricsTrustProxyHeaders,
 		tenantLimitsAllowPublish:              tenantLimitsAllowPublish,
 		tenantDefaultLimits:                   tenantDefaultLimits,

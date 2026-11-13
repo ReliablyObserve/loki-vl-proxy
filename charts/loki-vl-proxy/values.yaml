@@ -420,6 +420,7 @@ extraArgs:
   # server.admin-auth-token: ""                 # bearer token for admin/debug endpoints; prefer adminAuth.existingSecret (a plain value is visible in the pod spec and `helm get values`)
   # tail.mode: "auto"                           # auto | native | synthetic
   # tail.allowed-origins: ""                    # comma-separated websocket origin allowlist
+  # tail.backend-retry-window: "30s"            # how long a live tail stays open and retries while VictoriaLogs restarts or fails (resumes without repeating or skipping lines); 0 closes the tail on the first failure
   # ruler-backend: ""                           # optional /rules passthrough backend
   # alerts-backend: ""                          # optional /alerts passthrough backend
   # extra-label-fields: "service.name,host.name"

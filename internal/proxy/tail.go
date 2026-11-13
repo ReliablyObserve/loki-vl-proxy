@@ -120,21 +120,32 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	p.log.Debug("tail connected", "logql", redactQuery(logqlQuery, p.debugLogRawQueries), "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "native", nativeTail, "fallback", fallbackErr)
 	if !nativeTail {
 		if p.tailMode == TailModeNative {
-			p.closeTailWithError(wsCtx, conn, fallbackErr)
+			// A native-only tail has nothing to fall back to: a failure a
+			// retry can fix is retried, the rest closes the tail.
+			p.streamNativeTail(wsCtx, conn, tp, logsqlQuery, nil, fallbackErr, pingTicker.C)
 			return
 		}
 		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, tp, r.FormValue("start"))
 		return
 	}
-	defer resp.Body.Close()
 
-	p.forwardNativeTail(wsCtx, conn, tp, resp.Body, pingTicker.C)
+	p.streamNativeTail(wsCtx, conn, tp, logsqlQuery, resp, nil, pingTicker.C)
+}
+
+// tailForwardResult is how a forwarded native stream ended.
+type tailForwardResult struct {
+	// err is why a stream the client still wanted ended: VictoriaLogs closed
+	// it or it broke. It is nil when the client went away.
+	err        error
+	clientGone bool
+	rows       int // rows forwarded
 }
 
 // forwardNativeTail reads VictoriaLogs' NDJSON tail stream and forwards it
 // as Loki tail frames until the stream ends, the client goes away or a
-// write fails.
-func (p *Proxy) forwardNativeTail(wsCtx context.Context, conn tailConn, tp *tailPipeline, body io.Reader, ping <-chan time.Time) {
+// write fails. It does not close the tail: the caller decides whether the
+// failure is retried or ends the tail.
+func (p *Proxy) forwardNativeTail(wsCtx context.Context, conn tailConn, tp *tailPipeline, body io.Reader, ping <-chan time.Time) (res tailForwardResult) {
 	// Read VL NDJSON stream and forward as Loki WebSocket frames. The
 	// channel holds one frame's worth of rows, so rows that arrive together
 	// are converted and sent together while a slow client still holds the
@@ -144,25 +155,47 @@ func (p *Proxy) forwardNativeTail(wsCtx context.Context, conn tailConn, tp *tail
 	go func() {
 		scanner := bufio.NewScanner(body)
 		scanner.Buffer(make([]byte, 0, tailScanBufferInitial), 1024*1024) // 1MB max line
+		var partial bool
+		scanner.Split(splitTailRows(&partial))
 		for scanner.Scan() {
-			line := append([]byte(nil), scanner.Bytes()...)
+			row := bytes.TrimSpace(scanner.Bytes())
+			if len(row) == 0 {
+				continue
+			}
+			if !tailRowShapeOK(row) {
+				// A body that is not NDJSON of objects is broken, not a
+				// moment of trouble: no retry reads it any better.
+				errCh <- errTailRowNotJSON()
+				return
+			}
+			line := append([]byte(nil), row...)
 			select {
 			case lineCh <- line:
 			case <-wsCtx.Done():
 				return
 			}
 		}
-		errCh <- scanner.Err()
+		err := scanner.Err()
+		if err == nil && partial {
+			err = io.ErrUnexpectedEOF
+		}
+		errCh <- err
 	}()
 
+	// rows counts the entries delivered to the client, not the rows read: the
+	// rows a reopened stream sends again are dropped.
+	delivered := tp.delivered
+	defer func() { res.rows = tp.delivered - delivered }()
 	for {
 		select {
 		case <-wsCtx.Done():
-			return
+			res.clientGone = true
+			return res
 		case <-ping:
 			if err := p.writeTailMessage(conn, websocket.PingMessage, nil); err != nil {
 				p.log.Debug("websocket ping failed, client disconnected", "error", err)
-				return
+				res.clientGone = true
+				return res
 			}
 		case err := <-errCh:
 			// Rows read before the stream ended are still sent.
@@ -178,20 +211,22 @@ func (p *Proxy) forwardNativeTail(wsCtx context.Context, conn tailConn, tp *tail
 			}
 			if len(rest) > 0 {
 				if werr := p.writeTailRows(wsCtx, conn, tp, rest); werr != nil {
-					return
+					res.clientGone = true
+					return res
 				}
 			}
 			// A VictoriaLogs tail has no end of its own: a stream that stops,
 			// cleanly or not, while the client is still connected is a failed
-			// call, and the client is told so rather than left with a bare
-			// disconnect it would read as a normal close.
-			if wsCtx.Err() == nil {
-				if err == nil {
-					err = errTailStreamEnded
-				}
-				p.closeTailWithError(wsCtx, conn, err)
+			// call; the caller tells the client or reopens the stream.
+			if wsCtx.Err() != nil {
+				res.clientGone = true
+				return res
 			}
-			return
+			if err == nil {
+				err = errTailStreamEnded
+			}
+			res.err = err
+			return res
 		case line := <-lineCh:
 			// Rows that arrived together go out together, at most
 			// maxTailFrameEntries a batch.
@@ -207,7 +242,8 @@ func (p *Proxy) forwardNativeTail(wsCtx context.Context, conn tailConn, tp *tail
 			}
 			if err := p.writeTailRows(wsCtx, conn, tp, batch); err != nil {
 				p.log.Debug("websocket write failed, client disconnected", "error", err)
-				return
+				res.clientGone = true
+				return res
 			}
 		}
 	}
@@ -296,6 +332,14 @@ func (p *Proxy) preflightTailAccess(parent context.Context, logsqlQuery, startHi
 const maxTailCloseReasonBytes = 123
 
 func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string) (*http.Response, bool, error) {
+	return p.openNativeTailStreamFrom(parent, logsqlQuery, 0)
+}
+
+// openNativeTailStreamFrom opens the native tail. A resumed stream passes the
+// time since the row it reads from as startOffset: VictoriaLogs' first read
+// then covers that span (its start_offset option, 5s when absent) instead of
+// the last five seconds, so the rows of a gap come back.
+func (p *Proxy) openNativeTailStreamFrom(parent context.Context, logsqlQuery string, startOffset time.Duration) (*http.Response, bool, error) {
 	// Use the full request context (parent) so that the response body reader — which
 	// the caller uses to forward the VL streaming tail — is not cancelled by a short
 	// probe deadline.  VL v1.50+ accepts the request immediately (200 OK headers
@@ -313,7 +357,11 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 	// VL sends headers well within the 5s budget.  VL expects a duration string
 	// (e.g. "0s"), not a bare integer.
 
-	params := guardOutboundQuery(p.scopedTenantParams(parent, url.Values{"query": {logsqlQuery}, "offset": {"0s"}}))
+	params := url.Values{"query": {logsqlQuery}, "offset": {"0s"}}
+	if startOffset > 0 {
+		params.Set("start_offset", strconv.FormatInt(startOffset.Milliseconds(), 10)+"ms")
+	}
+	params = guardOutboundQuery(p.scopedTenantParams(parent, params))
 	tailURL := backendRequestURL(p.backend, "/select/logsql/tail")
 	tailURL.RawQuery = params.Encode()
 	vlURL := tailURL.String()
@@ -352,21 +400,40 @@ func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQu
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
+	retry := p.newTailRetry()
 	for {
+		wait := time.Duration(-1) // the poll interval, unless a failed poll is retried sooner
 		if err := p.writeSyntheticTailBatch(ctx, conn, logsqlQuery, tp, &windowStart, lastSeen); err != nil {
 			var writeErr *tailClientWriteError
-			if !errors.As(err, &writeErr) {
-				// A failed VictoriaLogs call ends the tail like a native stream
-				// that fails: Loki's tail does not retry.
-				p.closeTailWithError(ctx, conn, err)
+			if ctx.Err() != nil || errors.As(err, &writeErr) {
+				return
 			}
-			return
+			// A poll that fails is repeated from the same cursor: the rows of
+			// the outage are in the next answer, and the rows seen are dropped.
+			var verdict tailRetryVerdict
+			if wait, verdict = retry.next(err, time.Now()); verdict != tailRetryAgain {
+				// A failed VictoriaLogs call ends the tail like a native stream
+				// that fails, once the retry window is spent.
+				p.tailRetryEnded(ctx, conn, retry, err, verdict)
+				return
+			}
+			p.observeInternalOperation(ctx, tailRetryOpName, tailRetryOutRetried, wait)
+			p.log.Debug("tail backend poll failed, retrying", "wait", wait, "error", p.sanitizeUpstreamError(err))
+		} else {
+			p.tailRetryRecovered(ctx, retry)
+			retry.reset()
 		}
 
-		select {
-		case <-ctx.Done():
+		if wait < 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			continue
+		}
+		if !p.tailSleep(ctx, conn, nil, wait) {
 			return
-		case <-ticker.C:
 		}
 	}
 }
@@ -390,8 +457,13 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, tailScanBufferInitial), 1024*1024)
+	// A body that stops in the middle of a row is a broken call, not a row
+	// that is not JSON: the row is not read, and the poll is repeated.
+	var partial bool
+	scanner.Split(splitTailRows(&partial))
 	newest := *windowStart
 	var batch []byte
+	var pending []string
 	for scanner.Scan() {
 		line := append([]byte(nil), scanner.Bytes()...)
 		if len(bytes.TrimSpace(line)) == 0 {
@@ -401,7 +473,7 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 		var vlLine map[string]interface{}
 		if err := json.Unmarshal(line, &vlLine); err != nil {
 			// A row that is not JSON is a broken body, not a row to skip.
-			return fmt.Errorf("synthetic tail row is not JSON: %w", err)
+			return fmt.Errorf("synthetic tail row is not JSON: %w: %w", errTailMalformedRow, err)
 		}
 		timeStr, _ := stringifyEntryValue(vlLine["_time"])
 		msgStr, _ := stringifyEntryValue(vlLine["_msg"])
@@ -410,7 +482,9 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 		if lastSeen.Contains(seenKey) {
 			continue
 		}
-		lastSeen.Add(seenKey)
+		// Noted as seen once the batch is delivered: a body that breaks
+		// part-way is read again from the same cursor.
+		pending = append(pending, seenKey)
 
 		if entryTime, ok := parseEntryTime(timeStr); ok && entryTime.After(newest) {
 			newest = entryTime
@@ -421,8 +495,14 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 	if err := scanner.Err(); err != nil {
 		return err
 	}
+	if partial {
+		return io.ErrUnexpectedEOF
+	}
 	if err := p.writeTailRows(ctx, conn, tp, batch); err != nil {
 		return err
+	}
+	for _, key := range pending {
+		lastSeen.Add(key)
 	}
 
 	*windowStart = newest.Add(time.Nanosecond)
@@ -496,6 +576,11 @@ type tailPipeline struct {
 	exposure        *lineFieldExposure
 	lineFields      map[string]bool
 	lineFormat      string
+	// resume tracks what a native tail delivered, so a stream reopened after
+	// a backend outage carries on from there (tail_retry.go).
+	resume tailResume
+	// delivered counts the entries written to the client as frames.
+	delivered int
 }
 
 // maxTailFrameEntries is the most entries one tail frame holds, as Loki's
@@ -535,6 +620,13 @@ func (p *Proxy) tailFrames(ctx context.Context, tp *tailPipeline, rows []byte) (
 		return nil, err
 	}
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].ts < entries[j].ts })
+	if tp.resume.track {
+		if entries = tp.resume.filter(entries, time.Now()); len(entries) == 0 {
+			return nil, nil
+		}
+		tp.resume.observe(entries)
+	}
+	tp.delivered += len(entries)
 	frames := make([][]byte, 0, (len(entries)+maxTailFrameEntries-1)/maxTailFrameEntries)
 	for start := 0; start < len(entries); start += maxTailFrameEntries {
 		chunk := entries[start:min(start+maxTailFrameEntries, len(entries))]
