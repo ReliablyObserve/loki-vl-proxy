@@ -28,8 +28,8 @@ why: |
   only add to an answer that already has its required read keep it, and the
   mixed-failure gate names them with the reason.
   With -stream-response a log query sends the status line with its first row.
-  A body that is not JSON, that breaks off, or that holds a row above 1 MiB
-  before that row is answered as Loki's 500; one that breaks after it ends the
+  A body that is not JSON, that breaks off, or that holds a row above 8 MiB
+  before that row is answered as Loki's 500 (a row is read up to 8 MiB, as the buffered decoder reads it); one that breaks after it ends the
   response abnormally, so the client never reads a complete-looking partial
   result.
   Loki answers the same failures with an error, and Drilldown's partial

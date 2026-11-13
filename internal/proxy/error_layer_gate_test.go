@@ -366,8 +366,9 @@ type errLayerOutcome struct {
 	released bool
 	// aborted: the handler aborted the response (http.ErrAbortHandler) after
 	// sending the status line, which a client sees as a broken response; body
-	// is what was written before.
-	aborted bool
+	// is what was written before. streamed: the proxy ran with -stream-response,
+	// the only setting where an abort is an answer.
+	aborted, streamed bool
 }
 
 // errLayerExpect is Loki's answer to a failure mode.
@@ -461,7 +462,7 @@ func errLayerClasses(rt errLayerRoute, mode string, o errLayerOutcome, backendHo
 		// A streamed answer already sent as 200 cannot become an error. Only a
 		// body that breaks off mid-answer may end this way, and what was sent
 		// must never be a complete JSON document.
-		if mode != "truncated" || json.Valid([]byte(o.body)) {
+		if !o.streamed || mode != "truncated" || json.Valid([]byte(o.body)) {
 			classes[leakSilentSuccess] = true
 		}
 		return errLayerClassList(classes)
@@ -646,7 +647,7 @@ func runErrLayerBackendCell(t *testing.T, rt errLayerRoute, backend *errLayerBac
 		// one never met the failure.
 		t.Fatalf("route %s never called the backend; the cell proves nothing (status %d, body %.300q)", rt.name, w.Code, w.Body.String())
 	}
-	return errLayerOutcome{status: w.Code, body: w.Body.String(), headers: w.Header(), aborted: aborted}, host
+	return errLayerOutcome{status: w.Code, body: w.Body.String(), headers: w.Header(), aborted: aborted, streamed: backend.stream}, host
 }
 
 // serveRecoveringAbort serves req and reports whether the handler aborted the

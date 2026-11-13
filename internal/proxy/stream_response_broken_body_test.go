@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -61,12 +62,17 @@ type streamClientView struct {
 }
 
 // newStreamProxyServer serves the proxy with -stream-response on the shipped
-// chain from a real server, so the client sees what a connection shows.
-func newStreamProxyServer(t testing.TB, backendURL string) *httptest.Server {
+// chain from a real server, so the client sees what a connection shows. tune
+// edits the config first.
+func newStreamProxyServer(t testing.TB, backendURL string, tune ...func(*Config)) *httptest.Server {
 	t.Helper()
 	c := cache.New(time.Minute, 100)
 	t.Cleanup(c.Close)
-	p, err := New(Config{BackendURL: backendURL, Cache: c, LogLevel: "error", StreamResponse: true})
+	cfg := Config{BackendURL: backendURL, Cache: c, LogLevel: "error", StreamResponse: true}
+	for _, f := range tune {
+		f(&cfg)
+	}
+	p, err := New(cfg)
 	if err != nil {
 		t.Fatalf("new proxy: %v", err)
 	}
@@ -126,37 +132,43 @@ func readStreamClient(t testing.TB, base string, limit int, acceptGzip bool) str
 // conformance: semantics/error-layer-silent-success, semantics/error-layer-internal-go-text, status-500
 func TestStreamResponse_BrokenBackendBody(t *testing.T) {
 	good := streamRows(12)
-	bigRow := `{"_time":"2024-01-15T10:30:00Z","_stream":"{app=\"api\"}","app":"api","_msg":"` + strings.Repeat("y", 2<<20) + `"}` + "\n"
+	// The line cap is the buffered decoder's 8 MiB: a 2 MiB row is read, a 9 MiB row is not.
+	rowOf := func(n int) string {
+		return `{"_time":"2024-01-15T10:30:00Z","_stream":"{app=\"api\"}","app":"api","_msg":"` + strings.Repeat("y", n) + `"}` + "\n"
+	}
+	bigRow := rowOf(9 << 20)
 	cases := []struct {
 		name    string
 		serve   func(w http.ResponseWriter)
 		status  int  // the status the client sees
 		aborted bool // the 200 was sent and the response then ends abnormally
+		streams int  // the streams of a complete answer
 	}{
 		// Broken before the first row: Loki's error, no envelope.
-		{"first_row_not_json", func(w http.ResponseWriter) { _, _ = io.WriteString(w, "this is not json\n"+good) }, 500, false},
-		{"first_row_scalar", func(w http.ResponseWriter) { _, _ = io.WriteString(w, "42\n"+good) }, 500, false},
-		{"first_row_array", func(w http.ResponseWriter) { _, _ = io.WriteString(w, "[1,2]\n"+good) }, 500, false},
-		{"first_row_json_null", func(w http.ResponseWriter) { _, _ = io.WriteString(w, "null\n"+good) }, 500, false},
-		{"cut_before_first_row", func(w http.ResponseWriter) { streamCutBody(w, 4096, "") }, 500, false},
-		{"cut_inside_first_row", func(w http.ResponseWriter) { streamCutBody(w, 4096, good[:60]) }, 500, false},
-		{"first_row_over_the_line_limit", func(w http.ResponseWriter) { _, _ = io.WriteString(w, bigRow+good) }, 500, false},
+		{"first_row_not_json", func(w http.ResponseWriter) { _, _ = io.WriteString(w, "this is not json\n"+good) }, 500, false, 0},
+		{"first_row_scalar", func(w http.ResponseWriter) { _, _ = io.WriteString(w, "42\n"+good) }, 500, false, 0},
+		{"first_row_array", func(w http.ResponseWriter) { _, _ = io.WriteString(w, "[1,2]\n"+good) }, 500, false, 0},
+		{"first_row_json_null", func(w http.ResponseWriter) { _, _ = io.WriteString(w, "null\n"+good) }, 500, false, 0},
+		{"cut_before_first_row", func(w http.ResponseWriter) { streamCutBody(w, 4096, "") }, 500, false, 0},
+		{"cut_inside_first_row", func(w http.ResponseWriter) { streamCutBody(w, 4096, good[:60]) }, 500, false, 0},
+		{"first_row_over_the_line_limit", func(w http.ResponseWriter) { _, _ = io.WriteString(w, bigRow+good) }, 500, false, 0},
 		// Rows that are not part of the answer come before the first one that is.
 		{"skipped_rows_then_not_json", func(w http.ResponseWriter) {
 			_, _ = io.WriteString(w, `{"app":"no time"}`+"\n\n"+"garbage\n"+good)
-		}, 500, false},
+		}, 500, false, 0},
 		// Broken after the envelope is out: the response ends abnormally.
-		{"rows_then_not_json", func(w http.ResponseWriter) { _, _ = io.WriteString(w, good+"garbage\n"+good) }, 200, true},
-		{"rows_then_scalar", func(w http.ResponseWriter) { _, _ = io.WriteString(w, good+"7\n"+good) }, 200, true},
-		{"rows_then_array", func(w http.ResponseWriter) { _, _ = io.WriteString(w, good+"[]\n"+good) }, 200, true},
-		{"rows_then_cut_on_a_row_boundary", func(w http.ResponseWriter) { streamCutBody(w, len(good)*2, good) }, 200, true},
-		{"rows_then_cut_inside_a_row", func(w http.ResponseWriter) { streamCutBody(w, len(good)*2, good+good[:90]) }, 200, true},
-		{"rows_then_row_over_the_line_limit", func(w http.ResponseWriter) { _, _ = io.WriteString(w, good+bigRow+good) }, 200, true},
+		{"rows_then_not_json", func(w http.ResponseWriter) { _, _ = io.WriteString(w, good+"garbage\n"+good) }, 200, true, 0},
+		{"rows_then_scalar", func(w http.ResponseWriter) { _, _ = io.WriteString(w, good+"7\n"+good) }, 200, true, 0},
+		{"rows_then_array", func(w http.ResponseWriter) { _, _ = io.WriteString(w, good+"[]\n"+good) }, 200, true, 0},
+		{"rows_then_cut_on_a_row_boundary", func(w http.ResponseWriter) { streamCutBody(w, len(good)*2, good) }, 200, true, 0},
+		{"rows_then_cut_inside_a_row", func(w http.ResponseWriter) { streamCutBody(w, len(good)*2, good+good[:90]) }, 200, true, 0},
+		{"rows_then_row_over_the_line_limit", func(w http.ResponseWriter) { _, _ = io.WriteString(w, good+bigRow+good) }, 200, true, 0},
 		// Not failures: nothing to answer, or rows Loki would not return.
-		{"empty_body", func(w http.ResponseWriter) {}, 200, false},
-		{"blank_lines_only", func(w http.ResponseWriter) { _, _ = io.WriteString(w, "\n\n  \n") }, 200, false},
-		{"rows_without_time_only", func(w http.ResponseWriter) { _, _ = io.WriteString(w, `{"app":"no time"}`+"\n"+`{"_msg":"x"}`+"\n") }, 200, false},
-		{"complete_body", func(w http.ResponseWriter) { _, _ = io.WriteString(w, good) }, 200, false},
+		{"empty_body", func(w http.ResponseWriter) {}, 200, false, 0},
+		{"blank_lines_only", func(w http.ResponseWriter) { _, _ = io.WriteString(w, "\n\n  \n") }, 200, false, 0},
+		{"rows_without_time_only", func(w http.ResponseWriter) { _, _ = io.WriteString(w, `{"app":"no time"}`+"\n"+`{"_msg":"x"}`+"\n") }, 200, false, 0},
+		{"complete_body", func(w http.ResponseWriter) { _, _ = io.WriteString(w, good) }, 200, false, 12},
+		{"row_of_2_MiB_is_read", func(w http.ResponseWriter) { _, _ = io.WriteString(w, good+rowOf(2<<20)) }, 200, false, 13},
 	}
 	for _, tc := range cases {
 		for _, acceptGzip := range []bool{false, true} {
@@ -215,10 +227,7 @@ func TestStreamResponse_BrokenBackendBody(t *testing.T) {
 					if err := json.Unmarshal([]byte(got.body), &doc); err != nil {
 						t.Fatalf("answer is not JSON: %v: %.300q", err, got.body)
 					}
-					wantRows := 0
-					if tc.name == "complete_body" {
-						wantRows = 12 // one stream object per row
-					}
+					wantRows := tc.streams // one stream object per row
 					if doc.Status != "success" || doc.Data.ResultType != "streams" || len(doc.Data.Result) != wantRows {
 						t.Fatalf("answer %q, want success/streams with %d stream(s)", got.body, wantRows)
 					}
@@ -374,5 +383,79 @@ func BenchmarkStreamLogQuery(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+// streamedLogBodyFails runs a body through the streamed log decoder and
+// reports whether the client would see a failure: Loki's 500 before the
+// envelope, or an aborted response after it.
+func streamedLogBodyFails(p *Proxy, body []byte) bool {
+	rec := httptest.NewRecorder()
+	resp := &http.Response{Body: io.NopCloser(bytes.NewReader(body))}
+	aborted := func() (aborted bool) {
+		defer func() {
+			if v := recover(); v != nil {
+				if v != http.ErrAbortHandler {
+					panic(v)
+				}
+				aborted = true
+			}
+		}()
+		p.streamLogQuery(context.Background(), rec, resp, `{app="api"}`, false, false)
+		return false
+	}()
+	return aborted || rec.Code != http.StatusOK
+}
+
+// TestStreamResponse_LineCapMatchesBufferedDecoder: a row the buffered log
+// decoder reads is read with -stream-response, and one it refuses is refused.
+// conformance: semantics/error-layer-silent-success
+func TestStreamResponse_LineCapMatchesBufferedDecoder(t *testing.T) {
+	c := cache.New(time.Minute, 100)
+	t.Cleanup(c.Close)
+	p, err := New(Config{BackendURL: "http://unused", Cache: c, LogLevel: "error", StreamResponse: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	for _, n := range []int{100, 900 << 10, 1100 << 10, 2 << 20, 7 << 20, 9 << 20} {
+		row := `{"_time":"2024-01-15T10:30:00Z","_stream":"{app=\"api\"}","app":"api","_msg":"` + strings.Repeat("y", n) + `"}` + "\n"
+		_, _, bufferedErr := p.vlReaderToLokiStreams(strings.NewReader(row), `{app="api"}`, "", false, false, false)
+		if streamed := streamedLogBodyFails(p, []byte(row)); streamed != (bufferedErr != nil) {
+			t.Errorf("row of %d bytes: streamed fails=%v, buffered error=%v", n, streamed, bufferedErr)
+		}
+	}
+}
+
+// TestStreamResponse_AbortReleasesEverything: an aborted streamed request
+// gives back what it held. With room for one request, and one VictoriaLogs
+// call, at a time, the request after an aborted one is answered.
+// conformance: semantics/error-layer-silent-success
+func TestStreamResponse_AbortReleasesEverything(t *testing.T) {
+	good := streamRows(12)
+	var calls atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		if !errLayerQueryPath(r.URL.Path) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if calls.Add(1) == 1 {
+			streamCutBody(w, len(good)*2, good) // breaks off after the envelope is out
+			return
+		}
+		_, _ = io.WriteString(w, good)
+	}))
+	defer backend.Close()
+	front := newStreamProxyServer(t, backend.URL, func(cfg *Config) {
+		cfg.MaxConcurrent = 1
+	})
+	first := readStreamClient(t, front.URL, 1000, false)
+	if first.status != http.StatusOK || first.readErr == nil {
+		t.Fatalf("first request: status %d, read error %v; want an aborted 200", first.status, first.readErr)
+	}
+	second := readStreamClient(t, front.URL, 1000, false)
+	if second.status != http.StatusOK || second.readErr != nil {
+		t.Fatalf("request after the abort: status %d, read error %v, body %.200q; a slot was not released", second.status, second.readErr, second.body)
 	}
 }

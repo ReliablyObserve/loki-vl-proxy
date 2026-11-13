@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -349,7 +350,9 @@ func checkDecoderError(t *testing.T, err, want error, got int) {
 
 // FuzzVLRowDecodersFailTheSameBodies: whatever the body, the log row decoder
 // and the window decoder fail it with errVLBodyNotJSON exactly when one of its
-// lines is not a JSON object, and read every other body.
+// lines is not a JSON object, and read every other body. The -stream-response
+// decoder (Loki's 500 before its envelope, an aborted response after it) fails
+// a body only when the buffered decoder does.
 // conformance: semantics/error-layer-silent-success
 func FuzzVLRowDecodersFailTheSameBodies(f *testing.F) {
 	for _, seed := range []string{
@@ -364,6 +367,8 @@ func FuzzVLRowDecodersFailTheSameBodies(f *testing.F) {
 		"123\n",
 		`"text"` + "\n",
 		"null\n",
+		"\f\n",             // whitespace the decoders do not trim
+		"{\"\":\"\\0\"}\n", // an escape fastjson reads and encoding/json refuses
 	} {
 		f.Add([]byte(seed))
 	}
@@ -391,10 +396,29 @@ func FuzzVLRowDecodersFailTheSameBodies(f *testing.F) {
 				want = true
 			}
 		}
+		streamedFails := streamedLogBodyFails(p, body)
 		_, _, streamsErr := p.vlReaderToLokiStreams(bytes.NewReader(body), `{app="api"}`, "", false, false, false)
 		_, windowErr := p.vlLogsToLokiWindowEntriesStream(bytes.NewReader(body), shape, false, false)
 		if got := errors.Is(streamsErr, errVLBodyNotJSON); got != want {
 			t.Fatalf("%q: log decoder failed=%v (%v), want %v", body, got, streamsErr, want)
+		}
+		// The streamed decoder reads rows with encoding/json and falls back to
+		// the buffered decoder's fastjson: it fails a body exactly when one of
+		// its lines is no JSON object to either, and so never when the
+		// buffered decoder reads the body.
+		wantStreamed := false
+		for _, line := range bytes.Split(body, []byte("\n")) {
+			line = bytes.Trim(line, " \t\r")
+			var row map[string]any
+			if len(line) > 0 && !bufferedDecoderReadsRow(line) && (json.Unmarshal(line, &row) != nil || row == nil) {
+				wantStreamed = true
+			}
+		}
+		if streamedFails != wantStreamed {
+			t.Fatalf("%q: -stream-response decoder failed=%v, want %v", body, streamedFails, wantStreamed)
+		}
+		if streamedFails && !want {
+			t.Fatalf("%q: -stream-response decoder failed a body the buffered decoder reads", body)
 		}
 		if got := errors.Is(windowErr, errVLBodyNotJSON); got != want {
 			t.Fatalf("%q: window decoder failed=%v (%v), want %v", body, got, windowErr, want)

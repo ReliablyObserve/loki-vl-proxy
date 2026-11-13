@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -247,10 +248,26 @@ func (s *streamedLogWriter) fail(err error) {
 		s.p.writeErr(s.w, s.ctx, err)
 		return
 	}
-	if s.p.log != nil {
-		s.p.log.Error("streamed log query aborted after the response started", "upstream_error", err.Error())
+	// A client that went away reads nothing, so its abort is not an error.
+	level := slog.LevelError
+	if upstreamErrorStatus(s.ctx, err) < http.StatusInternalServerError {
+		level = slog.LevelInfo
 	}
+	if s.p.log != nil {
+		s.p.log.Log(s.ctx, level, "streamed log query aborted after the response started", "upstream_error", err.Error())
+	}
+	s.p.metrics.RecordInternalOperation("stream_response", "aborted", 0)
 	panic(http.ErrAbortHandler)
+}
+
+// bufferedDecoderReadsRow reports whether the buffered log decoder
+// (vlReaderToLokiStreams) reads line as a row, a JSON object. The streamed
+// decoder fails a body only on a line neither decoder reads, so the two never
+// disagree on a body VictoriaLogs could send.
+func bufferedDecoderReadsRow(line []byte) bool {
+	var parser fj.Parser
+	v, err := parser.ParseBytes(line)
+	return err == nil && v.Type() == fj.TypeObject
 }
 
 // streamLogQuery streams VL NDJSON response as chunked Loki-compatible JSON.
@@ -259,7 +276,9 @@ func (p *Proxy) streamLogQuery(ctx context.Context, w http.ResponseWriter, resp 
 	out := &streamedLogWriter{p: p, ctx: ctx, w: w, flusher: flusher, canFlush: canFlush, categorized: categorizedLabels, first: true}
 
 	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	// The same line cap as the buffered decoder (vlReaderToLokiStreams): the
+	// buffer grows past its first 1 MiB only for a row that needs it.
+	scanner.Buffer(make([]byte, 1024*1024), 8*1024*1024)
 
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	dropConditions, keepConditions, bareDropFields, bareKeepFields := extractDropKeepFromAST(originalQuery)
@@ -285,15 +304,21 @@ func (p *Proxy) streamLogQuery(ctx context.Context, w http.ResponseWriter, resp 
 	levelAsMetadata := categorizedLabels && emitStructuredMetadata
 	levelStages := newLevelDropKeep(bareDropFields, bareKeepFields)
 	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
+		line := bytes.Trim(scanner.Bytes(), " \t\r") // the buffered decoder trims the same bytes
 		if len(line) == 0 {
 			continue
 		}
 
 		var entry map[string]interface{}
 		if err := stdjson.Unmarshal(line, &entry); err != nil || entry == nil {
-			out.fail(errVLBodyNotJSON)
-			return
+			if !bufferedDecoderReadsRow(line) {
+				out.fail(errVLBodyNotJSON)
+				return
+			}
+			// Not valid JSON, but a row the buffered decoder reads (an escape
+			// the JSON grammar does not have): skipped as before, and never
+			// sent by VictoriaLogs.
+			continue
 		}
 
 		timeStr, ok := stringifyEntryValue(entry["_time"])
