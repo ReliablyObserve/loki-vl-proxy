@@ -908,10 +908,16 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 	p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 }
 
-func (p *Proxy) detectedLabelValuesForField(ctx context.Context, fieldName, query, start, end string, lineLimit int) []string {
-	_, summaries, err := p.detectLabels(ctx, query, start, end, lineLimit)
-	if err != nil || summaries == nil {
-		return nil
+// detectedLabelValuesForField returns the values the stream labels hold for fieldName. A label read that fails is
+// the error, not "no values".
+func (p *Proxy) detectedLabelValuesForField(ctx context.Context, fieldName, query, start, end string, lineLimit int) ([]string, error) {
+	// The scan supplement of detectLabels is where level and service_name come from when no stored label holds them.
+	_, summaries, err := p.detectLabelsFor(ctx, query, start, end, lineLimit, fieldName == "level" || fieldName == "service_name")
+	if err != nil {
+		return nil, err
+	}
+	if summaries == nil {
+		return nil, nil
 	}
 
 	available := make([]string, 0, len(summaries))
@@ -937,7 +943,7 @@ func (p *Proxy) detectedLabelValuesForField(ctx context.Context, fieldName, quer
 		}
 	}
 	if len(valueSet) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	values := make([]string, 0, len(valueSet))
@@ -945,7 +951,7 @@ func (p *Proxy) detectedLabelValuesForField(ctx context.Context, fieldName, quer
 		values = append(values, value)
 	}
 	sort.Strings(values)
-	return values
+	return values, nil
 }
 
 // lokiQueryParamRule describes how Loki v3.7 parses the selector parameter of a
