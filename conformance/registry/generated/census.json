@@ -788,6 +788,9 @@
     "semantics/topk-per-step-membership-differs | compare:observed",
     "semantics/topk-per-step-membership-differs | gap:open",
     "semantics/topk-per-step-membership-differs | query",
+    "semantics/transient-backend-failure-is-retried | compare:observed",
+    "semantics/transient-backend-failure-is-retried | gap:fixed",
+    "semantics/transient-backend-failure-is-retried | query",
     "semantics/translator-folds-binary-by-operand-without | compare:observed",
     "semantics/translator-folds-binary-by-operand-without | gap:open",
     "semantics/translator-folds-binary-by-operand-without | query",
@@ -1104,6 +1107,7 @@
     "internal/proxy/backend_response_guard_test.go | limits/label-values-response-cap",
     "internal/proxy/backend_response_guard_test.go | operator-configurable-limits",
     "internal/proxy/backend_response_guard_test.go | semantics/backend-aborted-response",
+    "internal/proxy/backend_retry_test.go | semantics/transient-backend-failure-is-retried",
     "internal/proxy/backend_stale_cancel_test.go | backend-deadlines-and-cancellation",
     "internal/proxy/backend_stale_cancel_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/backend_stale_cancel_test.go | semantics/live-request-not-cancelled-by-sibling",
@@ -1201,6 +1205,7 @@
     "internal/proxy/error_layer_gate_test.go | semantics/error-layer-proxy-limit-status",
     "internal/proxy/error_layer_gate_test.go | semantics/error-layer-silent-success",
     "internal/proxy/error_layer_gate_test.go | semantics/error-layer-transport-text",
+    "internal/proxy/error_layer_gate_test.go | semantics/transient-backend-failure-is-retried",
     "internal/proxy/error_layer_gate_test.go | status-400",
     "internal/proxy/error_layer_gate_test.go | status-500",
     "internal/proxy/error_layer_gate_test.go | status-502",
@@ -2420,7 +2425,7 @@
   ],
   "counts": {
     "case_consumers": {
-      "any": 28,
+      "any": 29,
       "api": 86,
       "drilldown": 50,
       "explore": 175,
@@ -2428,7 +2433,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 546,
+      "go": 547,
       "playwright": 1
     },
     "page_kinds": {
@@ -2448,7 +2453,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 107,
-    "wired_items": 329
+    "wired_items": 330
   },
   "gates": [
     "A/B shape selection",

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -291,6 +292,9 @@ func (cr *ColdRouter) coldRequest(ctx context.Context, method, path string, para
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// A request sent again (a retry after a transient failure) needs its body.
+	encoded := params.Encode()
+	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(encoded)), nil }
 	if headers != nil {
 		headers(req)
 	}

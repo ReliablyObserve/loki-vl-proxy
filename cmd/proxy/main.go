@@ -170,6 +170,9 @@ type proxyRuntimeConfig struct {
 	tailAllowedOrigins                  string
 	tailMode                            string
 	tailBackendRetryWindow              time.Duration
+	backendRetryAttempts                int
+	backendRetryMaxWait                 time.Duration
+	backendRetryBudgetRatio             float64
 	metricsMaxTenants                   int
 	metricsMaxClients                   int
 	metricsTrustProxyHeaders            bool
@@ -698,6 +701,9 @@ func run(
 	tailAllowedOrigins := fs.String("tail.allowed-origins", "", "Comma-separated WebSocket Origin allowlist for /loki/api/v1/tail. Empty denies browser origins.")
 	tailMode := fs.String("tail.mode", "auto", "Tail streaming mode: auto (native with synthetic fallback), native, or synthetic")
 	tailBackendRetryWindow := fs.Duration("tail.backend-retry-window", 30*time.Second, "How long a live tail keeps its websocket open while VictoriaLogs fails for a reason a retry can fix (connection refused or reset, a timeout, a stream that ends or breaks, a 429 or 5xx answer): the proxy reopens the stream, or polls again, with a jittered backoff from 250 ms up to 5 s, and resumes from the last line sent without repeating or skipping one. Past the window, and at once for a failure no retry fixes (a malformed or oversize row, a 4xx VictoriaLogs answer), the tail closes with 1011 and Loki's text. 0 closes on the first failure.")
+	backendRetryAttempts := fs.Int("backend-retry-attempts", proxy.DefaultBackendRetryAttempts, "How many times a VictoriaLogs read that fails for a reason a retry can fix is sent again before the client gets an error: a connection refused or reset, or closed before any answer, and a 429, 502, 503 or 504 answer (a full select queue, a node restarting, a proxy in front that lost its backend). The wait doubles from 200 ms to 2 s with jitter and honours Retry-After; nothing is repeated once an answer body was read, after a timeout, a client cancel, with the circuit breaker not closed, or past the request deadline. The error a client gets after the last try is the one it gets without retries. 0 sends every read once")
+	backendRetryMaxWait := fs.Duration("backend-retry-max-wait", proxy.DefaultBackendRetryMaxWait, "The longest one VictoriaLogs call waits, in total, between its tries (-backend-retry-attempts); a try that would not fit, or a Retry-After beyond it, ends the retries and returns the last answer. 0 disables retries")
+	backendRetryBudgetRatio := fs.Float64("backend-retry-budget-ratio", proxy.DefaultBackendRetryBudgetRatio, "Retries a replica earns per VictoriaLogs call, so a sustained failure is retried for at most that fraction of the calls (plus a burst of 20 for a quiet replica) and retries cannot multiply the load on an overloaded VictoriaLogs. Must be between 0 and 1; 0 leaves only the burst")
 	metricsMaxTenants := fs.Int("metrics.max-tenants", 256, "Maximum unique tenant labels retained in exported metrics before collapsing into __overflow__")
 	metricsMaxClients := fs.Int("metrics.max-clients", 256, "Maximum unique client labels retained in exported metrics before collapsing into __overflow__")
 	metricsTrustProxyHeaders := fs.Bool("metrics.trust-proxy-headers", false, "Trust X-Grafana-User and X-Forwarded-For when deriving per-client metrics labels")
@@ -1005,6 +1011,9 @@ func run(
 			tailAllowedOrigins:                  *tailAllowedOrigins,
 			tailMode:                            *tailMode,
 			tailBackendRetryWindow:              *tailBackendRetryWindow,
+			backendRetryAttempts:                *backendRetryAttempts,
+			backendRetryMaxWait:                 *backendRetryMaxWait,
+			backendRetryBudgetRatio:             *backendRetryBudgetRatio,
 			metricsMaxTenants:                   *metricsMaxTenants,
 			metricsMaxClients:                   *metricsMaxClients,
 			metricsTrustProxyHeaders:            *metricsTrustProxyHeaders,
@@ -2200,6 +2209,15 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	if cfg.tailBackendRetryWindow < 0 {
 		return proxy.Config{}, fmt.Errorf("invalid -tail.backend-retry-window: %s (must be >= 0; 0 closes a tail on the first failed VictoriaLogs call)", cfg.tailBackendRetryWindow)
 	}
+	if cfg.backendRetryAttempts < 0 {
+		return proxy.Config{}, fmt.Errorf("invalid -backend-retry-attempts: %d (must be >= 0; 0 sends every VictoriaLogs read once)", cfg.backendRetryAttempts)
+	}
+	if cfg.backendRetryMaxWait < 0 {
+		return proxy.Config{}, fmt.Errorf("invalid -backend-retry-max-wait: %s (must be >= 0; 0 disables retries)", cfg.backendRetryMaxWait)
+	}
+	if cfg.backendRetryBudgetRatio < 0 || cfg.backendRetryBudgetRatio > 1 {
+		return proxy.Config{}, fmt.Errorf("invalid -backend-retry-budget-ratio: %g (must be between 0 and 1)", cfg.backendRetryBudgetRatio)
+	}
 	if err := validateHeavyQueryLimits(cfg); err != nil {
 		return proxy.Config{}, err
 	}
@@ -2339,6 +2357,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		TailAllowedOrigins:                 parseCSV(cfg.tailAllowedOrigins),
 		TailMode:                           tailMode,
 		TailBackendRetryWindow:             cfg.tailBackendRetryWindow,
+		BackendRetryAttempts:               cfg.backendRetryAttempts,
+		BackendRetryMaxWait:                cfg.backendRetryMaxWait,
+		BackendRetryBudgetRatio:            cfg.backendRetryBudgetRatio,
 		MetricsMaxTenants:                  cfg.metricsMaxTenants,
 		MetricsMaxClients:                  cfg.metricsMaxClients,
 		MetricsTrustProxyHeaders:           cfg.metricsTrustProxyHeaders,

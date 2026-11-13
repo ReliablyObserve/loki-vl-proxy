@@ -1676,6 +1676,10 @@
       "internal/proxy/topk_over_aggregation_test.go",
       "test/e2e-compat/topk_over_aggregation_test.go"
     ],
+    "semantics/transient-backend-failure-is-retried": [
+      "internal/proxy/backend_retry_test.go",
+      "internal/proxy/error_layer_gate_test.go"
+    ],
     "semantics/translator-reads-blank-before-range-call-as-text": [
       "internal/querycorpus/grammar_sweep_test.go",
       "internal/querycorpus/vector_agg_blank_grid_test.go",
@@ -2069,7 +2073,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 510,
+  "registry_items": 511,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2278,6 +2282,9 @@
       "operator-configurable-limits",
       "semantics/backend-aborted-response"
     ],
+    "internal/proxy/backend_retry_test.go": [
+      "semantics/transient-backend-failure-is-retried"
+    ],
     "internal/proxy/backend_stale_cancel_test.go": [
       "backend-deadlines-and-cancellation",
       "semantics/json-metric-detected-level-derivation",
@@ -2462,6 +2469,7 @@
       "semantics/error-layer-proxy-limit-status",
       "semantics/error-layer-silent-success",
       "semantics/error-layer-transport-text",
+      "semantics/transient-backend-failure-is-retried",
       "status-400",
       "status-500",
       "status-502",
@@ -4576,7 +4584,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 547,
+  "tests_with_markers": 548,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4687,5 +4695,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 329
+  "wired_items": 330
 }

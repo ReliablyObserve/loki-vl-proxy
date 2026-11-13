@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (259), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (262), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -273,6 +273,9 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-backend-basic-auth` | string | (empty) | `extraArgs.backend-basic-auth` | Basic auth for VL backend (user:password) |
 | `-backend-compression` | string | `"auto"` | `extraArgs.backend-compression` | Backend HTTP compression preference: auto, gzip, zstd, none |
 | `-backend-default-msg-value` | string | (empty) | `extraArgs.backend-default-msg-value` | VictoriaLogs -defaultMsgValue when it is customized. Rows whose _msg is empty, starts with VictoriaLogs' default "missing _msg field" text, or equals this value get their log line rebuilt as a JSON object of the row's non-stream fields |
+| `-backend-retry-attempts` | int | `2` | `extraArgs.backend-retry-attempts` | How many times a VictoriaLogs read that fails for a reason a retry can fix is sent again before the client gets an error: a connection refused or reset, or closed before any answer, and a 429, 502, 503 or 504 answer (a full select queue, a node restarting, a proxy in front that lost its backend). The wait doubles from 200 ms to 2 s with jitter and honours Retry-After; nothing is repeated once an answer body was read, after a timeout, a client cancel, with the circuit breaker not closed, or past the request deadline. The error a client gets after the last try is the one it gets without retries. 0 sends every read once |
+| `-backend-retry-budget-ratio` | float64 | `0.1` | `extraArgs.backend-retry-budget-ratio` | Retries a replica earns per VictoriaLogs call, so a sustained failure is retried for at most that fraction of the calls (plus a burst of 20 for a quiet replica) and retries cannot multiply the load on an overloaded VictoriaLogs. Must be between 0 and 1; 0 leaves only the burst |
+| `-backend-retry-max-wait` | duration | `5 * time.Second` | `extraArgs.backend-retry-max-wait` | The longest one VictoriaLogs call waits, in total, between its tries (-backend-retry-attempts); a try that would not fit, or a Retry-After beyond it, ends the retries and returns the last answer. 0 disables retries |
 | `-backend-tls-skip-verify` | bool | `false` | `extraArgs.backend-tls-skip-verify` | Skip TLS verification for VL backend |
 | `-go-gc-percent` | int | `200` | `extraArgs.go-gc-percent` | GOGC target percentage. Higher values reduce GC frequency at the cost of higher peak RSS. Set to -1 to use Go runtime default (100). Ignored when GOGC env var is already set. |
 | `-go-mem-limit` | int64 | `0` | `extraArgs.go-mem-limit` | Explicit GOMEMLIMIT in bytes. Overrides -go-mem-limit-percent. 0 = use percentage or GOMEMLIMIT env var. |

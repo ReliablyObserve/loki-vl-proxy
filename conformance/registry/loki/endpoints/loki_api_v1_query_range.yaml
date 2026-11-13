@@ -51,7 +51,8 @@ victorialogs:
   transformed: []
   vl_cannot: |
     TODO: the VictoriaLogs limitation that forces proxy-side work, if any.
-edge_cases: []    # case ids under conformance/registry/cases/
+edge_cases:    # case ids under conformance/registry/cases/
+  - semantics/transient-backend-failure-is-retried
 perf:
   max_ratio: 2.0
   target_ratio: 1.0
