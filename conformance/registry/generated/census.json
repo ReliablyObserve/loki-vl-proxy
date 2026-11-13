@@ -739,6 +739,9 @@
     "semantics/tail-history-start-limit | compare:observed",
     "semantics/tail-history-start-limit | gap:open",
     "semantics/tail-history-start-limit | query",
+    "semantics/tail-survives-backend-outage | compare:observed",
+    "semantics/tail-survives-backend-outage | gap:fixed",
+    "semantics/tail-survives-backend-outage | query",
     "semantics/tenant-header-loki-answers | applies_to",
     "semantics/tenant-header-loki-answers | compare:observed",
     "semantics/tenant-label-default-aliases | applies_to",
@@ -1575,6 +1578,10 @@
     "internal/proxy/tail_backend_errors_test.go | semantics/error-layer-cancel-deadline",
     "internal/proxy/tail_backend_errors_test.go | semantics/error-layer-internal-go-text",
     "internal/proxy/tail_backend_errors_test.go | semantics/error-layer-silent-success",
+    "internal/proxy/tail_backend_retry_test.go | loki_api_v1_tail",
+    "internal/proxy/tail_backend_retry_test.go | semantics/error-layer-cancel-deadline",
+    "internal/proxy/tail_backend_retry_test.go | semantics/error-layer-internal-go-text",
+    "internal/proxy/tail_backend_retry_test.go | semantics/tail-survives-backend-outage",
     "internal/proxy/tail_pipeline_test.go | loki_api_v1_tail",
     "internal/proxy/tenant_auth_parity_test.go | tenant-auth-follows-loki",
     "internal/proxy/tenant_auth_parity_test.go | tenant-numeric-routing",
@@ -2236,6 +2243,8 @@
     "test/e2e-compat/sub_second_step_test.go | loki_api_v1_query_range",
     "test/e2e-compat/sub_second_step_test.go | semantics/sub-second-step-grid",
     "test/e2e-compat/sub_second_step_test.go | window-bounds-and-step-alignment",
+    "test/e2e-compat/tail_backend_outage_test.go | loki_api_v1_tail",
+    "test/e2e-compat/tail_backend_outage_test.go | semantics/tail-survives-backend-outage",
     "test/e2e-compat/tail_pipeline_test.go | loki_api_v1_tail",
     "test/e2e-compat/tenant_auth_loki_test.go | tenant-auth-follows-loki",
     "test/e2e-compat/tenant_label_isolation_test.go | prometheus_api_v1_alerts",
@@ -2342,12 +2351,12 @@
       "any": 28,
       "api": 66,
       "drilldown": 50,
-      "explore": 174,
+      "explore": 175,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 542,
+      "go": 544,
       "playwright": 1
     },
     "page_kinds": {
@@ -2367,7 +2376,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 108,
-    "wired_items": 307
+    "wired_items": 308
   },
   "gates": [
     "A/B shape selection",

@@ -22,6 +22,10 @@ why: |
   connection without a close frame, so clients saw their library's
   `unexpected EOF`; it now closes with 1011 and `Internal Server Error`. The
   polling tail ends the same way when a poll fails or its body is not JSON.
+  A failure a retry can fix (the stream ends or breaks, a poll fails) closes
+  the tail only once -tail.backend-retry-window (30s) is spent; a body that
+  is not JSON and a line above the scanner's cap close it at once
+  (semantics/tail-survives-backend-outage).
 request:
   scope: internal
   entry: lokiClientError, (*Proxy).writeErr, writeBackendError, writeGrafanaStatsFailure
@@ -53,5 +57,5 @@ gap:
   effort: S
   area: 'internal/proxy/http_utils.go writeError (map unknown errors to one Loki text); internal/proxy/tail.go forwardNativeTail, streamSyntheticTail'
   loki: 'pkg/util/server/error.go:124-128'
-  proxy: 'tail: any stream end or failed poll closes 1011 with the error layer text (closeTailWithError)'
+  proxy: 'tail: a stream end or failed poll that outlasts -tail.backend-retry-window, a malformed body and an oversize line close 1011 with the error layer text (closeTailWithError)'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

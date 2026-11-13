@@ -38,6 +38,15 @@ description: |
   Loki's tail is best effort: under load its ingester tailer drops entries
   silently (5-slot send buffer), so Loki may deliver fewer entries than it
   stores; the proxy delivers every stored entry the pipeline keeps.
+  Loki's tail also survives its storage side restarting (the querier
+  reconnects to its ingesters). The proxy's tail survives a VictoriaLogs
+  outage shorter than -tail.backend-retry-window (30s): the websocket stays
+  open and pinged, the native stream is reopened from the last delivered line
+  (start_offset) or the polled tail keeps its cursor, after a jittered
+  backoff of 250 ms to 5 s, and no line is repeated or skipped. A longer
+  outage closes with 1011 and Loki's text, and a failure no retry fixes (a
+  row that is not JSON, a line above 1 MiB, a 4xx answer other than 429)
+  closes at once.
 context:
   consumers:
     - explore
@@ -61,6 +70,7 @@ victorialogs:
   # proxy has to compute, and why VictoriaLogs cannot do that part.
   native:
     - /select/logsql/tail streams the rows of the query_range LogsQL query (stream selector, line filters, parsers, label filters VictoriaLogs evaluates like Loki)
+    - /select/logsql/tail start_offset reads a reopened stream from the last delivered line, so the rows written while VictoriaLogs was away come back
   transformed:
     - rows go through the query_range row conversion (stream labels, structured metadata, parsed labels, detected_level), the line-field label filter check, line_format, decolorize and derived fields, then Loki's tail frame batching
   vl_cannot: |
@@ -71,4 +81,5 @@ victorialogs:
     versions, forced synthetic mode) the proxy polls /select/logsql/query.
 edge_cases:    # case ids under conformance/registry/cases/
   - semantics/line-format-template-error-keeps-entry
+  - semantics/tail-survives-backend-outage
   - profiles/tail-line-format-parse-error-status
