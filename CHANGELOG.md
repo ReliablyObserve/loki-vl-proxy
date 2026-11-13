@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+## [2.200.0] - 2026-11-13
 
+### Fixed
 - A request with an invalid parameter now gets Loki's `400` and Loki's text on every read route, in the order Loki
   checks them, before the proxy looks in a cache or calls VictoriaLogs. The routes are `query_range`, `query`,
   `labels`, label values, `series`, `index/stats`, `index/volume`, `index/volume_range`, `patterns`,
