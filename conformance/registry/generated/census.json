@@ -1096,6 +1096,7 @@
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-body-shape",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-cancel-deadline",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-transport-text",
+    "internal/proxy/cold_bad_row_test.go | semantics/error-layer-silent-success",
     "internal/proxy/compat_cache_freshness_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/count_values_test.go | semantics/count-values-unsupported",
     "internal/proxy/credential_passthrough_test.go | credential-passthrough-as-configured",
@@ -1106,6 +1107,7 @@
     "internal/proxy/detected_fields_empty_answer_test.go | loki_api_v1_detected_fields",
     "internal/proxy/detected_fields_empty_answer_test.go | semantics/detected-fields-empty-answer",
     "internal/proxy/detected_fields_logfmt_tokens_test.go | semantics/detected-fields-no-logfmt-token-fields",
+    "internal/proxy/detected_followups_test.go | semantics/error-layer-silent-success",
     "internal/proxy/detected_level_cache_scope_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/detected_level_filter_test.go | loki_api_v1_query_range",
     "internal/proxy/detected_level_filter_test.go | severity-detected-level-derivation",
@@ -1163,6 +1165,11 @@
     "internal/proxy/error_layer_gate_test.go | status-500",
     "internal/proxy/error_layer_gate_test.go | status-502",
     "internal/proxy/error_layer_gate_test.go | status-503",
+    "internal/proxy/error_layer_mixed_test.go | semantics/error-layer-backend-failure-status",
+    "internal/proxy/error_layer_mixed_test.go | semantics/error-layer-backend-text",
+    "internal/proxy/error_layer_mixed_test.go | semantics/error-layer-internal-go-text",
+    "internal/proxy/error_layer_mixed_test.go | semantics/error-layer-silent-success",
+    "internal/proxy/error_layer_mixed_test.go | semantics/error-layer-transport-text",
     "internal/proxy/error_text_utf8_test.go | semantics/line-filter-invalid-utf8",
     "internal/proxy/extracted_probe_head_test.go | quality/extracted-label-probe-cost",
     "internal/proxy/extracted_probe_head_test.go | semantics/json-extracted-metric-pushdown",
@@ -2349,7 +2356,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 541,
+      "go": 544,
       "playwright": 1
     },
     "page_kinds": {
