@@ -1,0 +1,42 @@
+id: semantics/json-key-named-error-label
+title: A JSON key named __error__ is no error label in Loki; the proxy filters on it (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Recorded 2026-11-12 by TestPlanMatchesLokiOnLogQueries (internal/querycorpus): Loki's pipeline through the Loki oracle (test/oracle/loki process, Loki's exported packages), VictoriaLogs v1.53.0 and v1.49.0 through the store oracle (rows as the Loki push API hands them over), the rows through the proxy's query_range handler (default label style and metadata mode).
+
+  | query | line | Loki | proxy |
+  |---|---|---|---|
+  | `{namespace="prod"} \| json \| __error__!=""` | `{"__error__":"z","msg":"harvested"}` | drops it (the key does not set Loki's error label) | keeps it |
+  | same | the lines `\| json` rejects | keeps them, with `__error__=JSONParserErr` | drops them (semantics/parse-error-labels-on-log-lines) |
+
+  The plan writes `unpack_json | filter __error__:!""`: VictoriaLogs unpacks the
+  key like any other, and has no error label of its own.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{namespace="prod"} | json | __error__!=""'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, streams.values]
+  expect: |
+    Loki's lines: the parser's rejected lines with their error labels, no line
+    for a JSON key named __error__.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/queryplan/lower (filters on __error__ after a parser) and the log answer shaping in internal/proxy'
+  loki: 'the recorded answers above (Loki oracle, 2026-11-12)'
+  proxy: 'keeps the line with the key, drops the rejected lines'
+  planned_test: 'TestPlanMatchesLokiOnLogQueries (internal/querycorpus), listed in testdata/loki-differential-known.json'
+  clusters: []

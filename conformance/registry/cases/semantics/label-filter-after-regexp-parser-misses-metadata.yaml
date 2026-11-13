@@ -1,0 +1,49 @@
+id: semantics/label-filter-after-regexp-parser-misses-metadata
+title: A label filter after a regexp or pattern parser drops a line whose structured metadata holds the label when the parser does not match it (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Recorded 2026-11-12 by TestPlanMatchesLokiOnLogQueries (internal/querycorpus): Loki's pipeline through the Loki oracle (test/oracle/loki process, Loki's exported packages), VictoriaLogs v1.53.0 and v1.49.0 through the store oracle (rows as the Loki push API hands them over), the rows through the proxy's query_range handler (default label style and metadata mode).
+
+  Data: lines of one stream, one of them `metadata line 37` carrying the
+  structured metadata `status=500`.
+
+  | query | Loki | proxy |
+  |---|---|---|
+  | `{app="api-gateway",env="production"} \| regexp "\"status\":(?P<status>[0-9]+)" \| status >= 500` | keeps `metadata line 37` (the regexp does not match the line, the metadata label is read) | drops it |
+  | `{app="nginx-ingress",env="production"} \| pattern "<_> - - <_> \"<method> <uri> <_>\" <status> <size>" \| method="POST"` | keeps the line whose metadata holds `method=POST` | drops it |
+
+  The plan writes `extract_regexp` (or `extract`) then `filter status:>=500`.
+  On a line it does not match, VictoriaLogs' extract sets each capture's field
+  to the empty value (lib/logstorage pipe_extract_regexp.go, v1.53.0; the
+  `skip_empty_results` and `keep_original_fields` options keep the stored
+  value), so the metadata field the filter reads is gone. Loki's parser leaves
+  the labels it did not capture alone.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="api-gateway",env="production"} | regexp "\"status\":(?P<status>[0-9]+)" | status >= 500'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, streams.values]
+  expect: |
+    Loki's lines: a line the parser does not match is kept when its structured
+    metadata satisfies the filter.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/queryplan/lower (regexp and pattern parser lowering before a label filter)'
+  loki: 'the recorded answers above (Loki oracle, 2026-11-12)'
+  proxy: 'drops the line'
+  planned_test: 'TestPlanMatchesLokiOnLogQueries (internal/querycorpus), listed in testdata/loki-differential-known.json'
+  clusters: []

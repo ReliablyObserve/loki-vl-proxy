@@ -477,6 +477,12 @@ check_query_corpus() {
   ) &
   local loki_oracle=$!
   wait "$vl_oracle" "$loki_oracle"
+  # The Loki differential of log queries (internal/querycorpus): the live Loki and VictoriaLogs oracles must answer
+  # what its recorded answers hold; the unit tests compare the plan with those answers on every run.
+  LVP_RUN_ORACLES=1 LVP_LOKI_DIFF_CHECK=1 go test ./internal/querycorpus -run '^TestPlanMatchesLokiOnLogQueries$' -count=1 -v \
+    >"$TMP_DIR/oracle-loki-diff.log" 2>&1 \
+    || log_step "the Loki differential's live oracle check failed; its recorded answers are stale"
+  cat "$TMP_DIR/oracle-loki-diff.log" >&2
   LVP_QUERY_CORPUS_OUT="$corpus" LVP_QUERY_CORPUS_REPORT="$QUERY_CORPUS_REPORT" \
     LVP_QUERY_CORPUS_BASE="${QUALITY_QUERY_CORPUS_BASE:-}" \
     go test ./internal/querycorpus -run '^TestQueryCorpusReport$' -count=1 -v >&2 \
