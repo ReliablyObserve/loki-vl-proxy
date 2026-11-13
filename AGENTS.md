@@ -60,6 +60,21 @@ own case.
   proof in its existing separate harness and add a PR-specific capture when the
   behavior changes what Grafana or Drilldown shows.
 
+## Errors are covered like answers
+
+Every Loki error message is a registry item, every route x error kind is a cell of the generated matrix
+(`docs/error-compatibility-coverage.md`), and both are checked against recorded Loki answers: the unit replay
+(`TestLokiErrorAnswersReplay`) and the end-to-end comparison (`TestCompat_ErrorAnswersLikeLoki`).
+
+- A pull request that flips rows of `conformance/registry/error-layer-known-differences.json`, adds a `lokierr`
+  message, a gate route or failure mode, or records a new row reruns `python3 conformance/scripts/error_registry.py`
+  and commits what it writes. The scores (errors that match Loki, matrix coverage) may not drop; the quality report
+  shows them and the conformance gate fails on a stale file.
+- A new `lokierr` message, error-layer gate route or failure mode needs an entry in
+  `conformance/registry/error-coverage-spec.json` (its stage in Loki's order of checks, the route or kind it belongs
+  to, or the reason and test when Loki cannot be asked), or the conformance gate fails.
+- Record new answers with `go run ./test/errorrecord` against a running Loki; add rows by hand, never edit a recorded answer.
+
 ## Fail fast like Loki (hard rule)
 
 A query Loki rejects quickly (a parse error, a validation error, a limit) the proxy rejects just as early: at the first

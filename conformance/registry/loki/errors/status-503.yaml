@@ -1,11 +1,14 @@
 id: status-503
 status: 503
 error_type: timeout
-generated:
-  proxy_call_sites: 5
-  dynamic_sites: 3
-  literal_messages:
-    - "request cancelled waiting for stats_query_range slot"
+generated:   # rewritten by conformance/scripts/error_registry.py
+  proxy_call_sites: 0
+  dynamic_sites: 0
+  literal_messages: []
+  loki_messages: []
+  recorded_rows: 0
+  comparable_rows: 0
+  matching_rows: 0
 
 loki_behaviour: |
   Loki answers 503 only from its own readiness and ring checks, never for a
@@ -17,6 +20,6 @@ loki_behaviour: |
   status passed through; TestErrorLayer_NoVictoriaLogsLeak lists the cells.
 precedence: []   # failure classes Loki evaluates before this one
 consumers: |
-  TODO: how Grafana Explore and Logs Drilldown render it.
+  Grafana shows the text; the -max-concurrent admission cap is the only 503 the proxy still writes.
 cases:
   - semantics/error-layer-backend-failure-status

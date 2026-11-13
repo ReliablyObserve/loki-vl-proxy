@@ -62,6 +62,24 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Query text handled as strings: base versus PR", report)
         self.assertIn("| LogQL/LogsQL parser calls outside the AST packages | 64 | 60 | -4 |", report)
 
+    def test_error_compat_section_shows_base_versus_pr_and_flags_a_drop(self):
+        def inventory(matching, covered):
+            return {"error_compat": {"state": "available", "recorded_rows": 286, "comparable_rows": 215, "matching_rows": matching,
+                                     "cells": 124, "covered_cells": covered, "messages": 33, "messages_recorded": 27,
+                                     "match_ratio": round(matching / 215, 4), "coverage_ratio": round(covered / 124, 4)}}
+        base, head = snapshot(), snapshot()
+        base["quality_inventory"], head["quality_inventory"] = inventory(74, 71), inventory(100, 80)
+        report = self.render(base=base, head=head)
+        self.assertIn("Error compatibility: base versus PR", report)
+        self.assertIn("| Recorded Loki answers matched | 74 | 100 | +26 |", report)
+        self.assertIn("| Errors that match Loki | 34.4% | 46.5% | +12.1 pp |", report)
+        self.assertIn("Errors match Loki: 46.5% (base 34.4%) of 215 recorded answers", report.split("<details>", 1)[0])
+        self.assertNotIn("Error compatibility fell", report)
+        base["quality_inventory"], head["quality_inventory"] = inventory(100, 80), inventory(74, 71)
+        self.assertIn("Error compatibility fell (match ratio: 46.5% → 34.4%).", self.render(base=base, head=head).split("<details>", 1)[0])
+        del base["quality_inventory"]
+        self.assertIn("| Errors that match Loki | no base | 34.4% | n/a |", self.render(base=base, head=head))
+
     def test_query_corpus_oracle_table_and_regressions(self):
         head = snapshot()
         head["query_corpus"] = {
