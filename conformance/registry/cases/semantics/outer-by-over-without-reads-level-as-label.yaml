@@ -46,7 +46,7 @@ compare:
     One series {} per step, the largest count of the without's series.
 gap:
   status: open
-  impact: explore-visible
+  impact: edge
   effort: M
   area: 'internal/proxy without fold under an outer aggregation on the windowed metric routes'
   loki: 'a by label a series lacks is left out of its labels'

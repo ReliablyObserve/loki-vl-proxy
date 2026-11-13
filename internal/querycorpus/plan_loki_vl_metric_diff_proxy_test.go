@@ -3,6 +3,7 @@ package querycorpus_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -36,7 +37,7 @@ type metricVLAnswer struct {
 type metricFront struct {
 	version string
 	// upstream and tenant are the query server and the data set's tenant (record mode); answers the recorded
-	// answers by request key.
+	// answers by the hash of the request key (the keys hold the whole LogsQL text: the file keeps their hashes).
 	upstream string
 	tenant   uint32
 	answers  map[string]metricVLAnswer
@@ -83,11 +84,11 @@ func (s *metricFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.upstream != "" {
 		a = s.forward(r, body)
 		s.mu.Lock()
-		s.recorded[key] = a
+		s.recorded[shortHash(key)] = a
 		s.mu.Unlock()
 	} else {
 		var ok bool
-		if a, ok = s.answers[key]; !ok {
+		if a, ok = s.answers[shortHash(key)]; !ok {
 			s.mu.Lock()
 			s.missing = append(s.missing, key)
 			s.mu.Unlock()
@@ -118,7 +119,68 @@ func (s *metricFront) forward(r *http.Request, body []byte) metricVLAnswer {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	b, _ := io.ReadAll(resp.Body)
-	return metricVLAnswer{Status: resp.StatusCode, Body: string(b)}
+	return metricVLAnswer{Status: resp.StatusCode, Body: canonicalVLBody(r.URL.Path, body, b)}
+}
+
+// canonicalVLBody is an answer in an order of its own: VictoriaLogs collects a stats answer's series and an unsorted
+// query's rows from parallel workers, in any order (the HTTP API promises none), so a recording would differ from
+// run to run. The series of a stats answer are sorted by their labels, the rows of a query without a sort pipe by
+// their text; a query with a sort pipe keeps VictoriaLogs' order.
+func canonicalVLBody(path string, form, body []byte) string {
+	switch {
+	case strings.HasPrefix(path, "/select/logsql/stats_query"):
+		var resp map[string]json.RawMessage
+		if json.Unmarshal(body, &resp) != nil {
+			return string(body)
+		}
+		var data struct {
+			ResultType string            `json:"resultType"`
+			Result     []json.RawMessage `json:"result"`
+		}
+		if json.Unmarshal(resp["data"], &data) != nil {
+			return string(body)
+		}
+		keys := make([]string, len(data.Result))
+		for i, r := range data.Result {
+			var s struct {
+				Metric json.RawMessage `json:"metric"`
+			}
+			_ = json.Unmarshal(r, &s)
+			keys[i] = string(s.Metric)
+		}
+		sort.Sort(byKey{keys, data.Result})
+		resp["data"], _ = json.Marshal(data)
+		out, _ := json.Marshal(resp)
+		return string(out)
+	case path == "/select/logsql/query":
+		q := ""
+		if f, err := url.ParseQuery(string(form)); err == nil {
+			q = f.Get("query")
+		}
+		if strings.Contains(q, "| sort") {
+			return string(body)
+		}
+		lines := strings.Split(strings.TrimRight(string(body), "\n"), "\n")
+		sort.Strings(lines)
+		if len(lines) == 1 && lines[0] == "" {
+			return string(body)
+		}
+		return strings.Join(lines, "\n") + "\n"
+	}
+	return string(body)
+}
+
+// byKey sorts results by their keys.
+type byKey struct {
+	keys    []string
+	results []json.RawMessage
+}
+
+func (b byKey) Len() int           { return len(b.keys) }
+func (b byKey) Less(i, j int) bool { return b.keys[i] < b.keys[j] }
+func (b byKey) Swap(i, j int) {
+	b.keys[i], b.keys[j] = b.keys[j], b.keys[i]
+	b.results[i], b.results[j] = b.results[j], b.results[i]
 }
 
 // metricHandlerRun is one request through a fresh proxy.

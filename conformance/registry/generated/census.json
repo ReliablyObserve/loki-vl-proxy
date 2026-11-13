@@ -606,6 +606,9 @@
     "semantics/otel-name-label-filter-after-parser | compare:observed",
     "semantics/otel-name-label-filter-after-parser | gap:open",
     "semantics/otel-name-label-filter-after-parser | query",
+    "semantics/outer-by-over-without-reads-level-as-label | compare:observed",
+    "semantics/outer-by-over-without-reads-level-as-label | gap:open",
+    "semantics/outer-by-over-without-reads-level-as-label | query",
     "semantics/parenthesized-log-range | compare:observed",
     "semantics/parenthesized-log-range | gap:fixed",
     "semantics/parenthesized-log-range | perf",
@@ -1869,6 +1872,8 @@
     "internal/querycorpus/plan_loki_vl_diff_test.go | semantics/metadata-answered-as-parsed-after-extraction-list",
     "internal/querycorpus/plan_loki_vl_diff_test.go | semantics/numeric-label-filter-not-equal-missing-label",
     "internal/querycorpus/plan_loki_vl_diff_test.go | semantics/otel-name-label-filter-after-parser",
+    "internal/querycorpus/plan_loki_vl_metric_diff_harness_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/plan_loki_vl_metric_diff_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/plan_shadow_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/range_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/range_agg_oracle_test.go | architecture-syntax-package-layering",
@@ -2468,14 +2473,14 @@
   "counts": {
     "case_consumers": {
       "any": 29,
-      "api": 86,
+      "api": 87,
       "drilldown": 50,
       "explore": 175,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 553,
+      "go": 555,
       "playwright": 1
     },
     "page_kinds": {
@@ -2494,7 +2499,7 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 106,
+    "unwired_items": 107,
     "wired_items": 333
   },
   "gates": [

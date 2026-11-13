@@ -347,7 +347,7 @@ type metricRecord struct {
 	// Inputs is the hash of the fixture and the request forms the answers were recorded for.
 	Inputs string                      `json:"inputs"`
 	Loki   map[string]metricLokiAnswer `json:"loki"`
-	// VL are VictoriaLogs' answers per version, by request key.
+	// VL are VictoriaLogs' answers per version, by the hash of the request key (shortHash of metricRequestKey).
 	VL map[string]map[string]metricVLAnswer `json:"-"`
 }
 
