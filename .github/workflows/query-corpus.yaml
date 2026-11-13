@@ -67,6 +67,9 @@ jobs:
           go test ./internal/proxy -run '^TestLokiOracle$' -count=1 -v
           # The Loki differential of log queries: the live oracles must answer what its recorded answers hold.
           LVP_LOKI_DIFF_CHECK=1 go test ./internal/querycorpus -run '^TestPlanMatchesLokiOnLogQueries$' -count=1 -v
+          # The Loki differential of metric queries: Loki's engine and VictoriaLogs' own query handlers must answer
+          # what its recorded answers hold.
+          LVP_LOKI_DIFF_CHECK=1 go test ./internal/querycorpus -run '^TestPlanMatchesLokiOnMetricQueries$' -count=1 -v -timeout=30m
           # The grammar sweep records Loki's and VictoriaLogs' answers to the queries enumerated from the LogQL
           # grammar again and compares them with conformance/registry/grammar-sweep.json (the default size, which
           # fails when a recording no longer matches the known differences), then sweeps the nightly size and

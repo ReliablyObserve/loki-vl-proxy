@@ -1,0 +1,57 @@
+id: semantics/outer-by-over-without-reads-level-as-label
+title: An outer by over a without aggregation, on a range request whose step is not its range, gives a by label the series lack the value of detected_level (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki's by keeps only the labels it names that a series has: `max by (pod,
+  zone, rack, pod_name) (count without (baz) (rate({app="uw"}[30s])))` over
+  streams that have none of pod, zone, rack or pod_name is one series `{}` at
+  every step.
+
+  The Loki metric differential (internal/querycorpus
+  TestPlanMatchesLokiOnMetricQueries, Loki's engine against VictoriaLogs'
+  own query handlers v1.49.0 and v1.53.0, both alike, 2026-11-13) finds the
+  proxy answering, on query_range with the step under the range (6s for 30s)
+  or over it (90s), one series per level instead: `{rack="info"}` and
+  `{rack="error"}`, the two streams' detected_level values written into the
+  first by label the series lack. Eight corpus rows show it, every one an
+  outer by or avg/min/max/count by over a without (or a by over a without):
+    * `avg by (pod, zone, baz) (count without (rack, node) (rate({app="uw"} [1m])))`:
+      `{baz="info"}`, `{baz="error"}`, Loki `{}`.
+    * `avg(avg(rate({app="uw"} [90s])) without (pod)) by (zone, rack, app)`:
+      `{app="error"}` where Loki has `{app="uw"}`.
+    * `min(sum(rate({app="uw"} [30s])) without (baz, rack)) by (pod, baz, pod_name)`:
+      `{pod_name="info"}`, `{pod_name="error"}`, Loki `{}`.
+  The instant request and the range request with the step equal to the range
+  answer as Loki does, so the windowed routes (bucket sums, the window phase
+  filter) fold the series by position, and the detected_level the series
+  carry takes the place of a missing by label.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'max by (pod, zone, rack, pod_name) (count without (baz) (rate({app="uw"} [30s])))'
+    start: '2025-12-31T23:00:00Z'
+    end: '2026-01-01T00:00:00Z'
+    step: '6'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series labels, values]
+  expect: |
+    One series {} per step, the largest count of the without's series.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy without fold under an outer aggregation on the windowed metric routes'
+  loki: 'a by label a series lacks is left out of its labels'
+  proxy: 'a by label the series lack takes the value of detected_level on the step<range and step>range routes'
+  planned_test: 'TestPlanMatchesLokiOnMetricQueries (testdata/loki-metric-differential-known.json lists the rows); an edge-case table over the windowed routes when the fix is made'
+  visual: none
+  visual_reason: 'nested by over without is hand-written; Grafana builders do not write it'
+  clusters: []
