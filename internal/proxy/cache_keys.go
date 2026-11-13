@@ -522,6 +522,12 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 	if !derivedLevel {
 		var resolveErr error
 		nativeField, nativeOK, resolveErr = p.resolveNativeDetectedField(scanCtx, query, start, end, fieldName)
+		// Naming the stored column is a shortcut to the same values the scan below reads: a failed lookup sends
+		// the request to that scan, which is a required read and fails the request when the backend is down. A
+		// request that ended (cancelled or past its deadline) has no scan left to run.
+		if resolveErr != nil && scanCtx.Err() != nil {
+			return p.detectedValuesReadFailed(ctx, scanCtx, resolveErr, "detected_field_values_native")
+		}
 		nativeOK = nativeOK && resolveErr == nil
 	}
 	if nativeOK {
@@ -538,19 +544,21 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 	if values == nil && errVals == nil {
 		_, fieldValues, detectErr := p.detectFields(scanCtx, query, start, end, lineLimit)
 		if detectErr != nil {
-			if drilldownScanBudgetSpent(ctx, scanCtx, detectErr) {
-				p.observeInternalOperation(ctx, "drilldown_scan_timeout", "detected_field_values_detect_fields", 0)
-				return []string{}, nil
-			}
-			return nil, detectErr
+			return p.detectedValuesReadFailed(ctx, scanCtx, detectErr, "detected_field_values_detect_fields")
 		}
 		values = fieldValues[fieldName]
 	}
-	if !derivedLevel && len(values) == 0 && scanCtx.Err() == nil {
-		values = p.detectedLabelValuesForField(scanCtx, fieldName, query, start, end, lineLimit)
-	}
 	if errVals != nil {
 		return nil, errVals
+	}
+	if !derivedLevel && len(values) == 0 && scanCtx.Err() == nil {
+		// A stream label is no log field: its values come from the labels. This read decides the answer when the
+		// fields hold none, so its failure fails the request.
+		labelValues, labelErr := p.detectedLabelValuesForField(scanCtx, fieldName, query, start, end, lineLimit)
+		if labelErr != nil {
+			return p.detectedValuesReadFailed(ctx, scanCtx, labelErr, "detected_field_values_labels")
+		}
+		values = labelValues
 	}
 	if relaxOnEmpty && len(values) == 0 && scanCtx.Err() == nil {
 		if relaxed := relaxedFieldDetectionQuery(query); relaxed != "" && relaxed != query {
@@ -562,7 +570,11 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 	// not found by scan or relaxed-query. Only reached when no relaxed query is
 	// available (relaxOnEmpty=false or query already relaxed).
 	if len(values) == 0 && scanCtx.Err() == nil {
-		unpacked, _ := p.fetchUnpackedFieldValues(scanCtx, query, start, end, fieldName, lineLimit)
+		unpacked, unpackErr := p.fetchUnpackedFieldValues(scanCtx, query, start, end, fieldName, lineLimit)
+		if unpackErr != nil {
+			// The only read that can find a field inside the line: its failure is not "no values".
+			return p.detectedValuesReadFailed(ctx, scanCtx, unpackErr, "detected_field_values_unpacked")
+		}
 		values = unpacked
 	}
 	if scanCtx.Err() != nil && len(values) == 0 {
@@ -572,6 +584,16 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 		values = []string{}
 	}
 	return values, nil
+}
+
+// detectedValuesReadFailed is the answer of a values resolve whose read failed: the documented empty answer when
+// the read ran out of -drilldown-scan-timeout while the backend and the request are alive, the error otherwise.
+func (p *Proxy) detectedValuesReadFailed(ctx, scanCtx context.Context, err error, op string) ([]string, error) {
+	if drilldownScanBudgetSpent(ctx, scanCtx, err) {
+		p.observeInternalOperation(ctx, "drilldown_scan_timeout", op, 0)
+		return []string{}, nil
+	}
+	return nil, err
 }
 
 // withDrilldownScanTimeout returns a context bounded by drilldownScanTimeout

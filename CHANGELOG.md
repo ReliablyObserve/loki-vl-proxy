@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `/loki/api/v1/detected_fields` and `/loki/api/v1/detected_field/{name}/values` answer a failed later
+  VictoriaLogs call as an error, as Loki does, where the first read had already worked. A field that lives
+  inside the log line (the last read of its values), a value held by a stream label (the labels read), and a
+  field list whose line scan failed while the stored-field lookup worked now answer the status and text the
+  other routes give that failure (500 `Internal Server Error` for a failed backend, 504 and 499 for a
+  timeout and a cancel), and no longer an empty list of values or the stored fields alone. A field no line
+  holds, and a query VictoriaLogs cannot unpack, still answer an empty list. The lookups that only add to an
+  answer that already has its required read (extra stored fields, the sampled `level` and `service_name`
+  labels on `detected_labels`, the relaxed query after a strict one fails) keep that answer.
+
+## [2.195.0] - 2026-11-13
+
+### Fixed
+
 - `query_range`, `query`, `series` and the `index/volume` and `index/volume_range` routes answer a VictoriaLogs
   reply that is not VictoriaLogs JSON as Loki answers a failed backend, `500` `Internal Server Error`, and no
   longer as `200` with an empty result. That covers a body that cannot be read as JSON and a log, stats or

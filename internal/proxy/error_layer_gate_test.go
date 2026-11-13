@@ -44,7 +44,8 @@ import (
 // its case ids while it still fails exactly those classes, and fails the test once
 // it no longer does, so the list can only shrink. scripts/ci/check_conformance.py
 // holds the list to its ceiling. Set ERROR_LAYER_RECORD=<file> to write the
-// current list after a fix.
+// current list after a fix. A route that fails only after an earlier read worked
+// is the mixed-failure gate's (error_layer_mixed_test.go).
 
 const (
 	errLayerSentinel     = "VLSENTINEL"
@@ -131,6 +132,11 @@ func errLayerRoutes(now time.Time) []errLayerRoute {
 		{name: "label_values", path: "/loki/api/v1/label/app/values", params: q("start", start, "end", end)},
 		{name: "detected_fields", path: "/loki/api/v1/detected_fields", params: q("query", sel, "start", start, "end", end)},
 		{name: "detected_field_values", path: "/loki/api/v1/detected_field/level/values", params: q("query", sel, "start", start, "end", end)},
+		// A parser filter gives a strict and a relaxed query candidate, and a field outside the
+		// stored ones reaches the unpack and label fallbacks.
+		{name: "detected_fields_parser", path: "/loki/api/v1/detected_fields", params: q("query", `{app="api"} | json | level="info"`, "start", start, "end", end)},
+		{name: "detected_field_values_parser", path: "/loki/api/v1/detected_field/status/values", params: q("query", `{app="api"} | json | level="info"`, "start", start, "end", end)},
+		{name: "detected_field_values_field", path: "/loki/api/v1/detected_field/status/values", params: q("query", sel, "start", start, "end", end)},
 		{name: "detected_labels", path: "/loki/api/v1/detected_labels", params: q("query", sel, "start", start, "end", end)},
 		{name: "index_stats", path: "/loki/api/v1/index/stats", params: q("query", sel, "start", start, "end", end)},
 		{name: "index_volume", path: "/loki/api/v1/index/volume", params: q("query", sel, "start", start, "end", end)},
@@ -147,10 +153,19 @@ func errLayerRoutes(now time.Time) []errLayerRoute {
 // one mode. Bodies are shaped per endpoint so a size or decode failure is the
 // endpoint's own, not a shape mismatch.
 type errLayerBackend struct {
-	mode   string
-	hits   atomic.Int64
-	mu     sync.Mutex
-	cancel context.CancelFunc // client_cancel: cancels the client request once VictoriaLogs is called
+	mode string
+	hits atomic.Int64
+	// failSig, okBody, seen and failHits drive the mixed-failure gate
+	// (error_layer_mixed_test.go): see errLayerBackend.recordCall.
+	failSig string
+	// failContains selects the failing calls by a part of their signature instead of the whole of it.
+	failContains []string
+	okBody       string
+	seen         map[string]struct{}
+	order        []string
+	failHits     atomic.Int64
+	mu           sync.Mutex
+	cancel       context.CancelFunc // client_cancel: cancels the client request once VictoriaLogs is called
 	// tailHit and released serve a tail's client_cancel: the backend closes
 	// tailHit when the tail stream call arrives and released once the proxy
 	// has dropped that call (its request context is done).
@@ -169,12 +184,21 @@ func errLayerQueryPath(path string) bool {
 func (b *errLayerBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Read the request body first: the server notices a client that went away
 	// (and cancels r.Context()) only once the body is consumed.
-	_, _ = io.Copy(io.Discard, r.Body)
+	raw, _ := io.ReadAll(r.Body)
 	if !errLayerQueryPath(r.URL.Path) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	b.hits.Add(1)
+	if b.recordCall(r, raw) {
+		b.serveOK(w, r)
+		return
+	}
+	b.fail(w, r)
+}
+
+// fail answers one call in the backend's failure mode.
+func (b *errLayerBackend) fail(w http.ResponseWriter, r *http.Request) {
 	switch b.mode {
 	case "vl400_parse":
 		w.WriteHeader(http.StatusBadRequest)
@@ -534,7 +558,13 @@ func errLayerKnownLeaks(t *testing.T) map[string][]string {
 // runErrLayerCell drives one route against a fake backend in one mode.
 func runErrLayerCell(t *testing.T, rt errLayerRoute, mode string) (errLayerOutcome, string) {
 	t.Helper()
-	backend := &errLayerBackend{mode: mode}
+	return runErrLayerBackendCell(t, rt, &errLayerBackend{mode: mode})
+}
+
+// runErrLayerBackendCell drives one route against the given fake backend.
+func runErrLayerBackendCell(t *testing.T, rt errLayerRoute, backend *errLayerBackend) (errLayerOutcome, string) {
+	t.Helper()
+	mode := backend.mode
 	srv := httptest.NewServer(backend)
 	backendURL := srv.URL
 	if mode == "conn_refused" {
@@ -689,15 +719,21 @@ func TestErrorLayer_NoVictoriaLogsLeak(t *testing.T) {
 		})
 	}
 	if path := os.Getenv("ERROR_LAYER_RECORD"); path != "" {
-		total := 0
-		for _, ids := range recorded {
-			total += len(ids)
-		}
-		doc := map[string]any{"ceiling": total, "leaks": recorded}
-		raw, _ := json.MarshalIndent(doc, "", "  ")
-		if err := os.WriteFile(path, append(raw, '\n'), 0o644); err != nil {
-			t.Fatalf("record: %v", err)
-		}
+		writeErrLayerRecord(t, path, recorded)
+	}
+}
+
+// writeErrLayerRecord writes the leak list a gate run recorded, with its ceiling.
+func writeErrLayerRecord(t *testing.T, path string, recorded map[string][]string) {
+	t.Helper()
+	total := 0
+	for _, ids := range recorded {
+		total += len(ids)
+	}
+	doc := map[string]any{"ceiling": total, "leaks": recorded}
+	raw, _ := json.MarshalIndent(doc, "", "  ")
+	if err := os.WriteFile(path, append(raw, '\n'), 0o644); err != nil {
+		t.Fatalf("record: %v", err)
 	}
 }
 
