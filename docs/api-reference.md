@@ -330,6 +330,28 @@ The per-client rate limit and the `-max-concurrent` admission cap answer through
 
 Loki's router answers before any handler, and the proxy does the same, ahead of tenant, rate-limit and parameter checks: a path Loki would clean (`//`, `/./`, `/../`) is a `301` with no body; a path no route matches (including `/label/a/b/values` and `/detected_field/x`) is `404 page not found`; a method a read route does not serve (anything but `GET` and `POST`; `GET` alone on the rules and alerts routes) is a `405` with no body and no `Content-Type`; an invalid percent escape, a semicolon in the query string and a form body over 10 MiB are `400` with `invalid URL escape "..."`, `invalid semicolon separator in query` and `http: POST too large`. A `POST` body is read only as `application/x-www-form-urlencoded`, and its parameters win over the URL's. `format_query` parses its query and answers one it cannot parse with `400` and `{"status":"invalid-query","error":"<parser message>"}`.
 
+### Request parameters
+
+Every read route checks its parameters before it looks in a cache or calls VictoriaLogs, and answers an invalid one with Loki's `400` and Loki's text (the message alone, `text/plain`):
+
+The checks read times as Loki does, in the forms below; the proxy's query window itself still reads an integer of 11 to 18 digits by its magnitude (milliseconds or microseconds), a known difference listed in the registry case `semantics/error-request-validation-parity`.
+
+| Parameter | Read as | Loki's text for an invalid one |
+|---|---|---|
+| `start`, `end` | an integer (seconds up to ten characters, nanoseconds beyond), float seconds, or an RFC 3339 time; not trimmed; `now` and `now-1h` are not times | `could not parse 'start' parameter: strconv.ParseInt: parsing "abc": invalid syntax` |
+| `time` (`query`) | the same | `strconv.ParseInt: parsing "abc": invalid syntax` |
+| `since` | a Prometheus duration (`1h30m`, `2d`; no `1ns`, `1h1h`, `1.5h`, sign) | `could not parse 'since' parameter: not a valid duration string: "abc"` |
+| `step` (`query_range`, `index/volume_range`, `patterns`, `detected_fields`) | float seconds, else a Prometheus duration | `cannot parse "abc" to a valid duration`; `zero or negative query resolution step widths are not accepted. Try a positive integer`; more than 11,000 points: `exceeded maximum resolution of 11,000 points per time series. Try increasing the value of the step parameter` |
+| `interval` (`query_range`) | like `step`; `0` keeps every entry | `interval must be >= 0` |
+| `limit` | an integer; above zero on `query`, `query_range`, `tail`, `detected_fields` and `detected_field/{name}/values`, not below zero on the volume routes; `series`, `labels` and `patterns` do not read it | `limit must be a positive value`; `strconv.Atoi: parsing "abc": invalid syntax` |
+| `direction` | `forward` or `backward`, in any case | `invalid direction 'bad'` |
+| `aggregateBy` (volume) | `series` or `labels` | `invalid aggregation option` |
+| `delay_for` (`tail`) | an integer from 0 to 5 | `delay_for can't be greater than 5` |
+
+A request whose `end` is before its `start` is answered `end timestamp must not be before or equal to start time` on `query_range`, `index/stats`, the volume routes and `detected_fields` (an equal `end` is served). A range longer than `max_query_length` is answered `the query time range exceeds the limit` on the metadata routes, the volume routes, `detected_fields` and `detected_field/{name}/values` as well as on `query_range`. A URL or form body Loki cannot decode is `invalid URL escape "%zz"`, `invalid semicolon separator in query` or `http: POST too large` (a form body over 10 MB).
+
+When a request is wrong in two ways, the first of the checks answers, in Loki's order: the URL and form, then `end`, `start`, `limit`, `step` and `direction` (`query_range`), or `limit`, `direction`, `time` (`query`), then `end` against `start` and the 11,000-point resolution, then the query, and last `max_query_length` for a query that parses (a range query reports `max_query_length` after the syntax of its query, the metadata routes before the selector). `tail` reads its query first, then `limit`, `delay_for`, `end` and `start`. A `since` without a `start` sets the start (the length of the window before `end`, so VictoriaLogs reads that window); the query statistics read a request with no `start` as the hour before its `end`.
+
 ### Time range of a query
 
 The proxy holds every time of a request as 64-bit nanoseconds since the Unix epoch, which reach from 1677-09-21 to 2262-04-11. A `query` or `query_range` request whose window, moved by the query's `offset` and widened by its range selector, would leave that span (less 15 minutes at either end) is answered with `400` and the message `the time range of the query, moved by its offset, must lie between 1677-09-21 and 2262-04-11`. The step is not part of the check: a step as long as the window answers one point at the start.

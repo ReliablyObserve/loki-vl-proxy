@@ -25,11 +25,11 @@ check_order:
 recorded:
   rows: 8
   comparable_rows: 8
-  matching_rows: 2
+  matching_rows: 8
   row_ids: ["r0582", "r0654", "r0956", "r1006", "r1090", "r1115", "r1138", "r1436"]
-  known_difference_ids: ["r0582", "r0654", "r1090", "r1115", "r1138", "r1436"]
+  known_difference_ids: []
   e2e_rows: ["r0582", "r0654", "r0956", "r1006", "r1090", "r1115", "r1138", "r1436"]
 coverage:
-  state: differs
+  state: matches
   unit: ["TestLokiErrorAnswersReplay"]
   e2e: ["TestCompat_ErrorAnswersLikeLoki"]

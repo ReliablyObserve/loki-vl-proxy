@@ -2545,6 +2545,18 @@ func lokiRangeBounds(r *http.Request, now time.Time) (start, end time.Time, ok b
 	return endOrNow.Add(-since), end, true
 }
 
+// requestRangeWindowNs is the window [start, end] of a range request in
+// nanoseconds, with the defaults Loki gives a bound that is not sent (lokiRangeBounds):
+// the stats layer reports what that window held, whether the client named it
+// or sent a since.
+func requestRangeWindowNs(r *http.Request) (start, end int64, ok bool) {
+	s, e, ok := lokiRangeBounds(r, time.Now())
+	if !ok {
+		return 0, 0, false
+	}
+	return s.UnixNano(), e.UnixNano(), true
+}
+
 // queryRangeResponseCacheTTL is shared by full-response admission and freshness
 // checks; the endpoint's short backend TTL is not the age of these entries.
 const queryRangeResponseCacheTTL = 5 * time.Minute
