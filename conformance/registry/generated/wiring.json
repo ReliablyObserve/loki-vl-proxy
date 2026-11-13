@@ -113,6 +113,7 @@
       "internal/proxy/drilldown_burst_cancel_test.go",
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/ordered_json_result_cache_test.go",
+      "internal/proxy/stream_response_broken_body_test.go",
       "internal/proxy/tail_backend_errors_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
@@ -1107,6 +1108,7 @@
       "internal/proxy/error_writer_golden_test.go",
       "internal/proxy/loki_client_error_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
+      "internal/proxy/stream_response_broken_body_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-backend-text": [
@@ -1119,6 +1121,7 @@
       "internal/proxy/error_writer_golden_test.go",
       "internal/proxy/loki_client_error_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
+      "internal/proxy/stream_response_broken_body_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-body-shape": [
@@ -1138,6 +1141,7 @@
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/error_writer_golden_test.go",
       "internal/proxy/loki_client_error_test.go",
+      "internal/proxy/stream_response_broken_body_test.go",
       "internal/proxy/tail_backend_errors_test.go",
       "internal/proxy/tail_backend_retry_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
@@ -1147,6 +1151,7 @@
       "internal/proxy/error_layer_mixed_test.go",
       "internal/proxy/error_layer_sites_test.go",
       "internal/proxy/loki_client_error_test.go",
+      "internal/proxy/stream_response_broken_body_test.go",
       "internal/proxy/tail_backend_errors_test.go",
       "internal/proxy/tail_backend_retry_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
@@ -1173,6 +1178,7 @@
       "internal/proxy/proxy_test.go",
       "internal/proxy/query_semantics_compat_handlers_test.go",
       "internal/proxy/stats_error_body_test.go",
+      "internal/proxy/stream_response_broken_body_test.go",
       "internal/proxy/tail_backend_errors_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
@@ -2010,6 +2016,7 @@
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/loki_client_error_test.go",
       "internal/proxy/loki_error_answers_replay_test.go",
+      "internal/proxy/stream_response_broken_body_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "status-502": [
@@ -3220,6 +3227,15 @@
       "loki_api_v1_query_range",
       "profiles/keep-removes-derived-service-name",
       "profiles/keep-structured-metadata-key"
+    ],
+    "internal/proxy/stream_response_broken_body_test.go": [
+      "backend-deadlines-and-cancellation",
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-cancel-deadline",
+      "semantics/error-layer-internal-go-text",
+      "semantics/error-layer-silent-success",
+      "status-500"
     ],
     "internal/proxy/stream_tag_restore_test.go": [
       "loki_api_v1_query_range",
@@ -4646,7 +4662,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 551,
+  "tests_with_markers": 552,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
