@@ -162,10 +162,12 @@ const semicolonQueryError = "invalid semicolon separator in query"
 // refuse it themselves.
 func redirectUncleanPath(w http.ResponseWriter, r *http.Request) bool {
 	p := r.URL.EscapedPath()
-	if p == "" || p[0] != '/' || pathIsClean(p) {
+	if p == "" || pathIsClean(p) {
 		return false
 	}
-	clean := path.Clean(p)
+	// Rooted by construction: a server request's path starts with a slash,
+	// and one that does not is cleaned as if it did.
+	clean := path.Clean("/" + p)
 	if p[len(p)-1] == '/' && clean != "/" {
 		clean += "/"
 	}
