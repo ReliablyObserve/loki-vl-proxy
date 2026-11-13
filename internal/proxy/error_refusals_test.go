@@ -37,7 +37,8 @@ type errRefusalAnswer struct {
 
 func getRefusalAnswer(t *testing.T, addr, route string, params url.Values) errRefusalAnswer {
 	t.Helper()
-	resp, err := http.Get("http://" + addr + "/loki/api/v1/" + route + "?" + params.Encode())
+	u := url.URL{Scheme: "http", Host: addr, Path: "/loki/api/v1/" + route, RawQuery: params.Encode()}
+	resp, err := http.Get(u.String())
 	if err != nil {
 		t.Fatal(err)
 	}
