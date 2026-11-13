@@ -119,7 +119,7 @@ func newSeriesLimitError(ctx context.Context, limit int) error {
 			return lokierr.LimitReached(flagManualRangeMetricRowLimit, int64(limit), &seriesLimitError{limit: limit, rowBudget: true})
 		}
 	}
-	return lokierr.SeriesLimit(limit).WithLimit(flagMaxStatsQuerySeries, int64(limit)).WithCause(&seriesLimitError{limit: limit})
+	return lokierr.SeriesLimitOf(flagMaxStatsQuerySeries, limit, &seriesLimitError{limit: limit})
 }
 
 // tenantSeriesLimitContext is ctx for a check against the tenant's own series

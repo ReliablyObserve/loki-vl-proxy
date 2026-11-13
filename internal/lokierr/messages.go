@@ -300,6 +300,15 @@ func Lookback(limit time.Duration) *Error {
 	return newError(MsgLookback, "this data is no longer available, it is past now - max_query_lookback ("+FormatDuration(limit)+")", nil)
 }
 
+// SeriesLimitOf is SeriesLimit for the proxy's own limit: flag is the proxy
+// flag that sets it, set to limit, and cause says what was counted, both for the
+// log line only. It builds the error in one allocation.
+func SeriesLimitOf(flag string, limit int, cause error) *Error {
+	e := SeriesLimit(limit)
+	e.limitFlag, e.limitValue, e.cause = flag, int64(limit), cause
+	return e
+}
+
 // SeriesLimit is a metric query over max_query_series.
 func SeriesLimit(limit int) *Error {
 	return newError(MsgSeriesLimit, "maximum number of series ("+strconv.Itoa(limit)+") "+textSeriesLimit, nil)
@@ -351,6 +360,15 @@ func WriteNotSupported() *Error { return newError(MsgWriteNotSupported, textWrit
 // QueueFull is a request the query queue has no room for; cause says which
 // queue, for the log.
 func QueueFull(cause error) *Error { return newError(MsgQueueFull, textQueueFull, cause) }
+
+// QueueFullAt is QueueFull for one of the proxy's own queues and rate limits:
+// flag is the proxy flag that sets the limit, set to value, for the log line
+// only. It builds the error in one allocation.
+func QueueFullAt(flag string, value int64, cause error) *Error {
+	e := newError(MsgQueueFull, textQueueFull, cause)
+	e.limitFlag, e.limitValue = flag, value
+	return e
+}
 
 // Canceled is a request its client cancelled.
 func Canceled(cause error) *Error { return newError(MsgCanceled, textCanceled, cause) }

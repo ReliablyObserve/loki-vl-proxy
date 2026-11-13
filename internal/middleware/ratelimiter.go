@@ -183,13 +183,13 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			w.Header().Set("Retry-After", "1")
 			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", rl.ratePerSecond))
 			w.Header().Set("X-RateLimit-Remaining", "0")
-			rl.reject(w, r, lokierr.QueueFull(errRateLimited).WithLimit(flagRatePerSecond, int64(rl.ratePerSecond)))
+			rl.reject(w, r, lokierr.QueueFullAt(flagRatePerSecond, int64(rl.ratePerSecond), errRateLimited))
 			return
 		}
 
 		if !rl.AcquireConcurrent() {
 			w.Header().Set("Retry-After", "5")
-			rl.reject(w, r, lokierr.QueueFull(errTooManyConcurrent).WithLimit(flagMaxConcurrent, int64(rl.maxConcurrent)))
+			rl.reject(w, r, lokierr.QueueFullAt(flagMaxConcurrent, int64(rl.maxConcurrent), errTooManyConcurrent))
 			return
 		}
 		defer rl.ReleaseConcurrent()

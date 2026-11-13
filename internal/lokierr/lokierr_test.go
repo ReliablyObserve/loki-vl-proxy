@@ -391,6 +391,8 @@ func TestLimitCarriesItsFlagForTheLogOnly(t *testing.T) {
 		{"series", SeriesLimit(7).WithLimit("some-flag", 7)},
 		{"input too long", InputTooLong(9, 7).WithLimit("some-flag", 7)},
 		{"queue full", QueueFull(cause).WithLimit("some-flag", 7)},
+		{"series of", SeriesLimitOf("some-flag", 7, cause)},
+		{"queue full at", QueueFullAt("some-flag", 7, cause)},
 	} {
 		flag, value, ok := tc.e.Limit()
 		if !ok || flag != "some-flag" || value != 7 {

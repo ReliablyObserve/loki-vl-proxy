@@ -33,14 +33,22 @@ const (
 var errManualMetricResponseTooLarge = errors.New("manual metric response exceeds the buffered response limit")
 
 // limitCause is what a limit error counted, for the request error log line
-// only: operator wording that names the flag. It reports Is for one sentinel
-// so callers can still tell the limit apart without reading the text.
+// only: operator wording that names the flag, built when the line is written.
+// It reports Is for one sentinel so callers can still tell the limit apart
+// without reading the text.
 type limitCause struct {
-	msg  string
-	kind error
+	what  string // what was too large, or the whole wording when flag is empty
+	limit int64
+	flag  string
+	kind  error
 }
 
-func (c *limitCause) Error() string { return c.msg }
+func (c *limitCause) Error() string {
+	if c.flag == "" {
+		return c.what
+	}
+	return fmt.Sprintf("%s exceeds %d bytes; narrow the query or increase -%s", c.what, c.limit, c.flag)
+}
 
 func (c *limitCause) Is(target error) bool { return c.kind != nil && target == c.kind }
 
@@ -49,8 +57,7 @@ func (c *limitCause) Is(target error) bool { return c.kind != nil && target == c
 // the flag and the operator wording in the log line only. read is the size seen
 // when the read stopped, at least limit+1.
 func newBufferLimitError(flag string, read, limit int64, what string, kind error) error {
-	return lokierr.ResponseTooLarge(flag, read, limit,
-		&limitCause{msg: fmt.Sprintf("%s exceeds %d bytes; narrow the query or increase -%s", what, limit, flag), kind: kind})
+	return lokierr.ResponseTooLarge(flag, read, limit, &limitCause{what: what, limit: limit, flag: flag, kind: kind})
 }
 
 // newManualMetricResponseTooLarge is a proxy-evaluated metric response above
@@ -90,7 +97,7 @@ func newHeavyQueueFull(cause *heavyQueryQueueFullError) error {
 	if flag == "" {
 		flag = heavyQueryLimitFlag
 	}
-	return lokierr.QueueFull(cause).WithLimit(trimFlagDash(flag), int64(cause.maxConcurrent))
+	return lokierr.QueueFullAt(trimFlagDash(flag), int64(cause.maxConcurrent), cause)
 }
 
 // trimFlagDash is flag without its leading dash.
