@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 )
@@ -305,5 +306,70 @@ func TestAdmissionRejectionsLogOncePerSecond(t *testing.T) {
 	}
 	if n := strings.Count(logs.String(), "request error"); n != 1 {
 		t.Errorf("%d log lines for 5 rejections in one second, want 1: %s", n, logs.String())
+	}
+}
+
+// TestAdmissionLimitsAnswer429OnEveryRoute: through the real route chain, a
+// client over the rate limit, and a request over the -max-concurrent cap, get
+// Loki's 429 text on the query routes, the ruler's views, the alerts views and
+// tail: the limiter answers before a route's own error shape is known, so none
+// of them may turn the status into another.
+// conformance: semantics/error-layer-proxy-limit-status, limits/admission-limits-answer-queue-full, status-429
+func TestAdmissionLimitsAnswer429OnEveryRoute(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"values":[]}`))
+	}))
+	defer backend.Close()
+	paths := []string{
+		"/loki/api/v1/labels",
+		"/loki/api/v1/query_range?query=%7Bapp%3D%22a%22%7D",
+		"/loki/api/v1/rules",
+		"/prometheus/api/v1/rules",
+		"/api/prom/rules",
+		"/loki/api/v1/alerts",
+		"/prometheus/api/v1/alerts",
+		"/api/prom/alerts",
+		"/loki/api/v1/tail?query=%7Bapp%3D%22a%22%7D",
+		"/loki/api/v1/index/stats?query=%7Bapp%3D%22a%22%7D",
+	}
+	for _, mode := range []string{"rate", "concurrent"} {
+		for _, path := range paths {
+			t.Run(mode+path, func(t *testing.T) {
+				cfg := Config{BackendURL: backend.URL, AlertsBackendURL: backend.URL, Cache: cache.New(time.Minute, 100), LogLevel: "error"}
+				if mode == "rate" {
+					cfg.RatePerSecond, cfg.RateBurst = 0.001, 1
+				} else {
+					cfg.MaxConcurrent = 1
+				}
+				p, err := New(cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+				mux := http.NewServeMux()
+				p.RegisterRoutes(mux)
+				if mode == "concurrent" {
+					// Hold the only slot, as an in-flight request does.
+					if !p.limiter.AcquireConcurrent() {
+						t.Fatal("the slot was taken")
+					}
+					defer p.limiter.ReleaseConcurrent()
+				} else {
+					// The first request takes the one token.
+					mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+				}
+				rec := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req.Header.Set("X-Scope-OrgID", "0")
+				shippedChain(mux).ServeHTTP(rec, req)
+				if rec.Code != http.StatusTooManyRequests || rec.Body.String() != queueText {
+					t.Fatalf("answered %d %q, want 429 %q", rec.Code, rec.Body.String(), queueText)
+				}
+				if rec.Header().Get("Retry-After") == "" {
+					t.Errorf("Retry-After is gone: %v", rec.Header())
+				}
+			})
+		}
 	}
 }

@@ -7,7 +7,7 @@ const: MsgResponseTooLarge
 constructors: ["ResponseTooLarge"]
 summary: "a response above the message size a component accepts (a 500)."
 templates:
-  - "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (<got> vs. <max>)"
+  - "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (<size> vs. <bound>)"
 kind: limit
 status: 500
 error_type: internal

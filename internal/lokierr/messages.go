@@ -336,8 +336,8 @@ func LimitReached(flag string, value int64, cause error) *Error {
 // least limit+1 bytes), limit the bound; flag is the proxy flag that sets it
 // and cause says what was too large, both for the log line only.
 func ResponseTooLarge(flag string, read, limit int64, cause error) *Error {
-	got, max := strconv.FormatInt(read, 10), strconv.FormatInt(limit, 10)
-	e := newError(MsgResponseTooLarge, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max ("+got+" vs. "+max+")", cause)
+	size, bound := strconv.FormatInt(read, 10), strconv.FormatInt(limit, 10)
+	e := newError(MsgResponseTooLarge, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max ("+size+" vs. "+bound+")", cause)
 	e.limitFlag, e.limitValue = flag, limit
 	return e
 }
