@@ -100,12 +100,19 @@ const seriesLimitMessagePrefix = "maximum number of series ("
 // error's cause (newSeriesLimitError builds it), which tells the series
 // limit apart for the callers that degrade on it; the proxy's limit is set by
 // -max-stats-query-series, which the log line names.
+//
+// The cause is one of two shared values, so a rejection allocates none: the
+// limit's setting is the typed error's own, in the log line's limit_value.
 type seriesLimitError struct {
-	limit int
 	// rowBudget marks the raw-row budget of a request that folds its series
 	// afterwards, not a series limit: it answers the row-limit message.
 	rowBudget bool
 }
+
+var (
+	seriesLimitCause       = &seriesLimitError{}
+	seriesLimitBudgetCause = &seriesLimitError{rowBudget: true}
+)
 
 // newSeriesLimitError is the error of a metric result over limit series. While
 // a request folds its series afterwards and reads them under the raw-row budget
@@ -116,10 +123,10 @@ type seriesLimitError struct {
 func newSeriesLimitError(ctx context.Context, limit int) error {
 	if folding, _ := ctx.Value(foldedSumKey{}).(bool); folding {
 		if scope, _ := ctx.Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil && scope.foldBudget > 0 {
-			return lokierr.LimitReached(flagManualRangeMetricRowLimit, int64(limit), &seriesLimitError{limit: limit, rowBudget: true})
+			return lokierr.LimitReached(flagManualRangeMetricRowLimit, int64(limit), seriesLimitBudgetCause)
 		}
 	}
-	return lokierr.SeriesLimitOf(flagMaxStatsQuerySeries, limit, &seriesLimitError{limit: limit})
+	return lokierr.SeriesLimitOf(flagMaxStatsQuerySeries, limit, seriesLimitCause)
 }
 
 // tenantSeriesLimitContext is ctx for a check against the tenant's own series
@@ -130,9 +137,9 @@ func tenantSeriesLimitContext(ctx context.Context) context.Context {
 
 func (e *seriesLimitError) Error() string {
 	if e.rowBudget {
-		return (&rowLimitError{limit: e.limit}).Error()
+		return "metric result over the raw-row budget of a request that folds its series; narrow the query or increase -manual-range-metric-row-limit"
 	}
-	return lokierr.SeriesLimit(e.limit).Text()
+	return "metric result over the series limit; narrow the query or increase -max-stats-query-series"
 }
 
 func isSeriesLimitError(err error) bool {

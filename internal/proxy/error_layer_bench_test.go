@@ -28,7 +28,7 @@ func errorLayerBenchCases() []struct {
 		{"vl500", context.Background(), &upstreamStatusError{status: 500, msg: "VL backend returned 500", class: vlErrorUnclassified}},
 		{"refused", context.Background(), &url.Error{Op: "Post", URL: "http://10.0.0.9:9428/select/logsql/query", Err: errors.New("dial tcp 10.0.0.9:9428: connect: connection refused")}},
 		{"vl400_rejected", context.Background(), &upstreamStatusError{status: 400, msg: "cannot parse query arg: x", class: vlErrorQueryRejected}},
-		{"series_limit", context.Background(), &seriesLimitError{limit: 500}},
+		{"series_limit", context.Background(), newSeriesLimitError(context.Background(), 500)},
 		{"canceled", canceled, context.Canceled},
 	}
 }
