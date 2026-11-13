@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 )
@@ -209,13 +210,17 @@ func FuzzFail(f *testing.F) {
 	f.Add(uint8(3), uint8(1), uint8(12), "{app=\"x\"} |= \"\xff\"", 0, 0)
 	f.Add(uint8(9), uint8(2), uint8(21), "cannot parse query arg: x", 2, 7)
 	f.Add(uint8(13), uint8(0), uint8(24), "a; narrow the query or increase -flag", -1, 1)
+	f.Add(uint8(14), uint8(0), uint8(1), "x", 4097, 4096)
+	f.Add(uint8(16), uint8(0), uint8(3), "adaptive limit 2", 2, 1000)
+	f.Add(uint8(17), uint8(2), uint8(0), "{app=\"x\"}", 7, 512)
 	f.Fuzz(func(t *testing.T, kind, ctxState, route uint8, text string, line, col int) {
 		p := &Proxy{}
 		const marker = "\x00cause-marker"
 		cause := errors.New(text + marker)
 		var err error
 		var typed *lokierr.Error
-		switch kind % 14 {
+		const limitFlag = "fz-limit-flag"
+		switch kind % 18 {
 		case 0:
 			typed = lokierr.Direction(text)
 		case 1:
@@ -244,6 +249,14 @@ func FuzzFail(f *testing.F) {
 			err = nil
 		case 13:
 			err = errors.New(text + "; narrow the query or increase -flag")
+		case 14:
+			typed = lokierr.ResponseTooLarge(limitFlag, int64(line), int64(col), cause)
+		case 15:
+			typed = lokierr.LimitReached(limitFlag, int64(col), cause)
+		case 16:
+			typed, _ = lokierr.As(newHeavyQueueFull(&heavyQueryQueueFullError{limitFlag: "-" + limitFlag, work: text, maxConcurrent: line, queueWait: time.Duration(col), adaptive: text}))
+		case 17:
+			typed = lokierr.InputTooLong(len(text), col).WithLimit(limitFlag, int64(col)).WithCause(cause)
 		}
 		if typed != nil {
 			err = typed
@@ -260,6 +273,9 @@ func FuzzFail(f *testing.F) {
 		}
 		if strings.Contains(rec.Body.String(), marker) {
 			t.Fatalf("a cause reached the client: %q", rec.Body.String())
+		}
+		if kind%18 >= 14 && strings.Contains(rec.Body.String(), limitFlag) {
+			t.Fatalf("a limit's flag reached the client: %q", rec.Body.String())
 		}
 		if typed != nil && ctxState%3 == 0 {
 			if status != typed.Status() {

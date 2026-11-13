@@ -299,13 +299,13 @@ func FuzzErrorBodyShapes(f *testing.F) {
 
 // The window stats byte guard is the row limit's own budget (rows times the
 // largest row), so it is the same limit error: Loki's limit status 400 with the
-// text naming the one flag that raises it, never a 500 that names a flag.
-// conformance: semantics/error-layer-body-shape, limits/row-limit-error-names-flag
+// class text (the log line names the one flag that raises it), never a 500.
+// conformance: semantics/error-layer-body-shape, limits/row-limit-answers-loki-limit-text
 func TestSlidingStatsByteBudgetIsTheRowLimitError(t *testing.T) {
 	err := slidingStatsByteBudgetError(1000)
 	status, _, text := lokiClientError(context.Background(), err)
-	const want = "manual range metric row limit exceeded (1000 stats rows of up to 65536 bytes in one bucket grid); narrow the query or increase -manual-range-metric-row-limit"
-	if status != http.StatusBadRequest || text != want {
+	const want = "limit reached while evaluating the query"
+	if status != http.StatusBadRequest || text != want || limitFlagOf(err) != "-manual-range-metric-row-limit" {
 		t.Fatalf("got %d %q, want 400 %q", status, text, want)
 	}
 }

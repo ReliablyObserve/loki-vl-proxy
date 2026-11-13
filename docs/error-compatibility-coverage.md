@@ -16,7 +16,7 @@ The answers are those of Grafana Loki 3.7.9, recorded over HTTP on 2026-11-13. E
 | Errors that match Loki | 95.4% (209/219) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
 | Matrix coverage | 57.3% (71/124) | route x error kind cells with a recorded or documented Loki answer, a unit gate and an end-to-end comparison |
 | Cells that match | 94/124 | cells where every comparable row matches and no known leak remains |
-| Messages recorded | 27/34 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
+| Messages recorded | 27/36 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
 
 71 recorded rows are not comparable (the recorded Loki ran with authentication disabled, or its answer depends on its own configuration) and are replayed but not counted.
 
@@ -85,6 +85,8 @@ The order was observed by sending 33 requests that carry two errors each to a re
 | `msg-limit-lookback` | 400 | limit | 3 | - | recorded-not-comparable | - | - |
 | `msg-limit-not-positive` | 400 | param | 8 | 8/8 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-limit-query-length` | 400 | limit | 9 | 8/8 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-limit-reached` | 400 | limit | 0 | - | documented | TestLimitAnswersAreLokisTextAndLogTheFlag, TestErrorLayer_NoVictoriaLogsLeak | - |
+| `msg-limit-response-size` | 500 | limit | 0 | - | documented | TestLimitAnswersAreLokisTextAndLogTheFlag, TestErrorLayer_NoVictoriaLogsLeak | - |
 | `msg-limit-series` | 400 | limit | 0 | - | documented | TestErrorLayer_LokiLimitTexts | - |
 | `msg-method-not-allowed` | 405 | route | 59 | 59/59 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-not-found` | 404 | route | 21 | 21/21 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |

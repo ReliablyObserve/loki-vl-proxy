@@ -331,7 +331,7 @@ func TestContract_QueryRange_BareParserMetricCompatValidationAndBackendError(t *
 	}
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, `upstream timeout`, http.StatusBadGateway)
+		http.Error(w, `upstream timeout`, http.StatusGatewayTimeout)
 	}))
 	defer vlBackend.Close()
 

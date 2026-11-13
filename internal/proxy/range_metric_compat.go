@@ -2664,7 +2664,7 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 			points, formatted = appendHitsPoint(points, pointHint, tNS, value)
 			// `[1700000000,"<value>"],`: a timestamp of at most 20 bytes plus punctuation.
 			if encodedBytes += formatted + 26; encodedBytes > maxBytes {
-				return nil, fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", maxBytes)
+				return nil, newManualMetricResponseTooLarge(int64(maxBytes))
 			}
 		}
 		if sink != nil {

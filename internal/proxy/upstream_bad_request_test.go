@@ -722,7 +722,9 @@ func TestStatusFromUpstreamErr_ClientMistakes(t *testing.T) {
 		{"backend_503", vlErr(http.StatusServiceUnavailable, "too many concurrent queries"), http.StatusInternalServerError},
 		// VictoriaLogs' -search.maxConcurrentRequests queue: Loki's queue-full 429.
 		{"backend_429", vlErr(http.StatusTooManyRequests, "slow down"), http.StatusTooManyRequests},
-		{"backend_timeout_text", vlErr(http.StatusServiceUnavailable, "timeout exceeded"), http.StatusGatewayTimeout},
+		// VictoriaLogs' own deadline (a kind it reports in its message) is Loki's 504; any other text is a failed call.
+		{"backend_deadline", vlErr(http.StatusServiceUnavailable, "the request couldn't be executed in 30.000 seconds; possible solutions: to increase -search.maxQueryDuration=30s; to pass bigger value to 'timeout' query arg"), http.StatusGatewayTimeout},
+		{"backend_timeout_text", vlErr(http.StatusServiceUnavailable, "timeout exceeded"), http.StatusInternalServerError},
 		{"circuit_breaker", errors.New("circuit breaker open — backend unavailable"), http.StatusInternalServerError},
 		{"transport", errors.New("dial tcp: connection refused"), http.StatusInternalServerError},
 	}

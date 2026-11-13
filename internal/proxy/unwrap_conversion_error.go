@@ -1668,7 +1668,7 @@ func (p *Proxy) unwrapStripResponse(resp *http.Response, strip func([]byte) ([]b
 		return err
 	}
 	if int64(len(body)) > limit {
-		return fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", limit)
+		return newManualMetricResponseTooLarge(limit)
 	}
 	out, err := strip(body)
 	if err != nil {

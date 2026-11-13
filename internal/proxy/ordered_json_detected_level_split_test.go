@@ -472,8 +472,8 @@ func TestJSONDetectedLevelSplitRawRowsStayWithinTheRowLimit(t *testing.T) {
 		fake.stored = p.labelTranslator.ToVL
 		p.rangeMetricRowLimit = 5
 		code, _, body := runSplitQuery(t, p, tc.query, s0.Add(2*time.Minute), s0.Add(10*time.Minute), time.Minute)
-		if code != http.StatusBadRequest || !strings.Contains(body, "-manual-range-metric-row-limit") {
-			t.Fatalf("%s: got %d %s, want the 400 limit error naming -manual-range-metric-row-limit", tc.query, code, body)
+		if code != http.StatusBadRequest || body != "limit reached while evaluating the query" {
+			t.Fatalf("%s: got %d %s, want the 400 limit error", tc.query, code, body)
 		}
 		fake.mu.Lock()
 		reads := len(fake.rawQueries)

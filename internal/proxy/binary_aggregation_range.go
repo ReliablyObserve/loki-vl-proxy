@@ -1,8 +1,8 @@
 package proxy
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -24,7 +24,7 @@ func (p *Proxy) binaryAggregationResponse(r *http.Request, binary *logqlpkg.BinO
 		}
 		return buf
 	}
-	if resultType != "matrix" || depth >= 6 || buf.code != http.StatusInternalServerError || !bytes.Contains(buf.body, []byte("manual metric response exceeds")) {
+	if resultType != "matrix" || depth >= 6 || buf.code != http.StatusInternalServerError || !errors.Is(buf.failure, errManualMetricResponseTooLarge) {
 		return buf
 	}
 	leftReq, rightReq, ok := splitBinaryAggregationRange(r)
@@ -48,7 +48,7 @@ func (p *Proxy) binaryAggregationResponse(r *http.Request, binary *logqlpkg.BinO
 	merged, err = capSeriesToLimit(r.Context(), merged, p.resolvedMaxStatsQuerySeries(r.Context()))
 	if err != nil {
 		failed := &bufferedResponseWriter{}
-		p.writeError(failed, http.StatusBadRequest, err.Error())
+		p.writeErr(failed, r.Context(), err)
 		return failed
 	}
 	result := &bufferedResponseWriter{body: merged}
@@ -125,7 +125,7 @@ func mergeBinaryAggregationRanges(left, right []byte, limit int) ([]byte, error)
 		return nil, err
 	}
 	if len(body) > limit {
-		return nil, fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", limit)
+		return nil, newManualMetricResponseTooLarge(int64(limit))
 	}
 	return body, nil
 }

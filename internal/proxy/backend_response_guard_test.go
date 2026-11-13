@@ -84,7 +84,7 @@ func labelValuesIndexSize(p *Proxy) int {
 	return len(p.labelValuesIndex)
 }
 
-var resourceExhaustedRE = regexp.MustCompile(`^rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max \((\d+) vs\. (\d+)\); raise -label-values-max-response-bytes or narrow the query$`)
+var resourceExhaustedRE = regexp.MustCompile(`^rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max \((\d+) vs\. (\d+)\)$`)
 
 // A label values response above -label-values-max-response-bytes fails with
 // Loki's querier error for a message above grpc_server_max_send_msg_size, the
@@ -108,7 +108,7 @@ func TestLabelValuesResponseCap_OverLimitFailsWithLokiResourceExhausted(t *testi
 		msg := lokiErrorText(t, rec)
 		m := resourceExhaustedRE.FindStringSubmatch(msg)
 		if m == nil {
-			t.Fatalf("attempt %d: error %q is not Loki's ResourceExhausted text naming the flag", attempt, msg)
+			t.Fatalf("attempt %d: error %q is not Loki's ResourceExhausted text", attempt, msg)
 		}
 		if m[1] != "4097" || m[2] != "4096" {
 			t.Fatalf("attempt %d: sizes (%s vs. %s), want (4097 vs. 4096)", attempt, m[1], m[2])
@@ -347,7 +347,7 @@ func TestStatusFromUpstreamErr_GuardErrors(t *testing.T) {
 		{"aborted past its deadline", &vlResponseAbortedError{elapsed: time.Minute, timedOut: true}, http.StatusGatewayTimeout, lokiErrDeadlineExceeded},
 		{"aborted early", &vlResponseAbortedError{elapsed: 1500 * time.Millisecond}, http.StatusInternalServerError, "VictoriaLogs aborted the response after 1.5s, before it was complete; it ends a response this way when a query exceeds -search.maxQueryDuration or fails while its result is being written"},
 		{"wrapped abort", fmt.Errorf("fetch: %w", &vlResponseAbortedError{timedOut: true}), http.StatusGatewayTimeout, "fetch: " + lokiErrDeadlineExceeded},
-		{"label values too large", &labelValuesResponseTooLargeError{read: 67108865, limit: 67108864}, http.StatusInternalServerError, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (67108865 vs. 67108864); raise -label-values-max-response-bytes or narrow the query"},
+		{"label values too large", newLabelValuesTooLarge(67108865, 67108864), http.StatusInternalServerError, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (67108865 vs. 67108864)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

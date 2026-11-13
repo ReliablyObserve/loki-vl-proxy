@@ -1,12 +1,16 @@
 package middleware
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 )
 
 var (
@@ -37,6 +41,35 @@ type RateLimiter struct {
 	// Stats
 	RejectedTotal  atomic.Int64
 	ThrottledTotal atomic.Int64
+}
+
+// RejectFunc writes the answer to a request the limiter turned away: Loki's
+// queue-full error, typed, with the flag that set the limit in its Limit (for
+// the log line only). It is given per wrapped handler, never kept on the
+// limiter: the limiter's cleanup goroutine runs until Stop, and a writer that
+// refers to its owner would keep that owner alive with it.
+type RejectFunc func(w http.ResponseWriter, r *http.Request, err *lokierr.Error)
+
+// Flags behind the two admission limits, for the log line of a rejection.
+const (
+	flagRatePerSecond = "-rate-limit-per-second"
+	flagMaxConcurrent = "-max-concurrent"
+)
+
+var (
+	errRateLimited       = errors.New("per-client rate limit exceeded")
+	errTooManyConcurrent = errors.New("too many concurrent queries")
+)
+
+// rejectQueueFull answers a turned-away request with Loki's queue-full status
+// and text for both limits, when the caller gives no writer of its own.
+func rejectQueueFull(w http.ResponseWriter, _ *http.Request, err *lokierr.Error) {
+	// The message alone as text/plain, as Loki writes every error
+	// (pkg/util/server/error.go WriteError).
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(err.Status())
+	_, _ = io.WriteString(w, err.Text())
 }
 
 type tokenBucket struct {
@@ -136,32 +169,29 @@ func ClientID(r *http.Request) string {
 // Middleware wraps an http.Handler with rate limiting and concurrency control.
 // When both the per-client rate limit and global concurrency limit are disabled
 // (i.e., both are ≤ 0), this returns next directly with zero overhead.
-func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
+// reject writes the answer to a turned-away request (nil: Loki's queue-full
+// answer as text); which limit it was goes to the log line only.
+func (rl *RateLimiter) Middleware(next http.Handler, reject RejectFunc) http.Handler {
 	if rl.maxConcurrent <= 0 && rl.ratePerSecond <= 0 {
 		return next
+	}
+	if reject == nil {
+		reject = rejectQueueFull
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		clientID := ClientID(r)
 
 		if !rl.AllowClient(clientID) {
-			// The message alone as text/plain, as Loki writes every error
-			// (pkg/util/server/error.go WriteError).
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("Retry-After", "1")
 			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", rl.ratePerSecond))
 			w.Header().Set("X-RateLimit-Remaining", "0")
-			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte("rate limit exceeded"))
+			reject(w, r, lokierr.QueueFullAt(flagRatePerSecond, int64(rl.ratePerSecond), errRateLimited))
 			return
 		}
 
 		if !rl.AcquireConcurrent() {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("Retry-After", "5")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte("too many concurrent queries"))
+			reject(w, r, lokierr.QueueFullAt(flagMaxConcurrent, int64(rl.maxConcurrent), errTooManyConcurrent))
 			return
 		}
 		defer rl.ReleaseConcurrent()

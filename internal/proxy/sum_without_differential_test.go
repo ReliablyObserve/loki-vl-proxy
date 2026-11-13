@@ -861,8 +861,8 @@ func TestWithoutFoldRowBudgetIsNotASeriesLimit(t *testing.T) {
 				if !instant && strings.Contains(query, "count_over_time") && res.Code == http.StatusOK {
 					return // a tumbling window: VictoriaLogs folds the series, and the two it answers fit
 				}
-				if res.Code != http.StatusBadRequest || strings.Contains(body, "maximum number of series") || !strings.Contains(body, "-manual-range-metric-row-limit") {
-					t.Fatalf("%d %s, want the row-limit error naming the flag as a 400", res.Code, body)
+				if res.Code != http.StatusBadRequest || body != "limit reached while evaluating the query" {
+					t.Fatalf("%d %s, want Loki's limit text as a 400", res.Code, body)
 				}
 			})
 		}
@@ -921,10 +921,10 @@ func TestWithoutFoldRowBudgetError(t *testing.T) {
 					params.Set("query", guarded)
 					res := doCompatProxyRequest(p, target+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
 					body := res.Body.String()
-					if tc.wantRowText && (res.Code != http.StatusBadRequest || strings.Contains(body, "maximum number of series") || !strings.Contains(body, "-manual-range-metric-row-limit")) {
-						t.Fatalf("%s: %d %s, want the row-limit error naming the flag as a 400", guarded, res.Code, body)
+					if tc.wantRowText && (res.Code != http.StatusBadRequest || body != "limit reached while evaluating the query") {
+						t.Fatalf("%s: %d %s, want Loki's limit text as a 400", guarded, res.Code, body)
 					}
-					if !tc.wantRowText && (res.Code != http.StatusBadRequest || !strings.Contains(body, "maximum number of series (4)") || strings.Contains(body, "-manual-range-metric-row-limit")) {
+					if !tc.wantRowText && (res.Code != http.StatusBadRequest || !strings.Contains(body, "maximum number of series (4)")) {
 						t.Fatalf("%s: %d %s, want Loki's series limit error of the tenant's limit as a 400", guarded, res.Code, body)
 					}
 				}
@@ -936,16 +936,16 @@ func TestWithoutFoldRowBudgetError(t *testing.T) {
 		ctx := context.WithValue(context.Background(), foldedSumKey{}, true)
 		return context.WithValue(ctx, seriesLimitScopeKey{}, &seriesLimitScope{foldBudget: foldBudget})
 	}
-	if err := newSeriesLimitError(folding(7), 7); !strings.Contains(err.Error(), "-manual-range-metric-row-limit") {
+	if err := newSeriesLimitError(folding(7), 7); limitFlagOf(err) != "-manual-range-metric-row-limit" {
 		t.Fatalf("a request reading under the budget: %v", err)
 	}
-	if err := newSeriesLimitError(folding(7), 3); !strings.Contains(err.Error(), "-manual-range-metric-row-limit") {
+	if err := newSeriesLimitError(folding(7), 3); limitFlagOf(err) != "-manual-range-metric-row-limit" {
 		t.Fatalf("a request reading under the budget, whatever the limit it reports: %v", err)
 	}
-	if err := newSeriesLimitError(folding(0), 7); strings.Contains(err.Error(), "-manual-range-metric-row-limit") || !strings.Contains(err.Error(), "maximum number of series (7)") {
+	if err := newSeriesLimitError(folding(0), 7); limitFlagOf(err) != "-max-stats-query-series" || !strings.Contains(err.Error(), "maximum number of series (7)") {
 		t.Fatalf("a request the tenant's limit bounds: %v", err)
 	}
-	if err := seriesLimitReached(tenantSeriesLimitContext(folding(7)), 7); strings.Contains(err.Error(), "-manual-range-metric-row-limit") || !strings.Contains(err.Error(), "maximum number of series (7)") {
+	if err := seriesLimitReached(tenantSeriesLimitContext(folding(7)), 7); limitFlagOf(err) != "-max-stats-query-series" || !strings.Contains(err.Error(), "maximum number of series (7)") {
 		t.Fatalf("the tenant's own limit, equal to the budget: %v", err)
 	}
 }

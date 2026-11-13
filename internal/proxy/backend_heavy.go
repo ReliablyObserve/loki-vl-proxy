@@ -78,8 +78,8 @@ func (e *heavyQueryQueueFullError) Error() string {
 	if e.adaptive != "" {
 		bound = fmt.Sprintf("at most %s=%d per replica (%s)", flag, e.maxConcurrent, e.adaptive)
 	}
-	return fmt.Sprintf("%s: %s are limited to %s and this query waited -backend-heavy-query-queue-wait=%s; retry later, narrow the time range, or raise these limits",
-		lokiTooManyOutstandingRequests, work, bound, e.queueWait)
+	return fmt.Sprintf("%s are limited to %s and this query waited -backend-heavy-query-queue-wait=%s; retry later, narrow the time range, or raise these limits",
+		work, bound, e.queueWait)
 }
 
 func isHeavyQueryQueueFull(err error) bool {
@@ -168,7 +168,7 @@ func (l *heavyQueryLimiter) acquireUntil(ctx context.Context, tenant string, dea
 		if l.abandon(w) {
 			return l.releaseFunc(tenant), nil
 		}
-		return nil, &heavyQueryQueueFullError{limitFlag: l.limitFlag, work: l.work, maxConcurrent: l.capacity, queueWait: l.queueWait}
+		return nil, newHeavyQueueFull(&heavyQueryQueueFullError{limitFlag: l.limitFlag, work: l.work, maxConcurrent: l.capacity, queueWait: l.queueWait})
 	}
 }
 

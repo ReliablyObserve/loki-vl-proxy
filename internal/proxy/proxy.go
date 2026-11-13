@@ -722,6 +722,7 @@ type Proxy struct {
 	queryTracker                          *metrics.QueryTracker
 	coalescer                             *mw.Coalescer
 	limiter                               *mw.RateLimiter
+	admissionLog                          logGate // paces the log line of a request the limiter rejects
 	breaker                               *mw.CircuitBreaker
 	routingNamespace                      string       // immutable digest, replaced under configMu on reload
 	configMu                              sync.RWMutex // protects tenantMap and labelTranslator
@@ -1960,6 +1961,21 @@ func (p *Proxy) Init() {
 // ColdRouter returns the cold storage router for testing.
 func (p *Proxy) ColdRouter() *ColdRouter { return p.coldRouter }
 
+// rejectAdmission answers a request the admission limiter turned away: Loki's
+// queue-full error through the error layer, so the body shape, the status and
+// the log line (with the limit's flag) are the layer's.
+//
+// A flood of rejected requests is what the limiter exists to absorb, so the
+// log line is written at most once a second: the other rejections get the same
+// answer without a line, and the limiter counts every one.
+func (p *Proxy) rejectAdmission(w http.ResponseWriter, r *http.Request, err *lokierr.Error) {
+	if p.admissionLog.allow(time.Now()) {
+		p.fail(w, r, err)
+		return
+	}
+	routeErrorShape(r)(w, err.Status(), err.Text())
+}
+
 // Shutdown flushes in-memory caches that should survive rolling restarts.
 func (p *Proxy) Shutdown(ctx context.Context) error {
 	p.loweringShadow.close(ctx)
@@ -2062,7 +2078,7 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 						p.tenantLimitsMiddleware(endpoint,
 							p.stepAlignMiddleware(endpoint,
 								p.compatCacheMiddleware(endpoint, route,
-									p.requestTimeBounds(endpoint, h)))))))))))))
+									p.requestTimeBounds(endpoint, h)))))))), p.rejectAdmission)))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the
@@ -2087,7 +2103,7 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 // /admin/*, and /debug/* so callers can host those on dedicated listeners.
 func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 	rlNoTenant := func(endpoint, route string, h http.HandlerFunc) http.Handler {
-		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, route, h)))
+		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, route, h), p.rejectAdmission))
 	}
 
 	// Loki API endpoints — data queries are rate-limited
@@ -2131,7 +2147,7 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 
 	// Alerting / ruler read endpoints
 	alertRead := func(endpoint, route string, h http.HandlerFunc) http.Handler {
-		return p.routeGate(endpoint, route, securityHeaders(p.tenantMiddleware(p.limiter.Middleware(p.requestLogger(endpoint, route, h)))))
+		return p.routeGate(endpoint, route, securityHeaders(p.tenantMiddleware(p.limiter.Middleware(p.requestLogger(endpoint, route, h), p.rejectAdmission))))
 	}
 	mux.Handle("/loki/api/v1/rules", alertRead("rules", "/loki/api/v1/rules", p.handleRules))
 	mux.Handle("/loki/api/v1/rules/", alertRead("rules_nested", "/loki/api/v1/rules/{namespace}", p.handleRules))

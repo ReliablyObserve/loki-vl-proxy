@@ -23,7 +23,13 @@ type bufferedResponseWriter struct {
 	header http.Header
 	body   []byte
 	code   int
+	// failure is the error the error layer answered the request with, when it
+	// did: callers that retry a failure read it with errors.Is instead of
+	// reading the client text.
+	failure error
 }
+
+func (w *bufferedResponseWriter) recordFailure(err error) { w.failure = err }
 
 func (w *bufferedResponseWriter) Header() http.Header {
 	if w.header == nil {

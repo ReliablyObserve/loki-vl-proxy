@@ -876,7 +876,7 @@ Sizing: the defaults need no tuning for the data size, that is their point. Rais
 
 ## Fixed Execution Limits
 
-These protective limits bound what one request may do. Rejections are errors, not empty results; see [Security hardening migration](security-hardening-migration.md#execution-and-storage-limits) for rollout notes. Every limit that an operator may need to move is a flag — the table below names them — and each error names the flag that bounded it, so a rejection tells you what to raise.
+These protective limits bound what one request may do. Rejections are errors, not empty results; see [Security hardening migration](security-hardening-migration.md#execution-and-storage-limits) for rollout notes. Every limit that an operator may need to move is a flag — the table below names them — and a rejection answers Loki's text for the limit's class while the `request error` log line of the rejected request names the flag that bounded it (`limit_flag`) and its setting (`limit_value`), so a rejection tells the operator what to raise.
 
 | Area | Limit | When exceeded |
 |---|---|---|
@@ -890,7 +890,7 @@ These protective limits bound what one request may do. Rejections are errors, no
 | Request coalescer | 256 MiB per shared response body, or a larger configured response cap such as `-label-values-max-response-bytes` | error instead of silent truncation |
 | VictoriaLogs response aborted after its headers (GET reads: label names and values, series, detected fields, hits and other metadata calls) | VictoriaLogs ends a started response with a raw abort line when a query outlives its deadline | `504` with Loki's `request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed` when the request deadline or the `timeout` sent to VictoriaLogs ran out (or VictoriaLogs reported its deadline), otherwise `500` with `Internal Server Error` (the log line's `upstream_error` says `VictoriaLogs aborted the response after D, before it was complete; ...`); the partial body is never decoded or cached |
 | Hot/cold merge | 64 MiB buffered per hot or cold response | error |
-| Multi-tenant reads | `-multi-tenant-max-fanout` (default 64) tenants per request; `-multi-tenant-max-merged-response-bytes` (default 32 MiB) merged response | `400` / `413`, each naming its flag |
+| Multi-tenant reads | `-multi-tenant-max-fanout` (default 64) tenants per request; `-multi-tenant-max-merged-response-bytes` (default 32 MiB) merged response | `400` (fanout) / `500` (merged response), Loki's text for each class; the log line names the flag |
 | `/tail` client messages | 4 KiB per client message | WebSocket close `1009` |
 
 ### Flags for these limits
@@ -903,7 +903,7 @@ Each takes `0` to mean "use the built-in default", so a configuration that sets 
 | `-max-entries-limit-per-query-cap` | `false` | Lower a log query `limit` above `max_entries_limit_per_query` to that value and answer, instead of Loki's `400` (the proxy's behaviour before per-tenant limits) |
 | `-max-query-length-bytes` | `0` (uses `131072`) | LogQL query string length. The default is Loki's `syntax.maxInputSize`, so the proxy rejects only what Loki rejects; lower it to reject long queries earlier |
 | `-label-values-max-response-bytes` | `0` (uses `64 MiB`) | Bytes of the VictoriaLogs answer to a `/loki/api/v1/label/{name}/values` request: one response, or the size the merged listing would have as one response when the metadata inventory lists it from time buckets. Above it the request fails as Loki's querier does above `grpc_server_max_send_msg_size` (`500` `rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (N vs. LIMIT)`, with this flag named), and nothing is cached or indexed. The VictoriaLogs response is about 1.7x the Loki JSON (it carries a hit count per value): 1h of a high-churn `pod` label on the e2e stack is 2.4 MB (54,405 values), 24h about 53 MB. The default is 16x Loki's default message size, so a day of such a label still answers; lower it towards 4 MiB to fail where Loki's defaults would. Per tenant as `label_values_max_response_bytes` in `-tenant-limits` / `-tenant-default-limits` |
-| `-backend-max-buffered-response-bytes` | `0` (uses `64 MiB`) | Bytes read from one VictoriaLogs response the proxy buffers (stats, volume and binary-operand responses, the encoded metric result, the Drilldown field, stream and label-filter listings, and the cold backend's backward chunks). A gzip or zstd response may also decode to the larger of 256 MiB and this value. Exceeding it returns `500` naming the flag rather than a truncated result. Proxy memory grows with this value times the concurrent requests that buffer a response |
+| `-backend-max-buffered-response-bytes` | `0` (uses `64 MiB`) | Bytes read from one VictoriaLogs response the proxy buffers (stats, volume and binary-operand responses, the encoded metric result, the Drilldown field, stream and label-filter listings, and the cold backend's backward chunks). A gzip or zstd response may also decode to the larger of 256 MiB and this value. Exceeding it returns `500` with Loki's message-size text (the log line names the flag) rather than a truncated result. Proxy memory grows with this value times the concurrent requests that buffer a response |
 | `-binary-metric-max-operand-bytes` | `0` (uses `256 MiB`) | Operand-response bytes one binary metric expression may capture |
 | `-binary-metric-max-arrays` | `0` (uses `2000000`) | JSON arrays one binary metric expression may allocate while joining operands |
 | `-max-zero-fill-buckets` | `0` (uses `32768`) | Buckets the proxy zero-fills in a metric response |
@@ -913,8 +913,8 @@ Each takes `0` to mean "use the built-in default", so a configuration that sets 
 | `-patterns-second-pass-max-windows` | `0` (uses `8`) | Windows the `/patterns` second pass re-reads |
 | `-patterns-exact-max-lines` | `200000` (`0` turns it off) | Lines of a range the `/patterns` exact reading takes from VictoriaLogs; a range with more is answered from the counts |
 | `-patterns-max-counts-rows` | `0` (uses `250000`) | Rows the `/patterns` counts queries read from VictoriaLogs before the request samples lines instead |
-| `-multi-tenant-max-fanout` | `0` (uses `64`) | Tenants one multi-tenant request may fan out to; more returns `400` naming the flag |
-| `-multi-tenant-max-merged-response-bytes` | `0` (uses `32 MiB`) | Bytes of a merged multi-tenant response; more returns `413` naming the flag |
+| `-multi-tenant-max-fanout` | `0` (uses `64`) | Tenants one multi-tenant request may fan out to; more returns `400` (`limit reached while evaluating the query`; the log line names the flag) |
+| `-multi-tenant-max-merged-response-bytes` | `0` (uses `32 MiB`) | Bytes of a merged multi-tenant response; more returns `500` with Loki's message-size text (the log line names the flag) |
 
 ## Observability and Admin Surfaces
 

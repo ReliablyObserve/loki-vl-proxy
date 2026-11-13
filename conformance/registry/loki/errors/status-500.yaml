@@ -7,8 +7,8 @@ generated:   # rewritten by conformance/scripts/error_registry.py
   literal_messages:
     - "Internal Server Error"
     - "error while processing request: runtime error: integer divide by zero"
-  loki_messages: ["msg-backend-failed", "msg-internal", "msg-limit-index-series", "unmapped-evaluator-unexpected-expr",
-  "unmapped-shard-aggregations-disabled"]
+  loki_messages: ["msg-backend-failed", "msg-internal", "msg-limit-index-series", "msg-limit-response-size",
+  "unmapped-evaluator-unexpected-expr", "unmapped-shard-aggregations-disabled"]
   recorded_rows: 3
   comparable_rows: 1
   matching_rows: 0
@@ -25,7 +25,7 @@ loki_behaviour: |
   holds the cells that do not yet; error-layer-known-leaks.json lists them.
 precedence: []   # failure classes Loki evaluates before this one
 consumers: |
-  Grafana shows `Internal Server Error` or the documented limit text with the flag that raises it.
+  Grafana shows `Internal Server Error` or Loki's message size text for a buffer limit; the log line names the flag that raises it.
 cases:
   - semantics/error-layer-backend-failure-status
   - semantics/error-layer-internal-go-text

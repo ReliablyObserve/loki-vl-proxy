@@ -30,7 +30,9 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		return false
 	}
 	if len(tenantIDs) > p.limits().MultiTenantFanout {
-		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("multi-tenant fanout exceeds limit of %d tenants; raise -multi-tenant-max-fanout or query fewer tenants", p.limits().MultiTenantFanout))
+		fanout := p.limits().MultiTenantFanout
+		p.writeErr(w, r.Context(), lokierr.LimitReached(flagMultiTenantMaxFanout, int64(fanout),
+			&limitCause{msg: fmt.Sprintf("multi-tenant fanout exceeds limit of %d tenants; raise %s or query fewer tenants", fanout, flagMultiTenantMaxFanout)}))
 		return true
 	}
 	filteredReq, filteredTenants, err := p.applyTenantSelectorFilter(r, tenantIDs)
@@ -147,11 +149,12 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		return true
 	}
 	if body, err = p.limitMultiTenantMetricSeries(filteredReq, endpoint, recorders, body); err != nil {
-		p.writeError(w, http.StatusBadRequest, err.Error())
+		p.writeErr(w, r.Context(), err)
 		return true
 	}
 	if len(body) > p.limits().MultiTenantMergedBytes {
-		p.writeError(w, http.StatusRequestEntityTooLarge, "multi-tenant merged response exceeds configured safety limit; raise -multi-tenant-max-merged-response-bytes or query fewer tenants")
+		p.writeErr(w, r.Context(), lokierr.ResponseTooLarge(flagMultiTenantMaxMergedBytes, int64(len(body)), int64(p.limits().MultiTenantMergedBytes),
+			&limitCause{msg: "multi-tenant merged response exceeds configured safety limit; raise " + flagMultiTenantMaxMergedBytes + " or query fewer tenants"}))
 		return true
 	}
 	p.writeMultiTenantMerged(w, filteredReq, endpoint, body, contentType, stale)

@@ -1019,13 +1019,40 @@ func cachedSelectorValidation(kind, query string, validate func(string) string) 
 // Loki's "input size too long" at or above syntax.maxInputSize, the proxy's
 // maxQueryLength message for anything longer than that limit.
 func queryLengthError(query string, maxBytes int) string {
-	if msg := logqlpkg.InputSizeError(query); msg != "" {
-		return msg
-	}
-	if maxBytes > 0 && len(query) > maxBytes {
-		return fmt.Sprintf("query exceeds max length (%d > %d); raise -max-query-length-bytes", len(query), maxBytes)
+	if err := queryLengthLimit(query, maxBytes); err != nil {
+		return err.Text()
 	}
 	return ""
+}
+
+// queryLengthLimit is queryLengthError as a typed error: Loki's "input size
+// too long" for a query at or above syntax.maxInputSize, the same class and
+// text for a query over the proxy's own -max-query-length-bytes, whose flag goes
+// to the log line only. nil when the query is within both.
+func queryLengthLimit(query string, maxBytes int) *lokierr.Error {
+	if len(query) >= logqlpkg.MaxInputSize {
+		return lokierr.InputTooLong(len(query), logqlpkg.MaxInputSize)
+	}
+	if maxBytes > 0 && len(query) > maxBytes {
+		return lokierr.InputTooLong(len(query), maxBytes).WithLimit(flagMaxQueryLengthBytes, int64(maxBytes))
+	}
+	return nil
+}
+
+// queryParamLengthLimit is the query-length check of lokiQueryParamError,
+// typed, over the selector parameters of a metadata request: series reads
+// every match and match[] group, the other routes their query.
+func queryParamLengthLimit(rule lokiQueryParamRule, r *http.Request, maxQueryBytes int) *lokierr.Error {
+	query := r.FormValue("query") // parses the form
+	if rule == lokiSeriesMatchers {
+		for _, group := range append(append([]string(nil), r.Form["match"]...), r.Form["match[]"]...) {
+			if err := queryLengthLimit(group, maxQueryBytes); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return queryLengthLimit(query, maxQueryBytes)
 }
 
 // maxEchoedErrorBytes bounds how much of a rejected query a validation error
@@ -1119,6 +1146,11 @@ func (p *Proxy) lokiQueryParamValidation(endpoint string, next http.HandlerFunc)
 			}
 		}
 		if hasRule {
+			if err := queryParamLengthLimit(rule, r, p.limits().QueryLengthBytes); err != nil {
+				p.fail(w, r, err)
+				p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
+				return
+			}
 			if msg := lokiQueryParamError(rule, r, p.limits().QueryLengthBytes, p.lokiNameCheck()); msg != "" {
 				p.writeError(w, http.StatusBadRequest, truncateQueryError(msg))
 				p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
