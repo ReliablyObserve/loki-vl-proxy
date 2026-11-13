@@ -89,6 +89,33 @@ func newIndexStatsTestProxy(t *testing.T, backend string) *Proxy {
 // entries its lines; tenants are summed (pkg/querier/multi_tenant_querier.go:208-230).
 // Written from Loki's rules, independently of the proxy's helpers.
 func lokiIndexStatsReference(rows []indexStatsRow, tenants []string, startRaw, endRaw, sinceRaw string, now time.Time) (streams, entries int, ok bool) {
+	start, end, ok := lokiIndexStatsWindow(startRaw, endRaw, sinceRaw, now)
+	if !ok || end.Before(start) {
+		return 0, 0, false
+	}
+	for _, tenant := range tenants {
+		seen := map[string]bool{}
+		for _, row := range rows {
+			if row.tenant == tenant && row.ns >= start.UnixNano() && row.ns <= end.UnixNano() {
+				entries++
+				seen[row.stream] = true
+			}
+		}
+		streams += len(seen)
+	}
+	return streams, entries, true
+}
+
+// lokiIndexStatsRejects reports whether Loki answers the window with its 400
+// "end timestamp must not be before or equal to start time": an end before the
+// start (an end equal to the start is answered, with nothing in it).
+func lokiIndexStatsRejects(startRaw, endRaw, sinceRaw string, now time.Time) bool {
+	start, end, ok := lokiIndexStatsWindow(startRaw, endRaw, sinceRaw, now)
+	return ok && end.Before(start)
+}
+
+// lokiIndexStatsWindow is the window Loki reads for index/stats.
+func lokiIndexStatsWindow(startRaw, endRaw, sinceRaw string, now time.Time) (start, end time.Time, ok bool) {
 	parse := func(value string, def time.Time) (time.Time, bool) {
 		if value == "" {
 			return def, true
@@ -114,7 +141,7 @@ func lokiIndexStatsReference(rows []indexStatsRow, tenants []string, startRaw, e
 	if sinceRaw != "" {
 		d, err := time.ParseDuration(sinceRaw)
 		if err != nil {
-			return 0, 0, false
+			return time.Time{}, time.Time{}, false
 		}
 		since = d
 	}
@@ -124,20 +151,7 @@ func lokiIndexStatsReference(rows []indexStatsRow, tenants []string, startRaw, e
 		endOrNow = now
 	}
 	start, ok2 := parse(startRaw, endOrNow.Add(-since))
-	if !ok1 || !ok2 {
-		return 0, 0, false
-	}
-	for _, tenant := range tenants {
-		seen := map[string]bool{}
-		for _, row := range rows {
-			if row.tenant == tenant && row.ns >= start.UnixNano() && row.ns <= end.UnixNano() {
-				entries++
-				seen[row.stream] = true
-			}
-		}
-		streams += len(seen)
-	}
-	return streams, entries, true
+	return start, end, ok1 && ok2
 }
 
 type indexStatsAnswer struct {
@@ -376,6 +390,15 @@ func FuzzIndexStatsWindowLikeLoki(f *testing.F) {
 		before := time.Now()
 		w := doCompatProxyRequest(p, "/loki/api/v1/index/stats?"+params.Encode(), nil)
 		after := time.Now()
+		if r1, r2 := lokiIndexStatsRejects(startRaw, endRaw, sinceRaw, before), lokiIndexStatsRejects(startRaw, endRaw, sinceRaw, after); r1 || r2 {
+			if r1 != r2 {
+				return // the window's end is "now", and the request crossed its start
+			}
+			if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "end timestamp must not be before or equal to start time") {
+				t.Fatalf("index/stats %s: status=%d body=%s, Loki answers 400 for an end before the start", params.Encode(), w.Code, w.Body)
+			}
+			return
+		}
 		s1, e1, ok1 := lokiIndexStatsReference(rows, []string{"0"}, startRaw, endRaw, sinceRaw, before)
 		s2, e2, ok2 := lokiIndexStatsReference(rows, []string{"0"}, startRaw, endRaw, sinceRaw, after)
 		if !ok1 || !ok2 || s1 != s2 || e1 != e2 {

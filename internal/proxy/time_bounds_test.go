@@ -974,7 +974,7 @@ func FuzzRequestTimeBounds(f *testing.F) {
 	f.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
-	allowed := regexp.MustCompile(`^(strconv\.ParseInt: parsing .*|could not parse .*|exceeded maximum resolution.*|end timestamp must not be before.*|cannot parse .*|parse error.*|invalid .*|log queries are not supported.*)$`)
+	allowed := regexp.MustCompile(`^(strconv\.ParseInt: parsing .*|could not parse .*|exceeded maximum resolution.*|end timestamp must not be before.*|cannot parse .*|parse error.*|invalid .*|log queries are not supported.*|zero or negative query resolution step widths are not accepted.*)$`)
 	f.Fuzz(func(t *testing.T, start, end, stepSeconds, offsetNs int64) {
 		step := strconv.FormatInt(stepSeconds, 10) + "s"
 		offsetClause := ""
