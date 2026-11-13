@@ -9,29 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- A query the proxy accepts but cannot serve no longer answers with the proxy's own wording. The client read the
-  translator's text (`unknown pipeline stage "foo" — not a valid LogQL parser or label filter`, `sum() requires a
-  range metric inside ...`, `invalid range metric query`, `loki-vl-proxy requires a uniform offset ...`, `unsupported
-  metric query: range aggregations require compatible unwrap or translator support`) or a Go error. It now reads what
-  Loki answers:
-  - where Loki rejects the query with a message the proxy can build, that message: `parse error : parameter
-    required for operation quantile_over_time`, `parse error : duration out of range`, `parse error : invalid
-    aggregation sum_over_time without unwrap`, `could not parse 'start' parameter: strconv.ParseInt: parsing
-    "abc": invalid syntax` (also for `end`);
-  - where Loki rejects it with a position only the parser knows (a stage that is only a name, `{a="b"} | foo`),
-    Loki's status and its syntax error without the position: `parse error : syntax error: unexpected $end`;
-  - where Loki accepts the query and the proxy cannot serve it yet, Loki's fixed `500 Internal Server Error`. The
-    reason is in the proxy log line only, as `construct` and `upstream_error`.
-
-  **Breaking:** these answers change from `400` to `500` because Loki accepts these queries (it answers `200`):
-  a vector aggregation over a number or `vector()` such as `sum(1)`, a quantile with a tab or newline before
-  `unwrap`, a metric over a zero range such as `rate({a="b"}[0s])` on `query_range`, queries whose range vectors
-  carry different offsets (`rate(a[5m] offset 1h) / rate(b[5m] offset 2h)`) or an offset on only some of them
-  under an aggregation. A failure of the proxy's own work on a request (a binary operand it cannot join, a
-  malformed internal spec) also answers `500` and no longer `400`. One class moves the other way round: a quantile
-  whose `unwrap` follows a vertical tab, a form feed or another blank Loki's lexer rejects is `400` in Loki and was
-  `400` here; it is `500` now, because nothing the proxy holds tells it from the same query spelled with a tab.
-
 - **Breaking:** the proxy's limits and queues now answer Loki's text and status for their class, and no flag name
   reaches a client. The flag that set the limit is in the `request error` log line (`limit_flag`, with its setting
   in `limit_value`), and the operator wording that names it is the line's `upstream_error`.
@@ -56,6 +33,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `503` VictoriaLogs sends when a query outlives `-search.maxQueryDuration` still answer `504` and `499`. A `504`
   from the backend, or from a gateway in front of it, answers `504` by its status; a `502` or `503` from a gateway
   stays `500`, as before.
+
+## [2.210.0] - 2026-11-13
+
+### Fixed
+
+- A query the proxy accepts but cannot serve no longer answers with the proxy's own wording. The client read the
+  translator's text (`unknown pipeline stage "foo" — not a valid LogQL parser or label filter`, `sum() requires a
+  range metric inside ...`, `invalid range metric query`, `loki-vl-proxy requires a uniform offset ...`, `unsupported
+  metric query: range aggregations require compatible unwrap or translator support`) or a Go error. It now reads what
+  Loki answers:
+  - where Loki rejects the query with a message the proxy can build, that message: `parse error : parameter
+    required for operation quantile_over_time`, `parse error : duration out of range`, `parse error : invalid
+    aggregation sum_over_time without unwrap`, `could not parse 'start' parameter: strconv.ParseInt: parsing
+    "abc": invalid syntax` (also for `end`);
+  - where Loki rejects it with a position only the parser knows (a stage that is only a name, `{a="b"} | foo`),
+    Loki's status and its syntax error without the position: `parse error : syntax error: unexpected $end`;
+  - where Loki accepts the query and the proxy cannot serve it yet, Loki's fixed `500 Internal Server Error`. The
+    reason is in the proxy log line only, as `construct` and `upstream_error`.
+
+  **Breaking:** these answers change from `400` to `500` because Loki accepts these queries (it answers `200`):
+  a vector aggregation over a number or `vector()` such as `sum(1)`, a quantile with a tab or newline before
+  `unwrap`, a metric over a zero range such as `rate({a="b"}[0s])` on `query_range`, queries whose range vectors
+  carry different offsets (`rate(a[5m] offset 1h) / rate(b[5m] offset 2h)`) or an offset on only some of them
+  under an aggregation. A failure of the proxy's own work on a request (a binary operand it cannot join, a
+  malformed internal spec) also answers `500` and no longer `400`. One class moves the other way round: a quantile
+  whose `unwrap` follows a vertical tab, a form feed or another blank Loki's lexer rejects is `400` in Loki and was
+  `400` here; it is `500` now, because nothing the proxy holds tells it from the same query spelled with a tab.
 
 ## [2.200.0] - 2026-11-13
 
