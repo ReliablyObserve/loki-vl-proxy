@@ -483,6 +483,12 @@ check_query_corpus() {
     >"$TMP_DIR/oracle-loki-diff.log" 2>&1 \
     || log_step "the Loki differential's live oracle check failed; its recorded answers are stale"
   cat "$TMP_DIR/oracle-loki-diff.log" >&2
+  # The Loki differential of metric queries: Loki's engine and VictoriaLogs' own query handlers (both versions) must
+  # answer what its recorded answers hold.
+  LVP_RUN_ORACLES=1 LVP_LOKI_DIFF_CHECK=1 go test ./internal/querycorpus -run '^TestPlanMatchesLokiOnMetricQueries$' -count=1 -v -timeout=30m \
+    >"$TMP_DIR/oracle-loki-metric-diff.log" 2>&1 \
+    || log_step "the Loki metric differential's live oracle check failed; its recorded answers are stale"
+  cat "$TMP_DIR/oracle-loki-metric-diff.log" >&2
   LVP_QUERY_CORPUS_OUT="$corpus" LVP_QUERY_CORPUS_REPORT="$QUERY_CORPUS_REPORT" \
     LVP_QUERY_CORPUS_BASE="${QUALITY_QUERY_CORPUS_BASE:-}" \
     go test ./internal/querycorpus -run '^TestQueryCorpusReport$' -count=1 -v >&2 \
