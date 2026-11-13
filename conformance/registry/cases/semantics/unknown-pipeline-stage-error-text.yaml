@@ -1,0 +1,33 @@
+id: semantics/unknown-pipeline-stage-error-text
+title: "A pipeline stage that is only a name (`| foo`) passes the proxy's validation and fails in the translation with another text than Loki's syntax error (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  `{a="b"} | foo` is a syntax error in Loki ("parse error at line 1, col 14: syntax error: unexpected $end"), as is `{a="b"} | foo | unpack`
+  ("... col 15: syntax error: unexpected |"). The proxy's validation (logql.ValidateLogQLExpr, what Proxy.validateQuery runs) accepts the query;
+  the translator then fails it with "unknown pipeline stage \"foo\" — not a valid LogQL parser or label filter". The translation error is what a client gets unless a route
+  answers first (not checked here); either way the text is not Loki's, and the rejection comes after the response cache lookup, the query plan and the fences that a rejected query must not reach
+  (AGENTS.md, fail fast like Loki). The same holds for `| dropz` (a missing blank after a keyword).
+
+  Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
+request:
+  scope: query-grammar
+  entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/unknown-pipeline-stage-error-text"
+  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now, step 60s): {app=\"x\"} | foo . The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: "Loki's 400 with Loki's syntax error text, from the first validation step."
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: "internal/logql parser (a stage that is a lone name) and its validation"
+  loki: "a syntax error at the token after the name"
+  proxy: "accepted by validation; the translator fails it with its own text"
+  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  visual: none
+  visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
+  clusters: []

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+
 - With `-stream-response`, a broken VictoriaLogs answer to a log query is no longer sent as a partial success.
   A body that is broken before its first row (not JSON, cut off, or a row above 8 MiB) now answers Loki's `500`
   `Internal Server Error` (`504` or `499` for a timeout or a cancel), as it does without the flag. A body that
@@ -15,6 +16,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a failed response and not a complete-looking result that is missing rows; the aborts are counted in
   `loki_vl_proxy_internal_operation_total{operation="stream_response",outcome="aborted"}`. A body with no rows is
   still an empty result, and a healthy answer is unchanged.
+
+## [2.197.0] - 2026-11-13
+
+### Fixed
+- A short VictoriaLogs restart no longer ends a live tail. A `/loki/api/v1/tail` whose VictoriaLogs call fails
+  for a reason a retry can fix (the connection is refused or reset, a call times out, the stream ends or
+  breaks, a `429` or `5xx` answer) now keeps the websocket open, with pings, while the proxy reopens the native
+  stream, or polls again, after a jittered wait that doubles from 250 ms to 5 s, for at most
+  `-tail.backend-retry-window` (default `30s`; Helm `extraArgs.tail.backend-retry-window`). A reopened stream
+  reads from the last line sent and drops the lines it already sent, so no line is repeated and the lines
+  written during the outage arrive. When the window is spent the tail closes with `1011` and Loki's text, and
+  at once for a failure no retry fixes (a row that is not JSON, a line above 1 MiB, a `4xx` answer other than
+  `429`). Before, the first failed call closed the tail, and Grafana's live view then stopped on the last line
+  with no error and no reconnect. `-tail.backend-retry-window=0` closes on the first failed call as before.
+  `loki_vl_proxy_internal_operation_total{operation="tail_backend_retry"}` counts the waits, the recoveries and
+  the closes.
 
 ## [2.196.0] - 2026-11-13
 
@@ -28,18 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   holds, and a query VictoriaLogs cannot unpack, still answer an empty list. The lookups that only add to an
   answer that already has its required read (extra stored fields, the sampled `level` and `service_name`
   labels on `detected_labels`, the relaxed query after a strict one fails) keep that answer.
-- A short VictoriaLogs restart no longer ends a live tail. A `/loki/api/v1/tail` whose VictoriaLogs call fails
-  for a reason a retry can fix (the connection is refused or reset, a call times out, the stream ends or
-  breaks, a `429` or `5xx` answer) now keeps the websocket open, with pings, while the proxy reopens the native
-  stream, or polls again, after a jittered wait that doubles from 250 ms to 5 s, for at most
-  `-tail.backend-retry-window` (default `30s`; Helm `extraArgs.tail.backend-retry-window`). A reopened stream
-  reads from the last line sent and drops the lines it already sent, so no line is repeated and the lines
-  written during the outage arrive. When the window is spent the tail closes with `1011` and Loki's text, and
-  at once for a failure no retry fixes (a row that is not JSON, a line above 1 MiB, a `4xx` answer other than
-  `429`). Before, the first failed call closed the tail, and Grafana's live view then stopped on the last line
-  with no error and no reconnect. `-tail.backend-retry-window=0` closes on the first failed call as before.
-  `loki_vl_proxy_internal_operation_total{operation="tail_backend_retry"}` counts the waits, the recoveries and
-  the closes.
 
 ## [2.195.0] - 2026-11-13
 
