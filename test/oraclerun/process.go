@@ -14,6 +14,9 @@ type ProcessCase struct {
 	Query  string            `json:"q"`
 	Labels map[string]string `json:"labels"`
 	Line   string            `json:"line"`
+	// Metadata is the line's structured metadata; WithCategories asks for the categories of the labels of a kept line.
+	Metadata       map[string]string `json:"metadata,omitempty"`
+	WithCategories bool              `json:"categories,omitempty"`
 }
 
 // ProcessAnswer is what Loki's pipeline of the query makes of the line (test/oracle/loki process): Keep is whether
@@ -26,7 +29,11 @@ type ProcessAnswer struct {
 	Keep     bool              `json:"keep"`
 	Line     string            `json:"line,omitempty"`
 	Labels   map[string]string `json:"labels,omitempty"`
-	Error    string            `json:"error,omitempty"`
+	// Stream, StructuredMetadata and Parsed are Loki's categories of Labels, for a case with WithCategories.
+	Stream             map[string]string `json:"stream,omitempty"`
+	StructuredMetadata map[string]string `json:"structured_metadata,omitempty"`
+	Parsed             map[string]string `json:"parsed,omitempty"`
+	Error              string            `json:"error,omitempty"`
 }
 
 // LokiProcess runs the Loki oracle in oracleDir (test/oracle/loki) over cases and returns its answers, in the order
