@@ -9,7 +9,7 @@ generated:   # rewritten by conformance/scripts/error_registry.py
   loki_messages: ["msg-not-found"]
   recorded_rows: 21
   comparable_rows: 21
-  matching_rows: 17
+  matching_rows: 21
 
 loki_behaviour: |
   Loki's router answers a path it does not know with 404, `404 page not found`,

@@ -23,11 +23,11 @@ check_order:
 recorded:
   rows: 1
   comparable_rows: 1
-  matching_rows: 0
+  matching_rows: 1
   row_ids: ["r1401"]
-  known_difference_ids: ["r1401"]
+  known_difference_ids: []
   e2e_rows: ["r1401"]
 coverage:
-  state: differs
+  state: matches
   unit: ["TestLokiErrorAnswersReplay"]
   e2e: ["TestCompat_ErrorAnswersLikeLoki"]

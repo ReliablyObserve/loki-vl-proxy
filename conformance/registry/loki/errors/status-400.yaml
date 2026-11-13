@@ -42,7 +42,7 @@ generated:   # rewritten by conformance/scripts/error_registry.py
   "unmapped-index-shards-target-bytes", "unmapped-push-snappy-corrupt", "unmapped-ruler-local-store"]
   recorded_rows: 141
   comparable_rows: 126
-  matching_rows: 57
+  matching_rows: 64
 
 loki_behaviour: |
   Loki v3.7.7 answers 400 as `text/plain` with the error's own message for a

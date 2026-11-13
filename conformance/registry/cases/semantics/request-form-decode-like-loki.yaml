@@ -1,0 +1,46 @@
+id: semantics/request-form-decode-like-loki
+title: The URL query and the form body are decoded before any parameter is read (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - status-400
+consumer: any
+why: |
+  Loki's handlers decode the URL query and, for a POST, the form body before
+  they read a parameter, and answer 400 with Go's own text when that fails:
+  `invalid URL escape "%zz"`, `invalid semicolon separator in query`,
+  `http: POST too large` (a form body over 10 MiB). The proxy ignored the
+  decode error (its handlers read r.FormValue) and answered the parameter
+  error of the half-read request (a parse error, or 200 on a metadata route).
+  Loki reads a body only as application/x-www-form-urlencoded (any other
+  Content-Type, multipart included, leaves the body unread), and a parameter
+  in the body wins over the same one in the URL.
+
+  Fixed (internal/proxy/route_gate.go decodeRequestForm, in routeGate, ahead of
+  tenant and parameter checks): one ParseForm per request, the body bounded by
+  10 MiB, the typed errors lokierr.URLEscape, Semicolon and PostTooLarge. Go
+  parses only the form type, so multipart bodies are no longer parsed (the
+  handlers' r.FormValue used to parse them). A Content-Type that is not a media
+  type, or a body that cannot be read, is not an error here: Loki's answer to
+  them is not recorded, and the handlers have always ignored them.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    query: '%zz'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, headers, body]
+  expect: |
+    400 text/plain `invalid URL escape "%zz"`.
+gap:
+  status: fixed
+  fixed_by: 'router checks (internal/proxy/route_gate.go)'
+  impact: api-only
+  effort: S
+  area: 'internal/proxy/route_gate.go decodeRequestForm'
+  loki: 'recorded Loki 3.7.9 answers r1369-r1374, r1397-r1412 (catalogue run; r1369, r1370, r1373, r1374, r1401 in internal/lokierr/testdata/loki_error_answers.jsonl)'
+  proxy: '400 with Loki''s text'
+  planned_test: 'TestLokiRouterFormDecode, TestDecodeRequestFormBoundsTheBody, TestParseFormSemicolonError, FuzzLokiRouter, TestLokiErrorAnswersReplay (internal/proxy)'

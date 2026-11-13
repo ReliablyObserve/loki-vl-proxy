@@ -15,11 +15,11 @@ body_shapes: ["301 no Content-Type; no body"]
 recorded:
   rows: 7
   comparable_rows: 7
-  matching_rows: 0
+  matching_rows: 7
   row_ids: ["r1151", "r1163", "r1350", "r1359", "r1360", "r1361", "r1366"]
-  known_difference_ids: ["r1151", "r1163", "r1350", "r1359", "r1360", "r1361", "r1366"]
+  known_difference_ids: []
   e2e_rows: ["r1151", "r1163", "r1350"]
 coverage:
-  state: differs
+  state: matches
   unit: ["TestLokiErrorAnswersReplay"]
   e2e: ["TestCompat_ErrorAnswersLikeLoki"]

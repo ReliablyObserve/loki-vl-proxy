@@ -179,10 +179,12 @@ func TestLokiFunctions_WriteBlocked(t *testing.T) {
 		t.Errorf("expected 405 Method Not Allowed for push, got %d", resp.StatusCode)
 	}
 
-	var result map[string]string
-	json.NewDecoder(resp.Body).Decode(&result)
-	if !strings.Contains(result["error"], "read-only") {
-		t.Errorf("expected read-only error message, got %q", result["error"])
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "read-only") {
+		t.Errorf("expected read-only error message, got %q", body)
+	}
+	if strings.Contains(strings.ToLower(string(body)), "victoria") {
+		t.Errorf("the push answer names the backend: %q", body)
 	}
 }
 

@@ -6,10 +6,10 @@ generated:   # rewritten by conformance/scripts/error_registry.py
   dynamic_sites: 0
   literal_messages:
     - "method not allowed"
-  loki_messages: ["msg-method-not-allowed"]
+  loki_messages: ["msg-method-not-allowed", "msg-write-not-supported"]
   recorded_rows: 59
   comparable_rows: 59
-  matching_rows: 0
+  matching_rows: 59
 
 loki_behaviour: |
   Loki answers a method a route does not serve (PUT, DELETE, PATCH, HEAD,

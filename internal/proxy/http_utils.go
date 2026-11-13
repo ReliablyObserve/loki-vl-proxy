@@ -405,7 +405,13 @@ var routeErrorShapes = map[string]lokierr.Shape{
 
 // routeErrorShape is the error body shape of r's route.
 func routeErrorShape(r *http.Request) errorShape {
-	if shape, ok := routeErrorShapes[requestRouteMetaFromContext(r.Context()).endpoint]; ok {
+	return endpointErrorShape(requestRouteMetaFromContext(r.Context()).endpoint)
+}
+
+// endpointErrorShape is the error body shape of the route registered under
+// endpoint.
+func endpointErrorShape(endpoint string) errorShape {
+	if shape, ok := routeErrorShapes[endpoint]; ok {
 		return errorShapeWriter(shape)
 	}
 	return writeLokiErrorBody

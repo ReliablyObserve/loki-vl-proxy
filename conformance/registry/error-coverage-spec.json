@@ -268,7 +268,8 @@
     "canceled": "execution",
     "deadline": "execution",
     "backend-failed": "execution",
-    "internal": "execution"
+    "internal": "execution",
+    "write-not-supported": "routing"
   },
   "stage_rank": {
     "routing": 0,
@@ -340,6 +341,12 @@
       "reason": "Loki answers 500 for a failure of its own work, which cannot be provoked for one recorded request. The status and text are Loki's fixed ones.",
       "tests": [
         "TestErrorLayer_NoVictoriaLogsLeak"
+      ]
+    },
+    "write-not-supported": {
+      "reason": "The proxy serves Loki's read API only; Loki accepts a push, so there is no Loki answer to record. A POST to /loki/api/v1/push answers 405 with this proxy text, a documented limit (semantics/push-route-read-only-answer).",
+      "tests": [
+        "TestLokiPushRoute"
       ]
     }
   },

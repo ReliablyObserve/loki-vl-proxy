@@ -1,0 +1,49 @@
+id: semantics/format-query-parse-like-loki
+title: format_query answers a query it cannot parse 400 with the parser's message as JSON (fixed)
+pending: true
+proves:
+  - loki_api_v1_format_query
+  - status-400
+consumer: api
+why: |
+  Loki's format_query parses its query and answers one it cannot parse with
+  400, application/json; charset=utf-8, no nosniff and
+  {"status":"invalid-query","error":"<the parser's message>"}. It builds no
+  pipeline, so a line filter regexp or a template that does not compile still
+  parses and is answered. The proxy echoed every query as a 200.
+
+  Fixed (internal/proxy/patterns.go handleFormatQuery): the query goes through
+  the same validator as every other route, and the error is written by p.fail
+  in format_query's JSON shape. The stage errors only a pipeline build raises
+  carry the message prefix `parse error : stage '` (the only place they are
+  produced), which the parser rework replaces with a typed phase.
+
+  Open (the parser, not this route): a selector regexp that does not compile
+  has the proxy's wording (`parse error at line 1, col 1: parse error :
+  invalid regex: ...` against Loki's `parse error : error parsing regexp:
+  ...`, r0325), and `unwrap` in a log query parses (r0423). Loki's success
+  answer differs from the proxy's in key order and charset, folds `1 + 1` to
+  `2` and prints `quantile_over_time(2,{...} | unwrap foo[5m])` without
+  spaces; the proxy still echoes the query it was sent.
+request:
+  method: GET
+  path: /loki/api/v1/format_query
+  params:
+    query: '{'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, headers, body]
+  expect: |
+    400 application/json; charset=utf-8
+    {"status":"invalid-query","error":"parse error at line 1, col 2: syntax error: unexpected $end, expecting IDENTIFIER or }"}
+gap:
+  status: fixed
+  fixed_by: 'router checks (internal/proxy/patterns.go)'
+  impact: api-only
+  effort: S
+  area: 'internal/proxy/patterns.go handleFormatQuery, formatQueryError'
+  loki: 'recorded Loki 3.7.9 answers r0185-r0437, r1166-r1173 (internal/lokierr/testdata/loki_error_answers.jsonl holds r0185 and r0199)'
+  proxy: '400 JSON with the parser message'
+  planned_test: 'TestLokiFormatQuery, TestLokiErrorAnswersReplay (internal/proxy)'

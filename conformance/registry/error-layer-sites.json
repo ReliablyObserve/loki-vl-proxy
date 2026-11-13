@@ -3,8 +3,8 @@
   "totals": {
     "error_text_sites": 44,
     "free_text_sites": 113,
-    "parser_message_calls": 0,
-    "raw_error_status_writes": 5
+    "parser_message_calls": 1,
+    "raw_error_status_writes": 4
   },
   "files": {
     "error_text_sites": {
@@ -55,10 +55,11 @@
       "internal/proxy/unwrap_conversion_error.go": 1,
       "internal/proxy/volume.go": 1
     },
-    "parser_message_calls": {},
-    "raw_error_status_writes": {
-      "internal/proxy/alerting.go": 4,
+    "parser_message_calls": {
       "internal/proxy/patterns.go": 1
+    },
+    "raw_error_status_writes": {
+      "internal/proxy/alerting.go": 4
     }
   },
   "known_leak_pairs": 4
