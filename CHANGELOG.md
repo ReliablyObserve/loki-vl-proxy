@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.195.0] - 2026-11-13
+
 ### Fixed
 
 - `query_range`, `query`, `series` and the `index/volume` and `index/volume_range` routes answer a VictoriaLogs
