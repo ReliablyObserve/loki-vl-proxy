@@ -427,7 +427,7 @@ func (p *Proxy) processLogQueryResponse(w http.ResponseWriter, r *http.Request, 
 	p.metrics.RecordTupleMode(tupleModeForRequest(categorizedLabels, emitStructuredMetadata))
 
 	if p.streamResponse {
-		p.streamLogQuery(w, resp, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
+		p.streamLogQuery(r.Context(), w, resp, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
 		return
 	}
 

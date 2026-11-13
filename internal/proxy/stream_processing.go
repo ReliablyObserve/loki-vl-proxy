@@ -134,7 +134,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	// Formatting must run through the bounded template evaluator before writing
 	// a response. The streaming path otherwise skips Go template functions.
 	if p.streamResponse && !lineFormatTemplateRE.MatchString(r.FormValue("query")) {
-		p.streamLogQuery(w, resp, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
+		p.streamLogQuery(r.Context(), w, resp, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
 		return
 	}
 
@@ -182,23 +182,81 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	writeLokiStreamQueryResponse(w, streams, categorizedLabels)
 }
 
-// streamLogQuery streams VL NDJSON response as chunked Loki-compatible JSON.
-func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) {
-	flusher, canFlush := w.(http.Flusher)
+// streamedLogWriter writes a streamed log query answer. The status line and the
+// opening envelope go out with the first row that is part of the answer (or
+// with the closing envelope of an answer that has none), so a body that is
+// broken before then is answered with Loki's error. Once the envelope is out the
+// 200 is sent and cannot be taken back: a failure then aborts the response,
+// which a client sees as a broken connection, never as a complete answer.
+type streamedLogWriter struct {
+	p           *Proxy
+	ctx         context.Context
+	w           http.ResponseWriter
+	flusher     http.Flusher
+	canFlush    bool
+	categorized bool
+	opened      bool
+	first       bool
+}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Transfer-Encoding", "chunked")
+func (s *streamedLogWriter) flush() {
+	if s.canFlush {
+		s.flusher.Flush()
+	}
+}
 
-	// Write opening envelope
+func (s *streamedLogWriter) open() {
+	if s.opened {
+		return
+	}
+	s.opened = true
+	s.w.Header().Set("Content-Type", "application/json")
+	s.w.Header().Set("Transfer-Encoding", "chunked")
 	openEnvelope := `{"status":"success","data":{"resultType":"streams"`
-	if categorizedLabels {
+	if s.categorized {
 		openEnvelope += `,"encodingFlags":["categorize-labels"]`
 	}
 	openEnvelope += `,"result":[`
-	w.Write([]byte(openEnvelope))
-	if canFlush {
-		flusher.Flush()
+	s.w.Write([]byte(openEnvelope))
+	s.flush()
+}
+
+// add writes one stream of the result.
+func (s *streamedLogWriter) add(chunk []byte) {
+	s.open()
+	if !s.first {
+		s.w.Write([]byte(","))
 	}
+	s.w.Write(chunk)
+	s.first = false
+	s.flush()
+}
+
+// finish closes the envelope of a complete answer.
+func (s *streamedLogWriter) finish() {
+	s.open()
+	s.w.Write([]byte(`],"stats":{}}}`))
+	s.flush()
+}
+
+// fail ends the answer after a failed backend read or a body that is not
+// VictoriaLogs rows. Before the envelope it answers Loki's error and returns;
+// after it, it does not return.
+func (s *streamedLogWriter) fail(err error) {
+	if !s.opened {
+		s.p.writeErr(s.w, s.ctx, err)
+		return
+	}
+	if s.p.log != nil {
+		s.p.log.Error("streamed log query aborted after the response started", "upstream_error", err.Error())
+	}
+	panic(http.ErrAbortHandler)
+}
+
+// streamLogQuery streams VL NDJSON response as chunked Loki-compatible JSON.
+func (p *Proxy) streamLogQuery(ctx context.Context, w http.ResponseWriter, resp *http.Response, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) {
+	flusher, canFlush := w.(http.Flusher)
+	out := &streamedLogWriter{p: p, ctx: ctx, w: w, flusher: flusher, canFlush: canFlush, categorized: categorizedLabels, first: true}
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
@@ -226,16 +284,16 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 	mergeParsed, captureFields, mergeMetadata := exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
 	levelAsMetadata := categorizedLabels && emitStructuredMetadata
 	levelStages := newLevelDropKeep(bareDropFields, bareKeepFields)
-	first := true
 	for scanner.Scan() {
-		line := scanner.Bytes()
+		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 {
 			continue
 		}
 
 		var entry map[string]interface{}
-		if err := stdjson.Unmarshal(line, &entry); err != nil {
-			continue
+		if err := stdjson.Unmarshal(line, &entry); err != nil || entry == nil {
+			out.fail(errVLBodyNotJSON)
+			return
 		}
 
 		timeStr, ok := stringifyEntryValue(entry["_time"])
@@ -306,22 +364,13 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		}
 
 		chunk, _ := stdjson.Marshal(stream)
-		if !first {
-			w.Write([]byte(","))
-		}
-		w.Write(chunk)
-		first = false
-
-		if canFlush {
-			flusher.Flush()
-		}
+		out.add(chunk)
 	}
-
-	// Close envelope
-	w.Write([]byte(`],"stats":{}}}`))
-	if canFlush {
-		flusher.Flush()
+	if err := scanner.Err(); err != nil {
+		out.fail(err)
+		return
 	}
+	out.finish()
 }
 
 // applyDerivedFields extracts values from log lines using regex and adds them as labels.

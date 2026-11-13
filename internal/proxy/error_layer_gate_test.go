@@ -154,7 +154,10 @@ func errLayerRoutes(now time.Time) []errLayerRoute {
 // endpoint's own, not a shape mismatch.
 type errLayerBackend struct {
 	mode string
-	hits atomic.Int64
+	// stream runs the proxy with -stream-response, whose log queries send the
+	// status line before the body is read (stream_response_broken_body_test.go).
+	stream bool
+	hits   atomic.Int64
 	// failSig, okBody, seen and failHits drive the mixed-failure gate
 	// (error_layer_mixed_test.go): see errLayerBackend.recordCall.
 	failSig string
@@ -361,6 +364,10 @@ type errLayerOutcome struct {
 	// released: a tail's client went away and the proxy dropped its
 	// VictoriaLogs stream.
 	released bool
+	// aborted: the handler aborted the response (http.ErrAbortHandler) after
+	// sending the status line, which a client sees as a broken response; body
+	// is what was written before.
+	aborted bool
 }
 
 // errLayerExpect is Loki's answer to a failure mode.
@@ -450,6 +457,15 @@ func errLayerBodyShapeProblem(rt errLayerRoute, o errLayerOutcome) string {
 // errLayerClasses returns the leak classes an outcome fails for a mode.
 func errLayerClasses(rt errLayerRoute, mode string, o errLayerOutcome, backendHost string) []string {
 	classes := map[string]bool{}
+	if o.aborted {
+		// A streamed answer already sent as 200 cannot become an error. Only a
+		// body that breaks off mid-answer may end this way, and what was sent
+		// must never be a complete JSON document.
+		if mode != "truncated" || json.Valid([]byte(o.body)) {
+			classes[leakSilentSuccess] = true
+		}
+		return errLayerClassList(classes)
+	}
 	if rt.name == "tail" && mode == "client_cancel" {
 		// The client is gone, so Loki's 499 text has no reader: what a tail owes
 		// a cancelled client is to stop its VictoriaLogs stream.
@@ -503,6 +519,9 @@ func errLayerClasses(rt errLayerRoute, mode string, o errLayerOutcome, backendHo
 	}
 	visible := o.body + "\n" + o.closeText
 	for k, vs := range o.headers {
+		if k == "Transfer-Encoding" {
+			continue // framing of a streamed answer, not text
+		}
 		visible += "\n" + k + ": " + strings.Join(vs, ",")
 	}
 	if strings.Contains(visible, backendHost) || containsAny(visible, errLayerTransportMarkers) {
@@ -590,6 +609,7 @@ func runErrLayerBackendCell(t *testing.T, rt errLayerRoute, backend *errLayerBac
 	if mode == "oversize" {
 		cfg.ExecutionLimits.BackendMaxBufferedResponseBytes = 4096
 	}
+	cfg.StreamResponse = backend.stream
 	p, err := New(cfg)
 	if err != nil {
 		t.Fatalf("new proxy: %v", err)
@@ -620,13 +640,29 @@ func runErrLayerBackendCell(t *testing.T, rt errLayerRoute, backend *errLayerBac
 		req.Header.Set(k, v)
 	}
 	w := httptest.NewRecorder()
-	shippedChain(mux).ServeHTTP(w, req)
+	aborted := serveRecoveringAbort(shippedChain(mux), w, req)
 	if backend.hits.Load() == 0 && mode != "conn_refused" {
 		// Only query calls count (errLayerQueryPath): a route answered without
 		// one never met the failure.
 		t.Fatalf("route %s never called the backend; the cell proves nothing (status %d, body %.300q)", rt.name, w.Code, w.Body.String())
 	}
-	return errLayerOutcome{status: w.Code, body: w.Body.String(), headers: w.Header()}, host
+	return errLayerOutcome{status: w.Code, body: w.Body.String(), headers: w.Header(), aborted: aborted}, host
+}
+
+// serveRecoveringAbort serves req and reports whether the handler aborted the
+// response with http.ErrAbortHandler, which net/http turns into a connection
+// closed without the end of the body. Any other panic is not swallowed.
+func serveRecoveringAbort(h http.Handler, w http.ResponseWriter, req *http.Request) (aborted bool) {
+	defer func() {
+		if v := recover(); v != nil {
+			if v != http.ErrAbortHandler {
+				panic(v)
+			}
+			aborted = true
+		}
+	}()
+	h.ServeHTTP(w, req)
+	return false
 }
 
 // runErrLayerTail opens a real websocket tail (native mode, so a backend

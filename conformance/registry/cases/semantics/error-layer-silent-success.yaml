@@ -27,6 +27,11 @@ why: |
   working stored-field lookup) answer a failure the same way; the lookups that
   only add to an answer that already has its required read keep it, and the
   mixed-failure gate names them with the reason.
+  With -stream-response a log query sends the status line with its first row.
+  A body that is not JSON, that breaks off, or that holds a row above 1 MiB
+  before that row is answered as Loki's 500; one that breaks after it ends the
+  response abnormally, so the client never reads a complete-looking partial
+  result.
   Loki answers the same failures with an error, and Drilldown's partial
   carve-out covers max_query_series only (pkg/querier/queryrange/limits.go:507-512,
   pkg/logql/engine.go:536-548). An empty chart instead of an error hides the
@@ -54,6 +59,12 @@ request:
     loses a later read is seen. Its cells that still answer 200 are listed in
     conformance/registry/error-layer-known-leaks.json; the calls whose
     failure a route keeps on purpose are named, with the reason, in the test.
+    TestErrorLayer_StreamResponseNoPartialSuccess repeats the 14 modes against
+    the log query_range route with -stream-response on, with no known leaks: an
+    error status where the status is still unsent, and an aborted response (never
+    a complete document) where the body breaks off after the first row.
+    TestStreamResponse_BrokenBackendBody drives a real server and client through
+    the broken-body table, with and without gzip.
     TestCompat_ErrorLayerLikeLoki repeats the main modes against the stack's
     VictoriaLogs through a fault-injecting forwarder and compares with Loki.
 compare:
