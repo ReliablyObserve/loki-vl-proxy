@@ -96,7 +96,7 @@ func bt(s string) string { return "`" + s + "`" }
 
 // ---- parts ----
 
-func selectorValues() []sweepValue {
+func sweepSelectorValues() []sweepValue {
 	return join(
 		vals("eq", `{a="b"}`, `{a="b",}`, `{ a = "b" }`, `{a="b", c="d"}`, `{a="é"}`, `{a="b\"c"}`,
 			`{a="\x41"}`, `{a="é"}`, `{a=`+bt(`b\d`)+`}`, `{app="x", level="error"}`, `{a_b="c"}`),
@@ -526,7 +526,7 @@ func part(name string, vs []sweepValue, baseline int) sweepPart {
 }
 
 func sweepTemplates() []sweepTemplate {
-	sels := selectorValues()
+	sels := sweepSelectorValues()
 	stages := stageValues()
 	none := len(stages) - 1
 	logParts := func() []sweepPart {
