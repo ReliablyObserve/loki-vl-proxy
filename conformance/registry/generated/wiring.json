@@ -1001,6 +1001,7 @@
       "internal/proxy/query_stats_shards_test.go",
       "internal/proxy/query_stats_test.go",
       "internal/proxy/query_stats_totals_test.go",
+      "internal/proxy/request_params_test.go",
       "test/e2e-compat/query_stats_test.go"
     ],
     "range_function-count-over-time": [
@@ -1197,6 +1198,9 @@
     "semantics/error-request-validation-parity": [
       "internal/lokierr/lokierr_test.go",
       "internal/proxy/loki_error_answers_replay_test.go",
+      "internal/proxy/request_params_rules_test.go",
+      "internal/proxy/request_params_test.go",
+      "internal/proxy/time_bounds_test.go",
       "test/e2e-compat/error_answers_like_loki_test.go"
     ],
     "semantics/extracted-metric-known-differences": [
@@ -3143,6 +3147,13 @@
       "semantics/binary-operand-literals-reprint",
       "semantics/label-filter-expression-syntax"
     ],
+    "internal/proxy/request_params_rules_test.go": [
+      "semantics/error-request-validation-parity"
+    ],
+    "internal/proxy/request_params_test.go": [
+      "query-stats-envelope",
+      "semantics/error-request-validation-parity"
+    ],
     "internal/proxy/reserved_field_case_fence_test.go": [
       "cache-response-key-versions",
       "semantics/reserved-field-name-case-outbound"
@@ -3362,6 +3373,7 @@
       "tenant-numeric-routing"
     ],
     "internal/proxy/time_bounds_test.go": [
+      "semantics/error-request-validation-parity",
       "semantics/request-time-bounds"
     ],
     "internal/proxy/top_value_series_limit_test.go": [
@@ -4722,7 +4734,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 557,
+  "tests_with_markers": 559,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

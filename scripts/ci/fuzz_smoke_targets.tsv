@@ -157,3 +157,4 @@ smoke	internal/proxy	FuzzRequestTimeBounds	12s	-	start, end, step and offset of 
 smoke	internal/proxy	FuzzTailResume	12s	-	tail reopen after a backend outage: the start_offset is a positive span and the dedupe keeps exactly the entries after the last delivered one
 smoke	internal/proxy	FuzzTailRows	12s	-	tail stream row split: bounded work for any body, a cut last row is flagged and never returned, the row shape check passes objects only
 smoke	internal/proxy	FuzzBackendRetryDecision	12s	-	shared VictoriaLogs retry: Retry-After is zero or a span of at most a day, only 429, 502, 503 and 504 answers are transient, never a panic
+smoke	internal/proxy	FuzzRequestParamChecks	12s	-	request parameter checks (time, step, limit, since, window, length) against a model of the recorded Loki rules

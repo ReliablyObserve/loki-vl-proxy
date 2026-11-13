@@ -24,11 +24,11 @@ check_order:
 recorded:
   rows: 9
   comparable_rows: 9
-  matching_rows: 0
+  matching_rows: 9
   row_ids: ["r0561", "r0759", "r0791", "r0846", "r0920", "r0952", "r0993", "r1040", "r1086"]
-  known_difference_ids: ["r0561", "r0759", "r0791", "r0846", "r0920", "r0952", "r0993", "r1040", "r1086"]
+  known_difference_ids: []
   e2e_rows: ["r0561", "r0759", "r0791", "r0846", "r0920", "r0952", "r0993", "r1040", "r1086"]
 coverage:
-  state: differs
+  state: matches
   unit: ["TestLokiErrorAnswersReplay"]
   e2e: ["TestCompat_ErrorAnswersLikeLoki"]

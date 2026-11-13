@@ -398,9 +398,8 @@ func (w *queryStatsWriter) trailer() statsTrailer {
 // requestWindowLength is a query_range request's window (ns), 0 when it
 // cannot be read.
 func requestWindowLength(r *http.Request) int64 {
-	start, okS := parseLokiTimeToUnixNano(r.FormValue("start"))
-	end, okE := parseLokiTimeToUnixNano(r.FormValue("end"))
-	if !okS || !okE || end < start {
+	start, end, ok := requestRangeWindowNs(r)
+	if !ok || end < start {
 		return 0
 	}
 	return end - start

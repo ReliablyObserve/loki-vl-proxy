@@ -384,10 +384,9 @@ func requestWindow(r *http.Request, endpoint string, rangeDur time.Duration) (st
 		}
 		return t, t, int64(rangeDur), rangeDur > 0
 	}
-	start, okS := parseLokiTimeToUnixNano(r.FormValue("start"))
-	end, okE := parseLokiTimeToUnixNano(r.FormValue("end"))
+	start, end, okWindow := requestRangeWindowNs(r)
 	step, okStep := parseStepToNanos(r.FormValue("step"))
-	return start, end, step, okS && okE && end >= start && (okStep || rangeDur == 0)
+	return start, end, step, okWindow && end >= start && (okStep || rangeDur == 0)
 }
 
 // deriveQueryStatsTotals sets the request's Loki-meaning totals after its

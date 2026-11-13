@@ -1097,21 +1097,37 @@ func lokiQueryParamError(rule lokiQueryParamRule, r *http.Request, maxQueryBytes
 	return ""
 }
 
-// lokiQueryParamValidation rejects requests whose selector parameter Loki
-// answers with 400 bad_data (a non-selector expression, an empty-compatible
-// selector such as {app=""}, an oversized input or a parse error) before cache
-// lookup, tenant fan-out or any VictoriaLogs call. Endpoints without a rule
-// pass through.
+// lokiQueryParamValidation rejects requests Loki answers with 400 before cache
+// lookup, tenant fan-out or any VictoriaLogs call: a parameter it cannot read
+// (requestParamChecks, in Loki's order), then a selector parameter it answers
+// with bad_data (a non-selector expression, an empty-compatible selector such
+// as {app=""}, an oversized input or a parse error). Tail reads its query
+// first. Endpoints with neither pass through.
 func (p *Proxy) lokiQueryParamValidation(endpoint string, next http.HandlerFunc) http.HandlerFunc {
-	rule, ok := lokiQueryParamRules[endpoint]
-	if !ok {
+	rule, hasRule := lokiQueryParamRules[endpoint]
+	checks := requestParamChecks[endpoint]
+	if !hasRule && len(checks) == 0 {
 		return next
 	}
+	queryFirst := endpoint == "tail"
 	return func(w http.ResponseWriter, r *http.Request) {
-		if msg := lokiQueryParamError(rule, r, p.limits().QueryLengthBytes, p.lokiNameCheck()); msg != "" {
-			p.writeError(w, http.StatusBadRequest, truncateQueryError(msg))
-			p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
-			return
+		var ok bool
+		if !queryFirst {
+			if r, ok = p.requestParamValidation(w, r, endpoint, checks); !ok {
+				return
+			}
+		}
+		if hasRule {
+			if msg := lokiQueryParamError(rule, r, p.limits().QueryLengthBytes, p.lokiNameCheck()); msg != "" {
+				p.writeError(w, http.StatusBadRequest, truncateQueryError(msg))
+				p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
+				return
+			}
+		}
+		if queryFirst {
+			if r, ok = p.requestParamValidation(w, r, endpoint, checks); !ok {
+				return
+			}
 		}
 		next(w, r)
 	}
