@@ -357,32 +357,34 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 	if p.log == nil || !p.log.Enabled(context.Background(), level) {
 		return
 	}
-	attrs := []any{"code", status, "error", text}
+	// slog.Attr values carry no interface boxing: the line costs no allocation of its own.
+	var buf [10]slog.Attr
+	attrs := append(buf[:0], slog.Int("code", status), slog.String("error", text))
 	cause := err
 	if typed != nil {
-		attrs = append(attrs, "kind", typed.Kind().String(), "msg_id", typed.Msg().ID())
+		attrs = append(attrs, slog.String("kind", typed.Kind().String()), slog.String("msg_id", typed.Msg().ID()))
 		cause = typed.Cause()
 		if construct := constructOf(cause); construct != "" {
 			// A query Loki accepts that the proxy cannot serve yet: which construct, for the operator.
-			attrs = append(attrs, "construct", construct)
+			attrs = append(attrs, slog.String("construct", construct))
 		}
 	}
 	if cause != nil {
 		// The full error (VictoriaLogs' message, the transport error, the
 		// flag of a proxy queue) is for operators only.
-		attrs = append(attrs, "upstream_error", cause.Error())
+		attrs = append(attrs, slog.String("upstream_error", cause.Error()))
 	}
 	if strings.HasPrefix(text, seriesLimitMessagePrefix) {
 		// Loki's message carries no operator hint; the log says which flag
 		// sets the limit that rejected this query.
-		attrs = append(attrs, "limit_flag", "-max-stats-query-series")
+		attrs = append(attrs, slog.String("limit_flag", "-max-stats-query-series"))
 	}
 	if ctx != nil {
 		if meta := requestRouteMetaFromContext(ctx); meta.endpoint != "" {
-			attrs = append(attrs, "endpoint", meta.endpoint, "route", meta.route)
+			attrs = append(attrs, slog.String("endpoint", meta.endpoint), slog.String("route", meta.route))
 		}
 	}
-	p.log.Log(context.Background(), level, "request error", attrs...)
+	p.log.LogAttrs(context.Background(), level, "request error", attrs...)
 }
 
 // routeErrorShapes is the body shape Loki answers errors in, per route (the

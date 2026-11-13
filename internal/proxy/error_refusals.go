@@ -41,11 +41,13 @@ type notServedError struct {
 	cause     error
 }
 
+// Error is the reason for the log line: the failure the proxy hit, or the
+// construct when there is none (the construct has an attribute of its own).
 func (e *notServedError) Error() string {
 	if e.cause == nil {
-		return "not served: " + e.construct
+		return e.construct
 	}
-	return "not served: " + e.construct + ": " + e.cause.Error()
+	return e.cause.Error()
 }
 
 func (e *notServedError) Unwrap() error { return e.cause }
@@ -59,11 +61,36 @@ func notServed(construct string, cause error) *lokierr.Error {
 
 // constructOf is the construct a failure names (empty when it is no notServedError).
 func constructOf(err error) string {
-	var ns *notServedError
-	if errors.As(err, &ns) {
+	if ns, ok := asType[*notServedError](err); ok {
 		return ns.construct
 	}
 	return ""
+}
+
+// asType is errors.As for a concrete error type, without reflection and without
+// an allocation: every failed request meets it. It walks err's tree as errors.As
+// does (Unwrap() error and Unwrap() []error, depth first).
+func asType[T error](err error) (T, bool) {
+	var zero T
+	for err != nil {
+		if v, ok := err.(T); ok {
+			return v, true
+		}
+		switch u := err.(type) {
+		case interface{ Unwrap() error }:
+			err = u.Unwrap()
+		case interface{ Unwrap() []error }:
+			for _, inner := range u.Unwrap() {
+				if v, ok := asType[T](inner); ok {
+					return v, true
+				}
+			}
+			return zero, false
+		default:
+			return zero, false
+		}
+	}
+	return zero, false
 }
 
 // proxyFailure is the client error for a failure of the proxy's own work on
@@ -81,8 +108,11 @@ const unplacedSyntaxDetail = "syntax error: unexpected $end"
 // Loki's (400, a parse error); the position is missing until the parser can
 // report it. cause is the failure the proxy hit, for the log line only.
 func unplacedSyntaxError(cause error) *lokierr.Error {
-	return lokierr.Parse(0, 0, unplacedSyntaxDetail).WithCause(cause)
+	return unplacedSyntax.WithCause(cause)
 }
+
+// unplacedSyntax is the error unplacedSyntaxError answers, built once.
+var unplacedSyntax = lokierr.Parse(0, 0, unplacedSyntaxDetail)
 
 // queryRefusal is the client error for a query that passed validation and
 // that the translation (or the plan, or the lowering) refused. The class is
@@ -101,8 +131,7 @@ func queryRefusal(err error) *lokierr.Error {
 	if typed, ok := lokierr.As(err); ok {
 		return typed
 	}
-	var unsupported *translator.UnsupportedError
-	if errors.As(err, &unsupported) && unsupported.Func != "count_values" {
+	if unsupported, ok := asType[*translator.UnsupportedError](err); ok && unsupported.Func != "count_values" {
 		return notServed(unsupported.Func, err)
 	}
 	return unplacedSyntaxError(err)
@@ -136,8 +165,11 @@ func rangeWindowRefusal(window string) *lokierr.Error {
 	if isZeroDuration(window) {
 		return notServed("zero-range", nil)
 	}
-	return lokierr.Parse(0, 0, "duration out of range")
+	return durationOutOfRange
 }
+
+// durationOutOfRange is the error rangeWindowRefusal answers for a range too large for a duration, built once.
+var durationOutOfRange = lokierr.Parse(0, 0, "duration out of range")
 
 // isZeroDuration reports a duration literal whose every number is zero ("0s",
 // "0m0s"); the literal is empty or not a duration when it holds anything else.
@@ -162,8 +194,7 @@ func isZeroDuration(literal string) bool {
 // <strconv error>`, the error of the same strconv.ParseInt on the raw value.
 func timestampParamError(name, raw string) *lokierr.Error {
 	if _, err := strconv.ParseInt(raw, 10, 64); err != nil {
-		var numErr *strconv.NumError
-		if errors.As(err, &numErr) {
+		if numErr, ok := err.(*strconv.NumError); ok {
 			return lokierr.ParamNumber(name, numErr)
 		}
 	}
@@ -184,8 +215,8 @@ func (e *offsetError) Error() string { return e.msg }
 // not all carry an offset (a top-level binary expression is evaluated side by
 // side, each with its own, as Loki does).
 func isMixedOffsetError(err error) bool {
-	var oe *offsetError
-	return errors.As(err, &oe) && oe.mixed
+	oe, ok := asType[*offsetError](err)
+	return ok && oe.mixed
 }
 
 // offsetRefusal is the client error for a query whose offsets the proxy
@@ -238,8 +269,7 @@ func rangeParamsError(r *http.Request, okStart, okEnd bool) *lokierr.Error {
 // (`strconv.ParseInt: parsing "abc": invalid syntax`).
 func instantTimeError(raw string) *lokierr.Error {
 	if _, err := strconv.ParseInt(raw, 10, 64); err != nil {
-		var numErr *strconv.NumError
-		if errors.As(err, &numErr) {
+		if numErr, ok := err.(*strconv.NumError); ok {
 			return lokierr.Number(numErr)
 		}
 	}
