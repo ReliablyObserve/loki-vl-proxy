@@ -62,13 +62,17 @@ var requestParamKnownDifferences = map[string]string{
 	"r1601": "a stage that does not compile is reported with the parse error before the parameters; Loki reports it after them (needs the parser's phase of a rejection)",
 }
 
+// requestParamKnownDifferenceCeiling is the length of requestParamKnownDifferences:
+// a fix removes a row and lowers it, a new difference cannot be added.
+const requestParamKnownDifferenceCeiling = 7
+
 // TestRequestParamAnswers replays Loki's recorded answers to request-parameter
 // probes against the proxy: a request Loki rejects gets Loki's status,
 // Content-Type, X-Content-Type-Options and text, byte for byte, and a request
 // Loki accepts is not rejected. The rows cover every route x parameter x
 // invalid value and the pairs that fix the order of two checks.
 // LVP_REQUEST_PARAM_UPDATE=1 prints the rows that differ.
-// conformance: semantics/error-request-parameter-validation-order
+// conformance: semantics/error-request-validation-parity
 func TestRequestParamAnswers(t *testing.T) {
 	rows := readRequestParamAnswers(t)
 	addr := newLokiErrorReplayProxy(t)
@@ -96,6 +100,9 @@ func TestRequestParamAnswers(t *testing.T) {
 	}
 	sort.Strings(diffs)
 	t.Logf("%d rows, %d compared, %d listed as known differences", len(rows), compared, len(requestParamKnownDifferences))
+	if len(requestParamKnownDifferences) != requestParamKnownDifferenceCeiling {
+		t.Errorf("requestParamKnownDifferences lists %d rows, its ceiling is %d: the list may only shrink, and a fix lowers the ceiling with it", len(requestParamKnownDifferences), requestParamKnownDifferenceCeiling)
+	}
 	if len(diffs) > 0 {
 		t.Errorf("%d rows differ from Loki:\n%s", len(diffs), strings.Join(diffs, "\n"))
 	}
@@ -108,7 +115,7 @@ func TestRequestParamAnswers(t *testing.T) {
 // end covers the hour before now, as Loki reads it, so VictoriaLogs is asked
 // for that window and the query stats report the lines and bytes read from it,
 // the same as the request that names the window.
-// conformance: query-stats-envelope, semantics/error-request-parameter-validation-order
+// conformance: query-stats-envelope, semantics/error-request-validation-parity
 func TestQueryRangeSinceSetsTheWindow(t *testing.T) {
 	stub := &statsStubVL{rows: 20}
 	var mu sync.Mutex
@@ -139,6 +146,9 @@ func TestQueryRangeSinceSetsTheWindow(t *testing.T) {
 	named := url.Values{"query": {`{app="api"}`}, "limit": {"100"},
 		"start": {fmt.Sprint(now.Add(-time.Hour).UnixNano())}, "end": {fmt.Sprint(now.UnixNano())}}
 	got := statsView(t, serveQueryStats(t, newProxy(), "/loki/api/v1/query_range", since, nil))
+	mu.Lock()
+	sinceStarts := append([]string(nil), sentStart...)
+	mu.Unlock()
 	want := statsView(t, serveQueryStats(t, newProxy(), "/loki/api/v1/query_range", named, nil))
 	if got.Summary.Lines == 0 || got.Summary.Bytes == 0 {
 		t.Fatalf("since=1h: summary %+v, want the lines and bytes of the hour read", got.Summary)
@@ -146,17 +156,15 @@ func TestQueryRangeSinceSetsTheWindow(t *testing.T) {
 	if got.Summary.Lines != want.Summary.Lines || got.Summary.Bytes != want.Summary.Bytes {
 		t.Errorf("since=1h: lines %d bytes %d; the same window named: lines %d bytes %d", got.Summary.Lines, got.Summary.Bytes, want.Summary.Lines, want.Summary.Bytes)
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	// The log query is the call that carries the window.
+	// The log query of the since request is the call that carries the window.
 	var asked []time.Duration
-	for _, raw := range sentStart {
+	for _, raw := range sinceStarts {
 		if ns, ok := parseLokiTimeToUnixNano(raw); ok {
 			asked = append(asked, time.Since(time.Unix(0, ns)))
 		}
 	}
 	if len(asked) == 0 {
-		t.Fatalf("since=1h: VictoriaLogs was asked for starts %q, want the start of the hour", sentStart)
+		t.Fatalf("since=1h: VictoriaLogs was asked for starts %q, want the start of the hour", sinceStarts)
 	}
 	for _, age := range asked {
 		if age < time.Hour-5*time.Minute || age > time.Hour+5*time.Minute {
@@ -169,7 +177,7 @@ func TestQueryRangeSinceSetsTheWindow(t *testing.T) {
 // answered Loki's `http: POST too large` on every read route (a recorded row on
 // query_range and series: r1401, r1402), the read stops at the bound, and a
 // body of another content type is not read at all.
-// conformance: semantics/error-request-parameter-validation-order
+// conformance: semantics/error-request-validation-parity
 func TestFormBodyOverTenMegabytesIsRefusedOnEveryRoute(t *testing.T) {
 	p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: cache.New(time.Minute, 100), LogLevel: "error"})
 	if err != nil {

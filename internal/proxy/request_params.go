@@ -532,14 +532,51 @@ func formDecodeError(r *http.Request, err error) *lokierr.Error {
 // requestParamValidation answers a request whose parameters Loki rejects with
 // Loki's 400, in Loki's order, before the cache, the plan or any VictoriaLogs
 // call. It runs before the query is read, except for tail, which reads its
-// query first. It returns false when it answered.
-func (p *Proxy) requestParamValidation(w http.ResponseWriter, r *http.Request, endpoint string, checks []paramCheck) bool {
+// query first. It returns the request the next handler reads, or false when it
+// answered.
+func (p *Proxy) requestParamValidation(w http.ResponseWriter, r *http.Request, endpoint string, checks []paramCheck) (*http.Request, bool) {
 	if len(checks) == 0 {
-		return true
+		return r, true
 	}
-	if err := p.requestParamError(checks, r, time.Now()); err != nil {
+	now := time.Now()
+	if err := p.requestParamError(checks, r, now); err != nil {
 		p.metrics.RecordRequest(endpoint, p.fail(w, r, err), 0)
-		return false
+		return r, false
 	}
-	return true
+	return withSinceWindow(r, checks, now), true
+}
+
+// withSinceWindow gives a request that sends a since and no start the start
+// Loki derives from it (since before its end, or before now for an end in the
+// future), so that every reader of the window, VictoriaLogs' query included,
+// sees the window the client asked for. The checks have read since, end and
+// start; a request without a since is returned as it is.
+func withSinceWindow(r *http.Request, checks []paramCheck, now time.Time) *http.Request {
+	if len(checks) == 0 || checks[0] != ckSince || formValue(r, "start") != "" {
+		return r
+	}
+	raw := formValue(r, "since")
+	if raw == "" {
+		return r
+	}
+	since, ok := promDuration(raw)
+	if !ok {
+		return r
+	}
+	end := now
+	if rawEnd := formValue(r, "end"); rawEnd != "" {
+		t, numErr := lokiTimeParam(rawEnd)
+		if numErr != nil {
+			return r
+		}
+		end = t
+	}
+	if end.After(now) {
+		end = now
+	}
+	start := end.Add(-since)
+	if start.Before(time.Unix(0, math.MinInt64+int64(timeBoundsMargin))) {
+		return r // beyond what the handlers hold: left to them
+	}
+	return withRequestParams(r, map[string]string{"start": encodeAlignedBound(start.UnixNano())})
 }

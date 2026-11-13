@@ -1111,8 +1111,11 @@ func (p *Proxy) lokiQueryParamValidation(endpoint string, next http.HandlerFunc)
 	}
 	queryFirst := endpoint == "tail"
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !queryFirst && !p.requestParamValidation(w, r, endpoint, checks) {
-			return
+		var ok bool
+		if !queryFirst {
+			if r, ok = p.requestParamValidation(w, r, endpoint, checks); !ok {
+				return
+			}
 		}
 		if hasRule {
 			if msg := lokiQueryParamError(rule, r, p.limits().QueryLengthBytes, p.lokiNameCheck()); msg != "" {
@@ -1121,8 +1124,10 @@ func (p *Proxy) lokiQueryParamValidation(endpoint string, next http.HandlerFunc)
 				return
 			}
 		}
-		if queryFirst && !p.requestParamValidation(w, r, endpoint, checks) {
-			return
+		if queryFirst {
+			if r, ok = p.requestParamValidation(w, r, endpoint, checks); !ok {
+				return
+			}
 		}
 		next(w, r)
 	}

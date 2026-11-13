@@ -331,6 +331,8 @@ A few responses are produced before the Loki error writer: per-client rate limit
 
 Every read route checks its parameters before it looks in a cache or calls VictoriaLogs, and answers an invalid one with Loki's `400` and Loki's text (the message alone, `text/plain`):
 
+The checks read times as Loki does, in the forms below; the proxy's query window itself still reads an integer of 11 to 18 digits by its magnitude (milliseconds or microseconds), a known difference listed in the registry case `semantics/error-request-validation-parity`.
+
 | Parameter | Read as | Loki's text for an invalid one |
 |---|---|---|
 | `start`, `end` | an integer (seconds up to ten characters, nanoseconds beyond), float seconds, or an RFC 3339 time; not trimmed; `now` and `now-1h` are not times | `could not parse 'start' parameter: strconv.ParseInt: parsing "abc": invalid syntax` |
@@ -345,7 +347,7 @@ Every read route checks its parameters before it looks in a cache or calls Victo
 
 A request whose `end` is before its `start` is answered `end timestamp must not be before or equal to start time` on `query_range`, `index/stats`, the volume routes and `detected_fields` (an equal `end` is served). A range longer than `max_query_length` is answered `the query time range exceeds the limit` on the metadata routes, the volume routes, `detected_fields` and `detected_field/{name}/values` as well as on `query_range`. A URL or form body Loki cannot decode is `invalid URL escape "%zz"`, `invalid semicolon separator in query` or `http: POST too large` (a form body over 10 MB).
 
-When a request is wrong in two ways, the first of the checks answers, in Loki's order: the URL and form, then `end`, `start`, `limit`, `step` and `direction` (`query_range`), or `limit`, `direction`, `time` (`query`), then `end` against `start` and the 11,000-point resolution, then the query, and last `max_query_length` for a query that parses (a range query reports `max_query_length` after the syntax of its query, the metadata routes before the selector). `tail` reads its query first, then `limit`, `delay_for`, `end` and `start`. `since` sets the window of a request without a `start` (default one hour), and the query statistics report that window.
+When a request is wrong in two ways, the first of the checks answers, in Loki's order: the URL and form, then `end`, `start`, `limit`, `step` and `direction` (`query_range`), or `limit`, `direction`, `time` (`query`), then `end` against `start` and the 11,000-point resolution, then the query, and last `max_query_length` for a query that parses (a range query reports `max_query_length` after the syntax of its query, the metadata routes before the selector). `tail` reads its query first, then `limit`, `delay_for`, `end` and `start`. A `since` without a `start` sets the start (the length of the window before `end`, so VictoriaLogs reads that window); the query statistics read a request with no `start` as the hour before its `end`.
 
 ### Time range of a query
 

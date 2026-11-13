@@ -451,7 +451,7 @@ func TestRequestTimeBoundsOtherTimeForms(t *testing.T) {
 // now and now-1h are not times to Loki: it answers its parse error for them
 // (recorded, r0544), so the proxy does too, before the cache and the time bounds.
 //
-// conformance: semantics/request-time-bounds, semantics/error-request-parameter-validation-order
+// conformance: semantics/request-time-bounds, semantics/error-request-validation-parity
 func TestRequestTimeBoundsRelativeTimesAreNotTimes(t *testing.T) {
 	p, _ := timeBoundsProxy(t)
 	const q = `count_over_time({app="x"}[1m])`

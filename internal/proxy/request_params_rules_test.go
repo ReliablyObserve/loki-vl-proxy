@@ -24,7 +24,7 @@ import (
 // RFC 3339 time, and no value is trimmed. A value that is none of these fails
 // with the integer parse's own text. The values and errors are the recorded
 // Loki rows (r0535-r0560, r0654-r0694).
-// conformance: semantics/error-request-parameter-validation-order
+// conformance: semantics/error-request-validation-parity
 func TestLokiTimeParam(t *testing.T) {
 	sec := func(n int64) time.Time { return time.Unix(n, 0) }
 	for _, tc := range []struct {
@@ -71,7 +71,7 @@ func TestLokiTimeParam(t *testing.T) {
 // read as Prometheus reads a duration: whole numbers of y, w, d, h, m, s and ms,
 // each once and in that order, or "0". Go's grammar is wider: it reads 1ns,
 // 1h1h and 1.5h, which Loki rejects (r0568, r0572, r0562).
-// conformance: semantics/error-request-parameter-validation-order
+// conformance: semantics/error-request-validation-parity
 func TestPromDuration(t *testing.T) {
 	for _, tc := range []struct {
 		raw  string
@@ -120,7 +120,7 @@ func TestPromDuration(t *testing.T) {
 // TestLokiStepParam: a step or interval is float seconds or a Prometheus
 // duration, with Loki's text for one that is neither and for one whose
 // nanoseconds overflow int64 (r0564-r0580).
-// conformance: semantics/error-request-parameter-validation-order
+// conformance: semantics/error-request-validation-parity
 func TestLokiStepParam(t *testing.T) {
 	for _, tc := range []struct {
 		raw  string
@@ -170,7 +170,7 @@ var paramColumns = map[paramCheck][]string{
 // TestEveryParamCheckIsRecorded: a route checks a parameter only where a
 // recorded Loki row sends that parameter to that route, with a rejected value
 // among them (a check no recorded request exercises would be a guess).
-// conformance: semantics/error-request-parameter-validation-order
+// conformance: semantics/error-request-validation-parity
 func TestEveryParamCheckIsRecorded(t *testing.T) {
 	rejected := map[string]map[string]bool{} // route -> parameter -> a row with it was rejected
 	sent := map[string]map[string]bool{}
@@ -504,7 +504,7 @@ func checkParamRequest(p *Proxy, route string, v map[string]string) error {
 // checks accept exactly the requests the model of the recorded rules accepts,
 // reject with one of the messages the model gives, finish at once and
 // allocate a bounded amount.
-// conformance: semantics/error-request-parameter-validation-order
+// conformance: semantics/error-request-validation-parity
 func FuzzRequestParamChecks(f *testing.F) {
 	for _, seed := range [][]string{
 		{"0", "1794567075", "1794570675", "", "60", "", "100", "", "", "", ""},
@@ -563,7 +563,7 @@ func FuzzRequestParamChecks(f *testing.F) {
 
 // TestRequestParamChecksAllocate: the checks of a valid request, in the forms
 // Grafana sends, allocate nothing.
-// conformance: semantics/error-request-parameter-validation-order
+// conformance: semantics/error-request-validation-parity
 func TestRequestParamChecksAllocate(t *testing.T) {
 	p := paramTestProxy(t)
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -578,5 +578,52 @@ func TestRequestParamChecksAllocate(t *testing.T) {
 		}); allocs > 0 {
 			t.Errorf("%s: %v allocations for a valid request, want none", route, allocs)
 		}
+	}
+}
+
+// TestWithSinceWindow: a request that sends a since and no start gets the
+// start Loki derives (since before its end, before now for an end in the
+// future); a request with a start, or with no since, is left as it is.
+// conformance: semantics/error-request-validation-parity
+func TestWithSinceWindow(t *testing.T) {
+	now := time.Unix(1794570675, 0)
+	for _, tc := range []struct {
+		name  string
+		form  url.Values
+		start time.Time // zero: the request is unchanged
+	}{
+		{"since alone", url.Values{"since": {"1h"}}, now.Add(-time.Hour)},
+		{"since with a numeric end", url.Values{"since": {"30m"}, "end": {"1794567075"}}, time.Unix(1794567075, 0).Add(-30 * time.Minute)},
+		{"since with an end in the future", url.Values{"since": {"2h"}, "end": {"1794999999"}}, now.Add(-2 * time.Hour)},
+		{"since with an RFC 3339 end", url.Values{"since": {"1d"}, "end": {"2026-11-13T10:00:00Z"}}, time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)},
+		{"since zero", url.Values{"since": {"0"}}, now},
+		{"a start wins", url.Values{"since": {"1h"}, "start": {"1794567075"}}, time.Time{}},
+		{"no since", url.Values{"end": {"1794567075"}}, time.Time{}},
+		{"an end that is not a time", url.Values{"since": {"1h"}, "end": {"abc"}}, time.Time{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+tc.form.Encode(), nil)
+			_ = r.ParseForm()
+			got := withSinceWindow(r, requestParamChecks["query_range"], now)
+			if tc.start.IsZero() {
+				if got != r {
+					t.Fatalf("the request was rewritten: %v", got.Form)
+				}
+				return
+			}
+			start, ok := parseLokiTimeToUnixNano(got.FormValue("start"))
+			if !ok || start != tc.start.UnixNano() {
+				t.Fatalf("start %q = %d, want %d", got.FormValue("start"), start, tc.start.UnixNano())
+			}
+			if got.URL.Query().Get("start") == "" || got.FormValue("since") != tc.form.Get("since") {
+				t.Fatalf("the rewrite lost a parameter: %v", got.URL.RawQuery)
+			}
+		})
+	}
+	// Routes that do not read since are not rewritten.
+	r := httptest.NewRequest(http.MethodGet, "/?since=1h", nil)
+	_ = r.ParseForm()
+	if got := withSinceWindow(r, requestParamChecks["detected_labels"], now); got != r {
+		t.Error("detected_labels was rewritten for a since it does not read")
 	}
 }
