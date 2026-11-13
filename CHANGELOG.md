@@ -19,11 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JSON, is `null`, or is VictoriaLogs' error under a `200` no longer answers an empty or error-looking success. It
   fails with `500 Internal Server Error` and the backend's words in the log line only; the right-hand operand of
   `a + b` used to be ignored when it was an error body.
-- `GET /loki/api/v1/index/stats` and the instant metric query now fail a VictoriaLogs answer above
-  `-backend-max-buffered-response-bytes` with Loki's message size error (`500`, `rpc error: code = ResourceExhausted
-  ...`), as the other buffered reads do. Before, an oversize answer reached the decoder and the client read a bare
-  `Internal Server Error` for `index/stats`, or was served in full for the instant query. The flag is in the proxy
-  log line only.
+- `GET /loki/api/v1/index/stats`, the instant metric query and the operands of a binary metric query now fail a
+  VictoriaLogs answer above `-backend-max-buffered-response-bytes` (64 MiB by default) with Loki's message size error
+  (`500`, `rpc error: code = ResourceExhausted ...`), as the other buffered reads do. Before, an oversize answer
+  reached the decoder and the client read a bare `Internal Server Error` for `index/stats`, an empty or partial answer
+  for a binary operand, or the full answer for the instant query. The flag is in the proxy log line only.
 
   **Breaking:** an instant metric query whose VictoriaLogs answer is above that limit used to be served in full and
   now answers `500`; raise `-backend-max-buffered-response-bytes` if such answers are expected.

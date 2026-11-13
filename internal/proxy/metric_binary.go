@@ -2028,7 +2028,7 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op str
 				return
 			}
 			defer resp.Body.Close()
-			leftBody, _ = readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
+			leftBody, leftErr = p.readBufferedBackendBody(resp.Body)
 		}()
 		go func() {
 			defer wg.Done()
@@ -2038,7 +2038,7 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op str
 				return
 			}
 			defer resp.Body.Close()
-			rightBody, _ = readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
+			rightBody, rightErr = p.readBufferedBackendBody(resp.Body)
 		}()
 		wg.Wait()
 	} else {
@@ -2051,7 +2051,11 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op str
 				return
 			}
 			defer resp.Body.Close()
-			leftBody, _ = readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
+			var readErr error
+			if leftBody, readErr = p.readBufferedBackendBody(resp.Body); readErr != nil {
+				p.writeErr(w, r.Context(), readErr)
+				return
+			}
 		}
 
 		if rightIsScalar {
@@ -2063,7 +2067,11 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op str
 				return
 			}
 			defer resp.Body.Close()
-			rightBody, _ = readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
+			var readErr error
+			if rightBody, readErr = p.readBufferedBackendBody(resp.Body); readErr != nil {
+				p.writeErr(w, r.Context(), readErr)
+				return
+			}
 		}
 	}
 
@@ -2106,7 +2114,7 @@ func (p *Proxy) resolveBinOpBody(r *http.Request, operand physical.Op, vlEndpoin
 		return nil, false, e
 	}
 	defer resp.Body.Close()
-	body, err = readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
+	body, err = p.readBufferedBackendBody(resp.Body)
 	if err != nil {
 		return nil, false, err
 	}

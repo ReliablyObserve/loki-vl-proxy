@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -253,9 +254,24 @@ func FuzzAlertingAnswerDefect(f *testing.F) {
 	})
 }
 
+// alertingRoundTrip answers every backend call from memory, so a benchmark
+// measures the proxy's work on an answer and not the loopback sockets.
+type alertingRoundTrip struct {
+	answer string
+}
+
+func (rt alertingRoundTrip) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode:    http.StatusOK,
+		Header:        http.Header{"Content-Type": {"application/json"}},
+		Body:          io.NopCloser(strings.NewReader(rt.answer)),
+		ContentLength: int64(len(rt.answer)),
+	}, nil
+}
+
 // BenchmarkAlertingPassthrough is one alerts read through the proxy, with the
-// backend answering `alerts` alerts: what the validation before the first byte
-// costs on a route that used to stream the answer.
+// backend answering `alerts` alerts from memory: what the validation before the
+// first byte costs on a route that used to stream the answer.
 func BenchmarkAlertingPassthrough(b *testing.B) {
 	for _, alerts := range []int{10, 1000} {
 		var body strings.Builder
@@ -267,16 +283,11 @@ func BenchmarkAlertingPassthrough(b *testing.B) {
 			fmt.Fprintf(&body, `{"labels":{"alertname":"a%d","severity":"page"},"annotations":{"summary":"an alert"},"state":"firing","activeAt":"2026-01-01T00:00:00Z","value":"1"}`, i)
 		}
 		body.WriteString(`]}}`)
-		answer := body.String()
-		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(answer))
-		}))
-		b.Cleanup(backend.Close)
-		p, err := New(Config{BackendURL: "http://unused", AlertsBackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error"})
+		p, err := New(Config{BackendURL: "http://unused", AlertsBackendURL: "http://alerts.invalid", Cache: cache.New(60*time.Second, 1000), LogLevel: "error"})
 		if err != nil {
 			b.Fatal(err)
 		}
+		p.client = &http.Client{Transport: alertingRoundTrip{answer: body.String()}}
 		mux := http.NewServeMux()
 		p.RegisterRoutes(mux)
 		b.Run(fmt.Sprintf("alerts=%d", alerts), func(b *testing.B) {

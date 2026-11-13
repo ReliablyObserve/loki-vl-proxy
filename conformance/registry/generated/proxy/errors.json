@@ -1132,7 +1132,31 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
+      "expression": "r.Context(), readErr",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/metric_binary.go proxyBinaryMetric",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
       "expression": "r.Context(), e",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/metric_binary.go proxyBinaryMetric",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), readErr",
       "kind": "layer",
       "message": null,
       "status": null,
@@ -2706,11 +2730,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 173,
+        "count": 175,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 169,
+        "layer_sites": 171,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2718,6 +2742,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 217
+    "call_sites": 219
   }
 }

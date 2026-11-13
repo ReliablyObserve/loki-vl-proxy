@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
 
 const statsLeakSentinel = "STATSSENTINEL-do-not-leak"
@@ -221,6 +223,65 @@ func TestCoalescedBackendAnswer_OverTheBufferLimitFailsLikeLoki(t *testing.T) {
 				}
 				if !errLayerMessageSizeRE.MatchString(rec.Body.String()) || strings.Contains(rec.Body.String(), "-backend-max") {
 					t.Fatalf("body %q is not Loki's message size error without a flag", rec.Body.String())
+				}
+			})
+		}
+	}
+}
+
+// A binary operand above the bytes the proxy buffers fails with Loki's message
+// size error (500), not a bare 500 and not a partial answer; the flag is in the
+// log line only. An operand of exactly the limit is served. The handler under
+// test is proxyBinaryMetric, which evaluates the operands itself.
+// conformance: semantics/error-layer-proxy-limit-status
+func TestBinaryOperand_OverTheBufferLimitFailsLikeLoki(t *testing.T) {
+	const limit = 4096
+	rows := func(n int) string {
+		var b strings.Builder
+		b.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"x"},"values":[`)
+		for i := 0; i < n; i++ {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			fmt.Fprintf(&b, `[%d,"%d"]`, 1704067200+i*60, i)
+		}
+		b.WriteString(`]}]}}`)
+		return b.String()
+	}
+	small, big := rows(3), rows(2000)
+	query := func(app string) physical.Op { return physical.VLQuery{Text: `{app="` + app + `"} | stats count() hits`} }
+	scalar := physical.ScalarOp{V: 2, Text: "2"}
+	for _, shape := range []struct {
+		name        string
+		left, right physical.Op
+	}{
+		{"vector op scalar", query("x"), scalar},
+		{"scalar op vector", scalar, query("x")},
+		{"two vectors", query("x"), query("y")},
+		{"nested binary", physical.Binary{Op: "+", L: query("x"), R: scalar}, query("y")},
+	} {
+		for _, tc := range []struct {
+			name, body string
+			want       int
+		}{{"under the limit", small, http.StatusOK}, {"over the limit", big, http.StatusInternalServerError}} {
+			t.Run(shape.name+"/"+tc.name, func(t *testing.T) {
+				vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(tc.body))
+				}))
+				defer vl.Close()
+				p := newTestProxyWithOptions(t, withBackendURL(vl.URL), func(c *Config) {
+					c.ExecutionLimits.BackendMaxBufferedResponseBytes = limit
+				})
+				req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?start=1704067200&end=1704070800&step=60", nil)
+				req.Header.Set("X-Scope-OrgID", "0")
+				rec := httptest.NewRecorder()
+				p.proxyBinaryMetric(rec, req, "+", shape.left, shape.right, "stats_query_range", "matrix")
+				if rec.Code != tc.want {
+					t.Fatalf("status %d, want %d; body %.200q", rec.Code, tc.want, rec.Body.String())
+				}
+				if tc.want != http.StatusOK && (!errLayerMessageSizeRE.MatchString(rec.Body.String()) || strings.Contains(rec.Body.String(), "-backend-max")) {
+					t.Fatalf("body %.200q is not Loki's message size error without a flag", rec.Body.String())
 				}
 			})
 		}
