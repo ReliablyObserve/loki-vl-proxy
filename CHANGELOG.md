@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+## [2.260.1] - 2026-11-14
 
+### Fixed
 - Identical `query_range` metric requests that arrive together now share the VictoriaLogs reads of their stats
   buckets: the buckets not cached yet are read once for all of them, per tenant, instead of once per request.
 
