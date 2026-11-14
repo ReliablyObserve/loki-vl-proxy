@@ -140,3 +140,29 @@ func TestInstantQueryAtAPastTimeIsReusedAfterMaxStaleness(t *testing.T) {
 		t.Fatalf("%d VictoriaLogs calls were made for no client request", untagged)
 	}
 }
+
+// BenchmarkCompatCacheFreshnessCheck times the near-now check of a cache hit
+// for an instant query at a past time and a range query ending now.
+func BenchmarkCompatCacheFreshnessCheck(b *testing.B) {
+	p := &Proxy{recentTailRefreshEnabled: true, recentTailRefreshWindow: 2 * time.Minute, recentTailRefreshMaxStaleness: 2 * time.Second}
+	past := strconv.FormatInt(time.Now().Add(-30*time.Minute).UnixNano(), 10)
+	for _, tc := range []struct{ name, endpoint, target string }{
+		{"instant", "query", "/loki/api/v1/query?query=x&time=" + past},
+		{"range", "query_range", "/loki/api/v1/query_range?query=x&end=" + strconv.FormatInt(time.Now().UnixNano(), 10)},
+	} {
+		r := httptest.NewRequest(http.MethodGet, tc.target, nil)
+		_ = r.ParseForm()
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = p.compatCacheShouldBypassForFreshness(tc.endpoint, r, 5*time.Minute, 4*time.Minute, 10*time.Second)
+			}
+		})
+		b.Run(tc.name+"/young", func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = p.compatCacheShouldBypassForFreshness(tc.endpoint, r, 5*time.Minute, 5*time.Minute-time.Second, time.Second)
+			}
+		})
+	}
+}
