@@ -1642,6 +1642,9 @@
     "internal/proxy/query_lowering_test.go | loki_api_v1_query_range",
     "internal/proxy/query_lowering_test.go | observability-query-flow",
     "internal/proxy/query_lowering_test.go | semantics/keep-before-unwrap-series-identity",
+    "internal/proxy/query_lowering_test.go | semantics/translator-reads-marker-bytes-in-quoted-value",
+    "internal/proxy/query_lowering_test.go | semantics/translator-reads-quoted-text-as-syntax",
+    "internal/proxy/query_lowering_test.go | semantics/translator-writes-signed-number-with-blank",
     "internal/proxy/query_range_steps_harden_test.go | quality/query-range-settled-steps",
     "internal/proxy/query_range_steps_harden_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/query_range_steps_harden_test.go | semantics/unwrap-over-time-range-windows",
@@ -2684,7 +2687,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 600,
+      "go": 601,
       "playwright": 1
     },
     "page_kinds": {
@@ -2703,8 +2706,8 @@
     },
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
-    "unwired_items": 105,
-    "wired_items": 358
+    "unwired_items": 104,
+    "wired_items": 359
   },
   "gates": [
     "A/B shape selection",
