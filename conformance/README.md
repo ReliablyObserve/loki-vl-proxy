@@ -114,6 +114,13 @@ case's step), so both sides get the same bytes and no window reads data still
 arriving. A case compares the facets its `compare.fields` name (or its mode's
 default), and always the HTTP status; a difference is asked again before it is
 reported.
+Each field name reads only its own part of an answer: `timestamps` the sample or entry
+timestamps (never the values at them), `structured_metadata_keys` the keys of the structured
+metadata (never their values), `fields.label`, `fields.parsers`, `fields.type` and `limit` the
+parts of a detected_fields answer, `detectedLabels.cardinality` the cardinalities, and on
+`/index/stats` `streams`, `entries`, `bytes` and `chunks` the one number each names. A table
+test (`TestEveryFacetReadsOnlyWhatItNames`) pins that a change elsewhere in the answer is not a
+difference of the facet.
 
 No answer is compared on data that is not proven equal. Before a comparison
 that reads data, the case's stream selectors (every stream for a request without

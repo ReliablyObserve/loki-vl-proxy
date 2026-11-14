@@ -37,10 +37,28 @@ const (
 	facetCount      = "count"
 	facetValues     = "values"
 	facetEntries    = "entries"
-	facetMetadata   = "metadata"
 	facetFields     = "fields"
 	facetData       = "data"
 	facetBody       = "body"
+	// Narrow facets: each reads one part of an answer and nothing else, so a case that names one is not
+	// failed by a difference in another.
+	facetResult           = "result"             // data.result without the result type
+	facetTimestamps       = "timestamps"         // the sample or entry timestamps of every series, no values
+	facetStructuredMeta   = "structuredMetadata" // every entry's structured metadata
+	facetParsed           = "parsed"             // every entry's parsed labels
+	facetMetaKeys         = "metadata_keys"      // the keys of the structured metadata of the whole answer
+	facetParsedKeys       = "parsed_keys"        // the keys of the parsed labels of the whole answer
+	facetMetaCategories   = "metadata_categories"
+	facetDetectedLevel    = "detected_level" // the detected_level of every entry or series
+	facetFieldLabels      = "fields.label"
+	facetFieldParsers     = "fields.parsers"
+	facetFieldJSONPath    = "fields.jsonPath"
+	facetFieldType        = "fields.type"
+	facetLimit            = "limit"
+	facetLabelNames       = "detectedLabels.label"
+	facetLabelCardinality = "detectedLabels.cardinality"
+	// facetStat is one number of an index/stats answer: "stat:streams", "stat:entries", ...
+	facetStatPrefix = "stat:"
 )
 
 var fieldFacet = map[string]string{
@@ -48,21 +66,33 @@ var fieldFacet = map[string]string{
 	"errorType": facetErrorType, "warnings": facetWarnings,
 	"resultType": facetResultType, "data.resultType": facetResultType,
 	"series": facetLabels, "series_labels": facetLabels, "series labels": facetLabels, "data.result[].metric": facetLabels,
-	"parsed labels": facetLabels, "streams": facetLabels, "streams.stream": facetLabels, "streams.labels": facetLabels,
+	"streams": facetLabels, "streams.stream": facetLabels, "streams.labels": facetLabels,
 	"streams.stream labels": facetLabels,
 	"series_count":          facetCount, "series count": facetCount,
 	"values": facetValues, "matrix.values": facetValues, "values of the by() form": facetValues,
-	"streams.values": facetEntries, "entries": facetEntries, "timestamps": facetEntries,
-	"structured_metadata_keys": facetMetadata, "metadata_categories": facetMetadata, "structuredMetadata": facetMetadata,
-	"structured metadata": facetMetadata, "detected_level": facetMetadata,
-	"fields.label": facetFields, "fields.parsers": facetFields, "fields.jsonPath": facetFields,
-	"data.result values": facetValues, "data.result[].value[0]": facetValues, "data.result[].values": facetValues,
-	"detectedLabels": facetLabels, "detectedLabels.label": facetLabels, "matrix.metric": facetLabels, "matrix.series": facetLabels,
-	"fields": facetFields, "fields.type": facetFields,
-	"data": facetData, "data.result": facetData, "body": facetBody,
-	// The index/stats answer's own numbers and the detected labels' cardinality are compared on the whole body.
-	"bytes": facetBody, "chunks": facetBody, "detectedLabels.cardinality": facetBody,
+	"streams.values": facetEntries, "entries": facetEntries,
+	"data.result values": facetValues, "data.result[].values": facetValues,
+	"detectedLabels": facetLabels, "matrix.metric": facetLabels, "matrix.series": facetLabels,
+	"fields": facetFields,
+	"data":   facetData, "data.result": facetResult, "body": facetBody,
+	// Timestamps only: a case that names them does not compare the values at them.
+	"timestamps": facetTimestamps, "data.result[].value[0]": facetTimestamps, "data.result[].values[][0]": facetTimestamps,
+	// Parts of an entry's metadata, each on its own.
+	"structuredMetadata": facetStructuredMeta, "structured metadata": facetStructuredMeta,
+	"parsed labels": facetParsed, "parsed_keys": facetParsedKeys,
+	"structured_metadata_keys": facetMetaKeys, "metadata_categories": facetMetaCategories,
+	"detected_level": facetDetectedLevel,
+	// Parts of a detected_fields and a detected_labels answer.
+	"fields.label": facetFieldLabels, "fields.parsers": facetFieldParsers, "fields.jsonPath": facetFieldJSONPath,
+	"fields.type": facetFieldType, "limit": facetLimit,
+	"detectedLabels.label": facetLabelNames, "detectedLabels.cardinality": facetLabelCardinality,
+	// bytes and chunks of an index/stats answer: a case that names one is read as that number (see Facets).
+	"bytes": facetStatPrefix + "bytes", "chunks": facetStatPrefix + "chunks",
 }
+
+// indexStatsPath answers four numbers; on it `streams` and `entries` are numbers, not the stream and entry
+// lists of a log answer.
+const indexStatsPath = "/loki/api/v1/index/stats"
 
 // Facets returns the facets a probe compares and the field names the runner does not know. The status is
 // always compared: an answer with another status is never the same answer.
@@ -70,7 +100,11 @@ func (p Probe) Facets() ([]string, []string) {
 	set := map[string]bool{facetStatus: true}
 	var unknown []string
 	for _, f := range p.Fields {
-		if facet, ok := fieldFacet[f]; ok {
+		facet, ok := fieldFacet[f]
+		if p.Path == indexStatsPath && (f == "streams" || f == "entries") {
+			facet, ok = facetStatPrefix+f, true
+		}
+		if ok {
 			set[facet] = true
 		} else {
 			unknown = append(unknown, f)
@@ -268,9 +302,7 @@ func (p parsed) facet(f string, status int) any {
 	case facetValues:
 		return p.values()
 	case facetEntries:
-		return p.entries(false)
-	case facetMetadata:
-		return p.entries(true)
+		return p.entries()
 	case facetFields:
 		return sortedSet(field(p.doc, "fields"))
 	case facetData:
@@ -281,7 +313,8 @@ func (p parsed) facet(f string, status int) any {
 		}
 		return withoutStats(p.doc)
 	}
-	return nil
+	v, _ := p.narrow(f)
+	return v
 }
 
 func (p parsed) labels() any {
@@ -329,19 +362,14 @@ func (p parsed) values() any {
 	return normalizeData(field(p.doc, "data"))
 }
 
-// entries are the log lines of every stream, keyed by the stream's labels; withMeta keeps the metadata and
-// parsed labels that a categorized answer carries as each entry's third element.
-func (p parsed) entries(withMeta bool) any {
+// entries are the log lines of every stream, keyed by the stream's labels (a metric answer's samples).
+func (p parsed) entries() any {
 	out := map[string]any{}
 	for _, item := range p.result() {
 		values, _ := field(item, "values").([]any)
 		var kept []any
 		for _, v := range values {
-			e, _ := v.([]any)
-			switch {
-			case withMeta && len(e) > 2:
-				kept = append(kept, e[2])
-			case !withMeta && len(e) >= 2:
+			if e, _ := v.([]any); len(e) >= 2 {
 				kept = append(kept, []any{e[0], e[1]})
 			}
 		}
