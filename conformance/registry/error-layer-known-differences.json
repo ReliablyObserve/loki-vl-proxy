@@ -1,17 +1,7 @@
 {
   "description": "Rows of internal/lokierr/testdata/loki_error_answers.jsonl (real Loki 3.7.9 error answers recorded over HTTP) whose proxy answer is not Loki's yet, compared by TestLokiErrorAnswersReplay on status, Content-Type, X-Content-Type-Options and body, byte for byte, against a proxy with its default configuration and Loki's max_query_length of the recorded stack, in front of a VictoriaLogs stand-in that answers every query call with an empty valid answer (so a request the proxy forwards instead of rejecting shows as a 200). The list may only shrink: a row that newly differs fails the test, a listed row that now matches fails until it is removed, and ceiling equals the number of rows. proxy is today's answer, for the reader; the test compares only whether a row matches Loki.",
-  "ceiling": 10,
+  "ceiling": 8,
   "rows": {
-    "r0003": {
-      "route": "query",
-      "loki": "400 text/plain; charset=utf-8 \"parse error at line 1, col 4: syntax error: unexpected $end\"",
-      "proxy": "400 text/plain; charset=utf-8 \"parse error : syntax error: unexpected $end\""
-    },
-    "r0004": {
-      "route": "query_range",
-      "loki": "400 text/plain; charset=utf-8 \"parse error at line 1, col 4: syntax error: unexpected $end\"",
-      "proxy": "400 text/plain; charset=utf-8 \"parse error : syntax error: unexpected $end\""
-    },
     "r0043": {
       "route": "query",
       "loki": "400 text/plain; charset=utf-8 \"log queries are not supported as an instant query type, please change your query to a range query type\"",

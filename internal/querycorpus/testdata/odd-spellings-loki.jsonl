@@ -1,27 +1,27 @@
-{"kind":"check","q":"rate ({a=\"b\"}[5m])"}
-{"kind":"check","q":"sum by (a) (count_over_time ({a=\"b\"}[5m]))"}
-{"kind":"check","q":"{a=\"b\"} | line_format \"x\""}
-{"kind":"check","q":"{a=\"b\"} | json"}
-{"kind":"check","q":"{a=\"b\"} |= \"x\""}
-{"kind":"check","q":"{a=\"b\"} | json"}
-{"kind":"check","q":"rate({a=\"b\"}[5m])"}
-{"kind":"check","q":"sum by (a) (count_over_time({a=\"b\"}[5m]))"}
-{"kind":"check","q":"{a=\"b\"} | line_format\"x\""}
-{"kind":"check","q":"{a=\"b\"} |json"}
-{"kind":"check","q":"{a=\"b\"} |=\"x\""}
-{"kind":"check","q":"{a=\"b\"}| json"}
-{"kind":"check","q":"rate ({a=\"b\"}[5m])"}
-{"kind":"check","q":"sum by (a) (count_over_time ({a=\"b\"}[5m]))"}
-{"kind":"check","q":"{a=\"b\"} | line_format \"x\""}
-{"kind":"check","q":"{a=\"b\"} | json"}
-{"kind":"check","q":"{a=\"b\"} |= \"x\""}
-{"kind":"check","q":"{a=\"b\"} | json"}
-{"kind":"check","q":"rate　({a=\"b\"}[5m])"}
-{"kind":"check","q":"sum by (a) (count_over_time　({a=\"b\"}[5m]))"}
-{"kind":"check","q":"{a=\"b\"} | line_format　\"x\""}
-{"kind":"check","q":"{a=\"b\"} |　json"}
-{"kind":"check","q":"{a=\"b\"} |=　\"x\""}
-{"kind":"check","q":"{a=\"b\"}　| json"}
+{"kind":"check","q":"rate ({a=\"b\"}[5m])","error":"parse error at line 1, col 5: syntax error: unexpected IDENTIFIER, expecting ("}
+{"kind":"check","q":"sum by (a) (count_over_time ({a=\"b\"}[5m]))","error":"parse error at line 1, col 28: syntax error: unexpected IDENTIFIER, expecting ("}
+{"kind":"check","q":"{a=\"b\"} | line_format \"x\"","error":"parse error at line 1, col 22: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"kind":"check","q":"{a=\"b\"} | json","error":"parse error at line 1, col 11: syntax error: unexpected json"}
+{"kind":"check","q":"{a=\"b\"} |= \"x\"","error":"parse error at line 1, col 11: syntax error: unexpected IDENTIFIER, expecting STRING or ip"}
+{"kind":"check","q":"{a=\"b\"} | json","error":"parse error at line 1, col 8: syntax error: unexpected IDENTIFIER"}
+{"kind":"check","q":"rate({a=\"b\"}[5m])","error":"parse error at line 1, col 5: syntax error: unexpected IDENTIFIER, expecting ("}
+{"kind":"check","q":"sum by (a) (count_over_time({a=\"b\"}[5m]))","error":"parse error at line 1, col 28: syntax error: unexpected IDENTIFIER, expecting ("}
+{"kind":"check","q":"{a=\"b\"} | line_format\"x\"","error":"parse error at line 1, col 22: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"kind":"check","q":"{a=\"b\"} |json","error":"parse error at line 1, col 11: syntax error: unexpected json"}
+{"kind":"check","q":"{a=\"b\"} |=\"x\"","error":"parse error at line 1, col 11: syntax error: unexpected IDENTIFIER, expecting STRING or ip"}
+{"kind":"check","q":"{a=\"b\"}| json","error":"parse error at line 1, col 8: syntax error: unexpected IDENTIFIER"}
+{"kind":"check","q":"rate ({a=\"b\"}[5m])","error":"parse error at line 1, col 5: syntax error: unexpected IDENTIFIER, expecting ("}
+{"kind":"check","q":"sum by (a) (count_over_time ({a=\"b\"}[5m]))","error":"parse error at line 1, col 28: syntax error: unexpected IDENTIFIER, expecting ("}
+{"kind":"check","q":"{a=\"b\"} | line_format \"x\"","error":"parse error at line 1, col 22: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"kind":"check","q":"{a=\"b\"} | json","error":"parse error at line 1, col 11: syntax error: unexpected json"}
+{"kind":"check","q":"{a=\"b\"} |= \"x\"","error":"parse error at line 1, col 11: syntax error: unexpected IDENTIFIER, expecting STRING or ip"}
+{"kind":"check","q":"{a=\"b\"} | json","error":"parse error at line 1, col 8: syntax error: unexpected IDENTIFIER"}
+{"kind":"check","q":"rate　({a=\"b\"}[5m])","error":"parse error at line 1, col 5: syntax error: unexpected IDENTIFIER, expecting ("}
+{"kind":"check","q":"sum by (a) (count_over_time　({a=\"b\"}[5m]))","error":"parse error at line 1, col 28: syntax error: unexpected IDENTIFIER, expecting ("}
+{"kind":"check","q":"{a=\"b\"} | line_format　\"x\"","error":"parse error at line 1, col 22: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"kind":"check","q":"{a=\"b\"} |　json","error":"parse error at line 1, col 11: syntax error: unexpected json"}
+{"kind":"check","q":"{a=\"b\"} |=　\"x\"","error":"parse error at line 1, col 11: syntax error: unexpected IDENTIFIER, expecting STRING or ip"}
+{"kind":"check","q":"{a=\"b\"}　| json","error":"parse error at line 1, col 8: syntax error: unexpected IDENTIFIER"}
 {"kind":"check","q":"{a=\"b\"} | x = \"y\" and 、 = \"z\"","accept":true}
 {"kind":"check","q":"{a=\"b\"} | (、 = \"z\")","accept":true}
 {"kind":"check","q":"{a=\"b\"} | json | x = \"y\" and 、 > 5","accept":true}

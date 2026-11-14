@@ -2604,20 +2604,18 @@
         "r0001"
       ],
       "kind": "logql_syntax",
-      "known_difference_ids": [
-        "r0003"
-      ],
-      "matching_rows": 1,
+      "known_difference_ids": [],
+      "matching_rows": 2,
       "messages": [
         "parse"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "query",
       "rows": 2,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -2853,20 +2851,18 @@
         "r0002"
       ],
       "kind": "logql_syntax",
-      "known_difference_ids": [
-        "r0004"
-      ],
-      "matching_rows": 1,
+      "known_difference_ids": [],
+      "matching_rows": 2,
       "messages": [
         "parse"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "query_range",
       "rows": 2,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -3951,8 +3947,8 @@
     }
   ],
   "known_differences": {
-    "ceiling": 10,
-    "rows": 10
+    "ceiling": 8,
+    "rows": 8
   },
   "messages": {
     "aggregate-by": {
@@ -4687,7 +4683,7 @@
       ],
       "item": "msg-parse",
       "kind": "parse",
-      "matching_rows": 44,
+      "matching_rows": 46,
       "routes": [
         "detected_field_values",
         "detected_fields",
@@ -5155,16 +5151,16 @@
   "summary": {
     "cells": 124,
     "cells_e2e": 71,
-    "cells_matching": 96,
+    "cells_matching": 98,
     "cells_recorded": 65,
     "check_order_rows": 33,
     "comparable_rows": 231,
     "coverage_ratio": 0.5726,
     "covered_cells": 71,
-    "differing_rows": 10,
+    "differing_rows": 8,
     "e2e_rows": 140,
-    "match_ratio": 0.9567,
-    "matching_rows": 221,
+    "match_ratio": 0.9654,
+    "matching_rows": 223,
     "messages": 36,
     "messages_documented": 9,
     "messages_recorded": 27,

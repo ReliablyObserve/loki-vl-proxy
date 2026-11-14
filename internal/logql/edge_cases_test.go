@@ -626,8 +626,8 @@ func TestEdge_Semantic_Valid(t *testing.T) {
 		`sum(count_over_time({service_name="argocd", service_name != ""}[5s])) by (service_name)`,
 		`{app="nginx"} | line_format "{{.msg}}"`,
 		`{app="nginx"} | line_format "{{ .level }}: {{ .msg }}"`,
-		`{app="nginx"} | unwrap duration`,
-		`{app="nginx"} | json | unwrap latency`,
+		`sum_over_time({app="nginx"} | unwrap duration [5m])`,
+		`sum_over_time({app="nginx"} | json | unwrap latency | __error__="" [5m])`,
 		`rate({app="api"}[5m] offset 1h)`,
 	}
 	for _, q := range valid {
@@ -644,6 +644,9 @@ func TestEdge_Semantic_Invalid(t *testing.T) {
 		`quantile_over_time(-0.1, {app="api"} | unwrap lat [5m])`,    // negative phi
 		`quantile_over_time(-1, {app="api"} | unwrap lat [5m])`,      // negative phi
 		`{app="nginx"} | unwrap a | unwrap b`,                        // double unwrap
+		`{app="nginx"} | unwrap duration`,                            // unwrap outside a range aggregation
+		`{app="nginx"} | json | unwrap latency`,                      // unwrap outside a range aggregation
+		`avg_over_time({app="api"} | unwrap a | json [5m])`,          // a stage after unwrap
 		`avg_over_time({app="api"} | unwrap a [5m] | unwrap b [5m])`, // double unwrap in range
 		// Loki 3.7.1 answers 400 for an empty-compatible selector and for a
 		// line_format template it cannot build.

@@ -16,9 +16,13 @@ func TestRangeAggregationDurations(t *testing.T) {
 		{`rate({a="b"}[5m])`, 5 * time.Minute, 0, false, "5m", ""},
 		{`rate({a="b"}[1h] offset 30m)`, time.Hour, 30 * time.Minute, true, "1h", "30m"},
 		{`rate({a="b"}[1d] offset 1w)`, 24 * time.Hour, 7 * 24 * time.Hour, true, "1d", "1w"},
-		{`rate({a="b"}[1.5h])`, 90 * time.Minute, 0, false, "1.5h", ""},
+		{`rate({a="b"}[1h30m])`, 90 * time.Minute, 0, false, "1h30m", ""},
 		{`rate({a="b"}[500ms])`, 500 * time.Millisecond, 0, false, "500ms", ""},
 		{`rate({a="b"}[1y])`, 365 * 24 * time.Hour, 0, false, "1y", ""},
+		// The length is read exactly as Loki reads it: in nanoseconds, a part of 0 counting for nothing.
+		{`rate({a="b"}[3d1h2ms])`, 73*time.Hour + 2*time.Millisecond, 0, false, "3d1h2ms", ""},
+		{`rate({a="b"}[1d0h])`, 24 * time.Hour, 0, false, "1d0h", ""},
+		{`rate({a="b"}[1y0ms])`, 365 * 24 * time.Hour, 0, false, "1y0ms", ""},
 		{`rate({a="b"}[5m] offset 0s)`, 5 * time.Minute, 0, true, "5m", "0s"},
 	} {
 		expr, err := Parse(tc.query)

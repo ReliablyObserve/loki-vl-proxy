@@ -222,7 +222,11 @@ func FuzzParseTerminates(f *testing.F) {
 	for _, q := range []string{`{a="b"}`, `{a="b"} |= "x" | json | x > 5`, `sum by (a) (rate({a="b"}[5m]))`, `rate({a="b"}[5m]) / on(a) rate({a="b"}[5m])`, "{a=`b`} # c\n| logfmt", `1 + 1`, ``,
 		// label lists: a trailing, doubled and leading comma, two names, an empty list
 		`sum by (a,) (rate({a="b"}[5m]))`, `sum without (,a) (rate({a="b"}[5m]))`, `sum by (a b) (rate({a="b"}[5m]))`, `sum by () (rate({a="b"}[5m]))`,
-		`rate({a="b"}[5m]) / on(a,) group_left(,b) rate({a="b"}[5m])`, `{a="b"} | drop a,,b`, `{a="b"} | keep`, `{a="b"} | drop a="x",`, `{a="b"} | json a,`} {
+		`rate({a="b"}[5m]) / on(a,) group_left(,b) rate({a="b"}[5m])`, `{a="b"} | drop a,,b`, `{a="b"} | keep`, `{a="b"} | drop a="x",`, `{a="b"} | json a,`,
+		// blanks Loki's lexer does not skip, stages after an unwrap, unwrap in a log query, ranges Loki does not read
+		"sum\v(rate({a=\"b\"}[5m]))", "sum by (a,\u00a0) (rate({a=\"b\"}[5m]))", "{a=\"b\"}\u2003|\u2003drop\u2003z", `{a="b"} | x="a` + "\n" + `b"`,
+		`sum_over_time({a="b"} | unwrap c | json [5m])`, `sum_over_time({a="b"}[5m] | unwrap c |= "x")`, `{a="b"} | regexp "x" | unwrap a`,
+		`rate({a="b"}[1µs])`, `rate({a="b"}[5m5m])`, `rate({a="b"}[9999999999h5x])`, `rate({a="b"}[']) / on rate({a="b"}[5m])`, `{A="0"} | A<- 0`} {
 		f.Add(q)
 	}
 	f.Fuzz(func(t *testing.T, q string) {

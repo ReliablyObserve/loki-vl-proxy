@@ -145,7 +145,7 @@ The scanner (`scanner.go`) is a hand-written lexer with no external dependencies
 
 - **Single-pass, no backtracking.** Each call to `scan()` advances exactly one token.
 - **Disambiguates `!=` vs `!~` vs `!>` vs `!=` (label vs line filter).** Context is resolved by the parser, not the scanner — the scanner emits separate `TokBangEq`, `TokBangTilde`, `TokBangGt` tokens.
-- **Range durations** (`5m`, `1h`, `$__auto`) are emitted as `TokDuration` inside a `[range]`, with the unit string preserved.
+- **Range durations** (`5m`, `1h30m`) are emitted as `TokDuration` inside a `[range]`, with the unit string preserved. Nothing is skipped inside the brackets, and the text up to the `]` is checked as Loki checks it (see [Lexical rules](#lexical-rules-of-lokis-lexer)).
 - **Number, duration and bytes literals** outside a range are read as Loki's lexer reads them (see [Lexical rules](#lexical-rules-of-lokis-lexer)): `TokNumber`, `TokDurationLit` (`offset 5m`, `-5m`) and `TokBytes` (`5KB`).
 - **Quoted strings** are unescaped; raw backtick strings are returned verbatim.
 - **Lexer errors** (a malformed number, NUL, an unclosed `[`) are noted by the scanner as it reads the token, and `Parse` reports the first one ahead of any parse error, as Loki does.
@@ -175,7 +175,7 @@ Pipeline       := '|=' | '!=' | '|~' | '!~' | '|>' | '!>'   LineFilter
                |  '|' json | logfmt | regexp | pattern | unpack
                |  '|' LabelFilter (raw)
                |  '|' line_format | label_format (raw)
-               |  '|' unwrap [Converter] Label
+               |  '|' unwrap [Converter] Label    (in a range aggregation only; label filters only after it)
                |  '|' drop DropList
                |  '|' keep DropList
                |  '|' decolorize
@@ -209,7 +209,8 @@ Loki lexes a query with Go's `text/scanner`, a duration and bytes attempt after 
 | Bytes | After a number, the run of digits, `.` and `B i k K M G T P` is a BYTES size when Humanize's size parser reads it in any case (`5kB`, `5Ki`, `5k`; `5kb` is `5k` then the name `b`; `5gb` is a number then a name), and the size fits 64 bits. |
 | Sign | `-5m` (a minus right before a duration Go reads) is one DURATION token. A sign otherwise belongs to a NUMBER: `+5m` and `-5B` are `unexpected DURATION/BYTES, expecting NUMBER`. |
 | `0b` after white space | A `0b` or `0B` literal that follows white space is `decimal literal has no digits`, whatever follows the prefix. Right after an operator (`a<0b1`) it is scanned normally. A comment takes the line break that ends it, so what follows is not after white space. |
-| White space | Only space, tab, CR and LF. `\v`, `\f`, a non-breaking space and the like are tokens of their own (names). The query is parsed with the white space around it: a trailing control character is a token and the end-of-input column counts the trailing white space. |
+| White space | Only space, tab, CR and LF. `\v`, `\f`, U+0085, a non-breaking space, U+2003 and the like are tokens of their own (names), so between two tokens they are Loki's syntax error (`sum\u00a0by (a) (...)` is `unexpected IDENTIFIER, expecting ( or by or without`); in a list of names (`by (a,\u00a0)`) one is the name of a label no stream has and is left out. The query is parsed with the white space around it: a trailing control character is a token and the end-of-input column counts the trailing white space. A double-quoted string ends at a line break (`literal not terminated`). Held by `TestWhitespaceMatchesLoki` (16,356 recorded queries). |
+| Range | The text between `[` and `]` is one token, read with Prometheus' duration rules: whole numbers with the units `y w d h m s ms`, each at most once and largest first, a sum of at most about 292 years. Errors in Loki's order, at the column of the `[`: a part without digits or unit, or a number above 64 bits, is `not a valid duration string` (`[5m5]`, `[ 5m]`); then an unknown unit (`[1µs]`, `[1us]`, `[1.5m]` names `.`); then a repeated or out-of-order unit (`[5m5m]`, `[30s5m]`); then `duration out of range`. An `offset` reads Go's durations, so `offset 1us` and `offset 5m5m` are accepted. Held by `TestRangeAndUnwrapGrammarMatchLoki`. |
 | Names and other characters | A name is letters, digits and `_` (dots stay inside a name: the proxy's dotted names, `DottedNameError` for the Loki profile). Any other character is a token of its own: `+ - * / % ^ . { } ]` are named by themselves in errors, the rest are identifiers, `'x'` is a one-character literal (`invalid char literal`, `literal not terminated`), and `[` starts a range that needs its `]` (`missing closing ']' in duration`, line 0). Only an ASCII digit starts a number: another decimal digit (U+0663, U+0966, U+FF13), a superscript, a fraction and a Roman numeral start no token and are identifiers of their own, so `{app="a"} \| x ٣` and `\| x ²` are `unexpected IDENTIFIER`. The scanner must move on every character: a scan that reads nothing once made the parser loop without end (`FuzzParseTerminates` holds every entry point to 200 ms and a mebibyte per input byte). |
 | Keywords | `by without bool offset on ignoring group_left group_right unless unwrap json regexp logfmt unpack pattern label_format line_format decolorize drop keep variants of` (any case) are keyword tokens wherever they stand, so a label filter cannot name a label `by`. `ip`, `label_replace`, `vector`, the range and vector aggregation names and the unwrap conversions (`bytes`, `duration`, `duration_seconds`) are keywords only before a `(` or a `by (`/`without (`, and print in upper case in errors (`unexpected RATE`, `BYTES_CONV`). |
 | NUL | `invalid character NUL`, at the start of the token before it: its line when the NUL follows the token, line 0 when white space or a comment lies between. |
@@ -217,7 +218,7 @@ Loki lexes a query with Go's `text/scanner`, a duration and bytes attempt after 
 | Binary operator after a label filter | `+ - * / % ^ == > >= < <= unless` after a complete filter belong to the query, whose left operand is the pipeline: the query goes on from there and a log query operand is `unexpected type for left leg of binary operation (+): *syntax.PipelineExpr` (`MatchersExpr` for a bare selector, `right leg` for the right operand; the left operand first). Inside parentheses the operator is a syntax error. |
 | Float conversions | A number Go's `ParseFloat` cannot read (`0x1`, `0b1`, `1e999`) is `unable to parse literal as a float: strconv.ParseFloat: parsing ...` for an operand, `unable to parse vectorExpr as a float` in `vector()`, `invalid parameter for operation quantile_over_time: ...` and `invalid parameter topk(0x1,` for a parameter; Loki raises it after the left leg type check. |
 
-Not covered: the content of a `[range]` keeps the scanner's older reading (`[0x1]` names the unit `x` of `0x`), a stage that is a bare name alone (`| x`) passes through to the backend as an unknown stage (a name followed by more of the stage, `| x+y=1`, `| a, b` or `| a .5`, is Loki's syntax error at the token after the name), and the content of a stream selector that is not closed (`{app="a"} + {`) keeps the generic error.
+Not covered: a range of a bare `0`, which Loki reads as a duration of nothing and the proxy rejects, a range that holds a Grafana variable (`[$__auto]`) keeps the parser's own error, a byte order mark at the start of a query is a name to the proxy where Loki drops it, a stage that is a bare name alone (`| x`) passes through to the backend as an unknown stage (a name followed by more of the stage, `| x+y=1`, `| a, b` or `| a .5`, is Loki's syntax error at the token after the name), and the content of a stream selector that is not closed (`{app="a"} + {`) keeps the generic error.
 
 ## Semantic Validation
 
@@ -227,7 +228,8 @@ After parsing, `validateSemantics` walks the AST and enforces constraints:
 |---|---|
 | Empty stream selector `{}` | `parse error at line 1, col 2: queries require at least one matcher that is not a wildcard` |
 | `rate_counter` without `\| unwrap` | `parse error : rate_counter requires \| unwrap expression` |
-| Multiple `\| unwrap` stages | `parse error : syntax error: unexpected unwrap` |
+| `\| unwrap` outside a range aggregation | `parse error at line 1, col N: syntax error: unexpected unwrap`, at the unwrap, ahead of every other check of the query (the parser keeps such a log query, so the handlers can drop Grafana's `\| unwrap [1s]` stubs first) |
+| A stage after `\| unwrap` that is no label filter | `parse error at line 1, col N: syntax error: unexpected drop, expecting IDENTIFIER or (` (a line filter: `unexpected \|=, expecting RANGE or \|`, line 0), raised by the parser; the error of a stage before it that Loki builds while it parses (a regexp or pattern parser, a regex) comes first |
 | `rate()` / `bytes_rate()` referencing `__error__` | `parse error : __error__ and __error_details__ are not allowed inside rate() range vectors` |
 | `quantile_over_time` phi < 0 | `parse error at line 1, col 1: invalid parameter for quantile_over_time: …` |
 | `\| line_format` with unclosed `{{ }}` | `parse error : stage '…' : invalid line template: …` |

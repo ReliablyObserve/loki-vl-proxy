@@ -201,6 +201,21 @@ func StripComments(query string) string {
 	return b.String()
 }
 
+// onlyUnwrapStubs reports a log query whose unwrap stages all lack their label: Grafana's stubs, which
+// StripIncompleteUnwrapStubs drops.
+func onlyUnwrapStubs(expr Expr) bool {
+	lq, ok := expr.(*LogQuery)
+	if !ok {
+		return false
+	}
+	for _, st := range lq.Pipeline {
+		if u, ok := st.(*UnwrapStage); ok && u.Label != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // StripParserFlags removes the logfmt flags of a query (`--strict`,
 // `--keep-empty`). The parser keeps them on the typed stage; the request text
 // the handlers and the string translator read carries the stage without them,
@@ -213,7 +228,10 @@ func StripParserFlags(query string) string {
 	var spans [][2]int
 	p := &parser{sc: newScanner(query), flagSpans: &spans}
 	p.advance()
-	if _, err := p.parseExpr(); err != nil || p.cur.Typ != TokEOF || len(spans) == 0 {
+	// A query with an unwrap outside a range aggregation is Loki's syntax error at the unwrap: it keeps its flags, so
+	// that the error is at Loki's column. Grafana's stubs (`| unwrap [1s]`), which the handlers drop, do not count.
+	expr, err := p.parseExpr()
+	if err != nil || p.cur.Typ != TokEOF || len(spans) == 0 || p.plainUnwrapAt > 0 && !onlyUnwrapStubs(expr) {
 		return query
 	}
 	var b strings.Builder

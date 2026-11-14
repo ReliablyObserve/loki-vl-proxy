@@ -101,7 +101,7 @@ func TestQueryRefusalAnswersAreLokisNotTheTranslators(t *testing.T) {
 		{"quantile without its parameter, instant", "query", `quantile_over_time({a="b"} | unwrap c [5m])`, 400, lokiQuantileParameter},
 		{"label_replace regex", "query_range", `label_replace(rate({a="b"}[5m]), "x", "$1", "a", "(")`, 400,
 			"parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`"},
-		{"range too large for a duration", "query_range", `rate({a="b"}[9999999999h])`, 400, "parse error : duration out of range"},
+		{"range too large for a duration", "query_range", `rate({a="b"}[9999999999h])`, 400, "parse error at line 0, col 13: duration out of range"},
 		// Loki rejects these with a position only the parser has.
 		{"unknown pipeline stage", "query_range", `{a="b"} | foo`, 400, lokiUnplacedSyntax},
 		{"unknown pipeline stage, instant", "query", `{a="b"} | foo`, 400, lokiUnplacedSyntax},
