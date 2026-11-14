@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.230.0] - 2026-11-14
+
 ### Fixed
 
 - A ruler or alerts backend that answers with a body the proxy cannot pass on now fails the request instead of
