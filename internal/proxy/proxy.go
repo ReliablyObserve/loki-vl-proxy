@@ -189,7 +189,7 @@ type Config struct {
 	ForwardTenantHeader bool // forward per-tenant X-Scope-OrgID to upstream (safe for VL, needed for Victoria Lakehouse)
 
 	// Grafana datasource compatibility
-	MaxLines int // default max lines per query (0=1000)
+	MaxLines int // entries of a log query that sends no limit (0 = DefaultMaxLines, Loki's 100)
 	// RangeMetricRowLimit caps the number of log rows fetched per collectRangeMetricSamples
 	// call used by manual range-metric compatibility (rate, count_over_time, etc.).
 	// 0 means use the built-in default of 1,000,000. Lower values bound memory at the cost
@@ -1193,7 +1193,7 @@ func New(cfg Config) (*Proxy, error) {
 
 	maxLines := cfg.MaxLines
 	if maxLines <= 0 {
-		maxLines = 1000
+		maxLines = DefaultMaxLines
 	}
 
 	backendHeaders := maps.Clone(cfg.BackendHeaders)

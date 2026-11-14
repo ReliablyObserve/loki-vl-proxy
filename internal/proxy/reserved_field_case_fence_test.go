@@ -96,7 +96,7 @@ func TestReservedFieldCaseFenceDoesNotServeAnOldCachedAnswer(t *testing.T) {
 	p := newCompatTestProxy(t, backend.URL)
 	target := "/loki/api/v1/query_range?" + url.Values{"query": {query}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}}.Encode()
 	rewritten := logqlpkg.LowercaseKeywords(logqlpkg.StripParserFlags(logqlpkg.StripComments(query)))
-	keyTarget := "/loki/api/v1/query_range?" + url.Values{"query": {rewritten}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}}.Encode()
+	keyTarget := "/loki/api/v1/query_range?" + url.Values{"query": {rewritten}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}, "limit": {"100"}}.Encode() // and Loki's default limit
 	req := httptest.NewRequest(http.MethodGet, keyTarget, nil)
 	req.Header.Set("X-Scope-OrgID", "team-a")
 	key, ok := p.compatCacheKey("query_range", req)

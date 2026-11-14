@@ -650,13 +650,13 @@
       "flag": "max-lines",
       "helm_value": "extraArgs.max-lines",
       "type": "Int",
-      "default": "1000",
+      "default": "100",
       "unit": "rows",
       "bounds": "the default number of log lines per query when the client sends no limit",
       "error": "none",
       "metric": "none",
       "alert": "none",
-      "loki_parity": "the Loki data source's Max lines (1000)",
+      "loki_parity": "Loki's default limit of a log query (100); Grafana sends its Max lines (1000) as the limit",
       "per_tenant": true,
       "sizing": "Raise it only with -max-entries-limit-per-query; every line is transferred and rendered."
     }

@@ -586,6 +586,9 @@
     "semantics/log-entries-differ-same-count | compare:observed",
     "semantics/log-entries-differ-same-count | gap:open",
     "semantics/log-entries-differ-same-count | query",
+    "semantics/log-query-default-limit | compare:observed",
+    "semantics/log-query-default-limit | gap:fixed",
+    "semantics/log-query-default-limit | query",
     "semantics/logfmt-existence-filter-ungrouped-sum | compare:numeric",
     "semantics/logfmt-existence-filter-ungrouped-sum | gap:fixed",
     "semantics/logfmt-existence-filter-ungrouped-sum | query",
@@ -1230,6 +1233,7 @@
     "internal/proxy/compat_cache_freshness_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/count_values_test.go | semantics/count-values-unsupported",
     "internal/proxy/credential_passthrough_test.go | credential-passthrough-as-configured",
+    "internal/proxy/default_entry_limit_test.go | semantics/log-query-default-limit",
     "internal/proxy/delete_route_test.go | delete-api-requires-token",
     "internal/proxy/delete_route_test.go | loki_api_v1_delete",
     "internal/proxy/delete_route_test.go | semantics/delete-route-disabled-like-loki",
@@ -2672,14 +2676,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 95,
+      "api": 96,
       "drilldown": 50,
       "explore": 184,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 598,
+      "go": 599,
       "playwright": 1
     },
     "page_kinds": {
@@ -2699,7 +2703,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 105,
-    "wired_items": 358
+    "wired_items": 359
   },
   "gates": [
     "A/B shape selection",

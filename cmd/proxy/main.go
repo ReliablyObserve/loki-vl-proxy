@@ -571,7 +571,7 @@ func run(
 	responseCompressionMinBytes := fs.Int("response-compression-min-bytes", defaultResponseCompressionMinBytes, "Minimum response size before frontend compression starts (0 compresses any size)")
 
 	// Grafana datasource compatibility
-	maxLines := fs.Int("max-lines", 1000, "Default max lines per query")
+	maxLines := fs.Int("max-lines", proxy.DefaultMaxLines, "Entries of a log query (query_range) that sends no limit; Loki's default is 100")
 	orderedJSONMetricMaxBytes := fs.Int64("ordered-json-metric-max-bytes", 1<<30, "Safety cap on the VictoriaLogs raw rows response read, and the response built, by the proxy-side ordered JSON metric evaluator (0 = default 1 GiB, no upper bound). Exceeding it rejects the query instead of returning partial results. Grafana logs volume shapes are computed from VictoriaLogs stats buckets and do not read raw rows.")
 	labelFilterRefillMaxPages := fs.Int("label-filter-refill-max-pages", proxy.DefaultLabelFilterRefillMaxPages, "Loki-compatible profile: more pages of at most limit rows a log query reads when a Loki label filter on a log line key no earlier stage exposes dropped rows VictoriaLogs matched, so the page still holds limit lines. A response reads at most (1 + N) x limit rows; 0 reads no further page, and such a page can return fewer lines than the limit.")
 	rangeMetricRowLimit := fs.Int("manual-range-metric-row-limit", 1_000_000, "Maximum log rows fetched per manual range-metric compatibility call (rate, count_over_time, etc.). Lower values bound memory at the cost of result truncation for high-cardinality queries.")

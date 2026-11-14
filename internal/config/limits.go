@@ -477,7 +477,7 @@ var Limits = []Limit{
 		Error:      "none",
 		Metric:     "none",
 		Alert:      "none",
-		LokiParity: "the Loki data source's Max lines (1000)",
+		LokiParity: "Loki's default limit of a log query (100); Grafana sends its Max lines (1000) as the limit",
 		PerTenant:  true,
 		Sizing:     "Raise it only with -max-entries-limit-per-query; every line is transferred and rendered.",
 	},
