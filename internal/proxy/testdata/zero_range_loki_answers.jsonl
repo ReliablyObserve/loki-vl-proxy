@@ -1,0 +1,25 @@
+{"q":"rate({app=\"a\"}[0s])","range_empty":true,"instant_empty":true}
+{"q":"count_over_time({app=\"a\"}[0s])","range_empty":true,"instant_empty":true}
+{"q":"bytes_rate({app=\"a\"}[0s])","range_empty":true,"instant_empty":true}
+{"q":"rate({app=\"a\"}[0m0s])","range_empty":true,"instant_empty":true}
+{"q":"rate({app=\"a\"}[0s] offset 1m)","range_empty":true,"instant_empty":true}
+{"q":"sum(rate({app=\"a\"}[0s]))","range_empty":true,"instant_empty":true}
+{"q":"sum by (pod) (count_over_time({app=\"a\"}[0s]))","range_empty":true,"instant_empty":true}
+{"q":"topk(1, rate({app=\"a\"}[0s]))","range_empty":true,"instant_empty":true}
+{"q":"label_replace(rate({app=\"a\"}[0s]), \"x\", \"$1\", \"app\", \"(.*)\")","range_empty":true,"instant_empty":true}
+{"q":"sum_over_time({app=\"a\"} | logfmt | unwrap c [0s])","range_empty":true,"instant_empty":true}
+{"q":"quantile_over_time(0.5, {app=\"a\"} | logfmt | unwrap c [0s])","range_empty":true,"instant_empty":true}
+{"q":"rate({app=\"a\"}[0s]) + 1","range_empty":true,"instant_empty":true}
+{"q":"count_over_time({app=\"a\"}[0s]) \u003e 0","range_empty":true,"instant_empty":true}
+{"q":"vector(1) and rate({app=\"a\"}[0s])","range_empty":true,"instant_empty":true}
+{"q":"rate({app=\"a\"}[0s]) / rate({app=\"a\"}[1m])","range_empty":true,"instant_empty":true}
+{"q":"rate({app=\"a\"}[0s]) or rate({app=\"a\"}[0s])","range_empty":true,"instant_empty":true}
+{"q":"absent_over_time({app=\"a\"}[0s])","range_empty":false,"instant_empty":false}
+{"q":"absent_over_time({app=\"nope\"}[0s])","range_empty":false,"instant_empty":false}
+{"q":"absent_over_time({app=\"a\"}[0s]) * 2","range_empty":false,"instant_empty":false}
+{"q":"rate({app=\"a\"}[0s]) or vector(1)","range_empty":false,"instant_empty":false}
+{"q":"rate({app=\"a\"}[0s]) or rate({app=\"a\"}[1m])","range_empty":false,"instant_empty":false}
+{"q":"rate({app=\"a\"}[1m]) unless rate({app=\"a\"}[0s])","range_empty":false,"instant_empty":false}
+{"q":"rate({app=\"a\"}[1m])","range_empty":false,"instant_empty":false}
+{"q":"vector(1)","range_empty":false,"instant_empty":false}
+{"q":"1 + 1","range_empty":false,"instant_empty":false}

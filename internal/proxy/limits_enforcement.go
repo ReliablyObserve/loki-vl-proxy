@@ -471,17 +471,18 @@ func (p *Proxy) tenantLimitsMiddleware(endpoint string, next http.HandlerFunc) h
 				next(w, r)
 				return
 			}
+			// Loki's frontend sends an instant log query straight to the querier, past its limits, and the
+			// querier refuses it: the handler answers it before any other work.
+			if endpoint == "query" && !isSampleExpr(expr) {
+				next(w, r)
+				return
+			}
 			if entries {
 				var msg string
 				if r, msg = p.applyMaxEntriesLimit(r, expr, limits.MaxEntriesLimitPerQuery); msg != "" {
 					reject(msg)
 					return
 				}
-			}
-			// Loki's frontend sends an instant log query straight to the
-			// querier, past its limits middleware.
-			if endpoint == "query" && !isSampleExpr(expr) {
-				window = false
 			}
 		}
 		if window {

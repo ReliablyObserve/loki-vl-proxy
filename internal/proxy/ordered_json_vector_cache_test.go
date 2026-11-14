@@ -193,9 +193,10 @@ func TestOrderedJSONVectorResponseCacheFencesOldCopies(t *testing.T) {
 					t.Fatal("correct new reply not retained under new identity")
 				}
 				before = fixture.calls.Load()
+				served := len(fixture.requestsSince(0))
 				second := doCompatProxyRequest(p, target, headers)
 				if second.Code != 200 || !bytes.Equal(second.Body.Bytes(), first.Body.Bytes()) || fixture.calls.Load() != before {
-					t.Fatalf("new exact reply not reused: first=%s second=%s", first.Body, second.Body)
+					t.Fatalf("new exact reply not reused: first=%s second=%s backend calls %d -> %d: %q", first.Body, second.Body, before, fixture.calls.Load(), fixture.requestsSince(served))
 				}
 			}
 		})

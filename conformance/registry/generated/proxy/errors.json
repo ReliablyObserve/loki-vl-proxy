@@ -280,7 +280,7 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
-      "expression": "r.Context(), lokierr.Parse(0, 0, \"unexpected literal for \"+leg+\" leg of logical/set binary operation (\"+expr.Op+\"): \"+strconv.FormatFloat(literal, 'f', 6, 64))",
+      "expression": "r.Context(), treeRejection(rejection)",
       "kind": "layer",
       "message": null,
       "status": null,

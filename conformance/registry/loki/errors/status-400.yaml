@@ -22,9 +22,9 @@ generated:   # rewritten by conformance/scripts/error_registry.py
   "msg-step-duration", "msg-step-not-positive", "msg-step-overflow", "msg-step-too-many-points",
   "msg-tail-not-websocket", "msg-url-escape", "msg-url-semicolon", "unmapped-delete-query-not-set",
   "unmapped-index-shards-target-bytes", "unmapped-push-snappy-corrupt", "unmapped-ruler-local-store"]
-  recorded_rows: 145
-  comparable_rows: 130
-  matching_rows: 122
+  recorded_rows: 157
+  comparable_rows: 142
+  matching_rows: 134
 
 loki_behaviour: |
   Loki v3.7.7 answers 400 as `text/plain` with the error's own message for a
