@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.241.0] - 2026-11-14
+
 ### Fixed
 
 - `stddev_over_time` and `stdvar_over_time` over an unwrapped label on `query_range` now answer Loki's window when
