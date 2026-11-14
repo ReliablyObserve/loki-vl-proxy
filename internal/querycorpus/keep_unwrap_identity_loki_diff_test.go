@@ -111,9 +111,16 @@ var keepIdentityKnown = func() map[string]map[string]string {
 		`first_over_time({job="kj"} | json | keep app, region, duration_ms | unwrap duration_ms [5m])`,
 		`first_over_time({job=~"kj|kx"} | json duration_ms | keep app, duration_ms | unwrap duration_ms [5m])`,
 		`sum by (app) (first_over_time({job="kj"} | keep app | json | unwrap duration_ms [5m]))`)
-	// Without a keep each line is a Loki series of its own; rate_counter keeps the stream's series (its own one-sample
-	// proof reads logfmt only).
-	add("semantics/unwrap-per-series-identity-raw-rows", all, "sum by (app) ("+plain("rate_counter")+")", "sum("+plain("rate_counter")+")")
+	// Without a keep each line is a Loki series of its own. quantile_over_time and rate_counter keep the stream's
+	// series (or the group's samples), and so does every function over a range longer than the step: the window
+	// evaluator merges the step buckets of streams.
+	const perSeries = "semantics/unwrap-per-series-identity-raw-rows"
+	add(perSeries, all, "sum("+plain("quantile_over_time")+")", "sum by (app) ("+plain("rate_counter")+")", "sum("+plain("rate_counter")+")")
+	add("semantics/unwrap-quantile-sum-by-group-quantile", all, "sum by (app) ("+plain("quantile_over_time")+")")
+	add(perSeries, sliding, "sum by (app) ("+plain("avg_over_time")+")", "sum by (app) ("+plain("max_over_time")+")",
+		"sum by (app) ("+plain("min_over_time")+")", "sum("+plain("avg_over_time")+")", "sum("+plain("max_over_time")+")",
+		"sum("+plain("min_over_time")+")")
+	add("semantics/stdvar-grouped-pooled-variance", sliding, "sum by (app) ("+plain("stddev_over_time")+")", "sum by (app) ("+plain("stdvar_over_time")+")")
 	// A keep before the parser: the series are the kept labels and the parsed ones.
 	add("semantics/keep-before-parser-unwrap-identity", all,
 		`sum by (app) (quantile_over_time(0.9, {job="kj"} | keep app | json | unwrap duration_ms [5m]))`,
