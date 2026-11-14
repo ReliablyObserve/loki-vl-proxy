@@ -7,13 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
+	"github.com/grafana/jsonparser"
 	"gopkg.in/yaml.v3"
 )
 
@@ -175,7 +179,10 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 			body, err = filterAlertingJSONForTenant(body, label, org)
 		}
 		if err != nil || len(body) > maxAlertingResponseBytes {
-			p.writeErrShaped(w, r.Context(), errors.New("invalid alerting backend response"), shape)
+			if err == nil {
+				err = errors.New("alerting backend answer over the buffered limit")
+			}
+			p.writeErrShaped(w, r.Context(), alertingBackendFailure(err), shape)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -187,9 +194,86 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 		p.writeAlertingBackendStatus(w, resp.StatusCode, shape)
 		return
 	}
+	// The answer is read whole before the status line is sent: a body that
+	// breaks off, is not JSON or is the ruler's error under a success status
+	// fails as Loki fails a ruler call it could not complete, instead of
+	// reaching the client as a 200.
+	body, release, err := readAlertingBody(resp)
+	defer release()
+	if err == nil && len(body) > maxAlertingResponseBytes {
+		err = errors.New("alerting backend answer over the buffered limit")
+	}
+	if err == nil && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotModified {
+		err = alertingAnswerDefect(body)
+	}
+	if err != nil {
+		p.writeErrShaped(w, r.Context(), alertingBackendFailure(err), shape)
+		return
+	}
 	copyBackendHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	_, _ = w.Write(body)
+}
+
+// alertingBodyPool holds the buffers that alerting answers are read into.
+var alertingBodyPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
+// readAlertingBody reads an answer, at most one byte past the limit, into a
+// pooled buffer sized from the announced length when there is one. The bytes
+// are valid until release is called.
+func readAlertingBody(resp *http.Response) (body []byte, release func(), err error) {
+	buf := alertingBodyPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	release = func() {
+		if buf.Cap() <= 4<<20 {
+			alertingBodyPool.Put(buf)
+		}
+	}
+	if n := resp.ContentLength; n > 0 && n <= maxAlertingResponseBytes {
+		buf.Grow(int(n))
+	}
+	_, err = buf.ReadFrom(io.LimitReader(resp.Body, maxAlertingResponseBytes+1))
+	return buf.Bytes(), release, err
+}
+
+// alertingBackendFailure is the client error for a ruler or alerts backend
+// that answered but whose answer cannot be passed on: Loki's failed-call 500,
+// or its 504 when the body ran out of time. The cause is for the log line only.
+func alertingBackendFailure(cause error) *lokierr.Error {
+	var netErr net.Error
+	if errors.As(cause, &netErr) && netErr.Timeout() {
+		return lokierr.Deadline(cause)
+	}
+	return lokierr.BackendFailed(cause)
+}
+
+var (
+	errAlertingBodyNotJSON = errors.New("alerting backend answered a body that is not JSON")
+	errAlertingErrorBody   = errors.New("alerting backend answered an error body under a success status")
+)
+
+// alertingAnswerDefect reports why a ruler or alerts body, answered with a
+// success status, cannot be passed on: it is not one JSON object (empty,
+// broken off, or not JSON), or it is the ruler's own error ({"status":"error",
+// ...}). It returns nil for an answer to pass on. The body's text is not part
+// of the error: it is the backend's, and may name its internals.
+func alertingAnswerDefect(body []byte) error {
+	if !json.Valid(body) || !bytes.HasPrefix(bytes.TrimSpace(body), []byte("{")) {
+		return errAlertingBodyNotJSON
+	}
+	// The ruler's error carries its status first; reading that one key costs
+	// nothing on an answer of any size. A body without a status is checked as
+	// a backend error body, which reads its top-level keys.
+	if status, err := jsonparser.GetString(body, "status"); err == nil {
+		if status == "error" {
+			return errAlertingErrorBody
+		}
+		return nil
+	}
+	if _, isErr := vlStatsErrorBody(body); isErr {
+		return errAlertingErrorBody
+	}
+	return nil
 }
 
 const maxAlertingResponseBytes = 64 << 20
@@ -538,7 +622,11 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 
 	var decoded alertingRulesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		p.writeErrShaped(w, r.Context(), fmt.Errorf("invalid ruler backend response: %w", err), writeLokiHTTPError)
+		p.writeErrShaped(w, r.Context(), alertingBackendFailure(fmt.Errorf("invalid ruler backend response: %w", err)), writeLokiHTTPError)
+		return
+	}
+	if decoded.Status == "error" {
+		p.writeErrShaped(w, r.Context(), alertingBackendFailure(errAlertingErrorBody), writeLokiHTTPError)
 		return
 	}
 

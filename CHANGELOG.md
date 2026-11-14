@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A ruler or alerts backend that answers with a body the proxy cannot pass on now fails the request instead of
+  answering `200`. Before, `/prometheus/api/v1/alerts`, `/loki/api/v1/alerts`, `/prometheus/api/v1/rules` and the
+  legacy rules views sent the backend's body on as it came: a body cut off mid-answer, a body that is not JSON or
+  is empty, and the ruler's own error under a `200` all reached the client as a success (and a malformed body
+  carried the backend's text). They now answer what Loki answers for a ruler call that could not complete: `500`
+  in the route's error shape with `Internal Server Error`, and the backend's words in the proxy log line only.
+- A binary metric query (`sum(rate({app="x"}[1m])) * 2`, `a + b`) or a stats answer whose VictoriaLogs body is not
+  JSON, is `null`, or is VictoriaLogs' error under a `200` no longer answers an empty or error-looking success. It
+  fails with `500 Internal Server Error` and the backend's words in the log line only; the right-hand operand of
+  `a + b` used to be ignored when it was an error body.
+- `GET /loki/api/v1/index/stats`, the instant metric query and the operands of a binary metric query now fail a
+  VictoriaLogs answer above `-backend-max-buffered-response-bytes` (64 MiB by default) with Loki's message size error
+  (`500`, `rpc error: code = ResourceExhausted ...`), as the other buffered reads do. Before, an oversize answer
+  reached the decoder and the client read a bare `Internal Server Error` for `index/stats`, an empty or partial answer
+  for a binary operand, or the full answer for the instant query. The flag is in the proxy log line only.
+
+  **Breaking:** an instant metric query whose VictoriaLogs answer is above that limit used to be served in full and
+  now answers `500`; raise `-backend-max-buffered-response-bytes` if such answers are expected.
+
+### Fixed
+
 - **Breaking:** queries Loki rejects after it has parsed them are now rejected the same way, with Loki's `400` and text, before the
   proxy looks in a cache or calls VictoriaLogs: `sort` or `sort_desc` with labels to group by (`parse error : sort and
   sort_desc doesn't allow grouping by `), `quantile_over_time` without its quantile (`parse error : parameter

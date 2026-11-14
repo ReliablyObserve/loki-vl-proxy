@@ -36,7 +36,7 @@ func TestParseInstantVectorTimeVariants(t *testing.T) {
 
 func TestApplyScalarOpReverse(t *testing.T) {
 	body := []byte(`{"results":[{"metric":{"app":"api"},"values":[[1,"2"],[2,"4"]]}]}`)
-	out := applyScalarOpReverse(body, "-", 10, "matrix")
+	out := okBytes(applyScalarOpReverse(body, "-", 10, "matrix"))
 
 	var resp struct {
 		Data struct {
@@ -121,7 +121,7 @@ func TestPostprocessHelpers(t *testing.T) {
 func TestCombineMetricResults(t *testing.T) {
 	left := []byte(`{"results":[{"metric":{"app":"api"},"values":[["1","4"],["2","8"]]}]}`)
 	right := []byte(`{"results":[{"metric":{"app":"api"},"values":[["1","2"],["3","10"]]}]}`)
-	out := combineMetricResults(left, right, "/", "matrix")
+	out := okBytes(combineMetricResults(left, right, "/", "matrix"))
 
 	var resp struct {
 		Data struct {

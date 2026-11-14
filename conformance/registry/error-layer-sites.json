@@ -47,5 +47,5 @@
       "internal/proxy/alerting.go": 4
     }
   },
-  "known_leak_pairs": 4
+  "known_leak_pairs": 0
 }
