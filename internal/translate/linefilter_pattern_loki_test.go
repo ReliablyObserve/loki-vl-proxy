@@ -10,8 +10,9 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
-// lokiPatternTest is Loki's pattern matcher verdict for one pattern alternative on one line, as the pattern line
-// filter's documentation states it (pattern.Matcher.Test): each literal is searched once, at its first occurrence
+// lokiPatternTest is Loki's pattern matcher verdict for one pattern alternative on one line, as the registry records it
+// against Loki's pattern package (semantics/pattern-line-filter-anchoring: the filters matched Loki's real matcher on
+// 1.6M line checks): each literal is searched once, at its first occurrence
 // after the previous one (a leading literal may start anywhere in the line), every capture must be non-empty, and a
 // pattern that ends on a literal must end the line there. The empty pattern accepts only the empty line.
 func lokiPatternTest(pattern, line string) bool {

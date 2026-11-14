@@ -19,6 +19,7 @@ func writeFile(t *testing.T, root, rel, content string) {
 	}
 }
 
+// conformance: operator-configurable-limits
 // A flag's default is the value an operator sees: a constant of internal/proxy, constant arithmetic and a duration are
 // resolved, and an expression that is none of them is shown as written.
 func TestResolveDefault(t *testing.T) {
@@ -57,6 +58,7 @@ func TestResolveDefault(t *testing.T) {
 	}
 }
 
+// conformance: operator-configurable-limits
 // The usage of a flag is its first string literal, with adjacent literals joined and line breaks as spaces.
 func TestUsageAfter(t *testing.T) {
 	for _, c := range []struct {
@@ -80,6 +82,7 @@ func TestUsageAfter(t *testing.T) {
 	}
 }
 
+// conformance: operator-configurable-limits
 // ParseFlags reads each declaration of the binary and resolves its default through the constants of internal/proxy.
 func TestParseFlags(t *testing.T) {
 	root := t.TempDir()
@@ -116,6 +119,7 @@ func parse(fs *flag.FlagSet) {
 	}
 }
 
+// conformance: operator-configurable-limits
 func TestParseFlagsErrors(t *testing.T) {
 	if _, err := ParseFlags(filepath.Join(t.TempDir(), MainGoPath)); err == nil {
 		t.Error("a missing main.go must fail")
@@ -140,6 +144,7 @@ func TestParseFlagsErrors(t *testing.T) {
 	}
 }
 
+// conformance: operator-configurable-limits
 // The reference documents are generated from the flags the binary declares; a limit whose flag is gone is an error,
 // never a silent omission.
 func TestGenerateRejectsALimitWithoutItsFlag(t *testing.T) {
@@ -163,6 +168,7 @@ func TestGenerateRejectsALimitWithoutItsFlag(t *testing.T) {
 	}
 }
 
+// conformance: operator-configurable-limits
 // The helm value that sets a flag, the category of a flag and the limit table index.
 func TestFlagLookups(t *testing.T) {
 	for name, want := range map[string]string{

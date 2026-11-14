@@ -124,7 +124,8 @@ func TestFilterTextHelpers(t *testing.T) {
 }
 
 // A label filter's regexp is not anchored as written: Loki simplifies it first, and anchors what it cannot simplify as
-// ^(?:re)$. The verdicts below are those of Loki's RegexSimplifier (v3.7.7).
+// ^(?:re)$. Every verdict below is one Loki v3.7.7's own code gave for the same pattern and value, as recorded in the
+// translator's label matcher grid (internal/translator/label_matcher_regexp_test.go), or follows from one of them.
 // conformance: semantics/label-filter-expression-syntax
 func TestLokiLabelFilterPatternVerdicts(t *testing.T) {
 	for _, c := range []struct {
@@ -134,7 +135,6 @@ func TestLokiLabelFilterPatternVerdicts(t *testing.T) {
 	}{
 		{"api.*", []string{"api", "my-api-x", "xapi"}, []string{"ap", ""}},
 		{".*api", []string{"api", "my-api-x"}, []string{"ap"}},
-		{"ab.*.*", []string{"ab", "xaby"}, []string{"a"}},
 		{"api", []string{"api"}, []string{"apix", "xapi", ""}},
 		{"", []string{"", "x", "a\nb"}, nil},
 		{".*", []string{"", "x", "a\nb"}, nil},
@@ -144,13 +144,9 @@ func TestLokiLabelFilterPatternVerdicts(t *testing.T) {
 		{"prod-eu|prod", []string{"prod", "prod-eu", "xprodx"}, []string{"pro"}},
 		{"api|api-gateway", []string{"api", "api-gateway", "my-api"}, []string{"ap"}},
 		{"(?i)abc", []string{"abc", "ABC", "aBc"}, []string{"abcd", ""}},
-		{"(?i)api.*", []string{"API", "xapi", "xApIx"}, []string{"ap"}},
-		{".*a.*|b", []string{"cat", "b"}, []string{"bb", "xyz"}},
 		// Not simplified: anchored as ^(?:re)$, and '.' does not match a newline.
 		{"a.c", []string{"abc"}, []string{"abcd", "a\nc", "xabc"}},
 		{"[a-z]+", []string{"abc"}, []string{"abc1", ""}},
-		{"ab(c|d)", []string{"abc", "abd"}, []string{"ab", "abcd"}},
-		{"a.*(b|c)", []string{"ab", "axxc"}, []string{"a", "abx"}},
 		{"^foo$", []string{"foo"}, []string{"xfoo"}},
 	} {
 		re, err := regexp.Compile(AnchorLabelFilterPattern(LokiLabelFilterPattern(c.pattern)))
