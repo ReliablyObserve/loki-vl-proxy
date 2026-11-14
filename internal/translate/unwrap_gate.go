@@ -198,7 +198,7 @@ func SplitUnwrapGate(query string) (base, field string, ok bool) {
 	// apart before any gate is written.
 	ends := false
 	for _, g := range unwrapGateEnds {
-		ends = ends || strings.HasSuffix(tail, g.end)
+		ends = ends || endsWithGate(tail, g.end)
 	}
 	if !ends {
 		return query, "", false
@@ -212,11 +212,16 @@ func SplitUnwrapGate(query string) (base, field string, ok bool) {
 		return query, "", false
 	}
 	for _, g := range unwrapGateEnds {
-		if strings.HasSuffix(tail, g.end) && tail == UnwrapGateFor(field, g.conv) {
+		if endsWithGate(tail, g.end) && tail == UnwrapGateFor(field, g.conv) {
 			return query[:idx], field, true
 		}
 	}
 	return query, "", false
+}
+
+// endsWithGate reports a tail that ends with a gate's range filter end.
+func endsWithGate(tail, end string) bool {
+	return len(tail) >= len(end) && tail[len(tail)-len(end):] == end
 }
 
 // unwrapGateEnds are the unwrap conversions and the range filter that ends the gate of each (UnwrapGateFor).
