@@ -153,7 +153,7 @@ the counters are recorded, so a replay gives the same reuse verdicts. Not measur
 allocations per request, plan and translation cache hits, the reuse of proxy-evaluated operators, and a per-request
 attribution of the counters (background work counts too). `-no-reuse` skips the repeats. A case whose request
 names `proxy_flags` runs against the proxy variant of `-variants` that has them
-(`[{"name","url","flags"}]`), or is blocked. Each verdict is set against the case's `gap.status`: a fixed case (or
+(`[{"name","url","flags"}]`), or is blocked. A flag may be named off (`-label-values-indexed-cache=false`): a proxy that lists it as false, or does not list a flag that defaults to off, has it. When several variants have the flags, the `underscore` variant (the Loki-compatible profile without the main proxy's browse-keeping index) is the one used. Each verdict is set against the case's `gap.status`: a fixed case (or
 one without a gap) that differs is a regression (`-check` exits 1), an open case
 that matches is a proposed close, and a documented, owner-kept or upstream case
 that matches has changed behaviour. The runner never edits a case file: a

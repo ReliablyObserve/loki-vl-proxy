@@ -302,32 +302,55 @@ type Variant struct {
 	Flags []string `json:"flags"`
 }
 
+// lokiProfileVariant is the proxy variant that runs the Loki-compatible profile with no extension flags (the
+// stack's underscore variant, the one Grafana's proxy datasource reads). Several variants may hold the flags a case
+// names; this one is the reference they are measured against, so it is preferred.
+const lokiProfileVariant = "underscore"
+
+// defaultOff are the boolean flags that are off when a proxy does not list them (their declared default is false,
+// cmd/proxy/main.go; TestDefaultOffFlagsAreDeclaredOff keeps the list honest). A case that names one with =false
+// (say -label-values-indexed-cache=false, the Loki profile without the main proxy's browse-keeping index) is held
+// by a proxy that lists it as false or does not list it.
+var defaultOff = map[string]bool{"-label-values-indexed-cache": true}
+
+// holdsFlags reports whether a proxy running with flags has every flag a case names.
+func holdsFlags(flags, wanted []string) bool {
+	have := map[string]bool{}
+	listed := map[string]bool{}
+	for _, f := range flags {
+		have[f] = true
+		name, _, _ := strings.Cut(f, "=")
+		listed[name] = true
+	}
+	for _, f := range wanted {
+		name, value, ok := strings.Cut(f, "=")
+		off := ok && (value == "false" || value == "0" || value == "off")
+		unlistedOff := off && defaultOff[name] && !listed[name]
+		if !have[f] && !unlistedOff {
+			return false
+		}
+	}
+	return true
+}
+
 // ChooseVariant picks the proxy for a probe that names proxy flags: the default when its flags hold them all,
-// else the first variant that does; none blocks the probe.
+// else the Loki-profile variant if it does, else the first variant that does; none blocks the probe.
 func ChooseVariant(p *Probe, defaultFlags []string, variants []Variant) {
 	if len(p.ProxyFlags) == 0 || p.NotExecutable != "" || p.Blocked != "" {
 		return
 	}
-	holds := func(flags []string) bool {
-		have := map[string]bool{}
-		for _, f := range flags {
-			have[f] = true
-		}
-		for _, f := range p.ProxyFlags {
-			if !have[f] {
-				return false
-			}
-		}
-		return true
-	}
-	if holds(defaultFlags) {
+	if holdsFlags(defaultFlags, p.ProxyFlags) {
 		return
 	}
+	chosen := ""
 	for _, v := range variants {
-		if holds(v.Flags) {
-			p.Variant = v.Name
-			return
+		if holdsFlags(v.Flags, p.ProxyFlags) && (chosen == "" || v.Name == lokiProfileVariant) {
+			chosen = v.Name
 		}
+	}
+	if chosen != "" {
+		p.Variant = chosen
+		return
 	}
 	p.Blocked, p.BlockedClass = "needs a proxy variant with "+strings.Join(p.ProxyFlags, " "), classNoVariant
 }
