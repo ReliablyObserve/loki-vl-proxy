@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Breaking:** when VictoriaLogs refuses the query the proxy wrote for a request it has already checked as Loki does,
+  the client now gets `500 Internal Server Error`, what Loki answers when its storage fails. It got
+  `400 failed to parse the log query`, which said the user's query was wrong when Loki accepts it. Requests that
+  answered `400` this way now answer `500`, on every route (query, query_range, metadata routes, patterns, the tail
+  before and after the upgrade). VictoriaLogs' message stays in the proxy log only. The request error line now
+  names `plan_defect`, `plan_route` (the VictoriaLogs route that refused the call) and `logsql_hash` (a hash of the
+  query sent), and the new counter `loki_vl_proxy_plan_defects_total{endpoint,plan_route}` counts these answers.
+  They now count toward the 5xx alerts (`LokiVLProxyHighErrorRate`, `LokiVLProxyCriticalErrorRate`) instead of the
+  client error alert.
+  Routes that fall back to another form of the same request when VictoriaLogs refuses the first one still do, and
+  queries Loki rejects are still rejected with Loki's `400` before VictoriaLogs is called. Some queries with blanks
+  Loki does not read as white space, such as a no-break space between `by (a)` and the query, still reach
+  VictoriaLogs: they answered `400` with another text than Loki's and now answer `500`.
+
 ## [2.250.0] - 2026-11-14
 
 ### Fixed
@@ -31,20 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   printed query reads as the same filter; written together (`a<-0`) Loki reads a duration.
 - A range with a day, week or year unit is read to the nanosecond, as Loki reads it: `[3d1h2ms]` was a little short,
   and a range with a part of 0 (`[1d0h]`, `[1y0ms]`) counted as no range at all.
-
-- **Breaking:** when VictoriaLogs refuses the query the proxy wrote for a request it has already checked as Loki does,
-  the client now gets `500 Internal Server Error`, what Loki answers when its storage fails. It got
-  `400 failed to parse the log query`, which said the user's query was wrong when Loki accepts it. Requests that
-  answered `400` this way now answer `500`, on every route (query, query_range, metadata routes, patterns, the tail
-  before and after the upgrade). VictoriaLogs' message stays in the proxy log only. The request error line now
-  names `plan_defect`, `plan_route` (the VictoriaLogs route that refused the call) and `logsql_hash` (a hash of the
-  query sent), and the new counter `loki_vl_proxy_plan_defects_total{endpoint,plan_route}` counts these answers.
-  They now count toward the 5xx alerts (`LokiVLProxyHighErrorRate`, `LokiVLProxyCriticalErrorRate`) instead of the
-  client error alert.
-  Routes that fall back to another form of the same request when VictoriaLogs refuses the first one still do, and
-  queries Loki rejects are still rejected with Loki's `400` before VictoriaLogs is called. Some queries with blanks
-  Loki does not read as white space, such as a no-break space between `by (a)` and the query, still reach
-  VictoriaLogs: they answered `400` with another text than Loki's and now answer `500`.
 
 ## [2.242.0] - 2026-11-14
 
