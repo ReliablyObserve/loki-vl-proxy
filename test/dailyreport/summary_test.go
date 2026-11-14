@@ -110,7 +110,7 @@ func TestAGreenDay(t *testing.T) {
 	}
 	md := Markdown(s)
 	for _, want := range []string{"## Daily report 2026-11-14: green", "Main `c0ffee012345`, Loki 3.7.9, VictoriaLogs v1.49.0 and v1.53.0.",
-		"| open | 2 |", "Open by impact: edge 1, explore-visible 1.", "| v1.53.0 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |",
+		"| open | 2 |", "Open by impact: edge 1, explore-visible 1.", "| v1.53.0 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |",
 		"221 of 231 recorded Loki answers match, 10 known differences, 2 known leaks. Live re-record: 273 rows asked, 0 changed. Unit replay: passes.",
 		"| proxy accepts, Loki rejects | 547 |", "`query-corpus.yaml` success on 2026-11-14", "40 clusters over 900 requests, 0 claimed by no case",
 		"120 rows, 400 comparable timings, 0 above 2x Loki, 0 ratchet rows lost", "76 comparable shape x range pairs: 50 faster, 24 on par, 2 slower; 3 rows",
@@ -120,6 +120,41 @@ func TestAGreenDay(t *testing.T) {
 		if !strings.Contains(md, want) {
 			t.Errorf("markdown lacks %q:\n%s", want, md)
 		}
+	}
+}
+
+// A case Loki answered from a stale results-cache extent (loki_cached_stale) proves nothing about the proxy: the
+// table shows it in its own column, the docs line counts it with the cases not comparable that day, and it is neither
+// a difference nor a regression, so the day stays green.
+func TestACachedStaleVerdictIsNeitherADifferenceNorARegression(t *testing.T) {
+	in := fixture(t)
+	run := `{"date":"2026-11-14T06:00:00Z","commit":"c0ffee","mode":"live","loki_version":"3.7.9","victorialogs_version":"v1.53.0",
+		"proxy_flags":"-x","window_end":"2026-11-14T05:58:00Z","counts":{"matches":2,"differs":1,"loki_cached_stale":2,"not_comparable":1},
+		"flags":{"regression":[],"proposed_close":[],"behaviour_changed":[]},"proxy_build":{"revision":"c0ffee0","verified":true},
+		"cases":{"a/fixed":{"verdict":"loki_cached_stale","expected":"match","gap_status":"fixed","reason":"Loki answered from reused results-cache extents"},
+		"a/open1":{"verdict":"matches","expected":"differ","gap_status":"open"}}}`
+	write(t, filepath.Join(in.CasesDir, "cases-v1.53.0.json"), run)
+	s, merged, err := Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Red || len(s.Reasons) != 0 {
+		t.Errorf("red: %v", s.Reasons)
+	}
+	if caseCount(s, "v1.53.0", "loki_cached_stale") != 2 || caseCount(s, "v1.53.0", "regressions") != 0 {
+		t.Errorf("counts %+v", s.Cases["v1.53.0"])
+	}
+	if v := merged["cases"].(map[string]map[string]any)["a/fixed"]["v1.53.0"].(map[string]any); v["verdict"] != "loki_cached_stale" {
+		t.Errorf("merged verdict %+v", v)
+	}
+	md := Markdown(s)
+	for _, want := range []string{"Loki cached stale | Not comparable |", "| v1.53.0 | 2 | 1 | 0 | 0 | 0 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown lacks %q:\n%s", want, md)
+		}
+	}
+	if block := Block(&s); !strings.Contains(block, "v1.53.0: 2 match, 1 differ on equal data, 3 not comparable on that day's data") {
+		t.Errorf("block %s", block)
 	}
 }
 
