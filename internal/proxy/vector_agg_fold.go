@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -17,8 +18,9 @@ import (
 // only that first pipe, answers every series unreduced. A `without` anywhere is
 // folded by the without marker; the other operators are not series-level.
 func seriesAggregationChain(query string) ([]*logqlpkg.VectorAggregation, bool) {
-	expr, err := parseLogQLExpr(noFlowCtx, stripOuterLabelReplace(strings.TrimSpace(query)))
-	if err != nil {
+	// The shared parse of the query: the levels are read, never changed.
+	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
+	if !ok {
 		return nil, false
 	}
 	var chain []*logqlpkg.VectorAggregation
@@ -179,5 +181,6 @@ func innermostByLabels(logql string) ([]string, bool) {
 	if !ok || len(chain) < 2 || chain[0].Grouping == nil {
 		return nil, false
 	}
-	return chain[0].Grouping.Labels, true
+	// A copy: the levels belong to the shared parse, and the caller keeps the labels.
+	return slices.Clone(chain[0].Grouping.Labels), true
 }

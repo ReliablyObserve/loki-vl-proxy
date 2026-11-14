@@ -110,8 +110,11 @@ func rateCounterUnderSum(query string) (label string, ungrouped, ok bool) {
 // read with (the unwrap rate route, one series for a bare sum); other
 // requests get a nil channel and their spec and function back.
 func (p *Proxy) startRateCounterProof(r *http.Request, spec statsCompatSpec, manualFunc, field string, from, to time.Time) (<-chan bool, statsCompatSpec, string) {
+	if manualFunc != "rate_counter" {
+		return nil, spec, manualFunc // no parse for the other functions
+	}
 	label, ungrouped, ok := rateCounterUnderSum(r.FormValue("query"))
-	if !ok || manualFunc != "rate_counter" {
+	if !ok {
 		return nil, spec, manualFunc
 	}
 	proof := p.proveRateCounterOneSample(r.Context(), withoutUnwrapGate(spec).BaseQuery, field, label, from, to)

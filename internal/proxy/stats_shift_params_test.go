@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // The tumbling fetch's form is built once (tumblingStatsRangeParams), the shifted request copies only its form
@@ -115,5 +117,30 @@ func TestWithWindowPhaseFilterIsTheTextBefore(t *testing.T) {
 				t.Fatalf("filter of %d bytes, bound %d", len(filter), windowPhaseFilterMaxLen)
 			}
 		}
+	}
+}
+
+// queryUsesParserStages reads unpack_json and extract before the unwrap gate is split off (no gate holds them):
+// the answer is the one of the gate split first, for every gate.
+//
+// conformance: window-bounds-and-step-alignment
+func TestQueryUsesParserStagesAroundTheGate(t *testing.T) {
+	for _, conv := range []string{"", "duration", "bytes", "duration_seconds"} {
+		gate := translator.UnwrapGateFor("n", conv)
+		for base, want := range map[string]bool{
+			`app:="x"`:                                       false,
+			`app:="x" | unpack_json`:                         true,
+			`app:="x" | unpack_logfmt`:                       false,
+			`app:="x" | extract "<a> <b>"`:                   true,
+			`app:="x" | extract_regexp "(?P<a>[0-9]+)"`:      true,
+			`app:="x" | unpack_json | extract_regexp "(.+)"`: true,
+		} {
+			if got := queryUsesParserStages(base + gate); got != want {
+				t.Errorf("%q with the %q gate: %v, want %v", base, conv, got, want)
+			}
+		}
+	}
+	if !queryUsesParserStages(`app:="x" | unpack_json`) || queryUsesParserStages(`app:="x" | stats count()`) {
+		t.Fatal("without a gate")
 	}
 }

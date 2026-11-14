@@ -1008,8 +1008,9 @@ func (p *Proxy) writeHitsRangeMetricMatrixFolded(w http.ResponseWriter, manualFu
 // range aggregation yields into one series per step
 // (pkg/logql/evaluator.go newVectorAggEvaluator, VectorAggEvaluator.Next).
 func ungroupedSumRange(query string) (*logqlpkg.RangeAggregation, bool) {
-	expr, err := parseLogQLExpr(noFlowCtx, stripOuterLabelReplace(strings.TrimSpace(query)))
-	if err != nil {
+	// The shared parse of the query: the range aggregation is read, never changed.
+	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
+	if !ok {
 		return nil, false
 	}
 	agg, ok := expr.(*logqlpkg.VectorAggregation)
@@ -2294,11 +2295,6 @@ func unpacksMessage(query string) bool {
 
 func queryUsesParserStages(baseQuery string) bool {
 	baseQuery = translator.WithoutStreamTagRestore(translator.WithoutPatternLineFilterExtracts(withoutDerivedLevelChain(baseQuery)))
-	// The bytes() gate reads the value with an extract_regexp pipe: that is not a
-	// parser stage of the query.
-	if base, _, ok := translator.SplitUnwrapGate(baseQuery); ok {
-		baseQuery = base
-	}
 	// `| unpack_logfmt` exposes pre-parsed fields without transforming the
 	// log line — VL's stats_query_range handles it natively in tens of ms.
 	// Excluding it from the "parser stages" check lets queries with a
@@ -2311,6 +2307,12 @@ func queryUsesParserStages(baseQuery string) bool {
 	}
 	if strings.Contains(baseQuery, "| extract ") {
 		return true
+	}
+	// The bytes() gate reads the value with an extract_regexp pipe: that is not a
+	// parser stage of the query. No gate holds the two pipes above, so the gate is
+	// split off only for this last one.
+	if base, _, ok := translator.SplitUnwrapGate(baseQuery); ok {
+		baseQuery = base
 	}
 	if strings.Contains(baseQuery, "| extract_regexp ") {
 		return true

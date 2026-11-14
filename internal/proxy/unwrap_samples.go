@@ -484,8 +484,9 @@ func unwrapWindowBuckets(spec statsCompatSpec, origSpec originalRangeMetricSpec,
 // rangeBy reports a range aggregation with a by or without of its own under
 // those aggregations, which the folds do not take (seriesAggregationChain).
 func unwrapWindowForm(query string) (form, rangeBy bool) {
-	expr, err := parseLogQLExpr(noFlowCtx, stripOuterLabelReplace(strings.TrimSpace(query)))
-	if err != nil {
+	// The shared parse of the query, read only.
+	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
+	if !ok {
 		return false, false
 	}
 	if agg, ok := expr.(*logqlpkg.VectorAggregation); ok && (agg.Op == logqlpkg.VectorTopK || agg.Op == logqlpkg.VectorBottomK) {
