@@ -588,6 +588,7 @@
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/line_filter_error_runs_test.go",
       "test/e2e-compat/line_filter_invalid_utf8_test.go",
+      "test/e2e-compat/log_query_default_limit_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go",
       "test/e2e-compat/logfmt_risk_candidates_test.go",
       "test/e2e-compat/logql_unicode_runes_test.go",
@@ -1518,7 +1519,8 @@
       "internal/proxy/backend_stale_cancel_test.go"
     ],
     "semantics/log-query-default-limit": [
-      "internal/proxy/default_entry_limit_test.go"
+      "internal/proxy/default_entry_limit_test.go",
+      "test/e2e-compat/log_query_default_limit_test.go"
     ],
     "semantics/logfmt-existence-filter-ungrouped-sum": [
       "internal/proxy/ordered_json_vector_cache_test.go",
@@ -4704,6 +4706,10 @@
     "test/e2e-compat/line_format_error_test.go": [
       "semantics/line-format-template-error-keeps-entry"
     ],
+    "test/e2e-compat/log_query_default_limit_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/log-query-default-limit"
+    ],
     "test/e2e-compat/logfmt_existence_filter_test.go": [
       "loki_api_v1_query_range",
       "parser-logfmt",
@@ -5120,7 +5126,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 600,
+  "tests_with_markers": 601,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

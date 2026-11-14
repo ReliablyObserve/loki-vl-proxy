@@ -2409,6 +2409,8 @@
     "test/e2e-compat/line_filter_invalid_utf8_test.go | loki_api_v1_query_range",
     "test/e2e-compat/line_filter_invalid_utf8_test.go | semantics/line-filter-invalid-utf8",
     "test/e2e-compat/line_format_error_test.go | semantics/line-format-template-error-keeps-entry",
+    "test/e2e-compat/log_query_default_limit_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/log_query_default_limit_test.go | semantics/log-query-default-limit",
     "test/e2e-compat/logfmt_existence_filter_test.go | loki_api_v1_query_range",
     "test/e2e-compat/logfmt_existence_filter_test.go | parser-logfmt",
     "test/e2e-compat/logfmt_existence_filter_test.go | semantics/logfmt-existence-filter-ungrouped-sum",
@@ -2683,7 +2685,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 599,
+      "go": 600,
       "playwright": 1
     },
     "page_kinds": {
