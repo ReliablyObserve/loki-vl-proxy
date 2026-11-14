@@ -936,14 +936,15 @@ decisions:
       bound: 'see the PR: allocs and B/op equal to main on every BenchmarkTranslateQueryMissShapes shape'
   - id: metric-flip-gate-ready-not-flipped
     pending: true
-    chosen: 'One entry for metric queries in the flip (lowerMetric, internal/proxy/query_lowering.go): it plans a metric query once, serves a range function whose series a keep before the unwrap decides as before, and serves a flipped metric construct from the lowering only when its lowered text is the string translator''s (writesTranslatorText: no ranking, stddev or stdvar at any level, no binary the binary route evaluates operand by operand, none of the recorded divergences: a keep before an unwrap elsewhere, a numeric equality after a parser, a reserved field name, an unwrap of one in another case). The gate is proven with VectorAgg, RangeAgg, BinOp and LabelReplace flipped on test proxies; QueryPlanFlippedConstructs stays LogSelect: no metric construct is flipped.'
+    chosen: 'One entry for metric queries in the flip (lowerMetric, internal/proxy/query_lowering.go): it plans a metric query once, serves a range function whose series a keep before the unwrap decides as before, and serves a flipped metric construct from the lowering only when its lowered text is the string translator''s (writesTranslatorText: no ranking, stddev or stdvar at any level, no binary the binary route evaluates operand by operand, none of the recorded divergences: a keep before an unwrap elsewhere, a numeric equality after a parser, a reserved field name, an unwrap of one in another case, a label filter value the translator reads as syntax: detected_level or service_name in it, a \x00 to \x02 byte, a signed number). The one difference left is a label named like a LogsQL keyword, which the plan quotes and the translator writes bare (VictoriaLogs rejects it), as the corpus shadow already holds. The gate is proven with VectorAgg, RangeAgg, BinOp and LabelReplace flipped on test proxies; QueryPlanFlippedConstructs stays LogSelect: no metric construct is flipped.'
     over: ['flipping VectorAgg, RangeAgg, BinOp and LabelReplace now (the text and the requests are the translator''s, but a translation that misses the cache allocates more on shapes the flip serves and on every metric query it plans and leaves to the translator)', 'gating on the shadow''s test-only recognisers (they read query text; the gate reads the typed plan)', 'a second keep-identity entry beside the metric one (a metric query would be planned twice)']
     why: |
       Owner direction: switch to the planner and AST, construct by construct,
       biggest first, without a performance regression. The text half is
       ready: with the four metric constructs flipped, every metric corpus row
       is translated to the same text with the flag on and off under the seven
-      proxy profiles, the route parity runs send no VictoriaLogs query the base
+      proxy profiles (and any metric query the fuzz target writes, up to the
+      keyword quoting above), the route parity runs send no VictoriaLogs query the base
       did not send, and the Loki metric differential replays its recorded
       requests unchanged. The cost half is not: the plan path parses, builds
       and resolves the query before it can decide, which the string translator
@@ -953,7 +954,7 @@ decisions:
       translator (fewer bytes, about the same time).
     evidence: 'TestQueryPlanLowering_CorpusTextParity with the candidates flipped (VectorAgg 5,647, RangeAgg 4,011, BinOp 966, LabelReplace 854 translations, text equal under 7 profiles); TestPlanRouteParity call dump vs two base runs (no new LogsQL text); TestPlanMatchesLokiOnMetricQueries unchanged with no stale recording; BenchmarkTranslateQueryMissShapes base vs candidates, n=8, Apple M5 Pro, GOMAXPROCS=4 (see the PR).'
     code: [internal/proxy/query_lowering.go, internal/proxy/query_translation.go, internal/proxy/proxy.go]
-    tests: [TestQueryPlanLowering_CorpusTextParity, FuzzMetricFlipGate, TestQueryPlanLowering_ServesMetricConstructs, TestQueryPlanLowering_WritesTranslatorTextGate, TestQueryPlanLowering_MetricFlipScreenAndPanic, TestQueryPlanLowering_RouteParity, TestKeepIdentityServedFromPlan, TestKeepIdentityHandlersFollowTheFlip, TestPlanShadow]
+    tests: [TestQueryPlanLowering_CorpusTextParity, FuzzMetricFlipGate, TestQueryPlanLowering_MisreadFilterValue, TestQueryPlanLowering_ServesMetricConstructs, TestQueryPlanLowering_WritesTranslatorTextGate, TestQueryPlanLowering_MetricFlipScreenAndPanic, TestQueryPlanLowering_RouteParity, TestKeepIdentityServedFromPlan, TestKeepIdentityHandlersFollowTheFlip, TestPlanShadow]
     quality: 'Behaviour-neutral: QueryPlanFlippedConstructs is unchanged, the keep identity is served as before, and the shadow screens the canonical text as the proxy does (native 21,334 to 21,388: 54 rows written as `({...})[5m]` were delegated by the raw text''s spelling only).'
     performance:
       tracked: ['BenchmarkTranslateQueryMissShapes (internal/proxy): the metric shapes per construct, served and not served, ns/op, B/op, allocs/op']

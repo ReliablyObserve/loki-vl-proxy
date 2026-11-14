@@ -585,6 +585,14 @@ func TestQueryPlanLowering_WritesTranslatorTextGate(t *testing.T) {
 		`count_over_time({a="b"} | _stream="x" [5m])`:                                                   false,
 		`sum(max_over_time({a="b"} | json | unwrap _Stream_ID [5m]))`:                                   false,
 		`label_replace(max_over_time({a="b"} | json | keep n | unwrap n [5m]), "x", "$1", "a", "(.*)")`: false,
+		"count_over_time({a=\"b\"} | s=`a detected_level b` [5m])":                                      false,
+		`sum(count_over_time({a="b"} | s!~"service_name.*" [5m]))`:                                      false,
+		`sum(count_over_time({a="b"} | o="\x02\x00\x02" | json | k="v" [5m]))`:                          false,
+		`sum(count_over_time({a="b"} | json | (s="x" or o="\x01") [5m]))`:                               false,
+		`sum by (a) (count_over_time({a="b"} | n > - .5 [5m]))`:                                         false,
+		`count_over_time({a="b"} | d >= -5ms [5m]) / count_over_time({a="b"} | size < 1KB [5m])`:        false,
+		`sum(count_over_time({a="b"} | n > 5 and s="x" [5m]))`:                                          true,
+		`stddev_over_time({a="b"} | logfmt | unwrap n | s="detected" [5m])`:                             true,
 	} {
 		plan, err := loweringPlan(context.Background(), q)
 		if err != nil {
@@ -627,5 +635,32 @@ func TestQueryPlanLowering_MetricFlipScreenAndPanic(t *testing.T) {
 	}
 	if n := shadowCounts(t, p)["panic VectorAgg"]; n != 1 {
 		t.Fatalf("panic VectorAgg = %d, want 1", n)
+	}
+}
+
+// The label filter values the string translator reads as syntax, at every node of a plan: the gate reads the decoded
+// value of each leaf, and a value that is only text is left to the flip.
+// conformance: semantics/translator-reads-quoted-text-as-syntax, semantics/translator-reads-marker-bytes-in-quoted-value, semantics/translator-writes-signed-number-with-blank
+func TestQueryPlanLowering_MisreadFilterValue(t *testing.T) {
+	for q, want := range map[string]bool{
+		`{a="b"} | s="detected_level"`:                                                         true,
+		`topk(1, count_over_time({a="b"} | s=~"x|service_name" [5m]))`:                         true,
+		`label_replace(rate({a="b"} | v="\x00" [5m]), "x", "$1", "a", "(.*)")`:                 true,
+		`rate({a="b"}[5m]) + rate({a="c"} | n >= +1 [5m])`:                                     true,
+		`sum(rate({a="b"} | (x="1" or (y="2" and z=-3)) [5m]))`:                                true,
+		`topk(1, count_over_time({a="b"} | s="x" | n > 1.5 | d < 5ms | b >= 1KB [5m]))`:        false,
+		`rate({a="b"} | addr = ip("10.0.0.0/8") [5m]) + rate({a="c"} | json | m=~"\x03" [5m])`: false,
+		`vector(1)`: false,
+	} {
+		plan, err := loweringPlan(context.Background(), q)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		if got := misreadFilterValue(plan.Root); got != want {
+			t.Errorf("misreadFilterValue(%s) = %v, want %v", q, got, want)
+		}
+	}
+	if misreadLeaf(nil) {
+		t.Error("a nil filter is misread")
 	}
 }

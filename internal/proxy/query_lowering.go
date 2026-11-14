@@ -166,12 +166,60 @@ func metricConstructFlipped(flipped []string) bool {
 //     numeric equality after a parser (semantics/label-filter-numeric-equality), a label named like a field
 //     VictoriaLogs reserves (semantics/translator-writes-reserved-field-names), and an unwrap of one in another case,
 //     which the lowering writes in the outbound guard's form (semantics/reserved-field-name-case-outbound).
+//   - A label filter value the translator reads as syntax (misreadFilterValue).
 //
 // Serving these from the plan changes the text VictoriaLogs sees or its cache key, so they stay with the string
-// translator until a flip carries their own proof.
+// translator until a flip carries their own proof. A label named like a LogsQL keyword is the one difference left:
+// the plan quotes it and the translator writes it bare, which VictoriaLogs rejects
+// (semantics/translator-writes-keyword-field-names-bare), as the corpus shadow and the log query flip already hold.
 func writesTranslatorText(plan *queryplan.Plan, prof lower.Profile) bool {
 	return !holdsEvaluatedLayer(plan.Root) && !lower.RoutedBinary(plan.Root) && !lower.WritesKeepUnwrapIdentity(plan) &&
-		!lower.WritesNumericEquality(plan) && !lower.ReadsReservedField(plan, prof) && !lower.UnwrapsReservedFieldOtherCase(plan)
+		!lower.WritesNumericEquality(plan) && !lower.ReadsReservedField(plan, prof) && !lower.UnwrapsReservedFieldOtherCase(plan) &&
+		!misreadFilterValue(plan.Root)
+}
+
+// misreadFilterValue reports a plan with a label filter whose value the string translator reads as syntax, where Loki
+// and the plan read the value: one that holds detected_level or service_name (the translator unpacks the line,
+// semantics/translator-reads-quoted-text-as-syntax), one that holds a \x00, \x01 or \x02 byte (its stage markers,
+// semantics/translator-reads-marker-bytes-in-quoted-value), and a signed number, which the translator copies with
+// the blank a query may write after the sign (semantics/translator-writes-signed-number-with-blank). It reads the
+// values the parser decoded, never query text.
+func misreadFilterValue(n queryplan.Node) bool {
+	switch v := n.(type) {
+	case *queryplan.LogSelect:
+		for _, st := range v.Stages {
+			if lf, ok := st.(*queryplan.LabelFilter); ok && misreadLeaf(lf.Expr) {
+				return true
+			}
+		}
+	case *queryplan.RangeAgg:
+		return v.In != nil && misreadFilterValue(v.In)
+	case *queryplan.VectorAgg:
+		return misreadFilterValue(v.In)
+	case *queryplan.Rank:
+		return misreadFilterValue(v.In)
+	case *queryplan.LabelReplace:
+		return misreadFilterValue(v.In)
+	case *queryplan.BinOp:
+		return misreadFilterValue(v.L) || misreadFilterValue(v.R)
+	}
+	return false
+}
+
+// misreadLeaf reports a leaf of e whose value misreadFilterValue names.
+func misreadLeaf(e *logqlpkg.LabelFilterExpr) bool {
+	if e == nil {
+		return false
+	}
+	if !e.IsLeaf() {
+		return misreadLeaf(e.Left) || misreadLeaf(e.Right)
+	}
+	switch e.Kind {
+	case logqlpkg.LabelFilterValueNumber, logqlpkg.LabelFilterValueDuration, logqlpkg.LabelFilterValueBytes:
+		return e.Value != "" && (e.Value[0] == '-' || e.Value[0] == '+')
+	}
+	return strings.Contains(e.Value, "detected_level") || strings.Contains(e.Value, "service_name") ||
+		strings.ContainsAny(e.Value, "\x00\x01\x02")
 }
 
 // holdsEvaluatedLayer reports a plan with a ranking, a stddev or a stdvar anywhere in it.
