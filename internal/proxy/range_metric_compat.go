@@ -418,7 +418,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// Capture original Loki by-labels so we can translate VL label names back
 	// in the metric response (e.g. VL "level" → Loki "detected_level").
 	spec.OrigGroupBy = parseOriginalByLabels(originalLogql)
-	forceRawLevelRows := p.rangeRowsForced(originalLogql, spec, origSpec, hasOrigSpec, step)
+	forceRawLevelRows := hasOrigSpec && p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, spec.OrigGroupBy)
 
 	manualFunc := manualFunctionOf(spec, origSpec, native)
 	if manualFunc == "" {
@@ -482,30 +482,6 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	})
 }
 
-// rangeRowsForced reports a range query the raw-row evaluator answers whatever the stats could: a named parser that
-// does not expose the level the clause groups by (extractionListNeedsRawLevelRows), and the dynamic identity of a
-// parser over a window longer than the step (dynamicIdentityRows).
-func (p *Proxy) rangeRowsForced(query string, spec statsCompatSpec, origSpec originalRangeMetricSpec, hasOrigSpec bool, step time.Duration) bool {
-	if hasOrigSpec && p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, spec.OrigGroupBy) {
-		return true
-	}
-	return p.dynamicIdentityRows(query, origSpec, normalizeManualMetricFunction(spec, origSpec), step)
-}
-
-// dynamicIdentityRows reports a query whose series are the dynamic identity of a parser (lower.DynamicUnwrapIdentity)
-// over a window longer than the step, for a function VictoriaLogs takes per series: its step buckets cannot be merged
-// into the windows of each series without a bucket per series, so the rows are read (bounded by
-// -manual-range-metric-row-limit) and each one falls into the series of its stream and parsed labels, which the
-// lowered query writes as a field of every row. quantile and rate_counter read their own routes.
-func (p *Proxy) dynamicIdentityRows(query string, origSpec originalRangeMetricSpec, manualFunc string, step time.Duration) bool {
-	switch manualFunc {
-	case "avg", "max", "min", "stddev", "stdvar":
-	default:
-		return false
-	}
-	return windowLongerThanStep(origSpec, step) && p.dynamicUnwrapIdentity(query)
-}
-
 // windowLongerThanStep reports an unwrap range function whose range is longer
 // than the step: the windows the evaluator merges from buckets.
 func windowLongerThanStep(origSpec originalRangeMetricSpec, step time.Duration) bool {
@@ -531,12 +507,10 @@ func (p *Proxy) nativeMathTumblingStatsCompatible(r *http.Request, originalLogql
 		return false
 	}
 	spec, specOk := statsSpecOf(stats)
-	// quantile and rate_counter over the dynamic identity of a parser read their own routes: VictoriaLogs'
-	// quantile is not Loki's over two samples or more, and rate_counter is the proxy's.
-	if specOk && p.dynamicUnwrapIdentity(originalLogql) {
-		if fn := normalizeManualMetricFunction(spec, origSpec); fn == "quantile" || fn == "rate_counter" {
-			return false
-		}
+	// quantile over the dynamic identity of a parser reads its own route: VictoriaLogs' quantile is not Loki's over
+	// two samples or more.
+	if specOk && p.dynamicIdentityFor(r.Context(), originalLogql) && normalizeManualMetricFunction(spec, origSpec) == "quantile" {
+		return false
 	}
 	// Parser stages without an explicit drop-error opt-in require the manual path
 	// to preserve Loki's error-exclusion semantics; the query's plan reads the opt-in.
@@ -588,8 +562,8 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 		return false
 	}
 	// The series are the dynamic identity of a parser: VictoriaLogs takes the function per series and the
-	// aggregation over them (lower.DynamicUnwrapIdentity); quantile and rate_counter are read below.
-	if manualFunc != "quantile" && manualFunc != "rate_counter" && p.dynamicUnwrapIdentity(originalLogql) {
+	// aggregation over them (lower.DynamicUnwrapIdentity); quantile is read below.
+	if manualFunc != "quantile" && p.dynamicIdentityFor(r.Context(), originalLogql) {
 		return false
 	}
 	// An ungrouped sum of an additive unwrap function (rate, sum_over_time): the
@@ -750,8 +724,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		p.fail(w, r, withoutUnwrapError(unwrapErrorFuncName(origSpec.Func)))
 		return true
 	}
-	forceRawLevelRows := p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, spec.OrigGroupBy) ||
-		p.dynamicIdentityRows(r.FormValue("query"), origSpec, manualFunc, step)
+	forceRawLevelRows := p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, spec.OrigGroupBy)
 
 	// Fast path: count_over_time / rate / bytes_over_time / bytes_rate with
 	// explicit groupBy — use VL's stats_query_range endpoint which returns
@@ -1952,7 +1925,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	seriesCache := make(map[string]*metricSeriesCacheEntry, 32)
 	seriesMap := make(map[string]manualSeriesSamples)
 	// A row's series hash (lower.DynamicUnwrapIdentity) is one of the fields it groups by, after any parser.
-	includeParsedLabels := queryUsesParserStages(baseQuery) || slices.Contains(groupBy, dynamicSeriesGroupBy[1])
+	includeParsedLabels := queryUsesParserStages(baseQuery) || slices.Contains(groupBy, dynamicSeriesField)
 
 	fjp := vlFJParserPool.Get()
 	defer vlFJParserPool.Put(fjp)

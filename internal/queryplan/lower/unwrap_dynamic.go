@@ -31,14 +31,16 @@ const dynamicPrefix = "__lvp_p_"
 // so the hash alone names a series.
 var dynamicPacked = []string{dynamicPrefix + "*", "level", translate.DetectedLevelLabel, "_stream"}
 
-// dynamicSeries is the series identity of a dynamic identity, as the stats group by it.
-var dynamicSeries = []string{"_stream", dynamicSeriesField}
+// dynamicSeries is the series identity of a dynamic identity, as the stats group by it: the hash, which holds the
+// stream.
+var dynamicSeries = []string{dynamicSeriesField}
 
 // DynamicUnwrapIdentity reports a range function over an unwrapped label under one vector aggregation (sum, max, min
 // or avg, by labels or none) whose series are the stream and every label a json or logfmt parser extracts (no keep,
 // no drop, nothing that changes the line or the labels by their values): the queries whose series identity the
 // lowering writes from the data (the top of this file). The functions are the ones taken per series that the outer
-// aggregation then folds: avg, max, min, stddev, stdvar and quantile over time, and rate_counter.
+// aggregation then folds: avg, max, min, stddev, stdvar and quantile over time (rate_counter keeps its own one-sample
+// proof).
 func DynamicUnwrapIdentity(p *queryplan.Plan) bool {
 	va, ok := p.Root.(*queryplan.VectorAgg)
 	if !ok {
@@ -64,7 +66,7 @@ func dynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) (parser *q
 	}
 	switch ra.Op {
 	case logql.RangeAvgOverTime, logql.RangeMaxOverTime, logql.RangeMinOverTime, logql.RangeStddevOverTime,
-		logql.RangeStdvarOverTime, logql.RangeQuantileOverTime, logql.RangeRateCounter:
+		logql.RangeStdvarOverTime, logql.RangeQuantileOverTime:
 	default:
 		return nil, false
 	}
@@ -164,11 +166,11 @@ func WritesDynamicUnwrapIdentity(p *queryplan.Plan) bool {
 	return walk(p.Root)
 }
 
-// withoutDynamicSeries is by less the fields of the dynamic identity (the stream and the series hash).
+// withoutDynamicSeries is by less the field of the dynamic identity (the series hash).
 func withoutDynamicSeries(by []string) []string {
 	out := make([]string, 0, len(by))
 	for _, f := range by {
-		if f != "_stream" && f != dynamicSeriesField {
+		if f != dynamicSeriesField {
 			out = append(out, f)
 		}
 	}

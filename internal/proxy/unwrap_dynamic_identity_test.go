@@ -33,9 +33,9 @@ func TestDynamicIdentityServedFromPlan(t *testing.T) {
 	}
 	on, off := newProxy(false), newProxy(true)
 	for q, want := range map[string]string{
-		`sum(avg_over_time({app="a"} | json | unwrap n [5m]))`:                     dynamicSeriesHashPipe + " | stats by (_stream, __lvp_sid) avg(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)",
-		`sum by (app) (quantile_over_time(0.9, {app="a"} | json | unwrap n [5m]))`: dynamicSeriesHashPipe + " | stats by (app, _stream, __lvp_sid) quantile(0.9, __lvp_v) as __lvp_inner",
-		`sum(min_over_time({app="a"} | json | n > 1 | unwrap n [5m]))`:             dynamicSeriesHashPipe + " | stats by (_stream, __lvp_sid) min(__lvp_v) as __lvp_inner",
+		`sum(avg_over_time({app="a"} | json | unwrap n [5m]))`:                     dynamicSeriesHashPipe + " | stats by (__lvp_sid) avg(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)",
+		`sum by (app) (quantile_over_time(0.9, {app="a"} | json | unwrap n [5m]))`: dynamicSeriesHashPipe + " | stats by (app, __lvp_sid) quantile(0.9, __lvp_v) as __lvp_inner",
+		`sum(min_over_time({app="a"} | json | n > 1 | unwrap n [5m]))`:             dynamicSeriesHashPipe + " | stats by (__lvp_sid) min(__lvp_v) as __lvp_inner",
 		`max by (app) (stdvar_over_time({app="a"} | logfmt | unwrap n [5m]))`:      "| math __lvp_inner*__lvp_inner as __lvp_inner_var | stats by (app) max(__lvp_inner_var)",
 	} {
 		got, err := on.translateQuery(q)
@@ -75,9 +75,8 @@ func TestDynamicIdentityServedFromPlan(t *testing.T) {
 }
 
 // The handlers read the identity only where the lowering serves the query, and only with the lowering on: the
-// instant handler leaves the functions VictoriaLogs takes per series to the stats route, the quantile evaluator
-// groups by the stream and the series hash, a sum folds the series of the raw-row evaluator, and a window longer
-// than the step reads the rows.
+// instant handler leaves the functions VictoriaLogs takes per series to the stats route, and the quantile evaluator
+// groups by the series hash.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile
 func TestDynamicIdentityHandlersReadThePlan(t *testing.T) {
@@ -94,26 +93,6 @@ func TestDynamicIdentityHandlersReadThePlan(t *testing.T) {
 	_, spec, ok := p.withQuantileShape(r, q, statsCompatSpec{GroupBy: []string{"app"}, OrigGroupBy: []string{"app"}})
 	if !ok || !reflect.DeepEqual(spec.GroupBy, dynamicSeriesGroupBy) || !reflect.DeepEqual(spec.OrigGroupBy, dynamicSeriesGroupBy) || spec.ByExplicit {
 		t.Errorf("quantile grouping %v %v %v %v", spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, ok)
-	}
-	orig, _ := parseOriginalRangeMetricSpec(`sum(avg_over_time({app="a"} | json | unwrap n [5m]))`)
-	for _, tc := range []struct {
-		fn   string
-		step time.Duration
-		want bool
-	}{
-		{"avg", time.Minute, true},
-		{"stdvar", time.Minute, true},
-		{"avg", 5 * time.Minute, false},
-		{"avg", 15 * time.Minute, false},
-		{"quantile", time.Minute, false},
-		{"rate_counter", time.Minute, false},
-	} {
-		if got := p.dynamicIdentityRows(`sum(avg_over_time({app="a"} | json | unwrap n [5m]))`, orig, tc.fn, tc.step); got != tc.want {
-			t.Errorf("%s step %s: rows %v, want %v", tc.fn, tc.step, got, tc.want)
-		}
-	}
-	if p.dynamicIdentityRows(`sum(sum_over_time({app="a"} | json | unwrap n [5m]))`, orig, "avg", time.Minute) {
-		t.Error("a query without the identity reads the rows")
 	}
 	// With the lowering off the string translator serves the query, and the handlers read no identity.
 	off, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: cache.New(time.Minute, 100), LogLevel: "error", DisableQueryPlanLowering: true})
@@ -165,7 +144,6 @@ func TestDynamicIdentityClosedForm(t *testing.T) {
 		`avg by (app) (avg_over_time(` + j + `))`:           `avg_over_time({app="a"} | json | unwrap n[5m]) by (app)`,
 		`sum by (app) (stddev_over_time(` + j + `))`:        `sum by (app) (sum_over_time({app="a"} | json | unwrap n[5m])) * 0`,
 		`max(stdvar_over_time(` + j + `))`:                  `sum (sum_over_time({app="a"} | json | unwrap n[5m])) * 0`,
-		`sum(rate_counter(` + j + `))`:                      `sum (sum_over_time({app="a"} | json | unwrap n[5m])) * 0`,
 	} {
 		got, ok := dynamicClosedForm(q)
 		if !ok {
@@ -184,6 +162,7 @@ func TestDynamicIdentityClosedForm(t *testing.T) {
 		`sum(avg_over_time(` + j + `) by (app))`,
 		`count(avg_over_time(` + j + `))`,
 		`sum(sum_over_time(` + j + `))`,
+		`sum(rate_counter(` + j + `))`,
 		`avg_over_time(` + j + `)`,
 		`sum(`,
 	} {
@@ -203,9 +182,9 @@ func TestDynamicIdentityProvesAndVerdicts(t *testing.T) {
 		want    bool
 	}{
 		{"quantile", 5 * time.Minute, false, true},
-		{"rate_counter", 0, true, true},
-		{"avg", time.Minute, false, true},
-		{"stdvar", time.Minute, false, true},
+		{"rate_counter", 0, true, false},
+		{"avg", time.Minute, false, false},
+		{"stdvar", time.Minute, false, false},
 		{"avg", 5 * time.Minute, false, false},
 		{"max", 0, true, false},
 		{"sum", time.Minute, false, false},

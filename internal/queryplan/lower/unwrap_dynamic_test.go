@@ -29,7 +29,7 @@ func TestDynamicUnwrapIdentity(t *testing.T) {
 		{`sum by (app) (max_over_time(` + j + `))`, true, true},
 		{`max by (app) (stdvar_over_time({app="a"} | logfmt | unwrap n [5m]))`, true, true},
 		{`avg(quantile_over_time(0.9, ` + j + `))`, true, true},
-		{`min(rate_counter(` + j + `))`, true, true},
+		{`min(rate_counter(` + j + `))`, false, false},
 		{`sum(min_over_time({app="a"} |= "x" | json | unwrap n [5m]))`, true, true},
 		{`sum(stddev_over_time({app="a"} | json | n > 5 | unwrap n [5m]))`, true, true},
 		{`sum(stddev_over_time({app="a"} | json | unwrap n | __error__="" [5m]))`, true, true},
@@ -80,14 +80,13 @@ func TestDynamicUnwrapIdentity(t *testing.T) {
 func TestDynamicUnwrapIdentityLowering(t *testing.T) {
 	const j = `{app="a"} | json | unwrap n [5m]`
 	for q, want := range map[string]string{
-		`sum(avg_over_time(` + j + `))`:                        dynamicHash + ` | stats by (_stream, __lvp_sid) avg(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)`,
-		`sum by (app) (max_over_time(` + j + `))`:              dynamicHash + ` | stats by (app, _stream, __lvp_sid) max(__lvp_v) as __lvp_inner | stats by (app) sum(__lvp_inner)`,
-		`max by (app) (stdvar_over_time(` + j + `))`:           dynamicHash + ` | stats by (app, _stream, __lvp_sid) stddev(__lvp_v) as __lvp_inner | math __lvp_inner*__lvp_inner as __lvp_inner_var | stats by (app) max(__lvp_inner_var)`,
-		`sum(stdvar_over_time(` + j + `))`:                     dynamicHash + ` | stats by (_stream, __lvp_sid) stddev(__lvp_v) as __lvp_inner | math __lvp_inner*__lvp_inner as __lvp_inner_var | stats sum(__lvp_inner_var)`,
-		`sum by (app) (quantile_over_time(0.9, ` + j + `))`:    dynamicHash + ` | stats by (app, _stream, __lvp_sid) quantile(0.9, __lvp_v) as __lvp_inner | stats by (app) sum(__lvp_inner)`,
-		`avg(stddev_over_time(` + j + `))`:                     dynamicHash + ` | stats by (_stream, __lvp_sid) stddev(__lvp_v) as __lvp_inner | stats avg(__lvp_inner)`,
-		`sum(rate_counter(` + j + `))`:                         dynamicHash + ` | stats by (_stream, __lvp_sid) __rate_counter__(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)`,
-		`sum(min_over_time({app="a"} | json | unwrap n [5m]))`: dynamicHash + ` | stats by (_stream, __lvp_sid) min(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)`,
+		`sum(avg_over_time(` + j + `))`:                        dynamicHash + ` | stats by (__lvp_sid) avg(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)`,
+		`sum by (app) (max_over_time(` + j + `))`:              dynamicHash + ` | stats by (app, __lvp_sid) max(__lvp_v) as __lvp_inner | stats by (app) sum(__lvp_inner)`,
+		`max by (app) (stdvar_over_time(` + j + `))`:           dynamicHash + ` | stats by (app, __lvp_sid) stddev(__lvp_v) as __lvp_inner | math __lvp_inner*__lvp_inner as __lvp_inner_var | stats by (app) max(__lvp_inner_var)`,
+		`sum(stdvar_over_time(` + j + `))`:                     dynamicHash + ` | stats by (__lvp_sid) stddev(__lvp_v) as __lvp_inner | math __lvp_inner*__lvp_inner as __lvp_inner_var | stats sum(__lvp_inner_var)`,
+		`sum by (app) (quantile_over_time(0.9, ` + j + `))`:    dynamicHash + ` | stats by (app, __lvp_sid) quantile(0.9, __lvp_v) as __lvp_inner | stats by (app) sum(__lvp_inner)`,
+		`avg(stddev_over_time(` + j + `))`:                     dynamicHash + ` | stats by (__lvp_sid) stddev(__lvp_v) as __lvp_inner | stats avg(__lvp_inner)`,
+		`sum(min_over_time({app="a"} | json | unwrap n [5m]))`: dynamicHash + ` | stats by (__lvp_sid) min(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)`,
 	} {
 		if got := keepStats(t, q); got != want {
 			t.Errorf("%s:\n got %s\nwant %s", q, got, want)
@@ -97,7 +96,7 @@ func TestDynamicUnwrapIdentityLowering(t *testing.T) {
 	got := unwrapText(t, `sum(avg_over_time({app="a"} | logfmt | unwrap a_b [5m]))`, Profile{})
 	for _, part := range []string{
 		`| unpack_logfmt from _msg result_prefix "__lvp_p_" | delete __lvp_p_a_b, "__lvp_p_a.b", "__lvp_p_a-b" |`,
-		`| stats by (_stream, __lvp_sid) avg(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)`,
+		`| stats by (__lvp_sid) avg(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)`,
 	} {
 		if !strings.Contains(got, part) {
 			t.Errorf("logfmt: %s holds no %s", got, part)

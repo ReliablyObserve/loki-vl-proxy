@@ -182,7 +182,7 @@ func dynamicIdentityOp(op string) bool {
 }
 
 // dynamicIdentityFuncs are the range functions of a dynamic identity, as a query names them.
-var dynamicIdentityFuncs = [...]string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time", "quantile_over_time", "rate_counter"}
+var dynamicIdentityFuncs = [...]string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time", "quantile_over_time"}
 
 // filterOnly reports a log query whose stages are line filters and label filters only: the queries served from the
 // lowering. The text screen (logql.MayHaveNonFilterStage) turns the others away before a plan is built; this is the

@@ -75,7 +75,6 @@ func benchDynamicIdentityRoutes(b *testing.B, series int) {
 		{"sum_by_avg_tumbling", "query_range", `sum by (app) (avg_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
 		{"max_by_stdvar_tumbling", "query_range", `max by (app) (stdvar_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
 		{"sum_by_max_longer_range", "query_range", `sum by (app) (max_over_time({app="x"} | json | unwrap n [5m]))`, "60"},
-		{"sum_rate_counter_tumbling", "query_range", `sum(rate_counter({app="x"} | json | unwrap n [5m]))`, "300"},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			b.ReportAllocs()

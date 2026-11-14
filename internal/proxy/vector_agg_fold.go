@@ -80,7 +80,7 @@ func keepsParsedGroupLabels(ctx context.Context) bool {
 // left to foldUngroupedSum.
 func foldVectorAggregations(p *Proxy, w http.ResponseWriter, r *http.Request, query string, serve func(http.ResponseWriter, *http.Request) bool) bool {
 	chain, ok := seriesAggregationChain(query)
-	if !ok && len(chain) == 1 && p.dynamicUnwrapIdentity(query) {
+	if !ok && len(chain) == 1 && p.dynamicIdentityFor(r.Context(), query) {
 		// A sum over the dynamic identity of a parser: the evaluator answers a series per stream and parsed labels
 		// (lower.DynamicUnwrapIdentity), which the sum folds.
 		ok = true

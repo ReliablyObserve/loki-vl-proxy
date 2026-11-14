@@ -2804,6 +2804,10 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		p.handleRangeMetricPostAggregation(w, withQueryStepsSilent(r, stepsRun), start, logqlQuery, postAgg)
 		return
 	}
+	var dynamicServed bool
+	if dynamicServed, r = p.dynamicIdentityWindows(w, r, logqlQuery); dynamicServed {
+		return
+	}
 
 	logsqlQuery, err := p.translateLogResponseQuery(r.Context(), logqlQuery)
 	if err != nil {

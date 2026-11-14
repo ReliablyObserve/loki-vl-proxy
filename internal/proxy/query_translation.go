@@ -422,6 +422,12 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 	if keepLine {
 		cacheKey = "\x00keep-line\x00" + normalized
 	}
+	baseIdentity := streamIdentityOnly(ctx)
+	if baseIdentity {
+		// A window the dynamic identity's evaluators do not read (dynamicIdentityWindows): the string translator's
+		// text, kept apart from the lowering's.
+		cacheKey = "\x00stream-identity\x00" + cacheKey
+	}
 	streamLabels := p.plainStreamLabelNames(ctx, normalized)
 	if len(streamLabels) > 0 {
 		cacheKey += streamLabelsCacheKey(streamLabels)
@@ -462,8 +468,10 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 			if lowered, ok := p.lowerKeepIdentity(ctx, canon, prof); ok {
 				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
 			}
-			if lowered, ok := p.lowerDynamicIdentity(ctx, canon, prof); ok {
-				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
+			if !baseIdentity {
+				if lowered, ok := p.lowerDynamicIdentity(ctx, canon, prof); ok {
+					return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
+				}
 			}
 		}
 

@@ -21,22 +21,24 @@ import (
 // of each line's parsed labels (__lvp_sid), and VictoriaLogs answers the function per series and the aggregation over
 // them for an instant query and a range up to the step.
 //
-// quantile_over_time, rate_counter and a range longer than the step need each series' samples, which VictoriaLogs'
+// quantile_over_time and a range longer than the step need each series' samples, which VictoriaLogs'
 // stats cannot merge across buckets. When every line is a series of its own (a request id) that is one series per
 // line, so the proxy first proves it with one stats read over the fetch span: the rows and the distinct series
 // hashes. When they are equal each window holds at most one sample of a series, and the function has a closed form:
-// the value itself (quantile, avg, max, min over time) or 0 (stddev, stdvar over time, rate_counter), so the outer
+// the value itself (quantile, avg, max, min over time) or 0 (stddev, stdvar over time), so the outer
 // aggregation is the range function of the same name over the rows grouped by its clause (sum by (C) over
 // sum_over_time for a sum by C, max_over_time ... by (C) for a max by C, and so on, times 0 for the zero forms), which
 // the stats routes answer. Otherwise the series are
 // read one by one, bounded by the series limit (-max-stats-query-series): a hash collision only lowers the distinct
-// count, so it can fail the proof, never fake it.
+// count, so it can fail the proof, never fake it. The per-series evaluators are the quantile value counts and the
+// window evaluator over step buckets of each series, both grouped by the series hash.
 
 // dynamicSeriesField is the field of the series hash, as lower writes it.
 const dynamicSeriesField = "__lvp_sid"
 
-// dynamicSeriesGroupBy are the fields the stats of a dynamic identity group a series by: the stream and the hash of
-// the line's parsed labels less the unwrapped one (lower.DynamicUnwrapIdentity).
+// dynamicSeriesGroupBy are the fields the quantile counts of a dynamic identity group a series by: the hash of the
+// line's parsed labels less the unwrapped one (lower.DynamicUnwrapIdentity), and the stream, whose labels the outer
+// aggregation reads.
 var dynamicSeriesGroupBy = []string{"_stream", dynamicSeriesField}
 
 // dynamicUnwrapIdentity reports a query whose series are the dynamic identity of a parser
@@ -104,17 +106,11 @@ func (c *boundedVerdicts) put(key string, v bool) {
 	c.entries[key] = v
 }
 
-// dynamicIdentityProves reports the functions and windows that read each series' samples, which the proof of
-// one-sample series serves in closed form: quantile and rate_counter on any request, and the others over a range
-// longer than the step.
+// dynamicIdentityProves reports the functions the stats handlers prove one-sample series for before reading each
+// series' samples: quantile_over_time (the others over a range longer than the step are decided before the
+// translation, dynamicIdentityWindows).
 func dynamicIdentityProves(manualFunc string, origSpec originalRangeMetricSpec, step time.Duration, instant bool) bool {
-	switch manualFunc {
-	case "quantile", "rate_counter":
-		return true
-	case "avg", "max", "min", "stddev", "stdvar":
-		return !instant && windowLongerThanStep(origSpec, step)
-	}
-	return false
+	return manualFunc == "quantile"
 }
 
 // serveDynamicIdentity answers a query of the dynamic identity of a parser whose function reads each series' samples
@@ -122,7 +118,7 @@ func dynamicIdentityProves(manualFunc string, origSpec originalRangeMetricSpec, 
 // series limit when the series outnumber it; false leaves the request to the per-series evaluators. base is the
 // lowered log query up to its first stats pipe (the series hash included), from and to the fetch span.
 func (p *Proxy) serveDynamicIdentity(w http.ResponseWriter, r *http.Request, query, base string, from, to time.Time, instant bool) bool {
-	if !p.dynamicUnwrapIdentity(query) {
+	if !p.dynamicIdentityFor(r.Context(), query) {
 		return false
 	}
 	closed, ok := dynamicClosedForm(query)
@@ -189,7 +185,7 @@ func dynamicClosedForm(query string) (string, bool) {
 	}
 	zero := false
 	switch ra.Op {
-	case logqlpkg.RangeStddevOverTime, logqlpkg.RangeStdvarOverTime, logqlpkg.RangeRateCounter:
+	case logqlpkg.RangeStddevOverTime, logqlpkg.RangeStdvarOverTime:
 		zero, op = true, logqlpkg.RangeSumOverTime
 	case logqlpkg.RangeAvgOverTime, logqlpkg.RangeMaxOverTime, logqlpkg.RangeMinOverTime, logqlpkg.RangeQuantileOverTime:
 	default:
@@ -244,4 +240,83 @@ func (p *Proxy) dynamicIdentityRange(w http.ResponseWriter, r *http.Request, que
 		return false
 	}
 	return p.serveDynamicIdentity(w, r, query, spec.BaseQuery, startTS.Add(-origSpec.Window), endTS, false)
+}
+
+// streamIdentityKey marks a request whose dynamic identity the handlers do not serve (dynamicIdentityWindows): the
+// string translator translates it and every handler reads the series as before.
+type streamIdentityKey struct{}
+
+// streamIdentityOnly reports a request marked with streamIdentityKey.
+func streamIdentityOnly(ctx context.Context) bool {
+	marked, _ := ctx.Value(streamIdentityKey{}).(bool)
+	return marked
+}
+
+// dynamicIdentityFor is dynamicUnwrapIdentity for a request: false for one marked streamIdentityKey.
+func (p *Proxy) dynamicIdentityFor(ctx context.Context, query string) bool {
+	return !streamIdentityOnly(ctx) && p.dynamicUnwrapIdentity(query)
+}
+
+// dynamicIdentityWindows decides a range query of the dynamic identity of a parser over avg, max, min, stddev or
+// stdvar over time whose range is longer than the step, before it is translated: the window evaluator merges step
+// buckets of the stream's series, not of a series hash. When every series holds one sample in the fetch span (the
+// proof of serveDynamicIdentity) the query is answered in closed form; otherwise it is marked streamIdentityKey and
+// translated and answered as before. served reports an answered request; r is the request to go on with.
+func (p *Proxy) dynamicIdentityWindows(w http.ResponseWriter, r *http.Request, query string) (served bool, out *http.Request) {
+	window, ok := dynamicWindowRange(query)
+	if !ok || !p.dynamicIdentityFor(r.Context(), query) {
+		return false, r
+	}
+	step, ok := parsePositiveStepDuration(r.FormValue("step"))
+	if !ok || window <= step {
+		return false, r
+	}
+	marked := r.WithContext(context.WithValue(r.Context(), streamIdentityKey{}, true))
+	closed, ok := dynamicClosedForm(query)
+	startTS, errS := parseTimestamp(r.FormValue("start"))
+	endTS, errE := parseTimestamp(r.FormValue("end"))
+	if !ok || errS != nil || errE != nil {
+		return false, marked
+	}
+	text, err := p.translateQueryWithContext(r.Context(), query)
+	if err != nil {
+		return false, marked
+	}
+	spec, ok := statsSpecOf(statsQueryOf(text))
+	if !ok {
+		return false, marked
+	}
+	rows, series, ok := p.dynamicIdentitySeries(r.Context(), spec.BaseQuery, startTS.Add(-window), endTS)
+	if !ok || rows != series {
+		return false, marked
+	}
+	markQueryStepsRoute(r.Context(), "parser-identity-one-sample")
+	p.handleQueryRange(w, cloneMetricQueryRequest(r, closed))
+	return true, r
+}
+
+// dynamicWindowRange is the range of a query whose function the window evaluator merges from step buckets (avg, max,
+// min, stddev and stdvar over time) under a dynamic identity's shape; ok is false for any other query.
+func dynamicWindowRange(query string) (time.Duration, bool) {
+	query = strings.TrimSpace(query)
+	if !dynamicIdentityScreen(query) {
+		return 0, false
+	}
+	expr, ok := sharedLogQLExpr(query)
+	if !ok {
+		return 0, false
+	}
+	va, ok := expr.(*logqlpkg.VectorAggregation)
+	if !ok {
+		return 0, false
+	}
+	ra, ok := va.Inner.(*logqlpkg.RangeAggregation)
+	if !ok {
+		return 0, false
+	}
+	switch ra.Op {
+	case logqlpkg.RangeAvgOverTime, logqlpkg.RangeMaxOverTime, logqlpkg.RangeMinOverTime, logqlpkg.RangeStddevOverTime, logqlpkg.RangeStdvarOverTime:
+		return ra.RangeDuration, ra.RangeDuration > 0
+	}
+	return 0, false
 }
