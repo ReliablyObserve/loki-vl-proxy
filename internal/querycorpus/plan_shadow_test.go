@@ -233,10 +233,16 @@ func TestPlanShadow(t *testing.T) {
 	got, problems, slices := runShadowSlices(t, nativeLowering, 0)
 	got.Flipped = proxy.QueryPlanFlippedConstructs
 	// A flipped construct is served from the lowering with the corpus as its proof: it must be native under every
-	// profile, and its rows must all equal the string translator's text (a mismatch fails the run above).
+	// profile that translates it, and its rows must all equal the string translator's text (a mismatch fails the run
+	// above). The keepLine profiles translate log queries only (a metric query never keeps its line), so a metric
+	// construct has no row there.
 	for _, c := range got.Flipped {
 		for _, prof := range planProfiles() {
-			if sl := slices[[2]string{prof.name, c}]; sl == nil || sl.native == 0 || sl.mismatches != 0 {
+			sl := slices[[2]string{prof.name, c}]
+			if sl != nil && sl.rows == 0 && prof.keepLine && c != "LogSelect" {
+				continue
+			}
+			if sl == nil || sl.native == 0 || sl.mismatches != 0 {
 				t.Errorf("%s is served from the lowering, but is not native on the corpus under %q: %+v", c, prof.name, sl)
 			}
 		}

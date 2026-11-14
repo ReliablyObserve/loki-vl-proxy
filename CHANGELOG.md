@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipes the plan writes print straight into the query's text (a grouped rate: 60 to 42 allocations and 3.6 to 3.0 KiB
   per translation once served from the plan). Construct names cost no allocation, so the log queries already served
   from the plan allocate one less.
+- Vector aggregations (`sum`, `avg`, `min`, `max`, `count`, with `by` or `without`, over range functions with and
+  without `unwrap`) are served from the query plan instead of the string translator, where the plan writes the
+  translator's text byte for byte; rankings, `stddev`, `stdvar`, an empty `without ()` and the recorded differences
+  stay with the string translator. Answers, translation cache entries and the queries VictoriaLogs receives do not
+  change; a translation that misses the cache takes about half the time (a grouped rate: 6.6 to 2.7 us, 60 to 42
+  allocations). `-query-plan-lowering=false` turns it off.
 
 ## [2.260.1] - 2026-11-14
 

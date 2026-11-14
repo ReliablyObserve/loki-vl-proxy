@@ -660,7 +660,8 @@
       "known divergence semantics/translator-writes-signed-number-with-blank": 12
     },
     "flipped": [
-      "LogSelect"
+      "LogSelect",
+      "VectorAgg"
     ]
   }
 }

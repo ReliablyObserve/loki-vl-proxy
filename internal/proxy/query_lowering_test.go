@@ -555,11 +555,15 @@ func TestQueryPlanLowering_ServesMetricConstructs(t *testing.T) {
 			t.Errorf("flipped %s = %d, want %d", c, n, want)
 		}
 	}
-	// With the constructs served today, none of these is served from the lowering.
+	// With the constructs served today (QueryPlanFlippedConstructs), a query is served from the lowering exactly when
+	// its construct is one of them.
 	today := newProxy(false)
-	for _, q := range []string{`sum by (app) (rate({app="a"} |= "x" [5m]))`, `rate({app="a"}[5m])`, `sum(rate({app="a"}[5m])) * 2`} {
-		if got, ok := today.lowerMetric(context.Background(), q, prof); ok {
-			t.Errorf("%q: served from the lowering today %v (%s)", q, ok, got)
+	for q, c := range map[string]string{
+		`sum by (app) (rate({app="a"} |= "x" [5m]))`: "VectorAgg", `rate({app="a"}[5m])`: "RangeAgg",
+		`sum(rate({app="a"}[5m])) * 2`: "BinOp", `label_replace(rate({app="a"}[5m]), "x", "$1", "app", "(.*)")`: "LabelReplace",
+	} {
+		if got, ok := today.lowerMetric(context.Background(), q, prof); ok != slices.Contains(QueryPlanFlippedConstructs, c) {
+			t.Errorf("%q: served from the lowering today %v (%s), flipped %v", q, ok, got, QueryPlanFlippedConstructs)
 		}
 	}
 }
