@@ -835,17 +835,29 @@ func (p *Proxy) bareParserMetricSpec(query string) (bareParserMetricCompatSpec, 
 // keepUnwrapIdentity is the series identity a keep before the unwrap of the query decides
 // (lower.KeepUnwrapIdentity), read from the query's shared plan: the labels the keep leaves, as Loki names them. The
 // typed lowering serves such a query (keepIdentityConstruct), and the handlers evaluate the windows of those series;
-// with -query-plan-lowering=false the string translator serves it and no handler reads the identity. A query without
-// both words is not planned.
+// with -query-plan-lowering=false, or for a query the lowering turns away (a spelling the text screen leaves to the
+// string translator, a label it does not write), the string translator serves it and no handler reads the identity,
+// so the handlers and the translation decide alike. A query without both words is not planned.
 func (p *Proxy) keepUnwrapIdentity(query string) (labels []string, ok bool) {
 	if !p.queryPlanLowering || !strings.Contains(query, "keep") || !strings.Contains(query, "unwrap") {
 		return nil, false
 	}
-	plan := resolvedPlan(strings.TrimSpace(query))
+	query = strings.TrimSpace(query)
+	plan := resolvedPlan(query)
 	if plan == nil {
 		return nil, false
 	}
-	return lower.KeepUnwrapIdentity(plan)
+	if labels, ok = lower.KeepUnwrapIdentity(plan); !ok {
+		return nil, false
+	}
+	p.configMu.RLock()
+	streamFields := p.streamFieldsMap
+	p.configMu.RUnlock()
+	prof := loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, nil), streamFields, p.logsqlCapabilities(), false)
+	if _, err := lower.PlanQuery(logqlpkg.CanonicalizeLogRanges(query), plan, prof); err != nil {
+		return nil, false
+	}
+	return labels, true
 }
 
 // parseBareParserMetricCompatSpecAST uses the logql typed AST. It returns

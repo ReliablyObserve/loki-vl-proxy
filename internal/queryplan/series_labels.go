@@ -20,26 +20,24 @@ import "slices"
 // errorLabels are the labels a keep never removes.
 var errorLabels = [...]string{"__error__", "__error_details__", "__preserve_error__"}
 
-// SeriesLabels is what the stages leave of a sample's labels (see OutLabels).
-func SeriesLabels(stages []Stage) OutLabels {
-	var out OutLabels
+// SeriesLabels is what the stages leave of a sample's labels (see SampleLabels).
+func SeriesLabels(stages []Stage) SampleLabels {
+	var out SampleLabels
 	for _, st := range stages {
 		switch st := st.(type) {
 		case *Keep:
 			if len(st.Matchers) > 0 {
-				out = OutLabels{Opaque: true}
+				out = SampleLabels{Opaque: true}
 				continue
 			}
-			out = OutLabels{Kept: true, Names: withoutErrorLabels(st.Labels)}
+			out = SampleLabels{Kept: true, Names: withoutErrorLabels(st.Labels)}
 		case *Drop:
 			if len(st.Matchers) > 0 {
 				out.Opaque = true
 				continue
 			}
 			for _, l := range st.Labels {
-				if i := slices.Index(out.Names, l); i >= 0 {
-					out.Names = slices.Delete(slices.Clone(out.Names), i, i+1)
-				}
+				out.Names = without(out.Names, l)
 				if !slices.Contains(out.Dropped, l) {
 					out.Dropped = append(out.Dropped, l)
 				}
@@ -54,13 +52,24 @@ func SeriesLabels(stages []Stage) OutLabels {
 				// not model.
 				out.Opaque = true
 			}
-			if i := slices.Index(out.Names, st.Label); i >= 0 {
-				out.Names = slices.Delete(slices.Clone(out.Names), i, i+1)
-			}
+			out.Names = without(out.Names, st.Label)
 			out.Unwrapped = st.Label
 		}
 	}
 	return out
+}
+
+// without is names less name. The keep's own list is never written to: the last name is cut off with the capacity
+// cut too (an append then copies), any other is removed from a copy.
+func without(names []string, name string) []string {
+	switch i := slices.Index(names, name); {
+	case i < 0:
+		return names
+	case i == len(names)-1:
+		return names[:i:i]
+	default:
+		return slices.Delete(slices.Clone(names), i, i+1)
+	}
 }
 
 // withoutErrorLabels is labels without the error labels, shared with labels when it holds none.
@@ -83,9 +92,30 @@ func withoutErrorLabels(labels []string) []string {
 // parser after it adds a key, and no stage after it changes the labels by their values. The labels are the keep's
 // less the error labels, the ones a later drop removes and the unwrapped one; none (an empty slice) is one series
 // without labels. ok is false when the stream, or the parsers, still tell the series apart.
-func (o OutLabels) KeptIdentity() (labels []string, ok bool) {
+func (o SampleLabels) KeptIdentity() (labels []string, ok bool) {
 	if !o.Kept || o.Dynamic || o.Opaque {
 		return nil, false
 	}
 	return o.Names, true
+}
+
+// SampleLabels are the labels a sample carries after the last stage of a pipeline: Loki's series identity of a
+// metric over it (SeriesLabels). A type of its own, not PipelineSem's OutLabels, so the resolver's pipeline
+// attributes keep their size.
+type SampleLabels struct {
+	// Kept says a keep stage without a matcher deleted every label it does not name, the stream labels included.
+	Kept bool
+	// Names are, when Kept, the labels that keep leaves, in its order: without the error labels (a keep never
+	// removes them), the labels a later drop removes and the unwrapped label.
+	Names []string
+	// Dynamic says a parser stage after the last keep (or in a pipeline without one) adds the keys it extracts
+	// from each line.
+	Dynamic bool
+	// Dropped are the labels a drop stage without a matcher removes after the last keep.
+	Dropped []string
+	// Opaque says a stage changes the labels by their values (a label_format, a keep or a drop with a matcher), or
+	// the keep deleted the label the unwrap reads: no identity is claimed.
+	Opaque bool
+	// Unwrapped is the label the unwrap stage takes out of the sample ("" without one).
+	Unwrapped string
 }

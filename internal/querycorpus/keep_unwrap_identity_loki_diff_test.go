@@ -32,7 +32,8 @@ import (
 //     and three times it.
 //   - Shapes: each function bare, under sum by (app), under sum and under max by (app), over a keep of app and the
 //     unwrapped label and over the same pipeline without a keep; a keep of the unwrapped label alone, a keep of a
-//     label some lines lack, a keep before the parser, and a drop of a stream label.
+//     label some lines lack, a keep before the parser, a drop of a stream label, and the keep shapes as an operand
+//     (a binary operation, a ranking, label_replace, a sort).
 //
 // The answers are recorded (keepIdentityAnswersPath; LVP_RUN_ORACLES=1 records them again). Every run must match
 // Loki, or be listed in keepIdentityKnown with the registry case that holds the difference open; a listed run that
@@ -66,6 +67,17 @@ var keepIdentityEdgeShapes = []string{
 	`%s{job=~"kj|kx"} | json duration_ms | keep app, duration_ms | unwrap duration_ms [5m])`,
 	`max without (app) (%s{job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]))`,
 	`%s{job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]) by (app)`,
+}
+
+// keepIdentityExtraQueries are the keep shapes as an operand: of a binary operation, a ranking, label_replace and a
+// sort, each operand translated on its own.
+var keepIdentityExtraQueries = []string{
+	`first_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]) * 2`,
+	`topk(1, sum by (app) (quantile_over_time(0.9, {job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m])))`,
+	`label_replace(first_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]), "svc", "$1", "app", "(.*)")`,
+	`sort_desc(stddev_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]))`,
+	`stddev_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]) / avg_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m])`,
+	`sum(last_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m])) + sum(quantile_over_time(0.9, {job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]))`,
 }
 
 // keepIdentityKnown are the runs that differ from Loki, by query and request kind, with the registry case that holds
@@ -120,6 +132,11 @@ var keepIdentityKnown = func() map[string]map[string]string {
 	// rate_counter's series are right; its value differs from Loki's extrapolated rate in the sixth digit.
 	add("semantics/unwrap-rate-counter-window-extrapolation", all, keep("rate_counter"), "sum by (app) ("+keep("rate_counter")+")",
 		"sum("+keep("rate_counter")+")", "max by (app) ("+keep("rate_counter")+")")
+	// Under label_replace and in a binary operation between two such functions the operand keeps the stream's
+	// series (and label_replace's range answer hits the series limit, as before).
+	add("semantics/keep-before-unwrap-identity-in-operands", all, keepIdentityExtraQueries[2], keepIdentityExtraQueries[4])
+	// first and last over time on a range longer than the step, as above.
+	add("semantics/unwrap-first-last-range-longer-than-step", sliding, keepIdentityExtraQueries[0])
 	return known
 }()
 
@@ -154,6 +171,9 @@ func keepIdentityQueries(t *testing.T) []metricQuery {
 				add(fmt.Sprintf(shape, keepIdentityHead(fn)))
 			}
 		}
+	}
+	for _, q := range keepIdentityExtraQueries {
+		add(q)
 	}
 	return out
 }
@@ -196,7 +216,7 @@ func keepIdentityFixture() metricFixture {
 // TestKeepUnwrapIdentityMatchLoki replays the recorded answers through the handlers and holds every run to Loki's
 // answer, or to its listed difference.
 //
-// conformance: semantics/keep-before-unwrap-series-identity, semantics/keep-before-parser-unwrap-identity, semantics/drop-before-unwrap-stream-label, semantics/unwrap-rate-counter-window-extrapolation, semantics/unwrap-first-last-range-longer-than-step, semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile, semantics/stdvar-grouped-pooled-variance
+// conformance: semantics/keep-before-unwrap-series-identity, semantics/keep-before-parser-unwrap-identity, semantics/drop-before-unwrap-stream-label, semantics/unwrap-rate-counter-window-extrapolation, semantics/unwrap-first-last-range-longer-than-step, semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile, semantics/stdvar-grouped-pooled-variance, semantics/keep-before-unwrap-identity-in-operands
 func TestKeepUnwrapIdentityMatchLoki(t *testing.T) {
 	if testing.Short() && os.Getenv("CI") == "" && os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("runs every shape on a fresh proxy per request; run without -short")

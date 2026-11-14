@@ -369,30 +369,30 @@ var lokiOracleSeriesQueries = []string{
 // seriesLabelsAgainstLoki is the series identity of the pipeline (SeriesLabels) and the same reading of Loki's tree
 // (its stages that decide labels and its unwrapped label), for a pipeline with a keep or a drop and none with a
 // matcher; ok is false for the others.
-func seriesLabelsAgainstLoki(sel *LogSelect, lf lokiFacts) (ours, lokis OutLabels, ok bool) {
+func seriesLabelsAgainstLoki(sel *LogSelect, lf lokiFacts) (ours, lokis SampleLabels, ok bool) {
 	named := false
 	for _, st := range sel.Stages {
 		switch x := st.(type) {
 		case *Keep:
 			named = true
 			if len(x.Matchers) > 0 {
-				return OutLabels{}, OutLabels{}, false
+				return SampleLabels{}, SampleLabels{}, false
 			}
 		case *Drop:
 			named = true
 			if len(x.Matchers) > 0 {
-				return OutLabels{}, OutLabels{}, false
+				return SampleLabels{}, SampleLabels{}, false
 			}
 		}
 	}
 	if !named {
-		return OutLabels{}, OutLabels{}, false
+		return SampleLabels{}, SampleLabels{}, false
 	}
 	ours = SeriesLabels(sel.Stages)
 	for _, st := range lf.SeriesStages {
 		switch st.Kind {
 		case "keep":
-			lokis = OutLabels{Kept: true}
+			lokis = SampleLabels{Kept: true}
 			for _, n := range st.Names {
 				if n != "__error__" && n != "__error_details__" && n != "__preserve_error__" {
 					lokis.Names = append(lokis.Names, n)
@@ -420,7 +420,7 @@ func seriesLabelsAgainstLoki(sel *LogSelect, lf lokiFacts) (ours, lokis OutLabel
 	}
 	// Loki's keep stage holds its names in an order of its own: both sides are compared sorted, and an empty set
 	// as none.
-	for _, o := range []*OutLabels{&ours, &lokis} {
+	for _, o := range []*SampleLabels{&ours, &lokis} {
 		o.Names = slices.Sorted(slices.Values(o.Names))
 		if len(o.Names) == 0 {
 			o.Names = nil

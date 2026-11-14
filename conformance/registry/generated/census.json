@@ -486,6 +486,9 @@
     "semantics/keep-before-parser-unwrap-identity | compare:observed",
     "semantics/keep-before-parser-unwrap-identity | gap:open",
     "semantics/keep-before-parser-unwrap-identity | query",
+    "semantics/keep-before-unwrap-identity-in-operands | compare:observed",
+    "semantics/keep-before-unwrap-identity-in-operands | gap:open",
+    "semantics/keep-before-unwrap-identity-in-operands | query",
     "semantics/keep-before-unwrap-series-identity | compare:observed",
     "semantics/keep-before-unwrap-series-identity | gap:fixed",
     "semantics/keep-before-unwrap-series-identity | query",
@@ -1931,6 +1934,7 @@
     "internal/querycorpus/grammar_sweep_test.go | semantics/vector-aggregation-over-scalar-rejected",
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/drop-before-unwrap-stream-label",
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/keep-before-parser-unwrap-identity",
+    "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/keep-before-unwrap-identity-in-operands",
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/stdvar-grouped-pooled-variance",
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/unwrap-first-last-range-longer-than-step",
@@ -2581,7 +2585,7 @@
       "any": 34,
       "api": 92,
       "drilldown": 50,
-      "explore": 180,
+      "explore": 181,
       "grafana-datasource": 2,
       "operator": 4
     },
@@ -2606,7 +2610,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 102,
-    "wired_items": 353
+    "wired_items": 354
   },
   "gates": [
     "A/B shape selection",

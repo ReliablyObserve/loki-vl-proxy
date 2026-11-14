@@ -9,7 +9,7 @@ import (
 )
 
 // seriesLabelsOf is the series identity of the pipeline of a query's first log selector.
-func seriesLabelsOf(t testing.TB, q string) OutLabels {
+func seriesLabelsOf(t testing.TB, q string) SampleLabels {
 	t.Helper()
 	expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 	if err != nil {
@@ -34,43 +34,43 @@ func seriesLabelsOf(t testing.TB, q string) OutLabels {
 func TestSeriesLabels(t *testing.T) {
 	for _, tc := range []struct {
 		q        string
-		want     OutLabels
+		want     SampleLabels
 		identity []string
 		decided  bool
 	}{
-		{q: `{a="x"}`, want: OutLabels{}},
-		{q: `{a="x"} | json`, want: OutLabels{Dynamic: true}},
-		{q: `{a="x"} | json | keep app, duration_ms`, want: OutLabels{Kept: true, Names: []string{"app", "duration_ms"}},
+		{q: `{a="x"}`, want: SampleLabels{}},
+		{q: `{a="x"} | json`, want: SampleLabels{Dynamic: true}},
+		{q: `{a="x"} | json | keep app, duration_ms`, want: SampleLabels{Kept: true, Names: []string{"app", "duration_ms"}},
 			identity: []string{"app", "duration_ms"}, decided: true},
 		{q: `first_over_time({a="x"} | json | keep app, duration_ms | unwrap duration_ms [5m])`,
-			want:     OutLabels{Kept: true, Names: []string{"app"}, Unwrapped: "duration_ms"},
+			want:     SampleLabels{Kept: true, Names: []string{"app"}, Unwrapped: "duration_ms"},
 			identity: []string{"app"}, decided: true},
 		{q: `first_over_time({a="x"} | json | keep duration_ms | unwrap duration_ms [5m])`,
-			want:     OutLabels{Kept: true, Names: []string{}, Unwrapped: "duration_ms"},
+			want:     SampleLabels{Kept: true, Names: []string{}, Unwrapped: "duration_ms"},
 			identity: []string{}, decided: true},
 		// The error labels stay whatever the keep says; they are not part of the named identity.
 		{q: `{a="x"} | json | keep __error__, app, __error_details__, __preserve_error__`,
-			want: OutLabels{Kept: true, Names: []string{"app"}}, identity: []string{"app"}, decided: true},
-		{q: `{a="x"} | keep __error__`, want: OutLabels{Kept: true, Names: []string{}}, identity: []string{}, decided: true},
+			want: SampleLabels{Kept: true, Names: []string{"app"}}, identity: []string{"app"}, decided: true},
+		{q: `{a="x"} | keep __error__`, want: SampleLabels{Kept: true, Names: []string{}}, identity: []string{}, decided: true},
 		// A parser after the keep adds the keys of each line.
-		{q: `sum_over_time({a="x"} | keep app | json | unwrap d [5m])`, want: OutLabels{Kept: true, Names: []string{"app"}, Dynamic: true, Unwrapped: "d"}},
+		{q: `sum_over_time({a="x"} | keep app | json | unwrap d [5m])`, want: SampleLabels{Kept: true, Names: []string{"app"}, Dynamic: true, Unwrapped: "d"}},
 		// A drop after the keep removes its labels from the identity and is recorded.
 		{q: `sum_over_time({a="x"} | json | keep app, pod, d | drop pod | unwrap d [5m])`,
-			want: OutLabels{Kept: true, Names: []string{"app"}, Dropped: []string{"pod"}, Unwrapped: "d"}, identity: []string{"app"}, decided: true},
+			want: SampleLabels{Kept: true, Names: []string{"app"}, Dropped: []string{"pod"}, Unwrapped: "d"}, identity: []string{"app"}, decided: true},
 		{q: `sum_over_time({a="x"} | json d | drop pod, pod | unwrap d [5m])`,
-			want: OutLabels{Dynamic: true, Dropped: []string{"pod"}, Unwrapped: "d"}},
+			want: SampleLabels{Dynamic: true, Dropped: []string{"pod"}, Unwrapped: "d"}},
 		// A keep that deletes the unwrapped label: every sample is a conversion error, not modelled.
-		{q: `sum_over_time({a="x"} | json | keep app | unwrap d [5m])`, want: OutLabels{Kept: true, Names: []string{"app"}, Opaque: true, Unwrapped: "d"}},
+		{q: `sum_over_time({a="x"} | json | keep app | unwrap d [5m])`, want: SampleLabels{Kept: true, Names: []string{"app"}, Opaque: true, Unwrapped: "d"}},
 		// Stages that change labels by their values.
-		{q: `{a="x"} | json | keep app, b | label_format c=b`, want: OutLabels{Kept: true, Names: []string{"app", "b"}, Opaque: true}},
-		{q: `{a="x"} | json | keep app, b="y"`, want: OutLabels{Opaque: true}},
-		{q: `{a="x"} | json | keep app | drop b="y"`, want: OutLabels{Kept: true, Names: []string{"app"}, Opaque: true}},
+		{q: `{a="x"} | json | keep app, b | label_format c=b`, want: SampleLabels{Kept: true, Names: []string{"app", "b"}, Opaque: true}},
+		{q: `{a="x"} | json | keep app, b="y"`, want: SampleLabels{Opaque: true}},
+		{q: `{a="x"} | json | keep app | drop b="y"`, want: SampleLabels{Kept: true, Names: []string{"app"}, Opaque: true}},
 		// A later keep decides alone: what came before it is gone.
-		{q: `{a="x"} | json | label_format c=b | keep app, b="y" | keep app`, want: OutLabels{Kept: true, Names: []string{"app"}},
+		{q: `{a="x"} | json | label_format c=b | keep app, b="y" | keep app`, want: SampleLabels{Kept: true, Names: []string{"app"}},
 			identity: []string{"app"}, decided: true},
 		// Filters and formats of the line leave the labels alone.
 		{q: `sum_over_time({a="x"} | json | keep app, d |= "x" | app="y" | line_format "{{.app}}" | decolorize | unwrap d [5m])`,
-			want: OutLabels{Kept: true, Names: []string{"app"}, Unwrapped: "d"}, identity: []string{"app"}, decided: true},
+			want: SampleLabels{Kept: true, Names: []string{"app"}, Unwrapped: "d"}, identity: []string{"app"}, decided: true},
 	} {
 		got := seriesLabelsOf(t, tc.q)
 		if !reflect.DeepEqual(got, tc.want) {

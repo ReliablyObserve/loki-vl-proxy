@@ -37,9 +37,12 @@ why: |
   label_format or drop, decides nothing and keeps its previous plan.
 
   Proven against the Loki engine oracle and VictoriaLogs v1.53.0 and v1.49.0
-  (TestKeepUnwrapIdentityMatchLoki, 75 shapes x instant, step = range, step <
-  range and step > range, with and without keep, grouped and ungrouped). The
-  runs still differing are held by semantics/unwrap-first-last-range-longer-than-step,
+  (TestKeepUnwrapIdentityMatchLoki, 93 shapes x instant, step = range, step <
+  range and step > range, with and without keep, grouped and ungrouped, and as
+  an operand): runs matching Loki went from 24 to 68 of 93 on instant, 28 to 73
+  on step = range and step > range, 19 to 55 on step < range, and no run that
+  matched before differs. The runs still differing are held by
+  semantics/keep-before-unwrap-identity-in-operands, semantics/unwrap-first-last-range-longer-than-step,
   semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile,
   semantics/stdvar-grouped-pooled-variance, semantics/keep-before-parser-unwrap-identity,
   semantics/drop-before-unwrap-stream-label and semantics/unwrap-rate-counter-window-extrapolation.

@@ -1366,6 +1366,9 @@
     "semantics/keep-before-parser-unwrap-identity": [
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
     ],
+    "semantics/keep-before-unwrap-identity-in-operands": [
+      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
+    ],
     "semantics/keep-before-unwrap-series-identity": [
       "internal/proxy/keep_unwrap_identity_test.go",
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
@@ -2233,7 +2236,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 571,
+  "registry_items": 572,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3756,6 +3759,7 @@
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go": [
       "semantics/drop-before-unwrap-stream-label",
       "semantics/keep-before-parser-unwrap-identity",
+      "semantics/keep-before-unwrap-identity-in-operands",
       "semantics/keep-before-unwrap-series-identity",
       "semantics/stdvar-grouped-pooled-variance",
       "semantics/unwrap-first-last-range-longer-than-step",
@@ -5016,5 +5020,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 353
+  "wired_items": 354
 }

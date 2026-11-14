@@ -116,3 +116,45 @@ func TestKeepIdentityHandlersReadThePlan(t *testing.T) {
 		}
 	}
 }
+
+// The handlers read the keep identity only where the lowering serves the query: a spelling the text screen leaves
+// to the string translator keeps the raw-row route and the quantile evaluator's per-stream series.
+//
+// conformance: semantics/keep-before-unwrap-series-identity
+func TestKeepIdentityHandlersFollowTheFlip(t *testing.T) {
+	p := newTestProxy(t, "http://127.0.0.1:1")
+	prof := loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, nil), nil, p.logsqlCapabilities(), false)
+	for _, q := range []string{
+		`first_over_time({app="a"} | json | keep app, n |unwrap n [5m])`,
+		`quantile_over_time(0.50, {app="a"} | json | keep app, n | unwrap n [5m])`,
+		`first_over_time({app="a"} | json | keep app, n | unwrap n [5m])`,
+	} {
+		_, served := p.lowerKeepIdentity(context.Background(), q, prof)
+		_, read := p.keepUnwrapIdentity(q)
+		if served != read {
+			t.Errorf("%s: served from the lowering %v, the handlers read the identity %v", q, served, read)
+		}
+		if _, raw := p.bareParserMetricSpec(q); raw == served {
+			t.Errorf("%s: served from the lowering %v and from raw rows %v", q, served, raw)
+		}
+	}
+}
+
+// The answers cached before the fix are not served after it: a query with a keep and an unwrap carries the fence,
+// every other query keeps its key.
+//
+// conformance: semantics/keep-before-unwrap-series-identity
+func TestKeepIdentityCacheKeysFenced(t *testing.T) {
+	for q, want := range map[string]string{
+		`first_over_time({app="a"} | json | keep app, n | unwrap n [5m])`: keepUnwrapIdentityResponseVersion,
+		`sum(rate({app="a"} | json | keep app [5m]))`:                     "",
+		`first_over_time({app="a"} | json | unwrap n [5m])`:               "",
+	} {
+		if got := keepUnwrapIdentityResponseKeyVersion(q); got != want {
+			t.Errorf("%s: fence %q, want %q", q, got, want)
+		}
+		if got := responseKeyFences(httptest.NewRequest("GET", "/loki/api/v1/query_range?step=60", nil), q, responseKeyInnerQueryRange); !strings.Contains(got, want) || want == "" && strings.Contains(got, keepUnwrapIdentityResponseVersion) {
+			t.Errorf("%s: response key fences %q", q, got)
+		}
+	}
+}
