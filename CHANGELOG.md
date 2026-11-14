@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The configuration reference and the limits registry print the defaults of `-patterns-state-stream-idle`,
+  `-backend-heavy-query-min-range`, `-backend-heavy-query-queue-wait`, `-max-stats-cache-freshness`,
+  `-slow-query-threshold`, `-slow-upstream-threshold` and `-backend-retry-max-wait` as durations (`5m0s`, `6h0m0s`,
+  `20s`, `10m0s`, `3s`, `2s`, `5s`); they printed the Go expression (`5 * time.Minute`). The defaults themselves do not
+  change.
+
 ## [2.241.0] - 2026-11-14
 
 ### Fixed
