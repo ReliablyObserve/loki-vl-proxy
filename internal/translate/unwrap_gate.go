@@ -193,7 +193,17 @@ func SplitUnwrapGate(query string) (base, field string, ok bool) {
 	if idx < 0 {
 		return query, "", false
 	}
-	m := unwrapGateMarkerRE.FindStringSubmatch(query[idx:])
+	tail := query[idx:]
+	// A gate ends with its conversion's range filter: a query that ends otherwise (pipes after the gate) is told
+	// apart before any gate is written.
+	ends := false
+	for _, g := range unwrapGateEnds {
+		ends = ends || strings.HasSuffix(tail, g.end)
+	}
+	if !ends {
+		return query, "", false
+	}
+	m := unwrapGateMarkerRE.FindStringSubmatch(tail)
 	if m == nil {
 		return query, "", false
 	}
@@ -201,12 +211,19 @@ func SplitUnwrapGate(query string) (base, field string, ok bool) {
 	if err != nil {
 		return query, "", false
 	}
-	for _, conv := range []string{"", "duration", "bytes"} {
-		if query[idx:] == UnwrapGateFor(field, conv) {
+	for _, g := range unwrapGateEnds {
+		if strings.HasSuffix(tail, g.end) && tail == UnwrapGateFor(field, g.conv) {
 			return query[:idx], field, true
 		}
 	}
 	return query, "", false
+}
+
+// unwrapGateEnds are the unwrap conversions and the range filter that ends the gate of each (UnwrapGateFor).
+var unwrapGateEnds = [...]struct{ conv, end string }{
+	{"", UnwrapFilterPipe + UnwrapInRange("")},
+	{"duration", UnwrapFilterPipe + UnwrapInRange("duration")},
+	{"bytes", UnwrapFilterPipe + UnwrapInRange("bytes")},
 }
 
 // UnwrapConversion is an unwrap conversion function: its call as written up to and including the opening

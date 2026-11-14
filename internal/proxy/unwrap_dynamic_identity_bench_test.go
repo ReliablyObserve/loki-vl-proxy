@@ -19,7 +19,7 @@ import (
 // parser with no keep (lower.DynamicUnwrapIdentity) through the real handlers, against a stub VictoriaLogs that
 // answers a row query with 2,000 rows over the window and a stats query with a small answer: the proxy's work on each
 // route the shapes take, instant, a range equal to the step and a range longer than it. unique has one series per
-// line (the one-sample proof holds); dup has 40 series of 50 lines each (the per-series evaluators answer).
+// line; dup has 40 series of 50 lines each.
 func BenchmarkDynamicIdentityRoutes(b *testing.B) {
 	b.Run("unique", func(b *testing.B) { benchDynamicIdentityRoutes(b, 2000) })
 	b.Run("dup", func(b *testing.B) { benchDynamicIdentityRoutes(b, 40) })
@@ -42,12 +42,6 @@ func benchDynamicIdentityRoutes(b *testing.B, series int) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/query":
-			_ = r.ParseForm()
-			if strings.Contains(r.Form.Get("query"), "count_uniq_hash(") {
-				// The one-sample proof: the rows and the distinct series hashes.
-				_, _ = fmt.Fprintf(w, `{"n":"%d","u":"%d"}`, rows, series)
-				return
-			}
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			_, _ = w.Write(rowBody)
 		case "/select/logsql/stats_query":
@@ -71,7 +65,6 @@ func benchDynamicIdentityRoutes(b *testing.B, series int) {
 	for _, tc := range []struct{ name, endpoint, query, step string }{
 		{"sum_by_avg_instant", "query", `sum by (app) (avg_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
 		{"sum_stddev_instant", "query", `sum(stddev_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
-		{"sum_by_quantile_instant", "query", `sum by (app) (quantile_over_time(0.9, {app="x"} | json | unwrap n [5m]))`, "300"},
 		{"sum_by_avg_tumbling", "query_range", `sum by (app) (avg_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
 		{"max_by_stdvar_tumbling", "query_range", `max by (app) (stdvar_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
 		{"sum_by_max_longer_range", "query_range", `sum by (app) (max_over_time({app="x"} | json | unwrap n [5m]))`, "60"},

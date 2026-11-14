@@ -147,8 +147,9 @@ func (p *Proxy) lowerDynamicIdentity(ctx context.Context, canon string, prof low
 			text, ok = "", false
 		}
 	}()
-	plan, err := loweringPlan(ctx, canon)
-	if err != nil || !lower.DynamicUnwrapIdentity(plan) {
+	// The handlers asked for this plan before the translation (dynamicUnwrapIdentity): the memoised one is read.
+	plan := resolvedPlan(canon)
+	if plan == nil || !lower.DynamicUnwrapIdentity(plan) {
 		return "", false
 	}
 	op, err := lower.PlanQuery(canon, plan, prof)
@@ -182,7 +183,7 @@ func dynamicIdentityOp(op string) bool {
 }
 
 // dynamicIdentityFuncs are the range functions of a dynamic identity, as a query names them.
-var dynamicIdentityFuncs = [...]string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time", "quantile_over_time"}
+var dynamicIdentityFuncs = [...]string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time"}
 
 // filterOnly reports a log query whose stages are line filters and label filters only: the queries served from the
 // lowering. The text screen (logql.MayHaveNonFilterStage) turns the others away before a plan is built; this is the

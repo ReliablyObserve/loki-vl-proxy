@@ -566,9 +566,6 @@ func (p *Proxy) withQuantileShape(r *http.Request, logql string, spec statsCompa
 	if kept, decided := p.keepUnwrapIdentity(logql); decided && !rangeGrouped {
 		// A keep before the unwrap decides the series: the labels it leaves, as the range aggregation's by would.
 		spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = p.upstreamLabelNames(kept), kept, len(kept) == 0
-	} else if !rangeGrouped && p.dynamicIdentityFor(r.Context(), logql) {
-		// The series are the stream and the hash of each line's parsed labels (lower.DynamicUnwrapIdentity).
-		spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = dynamicSeriesGroupBy, dynamicSeriesGroupBy, false
 	} else if !rangeGrouped {
 		spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = nil, nil, false
 	}

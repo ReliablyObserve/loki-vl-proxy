@@ -467,8 +467,10 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if len(spec.GroupBy) == 0 && !spec.ByExplicit && queryOuterUngrouped(originalLogql) {
 		spec.ByExplicit = true
 	}
-	if handled, served := p.serveRangeQuantile(w, r, originalLogql, spec, origSpec, manualFunc, step); handled {
-		return served
+	if manualFunc == "quantile" {
+		if shaped, shapedSpec, ok := p.withQuantileShape(r, originalLogql, spec); ok {
+			return p.proxyManualRangeMetricRange(w, shaped, shapedSpec, origSpec, manualFunc)
+		}
 	}
 	// The evaluator decides on the request's query text (isSumAllLogRange): the
 	// fold must read the same text.
@@ -502,11 +504,6 @@ func (p *Proxy) nativeMathTumblingStatsCompatible(r *http.Request, originalLogql
 		return false
 	}
 	spec, specOk := statsSpecOf(stats)
-	// quantile over the dynamic identity of a parser reads its own route: VictoriaLogs' quantile is not Loki's over
-	// two samples or more.
-	if specOk && p.dynamicIdentityFor(r.Context(), originalLogql) && normalizeManualMetricFunction(spec, origSpec) == "quantile" {
-		return false
-	}
 	// Parser stages without an explicit drop-error opt-in require the manual path
 	// to preserve Loki's error-exclusion semantics; the query's plan reads the opt-in.
 	if !specOk || !queryUsesParserStages(spec.BaseQuery) {
@@ -557,8 +554,8 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 		return false
 	}
 	// The series are the dynamic identity of a parser: VictoriaLogs takes the function per series and the
-	// aggregation over them (lower.DynamicUnwrapIdentity); quantile is read below.
-	if manualFunc != "quantile" && p.dynamicIdentityFor(r.Context(), originalLogql) {
+	// aggregation over them (lower.DynamicUnwrapIdentity).
+	if p.dynamicIdentityFor(r.Context(), originalLogql) {
 		return false
 	}
 	// An ungrouped sum of an additive unwrap function (rate, sum_over_time): the
@@ -591,9 +588,6 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	}
 	if metricFuncRequiresUnwrap(origSpec.Func) && (!origSpec.HasUnwrap || strings.TrimSpace(origSpec.UnwrapField) == "") {
 		p.fail(w, r, withoutUnwrapError(unwrapErrorFuncName(origSpec.Func)))
-		return true
-	}
-	if p.dynamicIdentityInstant(w, r, originalLogql, spec, origSpec, manualFunc) {
 		return true
 	}
 	// A bare outer aggregation without by() collapses all streams into one empty-label
@@ -1919,8 +1913,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	// of log lines share the same stream identity (same series).
 	seriesCache := make(map[string]*metricSeriesCacheEntry, 32)
 	seriesMap := make(map[string]manualSeriesSamples)
-	// A row's series hash (lower.DynamicUnwrapIdentity) is one of the fields it groups by, after any parser.
-	includeParsedLabels := queryUsesParserStages(baseQuery) || slices.Contains(groupBy, dynamicSeriesField)
+	includeParsedLabels := queryUsesParserStages(baseQuery)
 
 	fjp := vlFJParserPool.Get()
 	defer vlFJParserPool.Put(fjp)

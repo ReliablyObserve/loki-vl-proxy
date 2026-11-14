@@ -1,5 +1,5 @@
 id: semantics/unwrap-per-series-identity-raw-rows
-title: A function taken per series (avg, max, min, stddev, stdvar, quantile over time) under sum, sum by, max, min or avg reads the stream and every parsed label as the series (open, partly fixed)
+title: A function taken per series (avg, max, min, stddev, stdvar over time, rate_counter) under sum or sum by uses the stream as the series (open, partly fixed - avg to stdvar on query and on a range up to the step)
 pending: true
 proves:
   - metric-series-identity
@@ -39,49 +39,41 @@ why: |
   series; main answered 273-2704): the values are not. Related, open:
   parsed-identity/dynamic-key-parsers (the series identity of a parser).
 
-  Partly fixed (this change): the series identity is a property of the data, not of the query (two
-  lines are one series when they agree on the stream, the stored level and every
-  parsed label less the unwrapped one, whatever their values; a line with a key
-  of its own is a series of its own), so the plan names it in VictoriaLogs. For a
-  json or logfmt parser of every key with no keep, drop or format, under sum,
-  max, min or avg (by labels or none) over avg, max, min, stddev, stdvar and
-  quantile over time, the lowering unpacks the line a second time
-  under a prefix of its own, deletes every spelling of the unwrapped label, packs
-  the rest with the stored level and detected_level and hashes it
+  Partly fixed: the series identity is a property of the data, not of the
+  query (two lines are one series when they agree on the stream, the stored
+  level and every parsed label less the unwrapped one, whatever their values; a
+  line with a key of its own is a series of its own), so the plan names it in
+  VictoriaLogs. For a json or logfmt parser of every key with no keep, drop or
+  format, under sum, max, min or avg (by labels or none) over avg, max, min,
+  stddev and stdvar over time, the lowering unpacks the line a second time under
+  a prefix of its own, deletes every spelling of the unwrapped label, packs the
+  rest with the stored level, detected_level and the stream and hashes it
   (lower.DynamicUnwrapIdentity). The stats then take the function per series
-  (the hash, which holds the stream) and the aggregation over the series in VictoriaLogs,
-  on query and on query_range with the range up to the step. quantile_over_time
-  and a range longer than the step need each series' samples: one stats read
-  over the fetch span counts the rows and the distinct series hashes first. When they are equal (every line a series of its own) each window holds
-  at most one sample of a series and the function has a closed form (the value,
-  or 0 for stddev, stdvar and rate_counter), answered as sum by (C) over
-  sum_over_time, or max, min or avg over time by (C), from VictoriaLogs' stats.
-  Otherwise quantile reads each series' value counts, bounded by the series limit
-  (-max-stats-query-series: a query with more series fails with Loki's series
-  limit error, where Loki would answer), and a range longer than the step keeps
-  the stream's series of the window evaluator (still open). The proxy serves
-  these queries from the
-  lowering (UnwrapDynamicIdentity, behind -query-plan-lowering); answers cached
-  before are fenced.
+  (the hash) and the aggregation over the series in VictoriaLogs, in one stats
+  query, on query and on query_range with the range up to the step. The proxy
+  serves these queries from the lowering (UnwrapDynamicIdentity, behind
+  -query-plan-lowering); answers cached before are fenced.
 
   Proven against the Loki engine oracle and VictoriaLogs v1.53.0 and v1.49.0,
-  through the handlers, on instant, step = range, step < range and step > range:
-  TestKeepUnwrapIdentityMatchLoki (every line a series of its own: no keep shape
-  of the function list differs any more), TestStddevStdvarMatchLoki (every line of
-  a stream one series: the sum, sum by, max by and avg by forms match) and
-  TestUnwrapDynamicIdentityMatchLoki (both cases in one stream, lines that are
-  the same text, a parsed label more, a nested object, keys in either order, a
-  detected_level that differs between lines, lines that do not parse, logfmt and
-  json). Still open: a range longer than the step when the series are not all of
-  one sample (the window evaluator merges the step buckets of streams);
-  rate_counter, which keeps its own one-sample proof for logfmt; a label filter
-  between the parser and the unwrap under the
-  Loki profile (semantics/unwrap-per-series-identity-label-filter); first and
-  last over a range longer than the step (semantics/unwrap-first-last-range-longer-than-step);
+  through the handlers, on instant, step = range and step > range:
+  TestKeepUnwrapIdentityMatchLoki (every line a series of its own),
+  TestStddevStdvarMatchLoki (every line of a stream one series: the sum, sum by,
+  max by and avg by forms) and TestUnwrapDynamicIdentityMatchLoki (both cases in
+  one stream, lines that are the same text, a parsed label more, a nested
+  object, keys in either order, a detected_level that differs between lines,
+  lines that do not parse, logfmt and json).
+
+  Still open: a range longer than the step (step < range) keeps the stream's
+  series: the window evaluator merges the step buckets of streams, not of a
+  series hash, so those queries are translated by the string translator as
+  before; rate_counter and quantile_over_time
+  (semantics/unwrap-quantile-sum-by-group-quantile) keep their previous series;
+  a label filter between the parser and the unwrap under the Loki profile
+  (semantics/unwrap-per-series-identity-label-filter); first and last over a
+  range longer than the step (semantics/unwrap-first-last-range-longer-than-step);
   rate_counter's extrapolated value (semantics/unwrap-rate-counter-window-extrapolation).
-  Not modelled: structured metadata other than the level fields, a line that
-  holds one key twice, and more than -max-stats-query-series series of several
-  samples each on the routes that read each series.
+  Not modelled: structured metadata other than the level fields and a line that
+  holds one key twice.
 corpus:
   size: 4
   dimensions:
@@ -107,7 +99,7 @@ gap:
   status: open
   impact: explore-visible
   effort: L
-  area: 'internal/queryplan/lower unwrap_dynamic.go (DynamicUnwrapIdentity, the identity pipes), unwrap.go; internal/proxy query_lowering.go (lowerDynamicIdentity), query_translation.go (dynamicUnwrapIdentity), range_metric_compat.go (the stats, raw-row and native routes), quantile_histogram.go (withQuantileShape), vector_agg_fold.go (the sum fold)'
+  area: 'internal/queryplan/lower unwrap_dynamic.go (DynamicUnwrapIdentity, the identity pipes), unwrap.go; internal/proxy query_lowering.go (lowerDynamicIdentity), query_translation.go, unwrap_dynamic_identity.go (dynamicUnwrapIdentity, dynamicIdentityWindows), range_metric_compat.go (the instant stats route); the window evaluator (unwrap_samples.go) for a range longer than the step'
   loki: 'pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next; pkg/logql/log/metrics_extraction.go:150-178 labelSampleExtractor (series = stream + parsed labels)'
   proxy: 'the value per stream and hash of the parsed labels, then the aggregation over the series'
   planned_test: 'TestUnwrapDynamicIdentityMatchLoki, TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicUnwrapIdentity, TestDynamicUnwrapIdentityLowering, FuzzDynamicUnwrapIdentity (internal/queryplan/lower); TestDynamicIdentityServedFromPlan, TestDynamicIdentityHandlersReadThePlan (internal/proxy); e2e: TestCompat_UnwrapPerSeriesIdentity (test/e2e-compat, group core) to add'

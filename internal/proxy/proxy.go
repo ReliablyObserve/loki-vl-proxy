@@ -2797,10 +2797,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var dynamicServed bool
-	if dynamicServed, r = p.dynamicIdentityWindows(w, r, logqlQuery); dynamicServed {
-		return
-	}
+	// A parser's dynamic identity over a range longer than the step keeps the stream's series (dynamicIdentityWindows).
+	r = p.dynamicIdentityWindows(r, logqlQuery)
+
 	if postAgg, ok := parseInstantMetricPostAggQuery(logqlQuery); ok {
 		if postAgg.name == "topk" || postAgg.name == "bottomk" {
 			stepsRun.arm() // ranked per step (applyTopKToMatrix)

@@ -17,7 +17,7 @@ const dynamicHash = `| unpack_json from _msg result_prefix "__lvp_p_" | delete _
 // aggregation; a query with a keep, a drop, a format, a named extraction, two parsers or a range by keeps the
 // translator's identity.
 //
-// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile, semantics/stdvar-grouped-pooled-variance
+// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/stdvar-grouped-pooled-variance
 func TestDynamicUnwrapIdentity(t *testing.T) {
 	const j = `{app="a"} | json | unwrap n [5m]`
 	for _, tc := range []struct {
@@ -28,7 +28,7 @@ func TestDynamicUnwrapIdentity(t *testing.T) {
 		{`sum(avg_over_time(` + j + `))`, true, true},
 		{`sum by (app) (max_over_time(` + j + `))`, true, true},
 		{`max by (app) (stdvar_over_time({app="a"} | logfmt | unwrap n [5m]))`, true, true},
-		{`avg(quantile_over_time(0.9, ` + j + `))`, true, true},
+		{`avg(quantile_over_time(0.9, ` + j + `))`, false, false},
 		{`min(rate_counter(` + j + `))`, false, false},
 		{`sum(min_over_time({app="a"} |= "x" | json | unwrap n [5m]))`, true, true},
 		{`sum(stddev_over_time({app="a"} | json | n > 5 | unwrap n [5m]))`, true, true},
@@ -76,7 +76,7 @@ func TestDynamicUnwrapIdentity(t *testing.T) {
 // The stats of the dynamic identity: the identity pipes after the unwrap gate, a value per series (the stream and
 // the hash), then the clause's aggregation over them; stdvar squares the deviation of each series in VictoriaLogs.
 //
-// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile, semantics/stdvar-grouped-pooled-variance
+// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/stdvar-grouped-pooled-variance
 func TestDynamicUnwrapIdentityLowering(t *testing.T) {
 	const j = `{app="a"} | json | unwrap n [5m]`
 	for q, want := range map[string]string{
@@ -84,7 +84,6 @@ func TestDynamicUnwrapIdentityLowering(t *testing.T) {
 		`sum by (app) (max_over_time(` + j + `))`:              dynamicHash + ` | stats by (app, __lvp_sid) max(__lvp_v) as __lvp_inner | stats by (app) sum(__lvp_inner)`,
 		`max by (app) (stdvar_over_time(` + j + `))`:           dynamicHash + ` | stats by (app, __lvp_sid) stddev(__lvp_v) as __lvp_inner | math __lvp_inner*__lvp_inner as __lvp_inner_var | stats by (app) max(__lvp_inner_var)`,
 		`sum(stdvar_over_time(` + j + `))`:                     dynamicHash + ` | stats by (__lvp_sid) stddev(__lvp_v) as __lvp_inner | math __lvp_inner*__lvp_inner as __lvp_inner_var | stats sum(__lvp_inner_var)`,
-		`sum by (app) (quantile_over_time(0.9, ` + j + `))`:    dynamicHash + ` | stats by (app, __lvp_sid) quantile(0.9, __lvp_v) as __lvp_inner | stats by (app) sum(__lvp_inner)`,
 		`avg(stddev_over_time(` + j + `))`:                     dynamicHash + ` | stats by (__lvp_sid) stddev(__lvp_v) as __lvp_inner | stats avg(__lvp_inner)`,
 		`sum(min_over_time({app="a"} | json | unwrap n [5m]))`: dynamicHash + ` | stats by (__lvp_sid) min(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)`,
 	} {
