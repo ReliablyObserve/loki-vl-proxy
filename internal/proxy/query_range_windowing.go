@@ -186,7 +186,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 		queryLimit = strconv.Itoa(p.maxLines)
 	}
 	queryLimit = sanitizeLimit(queryLimit, p.requestQueryLimits(r.Context()).MaxEntriesLimitPerQuery)
-	limitValue, err := strconv.Atoi(queryLimit)
+	limitValue, _ := strconv.Atoi(queryLimit)
 
 	categorizedLabels := requestWantsCategorizedLabels(r)
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
@@ -366,7 +366,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	if strings.Contains(originalQuery, "decolorize") {
 		decolorizeStreams(streams)
 	}
-	streams, err = applyQueryLineFormat(r.Context(), streams, originalQuery)
+	streams, err := applyQueryLineFormat(r.Context(), streams, originalQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		return true
