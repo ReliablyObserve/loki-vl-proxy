@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.220.0] - 2026-11-13
-
 ### Fixed
 
 - Queries Loki rejects after it has parsed them are now rejected the same way, with Loki's `400` and text, before the
@@ -28,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   step, still answers `500`.
 - An instant log query with a `limit` above `max_entries_limit_per_query` answers Loki's `log queries are not
   supported as an instant query type, ...` instead of the limit error, as in Loki.
+
+## [2.220.0] - 2026-11-13
+
+### Fixed
+
 - **Breaking:** the proxy's limits and queues now answer Loki's text and status for their class, and no flag name
   reaches a client. The flag that set the limit is in the `request error` log line (`limit_flag`, with its setting
   in `limit_value`), and the operator wording that names it is the line's `upstream_error`.
