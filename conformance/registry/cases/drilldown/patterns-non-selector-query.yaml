@@ -11,7 +11,7 @@ why: |
   bare selector, so its pages are not affected; an API client sending a
   pipeline gets an answer where Loki rejects the request.
 
-  Fixed (#554, route validation before any handler): a /patterns query that is not a stream selector is a 400 `only label matchers are supported` with no VictoriaLogs call, in Loki's plain-text shape since the typed error layer. patternScopeQuery now only serves callers that reach the handler without the route (tests).
+  Fixed (#554, route validation before any handler): a /patterns query that is not a stream selector is a 400 `only label matchers are supported` with no VictoriaLogs call, in Loki's plain-text shape since the typed error layer: the route rejects such a query before the handler runs. The case was recorded on 2026-11-07, after #554, while the route already answered 400.
 request:
   method: GET
   path: /loki/api/v1/patterns
