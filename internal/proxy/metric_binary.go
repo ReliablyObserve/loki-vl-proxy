@@ -240,14 +240,14 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 		// upstream status so they can react meaningfully.
 		if isGrafanaSourcedRequest(r) {
 			if upstream.status > 0 {
-				p.writeGrafanaStatsFailure(w, p.redactedBackendStatusError("", upstream.status, upstream.body))
+				p.writeBackendError(w, r.Context(), upstream.status, upstream.body)
 			} else {
 				p.writeGrafanaStatsFailure(w, upstream.err)
 			}
 			return
 		}
 		if upstream.status > 0 {
-			p.writeBackendError(w, upstream.status, upstream.body)
+			p.writeBackendError(w, r.Context(), upstream.status, upstream.body)
 		} else {
 			p.writeErr(w, r.Context(), upstream.err)
 		}
@@ -1774,7 +1774,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, stats ph
 
 	// Propagate VL error status
 	if status >= 400 {
-		p.writeBackendError(w, status, body)
+		p.writeBackendError(w, r.Context(), status, body)
 		return
 	}
 

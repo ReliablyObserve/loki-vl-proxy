@@ -535,7 +535,8 @@ func TestInstantAggregationFailureIsRedacted(t *testing.T) {
 				w := httptest.NewRecorder()
 				p.handleQuery(w, req)
 				if backendStatus == http.StatusBadRequest {
-					assertLokiBadData(t, w)
+					// VictoriaLogs refusing the LogsQL of a validated query is a plan defect: Loki's 500.
+					assertPlanDefectAnswer(t, w)
 					return
 				}
 				if w.Code < 400 {

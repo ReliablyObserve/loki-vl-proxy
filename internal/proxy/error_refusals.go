@@ -131,6 +131,10 @@ func queryRefusal(err error) *lokierr.Error {
 	if typed, ok := lokierr.As(err); ok {
 		return typed
 	}
+	if defect, ok := asType[*planDefectError](err); ok {
+		// VictoriaLogs refused what the proxy wrote: the proxy's defect, never the client's syntax error.
+		return planDefectAnswer(defect)
+	}
 	if unsupported, ok := asType[*translator.UnsupportedError](err); ok && unsupported.Func != "count_values" {
 		return notServed(unsupported.Func, err)
 	}

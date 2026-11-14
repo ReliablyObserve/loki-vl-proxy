@@ -312,6 +312,7 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 	metrics = append(metrics, p.backendReadMetrics(now)...)
 	metrics = append(metrics, p.internalOperationMetrics(now)...)
 	metrics = append(metrics, p.loweringShadowMetrics(now)...)
+	metrics = append(metrics, p.planDefectMetrics(now)...)
 	metrics = append(metrics, p.clientMetrics(now)...)
 	p.metrics.mu.RUnlock()
 
@@ -766,6 +767,22 @@ func (p *OTLPPusher) backendDurationMetrics(now int64) []map[string]interface{} 
 		return nil
 	}
 	return []map[string]interface{}{p.histogramMetric("loki_vl_proxy_backend_duration_seconds", "VL backend response time.", "s", points...)}
+}
+
+func (p *OTLPPusher) planDefectMetrics(now int64) []map[string]interface{} {
+	keys := sortedKeys(mapsFromCounters(p.metrics.planDefectsTotal))
+	points := make([]map[string]interface{}, 0, len(keys))
+	for _, key := range keys {
+		parts := splitMetricKey(key, 2)
+		if parts == nil {
+			continue
+		}
+		points = append(points, p.counterDP("loki_vl_proxy_plan_defects_total", p.metrics.planDefectsTotal[key].Load(), now, attr("endpoint", parts[0]), attr("plan_route", parts[1])))
+	}
+	if len(points) == 0 {
+		return nil
+	}
+	return []map[string]interface{}{p.sumMetric("loki_vl_proxy_plan_defects_total", "Requests the proxy validated as Loki does whose LogsQL VictoriaLogs refused, answered with Loki's 500, by client endpoint and VictoriaLogs route.", "", points...)}
 }
 
 func (p *OTLPPusher) loweringShadowMetrics(now int64) []map[string]interface{} {

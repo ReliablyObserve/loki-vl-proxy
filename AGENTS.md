@@ -80,7 +80,10 @@ Every Loki error message is a registry item, every route x error kind is a cell 
   its inputs (`withoutUnwrapError`, `timestampParamError`, `bareMetricRefusal`); Loki's syntax error without a position
   where Loki's own carries one only the parser has (`unplacedSyntaxError`); and Loki's fixed `500 Internal Server
   Error` where Loki accepts the query and the proxy cannot serve it yet (`notServed(construct, cause)`, the construct
-  and cause in the log line only, a registry case holding the gap open). Never classify a failure from its text:
+  and cause in the log line only, a registry case holding the gap open). A VictoriaLogs refusal of the LogsQL or an
+  argument the proxy wrote is the proxy's defect, typed where it is classified (`planDefect`): Loki's `500 Internal
+  Server Error`, counted in `loki_vl_proxy_plan_defects_total`, the route and the LogsQL hash in the log line; never a
+  client `400`. Never classify a failure from its text:
   `queryRefusal` reads the failure's type, and offsets use `offsetError`. `TestErrorLayerSites` holds each file's count
   of free-text sites (no file may gain one) and `TestClientErrorTextsCarryNoInternalWording` the words of the sites left.
 

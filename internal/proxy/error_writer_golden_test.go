@@ -171,7 +171,7 @@ func errorWriterAnswers(t *testing.T) map[string]errorWriterAnswer {
 	}
 	for _, b := range bodies {
 		rec := httptest.NewRecorder()
-		out["writeBackendError/"+b.name] = recordErrorAnswer(rec, p.writeBackendError(rec, b.status, []byte(b.body)))
+		out["writeBackendError/"+b.name] = recordErrorAnswer(rec, p.writeBackendError(rec, context.Background(), b.status, []byte(b.body)))
 	}
 	return out
 }

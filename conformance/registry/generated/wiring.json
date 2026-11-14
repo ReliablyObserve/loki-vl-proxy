@@ -643,6 +643,7 @@
     ],
     "loki_api_v1_tail": [
       "internal/proxy/extracted_suffix_collision_test.go",
+      "internal/proxy/plan_defect_test.go",
       "internal/proxy/tail_backend_errors_test.go",
       "internal/proxy/tail_backend_retry_test.go",
       "internal/proxy/tail_pipeline_test.go",
@@ -1118,6 +1119,7 @@
       "internal/proxy/error_layer_mixed_test.go",
       "internal/proxy/error_writer_golden_test.go",
       "internal/proxy/loki_client_error_test.go",
+      "internal/proxy/plan_defect_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
       "internal/proxy/stats_body_failure_test.go",
       "internal/proxy/stream_response_broken_body_test.go",
@@ -1133,6 +1135,7 @@
       "internal/proxy/error_layer_sites_test.go",
       "internal/proxy/error_writer_golden_test.go",
       "internal/proxy/loki_client_error_test.go",
+      "internal/proxy/plan_defect_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
       "internal/proxy/stats_body_failure_test.go",
       "internal/proxy/stream_response_broken_body_test.go",
@@ -1557,6 +1560,7 @@
       "test/e2e-compat/error_answers_like_loki_test.go"
     ],
     "semantics/parser-reads-unicode-blank-as-white-space": [
+      "internal/proxy/plan_defect_test.go",
       "internal/querycorpus/grammar_sweep_test.go",
       "internal/querycorpus/odd_spellings_loki_test.go"
     ],
@@ -1966,6 +1970,11 @@
       "internal/proxy/error_refusals_test.go",
       "internal/querycorpus/grammar_sweep_test.go"
     ],
+    "semantics/vl-refusal-is-plan-defect": [
+      "internal/proxy/multitenant_tenant_failure_test.go",
+      "internal/proxy/plan_defect_test.go",
+      "internal/proxy/upstream_bad_request_test.go"
+    ],
     "semantics/without-comparison-inside-ignored": [
       "internal/proxy/without_open_shapes_test.go",
       "test/e2e-compat/aggregation_over_binary_test.go"
@@ -2210,7 +2219,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 567,
+  "registry_items": 568,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2927,6 +2936,9 @@
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-adaptive-limit"
     ],
+    "internal/proxy/multitenant_tenant_failure_test.go": [
+      "semantics/vl-refusal-is-plan-defect"
+    ],
     "internal/proxy/multitenant_tenant_label_test.go": [
       "semantics/tenant-label-default-aliases",
       "tenant-label-isolation"
@@ -3127,6 +3139,13 @@
     "internal/proxy/plain_stream_labels_test.go": [
       "loki_api_v1_query_range",
       "semantics/plain-name-after-parser-reads-stream-label"
+    ],
+    "internal/proxy/plan_defect_test.go": [
+      "loki_api_v1_tail",
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text",
+      "semantics/parser-reads-unicode-blank-as-white-space",
+      "semantics/vl-refusal-is-plan-defect"
     ],
     "internal/proxy/plan_predicate_parity_test.go": [
       "architecture-syntax-package-layering"
@@ -3612,6 +3631,9 @@
       "semantics/unwrap-range-last-point",
       "semantics/unwrap-rate-ungrouped-sum-per-stream",
       "window-bounds-and-step-alignment"
+    ],
+    "internal/proxy/upstream_bad_request_test.go": [
+      "semantics/vl-refusal-is-plan-defect"
     ],
     "internal/proxy/vector_agg_fold_test.go": [
       "metric-series-identity",
@@ -4868,7 +4890,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 570,
+  "tests_with_markers": 573,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -4976,5 +4998,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 347
+  "wired_items": 348
 }

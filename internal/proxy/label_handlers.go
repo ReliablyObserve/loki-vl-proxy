@@ -469,7 +469,7 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 
 	// Propagate VL error status
 	if status >= 400 {
-		code := p.writeBackendError(w, status, body)
+		code := p.writeBackendError(w, r.Context(), status, body)
 		p.metrics.RecordRequest("series", code, time.Since(start))
 		return
 	}

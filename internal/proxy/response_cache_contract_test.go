@@ -116,7 +116,7 @@ func TestGrafanaStatsFailure_PreservesFailures(t *testing.T) {
 		{"wrapped_deadline", fmt.Errorf("private backend: %w", context.DeadlineExceeded), 504, lokiErrDeadlineExceeded},
 		{"cancelled", context.Canceled, 499, lokiErrClientCanceled},
 		{"queue_full", p.redactedBackendStatusError("", 429, []byte("private backend queue full")), 429, lokiTooManyOutstandingRequests},
-		{"query_rejected", p.redactedBackendStatusError("", 400, []byte(vlParseErrorBody)), 400, lokiErrParse},
+		{"query_rejected", p.redactedBackendStatusError("", 400, []byte(vlParseErrorBody)), 500, lokiErrInternal},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()

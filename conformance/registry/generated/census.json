@@ -980,6 +980,7 @@
     "semantics/vector-call-blank-before-parenthesis-as-query | compare:observed",
     "semantics/vector-call-blank-before-parenthesis-as-query | gap:open",
     "semantics/vector-call-blank-before-parenthesis-as-query | query",
+    "semantics/vl-refusal-is-plan-defect | compare:exact",
     "semantics/window-edge-float64-nanoseconds | compare:observed",
     "semantics/window-edge-float64-nanoseconds | gap:documented",
     "semantics/window-edge-float64-nanoseconds | query",
@@ -1440,6 +1441,7 @@
     "internal/proxy/metadata_scan_sim_scenarios_test.go | backend-admission-and-heavy-query-queueing",
     "internal/proxy/metadata_scan_sim_scenarios_test.go | limits/concurrent-full-retention-scans-exhaust-backend",
     "internal/proxy/metadata_scan_sim_scenarios_test.go | limits/metadata-scan-adaptive-limit",
+    "internal/proxy/multitenant_tenant_failure_test.go | semantics/vl-refusal-is-plan-defect",
     "internal/proxy/multitenant_tenant_label_test.go | semantics/tenant-label-default-aliases",
     "internal/proxy/multitenant_tenant_label_test.go | tenant-label-isolation",
     "internal/proxy/nested_vector_aggregation_differential_test.go | metric-series-identity",
@@ -1555,6 +1557,11 @@
     "internal/proxy/physical_sites_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/proxy/plain_stream_labels_test.go | loki_api_v1_query_range",
     "internal/proxy/plain_stream_labels_test.go | semantics/plain-name-after-parser-reads-stream-label",
+    "internal/proxy/plan_defect_test.go | loki_api_v1_tail",
+    "internal/proxy/plan_defect_test.go | semantics/error-layer-backend-failure-status",
+    "internal/proxy/plan_defect_test.go | semantics/error-layer-backend-text",
+    "internal/proxy/plan_defect_test.go | semantics/parser-reads-unicode-blank-as-white-space",
+    "internal/proxy/plan_defect_test.go | semantics/vl-refusal-is-plan-defect",
     "internal/proxy/plan_predicate_parity_test.go | architecture-syntax-package-layering",
     "internal/proxy/plan_route_metric_test.go | architecture-syntax-package-layering",
     "internal/proxy/plan_route_parity_test.go | architecture-syntax-package-layering",
@@ -1844,6 +1851,7 @@
     "internal/proxy/unwrap_ungrouped_sum_differential_test.go | semantics/unwrap-range-last-point",
     "internal/proxy/unwrap_ungrouped_sum_differential_test.go | semantics/unwrap-rate-ungrouped-sum-per-stream",
     "internal/proxy/unwrap_ungrouped_sum_differential_test.go | window-bounds-and-step-alignment",
+    "internal/proxy/upstream_bad_request_test.go | semantics/vl-refusal-is-plan-defect",
     "internal/proxy/vector_agg_fold_test.go | metric-series-identity",
     "internal/proxy/vector_agg_fold_test.go | semantics/non-sum-vector-aggregation-unreduced",
     "internal/proxy/vector_agg_log_selector_test.go | loki_api_v1_query",
@@ -2555,7 +2563,7 @@
   ],
   "counts": {
     "case_consumers": {
-      "any": 34,
+      "any": 35,
       "api": 92,
       "drilldown": 50,
       "explore": 176,
@@ -2563,7 +2571,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 569,
+      "go": 572,
       "playwright": 1
     },
     "page_kinds": {
@@ -2583,7 +2591,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 104,
-    "wired_items": 347
+    "wired_items": 348
   },
   "gates": [
     "A/B shape selection",

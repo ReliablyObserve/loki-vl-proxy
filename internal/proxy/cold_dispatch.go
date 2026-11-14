@@ -239,7 +239,7 @@ func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsql
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		p.writeBackendError(w, resp.StatusCode, body)
+		p.writeBackendError(w, r.Context(), resp.StatusCode, body)
 		return
 	}
 	p.processLogQueryResponse(w, r, resp)
@@ -334,7 +334,7 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		if hotResp != nil {
 			hotResp.Body.Close()
 		}
-		p.writeBackendError(w, coldResp.StatusCode, body)
+		p.writeBackendError(w, r.Context(), coldResp.StatusCode, body)
 		return
 	}
 
@@ -350,7 +350,7 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		body, _ := readBodyLimited(hotResp.Body, maxUpstreamErrorBodyBytes)
 		hotResp.Body.Close()
 		coldResp.Body.Close()
-		p.writeBackendError(w, hotResp.StatusCode, body)
+		p.writeBackendError(w, r.Context(), hotResp.StatusCode, body)
 		return
 	}
 
@@ -418,7 +418,7 @@ func bufferMergeResponse(resp *http.Response, limit int64) error {
 func (p *Proxy) processLogQueryResponse(w http.ResponseWriter, r *http.Request, resp *http.Response) {
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		p.writeBackendError(w, resp.StatusCode, body)
+		p.writeBackendError(w, r.Context(), resp.StatusCode, body)
 		return
 	}
 

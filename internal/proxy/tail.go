@@ -263,7 +263,9 @@ func (e *tailClientWriteError) Unwrap() error { return e.err }
 // log only.
 func (p *Proxy) closeTailWithError(ctx context.Context, conn tailConn, err error) {
 	_, _, reason := lokiClientError(ctx, err)
-	p.log.Debug("tail ended with a backend error", "error", err)
+	if !p.logTailPlanDefect(ctx, err) {
+		p.log.Debug("tail ended with a backend error", "error", err)
+	}
 	if len(reason) > maxTailCloseReasonBytes {
 		reason = reason[:maxTailCloseReasonBytes]
 	}
