@@ -44,7 +44,7 @@ compare:
     whatever second inside it the range ends at.
 gap:
   status: fixed
-  fixed_by: TBD-PR
+  fixed_by: "#1473"
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy/patterns_state.go (state reads), patterns_exact.go (exact tier), patterns_counts.go (counts tier), postprocess.go patternSamplesEndNs'
