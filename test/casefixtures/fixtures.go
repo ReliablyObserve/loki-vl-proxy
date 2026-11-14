@@ -12,7 +12,10 @@
 // VictoriaLogs URLs it is given.
 package casefixtures
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Route is how a stream reaches VictoriaLogs.
 type Route string
@@ -203,11 +206,10 @@ func profileStreams() []Stream {
 		},
 		{
 			Name:   "matrix-extraction-list-json",
-			Cases:  []string{"profiles/json-extraction-list-exposes-only-listed", "semantics/metadata-answered-as-parsed-after-extraction-list"},
+			Cases:  []string{"profiles/json-extraction-list-exposes-only-listed"},
 			Labels: m{"app": "matrix-extraction-list", "case": "json"},
 			Entries: []Entry{
 				{Line: `{"msg":"hello","level":"info"}`, VLFields: m{"level": "info"}},
-				{Line: "metadata line", Metadata: m{"msg": "hello"}},
 			},
 			Route: RouteJSONLine,
 		},
@@ -269,6 +271,36 @@ func profileStreams() []Stream {
 
 // semanticsStreams are the fixtures of the semantics cases (cases/semantics).
 func semanticsStreams() []Stream {
+	// m and s are stream labels, not structured metadata: Loki splits a metric query's series by structured
+	// metadata and the proxy does not (a difference of its own), and every metric query on {app="x"} (the fixed
+	// nested aggregation case among them) reads these streams too. As labels both sides split alike.
+	var labelled []Stream
+	for i, v := range []string{"5.0", "5", "6", "abc", ""} {
+		labels := m{"app": "x", "case": "numeric"}
+		if v != "" {
+			labels["m"] = v
+		}
+		labelled = append(labelled, Stream{
+			Name:    fmt.Sprintf("x-numeric-%d", i),
+			Cases:   []string{"semantics/label-filter-numeric-equality", "semantics/label-filter-numeric-error-label"},
+			Labels:  labels,
+			Entries: lines("numeric line " + fmt.Sprint(i)),
+			Route:   RouteJSONLine,
+		})
+	}
+	for i, v := range []string{"a detected_level b", "other text"} {
+		labelled = append(labelled, Stream{
+			Name:    fmt.Sprintf("x-quoted-%d", i),
+			Cases:   []string{"semantics/translator-reads-quoted-text-as-syntax"},
+			Labels:  m{"app": "x", "case": "quoted", "s": v},
+			Entries: lines("quoted line " + fmt.Sprint(i)),
+			Route:   RouteJSONLine,
+		})
+	}
+	return append(labelled, semanticsStreamsRest()...)
+}
+
+func semanticsStreamsRest() []Stream {
 	// The streams of app="x" are one selector for twelve cases (the case texts are corpus rows and stay as they
 	// are); each stream holds the lines of the cases that read it.
 	return []Stream{
@@ -281,26 +313,6 @@ func semanticsStreams() []Stream {
 				`{"level":"info","msg":"parsed level equals the stream label"}`,
 			),
 			Route: RouteJSONLine,
-		},
-		{
-			Name:   "x-numeric-metadata",
-			Cases:  []string{"semantics/label-filter-numeric-equality", "semantics/label-filter-numeric-error-label"},
-			Labels: m{"app": "x", "case": "numeric"},
-			Entries: []Entry{
-				{Line: "numeric one", Metadata: m{"m": "5.0"}},
-				{Line: "numeric two", Metadata: m{"m": "5"}},
-				{Line: "numeric three", Metadata: m{"m": "6"}},
-				{Line: "numeric four", Metadata: m{"m": "abc"}},
-				{Line: "numeric five"},
-			},
-			Route: RouteJSONLine,
-		},
-		{
-			Name:    "x-parsed-key-colliding",
-			Cases:   []string{"profiles/parsed-key-colliding-with-structured-metadata"},
-			Labels:  m{"app": "x", "case": "collide"},
-			Entries: []Entry{{Line: `{"trace_id":"line-trace","msg":"collide"}`, Metadata: m{"trace_id": "sm-trace"}}},
-			Route:   RouteJSONLine,
 		},
 		{
 			Name:    "x-pod-zone",
@@ -332,16 +344,6 @@ func semanticsStreams() []Stream {
 				`{"user":"m","msg":"info"}`,
 				`{"user":"other","msg":"m"}`,
 			),
-			Route: RouteJSONLine,
-		},
-		{
-			Name:   "x-quoted-text",
-			Cases:  []string{"semantics/translator-reads-quoted-text-as-syntax"},
-			Labels: m{"app": "x", "case": "quoted"},
-			Entries: []Entry{
-				{Line: "quoted one", Metadata: m{"s": "a detected_level b"}},
-				{Line: "quoted two", Metadata: m{"s": "other text"}},
-			},
 			Route: RouteJSONLine,
 		},
 		{

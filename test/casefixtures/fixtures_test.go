@@ -707,3 +707,19 @@ func TestStreamsLeakIntoNoOtherCase(t *testing.T) {
 		}
 	}
 }
+
+// Every metric query on {app="x"} reads every stream of the selector. Loki splits a metric query's series by
+// structured metadata and the proxy does not, so a stream of that selector with metadata makes each fixed case on it
+// differ for a reason of its own.
+func TestSharedSelectorStreamsCarryNoStructuredMetadata(t *testing.T) {
+	for _, s := range Streams() {
+		if s.Labels["app"] != "x" {
+			continue
+		}
+		for _, e := range s.Entries {
+			if len(e.Metadata) > 0 || len(e.LokiMetadata) > 0 {
+				t.Errorf("stream %s of the shared selector {app=\"x\"} carries structured metadata %v%v", s.Name, e.Metadata, e.LokiMetadata)
+			}
+		}
+	}
+}
