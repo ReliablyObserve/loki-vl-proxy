@@ -19,8 +19,8 @@ The proxy is stateless (except optional disk cache). Scale horizontally without 
 
 Key scaling controls (all tunable via CLI flags):
 
-- `-max-concurrent 100` — per-replica in-flight request cap (excess gets `503`); also bounds concurrent backend operations
-- `-rate-limit-per-second 50` / `-rate-limit-burst 100` — per-client token bucket
+- `-max-concurrent 100` — per-replica in-flight request cap (excess gets Loki's `429 too many outstanding requests`; the flag is named in the log line); also bounds concurrent backend operations
+- `-rate-limit-per-second 50` / `-rate-limit-burst 100` — per-client token bucket (excess gets the same `429 too many outstanding requests`)
 - `-cb-fail-threshold 5` / `-cb-open-duration 10s` — backend circuit breaker
 - use Grafana refresh policy, ingress shaping, HPA, and cache tuning as complementary levers
 
