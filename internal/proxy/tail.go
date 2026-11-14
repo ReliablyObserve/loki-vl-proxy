@@ -355,11 +355,22 @@ func (p *Proxy) fetchTailHistory(parent context.Context, logsqlQuery, startRaw, 
 
 	now := time.Now()
 	h := tailHistory{start: tailHistoryStart(startRaw, now), end: now}
-	limit := tailHistoryLimit(limitRaw, p.requestQueryLimits(parent).MaxEntriesLimitPerQuery)
+	limits := p.requestQueryLimits(parent)
+	limit := tailHistoryLimit(limitRaw, limits.MaxEntriesLimitPerQuery)
+	readStart := h.start
+	// Loki upgrades the tail and sends no history when the window from start
+	// is longer than max_query_length (recorded with start=1); the tail then
+	// carries live entries only. The call before the upgrade stays, with the
+	// shape of the access probe it replaced: the last five seconds, one row,
+	// discarded, so a failing backend still fails the request.
+	skipHistory := queryLengthTypedError(limits.MaxQueryLength, h.start, h.end) != nil
+	if skipHistory {
+		readStart, limit = h.end.Add(-5*time.Second), 1
+	}
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery+" | sort by (_time desc)")
-	params.Set("start", formatVLTimestamp(h.start.UTC().Format(time.RFC3339Nano)))
+	params.Set("start", formatVLTimestamp(readStart.UTC().Format(time.RFC3339Nano)))
 	params.Set("end", formatVLTimestamp(h.end.UTC().Format(time.RFC3339Nano)))
 	params.Set("limit", strconv.Itoa(limit))
 
@@ -381,7 +392,7 @@ func (p *Proxy) fetchTailHistory(parent context.Context, logsqlQuery, startRaw, 
 		return h, p.redactedBackendStatusError("", resp.StatusCode, body)
 	}
 	var rows []byte
-	if tp.exposure.filtersLineFields() {
+	if tp.exposure.filtersLineFields() && !skipHistory {
 		// The limit counts the entries a Loki label filter keeps, as in a
 		// query_range response: further pages fill it.
 		rows, err = p.refillLineFieldRows(ctx, resp.Body, params, limit, false, tp.exposure, !tp.levelAsMetadata,
@@ -395,7 +406,9 @@ func (p *Proxy) fetchTailHistory(parent context.Context, logsqlQuery, startRaw, 
 		p.log.Debug("tail history skipped", "error", err)
 		return h, nil
 	}
-	h.rows = rows
+	if !skipHistory {
+		h.rows = rows
+	}
 	return h, nil
 }
 
@@ -410,6 +423,12 @@ func (p *Proxy) sendTailHistory(ctx context.Context, conn tailConn, tp *tailPipe
 	if p.tailMode != TailModeSynthetic {
 		tp.resume.track = true
 	}
+	// Loki reads the history through its query path, whose entries carry
+	// detected_level in the stream labels (categorize-labels: in the entry
+	// metadata), where its live tailer sends the pushed stream as is.
+	noop := tp.noop
+	tp.noop = false
+	defer func() { tp.noop = noop }()
 	if err := p.writeTailRows(ctx, conn, tp, h.rows); err != nil {
 		return err
 	}

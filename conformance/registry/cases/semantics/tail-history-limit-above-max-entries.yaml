@@ -28,6 +28,9 @@ request:
     TestTailHistory_LimitDefaultsLikeLoki (internal/proxy) set the limit to
     10 and request 50: the history holds the newest 10 entries on every tail
     mode.
+  verify:
+    blocked_by: volume
+    reason: 'needs a Loki with a non-zero max_entries_limit_per_query; the stack runs 0'
 compare:
   mode: observed
   fields: [status, streams.values]

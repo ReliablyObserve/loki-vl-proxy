@@ -346,7 +346,11 @@ func (r *tailResume) entryKey(e tailEntry) uint64 {
 	}
 	r.names = r.names[:0]
 	for k := range e.stream {
-		r.names = append(r.names, k)
+		// detected_level is derived: the history carries it in the stream
+		// labels where the live frame of the same entry does not.
+		if k != detectedLevelLabel {
+			r.names = append(r.names, k)
+		}
 	}
 	slices.Sort(r.names)
 	h := &r.hash

@@ -55,6 +55,44 @@ func dialTailHistory(t *testing.T, base string, params url.Values, categorize bo
 	return conn, http.StatusSwitchingProtocols
 }
 
+// tailFrameEntries are the entries of one tail frame.
+func tailFrameEntries(msg []byte) []tailHistoryEntry {
+	var frame struct {
+		Streams []struct {
+			Stream map[string]string   `json:"stream"`
+			Values [][]json.RawMessage `json:"values"`
+		} `json:"streams"`
+	}
+	if json.Unmarshal(msg, &frame) != nil {
+		return nil
+	}
+	var got []tailHistoryEntry
+	for _, s := range frame.Streams {
+		names := make([]string, 0, len(s.Stream))
+		for k := range s.Stream {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		var labels strings.Builder
+		for _, k := range names {
+			fmt.Fprintf(&labels, "%s=%q,", k, s.Stream[k])
+		}
+		for _, v := range s.Values {
+			if len(v) < 2 {
+				continue
+			}
+			var ts, line, metadata string
+			_ = json.Unmarshal(v[0], &ts)
+			_ = json.Unmarshal(v[1], &line)
+			if len(v) > 2 {
+				metadata = tailHistoryCanonical(v[2])
+			}
+			got = append(got, tailHistoryEntry{ts, line, labels.String(), metadata})
+		}
+	}
+	return got
+}
+
 // readTailEntries reads frames until want entries arrived and then quiet
 // passed without one, or timeout.
 func readTailEntries(conn *websocket.Conn, want int, quiet, timeout time.Duration) []tailHistoryEntry {
@@ -70,40 +108,54 @@ func readTailEntries(conn *websocket.Conn, want int, quiet, timeout time.Duratio
 		if err != nil {
 			break // quiet passed, or the tail ended
 		}
-		var frame struct {
-			Streams []struct {
-				Stream map[string]string   `json:"stream"`
-				Values [][]json.RawMessage `json:"values"`
-			} `json:"streams"`
-		}
-		if json.Unmarshal(msg, &frame) != nil {
-			continue
-		}
-		for _, s := range frame.Streams {
-			names := make([]string, 0, len(s.Stream))
-			for k := range s.Stream {
-				names = append(names, k)
-			}
-			sort.Strings(names)
-			var labels strings.Builder
-			for _, k := range names {
-				fmt.Fprintf(&labels, "%s=%q,", k, s.Stream[k])
-			}
-			for _, v := range s.Values {
-				if len(v) < 2 {
-					continue
-				}
-				var ts, line, metadata string
-				_ = json.Unmarshal(v[0], &ts)
-				_ = json.Unmarshal(v[1], &line)
-				if len(v) > 2 {
-					metadata = tailHistoryCanonical(v[2])
-				}
-				got = append(got, tailHistoryEntry{ts, line, labels.String(), metadata})
-			}
-		}
+		got = append(got, tailFrameEntries(msg)...)
 	}
 	return got
+}
+
+// tailEntryPump reads a tail in the background, so a wait for entries that
+// ends does not break the connection.
+func tailEntryPump(conn *websocket.Conn) <-chan []tailHistoryEntry {
+	out := make(chan []tailHistoryEntry, 64)
+	go func() {
+		defer close(out)
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if entries := tailFrameEntries(msg); len(entries) > 0 {
+				out <- entries
+			}
+		}
+	}()
+	return out
+}
+
+// drainTailPump collects what a pump delivers until quiet passes with at
+// least want entries held, or timeout.
+func drainTailPump(pump <-chan []tailHistoryEntry, want int, quiet, timeout time.Duration) []tailHistoryEntry {
+	var got []tailHistoryEntry
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	for {
+		wait := time.NewTimer(quiet)
+		select {
+		case entries, ok := <-pump:
+			wait.Stop()
+			if !ok {
+				return got
+			}
+			got = append(got, entries...)
+		case <-wait.C:
+			if len(got) >= want {
+				return got
+			}
+		case <-deadline.C:
+			wait.Stop()
+			return got
+		}
+	}
 }
 
 // tailHistoryCanonical is a JSON value with its object keys sorted.
@@ -189,7 +241,12 @@ func TestTailHistory_StartLimitLikeLoki(t *testing.T) {
 		{"limit above the entries", url.Values{"limit": {"500"}}, tailHistoryRows},
 		{"start inside the entries", url.Values{"start": {strconv.FormatInt(base.Add(100*time.Second).UnixNano(), 10)}}, tailHistoryRows - 100},
 		{"start in unix seconds", url.Values{"start": {strconv.FormatInt(base.Add(100*time.Second).Unix(), 10)}}, tailHistoryRows - 100},
-		{"start older than the retention", url.Values{"start": {"1"}, "limit": {"500"}}, tailHistoryRows},
+		{"start older than max_query_length", url.Values{"start": {"1"}, "limit": {"500"}}, 0},
+		// The stack's Loki runs max_query_length 721h: the window from start
+		// decides whether it sends history, which tells the cause of the
+		// answer above.
+		{"start just inside max_query_length", url.Values{"start": {strconv.FormatInt(now.Add(-720*time.Hour).UnixNano(), 10)}, "limit": {"500"}}, tailHistoryRows},
+		{"start just past max_query_length", url.Values{"start": {strconv.FormatInt(now.Add(-722*time.Hour).UnixNano(), 10)}, "limit": {"500"}}, 0},
 		{"start in the future", url.Values{"start": {strconv.FormatInt(now.Add(time.Hour).UnixNano(), 10)}}, 0},
 	}
 	for _, categorize := range []bool{false, true} {
@@ -232,36 +289,65 @@ func TestTailHistory_StartLimitLikeLoki(t *testing.T) {
 	}
 
 	// After the history the live entries follow, once each, on every tail.
+	// Loki's tail reaches its ingesters a moment after the upgrade, so
+	// sentinel lines are pushed until Loki's tail carries one; the live
+	// line follows.
 	t.Run("live entry after the history", func(t *testing.T) {
 		params := url.Values{"query": {query}, "limit": {"5"}}
-		conns := map[string]*websocket.Conn{}
+		pumps := map[string]<-chan []tailHistoryEntry{}
 		lokiConn, _ := dialTailHistory(t, lokiURL, params, false)
 		if lokiConn == nil {
 			t.Fatal("Loki refused the tail")
 		}
 		defer lokiConn.Close()
-		conns["loki"] = lokiConn
+		pumps["loki"] = tailEntryPump(lokiConn)
 		for _, target := range tailHistoryTargets {
 			conn, _ := dialTailHistory(t, target.base, params, false)
 			if conn == nil {
 				t.Fatalf("%s refused the tail", target.name)
 			}
 			defer conn.Close()
-			conns[target.name] = conn
+			pumps[target.name] = tailEntryPump(conn)
 		}
 		history := map[string][]tailHistoryEntry{}
-		for name, conn := range conns {
-			history[name] = readTailEntries(conn, 5, 2*time.Second, 20*time.Second)
+		for name, pump := range pumps {
+			history[name] = drainTailPump(pump, 5, 2*time.Second, 20*time.Second)
 		}
-		live := logLine{Msg: "tail history live " + app, Level: "info"}
-		at := time.Now()
-		pushCustomToLoki(t, at, map[string]string{"app": app, "env": "test"}, []logLine{live})
-		pushCustomToVL(t, at, map[string]string{"app": app, "env": "test"}, []logLine{live}, []string{"app", "env"})
-		for name, conn := range conns {
-			got := readTailEntries(conn, 1, 3*time.Second, 20*time.Second)
+		push := func(msg string) {
+			at := time.Now()
+			pushCustomToLoki(t, at, map[string]string{"app": app, "env": "test"}, []logLine{{Msg: msg, Level: "info"}})
+			pushCustomToVL(t, at, map[string]string{"app": app, "env": "test"}, []logLine{{Msg: msg, Level: "info"}}, []string{"app", "env"})
+		}
+		subscribed := false
+		for attempt := 0; attempt < 15 && !subscribed; attempt++ {
+			push(fmt.Sprintf("tail history sentinel %d %s", attempt, app))
+			for _, e := range drainTailPump(pumps["loki"], 1, 2*time.Second, 3*time.Second) {
+				subscribed = subscribed || strings.Contains(e.line, "tail history sentinel")
+			}
+		}
+		if !subscribed {
+			t.Fatal("Loki's tail never carried a sentinel line")
+		}
+		for name, pump := range pumps {
+			if name != "loki" {
+				drainTailPump(pump, 0, 2*time.Second, 5*time.Second)
+			}
+		}
+		live := "tail history live " + app
+		push(live)
+		for name, pump := range pumps {
 			seen := 0
-			for _, e := range got {
-				if e.line == live.Msg {
+			var got []tailHistoryEntry
+			for deadline := time.Now().Add(20 * time.Second); seen == 0 && time.Now().Before(deadline); {
+				got = drainTailPump(pump, 1, 3*time.Second, 5*time.Second)
+				for _, e := range got {
+					if e.line == live {
+						seen++
+					}
+				}
+			}
+			for _, e := range drainTailPump(pump, 0, 2*time.Second, 5*time.Second) { // a late duplicate
+				if e.line == live {
 					seen++
 				}
 			}

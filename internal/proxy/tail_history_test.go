@@ -101,7 +101,8 @@ func historyProxy(t *testing.T, vl *retryVL, mode TailMode, window time.Duration
 type orderedTailClient struct {
 	lines  chan string
 	frames atomic.Int64
-	labels sync.Map // line -> its stream labels, printed
+	labels sync.Map // line -> its stream labels, printed, without detected_level
+	level  sync.Map // line -> its stream's detected_level label, when it has one
 }
 
 func dialOrderedTail(t *testing.T, wsURL string) *orderedTailClient {
@@ -131,7 +132,16 @@ func dialOrderedTail(t *testing.T, wsURL string) *orderedTailClient {
 			for _, s := range frame.Streams {
 				for _, v := range s.Values {
 					if len(v) > 1 {
-						c.labels.Store(v[1], fmt.Sprint(s.Stream))
+						if lv, ok := s.Stream[detectedLevelLabel]; ok {
+							c.level.Store(v[1], lv)
+						}
+						stream := map[string]string{}
+						for k, val := range s.Stream {
+							if k != detectedLevelLabel { // the history carries it, as Loki's query path does; a live entry does not
+								stream[k] = val
+							}
+						}
+						c.labels.Store(v[1], fmt.Sprint(stream))
 						c.lines <- v[1]
 					}
 				}
@@ -245,7 +255,8 @@ func TestTailHistory_NewestEntriesSinceStartBeforeLiveLikeLoki(t *testing.T) {
 						t.Fatalf("lines\n got %d %v\nwant %d %v", len(got), got, len(want), want)
 					}
 					// History entries carry the labels a live entry of the
-					// same stream carries.
+					// same stream carries, and detected_level as Loki's
+					// history does (TestTailHistory_HistoryCarriesDetectedLevel).
 					liveLabels, _ := client.labels.Load(live)
 					for _, line := range got {
 						if l, _ := client.labels.Load(line); l != liveLabels {
@@ -458,4 +469,94 @@ func FuzzTailHistoryParams(f *testing.F) {
 			t.Fatalf("limit %q, max %d: %d", limit, maxEntries, n)
 		}
 	})
+}
+
+// Loki reads the history through its query path, whose entries carry
+// detected_level in the stream labels; its live tailer sends the pushed stream
+// as is. The history here does the same, on every tail mode, and the
+// newest history entry is not sent again when the native stream's first read
+// returns it without that label.
+// conformance: semantics/tail-history-start-limit, loki_api_v1_tail
+func TestTailHistory_HistoryCarriesDetectedLevelLikeLoki(t *testing.T) {
+	for _, mode := range []TailMode{TailModeSynthetic, TailModeNative, TailModeAuto} {
+		t.Run(string(mode), func(t *testing.T) {
+			vl := newRetryVL(t)
+			vl.history.Store(true)
+			now := time.Now()
+			// The newest history entry is also inside the native stream's
+			// first read (the seconds before it opens).
+			for i := 0; i < 3; i++ {
+				vl.add(fmt.Sprintf("history %03d", i), now.Add(-time.Duration(3-i)*time.Second))
+			}
+			wsURL := historyProxy(t, vl, mode, time.Minute, nil)
+			client := dialOrderedTail(t, wsURL)
+			vl.add("live line", time.Now())
+			got := client.until(t, "live line", 300*time.Millisecond)
+			if want := "history 000|history 001|history 002|live line"; strings.Join(got, "|") != want {
+				t.Fatalf("lines %v, want %s", got, want)
+			}
+			for _, line := range got[:3] {
+				if lv, _ := client.level.Load(line); lv != "unknown" {
+					t.Errorf("history line %q: detected_level %v, want the query path's unknown", line, lv)
+				}
+			}
+			if lv, ok := client.level.Load("live line"); ok {
+				t.Errorf("live line carries detected_level %v: Loki's live tailer sends the pushed stream as is", lv)
+			}
+		})
+	}
+}
+
+// A start further back than max_query_length gets no history: Loki upgrades the
+// tail and sends live entries only (recorded with start=1), and the proxy
+// sends the one-row access call it always sends before the upgrade instead of a history read.
+// conformance: semantics/tail-history-start-limit, loki_api_v1_tail
+func TestTailHistory_StartPastMaxQueryLengthSendsNoHistory(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		start string
+		want  string // the lines before the live one
+	}{
+		{"start past the limit", "1", ""},
+		{"start inside the limit", "", "history 000|history 001"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vl := newRetryVL(t)
+			vl.history.Store(true)
+			now := time.Now()
+			vl.add("history 000", now.Add(-30*time.Second))
+			vl.add("history 001", now.Add(-29*time.Second))
+			wsURL := historyProxy(t, vl, TailModeSynthetic, 0, func(p *Proxy) {
+				p.tenantDefaultLimits = map[string]any{limitMaxQueryLength: "721h"}
+			})
+			if tc.start != "" {
+				wsURL += "&start=" + tc.start
+			}
+			client := dialOrderedTail(t, wsURL)
+			vl.add("live line", time.Now())
+			got := client.until(t, "live line", 300*time.Millisecond)
+			want := "live line"
+			if tc.want != "" {
+				want = tc.want + "|live line"
+			}
+			if strings.Join(got, "|") != want {
+				t.Fatalf("lines %v, want %s", got, want)
+			}
+			// The call before the upgrade stays either way.
+			if n := vl.historyCalls.Load(); n != 1 {
+				t.Fatalf("%d calls before the upgrade, want 1", n)
+			}
+		})
+	}
+	// A start past the limit still fails with Loki's 500 on a failing backend.
+	vl := newRetryVL(t)
+	vl.history.Store(true)
+	vl.setMode("down-503")
+	wsURL := historyProxy(t, vl, TailModeSynthetic, 0, func(p *Proxy) {
+		p.tenantDefaultLimits = map[string]any{limitMaxQueryLength: "721h"}
+	}) + "&start=1"
+	_, resp, err := (&websocket.Dialer{HandshakeTimeout: 5 * time.Second}).Dial(wsURL, http.Header{"X-Scope-OrgID": {"0"}})
+	if err == nil || resp == nil || resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("a failing backend: err %v, resp %v, want Loki's 500 before the upgrade", err, resp)
+	}
 }

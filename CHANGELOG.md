@@ -11,10 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/loki/api/v1/tail` now sends the entries since `start`, up to `limit`, before the live ones, as Loki does:
   Grafana's live view shows the latest lines at once instead of staying empty until new lines arrive. Like Loki,
   `start` defaults to one hour ago and `limit` to 100. The history is the newest `limit` entries, oldest first,
-  through the same pipeline as live entries, on every tail mode (native, polling and auto). The native stream does
+  through the same pipeline as live entries, on every tail mode (native, polling and auto). The history entries carry `detected_level` in the stream labels, as Loki's do; a `start` further back than `max_query_length` sends no history. The native stream does
   not repeat an entry the history sent. A label filter VictoriaLogs cannot evaluate like Loki counts only the
   entries it keeps toward the limit. The history read replaces the probe the tail already sent before the upgrade,
-  so a tail still makes one VictoriaLogs query before it streams. The read is held to `max_entries_limit_per_query`,
+  so a tail still makes one VictoriaLogs query before it streams, and a failing backend still fails the request. The read is held to `max_entries_limit_per_query`,
   and it is best effort: a read that takes more than two seconds is skipped, and the tail starts with its live
   entries. `start` is now read in all of Loki's time forms; Unix seconds were read as nanoseconds before.
 
