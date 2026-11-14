@@ -457,9 +457,6 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 		p.fail(w, r, withoutUnwrapError(unwrapErrorFuncName(origSpec.Func)))
 		return true
 	}
-	if p.dynamicIdentityRange(w, r, originalLogql, spec, origSpec, manualFunc, step) {
-		return true
-	}
 	if grouped {
 		// VictoriaLogs groups the buckets by the outer labels (unwrapGroupPushdown).
 		return p.proxyManualRangeMetricRange(w, r, unwrapSpec, origSpec, manualFunc)
@@ -470,10 +467,8 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if len(spec.GroupBy) == 0 && !spec.ByExplicit && queryOuterUngrouped(originalLogql) {
 		spec.ByExplicit = true
 	}
-	if manualFunc == "quantile" {
-		if shaped, shapedSpec, ok := p.withQuantileShape(r, originalLogql, spec); ok {
-			return p.proxyManualRangeMetricRange(w, shaped, shapedSpec, origSpec, manualFunc)
-		}
+	if handled, served := p.serveRangeQuantile(w, r, originalLogql, spec, origSpec, manualFunc, step); handled {
+		return served
 	}
 	// The evaluator decides on the request's query text (isSumAllLogRange): the
 	// fold must read the same text.

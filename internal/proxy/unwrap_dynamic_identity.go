@@ -363,3 +363,19 @@ func rangeLongerThan(expr logqlpkg.Expr, step time.Duration) bool {
 	}
 	return false
 }
+
+// serveRangeQuantile answers a range quantile_over_time from the closed form of one-sample series of a dynamic
+// identity (dynamicIdentityRange), else from the quantile evaluator of its shape (withQuantileShape). handled reports
+// that one of them took the request, served what the handler answers then; any other function is not handled.
+func (p *Proxy) serveRangeQuantile(w http.ResponseWriter, r *http.Request, query string, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string, step time.Duration) (handled, served bool) {
+	if manualFunc != "quantile" {
+		return false, false
+	}
+	if p.dynamicIdentityRange(w, r, query, spec, origSpec, manualFunc, step) {
+		return true, true
+	}
+	if shaped, shapedSpec, ok := p.withQuantileShape(r, query, spec); ok {
+		return true, p.proxyManualRangeMetricRange(w, shaped, shapedSpec, origSpec, manualFunc)
+	}
+	return false, false
+}
