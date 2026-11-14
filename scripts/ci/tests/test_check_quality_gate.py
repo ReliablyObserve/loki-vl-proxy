@@ -6,7 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from scripts.ci.check_quality_gate import REQUIRED_COMPONENTS, check_component_breakdown, check_samples_threshold, error_compat_failures, query_corpus_failures, relative_spread_pct
+from scripts.ci.check_quality_gate import REQUIRED_COMPONENTS, check_component_breakdown, check_coverage, check_samples_threshold, error_compat_failures, query_corpus_failures, relative_spread_pct
 
 
 class CheckQualityGateComponentTests(unittest.TestCase):
@@ -329,3 +329,29 @@ class ErrorCompatGateTests(unittest.TestCase):
         self.assertEqual(error_compat_failures({}, self.snap(0.1, 0.1)), [])
         self.assertEqual(error_compat_failures(self.snap(0.5, 0.6), {}), [])
         self.assertEqual(error_compat_failures(self.snap(), self.snap()), [])
+
+
+class CoverageFloorTests(unittest.TestCase):
+    def failures(self, base, head):
+        out = []
+        check_coverage(out, base, head)
+        return out
+
+    def test_under_the_floor_any_drop_fails(self):
+        self.assertTrue(self.failures(88.5, 88.4))
+        self.assertIn("below the 90% floor", self.failures(88.5, 88.4)[0])
+
+    def test_under_the_floor_equal_or_higher_passes(self):
+        self.assertEqual(self.failures(88.5, 88.5), [])
+        self.assertEqual(self.failures(88.5, 89.2), [])
+
+    def test_dropping_below_the_floor_fails(self):
+        self.assertTrue(self.failures(90.4, 89.9))
+
+    def test_above_the_floor_the_tolerance_applies(self):
+        self.assertEqual(self.failures(91.5, 90.6), [])
+        self.assertTrue(self.failures(92.5, 91.4))
+
+    def test_at_the_floor_passes(self):
+        self.assertEqual(self.failures(90.5, 90.0), [])
+
