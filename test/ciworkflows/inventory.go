@@ -40,6 +40,7 @@ type MetaFile struct {
 type Run struct {
 	Conclusion string `json:"conclusion"`
 	Date       string `json:"date"`
+	At         string `json:"at,omitempty"`
 	Event      string `json:"event,omitempty"`
 	URL        string `json:"url,omitempty"`
 }

@@ -65,6 +65,7 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import reuse  # noqa: E402
 import stack  # noqa: E402
 
 
@@ -440,6 +441,8 @@ def main():
                          "request does not meet the work the previous one started")
     ap.add_argument("--quiet-s", type=float, default=1.0)
     ap.add_argument("--quiet-cap-s", type=float, default=4.0, help="0 = no wait")
+    ap.add_argument("--proxy-metrics", action="store_true",
+                    help="read every proxy target's /metrics around each request: the cache reuse of the row (reuse.py)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     logs = dict(x.split("=", 1) for x in args.quiet_log)
@@ -519,7 +522,10 @@ def main():
                         continue
                     url = request_url(base, shape, query, secs, step, run_end)
                     headers = request_headers(shape)
+                    metered = args.proxy_metrics and tname != REFERENCE_TARGET
+                    before = reuse.scrape(base) if metered else None
                     status, body, dt, t0 = request(url, headers, args.tenant, args.timeout)
+                    after = reuse.scrape(base) if before is not None else None
                     if args.pause:
                         time.sleep(args.pause)
                     # vl_cpu_max / vl_cpu_avg are filled from the sampler's samples after the loop.
@@ -530,6 +536,8 @@ def main():
                     limit = ranked_max_points(query, secs, step, shape.get("instant", False))
                     if limit is not None:
                         row["ranked_max_points"] = limit
+                    if after is not None:
+                        row["reuse"] = reuse.delta(before, after)
                     timings.append((row, t0, dt))
                     cache = loki_cache_stats(body) if status == 200 else None
                     if cache:

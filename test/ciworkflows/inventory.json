@@ -10,6 +10,7 @@
     "compat-drilldown.yaml": {"group": "pr-gates", "required": true, "verifies": "Logs Drilldown compatibility against the pinned and matrix Grafana and plugin versions."},
     "compat-loki.yaml": {"group": "pr-gates", "required": true, "verifies": "Loki API compatibility against the pinned Loki and the Loki version matrix."},
     "compat-vl.yaml": {"group": "pr-gates", "required": true, "verifies": "Compatibility with the pinned VictoriaLogs and the supported VictoriaLogs version matrix."},
+    "daily-report.yaml": {"group": "daily", "required": false, "verifies": "Daily on main, on fresh stacks: every executable registry case against Loki on VictoriaLogs v1.49.0 and the pin, the Loki error answers asked again and replayed, a parity slice, the perf smoke, the proxy's cache reuse on every case and shape, and the scheduled workflows' health; one summary and one rolling report pull request."},
     "docs-site.yaml": {"group": "main-push", "required": false, "verifies": "Builds the documentation site on pull requests that touch it and deploys it from main."},
     "e2e-pipeline.yml": {"group": "pr-gates", "required": false, "verifies": "The end-to-end ingest pipeline stack answers through the proxy."},
     "error-answers-record.yaml": {"group": "weekly", "required": false, "verifies": "Asks the pinned Loki the recorded error requests again and fails when an answer changed."},

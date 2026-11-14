@@ -159,6 +159,8 @@ NON_PRODUCT = [
         "conformance/registry/generated/perf-evidence.json",
         "conformance/reports/performance.md",
         "conformance/reports/gaps.md",
+        # The daily report's bot-owned files (.github/workflows/daily-report.yaml).
+        "conformance/registry/generated/verification/**",
     )),
     ("I12", (
         ".gitignore",
@@ -497,7 +499,7 @@ WORKFLOW_JOBS = {
 # releases), so a change to one needs nothing more from the pull request CI.
 NO_JOB_WORKFLOWS = (
     "auto-release.yaml", "cancel-conflicted-pr-runs.yaml", "changelog-pr.yaml", "codeql.yaml",
-    "docs-site.yaml", "error-answers-record.yaml", "ghcr-badges.yaml", "loc-badges.yaml", "parity-refresh.yaml", "perf-daily.yaml",
+    "daily-report.yaml", "docs-site.yaml", "error-answers-record.yaml", "ghcr-badges.yaml", "loc-badges.yaml", "parity-refresh.yaml", "perf-daily.yaml",
     "pr-evidence-summary.yaml", "pr-labeler.yaml", "query-corpus.yaml", "release-pr-validation.yaml",
     "release.yaml", "scorecard.yaml", "security-heavy.yaml", "visual-smoke-cleanup.yaml",
 )
@@ -559,7 +561,7 @@ JOB_MAP = [
         "test/e2e-compat/docker-compose.bench.yml", "test/e2e-compat/docker-compose.review.yml",
         "test/e2e-fleet/docker-compose.http-discovery.yml",
         "test/e2e-compat/loki-bench-config.yaml", "test/e2e-compat/loki-bench-nocache-config.yaml",
-        "test/ciworkflows/inventory.json",
+        "test/ciworkflows/inventory.json", "conformance/registry/generated/verification/**",
     ), NO_JOBS),
     ("J6", ("scripts/ci/unit_test_mode.sh", "scripts/ci/test-cache-uncached.tsv"),
      UNIT_JOBS | CONFORMANCE_JOBS),

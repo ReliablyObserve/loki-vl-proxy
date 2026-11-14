@@ -42,6 +42,7 @@ The last-run columns are filled by the daily report from the GitHub API; it has 
 
 | Workflow | Triggers | Verifies | Required | Last run on main | Last scheduled run |
 |---|---|---|---|---|---|
+| `daily-report.yaml` Daily report | pull_request (main; 5 paths)<br />schedule `7 8 * * *` (daily 08:07 UTC)<br />workflow_dispatch | Daily on main, on fresh stacks: every executable registry case against Loki on VictoriaLogs v1.49.0 and the pin, the Loki error answers asked again and replayed, a parity slice, the perf smoke, the proxy's cache reuse on every case and shape, and the scheduled workflows' health; one summary and one rolling report pull request. | no | not recorded yet | not recorded yet |
 | `query-corpus.yaml` Query Corpus | push (main)<br />schedule `23 2 * * *` (daily 02:23 UTC)<br />workflow_dispatch | Builds the query corpus of main and re-verifies the recorded Loki and VictoriaLogs answers, differentials and the grammar sweep with the live oracles. | no | not recorded yet | not recorded yet |
 | `security-heavy.yaml` Security Heavy | schedule `0 4 * * *` (daily 04:00 UTC), `0 6 * * 1` (weekly, Monday 06:00 UTC)<br />workflow_dispatch | Image and SBOM scan, semgrep, long fuzzing and the DAST scan of a running proxy. | no | not recorded yet | not recorded yet |
 

@@ -1,0 +1,535 @@
+name: Daily report
+
+# One daily report from main: correctness and performance re-verified live, on
+# fresh stacks, with one summary and one rolling bot pull request.
+#
+#   inventory  the last run on main and the last scheduled run of every workflow
+#              (GitHub API, read-only token): the last-run columns of
+#              docs/ci-workflows.md and the health of the scheduled workflows
+#   verify     per VictoriaLogs version of the support policy (the newest 1.4x
+#              release and the pinned 1.5x, from compatibility-matrix.json): the
+#              e2e-compat stack with the pinned Loki, every executable registry
+#              case against Loki and the proxy (test/caseverify); on the pinned
+#              version also the recorded Loki error answers asked again
+#              (test/errorrecord -check) and replayed (TestLokiErrorAnswersReplay)
+#   parity     a slice of the differential parity corpus (bench/parity/refresh.py
+#              --mode validate): recorded as partial, never pruned, no case edited
+#   perf       the daily perf smoke (bench/ab/daily.py --smoke): the main shapes of
+#              every set at 1h and 6h, cold and warm, both Loki profiles; its history
+#              is kept in bench/ab/history/daily-smoke, apart from the weekly history
+#   report     test/dailyreport writes conformance/registry/generated/verification/
+#              summary.json and cases.json and the pull request body; the grammar sweep
+#              and the Loki differentials come from today's query-corpus run, which
+#              re-verifies them live (query-corpus.yaml); everything goes to the bot
+#              branch bench/daily-report as one pull request (never pushed to main)
+#
+# The day is red when a fixed case differs from Loki, a recording drifted, a
+# ratchet moved the wrong way, a perf row is above 2x Loki, a scheduled workflow
+# is missing or red, or a job produced no result. The pull request is opened or
+# updated anyway with the reasons at its top, and the job then ends red, which is
+# the notification. A day with no change still writes the day's date.
+#
+# The schedule is after query-corpus.yaml (daily 02:23) and clear of the weekly
+# perf run's window (Monday 03:17, up to four hours).
+#
+# A pull request that edits this pipeline runs the unit tests of its tools and
+# builds a summary from the committed files instead; it opens no pull request.
+
+on:
+  schedule:
+    - cron: "7 8 * * *"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/daily-report.yaml"
+      - "test/caseverify/**"
+      - "test/dailyreport/**"
+      - "test/ciworkflows/**"
+      - "bench/ab/smoke.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-report-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Pull requests that edit the pipeline: the tools' tests and a summary of the committed files.
+  validate:
+    name: daily-report
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          cache: true
+
+      - name: Unit tests of the report's tools
+        run: |
+          go test ./test/caseverify ./test/dailyreport ./test/ciworkflows -count=1
+          python3 -m unittest discover -s bench/ab/tests -p 'test_smoke.py'
+
+      - name: Summary of the committed files (no stack)
+        run: |
+          # Shown here and never failing a pull request: the stack inputs are missing by design.
+          go run ./test/dailyreport -out /tmp/daily/summary.json -cases-out /tmp/daily/cases.json -md /tmp/daily/summary.md \
+            -no-error-rerecord -no-error-replay
+          cat /tmp/daily/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+  plan:
+    name: plan
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      vl_versions: ${{ steps.matrix.outputs.vl_versions }}
+      pinned_vl: ${{ steps.matrix.outputs.pinned_vl }}
+      vl_image_repo: ${{ steps.matrix.outputs.vl_image_repo }}
+      loki_image: ${{ steps.matrix.outputs.loki_image }}
+      grafana_image: ${{ steps.matrix.outputs.grafana_image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          persist-credentials: false
+      - id: matrix
+        run: |
+          set -euo pipefail
+          # The versions of the support policy: the newest 1.4x release (the minimum supported) and the pin.
+          m=test/e2e-compat/compatibility-matrix.json
+          {
+            echo "vl_versions=$(jq -ce '.stack.victorialogs | [.support_window.minimum_supported_version, .pinned_version] | unique' "$m")"
+            echo "pinned_vl=$(jq -er '.stack.victorialogs.pinned_version' "$m")"
+            echo "vl_image_repo=$(jq -er '.stack.victorialogs.image_repo' "$m")"
+            echo "loki_image=$(jq -er '.stack.loki | "\(.image_repo):\(.pinned_version)"' "$m")"
+            echo "grafana_image=$(jq -er '.stack.grafana | "\(.image_repo):\(.pinned_version)"' "$m")"
+          } >> "$GITHUB_OUTPUT"
+
+  inventory:
+    name: inventory
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          cache: false
+
+      - name: Read the last runs of every workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/runs
+          for path in .github/workflows/*.yaml .github/workflows/*.yml; do
+            [ -f "$path" ] || continue
+            file="${path##*/}"
+            # A workflow GitHub does not know yet (added today) has no runs: its answer is left out.
+            gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${file}/runs?branch=main&per_page=10&exclude_pull_requests=true" \
+              > "/tmp/runs/${file}.main.json" 2>/dev/null || rm -f "/tmp/runs/${file}.main.json"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${file}/runs?event=schedule&per_page=10" \
+              > "/tmp/runs/${file}.schedule.json" 2>/dev/null || rm -f "/tmp/runs/${file}.schedule.json"
+          done
+
+      - name: Inventory and scheduled workflow health
+        run: |
+          set -euo pipefail
+          go run ./test/ciworkflows -ingest /tmp/runs -health /tmp/inventory/health.json -skip daily-report.yaml
+          cp conformance/registry/generated/verification/workflow-runs.json docs/ci-workflows.md /tmp/inventory/
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: daily-inventory
+          path: /tmp/inventory
+
+  verify:
+    name: verify (VictoriaLogs ${{ matrix.vl }})
+    needs: [plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        vl: ${{ fromJson(needs.plan.outputs.vl_versions) }}
+    env:
+      LOKI_IMAGE: ${{ needs.plan.outputs.loki_image }}
+      GRAFANA_IMAGE: ${{ needs.plan.outputs.grafana_image }}
+      VICTORIALOGS_IMAGE: ${{ format('{0}:{1}', needs.plan.outputs.vl_image_repo, matrix.vl) }}
+      PROXY_IMAGE: loki-vl-proxy:daily
+      OUT: /tmp/verify
+      VL: ${{ matrix.vl }}
+      PINNED: ${{ matrix.vl == needs.plan.outputs.pinned_vl }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          cache: false
+
+      - name: Build the proxy image of main
+        run: docker build --build-arg REVISION="$(git rev-parse HEAD)" -t "$PROXY_IMAGE" .
+
+      - name: Start the stack
+        working-directory: test/e2e-compat
+        run: |
+          set -euo pipefail
+          # The ui profile adds the log generator the registry cases' services come from.
+          docker compose --profile ui up -d --no-build
+          ../../scripts/ci/wait_e2e_stack.sh 240
+
+      - name: Ingest the e2e data and wait for Loki's metric path
+        run: |
+          set -euo pipefail
+          go test -tags=e2e -run '^TestSetup_IngestLogs$' -count=1 ./test/e2e-compat/
+          # A fresh Loki answers range metric queries empty for its first minutes: wait until one has a series.
+          q='sum(count_over_time({service_name=~".+"}[5m]))'
+          for _ in $(seq 1 60); do
+            n="$(curl -fsS -G http://127.0.0.1:13101/loki/api/v1/query --data-urlencode "query=${q}" -H 'X-Scope-OrgID: 0' \
+              | jq '.data.result | length' 2>/dev/null || echo 0)"
+            if [ "${n:-0}" -gt 0 ]; then echo "Loki's metric path answers"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::Loki's metric path did not answer within ten minutes"
+          exit 1
+
+      - name: Every executable registry case against Loki and the proxy
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          # The stack runs the version this job is named after, or nothing it records is labelled with it.
+          running="$(curl -fsS http://127.0.0.1:19428/metrics | sed -n 's/^vm_app_version{.*short_version="\([^"]*\)".*/\1/p' | head -n 1)"
+          if [ "$running" != "$VL" ]; then
+            echo "::error::the stack runs VictoriaLogs '${running}', not ${VL}"
+            exit 1
+          fi
+          flags="$(docker inspect e2e-proxy --format '{{join .Args " "}}')"
+          # The build the proxy reports at start: a run on another build than main's is refused.
+          # (a JSON or a text log line: "revision":"<sha>" or revision=<sha>)
+          revision="$(docker logs e2e-proxy 2>&1 | grep -oE '"?revision"?[=:]"?[0-9a-f]{7,}' | head -n 1 | grep -oE '[0-9a-f]{7,}$' || true)"
+          # Every proxy variant of the stack with its host port and flags: a case that names proxy_flags runs on one.
+          for c in $(docker ps --format '{{.Names}}' | grep '^e2e-proxy-'); do
+            port="$(docker port "$c" 3100/tcp 2>/dev/null | head -n 1 | sed 's/.*://')"
+            [ -n "$port" ] || continue
+            docker inspect "$c" --format '{{json .Args}}' | jq -c --arg n "$c" --arg u "http://127.0.0.1:${port}" '{name: $n, url: $u, flags: .}'
+          done | jq -s . > "$OUT/variants.json"
+          # A regression is reported by the report job; this step records every verdict.
+          # -vl counts the data of every case on VictoriaLogs (the precheck: a comparison on unequal data is no verdict).
+          go run ./test/caseverify -loki http://127.0.0.1:13101 -proxy http://127.0.0.1:13100 -vl http://127.0.0.1:19428 -vl-version "$VL" \
+            -proxy-flags "$flags" -variants "$OUT/variants.json" -commit "$(git rev-parse HEAD)" \
+            -proxy-revision "$revision" -proxy-image "$(docker inspect e2e-proxy --format '{{.Image}}')" -require-current-proxy \
+            -out "$OUT/cases/cases-${VL}.json" -record "$OUT/answers-${VL}.jsonl" -report "$OUT/cases-${VL}.md"
+          cat "$OUT/cases-${VL}.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: The recorded Loki error answers, asked again and replayed
+        if: env.PINNED == 'true'
+        run: |
+          set +e
+          go run ./test/errorrecord -loki http://127.0.0.1:13101 -check > "$OUT/error-rerecord.txt" 2>&1
+          echo $? > "$OUT/error-rerecord.exit"
+          go test ./internal/proxy -run '^TestLokiErrorAnswersReplay$' -count=1 > "$OUT/error-replay.txt" 2>&1
+          echo $? > "$OUT/error-replay.exit"
+          tail -n 40 "$OUT/error-rerecord.txt" "$OUT/error-replay.txt"
+          exit 0
+
+      - name: Tear down the stack
+        if: always()
+        working-directory: test/e2e-compat
+        run: docker compose --profile ui down -v
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        if: always()
+        with:
+          name: daily-verify-${{ matrix.vl }}
+          path: ${{ env.OUT }}
+          if-no-files-found: ignore
+
+  parity:
+    name: parity slice
+    needs: [plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      OUT: /tmp/parity-slice
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          cache: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
+        with:
+          node-version: "22"
+
+      - name: Install the capture tooling
+        working-directory: bench/visual
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
+          if [ -n "$CHROME_BIN" ]; then
+            echo "PLAYWRIGHT_EXECUTABLE_PATH=$CHROME_BIN" >> "$GITHUB_ENV"
+          else
+            npx playwright install --with-deps chromium
+          fi
+
+      # A slice: recorded as partial, pruning refused, so no registry case is changed; the weekly run is the whole corpus.
+      - name: Differential run (slice)
+        run: python3 bench/parity/refresh.py --out "$OUT" --mode validate --slice 25
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        if: always()
+        with:
+          name: daily-parity
+          path: |
+            ${{ env.OUT }}/result.json
+            ${{ env.OUT }}/summary.md
+          if-no-files-found: ignore
+
+  perf:
+    name: perf smoke
+    needs: [plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    env:
+      OUT: /tmp/perf-smoke
+      BRANCH: bench/daily-report
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          # The baseline is the newest release tag; it builds from a worktree.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Carry the smoke history an unmerged report PR already holds
+        env:
+          READ_TOKEN: ${{ github.token }}
+        run: |
+          # The smoke history is append-only and only the daily report writes it.
+          # shellcheck disable=SC2016 # git expands GIT_AUTH_TOKEN when it runs the helper
+          if GIT_AUTH_TOKEN="${READ_TOKEN}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' fetch --no-tags origin "$BRANCH" 2>/dev/null; then
+            git checkout FETCH_HEAD -- ':(glob)bench/ab/history/daily-smoke/*.jsonl' || true
+          fi
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          cache: false
+
+      - name: Daily perf smoke
+        run: python3 bench/ab/daily.py --out "$OUT" --smoke
+
+      - name: Collect the smoke's results
+        if: always()
+        run: |
+          mkdir -p /tmp/perf-upload/daily-smoke
+          for f in smoke.json smoke.md meta.json; do [ -f "$OUT/$f" ] && cp "$OUT/$f" /tmp/perf-upload/; done
+          cp bench/ab/history/daily-smoke/*.jsonl /tmp/perf-upload/daily-smoke/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        if: always()
+        with:
+          name: daily-perf
+          path: /tmp/perf-upload
+          if-no-files-found: ignore
+
+  report:
+    name: daily-report
+    needs: [plan, inventory, verify, parity, perf]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      IN: /tmp/daily-in
+      BRANCH: bench/daily-report
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          # The checkout only reads. The step that pushes gets the bot token through
+          # a credential helper and nothing keeps a token in the git config.
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          # No restored cache in the job that holds the bot token: nothing a pull
+          # request or branch run saved can run inside it.
+          cache: false
+
+      - name: Download the jobs' results
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: daily-*
+          path: ${{ env.IN }}
+
+      - name: Write the summary
+        id: summary
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PINNED_VL: ${{ needs.plan.outputs.pinned_vl }}
+        run: |
+          set -euo pipefail
+          # The bot-owned files the jobs wrote, put in place: the inventory's runs record and page, the smoke history.
+          mkdir -p conformance/registry/generated/verification bench/ab/history/daily-smoke /tmp/cases
+          if [ -f "$IN/daily-inventory/workflow-runs.json" ]; then
+            cp "$IN/daily-inventory/workflow-runs.json" conformance/registry/generated/verification/
+            cp "$IN/daily-inventory/ci-workflows.md" docs/ci-workflows.md
+          fi
+          cp "$IN"/daily-perf/daily-smoke/*.jsonl bench/ab/history/daily-smoke/ 2>/dev/null || true
+          cp "$IN"/daily-verify-*/cases/*.json /tmp/cases/ 2>/dev/null || true
+          pinned="$IN/daily-verify-${PINNED_VL}"
+          # A missing exit file is a step that did not run: 99, so the summary reports it red.
+          exit_of() { if [ -f "$1" ]; then cat "$1"; else echo 99; fi; }
+          args=(-cases /tmp/cases -health "$IN/daily-inventory/health.json"
+                -parity "$IN/daily-parity/result.json" -smoke "$IN/daily-perf/smoke.json"
+                -error-rerecord "$pinned/error-rerecord.txt" -error-rerecord-exit "$(exit_of "$pinned/error-rerecord.exit")"
+                -error-replay-exit "$(exit_of "$pinned/error-replay.exit")"
+                -commit "$(git rev-parse HEAD)" -date "$(date -u +%Y-%m-%d)" -run "$RUN_URL" -md /tmp/summary.md)
+          go run ./test/dailyreport "${args[@]}" | tee /tmp/dailyreport.txt
+          {
+            cat /tmp/summary.md
+            for f in "$IN"/daily-verify-*/cases-*.md "$IN/daily-perf/smoke.md" "$IN/daily-parity/summary.md"; do
+              [ -f "$f" ] && { echo; cat "$f"; }
+            done
+          } > /tmp/body.md
+          cat /tmp/body.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the daily report PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
+          PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          # The push runs git against github.com with the token that a credential
+          # helper reads from the environment for that one command. The token is
+          # never put in a URL or in the git config, and the checkout above did
+          # not keep one.
+          # What the daily report may change: its bot-owned files only. The registry cases, the census,
+          # the gaps and the wiring are never part of it.
+          FILES=(conformance/registry/generated/verification bench/ab/history/daily-smoke docs/ci-workflows.md)
+          STRAY="$(git status --porcelain -- . ':(exclude)conformance/registry/generated/verification' ':(exclude)bench/ab/history/daily-smoke' ':(exclude)docs/ci-workflows.md' | head -20)"
+          if [ -n "$STRAY" ]; then
+            echo "::warning::files outside the daily report's scope changed and are left out of the commit: ${STRAY//$'\n'/; }"
+          fi
+          if [ -z "$(git status --porcelain -- "${FILES[@]}")" ]; then
+            echo "nothing changed"
+            exit 0
+          fi
+          DATE="$(date -u +%Y-%m-%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The bot's commit sits on the main this run measured and touches only
+          # the files above. It is pushed to a temporary branch (a new ref, so
+          # nothing is compared with an older tip), and the report branch is then
+          # moved once, straight to that commit. It is never pushed over its old
+          # tip, and never set to main's tip first: git compares an update with
+          # the old tip, and when main had edited a workflow file since, a token
+          # without the workflow scope was refused.
+          REF="repos/${GITHUB_REPOSITORY}/git/refs"
+          TMP_BRANCH="${BRANCH}-next"
+          git checkout -B "$TMP_BRANCH"
+          git add -- "${FILES[@]}"
+          git commit -m "bench: daily report ${DATE}"
+          SHA="$(git rev-parse HEAD)"
+          gh api -X DELETE "${REF}/heads/${TMP_BRANCH}" >/dev/null 2>&1 || true
+          # shellcheck disable=SC2016 # git expands GIT_AUTH_TOKEN when it runs the helper
+          GIT_AUTH_TOKEN="${PUSH_TOKEN}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' push origin "${TMP_BRANCH}"
+          # A branch that cannot be moved is deleted and created again; that
+          # closes its pull request, and the step below opens a new one.
+          # The existence check reads git/ref (one exact ref).
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${BRANCH}" >/dev/null 2>&1; then
+            if ! gh api -X PATCH "${REF}/heads/${BRANCH}" -f sha="${SHA}" -F force=true >/dev/null 2>&1; then
+              echo "::warning::${BRANCH} could not be moved; deleting it and creating it again"
+              gh api -X DELETE "${REF}/heads/${BRANCH}" >/dev/null
+              gh api -X POST "${REF}" -f ref="refs/heads/${BRANCH}" -f sha="${SHA}" >/dev/null
+            fi
+          else
+            gh api -X POST "${REF}" -f ref="refs/heads/${BRANCH}" -f sha="${SHA}" >/dev/null
+          fi
+          gh api -X DELETE "${REF}/heads/${TMP_BRANCH}" >/dev/null 2>&1 || true
+          TITLE="bench: daily report ${DATE}"
+          # The pull request body is 65,536 characters at most; the job summary has the whole text.
+          BODY="$(printf '%s\n\n%s\n' "$(head -c 60000 /tmp/body.md)" \
+            "Daily report from \`main\` ($(git rev-parse --short HEAD^1)). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")"
+          PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
+            PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          fi
+          echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Arm auto-merge on the daily report PR
+        if: steps.pr.outputs.number != ''
+        env:
+          # The bot token only: a pull request the job's own token opened does not
+          # start the pull_request workflows, so it could not pass its checks.
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          # The report is already published as a PR: a problem here only warns.
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::warning::RELEASE_PR_TOKEN is not configured; enable auto-merge on pull request #${PR_NUMBER} by hand"
+            exit 0
+          fi
+          if ! gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash; then
+            echo "::warning::could not arm auto-merge on pull request #${PR_NUMBER}; enable it by hand"
+          fi
+
+      - name: Fail on a red day
+        if: ${{ !cancelled() }}
+        run: |
+          # Red run = the notification. The pull request is already open with the reasons at its top.
+          [ -f conformance/registry/generated/verification/summary.json ] || { echo "::error::no summary was written"; exit 1; }
+          python3 - conformance/registry/generated/verification/summary.json <<'PY'
+          import json, sys
+          s = json.load(open(sys.argv[1]))
+          for reason in s["reasons"][:10]:
+              print(f"::error title=daily report::{reason}")
+          if len(s["reasons"]) > 10:
+              print(f"{len(s['reasons']) - 10} more in the job summary")
+          sys.exit(1 if s["red"] else 0)
+          PY

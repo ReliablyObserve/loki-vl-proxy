@@ -415,6 +415,7 @@ RULE_CASES = [
     ("test/e2e-compat/loki-bench-config.yaml", False, "I14"),
     ("test/e2e-compat/loki-bench-nocache-config.yaml", False, "I14"),
     ("test/ciworkflows/inventory.json", False, "I15"),
+    ("conformance/registry/generated/verification/summary.json", False, "I11"),
     # The inventory's generator is Go code with unit tests: product.
     ("test/ciworkflows/inventory.go", True, "P-default"),
     # Lanes: not the full product, but not nothing.
@@ -703,8 +704,10 @@ class LaneRepositoryTests(unittest.TestCase):
             "conformance/reports/performance.md",
             "conformance/reports/gaps.md",
         }
+        # The daily report's bot-owned files (daily-report.yaml) are generated reports as well.
+        bot_owned = "conformance/registry/generated/verification/"
         for path in TRACKED:
-            if path.startswith("conformance/") and path not in reports:
+            if path.startswith("conformance/") and path not in reports and not path.startswith(bot_owned):
                 with self.subTest(path=path):
                     self.assertEqual(lane(path)[0], "product")
 
