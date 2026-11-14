@@ -36,6 +36,11 @@ type Probe struct {
 	// EmptyIsAnswer is why two empty answers prove the case (request.verify.empty_is_answer): the case is
 	// that a query the proxy once mishandled is answered like Loki, with nothing and no error.
 	EmptyIsAnswer string
+	// Control is a second request of the case (request.verify.control: params laid over the request's own) that
+	// must return data on both sides. Where the case's own answers are both empty, a control that answers data on
+	// both sides proves the data is there, and the two empty answers match; the control's own answers are not
+	// compared.
+	Control map[string]string
 
 	// OwnerKept are the owner-kept deviation cases this case's answers are subject to (the case's owner_kept).
 	OwnerKept []string
@@ -161,6 +166,11 @@ func probeOf(c registry.Case) Probe {
 	blockedBy, _ := verify["blocked_by"].(string)
 	reason, _ := verify["reason"].(string)
 	p.EmptyIsAnswer, _ = verify["empty_is_answer"].(string)
+	badControl := false
+	if c, ok := verify["control"].(map[string]any); ok {
+		p.Control = stringMap(c["params"])
+		badControl = len(p.Control) == 0
+	}
 	block := func(class, reason string) {
 		p.Blocked, p.BlockedClass = reason, class
 	}
@@ -180,6 +190,8 @@ func probeOf(c registry.Case) Probe {
 		block(classUnclassed, fmt.Sprintf("request.verify is not valid (met_by %q, blocked_by %q)", metBy, blockedBy))
 	case metBy != "" && evidence == "":
 		block(classUnclassed, "request.verify.met_by needs its evidence")
+	case badControl:
+		block(classUnclassed, "request.verify.control needs params")
 	case blockedBy != "":
 		if reason == "" {
 			reason = unmet
@@ -193,6 +205,19 @@ func probeOf(c registry.Case) Probe {
 	case notSent[p.Path].reason != "":
 		block(notSent[p.Path].class, notSent[p.Path].reason)
 	}
+	return p
+}
+
+// withParams is the probe with the parameters laid over its own: the control request of a case.
+func (p Probe) withParams(over map[string]string) Probe {
+	params := make(map[string]string, len(p.Params)+len(over))
+	for k, v := range p.Params {
+		params[k] = v
+	}
+	for k, v := range over {
+		params[k] = v
+	}
+	p.Params = params
 	return p
 }
 

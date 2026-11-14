@@ -479,7 +479,7 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 			return r
 		}
 		if len(r.Differences) == 0 {
-			if vacuous, blocked := settleVacuous(&r, p, loki, proxy); vacuous {
+			if vacuous, blocked := settleVacuous(&r, p, loki, proxy, func() string { return controlFailure(p, r.Facets, src, now, headers, req.Variant) }); vacuous {
 				if blocked {
 					return r
 				}
@@ -517,9 +517,17 @@ func dataVerdict(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, c
 // settleVacuous sets the verdict of two answers that agree on nothing but being empty: a match where the case says an
 // empty answer is the answer (a fixed case, never an open one), else blocked, saying which fields the runner does
 // not read when the case names some.
-func settleVacuous(r *Result, p Probe, loki, proxy Answer) (vacuous, blocked bool) {
+func settleVacuous(r *Result, p Probe, loki, proxy Answer, control func() string) (vacuous, blocked bool) {
 	if !Vacuous(r.Facets, loki, proxy) {
 		return false, false
+	}
+	if p.Control != nil {
+		if why := control(); why != "" {
+			r.Verdict, r.Reason, r.Class = verdictBlocked, "both answers are empty and the control query does not prove the data: "+why, classEmptyAnswer
+			return true, true
+		}
+		r.Verdict, r.Reason = verdictMatches, "both answers are empty, and the control query returns data on both sides: the data is there"
+		return true, false
 	}
 	if p.EmptyIsAnswer != "" && r.Expected == "match" {
 		r.Verdict, r.Reason = verdictMatches, "both answers are empty by design: "+p.EmptyIsAnswer
@@ -531,6 +539,33 @@ func settleVacuous(r *Result, p Probe, loki, proxy Answer) (vacuous, blocked boo
 		r.Class = classUnreadFields
 	}
 	return true, true
+}
+
+// controlID is the id the control request of a case is recorded under.
+func controlID(id string) string { return id + "#control" }
+
+// controlFailure asks the case's control request of both sides: "" when each answers data on the facets the case
+// compares, else why the control proves nothing. The control is asked once; its answers are not compared.
+func controlFailure(p Probe, facets []string, src Source, now time.Time, headers map[string]string, variant string) string {
+	cp := p.withParams(p.Control)
+	q, why := cp.Query(now)
+	if why != "" {
+		return why
+	}
+	req := Request{Method: p.Method, Path: p.Path, Query: q.Encode(), Headers: headers, Variant: variant}
+	for _, side := range []string{"loki", "proxy"} {
+		a := src.Ask(side, controlID(p.ID), 1, req)
+		name := map[string]string{"loki": "Loki", "proxy": "the proxy"}[side]
+		switch {
+		case unusable(name, a) != "":
+			return strings.TrimSuffix(unusable(name, a), "; ")
+		case !a.OK():
+			return fmt.Sprintf("%s answered %d", name, a.Status)
+		case Vacuous(facets, a, a):
+			return name + " answers nothing to it"
+		}
+	}
+	return ""
 }
 
 func meterAfter(meter Meter, p Probe, measured bool) (Snapshot, bool) {

@@ -167,7 +167,10 @@ A request the runner does not run says why in `request.verify`: `met_by: stack` 
 or compose flag that meets the case's `precondition`, so the runner sends it); `blocked_by` one of `load`, `fault`,
 `volume`, `version`, `fixture`, `proxy_only`, `moved_window` or `write`, with a `reason`; or `empty_is_answer` for a
 fixed case whose point is that a query the proxy once mishandled is answered like Loki, with nothing and no error (two
-empty answers then match; never for an open case). Every blocked verdict in `cases.json` and the report carries its
+empty answers then match; never for an open case); or `control`, params laid over the request's own (the same
+query with the stage that exposes the key, say): when the case's answers are both empty, a control that returns data on
+both sides proves the data is there and the two empty answers match, whatever the case's state (the control's own answers
+are not compared; it is recorded as `<case>#control`). Every blocked verdict in `cases.json` and the report carries its
 class, so the daily report counts what is blocked by what it needs: also `websocket`, `grafana`, `placeholder_time`,
 `empty_answer`, `unread_fields`, `no_answer`, `loki_error` and `no_variant`. `-compose
 test/e2e-compat/docker-compose.yml` reads the proxy variants (URL by published port, flags by command) and the default
