@@ -99,18 +99,14 @@ var keepIdentityKnown = func() map[string]map[string]string {
 	plain := func(fn string) string {
 		return keepIdentityHead(fn) + `{job="kj"} | json | unwrap duration_ms [5m])`
 	}
-	// first and last over time on a range longer than the step read one step, with or without a keep.
+	// first and last over time on a range longer than the step, where each line is a series of its own (no keep, or
+	// a keep before the parser): the step buckets of the lines, not their windows.
+	const perLineSliding = "semantics/unwrap-first-last-per-line-range-longer-than-step"
 	sliding := []string{"step<range"}
 	for _, fn := range []string{"first_over_time", "last_over_time"} {
-		add("semantics/unwrap-first-last-range-longer-than-step", sliding, "sum by (app) ("+plain(fn)+")", "sum("+plain(fn)+")")
+		add(perLineSliding, sliding, "sum by (app) ("+plain(fn)+")", "sum("+plain(fn)+")")
 	}
-	add("semantics/unwrap-first-last-range-longer-than-step", sliding,
-		keep("first_over_time"), "sum by (app) ("+keep("first_over_time")+")", "sum("+keep("first_over_time")+")",
-		"max by (app) ("+keep("first_over_time")+")", "max without (app) ("+keep("first_over_time")+")", keep("first_over_time")+" by (app)",
-		`first_over_time({job="kj"} | json | keep duration_ms | unwrap duration_ms [5m])`,
-		`first_over_time({job="kj"} | json | keep app, region, duration_ms | unwrap duration_ms [5m])`,
-		`first_over_time({job=~"kj|kx"} | json duration_ms | keep app, duration_ms | unwrap duration_ms [5m])`,
-		`sum by (app) (first_over_time({job="kj"} | keep app | json | unwrap duration_ms [5m]))`)
+	add(perLineSliding, sliding, `sum by (app) (first_over_time({job="kj"} | keep app | json | unwrap duration_ms [5m]))`)
 	// Without a keep each line is a Loki series of its own. quantile_over_time and rate_counter keep the stream's
 	// series (or the group's samples), and so does every function over a range longer than the step: the window
 	// evaluator merges the step buckets of streams.
@@ -136,8 +132,6 @@ var keepIdentityKnown = func() map[string]map[string]string {
 	// Under label_replace and in a binary operation between two such functions the operand keeps the stream's
 	// series (and label_replace's range answer hits the series limit, as before).
 	add("semantics/keep-before-unwrap-identity-in-operands", all, keepIdentityExtraQueries[2], keepIdentityExtraQueries[4])
-	// first and last over time on a range longer than the step, as above.
-	add("semantics/unwrap-first-last-range-longer-than-step", sliding, keepIdentityExtraQueries[0])
 	return known
 }()
 
@@ -217,7 +211,7 @@ func keepIdentityFixture() metricFixture {
 // TestKeepUnwrapIdentityMatchLoki replays the recorded answers through the handlers and holds every run to Loki's
 // answer, or to its listed difference.
 //
-// conformance: semantics/keep-before-unwrap-series-identity, semantics/keep-before-parser-unwrap-identity, semantics/drop-before-unwrap-stream-label, semantics/unwrap-rate-counter-window-extrapolation, semantics/unwrap-first-last-range-longer-than-step, semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile, semantics/stdvar-grouped-pooled-variance, semantics/keep-before-unwrap-identity-in-operands
+// conformance: semantics/keep-before-unwrap-series-identity, semantics/keep-before-parser-unwrap-identity, semantics/drop-before-unwrap-stream-label, semantics/unwrap-rate-counter-window-extrapolation, semantics/unwrap-first-last-range-longer-than-step, semantics/unwrap-first-last-per-line-range-longer-than-step, semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile, semantics/stdvar-grouped-pooled-variance, semantics/keep-before-unwrap-identity-in-operands
 func TestKeepUnwrapIdentityMatchLoki(t *testing.T) {
 	if testing.Short() && os.Getenv("CI") == "" && os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("runs every shape on a fresh proxy per request; run without -short")

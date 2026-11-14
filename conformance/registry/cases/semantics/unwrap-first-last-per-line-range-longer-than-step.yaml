@@ -1,0 +1,57 @@
+id: semantics/unwrap-first-last-per-line-range-longer-than-step
+title: first_over_time and last_over_time with unwrap over a series per line read one step, not Loki's window, for a range longer than the step (open)
+pending: true
+proves:
+  - window-bounds-and-step-alignment
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Residual of semantics/unwrap-first-last-range-longer-than-step. Over a parser
+  with no keep after it, a Loki series is the stream and the labels the parser
+  extracts, so lines with a key of their own (a request or transaction id) are a
+  series each. The proxy names such a series by the stream and the line
+  (`_stream, _msg`, semantics/unwrap-per-series-identity-raw-rows), which is no
+  bounded grouping of buckets: a window would need a row per line and bucket.
+  These queries keep one VictoriaLogs step bucket per point, so a point sums the
+  lines of the step (t-step, t] instead of the window: with the Loki engine oracle
+  and VictoriaLogs v1.53.0 and v1.49.0 (TestKeepUnwrapIdentityMatchLoki),
+  `sum(first_over_time({job="kj"} | json | unwrap duration_ms [5m]))` at step 60
+  answers 19011 where Loki answers 128874, for first and last, under sum and
+  sum by (app), and with a keep before the parser.
+
+  Fix to make: the window from VictoriaLogs for these series, for example one
+  stats_query_range per phase of the step within the range (each a tumbling
+  window of the range, which VictoriaLogs answers exactly) when range/step is
+  small, or the series identity of the per-line work.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(last_over_time({service_name="payment-service"} | logfmt | unwrap amount [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, timestamps, values]
+  expect: |
+    Loki's window value at every step.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy unwrapWindowBuckets (a grouping by _msg, or by _stream with a parser, keeps the step buckets)'
+  loki: 'the window (t-range, t] of every evaluation time, a series per stream and parsed labels'
+  proxy: 'one step bucket per point for a series per line'
+  planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus, listed runs)'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

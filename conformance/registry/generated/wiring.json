@@ -504,6 +504,7 @@
       "internal/proxy/drilldown_fields_json_path_test.go",
       "internal/proxy/drilldown_longrange_survival_test.go",
       "internal/proxy/extracted_suffix_collision_test.go",
+      "internal/proxy/first_last_range_longer_than_step_test.go",
       "internal/proxy/first_last_range_timestamps_test.go",
       "internal/proxy/ip_label_filter_test.go",
       "internal/proxy/keep_extracted_collision_test.go",
@@ -567,6 +568,7 @@
       "test/e2e-compat/drilldown_longrange_fields_burst_test.go",
       "test/e2e-compat/drop_error_spellings_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
+      "test/e2e-compat/first_last_range_longer_than_step_test.go",
       "test/e2e-compat/first_last_range_timestamps_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
@@ -1393,6 +1395,7 @@
     ],
     "semantics/keep-before-unwrap-series-identity": [
       "internal/proxy/keep_unwrap_identity_test.go",
+      "internal/querycorpus/first_last_loki_diff_test.go",
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
       "internal/queryplan/lower/unwrap_keep_test.go",
       "internal/queryplan/series_labels_test.go"
@@ -1481,6 +1484,9 @@
     "semantics/labels-end-inclusive-like-loki": [
       "internal/proxy/labels_inclusive_end_test.go",
       "test/e2e-compat/labels_zero_width_test.go"
+    ],
+    "semantics/last-over-time-vl149-row-max-wrong-row": [
+      "internal/querycorpus/first_last_loki_diff_test.go"
     ],
     "semantics/line-filter-error-quotes-the-run": [
       "internal/logql/line_filter_runs_loki_test.go",
@@ -1934,16 +1940,25 @@
     "semantics/unwrap-extraction-list-series-identity": [
       "internal/proxy/extraction_list_outside_without_test.go"
     ],
-    "semantics/unwrap-first-last-range-longer-than-step": [
+    "semantics/unwrap-first-last-per-line-range-longer-than-step": [
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
     ],
+    "semantics/unwrap-first-last-range-longer-than-step": [
+      "internal/proxy/first_last_range_longer_than_step_test.go",
+      "internal/querycorpus/first_last_loki_diff_test.go",
+      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
+      "test/e2e-compat/first_last_range_longer_than_step_test.go"
+    ],
     "semantics/unwrap-first-last-range-timestamps": [
+      "internal/proxy/first_last_range_longer_than_step_test.go",
       "internal/proxy/first_last_range_timestamps_test.go",
+      "internal/querycorpus/first_last_loki_diff_test.go",
       "test/e2e-compat/first_last_range_timestamps_test.go"
     ],
     "semantics/unwrap-first-last-under-aggregation": [
       "internal/proxy/first_last_range_timestamps_test.go",
       "internal/proxy/first_last_unwrap_differential_test.go",
+      "internal/querycorpus/first_last_loki_diff_test.go",
       "internal/translator/first_last_over_time_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go"
     ],
@@ -2014,6 +2029,9 @@
       "internal/translator/unwrap_gate_test.go",
       "test/e2e-compat/unwrap_sample_validity_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
+    ],
+    "semantics/unwrap-stored-integer-field-gate": [
+      "internal/querycorpus/first_last_loki_diff_test.go"
     ],
     "semantics/unwrap-sum-without-collapses": [
       "internal/proxy/sum_without_differential_test.go",
@@ -2260,6 +2278,7 @@
     ],
     "window-bounds-and-step-alignment": [
       "internal/proxy/absent_over_time_differential_test.go",
+      "internal/proxy/first_last_range_longer_than_step_test.go",
       "internal/proxy/ordered_json_steps_cache_test.go",
       "internal/proxy/query_range_steps_harden_test.go",
       "internal/proxy/range_lower_bound_test.go",
@@ -2290,7 +2309,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 574,
+  "registry_items": 577,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2803,6 +2822,12 @@
       "semantics/stage-after-unwrap-accepted",
       "semantics/stage-name-followed-by-more-of-stage",
       "semantics/unwrap-in-log-query"
+    ],
+    "internal/proxy/first_last_range_longer_than_step_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/unwrap-first-last-range-longer-than-step",
+      "semantics/unwrap-first-last-range-timestamps",
+      "window-bounds-and-step-alignment"
     ],
     "internal/proxy/first_last_range_timestamps_test.go": [
       "loki_api_v1_query_range",
@@ -3827,6 +3852,14 @@
     "internal/querycorpus/extract_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/first_last_loki_diff_test.go": [
+      "semantics/keep-before-unwrap-series-identity",
+      "semantics/last-over-time-vl149-row-max-wrong-row",
+      "semantics/unwrap-first-last-range-longer-than-step",
+      "semantics/unwrap-first-last-range-timestamps",
+      "semantics/unwrap-first-last-under-aggregation",
+      "semantics/unwrap-stored-integer-field-gate"
+    ],
     "internal/querycorpus/format_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3863,6 +3896,7 @@
       "semantics/keep-before-unwrap-identity-in-operands",
       "semantics/keep-before-unwrap-series-identity",
       "semantics/stdvar-grouped-pooled-variance",
+      "semantics/unwrap-first-last-per-line-range-longer-than-step",
       "semantics/unwrap-first-last-range-longer-than-step",
       "semantics/unwrap-per-series-identity-raw-rows",
       "semantics/unwrap-quantile-sum-by-group-quantile",
@@ -4486,6 +4520,10 @@
       "profiles/structured-metadata-label-collision",
       "semantics/extracted-suffix-collision"
     ],
+    "test/e2e-compat/first_last_range_longer_than_step_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/unwrap-first-last-range-longer-than-step"
+    ],
     "test/e2e-compat/first_last_range_timestamps_test.go": [
       "loki_api_v1_query_range",
       "semantics/unwrap-first-last-range-timestamps"
@@ -5060,7 +5098,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 594,
+  "tests_with_markers": 597,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5167,5 +5205,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 355
+  "wired_items": 358
 }

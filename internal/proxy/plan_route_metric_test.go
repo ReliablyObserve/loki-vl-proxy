@@ -428,7 +428,9 @@ func routeStatsText(q string, route lower.MetricRoute, phase string, start time.
 		// Where the filter goes is the handlers' text placement (withWindowPhaseFilter); that it goes is the route's.
 		base = withWindowPhaseFilter(context.Background(), base, start, step, route.Range)
 	}
-	out := base + " | stats " + by + agg
+	// first and last read the row's value with a second stats of the same groups: the handlers' builder
+	// (rowBucketPick); that the window merges from buckets is the route's.
+	out := base + " | stats " + by + agg + rowBucketPick(agg, " | stats "+by)
 	if route.Fold == lower.FoldCut {
 		cut, ok := translator.WithoutStreamCut(q, toVL, toLoki)
 		if !ok {
@@ -934,11 +936,17 @@ func TestMetricRouteRangeFunctionEdges(t *testing.T) {
 		{q: `stddev_over_time({app="ra"} | unwrap n [7m]) by (pod)`},
 		{q: `stddev_over_time({app="ra"} | unwrap duration(n) [90s]) by ()`},
 		{q: `stddev_over_time({app="ra"} | unwrap n [1m]) by (level)`, delegated: "RangeAgg route unwrap grouping"},
+		// first and last merge their windows from the earliest or the latest row per bucket
+		{q: `first_over_time({app="ra"} | unwrap n [1m])`},
+		{q: `last_over_time({app="ra"} | unwrap n [1m]) by (pod)`},
+		{q: `first_over_time({app="ra"} | unwrap n [7m]) by ()`},
+		{q: `last_over_time({app="ra"} | unwrap duration(n) [90s]) by (pod, zone)`},
+		{q: `first_over_time({app="ra"} | unwrap n [1m] offset 5m)`},
+		{q: `last_over_time({app="ra"} | unwrap n [1m]) by (detected_level)`, delegated: "RangeAgg route unwrap grouping"},
+		{q: `first_over_time({app="ra"} | logfmt | unwrap n [1m])`, delegated: "RangeAgg route unwrap pipeline"},
 		// the functions read another way stay delegated by name
 		{q: `quantile_over_time(0.5, {app="ra"} | unwrap n [1m])`, delegated: "RangeAgg route unwrap quantile"},
 		{q: `stdvar_over_time({app="ra"} | unwrap n [1m])`, delegated: "RangeAgg route unwrap stdvar"},
-		{q: `first_over_time({app="ra"} | unwrap n [1m])`, delegated: "RangeAgg route unwrap first"},
-		{q: `last_over_time({app="ra"} | unwrap n [1m]) by (pod)`, delegated: "RangeAgg route unwrap last"},
 		{q: `rate_counter({app="ra"} | unwrap n [1m])`, delegated: "RangeAgg route unwrap rate_counter"},
 		{q: `rate({app="ra"} | unwrap n [1m])`, delegated: "RangeAgg route unwrap rate"},
 		{q: `sum by (pod) (absent_over_time({app="ra"}[1m]))`, delegated: "VectorAgg route absent operand"},
@@ -1059,8 +1067,17 @@ func TestMetricRouteVectorUnwrapEdges(t *testing.T) {
 		{q: `max by (_stream, _msg) (avg_over_time({app="va"} | unwrap n [1m]))`, delegated: "VectorAgg route unwrap grouping"},
 		// the functions read another way, and absent_over_time
 		{q: `sum(quantile_over_time(0.5, {app="va"} | unwrap n [1m]))`, delegated: "VectorAgg route unwrap quantile"},
-		{q: `max(first_over_time({app="va"} | unwrap n [1m]))`, delegated: "VectorAgg route unwrap first"},
-		{q: `max(last_over_time({app="va"} | unwrap n [1m]))`, delegated: "VectorAgg route unwrap last"},
+		// first and last: the value of each series' window, folded by the operator
+		{q: `max(first_over_time({app="va"} | unwrap n [1m]))`},
+		{q: `max(last_over_time({app="va"} | unwrap n [1m]))`},
+		{q: `sum(first_over_time({app="va"} | unwrap n [7m]))`},
+		{q: `sum by (pod) (last_over_time({app="va"} | unwrap n [90s]))`},
+		{q: `avg(last_over_time({app="va"} | unwrap bytes(n) [1m]))`},
+		{q: `count by (pod) (first_over_time({app="va"} | unwrap n [1m]))`},
+		{q: `min by () (first_over_time({app="va"} | unwrap n [1500ms]))`},
+		{q: `sum(last_over_time({app="va"} | unwrap n [1m] offset 5m))`},
+		{q: `max by (pod) (first_over_time({app="va"} | unwrap n [1m]) by (zone))`, delegated: "VectorAgg grouping"},
+		{q: `sum by (_msg) (last_over_time({app="va"} | unwrap n [1m]))`, delegated: "VectorAgg route unwrap grouping"},
 		{q: `sum(rate({app="va"} | unwrap n [1m]))`, delegated: "VectorAgg route unwrap rate"},
 		{q: `sum(rate_counter({app="va"} | unwrap n [1m]))`, delegated: "VectorAgg route unwrap rate_counter"},
 		{q: `sum(absent_over_time({app="va"} | unwrap n [1m]))`, delegated: "VectorAgg route absent operand"},

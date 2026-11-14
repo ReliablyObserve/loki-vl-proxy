@@ -3211,7 +3211,7 @@
    ]
   },
   "unwrap-first-last": {
-   "description": "first_over_time and last_over_time with unwrap under an aggregation, the shape Grafana Explore sends with $__auto (semantics/unwrap-first-last-range-timestamps): F1 and F2 take a range equal to the step and must answer Loki's evaluation timestamps from relabelled step buckets, F3 is a range longer than the step (semantics/unwrap-first-last-range-longer-than-step, open). Run with the control set.",
+   "description": "first_over_time and last_over_time with unwrap under an aggregation, the shape Grafana Explore sends with $__auto (semantics/unwrap-first-last-range-timestamps): F1 and F2 take a range equal to the step and must answer Loki's evaluation timestamps from relabelled step buckets, F3 is a range longer than the step over a series per line (semantics/unwrap-first-last-per-line-range-longer-than-step, open), F4 the same over a series a keep decides (semantics/unwrap-first-last-range-longer-than-step). Run with the control set.",
    "ranges": [
     "1h",
     "6h",
@@ -3239,10 +3239,20 @@
      ]
     },
     {
+     "name": "F4 logfmt amount last_over_time behind a keep, 5m range over a shorter step",
+     "query": "sum(last_over_time({service_name=\"payment-service\"} | logfmt | keep service_name, amount | unwrap amount [5m]))",
+     "covers": [
+      "semantics/unwrap-first-last-range-longer-than-step",
+      "semantics/unwrap-first-last-under-aggregation",
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
+     ]
+    },
+    {
      "name": "F3 logfmt amount last_over_time, 5m range over a shorter step",
      "query": "sum(last_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
      "covers": [
-      "semantics/unwrap-first-last-range-longer-than-step",
+      "semantics/unwrap-first-last-per-line-range-longer-than-step",
       "semantics/unwrap-first-last-under-aggregation",
       "loki_api_v1_query_range",
       "quality/query-range-settled-steps"

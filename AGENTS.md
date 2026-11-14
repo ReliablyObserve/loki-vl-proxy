@@ -179,6 +179,37 @@ matrix in its PR summary, with links to retained, reproducible evidence.
 Infrastructure, release metadata and documentation changes may mark this matrix
 not applicable with their scope reason; they must not claim runtime savings.
 
+## Cache reuse on every layer, proven in every pull request (hard rule)
+
+Every request reuses what an earlier request already computed, on each cache semantic layer above, across the fleet's
+tiers (memory, disk, peers):
+
+- the **Loki-facing layer**: the Loki API answer and LogQL-derived fragments;
+- the **VictoriaLogs-facing layer**: every VictoriaLogs read a request makes — raw answers per call, stats_query_range
+  buckets (the stats extent cache), proof and probe reads, metadata scans, field and value listings — keyed by the
+  LogsQL, tenant scope and capability epoch;
+- the **proxy's own work**: results the proxy computes itself (parse and plan, translation, proxy-evaluated operators
+  such as window merges, binary and ranking steps, proof verdicts, label inventories) are cached where recomputing
+  them costs measurable time, under their own versioned keys.
+
+A pull request that adds or changes a VictoriaLogs read, a proxy-evaluated step or a response path, not only one that
+changes cache behavior, proves the reuse with a test and a performance table in its Performance section, per query
+structure it touches on both sides (the Loki query shapes, e.g. log query, range metric, instant, binary, ranking,
+metadata route; and the VictoriaLogs query structures they send, e.g. query, stats_query_range buckets, stats_query,
+hits, field values):
+
+- a repeat of the request makes no VictoriaLogs call and repeats no proxy computation the cache holds;
+- a refresh moved forward asks VictoriaLogs only for the new buckets or pieces;
+- another request shape that needs the same read or the same intermediate result reuses it;
+- the cached answer equals the uncached one byte for byte, and a fenced change never serves an older answer;
+- the numbers, per layer: hits and lookups, VictoriaLogs calls and bytes, proxy CPU and allocations per request, latency,
+  for cold, repeat and refresh.
+
+A new read or computation that is not cached when it could be is a performance regression. The daily performance report
+and the weekly full run measure reuse per query structure and per layer (hit ratio per tier, VictoriaLogs calls and
+bytes, proxy CPU per repeat and refresh, peer fill) and turn red when it drops, like a latency regression; the per-case
+verifier repeats each case and reports a repeat that differs or calls VictoriaLogs again.
+
 ## Fleet scale
 
 Design every change for tens of proxy replicas, a much larger VictoriaLogs

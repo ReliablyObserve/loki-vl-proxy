@@ -116965,7 +116965,7 @@
       "warm_p50": 0.011
     }
   ],
-  "semantics/unwrap-first-last-range-longer-than-step": [
+  "semantics/unwrap-first-last-per-line-range-longer-than-step": [
     {
       "baseline": "release",
       "baseline_status": "200",
@@ -117123,6 +117123,7 @@
       "warm_p50": 0.007
     }
   ],
+  "semantics/unwrap-first-last-range-longer-than-step": [],
   "semantics/unwrap-first-last-range-timestamps": [
     {
       "baseline": "release",
