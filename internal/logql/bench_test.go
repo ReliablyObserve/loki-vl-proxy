@@ -21,6 +21,9 @@ var benchQueries = map[string]string{
 	"quantile":      `quantile_over_time(0.99, {app="api"} | unwrap latency [5m])`,
 	"offset":        `rate({app="api"}[5m] offset 1h)`,
 	"trailing_by":   `sum(count_over_time({service_name="argocd", service_name != ""}[5s])) by (service_name)`,
+	"unwrap_filter": `sum_over_time({app="api"} | json | unwrap latency | __error__="" [1h30m])`,
+	"binary_three":  `rate({app="a"}[5m]) + rate({app="b"}[5m]) + rate({app="c"}[5m])`,
+	"spaced":        "sum by (app)\n\t(rate({app=\"api\"}\r\n|= \"x\" [5m]))",
 }
 
 func BenchmarkParse(b *testing.B) {

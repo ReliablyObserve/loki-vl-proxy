@@ -1,7 +1,6 @@
 package logql
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -332,13 +331,13 @@ func connectorKind(word string) lfTokKind {
 // literal is not terminated.
 func (p *lfParser) lexString(start int, quote byte) bool {
 	p.pos = start + 1
-	for p.pos < len(p.src) && p.src[p.pos] != quote {
+	for p.pos < len(p.src) && p.src[p.pos] != quote && (quote != '"' || p.src[p.pos] != '\n') {
 		if quote == '"' && p.src[p.pos] == '\\' {
 			p.pos++
 		}
 		p.pos++
 	}
-	if p.pos >= len(p.src) {
+	if p.pos >= len(p.src) || p.src[p.pos] != quote {
 		if p.lexErr == nil {
 			p.lexErr = &LabelFilterSyntaxError{Offset: start, Message: "literal not terminated"}
 		}
@@ -433,16 +432,7 @@ func (p *lfParser) lexRange(start int) string {
 		return "missing closing ']' in duration"
 	}
 	p.pos = start + end + 1
-	switch d := p.src[start+1 : start+end]; {
-	case d == "":
-		return "empty duration string"
-	case !lokiDuration(d):
-		if unit := durationUnit(d); unit != "" && unit != d {
-			return fmt.Sprintf("unknown unit %q in duration %q", unit, d)
-		}
-		return fmt.Sprintf("not a valid duration string: %q", d)
-	}
-	return ""
+	return rangeLexError(p.src[start+1 : start+end])
 }
 
 // lexChar reads the character literal that starts at start with a quote ('x'), which Loki's lexer returns as a
@@ -651,7 +641,7 @@ func (p *lfParser) parseFilter() (*LabelFilterExpr, *LabelFilterSyntaxError) {
 	p.next()
 	if kind == "IP" {
 		if p.tok.kind != lfLParen {
-			return nil, p.unexpected("")
+			return nil, p.unexpected("(")
 		}
 		p.next()
 		if p.tok.kind != lfString {
@@ -702,9 +692,11 @@ func (p *lfParser) readSign(op string) (string, *LabelFilterSyntaxError) {
 	return sign, nil
 }
 
-// isIPCall reports whether the word at the current token is `ip` followed by a parenthesis.
+// isIPCall reports whether the word at the current token is `ip` followed by a parenthesis. Loki's lexer looks
+// for the parenthesis over every character Go calls white space, so `ip` followed by one of those is the keyword
+// too, and the character after it is the unexpected token.
 func (p *lfParser) isIPCall() bool {
-	return strings.EqualFold(p.tok.text, "ip") && strings.HasPrefix(strings.TrimLeft(p.src[p.tok.end:], " \t\r\n"), "(")
+	return strings.EqualFold(p.tok.text, "ip") && strings.HasPrefix(strings.TrimLeftFunc(p.src[p.tok.end:], unicode.IsSpace), "(")
 }
 
 // unquoteLabelFilterString is the value of a string literal the way the LogQL

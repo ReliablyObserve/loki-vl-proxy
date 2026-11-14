@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Breaking:** queries Loki's parser rejects are now rejected the same way, with Loki's `400` and text, before the
+  proxy looks in a cache or calls VictoriaLogs. The proxy used to accept them and send them on, so they answered with
+  data or with an error from VictoriaLogs:
+  - a blank Loki does not treat as white space between two tokens: a vertical tab, a form feed, U+0085, a no-break
+    space (U+00A0), U+2003 and the like (`sum by (a) (...)` is `unexpected IDENTIFIER, expecting ( or by or
+    without`). Only a space, a tab, a line feed and a carriage return separate tokens, as in Loki. A blank in a
+    list of names, such as `sum by (a, )`, which Loki accepts, stays accepted;
+  - a stage after `| unwrap` other than a label filter, in a range aggregation (`| unwrap c | drop __error__` is
+    `unexpected drop, expecting IDENTIFIER or (`), and `| unwrap` in a log query (`{app="a"} | unwrap x` is
+    `unexpected unwrap`). Grafana's `| unwrap [1s]` stubs are still dropped before the check;
+  - a range Loki does not read as a duration: Go's units `ns`, `us` and `µs` (`[1µs]` is `unknown unit "µs" in
+    duration "1µs"`), fractions (`[1.5m]`, write `[1m30s]`), units repeated or out of order (`[5m5m]`, `[30s5m]`),
+    blanks inside the brackets and a range above about 292 years (`duration out of range`). An offset still accepts
+    Go's durations, as in Loki;
+  - `on` and `ignoring` without their list of labels (`... / on rate(...)` is `unexpected RATE, expecting (`).
+  A second `| unwrap` in a range aggregation and a few other syntax errors now carry Loki's line and column.
+- A label filter that compares with minus zero written apart (`| a < - 0`, a number) is printed apart, so the
+  printed query reads as the same filter; written together (`a<-0`) Loki reads a duration.
 - The configuration reference and the limits registry print the defaults of `-patterns-state-stream-idle`,
   `-backend-heavy-query-min-range`, `-backend-heavy-query-queue-wait`, `-max-stats-cache-freshness`,
   `-slow-query-threshold`, `-slow-upstream-threshold` and `-backend-retry-max-wait` as durations (`5m0s`, `6h0m0s`,

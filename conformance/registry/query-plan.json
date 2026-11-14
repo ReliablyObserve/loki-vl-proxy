@@ -2,8 +2,8 @@
   "description": "Ratchets of the query plan (internal/queryplan), one section per gate; a count may only fall, and LVP_QUERY_PLAN_UPDATE=1 rewrites the section of the test that ran. `logical` is the logical plan built from every query of the plan corpus (the curated sources and the capture sample): how many rows parse and build (all of them), and the spots the plan still holds as text, per construct (typing them lowers the count). `logical_key_sound` is, per profile, how the logical keys group the corpus and what the string translator wrote for the queries of a group: no group may differ in structure. `predicate_parity` is, per attribute of the resolver (queryplan.Resolve), the text predicate it replaces and every corpus row where the two differ, each with its reason (internal/proxy TestPlanPredicateParity: an unexplained or stale row fails).",
   "logical": {
     "rows": 2634,
-    "parsed": 2557,
-    "built": 2557,
+    "parsed": 2556,
+    "built": 2556,
     "untyped_by_construct": {
       "labelfilter_untyped": 0,
       "line_format_raw": 3,
@@ -16,8 +16,8 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2557,
-      "keys": 2504,
+      "rows": 2556,
+      "keys": 2503,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -25,8 +25,8 @@
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2557,
-      "keys": 2504,
+      "rows": 2556,
+      "keys": 2503,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -34,8 +34,8 @@
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2557,
-      "keys": 2504,
+      "rows": 2556,
+      "keys": 2503,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -43,8 +43,8 @@
       "unsound": 0
     },
     "v1.53 identity": {
-      "rows": 2557,
-      "keys": 2504,
+      "rows": 2556,
+      "keys": 2503,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -52,8 +52,8 @@
       "unsound": 0
     },
     "v1.53 no body scan": {
-      "rows": 2557,
-      "keys": 2504,
+      "rows": 2556,
+      "keys": 2503,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -61,8 +61,8 @@
       "unsound": 0
     },
     "v1.53 no body scan, stream fields, keepLine": {
-      "rows": 2557,
-      "keys": 2504,
+      "rows": 2556,
+      "keys": 2503,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 0,
@@ -70,8 +70,8 @@
       "unsound": 0
     },
     "v1.53 stream fields": {
-      "rows": 2557,
-      "keys": 2504,
+      "rows": 2556,
+      "keys": 2503,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -79,8 +79,8 @@
       "unsound": 0
     },
     "v1.53 stream fields and labels": {
-      "rows": 2557,
-      "keys": 2504,
+      "rows": 2556,
+      "keys": 2503,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -88,8 +88,8 @@
       "unsound": 0
     },
     "v1.53 stream labels": {
-      "rows": 2557,
-      "keys": 2504,
+      "rows": 2556,
+      "keys": 2503,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -97,8 +97,8 @@
       "unsound": 0
     },
     "v1.53 stream labels keepLine": {
-      "rows": 2557,
-      "keys": 2504,
+      "rows": 2556,
+      "keys": 2503,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 0,
@@ -106,8 +106,8 @@
       "unsound": 0
     },
     "v1.53 underscores": {
-      "rows": 2557,
-      "keys": 2504,
+      "rows": 2556,
+      "keys": 2503,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -115,8 +115,8 @@
       "unsound": 0
     },
     "v1.53 underscores keepLine": {
-      "rows": 2557,
-      "keys": 2504,
+      "rows": 2556,
+      "keys": 2503,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 0,
@@ -289,7 +289,7 @@
       "the plan does not route it: RangeAgg route offset bounds": 1,
       "the plan does not route it: RangeAgg route pipeline": 114,
       "the plan does not route it: RangeAgg route reserved field": 1,
-      "the plan does not route it: RangeAgg route spelling": 3,
+      "the plan does not route it: RangeAgg route spelling": 2,
       "the plan does not route it: RangeAgg route unwrap absent": 9,
       "the plan does not route it: RangeAgg route unwrap first": 10,
       "the plan does not route it: RangeAgg route unwrap last": 12,
@@ -468,8 +468,8 @@
     }
   },
   "route_parity": {
-    "rows": 2517,
-    "runs": 25170,
+    "rows": 2515,
+    "runs": 25150,
     "profiles": [
       "instant",
       "step=range",
@@ -505,7 +505,6 @@
       "LogSelect keep order": 10,
       "LogSelect level filter after stage": 10,
       "LogSelect line format function": 10,
-      "LogSelect pipeline": 10,
       "LogSelect unpack line": 10,
       "RangeAgg LogSelect level filter after stage": 10,
       "RangeAgg LogSelect line format function": 10,
@@ -518,7 +517,7 @@
       "RangeAgg route offset bounds": 10,
       "RangeAgg route pipeline": 1140,
       "RangeAgg route reserved field": 10,
-      "RangeAgg route spelling": 30,
+      "RangeAgg route spelling": 20,
       "RangeAgg route unwrap absent": 90,
       "RangeAgg route unwrap first": 100,
       "RangeAgg route unwrap last": 120,
@@ -557,47 +556,47 @@
       "VectorLit": 10
     },
     "statuses": {
-      "200": 24553,
-      "400": 584,
+      "200": 24537,
+      "400": 580,
       "500": 33
     },
     "routes": {
       "24h chunk/BinOp": "a0123d6f9e17fa36",
       "24h chunk/LabelReplace": "a6ccb94704141f22",
-      "24h chunk/LogSelect": "36de7ad2889c6b55",
-      "24h chunk/RangeAgg": "f6f6fff6f09f52d5",
+      "24h chunk/LogSelect": "1eae3ae49613d923",
+      "24h chunk/RangeAgg": "de3246adc1ef6d13",
       "24h chunk/Rank": "acf0095c7e7d47f0",
       "24h chunk/Scalar": "b01ddfee0a162681",
       "24h chunk/VectorAgg": "2a7964f97ab01aa3",
       "24h chunk/VectorLit": "fafe78111335aec9",
       "instant/BinOp": "a139312fd7796b7a",
       "instant/LabelReplace": "50c680b356a6c4c8",
-      "instant/LogSelect": "e9cac2f84f7514a7",
-      "instant/RangeAgg": "e289c8065f9eac55",
+      "instant/LogSelect": "0faecdd5951893c5",
+      "instant/RangeAgg": "3cd48a272c86eeab",
       "instant/Rank": "872242485620d173",
       "instant/Scalar": "058ee94c303a0c46",
       "instant/VectorAgg": "473ce21841c60355",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "ded1a846679dcc18",
       "step\u003crange/LabelReplace": "c8581a1704ba3fa9",
-      "step\u003crange/LogSelect": "36de7ad2889c6b55",
-      "step\u003crange/RangeAgg": "47fcd274475cb3e8",
+      "step\u003crange/LogSelect": "1eae3ae49613d923",
+      "step\u003crange/RangeAgg": "4e16d6ed926ea68f",
       "step\u003crange/Rank": "28279fc6c7916a12",
       "step\u003crange/Scalar": "b01ddfee0a162681",
       "step\u003crange/VectorAgg": "f0dfc9875d1f3758",
       "step\u003crange/VectorLit": "fafe78111335aec9",
       "step=range/BinOp": "ac2c93507815eca7",
       "step=range/LabelReplace": "4cdea3d606ece059",
-      "step=range/LogSelect": "36de7ad2889c6b55",
-      "step=range/RangeAgg": "6febd59a978f9c60",
+      "step=range/LogSelect": "1eae3ae49613d923",
+      "step=range/RangeAgg": "6303a59f748f7665",
       "step=range/Rank": "48b7c16f1a61f7ad",
       "step=range/Scalar": "b01ddfee0a162681",
       "step=range/VectorAgg": "cdeb18eb6ee73707",
       "step=range/VectorLit": "fafe78111335aec9",
       "step\u003erange/BinOp": "e7e755c8e8149468",
       "step\u003erange/LabelReplace": "2cdc35010867f604",
-      "step\u003erange/LogSelect": "36de7ad2889c6b55",
-      "step\u003erange/RangeAgg": "07acd680811f7ef9",
+      "step\u003erange/LogSelect": "1eae3ae49613d923",
+      "step\u003erange/RangeAgg": "cf5db13de6446d05",
       "step\u003erange/Rank": "bde2008f55288e03",
       "step\u003erange/Scalar": "b01ddfee0a162681",
       "step\u003erange/VectorAgg": "f4815d4c4d94f80c",
@@ -605,7 +604,7 @@
     }
   },
   "shadow": {
-    "rows": 23697,
+    "rows": 23688,
     "profiles": 12,
     "native": 21298,
     "native_proxy_evaluated": 3951,
@@ -658,7 +657,6 @@
       "known divergence semantics/binary-operand-without-empty-collapses": 378,
       "known divergence semantics/label-filter-numeric-equality": 57,
       "known divergence semantics/label-replace-around-ranking-and-vector": 18,
-      "known divergence semantics/parser-reads-unicode-blank-as-white-space": 9,
       "known divergence semantics/pattern-capture-before-bracket-text": 12,
       "known divergence semantics/stddev-stdvar-nested-or-binary": 90,
       "known divergence semantics/translator-reads-marker-bytes-in-quoted-value": 12,

@@ -277,11 +277,36 @@ func (s *scanner) read() rune {
 	return r
 }
 
+// isLokiSpace reports whether r is white space to Loki's lexer: a space, a tab, a line feed or a carriage return.
+// Every other character Go calls white space (a vertical tab, a form feed, U+0085, U+00A0, U+2003, ...) starts a
+// token of its own there, which the grammar reads as a name.
+func isLokiSpace(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' }
+
+// trimLokiSpace drops the white space Loki's lexer skips from both ends of s.
+func trimLokiSpace(s string) string {
+	for len(s) > 0 && isLokiSpace(rune(s[0])) {
+		s = s[1:]
+	}
+	for len(s) > 0 && isLokiSpace(rune(s[len(s)-1])) {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+// isWildcard reports the bare wildcard some clients send for "all streams", with the white space Loki skips around it.
+func isWildcard(s string) bool {
+	return strings.IndexByte(s, '*') >= 0 && trimLokiSpace(s) == "*"
+}
+
 // skipWS skips white space and comments. It reports whether white space stands right before the token: Loki's
 // lexer takes the line break that ends a comment with the comment.
 func (s *scanner) skipWS() (spaced bool) {
 	if s.hasNUL {
 		s.afterComment = false
+	}
+	if s.inRange {
+		// Loki's lexer reads a [range] as one token, up to the ']': nothing in it is skipped.
+		return false
 	}
 	for {
 		r, size := s.peek()
@@ -308,7 +333,7 @@ func (s *scanner) skipWS() (spaced bool) {
 			spaced = false
 			continue
 		}
-		if !unicode.IsSpace(r) {
+		if !isLokiSpace(r) {
 			return spaced
 		}
 		s.pos += size
@@ -483,7 +508,9 @@ func (s *scanner) scanToken(spaced bool) Token {
 		return s.scanRawString()
 
 	case '\'':
-		return s.scanCharLiteral()
+		if !s.inRange { // a range is one token to Loki's lexer, whose text the parser checks (rangeLexError)
+			return s.scanCharLiteral()
+		}
 	}
 
 	if unicode.IsLetter(r) || r == '_' {
@@ -575,6 +602,10 @@ func (s *scanner) scanQuotedString() Token {
 		if r == '\\' {
 			s.read() // an escaped quote cannot close the literal
 			continue
+		}
+		if r == '\n' {
+			// Go's text scanner, which Loki's lexer wraps, ends a double-quoted string at a line break.
+			return Token{Typ: TokError, Val: "unterminated quoted string"}
 		}
 		if r == '"' {
 			literal := s.src[start:s.pos]

@@ -1,0 +1,599 @@
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"us\" in duration \"1us\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"us\" in duration \"1us\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"us\" in duration \"1us\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"us\" in duration \"1us\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"us\" in duration \"1us\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"µs\" in duration \"1µs\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"µs\" in duration \"1µs\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"µs\" in duration \"1µs\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"µs\" in duration \"1µs\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"µs\" in duration \"1µs\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"ns\" in duration \"1ns\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"ns\" in duration \"1ns\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"ns\" in duration \"1ns\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"ns\" in duration \"1ns\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"ns\" in duration \"1ns\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"µs\" in duration \"5m1µs\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"µs\" in duration \"5m1µs\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"µs\" in duration \"5m1µs\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"µs\" in duration \"5m1µs\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"µs\" in duration \"5m1µs\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \".\" in duration \"1.5m\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \".\" in duration \"1.5m\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \".\" in duration \"1.5m\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \".\" in duration \"1.5m\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \".\" in duration \"1.5m\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \".\" in duration \"1.5h\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \".\" in duration \"1.5h\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \".\" in duration \"1.5h\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \".\" in duration \"1.5h\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \".\" in duration \"1.5h\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \".\" in duration \"1h1.5m\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \".\" in duration \"1h1.5m\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \".\" in duration \"1h1.5m\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \".\" in duration \"1h1.5m\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \".\" in duration \"1h1.5m\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"5m5m\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"5m5m\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"5m5m\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"5m5m\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"5m5m\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"1h1h\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"1h1h\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"1h1h\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"1h1h\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"1h1h\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"1y1y\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"1y1y\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"1y1y\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"1y1y\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"1y1y\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"30s5m\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"30s5m\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"30s5m\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"30s5m\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"30s5m\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"5ms5s\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"5ms5s\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"5ms5s\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"5ms5s\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"5ms5s\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"1ms5h\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"1ms5h\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"1ms5h\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"1ms5h\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"1ms5h\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"1d1h1d\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"1d1h1d\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"1d1h1d\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"1d1h1d\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"1d1h1d\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"5m5m5m\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"5m5m5m\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"5m5m5m\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"5m5m5m\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"5m5m5m\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"5m5m5x\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"5m5m5x\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"5m5m5x\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"5m5m5x\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"5m5m5x\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"1y1y5x\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"1y1y5x\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"1y1y5x\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"1y1y5x\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"1y1y5x\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"5m5\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"5m5\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"5m5\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"5m5\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"5m5\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"5h5\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"5h5\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"5h5\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"5h5\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"5h5\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"5\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"5\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"5\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"5\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"5\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"00\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"00\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"00\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"00\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"00\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"m\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"m\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"m\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"m\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"m\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"x\" in duration \"5x\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"x\" in duration \"5x\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"x\" in duration \"5x\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"x\" in duration \"5x\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"x\" in duration \"5x\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"mx\" in duration \"5mx\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"mx\" in duration \"5mx\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"mx\" in duration \"5mx\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"mx\" in duration \"5mx\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"mx\" in duration \"5mx\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"mm\" in duration \"5mm\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"mm\" in duration \"5mm\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"mm\" in duration \"5mm\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"mm\" in duration \"5mm\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"mm\" in duration \"5mm\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"M\" in duration \"5M\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"M\" in duration \"5M\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"M\" in duration \"5M\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"M\" in duration \"5M\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"M\" in duration \"5M\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"H\" in duration \"1H\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"H\" in duration \"1H\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"H\" in duration \"1H\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"H\" in duration \"1H\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"H\" in duration \"1H\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"x\" in duration \"5m5x\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"x\" in duration \"5m5x\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"x\" in duration \"5m5x\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"x\" in duration \"5m5x\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"x\" in duration \"5m5x\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"x\" in duration \"5x5m\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"x\" in duration \"5x5m\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"x\" in duration \"5x5m\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"x\" in duration \"5x5m\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"x\" in duration \"5x5m\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"m.\" in duration \"5m5m.\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"m.\" in duration \"5m5m.\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"m.\" in duration \"5m5m.\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"m.\" in duration \"5m5m.\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"m.\" in duration \"5m5m.\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"99999999999999999999h\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"99999999999999999999h\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"99999999999999999999h\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"99999999999999999999h\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"99999999999999999999h\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"100000000000000000000ms\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"100000000000000000000ms\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"100000000000000000000ms\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"100000000000000000000ms\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"100000000000000000000ms\""}
+{"accept":false,"error":"parse error at line 0, col 13: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 52: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 49: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 34: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 43: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 13: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 52: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 49: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 34: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 43: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 13: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 52: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 49: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 34: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 43: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 13: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 52: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 49: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 34: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 43: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 13: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 52: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 49: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 34: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 43: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 13: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 52: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 49: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 34: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 43: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 13: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 52: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 49: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 34: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 43: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 13: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 52: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 49: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 34: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 43: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 13: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 52: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 49: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 34: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 43: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 13: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 52: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 49: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 34: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 43: duration out of range"}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \" 5m\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \" 5m\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \" 5m\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \" 5m\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \" 5m\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"m \" in duration \"5m \""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"m \" in duration \"5m \""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"m \" in duration \"5m \""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"m \" in duration \"5m \""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"m \" in duration \"5m \""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \" 5m \""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \" 5m \""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \" 5m \""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \" 5m \""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \" 5m \""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \" m\" in duration \"5 m\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \" m\" in duration \"5 m\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \" m\" in duration \"5 m\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \" m\" in duration \"5 m\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \" m\" in duration \"5 m\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"m\\t\" in duration \"5m\\t\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"m\\t\" in duration \"5m\\t\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"m\\t\" in duration \"5m\\t\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"m\\t\" in duration \"5m\\t\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"m\\t\" in duration \"5m\\t\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"\\t5m\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"\\t5m\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"\\t5m\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"\\t5m\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"\\t5m\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"m\\n\" in duration \"5m\\n\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"m\\n\" in duration \"5m\\n\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"m\\n\" in duration \"5m\\n\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"m\\n\" in duration \"5m\\n\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"m\\n\" in duration \"5m\\n\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"m:\" in duration \"5m:1m\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"m:\" in duration \"5m:1m\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"m:\" in duration \"5m:1m\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"m:\" in duration \"5m:1m\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"m:\" in duration \"5m:1m\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \".\" in duration \"1.5m:1m\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \".\" in duration \"1.5m:1m\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \".\" in duration \"1.5m:1m\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \".\" in duration \"1.5m:1m\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \".\" in duration \"1.5m:1m\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"m#x\" in duration \"5m#x\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"m#x\" in duration \"5m#x\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"m#x\" in duration \"5m#x\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"m#x\" in duration \"5m#x\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"m#x\" in duration \"5m#x\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"m-\" in duration \"5m-1s\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"m-\" in duration \"5m-1s\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"m-\" in duration \"5m-1s\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"m-\" in duration \"5m-1s\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"m-\" in duration \"5m-1s\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"-5m\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"-5m\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"-5m\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"-5m\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"-5m\""}
+{"accept":false,"error":"parse error at line 0, col 13: not a valid duration string: \"+5m\""}
+{"accept":false,"error":"parse error at line 0, col 52: not a valid duration string: \"+5m\""}
+{"accept":false,"error":"parse error at line 0, col 49: not a valid duration string: \"+5m\""}
+{"accept":false,"error":"parse error at line 0, col 34: not a valid duration string: \"+5m\""}
+{"accept":false,"error":"parse error at line 0, col 43: not a valid duration string: \"+5m\""}
+{"accept":false,"error":"parse error at line 0, col 13: empty duration string"}
+{"accept":false,"error":"parse error at line 0, col 52: empty duration string"}
+{"accept":false,"error":"parse error at line 0, col 49: empty duration string"}
+{"accept":false,"error":"parse error at line 0, col 34: empty duration string"}
+{"accept":false,"error":"parse error at line 0, col 43: empty duration string"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"x\" in duration \"0x1\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"x\" in duration \"0x1\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"x\" in duration \"0x1\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"x\" in duration \"0x1\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"x\" in duration \"0x1\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"e\" in duration \"1e3s\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"e\" in duration \"1e3s\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"e\" in duration \"1e3s\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"e\" in duration \"1e3s\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"e\" in duration \"1e3s\""}
+{"accept":false,"error":"parse error at line 0, col 13: unknown unit \"_\" in duration \"1_000s\""}
+{"accept":false,"error":"parse error at line 0, col 52: unknown unit \"_\" in duration \"1_000s\""}
+{"accept":false,"error":"parse error at line 0, col 49: unknown unit \"_\" in duration \"1_000s\""}
+{"accept":false,"error":"parse error at line 0, col 34: unknown unit \"_\" in duration \"1_000s\""}
+{"accept":false,"error":"parse error at line 0, col 43: unknown unit \"_\" in duration \"1_000s\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected drop, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected drop, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected drop, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected keep, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected keep, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected keep, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected json, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected json, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected json, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected logfmt, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected logfmt, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected logfmt, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected logfmt, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected logfmt, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected logfmt, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected regexp, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected regexp, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected regexp, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected pattern, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected pattern, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected pattern, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected unpack, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected unpack, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected unpack, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected line_format, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected line_format, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected line_format, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected label_format, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected label_format, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected label_format, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected decolorize, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected decolorize, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected decolorize, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected unwrap, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected unwrap, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected unwrap, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected unwrap, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected unwrap, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected unwrap, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected json, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected json, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected json, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected drop, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected drop, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected drop, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected bool, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected bool, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected bool, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected of, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected of, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected of, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected offset, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected offset, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected offset, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected variants, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected variants, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected variants, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected ip, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected ip, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected ip, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 45: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 61: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 1, col 56: syntax error: unexpected IDENTIFIER"}
+{"accept":false,"error":"parse error at line 0, col 34: syntax error: unexpected |=, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 50: syntax error: unexpected |=, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 45: syntax error: unexpected |=, expecting )"}
+{"accept":false,"error":"parse error at line 0, col 34: syntax error: unexpected !=, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 50: syntax error: unexpected !=, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 45: syntax error: unexpected !=, expecting )"}
+{"accept":false,"error":"parse error at line 0, col 34: syntax error: unexpected |~, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 50: syntax error: unexpected |~, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 45: syntax error: unexpected |~, expecting )"}
+{"accept":false,"error":"parse error at line 0, col 34: syntax error: unexpected !~, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 50: syntax error: unexpected !~, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 45: syntax error: unexpected !~, expecting )"}
+{"accept":false,"error":"parse error at line 0, col 34: syntax error: unexpected |\u003e, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 50: syntax error: unexpected |\u003e, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 45: syntax error: unexpected |\u003e, expecting )"}
+{"accept":false,"error":"parse error at line 0, col 34: syntax error: unexpected !\u003e, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 50: syntax error: unexpected !\u003e, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 45: syntax error: unexpected !\u003e, expecting )"}
+{"accept":false,"error":"parse error at line 0, col 36: syntax error: unexpected |=, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 0, col 52: syntax error: unexpected |=, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 0, col 47: syntax error: unexpected |=, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 0, col 36: syntax error: unexpected !=, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 0, col 52: syntax error: unexpected !=, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 0, col 47: syntax error: unexpected !=, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected NUMBER, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected NUMBER, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected NUMBER, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected STRING, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected STRING, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 47: syntax error: unexpected STRING, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 44: syntax error: unexpected json, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 60: syntax error: unexpected json, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 55: syntax error: unexpected json, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 0, col 42: syntax error: unexpected |=, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 58: syntax error: unexpected |=, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 0, col 53: syntax error: unexpected |=, expecting )"}
+{"accept":false,"error":"parse error : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error at line 1, col 37: syntax error: unexpected json, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 42: syntax error: unexpected json, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 0, col 40: syntax error: unexpected |=, expecting )"}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 77: syntax error: unexpected json, expecting IDENTIFIER or ("}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 18: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 13: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 35: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 32: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 23: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 43: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid pattern parser: at least one capture is required"}
+{"accept":false,"error":"parse error : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected regexp, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 11: syntax error: unexpected unwrap"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error at line 1, col 96: syntax error: unexpected json, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error at line 1, col 52: syntax error: unexpected DURATION_CONV, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 1, col 32: syntax error: unexpected BYTES_CONV, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 1, col 32: syntax error: unexpected DURATION_SECONDS_CONV, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 1, col 36: syntax error: unexpected BYTES_CONV, expecting IDENTIFIER or ("}
+{"accept":false,"error":"parse error at line 1, col 34: syntax error: unexpected BYTES_CONV, expecting RANGE or |"}
+{"accept":false,"error":"parse error at line 1, col 50: syntax error: unexpected IDENTIFIER, expecting )"}
+{"accept":false,"error":"parse error at line 0, col 50: syntax error: unexpected RANGE, expecting )"}
+{"accept":false,"error":"parse error at line 1, col 49: syntax error: unexpected IDENTIFIER, expecting )"}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected RATE, expecting ("}
+{"accept":false,"error":"parse error at line 1, col 30: syntax error: unexpected RATE, expecting ("}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected IDENTIFIER, expecting ("}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error at line 1, col 24: syntax error: unexpected group_left, expecting ("}

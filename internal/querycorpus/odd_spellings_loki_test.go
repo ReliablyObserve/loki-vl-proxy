@@ -27,6 +27,7 @@ type oddAnswer struct {
 	Query  string            `json:"q"`
 	Labels map[string]string `json:"labels,omitempty"`
 	Accept bool              `json:"accept,omitempty"` // check
+	Error  string            `json:"error,omitempty"`  // check: Loki's text for a query it rejects
 	Keep   bool              `json:"keep,omitempty"`   // process
 }
 
@@ -93,10 +94,11 @@ func recordOddSpellings(t *testing.T) {
 	if err := oraclerun.Run(bin, "check", "-in", in, "-out", out); err != nil {
 		t.Fatal(err)
 	}
-	verdicts := readVerdictFile(t, out)
+	verdicts := readVerdictsWithError(t, out)
 	var rows []oddAnswer
 	for i, q := range checks {
-		rows = append(rows, oddAnswer{Kind: "check", Query: q, Accept: verdicts[strconv.Itoa(i)].Accept})
+		v := verdicts[strconv.Itoa(i)]
+		rows = append(rows, oddAnswer{Kind: "check", Query: q, Accept: v.Accept, Error: v.Error})
 	}
 	var cases []oraclerun.ProcessCase
 	for _, pair := range signed {
@@ -180,8 +182,8 @@ func planText(t *testing.T, q string) string {
 
 // TestOddSpellingsMatchLoki holds what the entries of known-typed-divergences.json and the plan's quoting rest on to
 // Loki's answers:
-//   - Loki reads a blank that is no ASCII one (U+00A0, U+0085, U+2003, U+3000) as part of a name, so it answers 400
-//     for every query that has one between two tokens, where the proxy's parser reads it as white space
+//   - Loki reads a blank that is no ASCII one (U+00A0, U+0085, U+2003, U+3000) as a name of its own, so it answers
+//     400 for every query that has one between two tokens, and so does the proxy, with Loki's text
 //     (semantics/parser-reads-unicode-blank-as-white-space);
 //   - Loki reads `a > - .5` as it reads `a > -.5`: the same lines are kept for every operator and value, and the plan
 //     writes the same text for both, where the translator copies the blank into a number VictoriaLogs rejects
@@ -215,8 +217,8 @@ func TestOddSpellingsMatchLoki(t *testing.T) {
 		if byQuery[q].Accept {
 			t.Errorf("Loki accepts %q", q)
 		}
-		if logql.ParseAndValidate(q) != nil {
-			t.Errorf("%q: the proxy's parser now rejects it as Loki does: remove its entries from known-typed-divergences.json", q)
+		if got := logql.ValidateLogQL(q); got != byQuery[q].Error {
+			t.Errorf("%q: the proxy answers %q, Loki %q", q, got, byQuery[q].Error)
 		}
 	}
 	for _, q := range quotedExoticQueries() {

@@ -213,7 +213,9 @@ func StripParserFlags(query string) string {
 	var spans [][2]int
 	p := &parser{sc: newScanner(query), flagSpans: &spans}
 	p.advance()
-	if _, err := p.parseExpr(); err != nil || p.cur.Typ != TokEOF || len(spans) == 0 {
+	// A query with an unwrap outside a range aggregation is Loki's syntax error at the unwrap: it keeps its flags, so
+	// that the error is at Loki's column.
+	if _, err := p.parseExpr(); err != nil || p.cur.Typ != TokEOF || len(spans) == 0 || p.plainUnwrapAt > 0 {
 		return query
 	}
 	var b strings.Builder
