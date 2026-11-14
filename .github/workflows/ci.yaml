@@ -1153,6 +1153,15 @@ jobs:
       - name: Verify generated configuration and limits reference
         run: go run ./cmd/configdoc -check
 
+      # Every workflow has an inventory row, and docs/ci-workflows.md shows the triggers the files declare: a
+      # pull request that adds, removes or renames a workflow, or changes its triggers, regenerates the page.
+      # The package's tests also hold the wiring of the report workflows, which a workflow-only pull request
+      # changes without running the Go unit tests.
+      - name: CI workflow inventory matches .github/workflows
+        run: |
+          go run ./test/ciworkflows -check
+          go test ./test/ciworkflows -count=1
+
       - name: README support policy matches the VictoriaLogs version matrix
         run: go test ./internal/logsql -run '^TestVictoriaLogsSupportPolicy$' -count=1
 

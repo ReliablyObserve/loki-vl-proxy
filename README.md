@@ -568,6 +568,7 @@ VictoriaLogs backend with Loki-VL-proxy as the Loki-compatible query layer.
 
 ### Testing and Release
 - [Testing](docs/testing.md)
+- [CI workflows](docs/ci-workflows.md)
 - [Release Info](docs/release-info.md)
 
 ### Migration and Project Status
