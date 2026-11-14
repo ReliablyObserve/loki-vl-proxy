@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A second `| unwrap` in a range aggregation and a few other syntax errors now carry Loki's line and column.
 - A label filter that compares with minus zero written apart (`| a < - 0`, a number) is printed apart, so the
   printed query reads as the same filter; written together (`a<-0`) Loki reads a duration.
+- A range with a day, week or year unit is read to the nanosecond, as Loki reads it: `[3d1h2ms]` was a little short,
+  and a range with a part of 0 (`[1d0h]`, `[1y0ms]`) counted as no range at all.
 
 ## [2.242.0] - 2026-11-14
 
