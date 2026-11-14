@@ -373,6 +373,16 @@ func TestStreamLevelSeriesFence(t *testing.T) {
 		{`label_replace(rate({app="a"} | json [1m]), "x", "$1", "pod", "(.*)")`, true},
 		{`sort_desc (rate({app="a"} | json [1m]))`, true},
 		{`topk by (pod) (1, rate({app="a"} | json [1m]))`, true},
+		// The parser reads keywords in any case and any Unicode blank before a parenthesis.
+		{`TOPK(1, rate({app="a"} | json [1m]))`, true},
+		{`BottomK(1, rate({app="a"} | json [1m]))`, true},
+		{`sum WITHOUT (pod) (rate({app="a"}[1m]))`, true},
+		{`max_over_time({app="a"} | UNWRAP amount [5m])`, true},
+		{`SORT(rate({app="a"} | json [1m]))`, true},
+		{"sort\v(rate({app=\"a\"} | json [1m]))", true},
+		{"Sort_Desc\u00a0(rate({app=\"a\"} | json [1m]))", true},
+		{"LABEL_REPLACE\u0085(rate({app=\"a\"} | json [1m]), \"x\", \"$1\", \"pod\", \"(.*)\")", true},
+		{`SUM BY (app) (count_over_time({app="a"}[5m]))`, false},
 		{`sum by (app) (count_over_time({app="a"}[5m]))`, false},
 		{`sum by (detected_level) (rate({app="a"} | json [1m]))`, false},
 		{`count(rate({app="a"} | logfmt | status = "sort" [1m]))`, false},
@@ -421,4 +431,38 @@ func TestStreamLevelSeriesFence(t *testing.T) {
 	if again := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "0"}); again.Body.String() != rec.Body.String() || len(emu.Calls) != before {
 		t.Fatalf("repeat: %d new VictoriaLogs calls, same body %v", len(emu.Calls)-before, again.Body.String() == rec.Body.String())
 	}
+}
+
+// FuzzStreamLevelSeriesFenceSpelling: the parser reads keywords in any case
+// and any Unicode blank, so a query the fence covers stays covered with its
+// letters' case flipped and its blanks written as \v, \f, a no-break space or
+// a next-line character.
+func FuzzStreamLevelSeriesFenceSpelling(f *testing.F) {
+	for _, q := range []string{`topk(1, rate({app="a"} | json [1m]))`, `bottomk by (pod) (1, count_over_time({app="a"} | logfmt [5m]))`, `sum without (pod) (rate({app="a"}[1m]))`,
+		`max_over_time({app="a"} | unwrap amount [5m])`, `sort (rate({app="a"} | json [1m]))`, `sort_desc(rate({app="a"}[1m]))`, `label_replace(rate({app="a"}[1m]), "x", "$1", "pod", "(.*)")`} {
+		f.Add(q, uint64(0x5a5a5a5a5a5a5a5a), uint8(1))
+	}
+	blanks := [...]string{" ", "\v", "\f", "\u00a0", "\u0085", "\t\n"}
+	f.Fuzz(func(t *testing.T, q string, mask uint64, blank uint8) {
+		if streamLevelSeriesResponseKeyVersion(q) == "" {
+			return
+		}
+		var b strings.Builder
+		for i := 0; i < len(q); i++ {
+			c := q[i]
+			switch {
+			case c == ' ':
+				b.WriteString(blanks[int(blank)%len(blanks)])
+				continue
+			case mask>>(uint(i)%64)&1 == 1 && c >= 'a' && c <= 'z':
+				c -= 'a' - 'A'
+			case mask>>(uint(i)%64)&1 == 1 && c >= 'A' && c <= 'Z':
+				c += 'a' - 'A'
+			}
+			b.WriteByte(c)
+		}
+		if v := b.String(); streamLevelSeriesResponseKeyVersion(v) == "" {
+			t.Fatalf("%q is fenced, %q is not", q, v)
+		}
+	})
 }

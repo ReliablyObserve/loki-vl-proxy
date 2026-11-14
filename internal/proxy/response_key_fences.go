@@ -3,6 +3,8 @@ package proxy
 import (
 	"net/http"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // responseKeySite names the response key a fence chain is appended to. The
@@ -114,32 +116,51 @@ const streamLevelSeriesResponseVersion = "@stream-level-series-v1:"
 // changed in a diff of range functions, parsers and outer forms against the previous build. A text screen, so a
 // query that reads no such series is fenced too (one more cache miss), and no other query's key changes. It jumps
 // between the rare bytes the words hold (a log query has no parenthesis and returns at once): k for topk and bottomk,
-// w for without and unwrap, and the name before each ( for sort, sort_desc and label_replace.
+// w for without and unwrap, and the name before each ( for sort, sort_desc and label_replace. The parser reads
+// keywords in any case and any Unicode blank before a parenthesis (TOPK, sum WITHOUT, sort\v(), so the screen does
+// too: it also jumps to K and W and compares the words case-folded.
 func streamLevelSeriesResponseKeyVersion(query string) string {
 	if strings.IndexByte(query, '(') < 0 {
 		return ""
 	}
-	for s, i := query, strings.IndexByte(query, 'k'); i >= 0; i = strings.IndexByte(s, 'k') {
-		if i >= 3 && s[i-3:i+1] == "topk" || i >= 6 && s[i-6:i+1] == "bottomk" {
-			return streamLevelSeriesResponseVersion
+	for _, c := range [...]byte{'k', 'K'} {
+		for s, i := query, strings.IndexByte(query, c); i >= 0; i = strings.IndexByte(s, c) {
+			if i >= 3 && strings.EqualFold(s[i-3:i+1], "topk") || i >= 6 && strings.EqualFold(s[i-6:i+1], "bottomk") {
+				return streamLevelSeriesResponseVersion
+			}
+			s = s[i+1:]
 		}
-		s = s[i+1:]
 	}
-	for s, i := query, strings.IndexByte(query, 'w'); i >= 0; i = strings.IndexByte(s, 'w') {
-		if strings.HasPrefix(s[i:], "without") || i >= 2 && strings.HasPrefix(s[i-2:], "unwrap") {
-			return streamLevelSeriesResponseVersion
+	for _, c := range [...]byte{'w', 'W'} {
+		for s, i := query, strings.IndexByte(query, c); i >= 0; i = strings.IndexByte(s, c) {
+			if i+7 <= len(s) && strings.EqualFold(s[i:i+7], "without") || i >= 2 && i+4 <= len(s) && strings.EqualFold(s[i-2:i+4], "unwrap") {
+				return streamLevelSeriesResponseVersion
+			}
+			s = s[i+1:]
 		}
-		s = s[i+1:]
 	}
 	for s, i := query, strings.IndexByte(query, '('); i >= 0; i = strings.IndexByte(s, '(') {
-		j := i
-		for j > 0 && (s[j-1] == ' ' || s[j-1] == '\t' || s[j-1] == '\n' || s[j-1] == '\r') {
-			j--
-		}
-		if name := s[:j]; strings.HasSuffix(name, "sort") || strings.HasSuffix(name, "sort_desc") || strings.HasSuffix(name, "label_replace") {
+		name := trimRightBlanks(s[:i])
+		if hasSuffixFold(name, "sort") || hasSuffixFold(name, "sort_desc") || hasSuffixFold(name, "label_replace") {
 			return streamLevelSeriesResponseVersion
 		}
 		s = s[i+1:]
 	}
 	return ""
+}
+
+// trimRightBlanks drops the blanks the LogQL parser skips (unicode.IsSpace) from the end of s.
+func trimRightBlanks(s string) string {
+	for len(s) > 0 {
+		r, size := utf8.DecodeLastRuneInString(s)
+		if !unicode.IsSpace(r) {
+			break
+		}
+		s = s[:len(s)-size]
+	}
+	return s
+}
+
+func hasSuffixFold(s, suffix string) bool {
+	return len(s) >= len(suffix) && strings.EqualFold(s[len(s)-len(suffix):], suffix)
 }
