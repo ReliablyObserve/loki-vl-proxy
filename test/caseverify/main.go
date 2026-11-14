@@ -29,6 +29,10 @@
 //	                request needs a precondition, a placeholder time, a write, a stream or Grafana
 //	not_executable  a scenario case (scope and entry) with no HTTP request
 //
+// A fixed case that differs is a regression, unless its owner_kept names the owner-kept deviation cases its
+// answers are subject to: then it is reported as differs_owner_kept with them (still a difference, never
+// passed, not counted as a regression).
+//
 // A case whose request names proxy_flags runs against the proxy variant (-variants) that has them, or is
 // blocked. Each verdict is set against the registry: a fixed case (or one without a gap) that differs is a
 // regression, an open case that matches is a proposed close, a documented, owner-kept or upstream case that
@@ -177,9 +181,14 @@ func run(cfg config, stdout, stderr io.Writer) int {
 	for _, v := range verdicts {
 		parts = append(parts, fmt.Sprintf("%d %s", f.Counts[v], v))
 	}
-	fmt.Fprintf(stdout, "caseverify: %d cases (%s): %s; %d regressions, %d proposed closes, %d changed behaviours\n",
+	fmt.Fprintf(stdout, "caseverify: %d cases (%s): %s; %d regressions, %d differ with an owner-kept deviation, %d proposed closes, %d changed behaviours\n",
 		len(f.Cases), f.Mode, strings.Join(parts, ", "),
-		len(f.Flags[flagRegression]), len(f.Flags[flagProposedClose]), len(f.Flags[flagBehaviourChanged]))
+		len(f.Flags[flagRegression]), len(f.Flags[flagOwnerKept]), len(f.Flags[flagProposedClose]), len(f.Flags[flagBehaviourChanged]))
+	// A difference an owner-kept deviation explains is not a regression and does not fail -check, but it is
+	// said every run.
+	for _, id := range f.Flags[flagOwnerKept] {
+		fmt.Fprintf(stderr, "owner-kept: %s differs from Loki, subject to %s\n", id, strings.Join(f.Cases[id].OwnerKept, ", "))
+	}
 	if cfg.check && len(f.Flags[flagRegression]) > 0 {
 		for _, id := range f.Flags[flagRegression] {
 			fmt.Fprintf(stderr, "regression: %s differs from Loki\n", id)

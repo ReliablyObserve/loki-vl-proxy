@@ -33,6 +33,9 @@ type Probe struct {
 
 	// NotExecutable is set for a scenario case (scope and entry): there is no request to send.
 	NotExecutable string
+	// OwnerKept are the owner-kept deviation cases this case's answers are subject to (the case's owner_kept).
+	OwnerKept []string
+
 	// Blocked is set for a request the runner does not send: a precondition it cannot set up, a placeholder
 	// time, a write, a stream, a request through Grafana.
 	Blocked string
@@ -61,8 +64,21 @@ var notSent = map[string]string{
 // Probes turns the loaded cases into probes, sorted by id.
 func Probes(cases []registry.Case) []Probe {
 	out := make([]Probe, 0, len(cases))
+	ownerKept := map[string]bool{}
 	for _, c := range cases {
+		if gap, ok := c.Doc["gap"].(map[string]any); ok && gap["status"] == "owner-kept" {
+			ownerKept[c.ID] = true
+		}
 		out = append(out, probeOf(c))
+	}
+	// A case may name only owner-kept cases: an annotation that points nowhere would excuse a difference
+	// without saying why.
+	for i := range out {
+		for _, id := range out[i].OwnerKept {
+			if !ownerKept[id] && out[i].Blocked == "" && out[i].NotExecutable == "" {
+				out[i].Blocked = fmt.Sprintf("owner_kept names %q, which is not an owner-kept case", id)
+			}
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
@@ -100,6 +116,11 @@ func probeOf(c registry.Case) Probe {
 	if list, ok := req["proxy_flags"].([]any); ok {
 		for _, f := range list {
 			p.ProxyFlags = append(p.ProxyFlags, fmt.Sprint(f))
+		}
+	}
+	if list, ok := doc["owner_kept"].([]any); ok {
+		for _, id := range list {
+			p.OwnerKept = append(p.OwnerKept, fmt.Sprint(id))
 		}
 	}
 	switch {

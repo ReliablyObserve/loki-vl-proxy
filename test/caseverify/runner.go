@@ -335,6 +335,10 @@ const (
 	flagRegression       = "regression"
 	flagProposedClose    = "proposed_close"
 	flagBehaviourChanged = "behaviour_changed"
+	// flagOwnerKept holds the fixed cases that differ from Loki on equal data and name, in owner_kept, the
+	// owner-kept deviations their answers are subject to. They stay differences, listed with the deviations;
+	// they are never passed, and never counted as regressions.
+	flagOwnerKept = "differs_owner_kept"
 	// flagStaleRegression holds the cases that differ on a proxy built from another commit than the one measured.
 	flagStaleRegression = "differs_on_stale_proxy"
 )
@@ -351,6 +355,7 @@ type Result struct {
 	LokiStatus    int          `json:"loki_status,omitempty"`
 	ProxyStatus   int          `json:"proxy_status,omitempty"`
 	Variant       string       `json:"variant,omitempty"`
+	OwnerKept     []string     `json:"owner_kept,omitempty"`
 	Data          []DataCheck  `json:"data,omitempty"`
 	Reuse         *Reuse       `json:"reuse,omitempty"`
 	Differences   []Difference `json:"differences,omitempty"`
@@ -389,7 +394,7 @@ func tolerance(p Probe) float64 {
 
 // Verify runs one probe.
 func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant string) (r Result) {
-	r = Result{GapStatus: p.Status, Expected: p.Expectation(), Variant: p.Variant}
+	r = Result{GapStatus: p.Status, Expected: p.Expectation(), Variant: p.Variant, OwnerKept: p.OwnerKept}
 	switch {
 	case p.NotExecutable != "":
 		r.Verdict, r.Reason = verdictNotExecutable, p.NotExecutable
@@ -605,6 +610,8 @@ func unusable(side string, a Answer) string {
 
 func flagOf(r Result) string {
 	switch {
+	case r.Expected == "match" && r.Verdict == verdictDiffers && len(r.OwnerKept) > 0:
+		return flagOwnerKept
 	case r.Expected == "match" && r.Verdict == verdictDiffers:
 		return flagRegression
 	case r.Expected == "differ" && r.Verdict == verdictMatches:
@@ -636,7 +643,7 @@ type File struct {
 func Summarize(f *File) {
 	f.Reuse = SummarizeReuse(f.Cases)
 	f.Counts = map[string]int{}
-	f.Flags = map[string][]string{flagRegression: {}, flagProposedClose: {}, flagBehaviourChanged: {}}
+	f.Flags = map[string][]string{flagRegression: {}, flagOwnerKept: {}, flagProposedClose: {}, flagBehaviourChanged: {}}
 	for id, r := range f.Cases {
 		f.Counts[r.Verdict]++
 		if r.Flag != "" {
@@ -693,6 +700,7 @@ func Report(f File) string {
 	}
 	sections := []struct{ flag, title string }{
 		{flagRegression, "Fixed cases (or cases without a gap) that differ from Loki on equal data"},
+		{flagOwnerKept, "Fixed cases that differ from Loki where an owner-kept deviation applies (listed with the deviations; not regressions, not passed)"},
 		{flagProposedClose, "Open cases that now match Loki (proposed close; the case file is not changed)"},
 		{flagBehaviourChanged, "Documented, owner-kept or upstream cases that now match Loki (behaviour changed)"},
 	}
@@ -706,6 +714,9 @@ func Report(f File) string {
 			}
 			r := f.Cases[id]
 			fmt.Fprintf(&b, "- `%s` (Loki %d, proxy %d, compared: %s)\n", id, r.LokiStatus, r.ProxyStatus, strings.Join(r.Facets, ", "))
+			if len(r.OwnerKept) > 0 {
+				fmt.Fprintf(&b, "  - subject to the owner-kept deviation(s): %s\n", strings.Join(r.OwnerKept, ", "))
+			}
 			for _, d := range r.Differences {
 				fmt.Fprintf(&b, "  - %s: Loki `%s`, proxy `%s`\n", d.Facet, oneLine(d.Loki, 200), oneLine(d.Proxy, 200))
 			}

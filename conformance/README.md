@@ -149,6 +149,12 @@ that matches is a proposed close, and a documented, owner-kept or upstream case
 that matches has changed behaviour. The runner never edits a case file: a
 proposed close is closed by hand with its evidence.
 
+A case whose answers show an owner-kept deviation names it in `owner_kept` (a list of owner-kept case ids, for
+example `metric-identity/structured-metadata-splits-series`). A fixed case that differs from Loki on equal data and
+names one is reported as `differs_owner_kept` with the deviation, listed in the report and in `cases.json`, never
+passed and never counted as a regression; `-check` prints it and does not fail on it. A name that is not an owner-kept
+case blocks the case.
+
 ## Reporting what a change touches
 
 Before opening a pull request that changes client-visible behaviour, run:

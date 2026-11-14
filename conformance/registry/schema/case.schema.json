@@ -38,6 +38,11 @@
       "type": "boolean"
     },
     "loki_parity": {"type": "string", "minLength": 1},
+    "owner_kept": {
+      "description": "Owner-kept deviation cases whose difference from Loki this case's answers show (for example metric-identity/structured-metadata-splits-series). test/caseverify reports a fixed case that differs from Loki as differs_owner_kept, naming them, instead of as a regression; the difference stays listed and the case is never passed.",
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[a-z0-9-]+/[a-z0-9_.-]+$"}
+    },
     "corpus": {
       "type": "object",
       "additionalProperties": false,
