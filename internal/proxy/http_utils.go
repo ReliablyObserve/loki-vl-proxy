@@ -251,17 +251,13 @@ func rewriteQuantilePhiGT1(query string) string {
 // text the handlers translate.
 func RewriteQuantilePhiGT1(query string) string { return rewriteQuantilePhiGT1(query) }
 
-// sanitizeLimit caps and validates the limit parameter against the request
-// tenant's max_entries_limit_per_query; 0 is unlimited, as in Loki.
+// sanitizeLimit caps the limit parameter of a log query to the request tenant's
+// max_entries_limit_per_query; 0 is unlimited, as in Loki. The request route has
+// already given the limit a positive integer value (requestParamValidation
+// rejects any other and withDefaultEntryLimit fills an absent one), so limitStr
+// is always one.
 func sanitizeLimit(limitStr string, maxLimit int) string {
-	if limitStr == "" {
-		return "1000"
-	}
-	n, err := strconv.Atoi(limitStr)
-	if err != nil || n <= 0 {
-		return "1000"
-	}
-	if maxLimit > 0 && n > maxLimit {
+	if n, _ := strconv.Atoi(limitStr); maxLimit > 0 && n > maxLimit {
 		return strconv.Itoa(maxLimit)
 	}
 	return limitStr

@@ -187,9 +187,6 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	}
 	queryLimit = sanitizeLimit(queryLimit, p.requestQueryLimits(r.Context()).MaxEntriesLimitPerQuery)
 	limitValue, err := strconv.Atoi(queryLimit)
-	if err != nil || limitValue <= 0 {
-		limitValue = 1000
-	}
 
 	categorizedLabels := requestWantsCategorizedLabels(r)
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
