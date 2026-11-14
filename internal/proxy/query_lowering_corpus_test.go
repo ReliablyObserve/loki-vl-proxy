@@ -140,6 +140,9 @@ func FuzzMetricFlipGate(f *testing.F) {
 		if len(q) > 512 || strings.HasPrefix(strings.TrimSpace(q), "{") {
 			return
 		}
+		// The query as the handlers and the translation read it (lowercaseQueryKeywords): keywords in lower case,
+		// without comments and parser flags.
+		q = logqlpkg.LowercaseKeywords(logqlpkg.StripParserFlags(logqlpkg.StripComments(q)))
 		got, gotErr := on.translateQueryOpts(context.Background(), q, false)
 		want, wantErr := off.translateQueryOpts(context.Background(), q, false)
 		if _, kept := on.keepUnwrapIdentity(q); kept {
