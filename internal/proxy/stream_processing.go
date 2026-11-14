@@ -111,7 +111,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	// Propagate VL error status to the client with Loki-compatible error format.
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		p.writeBackendError(w, resp.StatusCode, body)
+		p.writeBackendError(w, r.Context(), resp.StatusCode, body)
 		return
 	}
 

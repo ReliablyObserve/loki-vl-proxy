@@ -10,10 +10,10 @@ why: |
   Loki never answers with storage or backend text: its querier failure is
   500 with Loki's text, a bad query 400 with its parse error. The error layer
   now answers every VictoriaLogs error body with Loki's text: 500 `Internal
-  Server Error`, 400 `failed to parse the log query` (logqlmodel.ErrParse,
-  pkg/logqlmodel/error.go:13) for a query VictoriaLogs rejects as unparsable,
-  429 `too many outstanding requests`; VictoriaLogs' message stays in the log
-  line. A metric query the proxy post-processes after its handler answered
+  Server Error` (a LogsQL VictoriaLogs refuses included: the proxy validated
+  the query first, so the refusal is its own defect,
+  semantics/vl-refusal-is-plan-defect), 429 `too many outstanding requests`;
+  VictoriaLogs' message stays in the log line. A metric query the proxy post-processes after its handler answered
   (label_replace, a without fold, on query and query_range) sends the
   handler's failed answer as written, which is the error layer's (it ran the
   body through the VictoriaLogs message redaction again, which can only

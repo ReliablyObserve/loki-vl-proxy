@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Breaking:** when VictoriaLogs refuses the query the proxy wrote for a request it has already checked as Loki does,
+  the client now gets `500 Internal Server Error`, what Loki answers when its storage fails. It got
+  `400 failed to parse the log query`, which said the user's query was wrong when Loki accepts it. Requests that
+  answered `400` this way now answer `500`, on every route (query, query_range, metadata routes, patterns, the tail
+  before and after the upgrade). VictoriaLogs' message stays in the proxy log only. The request error line now
+  names `plan_defect`, `plan_route` (the VictoriaLogs route that refused the call) and `logsql_hash` (a hash of the
+  query sent), and the new counter `loki_vl_proxy_plan_defects_total{endpoint,plan_route}` counts these answers.
+  They now count toward the 5xx alerts (`LokiVLProxyHighErrorRate`, `LokiVLProxyCriticalErrorRate`) instead of the
+  client error alert.
+  Routes that fall back to another form of the same request when VictoriaLogs refuses the first one still do, and
+  queries Loki rejects are still rejected with Loki's `400` before VictoriaLogs is called. Some queries with blanks
+  Loki does not read as white space, such as a no-break space between `by (a)` and the query, still reach
+  VictoriaLogs: they answered `400` with another text than Loki's and now answer `500`.
+
 - `first_over_time` and `last_over_time` over an unwrapped label on `query_range` now answer Loki's window when the
   range is longer than the step. Every point read only the step before it, so with `[5m]` at a 1-minute step a
   window whose last minute held no line lost its point or showed an older line for `last_over_time`, and

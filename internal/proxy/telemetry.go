@@ -53,6 +53,9 @@ type requestTelemetry struct {
 	// heavyAdmissionRejected memoizes a heavy-query queue rejection so later
 	// heavy backend calls of the same request fail fast instead of queueing again.
 	heavyAdmissionRejected error
+	// rejectedCall is the request's first VictoriaLogs call answered with a
+	// refusal status, for the log line of a plan defect (plan_defect.go).
+	rejectedCall vlRejectedCall
 	// heavyAdmissionDeadline bounds the total time one request spends waiting
 	// for admission slots, however many heavy calls it makes.
 	heavyAdmissionDeadline time.Time

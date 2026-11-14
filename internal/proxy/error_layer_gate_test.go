@@ -383,7 +383,9 @@ type errLayerOutcome struct {
 func errLayerExpect(mode string) (status int, text string) {
 	switch mode {
 	case "vl400_parse":
-		return http.StatusBadRequest, ""
+		// The proxy validated the query as Loki does, so VictoriaLogs refusing its LogsQL is a plan defect: Loki's
+		// failed-backend answer.
+		return http.StatusInternalServerError, lokiErrInternal
 	case "vl429":
 		return http.StatusTooManyRequests, lokiQueueFull
 	case "timeout":

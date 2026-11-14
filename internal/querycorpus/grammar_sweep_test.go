@@ -1169,6 +1169,14 @@ func TestGrammarSweep(t *testing.T) {
 			t.Errorf("a class of %d queries is gone, remove it from %s (run LVP_QUERY_PLAN_UPDATE=1): %s", c.Count, strings.TrimPrefix(sweepFile, "../../"), id)
 		}
 	}
+	// A query Loki rejects whose LogsQL VictoriaLogs refuses passed the proxy's validation: the client reads the
+	// plan defect's 500 where Loki answers 400. Their count may only go down, as validation learns to reject them.
+	switch {
+	case got.VLRejects > old.VLRejects:
+		t.Errorf("more LogsQL texts of queries Loki rejects reach VictoriaLogs and are refused (%d, was %d): reject those queries in validation first", got.VLRejects, old.VLRejects)
+	case got.VLRejects < old.VLRejects:
+		t.Errorf("fewer LogsQL texts of queries Loki rejects reach VictoriaLogs (%d, was %d): run LVP_QUERY_PLAN_UPDATE=1 go test ./internal/querycorpus -run TestGrammarSweep and commit %s", got.VLRejects, old.VLRejects, strings.TrimPrefix(sweepFile, "../../"))
+	}
 }
 
 func countRejected(loki map[string]sweepLokiRow) int {

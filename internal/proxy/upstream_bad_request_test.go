@@ -62,6 +62,22 @@ func assertLokiBadData(t *testing.T, w *httptest.ResponseRecorder) {
 	}
 }
 
+// assertPlanDefectAnswer checks the answer to a query the proxy validated and
+// whose LogsQL VictoriaLogs refused: Loki's failed-backend 500 with Loki's
+// text, nothing of VictoriaLogs' status, message or query echo.
+func assertPlanDefectAnswer(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body=%s", w.Code, w.Body.String())
+	}
+	if body := readErrorRec(t, w); body.Error != lokiErrInternal {
+		t.Fatalf("error text %q, want %q", body.Error, lokiErrInternal)
+	}
+	if strings.Contains(w.Body.String(), "billing-secret-value") {
+		t.Fatalf("backend query echo leaked to client: %s", w.Body.String())
+	}
+}
+
 func badRequestTestRange() (string, string) {
 	end := time.Now()
 	return strconv.FormatInt(end.Add(-time.Hour).UnixNano(), 10), strconv.FormatInt(end.UnixNano(), 10)
@@ -78,8 +94,11 @@ func badRequestURL(path string, params map[string]string) string {
 	return path + "?" + values.Encode()
 }
 
-// TestUpstreamBadRequest_MapsToLokiBadData pins Loki's contract for a query the
-// backend rejects: every endpoint family answers 400 bad_data, not 502.
+// TestUpstreamBadRequest_MapsToLokiBadData pins the answer for a validated
+// query whose LogsQL the backend refuses: a plan defect, so every endpoint
+// family answers Loki's failed-backend 500, never 400 or 502, and the breaker
+// stays closed.
+// conformance: semantics/vl-refusal-is-plan-defect
 func TestUpstreamBadRequest_MapsToLokiBadData(t *testing.T) {
 	const sel = `{app="billing"}`
 	cases := []struct {
@@ -140,7 +159,7 @@ func TestUpstreamBadRequest_MapsToLokiBadData(t *testing.T) {
 			_ = req.ParseForm()
 			w := httptest.NewRecorder()
 			tc.handler(p)(w, req)
-			assertLokiBadData(t, w)
+			assertPlanDefectAnswer(t, w)
 			if len(vl.calls()) == 0 {
 				t.Fatalf("expected the backend to be consulted")
 			}
@@ -199,9 +218,9 @@ func TestUpstreamBadRequest_TranslationErrorsMapToBadData(t *testing.T) {
 	}
 }
 
-// TestUpstreamBadRequest_NeverServesStaleCache: a query the backend rejects is
-// wrong for every caller, so a previously cached answer for the same key must
-// not mask the 400.
+// TestUpstreamBadRequest_NeverServesStaleCache: a query the backend refuses
+// fails for every caller, so a previously cached answer for the same key must
+// not mask the plan defect's 500.
 func TestUpstreamBadRequest_NeverServesStaleCache(t *testing.T) {
 	const sel = `{app="billing"}`
 	cases := []struct {
@@ -245,7 +264,7 @@ func TestUpstreamBadRequest_NeverServesStaleCache(t *testing.T) {
 
 			w := httptest.NewRecorder()
 			tc.handler(p)(w, req)
-			assertLokiBadData(t, w)
+			assertPlanDefectAnswer(t, w)
 		})
 	}
 }
@@ -474,9 +493,9 @@ func TestUpstreamBadRequest_OptimisedPathRejectionFallsBack(t *testing.T) {
 	})
 }
 
-// TestUpstreamBadRequest_InvalidQueryFailsAfterFallbacks: a genuinely invalid
-// query is rejected on every path, so the fallbacks run and the exact path's
-// rejection is answered with Loki's 400.
+// TestUpstreamBadRequest_InvalidQueryFailsAfterFallbacks: a query VictoriaLogs
+// refuses on every path runs the fallbacks, and the exact path's refusal is a
+// plan defect answered with Loki's 500.
 func TestUpstreamBadRequest_InvalidQueryFailsAfterFallbacks(t *testing.T) {
 	t.Run("volume_range_optimised_then_plain_stats", func(t *testing.T) {
 		vl := newVLBadRequestBackend(t)
@@ -484,7 +503,7 @@ func TestUpstreamBadRequest_InvalidQueryFailsAfterFallbacks(t *testing.T) {
 		w := httptest.NewRecorder()
 		p.handleVolumeRange(w, httptest.NewRequest(http.MethodGet,
 			badRequestURL("/loki/api/v1/index/volume_range", map[string]string{"query": `{app="billing"}`, "step": "60", "targetLabels": "app"}), nil))
-		assertLokiBadData(t, w)
+		assertPlanDefectAnswer(t, w)
 		if calls := vl.calls(); len(calls) != 2 || calls[0] != "/select/logsql/stats_query_range" || calls[1] != "/select/logsql/stats_query_range" {
 			t.Fatalf("want the optimised stats query and the plain stats fallback, got %v", calls)
 		}
@@ -497,7 +516,7 @@ func TestUpstreamBadRequest_InvalidQueryFailsAfterFallbacks(t *testing.T) {
 		w := httptest.NewRecorder()
 		p.handleQueryRange(w, httptest.NewRequest(http.MethodGet,
 			badRequestURL("/loki/api/v1/query_range", map[string]string{"query": `count_over_time({app="billing"} | logfmt [5m])`, "step": "60"}), nil))
-		assertLokiBadData(t, w)
+		assertPlanDefectAnswer(t, w)
 		calls := strings.Join(vl.calls(), " ")
 		for _, path := range []string{"/select/logsql/hits", "/select/logsql/stats_query_range", "/select/logsql/query"} {
 			if !strings.Contains(calls, path) {
@@ -512,7 +531,7 @@ func TestUpstreamBadRequest_InvalidQueryFailsAfterFallbacks(t *testing.T) {
 		w := httptest.NewRecorder()
 		p.handleQueryRange(w, httptest.NewRequest(http.MethodGet,
 			badRequestURL("/loki/api/v1/query_range", map[string]string{"query": `sum_over_time({app="billing"} | logfmt | unwrap latency [5m])`, "step": "60"}), nil))
-		assertLokiBadData(t, w)
+		assertPlanDefectAnswer(t, w)
 		calls := strings.Join(vl.calls(), " ")
 		if !strings.Contains(calls, "/select/logsql/stats_query_range") || !strings.Contains(calls, "/select/logsql/query") {
 			t.Fatalf("want the stats fast path and the raw fallback, got %v", vl.calls())
@@ -680,7 +699,7 @@ func TestUpstreamBadRequest_GrafanaStatsQueries(t *testing.T) {
 					w := httptest.NewRecorder()
 					p.handleQueryRange(w, req)
 					if body.rejected {
-						assertLokiBadData(t, w)
+						assertPlanDefectAnswer(t, w)
 						return
 					}
 					if envelope := readErrorRec(t, w); w.Code != http.StatusInternalServerError || envelope.Error != lokiErrInternal {
@@ -705,14 +724,15 @@ func TestStatusFromUpstreamErr_ClientMistakes(t *testing.T) {
 		err  error
 		want int
 	}{
-		{"backend_400", vlErr(http.StatusBadRequest, vlBodyParsePattern), http.StatusBadRequest},
-		{"backend_422", vlErr(http.StatusUnprocessableEntity, vlBodyParseRegexStats), http.StatusBadRequest},
+		// A refusal of the LogsQL the proxy wrote is a plan defect, not the client's mistake.
+		{"backend_400", vlErr(http.StatusBadRequest, vlBodyParsePattern), http.StatusInternalServerError},
+		{"backend_422", vlErr(http.StatusUnprocessableEntity, vlBodyParseRegexStats), http.StatusInternalServerError},
 		// Limit, execution and unrecognised 400s are backend failures, not client mistakes.
 		{"backend_400_limit", vlErr(http.StatusBadRequest, vlBodyMaxTimeRange), http.StatusInternalServerError},
 		{"backend_422_memory", vlErr(http.StatusUnprocessableEntity, vlBodyStatsMemory), http.StatusInternalServerError},
 		{"backend_400_storage_eof", vlErr(http.StatusBadRequest, vlBodyMetadataFailure), http.StatusInternalServerError},
 		{"backend_400_unknown", vlErr(http.StatusBadRequest, vlBodyUnknown), http.StatusInternalServerError},
-		{"wrapped_backend_400", fmt.Errorf("left query: %w", vlErr(http.StatusBadRequest, vlBodyEmptyQuery)), http.StatusBadRequest},
+		{"wrapped_backend_400", fmt.Errorf("left query: %w", vlErr(http.StatusBadRequest, vlBodyEmptyQuery)), http.StatusInternalServerError},
 		{"translator_parse_error", &translator.ParseError{Msg: "unmatched '{' in stream selector", Pos: -1}, http.StatusBadRequest},
 		// Valid LogQL the translator cannot express (Loki accepts it): not a client mistake.
 		{"translator_unsupported", &translator.UnsupportedError{Msg: "unsupported"}, http.StatusInternalServerError},
@@ -760,6 +780,10 @@ func TestRedactedBackendStatusError_IsTypedAndRedacted(t *testing.T) {
 	var typed *upstreamStatusError
 	if !errors.As(err, &typed) || typed.StatusCode() != http.StatusBadRequest {
 		t.Fatalf("expected typed upstream status error with 400, got %T %v", err, err)
+	}
+	// The refusal is a plan defect whose text stays VictoriaLogs' redacted message, for the log lines.
+	if !isPlanDefect(err) {
+		t.Fatalf("a refusal is not typed as a plan defect: %T", err)
 	}
 	if strings.Contains(err.Error(), "billing-secret-value") {
 		t.Fatalf("redaction lost: %s", err.Error())

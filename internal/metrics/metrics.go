@@ -47,6 +47,7 @@ type Metrics struct {
 	internalOperationTotal     map[string]*atomic.Int64 // "operation<sep>outcome" → count
 	internalOperationDurations map[string]*histogram    // "operation<sep>outcome" → duration histogram
 	loweringShadowTotal        map[string]*atomic.Int64 // "result<sep>construct" → count
+	planDefectsTotal           map[string]*atomic.Int64 // "endpoint<sep>plan_route" → count
 
 	// Per-request work and phase times, and per-lookup cache times (request_flow.go)
 	flow *flowMetrics
@@ -399,6 +400,7 @@ func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitive
 		internalOperationTotal:     make(map[string]*atomic.Int64),
 		internalOperationDurations: make(map[string]*histogram),
 		loweringShadowTotal:        make(map[string]*atomic.Int64),
+		planDefectsTotal:           make(map[string]*atomic.Int64),
 		flow:                       newFlowMetrics(),
 		tupleModes:                 make(map[string]*atomic.Int64),
 		clientRequests:             make(map[string]*atomic.Int64),
@@ -1527,6 +1529,31 @@ func (m *Metrics) RecordLoweringShadow(result, construct string) {
 	counter.Add(1)
 }
 
+// RecordPlanDefect counts one request the proxy validated as Loki does and
+// whose LogsQL (or a VictoriaLogs argument the proxy wrote) VictoriaLogs
+// refused, answered with Loki's 500: endpoint is the client route's endpoint
+// name and planRoute the VictoriaLogs path of the refused call ("unknown" when
+// the request did not record it). Both come from the proxy's fixed route sets,
+// never from a query.
+func (m *Metrics) RecordPlanDefect(endpoint, planRoute string) {
+	if m == nil {
+		return
+	}
+	key := endpoint + metricKeySep + planRoute
+	m.mu.RLock()
+	counter, ok := m.planDefectsTotal[key]
+	m.mu.RUnlock()
+	if !ok {
+		m.mu.Lock()
+		if counter, ok = m.planDefectsTotal[key]; !ok {
+			counter = &atomic.Int64{}
+			m.planDefectsTotal[key] = counter
+		}
+		m.mu.Unlock()
+	}
+	counter.Add(1)
+}
+
 // RecordInternalOperation records proxy-side work not performed by VL directly.
 func (m *Metrics) RecordInternalOperation(operation, outcome string, d time.Duration) {
 	operation = strings.TrimSpace(operation)
@@ -1718,6 +1745,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sInternalOperationTotal := snapshotAtomicMap(m.internalOperationTotal)
 	sInternalOperationDurations := snapshotHistogramMap(m.internalOperationDurations)
 	sLoweringShadow := snapshotAtomicMap(m.loweringShadowTotal)
+	sPlanDefects := snapshotAtomicMap(m.planDefectsTotal)
 	sCacheStatsFn := m.cacheStatsProvider
 	sCbStateFn := m.cbStateFunc
 	sExportSensitive := m.exportSensitiveLabels
@@ -2237,6 +2265,21 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		fmt.Fprintf(&sb, "loki_vl_proxy_lowering_shadow_total{result=%q,construct=%q} %d\n", parts[0], parts[1], sLoweringShadow[key].Load())
+	}
+
+	sb.WriteString("# HELP loki_vl_proxy_plan_defects_total Requests the proxy validated as Loki does whose LogsQL VictoriaLogs refused, answered with Loki's 500, by client endpoint and VictoriaLogs route.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_plan_defects_total counter\n")
+	planDefectKeys := make([]string, 0, len(sPlanDefects))
+	for k := range sPlanDefects {
+		planDefectKeys = append(planDefectKeys, k)
+	}
+	sort.Strings(planDefectKeys)
+	for _, key := range planDefectKeys {
+		parts := splitMetricKey(key, 2)
+		if parts == nil {
+			continue
+		}
+		fmt.Fprintf(&sb, "loki_vl_proxy_plan_defects_total{endpoint=%q,plan_route=%q} %d\n", parts[0], parts[1], sPlanDefects[key].Load())
 	}
 
 	sb.WriteString("# HELP loki_vl_proxy_internal_operation_duration_seconds Proxy-side internal operation duration.\n")
