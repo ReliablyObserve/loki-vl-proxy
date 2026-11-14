@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or latest one of each window, for a series a `| keep` decides, a stream without a parser and the labels of a
   grouping, under `sum`, `avg`, `min`, `max`, `count`, `topk`, a binary operation or an offset. A series per line
   (a parser with no keep) still reads the step.
+- Identical `query_range` metric requests that arrive together now share the VictoriaLogs reads of their stats
+  buckets: the buckets not cached yet are read once for all of them, per tenant, instead of once per request.
 
 ## [2.250.0] - 2026-11-14
 

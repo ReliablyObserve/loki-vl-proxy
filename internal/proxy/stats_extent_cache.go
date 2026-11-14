@@ -248,7 +248,7 @@ func (p *Proxy) statsExtentReadLimit(req *statsExtentRequest, first, last int64)
 // streams, keeping a copy of what the caller reads: once the caller has read
 // it whole, the buckets are taken apart and stored off the request path.
 func (p *Proxy) statsExtentMiss(ctx context.Context, req *statsExtentRequest, lastStored int64, chunks map[int64]*statsExtentChunk, limit int64) (*http.Response, string, error) {
-	resp, err := p.vlPostHTTP(ctx, statsQueryRangePath, req.params)
+	resp, err := p.statsExtentPostShared(ctx, req.params)
 	if err != nil {
 		return nil, "error", err
 	}
@@ -266,6 +266,22 @@ func (p *Proxy) statsExtentMiss(ctx context.Context, req *statsExtentRequest, la
 		})
 	}}
 	return resp, "miss", nil
+}
+
+// statsExtentPostShared is vlPostHTTP for the extent cache's reads of VictoriaLogs, shared by identical reads in
+// flight: requests of one tenant scope that ask for the same buckets at the same time make one call (the coalescer,
+// keyed by the form and the scope, which carries the tenant and its credentials), and the call stops only when its
+// last waiter leaves. The answer comes back read whole, as every caller of these reads takes it.
+func (p *Proxy) statsExtentPostShared(ctx context.Context, params url.Values) (*http.Response, error) {
+	key := "stats_extent:" + params.Encode() + ":scope:" + p.contextScopeFingerprint(ctx)
+	status, _, body, err := p.coalescer.DoWithGuardCtx(ctx, key, func() bool { return true }, func(callCtx context.Context) (*http.Response, error) {
+		return p.vlPostHTTP(callCtx, statsQueryRangePath, params)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {"application/json"}},
+		Body: io.NopCloser(bytes.NewReader(body)), ContentLength: int64(len(body))}, nil
 }
 
 // statsExtentTee copies what the caller reads of a VictoriaLogs answer, up to
@@ -391,7 +407,7 @@ func (g *statsExtentStoreGroup) close() {
 
 // statsExtentPassThrough sends the call unchanged and hands its answer on.
 func (p *Proxy) statsExtentPassThrough(ctx context.Context, req *statsExtentRequest) (*http.Response, string, error) {
-	resp, err := p.vlPostHTTP(ctx, statsQueryRangePath, req.params)
+	resp, err := p.statsExtentPostShared(ctx, req.params)
 	if err != nil {
 		return nil, "error", err
 	}
@@ -442,7 +458,7 @@ func (r *statsExtentRequest) gapParams(gap [2]int64) url.Values {
 // response is VictoriaLogs' refusal, a nil fragment without one an answer the
 // cache cannot use.
 func (p *Proxy) statsExtentFetch(ctx context.Context, req *statsExtentRequest, gap [2]int64, limit int64) (*statsExtentFragment, *http.Response, error) {
-	resp, err := p.vlPostHTTP(ctx, statsQueryRangePath, req.gapParams(gap))
+	resp, err := p.statsExtentPostShared(ctx, req.gapParams(gap))
 	if err != nil {
 		return nil, nil, err
 	}
