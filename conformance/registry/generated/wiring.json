@@ -506,6 +506,7 @@
       "internal/proxy/extracted_suffix_collision_test.go",
       "internal/proxy/first_last_range_longer_than_step_test.go",
       "internal/proxy/first_last_range_timestamps_test.go",
+      "internal/proxy/first_last_window_cache_test.go",
       "internal/proxy/ip_label_filter_test.go",
       "internal/proxy/keep_extracted_collision_test.go",
       "internal/proxy/keep_series_grouping_test.go",
@@ -960,6 +961,7 @@
       "test/e2e-compat/label_freshness_e2e_test.go"
     ],
     "quality/query-range-extent-cache": [
+      "internal/proxy/first_last_window_cache_test.go",
       "internal/proxy/manual_metric_encoding_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
       "internal/proxy/stats_extent_cache_test.go",
@@ -979,6 +981,7 @@
       "test/e2e-fleet/stats_extent_large_answer_test.go"
     ],
     "quality/query-range-settled-steps": [
+      "internal/proxy/first_last_window_cache_test.go",
       "internal/proxy/ordered_json_steps_cache_test.go",
       "internal/proxy/quantile_histogram_test.go",
       "internal/proxy/quantile_slider_harden_test.go",
@@ -1952,6 +1955,7 @@
     ],
     "semantics/unwrap-first-last-range-longer-than-step": [
       "internal/proxy/first_last_range_longer_than_step_test.go",
+      "internal/proxy/first_last_window_cache_test.go",
       "internal/querycorpus/first_last_loki_diff_test.go",
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
       "test/e2e-compat/first_last_range_longer_than_step_test.go"
@@ -2849,6 +2853,12 @@
     "internal/proxy/first_last_unwrap_differential_test.go": [
       "metric-series-identity",
       "semantics/unwrap-first-last-under-aggregation"
+    ],
+    "internal/proxy/first_last_window_cache_test.go": [
+      "loki_api_v1_query_range",
+      "quality/query-range-extent-cache",
+      "quality/query-range-settled-steps",
+      "semantics/unwrap-first-last-range-longer-than-step"
     ],
     "internal/proxy/gaps_test.go": [
       "loki_api_v1_index_stats"
@@ -5130,7 +5140,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 602,
+  "tests_with_markers": 603,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

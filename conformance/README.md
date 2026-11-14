@@ -93,6 +93,55 @@ or Loki returned nothing, so nothing is proven). Results land in
 `registry/generated/live-evidence.json`, and the matrix report shows them beside
 the versions under test.
 
+### Per-case verdicts (Go)
+
+`test/caseverify` runs every case whose request is an HTTP request against Loki
+and the proxy, through the strict loader (`test/registry`), and writes
+`registry/generated/verification/cases.json`: a verdict per case (`matches`,
+`differs` with both measured values, `unstable`, `both_fail`, `blocked`,
+`not_executable`), the run's date, commit, Loki and VictoriaLogs versions and
+proxy flags.
+
+```bash
+go run ./test/caseverify -loki http://127.0.0.1:13101 -proxy http://127.0.0.1:13100 \
+  -vl http://127.0.0.1:19428 -record /tmp/answers.jsonl -report /tmp/cases.md
+go run ./test/caseverify -replay /tmp/answers.jsonl   # the same verdicts, no request sent
+```
+
+Relative times (`now`, `now-1h`) are resolved once per run against a settled
+end (the run's start less `-settle`, at least 5 minutes, aligned down to the
+case's step), so both sides get the same bytes and no window reads data still
+arriving. A case compares the facets its `compare.fields` name (or its mode's
+default), and always the HTTP status; a difference is asked again before it is
+reported.
+
+No answer is compared on data that is not proven equal. Before a comparison
+that reads data, the case's stream selectors (every stream for a request without
+a query) are counted over its window on Loki (`sum(count_over_time(...))`) and on
+VictoriaLogs (`-vl`, the same matchers as field filters and `stats count()`).
+Unequal counts are `data_differs`, no line on either side `empty`, no answer from
+Loki's metric path while VictoriaLogs holds the lines `loki_not_ready`, a Loki
+answer with warnings or a stale proxy answer `not_comparable`, and no count at
+all `data_unchecked`; none of them is a difference of the proxy. Every count is
+recorded with the answers, so `-replay` needs no stack. The recording's first line holds the settled end every window was resolved against and the proxy build, so a replay at any later time gives the live run's verdicts.
+
+Log entries compare as Loki defines their equality: per stream, ordered by timestamp with ties ordered by line. An answer that reaches its line limit is compared up to the timestamp both sides hold whole (the timestamp the limit cut at may hold any of its lines), and a patterns answer without its first and last sample buckets. `-proxy-revision` (and `-proxy-image`) record the proxy's build: a revision other than `-commit` marks the run stale and lists its differences apart, never as regressions; `-require-current-proxy` refuses such a run.
+
+Every answer the proxy served is asked once more, with the proxy's `/metrics` read around the first ask and
+the repeat: the VictoriaLogs calls (in all and per VictoriaLogs endpoint) and bytes, the cache lookups and hits
+per semantic layer (`loki`, `vl`) and tier, CPU and translations of each. A repeat that answers differently or
+calls VictoriaLogs again on the endpoints its first ask used is `cache_not_reused` (calls on other endpoints, such
+as a health check or the stream field inventory, are counted apart as the proxy's background work), a finding about the cache and never a regression of the case;
+the counters are recorded, so a replay gives the same reuse verdicts. Not measured yet, for want of a metric:
+allocations per request, plan and translation cache hits, the reuse of proxy-evaluated operators, and a per-request
+attribution of the counters (background work counts too). `-no-reuse` skips the repeats. A case whose request
+names `proxy_flags` runs against the proxy variant of `-variants` that has them
+(`[{"name","url","flags"}]`), or is blocked. Each verdict is set against the case's `gap.status`: a fixed case (or
+one without a gap) that differs is a regression (`-check` exits 1), an open case
+that matches is a proposed close, and a documented, owner-kept or upstream case
+that matches has changed behaviour. The runner never edits a case file: a
+proposed close is closed by hand with its evidence.
+
 ## Reporting what a change touches
 
 Before opening a pull request that changes client-visible behaviour, run:

@@ -77,7 +77,7 @@ gap:
   area: 'internal/proxy unwrap_samples.go (firstBucketStats, lastBucketStats, rowBucketPick, mergeUnwrapBuckets, unwrapWindowBuckets), range_metric_compat.go (handleStatsCompatRange, collectRangeMetricHitsAux), vector_agg_fold.go (seriesAggregationChain); internal/queryplan/lower route.go (routeUnwrapOps)'
   loki: 'the window (t-range, t] of every evaluation time, its first or last sample per series'
   proxy: 'the earliest or the latest of the gcd buckets of the window that holds a line, per series'
-  planned_test: 'TestFirstLastMatchLoki and TestKeepUnwrapIdentityMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestFirstLastOverTimeRangeLongerThanStep, TestFirstLastOverTimeRangeLongerThanStepDifferential, FuzzFirstLastOverTimeRangeLongerThanStep, TestFirstLastOverTimeWindowRouteScreen, TestMergeUnwrapBucketsFirstLast, TestMetricRouteRangeFunctionEdges and TestMetricRouteVectorUnwrapEdges (internal/proxy); TestCompat_UnwrapFirstLastRangeLongerThanStep (test/e2e-compat, group core; written, not yet run)'
+  planned_test: 'TestFirstLastMatchLoki and TestKeepUnwrapIdentityMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestFirstLastOverTimeRangeLongerThanStep, TestFirstLastOverTimeRangeLongerThanStepDifferential, FuzzFirstLastOverTimeRangeLongerThanStep, TestFirstLastOverTimeWindowRouteScreen, TestMergeUnwrapBucketsFirstLast, TestFirstLastWindowCacheReuse, TestFirstLastWindowCacheMatchesUncached, TestFirstLastWindowCoalesced, TestMetricRouteRangeFunctionEdges and TestMetricRouteVectorUnwrapEdges (internal/proxy); TestCompat_UnwrapFirstLastRangeLongerThanStep (test/e2e-compat, group core; written, not yet run)'
   clusters: []
 perf:
   max_ratio: 2.0

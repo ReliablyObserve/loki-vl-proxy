@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or latest one of each window, for a series a `| keep` decides, a stream without a parser and the labels of a
   grouping, under `sum`, `avg`, `min`, `max`, `count`, `topk`, a binary operation or an offset. A series per line
   (a parser with no keep) still reads the step.
+- Identical `query_range` metric requests that arrive together now share the VictoriaLogs reads of their stats
+  buckets: the buckets not cached yet are read once for all of them, per tenant, instead of once per request.
 - `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`,
   `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep` now read Loki's series on
   `query` and on `query_range` with the range up to the step: the stream plus every parsed label except the unwrapped
