@@ -1520,6 +1520,7 @@
     ],
     "semantics/log-query-default-limit": [
       "internal/proxy/default_entry_limit_test.go",
+      "internal/proxy/limit_fallbacks_unreachable_test.go",
       "test/e2e-compat/log_query_default_limit_test.go"
     ],
     "semantics/logfmt-existence-filter-ungrouped-sum": [
@@ -2973,6 +2974,9 @@
       "semantics/error-layer-proxy-limit-status",
       "status-429",
       "status-500"
+    ],
+    "internal/proxy/limit_fallbacks_unreachable_test.go": [
+      "semantics/log-query-default-limit"
     ],
     "internal/proxy/line_fields_without_parser_test.go": [
       "loki-compatible-profile",
@@ -5126,7 +5130,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 601,
+  "tests_with_markers": 602,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

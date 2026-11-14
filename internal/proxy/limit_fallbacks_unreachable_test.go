@@ -20,6 +20,7 @@ import (
 // handler with every spelling of the limit. A spelling Loki rejects is answered
 // with 400 and reaches no backend; every other one reaches the backends as a
 // positive integer no larger than the answer's limit.
+// conformance: semantics/log-query-default-limit
 func TestLogQueryLimitReachesEveryReaderAsAPositiveInteger(t *testing.T) {
 	now := time.Now()
 	ns := func(d time.Duration) string { return strconv.FormatInt(now.Add(d).UnixNano(), 10) }
