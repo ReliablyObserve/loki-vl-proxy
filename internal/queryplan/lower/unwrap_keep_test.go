@@ -103,3 +103,20 @@ func TestKeepUnwrapIdentity(t *testing.T) {
 		}
 	}
 }
+
+// A keep decides nothing where the string translator reads the keep another way (a name that is not a bare
+// identifier) or the label function folds two kept labels into one field: the series stay the stream's.
+//
+// conformance: semantics/keep-before-unwrap-series-identity
+func TestKeepUnwrapIdentityLeftAlone(t *testing.T) {
+	if _, ok := trailingKeepLabels(selectOf(t, `{a="b"} | json | keep x.y, n | unwrap n`), true); ok {
+		t.Error("a keep of a dotted name decides the series")
+	}
+	sel := selectOf(t, `{a="b"} | json | keep x, y, n | unwrap n`)
+	if by, ok := keptIdentity(sel, Profile{Label: func(string) string { return "z" }}); ok {
+		t.Errorf("two labels named alike decide the series: %v", by)
+	}
+	if by, ok := keptIdentity(sel, Profile{}); !ok || strings.Join(by, ",") != "x,y" {
+		t.Errorf("identity %v %v", by, ok)
+	}
+}

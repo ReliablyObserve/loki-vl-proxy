@@ -78,7 +78,8 @@ func TestKeepIdentityHandlersReadThePlan(t *testing.T) {
 	if _, ok := p.bareParserMetricSpec(`quantile_over_time(0.9, {app="a"} | json | unwrap n [5m])`); !ok {
 		t.Error("a query without a keep left the raw-row evaluator")
 	}
-	for q, want := range map[string]bool{kept: true, `sum(` + kept + `)`: true, `rate({app="a"} | json | keep app [5m])`: false, `quantile_over_time(0.9, {app="a"} | keep x unwrap`: false} {
+	for q, want := range map[string]bool{kept: true, `sum(` + kept + `)`: true, `rate({app="a"} | json | keep app [5m])`: false, `quantile_over_time(0.9, {app="a"} | keep x unwrap`: false,
+		`quantile_over_time(0.9, {app="a"} | json | keep app | unwrap n [5m])`: false} {
 		if _, ok := p.keepUnwrapIdentity(q); ok != want {
 			t.Errorf("%s: keep identity %v, want %v", q, ok, want)
 		}
