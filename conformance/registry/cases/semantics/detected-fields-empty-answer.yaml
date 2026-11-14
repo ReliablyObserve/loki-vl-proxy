@@ -53,6 +53,8 @@ request:
     end: 'now'
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    empty_is_answer: "a query that matches no line lists no fields and no limit, as the answer {} of Loki does; the proxy once listed ten fields of the unmatched query"
 compare:
   mode: exact
   fields: [fields, limit]

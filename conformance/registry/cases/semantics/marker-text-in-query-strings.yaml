@@ -30,6 +30,8 @@ request:
     limit: '100'
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    empty_is_answer: "a line filter holding the proxy's old in-band marker text must be answered as plain text, like Loki: no line contains it, and the answer is a success with nothing"
 compare:
   mode: observed
   fields: [status, streams.values]

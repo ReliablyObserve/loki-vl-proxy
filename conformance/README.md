@@ -114,6 +114,17 @@ case's step), so both sides get the same bytes and no window reads data still
 arriving. A case compares the facets its `compare.fields` name (or its mode's
 default), and always the HTTP status; a difference is asked again before it is
 reported.
+Each field name reads only its own part of an answer: `timestamps` the sample or entry
+timestamps (never the values at them), `structured_metadata_keys` the keys of the structured
+metadata (never their values), `fields.label`, `fields.parsers`, `fields.type` and `limit` the
+parts of a detected_fields answer, `detectedLabels.cardinality` the cardinalities, and on
+`/index/stats` `streams`, `entries`, `bytes` and `chunks` the one number each names. A table
+test (`TestEveryFacetReadsOnlyWhatItNames`) pins that a change elsewhere in the answer is not a
+difference of the facet.
+`ranked_values` compares a `topk` or `bottomk` answer where Loki's choice among series tied at the cutoff is
+its Go map order: per grouping key of by()/without(), the ranked values of every step must equal
+(`test/metricparity.RankedValuesDifference`) and every series ranked strictly above the cutoff of a full step must
+be in both answers with the same value; only the series tied at the cutoff may differ.
 
 No answer is compared on data that is not proven equal. Before a comparison
 that reads data, the case's stream selectors (every stream for a request without
@@ -141,6 +152,24 @@ one without a gap) that differs is a regression (`-check` exits 1), an open case
 that matches is a proposed close, and a documented, owner-kept or upstream case
 that matches has changed behaviour. The runner never edits a case file: a
 proposed close is closed by hand with its evidence.
+
+A case whose answers show an owner-kept deviation names it in `owner_kept` (a list of owner-kept case ids, for
+example `metric-identity/structured-metadata-splits-series`). A fixed case that differs from Loki on equal data and
+names one is reported as `differs_owner_kept` with the deviation, listed in the report and in `cases.json`, never
+passed and never counted as a regression; `-check` prints it and does not fail on it. A name that is not an owner-kept
+case blocks the case.
+
+A request the runner does not run says why in `request.verify`: `met_by: stack` with its `evidence` (the generator line
+or compose flag that meets the case's `precondition`, so the runner sends it); `blocked_by` one of `load`, `fault`,
+`volume`, `version`, `fixture`, `proxy_only`, `moved_window` or `write`, with a `reason`; or `empty_is_answer` for a
+fixed case whose point is that a query the proxy once mishandled is answered like Loki, with nothing and no error (two
+empty answers then match; never for an open case). Every blocked verdict in `cases.json` and the report carries its
+class, so the daily report counts what is blocked by what it needs: also `websocket`, `grafana`, `placeholder_time`,
+`empty_answer`, `unread_fields`, `no_answer`, `loki_error` and `no_variant`. `-compose
+test/e2e-compat/docker-compose.yml` reads the proxy variants (URL by published port, flags by command) and the default
+proxy's flags from the stack's compose file; `-list` sends nothing and prints how many cases go to which proxy and which
+are blocked, by class. Redirects are answers, not followed. Loki's `/index/stats` counts flushed chunks only: an answer
+whose entries lag behind its own `count_over_time` of the window is `not_comparable`.
 
 ### The daily report
 

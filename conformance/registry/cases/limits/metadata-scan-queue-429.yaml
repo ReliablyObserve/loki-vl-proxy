@@ -48,6 +48,9 @@ request:
     this replica or, through VictoriaLogs' running selects, anywhere), or
     VictoriaLogs' resident set leaves less than the headroom free, for longer
     than -backend-heavy-query-queue-wait.
+  verify:
+    blocked_by: load
+    reason: "the adaptive metadata-scan limit used up by other scans"
 compare:
   mode: exact
   fields: [status]

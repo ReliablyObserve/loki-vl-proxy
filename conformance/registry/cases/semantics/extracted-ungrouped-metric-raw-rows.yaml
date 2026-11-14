@@ -28,6 +28,9 @@ request:
     step: '60'
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    blocked_by: volume
+    reason: "an answer of more than the 32 MiB the runner reads from one side (6h of an ungrouped extracted-label metric)"
 compare:
   mode: exact
   fields: [status, series_labels, values]

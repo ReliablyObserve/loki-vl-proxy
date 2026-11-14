@@ -44,6 +44,9 @@ request:
     A replica that has answered or warmed the 7-day preset once, then windows
     moved past the response cache's time bucket (what Grafana refreshes
     send) and windows no request asked for before.
+  verify:
+    blocked_by: moved_window
+    reason: "asks with windows moved past the response cache bucket, timed"
 compare:
   mode: exact
   fields: [status, data]

@@ -24,6 +24,9 @@ request:
   precondition: |
     -max-stats-query-series=1000000 against data with about 240,000 distinct pods in
     the window.
+  verify:
+    blocked_by: volume
+    reason: "about 240,000 distinct pods and -max-stats-query-series=1000000"
 compare:
   mode: exact
   fields: [status]

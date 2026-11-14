@@ -16,6 +16,9 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     The tenant has no rule groups.
+  verify:
+    blocked_by: fixture
+    reason: "a tenant with no rule groups; tenant 0 of the stack may hold some, and another tenant has no data for the precheck"
 compare:
   mode: observed
   fields: [status, headers, body]

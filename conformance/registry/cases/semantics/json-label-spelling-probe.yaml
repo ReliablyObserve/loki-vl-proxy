@@ -62,6 +62,9 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     The stream holds a line `{"service":{"version":"0.96.0"},"pipeline":"logs/loki"}`.
+  verify:
+    blocked_by: fixture
+    reason: "a line {\"service\":{\"version\":\"0.96.0\"},\"pipeline\":\"logs/loki\"} on a stream of its own"
 compare:
   mode: exact
   fields: [status, series_labels, values]

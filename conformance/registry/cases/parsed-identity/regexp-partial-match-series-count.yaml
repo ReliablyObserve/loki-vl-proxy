@@ -34,6 +34,11 @@ request:
     -max-stats-query-series=50000 so neither side is truncated by the series
     cap; at the 500 default both Loki-facing builds return
     `maximum metric series exceeded (500)` and the counts cannot be compared.
+  proxy_flags:
+    - "-max-stats-query-series=1000000"
+  verify:
+    met_by: stack
+    evidence: "The main proxy runs -max-stats-query-series=1000000 (test/e2e-compat/docker-compose.yml, loki-vl-proxy), above the 50000 the precondition asks, so neither side is truncated by the series cap."
 compare:
   mode: observed
   fields: [series_count, label_presence]

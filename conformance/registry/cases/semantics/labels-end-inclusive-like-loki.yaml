@@ -41,6 +41,9 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     A row exists at exactly that nanosecond (Grafana sends the row's time).
+  verify:
+    blocked_by: fixture
+    reason: "a row time in nanoseconds read from the data to use as both start and end"
 compare:
   mode: observed
   fields: [status, data]

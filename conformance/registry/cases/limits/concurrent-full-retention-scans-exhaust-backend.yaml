@@ -73,6 +73,9 @@ request:
     Several proxy replicas refresh their stream-field inventory over the
     whole retention at once, or several users open a 7-day label browser at
     the same moment.
+  verify:
+    blocked_by: load
+    reason: "several replicas or users scanning the whole retention at once, with the VictoriaLogs restart count watched"
 compare:
   mode: exact
   fields: [status]

@@ -75,6 +75,9 @@ request:
     The same request answered and cached, then a stream with a new label
     written, then the request repeated more than 2s later (also the 24h and 6h
     windows and /label/<name>/values).
+  verify:
+    blocked_by: write
+    reason: "a stream with a new label written between two asks"
 compare:
   mode: exact
   fields: [status, data]
