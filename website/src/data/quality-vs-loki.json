@@ -219,7 +219,7 @@
       "compared_with_loki": 19,
       "endpoints": 27,
       "name": "Loki API clients",
-      "open_differences": 20,
+      "open_differences": 22,
       "proven": 12,
       "routed": 25
     }
@@ -229,15 +229,15 @@
   ],
   "date": "2026-11-09",
   "differences": {
-    "open": 129,
+    "open": 131,
     "open_by_impact": {
-      "api-only": 20,
+      "api-only": 22,
       "drilldown-visible": 13,
       "edge": 35,
       "explore-visible": 60,
       "grafana-datasource": 1
     },
-    "ranked": 154
+    "ranked": 156
   },
   "distribution": [
     {
