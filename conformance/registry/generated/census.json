@@ -807,6 +807,8 @@
     "semantics/sub-second-step-grid | gap:fixed",
     "semantics/sub-second-step-grid | perf",
     "semantics/sub-second-step-grid | query",
+    "semantics/tail-history-limit-above-max-entries | compare:observed",
+    "semantics/tail-history-limit-above-max-entries | query",
     "semantics/tail-history-start-limit | compare:observed",
     "semantics/tail-history-start-limit | gap:open",
     "semantics/tail-history-start-limit | query",
@@ -1809,6 +1811,8 @@
     "internal/proxy/tail_backend_retry_test.go | semantics/error-layer-cancel-deadline",
     "internal/proxy/tail_backend_retry_test.go | semantics/error-layer-internal-go-text",
     "internal/proxy/tail_backend_retry_test.go | semantics/tail-survives-backend-outage",
+    "internal/proxy/tail_history_test.go | loki_api_v1_tail",
+    "internal/proxy/tail_history_test.go | semantics/tail-history-start-limit",
     "internal/proxy/tail_pipeline_test.go | loki_api_v1_tail",
     "internal/proxy/tenant_auth_parity_test.go | tenant-auth-follows-loki",
     "internal/proxy/tenant_auth_parity_test.go | tenant-numeric-routing",
@@ -2568,6 +2572,8 @@
     "test/e2e-compat/sub_second_step_test.go | window-bounds-and-step-alignment",
     "test/e2e-compat/tail_backend_outage_test.go | loki_api_v1_tail",
     "test/e2e-compat/tail_backend_outage_test.go | semantics/tail-survives-backend-outage",
+    "test/e2e-compat/tail_history_test.go | loki_api_v1_tail",
+    "test/e2e-compat/tail_history_test.go | semantics/tail-history-start-limit",
     "test/e2e-compat/tail_pipeline_test.go | loki_api_v1_tail",
     "test/e2e-compat/tenant_auth_loki_test.go | tenant-auth-follows-loki",
     "test/e2e-compat/tenant_label_isolation_test.go | prometheus_api_v1_alerts",
@@ -2672,14 +2678,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 95,
+      "api": 96,
       "drilldown": 50,
       "explore": 184,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 598,
+      "go": 600,
       "playwright": 1
     },
     "page_kinds": {
@@ -2699,7 +2705,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 105,
-    "wired_items": 358
+    "wired_items": 359
   },
   "gates": [
     "A/B shape selection",
