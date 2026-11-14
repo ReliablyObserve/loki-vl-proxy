@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Test support: the plan corpus leaves out the request of a registry case that compares only a client error, and six
+  conformance cases for queries Loki rejects now carry an HTTP request the live verifier sends. No proxy behaviour changes.
+
 ## [2.260.1] - 2026-11-14
 
 ### Fixed
