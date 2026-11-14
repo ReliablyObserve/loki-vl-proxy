@@ -7,6 +7,10 @@ name: Query Corpus
 on:
   push:
     branches: [main]
+  # Daily on main as well: the live oracles re-verify the recorded Loki and VictoriaLogs answers even on a day
+  # with no merge, so a drift of either side (or of the recordings) shows the next morning.
+  schedule:
+    - cron: "23 2 * * *"
   workflow_dispatch:
 
 permissions:
@@ -65,17 +69,6 @@ jobs:
         run: |
           go test ./internal/querycorpus -run '^TestVLOracle$' -count=1 -v
           go test ./internal/proxy -run '^TestLokiOracle$' -count=1 -v
-          # The Loki differential of log queries: the live oracles must answer what its recorded answers hold.
-          LVP_LOKI_DIFF_CHECK=1 go test ./internal/querycorpus -run '^TestPlanMatchesLokiOnLogQueries$' -count=1 -v
-          # The Loki differential of metric queries: Loki's engine and VictoriaLogs' own query handlers must answer
-          # what its recorded answers hold.
-          LVP_LOKI_DIFF_CHECK=1 go test ./internal/querycorpus -run '^TestPlanMatchesLokiOnMetricQueries$' -count=1 -v -timeout=30m
-          # The grammar sweep records Loki's and VictoriaLogs' answers to the queries enumerated from the LogQL
-          # grammar again and compares them with conformance/registry/grammar-sweep.json (the default size, which
-          # fails when a recording no longer matches the known differences), then sweeps the nightly size and
-          # reports it (the full recordings are not committed).
-          go test ./internal/querycorpus -run '^TestGrammarSweep$' -count=1 -v
-          LVP_GRAMMAR_SWEEP_SIZE=full go test ./internal/querycorpus -run '^TestGrammarSweep$' -count=1 -v
 
       - name: Save the corpus for pull requests based on this commit
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] a gzipped list of test queries read as data by the PR quality report; nothing from this job is published
@@ -92,3 +85,22 @@ jobs:
             /tmp/query-corpus/query-corpus.vl-*.jsonl.gz
             /tmp/query-corpus/query-corpus.vl-*.constructs.json
             /tmp/query-corpus/query-corpus.loki-*
+
+      # The live checks run after the corpus is saved and uploaded, and fail the job: a recorded answer that the
+      # live Loki or VictoriaLogs oracles no longer give, or a grammar-sweep class that moved, is a red run on main.
+      - name: Re-verify the recorded answers with the live Loki and VictoriaLogs oracles
+        env:
+          LVP_RUN_ORACLES: "1"
+          LVP_QUERY_CORPUS_OUT: /tmp/query-corpus/query-corpus.jsonl.gz
+        run: |
+          # The Loki differential of log queries: the live oracles must answer what its recorded answers hold.
+          LVP_LOKI_DIFF_CHECK=1 go test ./internal/querycorpus -run '^TestPlanMatchesLokiOnLogQueries$' -count=1 -v
+          # The Loki differential of metric queries: Loki's engine and VictoriaLogs' own query handlers must answer
+          # what its recorded answers hold.
+          LVP_LOKI_DIFF_CHECK=1 go test ./internal/querycorpus -run '^TestPlanMatchesLokiOnMetricQueries$' -count=1 -v -timeout=30m
+          # The grammar sweep records Loki's and VictoriaLogs' answers to the queries enumerated from the LogQL
+          # grammar again and compares them with conformance/registry/grammar-sweep.json (the default size, which
+          # fails when a recording no longer matches the known differences), then sweeps the nightly size and
+          # reports it (the full recordings are not committed).
+          go test ./internal/querycorpus -run '^TestGrammarSweep$' -count=1 -v
+          LVP_GRAMMAR_SWEEP_SIZE=full go test ./internal/querycorpus -run '^TestGrammarSweep$' -count=1 -v
