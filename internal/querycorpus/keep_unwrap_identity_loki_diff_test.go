@@ -111,6 +111,9 @@ var keepIdentityKnown = func() map[string]map[string]string {
 		`first_over_time({job="kj"} | json | keep app, region, duration_ms | unwrap duration_ms [5m])`,
 		`first_over_time({job=~"kj|kx"} | json duration_ms | keep app, duration_ms | unwrap duration_ms [5m])`,
 		`sum by (app) (first_over_time({job="kj"} | keep app | json | unwrap duration_ms [5m]))`)
+	// Without a keep each line is a Loki series of its own; rate_counter keeps the stream's series (its own one-sample
+	// proof reads logfmt only).
+	add("semantics/unwrap-per-series-identity-raw-rows", all, "sum by (app) ("+plain("rate_counter")+")", "sum("+plain("rate_counter")+")")
 	// A keep before the parser: the series are the kept labels and the parsed ones.
 	add("semantics/keep-before-parser-unwrap-identity", all,
 		`sum by (app) (quantile_over_time(0.9, {job="kj"} | keep app | json | unwrap duration_ms [5m]))`,

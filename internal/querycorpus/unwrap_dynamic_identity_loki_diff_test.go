@@ -69,9 +69,29 @@ var dynamicIdentityKnown = func() map[string]map[string]string {
 			}
 		}
 	}
-	// rate_counter's series are right; its value differs from Loki's extrapolated rate in the sixth digit.
+	const perSeries = "semantics/unwrap-per-series-identity-raw-rows"
 	for _, shape := range dynamicIdentityShapes {
-		add("semantics/unwrap-rate-counter-window-extrapolation", all, fmt.Sprintf(shape, keepIdentityHead("rate_counter")))
+		q := fmt.Sprintf(shape, keepIdentityHead("rate_counter"))
+		if strings.Contains(q, `"dk"`) || strings.Contains(q, `"de"`) {
+			// One series per stream: the series are right, the value differs from Loki's extrapolated rate in the
+			// sixth digit.
+			add("semantics/unwrap-rate-counter-window-extrapolation", all, q)
+			continue
+		}
+		// rate_counter keeps the stream's series.
+		add(perSeries, all, q)
+	}
+	// A range longer than the step whose series are not all of one sample: the window evaluator merges the step
+	// buckets of streams.
+	sliding := []string{"step<range"}
+	for _, fn := range []string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time"} {
+		for _, shape := range dynamicIdentityShapes {
+			q := fmt.Sprintf(shape, keepIdentityHead(fn))
+			if strings.Contains(q, `__error__`) || fn == "max_over_time" && strings.HasPrefix(q, "max by (app) (") {
+				continue
+			}
+			add(perSeries, sliding, q)
+		}
 	}
 	// A label filter between the parser and the unwrap: the lowering does not serve the query under the Loki
 	// profile, and the string translator's series are the stream and each line.

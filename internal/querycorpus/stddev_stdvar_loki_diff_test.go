@@ -73,6 +73,16 @@ var stddevKnown = func() map[string]map[string]string {
 			known[q][k] = id
 		}
 	}
+	// A range longer than the step: the window evaluator merges the step buckets of streams, the group's pooled
+	// samples under sum by, max by and avg by, and each line under sum.
+	sliding := []string{"step<range"}
+	const pooled, perLine = "semantics/stdvar-grouped-pooled-variance", "semantics/unwrap-per-series-identity-raw-rows"
+	add(`sum by (app) (stddev_over_time({job="json"} | json | unwrap duration_ms [5m]))`, pooled, sliding...)
+	add(`sum by (app) (stdvar_over_time({job="json"} | json | unwrap duration_ms [5m]))`, pooled, sliding...)
+	add(`max by (app) (stdvar_over_time({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`, pooled, sliding...)
+	add(`avg by (app) (stdvar_over_time({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`, pooled, sliding...)
+	add(`sum(stddev_over_time({job="json"} | json | unwrap duration_ms [5m]))`, perLine, sliding...)
+	add(`sum(stdvar_over_time({job="json"} | json | unwrap duration_ms [5m]))`, perLine, sliding...)
 	// An aggregation over a range aggregation with a by of its own: not applied (the series of the range by), or on
 	// a sliding window applied over the step buckets.
 	const rangeBy = "semantics/aggregation-over-range-by-not-applied"
