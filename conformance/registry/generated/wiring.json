@@ -1679,7 +1679,8 @@
       "cmd/proxy/main_test.go",
       "internal/proxy/step_align_diff_test.go",
       "internal/proxy/step_align_test.go",
-      "test/e2e-compat/align_queries_with_step_test.go"
+      "test/e2e-compat/align_queries_with_step_test.go",
+      "test/e2e-compat/loki_metric_probe_window_test.go"
     ],
     "semantics/query-range-window-budget": [
       "test/e2e-compat/query_range_window_budget_test.go"
@@ -1722,6 +1723,7 @@
       "internal/queryplan/lower/outbound_guard_test.go",
       "internal/queryplan/lower/reserved_field_case_test.go",
       "internal/queryplan/lower/vl_clone_roundtrip_test.go",
+      "test/e2e-compat/loki_metric_probe_window_test.go",
       "test/e2e-compat/reserved_field_name_case_test.go"
     ],
     "semantics/router-method-not-allowed-like-loki": [
@@ -4719,6 +4721,10 @@
       "semantics/stage-after-unwrap-accepted",
       "semantics/unwrap-in-log-query"
     ],
+    "test/e2e-compat/loki_metric_probe_window_test.go": [
+      "semantics/query-range-step-alignment",
+      "semantics/reserved-field-name-case-outbound"
+    ],
     "test/e2e-compat/loki_profile_parity_test.go": [
       "profiles/dotted-name-parse-error",
       "profiles/dotted-names-accepted-outside-loki-profile",
@@ -5108,7 +5114,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 598,
+  "tests_with_markers": 599,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

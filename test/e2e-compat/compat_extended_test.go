@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -205,13 +206,10 @@ func waitForLokiMetricDataSelector(t *testing.T, selector string) {
 
 func waitForLokiMetricDataSelectorForTenant(t *testing.T, selector, tenant string) {
 	t.Helper()
-	deadline := time.Now().Add(90 * time.Second)
-	probe := url.Values{}
-	probe.Set("query", `count_over_time(`+selector+`[5m])`)
-	probe.Set("start", fmt.Sprintf("%d", time.Now().Add(-10*time.Minute).UnixNano()))
-	probe.Set("end", fmt.Sprintf("%d", time.Now().UnixNano()))
-	probe.Set("step", "60")
-	for time.Now().Before(deadline) {
+	deadline, cut, done := lokiMetricWaitStart(90 * time.Second)
+	defer done()
+	for attempt := 0; ; attempt++ {
+		probe := lokiMetricProbeParams(`count_over_time(`+selector+`[5m])`, time.Now().Add(-10*time.Minute), time.Now(), attempt)
 		status, _, resp := doJSONGET(t, lokiURL+"/loki/api/v1/query_range?"+probe.Encode(), tenantRequestHeaders(tenant))
 		if status == http.StatusOK {
 			data := extractMap(resp, "data")
@@ -219,9 +217,68 @@ func waitForLokiMetricDataSelectorForTenant(t *testing.T, selector, tenant strin
 				return
 			}
 		}
+		if !time.Now().Before(deadline) {
+			break
+		}
 		time.Sleep(500 * time.Millisecond)
 	}
+	if cut {
+		t.Fatalf("Loki answered no range metric for %s and this run's %s for Loki range metrics is spent: Loki is not answering them, nothing to compare", selector, lokiMetricWaitBudget)
+	}
 	t.Logf("warning: Loki metric data not available after 90s for %s — parity tests may show Loki returning empty", selector)
+}
+
+// lokiMetricProbeParams is the attempt-th query_range probe of a range metric
+// over [start, end]. Loki (align_queries_with_step) floors start and end to the
+// step, so a probe ending at a raw "now" puts its last point up to a step before
+// lines written just before now, and the probe stays empty however long it
+// polls. The probe's end is moved to the first point of the step grid after end
+// instead. The step grows with each attempt so no attempt is answered from
+// Loki's results cache (max_cache_freshness_per_query is 0s on this stack, so
+// an earlier empty probe is cached) and stays under the 5m range of the probe
+// query, so the points cover every line in the window.
+func lokiMetricProbeParams(query string, start, end time.Time, attempt int) url.Values {
+	step := int64(60 + attempt%180)
+	endSec := (end.Unix()/step + 1) * step
+	return url.Values{
+		"query": {query},
+		"start": {strconv.FormatInt(start.UnixNano(), 10)},
+		"end":   {strconv.FormatInt(endSec*int64(time.Second), 10)},
+		"step":  {strconv.FormatInt(step, 10)},
+	}
+}
+
+// lokiMetricWaitBudget bounds the time one go test run spends in all its
+// range-metric warm-up waits (this helper and the reserved-name probe): once it
+// is spent, a wait that finds no Loki answer fails with that reason instead of
+// adding its full wait to the group's time.
+const lokiMetricWaitBudget = 4 * time.Minute
+
+var lokiMetricWaitSpent struct {
+	sync.Mutex
+	spent time.Duration
+}
+
+// lokiMetricWaitStart returns the deadline of one wait (perCall, cut to what is
+// left of the run's budget), whether the budget cut it, and the func that books
+// the time the wait took.
+func lokiMetricWaitStart(perCall time.Duration) (time.Time, bool, func()) {
+	began := time.Now()
+	lokiMetricWaitSpent.Lock()
+	left := lokiMetricWaitBudget - lokiMetricWaitSpent.spent
+	lokiMetricWaitSpent.Unlock()
+	cut := left < perCall
+	if cut {
+		perCall = left
+	}
+	if perCall < 0 {
+		perCall = 0
+	}
+	return began.Add(perCall), cut, func() {
+		lokiMetricWaitSpent.Lock()
+		lokiMetricWaitSpent.spent += time.Since(began)
+		lokiMetricWaitSpent.Unlock()
+	}
 }
 
 // =============================================================================

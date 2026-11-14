@@ -188,26 +188,30 @@ func TestCompat_ReservedFieldNameCaseLikeLoki(t *testing.T) {
 }
 
 // waitForReservedCaseLokiMetrics waits for Loki to answer a range metric of the fixture's three streams (the
-// fresh-stack blank window), 3 minutes at most, and fails with Loki's last answer when it does not. The probe is a
-// shape the comparisons do not send (another step), so no partial answer lands in Loki's results cache.
+// fresh-stack blank window), 3 minutes at most within the run's budget for such waits. The probe is a shape the
+// comparisons do not send, its last point lies after every fixture line (lokiMetricProbeParams), and each attempt
+// asks another step, so no attempt is answered from an earlier probe in Loki's results cache.
 func waitForReservedCaseLokiMetrics(t *testing.T, selector string, start, end time.Time, headers map[string]string) {
 	t.Helper()
-	probe := url.Values{"query": {`count_over_time(` + selector + `[5m])`}, "start": {strconv.FormatInt(start.UnixNano(), 10)},
-		"end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"59"}}
-	deadline := time.Now().Add(3 * time.Minute)
+	deadline, _, done := lokiMetricWaitStart(3 * time.Minute)
+	defer done()
 	var last string
-	for time.Now().Before(deadline) {
+	for attempt := 0; ; attempt++ {
+		probe := lokiMetricProbeParams(`count_over_time(`+selector+`[5m])`, start, end, attempt)
 		status, body, payload := queryRangeGET(t, lokiURL, probe, headers)
 		last = body
 		if status == http.StatusOK && len(extractArray(extractMap(payload, "data"), "result")) == 3 {
 			return
+		}
+		if !time.Now().Before(deadline) {
+			break
 		}
 		time.Sleep(time.Second)
 	}
 	// Loki shows a new stream's range metrics only once its ingester can read them, which on a fresh stack can take
 	// longer than the wait. Then there is no Loki answer to compare the range part with: skip it rather than fail on
 	// Loki's readiness (the log part above has already been compared).
-	t.Skipf("Loki range metrics of the fixture incomplete after 3m (fresh-stack blank window), the range part is not compared: %.300s", last)
+	t.Skipf("Loki range metrics of the fixture incomplete after the wait (fresh-stack blank window), the range part is not compared: %.300s", last)
 }
 
 // reservedCaseMax is the highest point of a matrix answer's series, NaN for none.
