@@ -244,40 +244,42 @@ func firstBy(dst []string, pipes []logsql.Pipe) []string {
 	return dst
 }
 
-// errorLabels are the labels a keep never removes.
-var errorLabels = [...]string{"__error__", "__error_details__", "__preserve_error__"}
-
-// trailingKeepLabels are the labels the last keep stage of the log query leaves, when the translator takes that
-// keep to decide the series of every sample (trailingKeepGrouping): the keep has no matcher and only plain label
-// names, and no parser, label_format, drop or unwrap follows it. Loki deletes every label a keep does not name, so
-// the series that keep the same labels are one. ok is false when the keep decides nothing: the series are then the
-// stream (and its level). A keep that lists only error labels leaves none (kept is empty, ok is true).
-func trailingKeepLabels(sel *queryplan.LogSelect) (kept []string, ok bool) {
-	found := false
+// trailingKeepLabels are the labels a keep stage leaves to tell the series of every sample apart (the series
+// identity queryplan.SeriesLabels reads): the keep has no matcher, no parser, label_format or drop follows it, and
+// an unwrap after it takes its label out of the sample. Loki deletes every label a keep does not name, so the series
+// that keep the same labels are one. Every keep of the query names only plain labels and has no matcher, as the
+// string translator reads keeps. unwrapped says the function reads the unwrapped value: for one that does not
+// (absent_over_time written with an unwrap) a pipeline with an unwrap stage decides nothing, as before. ok is false
+// when the keep decides nothing: the series are then the stream (and its level). A keep that leaves no label (only
+// error labels, or only the unwrapped one) leaves none (kept is empty, ok is true).
+func trailingKeepLabels(sel *queryplan.LogSelect, unwrapped bool) (kept []string, ok bool) {
+	unwrapAfter, keeps := false, false
 	for _, st := range sel.Stages {
-		switch st := st.(type) {
-		case *queryplan.Keep:
-			if len(st.Matchers) > 0 {
+		if _, isUnwrap := st.(*queryplan.Unwrap); isUnwrap {
+			unwrapAfter = true
+		}
+		k, isKeep := st.(*queryplan.Keep)
+		if !isKeep {
+			continue
+		}
+		unwrapAfter, keeps = false, true
+		if len(k.Matchers) > 0 {
+			return nil, false
+		}
+		for _, l := range k.Labels {
+			if !bareIdentifier(l) {
 				return nil, false
 			}
-			for _, l := range st.Labels {
-				if !bareIdentifier(l) {
-					return nil, false
-				}
-			}
-			// The labels are the stage's own unless it names an error label, which a keep never removes.
-			kept, found = st.Labels, true
-			for i, l := range st.Labels {
-				if slices.Contains(errorLabels[:], l) {
-					kept = append(slices.Clone(st.Labels[:i]), keptAfter(st.Labels[i+1:])...)
-					break
-				}
-			}
-		case *queryplan.Parse, *queryplan.LabelFormat, *queryplan.Drop, *queryplan.Unwrap:
-			found = false
 		}
 	}
-	return kept, found
+	if !keeps || unwrapAfter && !unwrapped {
+		return nil, false
+	}
+	out := queryplan.SeriesLabels(sel.Stages)
+	if kept, ok = out.KeptIdentity(); !ok || len(out.Dropped) > 0 {
+		return nil, false
+	}
+	return kept, true
 }
 
 // filteredAfterParser reports whether a label filter or a drop stage stands after a parser stage of the log query.
@@ -294,17 +296,6 @@ func filteredAfterParser(sel *queryplan.LogSelect) bool {
 		}
 	}
 	return false
-}
-
-// keptAfter are the labels of rest that are not error labels.
-func keptAfter(rest []string) []string {
-	var kept []string
-	for _, l := range rest {
-		if !slices.Contains(errorLabels[:], l) {
-			kept = append(kept, l)
-		}
-	}
-	return kept
 }
 
 // bareIdentifier reports whether s is a label name made of letters, digits and underscores, as the translator reads
@@ -430,14 +421,19 @@ func parserLabels(st *queryplan.Parse) (names []string, known bool) {
 // seriesIdent are the grouping fields that tell the series of a rate, or the one value per series of count, min,
 // max and avg, apart (the translator's seriesIdentityGrouping): the labels a trailing keep leaves, else for a
 // `without` fold (fold) over a parser the stream and the labels it names, else the stream and its level (the
-// stream alone behind a parser). owner names the delegation of a keep
+// stream alone behind a parser); unwrapped says the function reads the unwrapped value (trailingKeepLabels). owner
+// names the delegation of a keep
 // that leaves no label (an explicit `by ()`). It returns nil for the default identity (seriesIdentity).
-func seriesIdent(sel *queryplan.LogSelect, parser, fold bool, owner string, prof Profile) ([]string, error) {
-	if kept, ok := trailingKeepLabels(sel); ok {
+func seriesIdent(sel *queryplan.LogSelect, parser, fold, unwrapped bool, owner string, prof Profile) ([]string, error) {
+	if kept, ok := trailingKeepLabels(sel, unwrapped); ok {
 		if filteredAfterParser(sel) {
 			return nil, &NotLoweredError{Construct: owner + costConstruct}
 		}
 		by := translate.NormalizeByLabels(kept, prof.Label)
+		if len(kept) == 0 && unwrapStage(sel) != nil {
+			// A keep of the unwrapped label alone: one series, the samples of every line.
+			return []string{}, nil
+		}
 		if len(by) == 0 {
 			return nil, &NotLoweredError{Construct: owner + " keep identity"}
 		}

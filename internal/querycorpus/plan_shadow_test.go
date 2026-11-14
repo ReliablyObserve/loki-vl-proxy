@@ -154,6 +154,11 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 				// translator a field VictoriaLogs rejects or reads as its own filter.
 				caseID, ok = "semantics/translator-writes-reserved-field-names", true
 			}
+			if !ok && lower.WritesKeepUnwrapIdentity(plan) && !sameAsTranslator(got, legacy) {
+				// A keep before the unwrap decides the series: the plan groups by the labels it leaves, the translator
+				// by the stream (and each line), and the proxy serves the plan's text (lowerKeepIdentity).
+				caseID, ok = knownKeepIdentity, true
+			}
 			if !ok && lower.WritesNumericEquality(plan) {
 				// A numeric, duration or bytes equality after a json or logfmt parser: the plan compares the value as
 				// a number as Loki does, the translator writes the exact text of the literal.
@@ -206,6 +211,17 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 		}
 	}
 	return sec, problems, slices
+}
+
+// knownKeepIdentity is the registry case of the plan's series identity behind a keep, which the proxy serves from
+// the lowering where it differs from the string translator's.
+const knownKeepIdentity = "semantics/keep-before-unwrap-series-identity"
+
+// sameAsTranslator reports a lowering that writes the string translator's operators and text: a keep whose
+// identity the translator happens to write too (an outer by that holds every kept label) is native.
+func sameAsTranslator(got physical.Op, legacy string) bool {
+	want, err := translator.DecodePhysical(legacy)
+	return err == nil && physical.Equal(want, got) && translator.EncodePhysical(got) == legacy
 }
 
 // TestPlanShadow holds the native lowering to the string translator on the whole corpus under every profile.
@@ -372,7 +388,9 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		return physical.VLQuery{Text: "*"}, nil
 	}
 	t.Run("a wrong query is a mismatch", func(t *testing.T) {
-		if bad, _ := runShadow(t, wrong, rows); bad.Native != 0 || bad.Mismatches < sec.Rows-known {
+		// A row whose series a keep before the unwrap decides is held to Loki (TestKeepUnwrapIdentityMatchLoki), not
+		// to the translator: a lowering that differs there is that divergence, not a mismatch.
+		if bad, _ := runShadow(t, wrong, rows); bad.Native != 0 || bad.Mismatches < sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity] {
 			t.Fatalf("a lowering that answers `*` for everything: %+v", bad)
 		}
 	})
@@ -384,7 +402,7 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		return physical.LabelMap{Replace: []physical.LabelReplace{{DstLabel: "x"}}, In: op}, nil
 	}
 	t.Run("a changed post-processing is a mismatch", func(t *testing.T) {
-		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known {
+		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity] {
 			t.Fatalf("a lowering that adds a label_replace to each answer: %+v", bad)
 		}
 	})

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/grafana/loki/v3/pkg/logql/log"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
@@ -63,8 +64,19 @@ type Facts struct {
 	LabelFilters []LabelFilterFact `json:"label_filters"`
 	// Binary is the binary operation under any label_replace, nil for any other shape.
 	Binary *BinaryFact `json:"binary,omitempty"`
+	// SeriesStages are the stages of that pipeline that decide the labels of a sample, in order (seriesStageOf), and
+	// Unwrap the label the range aggregation under the aggregations unwraps ("" for none).
+	SeriesStages []SeriesStage `json:"series_stages,omitempty"`
+	Unwrap       string        `json:"unwrap,omitempty"`
 	// LabelReplace are the label_replace calls around the expression, outermost first.
 	LabelReplace []LabelReplaceFact `json:"label_replace,omitempty"`
+}
+
+// SeriesStage is a stage that decides the labels of a sample: a parser ("parser"), a keep or a drop with the label
+// names it requires or lists ("keep", "drop"), a label_format ("label_format").
+type SeriesStage struct {
+	Kind  string   `json:"kind"`
+	Names []string `json:"names,omitempty"`
 }
 
 // BinaryFact is a binary operation as Loki's tree holds it: the operator, the bool modifier, the vector matching
@@ -236,6 +248,7 @@ func factsOf(x FactsInput) (r Facts) {
 		r.Outer = v.Operation
 	}
 	offsets(expr, &r.Offsets)
+	r.Unwrap = unwrapUnderAggregations(expr)
 	if sel := pipelineUnderAggregations(expr); sel != nil {
 		r.HasPipeline = true
 		r.Pipeline = []Stage{}
@@ -248,6 +261,9 @@ func factsOf(x FactsInput) (r Facts) {
 		if p, ok := sel.(*syntax.PipelineExpr); ok {
 			for _, st := range p.MultiStages {
 				r.Pipeline = append(r.Pipeline, stageOf(st))
+				if ss, ok := seriesStageOf(st); ok {
+					r.SeriesStages = append(r.SeriesStages, ss)
+				}
 				switch v := st.(type) {
 				case *syntax.LineFilterExpr:
 					lineFilterFacts(v, &r.LineFilters)
@@ -296,6 +312,50 @@ func pipelineUnderAggregations(e syntax.Expr) syntax.LogSelectorExpr {
 			return nil
 		}
 	}
+}
+
+// unwrapUnderAggregations is the label the range aggregation under label_replace calls and vector aggregations
+// unwraps ("" for none).
+func unwrapUnderAggregations(e syntax.Expr) string {
+	for {
+		switch v := e.(type) {
+		case *syntax.LabelReplaceExpr:
+			e = v.Left
+		case *syntax.VectorAggregationExpr:
+			e = v.Left
+		case *syntax.RangeAggregationExpr:
+			if v.Left.Unwrap == nil {
+				return ""
+			}
+			return v.Left.Unwrap.Identifier
+		default:
+			return ""
+		}
+	}
+}
+
+// seriesStageOf is a stage that decides the labels of a sample, read through Loki's exported tree: a keep's
+// required label names come from the stage Loki builds of it.
+func seriesStageOf(st syntax.StageExpr) (SeriesStage, bool) {
+	switch v := st.(type) {
+	case *syntax.LineParserExpr, *syntax.LogfmtParserExpr, *syntax.LogfmtExpressionParserExpr, *syntax.JSONExpressionParserExpr:
+		return SeriesStage{Kind: "parser"}, true
+	case *syntax.DropLabelsExpr:
+		return SeriesStage{Kind: "drop", Names: v.Names()}, true
+	case *syntax.KeepLabelsExpr:
+		// The tree exports no names of a keep: they are read from its printed form, `| keep a, b`, where a
+		// matcher is printed `a="x"` (left out; the proxy's test compares only keeps without a matcher).
+		names := []string{}
+		for _, item := range strings.Split(strings.TrimPrefix(v.String(), "| keep "), ",") {
+			if item = strings.TrimSpace(item); item != "" && !strings.ContainsAny(item, "=!~\"") {
+				names = append(names, item)
+			}
+		}
+		return SeriesStage{Kind: "keep", Names: names}, true
+	case *syntax.LabelFmtExpr:
+		return SeriesStage{Kind: "label_format"}, true
+	}
+	return SeriesStage{}, false
 }
 
 func stageOf(st syntax.StageExpr) Stage {

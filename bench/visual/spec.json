@@ -1482,6 +1482,19 @@
    ]
   },
   {
+   "id": "explore-unwrap-keep-series-identity",
+   "kind": "explore",
+   "query": "sum by (app) (quantile_over_time(0.9, {app=\"api-gateway\"} | json | keep app, duration_ms | unwrap duration_ms [5m]))",
+   "covers": [
+    "semantics/keep-before-unwrap-series-identity",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/keep-before-unwrap-series-identity"
+   ]
+  },
+  {
    "id": "explore-unwrap-first-last-under-sum",
    "kind": "explore",
    "query": "sum by (service_name) (last_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [$__auto]))",

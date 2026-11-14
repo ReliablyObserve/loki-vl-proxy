@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.242.0] - 2026-11-14
+
+### Fixed
+
+- A `| keep` before `| unwrap` now decides the series of `first_over_time`, `last_over_time`, `quantile_over_time`,
+  `stddev_over_time`, `stdvar_over_time`, `avg_over_time`, `max_over_time`, `min_over_time`, `sum_over_time`,
+  `rate_counter` and `rate` over the unwrapped label, as in Loki: the keep deletes every label it does not name, so
+  the lines of all streams that keep the same labels are one series. For example
+  `first_over_time({app="api-gateway"} | json | keep app, duration_ms | unwrap duration_ms [5m])` answered a series
+  per stream (674 on a test stack) and now answers one series `{app="api-gateway"}`, and
+  `sum by (app) (quantile_over_time(0.9, ...))` over the same pipeline answered the sum of a quantile per line
+  (508946.9 where Loki answers 281) and now answers Loki's value. The proxy groups VictoriaLogs' stats by the kept
+  labels, on `query` and `query_range` alike, instead of reading the rows of every line. A keep with a condition,
+  or one followed by a parser, `label_format` or `drop`, keeps its previous behaviour.
+
+## [2.241.1] - 2026-11-14
+
 ### Fixed
 
 - **Breaking:** queries Loki's parser rejects are now rejected the same way, with Loki's `400` and text, before the
