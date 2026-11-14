@@ -28,6 +28,9 @@
     "drilldown/logs-footer-query-stats | compare:observed",
     "drilldown/logs-footer-query-stats | gap:documented",
     "drilldown/logs-footer-query-stats | query",
+    "drilldown/patterns-counts-tier-step-buckets | compare:observed",
+    "drilldown/patterns-counts-tier-step-buckets | gap:open",
+    "drilldown/patterns-counts-tier-step-buckets | query",
     "drilldown/patterns-full-range-counts | compare:observed",
     "drilldown/patterns-full-range-counts | gap:fixed",
     "drilldown/patterns-full-range-counts | perf",
@@ -42,6 +45,9 @@
     "drilldown/patterns-one-series-per-level | gap:fixed",
     "drilldown/patterns-one-series-per-level | perf",
     "drilldown/patterns-one-series-per-level | query",
+    "drilldown/patterns-range-end-inside-sample | compare:observed",
+    "drilldown/patterns-range-end-inside-sample | gap:fixed",
+    "drilldown/patterns-range-end-inside-sample | query",
     "drilldown/plugin-legend-sync-race | compare:observed",
     "drilldown/plugin-legend-sync-race | gap:upstream",
     "drilldown/plugin-legend-sync-race | query",
@@ -1588,6 +1594,9 @@
     "internal/proxy/pattern_loki_answers_test.go | loki_api_v1_patterns",
     "internal/proxy/pattern_loki_answers_test.go | patterns-loki-mining",
     "internal/proxy/pattern_miner_answers_test.go | loki_api_v1_patterns",
+    "internal/proxy/pattern_tie_order_test.go | drilldown/patterns-mined-differently",
+    "internal/proxy/pattern_tie_order_test.go | loki_api_v1_patterns",
+    "internal/proxy/pattern_tie_order_test.go | patterns-loki-mining",
     "internal/proxy/pattern_tokenizer_test.go | loki_api_v1_patterns",
     "internal/proxy/patterns_backend_failure_test.go | semantics/error-layer-silent-success",
     "internal/proxy/patterns_counts_test.go | drilldown/patterns-full-range-counts",
@@ -1601,6 +1610,10 @@
     "internal/proxy/patterns_owner_test.go | patterns-loki-mining",
     "internal/proxy/patterns_owner_test.go | peer-cache-patterns",
     "internal/proxy/patterns_persistence_test.go | peer-cache-replication",
+    "internal/proxy/patterns_sample_end_test.go | drilldown/patterns-full-range-counts",
+    "internal/proxy/patterns_sample_end_test.go | drilldown/patterns-range-end-inside-sample",
+    "internal/proxy/patterns_sample_end_test.go | loki_api_v1_patterns",
+    "internal/proxy/patterns_sample_end_test.go | patterns-loki-mining",
     "internal/proxy/patterns_scope_test.go | loki_api_v1_patterns",
     "internal/proxy/patterns_scope_test.go | patterns-loki-mining",
     "internal/proxy/patterns_state_test.go | drilldown/patterns-full-range-counts",
@@ -2673,13 +2686,13 @@
     "case_consumers": {
       "any": 35,
       "api": 95,
-      "drilldown": 50,
+      "drilldown": 52,
       "explore": 184,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 598,
+      "go": 600,
       "playwright": 1
     },
     "page_kinds": {
@@ -2698,8 +2711,8 @@
     },
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
-    "unwired_items": 105,
-    "wired_items": 358
+    "unwired_items": 106,
+    "wired_items": 359
   },
   "gates": [
     "A/B shape selection",

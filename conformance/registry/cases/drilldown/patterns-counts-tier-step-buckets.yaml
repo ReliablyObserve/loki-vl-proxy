@@ -1,0 +1,45 @@
+id: drilldown/patterns-counts-tier-step-buckets
+title: The patterns counts tier counts lines into steps by their own time, not by their 10 s sample
+pending: true
+proves:
+  - loki_api_v1_patterns
+consumer: drilldown
+why: |
+  Loki counts a line into its 10 s sample, then the sample into the step it
+  starts in (both truncated from the epoch). For a step that is not a whole
+  number of samples, such as the 14 s step of a 1-hour range (the range over
+  250 points), a line near a step boundary can sit in a different step than
+  its own time gives.
+
+  The counts tier, which answers selectors whose lines exceed
+  -patterns-exact-max-lines and the pattern state's bounds, asks VictoriaLogs
+  for the lines per step (stats by _time:<step>), so each line is counted in
+  the step its own time falls in. With a step of whole samples (10 s, 20 s,
+  60 s, ...) that is Loki's answer; with any other step a step's count can
+  differ from Loki's by the lines whose sample starts in the step before.
+  Counting per 10 s and summing in the proxy would give Loki's steps but
+  multiply the timeline's rows by the step over 10 s.
+request:
+  method: GET
+  path: /loki/api/v1/patterns
+  params:
+    query: '{env="production"}'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data]
+  expect: |
+    Loki's samples per step for a selector the counts tier answers, with a
+    step that is not a multiple of 10 s.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/proxy/patterns_counts.go (patternTimelineQuery)'
+  loki: 'recorded answers: line into its 10 s sample, sample into its step'
+  proxy: 'line into the step its own time falls in'
+  planned_test: 'TestPatternsRangeEndingInsideASampleCountsItWhole (internal/proxy; the counts tier runs only for steps of whole samples there)'
+  clusters: []
