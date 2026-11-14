@@ -654,7 +654,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	if foldWithout {
 		var capErr error
 		if result, capErr = p.capWithoutFold(r.Context(), result); capErr != nil {
-			p.writeError(w, http.StatusBadRequest, capErr.Error())
+			p.writeErr(w, r.Context(), capErr)
 			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 			return
 		}
@@ -783,7 +783,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	if foldWithout {
 		var capErr error
 		if result, capErr = p.capWithoutFold(r.Context(), result); capErr != nil {
-			p.writeError(w, http.StatusBadRequest, capErr.Error())
+			p.writeErr(w, r.Context(), capErr)
 			if code := unwrapRecordedStatus(r.Context(), http.StatusBadRequest); !silent {
 				p.metrics.RecordRequest("query_range", code, time.Since(start))
 			}

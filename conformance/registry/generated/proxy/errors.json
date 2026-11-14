@@ -88,7 +88,19 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
-      "expression": "r.Context(), errors.New(\"invalid alerting backend response\"), shape",
+      "expression": "r.Context(), alertingBackendFailure(err), shape",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/alerting.go proxyAlertingRead",
+      "writer": "writeErrShaped"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), alertingBackendFailure(err), shape",
       "kind": "layer",
       "message": null,
       "status": null,
@@ -124,7 +136,19 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
-      "expression": "r.Context(), fmt.Errorf(\"invalid ruler backend response: %w\", err), writeLokiHTTPError",
+      "expression": "r.Context(), alertingBackendFailure(fmt.Errorf(\"invalid ruler backend response: %w\", err)), writeLokiHTTPError",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/alerting.go handleLegacyRules",
+      "writer": "writeErrShaped"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), alertingBackendFailure(errAlertingErrorBody), writeLokiHTTPError",
       "kind": "layer",
       "message": null,
       "status": null,
@@ -205,16 +229,16 @@
       "writer": "writeErr"
     },
     {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "bad_data",
-      "expression": "err.Error()",
-      "kind": "dynamic",
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), err",
+      "kind": "layer",
       "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/binary_aggregation_range.go binaryAggregationResponse",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": true,
@@ -289,16 +313,16 @@
       "writer": "writeErr"
     },
     {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "bad_data",
-      "expression": "err.Error()",
-      "kind": "dynamic",
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), err",
+      "kind": "layer",
       "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/binary_logql.go proxyBinaryLogQL",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -495,14 +519,14 @@
     {
       "dynamic": false,
       "error_text": false,
-      "error_type": "bad_data",
-      "expression": "msg",
-      "kind": "literal",
-      "message": "multi-tenant sub-request failed",
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
+      "error_type": null,
+      "expression": "context.Background(), err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/http_utils.go validateQuery",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": true,
@@ -697,6 +721,18 @@
       "writer": "writeErr"
     },
     {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/label_handlers.go lokiQueryParamValidation",
+      "writer": "fail"
+    },
+    {
       "dynamic": true,
       "error_text": false,
       "error_type": "bad_data",
@@ -829,16 +865,16 @@
       "writer": "fail"
     },
     {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "bad_data",
-      "expression": "capErr.Error()",
-      "kind": "dynamic",
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), capErr",
+      "kind": "layer",
       "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -877,16 +913,16 @@
       "writer": "writeErr"
     },
     {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "bad_data",
-      "expression": "capErr.Error()",
-      "kind": "dynamic",
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), capErr",
+      "kind": "layer",
       "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/metric_agg.go handleRangeMetricPostAggregation",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -961,22 +997,22 @@
       "writer": "writeErr"
     },
     {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "bad_data",
-      "expression": "newSeriesLimitError(ctx, limit).Error()",
-      "kind": "dynamic",
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "ctx, newSeriesLimitError(ctx, limit)",
+      "kind": "layer",
       "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/metric_binary.go proxyStatsQueryRangeDirectAnchored",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
       "error_text": false,
       "error_type": null,
-      "expression": "ctx, fmt.Errorf(\"manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes\", p.limits().BufferedBackendBodyByte",
+      "expression": "ctx, newManualMetricResponseTooLarge(int64(p.limits().BufferedBackendBodyBytes))",
       "kind": "layer",
       "message": null,
       "status": null,
@@ -1009,16 +1045,16 @@
       "writer": "writeErr"
     },
     {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "bad_data",
-      "expression": "err.Error()",
-      "kind": "dynamic",
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "ctx, err",
+      "kind": "layer",
       "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/metric_binary.go proxyStatsQueryRangeDirectAnchored",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -1120,7 +1156,31 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
+      "expression": "r.Context(), readErr",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/metric_binary.go proxyBinaryMetric",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
       "expression": "r.Context(), e",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/metric_binary.go proxyBinaryMetric",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), readErr",
       "kind": "layer",
       "message": null,
       "status": null,
@@ -1145,6 +1205,18 @@
       "error_text": false,
       "error_type": null,
       "expression": "r.Context(), rightErr",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/metric_binary.go proxyBinaryMetric",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), err",
       "kind": "layer",
       "message": null,
       "status": null,
@@ -1237,16 +1309,16 @@
       "writer": "writeError"
     },
     {
-      "dynamic": true,
+      "dynamic": false,
       "error_text": false,
-      "error_type": "bad_data",
-      "expression": "fmt.Sprintf(\"multi-tenant fanout exceeds limit of %d tenants; raise -multi-tenant-max-fanout or query fewer tenants\", p.limits().MultiTenantFanout)",
-      "kind": "dynamic",
-      "message": "multi-tenant fanout exceeds limit of %d tenants; raise -multi-tenant-max-fanout or query fewer tenants",
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
+      "error_type": null,
+      "expression": "r.Context(), lokierr.LimitReached(flagMultiTenantMaxFanout, int64(fanout), &limitCause{msg: fmt.Sprintf(\"multi-tenant fanout exceeds limit of %d tenants; raise ",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/multitenant.go handleMultiTenantFanout",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -1297,28 +1369,28 @@
       "writer": "writeErr"
     },
     {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "bad_data",
-      "expression": "err.Error()",
-      "kind": "dynamic",
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), err",
+      "kind": "layer",
       "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/multitenant.go handleMultiTenantFanout",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
       "error_text": false,
-      "error_type": "bad_data",
-      "expression": "\"multi-tenant merged response exceeds configured safety limit; raise -multi-tenant-max-merged-response-bytes or query fewer tenants\"",
-      "kind": "literal",
-      "message": "multi-tenant merged response exceeds configured safety limit; raise -multi-tenant-max-merged-response-bytes or query fewer tenants",
-      "status": 413,
-      "status_token": "http.StatusRequestEntityTooLarge",
+      "error_type": null,
+      "expression": "r.Context(), lokierr.ResponseTooLarge(flagMultiTenantMaxMergedBytes, int64(len(body)), int64(p.limits().MultiTenantMergedBytes), &limitCause{msg: \"multi-tenant ",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/multitenant.go handleMultiTenantFanout",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -1619,6 +1691,18 @@
       "status_token": "http.StatusMethodNotAllowed",
       "where": "internal/proxy/patterns.go handleDelete",
       "writer": "writeBodylessError"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/proxy.go rejectAdmission",
+      "writer": "fail"
     },
     {
       "dynamic": false,
@@ -2440,13 +2524,25 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
-      "expression": "ctx, msg",
+      "expression": "ctx, statsErrorBodyFailure(msg)",
       "kind": "layer",
       "message": null,
       "status": null,
       "status_token": null,
       "where": "internal/proxy/stream_processing.go wrapStatsOrFail",
-      "writer": "writeVLStatsErrorBody"
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "ctx, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/stream_processing.go wrapStatsOrFail",
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -2560,12 +2656,12 @@
   "summary": {
     "by_status": {
       "400": {
-        "count": 34,
-        "dynamic_sites": 26,
-        "error_text_sites": 17,
+        "count": 25,
+        "dynamic_sites": 18,
+        "error_text_sites": 10,
         "error_type": "bad_data",
         "layer_sites": 0,
-        "literal_sites": 8,
+        "literal_sites": 7,
         "messages": [
           "both start and end parameters required for delete",
           "delete requires X-Delete-Confirmation: true header for safety",
@@ -2573,7 +2669,6 @@
           "end must be after start",
           "invalid end timestamp: ",
           "invalid start timestamp: ",
-          "multi-tenant fanout exceeds limit of %d tenants; raise -multi-tenant-max-fanout or query fewer tenants",
           "multi-tenant sub-request failed",
           "not supported value %q",
           "query parameter required for delete",
@@ -2633,18 +2728,6 @@
         ],
         "no_body_sites": 1
       },
-      "413": {
-        "count": 1,
-        "dynamic_sites": 0,
-        "error_text_sites": 0,
-        "error_type": "bad_data",
-        "layer_sites": 0,
-        "literal_sites": 1,
-        "messages": [
-          "multi-tenant merged response exceeds configured safety limit; raise -multi-tenant-max-merged-response-bytes or query fewer tenants"
-        ],
-        "no_body_sites": 0
-      },
       "429": {
         "count": 1,
         "dynamic_sites": 0,
@@ -2671,11 +2754,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 159,
+        "count": 177,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 155,
+        "layer_sites": 173,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2683,6 +2766,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 213
+    "call_sites": 221
   }
 }

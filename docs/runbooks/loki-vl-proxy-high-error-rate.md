@@ -13,10 +13,10 @@
 1. `sum(rate(loki_vl_proxy_requests_total{status=~"5.."}[5m])) by (endpoint)`
 2. `histogram_quantile(0.95, sum(rate(loki_vl_proxy_backend_duration_seconds_bucket[5m])) by (le, endpoint))`
 3. `rate(loki_vl_proxy_translation_errors_total[5m])`
-4. Review proxy logs for failing paths and backend status codes. Error messages
-   containing `limit exceeded` or `budget exceeded` (and `503` responses with
-   `too many concurrent queries`) point to execution-limit rejections; identify
-   the client or tenant sending those queries.
+4. Review proxy logs for failing paths and backend status codes. Log lines
+   with a `limit_flag` field (and `429` responses with
+   `too many outstanding requests`) point to execution-limit rejections; the
+   flag names the limit; identify the client or tenant sending those queries.
 
 ## Mitigation
 

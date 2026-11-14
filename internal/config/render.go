@@ -68,7 +68,7 @@ func RenderLimitsRegistry(flags []Flag) (string, error) {
 	var b strings.Builder
 	b.WriteString(generatedHeader)
 	b.WriteString("# Limits registry\n\n")
-	b.WriteString("Every operator-tunable bound on the work one request may do. A limit is never a silent truncation: hitting one returns an error that names the flag, so an operator can raise it. Zero selects the built-in default of each flag; startup rejects negative values.\n\n")
+	b.WriteString("Every operator-tunable bound on the work one request may do. A limit is never a silent truncation: hitting one returns an error with Loki's text for the limit's class, and the request error log line names the flag (`limit_flag`), so an operator can raise it. Zero selects the built-in default of each flag; startup rejects negative values.\n\n")
 	b.WriteString("Fleet arithmetic: per-replica limits multiply by the replica count, and every byte limit multiplies by the requests that hold a response at once (`-max-concurrent`).\n\n")
 	b.WriteString("| Limit | Flag | Helm value | Default | Unit | Bounds | Error when hit | Metric | Alert | Per tenant | Loki parity |\n|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, limit := range Limits {

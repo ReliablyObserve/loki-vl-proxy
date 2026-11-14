@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const rowLimitErrorText = "manual range metric row limit exceeded (3); narrow the query or increase -manual-range-metric-row-limit"
+const rowLimitErrorText = "limit reached while evaluating the query"
 
 // rowLimitBackend answers every VictoriaLogs call but the raw row fetch with
 // an error carrying text no client may read, which keeps the metric on the
@@ -70,7 +70,7 @@ func rowLimitRequest(p *Proxy, endpoint, query string) *httptest.ResponseRecorde
 // bad_data as Loki answers a query over one of its limits (logqlmodel.ErrLimit,
 // pkg/util/server/error.go:110-118), and the text names the flag. The
 // client reads nothing of VictoriaLogs or Go.
-// conformance: heavy-metric-fetch-bounds, limits/row-limit-error-names-flag
+// conformance: heavy-metric-fetch-bounds, limits/row-limit-answers-loki-limit-text
 func TestRangeMetricRowLimitErrorIsLokiShaped(t *testing.T) {
 	for _, tc := range []struct{ name, query string }{
 		// The Logs Drilldown level breakdown over `| json`, read by the ordered JSON evaluator.
@@ -106,7 +106,7 @@ func TestRangeMetricRowLimitErrorIsLokiShaped(t *testing.T) {
 }
 
 // Exactly -manual-range-metric-row-limit rows is within the limit.
-// conformance: heavy-metric-fetch-bounds, limits/row-limit-error-names-flag
+// conformance: heavy-metric-fetch-bounds, limits/row-limit-answers-loki-limit-text
 func TestRangeMetricRowLimitAdmitsRowsAtTheLimit(t *testing.T) {
 	srv := rowLimitBackend(t, 3, nil)
 	p := newFilterPushdownProxy(t, srv.URL)
@@ -118,7 +118,7 @@ func TestRangeMetricRowLimitAdmitsRowsAtTheLimit(t *testing.T) {
 
 // The raw fetch is cut off as the limit is hit: the proxy hangs up on a
 // VictoriaLogs that keeps sending rows, so no further row is read or buffered.
-// conformance: heavy-metric-fetch-bounds, limits/row-limit-error-names-flag
+// conformance: heavy-metric-fetch-bounds, limits/row-limit-answers-loki-limit-text
 func TestRangeMetricRowLimitStopsReadingUpstream(t *testing.T) {
 	for _, tc := range []struct{ name, query string }{
 		{"ordered json", `sum by (detected_level) (count_over_time({env="production"} | json | __error__!="" [5m]))`},
@@ -130,7 +130,7 @@ func TestRangeMetricRowLimitStopsReadingUpstream(t *testing.T) {
 			p := newFilterPushdownProxy(t, srv.URL)
 			p.rangeMetricRowLimit = 3
 			rec := rowLimitRequest(p, "query_range", tc.query)
-			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") {
+			if rec.Code != http.StatusBadRequest || rec.Body.String() != rowLimitErrorText {
 				t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 			}
 			select {

@@ -416,3 +416,27 @@ func FuzzProxyLifecycleNoGoroutineLeak(f *testing.F) {
 		}
 	})
 }
+
+// conformance: shutdown-releases-background-work
+// TestUnclosedProxyIsCollected: a proxy dropped without Close is garbage once
+// nothing outside it refers to it. Its background goroutines (the admission
+// limiter's cleanup among them) must not reach the Proxy, or every proxy a
+// caller forgets to close keeps its caches for good.
+func TestUnclosedProxyIsCollected(t *testing.T) {
+	collected := make(chan struct{})
+	func() {
+		p := newTestProxyWithOptions(t)
+		p.RegisterRoutes(http.NewServeMux())
+		runtime.AddCleanup(p, func(ch chan struct{}) { close(ch) }, collected)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		runtime.GC()
+		select {
+		case <-collected:
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	t.Fatal("a proxy that was never closed is still reachable after GC: a background goroutine holds it")
+}

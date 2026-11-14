@@ -30,7 +30,7 @@ func TestScalarMatrix_ApplyScalarOp_AllOperators(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.op, func(t *testing.T) {
-			out := applyScalarOp(body, tc.op, 2, "matrix")
+			out := okBytes(applyScalarOp(body, tc.op, 2, "matrix"))
 			got := firstMatrixValue(t, out)
 			assertApproxEqual(t, got, tc.want)
 		})
@@ -59,7 +59,7 @@ func TestScalarMatrix_ApplyScalarOpReverse_AllOperators(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.op, func(t *testing.T) {
-			out := applyScalarOpReverse(body, tc.op, 2, "matrix")
+			out := okBytes(applyScalarOpReverse(body, tc.op, 2, "matrix"))
 			got := firstMatrixValue(t, out)
 			assertApproxEqual(t, got, tc.want)
 		})
@@ -71,20 +71,20 @@ func TestScalarMatrix_ApplyScalarOp_DivisionAndModuloByZero(t *testing.T) {
 		body := scalarMatrixBody(4)
 
 		// Loki: a zero divisor of / and % is NaN (syntax.MergeBinOp).
-		outDiv := applyScalarOp(body, "/", 0, "matrix")
+		outDiv := okBytes(applyScalarOp(body, "/", 0, "matrix"))
 		assertNaN(t, firstMatrixValue(t, outDiv))
 
-		outMod := applyScalarOp(body, "%", 0, "matrix")
+		outMod := okBytes(applyScalarOp(body, "%", 0, "matrix"))
 		assertNaN(t, firstMatrixValue(t, outMod))
 	})
 
 	t.Run("reverse_zero_denominator", func(t *testing.T) {
 		body := scalarMatrixBody(0)
 
-		outDiv := applyScalarOpReverse(body, "/", 2, "matrix")
+		outDiv := okBytes(applyScalarOpReverse(body, "/", 2, "matrix"))
 		assertNaN(t, firstMatrixValue(t, outDiv))
 
-		outMod := applyScalarOpReverse(body, "%", 2, "matrix")
+		outMod := okBytes(applyScalarOpReverse(body, "%", 2, "matrix"))
 		assertNaN(t, firstMatrixValue(t, outMod))
 	})
 }
@@ -92,30 +92,30 @@ func TestScalarMatrix_ApplyScalarOp_DivisionAndModuloByZero(t *testing.T) {
 func TestScalarMatrix_CombineBinaryMetricResults_RoutesScalarSides(t *testing.T) {
 	metricBody := scalarMatrixBody(4)
 
-	rightScalarOut := combineBinaryMetricResults(metricBody, nil, "+", "matrix", false, true, "", "2")
+	rightScalarOut := okBytes(combineBinaryMetricResults(metricBody, nil, "+", "matrix", false, true, "", "2"))
 	assertApproxEqual(t, firstMatrixValue(t, rightScalarOut), 6)
 
-	leftScalarOut := combineBinaryMetricResults(nil, metricBody, "-", "matrix", true, false, "2", "")
+	leftScalarOut := okBytes(combineBinaryMetricResults(nil, metricBody, "-", "matrix", true, false, "2", ""))
 	assertApproxEqual(t, firstMatrixValue(t, leftScalarOut), -2)
 }
 
 func TestScalarMatrix_ApplyScalarOp_InstantVectorSample(t *testing.T) {
 	body := scalarVectorBody(4)
 
-	out := applyScalarOp(body, "*", 2, "vector")
+	out := okBytes(applyScalarOp(body, "*", 2, "vector"))
 	assertApproxEqual(t, firstMatrixValue(t, out), 8)
 
-	reverse := applyScalarOpReverse(body, "-", 2, "vector")
+	reverse := okBytes(applyScalarOpReverse(body, "-", 2, "vector"))
 	assertApproxEqual(t, firstMatrixValue(t, reverse), -2)
 }
 
 func TestScalarMatrix_ApplyScalarOp_PromDataResultShape(t *testing.T) {
 	body := scalarPromVectorBody(4)
 
-	out := applyScalarOp(body, "*", 2, "vector")
+	out := okBytes(applyScalarOp(body, "*", 2, "vector"))
 	assertApproxEqual(t, firstMatrixValue(t, out), 8)
 
-	reverse := applyScalarOpReverse(body, "-", 2, "vector")
+	reverse := okBytes(applyScalarOpReverse(body, "-", 2, "vector"))
 	assertApproxEqual(t, firstMatrixValue(t, reverse), -2)
 }
 
@@ -123,28 +123,8 @@ func TestScalarMatrix_CombineMetricResults_PromDataResultShape(t *testing.T) {
 	left := []byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"app":"a"},"value":[1,"4"]}]}}`)
 	right := []byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"app":"a"},"value":[1,"2"]}]}}`)
 
-	out := combineBinaryMetricResults(left, right, "*", "vector", false, false, "", "")
+	out := okBytes(combineBinaryMetricResults(left, right, "*", "vector", false, false, "", ""))
 	assertApproxEqual(t, firstMatrixValue(t, out), 8)
-}
-
-func TestScalarMatrix_ApplyScalarOp_InvalidBodyReturnsEmptySuccess(t *testing.T) {
-	out := applyScalarOp([]byte("not-json"), "+", 2, "matrix")
-
-	var payload struct {
-		Status string `json:"status"`
-		Data   struct {
-			Result []interface{} `json:"result"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(out, &payload); err != nil {
-		t.Fatalf("decode fallback response: %v", err)
-	}
-	if payload.Status != "success" {
-		t.Fatalf("expected success fallback status, got %q", payload.Status)
-	}
-	if len(payload.Data.Result) != 0 {
-		t.Fatalf("expected empty fallback result, got %#v", payload.Data.Result)
-	}
 }
 
 func scalarMatrixBody(v float64) []byte {

@@ -620,7 +620,7 @@ func (p *Proxy) checkMergedListingCap(ctx context.Context, path string, merged [
 	p.observeInternalOperation(ctx, "label_values_response_cap", "rejected", 0)
 	p.log.Warn("label values response exceeds -label-values-max-response-bytes",
 		"backend.route", path, "bytes_read", size, "limit", limit, "limit_flag", "-label-values-max-response-bytes")
-	return &labelValuesResponseTooLargeError{read: size, limit: limit}
+	return newLabelValuesTooLarge(size, limit)
 }
 
 func inventoryOutcome(scanned, revalidated, reused int) string {

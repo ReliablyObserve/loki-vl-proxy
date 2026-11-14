@@ -491,17 +491,6 @@ func TestCoverage_ProxyStatsQuery(t *testing.T) {
 // Coverage gap: wrapAsLokiResponse all 3 branches
 // =============================================================================
 
-func TestCoverage_WrapAsLokiResponse_InvalidJSON(t *testing.T) {
-	result := wrapAsLokiResponse([]byte("not json"), "matrix")
-	var resp map[string]interface{}
-	if err := json.Unmarshal(result, &resp); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-	if resp["status"] != "success" {
-		t.Error("expected success status for invalid input")
-	}
-}
-
 func TestCoverage_WrapAsLokiResponse_WithDataField(t *testing.T) {
 	input, _ := json.Marshal(map[string]interface{}{
 		"data": map[string]interface{}{
@@ -509,7 +498,7 @@ func TestCoverage_WrapAsLokiResponse_WithDataField(t *testing.T) {
 			"result":     []interface{}{},
 		},
 	})
-	result := wrapAsLokiResponse(input, "vector")
+	result := okBytes(wrapAsLokiResponse(input, "vector"))
 	var resp map[string]interface{}
 	json.Unmarshal(result, &resp)
 	if resp["status"] != "success" {
@@ -525,7 +514,7 @@ func TestCoverage_WrapAsLokiResponse_RawJSON(t *testing.T) {
 		"resultType": "matrix",
 		"result":     []interface{}{},
 	})
-	result := wrapAsLokiResponse(input, "matrix")
+	result := okBytes(wrapAsLokiResponse(input, "matrix"))
 	var resp map[string]interface{}
 	json.Unmarshal(result, &resp)
 	if resp["status"] != "success" {
@@ -667,4 +656,12 @@ func TestGap_VolumeRange_SevenDayMinuteRange(t *testing.T) {
 			t.Fatalf("unexpected values %v", values)
 		}
 	}
+}
+
+// okBytes is the answer of a call that must not fail: a failure ends the test.
+func okBytes(b []byte, err error) []byte {
+	if err != nil {
+		panic(err)
+	}
+	return b
 }

@@ -270,7 +270,7 @@ func TestSeriesLevelAggregationStaysWithinResponseBudget(t *testing.T) {
 					res := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "0"})
 					closeBackend()
 					matrixFoldOff.Store(false)
-					if res.Code == 500 && strings.Contains(res.Body.String(), "manual metric response exceeds") {
+					if res.Code == 500 && strings.Contains(res.Body.String(), "ResourceExhausted") {
 						over++
 					}
 				}
@@ -351,7 +351,7 @@ func TestAggregationOverBinaryRateCountRatioSlidingWindowWithinBudget(t *testing
 	}
 	defer func() { _ = p.Shutdown(context.Background()) }()
 	target := fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&step=%d", url.QueryEscape(query), start/1e9, end/1e9, int64(step/time.Second))
-	if res := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "0"}); res.Code != http.StatusInternalServerError || !strings.Contains(res.Body.String(), "manual metric response exceeds") {
+	if res := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "0"}); res.Code != http.StatusInternalServerError || !strings.Contains(res.Body.String(), "ResourceExhausted") {
 		t.Fatalf("without the fold in the builder the %d byte bound should be passed: %d %s", budget, res.Code, res.Body)
 	}
 }

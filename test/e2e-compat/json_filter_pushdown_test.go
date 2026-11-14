@@ -73,7 +73,7 @@ func jsonFilterFixture(s0 time.Time) []jsonVolumeStreamLine {
 // VictoriaLogs stats buckets, never from raw rows; the spelling probe keeps
 // the exact raw evaluator for a stream in which a nested object yields the
 // filtered label in Loki. On v1.91.0 every one of these shapes fell to the
-// raw-row evaluator (`manual range metric row limit exceeded` at 3 h).
+// raw-row evaluator (`limit reached while evaluating the query` at 3 h).
 // conformance: parser-error-and-label-collision, semantics/json-filter-pushdown-underscore-label, semantics/json-filter-pushdown-without-error-drop, semantics/json-filter-pushdown-ungrouped-sum, semantics/json-filter-pushdown-translated-label, semantics/json-label-spelling-probe
 func TestRangeMetricCompatibilityJSONFilterPushdown(t *testing.T) {
 	now := time.Now()

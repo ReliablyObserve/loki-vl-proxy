@@ -73,14 +73,14 @@
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "binary expression exceeds its evaluation budget; narrow the query or increase -binary-evaluation-budget",
+    "body": "limit reached while evaluating the query",
     "returned": 400
   },
   "writeErr/body too large": {
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (4097 vs. 4096)",
     "returned": 500
   },
   "writeErr/ctx canceled": {
@@ -115,7 +115,14 @@
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024); raise -label-values-max-response-bytes or narrow the query",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024)",
+    "returned": 500
+  },
+  "writeErr/manual metric response too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (65 vs. 64)",
     "returned": 500
   },
   "writeErr/nil": {
@@ -132,11 +139,11 @@
     "body": "pipeline error: invalid � byte",
     "returned": 400
   },
-  "writeErr/proxy limit text": {
+  "writeErr/proxy limit text is no limit": {
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes",
+    "body": "Internal Server Error",
     "returned": 500
   },
   "writeErr/proxy limit text with quote": {
@@ -153,11 +160,18 @@
     "body": "Internal Server Error",
     "returned": 500
   },
+  "writeErr/query length limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "parse error : input size too long (600 \u003e 512)",
+    "returned": 400
+  },
   "writeErr/row limit": {
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "manual range metric row limit exceeded (100 series); the query matches 2000 log lines; narrow the query or increase -manual-range-metric-row-limit",
+    "body": "limit reached while evaluating the query",
     "returned": 400
   },
   "writeErr/series limit": {
@@ -171,29 +185,29 @@
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "manual range metric row limit exceeded (1000); narrow the query or increase -manual-range-metric-row-limit",
+    "body": "limit reached while evaluating the query",
     "returned": 400
   },
   "writeErr/text context canceled": {
-    "status": 499,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "the request was cancelled by the client",
-    "returned": 499
+    "body": "Internal Server Error",
+    "returned": 500
   },
   "writeErr/text deadline exceeded": {
-    "status": 504,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
-    "returned": 504
+    "body": "Internal Server Error",
+    "returned": 500
   },
   "writeErr/text timeout": {
-    "status": 504,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
-    "returned": 504
+    "body": "Internal Server Error",
+    "returned": 500
   },
   "writeErr/translator parse": {
     "status": 400,
@@ -325,14 +339,14 @@
     "status": 400,
     "content_type": "application/json",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"binary expression exceeds its evaluation budget; narrow the query or increase -binary-evaluation-budget\"}",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"limit reached while evaluating the query\"}",
     "returned": 400
   },
   "writeErrShaped/alerts_json/body too large": {
     "status": 500,
     "content_type": "application/json",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes\"}",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (4097 vs. 4096)\"}",
     "returned": 500
   },
   "writeErrShaped/alerts_json/ctx canceled": {
@@ -367,7 +381,14 @@
     "status": 500,
     "content_type": "application/json",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024); raise -label-values-max-response-bytes or narrow the query\"}",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024)\"}",
+    "returned": 500
+  },
+  "writeErrShaped/alerts_json/manual metric response too large": {
+    "status": 500,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (65 vs. 64)\"}",
     "returned": 500
   },
   "writeErrShaped/alerts_json/nil": {
@@ -384,11 +405,11 @@
     "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"pipeline error: invalid � byte\"}",
     "returned": 400
   },
-  "writeErrShaped/alerts_json/proxy limit text": {
+  "writeErrShaped/alerts_json/proxy limit text is no limit": {
     "status": 500,
     "content_type": "application/json",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes\"}",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
     "returned": 500
   },
   "writeErrShaped/alerts_json/proxy limit text with quote": {
@@ -405,11 +426,18 @@
     "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
     "returned": 500
   },
+  "writeErrShaped/alerts_json/query length limit": {
+    "status": 400,
+    "content_type": "application/json",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"parse error : input size too long (600 \\u003e 512)\"}",
+    "returned": 400
+  },
   "writeErrShaped/alerts_json/row limit": {
     "status": 400,
     "content_type": "application/json",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"manual range metric row limit exceeded (100 series); the query matches 2000 log lines; narrow the query or increase -manual-range-metric-row-limit\"}",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"limit reached while evaluating the query\"}",
     "returned": 400
   },
   "writeErrShaped/alerts_json/series limit": {
@@ -423,29 +451,29 @@
     "status": 400,
     "content_type": "application/json",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"manual range metric row limit exceeded (1000); narrow the query or increase -manual-range-metric-row-limit\"}",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"limit reached while evaluating the query\"}",
     "returned": 400
   },
   "writeErrShaped/alerts_json/text context canceled": {
     "status": 500,
     "content_type": "application/json",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"the request was cancelled by the client\"}",
-    "returned": 499
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
   },
   "writeErrShaped/alerts_json/text deadline exceeded": {
     "status": 500,
     "content_type": "application/json",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
-    "returned": 504
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
   },
   "writeErrShaped/alerts_json/text timeout": {
     "status": 500,
     "content_type": "application/json",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
-    "returned": 504
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
   },
   "writeErrShaped/alerts_json/translator parse": {
     "status": 400,
@@ -577,14 +605,14 @@
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "binary expression exceeds its evaluation budget; narrow the query or increase -binary-evaluation-budget",
+    "body": "limit reached while evaluating the query",
     "returned": 400
   },
   "writeErrShaped/frontend/body too large": {
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (4097 vs. 4096)",
     "returned": 500
   },
   "writeErrShaped/frontend/ctx canceled": {
@@ -619,7 +647,14 @@
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024); raise -label-values-max-response-bytes or narrow the query",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024)",
+    "returned": 500
+  },
+  "writeErrShaped/frontend/manual metric response too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (65 vs. 64)",
     "returned": 500
   },
   "writeErrShaped/frontend/nil": {
@@ -636,11 +671,11 @@
     "body": "pipeline error: invalid � byte",
     "returned": 400
   },
-  "writeErrShaped/frontend/proxy limit text": {
+  "writeErrShaped/frontend/proxy limit text is no limit": {
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes",
+    "body": "Internal Server Error",
     "returned": 500
   },
   "writeErrShaped/frontend/proxy limit text with quote": {
@@ -657,11 +692,18 @@
     "body": "Internal Server Error",
     "returned": 500
   },
+  "writeErrShaped/frontend/query length limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "parse error : input size too long (600 \u003e 512)",
+    "returned": 400
+  },
   "writeErrShaped/frontend/row limit": {
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "manual range metric row limit exceeded (100 series); the query matches 2000 log lines; narrow the query or increase -manual-range-metric-row-limit",
+    "body": "limit reached while evaluating the query",
     "returned": 400
   },
   "writeErrShaped/frontend/series limit": {
@@ -675,29 +717,29 @@
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "manual range metric row limit exceeded (1000); narrow the query or increase -manual-range-metric-row-limit",
+    "body": "limit reached while evaluating the query",
     "returned": 400
   },
   "writeErrShaped/frontend/text context canceled": {
-    "status": 499,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "the request was cancelled by the client",
-    "returned": 499
+    "body": "Internal Server Error",
+    "returned": 500
   },
   "writeErrShaped/frontend/text deadline exceeded": {
-    "status": 504,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
-    "returned": 504
+    "body": "Internal Server Error",
+    "returned": 500
   },
   "writeErrShaped/frontend/text timeout": {
-    "status": 504,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
-    "returned": 504
+    "body": "Internal Server Error",
+    "returned": 500
   },
   "writeErrShaped/frontend/translator parse": {
     "status": 400,
@@ -829,14 +871,14 @@
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "binary expression exceeds its evaluation budget; narrow the query or increase -binary-evaluation-budget\n",
+    "body": "limit reached while evaluating the query\n",
     "returned": 400
   },
   "writeErrShaped/http_error/body too large": {
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes\n",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (4097 vs. 4096)\n",
     "returned": 500
   },
   "writeErrShaped/http_error/ctx canceled": {
@@ -871,7 +913,14 @@
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024); raise -label-values-max-response-bytes or narrow the query\n",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024)\n",
+    "returned": 500
+  },
+  "writeErrShaped/http_error/manual metric response too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (65 vs. 64)\n",
     "returned": 500
   },
   "writeErrShaped/http_error/nil": {
@@ -888,11 +937,11 @@
     "body_quoted": "\"pipeline error: invalid \\xff byte\\n\"",
     "returned": 400
   },
-  "writeErrShaped/http_error/proxy limit text": {
+  "writeErrShaped/http_error/proxy limit text is no limit": {
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes\n",
+    "body": "Internal Server Error\n",
     "returned": 500
   },
   "writeErrShaped/http_error/proxy limit text with quote": {
@@ -909,11 +958,18 @@
     "body": "Internal Server Error\n",
     "returned": 500
   },
+  "writeErrShaped/http_error/query length limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "parse error : input size too long (600 \u003e 512)\n",
+    "returned": 400
+  },
   "writeErrShaped/http_error/row limit": {
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "manual range metric row limit exceeded (100 series); the query matches 2000 log lines; narrow the query or increase -manual-range-metric-row-limit\n",
+    "body": "limit reached while evaluating the query\n",
     "returned": 400
   },
   "writeErrShaped/http_error/series limit": {
@@ -927,29 +983,29 @@
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "manual range metric row limit exceeded (1000); narrow the query or increase -manual-range-metric-row-limit\n",
+    "body": "limit reached while evaluating the query\n",
     "returned": 400
   },
   "writeErrShaped/http_error/text context canceled": {
-    "status": 499,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "the request was cancelled by the client\n",
-    "returned": 499
+    "body": "Internal Server Error\n",
+    "returned": 500
   },
   "writeErrShaped/http_error/text deadline exceeded": {
-    "status": 504,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\n",
-    "returned": 504
+    "body": "Internal Server Error\n",
+    "returned": 500
   },
   "writeErrShaped/http_error/text timeout": {
-    "status": 504,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\n",
-    "returned": 504
+    "body": "Internal Server Error\n",
+    "returned": 500
   },
   "writeErrShaped/http_error/translator parse": {
     "status": 400,
@@ -1081,14 +1137,14 @@
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"binary expression exceeds its evaluation budget; narrow the query or increase -binary-evaluation-budget\"}",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"limit reached while evaluating the query\"}",
     "returned": 400
   },
   "writeErrShaped/ruler_json/body too large": {
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes\"}",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (4097 vs. 4096)\"}",
     "returned": 500
   },
   "writeErrShaped/ruler_json/ctx canceled": {
@@ -1123,7 +1179,14 @@
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024); raise -label-values-max-response-bytes or narrow the query\"}",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024)\"}",
+    "returned": 500
+  },
+  "writeErrShaped/ruler_json/manual metric response too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (65 vs. 64)\"}",
     "returned": 500
   },
   "writeErrShaped/ruler_json/nil": {
@@ -1140,11 +1203,11 @@
     "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"pipeline error: invalid � byte\"}",
     "returned": 400
   },
-  "writeErrShaped/ruler_json/proxy limit text": {
+  "writeErrShaped/ruler_json/proxy limit text is no limit": {
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes\"}",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
     "returned": 500
   },
   "writeErrShaped/ruler_json/proxy limit text with quote": {
@@ -1161,11 +1224,18 @@
     "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
     "returned": 500
   },
+  "writeErrShaped/ruler_json/query length limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"parse error : input size too long (600 \\u003e 512)\"}",
+    "returned": 400
+  },
   "writeErrShaped/ruler_json/row limit": {
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"manual range metric row limit exceeded (100 series); the query matches 2000 log lines; narrow the query or increase -manual-range-metric-row-limit\"}",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"limit reached while evaluating the query\"}",
     "returned": 400
   },
   "writeErrShaped/ruler_json/series limit": {
@@ -1179,29 +1249,29 @@
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"manual range metric row limit exceeded (1000); narrow the query or increase -manual-range-metric-row-limit\"}",
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"limit reached while evaluating the query\"}",
     "returned": 400
   },
   "writeErrShaped/ruler_json/text context canceled": {
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"the request was cancelled by the client\"}",
-    "returned": 499
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
   },
   "writeErrShaped/ruler_json/text deadline exceeded": {
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
-    "returned": 504
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
   },
   "writeErrShaped/ruler_json/text timeout": {
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed\"}",
-    "returned": 504
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
   },
   "writeErrShaped/ruler_json/translator parse": {
     "status": 400,
@@ -1333,14 +1403,14 @@
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "binary expression exceeds its evaluation budget; narrow the query or increase -binary-evaluation-budget",
+    "body": "limit reached while evaluating the query",
     "returned": 0
   },
   "writeGrafanaStatsFailure/body too large": {
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "backend response exceeds 4096 bytes; narrow the query or increase -backend-max-buffered-response-bytes",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (4097 vs. 4096)",
     "returned": 0
   },
   "writeGrafanaStatsFailure/ctx canceled": {
@@ -1375,7 +1445,14 @@
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024); raise -label-values-max-response-bytes or narrow the query",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (2048 vs. 1024)",
+    "returned": 0
+  },
+  "writeGrafanaStatsFailure/manual metric response too large": {
+    "status": 500,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (65 vs. 64)",
     "returned": 0
   },
   "writeGrafanaStatsFailure/nil": {
@@ -1392,11 +1469,11 @@
     "body": "pipeline error: invalid � byte",
     "returned": 0
   },
-  "writeGrafanaStatsFailure/proxy limit text": {
+  "writeGrafanaStatsFailure/proxy limit text is no limit": {
     "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "manual metric response exceeds 67108864 bytes; narrow the query or increase -backend-max-buffered-response-bytes",
+    "body": "Internal Server Error",
     "returned": 0
   },
   "writeGrafanaStatsFailure/proxy limit text with quote": {
@@ -1413,11 +1490,18 @@
     "body": "Internal Server Error",
     "returned": 0
   },
+  "writeGrafanaStatsFailure/query length limit": {
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "nosniff": "nosniff",
+    "body": "parse error : input size too long (600 \u003e 512)",
+    "returned": 0
+  },
   "writeGrafanaStatsFailure/row limit": {
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "manual range metric row limit exceeded (100 series); the query matches 2000 log lines; narrow the query or increase -manual-range-metric-row-limit",
+    "body": "limit reached while evaluating the query",
     "returned": 0
   },
   "writeGrafanaStatsFailure/series limit": {
@@ -1431,28 +1515,28 @@
     "status": 400,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "manual range metric row limit exceeded (1000); narrow the query or increase -manual-range-metric-row-limit",
+    "body": "limit reached while evaluating the query",
     "returned": 0
   },
   "writeGrafanaStatsFailure/text context canceled": {
-    "status": 499,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "the request was cancelled by the client",
+    "body": "Internal Server Error",
     "returned": 0
   },
   "writeGrafanaStatsFailure/text deadline exceeded": {
-    "status": 504,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "body": "Internal Server Error",
     "returned": 0
   },
   "writeGrafanaStatsFailure/text timeout": {
-    "status": 504,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed",
+    "body": "Internal Server Error",
     "returned": 0
   },
   "writeGrafanaStatsFailure/translator parse": {

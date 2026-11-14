@@ -898,5 +898,10 @@ func (p *Proxy) vlPostCoalesced(ctx context.Context, key, path string, params ur
 	if err != nil {
 		return 0, nil, err
 	}
+	// The coalescer reads a shared body up to its own bound; a body above the
+	// bytes the proxy buffers fails as every buffered read of that size does.
+	if limit := int64(p.limits().BufferedBackendBodyBytes); limit > 0 && int64(len(body)) > limit {
+		return 0, nil, newBackendBodyTooLarge(limit)
+	}
 	return status, body, nil
 }

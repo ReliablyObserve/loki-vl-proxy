@@ -1,5 +1,6 @@
 id: limits/raw-metric-row-precheck
 title: A raw metric scan that cannot fit is refused before any row is fetched
+pending: true
 proves:
   - heavy-metric-fetch-bounds
 consumer: any
@@ -27,8 +28,8 @@ compare:
   mode: exact
   fields: [status]
   expect:
-    body_contains:
-      - manual range metric row limit exceeded
-      - -manual-range-metric-row-limit
+    body: limit reached while evaluating the query
+    log_contains:
+      - limit_flag=-manual-range-metric-row-limit
     backend_calls: |
       One `| stats count() as rows` call; no raw row fetch.

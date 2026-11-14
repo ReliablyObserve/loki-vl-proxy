@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"testing"
@@ -50,7 +51,7 @@ func TestCircuitBreaker_IgnoresCanceledErrors(t *testing.T) {
 	})
 
 	t.Run("wrapped canceled message", func(t *testing.T) {
-		p := newCircuitBreakerTestProxy(t, errorRoundTripper{err: errors.New("upstream: context canceled")})
+		p := newCircuitBreakerTestProxy(t, errorRoundTripper{err: fmt.Errorf("upstream: %w", context.Canceled)})
 		for i := 0; i < 5; i++ {
 			_, err := p.vlPost(context.Background(), "/select/logsql/query", url.Values{"query": {"*"}})
 			if err == nil {

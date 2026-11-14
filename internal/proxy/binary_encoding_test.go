@@ -72,7 +72,7 @@ func TestBinaryGroupedLabelAmplificationBound(t *testing.T) {
 			left, right = one, many
 		}
 		body, err := matchBinaryMetricResultsContext(ctx, left, right, "+", "matrix", vm, false)
-		if err == nil || !strings.Contains(err.Error(), "output labels exceed") || body != nil {
+		if err == nil || limitFlagOf(err) != "-backend-max-buffered-response-bytes" || body != nil {
 			t.Fatalf("%s amplification accepted: %s %v", side, body, err)
 		}
 	}
@@ -97,8 +97,8 @@ func TestBinaryGroupingRepairPreflightAndBoundedRewrite(t *testing.T) {
 	p := newTestProxy(t, "http://127.0.0.1:1")
 	p.restoreBinaryOperandResponse(w, expr, "vector")
 	// The writer cap is -backend-max-buffered-response-bytes: a proxy buffer
-	// limit, Loki's failed call (500) with the text naming the flag.
-	if w.status != http.StatusInternalServerError || !strings.HasSuffix(w.body.String(), "increase -backend-max-buffered-response-bytes") {
+	// limit, Loki's failed call (500) with Loki's message size text.
+	if w.status != http.StatusInternalServerError || !strings.HasPrefix(w.body.String(), "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (") {
 		t.Fatalf("expanded repair bypassed writer cap: %d %s", w.status, w.body.String())
 	}
 	ctx = binaryEvaluationContext(context.Background())

@@ -1,9 +1,9 @@
 package proxy
 
 import (
+	"errors"
 	"runtime"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
@@ -168,7 +168,7 @@ func TestBuildHitsRangeMetricMatrix_ResponseByteLimit(t *testing.T) {
 		key := strconv.Itoa(i)
 		series[key] = manualSeriesSamples{Metric: map[string]string{"pod": key}, Samples: samples}
 	}
-	if _, err := buildHitsRangeMetricMatrix("count_over_time", series, start, end, step, time.Second, DefaultBackendMaxBufferedResponseBytes); err == nil || !strings.Contains(err.Error(), "manual metric response exceeds") {
+	if _, err := buildHitsRangeMetricMatrix("count_over_time", series, start, end, step, time.Second, DefaultBackendMaxBufferedResponseBytes); !errors.Is(err, errManualMetricResponseTooLarge) {
 		t.Fatalf("expected the response byte limit error, got %v", err)
 	}
 }

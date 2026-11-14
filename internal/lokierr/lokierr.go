@@ -96,6 +96,11 @@ type Error struct {
 	msg   Msg
 	text  string
 	cause error
+	// limitFlag and limitValue are the operator flag behind a limit or queue
+	// answer and its value. They are for the log line only: no text a client
+	// reads carries them.
+	limitFlag  string
+	limitValue int64
 }
 
 // Error is the text a client reads: Loki's message only, never the cause.
@@ -123,6 +128,21 @@ func (e *Error) Status() int { return messages[e.msg].status }
 // Shape is the body shape the message is always written in, or ShapeRoute
 // when the answering route decides.
 func (e *Error) Shape() Shape { return messages[e.msg].shape }
+
+// Limit is the operator flag behind a limit or queue answer, as the operator
+// types it (with its leading dash), and the value it is set to; ok is false when
+// the answer has none. It is for the log line only.
+func (e *Error) Limit() (flag string, value int64, ok bool) {
+	return e.limitFlag, e.limitValue, e.limitFlag != ""
+}
+
+// WithLimit is e with the flag that sets the limit behind it and the flag's
+// value, for the log line; the client text is unchanged.
+func (e *Error) WithLimit(flag string, value int64) *Error {
+	c := *e
+	c.limitFlag, c.limitValue = flag, value
+	return &c
+}
 
 // WithCause is e with cause as its internal cause; the client text is
 // unchanged.

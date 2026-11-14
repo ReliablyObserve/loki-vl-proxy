@@ -311,7 +311,7 @@ func TestOrderedJSONMetricRowsCancellationAndTenant(t *testing.T) {
 	req = p.withRequestScope(req)
 	plan, _ := compileOrderedJSONMetric(`rate({app="test"}|json[5m])`)
 	_, err := p.collectOrderedJSONMetric(req.Context(), plan, stamp.Add(2*time.Second), stamp.Add(2*time.Second), time.Second)
-	if err == nil || !strings.Contains(err.Error(), "row limit") || requestedLimit != "" || !strings.HasSuffix(requestedQuery, " | limit 2") || account != "91" {
+	if !isRowLimitError(err) || requestedLimit != "" || !strings.HasSuffix(requestedQuery, " | limit 2") || account != "91" {
 		t.Fatalf("limit=%s query=%s account=%s err=%v", requestedLimit, requestedQuery, account, err)
 	}
 	ctx, cancel := context.WithCancel(req.Context())

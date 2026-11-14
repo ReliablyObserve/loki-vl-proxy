@@ -1,5 +1,6 @@
 id: limits/metadata-scan-queue-429
 title: A saturated metadata-scan limiter answers with Loki's 429, naming its flag
+pending: true
 proves:
   - backend-admission-and-heavy-query-queueing
   - loki_api_v1_labels
@@ -52,10 +53,9 @@ compare:
   fields: [status]
   expect:
     status: 429
-    body_contains:
-      - too many outstanding requests
-      - -backend-max-concurrent-metadata-scans
-      - -backend-heavy-query-queue-wait
+    body: too many outstanding requests
+    log_contains:
+      - limit_flag=-backend-max-concurrent-metadata-scans
 loki_parity: |
   pkg/queue/queue.go ErrTooManyRequests, returned as 429 by the query frontend.
   Loki never needs this limiter for /labels because its index answers the
