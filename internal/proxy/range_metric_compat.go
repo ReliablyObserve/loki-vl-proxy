@@ -2781,6 +2781,10 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 				value = 0
 			}
 			if sink != nil {
+				if folded == nil {
+					// One buffer for every series' points, which the sink copies.
+					folded = make([]typedPoint, 0, pointHint)
+				}
 				folded = append(folded, typedPoint{ts: lokiSampleSeconds(tNS), v: value})
 				continue
 			}

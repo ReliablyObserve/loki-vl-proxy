@@ -350,3 +350,24 @@ func BenchmarkFirstLastRangeLongerThanStep(b *testing.B) {
 		})
 	}
 }
+
+// lokiResultSeriesCount counts the series of a matrix or a vector answer, and is 0 for no result or a body that is
+// not an answer: the fold's series limit reads it on every folded answer.
+func TestLokiResultSeriesCount(t *testing.T) {
+	for _, c := range []struct {
+		body string
+		want int
+	}{
+		{`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"a":"1"},"values":[[1,"2"]]},{"metric":{},"values":[]}]}}`, 2},
+		{`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"a":"[1]"},"value":[1,"2"]}]}}`, 1},
+		{`{"status":"success","data":{"resultType":"matrix","result":[]}}`, 0},
+		{`{"status":"success","data":{"resultType":"matrix"}}`, 0},
+		{`{"status":"error","error":"x"}`, 0},
+		{`not json`, 0},
+		{``, 0},
+	} {
+		if got := lokiResultSeriesCount([]byte(c.body)); got != c.want {
+			t.Errorf("lokiResultSeriesCount(%s) = %d, want %d", c.body, got, c.want)
+		}
+	}
+}
