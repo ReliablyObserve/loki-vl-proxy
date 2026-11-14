@@ -27,8 +27,8 @@ func TestDetectedRoutesBackendFailureAnswersLokisError(t *testing.T) {
 		text      string
 	}
 	wants := map[string]want{
-		// A query VictoriaLogs rejects is the client's mistake: Loki's 400 with its own text.
-		"vl400_parse":   {http.StatusBadRequest, "bad_data", lokiErrParse},
+		// VictoriaLogs refusing the LogsQL of a validated query is the proxy's defect: Loki's failed-backend 500.
+		"vl400_parse":   {http.StatusInternalServerError, "internal", lokiErrInternal},
 		"vl400_limit":   {http.StatusInternalServerError, "internal", lokiErrInternal},
 		"vl422":         {http.StatusInternalServerError, "internal", lokiErrInternal},
 		"vl500":         {http.StatusInternalServerError, "internal", lokiErrInternal},

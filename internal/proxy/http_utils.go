@@ -328,7 +328,16 @@ func (p *Proxy) writeFailure(w http.ResponseWriter, ctx context.Context, err err
 		text   string
 		typed  *lokierr.Error
 	)
-	if e, ok := lokierr.As(err); ok && (ctx == nil || ctx.Err() == nil) {
+	e, ok := lokierr.As(err)
+	if !ok {
+		// A plan defect is typed where VictoriaLogs' answer is classified and
+		// answered here, so the error keeps VictoriaLogs' reason for the log
+		// lines before this one.
+		if defect, isDefect := asType[*planDefectError](err); isDefect {
+			e, ok = planDefectAnswer(defect), true
+		}
+	}
+	if ok && (ctx == nil || ctx.Err() == nil) {
 		typed, status, text = e, e.Status(), e.Text()
 		if own := e.Shape(); own != lokierr.ShapeRoute {
 			shape = errorShapeWriter(own)
@@ -355,6 +364,8 @@ type failureRecorder interface{ recordFailure(err error) }
 // text, the internal error behind them, the message and kind of a typed
 // error, the route, and the flag of a limit whose Loki text names none.
 func (p *Proxy) logRequestError(ctx context.Context, status int, text string, err error, typed *lokierr.Error) {
+	// A plan defect is counted whether or not the line is written.
+	defectRoute, defectHash, defect := p.notePlanDefect(ctx, err)
 	level := slog.LevelInfo
 	switch {
 	case status >= http.StatusInternalServerError:
@@ -367,7 +378,7 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 	}
 	// slog.Attr values carry no interface boxing, and the buffer holds every field
 	// the line can carry: the line costs no allocation of its own.
-	var buf [10]slog.Attr
+	var buf [13]slog.Attr
 	attrs := append(buf[:0], slog.Int("code", status), slog.String("error", text))
 	cause := err
 	if typed != nil {
@@ -377,6 +388,10 @@ func (p *Proxy) logRequestError(ctx context.Context, status int, text string, er
 			// A query Loki accepts that the proxy cannot serve yet: which construct, for the operator.
 			attrs = append(attrs, slog.String("construct", construct))
 		}
+	}
+	if defect {
+		// VictoriaLogs refused what the proxy wrote: which route and which LogsQL, for the operator.
+		attrs = planDefectAttrs(attrs, defectRoute, defectHash)
 	}
 	if cause != nil {
 		// The full error (VictoriaLogs' message, the transport error, the
@@ -586,6 +601,10 @@ func writeLokiRulerJSON(w http.ResponseWriter, code int, msg, contentType string
 // (:108-123), a full queue 429 (pkg/queue/queue.go:21) and every other failure
 // 500 (:124-128). Loki never answers a query with 502, 503 or 422. The status
 // is also the one recorded in upstream metrics and logs (upstreamErrorStatus).
+//
+// A query VictoriaLogs rejects is not one of the 400s: the proxy validated it
+// as Loki does before it wrote the LogsQL, so the rejection is the proxy's own
+// defect (planDefect), answered as Loki answers a failed backend call.
 func statusFromUpstreamErr(err error) int {
 	// A VictoriaLogs body that failed after its headers: Loki's 504 when the
 	// query ran out of time, a failed backend call otherwise.
@@ -602,8 +621,13 @@ func statusFromUpstreamErr(err error) int {
 	if typed, ok := lokierr.As(err); ok && (typed.Kind() == lokierr.KindLimit || typed.Kind() == lokierr.KindQueueFull) {
 		return typed.Status()
 	}
-	if isUpstreamQueryRejected(err) || isOrderedJSONPipelineError(err) {
+	if isTranslatorParseError(err) || isOrderedJSONPipelineError(err) {
 		return http.StatusBadRequest
+	}
+	// A refusal of what the proxy wrote is a plan defect: Loki's failed-backend
+	// 500, decided here without the checks below (it is none of them).
+	if statusErr, ok := asType[*upstreamStatusError](err); ok && statusErr.class == vlErrorQueryRejected {
+		return http.StatusInternalServerError
 	}
 	if isUpstreamQueueFull(err) {
 		return http.StatusTooManyRequests
@@ -641,9 +665,6 @@ func statusFromUpstreamErr(err error) int {
 const (
 	// pkg/util/server/error.go:26
 	lokiErrClientCanceled = "the request was cancelled by the client"
-	// pkg/logqlmodel/error.go:13 (logqlmodel.ErrParse): the text of a query
-	// VictoriaLogs rejected, without VictoriaLogs' reason or query echo.
-	lokiErrParse = "failed to parse the log query"
 	// Loki returns a failed storage call's own error text (error.go:128) and
 	// has no fixed constant for it; the proxy never forwards the backend's
 	// text, so it answers the status line's reason phrase.
@@ -698,8 +719,6 @@ func lokiClientText(status int, err error) string {
 		return pipelineErr.Error()
 	case errors.As(err, &matchingErr):
 		return matchingErr.Error()
-	case status == http.StatusBadRequest:
-		return lokiErrParse
 	}
 	return lokiErrInternal
 }
@@ -726,6 +745,13 @@ func isUpstreamQueueFull(err error) bool {
 func isOrderedJSONPipelineError(err error) bool {
 	var pipelineErr *orderedJSONPipelineError
 	return errors.As(err, &pipelineErr)
+}
+
+// isTranslatorParseError reports a query the translator could not read: a
+// query Loki rejects with a position (unplacedSyntaxError answers it).
+func isTranslatorParseError(err error) bool {
+	_, ok := asType[*translator.ParseError](err)
+	return ok
 }
 
 // writeErr answers a failed request through the single error layer:
@@ -780,7 +806,11 @@ type vlErrorClass uint8
 
 const (
 	vlErrorUnclassified vlErrorClass = iota
-	// vlErrorQueryRejected: the query or an argument is invalid (Loki: 400).
+	// vlErrorQueryRejected: VictoriaLogs refused the query or an argument the
+	// proxy wrote. The proxy validated the request as Loki does first, so it
+	// is the proxy's defect (planDefect), answered with Loki's 500; the call
+	// is not retried, the request does not fall back to another backend path
+	// and no stale answer masks it (isUpstreamQueryRejected).
 	vlErrorQueryRejected
 	// vlErrorResourceLimit: the query parsed but hit a limit or failed while
 	// executing; Loki answers Drilldown limit hits with partial results.
@@ -947,13 +977,13 @@ func (e *upstreamStatusError) Error() string { return e.msg }
 
 func (e *upstreamStatusError) StatusCode() int { return e.status }
 
-// isUpstreamQueryRejected reports whether err is certainly the query's fault, a
-// client mistake Loki answers with 400 bad_data for every client: a VictoriaLogs
-// parse or argument error (vlErrorQueryRejected) or a translator parse error.
+// isUpstreamQueryRejected reports whether err fails the same way on every
+// tenant and every retry: a series limit, a translator parse error (a query
+// Loki rejects, 400) or a VictoriaLogs parse or argument error
+// (vlErrorQueryRejected, a plan defect answered with Loki's 500).
 // translator.UnsupportedError is excluded: it marks valid LogQL (for example
-// count_values) that Loki accepts. A rejected query fails on every tenant and
-// every retry, so callers must not retry it, fall back to another backend path,
-// or mask it with a stale answer. VictoriaLogs also answers resource limits and
+// count_values) that Loki accepts. Callers must not retry such a failure, fall
+// back to another backend path, or mask it with a stale answer. VictoriaLogs also answers resource limits and
 // execution failures with 400/422; those, and unrecognised messages, are not
 // rejections and keep the backend-failure handling (fallbacks, stale reads,
 // partial results, per-tenant skipping, 5xx mapping).
@@ -970,11 +1000,14 @@ func isUpstreamQueryRejected(err error) bool {
 }
 
 // writeBackendError answers a completed VictoriaLogs error response through
-// the error layer and returns the status written: 400 bad_data for a rejected
-// query (including VL's 422 from stats endpoints), 429 for a full VictoriaLogs
-// queue, Loki's 500 otherwise.
-func (p *Proxy) writeBackendError(w http.ResponseWriter, status int, body []byte) int {
-	return p.writeErr(w, context.Background(), p.redactedBackendStatusError("", status, body))
+// the error layer and returns the status written: 429 for a full VictoriaLogs
+// queue, 504 for its deadline, Loki's 500 otherwise (a rejected query, VL's 422
+// from stats endpoints included, is a plan defect). ctx is the request's: its
+// values name the route and the refused call in the log line and the plan
+// defect counter; its cancellation is not read, so the answer is the
+// backend's whatever the client did.
+func (p *Proxy) writeBackendError(w http.ResponseWriter, ctx context.Context, status int, body []byte) int {
+	return p.writeErr(w, context.WithoutCancel(ctx), p.redactedBackendStatusError("", status, body))
 }
 
 // writeGrafanaStatsFailure answers failed Grafana stats calls through the same
@@ -1120,12 +1153,20 @@ func (p *Proxy) redactedBackendErrorMessage(status int, body []byte) string {
 	return msg
 }
 
+// redactedBackendStatusError is the error of a completed VictoriaLogs error
+// response. A refusal of the LogsQL or of an argument the proxy wrote is typed
+// here, where it is classified, as a plan defect (planDefect), which the error
+// layer answers with Loki's 500 and VictoriaLogs' message in the log line only.
 func (p *Proxy) redactedBackendStatusError(prefix string, status int, body []byte) error {
 	msg := p.redactedBackendErrorMessage(status, body)
 	if prefix != "" {
 		msg = fmt.Sprintf("%s %d: %s", prefix, status, msg)
 	}
-	return &upstreamStatusError{status: status, msg: msg, class: classifyVLError(status, extractVLErrorMsg(body))}
+	statusErr := &upstreamStatusError{status: status, msg: msg, class: classifyVLError(status, extractVLErrorMsg(body))}
+	if statusErr.class == vlErrorQueryRejected {
+		return planDefect(statusErr)
+	}
+	return statusErr
 }
 
 // lokiErrorType returns the Loki/Prometheus-style errorType for an HTTP status code.
