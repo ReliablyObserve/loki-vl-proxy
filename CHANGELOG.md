@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An instant query evaluated at a fixed past `time` is now answered from the cache on a repeat. The near-now
+  freshness check read only `end`/`to`, which an instant query does not send, so every instant query was treated
+  as ending now: a repeat older than `-recent-tail-refresh-max-staleness` asked VictoriaLogs again. The check now
+  reads `time` on `/loki/api/v1/query` (and only there, as Loki does); an instant query without `time` is still
+  evaluated at now and refreshed as before.
+
 ## [2.260.1] - 2026-11-14
 
 ### Fixed

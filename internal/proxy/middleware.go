@@ -729,7 +729,7 @@ func patternsPayloadEmpty(body []byte) bool {
 // ttl it would look old and be refetched on every request.
 func (p *Proxy) compatCacheShouldBypassForFreshness(endpoint string, r *http.Request, ttl, remaining, age time.Duration) bool {
 	window, ok := p.nearNowWindow(endpoint)
-	if !ok || ttl <= 0 || remaining <= 0 || !requestEndsWithin(r, window) {
+	if !ok || ttl <= 0 || remaining <= 0 || !requestEndsWithin(r, endpoint, window) {
 		return false
 	}
 	if age < 0 {

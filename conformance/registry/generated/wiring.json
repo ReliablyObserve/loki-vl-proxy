@@ -137,7 +137,8 @@
       "internal/proxy/credential_passthrough_test.go"
     ],
     "data-probing-and-freshness": [
-      "internal/proxy/ordered_json_result_cache_test.go"
+      "internal/proxy/ordered_json_result_cache_test.go",
+      "internal/proxy/request_ends_within_test.go"
     ],
     "delete-api-requires-token": [
       "cmd/proxy/delete_api_validation_test.go",
@@ -432,6 +433,7 @@
       "internal/proxy/label_replace_semantics_test.go",
       "internal/proxy/parenthesized_range_test.go",
       "internal/proxy/physical_sites_test.go",
+      "internal/proxy/request_ends_within_test.go",
       "internal/proxy/selector_value_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/sum_without_differential_test.go",
@@ -526,6 +528,7 @@
       "internal/proxy/query_range_steps_middleware_test.go",
       "internal/proxy/query_range_steps_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
+      "internal/proxy/request_ends_within_test.go",
       "internal/proxy/selector_value_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/stage_field_exposure_test.go",
@@ -3414,6 +3417,11 @@
       "semantics/binary-operand-literals-reprint",
       "semantics/label-filter-expression-syntax"
     ],
+    "internal/proxy/request_ends_within_test.go": [
+      "data-probing-and-freshness",
+      "loki_api_v1_query",
+      "loki_api_v1_query_range"
+    ],
     "internal/proxy/request_params_rules_test.go": [
       "semantics/error-request-validation-parity"
     ],
@@ -5114,7 +5122,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 599,
+  "tests_with_markers": 600,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

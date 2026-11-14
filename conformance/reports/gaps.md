@@ -73,7 +73,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 4 | 4 | unknown |
 | semantics | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | 2 | 1 | proven |
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |
-| data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 11 | 1 | gap |
+| data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 11 | 2 | gap |
 | semantics | `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | 5 | 2 | proven |
 | limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 6 | partial |
 | semantics | `instrumentation-reveals-no-secrets` — /metrics and /config reveal no secret and no more than Loki's | 2 | 1 | proven |

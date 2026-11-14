@@ -1687,6 +1687,9 @@
     "internal/proxy/recent_tail_bypass_clamp_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/reprint_translation_test.go | semantics/binary-operand-literals-reprint",
     "internal/proxy/reprint_translation_test.go | semantics/label-filter-expression-syntax",
+    "internal/proxy/request_ends_within_test.go | data-probing-and-freshness",
+    "internal/proxy/request_ends_within_test.go | loki_api_v1_query",
+    "internal/proxy/request_ends_within_test.go | loki_api_v1_query_range",
     "internal/proxy/request_params_rules_test.go | semantics/error-request-validation-parity",
     "internal/proxy/request_params_test.go | query-stats-envelope",
     "internal/proxy/request_params_test.go | semantics/error-request-validation-parity",
@@ -2679,7 +2682,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 598,
+      "go": 599,
       "playwright": 1
     },
     "page_kinds": {
