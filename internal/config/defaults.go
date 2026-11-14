@@ -105,15 +105,17 @@ var durationUnits = map[string]time.Duration{
 }
 
 func evalDuration(expr string) (string, bool) {
+	expr = strings.TrimSpace(expr)
 	for name, unit := range durationUnits {
 		if expr == name {
 			return unit.String(), true
 		}
-		factor, found := strings.CutSuffix(strings.TrimSpace(expr), "*"+name)
-		if !found {
+		// A count times a unit, with or without spaces around the operator: 5*time.Minute, 5 * time.Minute.
+		star := strings.LastIndex(expr, "*")
+		if star < 0 || strings.TrimSpace(expr[star+1:]) != name {
 			continue
 		}
-		count, ok := evalInt(strings.TrimSpace(strings.TrimSuffix(factor, "*")))
+		count, ok := evalInt(strings.TrimSpace(expr[:star]))
 		if !ok {
 			continue
 		}
