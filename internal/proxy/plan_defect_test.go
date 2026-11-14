@@ -298,12 +298,13 @@ func TestPlanDefect_ClientGetsLokisFailedBackendAnswer(t *testing.T) {
 	}
 }
 
-// TestPlanDefect_QueriesLokiRejectsThatReachVictoriaLogs pins the queries Loki
-// rejects at its lexer that the proxy's parser accepts (blanks Loki does not
-// read as white space between tokens): validation lets them through, so
-// VictoriaLogs refuses the LogsQL and the client reads the failed-backend 500
-// where Loki answers 400. The grammar sweep holds their count
-// (victorialogs_rejections_for_queries_loki_rejects), which may only go down.
+// TestPlanDefect_QueriesLokiRejectsThatReachVictoriaLogs pins queries Loki
+// rejects at its lexer (blanks Loki does not read as white space between
+// tokens) that used to pass the proxy's parser and reach VictoriaLogs. The
+// parser now rejects them with Loki's 400 before any VictoriaLogs call, so a
+// VictoriaLogs refusal never answers the client for them. The grammar sweep
+// holds the count of such queries (victorialogs_rejections_for_queries_loki_rejects),
+// which may only go down.
 //
 // conformance: semantics/parser-reads-unicode-blank-as-white-space, semantics/vl-refusal-is-plan-defect
 func TestPlanDefect_QueriesLokiRejectsThatReachVictoriaLogs(t *testing.T) {
@@ -315,8 +316,8 @@ func TestPlanDefect_QueriesLokiRejectsThatReachVictoriaLogs(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, badRequestURL("/loki/api/v1/query_range", map[string]string{"query": query, "step": "60"}), nil)
 			req.Header.Set("X-Scope-OrgID", "0")
 			h.ServeHTTP(w, req)
-			if len(backend.recorded()) == 0 || w.Code != http.StatusInternalServerError || w.Body.String() != lokiErrInternal {
-				t.Fatalf("got %d %q after %d VictoriaLogs calls; once validation rejects it, Loki's 400 belongs here", w.Code, w.Body.String(), len(backend.recorded()))
+			if len(backend.recorded()) != 0 || w.Code != http.StatusBadRequest || !strings.HasPrefix(w.Body.String(), "parse error at line 1") {
+				t.Fatalf("got %d %q after %d VictoriaLogs calls; want Loki's 400 parse error and no VictoriaLogs call", w.Code, w.Body.String(), len(backend.recorded()))
 			}
 		})
 	}
