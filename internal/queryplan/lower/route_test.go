@@ -123,6 +123,12 @@ func TestRouteDecidesTheWindows(t *testing.T) {
 		{q: `max_over_time({app="a"} | unwrap bytes(n) [5m])`, req: RouteRequest{Step: 5 * time.Minute, Span: hour}, window: WindowTumbling, bucket: 5 * time.Minute, identity: true, probe: true, counted: true},
 		{q: `avg_over_time({app="a"} | unwrap duration(n) [5m])`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, identity: true, probe: true, counted: true},
 		{q: `min_over_time({app="a"} |= "x" | env="b" | unwrap duration_seconds(n) [1m])`, req: RouteRequest{Step: 15 * time.Minute, Span: hour}, window: WindowPhase, bucket: 15 * time.Minute, identity: true, probe: true, counted: true, stepBkts: true},
+		// stddev merges a longer window from the mean, count and deviation of each bucket; a shorter one is read
+		// from the step buckets under the phase filter, like the other partial aggregates
+		{q: `stddev_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, window: WindowInstant, identity: true, probe: true, counted: true},
+		{q: `stddev_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Step: 5 * time.Minute, Span: hour}, window: WindowTumbling, bucket: 5 * time.Minute, identity: true, probe: true, counted: true},
+		{q: `stddev_over_time({app="a"} | unwrap n [5m]) by (pod)`, req: RouteRequest{Step: time.Minute, Span: hour}, window: WindowBuckets, bucket: time.Minute, counted: true},
+		{q: `stddev_over_time({app="a"} | unwrap n [1m])`, req: RouteRequest{Step: 15 * time.Minute, Span: hour}, window: WindowPhase, bucket: 15 * time.Minute, identity: true, probe: true, counted: true, stepBkts: true},
 		// a count over the same short range is not read from step buckets
 		{q: `count_over_time({app="a"}[1m])`, req: RouteRequest{Step: 15 * time.Minute, Span: hour}, window: WindowPhase, bucket: 15 * time.Minute, identity: true, probe: true},
 		// a grouping by labels the stats keep as they are: no stream identity, no level chain, no probe
@@ -202,7 +208,6 @@ func TestRouteDecidesTheWindows(t *testing.T) {
 		{q: `count_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg unwrap count_over_time"},
 		{q: `rate({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap rate"},
 		{q: `quantile_over_time(0.9, {app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap quantile"},
-		{q: `stddev_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap stddev"},
 		{q: `stdvar_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap stdvar"},
 		{q: `first_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap first"},
 		{q: `last_over_time({app="a"} | unwrap n [5m])`, req: RouteRequest{Instant: true}, construct: "RangeAgg route unwrap last"},

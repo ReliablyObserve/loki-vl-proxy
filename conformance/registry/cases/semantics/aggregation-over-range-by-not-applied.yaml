@@ -1,0 +1,60 @@
+id: semantics/aggregation-over-range-by-not-applied
+title: A vector aggregation over a range aggregation with its own by is not applied (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum by (app) (stddev_over_time({job="json"} | json | unwrap duration_ms [5m]) by (app, pod))`
+  answers one series per app and pod, the range aggregation's own grouping, where Loki
+  sums them into one series per app; the stdvar form too, on an instant query and a
+  range query at every step (Loki engine oracle, VictoriaLogs v1.53.0 and v1.49.0,
+  TestStddevStdvarMatchLoki). `max(stddev_over_time(... | json | unwrap duration_ms [5m]) by (pod))`
+  answers one series per pod on an instant query (Loki: one series), and with a step
+  shorter than the range the maximum of the step buckets, not of the windows
+  (1459.13 where Loki answers 1511.02); at a step equal to or longer than the range
+  it matches Loki.
+
+  The translator reads the range aggregation's own by and leaves the outer
+  aggregation to the handlers, whose folds (seriesAggregationChain) take no range
+  aggregation with a grouping. Found while proving
+  semantics/stddev-stdvar-over-time-range-window; the same on origin/main before it.
+  The window evaluator of stddev and stdvar over time leaves these shapes on the
+  step buckets they had, so the change does not alter their answers.
+
+  Related, fixed and not covering it: semantics/nested-aggregation-outer-by-native-routes
+  (a vector aggregation over another vector aggregation) and
+  semantics/unwrap-first-last-under-aggregation (first and last over time under an
+  aggregation answer 200).
+
+  Fix to make: fold the outer aggregation over the range aggregation's series
+  (the plan knows both groupings), on every route.
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: 'sum by (app) (stddev_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]) by (app, pod))'
+      - query: 'max(stdvar_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]) by (pod))'
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (app) (stddev_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]) by (app, pod))'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series per app with the sum of the pods' deviations, as Loki.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy vector_agg_fold.go (seriesAggregationChain takes no grouped range aggregation) and the translator reading of a range-level by under an outer aggregation'
+  loki: 'the range aggregation groups its samples by its by, then the vector aggregation folds those series'
+  proxy: 'the range aggregation''s series, the outer aggregation dropped (or applied to step buckets on a sliding window)'
+  planned_test: 'TestStddevStdvarMatchLoki (internal/querycorpus) lists the shapes as known differences'
+  clusters: []

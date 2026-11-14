@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -169,6 +170,64 @@ func TestStdvarOverTimeGroupedAnswersAsScalarBinary(t *testing.T) {
 	}
 }
 
+// A ranking or a sort around a grouped stdvar_over_time evaluates its operand in handlers of its own
+// (handleInstantMetricPostAggregation, handleRangeMetricPostAggregation), which sent the binary expression to the
+// stats handlers: they refuse it (500, Loki answers 200). The operand is now answered as the query and query_range
+// routes answer it, the deviation squared, then ranked.
+//
+// conformance: semantics/stdvar-grouped-binary-marker
+func TestStdvarUnderARankingAnswersAsScalarBinary(t *testing.T) {
+	for _, c := range []struct {
+		query string
+		apps  []string // the series left at every point, in order
+	}{
+		{`topk(1, stdvar_over_time({app="x"} | json | unwrap n [5m]) by (app))`, []string{"api"}},
+		{`bottomk(1, stdvar_over_time({app="x"} | unwrap n [5m]) by (app))`, nil},
+		{`sort_desc(stdvar_over_time({app="x"} | json | unwrap n [5m]) by (app))`, []string{"api", "web"}},
+		{`sort(stdvar_over_time({app="x"} | logfmt | unwrap n [5m]) by (app))`, []string{"web", "api"}},
+	} {
+		for _, endpoint := range []string{"query", "query_range"} {
+			t.Run(endpoint+"/"+c.query, func(t *testing.T) {
+				stub := &statsStub{rangeAns: stdvarRangeAnswer, instAns: stdvarInstantAnswer}
+				p := newStatsStubProxy(t, stub)
+				params := url.Values{"query": {c.query}, "start": {"1800000000"}, "end": {"1800000600"}, "step": {"300"}, "time": {"1800000600"}}
+				res := doCompatProxyRequest(p, "/loki/api/v1/"+endpoint+"?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+				if res.Code != http.StatusOK {
+					t.Fatalf("status %d, Loki answers 200: %s", res.Code, res.Body)
+				}
+				stub.mu.Lock()
+				for i, form := range stub.requests {
+					if q := form.Get("query"); strings.Contains(q, translator.BinaryMetricPrefix) || strings.Contains(q, "|||") {
+						t.Fatalf("%s was sent the binary marker as a query: %.200s", stub.paths[i], q)
+					}
+				}
+				stub.mu.Unlock()
+				samples := decodeStubSamples(t, res.Body.Bytes())
+				if len(samples) == 0 {
+					t.Fatalf("no series: %s", res.Body)
+				}
+				var apps []string
+				for _, sample := range samples {
+					apps = append(apps, sample.Metric["app"])
+					points := sample.Values
+					if endpoint == "query" {
+						points = [][]any{sample.Value}
+					}
+					for _, point := range points {
+						got, _ := strconv.ParseFloat(point[1].(string), 64)
+						if want := map[string][]float64{"api": {9, 16}, "web": {0.25}}[sample.Metric["app"]]; !slices.Contains(want, got) {
+							t.Fatalf("app %s: %v, want the standard deviation squared %v", sample.Metric["app"], got, want)
+						}
+					}
+				}
+				if c.apps != nil && endpoint == "query" && !slices.Equal(apps, c.apps) {
+					t.Fatalf("series %v, want %v", apps, c.apps)
+				}
+			})
+		}
+	}
+}
+
 // No text that starts with the binary marker reaches a stats handler, and one that gets there is answered, not sent
 // to VictoriaLogs.
 //
@@ -257,9 +316,10 @@ func matrixTimes(t *testing.T, body []byte) map[string][]float64 {
 // With a range equal to the step, VictoriaLogs' bucket labelled T holds [T, T+step) and Loki's sample at T is the
 // window (T-range, T]. stddev and stdvar over time were answered from the unshifted bucket, one step late; they are
 // fetched from start-step and relabelled to the evaluation time each bucket closes, as sum, avg, min and max over
-// time are. A range that is not the step stays as it was: the bucket is not their window.
+// time are. A longer range merges its window from buckets of the mean, count and deviation fetched from start-range;
+// a shorter one is read from the step buckets under the window phase filter, fetched from start-step.
 //
-// conformance: semantics/stddev-stdvar-over-time-step-bucket, window-bounds-and-step-alignment
+// conformance: semantics/stddev-stdvar-over-time-step-bucket, semantics/stddev-stdvar-over-time-range-window, window-bounds-and-step-alignment
 func TestStddevStdvarOverTimeTumblingReadsTheWindowEndingAtT(t *testing.T) {
 	const start, end = int64(1800000000), int64(1800000600)
 	const buckets = `{"status":"success","data":{"resultType":"matrix","result":[` +
@@ -301,40 +361,57 @@ func TestStddevStdvarOverTimeTumblingReadsTheWindowEndingAtT(t *testing.T) {
 				}
 			}
 		})
-		t.Run(fn+"/range is not the step", func(t *testing.T) {
+		t.Run(fn+"/range longer than the step", func(t *testing.T) {
 			_, reqs := statsRangeRun(t, query(fn, "10m"), buckets, start, end, 300)
 			if len(reqs) != 1 {
 				t.Fatalf("%d stats requests, want 1", len(reqs))
 			}
-			// Not shifted: the request's own start, as before.
-			if got := reqs[0].Get("start"); got != strconv.FormatInt(start, 10) {
-				t.Fatalf("fetched from %q, want the request's start %d", got, start)
+			// The window's buckets, from one range before the start, each the mean, count and deviation.
+			if got, want := reqs[0].Get("start"), time.Unix(start-600, 0).UTC().Format(time.RFC3339); got != want {
+				t.Fatalf("fetched from %q, want %q (start-range)", got, want)
+			}
+			if q := reqs[0].Get("query"); !strings.HasSuffix(q, deviationBucketStats) {
+				t.Fatalf("bucket stats %q, want the mean, count and deviation (%s)", q, deviationBucketStats)
+			}
+		})
+		t.Run(fn+"/range shorter than the step", func(t *testing.T) {
+			_, reqs := statsRangeRun(t, query(fn, "1m"), buckets, start, end, 300)
+			if len(reqs) != 1 {
+				t.Fatalf("%d stats requests, want 1", len(reqs))
+			}
+			// Shifted like a range equal to the step, the lines outside (T-range, T] filtered out.
+			if got := reqs[0].Get("start"); got != wantStart {
+				t.Fatalf("fetched from %q, want %q (start-step)", got, wantStart)
+			}
+			if q := reqs[0].Get("query"); !strings.Contains(q, "as __lvp_window_phase") {
+				t.Fatalf("no window phase filter in %q", q)
 			}
 		})
 	}
 
-	// sum_over_time keeps its shift for any range: the contrast the range != step case above is read against.
+	// sum_over_time is shifted for any range, the contrast the cases above are read against.
 	_, reqs := statsRangeRun(t, query("sum_over_time", "10m"), buckets, start, end, 300)
 	if len(reqs) != 1 || reqs[0].Get("start") == strconv.FormatInt(start, 10) {
 		t.Fatalf("sum_over_time over a longer range is no longer shifted: %v", reqs)
 	}
 }
 
-// logRangeFunctions classifies stddev and stdvar over time with unwrap as native step buckets only for the shift
-// that needs range == step.
+// logRangeFunctions classifies stddev and stdvar over time with unwrap as the other functions over an unwrapped
+// label: native step buckets for a range up to the step (a longer one merges its window from buckets first).
 //
-// conformance: semantics/stddev-stdvar-over-time-step-bucket
+// conformance: semantics/stddev-stdvar-over-time-step-bucket, semantics/stddev-stdvar-over-time-range-window
 func TestLogRangeFunctionsStddevStdvar(t *testing.T) {
 	for _, tc := range []struct {
 		query                         string
 		found, logRangeOnly, unwrapOn bool
 	}{
-		{`stddev_over_time({a="b"} | json | unwrap n [5m])`, true, true, false},
-		{`stdvar_over_time({a="b"} | json | unwrap n [5m])`, true, true, false},
-		{`sum by (a) (stddev_over_time({a="b"} | json | unwrap n [5m]))`, true, true, false},
-		{`stddev_over_time({a="b"} | json | unwrap n [5m]) / sum_over_time({a="b"} | json | unwrap n [5m])`, true, true, false},
+		{`stddev_over_time({a="b"} | json | unwrap n [5m])`, true, true, true},
+		{`stdvar_over_time({a="b"} | json | unwrap n [5m])`, true, true, true},
+		{`sum by (a) (stddev_over_time({a="b"} | json | unwrap n [5m]))`, true, true, true},
+		{`stddev_over_time({a="b"} | json | unwrap n [5m]) / sum_over_time({a="b"} | json | unwrap n [5m])`, true, true, true},
 		{`sum_over_time({a="b"} | json | unwrap n [5m])`, true, true, true},
 		{`quantile_over_time(0.5, {a="b"} | json | unwrap n [5m])`, true, false, false},
+		{`stddev_over_time({a="b"} | json [5m])`, true, false, false},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			expr, err := parseLogQLExpr(context.Background(), tc.query)

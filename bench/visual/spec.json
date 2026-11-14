@@ -1469,6 +1469,19 @@
    ]
   },
   {
+   "id": "explore-unwrap-stddev-over-time-range-window",
+   "kind": "explore",
+   "query": "stddev_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [5m]) by (app)",
+   "covers": [
+    "semantics/stddev-stdvar-over-time-range-window",
+    "window-bounds-and-step-alignment",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/stddev-stdvar-over-time-range-window"
+   ]
+  },
+  {
    "id": "explore-unwrap-first-last-under-sum",
    "kind": "explore",
    "query": "sum by (service_name) (last_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [$__auto]))",

@@ -770,8 +770,12 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params)))
 	u := backendRequestURL(p.backend, path)
 	querycorpus.RecordBackend(path, params.Get("query"))
-	p.log.Debug("VL request", "method", "POST", "url", u.String(), "params", redactQuery(params.Encode(), p.debugLogRawQueries))
-	req, err := http.NewRequestWithContext(ctx, "POST", u.String(), strings.NewReader(params.Encode()))
+	body := params.Encode()
+	if p.log.Enabled(ctx, slog.LevelDebug) {
+		// Built only when written: the encoded form, its hash and the URL cost a request's worth of bytes.
+		p.log.Debug("VL request", "method", "POST", "url", u.String(), "params", redactQuery(body, p.debugLogRawQueries))
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", u.String(), strings.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

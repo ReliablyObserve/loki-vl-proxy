@@ -135,11 +135,15 @@ func parseFlexibleUnixNanos(raw string) (int64, bool) {
 	if value == "" {
 		return 0, false
 	}
-	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
-		return parsed.UnixNano(), true
-	}
-	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
-		return parsed.UnixNano(), true
+	// An RFC 3339 time always holds a colon and a number never does: a number skips the two time layouts, whose
+	// failed parses allocate their errors.
+	if strings.IndexByte(value, ':') >= 0 {
+		if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
+			return parsed.UnixNano(), true
+		}
+		if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+			return parsed.UnixNano(), true
+		}
 	}
 	if integer, err := strconv.ParseInt(value, 10, 64); err == nil {
 		return normalizeUnixNanos(integer), true
