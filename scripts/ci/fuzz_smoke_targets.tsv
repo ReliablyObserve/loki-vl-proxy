@@ -172,3 +172,4 @@ smoke	internal/proxy	FuzzRefusalErrors	12s	-	client errors built from a raw star
 smoke	internal/proxy	FuzzRequestParamChecks	12s	-	request parameter checks (time, step, limit, since, window, length) against a model of the recorded Loki rules
 smoke	test/ciworkflows	FuzzParseWorkflow	12s	-	the CI workflow inventory reads any workflow text or refuses it, and every schedule it accepts has a period
 smoke	test/caseverify	FuzzCompareIsReflexive	12s	-	the per-case live runner finds no difference between an answer and itself, whatever the answer holds
+smoke	internal/translate	FuzzSplitUnwrapGate	12s	-	the unwrap gate split answers as the reference that writes every gate

@@ -109,6 +109,9 @@ func TestDynamicIdentityCacheReuse(t *testing.T) {
 		cold = get("/loki/api/v1/query_range", window(end))
 		coldCalls, coldBytes = counter.take()
 		_, coldBuckets := shim.bucketsRead()
+		if !shimReadIdentity(shim) {
+			t.Errorf("%s range: the stats calls do not group by the series hash", q)
+		}
 		shim.reset()
 		again = get("/loki/api/v1/query_range", window(end))
 		repCalls, repBytes = counter.take()
@@ -161,6 +164,13 @@ func dynamicIdentityStatsStub(t *testing.T) http.Handler {
 			}
 			b.WriteString(`]}]}}`)
 			_, _ = w.Write([]byte(b.String()))
+		case "/select/logsql/query":
+			// A raw-row read (a route that evaluates the rows itself): a few json lines in the window.
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			for i := 0; i < 20; i++ {
+				ts := time.Unix(1700011800-int64(i)*7, 0).UTC().Format(time.RFC3339Nano)
+				_, _ = w.Write([]byte(`{"_time":"` + ts + `","_stream":"{app=\"api\"}","app":"api","_msg":"{\"n\":` + strconv.Itoa(i) + `}","n":"` + strconv.Itoa(i) + `"}` + "\n"))
+			}
 		default:
 			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
 		}
@@ -180,4 +190,16 @@ func dynamicIdentityResult(t *testing.T, body []byte) []byte {
 		t.Fatalf("not a Loki answer: %.300s", body)
 	}
 	return resp.Data.Result
+}
+
+// shimReadIdentity reports stats_query_range calls the extent shim saw, every one grouped by a parser's series hash.
+func shimReadIdentity(s *extentShim) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.calls {
+		if !strings.Contains(c.query, dynamicSeriesHashPipe) {
+			return false
+		}
+	}
+	return len(s.calls) > 0
 }
