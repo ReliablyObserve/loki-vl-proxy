@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.241.0] - 2026-11-14
-
 ### Fixed
 
 - A `| keep` before `| unwrap` now decides the series of `first_over_time`, `last_over_time`, `quantile_over_time`,
@@ -21,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (508946.9 where Loki answers 281) and now answers Loki's value. The proxy groups VictoriaLogs' stats by the kept
   labels, on `query` and `query_range` alike, instead of reading the rows of every line. A keep with a condition,
   or one followed by a parser, `label_format` or `drop`, keeps its previous behaviour.
+
+## [2.241.0] - 2026-11-14
+
+### Fixed
+
 - `stddev_over_time` and `stdvar_over_time` over an unwrapped label on `query_range` now answer Loki's window when
   the range is not the step. With a range longer than the step (for example `[5m]` in Grafana's 1-minute step) every
   point was the step-sized bucket after it, so the range was ignored and the chart matched the `[1m]` one. The proxy
