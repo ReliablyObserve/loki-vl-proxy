@@ -1,0 +1,41 @@
+id: semantics/drop-before-unwrap-stream-label
+title: A drop of a stream label before an unwrap keeps the label in the proxy's series; Loki's series lose it (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `first_over_time({job="kj"} | json duration_ms | drop pod | unwrap duration_ms [5m])`:
+  the drop deletes the stream label pod, so the samples of the streams that differ
+  only by pod are one Loki series without pod. The proxy keeps a series per stream
+  with its pod label. Measured with the Loki engine oracle and VictoriaLogs
+  v1.53.0 and v1.49.0 (TestKeepUnwrapIdentityMatchLoki): first, quantile and
+  stddev over time differ on every request kind ("adds a label"). Seen on the
+  stack with `| drop level` (Loki 3.7.9). The plan's series attribute
+  (queryplan.SeriesLabels) records the dropped labels, but the stream's other
+  labels are not known to the plan (no stream label names reach it), so the
+  lowering cannot group by the stream less a label.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'first_over_time({app="api-gateway"} | json duration_ms | drop pod | unwrap duration_ms [5m])'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series]
+  expect: |
+    Loki's series, without the dropped label.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/queryplan/lower (no stream label names in the plan); internal/proxy raw-row evaluators (series key per stream)'
+  loki: 'a drop deletes the label from every sample'
+  proxy: 'a series per stream with the dropped label'
+  planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus) lists the runs under this case'
+  clusters: []

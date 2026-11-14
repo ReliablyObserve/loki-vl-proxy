@@ -292,7 +292,7 @@ func readsParserLabels(p *queryplan.Plan) bool {
 		return true
 	}
 	rate := ra.Op == logql.RangeRate || ra.Op == logql.RangeBytesRate
-	if _, kept := trailingKeepLabels(ra.In); kept && (rate || inner != nil && inner.Op != logql.VectorSum) {
+	if _, kept := trailingKeepLabels(ra.In, false); kept && (rate || inner != nil && inner.Op != logql.VectorSum) {
 		return true
 	}
 	for _, g := range groupings {

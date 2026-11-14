@@ -28,7 +28,10 @@ import (
 //     the labels of the clause), and a without clause groups nothing and leaves the fold to the proxy, over a
 //     stats that keeps a row per stream;
 //   - quantile_over_time aggregates the rows of its group under any outer aggregation, which only chooses the
-//     grouping, and rate_counter's value is computed by the proxy (the marker function).
+//     grouping, and rate_counter's value is computed by the proxy (the marker function);
+//   - behind a keep before the unwrap (keptIdentity) the series are the labels it leaves, wherever the rules above
+//     say the stream (and each line): Loki's identity, which the string translator does not write, so the proxy
+//     serves these queries from the lowering (KeepUnwrapIdentity).
 //
 // Left to the string translator under a construct name: stdvar_over_time (the proxy squares the deviation), a
 // grouping by without, a range of no length under rate, a label that is not named as the translator reads it from
@@ -381,7 +384,7 @@ func unwrapRange(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	// The unwrap stage stands where it was written: the translator takes a keep after it to decide the series of a rate.
 	var ident []string
 	if rate {
-		if ident, err = seriesIdent(ra.In, log.parser, false, "RangeAgg", prof); err != nil {
+		if ident, err = seriesIdent(ra.In, log.parser, false, true, "RangeAgg", prof); err != nil {
 			return nil, err
 		}
 	}
@@ -539,7 +542,7 @@ func (q *unwrapQuery) outerIdentity() []string {
 // empty for a keep that leaves no label (one series). A label the label function turns into nothing decides
 // nothing either.
 func keptIdentity(sel *queryplan.LogSelect, prof Profile) (by []string, ok bool) {
-	kept, ok := trailingKeepLabels(sel)
+	kept, ok := trailingKeepLabels(sel, true)
 	if !ok || unwrapStage(sel) == nil {
 		return nil, false
 	}
@@ -698,7 +701,7 @@ func unwrapVectorStats(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Pro
 	q.kept, q.keptSet = keptIdentity(ra.In, prof)
 	if rate {
 		// The unwrap stage stands where it was written: the translator takes a keep after it to decide the series.
-		ident, err := seriesIdent(ra.In, log.parser, without, "VectorAgg", prof)
+		ident, err := seriesIdent(ra.In, log.parser, without, true, "VectorAgg", prof)
 		if err != nil {
 			return nil, statsView{}, err
 		}
@@ -1062,8 +1065,8 @@ func KeepUnwrapIdentity(p *queryplan.Plan) (labels []string, ok bool) {
 	if va, isVec := p.Root.(*queryplan.VectorAgg); isVec {
 		ra, isRange = va.In.(*queryplan.RangeAgg)
 	}
-	if !isRange || ra.In == nil || unwrapStage(ra.In) == nil {
+	if !isRange || ra.In == nil || unwrapStage(ra.In) == nil || ra.Op == logql.RangeAbsentOverTime {
 		return nil, false
 	}
-	return trailingKeepLabels(ra.In)
+	return trailingKeepLabels(ra.In, true)
 }

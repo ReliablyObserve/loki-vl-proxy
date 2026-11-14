@@ -816,23 +816,29 @@ func hasExtractingParserStage(logql string) bool {
 // extraction. Template-window queries that the parser rejects fall back to the
 // regex-based path so runtime behaviour is identical.
 func parseBareParserMetricCompatSpec(query string) (bareParserMetricCompatSpec, bool) {
-	// A keep before the unwrap decides the series (lower.KeepDecidesUnwrapIdentity): the query is translated by the
-	// typed lowering, whose stats group by the labels the keep leaves, and answered from VictoriaLogs' stats.
-	if _, kept := keepUnwrapIdentity(query); kept {
-		return bareParserMetricCompatSpec{}, false
-	}
 	if spec, ok := parseBareParserMetricCompatSpecAST(strings.TrimSpace(query)); ok {
 		return spec, true
 	}
 	return parseBareParserMetricCompatSpecRegex(strings.TrimSpace(query))
 }
 
+// bareParserMetricSpec is parseBareParserMetricCompatSpec for the query and query_range handlers: a query whose
+// series a keep before the unwrap decides (keepUnwrapIdentity) is translated by the typed lowering, whose stats
+// group by the labels the keep leaves, and answered from VictoriaLogs' stats, not from raw rows.
+func (p *Proxy) bareParserMetricSpec(query string) (bareParserMetricCompatSpec, bool) {
+	if _, kept := p.keepUnwrapIdentity(query); kept {
+		return bareParserMetricCompatSpec{}, false
+	}
+	return parseBareParserMetricCompatSpec(query)
+}
+
 // keepUnwrapIdentity is the series identity a keep before the unwrap of the query decides
 // (lower.KeepUnwrapIdentity), read from the query's shared plan: the labels the keep leaves, as Loki names them. The
-// typed lowering serves such a query (keepIdentityConstruct), and the handlers evaluate the windows of those series.
-// A query without both words is not planned.
-func keepUnwrapIdentity(query string) (labels []string, ok bool) {
-	if !strings.Contains(query, "keep") || !strings.Contains(query, "unwrap") {
+// typed lowering serves such a query (keepIdentityConstruct), and the handlers evaluate the windows of those series;
+// with -query-plan-lowering=false the string translator serves it and no handler reads the identity. A query without
+// both words is not planned.
+func (p *Proxy) keepUnwrapIdentity(query string) (labels []string, ok bool) {
+	if !p.queryPlanLowering || !strings.Contains(query, "keep") || !strings.Contains(query, "unwrap") {
 		return nil, false
 	}
 	plan := resolvedPlan(strings.TrimSpace(query))

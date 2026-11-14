@@ -1,0 +1,80 @@
+id: semantics/keep-before-unwrap-series-identity
+title: A keep before an unwrap decides the series of first, last, quantile, stddev, stdvar, avg, max, sum and rate_counter over time (fixed)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki puts every sample in the series of the labels its line carries after the
+  last stage. A keep without a matcher deletes every label it does not name
+  (stream labels and structured metadata included, never the error labels), and
+  the unwrap takes its own label out of the sample. So
+  `first_over_time({app="api-gateway"} | json | keep app, duration_ms | unwrap duration_ms [5m])`
+  is one series `{app="api-gateway"}` for the whole selector: the first sample of
+  all its lines in the window.
+
+  The proxy grouped these functions by the stream (and each line, over a
+  parser), whatever the keep. Measured on the stack (Loki 3.7.9, VictoriaLogs
+  v1.53.0, generator data where every api-gateway line is a series of its own
+  without the keep): the bare first_over_time answered 674 series (Loki 1),
+  `sum by (app) (first_over_time(...))` and `last_over_time` 1311298 (Loki 225 and
+  213), `sum by (app) (quantile_over_time(0.9, ...))` 508946.9 (Loki 281),
+  `sum(stddev_over_time(...))` 83346 on instant and 0 on range (Loki 572.6), and
+  rate_counter 1-3% off. `sum by (app) (avg|max|stddev(...))` matched only
+  because the stats of an outer by group by its labels alone.
+
+  Fixed: the plan reads the labels a sample carries after the pipeline from its
+  typed stages (queryplan.SeriesLabels: the kept labels less the error labels, a
+  later drop and the unwrapped one). When a keep before the unwrap decides them,
+  the lowering groups the stats by those labels (a function alone, under a vector
+  aggregation whose clause does not hold them, and the window evaluators of
+  first, last, quantile and rate_counter), the proxy serves the query from the
+  lowering instead of the string translator, and the raw-row and quantile
+  evaluators read the same labels. A keep that leaves no label is one series
+  without labels. A keep with a matcher, or one followed by a parser,
+  label_format or drop, decides nothing and keeps its previous plan.
+
+  Proven against the Loki engine oracle and VictoriaLogs v1.53.0 and v1.49.0
+  (TestKeepUnwrapIdentityMatchLoki, 75 shapes x instant, step = range, step <
+  range and step > range, with and without keep, grouped and ungrouped). The
+  runs still differing are held by semantics/unwrap-first-last-range-longer-than-step,
+  semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile,
+  semantics/stdvar-grouped-pooled-variance, semantics/keep-before-parser-unwrap-identity,
+  semantics/drop-before-unwrap-stream-label and semantics/unwrap-rate-counter-window-extrapolation.
+corpus:
+  size: 6
+  dimensions:
+    shapes:
+      - query: 'first_over_time({app="api-gateway"} | json | keep app, duration_ms | unwrap duration_ms [5m])'
+      - query: 'sum by (app) (last_over_time({app="api-gateway"} | json | keep app, duration_ms | unwrap duration_ms [5m]))'
+      - query: 'quantile_over_time(0.9, {app="api-gateway"} | json | keep app, duration_ms | unwrap duration_ms [5m])'
+      - query: 'sum(stddev_over_time({app="api-gateway"} | json | keep app, duration_ms | unwrap duration_ms [5m]))'
+      - query: 'sum(stdvar_over_time({app="api-gateway"} | json | keep app, duration_ms | unwrap duration_ms [5m]))'
+      - query: 'max by (app) (avg_over_time({app="api-gateway"} | json | keep app, pod, duration_ms | unwrap duration_ms [5m]))'
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (app) (quantile_over_time(0.9, {app="api-gateway"} | json | keep app, duration_ms | unwrap duration_ms [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '300'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's series (the kept labels less the unwrapped one) and values.
+gap:
+  status: fixed
+  fixed_by: "this change"
+  impact: explore-visible
+  effort: M
+  area: 'internal/queryplan series_labels.go (SeriesLabels); internal/queryplan/lower unwrap.go (keptIdentity, KeepUnwrapIdentity), parser_labels.go (trailingKeepLabels); internal/proxy query_lowering.go (lowerKeepIdentity), query_translation.go (keepUnwrapIdentity), quantile_histogram.go (withQuantileShape), keep_series_grouping.go (trailingKeepLabels)'
+  loki: 'the series are the labels after the last stage: a keep deletes the labels it does not name, the unwrap deletes its own'
+  proxy: 'the stats, the raw-row evaluators and the quantile evaluator group by the labels the keep leaves'
+  planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestSeriesLabels, FuzzSeriesLabels (internal/queryplan); TestKeepUnwrapIdentityLowering (internal/queryplan/lower); TestKeepIdentityServedFromPlan (internal/proxy)'
+  clusters: []

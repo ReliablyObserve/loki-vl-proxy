@@ -563,7 +563,7 @@ func (p *Proxy) withQuantileShape(r *http.Request, logql string, spec statsCompa
 	if !ok {
 		return r, spec, false
 	}
-	if kept, decided := keepUnwrapIdentity(logql); decided && !rangeGrouped {
+	if kept, decided := p.keepUnwrapIdentity(logql); decided && !rangeGrouped {
 		// A keep before the unwrap decides the series: the labels it leaves, as the range aggregation's by would.
 		spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = p.upstreamLabelNames(kept), kept, len(kept) == 0
 	} else if !rangeGrouped {

@@ -287,7 +287,8 @@ func parserLabelsShadow(t *testing.T, grid []string, lowerFn lowering) (rows, na
 			}
 			// A root the proxy evaluates (stddev, stdvar, a ranking) is held to the proxy's route, as in TestPlanShadow.
 			routed, divergence := routedRoot(plan)
-			if _, known := knownTypedDivergences()[queryID("logql", q)]; known || translatorMisreadsQuotedText(q) || (!routed && translatorMisreadsParenthesizedMetric(q)) || translatorReadsStageMarker(q) || emptyWithoutDiffers(q, plan, prof) {
+			if _, known := knownTypedDivergences()[queryID("logql", q)]; known || translatorMisreadsQuotedText(q) || (!routed && translatorMisreadsParenthesizedMetric(q)) || translatorReadsStageMarker(q) || emptyWithoutDiffers(q, plan, prof) ||
+				lower.KeepDecidesUnwrapIdentity(plan) && !sameAsTranslator(got, legacy) {
 				delegated["known divergence"]++
 				continue
 			}

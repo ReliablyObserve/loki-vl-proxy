@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -51,6 +52,8 @@ type lokiFacts struct {
 	} `json:"matchers"`
 	LineFilters  []lokiLineFilter  `json:"line_filters"`
 	LabelFilters []lokiLabelFilter `json:"label_filters"`
+	SeriesStages []lokiStage       `json:"series_stages"`
+	Unwrap       string            `json:"unwrap"`
 }
 
 type lokiLabelFilter struct {
@@ -347,6 +350,85 @@ func ourPipeline(n Node) *LogSelect {
 
 var vectorOps = map[string]bool{"sum": true, "avg": true, "min": true, "max": true, "count": true, "stddev": true, "stdvar": true}
 
+// lokiOracleSeriesQueries are the keep and drop shapes of the series identity (SeriesLabels) besides the corpus's.
+var lokiOracleSeriesQueries = []string{
+	`first_over_time({app="a"} | json | keep app, duration_ms | unwrap duration_ms [5m])`,
+	`sum by (app) (quantile_over_time(0.9, {app="a"} | json | keep app, duration_ms | unwrap duration_ms [5m]))`,
+	`stddev_over_time({app="a"} | json | keep duration_ms | unwrap duration_ms [5m])`,
+	`sum(rate_counter({app="a"} | json | keep app, region, __error__, duration_ms | unwrap duration_ms [5m]))`,
+	`sum by (app) (stddev_over_time({app="a"} | keep app | json | unwrap duration_ms [5m]))`,
+	`first_over_time({app="a"} | json duration_ms | drop pod | unwrap duration_ms [5m])`,
+	`first_over_time({app="a"} | json | keep app, duration_ms | drop app | unwrap duration_ms [5m])`,
+	`first_over_time({app="a"} | json | keep app | unwrap duration_ms [5m])`,
+	`first_over_time({app="a"} | json | keep app, duration_ms | label_format x=app | unwrap duration_ms [5m])`,
+	`rate({app="a"} | json | keep app, pod [5m])`,
+	`count_over_time({app="a"} | logfmt | keep app | json [5m])`,
+	`{app="a"} | json | keep app, pod`,
+}
+
+// seriesLabelsAgainstLoki is the series identity of the pipeline (SeriesLabels) and the same reading of Loki's tree
+// (its stages that decide labels and its unwrapped label), for a pipeline with a keep or a drop and none with a
+// matcher; ok is false for the others.
+func seriesLabelsAgainstLoki(sel *LogSelect, lf lokiFacts) (ours, lokis OutLabels, ok bool) {
+	named := false
+	for _, st := range sel.Stages {
+		switch x := st.(type) {
+		case *Keep:
+			named = true
+			if len(x.Matchers) > 0 {
+				return OutLabels{}, OutLabels{}, false
+			}
+		case *Drop:
+			named = true
+			if len(x.Matchers) > 0 {
+				return OutLabels{}, OutLabels{}, false
+			}
+		}
+	}
+	if !named {
+		return OutLabels{}, OutLabels{}, false
+	}
+	ours = SeriesLabels(sel.Stages)
+	for _, st := range lf.SeriesStages {
+		switch st.Kind {
+		case "keep":
+			lokis = OutLabels{Kept: true}
+			for _, n := range st.Names {
+				if n != "__error__" && n != "__error_details__" && n != "__preserve_error__" {
+					lokis.Names = append(lokis.Names, n)
+				}
+			}
+		case "drop":
+			for _, n := range st.Names {
+				lokis.Names = slices.DeleteFunc(lokis.Names, func(l string) bool { return l == n })
+				if !slices.Contains(lokis.Dropped, n) {
+					lokis.Dropped = append(lokis.Dropped, n)
+				}
+			}
+		case "parser":
+			lokis.Dynamic = true
+		case "label_format":
+			lokis.Opaque = true
+		}
+	}
+	if u := lf.Unwrap; u != "" {
+		if lokis.Kept && !lokis.Dynamic && !slices.Contains(lokis.Names, u) {
+			lokis.Opaque = true
+		}
+		lokis.Names = slices.DeleteFunc(lokis.Names, func(l string) bool { return l == u })
+		lokis.Unwrapped = u
+	}
+	// Loki's keep stage holds its names in an order of its own: both sides are compared sorted, and an empty set
+	// as none.
+	for _, o := range []*OutLabels{&ours, &lokis} {
+		o.Names = slices.Sorted(slices.Values(o.Names))
+		if len(o.Names) == 0 {
+			o.Names = nil
+		}
+	}
+	return ours, lokis, true
+}
+
 func TestPlanMatchesLokiOracle(t *testing.T) {
 	if os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("LVP_RUN_ORACLES=1 is not set")
@@ -371,7 +453,7 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := bufio.NewWriter(f)
-	for _, q := range append(rows, lokiOracleLevelQueries...) {
+	for _, q := range append(append(rows, lokiOracleLevelQueries...), lokiOracleSeriesQueries...) {
 		expr, msg := logql.ValidateLogQLExpr(q)
 		if msg != "" || expr == nil {
 			continue
@@ -398,7 +480,7 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 		t.Fatal(err)
 	}
 	var problems []string
-	compared, lokiRejects, ambiguous, selectors, lineFilterPipelines, levelFilterPipelines := 0, 0, 0, 0, 0, 0
+	compared, lokiRejects, ambiguous, selectors, lineFilterPipelines, levelFilterPipelines, seriesPipelines := 0, 0, 0, 0, 0, 0, 0
 	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
 		var lf lokiFacts
 		if err := json.Unmarshal([]byte(line), &lf); err != nil {
@@ -459,6 +541,16 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 				continue
 			}
 		}
+		// The labels a sample carries after the pipeline (SeriesLabels), against the same reading of the stages and
+		// the unwrapped label in Loki's tree. A keep or a drop with a matcher is left out: Loki's tree lists the
+		// matcher's name among the keep's labels.
+		if ours, lokis, ok := seriesLabelsAgainstLoki(sel, lf); ok {
+			seriesPipelines++
+			if !reflect.DeepEqual(ours, lokis) {
+				problems = append(problems, fmt.Sprintf("%q: series labels %+v, Loki's tree %+v", r.q, ours, lokis))
+				continue
+			}
+		}
 		mine, loki := ourStages(sel), significant(lf.Pipeline)
 		if !reflect.DeepEqual(mine, loki) {
 			problems = append(problems, fmt.Sprintf("%q: parser and drop stages %+v, Loki's tree %+v", r.q, mine, loki))
@@ -479,7 +571,10 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 			problems = append(problems, fmt.Sprintf("%q: %d parsers, error policy %d; Loki's tree: %d parsers, error label dropped %v", r.q, sel.Sem.Parsers, sel.Sem.ErrorPolicy, parsers, dropped))
 		}
 	}
-	t.Logf("%d queries compared with Loki's tree (%d stream selectors, %d with line filters, %d with detected_level filters), %d the proxy accepts and Loki rejects (the parse oracle reports them), %d conditional drops of __error__ left out", compared, selectors, lineFilterPipelines, levelFilterPipelines, lokiRejects, ambiguous)
+	t.Logf("%d queries compared with Loki's tree (%d stream selectors, %d with line filters, %d with detected_level filters, %d with a keep or a drop), %d the proxy accepts and Loki rejects (the parse oracle reports them), %d conditional drops of __error__ left out", compared, selectors, lineFilterPipelines, levelFilterPipelines, seriesPipelines, lokiRejects, ambiguous)
+	if seriesPipelines < len(lokiOracleSeriesQueries) {
+		t.Fatalf("only %d pipelines with a keep or a drop compared", seriesPipelines)
+	}
 	if compared < 1000 {
 		t.Fatalf("only %d queries compared", compared)
 	}

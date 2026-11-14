@@ -217,13 +217,30 @@ func TestTrailingKeepLabels(t *testing.T) {
 		`{a="b"} | keep __error__`:                        "",
 		`{a="b"} | line_format "x"`:                       "-",
 	} {
-		kept, ok := trailingKeepLabels(selectOf(t, q))
+		kept, ok := trailingKeepLabels(selectOf(t, q), false)
 		got := "-"
 		if ok {
 			got = strings.Join(kept, ",")
 		}
 		if got != want {
 			t.Errorf("%s: got %q, want %q", q, got, want)
+		}
+	}
+	// For a function that reads the unwrapped value, a keep before the unwrap decides the series, less the
+	// unwrapped label (semantics/keep-before-unwrap-series-identity).
+	for q, want := range map[string]string{
+		`{a="b"} | keep x | unwrap n`:           "-",
+		`{a="b"} | keep x, n | unwrap n`:        "x",
+		`{a="b"} | json | keep n | unwrap n`:    "",
+		`{a="b"} | keep x, n | json | unwrap n`: "-",
+	} {
+		kept, ok := trailingKeepLabels(selectOf(t, q), true)
+		got := "-"
+		if ok {
+			got = strings.Join(kept, ",")
+		}
+		if got != want {
+			t.Errorf("unwrapped %s: got %q, want %q", q, got, want)
 		}
 	}
 }

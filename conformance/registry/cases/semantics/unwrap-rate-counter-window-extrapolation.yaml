@@ -1,0 +1,40 @@
+id: semantics/unwrap-rate-counter-window-extrapolation
+title: rate_counter over an unwrapped label differs from Loki's in the sixth significant digit (open)
+pending: true
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  With the series right (a keep before the unwrap decides them,
+  semantics/keep-before-unwrap-series-identity),
+  `sum(rate_counter({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]))`
+  answers 383.8 where Loki answers 383.80039 (and 377.19 for 377.19040): about
+  1e-6 relative, above the differential's 1e-9 float tolerance, on every request
+  kind. Measured with the Loki engine oracle and VictoriaLogs v1.53.0 and v1.49.0
+  (TestKeepUnwrapIdentityMatchLoki). Loki's rate_counter is the extrapolated
+  counter rate of the window; the proxy's window rate does not extrapolate the
+  same way.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum(rate_counter({app="api-gateway"} | json | keep app, duration_ms | unwrap duration_ms [5m]))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [values]
+  expect: |
+    Loki's extrapolated counter rate, equal to 1e-9 relative.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy range_metric_compat.go rateCounterWindow'
+  loki: 'the extrapolated rate of the counter over the window'
+  proxy: 'the increase over the window divided by the range'
+  planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus) lists the runs under this case'
+  clusters: []

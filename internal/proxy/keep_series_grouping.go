@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 )
 
 // keepSeriesGrouping returns query with every range aggregation over a
@@ -112,35 +113,25 @@ func keepGrouped(v *logqlpkg.VectorAggregation) bool {
 // trailingKeepLabels returns the labels the last | keep of a pipeline names
 // (Loki's special error labels left out: keep never removes them, and a
 // metric whose series carries one is an error) and whether that keep decides
-// the series labels: it has no matcher, and every stage after it leaves the
-// labels alone. A pipeline with an unwrap is left out: its series also drop
-// the unwrapped label.
+// the series labels: the series identity the plan reads from the stages
+// (queryplan.SeriesLabels) is the keep's, no keep of the pipeline has a
+// matcher, and no stage after it adds, renames or drops a label. A pipeline
+// with an unwrap is left out: its series also drop the unwrapped label, and
+// the typed lowering answers it (keepUnwrapIdentity).
 func trailingKeepLabels(pipeline []logqlpkg.Stage) (kept []string, ok bool) {
-	last := -1
-	for i, stage := range pipeline {
-		if k, isKeep := stage.(*logqlpkg.KeepStage); isKeep {
-			if len(k.Matchers) > 0 {
+	for _, stage := range pipeline {
+		switch st := stage.(type) {
+		case *logqlpkg.KeepStage:
+			if len(st.Matchers) > 0 {
 				return nil, false
 			}
-			last = i
-		}
-	}
-	if last < 0 {
-		return nil, false
-	}
-	for _, stage := range pipeline[last+1:] {
-		switch stage.(type) {
-		case *logqlpkg.LineFilterStage, *logqlpkg.LabelFilterStage, *logqlpkg.LineFormatStage, *logqlpkg.DecolorizeStage:
-		default:
+		case *logqlpkg.UnwrapStage:
 			return nil, false
 		}
 	}
-	for _, l := range pipeline[last].(*logqlpkg.KeepStage).Labels {
-		switch l {
-		case errorLabel, errorDetailsLabel, "__preserve_error__":
-			continue
-		}
-		kept = append(kept, l)
+	out := queryplan.SeriesLabels(pipeline)
+	if kept, ok = out.KeptIdentity(); !ok || len(out.Dropped) > 0 {
+		return nil, false
 	}
 	return kept, true
 }
