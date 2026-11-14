@@ -197,8 +197,9 @@ func TestRunFollowsAfterTheBacklog(t *testing.T) {
 	if !strings.Contains(out.String(), "following: one tick per 30s") {
 		t.Errorf("no follow line:\n%s", out.String())
 	}
-	// Four ticks of backlog, and the follow may already have written the next one when the clock is past it.
-	if n := st.loki[selector(s[0])]; n != 4*len(s[0].Entries) && n != 5*len(s[0].Entries) {
+	// Four ticks of backlog; the follow writes the next one at once when the clock is already past it, and a second
+	// one when the run starts within the last seconds of a 30 second boundary and the 3 second context spans it.
+	if n := st.loki[selector(s[0])]; n < 4*len(s[0].Entries) || n > 6*len(s[0].Entries) {
 		t.Errorf("the backlog holds %d lines", n)
 	}
 }
