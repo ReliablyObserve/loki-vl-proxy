@@ -297,13 +297,13 @@ func TestDLVCacheBaselineCompleteTier0Repeat(t *testing.T) {
 		t.Run(shape.name, func(t *testing.T) {
 			backend, fixture := newDLVBaselineBackend(t, shape, base)
 			p := newDLVBaselineProxy(t, backend.URL, true)
+			origins := traceVLCallOrigins(p)
 			target, headers := dlvBaselineRequest(shape, base.Add(time.Minute), base.Add(3*time.Minute))
 			want := dlvBaselineWant(fixture.rows, shape, base.Add(time.Minute), base.Add(3*time.Minute), "10", "alpha")
-			first := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, headers))
-			before := fixture.calls.Load()
-			second := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, headers))
-			if len(first) == 0 || !reflect.DeepEqual(first, want) || !reflect.DeepEqual(second, want) || fixture.calls.Load() != before {
-				t.Fatalf("complete repeat: first=%v second=%v want=%v backend calls %d -> %d", first, second, want, before, fixture.calls.Load())
+			first := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "cold")))
+			second := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "repeat")))
+			if len(first) == 0 || !reflect.DeepEqual(first, want) || !reflect.DeepEqual(second, want) || origins.made("cold") == 0 || origins.made("repeat") != 0 {
+				t.Fatalf("complete repeat: first=%v second=%v want=%v backend calls cold %d, repeat %d", first, second, want, origins.made("cold"), origins.made("repeat"))
 			}
 		})
 	}
