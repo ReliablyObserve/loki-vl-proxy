@@ -116,5 +116,18 @@ class JudgeTest(unittest.TestCase):
         self.assertEqual([e["commit"] for e in lines], ["0123456789abcdef"])
 
 
+class JudgeCommandTest(unittest.TestCase):
+    def test_judge_writes_the_verdict_of_saved_summaries(self):
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "summary-control.json")
+        with open(path, "w") as f:
+            json.dump(summary("2026-11-16", row("a", "1h", 3.0, 1.0), row("b", "1h", 1.0, 1.0)), f)
+        out = os.path.join(d, "verdict.json")
+        self.assertEqual(smoke.main(["judge", "--out", out, "--ratchet-dir", d, path]), 0)
+        with open(out) as f:
+            v = json.load(f)
+        self.assertEqual((v["rows"], len(v["over_2x"]), v["red"]), (2, 1, True))
+
+
 if __name__ == "__main__":
     unittest.main()

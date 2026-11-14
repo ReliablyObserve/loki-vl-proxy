@@ -24,10 +24,16 @@ judge() is the smoke's verdict, red when
 The distribution (below, close, between, above 2x Loki) is reported per mode beside it, and the reuse per row
 (VictoriaLogs calls and bytes, cold, repeat and refresh, and the repeat's hit ratio per layer and tier) is kept
 in bench/ab/history/daily-smoke/reuse.jsonl, one line per day.
+
+  python3 bench/ab/smoke.py judge --out verdict.json SUMMARY.json...
+judges report.py summaries of any run the same way, with no previous line (the weekly run uses it for its
+full A/B on the oldest supported VictoriaLogs, which writes no history).
 """
+import argparse
 import json
 import os
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -209,3 +215,30 @@ def write(summaries, out_dir, date, commit, directory=DIRECTORY, ratchet_dir=his
     with open(os.path.join(out_dir, "smoke.md"), "w") as f:
         f.write(render(verdict, date, commit))
     return verdict
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="judge report.py summaries like the daily perf smoke")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    j = sub.add_parser("judge")
+    j.add_argument("--out", required=True)
+    j.add_argument("--ratchet-dir", default=history.HISTORY)
+    j.add_argument("summaries", nargs="+")
+    a = ap.parse_args(argv)
+    summaries = []
+    for path in a.summaries:
+        with open(path) as f:
+            summaries.append(json.load(f))
+    ratchet, problem = history.read_ratchet(a.ratchet_dir)
+    with tempfile.TemporaryDirectory() as empty:
+        verdict = judge(summaries, ratchet, empty)
+    verdict["ratchet_problem"] = problem
+    with open(a.out, "w") as f:
+        json.dump(verdict, f, indent=1, sort_keys=True)
+        f.write("\n")
+    print(f"{verdict['rows']} rows, {len(verdict['over_2x'])} above 2x Loki, {len(verdict['ratchet_lost'])} ratchet rows lost")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

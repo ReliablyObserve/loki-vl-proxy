@@ -190,6 +190,25 @@ a parity cluster is claimed by no case, a perf row is above 2x Loki or lost the
 weekly ratchet, a scheduled workflow is missing or red, or a job produced no
 result.
 
+### The weekly full run
+
+`.github/workflows/perf-daily.yaml` (Perf weekly) runs the full A/B on the
+pinned VictoriaLogs and, beside it, on both VictoriaLogs versions of the support
+policy: the per-case verdicts, the whole parity corpus (recorded, never pruned;
+`parity-refresh.yaml` is the run that prunes), the full-size grammar sweep with
+the live oracles, the full A/B on v1.49.0 (written nowhere, judged by
+`bench/ab/smoke.py judge`) and a `release.yaml` dry run. `test/dailyreport
+-weekly` appends the week's numbers to
+`registry/generated/verification/weekly-history.jsonl` and writes
+`weekly-trend.md`, every number over the last eight weeks, which the weekly pull
+request carries. The weekly run also holds the fleet cache proof of the pull
+request gate (three proxies, peer memory and disk fetches, disk loss and refill,
+an owner down, replication factors 1 and 2) and the cache reuse of the A/B on
+both versions (VictoriaLogs calls of the repeats, the rows that repeat without
+calling VictoriaLogs). The run is red when a weekly job fails, the release dry
+run does not succeed, the fleet proof fails, or the reuse dropped against the
+week before.
+
 ## Reporting what a change touches
 
 Before opening a pull request that changes client-visible behaviour, run:

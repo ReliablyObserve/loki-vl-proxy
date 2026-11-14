@@ -18,7 +18,7 @@
     "loc-badges.yaml": {"group": "maintenance", "required": false, "verifies": "Refreshes the lines-of-code badges."},
     "parity-refresh.yaml": {"group": "weekly", "required": false, "verifies": "Differential run of the proxy against Loki over the whole corpus on a fresh stack; opens the rolling parity report pull request."},
     "perf-ab.yaml": {"group": "pr-gates", "required": false, "verifies": "Per pull request A/B smoke of the base build, the PR build and Loki over the shapes the change selects."},
-    "perf-daily.yaml": {"group": "weekly", "required": false, "verifies": "Full A/B run of the last release, main and Loki over every shape set and range; opens the rolling performance report pull request."},
+    "perf-daily.yaml": {"group": "weekly", "required": false, "verifies": "Full A/B run of the last release, main and Loki over every shape set and range, and the weekly full run on VictoriaLogs v1.49.0 and the pin: per-case verdicts, the whole parity corpus, the full-size grammar sweep, the A/B on v1.49.0, the fleet cache proof, the cache reuse of every shape and a release.yaml dry run; opens the rolling performance report pull request with the weekly trend."},
     "pr-evidence-summary.yaml": {"group": "pr-gates", "required": false, "verifies": "Summarises the evidence artifacts of a pull request's finished runs; runs no pull request code."},
     "pr-labeler.yaml": {"group": "maintenance", "required": false, "verifies": "Labels pull requests from their changed paths."},
     "pr-quality-report.yaml": {"group": "pr-gates", "required": true, "verifies": "Base against head quality report: coverage floor, tests, query corpus, compatibility scores and tracked performance."},

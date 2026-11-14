@@ -248,6 +248,15 @@ class ScopeCheckTests(unittest.TestCase):
         proc = self.run_check(pr("bench/daily-perf"), files(*PERF_FILES), commits(False))
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
+    def test_weekly_pull_request_with_the_weekly_trend_passes(self):
+        weekly = ["conformance/registry/generated/verification/weekly-history.jsonl",
+                  "conformance/registry/generated/verification/weekly-trend.md"]
+        proc = self.run_check(pr("bench/daily-perf"), files(*PERF_FILES, *weekly), commits(False))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        proc = self.run_check(pr("bench/daily-perf"), files(*PERF_FILES, "conformance/registry/generated/verification/summary.json"),
+                              commits(False))
+        self.assertNotEqual(proc.returncode, 0)
+
     def test_daily_pull_request_touching_cmd_fails(self):
         proc = self.run_check(pr("bench/daily-perf"), files(*PERF_FILES, "cmd/proxy/main.go"), commits(False))
         self.assertNotEqual(proc.returncode, 0)
