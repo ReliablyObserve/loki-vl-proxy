@@ -966,6 +966,7 @@
       "internal/proxy/stats_extent_large_answer_test.go",
       "internal/proxy/stats_extent_retention_test.go",
       "internal/proxy/step_align_test.go",
+      "internal/proxy/unwrap_dynamic_identity_cache_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
       "internal/proxy/unwrap_over_time_window_test.go",
       "test/e2e-compat/metric_range_extent_cache_test.go",
@@ -1258,6 +1259,9 @@
       "test/e2e-compat/extracted_metric_pushdown_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/json_label_probe_gates_test.go"
+    ],
+    "semantics/first-last-over-time-translation": [
+      "internal/querycorpus/first_last_offset_loki_diff_test.go"
     ],
     "semantics/format-query-parse-like-loki": [
       "internal/proxy/route_gate_test.go"
@@ -1791,8 +1795,11 @@
       "test/e2e-compat/stdvar_over_time_binary_marker_test.go"
     ],
     "semantics/stdvar-grouped-pooled-variance": [
+      "internal/proxy/unwrap_dynamic_identity_test.go",
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
-      "internal/querycorpus/stddev_stdvar_loki_diff_test.go"
+      "internal/querycorpus/stddev_stdvar_loki_diff_test.go",
+      "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go",
+      "internal/queryplan/lower/unwrap_dynamic_test.go"
     ],
     "semantics/stream-label-shadowed-by-ingest-json-key": [
       "internal/proxy/stream_tag_restore_test.go",
@@ -1992,8 +1999,12 @@
       "internal/proxy/unwrap_over_time_window_test.go"
     ],
     "semantics/unwrap-per-series-identity-raw-rows": [
+      "internal/proxy/unwrap_dynamic_identity_cache_test.go",
+      "internal/proxy/unwrap_dynamic_identity_test.go",
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
-      "internal/querycorpus/stddev_stdvar_loki_diff_test.go"
+      "internal/querycorpus/stddev_stdvar_loki_diff_test.go",
+      "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go",
+      "internal/queryplan/lower/unwrap_dynamic_test.go"
     ],
     "semantics/unwrap-quantile-response-limit": [
       "internal/proxy/quantile_histogram_test.go",
@@ -2002,7 +2013,8 @@
       "test/e2e-compat/unwrap_quantile_test.go"
     ],
     "semantics/unwrap-quantile-sum-by-group-quantile": [
-      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
+      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
+      "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go"
     ],
     "semantics/unwrap-range-last-point": [
       "internal/proxy/unwrap_range_last_point_test.go",
@@ -2309,7 +2321,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 577,
+  "registry_items": 578,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3723,6 +3735,14 @@
       "semantics/aggregation-over-range-by-not-applied",
       "semantics/stddev-stdvar-over-time-range-window"
     ],
+    "internal/proxy/unwrap_dynamic_identity_cache_test.go": [
+      "quality/query-range-extent-cache",
+      "semantics/unwrap-per-series-identity-raw-rows"
+    ],
+    "internal/proxy/unwrap_dynamic_identity_test.go": [
+      "semantics/stdvar-grouped-pooled-variance",
+      "semantics/unwrap-per-series-identity-raw-rows"
+    ],
     "internal/proxy/unwrap_extent_cache_test.go": [
       "loki_api_v1_query_range",
       "quality/query-range-extent-cache",
@@ -3859,6 +3879,9 @@
       "semantics/unwrap-first-last-range-timestamps",
       "semantics/unwrap-first-last-under-aggregation",
       "semantics/unwrap-stored-integer-field-gate"
+    ],
+    "internal/querycorpus/first_last_offset_loki_diff_test.go": [
+      "semantics/first-last-over-time-translation"
     ],
     "internal/querycorpus/format_grid_test.go": [
       "architecture-syntax-package-layering"
@@ -4008,6 +4031,11 @@
       "semantics/stdvar-grouped-pooled-variance",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
+    "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go": [
+      "semantics/stdvar-grouped-pooled-variance",
+      "semantics/unwrap-per-series-identity-raw-rows",
+      "semantics/unwrap-quantile-sum-by-group-quantile"
+    ],
     "internal/querycorpus/unwrap_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -4126,6 +4154,10 @@
     ],
     "internal/queryplan/lower/unpack_test.go": [
       "semantics/translator-writes-unpack-as-unpack-json"
+    ],
+    "internal/queryplan/lower/unwrap_dynamic_test.go": [
+      "semantics/stdvar-grouped-pooled-variance",
+      "semantics/unwrap-per-series-identity-raw-rows"
     ],
     "internal/queryplan/lower/unwrap_keep_test.go": [
       "semantics/keep-before-unwrap-series-identity"
@@ -5098,7 +5130,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 597,
+  "tests_with_markers": 602,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5154,7 +5186,6 @@
     "semantics/eager-pipeline-validation",
     "semantics/extracted-derived-labels-raw-evaluator",
     "semantics/extracted-ungrouped-metric-raw-rows",
-    "semantics/first-last-over-time-translation",
     "semantics/ip-filter-keeps-parser-error-lines",
     "semantics/json-empty-value-label-series",
     "semantics/label-filter-before-parser-reads-ingest-json-key",
@@ -5193,6 +5224,7 @@
     "semantics/unwrap-count-avg-without-after-parser",
     "semantics/unwrap-over-time-short-range-windows",
     "semantics/unwrap-parserless-reads-stored-field",
+    "semantics/unwrap-per-series-identity-label-filter",
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
     "semantics/uppercase-topk-ranks-once",
@@ -5205,5 +5237,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 358
+  "wired_items": 359
 }

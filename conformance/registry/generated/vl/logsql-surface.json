@@ -651,7 +651,6 @@
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/sliding_window_stats.go",
-        "internal/proxy/unwrap_dynamic_identity.go",
         "internal/proxy/unwrap_samples.go",
         "internal/translate/range.go",
         "internal/translator/parsed_key_variants.go",
@@ -684,8 +683,7 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/label_handlers.go",
-        "internal/proxy/rate_counter_singletons.go",
-        "internal/proxy/unwrap_dynamic_identity.go"
+        "internal/proxy/rate_counter_singletons.go"
       ]
     },
     {
