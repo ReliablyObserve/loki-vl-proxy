@@ -138,6 +138,7 @@
     ],
     "data-probing-and-freshness": [
       "internal/proxy/ordered_json_result_cache_test.go",
+      "internal/proxy/ordered_json_stats_join_test.go",
       "internal/proxy/request_ends_within_test.go"
     ],
     "delete-api-requires-token": [
@@ -1322,11 +1323,13 @@
     ],
     "semantics/json-detected-level-error-split": [
       "internal/proxy/ordered_json_detected_level_split_test.go",
+      "internal/proxy/ordered_json_stats_join_test.go",
       "internal/proxy/ordered_json_step_wider_test.go",
       "test/e2e-compat/json_metric_step_wider_test.go"
     ],
     "semantics/json-error-filter-metric-split-pushdown": [
       "internal/proxy/ordered_json_recorded_test.go",
+      "internal/proxy/ordered_json_stats_join_test.go",
       "internal/proxy/ordered_json_valid_split_test.go",
       "test/e2e-compat/json_error_filter_split_test.go",
       "test/e2e-compat/parser_error_matrix_test.go"
@@ -3170,6 +3173,11 @@
       "loki_api_v1_query_range",
       "parser-error-and-label-collision",
       "tenant-numeric-routing"
+    ],
+    "internal/proxy/ordered_json_stats_join_test.go": [
+      "data-probing-and-freshness",
+      "semantics/json-detected-level-error-split",
+      "semantics/json-error-filter-metric-split-pushdown"
     ],
     "internal/proxy/ordered_json_step_wider_test.go": [
       "limits/series-limit-error",
@@ -5122,7 +5130,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 600,
+  "tests_with_markers": 601,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
