@@ -1706,6 +1706,7 @@
     "semantics/range-duration-grammar-wider-than-loki": [
       "internal/logql/range_unwrap_grammar_loki_test.go",
       "internal/logql/zero_range_comments_loki_test.go",
+      "internal/proxy/comment_forms_test.go",
       "internal/proxy/error_refusals_test.go",
       "internal/proxy/fail_fast_unicode_test.go",
       "internal/proxy/logql_grammar_rejects_test.go",
@@ -2650,7 +2651,8 @@
       "semantics/comment-between-function-and-parenthesis-accepted"
     ],
     "internal/proxy/comment_forms_test.go": [
-      "semantics/comment-between-function-and-parenthesis-accepted"
+      "semantics/comment-between-function-and-parenthesis-accepted",
+      "semantics/range-duration-grammar-wider-than-loki"
     ],
     "internal/proxy/compat_cache_freshness_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"

@@ -41,7 +41,7 @@ var lateValidation = map[string]bool{}
 // cache lookup, plan, translation or VictoriaLogs call: the queries that once stopped the parser from returning,
 // on every route that takes a query. The fake VictoriaLogs counts its requests.
 //
-// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma, semantics/stage-name-followed-by-more-of-stage, semantics/parser-reads-unicode-blank-as-white-space, semantics/stage-after-unwrap-accepted, semantics/unwrap-in-log-query, semantics/range-duration-grammar-wider-than-loki
+// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma, semantics/stage-name-followed-by-more-of-stage, semantics/parser-reads-unicode-blank-as-white-space, semantics/stage-after-unwrap-accepted, semantics/unwrap-in-log-query, semantics/range-duration-grammar-wider-than-loki, semantics/comment-between-function-and-parenthesis-accepted
 func TestRejectedQueryNeverReachesVictoriaLogs(t *testing.T) {
 	var upstream atomic.Int64
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +67,11 @@ func TestRejectedQueryNeverReachesVictoriaLogs(t *testing.T) {
 		{"{app=\"a\"} | line_format\u00a0\"x\"", "topk(2, sum by (a)\u2003(rate({app=\"a\"}[5m])))", "syntax error: unexpected IDENTIFIER"},
 		{"{app=\"a\"} | json | unwrap x", "sum_over_time({app=\"a\"} | unwrap x | drop y [5m])", "syntax error: unexpected"},
 		{"{app=\"a\"} | unwrap x | x > 1", "quantile_over_time(.5, {app=\"a\"} | json | unwrap c[1µs])", ""},
+		// A comment between a function's name and its parenthesis (semantics/comment-between-function-and-parenthesis-accepted):
+		// the query keeps its comments and is rejected on every route.
+		{"{app=\"a\"} |= ip # c\n(\"1.2.3.4\")", "rate # c\n({app=\"a\"}[5m])", "syntax error: unexpected IDENTIFIER"},
+		{"{app=\"a\"} | x = ip#c\n(\"1.2.3.4\")", "label_replace # c\n(vector # c\n(1), \"d\", \"$1\", \"a\", \"(.*)\")", "syntax error: unexpected IDENTIFIER"},
+		{"{app=\"a\"} | unwrap bytes # c\n(c)", "sum_over_time({app=\"a\"} | logfmt | unwrap bytes # c\n(c) [5m])", "syntax error: unexpected"},
 	} {
 		for _, rt := range failFastRoutes {
 			query := tc.log

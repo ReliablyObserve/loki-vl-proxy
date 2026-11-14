@@ -176,7 +176,7 @@ func TestCommentFormsAnswerLikeLoki(t *testing.T) {
 // the query without one (recorded with its engine); the proxy sends VictoriaLogs the requests of the query without
 // an offset and answers what it answers.
 //
-// conformance: semantics/comment-between-function-and-parenthesis-accepted
+// conformance: semantics/range-duration-grammar-wider-than-loki
 func TestNegativeZeroOffsetAnswersLikeNoOffset(t *testing.T) {
 	loki := loadCommentFormAnswers(t)
 	const plain = "rate({app=\"a\"}[5m])"
