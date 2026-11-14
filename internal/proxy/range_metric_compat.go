@@ -418,8 +418,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// Capture original Loki by-labels so we can translate VL label names back
 	// in the metric response (e.g. VL "level" → Loki "detected_level").
 	spec.OrigGroupBy = parseOriginalByLabels(originalLogql)
-	forceRawLevelRows := hasOrigSpec && p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, spec.OrigGroupBy) ||
-		p.dynamicIdentityRows(originalLogql, origSpec, normalizeManualMetricFunction(spec, origSpec), step)
+	forceRawLevelRows := p.rangeRowsForced(originalLogql, spec, origSpec, hasOrigSpec, step)
 
 	manualFunc := manualFunctionOf(spec, origSpec, native)
 	if manualFunc == "" {
@@ -478,6 +477,16 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	return foldVectorAggregations(p, w, r, r.FormValue("query"), func(w http.ResponseWriter, r *http.Request) bool {
 		return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
 	})
+}
+
+// rangeRowsForced reports a range query the raw-row evaluator answers whatever the stats could: a named parser that
+// does not expose the level the clause groups by (extractionListNeedsRawLevelRows), and the dynamic identity of a
+// parser over a window longer than the step (dynamicIdentityRows).
+func (p *Proxy) rangeRowsForced(query string, spec statsCompatSpec, origSpec originalRangeMetricSpec, hasOrigSpec bool, step time.Duration) bool {
+	if hasOrigSpec && p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, spec.OrigGroupBy) {
+		return true
+	}
+	return p.dynamicIdentityRows(query, origSpec, normalizeManualMetricFunction(spec, origSpec), step)
 }
 
 // dynamicIdentityRows reports a query whose series are the dynamic identity of a parser (lower.DynamicUnwrapIdentity)
