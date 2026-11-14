@@ -997,13 +997,15 @@ func (p *parser) parseUnwrap() (Stage, error) {
 	}
 	name := p.advance() // consume ident
 
-	if p.cur.Typ != TokLParen && isUnwrapConverter(name.Val) &&
-		strings.HasPrefix(strings.TrimLeftFunc(p.sc.src[p.prevEnd:], unicode.IsSpace), "(") {
+	parenNext := strings.HasPrefix(strings.TrimLeftFunc(p.sc.src[p.prevEnd:], unicode.IsSpace), "(")
+	if p.cur.Typ != TokLParen && isUnwrapConverter(name.Val) && parenNext {
 		// Loki's lexer reads the converter's name as its keyword before a parenthesis it finds over any white space
 		// of Go's, and the character in between is the unexpected token.
 		return nil, p.syntaxErrorAt("(")
 	}
-	if p.cur.Typ == TokLParen {
+	// A comment between a converter's name (in any case) and its parenthesis makes the name the label, to Loki's lexer
+	// (`unwrap bytes # c` and `(c)` on the next line): the parenthesis is then the unexpected token after the stage.
+	if p.cur.Typ == TokLParen && (parenNext || !isUnwrapConverter(strings.ToLower(name.Val))) {
 		// converter(label) form
 		converter := name.Val
 		p.advance() // consume '('

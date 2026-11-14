@@ -1,6 +1,8 @@
 package logql
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -106,40 +108,143 @@ func TestCommentBetweenVectorAggregationAndCallLikeLoki(t *testing.T) {
 	}
 }
 
-// The other function names (range aggregations, label_replace, vector, ip, the unwrap conversions) have no recorded
-// Loki answer with a comment before their parenthesis: the comment is still removed there, as before, until those
-// answers are recorded (semantics/comment-between-function-and-parenthesis-accepted).
-func TestCommentBeforeOtherCallsStillRemoved(t *testing.T) {
-	for _, q := range []string{
-		"rate # c\n({a=\"b\"}[5m])", "count_over_time#c\n({a=\"b\"}[5m])", "vector # c\n(1)",
+const commentFormsLokiAnswers = "testdata/comment-forms-loki.jsonl"
+
+// commentFormsGrid holds a comment between every function name and its parenthesis, between a vector aggregation
+// and its grouping keyword and parenthesis, the subquery-like ranges and the negative zero offsets, and their
+// neighbours that Loki accepts.
+func commentFormsGrid() []string {
+	return []string{
+		// range aggregations
+		"rate # c\n({a=\"b\"}[5m])",
+		"rate#c\n({a=\"b\"}[5m])",
+		"count_over_time#c\n({a=\"b\"}[5m])",
+		"count_over_time # c\n({a=\"b\"}[5m])",
+		"bytes_over_time # c\n({a=\"b\"}[5m])",
+		"absent_over_time # c\n({a=\"b\"}[5m])",
+		"rate_counter # c\n({a=\"b\"} | unwrap c [5m])",
+		"quantile_over_time # c\n(0.5, {a=\"b\"} | unwrap c [5m])",
+		"quantile_over_time#c\n(0.5, {a=\"b\"} | unwrap c [5m]) by (a)",
+		"sum(rate # c\n({a=\"b\"}[5m]))",
+		"rate # c\nby (a) ({a=\"b\"}[5m])",
+		"rate by # c\n(a) ({a=\"b\"}[5m])",
+		"RATE # c\n({a=\"b\"}[5m])",
+		"Count_Over_Time#c\n({a=\"b\"}[5m])",
+		// vector and label_replace
+		"vector # c\n(1)",
+		"vector#c\n(1)",
+		"Vector # c\n(1)",
+		"LABEL_REPLACE # c\n(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")",
+		"sum(vector # c\n(1))",
+		"sum(rate({a=\"b\"}[5m])) + vector # c\n(1)",
 		"label_replace # c\n(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")",
+		"label_replace#c\n(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")",
+		"label_replace # c\n(vector(1), \"d\", \"$1\", \"a\", \"(.*)\") or vector(2)",
+		// ip, as a line filter and a label filter
+		"{a=\"b\"} |= ip # c\n(\"1.2.3.4\")",
+		"{a=\"b\"} |= ip#c\n(\"1.2.3.4\")",
+		"{a=\"b\"} |= IP # c\n(\"1.2.3.4\")",
+		"{a=\"b\"} | x = Ip # c\n(\"1.2.3.4\")",
+		"{a=\"b\"} != ip # c\n(\"1.2.3.4\")",
+		"{a=\"b\"} |= \"x\" or ip # c\n(\"1.2.3.4\")",
+		"{a=\"b\"} | x = ip # c\n(\"1.2.3.4\")",
+		"{a=\"b\"} | x != ip # c\n(\"1.2.3.4\")",
+		"{a=\"b\"} | x = ip # c\n(\"1.2.3.4\") or y = ip(\"::1\")",
+		"count_over_time({a=\"b\"} |= ip # c\n(\"1.2.3.4\") [5m])",
+		// the unwrap conversions: the name becomes the label, and the parenthesis is the unexpected token
 		"sum_over_time({a=\"b\"} | unwrap bytes # c\n(c) [5m])",
-	} {
-		if !commentBeforeCall(q) {
-			t.Errorf("%q: no comment before a call found", q)
-		}
-		if got := StripComments(q); got == q {
-			t.Errorf("%q: comments kept", q)
-		}
+		"sum_over_time({a=\"b\"} | unwrap duration # c\n(c) [5m])",
+		"sum_over_time({a=\"b\"} | unwrap duration_seconds # c\n(c) [5m])",
+		"sum_over_time({a=\"b\"} | unwrap bytes#c\n(c) [5m])",
+		"sum_over_time({a=\"b\"} | unwrap BYTES # c\n(c) [5m])",
+		"sum_over_time({a=\"b\"} | unwrap Duration_Seconds # c\n(c) [5m])",
+		"sum_over_time({a=\"b\"} | unwrap BYTES(c) [5m])",
+		"sum_over_time({a=\"b\"} | unwrap bytes # c\n # d\n(c) [5m])",
+		"sum_over_time({a=\"b\"} | unwrap bytes # c\n(c) | d=\"e\" [5m])",
+		"sum_over_time({a=\"b\"} | unwrap bytes # c\n(c) [5m]) by (a)",
+		"sum by (a) (sum_over_time({a=\"b\"} | unwrap duration#c\n(c) [5m]))",
+		"sum_over_time({a=\"b\"} | json | unwrap bytes # c\n(c) [5m])",
+		"sum_over_time({a=\"b\"} | unwrap bytes # c\n [5m])",
+		"sum_over_time({a=\"b\"} | unwrap bytes(c) [5m])",
+		"{a=\"b\"} | unwrap bytes # c\n(c)",
+		// vector aggregations not recorded before
+		"sum without # c\n(a) (rate({a=\"b\"}[5m]))",
+		"sum without#c\n(a) (rate({a=\"b\"}[5m]))",
+		"sum # c\nwithout (a) (rate({a=\"b\"}[5m]))",
+		"avg # c\n(rate({a=\"b\"}[5m]))",
+		"avg#c\n(rate({a=\"b\"}[5m]))",
+		"count # c\n(rate({a=\"b\"}[5m]))",
+		"topk # c\n(2, rate({a=\"b\"}[5m]))",
+		"sort # c\n(rate({a=\"b\"}[5m]))",
+		"AVG # c\n(rate({a=\"b\"}[5m]))",
+		// a name that is no function's: the comment is removed, and Loki's answer is the same
+		"{a=\"b\"} | json # c\n(a)",
+		"sum by (json # c\n) (rate({a=\"b\"}[5m]))",
+		// comments where Loki's lexer does not look
+		"{a=\"b\"} |= ip(\"1.2.3.4\") # c\n",
+		"rate({a=\"b\"}[5m]) # c\n",
+		"rate( # c\n{a=\"b\"}[5m])",
+		"rate\n({a=\"b\"}[5m])",
+		"sum\t(rate({a=\"b\"}[5m]))",
+		// subquery-like ranges and negative zero offsets
+		"rate({a=\"b\"}[0:1m])",
+		"rate({a=\"b\"}[5m:1m])",
+		"rate({a=\"b\"}[0s:1m])",
+		"rate({a=\"b\"}[5m] offset -0s)",
+		"rate({a=\"b\"}[5m] offset -0)",
+		"rate({a=\"b\"}[5m] offset -5m)",
+		"rate({a=\"b\"}[5m] offset 0s)",
 	}
 }
 
-// commentBeforeCall reports a query with a comment between a function name (other than a vector aggregation's) and
-// its parenthesis or grouping: the forms StripComments leaves as they were, whose Loki answers are not recorded.
-func commentBeforeCall(q string) bool {
-	s := &scanner{src: q, extra: &scanExtra{}}
-	for {
-		t := s.next()
-		switch t.Typ {
-		case TokEOF, TokError:
-			return false
-		case TokIdent:
-			lower := strings.ToLower(t.Val)
-			call := rangeAggNames[lower] || unwrapConversions[lower] || lower == "vector" || lower == "ip" || lower == "label_replace"
-			if call && !parenFollows(q, s.pos) && parenAfter(q, s.pos, skipSpaceAndComments) {
-				return true
+// A comment between a function's name and its parenthesis (a range aggregation, vector, label_replace, ip, an unwrap
+// conversion) makes the name an identifier to Loki's lexer, as for the vector aggregations: the proxy keeps the
+// comments of such a query and validation answers Loki's text, read where Loki reads it (an unwrap conversion's name
+// becomes the label, and the parenthesis is the unexpected token). A comment anywhere else is removed and the query
+// answered as Loki answers it; the subquery-like ranges get Loki's duration error, and the negative zero offsets are
+// accepted. Loki's answers are recorded with the Loki oracle (test/oracle/loki check; LVP_RUN_ORACLES=1 records them
+// again); the HTTP answers of the same forms are TestCommentFormsAnswerLikeLoki's (internal/proxy).
+//
+// conformance: semantics/comment-between-function-and-parenthesis-accepted
+func TestCommentBetweenFunctionAndCallLikeLoki(t *testing.T) {
+	grid := commentFormsGrid()
+	if os.Getenv("LVP_RUN_ORACLES") == "1" {
+		recordOracleAnswers(t, "check", grid, commentFormsLokiAnswers)
+	}
+	b, err := os.ReadFile(commentFormsLokiAnswers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(lines) != len(grid) {
+		t.Fatalf("%d recorded answers for %d queries: record them again with LVP_RUN_ORACLES=1", len(lines), len(grid))
+	}
+	rejected, kept := 0, 0
+	for i, q := range grid {
+		var loki patternFilterAnswer
+		if err := json.Unmarshal([]byte(lines[i]), &loki); err != nil {
+			t.Fatal(err)
+		}
+		if !loki.Accept {
+			rejected++
+		}
+		stripped := StripComments(q)
+		if stripped == q && commentKeptForName(q) {
+			kept++
+			if loki.Accept {
+				t.Errorf("%q: Loki accepts it, and StripComments keeps its comments", q)
 			}
 		}
+		// What the handlers validate (lowercaseQueryKeywords), and the text as it is.
+		if msg := ValidateLogQL(LowercaseKeywords(StripParserFlags(stripped))); msg != loki.Error {
+			t.Errorf("%q:\n proxy %q\n Loki  %q", q, msg, loki.Error)
+		}
+		if msg := ValidateLogQL(q); msg != loki.Error {
+			t.Errorf("%q unstripped:\n proxy %q\n Loki  %q", q, msg, loki.Error)
+		}
+	}
+	if rejected == 0 || rejected == len(grid) || kept == 0 {
+		t.Fatalf("%d of %d recorded answers are rejections, %d kept: the grid lost its neighbours", rejected, len(grid), kept)
 	}
 }
 
@@ -153,8 +258,8 @@ func TestSkipSpaceAndComments(t *testing.T) {
 	}
 }
 
-// commentMakesName finds the vector aggregation name before a comment, or before the grouping keyword before it, and
-// only a whole name: the end of a dotted or a longer name is none.
+// commentMakesName finds the function name before a comment, or the vector aggregation name before the grouping
+// keyword before it, and only a whole name: the end of a dotted or a longer name is none.
 func TestCommentMakesName(t *testing.T) {
 	for q, want := range map[string]bool{
 		"sum # c\n(":                true,
@@ -165,7 +270,12 @@ func TestCommentMakesName(t *testing.T) {
 		"sum # c\nby (a) (":         true,
 		"sum # c\n[":                false,
 		"sum(x) by # c\n(a)":        false,
-		"rate # c\n(":               false,
+		"rate # c\n(":               true,
+		"vector#c\n(":               true,
+		"x = ip # c\n(":             true,
+		"unwrap bytes # c\n(":       true,
+		"rate by # c\n(a) (":        false,
+		"json # c\n(":               false,
 		"x.sum # c\n(":              false,
 		"ésum # c\n(":               false,
 		"my_sum # c\n(":             false,
