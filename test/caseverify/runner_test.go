@@ -38,7 +38,7 @@ func TestProbeOf(t *testing.T) {
 		{"push", "request: {method: POST, path: /loki/api/v1/push}\ncompare: {mode: status}\n", "", "a write"},
 		{"tail", "request: {method: GET, path: /loki/api/v1/tail}\ncompare: {mode: status}\n", "", "websocket"},
 		{"grafana", "request: {method: POST, path: /api/ds/query}\ncompare: {mode: status}\n", "", "Grafana"},
-		{"double slash", "request: {method: GET, path: /loki//api/v1/labels}\ncompare: {mode: status}\n", "", "malformed path"},
+		{"double slash is sent", "request: {method: GET, path: /loki//api/v1/labels}\ncompare: {mode: status}\n", "", ""},
 	}
 	for _, c := range cases {
 		p := probeOf(doc(c.extra))

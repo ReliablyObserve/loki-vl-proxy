@@ -59,7 +59,8 @@ import (
 type config struct {
 	registry, loki, proxy, vl, replay, record, out, report string
 	commit, proxyFlags, lokiVersion, vlVersion, tenant     string
-	variants, proxyRevision, proxyImage                    string
+	variants, compose, proxyRevision, proxyImage           string
+	list                                                   bool
 	requireCurrent, noReuse                                bool
 	cases                                                  string
 	settle, timeout                                        time.Duration
@@ -78,6 +79,8 @@ func main() {
 	flag.BoolVar(&cfg.noReuse, "no-reuse", false, "do not repeat each case to measure the proxy's cache reuse")
 	flag.BoolVar(&cfg.requireCurrent, "require-current-proxy", false, "refuse the run unless -proxy-revision is -commit")
 	flag.StringVar(&cfg.variants, "variants", "", `JSON file of the proxy variants: [{"name","url","flags":[...]}]`)
+	flag.StringVar(&cfg.compose, "compose", "", "compose file (test/e2e-compat/docker-compose.yml) whose proxy services are the variants, and whose service on -proxy's port gives the default flags; -variants adds to them")
+	flag.BoolVar(&cfg.list, "list", false, "send nothing: print the cases that are blocked, by class, and the cases that run, and exit")
 	flag.StringVar(&cfg.replay, "replay", "", "recorded answers file: verdicts without sending a request")
 	flag.StringVar(&cfg.record, "record", "", "live run: write every answer to this file")
 	flag.StringVar(&cfg.out, "out", "conformance/registry/generated/verification/cases.json", "the verdicts file")
@@ -107,7 +110,8 @@ func run(cfg config, stdout, stderr io.Writer) int {
 	if len(problems) > 0 {
 		return fail(fmt.Errorf("the registry does not load strictly (%d problems; go run ./test/registry/cmd/regload check)", len(problems)))
 	}
-	client := &http.Client{Timeout: cfg.timeout}
+	// A redirect is an answer to compare (a path Loki and the proxy redirect), not a hop to follow.
+	client := &http.Client{Timeout: cfg.timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	start := cfg.now().UTC()
 	f := File{GeneratedBy: "go run ./test/caseverify", Date: start.Format(time.RFC3339), Commit: cfg.commit,
 		ProxyFlags: cfg.proxyFlags, Loki: cfg.lokiVersion, VictoriaLogs: cfg.vlVersion, Cases: map[string]Result{}}
@@ -117,6 +121,13 @@ func run(cfg config, stdout, stderr io.Writer) int {
 	variants, err := loadVariants(cfg.variants)
 	if err != nil {
 		return fail(err)
+	}
+	variants, err = withCompose(&cfg, variants, &f)
+	if err != nil {
+		return fail(err)
+	}
+	if cfg.list {
+		return list(cases, strings.Fields(cfg.proxyFlags), variants, stdout)
 	}
 	src, cnt, meter, rec, err := sources(cfg, client, variants, &f)
 	if err != nil {
@@ -177,6 +188,12 @@ func run(cfg config, stdout, stderr io.Writer) int {
 			return fail(err)
 		}
 	}
+	return summarize(cfg, f, stdout, stderr)
+}
+
+// summarize prints the run's counts and, with -check, fails on a regression. A difference an owner-kept deviation
+// explains is not a regression and does not fail -check, but it is said every run.
+func summarize(cfg config, f File, stdout, stderr io.Writer) int {
 	parts := make([]string, 0, len(verdicts))
 	for _, v := range verdicts {
 		parts = append(parts, fmt.Sprintf("%d %s", f.Counts[v], v))
@@ -196,6 +213,23 @@ func run(cfg config, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// withCompose adds the proxy services of the compose file to the variants and takes the default proxy's flags
+// from the service on -proxy's port.
+func withCompose(cfg *config, variants []Variant, f *File) ([]Variant, error) {
+	if cfg.compose == "" {
+		return variants, nil
+	}
+	composed, defaultFlags, err := VariantsFromCompose(cfg.compose, "127.0.0.1", cfg.proxy)
+	if err != nil {
+		return nil, fmt.Errorf("-compose: %w", err)
+	}
+	if cfg.proxyFlags == "" {
+		cfg.proxyFlags = strings.Join(defaultFlags, " ")
+	}
+	f.ProxyFlags = cfg.proxyFlags
+	return append(composed, variants...), nil
 }
 
 // loadVariants reads the -variants file: every proxy variant with its URL and flags.

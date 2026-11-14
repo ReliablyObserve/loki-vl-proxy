@@ -159,6 +159,18 @@ names one is reported as `differs_owner_kept` with the deviation, listed in the 
 passed and never counted as a regression; `-check` prints it and does not fail on it. A name that is not an owner-kept
 case blocks the case.
 
+A request the runner does not run says why in `request.verify`: `met_by: stack` with its `evidence` (the generator line
+or compose flag that meets the case's `precondition`, so the runner sends it); `blocked_by` one of `load`, `fault`,
+`volume`, `version`, `fixture`, `proxy_only`, `moved_window` or `write`, with a `reason`; or `empty_is_answer` for a
+fixed case whose point is that a query the proxy once mishandled is answered like Loki, with nothing and no error (two
+empty answers then match; never for an open case). Every blocked verdict in `cases.json` and the report carries its
+class, so the daily report counts what is blocked by what it needs: also `websocket`, `grafana`, `placeholder_time`,
+`empty_answer`, `unread_fields`, `no_answer`, `loki_error` and `no_variant`. `-compose
+test/e2e-compat/docker-compose.yml` reads the proxy variants (URL by published port, flags by command) and the default
+proxy's flags from the stack's compose file; `-list` sends nothing and prints how many cases go to which proxy and which
+are blocked, by class. Redirects are answers, not followed. Loki's `/index/stats` counts flushed chunks only: an answer
+whose entries lag behind its own `count_over_time` of the window is `not_comparable`.
+
 ## Reporting what a change touches
 
 Before opening a pull request that changes client-visible behaviour, run:

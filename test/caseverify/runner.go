@@ -345,11 +345,13 @@ const (
 
 // Result is one case's verdict.
 type Result struct {
-	Verdict       string       `json:"verdict"`
-	GapStatus     string       `json:"gap_status,omitempty"`
-	Expected      string       `json:"expected"`
-	Flag          string       `json:"flag,omitempty"`
-	Reason        string       `json:"reason,omitempty"`
+	Verdict   string `json:"verdict"`
+	GapStatus string `json:"gap_status,omitempty"`
+	Expected  string `json:"expected"`
+	Flag      string `json:"flag,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	// Class is what a blocked case needs (see the class constants in probe.go).
+	Class         string       `json:"class,omitempty"`
 	Facets        []string     `json:"facets,omitempty"`
 	UnknownFields []string     `json:"unknown_fields,omitempty"`
 	LokiStatus    int          `json:"loki_status,omitempty"`
@@ -400,12 +402,12 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 		r.Verdict, r.Reason = verdictNotExecutable, p.NotExecutable
 		return r
 	case p.Blocked != "":
-		r.Verdict, r.Reason = verdictBlocked, p.Blocked
+		r.Verdict, r.Reason, r.Class = verdictBlocked, p.Blocked, p.BlockedClass
 		return r
 	}
 	q, why := p.Query(now)
 	if why != "" {
-		r.Verdict, r.Reason = verdictBlocked, why
+		r.Verdict, r.Reason, r.Class = verdictBlocked, why, classPlaceholder
 		return r
 	}
 	headers := map[string]string{}
@@ -448,11 +450,11 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 		}
 		r.LokiStatus, r.ProxyStatus = loki.Status, proxy.Status
 		if blocked := unusable("Loki", loki) + unusable("the proxy", proxy); blocked != "" {
-			r.Verdict, r.Reason, r.Differences = verdictBlocked, strings.TrimSuffix(blocked, "; "), nil
+			r.Verdict, r.Reason, r.Differences, r.Class = verdictBlocked, strings.TrimSuffix(blocked, "; "), nil, classNoAnswer
 			return r
 		}
 		if !statusIntent(p) && loki.Status >= 500 {
-			r.Verdict, r.Reason = verdictBlocked, fmt.Sprintf("Loki answered %d", loki.Status)
+			r.Verdict, r.Reason, r.Class = verdictBlocked, fmt.Sprintf("Loki answered %d", loki.Status), classLokiError
 			if proxy.Status >= 500 {
 				r.Verdict = verdictBothFail
 				r.Reason += fmt.Sprintf(" and the proxy %d", proxy.Status)
@@ -466,16 +468,17 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 		// The data precheck, once: an answer is compared only on equal, non-empty data.
 		if !checked && needsData(r.Facets, loki) {
 			checked = true
-			if verdict, why := precheck(&r, p, q, cnt, now, headers["X-Scope-OrgID"], tenant); verdict != "" {
-				r.Verdict, r.Reason = verdict, why
+			if dataVerdict(&r, p, q, cnt, now, headers["X-Scope-OrgID"], tenant, loki) {
 				return r
 			}
 		}
 		r.Differences = CompareWith(r.Facets, loki, proxy, opts)
 		if len(r.Differences) == 0 {
-			if Vacuous(r.Facets, loki, proxy) {
-				r.Verdict, r.Reason = verdictBlocked, "both answers are empty: nothing is proven"
-				return r
+			if vacuous, blocked := settleVacuous(&r, p, loki, proxy); vacuous {
+				if blocked {
+					return r
+				}
+				break
 			}
 			r.Verdict = verdictMatches
 			if attempt == 2 {
@@ -489,11 +492,65 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 	return r
 }
 
+// dataVerdict runs the data precheck and the health check of Loki's index; true when the data does not allow a
+// comparison (the verdict is set).
+func dataVerdict(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, caseTenant, tenant string, loki Answer) bool {
+	if verdict, why := precheck(r, p, q, cnt, now, caseTenant, tenant); verdict != "" {
+		r.Verdict, r.Reason = verdict, why
+		if verdict == verdictBlocked {
+			r.Class = classNoAnswer
+		}
+		return true
+	}
+	if why := lokiIndexBehind(p, *r, loki); why != "" {
+		r.Verdict, r.Reason = verdictNotComparable, why
+		return true
+	}
+	return false
+}
+
+// settleVacuous sets the verdict of two answers that agree on nothing but being empty: a match where the case says an
+// empty answer is the answer (a fixed case, never an open one), else blocked, saying which fields the runner does
+// not read when the case names some.
+func settleVacuous(r *Result, p Probe, loki, proxy Answer) (vacuous, blocked bool) {
+	if !Vacuous(r.Facets, loki, proxy) {
+		return false, false
+	}
+	if p.EmptyIsAnswer != "" && r.Expected == "match" {
+		r.Verdict, r.Reason = verdictMatches, "both answers are empty by design: "+p.EmptyIsAnswer
+		return true, false
+	}
+	r.Verdict, r.Reason, r.Class = verdictBlocked, "both answers are empty: nothing is proven", classEmptyAnswer
+	if len(r.UnknownFields) > 0 {
+		r.Reason = fmt.Sprintf("both answers are empty on what the runner reads; it does not read %s", strings.Join(r.UnknownFields, ", "))
+		r.Class = classUnreadFields
+	}
+	return true, true
+}
+
 func meterAfter(meter Meter, p Probe, measured bool) (Snapshot, bool) {
 	if !measured {
 		return nil, false
 	}
 	return meter.Measure(p.ID, p.Variant, "cold_after")
+}
+
+// lokiIndexBehind is why Loki's /index/stats answer cannot be compared: it counts the chunks of its store, and
+// those it has not flushed yet are missing, so its entries fall below its own count_over_time of the same window
+// (which the precheck proved equal to VictoriaLogs'). A Loki that is not caught up with its own data says nothing
+// about the proxy; both sides must be healthy before they are compared. Entries above the count are not that:
+// Loki counts every chunk that overlaps the window, so a flushed Loki reads above it at the window's edges.
+func lokiIndexBehind(p Probe, r Result, loki Answer) string {
+	if p.Path != indexStatsPath || len(r.Data) != 1 || r.Data[0].Loki == nil || !loki.OK() {
+		return ""
+	}
+	var doc struct {
+		Entries float64 `json:"entries"`
+	}
+	if json.Unmarshal([]byte(loki.Body), &doc) != nil || doc.Entries >= r.Data[0].Loki.Count {
+		return ""
+	}
+	return fmt.Sprintf("Loki's index/stats counts %.0f entries, below its own count_over_time of the window (%.0f): its index has not caught up with its data", doc.Entries, r.Data[0].Loki.Count)
 }
 
 // notComparable is why two answers cannot be compared at all: Loki's own answer carries warnings (a partial or

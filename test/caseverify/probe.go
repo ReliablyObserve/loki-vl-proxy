@@ -33,13 +33,45 @@ type Probe struct {
 
 	// NotExecutable is set for a scenario case (scope and entry): there is no request to send.
 	NotExecutable string
+	// EmptyIsAnswer is why two empty answers prove the case (request.verify.empty_is_answer): the case is
+	// that a query the proxy once mishandled is answered like Loki, with nothing and no error.
+	EmptyIsAnswer string
+
 	// OwnerKept are the owner-kept deviation cases this case's answers are subject to (the case's owner_kept).
 	OwnerKept []string
 
 	// Blocked is set for a request the runner does not send: a precondition it cannot set up, a placeholder
-	// time, a write, a stream, a request through Grafana.
-	Blocked string
+	// time, a write, a stream, a request through Grafana. BlockedClass names the kind of block, so the daily
+	// report counts the blocked cases by what they need (see the class constants).
+	Blocked      string
+	BlockedClass string
 }
+
+// Classes of blocked cases. The first group is set by the case (request.verify.blocked_by) or by its path, the
+// second by what the answers showed.
+const (
+	classLoad         = "load"         // needs admission slots, queues or concurrent clients held
+	classFault        = "fault"        // needs a backend failure injected
+	classVolume       = "volume"       // needs more data or series than the stack holds, or a limit the stack does not run
+	classVersion      = "version"      // needs another VictoriaLogs version
+	classFixture      = "fixture"      // needs data the stack does not hold
+	classProxyOnly    = "proxy_only"   // the expectation is the proxy's own behaviour or log, which Loki does not answer
+	classMovedWindow  = "moved_window" // needs a second ask with a moved window and compares the two asks
+	classWrite        = "write"
+	classWebsocket    = "websocket"
+	classGrafana      = "grafana"
+	classPlaceholder  = "placeholder_time"
+	classUnclassed    = "unclassified"
+	classEmptyAnswer  = "empty_answer"  // both sides answered, with nothing to compare
+	classNoAnswer     = "no_answer"     // a side did not answer, or answered more than the runner reads
+	classLokiError    = "loki_error"    // Loki failed on a case that does not compare errors
+	classUnreadFields = "unread_fields" // both answers are empty on what the runner reads; the case names fields it does not
+	classNoVariant    = "no_variant"    // the case names proxy flags no running proxy has
+)
+
+// blockedByClasses are the classes a case may name in request.verify.blocked_by.
+var blockedByClasses = map[string]bool{classLoad: true, classFault: true, classVolume: true, classVersion: true,
+	classFixture: true, classProxyOnly: true, classMovedWindow: true, classWrite: true}
 
 // Expectation is what the registry says about a case: a fixed case or a case without a gap must match
 // Loki; an open case differs; a documented, owner-kept or upstream case differs on purpose.
@@ -54,11 +86,11 @@ func (p Probe) Expectation() string {
 }
 
 // Endpoints the runner never sends: they write, stream, or answer through another API.
-var notSent = map[string]string{
-	"/loki/api/v1/push":   "a write; the runner only reads",
-	"/loki/api/v1/delete": "a delete; the runner only reads",
-	"/loki/api/v1/tail":   "a websocket stream",
-	"/api/ds/query":       "a request through Grafana's datasource API",
+var notSent = map[string]struct{ reason, class string }{
+	"/loki/api/v1/push":   {"a write; the runner only reads", classWrite},
+	"/loki/api/v1/delete": {"a delete route; the case's expectation is the proxy's default (-delete-api-enabled unset), not what this stack's Loki answers", classProxyOnly},
+	"/loki/api/v1/tail":   {"a websocket stream", classWebsocket},
+	"/api/ds/query":       {"a request through Grafana's datasource API", classGrafana},
 }
 
 // Probes turns the loaded cases into probes, sorted by id.
@@ -123,17 +155,43 @@ func probeOf(c registry.Case) Probe {
 			p.OwnerKept = append(p.OwnerKept, fmt.Sprint(id))
 		}
 	}
+	verify, _ := req["verify"].(map[string]any)
+	metBy, _ := verify["met_by"].(string)
+	evidence, _ := verify["evidence"].(string)
+	blockedBy, _ := verify["blocked_by"].(string)
+	reason, _ := verify["reason"].(string)
+	p.EmptyIsAnswer, _ = verify["empty_is_answer"].(string)
+	block := func(class, reason string) {
+		p.Blocked, p.BlockedClass = reason, class
+	}
+	// What the request needs that the runner does not set up: the case names it (verify.blocked_by) or, for a
+	// precondition the stack's standing data meets, says so with its evidence (verify.met_by).
+	unmet := ""
+	switch {
+	case req["setup"] != nil:
+		unmet = "needs a setup step the runner does not run"
+	case req["precondition"] != nil && (metBy != "stack" || evidence == ""):
+		unmet = "needs a precondition the runner does not set up"
+	}
 	switch {
 	case p.Method == "" || p.Path == "":
 		p.NotExecutable = "a scenario case (scope and entry), not an HTTP request"
-	case req["precondition"] != nil:
-		p.Blocked = "needs a precondition the runner does not set up"
-	case req["setup"] != nil:
-		p.Blocked = "needs a setup step the runner does not run"
-	case notSent[p.Path] != "":
-		p.Blocked = notSent[p.Path]
-	case strings.Contains(p.Path, "//"):
-		p.Blocked = "a malformed path the runner does not send"
+	case verify != nil && (metBy != "" && blockedBy != "" || metBy != "" && metBy != "stack" || blockedBy != "" && !blockedByClasses[blockedBy]):
+		block(classUnclassed, fmt.Sprintf("request.verify is not valid (met_by %q, blocked_by %q)", metBy, blockedBy))
+	case metBy != "" && evidence == "":
+		block(classUnclassed, "request.verify.met_by needs its evidence")
+	case blockedBy != "":
+		if reason == "" {
+			reason = unmet
+		}
+		if reason == "" {
+			reason = "needs " + blockedBy
+		}
+		block(blockedBy, reason)
+	case unmet != "":
+		block(classUnclassed, unmet)
+	case notSent[p.Path].reason != "":
+		block(notSent[p.Path].class, notSent[p.Path].reason)
 	}
 	return p
 }
@@ -246,7 +304,7 @@ func ChooseVariant(p *Probe, defaultFlags []string, variants []Variant) {
 			return
 		}
 	}
-	p.Blocked = "needs a proxy variant with " + strings.Join(p.ProxyFlags, " ")
+	p.Blocked, p.BlockedClass = "needs a proxy variant with "+strings.Join(p.ProxyFlags, " "), classNoVariant
 }
 
 // absoluteTime is a Unix time (seconds or nanoseconds, a fraction allowed) or an RFC 3339 time, which Loki
