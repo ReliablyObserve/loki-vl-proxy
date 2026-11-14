@@ -121,6 +121,10 @@ parts of a detected_fields answer, `detectedLabels.cardinality` the cardinalitie
 `/index/stats` `streams`, `entries`, `bytes` and `chunks` the one number each names. A table
 test (`TestEveryFacetReadsOnlyWhatItNames`) pins that a change elsewhere in the answer is not a
 difference of the facet.
+`ranked_values` compares a `topk` or `bottomk` answer where Loki's choice among series tied at the cutoff is
+its Go map order: per grouping key of by()/without(), the ranked values of every step must equal
+(`test/metricparity.RankedValuesDifference`) and every series ranked strictly above the cutoff of a full step must
+be in both answers with the same value; only the series tied at the cutoff may differ.
 
 No answer is compared on data that is not proven equal. Before a comparison
 that reads data, the case's stream selectors (every stream for a request without

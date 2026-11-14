@@ -76,7 +76,8 @@ var fieldFacet = map[string]string{
 	"fields": facetFields,
 	"data":   facetData, "data.result": facetResult, "body": facetBody,
 	// Timestamps only: a case that names them does not compare the values at them.
-	"timestamps": facetTimestamps, "data.result[].value[0]": facetTimestamps, "data.result[].values[][0]": facetTimestamps,
+	"ranked_values": facetRanked,
+	"timestamps":    facetTimestamps, "data.result[].value[0]": facetTimestamps, "data.result[].values[][0]": facetTimestamps,
 	// Parts of an entry's metadata, each on its own.
 	"structuredMetadata": facetStructuredMeta, "structured metadata": facetStructuredMeta,
 	"parsed labels": facetParsed, "parsed_keys": facetParsedKeys,
@@ -299,7 +300,7 @@ func (p parsed) facet(f string, status int) any {
 		return p.labels()
 	case facetCount:
 		return float64(len(p.result()))
-	case facetValues:
+	case facetValues, facetRanked:
 		return p.values()
 	case facetEntries:
 		return p.entries()

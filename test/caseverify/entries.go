@@ -15,6 +15,8 @@ type Options struct {
 	Forward bool
 	// Patterns marks a /patterns answer, whose first and last sample buckets cover part of the window.
 	Patterns bool
+	// Rank is the query's outermost topk or bottomk, for the ranked_values facet.
+	Rank *RankSpec
 }
 
 // OptionsOf reads the comparison options of a probe's resolved request.
@@ -28,6 +30,7 @@ func OptionsOf(p Probe, query map[string][]string) Options {
 	}
 	switch p.Path {
 	case "/loki/api/v1/query_range", "/loki/api/v1/query":
+		o.Rank = RankOf(get("query"))
 		o.Limit = 100
 		if n, err := strconv.Atoi(get("limit")); err == nil && n > 0 {
 			o.Limit = n
@@ -241,5 +244,25 @@ func CompareWith(facets []string, loki, proxy Answer, o Options) []Difference {
 	if o.Patterns {
 		trimPatternEdges(l, p)
 	}
-	return compareParsed(facets, l, p, loki.Status, proxy.Status, o.Tolerance, o.Subset)
+	var ranked bool
+	rest := make([]string, 0, len(facets))
+	for _, f := range facets {
+		if f == facetRanked {
+			ranked = true
+			continue
+		}
+		rest = append(rest, f)
+	}
+	out := compareParsed(rest, l, p, loki.Status, proxy.Status, o.Tolerance, o.Subset)
+	if !ranked {
+		return out
+	}
+	if o.Rank == nil {
+		// Not a topk or bottomk answer: nothing is tied, so the values compare as they are.
+		return append(out, compareParsed([]string{facetValues}, l, p, loki.Status, proxy.Status, o.Tolerance, o.Subset)...)
+	}
+	if msg := RankedDifference(loki, proxy, o.Rank); msg != "" {
+		out = append(out, Difference{Facet: facetRanked, Loki: "the ranked values of every step and the series above the cutoff", Proxy: clip(msg)})
+	}
+	return out
 }

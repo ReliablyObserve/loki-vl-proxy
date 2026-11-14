@@ -153,6 +153,12 @@ func TestEveryFacetReadsOnlyWhatItNames(t *testing.T) {
 			{"the status text", series(lbl, sampleA), ok(strings.Replace(series(lbl, sampleA).Body, `"success"`, `"other"`, 1)), false, Options{}},
 			{"a value", series(lbl, sampleA), series(lbl, sampleVal), true, Options{}},
 		}},
+		{facetRanked, []change{
+			{"the status text", series(lbl, sampleA), ok(strings.Replace(series(lbl, sampleA).Body, `"success"`, `"other"`, 1)), false, Options{}},
+			{"a value", series(lbl, sampleA), series(lbl, sampleVal), true, Options{}},
+			{"a series tied at the cutoff", series(`{"a":"1"}`, sampleA), series(`{"a":"2"}`, sampleA), false, Options{Rank: RankOf(`topk(1, rate({a="b"}[5m]))`)}},
+			{"a value of the ranking", series(`{"a":"1"}`, sampleA), series(`{"a":"1"}`, sampleVal), true, Options{Rank: RankOf(`topk(1, rate({a="b"}[5m]))`)}},
+		}},
 		{facetEntries, []change{
 			{"the metadata", logs(lbl, "x", mt), logs(lbl, "x", `{"structuredMetadata":{"k":"w"}}`), false, Options{}},
 			{"a line", logs(lbl, "x", mt), logs(lbl, "y", mt), true, Options{}},
