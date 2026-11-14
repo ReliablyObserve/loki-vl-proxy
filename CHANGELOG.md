@@ -9,12 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The configuration reference and the limits registry print the defaults of `-patterns-state-stream-idle`,
-  `-backend-heavy-query-min-range`, `-backend-heavy-query-queue-wait`, `-max-stats-cache-freshness`,
-  `-slow-query-threshold`, `-slow-upstream-threshold` and `-backend-retry-max-wait` as durations (`5m0s`, `6h0m0s`,
-  `20s`, `10m0s`, `3s`, `2s`, `5s`); they printed the Go expression (`5 * time.Minute`). The defaults themselves do not
-  change.
-
 - A `| keep` before `| unwrap` now decides the series of `first_over_time`, `last_over_time`, `quantile_over_time`,
   `stddev_over_time`, `stdvar_over_time`, `avg_over_time`, `max_over_time`, `min_over_time`, `sum_over_time`,
   `rate_counter` and `rate` over the unwrapped label, as in Loki: the keep deletes every label it does not name, so
@@ -25,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (508946.9 where Loki answers 281) and now answers Loki's value. The proxy groups VictoriaLogs' stats by the kept
   labels, on `query` and `query_range` alike, instead of reading the rows of every line. A keep with a condition,
   or one followed by a parser, `label_format` or `drop`, keeps its previous behaviour.
+
+## [2.241.1] - 2026-11-14
+
+### Fixed
+
+- The configuration reference and the limits registry print the defaults of `-patterns-state-stream-idle`,
+  `-backend-heavy-query-min-range`, `-backend-heavy-query-queue-wait`, `-max-stats-cache-freshness`,
+  `-slow-query-threshold`, `-slow-upstream-threshold` and `-backend-retry-max-wait` as durations (`5m0s`, `6h0m0s`,
+  `20s`, `10m0s`, `3s`, `2s`, `5s`); they printed the Go expression (`5 * time.Minute`). The defaults themselves do not
+  change.
 
 ## [2.241.0] - 2026-11-14
 
