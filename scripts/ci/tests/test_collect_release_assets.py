@@ -102,6 +102,31 @@ class CollectReleaseAssetsTests(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("BUNDLE_CHART", proc.stdout)
 
+    def test_a_dry_run_skips_the_attestations_it_did_not_create(self):
+        # release.yaml's dry run creates no attestation: the bundle variables are empty.
+        proc = self.run_script(DRY_RUN="true", **{name: "" for name in BUNDLES})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        for name in BUNDLES:
+            self.assertIn(f"dry run: no {name}", proc.stdout)
+        self.assertEqual((self.dist / "loki-vl-proxy-1.2.3.intoto.jsonl").read_text(), "")
+        # The image SBOMs and the digests are still collected and checked.
+        self.assertTrue((self.dist / "loki-vl-proxy-image-1.2.3-linux-arm64.spdx.json").exists())
+        self.assertIn(DIGEST, (self.dist / "image-digests.txt").read_text())
+
+    def test_a_dry_run_still_checks_a_bundle_it_was_given(self):
+        notabundle = self.root / "notabundle.json"
+        notabundle.write_text(json.dumps({"hello": "world"}))
+        proc = self.run_script(DRY_RUN="true", BUNDLE_CHART=str(notabundle))
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("BUNDLE_CHART", proc.stdout)
+        proc = self.run_script(DRY_RUN="true", IMAGE_DIGEST="sha256:short")
+        self.assertNotEqual(proc.returncode, 0)
+
+    def test_missing_bundles_fail_a_run_that_is_not_a_dry_run(self):
+        proc = self.run_script(DRY_RUN="false", BUNDLE_CHART="")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("BUNDLE_CHART", proc.stdout)
+
     def test_docker_hub_bundle_is_required_when_docker_hub_is_pushed(self):
         proc = self.run_script(BUNDLE_IMAGE_DH="")
         self.assertNotEqual(proc.returncode, 0)
