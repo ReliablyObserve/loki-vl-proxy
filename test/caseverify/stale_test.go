@@ -61,6 +61,10 @@ func TestLokiCachedStaleNeedsAllTheEvidence(t *testing.T) {
 	}{
 		{"half of the lines, an extent reused", streamsAnswer(1, "1:a", "2:b"), full, nil, true, []string{"entriesFound", "2 of the proxy's 4"}},
 		{"none of the lines, an extent reused", streamsAnswer(2), full, nil, true, []string{"0 of the proxy's 4"}},
+		{"the older lines missing", streamsAnswer(1, "3:c", "4:d"), full, nil, true, []string{"between 1 and 2"}},
+		{"a block missing in the middle", streamsAnswer(1, "1:a", "4:d"), full, nil, true, []string{"between 2 and 3"}},
+		{"the proxy's extra lines interleaved with Loki's", streamsAnswer(1, "1:a", "3:c"), full, nil, false, nil},
+		{"two blocks of missing lines around Loki's", streamsAnswer(1, "2:b", "4:d"), streamsAnswer(0, "1:a", "2:b", "3:c", "4:d", "5:e"), nil, false, nil},
 		{"half of the lines, no extent reused", streamsAnswer(0, "1:a", "2:b"), full, nil, false, nil},
 		{"a line only Loki holds", streamsAnswer(1, "1:a", "9:z"), full, nil, false, nil},
 		{"a line of another text", streamsAnswer(1, "1:a", "2:changed"), full, nil, false, nil},
