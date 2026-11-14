@@ -28,8 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Breaking:** an instant metric query whose VictoriaLogs answer is above that limit used to be served in full and
   now answers `500`; raise `-backend-max-buffered-response-bytes` if such answers are expected.
 
-### Fixed
-
 - **Breaking:** queries Loki rejects after it has parsed them are now rejected the same way, with Loki's `400` and text, before the
   proxy looks in a cache or calls VictoriaLogs: `sort` or `sort_desc` with labels to group by (`parse error : sort and
   sort_desc doesn't allow grouping by `), `quantile_over_time` without its quantile (`parse error : parameter
