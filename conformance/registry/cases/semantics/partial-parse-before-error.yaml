@@ -27,6 +27,9 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     The stream holds `{"level":"error","msg": truncated`.
+  verify:
+    blocked_by: fixture
+    reason: "a stream holding {\"level\":\"error\",\"msg\": truncated"
 compare:
   mode: exact
   fields: [status, series_labels, values]

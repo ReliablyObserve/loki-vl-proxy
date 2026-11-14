@@ -19,6 +19,9 @@ request:
   headers:
     X-Scope-OrgID: "0"
     X-Loki-Response-Encoding-Flags: categorize-labels
+  verify:
+    blocked_by: volume
+    reason: "a stats query that hits a limit; the stack's data stays under every limit"
 compare:
   mode: observed
   fields: [status, warnings]

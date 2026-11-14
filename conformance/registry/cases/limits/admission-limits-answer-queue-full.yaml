@@ -26,6 +26,9 @@ request:
   precondition: |
     The client's token bucket is empty (-rate-limit-per-second), or every
     -max-concurrent slot is held by an in-flight request.
+  verify:
+    blocked_by: load
+    reason: "admission slots held (rate limit bucket empty or every -max-concurrent slot busy); a read-only run holds none"
 compare:
   mode: exact
   fields: [status, headers, body]

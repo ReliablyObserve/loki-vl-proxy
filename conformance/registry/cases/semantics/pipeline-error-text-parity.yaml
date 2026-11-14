@@ -64,6 +64,9 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     The stream holds at least one line that is not a JSON object.
+  verify:
+    met_by: stack
+    evidence: "payment-service writes logfmt lines (test/e2e-compat/log-generator.py:240-275) and nginx-ingress its combined format (test/e2e-compat/log-generator.py:307) under env=production (test/e2e-compat/log-generator.py:672): lines that are no JSON object."
 compare:
   mode: exact
   fields: [status, error_text]

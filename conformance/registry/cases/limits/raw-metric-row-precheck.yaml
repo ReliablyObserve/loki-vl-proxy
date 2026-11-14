@@ -24,6 +24,9 @@ request:
   precondition: |
     The selector matches more rows than -manual-range-metric-row-limit over a
     range of at least -backend-heavy-query-min-range, with no pipeline stage.
+  verify:
+    blocked_by: volume
+    reason: "a selector matching more rows than -manual-range-metric-row-limit; the expectation is the proxy's own limit text and log line"
 compare:
   mode: exact
   fields: [status]

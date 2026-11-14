@@ -28,6 +28,9 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     The stream holds lines `{"a":""}`, `{"a":"x"}` and `{"b":1}`.
+  verify:
+    blocked_by: fixture
+    reason: "a stream holding {\"a\":\"\"}, {\"a\":\"x\"} and {\"b\":1}"
 compare:
   mode: exact
   fields: [series_labels, values]

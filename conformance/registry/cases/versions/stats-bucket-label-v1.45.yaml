@@ -43,6 +43,9 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     The fixture holds lines exactly on 5 s multiples; VictoriaLogs v1.42.0 or v1.44.0.
+  verify:
+    blocked_by: version
+    reason: "VictoriaLogs v1.42.0 or v1.44.0; the stack runs the 1.49 and 1.53 lines"
 compare:
   mode: exact
   fields: [series_labels, values]

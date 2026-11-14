@@ -62,6 +62,9 @@ request:
   precondition: |
     `level` is a stream label and a key of every JSON body (the log
     generator's api-gateway, payment and worker services).
+  verify:
+    met_by: stack
+    evidence: "test/e2e-compat/log-generator.py:673 puts level in the stream labels of every service (unless LOG_NO_LEVEL_LABEL=1) and test/e2e-compat/log-generator.py:227,test/e2e-compat/log-generator.py:301 write it as a key of the JSON bodies of api-gateway and auth-service; _split_json_by_level keeps the two equal."
 compare:
   mode: exact
   fields: [status, series_labels, values]

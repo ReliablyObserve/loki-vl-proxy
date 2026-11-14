@@ -23,6 +23,9 @@ request:
     end: now
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    blocked_by: proxy_only
+    reason: "the expectation is when label scans reach VictoriaLogs (-labels-cache-warm), which only the proxy shows"
 compare:
   mode: status
   fields: [status]

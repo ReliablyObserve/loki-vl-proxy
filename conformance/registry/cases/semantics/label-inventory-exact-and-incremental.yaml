@@ -56,6 +56,9 @@ request:
   precondition: |
     The same window, then the window moved by seconds and by past the
     response cache's time bucket (what Grafana refreshes send).
+  verify:
+    blocked_by: moved_window
+    reason: "the same window, then moved by seconds and past the cache bucket"
 compare:
   mode: exact
   fields: [status, data]

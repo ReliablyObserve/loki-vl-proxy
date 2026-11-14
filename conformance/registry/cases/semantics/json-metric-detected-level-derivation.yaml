@@ -225,6 +225,9 @@ request:
     orders, a line with the word error and no level key, a detected_level
     stream label, a body detected_level key, structured metadata level and
     detected_level.
+  verify:
+    blocked_by: fixture
+    reason: "one stream per probe line (pino levels, notice, padded and capitalised level keys and the others the precondition lists)"
 compare:
   mode: exact
   fields: [status, series_labels, values]
