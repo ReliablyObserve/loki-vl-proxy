@@ -139,6 +139,12 @@ func TestEveryEmptyCaseIsServedOrExplained(t *testing.T) {
 			t.Errorf("%s is explained but is not one of the empty cases", id)
 		}
 	}
+	for _, id := range OwnStreamCases {
+		listed[id] = true
+		if !served[id] || Unservable[id] != "" {
+			t.Errorf("%s has its own stream in the cases' list but no stream serves it (or it is unservable)", id)
+		}
+	}
 	for id := range served {
 		if !listed[id] {
 			t.Errorf("a stream serves %s, which is not one of the empty cases", id)

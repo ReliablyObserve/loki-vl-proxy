@@ -126,6 +126,17 @@
     },
     "q": "{service_name=\"api-gateway\"} | json | ip=ip(\"10.2.0.0/16\")"
   },
+  "q-31b0f860565a": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"logfmt-malformed\"} | logfmt --strict"
+  },
   "q-37ae8f70adb3": {
     "classes": {
       "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
@@ -348,6 +359,17 @@
       "misses an _extracted label": "semantics/partial-parse-before-error"
     },
     "q": "{app=\"api-gateway\",env=\"production\"} | json | method!=\"DELETE\""
+  },
+  "q-7a89752012e3": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/ip-filter-keeps-parser-error-lines",
+      "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "categorized: parsed: misses __error_details__": "semantics/parse-error-labels-on-log-lines",
+      "drops a line Loki keeps": "semantics/ip-filter-keeps-parser-error-lines",
+      "misses __error__": "semantics/parse-error-labels-on-log-lines",
+      "misses __error_details__": "semantics/parse-error-labels-on-log-lines"
+    },
+    "q": "{app=\"ip-json-parser-error\"} | json | ip=ip(\"10.2.0.0/16\")"
   },
   "q-7db84c61aa06": {
     "classes": {
