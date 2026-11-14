@@ -48,6 +48,9 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		ctx = withExecutionLimits(ctx, p.execLimits)
 		reqWithTelemetry := r.WithContext(ctx)
 		sc := &statusCapture{ResponseWriter: w, code: 200}
+		if p.debugVLCallsHeader {
+			sc.beforeHeader = rt.setVLCallsHeaders
+		}
 		next.ServeHTTP(sc, reqWithTelemetry)
 
 		elapsed := time.Since(start)

@@ -222,6 +222,8 @@
     "quality/detected-metadata-proxy-cache | compare:observed",
     "quality/detected-metadata-proxy-cache | gap:open",
     "quality/detected-metadata-proxy-cache | query",
+    "quality/edge-cache-oversized-reply | compare:observed",
+    "quality/edge-cache-oversized-reply | query",
     "quality/extracted-label-probe-cost | compare:numeric",
     "quality/extracted-label-probe-cost | query",
     "quality/index-stats-bytes-and-chunks | compare:observed",
@@ -1228,6 +1230,14 @@
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-transport-text",
     "internal/proxy/cold_bad_row_test.go | semantics/error-layer-silent-success",
     "internal/proxy/compat_cache_freshness_test.go | semantics/metadata-answers-include-last-24h-like-loki",
+    "internal/proxy/compat_oversized_reply_test.go | limits/drilldown-breakdown-keeps-busiest",
+    "internal/proxy/compat_oversized_reply_test.go | parsed-identity/bare-parser-metric-duplicates-extracted",
+    "internal/proxy/compat_oversized_reply_test.go | parsed-identity/regexp-partial-match-series-count",
+    "internal/proxy/compat_oversized_reply_test.go | quality/edge-cache-oversized-reply",
+    "internal/proxy/compat_oversized_reply_test.go | semantics/keep-before-unwrap-identity-in-operands",
+    "internal/proxy/compat_oversized_reply_test.go | semantics/label-filter-before-parser-reads-ingest-json-key",
+    "internal/proxy/compat_oversized_reply_test.go | semantics/quantile-over-time-out-of-range",
+    "internal/proxy/compat_oversized_reply_test.go | semantics/unpack-non-string-values",
     "internal/proxy/count_values_test.go | semantics/count-values-unsupported",
     "internal/proxy/credential_passthrough_test.go | credential-passthrough-as-configured",
     "internal/proxy/delete_route_test.go | delete-api-requires-token",
@@ -1922,6 +1932,7 @@
     "internal/proxy/vector_agg_series_differential_test.go | metric-series-identity",
     "internal/proxy/vector_agg_series_differential_test.go | semantics/non-sum-vector-aggregation-unreduced",
     "internal/proxy/vector_agg_series_differential_test.go | window-bounds-and-step-alignment",
+    "internal/proxy/vl_calls_header_test.go | quality/edge-cache-oversized-reply",
     "internal/proxy/volume_segments_test.go | loki_api_v1_index_volume",
     "internal/proxy/volume_segments_test.go | quality/index-volume-settled-segments",
     "internal/proxy/volume_test.go | drilldown/index_volume/end-millisecond-rounding",
@@ -2651,6 +2662,7 @@
     "test/e2e-compat/vl_pattern_lines_test.go | vl-phrase-filter-quoted-names",
     "test/e2e-compat/vl_pattern_lines_test.go | vl-sort-ties-by-text",
     "test/e2e-compat/vl_zstd_response_window_test.go | vl-zstd-response-window",
+    "test/e2e-fleet/oversized_reply_local_test.go | quality/edge-cache-oversized-reply",
     "test/e2e-fleet/peer_cache_proof_test.go | peer-cache-fleet-recovery",
     "test/e2e-fleet/peer_cache_proof_test.go | peer-cache-label-values-index",
     "test/e2e-fleet/peer_cache_proof_test.go | peer-cache-metadata",
@@ -2673,13 +2685,13 @@
     "case_consumers": {
       "any": 35,
       "api": 95,
-      "drilldown": 50,
+      "drilldown": 51,
       "explore": 184,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 598,
+      "go": 601,
       "playwright": 1
     },
     "page_kinds": {
@@ -2698,8 +2710,8 @@
     },
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
-    "unwired_items": 105,
-    "wired_items": 358
+    "unwired_items": 100,
+    "wired_items": 364
   },
   "gates": [
     "A/B shape selection",

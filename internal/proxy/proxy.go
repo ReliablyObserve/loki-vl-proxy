@@ -599,6 +599,10 @@ type Config struct {
 	// backend query params in debug-level logs. Intended for local development
 	// only. Default is false (redacted).
 	DebugLogRawQueries bool
+	// DebugVLCallsHeader adds X-Loki-VL-Backend-Calls and
+	// X-Loki-VL-Cache-Result to every read response (vl_calls_header.go).
+	// Off by default: Loki sends neither header.
+	DebugVLCallsHeader bool
 	// SlowQueryThreshold is the duration at or over which a client request is slow: counted and logged with
 	// its LogQL and trace (slow_query_log.go). 0 turns it off.
 	SlowQueryThreshold time.Duration
@@ -913,6 +917,7 @@ type Proxy struct {
 	cacheTTLLabelValues                  time.Duration // per-instance TTL for label_values endpoint
 	metadataNegativeCacheTTL             time.Duration // TTL for empty label lists; see effectiveMetadataNegativeTTL
 	debugLogRawQueries                   bool          // when true, debug logs include raw LogQL/LogsQL and backend params
+	debugVLCallsHeader                   bool          // when true, read responses carry the request's VictoriaLogs calls (vl_calls_header.go)
 	slowQueryThreshold                   time.Duration
 	slowUpstreamThreshold                time.Duration
 	slowQueryLogRawQueries               bool
@@ -1565,6 +1570,7 @@ func New(cfg Config) (*Proxy, error) {
 		cacheTTLLabelValues:                   labelCacheTTL,
 		metadataNegativeCacheTTL:              effectiveMetadataNegativeTTL(cfg.Cache.DiskMinTTL(), cfg.PeerCache.WriteThroughMinTTL()),
 		debugLogRawQueries:                    cfg.DebugLogRawQueries,
+		debugVLCallsHeader:                    cfg.DebugVLCallsHeader,
 		slowQueryThreshold:                    cfg.SlowQueryThreshold,
 		slowUpstreamThreshold:                 cfg.SlowUpstreamThreshold,
 		slowQueryLogRawQueries:                cfg.SlowQueryLogRawQueries,
@@ -1577,6 +1583,9 @@ func New(cfg Config) (*Proxy, error) {
 		metadataMaxStaleness:                  max(cfg.MetadataMaxStaleness, 0),
 		metadataEdgeRefreshBudget:             max(cfg.MetadataEdgeRefreshBudget, 0),
 		drilldownScanTimeout:                  cfg.DrilldownScanTimeout,
+	}
+	if p.debugVLCallsHeader {
+		p.countVLCalls()
 	}
 	p.metrics.SetCacheLayerStatsProvider(p.cacheLayerStats)
 	coalescerStats := func() metrics.CoalescerStats {
