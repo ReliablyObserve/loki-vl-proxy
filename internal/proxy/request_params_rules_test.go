@@ -449,13 +449,14 @@ var (
 	fuzzParamProxy     *Proxy
 )
 
-// paramTestProxy is a proxy whose limits the checks read: max_query_length of
-// Loki's recorded stack (30d1h), no lookback.
+// paramTestProxy is a proxy whose limits the checks read: the shipped
+// -default-max-query-length (Loki's default 30d1h, the recorded stack's), no
+// lookback.
 func paramTestProxy(tb testing.TB) *Proxy {
 	tb.Helper()
 	fuzzParamProxyOnce.Do(func() {
 		c := cache.New(time.Minute, 100)
-		p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: c, LogLevel: "error", DefaultMaxQueryLength: 721 * time.Hour})
+		p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: c, LogLevel: "error", DefaultMaxQueryLength: DefaultMaxQueryLength})
 		if err != nil {
 			panic(err)
 		}
@@ -485,7 +486,7 @@ func checkParamRequest(p *Proxy, route string, v map[string]string) error {
 		}
 		return nil
 	}
-	want := model.rejectedBy(v, now, 721*time.Hour)
+	want := model.rejectedBy(v, now, DefaultMaxQueryLength)
 	switch {
 	case got == nil && len(want) > 0:
 		return fmt.Errorf("%s %q: accepted; the model rejects it with %v", route, v, want)

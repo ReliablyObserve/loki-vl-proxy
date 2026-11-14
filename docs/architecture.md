@@ -268,7 +268,7 @@ flowchart TD
 | Query normalization | Improve cache hit rate | Sort matchers, collapse whitespace |
 | Tier0 response cache | Short-circuit repeated safe GET reads after tenant validation | Enabled, 10% of L1 memory budget, safe GET read endpoints only |
 | Tiered cache | Reduce backend calls with local, disk, and peer reuse | L1 memory, optional L2 disk, optional L3 peer cache |
-| Query-length enforcement | Reject requests whose time range exceeds the configured maximum | `-default-max-query-length=0` (disabled); per-tenant override via limits config; tenant limit takes precedence |
+| Query-length enforcement | Reject requests whose time range exceeds the configured maximum | `-default-max-query-length=721h` (Loki's `max_query_length` default; `0` disables it); per-tenant override via limits config; tenant limit takes precedence |
 | Stats series and concurrency caps | Bound stats responses and parallel `stats_query_range` calls | `-max-stats-query-series=0` (built-in `500`), `-stats-query-range-concurrency=0` (built-in `4`) |
 | Metadata lookback | Bound `/labels`, `/label/{name}/values` and `/series` when the client omits `start`/`end` | `-metadata-default-lookback=12h` |
 | Execution budgets | Reject oversized raw metric scans, binary expressions and `line_format` output with explicit errors instead of partial results | `-manual-range-metric-row-limit=1000000` plus fixed budgets; see [Security hardening migration](security-hardening-migration.md) |

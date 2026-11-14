@@ -80,6 +80,10 @@
     "limits/label-values-response-cap | query",
     "limits/max-entries-limit-rejects | applies_to",
     "limits/max-entries-limit-rejects | compare:exact",
+    "limits/max-query-length-default | applies_to",
+    "limits/max-query-length-default | compare:exact",
+    "limits/max-query-length-default | gap:fixed",
+    "limits/max-query-length-default | query",
     "limits/max-query-length-error | applies_to",
     "limits/max-query-length-error | compare:exact",
     "limits/max-query-lookback | applies_to",
@@ -1075,8 +1079,10 @@
     "cmd/proxy/main_test.go | limits/every-cap-is-a-flag",
     "cmd/proxy/main_test.go | operator-configurable-limits",
     "cmd/proxy/main_test.go | semantics/query-range-step-alignment",
+    "cmd/proxy/tenant_routing_test.go | limits/max-query-length-default",
     "cmd/proxy/tenant_routing_test.go | tenant-auth-follows-loki",
     "cmd/proxy/tenant_routing_test.go | tenant-numeric-routing",
+    "cmd/proxy/tenant_routing_test.go | tenant-query-limits",
     "internal/cache/cache_coverage_test.go | observability-query-flow",
     "internal/cache/cache_test.go | shutdown-releases-background-work",
     "internal/cache/peer_protocol_edges_test.go | peer-cache-fleet-recovery",
@@ -1230,6 +1236,11 @@
     "internal/proxy/compat_cache_freshness_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/count_values_test.go | semantics/count-values-unsupported",
     "internal/proxy/credential_passthrough_test.go | credential-passthrough-as-configured",
+    "internal/proxy/default_max_query_length_test.go | limits/effective-limit-resolution",
+    "internal/proxy/default_max_query_length_test.go | limits/max-query-length-default",
+    "internal/proxy/default_max_query_length_test.go | limits/max-query-length-error",
+    "internal/proxy/default_max_query_length_test.go | limits/published-equals-enforced",
+    "internal/proxy/default_max_query_length_test.go | tenant-query-limits",
     "internal/proxy/delete_route_test.go | delete-api-requires-token",
     "internal/proxy/delete_route_test.go | loki_api_v1_delete",
     "internal/proxy/delete_route_test.go | semantics/delete-route-disabled-like-loki",
@@ -2229,6 +2240,8 @@
     "test/e2e-compat/compat_option_matrix_test.go | profiles/label-browse-params-ignored",
     "test/e2e-compat/compat_option_matrix_test.go | profiles/structured-metadata-keys-per-profile",
     "test/e2e-compat/count_values_test.go | semantics/count-values-unsupported",
+    "test/e2e-compat/default_max_query_length_like_loki_test.go | limits/max-query-length-default",
+    "test/e2e-compat/default_max_query_length_like_loki_test.go | tenant-query-limits",
     "test/e2e-compat/detected_fields_empty_answer_test.go | loki_api_v1_detected_fields",
     "test/e2e-compat/detected_fields_empty_answer_test.go | semantics/detected-fields-empty-answer",
     "test/e2e-compat/detected_fields_logfmt_tokens_test.go | loki_api_v1_detected_fields",
@@ -2672,14 +2685,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 95,
+      "api": 96,
       "drilldown": 50,
       "explore": 184,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 598,
+      "go": 600,
       "playwright": 1
     },
     "page_kinds": {
@@ -2699,7 +2712,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 105,
-    "wired_items": 358
+    "wired_items": 359
   },
   "gates": [
     "A/B shape selection",

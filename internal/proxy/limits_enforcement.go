@@ -30,6 +30,14 @@ const (
 	limitQueryTimeout            = "query_timeout"
 )
 
+const (
+	// DefaultMaxQueryLength is the -default-max-query-length default: Loki's
+	// max_query_length default (721h, published as 30d1h), so a proxy with no
+	// limit configured rejects the ranges Loki rejects. 0 on the flag, or in a
+	// tenant limit, turns the limit off, as in Loki.
+	DefaultMaxQueryLength = 721 * time.Hour
+)
+
 // limitLabelValuesMaxResponseBytes is the per-tenant form of
 // -label-values-max-response-bytes. Loki has no per-tenant equivalent (its
 // bound is the server's grpc_server_max_send_msg_size), so the key is accepted
@@ -452,7 +460,9 @@ func (p *Proxy) tenantLimitsMiddleware(endpoint string, next http.HandlerFunc) h
 		entries := query && entryLimitAbove(r, limits.MaxEntriesLimitPerQuery)
 		interval := query && limits.MaxQueryRange > 0
 		window := lookback && (limits.MaxQueryLookback > 0 || (limits.MaxQueryLength > 0 && endpoint != "query"))
-		if !entries && !interval && !window {
+		// With max_query_length the only check that applies, a range inside it
+		// passes as it would after the checks below, without parsing the query.
+		if !entries && !interval && (!window || limits.MaxQueryLookback <= 0 && !rangeOverLength(r, limits.MaxQueryLength)) {
 			next(w, r)
 			return
 		}
@@ -506,6 +516,14 @@ func (p *Proxy) tenantLimitsMiddleware(endpoint string, next http.HandlerFunc) h
 		}
 		next(w, r)
 	}
+}
+
+// rangeOverLength reports whether the request's start and end span more than
+// maxLen, the max_query_length check of applyLookbackAndLength.
+func rangeOverLength(r *http.Request, maxLen time.Duration) bool {
+	startNs, startOK := parseLokiTimeToUnixNano(r.FormValue("start"))
+	endNs, endOK := parseLokiTimeToUnixNano(r.FormValue("end"))
+	return startOK && endOK && queryLengthLimitError(maxLen, startNs, endNs) != ""
 }
 
 // tenantLimitsTimeoutEndpoints are the requests Loki runs under the tenant's

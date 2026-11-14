@@ -29,7 +29,9 @@ proxy: |
   One resolver answers both enforcement and the published limits, per tenant:
   -tenant-limits[tenant] -> -tenant-default-limits -> the proxy flag
   (-max-stats-query-series, -max-entries-limit-per-query,
-  -default-max-query-length, -backend-timeout) -> Loki's default. Every metric
+  -default-max-query-length, -backend-timeout) -> Loki's default.
+  -default-max-query-length defaults to Loki's 721h, so a proxy with no
+  length configured rejects and publishes what Loki does; 0 turns it off. Every metric
   route reads max_query_series from it; the request middleware applies
   max_entries_limit_per_query, max_query_range, max_query_lookback,
   max_query_length and a query_timeout override with the combined limits of a
@@ -55,6 +57,7 @@ cases:
   - limits/multi-tenant-limit-combination
   - limits/max-entries-limit-rejects
   - limits/max-query-length-error
+  - limits/max-query-length-default
   - limits/max-query-lookback
   - limits/max-query-range-interval
   - limits/query-timeout-per-tenant
