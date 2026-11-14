@@ -953,7 +953,7 @@ decisions:
       translator (fewer bytes, about the same time).
     evidence: 'TestQueryPlanLowering_CorpusTextParity with the candidates flipped (VectorAgg 5,647, RangeAgg 4,011, BinOp 966, LabelReplace 854 translations, text equal under 7 profiles); TestPlanRouteParity call dump vs two base runs (no new LogsQL text); TestPlanMatchesLokiOnMetricQueries unchanged with no stale recording; BenchmarkTranslateQueryMissShapes base vs candidates, n=8, Apple M5 Pro, GOMAXPROCS=4 (see the PR).'
     code: [internal/proxy/query_lowering.go, internal/proxy/query_translation.go, internal/proxy/proxy.go]
-    tests: [TestQueryPlanLowering_CorpusTextParity, TestQueryPlanLowering_ServesMetricConstructs, TestQueryPlanLowering_WritesTranslatorTextGate, TestQueryPlanLowering_MetricFlipScreenAndPanic, TestQueryPlanLowering_RouteParity, TestKeepIdentityServedFromPlan, TestKeepIdentityHandlersFollowTheFlip, TestPlanShadow]
+    tests: [TestQueryPlanLowering_CorpusTextParity, FuzzMetricFlipGate, TestQueryPlanLowering_ServesMetricConstructs, TestQueryPlanLowering_WritesTranslatorTextGate, TestQueryPlanLowering_MetricFlipScreenAndPanic, TestQueryPlanLowering_RouteParity, TestKeepIdentityServedFromPlan, TestKeepIdentityHandlersFollowTheFlip, TestPlanShadow]
     quality: 'Behaviour-neutral: QueryPlanFlippedConstructs is unchanged, the keep identity is served as before, and the shadow screens the canonical text as the proxy does (native 21,334 to 21,388: 54 rows written as `({...})[5m]` were delegated by the raw text''s spelling only).'
     performance:
       tracked: ['BenchmarkTranslateQueryMissShapes (internal/proxy): the metric shapes per construct, served and not served, ns/op, B/op, allocs/op']

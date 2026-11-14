@@ -95,3 +95,46 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 		t.Logf("served from the lowering: %-18s %d translations", c, total[c])
 	}
 }
+
+// FuzzMetricFlipGate holds the metric flip to the string translator on any query: with the candidate metric
+// constructs flipped, a query the lowering serves (writesTranslatorText passed) is the translator's text, byte for
+// byte, or the keep identity; the gate and the lowering never panic out of lowerMetric.
+//
+// conformance: architecture-syntax-package-layering
+func FuzzMetricFlipGate(f *testing.F) {
+	for _, q := range []string{
+		`sum by (app) (rate({app="a"} |= "x" [5m]))`, `count_over_time({app="a"} | json | status="500" [5m])`,
+		`sum(rate({app="a"}[5m])) / sum(rate({app="b"}[5m]))`, `label_replace(rate({app="a"}[5m]), "x", "$1", "app", "(.*)")`,
+		`topk(2, sum by (app) (rate({app="a"}[5m])))`, `stddev(count_over_time({app="a"}[5m]))`,
+		`sum without (pod) (rate({app="a"}[5m])) / 2`, `sum(count_over_time({app="a"} | json | n == 5 [5m]))`,
+		`sum(count_over_time({app="a"} | _time="x" [5m]))`, `max_over_time({app="a"} | logfmt | unwrap d [5m]) by (app)`,
+		`first_over_time({app="a"} | json | keep app, n | unwrap n [5m])`, `sum by (app) (bytes_over_time(({app="a"} |~ "x")[5m]))`,
+	} {
+		f.Add(q)
+	}
+	newProxy := func(disable bool) *Proxy {
+		p, err := New(Config{BackendURL: "http://unused", Cache: cache.New(time.Minute, 100), LogLevel: "error",
+			LabelStyle: LabelStyleUnderscores, DisableQueryPlanLowering: disable})
+		if err != nil {
+			f.Fatal(err)
+		}
+		f.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+		p.translationCache = nil
+		return p
+	}
+	on, off := newProxy(false), newProxy(true)
+	withFlipped(on, metricFlipCandidates...)
+	f.Fuzz(func(t *testing.T, q string) {
+		if len(q) > 512 || strings.HasPrefix(strings.TrimSpace(q), "{") {
+			return
+		}
+		got, gotErr := on.translateQueryOpts(context.Background(), q, false)
+		want, wantErr := off.translateQueryOpts(context.Background(), q, false)
+		if _, kept := on.keepUnwrapIdentity(q); kept {
+			return
+		}
+		if got != want || (gotErr == nil) != (wantErr == nil) {
+			t.Fatalf("%q:\n flag on  %q %v\n flag off %q %v", q, got, gotErr, want, wantErr)
+		}
+	})
+}
