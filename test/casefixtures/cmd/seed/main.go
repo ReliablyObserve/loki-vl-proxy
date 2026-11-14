@@ -8,7 +8,8 @@
 // verifier reads a window that ends -settle, five minutes, before its start). Without -follow the command exits
 // after the backlog and the verifier must start within about five minutes of it.
 //
-// The command writes only to the two URLs it is given; it never reads a registry or a checkout.
+// The command writes only to the two URLs it is given; it never reads a registry or a checkout. A stream that
+// failed on either side is named on stderr and the exit code is 1 (the others are still written).
 package main
 
 import (
@@ -36,10 +37,10 @@ func main() {
 		list   = flag.Bool("list", false, "list the streams and the cases that read them, and exit")
 	)
 	flag.Parse()
-	streams := choose(casefixtures.Streams(), *only)
+	streams := casefixtures.Choose(casefixtures.Streams(), *only)
 	if *list {
 		for _, s := range streams {
-			fmt.Printf("%s\t%s\t%s\t%s\n", s.Name, s.Route, selectorText(s), strings.Join(s.Cases, ","))
+			fmt.Printf("%s\t%s\t%v\t%s\n", s.Name, s.Route, s.Labels, strings.Join(s.Cases, ","))
 		}
 		return
 	}
@@ -49,75 +50,12 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	target := casefixtures.Target{Loki: *loki, VL: *vl, Tenant: *tenant}
-	now := time.Now()
-	ticks := casefixtures.Ticks(now, *span, *every)
-	for _, s := range streams {
-		if err := target.Push(ctx, s, ticks); err != nil {
-			fmt.Fprintln(os.Stderr, "seed:", err)
-			os.Exit(1)
-		}
-		fmt.Printf("pushed %s: %d ticks of %d lines\n", s.Name, len(ticks), len(s.Entries))
+	cfg := casefixtures.Config{
+		Target: casefixtures.Target{Loki: *loki, VL: *vl, Tenant: *tenant},
+		Span:   *span, Every: *every, Wait: *wait, Follow: *follow, Lag: 2 * time.Second,
 	}
-	target.Flush(ctx)
-	failed := false
-	for _, s := range streams {
-		wctx, cancel := context.WithTimeout(ctx, *wait)
-		want := float64(len(ticks) * len(s.Entries))
-		l, v, err := target.WaitReady(wctx, s, now, *span+time.Minute, want)
-		cancel()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "seed: stream %s is not ready: %v\n", s.Name, err)
-			failed = true
-			continue
-		}
-		fmt.Printf("ready %s: Loki %.0f, VictoriaLogs %.0f lines\n", s.Name, l, v)
+	if code := casefixtures.Run(ctx, cfg, streams, os.Stdout, os.Stderr); code != 0 {
+		stop()
+		os.Exit(code)
 	}
-	if failed {
-		os.Exit(1)
-	}
-	if !*follow {
-		return
-	}
-	fmt.Println("following: one tick per", *every, "until interrupted")
-	next := ticks[len(ticks)-1].Add(*every)
-	for {
-		wait := time.Until(next.Add(2 * time.Second))
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(wait):
-		}
-		for _, s := range streams {
-			if err := target.Push(ctx, s, []time.Time{next}); err != nil {
-				fmt.Fprintln(os.Stderr, "seed:", err)
-			}
-		}
-		next = next.Add(*every)
-	}
-}
-
-func choose(all []casefixtures.Stream, only string) []casefixtures.Stream {
-	if only == "" {
-		return all
-	}
-	want := map[string]bool{}
-	for _, n := range strings.Split(only, ",") {
-		want[strings.TrimSpace(n)] = true
-	}
-	var out []casefixtures.Stream
-	for _, s := range all {
-		if want[s.Name] {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-func selectorText(s casefixtures.Stream) string {
-	parts := make([]string, 0, len(s.Labels))
-	for k, v := range s.Labels {
-		parts = append(parts, fmt.Sprintf("%s=%q", k, v))
-	}
-	return "{" + strings.Join(parts, ",") + "}"
 }

@@ -621,3 +621,89 @@ func TestCountQueriesNameTheStreamsLabels(t *testing.T) {
 		t.Error("the filter survives encoding")
 	}
 }
+
+// lokiLabels are a stream's labels as Loki holds them (service_name derived from app when absent). Streams()
+// already carries it as a label, so this is the identity for every seeded stream; the leak test applies it to the
+// raw labels too, to catch a stream written without it.
+func lokiLabels(labels map[string]string) map[string]string { return withServiceName(labels) }
+
+// generatorServices are the services the visual stack's generator writes (the selectors of the cases the live run
+// proved on that data): a selector that can select one of them is shared with data the cases already read.
+var generatorServices = []string{"api-gateway", "payment-service", "cache-redis", "frontend-ssr", "otel-collector", "batch-etl", "nginx-ingress", "checkout-svc"}
+
+// readsGeneratorData reports whether the selector can select a stream of the generator.
+func readsGeneratorData(ms []logql.LabelMatcher) bool {
+	for _, g := range generatorServices {
+		for _, ns := range []string{"prod", "monitoring", "ingress-nginx"} {
+			labels := map[string]string{"app": g, "service_name": g, "env": "production", "namespace": ns, "level": "info", "cluster": "us-east-1"}
+			if matches(labels, ms) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// catchAll reports whether the selector matches every stream: `{service_name=~".+"}` reads whatever is stored.
+func catchAll(ms []logql.LabelMatcher) bool {
+	return matches(map[string]string{"service_name": "any"}, ms) && matches(map[string]string{"service_name": "other", "app": "z"}, ms)
+}
+
+// holdsTicks reports whether a case reads a window the seed's backlog reaches, as TestServedCasesWindowsHoldTicks
+// computes it: an absolute window reads no seeded data.
+func holdsTicks(p map[string]string) bool {
+	for _, k := range []string{"start", "end", "time"} {
+		if v, ok := p[k]; ok {
+			if _, rel := relativeOffset(v); !rel {
+				return false
+			}
+		}
+	}
+	if s, ok := p["start"]; ok {
+		if d, _ := relativeOffset(s); d < -48*time.Hour {
+			return false // further back than the seed reaches
+		}
+		if e, _ := relativeOffset(p["end"]); e < -DefaultSpan-verifierSettle {
+			return false
+		}
+	}
+	return true
+}
+
+// A stream must not change what a case that does not list it reads: with Loki's labels (service_name derived from
+// app) and with VictoriaLogs' raw fields, no stream may match the selectors of a case that reads relative time and
+// is not one of the stream's cases, and no stream may match on one side only (the verifier's counts would differ for
+// the case, and every case selecting the same streams).
+func TestStreamsLeakIntoNoOtherCase(t *testing.T) {
+	cases := loadCases(t)
+	for _, s := range Streams() {
+		listed := map[string]bool{}
+		for _, id := range append(append([]string(nil), s.Cases...), s.Decoys...) {
+			listed[id] = true
+		}
+		for id, c := range cases {
+			p := params(c)
+			if p["query"] == "" || !holdsTicks(p) {
+				continue
+			}
+			expr, err := logql.Parse(p["query"])
+			if err != nil || expr == nil {
+				continue
+			}
+			for _, ms := range selectorsOf(t, p["query"]) {
+				onLoki, onVL := matches(lokiLabels(s.Labels), ms), matches(s.Labels, ms)
+				if catchAll(ms) {
+					continue // reads every stream by design, on both sides alike
+				}
+				if onLoki != onVL {
+					t.Errorf("stream %s is selected by %s on %s only: the two sides would count different lines", s.Name, id, map[bool]string{true: "Loki", false: "VictoriaLogs"}[onLoki])
+				}
+				// A selector of fixture names alone read nothing before the seed, so the data is new to it; one that
+				// can select the generator's streams would see its proven answer change.
+				if (onLoki || onVL) && !listed[id] && readsGeneratorData(ms) {
+					t.Errorf("stream %s is selected by %s, which does not list it and reads the generator's data too: it would change that case's data", s.Name, id)
+				}
+			}
+		}
+	}
+}

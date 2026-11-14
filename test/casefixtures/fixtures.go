@@ -89,6 +89,31 @@ func Streams() []Stream {
 	out = append(out, visualStreams()...)
 	out = append(out, profileStreams()...)
 	out = append(out, semanticsStreams()...)
+	for i := range out {
+		out[i].Labels = withServiceName(out[i].Labels)
+	}
+	return out
+}
+
+// withServiceName gives a stream the service_name Loki would derive for it (the first non-empty of service, app,
+// application, name, app_kubernetes_io_name, container, container_name, component, workload, job), as a label both
+// sides hold: Loki adds it at ingest, VictoriaLogs stores no such field, and the verifier counts VictoriaLogs by the
+// selector's field names, so a stream without it would be counted by `{service_name=~".+"}` on Loki only.
+func withServiceName(labels map[string]string) map[string]string {
+	if labels["service_name"] != "" {
+		return labels
+	}
+	out := make(map[string]string, len(labels)+1)
+	for k, v := range labels {
+		out[k] = v
+	}
+	out["service_name"] = "unknown_service"
+	for _, k := range []string{"service", "app", "application", "name", "app_kubernetes_io_name", "container", "container_name", "component", "workload", "job"} {
+		if labels[k] != "" {
+			out["service_name"] = labels[k]
+			break
+		}
+	}
 	return out
 }
 
@@ -128,7 +153,9 @@ func visualStreams() []Stream {
 
 // profileStreams are the fixtures of the profile cases (cases/profiles).
 func profileStreams() []Stream {
-	apps := []struct{ app, svc string }{{"api", "api"}, {"web", "web"}, {"api-gateway", "api-gateway"}, {"my-api", "my-api"}, {"webhook", "web"}}
+	// The svc values of the label filter case (`svc=~"api|api-gateway"`) ride in the streams that exist anyway, so no
+	// stream carries app="api-gateway", the selector of twenty cases the generator's data already serves.
+	apps := []struct{ app, svc string }{{"api", "api"}, {"web", "web"}, {"my-api", "my-api"}, {"webhook", "api-gateway"}}
 	var anchors []Stream
 	for _, a := range apps {
 		// The selector app=~"api|web" is anchored: api and web are its streams, the others are what a substring
@@ -137,13 +164,17 @@ func profileStreams() []Stream {
 		if a.app != "api" && a.app != "web" {
 			cases, decoys = cases[:1], cases[1:]
 		}
+		if a.app == "api" {
+			// `{app="api"}` is also the selector of the line_format case: its stream reads this one too.
+			cases = append(append([]string(nil), cases...), "semantics/line-format-template-error-keeps-entry")
+		}
 		anchors = append(anchors, Stream{
 			Name:   "anchor-" + a.app,
 			Cases:  cases,
 			Decoys: decoys,
 			Labels: m{"probe": "anchor<ts>", "app": a.app},
 			Entries: lines(
-				`{"svc":"`+a.app+`","msg":"anchor `+a.app+`"}`,
+				`{"svc":"`+a.svc+`","msg":"anchor `+a.app+`"}`,
 				`{"svc":"no dotted keys here","msg":"anchor other"}`,
 			),
 			Route: RouteJSONLine,
@@ -310,17 +341,6 @@ func semanticsStreams() []Stream {
 			Entries: []Entry{
 				{Line: "quoted one", Metadata: m{"s": "a detected_level b"}},
 				{Line: "quoted two", Metadata: m{"s": "other text"}},
-			},
-			Route: RouteJSONLine,
-		},
-		{
-			Name:   "x-marker-bytes",
-			Cases:  []string{"semantics/translator-reads-marker-bytes-in-quoted-value"},
-			Labels: m{"app": "x", "case": "marker"},
-			Entries: []Entry{
-				{Line: `{"K":"p"}`, Metadata: m{"o": "\x02\x00\x02", "K": "kept"}},
-				{Line: `{"K":"z"}`, Metadata: m{"o": "\x02\x00\x02", "K": "kept"}},
-				{Line: `{"K":"q"}`, Metadata: m{"o": "plain", "K": "kept"}},
 			},
 			Route: RouteJSONLine,
 		},
