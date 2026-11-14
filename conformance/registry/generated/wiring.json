@@ -15,6 +15,7 @@
       "internal/logql/line_template_test.go",
       "internal/logsql/ip_range_vl_test.go",
       "internal/logsql/parser_read_test.go",
+      "internal/logsql/parser_stats_funcs_test.go",
       "internal/logsql/parser_typed_test.go",
       "internal/logsql/pipe_math_as_test.go",
       "internal/lokierr/lokierr_test.go",
@@ -50,6 +51,7 @@
       "internal/querycorpus/plan_loki_vl_metric_diff_harness_test.go",
       "internal/querycorpus/plan_loki_vl_metric_diff_test.go",
       "internal/querycorpus/plan_shadow_test.go",
+      "internal/querycorpus/plancorpus/plancorpus_test.go",
       "internal/querycorpus/range_agg_grid_test.go",
       "internal/querycorpus/range_agg_oracle_test.go",
       "internal/querycorpus/rank_grid_test.go",
@@ -93,7 +95,10 @@
       "internal/queryplan/lower/vector_agg_test.go",
       "internal/queryplan/physical/eval_test.go",
       "internal/translate/extract_stages_test.go",
+      "internal/translate/label_filter_test.go",
       "internal/translate/line_format_test.go",
+      "internal/translate/pipe_builders_test.go",
+      "internal/translate/selector_filters_test.go",
       "internal/translate/selector_test.go",
       "internal/translate/vector_test.go"
     ],
@@ -704,6 +709,7 @@
     ],
     "operator-configurable-limits": [
       "cmd/proxy/main_test.go",
+      "internal/config/generate_edge_test.go",
       "internal/config/registry_test.go",
       "internal/proxy/backend_read_bounds_test.go",
       "internal/proxy/backend_response_guard_test.go",
@@ -722,6 +728,7 @@
       "internal/logql/parser_captures_test.go",
       "internal/proxy/ordered_json_conditional_unpack_test.go",
       "internal/proxy/parser_capture_identity_test.go",
+      "internal/translate/label_filter_test.go",
       "test/e2e-compat/parser_capture_identity_test.go"
     ],
     "parser-error-and-label-collision": [
@@ -770,6 +777,8 @@
       "test/e2e-compat/patterns_loki_oracle_test.go"
     ],
     "peer-cache-fleet-recovery": [
+      "internal/cache/peer_protocol_edges_test.go",
+      "internal/proxy/peer_warm_fetch_test.go",
       "test/e2e-fleet/peer_cache_proof_test.go"
     ],
     "peer-cache-label-values-index": [
@@ -791,6 +800,7 @@
       "test/e2e-fleet/peer_cache_proof_test.go"
     ],
     "peer-cache-replication": [
+      "internal/cache/peer_protocol_edges_test.go",
       "internal/cache/peer_replication_test.go",
       "internal/proxy/patterns_persistence_test.go",
       "internal/proxy/peer_push_identity_test.go",
@@ -1231,6 +1241,7 @@
     ],
     "semantics/extracted-suffix-collision": [
       "internal/proxy/extracted_suffix_collision_test.go",
+      "internal/translate/pipe_builders_test.go",
       "internal/translator/extracted_suffix_test.go",
       "test/e2e-compat/extracted_metric_pushdown_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
@@ -1268,6 +1279,7 @@
     ],
     "semantics/ip-label-filter-embedded-address": [
       "internal/translate/ip_label_prefilter_test.go",
+      "internal/translate/label_filter_test.go",
       "internal/translator/ip_label_filter_loki_test.go",
       "internal/translator/ip_label_filter_test.go",
       "internal/translator/ip_scan_reference_test.go",
@@ -1275,16 +1287,19 @@
     ],
     "semantics/ip-label-filter-invalid-pattern": [
       "internal/logql/ip_label_filter_validate_loki_test.go",
+      "internal/translate/ip_label_filter_test.go",
       "test/e2e-compat/ip_label_filter_invalid_pattern_test.go"
     ],
     "semantics/ip-label-filter-missing-label": [
       "internal/proxy/ip_label_filter_test.go",
+      "internal/translate/ip_label_filter_test.go",
       "internal/translator/ip_label_filter_loki_test.go",
       "internal/translator/ip_label_filter_test.go",
       "test/e2e-compat/ip_label_filter_test.go"
     ],
     "semantics/ip-line-filter-ipv4-like-loki": [
       "internal/translate/ip_line_filter_loki_test.go",
+      "internal/translate/linefilter_test.go",
       "test/e2e-compat/ip_line_filter_test.go"
     ],
     "semantics/json-detected-level-error-split": [
@@ -1385,6 +1400,8 @@
       "internal/proxy/binary_literal_reprint_test.go",
       "internal/proxy/label_filter_expression_test.go",
       "internal/proxy/reprint_translation_test.go",
+      "internal/translate/label_filter_test.go",
+      "internal/translate/selector_filters_test.go",
       "internal/translator/label_filter_expr_test.go",
       "test/e2e-compat/label_filter_expression_test.go"
     ],
@@ -1450,12 +1467,14 @@
     ],
     "semantics/line-filter-invalid-utf8": [
       "internal/proxy/error_text_utf8_test.go",
+      "internal/translate/linefilter_test.go",
       "internal/translator/line_filter_invalid_utf8_test.go",
       "test/e2e-compat/line_filter_invalid_utf8_test.go",
       "test/e2e-compat/vl_empty_in_test.go"
     ],
     "semantics/line-filter-or-alternatives": [
       "internal/logql/log_range_alternatives_test.go",
+      "internal/translate/linefilter_test.go",
       "internal/translator/line_filter_or_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go"
     ],
@@ -1530,7 +1549,8 @@
       "test/e2e-compat/parser_error_matrix_test.go"
     ],
     "semantics/numeric-label-filter-not-equal-missing-label": [
-      "internal/querycorpus/plan_loki_vl_diff_test.go"
+      "internal/querycorpus/plan_loki_vl_diff_test.go",
+      "internal/translate/label_filter_test.go"
     ],
     "semantics/offset-different-per-range-vector": [
       "internal/proxy/error_refusals_test.go",
@@ -1566,12 +1586,14 @@
     "semantics/pattern-line-filter": [
       "internal/proxy/pattern_line_filter_test.go",
       "internal/queryplan/lower/pattern_filter_test.go",
+      "internal/translate/linefilter_pattern_loki_test.go",
       "internal/translate/linefilter_pattern_test.go",
       "internal/translator/pattern_line_filter_test.go",
       "test/e2e-compat/pattern_line_filter_test.go"
     ],
     "semantics/pattern-line-filter-anchoring": [
       "internal/proxy/pattern_line_filter_test.go",
+      "internal/translate/linefilter_pattern_loki_test.go",
       "internal/translator/pattern_line_filter_anchoring_test.go",
       "test/e2e-compat/pattern_line_filter_test.go"
     ],
@@ -1890,6 +1912,7 @@
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
       "internal/proxy/unwrap_over_time_window_test.go",
+      "internal/translate/unwrap_gate_syntax_test.go",
       "internal/translator/unwrap_gate_property_test.go",
       "internal/translator/unwrap_gate_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
@@ -2027,6 +2050,7 @@
       "internal/proxy/logfmt_risk_candidates_test.go",
       "internal/proxy/ordered_json_detected_level_split_test.go",
       "internal/translate/detected_level_chain_memo_test.go",
+      "internal/translate/detected_level_filter_test.go",
       "internal/translate/detected_level_keyword_test.go",
       "internal/translate/detected_level_normalize_test.go",
       "internal/translator/detected_level_filter_stage_test.go",
@@ -2231,11 +2255,18 @@
     "internal/cache/cache_test.go": [
       "shutdown-releases-background-work"
     ],
+    "internal/cache/peer_protocol_edges_test.go": [
+      "peer-cache-fleet-recovery",
+      "peer-cache-replication"
+    ],
     "internal/cache/peer_replication_test.go": [
       "peer-cache-replication"
     ],
     "internal/cache/peer_test.go": [
       "peer-cache-patterns"
+    ],
+    "internal/config/generate_edge_test.go": [
+      "operator-configurable-limits"
     ],
     "internal/config/registry_test.go": [
       "limits/every-cap-is-a-flag",
@@ -2344,6 +2375,9 @@
       "semantics/reserved-field-name-case-outbound"
     ],
     "internal/logsql/parser_read_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/logsql/parser_stats_funcs_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/logsql/parser_typed_test.go": [
@@ -3112,6 +3146,9 @@
     "internal/proxy/peer_push_identity_test.go": [
       "peer-cache-replication"
     ],
+    "internal/proxy/peer_warm_fetch_test.go": [
+      "peer-cache-fleet-recovery"
+    ],
     "internal/proxy/perf_hardening_test.go": [
       "semantics/error-layer-silent-success"
     ],
@@ -3797,6 +3834,9 @@
     "internal/querycorpus/plan_shadow_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/plancorpus/plancorpus_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/range_agg_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3982,6 +4022,9 @@
     "internal/translate/detected_level_chain_memo_test.go": [
       "severity-detected-level-derivation"
     ],
+    "internal/translate/detected_level_filter_test.go": [
+      "severity-detected-level-derivation"
+    ],
     "internal/translate/detected_level_keyword_test.go": [
       "severity-detected-level-derivation"
     ],
@@ -3991,6 +4034,10 @@
     "internal/translate/extract_stages_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/translate/ip_label_filter_test.go": [
+      "semantics/ip-label-filter-invalid-pattern",
+      "semantics/ip-label-filter-missing-label"
+    ],
     "internal/translate/ip_label_prefilter_test.go": [
       "semantics/ip-label-filter-embedded-address"
     ],
@@ -3999,14 +4046,41 @@
       "semantics/ip-filter-precision",
       "semantics/ip-line-filter-ipv4-like-loki"
     ],
+    "internal/translate/label_filter_test.go": [
+      "architecture-syntax-package-layering",
+      "parsed-label-series-identity",
+      "semantics/ip-label-filter-embedded-address",
+      "semantics/label-filter-expression-syntax",
+      "semantics/numeric-label-filter-not-equal-missing-label"
+    ],
     "internal/translate/line_format_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/translate/linefilter_pattern_loki_test.go": [
+      "semantics/pattern-line-filter",
+      "semantics/pattern-line-filter-anchoring"
     ],
     "internal/translate/linefilter_pattern_test.go": [
       "semantics/pattern-line-filter"
     ],
+    "internal/translate/linefilter_test.go": [
+      "semantics/ip-line-filter-ipv4-like-loki",
+      "semantics/line-filter-invalid-utf8",
+      "semantics/line-filter-or-alternatives"
+    ],
+    "internal/translate/pipe_builders_test.go": [
+      "architecture-syntax-package-layering",
+      "semantics/extracted-suffix-collision"
+    ],
+    "internal/translate/selector_filters_test.go": [
+      "architecture-syntax-package-layering",
+      "semantics/label-filter-expression-syntax"
+    ],
     "internal/translate/selector_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/translate/unwrap_gate_syntax_test.go": [
+      "semantics/unwrap-gate-parsefloat-divergences"
     ],
     "internal/translate/vector_test.go": [
       "architecture-syntax-package-layering"
@@ -4868,7 +4942,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 570,
+  "tests_with_markers": 583,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
