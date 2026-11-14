@@ -85,6 +85,7 @@ jobs:
           go run ./test/dailyreport -out /tmp/daily/summary.json -cases-out /tmp/daily/cases.json -md /tmp/daily/summary.md \
             -no-error-rerecord -no-error-replay
           cat /tmp/daily/summary.md >> "$GITHUB_STEP_SUMMARY"
+          go run ./test/dailyreport -docs -check
 
   plan:
     name: plan
@@ -410,6 +411,13 @@ jobs:
           PINNED_VL: ${{ needs.plan.outputs.pinned_vl }}
         run: |
           set -euo pipefail
+          # Main's committed numbers before today's replace them: on the schedule, a daily number older than 48 hours
+          # or a weekly one older than 8 days (a report pull request left unmerged) turns the day red below.
+          set +e
+          go run ./test/dailyreport -docs -check > /tmp/age-before.txt 2>&1
+          echo $? > /tmp/age-before.exit
+          set -e
+          cat /tmp/age-before.txt
           # The bot-owned files the jobs wrote, put in place: the inventory's runs record and page, the smoke history.
           mkdir -p conformance/registry/generated/verification bench/ab/history/daily-smoke /tmp/cases
           if [ -f "$IN/daily-inventory/workflow-runs.json" ]; then
@@ -427,6 +435,14 @@ jobs:
                 -error-replay-exit "$(exit_of "$pinned/error-replay.exit")"
                 -commit "$(git rev-parse HEAD)" -date "$(date -u +%Y-%m-%d)" -run "$RUN_URL" -md /tmp/summary.md)
           go run ./test/dailyreport "${args[@]}" | tee /tmp/dailyreport.txt
+          # The dated block of every page that states the numbers, from the summary just written; then their ages
+          # again (a weekly number is not renewed by today's run).
+          go run ./test/dailyreport -docs
+          set +e
+          go run ./test/dailyreport -docs -check > /tmp/age-after.txt 2>&1
+          echo $? > /tmp/age-after.exit
+          set -e
+          cat /tmp/age-after.txt
           {
             cat /tmp/summary.md
             for f in "$IN"/daily-verify-*/cases-*.md "$IN/daily-perf/smoke.md" "$IN/daily-parity/summary.md"; do
@@ -448,8 +464,12 @@ jobs:
           # not keep one.
           # What the daily report may change: its bot-owned files only. The registry cases, the census,
           # the gaps and the wiring are never part of it.
-          FILES=(conformance/registry/generated/verification bench/ab/history/daily-smoke docs/ci-workflows.md)
-          STRAY="$(git status --porcelain -- . ':(exclude)conformance/registry/generated/verification' ':(exclude)bench/ab/history/daily-smoke' ':(exclude)docs/ci-workflows.md' | head -20)"
+          FILES=(conformance/registry/generated/verification bench/ab/history/daily-smoke docs/ci-workflows.md
+                 README.md docs/KNOWN_ISSUES.md docs/real-window-compatibility-gaps.md conformance/reports/verification.md
+                 website/src/data/verification.json)
+          STRAY="$(git status --porcelain -- . ':(exclude)conformance/registry/generated/verification' ':(exclude)bench/ab/history/daily-smoke' \
+            ':(exclude)docs/ci-workflows.md' ':(exclude)README.md' ':(exclude)docs/KNOWN_ISSUES.md' ':(exclude)docs/real-window-compatibility-gaps.md' \
+            ':(exclude)conformance/reports/verification.md' ':(exclude)website/src/data/verification.json' | head -20)"
           if [ -n "$STRAY" ]; then
             echo "::warning::files outside the daily report's scope changed and are left out of the commit: ${STRAY//$'\n'/; }"
           fi
@@ -531,5 +551,14 @@ jobs:
               print(f"::error title=daily report::{reason}")
           if len(s["reasons"]) > 10:
               print(f"{len(s['reasons']) - 10} more in the job summary")
-          sys.exit(1 if s["red"] else 0)
+          aged = []
+          for name in ("before", "after"):
+              try:
+                  if open(f"/tmp/age-{name}.exit").read().strip() != "0":
+                      aged += [l.strip() for l in open(f"/tmp/age-{name}.txt") if "verified numbers:" in l and "warning" not in l]
+              except OSError:
+                  aged.append(f"the {name} age check did not run")
+          for line in aged[:10]:
+              print(f"::error title=verified numbers::{line}")
+          sys.exit(1 if s["red"] or aged else 0)
           PY

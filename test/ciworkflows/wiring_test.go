@@ -141,7 +141,10 @@ func TestDailyReportWiring(t *testing.T) {
 	}
 	for _, f := range strings.Fields(files[1]) {
 		switch f {
-		case "conformance/registry/generated/verification", "bench/ab/history/daily-smoke", "docs/ci-workflows.md":
+		case "conformance/registry/generated/verification", "bench/ab/history/daily-smoke", "docs/ci-workflows.md",
+			// The dated block of the pages that state the verified numbers (test/dailyreport -docs).
+			"README.md", "docs/KNOWN_ISSUES.md", "docs/real-window-compatibility-gaps.md", "conformance/reports/verification.md",
+			"website/src/data/verification.json":
 		default:
 			t.Errorf("the daily report commits %s, which it does not own", f)
 		}

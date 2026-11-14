@@ -16,6 +16,12 @@ mdx:
 - [Performance evidence](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md): every measured shape the proxy answers slower than Loki.
 - [Quality and performance vs Loki (current)](https://github.com/ReliablyObserve/loki-vl-proxy#quality-and-performance-vs-loki-current): the dated summary of the numbers above, with the open differences and the shapes that are still slower.
 
+<!-- verified-numbers:start -->
+
+The numbers on this page are not verified by a live run yet: the daily report (`.github/workflows/daily-report.yaml`) has recorded no run on `main`.
+
+<!-- verified-numbers:end -->
+
 ## Quality and performance vs Loki (current)
 
 <!-- quality-summary:start -->

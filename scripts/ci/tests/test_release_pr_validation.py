@@ -48,6 +48,10 @@ DAILY_FILES = [
     "conformance/registry/generated/verification/workflow-runs.json",
     "bench/ab/history/daily-smoke/control.jsonl",
     "docs/ci-workflows.md",
+    "README.md",
+    "docs/KNOWN_ISSUES.md",
+    "conformance/reports/verification.md",
+    "website/src/data/verification.json",
 ]
 
 PERF_FILES = [
