@@ -15,9 +15,9 @@ import (
 // It answers "" for a query with any of these (outside quoted strings, unless said otherwise):
 //   - a ranking (topk, bottomk, sort, sort_desc), stddev or stdvar, vector(), the bool modifier, rate_counter or a call
 //     it does not know: the proxy evaluates them, or the plan does not write them;
-//   - a stage the lowering leaves to the translator in a metric query (unpack, regexp, pattern, line_format,
-//     label_format, decolorize), a keep with an unwrap (the keep identity has its own path), a level filter after a
-//     parser, a set operator outside a log pipeline;
+//   - a stage the lowering leaves to the translator in a metric query (unpack, line_format, decolorize), a regexp or
+//     pattern parser with no blank before its expression, a keep with an unwrap (the keep identity has its own path),
+//     a level filter after a parser, a set operator outside a log pipeline;
 //   - an empty without clause, a grouping after a range function inside an aggregation, nested aggregations over an
 //     unwrap, a range function that reads an unwrapped value with no unwrap;
 //   - a binary operation inside an aggregation, more than one at the top, one with a without clause or a
@@ -446,6 +446,10 @@ func (s *metricScan) keyword(q, w string, j int) (done, ok bool) {
 	case "topk", "bottomk", "sort", "sort_desc", "stddev", "stdvar", "vector", "bool", "line_format", "decolorize", "unpack":
 		return true, false
 	case "regexp", "pattern":
+		// The string translator reads the parser only with a blank before its expression (`| pattern "<_>"`).
+		if j >= len(q) || !isBlank(q[j]) {
+			return true, false
+		}
 		s.parsedOther = true
 	case "and", "or", "unless":
 		// A set operator; inside a log pipeline, a label filter's.
