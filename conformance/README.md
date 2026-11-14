@@ -140,6 +140,8 @@ answer with warnings or a stale proxy answer `not_comparable`, and no count at
 all `data_unchecked`; none of them is a difference of the proxy. Every count is
 recorded with the answers, so `-replay` needs no stack. The recording's first line holds the settled end every window was resolved against and the proxy build, so a replay at any later time gives the live run's verdicts.
 
+A case whose error text names a series Loki picks anew on every identical request (`pipeline error: '...' for series: '{...}'`) may set `compare.values.mask_error_series: true`: the labels inside the braces are masked on both sides and the rest of the text compares exactly.
+
 Log entries compare as Loki defines their equality: per stream, ordered by timestamp with ties ordered by line. An answer that reaches its line limit is compared up to the timestamp both sides hold whole (the timestamp the limit cut at may hold any of its lines), and a patterns answer without its first and last sample buckets. `-proxy-revision` (and `-proxy-image`) record the proxy's build: a revision other than `-commit` marks the run stale and lists its differences apart, never as regressions; `-require-current-proxy` refuses such a run.
 
 Every answer the proxy served is asked once more, with the proxy's `/metrics` read around the first ask and
