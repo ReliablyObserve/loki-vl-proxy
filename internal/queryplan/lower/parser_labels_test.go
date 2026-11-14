@@ -58,7 +58,6 @@ func TestPlanLowersParserLabels(t *testing.T) {
 		`min by (x) (count_over_time({app="a"} | logfmt | keep a [5m]))`,
 		`sum(rate({app="a"} | keep service_name [5m]))`,
 		`rate({app="a"} | keep a="x" [5m])`,
-		`rate({app="a"} | json | unwrap n | keep a [5m])`,
 		`count(absent_over_time({app="a"} | keep a | unwrap a [5m]))`,
 		`sum by (a_b) (rate({app="a"} | json | keep a_b [5m]))`,
 	} {
@@ -143,7 +142,6 @@ func TestParsedSeriesLabels(t *testing.T) {
 		{`{app="a"} | json a | json b`, "", "a,b"},
 		{`{app="a"} | json a, a`, "", "a"},
 		{`{app="a"} | json a | unwrap a`, "a", ""},
-		{`{app="a"} | json a, n | unwrap n | json zz`, "n", "a"},
 		{`{app="a"} | regexp "(?P<a>x)(?P<b>y)"`, "", "a,b"},
 		{`{app="a"} | regexp "(x)"`, "", ""},
 		{`{app="a"} | regexp "(?P<a>x"`, "", "-"},
@@ -292,7 +290,7 @@ func readsParserLabels(p *queryplan.Plan) bool {
 		return true
 	}
 	rate := ra.Op == logql.RangeRate || ra.Op == logql.RangeBytesRate
-	if _, kept := trailingKeepLabels(ra.In); kept && (rate || inner != nil && inner.Op != logql.VectorSum) {
+	if _, kept := trailingKeepLabels(ra.In, false); kept && (rate || inner != nil && inner.Op != logql.VectorSum) {
 		return true
 	}
 	for _, g := range groupings {

@@ -2781,7 +2781,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 	unwrapLookup.setQuery(logqlQuery)
 
-	if spec, ok := parseBareParserMetricCompatSpec(logqlQuery); ok {
+	if spec, ok := p.bareParserMetricSpec(logqlQuery); ok {
 		resolvedSpec, resolved := resolveBareParserMetricRangeWindow(spec, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 		if !resolved {
 			status := p.fail(w, r, unplacedSyntaxError(errors.New("unresolved range selector "+strconv.Quote(spec.rangeWindowExpr))))
@@ -3115,7 +3115,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 	unwrapLookup.setQuery(logqlQuery)
 
-	if spec, ok := parseBareParserMetricCompatSpec(logqlQuery); ok {
+	if spec, ok := p.bareParserMetricSpec(logqlQuery); ok {
 		resolvedSpec, resolved := resolveBareParserMetricRangeWindow(spec, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 		if !resolved {
 			status := p.fail(w, r, unplacedSyntaxError(errors.New("unresolved range selector "+strconv.Quote(spec.rangeWindowExpr))))

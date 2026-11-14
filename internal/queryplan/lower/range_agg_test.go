@@ -109,7 +109,14 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 	if err != nil {
 		t.Fatalf("%s: the lowered %s does not parse: %v", q, lowered, err)
 	}
-	return lowered, legacy, reflect.DeepEqual(want, got) && reflect.DeepEqual(post, wantPost), false, true
+	same = reflect.DeepEqual(want, got) && reflect.DeepEqual(post, wantPost)
+	if !same && WritesKeepUnwrapIdentity(p) {
+		// A keep before the unwrap decides the series: the lowering groups by the labels it leaves where the
+		// translator groups by the stream (semantics/keep-before-unwrap-series-identity), held to Loki by
+		// TestKeepUnwrapIdentityMatchLoki, not to the translator.
+		return "", legacy, false, true, true
+	}
+	return lowered, legacy, same, false, true
 }
 
 // A range aggregation over a log query with no parser lowers to the query the string translator writes, for every
@@ -414,7 +421,7 @@ func TestPlanRangeCallBlankBeforeParenthesis(t *testing.T) {
 		`label_replace(1 + rate ({app="a"}[5m]), "d", "$1", "a", "(.*)")`: "LabelReplace operand spelling",
 		// Blanks elsewhere in the call are read alike by both: the query stays lowered.
 		`rate( {app="a"}[5m])`:             "",
-		`rate({ app = "a" } [ 5m ] )`:      "",
+		`rate({ app = "a" } [5m] )`:        "",
 		`rate({app="a"}[5m] ) `:            "",
 		"\n\trate({app=\"a\"}[5m])\n":      "",
 		`rate({app="a"} |= "rate (" [5m])`: "",
@@ -446,7 +453,7 @@ func TestPlanRangeCallBlankBeforeParenthesis(t *testing.T) {
 		}
 	}
 	// What stays lowered equals the translator under every profile.
-	for _, q := range []string{`rate( {app="a"}[5m])`, `rate({ app = "a" } [ 5m ] )`, "\n\trate({app=\"a\"}[5m])\n", `1 + rate({app="a"}[5m])`} {
+	for _, q := range []string{`rate( {app="a"}[5m])`, `rate({ app = "a" } [5m] )`, "\n\trate({app=\"a\"}[5m])\n", `1 + rate({app="a"}[5m])`} {
 		for _, prof := range rangeProfiles() {
 			if lowered, legacy, same, construct, ok := binOpLowering(t, q, prof); !ok || construct != "" || !same {
 				t.Errorf("%s: %q: delegated %q (ok %v)\n lowered %s\n  string %s", prof.name, q, construct, ok, lowered, legacy)

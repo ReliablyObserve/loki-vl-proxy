@@ -109,7 +109,6 @@ func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 		`sum_over_time({app="a"} |= "x without (y)" | unwrap n [5m])`:           "RangeAgg quoted clause",
 		`rate({app="a"} | unwrap n [0s])`:                                       "RangeAgg range",
 		`avg_over_time({app="a"} | unwrap n [5m]) without (pod)`:                "RangeAgg grouping",
-		`sum_over_time({app="a"} | unwrap n | unwrap m [5m])`:                   "RangeAgg unwrap stages",
 		`sum_over_time({app="a"} | line_format "{{upper .a}}" | unwrap n [5m])`: "RangeAgg LogSelect line format function",
 		`sum_over_time({app="a"} | detected_level="e" | unwrap n [5m])`:         "RangeAgg " + levelUnwrapConstruct,
 		`sum_over_time({app="a"} |~ "\x41b" | unwrap n [5m])`:                   "RangeAgg LogSelect escaped spelling",

@@ -73,7 +73,7 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	// The series of a rate behind a trailing keep are the labels it leaves.
 	var ident []string
 	if rate {
-		if ident, err = seriesIdent(ra.In, log.parser, false, "RangeAgg", prof); err != nil {
+		if ident, err = seriesIdent(ra.In, log.parser, false, false, "RangeAgg", prof); err != nil {
 			return nil, err
 		}
 	}

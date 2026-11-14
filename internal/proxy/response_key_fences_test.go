@@ -28,7 +28,8 @@ func oldCompatQueryFences(r *http.Request, query string) string {
 		repeatedLabelFilterResponseKeyVersion(query) +
 		keywordLabelResponseKeyVersion(query) +
 		reservedFieldCaseResponseKeyVersion(query) +
-		reservedFieldLabelResponseKeyVersion(query)
+		reservedFieldLabelResponseKeyVersion(query) +
+		keepUnwrapIdentityResponseKeyVersion(query)
 }
 
 func oldCompatQueryRangeFences(r *http.Request, query string) string {
@@ -47,6 +48,7 @@ func oldInnerQueryRangeFences(r *http.Request, query string) string {
 	key.WriteString(keywordLabelResponseKeyVersion(query))
 	key.WriteString(reservedFieldCaseResponseKeyVersion(query))
 	key.WriteString(reservedFieldLabelResponseKeyVersion(query))
+	key.WriteString(keepUnwrapIdentityResponseKeyVersion(query))
 	return key.String()
 }
 

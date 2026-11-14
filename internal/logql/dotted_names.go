@@ -238,7 +238,7 @@ func (d *dotScanner) skipSpaceAndComments() {
 		switch {
 		case size == 0:
 			return
-		case unicode.IsSpace(r):
+		case isLokiSpace(r):
 			d.advance()
 		case r == '#':
 			for d.pos < len(d.src) && d.src[d.pos] != '\n' {

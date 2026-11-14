@@ -48,37 +48,28 @@ func validateLogQL(query string) (Expr, string) {
 	if msg := InputSizeError(query); msg != "" {
 		return nil, msg
 	}
-	original := query
-	query = strings.TrimSpace(query)
-	parsed := original
-
-	// Fast path: Loki's exact error for empty queries.
-	if query == "" {
-		return nil, "parse error : syntax error: unexpected $end"
-	}
-
-	// Fast path: queries starting with | have no stream selector.
-	if strings.HasPrefix(query, "|") {
-		return nil, "parse error at line 1, col 1: syntax error: unexpected |"
-	}
-
 	// Bare wildcard: some clients send query=* as "all streams". The parser
 	// would reject it, but translateQueryWithContext handles * specially so
-	// it must be allowed through validation unchanged.
-	if query == "*" {
+	// it must be allowed through validation unchanged. Only the white space
+	// Loki's lexer skips is dropped around it.
+	if isWildcard(query) {
 		return nil, ""
 	}
 
 	// Structural parse. Loki does not trim the query: white space before the first token and after the last one
 	// counts in the line and column of an error, a trailing character that is not white space to Loki (a
 	// vertical tab) is a token, and a 0b literal after leading white space is read as after any white space.
-	expr, unknown, err := parseExpression(parsed)
+	// An empty query and one of white space only are errors of the parser, at the end of the text.
+	expr, unknown, plainUnwrap, err := parseExpression(query)
 	if err != nil {
-		return nil, formatParseError(err, parsed)
+		return nil, formatParseError(err, query)
+	}
+	if plainUnwrap != nil {
+		return nil, plainUnwrap.Msg
 	}
 
 	// Semantic pass over the typed AST.
-	if msg := validateSemantics(expr, parsed); msg != "" {
+	if msg := validateSemantics(expr, query); msg != "" {
 		return nil, msg
 	}
 	if unknown != nil {
@@ -104,11 +95,13 @@ func formatParseError(err error, raw string) string {
 
 	switch {
 	case strings.Contains(msg, "empty expression"):
-		if strings.TrimSpace(raw) != "" {
-			// Only comments: Loki's lexer reaches the end after them.
-			return fmt.Sprintf("parse error at line 1, col %d: syntax error: unexpected $end", utf8.RuneCountInString(raw)+1)
+		if raw == "" {
+			return "parse error : syntax error: unexpected $end"
 		}
-		return "parse error : syntax error: unexpected $end"
+		// Only white space and comments: Loki's lexer reaches the end after them.
+		line := 1 + strings.Count(raw, "\n")
+		col := utf8.RuneCountInString(raw[strings.LastIndexByte(raw, '\n')+1:]) + 1
+		return fmt.Sprintf("parse error at line %d, col %d: syntax error: unexpected $end", line, col)
 	case strings.Contains(msg, "expected label operator") ||
 		strings.Contains(msg, "expected label value"):
 		return "parse error at line 1, col 1: syntax error: unexpected }, expecting STRING"
@@ -138,13 +131,13 @@ const (
 // that does not match the empty string. Returns "" when valid.
 func ValidateMatchersQuery(query string) string {
 	// Bare wildcard: tolerated for the same clients ValidateLogQL tolerates.
-	if strings.TrimSpace(query) == "*" {
+	if isWildcard(query) {
 		return ""
 	}
 	if msg := InputSizeError(query); msg != "" {
 		return msg
 	}
-	expr, err := Parse(query)
+	expr, err := parseForValidation(query)
 	if err != nil {
 		return formatParseError(err, query)
 	}
@@ -167,7 +160,7 @@ func parseMatchersOnly(query string) (*LogQuery, string) {
 	if msg := InputSizeError(query); msg != "" {
 		return nil, msg
 	}
-	expr, err := Parse(query)
+	expr, err := parseForValidation(query)
 	if err != nil {
 		return nil, formatParseError(err, query)
 	}
@@ -206,7 +199,7 @@ func ValidateSeriesMatchers(groups []string) string {
 	selectors := make([]*StreamSelector, 0, len(deduped))
 	for _, g := range deduped {
 		// Bare wildcard: tolerated for the same clients ValidateLogQL tolerates.
-		if strings.TrimSpace(g) == "*" {
+		if isWildcard(g) {
 			continue
 		}
 		lq, msg := parseMatchersOnly(g)

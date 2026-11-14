@@ -1,0 +1,43 @@
+id: semantics/keep-before-unwrap-identity-in-operands
+title: Under label_replace, or in a binary operation between two vectors, a keep before an unwrap still leaves the stream in the operand's series (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  semantics/keep-before-unwrap-series-identity serves a range function over an
+  unwrapped label whose series a keep decides, alone, under one vector
+  aggregation, under a ranking or a sort, and against a number. Two forms keep
+  the stream (and each line) as the series of the operand, as before:
+    * `label_replace(first_over_time({job="kj"} | json | keep app, duration_ms | unwrap duration_ms [5m]), "svc", "$1", "app", "(.*)")`:
+      a series per stream on `query` and `query_range` step > range, and the
+      series limit (400) on step = range and step < range, where Loki answers
+      one series per app;
+    * `stddev_over_time(K) / avg_over_time(K)` with the same keep on both sides:
+      a series per stream with its stream labels.
+  Measured with the Loki engine oracle and VictoriaLogs v1.53.0 and v1.49.0
+  (TestKeepUnwrapIdentityMatchLoki); both answered the same way before the fix.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'label_replace(first_over_time({app="api-gateway"} | json | keep app, duration_ms | unwrap duration_ms [5m]), "svc", "$1", "app", "(.*)")'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's series (the kept labels), relabelled.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/queryplan/lower unwrap.go KeepUnwrapIdentity (the root, or one vector aggregation over it); the label_replace and vector binary routes translate their operands another way'
+  loki: 'the operand series are the kept labels less the unwrapped one'
+  proxy: 'the stream (and each line) as the operand series'
+  planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus) lists the runs under this case'
+  clusters: []

@@ -1,5 +1,5 @@
 id: semantics/range-duration-grammar-wider-than-loki
-title: "The proxy reads range durations Loki rejects (`[1.5m]`, `[5m5m]`, `[ 5m ]`, `[1ns]`, `[1us]`, `[9999999999h]`) and rejects `[0]`, which Loki accepts (open)"
+title: "The proxy rejects `[0]`, a range Loki accepts (open); range durations Loki rejects (`[1.5m]`, `[5m5m]`, `[ 5m ]`, `[1ns]`, `[1us]`, `[1µs]`, `[9999999999h]`) are Loki's 400 (fixed)"
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -14,6 +14,12 @@ why: |
   "parse error at line 0, col 13: not a valid duration string: \"0\"". Offsets read the same durations and show no difference in the sweep.
 
   Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
+
+  Fixed: a range is read as Loki reads it, with Prometheus' duration rules in Loki's order of checks: a part with no
+  digits, no unit or a number above 64 bits is `not a valid duration string`, then an unknown unit, then a unit out of
+  order or repeated, then a sum above the longest duration (`duration out of range`), at the column of the `[`. An
+  offset still reads Go's durations (`offset 1us`, `offset 5m5m` stay accepted, as in Loki). Still open: `[0]`.
+
 request:
   scope: query-grammar
   entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/range-duration-grammar-wider-than-loki"
@@ -28,8 +34,8 @@ gap:
   effort: S
   area: "internal/logql duration scanner (range and offset durations)"
   loki: "whole-unit durations in descending order; a bare 0 is a duration"
-  proxy: "fractions, repeated units, padding and sub-millisecond units are read; a bare 0 is rejected"
-  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  proxy: "a bare 0 is rejected; every other range is read as Loki reads it"
+  planned_test: "TestRangeAndUnwrapGrammarMatchLoki (internal/logql: rangeUnwrapKnown holds the [0] rows), TestGrammarSweep (internal/querycorpus)"
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
   clusters: []

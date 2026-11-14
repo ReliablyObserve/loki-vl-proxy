@@ -151,7 +151,7 @@ func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src 
 	identity := seriesIdentity(log.parser)
 	seriesLevel := rate || va.Op != logql.VectorSum
 	if seriesLevel {
-		ident, err := seriesIdent(src, log.parser, without, "VectorAgg", prof)
+		ident, err := seriesIdent(src, log.parser, without, false, "VectorAgg", prof)
 		if err != nil {
 			return builtVector{}, err
 		}

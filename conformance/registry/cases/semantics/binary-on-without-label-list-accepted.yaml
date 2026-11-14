@@ -1,5 +1,5 @@
 id: semantics/binary-on-without-label-list-accepted
-title: "A binary operation with `on` and no label list (`+ on 1`, `% on rate(...)`) is accepted (open)"
+title: "A binary operation with `on` and no label list (`+ on 1`, `% on rate(...)`) is accepted (fixed)"
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -9,6 +9,10 @@ why: |
   The proxy's parser accepts both: `on` with no parentheses reads as no modifier.
 
   Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
+
+  Fixed: on and ignoring take their parenthesized list; without it the query is Loki's `unexpected <token>, expecting (`
+  (internal/logql TestRangeAndUnwrapGrammarMatchLoki and TestWhitespaceMatchesLoki, recorded with the Loki oracle).
+
 request:
   scope: query-grammar
   entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/binary-on-without-label-list-accepted"
@@ -18,13 +22,14 @@ compare:
   fields: [status, error_text]
   expect: "Loki's 400 syntax error at the token after on."
 gap:
-  status: open
+  status: fixed
+  fixed_by: TBD-PR
   impact: api-only
   effort: S
   area: "internal/logql parser (vector matching modifiers)"
   loki: "on and ignoring take a parenthesized label list"
-  proxy: "on without parentheses is skipped"
-  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  proxy: "on and ignoring without a list are Loki's 400"
+  planned_test: "TestRangeAndUnwrapGrammarMatchLoki (internal/logql), TestLogQLGrammarRejectsBeforeVictoriaLogs (internal/proxy), TestGrammarSweep (internal/querycorpus)"
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
   clusters: []
