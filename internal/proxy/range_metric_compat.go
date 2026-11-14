@@ -1469,7 +1469,7 @@ func snapSlidingBucketNanos(ts int64, start time.Time, hitStep time.Duration) in
 // limit as a memory guard, with errStatsGroupGuard instead of the series limit
 // error, and the caller asks again in a form whose groups are its series, or
 // leaves the query to the row evaluator.
-func (p *Proxy) readStatsBucketBody(ctx context.Context, body io.Reader, limit, perSeries int) ([]byte, error) {
+func (p *Proxy) readStatsBucketBody(ctx context.Context, body io.Reader, size int64, limit, perSeries int) ([]byte, error) {
 	counter := &seriesCountingReader{r: body}
 	guarded := statsGroupsGuarded(ctx)
 	if !requestKeepsPartialSeries(ctx) {
@@ -1478,7 +1478,7 @@ func (p *Proxy) readStatsBucketBody(ctx context.Context, body io.Reader, limit, 
 			counter.limit *= splitGroupSlack
 		}
 	}
-	out, err := readBodyLimited(counter, maxStatsBucketResponseBytes)
+	out, err := readBodyKnownSize(counter, size, maxStatsBucketResponseBytes)
 	if errors.Is(err, errSeriesCountExceeded) {
 		if guarded {
 			return nil, errStatsGroupGuard
@@ -1489,6 +1489,38 @@ func (p *Proxy) readStatsBucketBody(ctx context.Context, body io.Reader, limit, 
 		return nil, err
 	}
 	return out, nil
+}
+
+// readBodyKnownSize is readBodyLimited for a body whose length size is known
+// (the VictoriaLogs client rewrote the answer in memory and set its length; -1
+// when unknown): it reads into one buffer of that size instead of
+// readBodyLimited's 128 KiB start, and reads on past it if the body is longer.
+func readBodyKnownSize(r io.Reader, size, limit int64) ([]byte, error) {
+	if size < 0 || size > limit {
+		return readBodyLimited(r, limit)
+	}
+	body := make([]byte, size+1)
+	n, err := io.ReadFull(r, body)
+	body = body[:n]
+	switch {
+	case err == io.EOF || err == io.ErrUnexpectedEOF:
+		return body, nil
+	case err != nil:
+		return nil, err
+	}
+	// Longer than its length said: the rest, within the limit.
+	if int64(n) > limit {
+		return body[:limit], errBodyTooLarge
+	}
+	rest, err := io.ReadAll(io.LimitReader(r, limit-int64(n)+1))
+	body = append(body, rest...)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return body[:limit], errBodyTooLarge
+	}
+	return body, nil
 }
 
 // splitGroupSlack scales the series limit into the number of groups a guarded
@@ -1610,7 +1642,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 
 	limit := p.resolvedMaxStatsQuerySeries(ctx)
 	withPresence := strings.Contains(statsAggFunc, " as __sample_count")
-	body, err := p.readStatsBucketBody(ctx, resp.Body, limit, statsResultsPerSeries(withPresence, aux != "")+deviationResults(statsAggFunc))
+	body, err := p.readStatsBucketBody(ctx, resp.Body, resp.ContentLength, limit, statsResultsPerSeries(withPresence, aux != "")+deviationResults(statsAggFunc))
 	if err != nil {
 		return nil, nil, err
 	}

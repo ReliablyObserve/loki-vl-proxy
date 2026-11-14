@@ -1,7 +1,9 @@
 package proxy
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -396,5 +399,39 @@ func TestHandleStatsCompatRangeScreensTheFunction(t *testing.T) {
 	}
 	if !rangeStatsFunc("row_min") || !rangeStatsFunc("max") || rangeStatsFunc("row_any") || firstLastRowStats("min") {
 		t.Fatal("the range evaluator reads the manual functions and row_min, row_max only")
+	}
+}
+
+// readBodyKnownSize reads a body of a known length into one buffer of that length, and answers as readBodyLimited
+// does for a body longer than it said, one over the limit, an unknown length and a reader that fails.
+func TestReadBodyKnownSize(t *testing.T) {
+	failing := errors.New("broken")
+	for _, c := range []struct {
+		name        string
+		body        string
+		size, limit int64
+		want        string
+		err         error
+	}{
+		{"exact", "abcdef", 6, 10, "abcdef", nil},
+		{"shorter than said", "abc", 6, 10, "abc", nil},
+		{"longer than said", "abcdefgh", 4, 10, "abcdefgh", nil},
+		{"longer than said, past the limit", "abcdefghijkl", 4, 10, "abcdefghij", errBodyTooLarge},
+		{"said as the limit, one more", "abcdefghijk", 10, 10, "abcdefghij", errBodyTooLarge},
+		{"said as the limit", "abcdefghij", 10, 10, "abcdefghij", nil},
+		{"unknown length", "abcdef", -1, 10, "abcdef", nil},
+		{"said over the limit", "abcdef", 20, 10, "abcdef", nil},
+		{"empty", "", 0, 10, "", nil},
+	} {
+		got, err := readBodyKnownSize(strings.NewReader(c.body), c.size, c.limit)
+		if !errors.Is(err, c.err) || (err == nil || errors.Is(err, errBodyTooLarge)) && string(got) != c.want {
+			t.Errorf("%s: %q, %v; want %q, %v", c.name, got, err, c.want, c.err)
+		}
+	}
+	if _, err := readBodyKnownSize(io.MultiReader(strings.NewReader("ab"), iotest.ErrReader(failing)), 6, 10); !errors.Is(err, failing) {
+		t.Errorf("a failing reader: %v", err)
+	}
+	if _, err := readBodyKnownSize(io.MultiReader(strings.NewReader("abcdefg"), iotest.ErrReader(failing)), 4, 10); !errors.Is(err, failing) {
+		t.Errorf("a reader failing past its length: %v", err)
 	}
 }
