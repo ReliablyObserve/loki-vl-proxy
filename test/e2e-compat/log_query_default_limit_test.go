@@ -12,15 +12,15 @@ import (
 	"time"
 )
 
-// TestCompat_LogQueryWithoutLimitLikeLoki: a range log query that sends no
+// TestLogQueryDefaultLimitLikeLoki: a range log query that sends no
 // `limit` gets Loki's default of 100 entries (the HTTP API default), and the
 // entries are the same as Loki's: the newest 100 of the window, same
 // timestamps and lines (and, for a plain selector, the same stream labels). The
 // proxy answered 1000, its -max-lines default, before. The fixture holds about
-// 500 lines in the window, so the limit decides the answer. An explicit limit
+// 800 lines in the window, so the limit decides the answer. An explicit limit
 // is still honoured.
 // conformance: semantics/log-query-default-limit, loki_api_v1_query_range
-func TestCompat_LogQueryWithoutLimitLikeLoki(t *testing.T) {
+func TestLogQueryDefaultLimitLikeLoki(t *testing.T) {
 	fx := ensureNonSumFixtures(t)
 	selector := fmt.Sprintf(`{probe=%q}`, fx.probe)
 	start, end := fx.s0, fx.s0.Add(31*time.Minute)

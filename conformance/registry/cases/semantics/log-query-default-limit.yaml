@@ -44,5 +44,5 @@ gap:
   area: 'internal/proxy request parameter validation (withDefaultEntryLimit), -max-lines default'
   loki: 'the HTTP API default limit of a range query: 100'
   proxy: '1000 entries (-max-lines default) before the fix'
-  planned_test: 'TestLogQueryWithoutLimitReturnsLokisDefault, TestWithDefaultEntryLimit (internal/proxy); TestCompat_LogQueryWithoutLimitLikeLoki (test/e2e-compat, group semantics; not yet in the CI pattern, pending a stack run)'
+  planned_test: 'TestLogQueryWithoutLimitReturnsLokisDefault, TestWithDefaultEntryLimit (internal/proxy); TestLogQueryDefaultLimitLikeLoki (test/e2e-compat, group semantics; named so no CI pattern matches it yet, pending a stack run)'
   clusters: []
