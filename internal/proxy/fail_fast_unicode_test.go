@@ -110,7 +110,7 @@ func TestRejectedQueryNeverReachesVictoriaLogs(t *testing.T) {
 // followed by a character that starts no token), is not served the answer an older binary cached: the compat edge key
 // of a rejected query carries a version, and the key of a valid query does not change.
 //
-// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma, semantics/stage-name-followed-by-more-of-stage, cache-response-key-versions
+// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma, semantics/stage-name-followed-by-more-of-stage, cache-response-key-versions, semantics/comment-between-function-and-parenthesis-accepted
 func TestCompatEdgeDoesNotServeAnAnswerCachedBeforeTheRuneFix(t *testing.T) {
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -130,7 +130,9 @@ func TestCompatEdgeDoesNotServeAnAnswerCachedBeforeTheRuneFix(t *testing.T) {
 			{"sum by (a,) (count_over_time({app=\"a\"}[1m]))", true},
 			{"{app=\"a\"} | drop a,", true},
 			{"{app=\"a\"} | keep a | a .5", true},
+			{"sum # c\n(count_over_time({app=\"a\"}[1m]))", true}, // a comment before a vector aggregation's call
 			{"sum by (a) (count_over_time({app=\"a\"}[1m]))", false},
+			{"sum by (a) (count_over_time({app=\"a\"}[0]))", false}, // a bare 0 range
 			{"{app=\"a\"} |= \"x\u00b2\"", false},
 		} {
 			p := newCompatTestProxy(t, vl.URL)

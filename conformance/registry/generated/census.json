@@ -1126,6 +1126,9 @@
     "internal/logql/unicode_runes_loki_test.go | semantics/logql-unicode-runes",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
     "internal/logql/whitespace_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
+    "internal/logql/zero_range_comments_loki_test.go | semantics/comment-between-function-and-parenthesis-accepted",
+    "internal/logql/zero_range_comments_loki_test.go | semantics/range-duration-grammar-wider-than-loki",
+    "internal/logql/zero_range_comments_loki_test.go | semantics/zero-range-metric",
     "internal/logsql/field_names_test.go | semantics/translator-writes-exotic-field-names-bare",
     "internal/logsql/ip_range_vl_test.go | architecture-syntax-package-layering",
     "internal/logsql/keyword_fields_test.go | semantics/translator-writes-keyword-field-names-bare",
@@ -1227,6 +1230,7 @@
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-cancel-deadline",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-transport-text",
     "internal/proxy/cold_bad_row_test.go | semantics/error-layer-silent-success",
+    "internal/proxy/comment_before_call_test.go | semantics/comment-between-function-and-parenthesis-accepted",
     "internal/proxy/compat_cache_freshness_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/count_values_test.go | semantics/count-values-unsupported",
     "internal/proxy/credential_passthrough_test.go | credential-passthrough-as-configured",
@@ -1341,6 +1345,7 @@
     "internal/proxy/extraction_list_outside_without_test.go | semantics/topk-bottomk-without-strips-label",
     "internal/proxy/extraction_list_outside_without_test.go | semantics/unwrap-extraction-list-series-identity",
     "internal/proxy/fail_fast_unicode_test.go | cache-response-key-versions",
+    "internal/proxy/fail_fast_unicode_test.go | semantics/comment-between-function-and-parenthesis-accepted",
     "internal/proxy/fail_fast_unicode_test.go | semantics/label-list-trailing-comma",
     "internal/proxy/fail_fast_unicode_test.go | semantics/logql-unicode-runes",
     "internal/proxy/fail_fast_unicode_test.go | semantics/parser-reads-unicode-blank-as-white-space",
@@ -1949,6 +1954,7 @@
     "internal/proxy/without_pushdown_differential_test.go | semantics/nested-aggregation-outer-by-native-routes",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-sliding-sum-folded-buckets",
+    "internal/proxy/zero_range_test.go | semantics/range-duration-grammar-wider-than-loki",
     "internal/proxy/zero_range_test.go | semantics/zero-range-metric",
     "internal/querycorpus/binop_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/binop_loki_test.go | architecture-syntax-package-layering",
@@ -2679,7 +2685,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 598,
+      "go": 600,
       "playwright": 1
     },
     "page_kinds": {
@@ -2698,8 +2704,8 @@
     },
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
-    "unwired_items": 105,
-    "wired_items": 358
+    "unwired_items": 104,
+    "wired_items": 359
   },
   "gates": [
     "A/B shape selection",

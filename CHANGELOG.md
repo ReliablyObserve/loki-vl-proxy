@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A range of a bare `0` (`rate({app="x"}[0])`, also with an offset or an unwrap) is now accepted as Loki accepts it,
+  as the same zero range as `[0s]`: `query_range` and `query` answer Loki's empty result without a VictoriaLogs
+  call. It was rejected with `400 not a valid duration string: "0"`. `[00]` and `offset 0` stay Loki's `400`.
+- **Breaking:** a comment between a vector aggregation's name and its parenthesis or `by (` grouping
+  (`sum # note` on one line and `(rate({app="x"}[5m]))` on the next) now answers Loki's
+  `400 parse error at line 1, col 1: syntax error: unexpected IDENTIFIER` before any VictoriaLogs call. Loki's
+  lexer reads the name as a label name there; the proxy removed the comment and answered the query. A comment
+  anywhere else, after the grouping keyword of a call included, is still skipped as Loki skips it.
+
 ## [2.260.1] - 2026-11-14
 
 ### Fixed
