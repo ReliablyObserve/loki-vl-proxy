@@ -1,0 +1,240 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+const sampleMetrics = `# HELP loki_vl_proxy_backend_duration_seconds x
+loki_vl_proxy_backend_duration_seconds_count{system="victorialogs",direction="upstream",endpoint="/select/logsql/query",route="query_range"} 3
+loki_vl_proxy_backend_duration_seconds_count{system="victorialogs",direction="upstream",endpoint="/select/logsql/stats_query_range",route="a,b"} 2
+loki_vl_proxy_backend_read_bytes_total{kind="query"} 100
+loki_vl_proxy_backend_read_bytes_total{kind="stats"} 50
+loki_vl_proxy_cache_layer_requests_total{layer="loki",component="response",tier="l1_memory"} 4
+loki_vl_proxy_cache_layer_hits_total{layer="loki",component="response",tier="l1_memory"} 3
+loki_vl_proxy_cache_layer_requests_total{layer="vl",component="window",tier="l2_disk"} 2
+process_cpu_seconds_total 1.5
+loki_vl_proxy_translations_total 7
+loki_vl_proxy_unrelated_total 9
+broken{line 1
+no_value{a="1"}
+bad_value{a="1"} x
+`
+
+func TestParseMetrics(t *testing.T) {
+	got := ParseMetrics(strings.NewReader(sampleMetrics))
+	want := Snapshot{"vl_calls": 5, "vl_calls:/select/logsql/query": 3, "vl_calls:/select/logsql/stats_query_range": 2, "vl_bytes": 150,
+		"loki:l1_memory:requests": 4, "loki:l1_memory:hits": 3, "vl:l2_disk:requests": 2, "cpu_seconds": 1.5, "translations": 7}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("snapshot:\n%v\nwant\n%v", got, want)
+	}
+	if got := splitLabels(`a="x\",y",b="2"`); len(got) != 2 {
+		t.Errorf("escaped quote: %q", got)
+	}
+	d := Delta(Snapshot{"vl_calls": 5, "loki:l1_memory:requests": 4, "loki:l1_memory:hits": 3},
+		Snapshot{"vl_calls": 5, "loki:l1_memory:requests": 6, "loki:l1_memory:hits": 5, "vl:l2_disk:requests": 1})
+	if !reflect.DeepEqual(d, Snapshot{"loki:l1_memory:requests": 2, "loki:l1_memory:hits": 2, "vl:l2_disk:requests": 1}) {
+		t.Errorf("delta %v", d)
+	}
+	if h := HitRatio(d); h["loki:l1_memory"] != 1 || h["vl:l2_disk"] != 0 || len(h) != 2 {
+		t.Errorf("hit ratio %v", h)
+	}
+}
+
+// meter answers the snapshots of a table: phase -> snapshot.
+type meter map[string]Snapshot
+
+func (m meter) Measure(_, _, phase string) (Snapshot, bool) {
+	s, ok := m[phase]
+	return s, ok
+}
+
+func TestMeasureReuse(t *testing.T) {
+	p := Probe{ID: "c"}
+	req := Request{Method: "GET", Path: "/loki/api/v1/query_range"}
+	cold := Snapshot{"vl_calls": 2}
+	same := fake{"c": {repeatAttempt: {"proxy": ok(matrixB)}}}
+	other := fake{"c": {repeatAttempt: {"proxy": ok(matrixLabels)}}}
+	failing := fake{"c": {repeatAttempt: {"proxy": Answer{Err: "reset"}}}}
+	hit := meter{"repeat_before": {"vl_calls": 2, "loki:l1_memory:requests": 1}, "repeat_after": {"vl_calls": 2, "loki:l1_memory:requests": 2, "loki:l1_memory:hits": 1}}
+	cold = Snapshot{"vl_calls": 2, "vl_calls:/q": 2}
+	call := meter{"repeat_before": {"vl_calls": 2, "vl_calls:/q": 2}, "repeat_after": {"vl_calls": 3, "vl_calls:/q": 3}}
+	background := meter{"repeat_before": {"vl_calls": 2, "vl_calls:/q": 2}, "repeat_after": {"vl_calls": 5, "vl_calls:/q": 2, "vl_calls:/health": 1, "vl_calls:/names": 2}}
+	cases := []struct {
+		name    string
+		src     Source
+		m       Meter
+		cost    Snapshot
+		verdict string
+		why     string
+	}{
+		{"served from the cache", same, hit, cold, reuseReused, ""},
+		{"another answer", other, hit, cold, reuseNotReused, "answers differently (labels)"},
+		{"VictoriaLogs asked again", same, call, cold, reuseNotReused, "called VictoriaLogs 1 time(s) on the endpoints of the first ask"},
+		{"background calls on other endpoints", same, background, cold, reuseReused, ""},
+		{"no meter", same, nil, cold, reuseNotMeasured, "could not be read"},
+		{"no cold cost", same, hit, nil, reuseNotMeasured, "could not be read"},
+		{"a failed repeat", failing, hit, cold, reuseNotMeasured, "repeat or its metrics"},
+		{"metrics gone", same, meter{}, cold, reuseNotMeasured, "repeat or its metrics"},
+	}
+	for _, c := range cases {
+		r := measureReuse(p, req, ok(matrixA), c.cost, c.src, c.m, []string{facetStatus, facetLabels}, Options{})
+		if r.Verdict != c.verdict || !strings.Contains(r.Reason, c.why) {
+			t.Errorf("%s: %+v", c.name, r)
+		}
+		if c.name == "background calls on other endpoints" && r.Background != 3 {
+			t.Errorf("background calls: %+v", r)
+		}
+	}
+	s := SummarizeReuse(map[string]Result{
+		"a": {Reuse: &Reuse{Verdict: reuseReused, Cold: Snapshot{"vl_calls": 2, "vl_bytes": 10}, Repeat: Snapshot{"loki:l1_memory:requests": 1, "loki:l1_memory:hits": 1}}},
+		"b": {Reuse: &Reuse{Verdict: reuseNotReused, Cold: Snapshot{"vl_calls": 1}, Repeat: Snapshot{"vl_calls": 1, "vl_bytes": 4, "loki:l1_memory:requests": 1}}},
+		"c": {},
+	})
+	if s.Counts[reuseReused] != 1 || s.Counts[reuseNotReused] != 1 || !reflect.DeepEqual(s.NotReused, []string{"b"}) || s.ColdVLCalls != 3 ||
+		s.RepeatCalls != 1 || s.ColdBytes != 10 || s.RepeatBytes != 4 || s.RepeatHits["loki:l1_memory"] != 0.5 {
+		t.Errorf("summary %+v", s)
+	}
+}
+
+// cachingProxy answers like the fake stack's proxy, keeps a response cache unless the query names "nocache",
+// and exposes its counters on /metrics.
+func cachingProxy(t *testing.T, inner http.Handler) *httptest.Server {
+	t.Helper()
+	var mu sync.Mutex
+	seen := map[string]bool{}
+	calls, hits, lookups := 0, 0, 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.URL.Path == "/metrics" {
+			fmt.Fprintf(w, "loki_vl_proxy_backend_duration_seconds_count{endpoint=%q} %d\n", "/select/logsql/query", calls)
+			fmt.Fprintf(w, "loki_vl_proxy_cache_layer_requests_total{layer=\"loki\",tier=\"l1_memory\"} %d\n", lookups)
+			fmt.Fprintf(w, "loki_vl_proxy_cache_layer_hits_total{layer=\"loki\",tier=\"l1_memory\"} %d\n", hits)
+			return
+		}
+		key := r.URL.String()
+		lookups++
+		if seen[key] && !strings.Contains(r.URL.RawQuery, "nocache") {
+			hits++
+		} else {
+			calls++
+			seen[key] = true
+		}
+		inner.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestReuseLiveAndReplay(t *testing.T) {
+	root := writeRegistry(t, map[string]string{"x/same": rangeCase("same"), "x/nocache": strings.Replace(rangeCase("same"), `[1m]`, ` |= "nocache" [1m]`, 1)})
+	loki, inner, vl := precheckStack(t)
+	proxy := cachingProxy(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp, err := http.Get(inner.URL + r.URL.String())
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		_, _ = io.Copy(w, resp.Body)
+	}))
+	dir := t.TempDir()
+	live := config{registry: root, loki: loki.URL, proxy: proxy.URL, vl: vl.URL, out: filepath.Join(dir, "live.json"), report: filepath.Join(dir, "r.md"),
+		record: filepath.Join(dir, "a.jsonl"), tenant: "0", settle: minSettle, timeout: 5 * time.Second, now: func() time.Time { return testNow }}
+	var out, errs bytes.Buffer
+	if code := run(live, &out, &errs); code != 0 {
+		t.Fatalf("live: %d %s", code, errs.String())
+	}
+	lf := readFile(t, live.out)
+	if r := lf.Cases["x/same"].Reuse; r == nil || r.Verdict != reuseReused || r.Cold["vl_calls"] != 1 || r.Repeat["loki:l1_memory:hits"] != 1 {
+		t.Errorf("same: %+v", r)
+	}
+	if r := lf.Cases["x/nocache"].Reuse; r == nil || r.Verdict != reuseNotReused || !strings.Contains(r.Reason, "called VictoriaLogs 1 time(s)") {
+		t.Errorf("nocache: %+v", r)
+	}
+	if lf.Cases["x/nocache"].Flag == flagRegression && lf.Cases["x/nocache"].Verdict != verdictDiffers {
+		t.Error("a cache that is not reused is not a regression")
+	}
+	if !reflect.DeepEqual(lf.Reuse.NotReused, []string{"x/nocache"}) || lf.Reuse.RepeatHits["loki:l1_memory"] != 0.5 {
+		t.Errorf("reuse summary %+v", lf.Reuse)
+	}
+	if report, _ := os.ReadFile(live.report); !strings.Contains(string(report), "Cache reuse of a repeat: 1 reused, 1 not reused") {
+		t.Errorf("report:\n%s", report)
+	}
+	replay := config{registry: root, replay: live.record, out: filepath.Join(dir, "replay.json"), tenant: "0", settle: minSettle,
+		lokiVersion: lf.Loki, vlVersion: lf.VictoriaLogs, now: func() time.Time { return testNow.Add(time.Hour) }}
+	if code := run(replay, &out, &errs); code != 0 {
+		t.Fatalf("replay: %d %s", code, errs.String())
+	}
+	if rf := readFile(t, replay.out); !reflect.DeepEqual(rf.Cases, lf.Cases) || !reflect.DeepEqual(rf.Reuse, lf.Reuse) {
+		t.Errorf("replay differs:\n%+v\n%+v", rf.Reuse, lf.Reuse)
+	}
+	// -no-reuse measures nothing.
+	live.noReuse, live.record = true, ""
+	if code := run(live, &out, &errs); code != 0 {
+		t.Fatal(errs.String())
+	}
+	if r := readFile(t, live.out).Cases["x/same"].Reuse; r != nil {
+		t.Errorf("no reuse: %+v", r)
+	}
+}
+
+func TestLiveMeter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v/metrics" {
+			http.Error(w, "no", http.StatusForbidden)
+			return
+		}
+		_, _ = io.WriteString(w, sampleMetrics)
+	}))
+	defer srv.Close()
+	rec := &Recorder{}
+	m := &LiveMeter{Bases: map[string]string{"proxy": srv.URL, "proxy@v": srv.URL + "/v"}, Client: http.DefaultClient, rec: rec}
+	if s, ok := m.Measure("c", "", "cold_before"); !ok || s["vl_calls"] != 5 {
+		t.Errorf("default: %v %v", s, ok)
+	}
+	if _, ok := m.Measure("c", "v", "cold_before"); ok {
+		t.Error("a refused scrape is not a snapshot")
+	}
+	if _, ok := m.Measure("c", "none", "x"); ok {
+		t.Error("an unknown variant is not scraped")
+	}
+	if _, ok := (&LiveMeter{Bases: map[string]string{"proxy": "http://127.0.0.1:1"}, Client: &http.Client{Timeout: time.Second}}).Measure("c", "", "x"); ok {
+		t.Error("an unreachable proxy is not a snapshot")
+	}
+	var buf bytes.Buffer
+	if err := rec.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
+	rp, err := LoadReplay(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, ok := rp.Measure("c", "", "cold_before"); !ok || s["vl_bytes"] != 150 {
+		t.Errorf("replayed snapshot %v %v", s, ok)
+	}
+}
+
+func TestPartialProxyAnswerIsNotCompared(t *testing.T) {
+	src := fake{"c": both(ok(matrixA), Answer{Status: 200, Body: matrixA, Partial: true})}
+	p := Probe{ID: "c", Status: "fixed", Mode: "exact", Method: "GET", Path: "/loki/api/v1/query_range", Params: map[string]string{"start": "now-1h", "end": "now"}}
+	if r := Verify(p, src, equalCounts, nil, testNow, "0"); r.Verdict != verdictNotComparable || !strings.Contains(r.Reason, "partial") {
+		t.Errorf("partial: %+v", r)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Header().Set(partialHeader, "true") }))
+	defer srv.Close()
+	if a := (&Live{Bases: map[string]string{"proxy": srv.URL}, Client: http.DefaultClient}).Ask("proxy", "c", 1, Request{Method: "GET", Path: "/"}); !a.Partial {
+		t.Error("the partial header is read")
+	}
+}

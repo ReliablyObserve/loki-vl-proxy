@@ -59,7 +59,7 @@ The last-run columns are filled by the daily report from the GitHub API; it has 
 | Workflow | Triggers | Verifies | Required | Last run on main | Last scheduled run |
 |---|---|---|---|---|---|
 | `auto-release.yaml` Auto Release | push (main)<br />workflow_dispatch | On every push to main: decides from the changelog whether a release is due, validates, tags, builds, signs and publishes it, and refreshes the release metadata pull request. | no | not recorded yet | not scheduled |
-| `release.yaml` Release | workflow_dispatch (inputs: tag) | Manual republish of a release tag: binaries, SBOMs, provenance, signatures, images (GHCR and Docker Hub), Helm chart and release assets. | no | not recorded yet | not scheduled |
+| `release.yaml` Release | workflow_dispatch (inputs: dry_run, tag) | Manual republish of a release tag: binaries, SBOMs, provenance, signatures, images (GHCR and Docker Hub), Helm chart and release assets. | no | not recorded yet | not scheduled |
 
 ## Maintenance
 

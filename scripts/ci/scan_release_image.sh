@@ -12,7 +12,13 @@
 # A Trivy failure that is not a finding (for example the vulnerability database
 # could not be downloaded) is retried; a finding is never retried.
 #
-# Required: IMAGE_REF
+# A dry run of release.yaml pushes nothing: it gives IMAGE_ARCHIVE, the OCI
+# archive the build wrote. Trivy's --input reads a docker-save tar or an OCI
+# layout directory, not an OCI tar, so the archive is unpacked into a temporary
+# OCI layout directory and the same scan reads the image from it instead of the
+# registry.
+#
+# Required: IMAGE_REF, or IMAGE_ARCHIVE (an OCI archive file)
 # Optional: IGNORE_FILE (default .trivyignore.yaml), TRIVY_CACHE_DIR
 #   (default $RUNNER_TEMP/trivy-cache), PLATFORMS (default "linux/amd64 linux/arm64").
 set -euo pipefail
@@ -24,8 +30,20 @@ fail() {
   exit 1
 }
 
-[ -n "${IMAGE_REF:-}" ] || fail "release image scan: IMAGE_REF is not set"
-[[ "${IMAGE_REF}" =~ @sha256:[0-9a-f]{64}$ ]] || fail "release image scan: '${IMAGE_REF}' is not a digest reference"
+SOURCE=()
+if [ -n "${IMAGE_ARCHIVE:-}" ]; then
+  [ -f "${IMAGE_ARCHIVE}" ] || fail "release image scan: archive ${IMAGE_ARCHIVE} not found"
+  LAYOUT_DIR="$(mktemp -d)"
+  tar -xf "${IMAGE_ARCHIVE}" -C "${LAYOUT_DIR}" || fail "release image scan: archive ${IMAGE_ARCHIVE} is not a tar file"
+  [ -f "${LAYOUT_DIR}/index.json" ] || fail "release image scan: archive ${IMAGE_ARCHIVE} is not an OCI image layout (no index.json)"
+  IMAGE_REF="${IMAGE_ARCHIVE}"
+  SOURCE=(-v "${LAYOUT_DIR}:/image:ro")
+  TARGET=(--input /image)
+else
+  [ -n "${IMAGE_REF:-}" ] || fail "release image scan: IMAGE_REF is not set"
+  [[ "${IMAGE_REF}" =~ @sha256:[0-9a-f]{64}$ ]] || fail "release image scan: '${IMAGE_REF}' is not a digest reference"
+  TARGET=("${IMAGE_REF}")
+fi
 
 IGNORE_FILE="${IGNORE_FILE:-.trivyignore.yaml}"
 [ -f "${IGNORE_FILE}" ] || fail "release image scan: ignore file ${IGNORE_FILE} not found"
@@ -35,7 +53,7 @@ IGNORE_NAME="$(basename "${IGNORE_FILE}")"
 CACHE_DIR="${TRIVY_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/trivy-cache}"
 mkdir -p "${CACHE_DIR}"
 LOG="$(mktemp)"
-trap 'rm -f "${LOG}"' EXIT
+trap 'rm -f "${LOG}"; [ -z "${LAYOUT_DIR:-}" ] || rm -rf "${LAYOUT_DIR}"' EXIT
 
 scan() {
   local platform="$1"
@@ -44,8 +62,9 @@ scan() {
     -e TRIVY_CACHE_DIR=/cache \
     -v "${CACHE_DIR}:/cache" \
     -v "${IGNORE_DIR}:/config:ro" \
+    ${SOURCE[@]+"${SOURCE[@]}"} \
     "${TRIVY_IMAGE}" \
-    image "${IMAGE_REF}" \
+    image "${TARGET[@]}" \
     --platform "${platform}" \
     --ignorefile "/config/${IGNORE_NAME}" \
     --scanners vuln,misconfig,secret \

@@ -62,6 +62,8 @@ class ScanReleaseImageScriptTests(unittest.TestCase):
         return subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True)
 
     def calls(self):
+        if not self.log.exists():
+            return []
         return [line for line in self.log.read_text().splitlines() if line]
 
     def test_scans_both_platforms_with_the_pull_request_scan_settings(self):
@@ -75,6 +77,43 @@ class ScanReleaseImageScriptTests(unittest.TestCase):
             for flag in (IMAGE_REF, "--severity HIGH,CRITICAL", "--ignore-unfixed", "--exit-code 1", "--ignorefile /config/.trivyignore.yaml"):
                 self.assertIn(flag, call)
             self.assertIn("--scanners vuln,misconfig,secret", call)
+
+    def oci_archive(self, with_index=True):
+        layout = self.root / "layout"
+        layout.mkdir()
+        (layout / "oci-layout").write_text('{"imageLayoutVersion": "1.0.0"}')
+        if with_index:
+            (layout / "index.json").write_text('{"schemaVersion": 2, "manifests": []}')
+        archive = self.root / "out" / "image.oci.tar"
+        archive.parent.mkdir()
+        subprocess.run(["tar", "-cf", str(archive), "-C", str(layout), "."], check=True)
+        return archive
+
+    def test_a_dry_run_scans_the_oci_archive_as_a_layout_directory(self):
+        # Trivy's --input cannot open an OCI tar ("manifest.json not found in tar",
+        # "index.json: not a directory"): the scan reads the unpacked layout.
+        archive = self.oci_archive()
+        result = self.run_script(IMAGE_REF=None, IMAGE_ARCHIVE=str(archive))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.calls()
+        self.assertEqual(len(calls), 2)
+        for call in calls:
+            mount = re.search(r"-v (\S+):/image:ro", call)
+            self.assertIsNotNone(mount, call)
+            self.assertNotEqual(mount.group(1), str(archive.parent))
+            self.assertIn("image --input /image ", call)
+            self.assertNotIn("image.oci.tar", call.split("image --input")[1])
+        self.assertFalse(Path(mount.group(1)).exists(), "the unpacked layout is removed after the scan")
+
+    def test_a_dry_run_rejects_an_archive_that_is_not_an_oci_layout(self):
+        missing = self.run_script(IMAGE_REF=None, IMAGE_ARCHIVE=str(self.root / "none.tar"))
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("not found", missing.stdout)
+        no_index = self.oci_archive(with_index=False)
+        result = self.run_script(IMAGE_REF=None, IMAGE_ARCHIVE=str(no_index))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no index.json", result.stdout)
+        self.assertEqual(self.calls(), [])
 
     def test_uses_the_trivy_image_of_the_pull_request_scan(self):
         pr_pin = TRIVY_PIN.search((WORKFLOWS_DIR / "security-pr.yaml").read_text()).group(0)
@@ -143,7 +182,11 @@ class ReleaseWorkflowOrderTests(unittest.TestCase):
     def test_the_scan_target_is_the_pushed_digest(self):
         for name in RELEASE_WORKFLOWS:
             text = (WORKFLOWS_DIR / name).read_text()
-            self.assertIn("IMAGE_REF: ${{ steps.image-tags.outputs.ghcr_image }}@${{ steps.build.outputs.digest }}", text, name)
+            # release.yaml's dry run has no pushed digest and scans its OCI archive (IMAGE_ARCHIVE) instead.
+            target = ("IMAGE_REF: ${{ steps.image-tags.outputs.ghcr_image }}@${{ steps.build.outputs.digest || steps.build_dry.outputs.digest }}"
+                      if name == "release.yaml" else
+                      "IMAGE_REF: ${{ steps.image-tags.outputs.ghcr_image }}@${{ steps.build.outputs.digest }}")
+            self.assertIn(target, text, name)
 
 
 if __name__ == "__main__":
