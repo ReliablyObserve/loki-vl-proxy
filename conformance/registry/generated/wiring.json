@@ -28,6 +28,7 @@
       "internal/proxy/plan_route_metric_test.go",
       "internal/proxy/plan_route_parity_test.go",
       "internal/proxy/post_aggregation_physical_test.go",
+      "internal/proxy/query_lowering_corpus_test.go",
       "internal/proxy/query_lowering_test.go",
       "internal/proxy/unwrap_gate_spec_test.go",
       "internal/querycorpus/binop_grid_test.go",
@@ -1398,6 +1399,7 @@
     ],
     "semantics/keep-before-unwrap-series-identity": [
       "internal/proxy/keep_unwrap_identity_test.go",
+      "internal/proxy/query_lowering_test.go",
       "internal/querycorpus/first_last_loki_diff_test.go",
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
       "internal/queryplan/lower/unwrap_keep_test.go",
@@ -3325,9 +3327,13 @@
       "observability-query-flow",
       "observability-slow-query-log"
     ],
+    "internal/proxy/query_lowering_corpus_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/proxy/query_lowering_test.go": [
       "architecture-syntax-package-layering",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "semantics/keep-before-unwrap-series-identity"
     ],
     "internal/proxy/query_range_steps_harden_test.go": [
       "quality/query-range-settled-steps",

@@ -14,20 +14,23 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// The first construct served from the typed query-plan lowering instead of the string translator: a log query whose
+// The constructs served from the typed query-plan lowering instead of the string translator. A log query whose
 // stages are line filters (including pattern filters) and label filters with no parser (lower.Plan answers
-// LogSelect natively for exactly these). Every other query, and every query the lowering answers with an error,
-// is translated by the string translator as before, so nothing is lost by a lowering that does not cover it.
+// LogSelect natively for exactly these), and a metric query whose plan is one of the flipped metric constructs and
+// whose lowered text is the string translator's (writesTranslatorText). Every other query, and every query the
+// lowering answers with an error, is translated by the string translator as before, so nothing is lost by a
+// lowering that does not cover it.
 //
 // The lowering writes the text the string translator writes, byte for byte, on every query the lowering covers
-// under every translator profile (internal/querycorpus TestPlanShadow asserts physical.Encode(lower.Plan(...)) is
-// the translator's text), so the translation cache, the markers and the handlers see no difference.
+// under every translator profile (internal/querycorpus TestPlanShadow asserts physical.Encode(lower.PlanQuery(...))
+// is the translator's text), so the translation cache, the markers and the handlers see no difference.
 // -query-plan-lowering=false turns it off.
 
 // QueryPlanFlippedConstructs are the plan constructs (lower.Construct) the proxy serves from the typed lowering:
 // a query whose plan is one of them and which lower.Plan lowers is translated by it instead of the string
 // translator. The corpus shadow requires each to be lowered natively, equal to the translator, byte for byte, and
-// records the list in conformance/registry/query-plan.json; widening it is how a construct is flipped.
+// records the list in conformance/registry/query-plan.json; widening it is how a construct is flipped. A proxy reads it
+// once, when it is built.
 var QueryPlanFlippedConstructs = []string{"LogSelect"}
 
 // loweringProfile is the lowering's view of the options the string translator is given: the one place the
@@ -76,7 +79,7 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 		return "", false
 	}
 	construct := lower.Construct(plan.Root)
-	if !slices.Contains(QueryPlanFlippedConstructs, construct) || !filterOnly(plan.Root) {
+	if !slices.Contains(p.flippedConstructs, construct) || !filterOnly(plan.Root) {
 		return "", false
 	}
 	op, err := lower.Plan(plan, prof)
@@ -97,31 +100,93 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 // translator, and the Loki differential (internal/querycorpus TestKeepUnwrapIdentityMatchLoki) holds the answers.
 const keepIdentityConstruct = "UnwrapKeepIdentity"
 
-// lowerKeepIdentity translates a canonical metric query with the typed lowering when a keep before its unwrap
-// decides its series (keepIdentityConstruct), and reports whether it did. A query without both words is turned away
-// before any plan is built, so other metric queries pay one scan of their text.
-func (p *Proxy) lowerKeepIdentity(ctx context.Context, canon string, prof lower.Profile) (text string, ok bool) {
-	if canon == "" || canon[0] == '{' || !strings.Contains(canon, "keep") || !strings.Contains(canon, "unwrap") {
+// lowerMetric translates a canonical metric query with the typed lowering and reports whether it did: a query whose
+// series a keep before its unwrap decides (keepIdentityConstruct), or one whose plan is a flipped metric construct
+// and whose lowered text is the string translator's (writesTranslatorText). The query is planned once for both
+// decisions. While no metric construct is flipped, a query without both words of the keep identity is turned away
+// before any plan is built, so the other metric queries pay one scan of their text.
+func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profile) (text string, ok bool) {
+	if canon == "" || canon[0] == '{' {
 		return "", false
 	}
+	metricFlipped := metricConstructFlipped(p.flippedConstructs)
+	if !metricFlipped && (!strings.Contains(canon, "keep") || !strings.Contains(canon, "unwrap")) {
+		return "", false
+	}
+	construct := keepIdentityConstruct
 	defer func() {
 		if r := recover(); r != nil {
 			// The panic value can hold query text, so it is not logged: the string translator answers instead.
-			p.recordLoweringShadow(shadowPanic, keepIdentityConstruct)
+			p.recordLoweringShadow(shadowPanic, construct)
 			text, ok = "", false
 		}
 	}()
 	plan, err := loweringPlan(ctx, canon)
-	if err != nil || !lower.KeepDecidesUnwrapIdentity(plan) {
+	if err != nil {
 		return "", false
+	}
+	// The keep identity is decided first: it is served whatever is flipped, and naming the construct costs an
+	// allocation the keep path does not pay.
+	if !lower.KeepDecidesUnwrapIdentity(plan) {
+		if !metricFlipped {
+			return "", false
+		}
+		if construct = lower.Construct(plan.Root); !slices.Contains(p.flippedConstructs, construct) || !writesTranslatorText(plan, prof) {
+			return "", false
+		}
 	}
 	op, err := lower.PlanQuery(canon, plan, prof)
 	if err != nil {
 		return "", false
 	}
 	querycorpus.Record(querycorpus.LogQLTranslate, canon)
-	p.recordLoweringShadow(shadowFlipped, keepIdentityConstruct)
+	p.recordLoweringShadow(shadowFlipped, construct)
 	return physical.Encode(op), true
+}
+
+// metricConstructFlipped reports whether the list flips a metric construct (any but LogSelect).
+func metricConstructFlipped(flipped []string) bool {
+	for _, c := range flipped {
+		if c != "LogSelect" {
+			return true
+		}
+	}
+	return false
+}
+
+// writesTranslatorText reports a metric plan whose lowered text is the one the corpus shadow holds to the string
+// translator's, byte for byte (TestPlanShadow): it turns away the plans the shadow holds to anything else.
+//   - A ranking, stddev or stdvar at any level: the handlers evaluate it themselves and translate its operand, so the
+//     lowering writes the operand's request and the proxy's evaluation (internal/querycorpus native_proxy_evaluated),
+//     and the translator's text for the whole query drops the level (semantics/stddev-stdvar-nested-or-binary).
+//   - A binary operation the binary route evaluates operand by operand (lower.RoutedBinary: a without clause or a
+//     vector(n) operand).
+//   - The recorded known divergences the plan writes as Loki reads them, where the translator writes another text:
+//     a keep before an unwrap anywhere but where the proxy serves its identity (lower.WritesKeepUnwrapIdentity), a
+//     numeric equality after a parser (semantics/label-filter-numeric-equality), a label named like a field
+//     VictoriaLogs reserves (semantics/translator-writes-reserved-field-names), and an unwrap of one in another case,
+//     which the lowering writes in the outbound guard's form (semantics/reserved-field-name-case-outbound).
+//
+// Serving these from the plan changes the text VictoriaLogs sees or its cache key, so they stay with the string
+// translator until a flip carries their own proof.
+func writesTranslatorText(plan *queryplan.Plan, prof lower.Profile) bool {
+	return !holdsEvaluatedLayer(plan.Root) && !lower.RoutedBinary(plan.Root) && !lower.WritesKeepUnwrapIdentity(plan) &&
+		!lower.WritesNumericEquality(plan) && !lower.ReadsReservedField(plan, prof) && !lower.UnwrapsReservedFieldOtherCase(plan)
+}
+
+// holdsEvaluatedLayer reports a plan with a ranking, a stddev or a stdvar anywhere in it.
+func holdsEvaluatedLayer(n queryplan.Node) bool {
+	switch v := n.(type) {
+	case *queryplan.Rank:
+		return true
+	case *queryplan.VectorAgg:
+		return v.Op == logqlpkg.VectorStddev || v.Op == logqlpkg.VectorStdvar || holdsEvaluatedLayer(v.In)
+	case *queryplan.LabelReplace:
+		return holdsEvaluatedLayer(v.In)
+	case *queryplan.BinOp:
+		return holdsEvaluatedLayer(v.L) || holdsEvaluatedLayer(v.R)
+	}
+	return false
 }
 
 // filterOnly reports a log query whose stages are line filters and label filters only: the queries served from the

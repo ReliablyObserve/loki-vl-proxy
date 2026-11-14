@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Metric queries are planned once for the query plan's decisions: the range functions whose series a `keep` before
+  the unwrap decides are served from the plan as before, and the proxy now checks, on the typed plan, which range
+  and vector aggregations, binary operations and `label_replace` calls the plan would write with the string
+  translator's text (no ranking, `stddev` or `stdvar` at any level, no binary the proxy evaluates operand by
+  operand, none of the recorded differences). None of them is served from the plan yet, so answers, translation
+  cache entries and VictoriaLogs requests do not change. The query plan's corpus check now reads the query as the
+  proxy does (a range written `({...})[5m]` is read as `{...}[5m]`), which counts 54 more rows as written by the
+  plan. New tests hold every metric query of the corpus to the same text with the four metric constructs served
+  from the plan under seven proxy profiles, and the translation benchmark measures the metric shapes of each
+  construct, served and not served.
+
 ## [2.260.1] - 2026-11-14
 
 ### Fixed

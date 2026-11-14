@@ -55,8 +55,10 @@ type shadowSlice struct {
 // lowering is what the harness holds to the string translator: the native lowering, or a test's stand-in.
 type lowering func(q string, p *queryplan.Plan, prof planProfile) (physical.Op, error)
 
+// It screens the canonical text (logql.CanonicalizeLogRanges), as the proxy does when it serves a query from the
+// lowering (lowerMetric): the shadow holds what the proxy sends.
 func nativeLowering(q string, p *queryplan.Plan, prof planProfile) (physical.Op, error) {
-	return lower.PlanQuery(q, p, prof.lowerProfile())
+	return lower.PlanQuery(logql.CanonicalizeLogRanges(q), p, prof.lowerProfile())
 }
 
 func (p planProfile) lowerProfile() lower.Profile {
@@ -156,7 +158,7 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			}
 			if !ok && lower.WritesKeepUnwrapIdentity(plan) && !sameAsTranslator(got, legacy) {
 				// A keep before the unwrap decides the series: the plan groups by the labels it leaves, the translator
-				// by the stream (and each line), and the proxy serves the plan's text (lowerKeepIdentity).
+				// by the stream (and each line), and the proxy serves the plan's text (lowerMetric).
 				caseID, ok = knownKeepIdentity, true
 			}
 			if !ok && lower.WritesNumericEquality(plan) {

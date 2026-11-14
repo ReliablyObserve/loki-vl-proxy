@@ -757,6 +757,7 @@ type Proxy struct {
 	tenantMapFileSet                      bool
 	loweringShadow                        *loweringShadow // nil unless -translate-shadow-sample is set
 	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
+	flippedConstructs                     []string        // QueryPlanFlippedConstructs, read once by New
 	queryStatsVictoriaLogsMode            bool            // -query-stats-mode=victorialogs: measured stats, not Loki's accounting
 	queryStatsExactMetricBytes            bool            // -query-stats-exact-metric-bytes
 	queryStatsExactLogLines               bool            // -query-stats-exact-log-lines
@@ -1464,6 +1465,7 @@ func New(cfg Config) (*Proxy, error) {
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
 		loweringShadow:                        newLoweringShadow(cfg.TranslateShadowSample),
 		queryPlanLowering:                     !cfg.DisableQueryPlanLowering,
+		flippedConstructs:                     QueryPlanFlippedConstructs,
 		queryStatsVictoriaLogsMode:            cfg.QueryStatsMode == QueryStatsModeVictoriaLogs,
 		queryStatsExactMetricBytes:            cfg.QueryStatsExactMetricBytes,
 		queryStatsExactLogLines:               cfg.QueryStatsExactLogLines,
