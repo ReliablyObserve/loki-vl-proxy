@@ -1,9 +1,11 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -39,6 +41,18 @@ type dlvBaselineBackend struct {
 	fail                  atomic.Bool
 	mu                    sync.Mutex
 	accounts, credentials []string
+	// requests is every call the backend served, as path, query and body, for failure messages.
+	requests []string
+}
+
+// requestsSince is the calls the backend served after the first n.
+func (b *dlvBaselineBackend) requestsSince(n int) []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if n >= len(b.requests) {
+		return nil
+	}
+	return append([]string(nil), b.requests[n:]...)
 }
 
 // snapshot is the rows as they are now. A test appends rows while a request
@@ -97,7 +111,10 @@ func newDLVBaselineBackend(t *testing.T, shape dlvBaselineShape, at time.Time) (
 			http.Error(w, "controlled upstream failure", http.StatusServiceUnavailable)
 			return
 		}
+		body, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(body))
 		b.mu.Lock()
+		b.requests = append(b.requests, r.URL.Path+"?"+r.URL.RawQuery+" "+string(body))
 		b.accounts = append(b.accounts, r.Header.Get("AccountID"))
 		b.credentials = append(b.credentials, r.Header.Get("X-Auth-Token"))
 		b.mu.Unlock()
