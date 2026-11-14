@@ -850,7 +850,10 @@ type Proxy struct {
 	queryRangeExtentCacheTTL              time.Duration
 	// statsExtentStores bounds and tracks the extent
 	// cache stores running off the request path (stats_extent_cache.go).
-	statsExtentStores                    *statsExtentStoreGroup
+	statsExtentStores *statsExtentStoreGroup
+	// statsExtentPending holds the extent stores in progress per extent key,
+	// which a lookup of the same key waits for (stats_extent_cache.go).
+	statsExtentPending                   statsExtentPendingStores
 	parseRiskProbeCacheTTL               time.Duration
 	parseRiskProbeSettle                 time.Duration
 	queryRangeWindowTimeout              time.Duration

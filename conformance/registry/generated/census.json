@@ -1762,6 +1762,7 @@
     "internal/proxy/stats_extent_large_answer_test.go | loki_api_v1_query_range",
     "internal/proxy/stats_extent_large_answer_test.go | quality/query-range-extent-cache",
     "internal/proxy/stats_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
+    "internal/proxy/stats_extent_pending_test.go | quality/query-range-extent-cache",
     "internal/proxy/stats_extent_retention_test.go | quality/query-range-extent-cache",
     "internal/proxy/stats_fold_relabel_parse_test.go | quality/stats-tumbling-relabel-one-parse",
     "internal/proxy/stats_fold_relabel_parse_test.go | semantics/without-sliding-sum-folded-buckets",
@@ -2691,7 +2692,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 601,
+      "go": 602,
       "playwright": 1
     },
     "page_kinds": {
