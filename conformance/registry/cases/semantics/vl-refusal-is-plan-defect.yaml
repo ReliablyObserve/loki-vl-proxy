@@ -1,0 +1,61 @@
+id: semantics/vl-refusal-is-plan-defect
+title: VictoriaLogs refusing the LogsQL of a validated query is the proxy's defect, answered with Loki's failed-backend 500
+pending: true
+proves:
+  - semantics/error-layer-backend-failure-status
+  - semantics/error-layer-backend-text
+  - status-500
+  - status-400
+consumer: any
+why: |
+  Every read route validates its query and parameters as Loki does before it
+  asks VictoriaLogs (fail-fast rule), so a query that reaches VictoriaLogs is
+  one Loki accepts. When VictoriaLogs then refuses the LogsQL (or an argument)
+  the proxy wrote, the request is one Loki would have answered with data: the
+  refusal is a defect of the proxy's plan or translation, not the client's
+  mistake. The proxy answered it with 400 `failed to parse the log query`
+  (logqlmodel.ErrParse), which tells the user to fix a query that is valid.
+  It now answers what Loki answers when its storage call fails: 500
+  `Internal Server Error`, in the route's body shape (Loki returns its storage
+  error's own text there, pkg/util/server/error.go:124-128; the proxy never
+  forwards VictoriaLogs' text). The refusal is typed where it is classified
+  (redactedBackendStatusError, lokierr.KindInternal), counted in
+  loki_vl_proxy_plan_defects_total{endpoint,plan_route}, and the request error
+  line carries plan_defect, plan_route (the VictoriaLogs route of the refused
+  call), logsql_hash (FNV-1a of the LogsQL sent) and VictoriaLogs' message as
+  upstream_error. The failure stays final: no retry, no fallback to another
+  backend path, no stale answer. The routes whose refused call is the proxy's
+  own rewrite keep their fallback, which answers what Loki answers (the plain
+  _stream volume query, the raw evaluator behind the stats fast paths, the
+  field values listing without an unpack stage). A query Loki rejects is still
+  rejected with Loki's 400 before any VictoriaLogs call.
+
+  Open part: the grammar sweep lists 55 queries Loki rejects at its lexer or
+  grammar that the proxy's parser accepts (blanks Loki does not read as white
+  space, a stage after unwrap, an unwrap in a log query, range literals such
+  as 1µs and 5m5m) and whose LogsQL VictoriaLogs refuses (100 LogsQL texts
+  over the two VictoriaLogs versions). They answered 400 with the wrong text
+  and now answer 500; the parser has to reject them first
+  (semantics/parser-reads-unicode-blank-as-white-space,
+  semantics/stage-after-unwrap-accepted, semantics/unwrap-in-log-query,
+  semantics/range-duration-grammar-wider-than-loki). The sweep's
+  victorialogs_rejections_for_queries_loki_rejects count may only go down.
+request:
+  scope: internal
+  entry: (*Proxy).redactedBackendStatusError, planDefect, statusFromUpstreamErr, (*Proxy).writeFailure, (*Proxy).logRequestError, (*Proxy).closeTailWithError
+  setup: |
+    TestPlanDefect_ClientGetsLokisFailedBackendAnswer: a fake VictoriaLogs that
+    refuses a log query, a metric query (400 and the stats endpoints' 422), an
+    instant query, a metadata route and an argument; two routes whose rewrite
+    has a fallback; a memory limit (no plan defect); two queries Loki rejects
+    (no VictoriaLogs call). TestPlanDefect_QueriesLokiRejectsThatReachVictoriaLogs
+    pins the open part. The error-layer gates (errLayerExpect("vl400_parse"))
+    hold every route.
+compare:
+  mode: exact
+  fields: [status, body, log_line, metric]
+  expect: |
+    500 `Internal Server Error` with no VictoriaLogs text on every route (1011
+    with the same text on an upgraded tail); one plan-defect log line naming the
+    refused call's route and LogsQL hash; the counter at one. A fallback route
+    answers 200. A query Loki rejects answers Loki's 400 with no VictoriaLogs call.

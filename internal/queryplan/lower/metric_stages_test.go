@@ -212,7 +212,6 @@ func TestTrailingKeepLabels(t *testing.T) {
 		`{a="b"} | keep x | pattern "<q>"`:                "-",
 		`{a="b"} | keep x | json | keep y`:                "y",
 		`{a="b"} | drop x | keep y`:                       "y",
-		`{a="b"} | keep x | unwrap n | keep y`:            "y",
 		`{a="b"} | keep __error__, x, __error_details__`:  "x",
 		`{a="b"} | keep __error__`:                        "",
 		`{a="b"} | line_format "x"`:                       "-",

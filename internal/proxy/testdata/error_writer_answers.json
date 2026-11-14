@@ -21,11 +21,11 @@
     "returned": 500
   },
   "writeBackendError/parse 400": {
-    "status": 400,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "failed to parse the log query",
-    "returned": 400
+    "body": "Internal Server Error",
+    "returned": 500
   },
   "writeBackendError/plain 500": {
     "status": 500,
@@ -42,11 +42,11 @@
     "returned": 429
   },
   "writeBackendError/stats 422": {
-    "status": 400,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "failed to parse the log query",
-    "returned": 400
+    "body": "Internal Server Error",
+    "returned": 500
   },
   "writeBackendError/unsupported path": {
     "status": 500,
@@ -245,11 +245,11 @@
     "returned": 500
   },
   "writeErr/vl 400 rejected": {
-    "status": 400,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "failed to parse the log query",
-    "returned": 400
+    "body": "Internal Server Error",
+    "returned": 500
   },
   "writeErr/vl 400 resource limit": {
     "status": 500,
@@ -273,11 +273,11 @@
     "returned": 500
   },
   "writeErr/vl 422 rejected": {
-    "status": 400,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "failed to parse the log query",
-    "returned": 400
+    "body": "Internal Server Error",
+    "returned": 500
   },
   "writeErr/vl 429": {
     "status": 429,
@@ -511,11 +511,11 @@
     "returned": 500
   },
   "writeErrShaped/alerts_json/vl 400 rejected": {
-    "status": 400,
+    "status": 500,
     "content_type": "application/json",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"failed to parse the log query\"}",
-    "returned": 400
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
   },
   "writeErrShaped/alerts_json/vl 400 resource limit": {
     "status": 500,
@@ -539,11 +539,11 @@
     "returned": 500
   },
   "writeErrShaped/alerts_json/vl 422 rejected": {
-    "status": 400,
+    "status": 500,
     "content_type": "application/json",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"failed to parse the log query\"}",
-    "returned": 400
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
   },
   "writeErrShaped/alerts_json/vl 429": {
     "status": 500,
@@ -777,11 +777,11 @@
     "returned": 500
   },
   "writeErrShaped/frontend/vl 400 rejected": {
-    "status": 400,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "failed to parse the log query",
-    "returned": 400
+    "body": "Internal Server Error",
+    "returned": 500
   },
   "writeErrShaped/frontend/vl 400 resource limit": {
     "status": 500,
@@ -805,11 +805,11 @@
     "returned": 500
   },
   "writeErrShaped/frontend/vl 422 rejected": {
-    "status": 400,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "failed to parse the log query",
-    "returned": 400
+    "body": "Internal Server Error",
+    "returned": 500
   },
   "writeErrShaped/frontend/vl 429": {
     "status": 429,
@@ -1043,11 +1043,11 @@
     "returned": 500
   },
   "writeErrShaped/http_error/vl 400 rejected": {
-    "status": 400,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "failed to parse the log query\n",
-    "returned": 400
+    "body": "Internal Server Error\n",
+    "returned": 500
   },
   "writeErrShaped/http_error/vl 400 resource limit": {
     "status": 500,
@@ -1071,11 +1071,11 @@
     "returned": 500
   },
   "writeErrShaped/http_error/vl 422 rejected": {
-    "status": 400,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "failed to parse the log query\n",
-    "returned": 400
+    "body": "Internal Server Error\n",
+    "returned": 500
   },
   "writeErrShaped/http_error/vl 429": {
     "status": 429,
@@ -1309,11 +1309,11 @@
     "returned": 500
   },
   "writeErrShaped/ruler_json/vl 400 rejected": {
-    "status": 400,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"failed to parse the log query\"}",
-    "returned": 400
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
   },
   "writeErrShaped/ruler_json/vl 400 resource limit": {
     "status": 500,
@@ -1337,11 +1337,11 @@
     "returned": 500
   },
   "writeErrShaped/ruler_json/vl 422 rejected": {
-    "status": 400,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "",
-    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"bad_data\",\"error\":\"failed to parse the log query\"}",
-    "returned": 400
+    "body": "{\"status\":\"error\",\"data\":null,\"errorType\":\"server_error\",\"error\":\"Internal Server Error\"}",
+    "returned": 500
   },
   "writeErrShaped/ruler_json/vl 429": {
     "status": 500,
@@ -1575,10 +1575,10 @@
     "returned": 0
   },
   "writeGrafanaStatsFailure/vl 400 rejected": {
-    "status": 400,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "failed to parse the log query",
+    "body": "Internal Server Error",
     "returned": 0
   },
   "writeGrafanaStatsFailure/vl 400 resource limit": {
@@ -1603,10 +1603,10 @@
     "returned": 0
   },
   "writeGrafanaStatsFailure/vl 422 rejected": {
-    "status": 400,
+    "status": 500,
     "content_type": "text/plain; charset=utf-8",
     "nosniff": "nosniff",
-    "body": "failed to parse the log query",
+    "body": "Internal Server Error",
     "returned": 0
   },
   "writeGrafanaStatsFailure/vl 429": {

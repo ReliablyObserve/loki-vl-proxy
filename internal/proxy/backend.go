@@ -706,6 +706,9 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 		return nil, fmt.Errorf("decode backend response: %w", err)
 	}
 	p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
+	if isVLRefusalStatus(resp.StatusCode) {
+		recordVLRefusalCall(ctx, path, params.Get("query"))
+	}
 	// Any completed HTTP response proves backend reachability; keep breaker for transport failures only.
 	p.breaker.RecordSuccess()
 	resp.Body = p.guardBackendBody(ctx, resp.Body, path, params, start)
@@ -808,6 +811,9 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 		return nil, fmt.Errorf("decode backend response: %w", err)
 	}
 	p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
+	if isVLRefusalStatus(resp.StatusCode) {
+		recordVLRefusalCall(ctx, path, params.Get("query"))
+	}
 	resp.Body = p.observeBackendBody(ctx, resp.Body, path, params, resp.StatusCode, start)
 	if stripUnwrapCounter != nil {
 		if err := p.unwrapStripResponse(resp, stripUnwrapCounter); err != nil {

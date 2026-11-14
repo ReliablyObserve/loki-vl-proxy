@@ -1,0 +1,36 @@
+id: semantics/comment-between-function-and-parenthesis-accepted
+title: "A comment between a function name and its parenthesis (`sum # c\\n(rate(...))`) is accepted where Loki answers a syntax error (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki's lexer reads `sum`, `rate`, `by` and the other function names as their keyword only when a parenthesis
+  follows over white space; a comment in between makes the name an identifier. The Loki oracle answers "parse error
+  at line 1, col 1: syntax error: unexpected IDENTIFIER" for `sum # c\n(rate({a="b"}[5m])) by (a)` and `sum#c\nby (a)
+  (rate({a="b"}[5m]))`, and "... line 1, col 9 ..." for `topk(2, sum # c\nby (a) (rate({a="b"}[5m])))`. The proxy
+  removes the comments of a query before any handler reads it (lowercaseQueryKeywords), so the validation reads
+  `sum \n(...)` and the query is answered.
+
+  Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki
+  3.7.9): 16 queries, held under semantics/parser-reads-unicode-blank-as-white-space until the white space fix
+  separated them.
+request:
+  scope: query-grammar
+  entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/comment-between-function-and-parenthesis-accepted"
+  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now, step 60s): sum # c\\n(rate({app=\"x\"}[5m])) by (app) . The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: "Loki's 400 syntax error at the function name."
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: "internal/logql StripComments and the keyword lookahead (a comment before a function's parenthesis)"
+  loki: "a function name followed by a comment is an identifier"
+  proxy: "comments are removed before the validation, so the name is read as the function"
+  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  visual: none
+  visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
+  clusters: []

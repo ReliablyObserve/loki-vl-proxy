@@ -41,7 +41,7 @@ var lateValidation = map[string]bool{}
 // cache lookup, plan, translation or VictoriaLogs call: the queries that once stopped the parser from returning,
 // on every route that takes a query. The fake VictoriaLogs counts its requests.
 //
-// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma, semantics/stage-name-followed-by-more-of-stage
+// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma, semantics/stage-name-followed-by-more-of-stage, semantics/parser-reads-unicode-blank-as-white-space, semantics/stage-after-unwrap-accepted, semantics/unwrap-in-log-query, semantics/range-duration-grammar-wider-than-loki
 func TestRejectedQueryNeverReachesVictoriaLogs(t *testing.T) {
 	var upstream atomic.Int64
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +61,12 @@ func TestRejectedQueryNeverReachesVictoriaLogs(t *testing.T) {
 		// A stage name followed by more of the stage (semantics/stage-name-followed-by-more-of-stage).
 		{"{app=\"a\"} | keep a | a, b", "rate({app=\"a\"} | keep a | a, b [1m])", "syntax error: unexpected ,"},
 		{"{app=\"a\"} | keep a | a .5", "rate({app=\"a\"} | keep a | a .0000! [1m])", "syntax error: unexpected NUMBER"},
+		// A blank Loki's lexer does not skip (semantics/parser-reads-unicode-blank-as-white-space), a stage after an
+		// unwrap, an unwrap in a log query and a range Loki does not read as a duration.
+		{"{app=\"a\"}\v| json", "sum\v(rate({app=\"a\"}[5m])) by (a)", "syntax error: unexpected IDENTIFIER"},
+		{"{app=\"a\"} | line_format\u00a0\"x\"", "topk(2, sum by (a)\u2003(rate({app=\"a\"}[5m])))", "syntax error: unexpected IDENTIFIER"},
+		{"{app=\"a\"} | json | unwrap x", "sum_over_time({app=\"a\"} | unwrap x | drop y [5m])", "syntax error: unexpected"},
+		{"{app=\"a\"} | unwrap x | x > 1", "quantile_over_time(.5, {app=\"a\"} | json | unwrap c[1µs])", ""},
 	} {
 		for _, rt := range failFastRoutes {
 			query := tc.log

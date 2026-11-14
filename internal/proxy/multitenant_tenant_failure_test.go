@@ -15,12 +15,15 @@ type tenantFailure struct {
 	status     int
 	body       string
 	wantStatus int
+	// refused: VictoriaLogs refuses the query (it fails every tenant alike).
+	refused bool
 }
 
 var tenantFailureModes = []tenantFailure{
 	{name: "backend_failure", status: http.StatusServiceUnavailable, body: "backend unavailable", wantStatus: http.StatusInternalServerError},
 	{name: "timeout", status: http.StatusGatewayTimeout, body: "timeout while executing the query", wantStatus: http.StatusGatewayTimeout},
-	{name: "query_rejected", status: http.StatusBadRequest, body: vlBodyParsePattern, wantStatus: http.StatusBadRequest},
+	// VictoriaLogs refusing the LogsQL is a plan defect: Loki's 500, and it fails the whole request.
+	{name: "query_rejected", status: http.StatusBadRequest, body: vlBodyParsePattern, wantStatus: http.StatusInternalServerError, refused: true},
 }
 
 // newTenantFailureBackend serves VictoriaLogs responses for two tenants. While
@@ -97,7 +100,7 @@ func TestMultiTenantFanout_TenantFailureFailsWholeRequest(t *testing.T) {
 	}
 	for _, family := range families {
 		for _, mode := range tenantFailureModes {
-			if family.rejectOnly && mode.wantStatus != http.StatusBadRequest {
+			if family.rejectOnly && !mode.refused {
 				continue
 			}
 			t.Run(family.name+"/"+mode.name, func(t *testing.T) {
@@ -231,8 +234,10 @@ func TestMultiTenantFanout_DrilldownTenantFailureFailsWholeRequest(t *testing.T)
 	}
 }
 
-// Loki validates the query before splitting by tenant, so a query rejected by
-// one tenant is a 400 even when an earlier tenant hit a backend failure.
+// A refused query fails the same way on every tenant, so it ends the fan-out
+// even when an earlier tenant hit a backend failure; it is a plan defect, so the
+// answer is Loki's failed-backend 500.
+// conformance: semantics/vl-refusal-is-plan-defect
 func TestMultiTenantFanout_RejectedQueryWinsOverBackendFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Header.Get("AccountID") {
@@ -256,8 +261,8 @@ func TestMultiTenantFanout_RejectedQueryWinsOverBackendFailure(t *testing.T) {
 		req.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
-		if rec.Code != http.StatusBadRequest {
-			t.Errorf("%s: status = %d, want 400; body=%s", path, rec.Code, rec.Body.String())
+		if rec.Code != http.StatusInternalServerError || readErrorRec(t, rec).Error != lokiErrInternal {
+			t.Errorf("%s: status = %d, want 500; body=%s", path, rec.Code, rec.Body.String())
 		}
 	}
 }

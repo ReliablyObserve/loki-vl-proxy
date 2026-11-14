@@ -178,17 +178,17 @@ func TestCompatCache_DoesNotCaptureStaleOnErrorResponses(t *testing.T) {
 }
 
 // On a 4xx from the streams endpoint, /label/service_name/values must not answer
-// from the recent-data detection sample. A rejected query returns Loki's 400
-// bad_data; a resource limit or storage failure reported with the same 400 is a
-// backend failure (502); a backend without the endpoint keeps the full-range
-// native answer.
+// from the recent-data detection sample. A refused query is a plan defect and a
+// resource limit or storage failure reported with the same 400 is a failed
+// backend call, both Loki's 500; a backend without the endpoint keeps the
+// full-range native answer.
 func TestServiceNameValues_Streams4xxNeverUsesRecentSample(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		streamsErr string
 		wantStatus int
 	}{
-		{name: "rejected query returns the error", streamsErr: "cannot parse `query` arg: unexpected token", wantStatus: http.StatusBadRequest},
+		{name: "rejected query returns the error", streamsErr: "cannot parse `query` arg: unexpected token", wantStatus: http.StatusInternalServerError},
 		{name: "storage failure is a backend error", streamsErr: "cannot obtain streams: cannot read index: unexpected EOF", wantStatus: http.StatusInternalServerError},
 		{name: "unsupported endpoint keeps full-range native answer", streamsErr: `unsupported path requested: "/select/logsql/streams"`, wantStatus: http.StatusOK},
 	} {

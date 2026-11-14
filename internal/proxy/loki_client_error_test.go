@@ -35,7 +35,6 @@ var lokiFixedClientTexts = map[string]bool{
 	lokiErrClientCanceled:          true,
 	lokiErrDeadlineExceeded:        true,
 	lokiTooManyOutstandingRequests: true,
-	lokiErrParse:                   true,
 	lokiErrInternal:                true,
 }
 
@@ -90,9 +89,11 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 		// 503 (main.go:236 in v1.49.0, :276-278 in v1.53.0): Loki's deadline.
 		{"VictoriaLogs query deadline 503", context.Background(), vl(http.StatusServiceUnavailable, "the request couldn't be executed in 30.000 seconds; possible solutions: to increase -search.maxQueryDuration=30s; to pass bigger value to 'timeout' query arg"), http.StatusGatewayTimeout, lokiErrDeadlineExceeded},
 		{"VictoriaLogs 429", context.Background(), vl(http.StatusTooManyRequests, "couldn't start executing the request in 10.000 seconds, since -search.maxConcurrentRequests=16 concurrent requests are executed"), http.StatusTooManyRequests, lokiTooManyOutstandingRequests},
-		// error.go:110-117 (logqlmodel.ErrParse, pkg/logqlmodel/error.go:13): a rejected query is 400.
-		{"VictoriaLogs 400 parse error", context.Background(), vl(http.StatusBadRequest, vlBodyParsePattern), http.StatusBadRequest, lokiErrParse},
-		{"VictoriaLogs 422 parse error", context.Background(), fmt.Errorf("left query: %w", vl(http.StatusUnprocessableEntity, vlBodyParseRegexStats)), http.StatusBadRequest, lokiErrParse},
+		// The proxy validated the query as Loki does before it wrote the LogsQL, so VictoriaLogs refusing it is the
+		// proxy's defect: Loki's failed-backend 500, typed where it is classified or not.
+		{"VictoriaLogs 400 parse error", context.Background(), vl(http.StatusBadRequest, vlBodyParsePattern), http.StatusInternalServerError, lokiErrInternal},
+		{"VictoriaLogs 422 parse error", context.Background(), fmt.Errorf("left query: %w", vl(http.StatusUnprocessableEntity, vlBodyParseRegexStats)), http.StatusInternalServerError, lokiErrInternal},
+		{"VictoriaLogs refusal built untyped", context.Background(), &upstreamStatusError{status: http.StatusBadRequest, msg: "cannot parse query arg: x", class: vlErrorQueryRejected}, http.StatusInternalServerError, lokiErrInternal},
 		// The translator's wording never reaches a client: Loki's syntax error without a position.
 		{"translator parse error", context.Background(), &translator.ParseError{Msg: "unmatched '{' in stream selector", Pos: -1}, http.StatusBadRequest, "parse error : syntax error: unexpected $end"},
 		{"ordered JSON pipeline error", context.Background(), &orderedJSONPipelineError{errLokiStepTooSmall}, http.StatusBadRequest, ""},
@@ -174,7 +175,9 @@ func TestWriteErr_EnvelopeCarriesOnlyLokiText(t *testing.T) {
 // aborted body), optionally wrapped and under a live, cancelled or expired
 // request context, and asserts the client answer: a status in Loki's set,
 // the errorType of that status, and one of Loki's fixed texts, so no
-// VictoriaLogs body, host:port or URL can reach a client.
+// VictoriaLogs body, host:port or URL can reach a client. A VictoriaLogs
+// answer is never a 400 (a refusal is a plan defect), and it is typed as a plan
+// defect exactly when its class is a refusal.
 //
 // conformance: semantics/error-layer-transport-text, semantics/error-layer-backend-text, semantics/error-layer-internal-go-text, semantics/error-layer-cancel-deadline
 func FuzzLokiClientError(f *testing.F) {
@@ -253,6 +256,18 @@ func FuzzLokiClientError(f *testing.F) {
 		}
 		if trimmed := strings.TrimSpace(body); trimmed != "" && strings.Contains(text, trimmed) && !withinLokiFixedText(trimmed) {
 			t.Fatalf("text %q carries the VictoriaLogs body %q", text, body)
+		}
+		if kind%6 == 0 && ctxState%3 == 0 {
+			// No VictoriaLogs answer is the client's mistake: the proxy validated the query before it wrote the
+			// LogsQL, so a refusal is a plan defect (500) and only a queue or a deadline has its own status.
+			if gotStatus == http.StatusBadRequest {
+				t.Fatalf("VictoriaLogs %d answered as the client's mistake: %d %q", status, gotStatus, text)
+			}
+			// The typed answer and the class behind it agree: a refusal is a plan defect, and only a refusal.
+			var statusErr *upstreamStatusError
+			if errors.As(err, &statusErr) && isPlanDefect(err) != (statusErr.class == vlErrorQueryRejected) {
+				t.Fatalf("plan defect %v for class %d", isPlanDefect(err), statusErr.class)
+			}
 		}
 		switch ctxState % 3 {
 		case 1:

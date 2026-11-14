@@ -9,11 +9,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The configuration reference and the limits registry print the defaults of `-patterns-state-stream-idle`,
-  `-backend-heavy-query-min-range`, `-backend-heavy-query-queue-wait`, `-max-stats-cache-freshness`,
-  `-slow-query-threshold`, `-slow-upstream-threshold` and `-backend-retry-max-wait` as durations (`5m0s`, `6h0m0s`,
-  `20s`, `10m0s`, `3s`, `2s`, `5s`); they printed the Go expression (`5 * time.Minute`). The defaults themselves do not
-  change.
+- **Breaking:** when VictoriaLogs refuses the query the proxy wrote for a request it has already checked as Loki does,
+  the client now gets `500 Internal Server Error`, what Loki answers when its storage fails. It got
+  `400 failed to parse the log query`, which said the user's query was wrong when Loki accepts it. Requests that
+  answered `400` this way now answer `500`, on every route (query, query_range, metadata routes, patterns, the tail
+  before and after the upgrade). VictoriaLogs' message stays in the proxy log only. The request error line now
+  names `plan_defect`, `plan_route` (the VictoriaLogs route that refused the call) and `logsql_hash` (a hash of the
+  query sent), and the new counter `loki_vl_proxy_plan_defects_total{endpoint,plan_route}` counts these answers.
+  They now count toward the 5xx alerts (`LokiVLProxyHighErrorRate`, `LokiVLProxyCriticalErrorRate`) instead of the
+  client error alert.
+  Routes that fall back to another form of the same request when VictoriaLogs refuses the first one still do, and
+  queries Loki rejects are still rejected with Loki's `400` before VictoriaLogs is called. Some queries with blanks
+  Loki does not read as white space, such as a no-break space between `by (a)` and the query, still reach
+  VictoriaLogs: they answered `400` with another text than Loki's and now answer `500`.
+
+- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`,
+  `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep` now read Loki's series on
+  `query` and on `query_range` with the range up to the step: the stream plus every parsed label except the unwrapped
+  one. Lines that share those labels are one series whatever their values, and a line with a label of its own (a
+  request id) is a series of its own. The proxy read one series per stream, per line or per group instead, so for
+  example `sum by (app) (stdvar_over_time({app="api"} | json | unwrap duration_ms [5m]))` answered the variance of the
+  app's pooled samples and `sum(stddev_over_time(...))` disagreed between `query` and `query_range`. VictoriaLogs now
+  groups the stats by a hash of the stream and each line's parsed labels and aggregates the series itself, so an
+  instant query reads one stats answer instead of every row of the window. A range longer than the step,
+  `quantile_over_time`, `rate_counter` and a label filter between the parser and the unwrap keep their previous
+  series (`semantics/unwrap-per-series-identity-raw-rows`, `semantics/unwrap-per-series-identity-label-filter`).
+
+## [2.250.0] - 2026-11-14
+
+### Fixed
+
+- **Breaking:** queries Loki's parser rejects are now rejected the same way, with Loki's `400` and text, before the
+  proxy looks in a cache or calls VictoriaLogs. The proxy used to accept them and send them on, so they answered with
+  data or with an error from VictoriaLogs:
+  - a blank Loki does not treat as white space between two tokens: a vertical tab, a form feed, U+0085, a no-break
+    space (U+00A0), U+2003 and the like (`sum by (a) (...)` is `unexpected IDENTIFIER, expecting ( or by or
+    without`). Only a space, a tab, a line feed and a carriage return separate tokens, as in Loki. A blank in a
+    list of names, such as `sum by (a, )`, which Loki accepts, stays accepted;
+  - a stage after `| unwrap` other than a label filter, in a range aggregation (`| unwrap c | drop __error__` is
+    `unexpected drop, expecting IDENTIFIER or (`), and `| unwrap` in a log query (`{app="a"} | unwrap x` is
+    `unexpected unwrap`). Grafana's `| unwrap [1s]` stubs are still dropped before the check;
+  - a range Loki does not read as a duration: Go's units `ns`, `us` and `µs` (`[1µs]` is `unknown unit "µs" in
+    duration "1µs"`), fractions (`[1.5m]`, write `[1m30s]`), units repeated or out of order (`[5m5m]`, `[30s5m]`),
+    blanks inside the brackets and a range above about 292 years (`duration out of range`). An offset still accepts
+    Go's durations, as in Loki;
+  - `on` and `ignoring` without their list of labels (`... / on rate(...)` is `unexpected RATE, expecting (`).
+  A second `| unwrap` in a range aggregation and a few other syntax errors now carry Loki's line and column.
+- A label filter that compares with minus zero written apart (`| a < - 0`, a number) is printed apart, so the
+  printed query reads as the same filter; written together (`a<-0`) Loki reads a duration.
+- A range with a day, week or year unit is read to the nanosecond, as Loki reads it: `[3d1h2ms]` was a little short,
+  and a range with a part of 0 (`[1d0h]`, `[1y0ms]`) counted as no range at all.
+
+## [2.242.0] - 2026-11-14
+
+### Fixed
 
 - A `| keep` before `| unwrap` now decides the series of `first_over_time`, `last_over_time`, `quantile_over_time`,
   `stddev_over_time`, `stdvar_over_time`, `avg_over_time`, `max_over_time`, `min_over_time`, `sum_over_time`,
@@ -26,20 +75,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   labels, on `query` and `query_range` alike, instead of reading the rows of every line. A keep with a condition,
   or one followed by a parser, `label_format` or `drop`, keeps its previous behaviour.
 
-- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`,
-  `stddev_over_time`, `stdvar_over_time` and `quantile_over_time` after `| json` or `| logfmt` with no
-  `| keep` now read Loki's series: the stream plus every parsed label except the unwrapped one. Lines that share
-  those labels are one series whatever their values, and a line with a label of its own (a request id) is a series
-  of its own. The proxy read one series per stream, per line or per group instead, so for example
-  `sum by (app) (quantile_over_time(0.9, {job="kj"} | json | unwrap duration_ms [5m]))` answered a quantile of all
-  the app's samples, `sum by (app) (stdvar_over_time(...))` the variance of the app's pooled samples, and
-  `sum(stddev_over_time(...))` disagreed between `query` and `query_range`. VictoriaLogs now groups the stats by
-  the stream and a hash of each line's parsed labels and aggregates the series itself, on `query` and on
-  `query_range` with the range up to the step. For `quantile_over_time` and a range longer than the step one more
-  VictoriaLogs read proves when every line is a series of its own, and the answer then comes from VictoriaLogs'
-  stats too; otherwise `quantile_over_time` reads each series' value counts, up to `-max-stats-query-series` series
-  (more fail with the series limit error), and a range longer than the step keeps its previous series. A label filter between the parser and the
-  unwrap keeps the previous series (`semantics/unwrap-per-series-identity-label-filter`).
+## [2.241.1] - 2026-11-14
+
+### Fixed
+
+- The configuration reference and the limits registry print the defaults of `-patterns-state-stream-idle`,
+  `-backend-heavy-query-min-range`, `-backend-heavy-query-queue-wait`, `-max-stats-cache-freshness`,
+  `-slow-query-threshold`, `-slow-upstream-threshold` and `-backend-retry-max-wait` as durations (`5m0s`, `6h0m0s`,
+  `20s`, `10m0s`, `3s`, `2s`, `5s`); they printed the Go expression (`5 * time.Minute`). The defaults themselves do not
+  change.
 
 ## [2.241.0] - 2026-11-14
 

@@ -176,7 +176,7 @@ func TestOldLokiDurationOverflowIsTheOnlyDisagreement(t *testing.T) {
 func TestRangeAggregationDurationsKnownValues(t *testing.T) {
 	for lit, want := range map[string]time.Duration{
 		"1ms": time.Millisecond, "500ms": 500 * time.Millisecond, "30s": 30 * time.Second, "90s": 90 * time.Second,
-		"5m": 5 * time.Minute, "1h": time.Hour, "1.5h": 90 * time.Minute, "1d": 24 * time.Hour,
+		"5m": 5 * time.Minute, "1h": time.Hour, "1h30m": 90 * time.Minute, "1d": 24 * time.Hour,
 		"7d": 7 * 24 * time.Hour, "1w": 7 * 24 * time.Hour, "1y": 365 * 24 * time.Hour, "0s": 0,
 	} {
 		expr, err := logqlpkg.Parse(`count_over_time({app="api"}[` + lit + `])`)
@@ -191,6 +191,10 @@ func TestRangeAggregationDurationsKnownValues(t *testing.T) {
 	for lit, want := range map[string]string{
 		"5M": `parse error at line 0, col 28: unknown unit "M" in duration "5M"`,
 		"5x": `parse error at line 0, col 28: unknown unit "x" in duration "5x"`,
+		// Go's fractions and sub-millisecond units, and a unit twice, are no range to Loki either.
+		"1.5h": `parse error at line 0, col 28: unknown unit "." in duration "1.5h"`,
+		"1us":  `parse error at line 0, col 28: unknown unit "us" in duration "1us"`,
+		"5m5m": `parse error at line 0, col 28: not a valid duration string: "5m5m"`,
 	} {
 		if _, msg := logqlpkg.ValidateLogQLExpr(`count_over_time({app="api"}[` + lit + `])`); msg != want {
 			t.Errorf("[%s]: %q, Loki %q", lit, msg, want)

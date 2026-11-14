@@ -104,10 +104,7 @@ func readTail(t *testing.T, wsURL string, readFor time.Duration) tailOutcome {
 // or Go reader wording. A polling tail stops calling VictoriaLogs once closed.
 // conformance: semantics/error-layer-internal-go-text, semantics/error-layer-cancel-deadline, semantics/error-layer-silent-success, loki_api_v1_tail
 func TestTail_BackendFailureModes(t *testing.T) {
-	const (
-		internal = lokiErrInternal
-		parse    = lokiErrParse
-	)
+	const internal = lokiErrInternal
 	type want struct {
 		httpStatus int    // the upgrade is refused with this status
 		text       string // refused body, or the close frame text
@@ -126,7 +123,8 @@ func TestTail_BackendFailureModes(t *testing.T) {
 		mode            string
 		native, polling want
 	}{
-		{"vl400_parse", refused(400, parse), refused(400, parse)},
+		// VictoriaLogs refusing the probe's LogsQL is a plan defect: Loki's 500.
+		{"vl400_parse", refused(500, internal), refused(500, internal)},
 		{"vl400_limit", refused(500, internal), refused(500, internal)},
 		{"vl422", refused(500, internal), refused(500, internal)},
 		{"vl500", refused(500, internal), refused(500, internal)},
