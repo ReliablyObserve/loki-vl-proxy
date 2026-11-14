@@ -121,6 +121,10 @@ func FuzzMetricFlipGate(f *testing.F) {
 		`sum(count_over_time({service_name="api-gateway"} | status > - .5 [5m]))`,
 		`count_over_time({app="nginx"} | pattern "<_> <a><b" [5m])`,
 		`count_over_time({app="a"} | json | not="x" [5m])`, `sum(count_over_time({app="a"} | n > +2 [5m]))`,
+		// Spellings the fuzz found, as valid queries: a parser with no blank before its expression (the translator
+		// copies it), a keyword in another case, a grouping with no labels.
+		`count_over_time({app="a"} |pattern"<_> <m>" [5m])`, "count_over_time({app=\"a\"} |regexp`(?P<a>x)` [5m])",
+		`first_over_time({app="a"} | json | keep app, n | unwrAp n [5m])`, `max_over_time({app="a"} | logfmt | unwrap A [5m]) by ()`,
 	} {
 		f.Add(q)
 	}
@@ -143,6 +147,11 @@ func FuzzMetricFlipGate(f *testing.F) {
 		// The query as the handlers and the translation read it (lowercaseQueryKeywords): keywords in lower case,
 		// without comments and parser flags.
 		q = logqlpkg.LowercaseKeywords(logqlpkg.StripParserFlags(logqlpkg.StripComments(q)))
+		// A query Loki rejects is rejected by the request's validation before any translation (an empty selector, an
+		// empty pattern): neither path translates it.
+		if logqlpkg.ParseAndValidate(q) != nil {
+			return
+		}
 		got, gotErr := on.translateQueryOpts(context.Background(), q, false)
 		want, wantErr := off.translateQueryOpts(context.Background(), q, false)
 		if _, kept := on.keepUnwrapIdentity(q); kept {
