@@ -243,6 +243,18 @@ its timing tables against Loki and its load test on top of this. Commit the
 benchmark rather than a throwaway one, and name it in the registry decision.
 
 
+## Test coverage of at least 90% (hard rule)
+
+Total Go test coverage (the `coverage_pct` of the PR quality report, the README badge) is always at or above 90%.
+Every pull request that adds code adds the tests that cover it, and checks the head coverage in its quality report
+before it asks for a merge. While coverage is under 90%, a pull request may not lower it at all, and raising it comes
+before other test work. `scripts/ci/check_quality_gate.py` holds this: `check_coverage` fails a head under the floor
+that is lower than its base, and a head that drops below the floor; above the floor a drop within the run-to-run
+tolerance passes. Never lower the floor or add tolerance to get a green check. Coverage tests assert behaviour (Loki's
+answers, edge cases, errors and limits), not lines touched to move the number; extend the existing tables, oracles
+and fuzz targets.
+
+
 ## Docs, rules and skill in the same pull request
 
 A pull request updates every README and `docs/` page its change affects, in the same pull request: compatibility
