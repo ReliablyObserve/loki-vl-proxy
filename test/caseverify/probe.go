@@ -36,6 +36,11 @@ type Probe struct {
 	// EmptyIsAnswer is why two empty answers prove the case (request.verify.empty_is_answer): the case is
 	// that a query the proxy once mishandled is answered like Loki, with nothing and no error.
 	EmptyIsAnswer string
+	// Control is a second request of the case (request.verify.control: params laid over the request's own) that
+	// must return data on both sides. Where the case's own answers are both empty, a control that answers data on
+	// both sides proves the data is there, and the two empty answers match; the control's own answers are not
+	// compared.
+	Control map[string]string
 
 	// OwnerKept are the owner-kept deviation cases this case's answers are subject to (the case's owner_kept).
 	OwnerKept []string
@@ -161,6 +166,11 @@ func probeOf(c registry.Case) Probe {
 	blockedBy, _ := verify["blocked_by"].(string)
 	reason, _ := verify["reason"].(string)
 	p.EmptyIsAnswer, _ = verify["empty_is_answer"].(string)
+	badControl := false
+	if c, ok := verify["control"].(map[string]any); ok {
+		p.Control = stringMap(c["params"])
+		badControl = len(p.Control) == 0
+	}
 	block := func(class, reason string) {
 		p.Blocked, p.BlockedClass = reason, class
 	}
@@ -180,6 +190,8 @@ func probeOf(c registry.Case) Probe {
 		block(classUnclassed, fmt.Sprintf("request.verify is not valid (met_by %q, blocked_by %q)", metBy, blockedBy))
 	case metBy != "" && evidence == "":
 		block(classUnclassed, "request.verify.met_by needs its evidence")
+	case badControl:
+		block(classUnclassed, "request.verify.control needs params")
 	case blockedBy != "":
 		if reason == "" {
 			reason = unmet
@@ -193,6 +205,19 @@ func probeOf(c registry.Case) Probe {
 	case notSent[p.Path].reason != "":
 		block(notSent[p.Path].class, notSent[p.Path].reason)
 	}
+	return p
+}
+
+// withParams is the probe with the parameters laid over its own: the control request of a case.
+func (p Probe) withParams(over map[string]string) Probe {
+	params := make(map[string]string, len(p.Params)+len(over))
+	for k, v := range p.Params {
+		params[k] = v
+	}
+	for k, v := range over {
+		params[k] = v
+	}
+	p.Params = params
 	return p
 }
 
@@ -277,32 +302,55 @@ type Variant struct {
 	Flags []string `json:"flags"`
 }
 
+// lokiProfileVariant is the proxy variant that runs the Loki-compatible profile with no extension flags (the
+// stack's underscore variant, the one Grafana's proxy datasource reads). Several variants may hold the flags a case
+// names; this one is the reference they are measured against, so it is preferred.
+const lokiProfileVariant = "underscore"
+
+// defaultOff are the boolean flags that are off when a proxy does not list them (their declared default is false,
+// cmd/proxy/main.go; TestDefaultOffFlagsAreDeclaredOff keeps the list honest). A case that names one with =false
+// (say -label-values-indexed-cache=false, the Loki profile without the main proxy's browse-keeping index) is held
+// by a proxy that lists it as false or does not list it.
+var defaultOff = map[string]bool{"-label-values-indexed-cache": true}
+
+// holdsFlags reports whether a proxy running with flags has every flag a case names.
+func holdsFlags(flags, wanted []string) bool {
+	have := map[string]bool{}
+	listed := map[string]bool{}
+	for _, f := range flags {
+		have[f] = true
+		name, _, _ := strings.Cut(f, "=")
+		listed[name] = true
+	}
+	for _, f := range wanted {
+		name, value, ok := strings.Cut(f, "=")
+		off := ok && (value == "false" || value == "0" || value == "off")
+		unlistedOff := off && defaultOff[name] && !listed[name]
+		if !have[f] && !unlistedOff {
+			return false
+		}
+	}
+	return true
+}
+
 // ChooseVariant picks the proxy for a probe that names proxy flags: the default when its flags hold them all,
-// else the first variant that does; none blocks the probe.
+// else the Loki-profile variant if it does, else the first variant that does; none blocks the probe.
 func ChooseVariant(p *Probe, defaultFlags []string, variants []Variant) {
 	if len(p.ProxyFlags) == 0 || p.NotExecutable != "" || p.Blocked != "" {
 		return
 	}
-	holds := func(flags []string) bool {
-		have := map[string]bool{}
-		for _, f := range flags {
-			have[f] = true
-		}
-		for _, f := range p.ProxyFlags {
-			if !have[f] {
-				return false
-			}
-		}
-		return true
-	}
-	if holds(defaultFlags) {
+	if holdsFlags(defaultFlags, p.ProxyFlags) {
 		return
 	}
+	chosen := ""
 	for _, v := range variants {
-		if holds(v.Flags) {
-			p.Variant = v.Name
-			return
+		if holdsFlags(v.Flags, p.ProxyFlags) && (chosen == "" || v.Name == lokiProfileVariant) {
+			chosen = v.Name
 		}
+	}
+	if chosen != "" {
+		p.Variant = chosen
+		return
 	}
 	p.Blocked, p.BlockedClass = "needs a proxy variant with "+strings.Join(p.ProxyFlags, " "), classNoVariant
 }

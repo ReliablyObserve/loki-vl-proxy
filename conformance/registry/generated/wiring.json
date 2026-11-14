@@ -2315,7 +2315,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 577,
+  "registry_items": 579,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -5171,6 +5171,7 @@
     "semantics/extracted-derived-labels-raw-evaluator",
     "semantics/extracted-ungrouped-metric-raw-rows",
     "semantics/first-last-over-time-translation",
+    "semantics/format-query-canonical-form-like-loki",
     "semantics/ip-filter-keeps-parser-error-lines",
     "semantics/json-empty-value-label-series",
     "semantics/label-filter-before-parser-reads-ingest-json-key",
@@ -5188,6 +5189,7 @@
     "semantics/quantile-over-time-out-of-range",
     "semantics/regexp-chain-led-by-ip",
     "semantics/ruler-empty-list-status",
+    "semantics/ruler-rules-unknown-type-like-loki",
     "semantics/ruler-store-failure-status",
     "semantics/stddev-stdvar-parsed-label-series-identity",
     "semantics/step-duration-grammar-wider-than-loki",

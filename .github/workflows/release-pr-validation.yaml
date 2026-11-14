@@ -102,6 +102,9 @@ jobs:
                 conformance/registry/generated/verification/*) ;;
                 bench/ab/history/daily-smoke/*) ;;
                 docs/ci-workflows.md) ;;
+                # The pages whose dated block states the verified numbers (test/dailyreport -docs).
+                README.md|docs/KNOWN_ISSUES.md|docs/real-window-compatibility-gaps.md) ;;
+                conformance/reports/verification.md|website/src/data/verification.json) ;;
                 *) fail "file outside the daily report: ${path}" ;;
               esac
             done <<<"${files}"

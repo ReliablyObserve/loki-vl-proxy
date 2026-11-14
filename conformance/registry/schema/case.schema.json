@@ -73,7 +73,7 @@
         "entry": {"type": "string", "minLength": 1},
         "setup": {"type": "string", "minLength": 1},
         "verify": {
-          "description": "How test/caseverify treats a request whose precondition or setup it does not run. met_by: stack says the stack's standing data meets the precondition (evidence names where: the generator line, a compose flag); the runner then sends the request. blocked_by names what the request needs that a read-only comparison run cannot give: load, fault, volume, version, fixture, proxy_only, moved_window or write; reason says what. empty_is_answer says why two empty answers prove a case that is not open (a query the proxy once mishandled is answered like Loki, with nothing and no error).",
+          "description": "How test/caseverify treats a request whose precondition or setup it does not run. met_by: stack says the stack's standing data meets the precondition (evidence names where: the generator line, a compose flag); the runner then sends the request. blocked_by names what the request needs that a read-only comparison run cannot give: load, fault, volume, version, fixture, proxy_only, moved_window or write; reason says what. empty_is_answer says why two empty answers prove a case that is not open (a query the proxy once mishandled is answered like Loki, with nothing and no error). control names a second request of the case (params laid over the request's own, for example the same query with the stage that exposes the key) that must return data on both sides: where the case's own answers are both empty, the control proves the data is there, so two empty answers match; the control's answers are not compared.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -81,7 +81,13 @@
             "evidence": {"type": "string", "minLength": 1},
             "blocked_by": {"type": "string", "enum": ["load", "fault", "volume", "version", "fixture", "proxy_only", "moved_window", "write"]},
             "reason": {"type": "string", "minLength": 1},
-            "empty_is_answer": {"type": "string", "minLength": 1}
+            "empty_is_answer": {"type": "string", "minLength": 1},
+            "control": {
+              "type": "object",
+              "required": ["params"],
+              "additionalProperties": false,
+              "properties": {"params": {"$ref": "#/definitions/stringMap"}}
+            }
           }
         },
         "proxy_flags": {

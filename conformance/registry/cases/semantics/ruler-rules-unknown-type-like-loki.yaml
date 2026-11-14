@@ -1,0 +1,40 @@
+id: semantics/ruler-rules-unknown-type-like-loki
+title: The Prometheus-style rules route refuses an unknown type filter like Loki (open until a live run proves it)
+pending: true
+proves:
+  - prometheus_api_v1_rules
+  - status-400
+consumer: api
+why: |
+  Split from semantics/error-request-validation-parity, whose own request
+  probes only the parameter-validation half of query_range.
+
+  `/prometheus/api/v1/rules?type=xyz`: Loki's rules handler answers
+  400 `{"status":"error","data":null,"errorType":"bad_data","error":"not supported value \"xyz\""}`
+  (the Prometheus rules API's own check), and the proxy's unit test pins the
+  same answer (internal/proxy TestErrorBody_RulerAndDeleteShapes,
+  prometheus_rules/unknown_type), against a stand-in backend. No recorded
+  Loki row holds `xyz`, so this case compares the proxy with the stack's Loki
+  live; the legacy views /loki/api/v1/rules and /api/prom/rules take no type
+  filter and are not probed.
+request:
+  method: GET
+  path: /prometheus/api/v1/rules
+  params:
+    type: 'xyz'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, headers, body]
+  expect: |
+    Loki's status, Content-Type and text.
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: 'internal/proxy rules handlers (type filter of the Prometheus-style route)'
+  loki: 'the stack Loki answers the Prometheus rules API check; not recorded'
+  proxy: 'pinned by TestErrorBody_RulerAndDeleteShapes; unproven against Loki'
+  planned_test: 'TestErrorBody_RulerAndDeleteShapes/prometheus_rules/unknown_type (internal/proxy)'
+  clusters: []

@@ -56,6 +56,12 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 
 ## Quality and performance vs Loki (current)
 
+<!-- verified-numbers:start -->
+
+The numbers on this page are not verified by a live run yet: the daily report (`.github/workflows/daily-report.yaml`) has recorded no run on `main`.
+
+<!-- verified-numbers:end -->
+
 <!-- quality-summary:start -->
 
 Tested against Loki v3.7.9, the release the compatibility stack and CI pin. Timings were measured on 2026-11-09 at commit `0843224237` on the project's A/B stack: the same data, the same hardware, the latest valid weekly run of each of 39 query-shape sets over 1h to 24h. A pair is one query shape over one time range; "comparable" means both sides answered 200 and Loki's results cache did not answer the first request. Faster and slower mean beyond 25% and 50 ms; everything else is on par. A `topk` or `bottomk` answer is compared by its ranked points and their sum, not by its series count.
@@ -177,8 +183,8 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 10 proven, 21 partial, 3 gaps |
-| Known differences from Loki (ranked) | **154**: 129 open, 15 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **74 of 129**: 60 Explore, 13 Logs Drilldown, 1 Grafana datasource; 20 API only, 35 edge cases |
+| Known differences from Loki (ranked) | **156**: 131 open, 15 documented, 7 owner-kept, 3 upstream |
+| Open differences visible in Grafana (registry impact) | **74 of 131**: 60 Explore, 13 Logs Drilldown, 1 Grafana datasource; 22 API only, 35 edge cases |
 
 **Readiness by client**
 
@@ -189,7 +195,7 @@ The Loki endpoints each client calls (registry `consumers`), with the same evide
 | Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 60 |
 | Logs Drilldown | 11 | 11 (100%) | 11 (100%) | 9 (82%) | 13 |
 | Grafana Loki datasource | 6 | 6 (100%) | 6 (100%) | 4 (67%) | 1 |
-| Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 20 |
+| Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 22 |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 

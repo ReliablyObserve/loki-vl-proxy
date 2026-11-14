@@ -416,6 +416,7 @@ RULE_CASES = [
     ("test/e2e-compat/loki-bench-nocache-config.yaml", False, "I14"),
     ("test/ciworkflows/inventory.json", False, "I15"),
     ("conformance/registry/generated/verification/summary.json", False, "I11"),
+    ("conformance/reports/verification.md", False, "I11"),
     # The inventory's generator is Go code with unit tests: product.
     ("test/ciworkflows/inventory.go", True, "P-default"),
     # Lanes: not the full product, but not nothing.
@@ -703,6 +704,7 @@ class LaneRepositoryTests(unittest.TestCase):
             "conformance/registry/generated/perf-evidence.json",
             "conformance/reports/performance.md",
             "conformance/reports/gaps.md",
+            "conformance/reports/verification.md",
         }
         # The daily report's bot-owned files (daily-report.yaml) are generated reports as well.
         bot_owned = "conformance/registry/generated/verification/"

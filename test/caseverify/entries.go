@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 )
@@ -17,11 +19,16 @@ type Options struct {
 	Patterns bool
 	// Rank is the query's outermost topk or bottomk, for the ranked_values facet.
 	Rank *RankSpec
+	// MaskErrorSeries (compare.values.mask_error_series) masks the series labels of a pipeline error's text before
+	// the error compares: Loki names a sample series of its own choosing, another one on the same request, so the
+	// text compares exactly except the labels inside `for series: '{...}'`.
+	MaskErrorSeries bool
 }
 
 // OptionsOf reads the comparison options of a probe's resolved request.
 func OptionsOf(p Probe, query map[string][]string) Options {
 	o := Options{Tolerance: tolerance(p), Subset: p.Mode == "subset"}
+	o.MaskErrorSeries, _ = p.Values["mask_error_series"].(bool)
 	get := func(k string) string {
 		if v := query[k]; len(v) > 0 {
 			return v[0]
@@ -146,16 +153,36 @@ func (p parsed) keepEntries(keep func(ts any) bool) {
 	data["result"] = kept
 }
 
-// trimLimitEdge compares two log answers that reached the line limit up to the timestamp both hold whole:
-// lines of the timestamp the limit cut at may be any of that timestamp's lines.
-func trimLimitEdge(l, p parsed, o Options) {
+// limitCounts are the line counts of two log answers when exactly one of them reached the line limit: that
+// answer is cut at the limit and the other is not, so the answers are compared whole and the counts are
+// reported with the difference.
+type limitCounts struct {
+	loki, proxy, limit int
+}
+
+// text says a side's count against the limit.
+func (c limitCounts) text(n int) string {
+	if n >= c.limit {
+		return fmt.Sprintf("%d lines (at the limit %d)", n, c.limit)
+	}
+	return fmt.Sprintf("%d lines (under the limit %d)", n, c.limit)
+}
+
+// trimLimitEdge compares two log answers that both reached the line limit up to the timestamp both hold whole:
+// lines of the timestamp the limit cut at may be any of that timestamp's lines. When only one side reached the
+// limit the other answer is complete (or short), so nothing is cut: the extra lines the limit-reaching side holds
+// are a difference in the count of lines, not an edge to trim, and the counts are returned to be reported.
+func trimLimitEdge(l, p parsed, o Options) *limitCounts {
 	if o.Limit <= 0 {
-		return
+		return nil
 	}
 	nl, el := l.streamEntries(o.Forward)
 	np, ep := p.streamEntries(o.Forward)
-	if (nl < o.Limit && np < o.Limit) || el == nil || ep == nil {
-		return
+	if (nl >= o.Limit) != (np >= o.Limit) {
+		return &limitCounts{loki: nl, proxy: np, limit: o.Limit}
+	}
+	if nl < o.Limit || el == nil || ep == nil {
+		return nil
 	}
 	// Backward answers are cut at their oldest timestamp, forward ones at their newest: keep what lies on the
 	// near side of the more restrictive of the two cuts.
@@ -171,6 +198,22 @@ func trimLimitEdge(l, p parsed, o Options) {
 	}
 	l.keepEntries(keep)
 	p.keepEntries(keep)
+	return nil
+}
+
+// withLimitCounts puts the line counts in front of the entry and data differences of an answer pair where one side
+// reached the limit and the other did not.
+func withLimitCounts(diffs []Difference, c *limitCounts) []Difference {
+	if c == nil {
+		return diffs
+	}
+	for i, d := range diffs {
+		if d.Facet == facetEntries || d.Facet == facetData {
+			diffs[i].Loki = c.text(c.loki) + ": " + d.Loki
+			diffs[i].Proxy = c.text(c.proxy) + ": " + d.Proxy
+		}
+	}
+	return diffs
 }
 
 // sampleRange is the first and last sample bucket of a patterns answer.
@@ -238,9 +281,13 @@ func trimPatternEdges(l, p parsed) {
 // equality, a limit-cut answer up to the timestamp both sides hold whole, patterns without their edge buckets.
 func CompareWith(facets []string, loki, proxy Answer, o Options) []Difference {
 	l, p := parse(loki), parse(proxy)
+	if o.MaskErrorSeries {
+		l.maskErrorSeries()
+		p.maskErrorSeries()
+	}
 	l.sortStreams()
 	p.sortStreams()
-	trimLimitEdge(l, p, o)
+	counts := trimLimitEdge(l, p, o)
 	if o.Patterns {
 		trimPatternEdges(l, p)
 	}
@@ -254,6 +301,7 @@ func CompareWith(facets []string, loki, proxy Answer, o Options) []Difference {
 		rest = append(rest, f)
 	}
 	out := compareParsed(rest, l, p, loki.Status, proxy.Status, o.Tolerance, o.Subset)
+	out = withLimitCounts(out, counts)
 	if !ranked {
 		return out
 	}
@@ -265,4 +313,27 @@ func CompareWith(facets []string, loki, proxy Answer, o Options) []Difference {
 		out = append(out, Difference{Facet: facetRanked, Loki: "the ranked values of every step and the series above the cutoff", Proxy: clip(msg)})
 	}
 	return out
+}
+
+// pipelineSeries is the series labels of a pipeline error: `pipeline error: 'SampleExtractionErr' for series:
+// '{...}'.` The labels may hold quotes and braces; they end at the first quote that closes the brace and is
+// followed by the sentence's end.
+var pipelineSeries = regexp.MustCompile(`(?s)(for series: ')\{.*?\}('\.?(?:\n|$))`)
+
+// maskPipelineSeries replaces the series labels of every pipeline error in text.
+func maskPipelineSeries(text string) string {
+	return pipelineSeries.ReplaceAllString(text, "${1}{...}${2}")
+}
+
+// maskErrorSeries masks the series labels in the answer's error text, whether it is plain text or the error
+// field of a JSON answer.
+func (p *parsed) maskErrorSeries() {
+	p.text = maskPipelineSeries(p.text)
+	if m, ok := p.doc.(map[string]any); ok {
+		for _, k := range []string{"error", "message"} {
+			if s, ok := m[k].(string); ok {
+				m[k] = maskPipelineSeries(s)
+			}
+		}
+	}
 }
