@@ -25,7 +25,14 @@
 // the weekly per-case verdicts and full parity corpus of both VictoriaLogs versions, the full-size grammar
 // sweep, the full A/B on the oldest supported VictoriaLogs, the weekly A/B figures, the release dry run) to
 // conformance/registry/generated/verification/weekly-history.jsonl and writes weekly-trend.md, every number
-// over the last weeks. The command is test support: it reads and writes files only.
+// over the last weeks.
+//
+// -docs renders the dated numbers from summary.json: the block between the verified-numbers markers of
+// README.md, docs/KNOWN_ISSUES.md and docs/real-window-compatibility-gaps.md, conformance/reports/
+// verification.md and website/src/data/verification.json. -docs -check writes nothing and fails on a stale
+// page, and on numbers older than -max-daily-age (daily) or -max-weekly-age (weekly) when it runs on main's
+// schedule (GITHUB_EVENT_NAME, GITHUB_REF: the daily report); elsewhere old numbers are a warning. The command is test
+// support: it reads and writes files only.
 package main
 
 import (
@@ -36,6 +43,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 )
 
@@ -46,6 +54,10 @@ type config struct {
 	weekly            bool
 	week              WeeklyInputs
 	history, trend    string
+	docs              bool
+	summary           string
+	ages              Ages
+	now, event, ref   string
 }
 
 func main() {
@@ -95,6 +107,13 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&cfg.week.FleetDir, "weekly-fleet", "", "weekly: directory of the fleet cache proof reports (rf<N>.json, rf<N>.exit)")
 	fs.StringVar(&cfg.week.ReleaseDry, "release-dry-run", "", "weekly: the conclusion of the release.yaml dry run")
 	fs.StringVar(&cfg.history, "weekly-history", "conformance/registry/generated/verification/weekly-history.jsonl", "weekly: the history")
+	fs.BoolVar(&cfg.docs, "docs", false, "render the dated numbers of summary.json into the pages that state them")
+	fs.StringVar(&cfg.summary, "summary", "conformance/registry/generated/verification/summary.json", "docs: the daily summary")
+	fs.DurationVar(&cfg.ages.Daily, "max-daily-age", 48*time.Hour, "docs -check: the oldest a daily number may be on main")
+	fs.DurationVar(&cfg.ages.Weekly, "max-weekly-age", 8*24*time.Hour, "docs -check: the oldest a weekly number may be on main")
+	fs.StringVar(&cfg.now, "now", "", "docs -check: the time to judge ages at (RFC 3339; default now)")
+	fs.StringVar(&cfg.event, "event", os.Getenv("GITHUB_EVENT_NAME"), "docs -check: the CI event")
+	fs.StringVar(&cfg.ref, "ref", os.Getenv("GITHUB_REF"), "docs -check: the CI ref")
 	fs.StringVar(&cfg.trend, "weekly-trend", "conformance/registry/generated/verification/weekly-trend.md", "weekly: the trend page")
 	err := fs.Parse(args)
 	return cfg, err
@@ -103,6 +122,9 @@ func parseFlags(args []string) (config, error) {
 func run(cfg config, stdout, stderr io.Writer) int {
 	if cfg.weekly {
 		return runWeekly(cfg, stdout, stderr)
+	}
+	if cfg.docs {
+		return runDocs(cfg, stdout, stderr)
 	}
 	s, merged, err := Build(cfg.in)
 	if err == nil {
@@ -180,4 +202,65 @@ func runWeekly(cfg config, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func runDocs(cfg config, stdout, stderr io.Writer) int {
+	fail := func(err error) int {
+		fmt.Fprintln(stderr, "dailyreport:", err)
+		return 2
+	}
+	s, err := LoadSummary(cfg.summary)
+	if err != nil {
+		return fail(err)
+	}
+	pages, err := Pages(s, os.ReadFile)
+	if err != nil {
+		return fail(err)
+	}
+	paths := make([]string, 0, len(pages))
+	for p := range pages {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	if !cfg.check {
+		for _, p := range paths {
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				return fail(err)
+			}
+			if err := os.WriteFile(p, []byte(pages[p]), 0o644); err != nil {
+				return fail(err)
+			}
+		}
+		fmt.Fprintf(stdout, "verified numbers: wrote %d pages\n", len(paths))
+		return 0
+	}
+	code := 0
+	for _, p := range paths {
+		if current, err := os.ReadFile(p); err != nil || string(current) != pages[p] {
+			fmt.Fprintf(stdout, "verified numbers: %s is stale; run go run ./test/dailyreport -docs\n", p)
+			code = 1
+		}
+	}
+	now := time.Now()
+	if cfg.now != "" {
+		if now, err = time.Parse(time.RFC3339, cfg.now); err != nil {
+			return fail(err)
+		}
+	}
+	if s == nil {
+		fmt.Fprintln(stdout, "verified numbers: no daily summary on this branch yet; the pages say so")
+	}
+	strict := Strict(cfg.event, cfg.ref)
+	for _, problem := range Stale(s, now, cfg.ages) {
+		if strict {
+			fmt.Fprintln(stdout, "verified numbers: "+problem)
+			code = 1
+		} else {
+			fmt.Fprintln(stdout, "verified numbers: warning: "+problem)
+		}
+	}
+	if code == 0 {
+		fmt.Fprintf(stdout, "verified numbers: %d pages current\n", len(paths))
+	}
+	return code
 }

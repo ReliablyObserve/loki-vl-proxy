@@ -334,6 +334,14 @@ with Loki is the model: `conformance/scripts/perf_evidence.py --quality-summary`
 `bench/ab/daily.py`, checked by `scripts/ci/check_conformance.py`.
 
 - A figure that is not generated yet is labelled with its date, commit and method, and never presented as current.
+- The daily report (`.github/workflows/daily-report.yaml`) re-verifies the registry, error, grammar-sweep and
+  performance numbers live and writes `conformance/registry/generated/verification/summary.json`; the block between
+  the `verified-numbers` markers (README, `docs/KNOWN_ISSUES.md`, `docs/real-window-compatibility-gaps.md`),
+  `conformance/reports/verification.md` and `website/src/data/verification.json` state them with the date, commit and
+  versions they were verified on (`go run ./test/dailyreport -docs`). The conformance gate fails a stale page; the daily
+  report, on `main`'s schedule, fails when the committed daily numbers are older than 48 hours or a weekly one older
+  than 8 days (a report pull request left unmerged). Elsewhere, pull requests included, old numbers only warn.
+  A page that states one of these numbers carries the markers.
 - Show the whole distribution, not only medians: the p90 and the slowest queries, by time range, and the heaviest
   queries users wait for, next to Loki's.
 - State the current measured position only. README, docs and marketing pages do not compare with earlier

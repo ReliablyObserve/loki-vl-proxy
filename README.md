@@ -56,6 +56,12 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 
 ## Quality and performance vs Loki (current)
 
+<!-- verified-numbers:start -->
+
+The numbers on this page are not verified by a live run yet: the daily report (`.github/workflows/daily-report.yaml`) has recorded no run on `main`.
+
+<!-- verified-numbers:end -->
+
 <!-- quality-summary:start -->
 
 Tested against Loki v3.7.9, the release the compatibility stack and CI pin. Timings were measured on 2026-11-09 at commit `0843224237` on the project's A/B stack: the same data, the same hardware, the latest valid weekly run of each of 39 query-shape sets over 1h to 24h. A pair is one query shape over one time range; "comparable" means both sides answered 200 and Loki's results cache did not answer the first request. Faster and slower mean beyond 25% and 50 ms; everything else is on par. A `topk` or `bottomk` answer is compared by its ranked points and their sum, not by its series count.

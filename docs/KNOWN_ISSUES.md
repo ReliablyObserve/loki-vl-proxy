@@ -15,6 +15,12 @@ that VictoriaLogs is natively Loki or that every Loki behavior is reproduced in
 the backend itself. This page tracks the differences, scope boundaries, and
 operational caveats that still matter in the current codebase.
 
+<!-- verified-numbers:start -->
+
+The numbers on this page are not verified by a live run yet: the daily report (`.github/workflows/daily-report.yaml`) has recorded no run on `main`.
+
+<!-- verified-numbers:end -->
+
 ## Intentional Scope Boundaries
 
 <!-- api-status:start -->
