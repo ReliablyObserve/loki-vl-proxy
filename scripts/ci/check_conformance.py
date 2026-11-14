@@ -45,6 +45,11 @@ Fails when:
     an unknown or fixed case, or disagrees with its ceiling; with test results: the error-layer gate
     (TestErrorLayer_NoVictoriaLogsLeak) did not run, failed, or skipped more cells than the list holds;
     see error_layer_problems();
+  * the dated block of verified numbers (README.md, docs/KNOWN_ISSUES.md, docs/real-window-compatibility-gaps.md),
+    conformance/reports/verification.md or website/src/data/verification.json is stale against
+    conformance/registry/generated/verification/summary.json (go run ./test/dailyreport -docs -check); old numbers only
+    warn here, and fail on main's schedule, in the daily report (a daily number older than 48 hours, a weekly one
+    older than 8 days);
   * the Grafana and Logs Drilldown profile known-drift list (conformance/registry/profile-known-drift.json) grew, or
     disagrees with its ceiling or a missing reason; see profile_drift_problems(). The Go guard
     TestClientProfilesMatchMatrix fails on drift that is not listed and on listed drift that is gone.
@@ -251,6 +256,12 @@ def main():
     print(cases.stdout.strip() or cases.stderr.strip())
     if cases.returncode:
         failures.append("registry case schema")
+
+    # The verified numbers' dated pages match summary.json; old numbers warn here (the daily report fails them).
+    verified = subprocess.run(["go", "run", "./test/dailyreport", "-docs", "-check"], capture_output=True, text=True)
+    print(verified.stdout.strip() or verified.stderr.strip())
+    if verified.returncode:
+        failures.append("verified numbers")
 
     wiring = run("wire.py", "--check")
     print(wiring.stdout.strip())

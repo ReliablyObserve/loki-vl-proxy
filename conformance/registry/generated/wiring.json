@@ -1683,7 +1683,8 @@
       "cmd/proxy/main_test.go",
       "internal/proxy/step_align_diff_test.go",
       "internal/proxy/step_align_test.go",
-      "test/e2e-compat/align_queries_with_step_test.go"
+      "test/e2e-compat/align_queries_with_step_test.go",
+      "test/e2e-compat/loki_metric_probe_window_test.go"
     ],
     "semantics/query-range-window-budget": [
       "test/e2e-compat/query_range_window_budget_test.go"
@@ -1726,6 +1727,7 @@
       "internal/queryplan/lower/outbound_guard_test.go",
       "internal/queryplan/lower/reserved_field_case_test.go",
       "internal/queryplan/lower/vl_clone_roundtrip_test.go",
+      "test/e2e-compat/loki_metric_probe_window_test.go",
       "test/e2e-compat/reserved_field_name_case_test.go"
     ],
     "semantics/router-method-not-allowed-like-loki": [
@@ -2325,7 +2327,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 578,
+  "registry_items": 580,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4751,6 +4753,10 @@
       "semantics/stage-after-unwrap-accepted",
       "semantics/unwrap-in-log-query"
     ],
+    "test/e2e-compat/loki_metric_probe_window_test.go": [
+      "semantics/query-range-step-alignment",
+      "semantics/reserved-field-name-case-outbound"
+    ],
     "test/e2e-compat/loki_profile_parity_test.go": [
       "profiles/dotted-name-parse-error",
       "profiles/dotted-names-accepted-outside-loki-profile",
@@ -5140,7 +5146,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 603,
+  "tests_with_markers": 604,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5196,6 +5202,7 @@
     "semantics/eager-pipeline-validation",
     "semantics/extracted-derived-labels-raw-evaluator",
     "semantics/extracted-ungrouped-metric-raw-rows",
+    "semantics/format-query-canonical-form-like-loki",
     "semantics/ip-filter-keeps-parser-error-lines",
     "semantics/json-empty-value-label-series",
     "semantics/label-filter-before-parser-reads-ingest-json-key",
@@ -5213,6 +5220,7 @@
     "semantics/quantile-over-time-out-of-range",
     "semantics/regexp-chain-led-by-ip",
     "semantics/ruler-empty-list-status",
+    "semantics/ruler-rules-unknown-type-like-loki",
     "semantics/ruler-store-failure-status",
     "semantics/stddev-stdvar-parsed-label-series-identity",
     "semantics/step-duration-grammar-wider-than-loki",

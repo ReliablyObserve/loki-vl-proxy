@@ -43,6 +43,8 @@ request:
     step: '60s'
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    empty_is_answer: "unwrap of a field named _TIME once crashed VictoriaLogs; Loki answers an empty matrix and so must the proxy, with no error"
 corpus:
   dimensions:
     shapes:

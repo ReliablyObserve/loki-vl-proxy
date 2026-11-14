@@ -36,6 +36,9 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     A line `{"level_extracted":"a","level":"b"}` on a stream with a level label.
+  verify:
+    blocked_by: fixture
+    reason: "a line {\"level_extracted\":\"a\",\"level\":\"b\"} on a stream with a level label"
 compare:
   mode: exact
   fields: [series_labels]

@@ -313,16 +313,17 @@ const (
 	verdictBlocked       = "blocked"
 	verdictNotExecutable = "not_executable"
 	// The data precheck's verdicts: nothing about the proxy is proven, so none of them is ever a regression.
-	verdictDataDiffers   = "data_differs"   // Loki and VictoriaLogs count other lines for the case's selectors and window
-	verdictEmpty         = "empty"          // both count no line
-	verdictLokiNotReady  = "loki_not_ready" // Loki's metric path answers nothing while VictoriaLogs holds the lines
-	verdictNotComparable = "not_comparable" // Loki answered with warnings, or the proxy with a stale or partial answer
-	verdictDataUnchecked = "data_unchecked" // no count to prove the data equal (no VictoriaLogs URL, or a recording without counts)
+	verdictDataDiffers   = "data_differs"      // Loki and VictoriaLogs count other lines for the case's selectors and window
+	verdictEmpty         = "empty"             // both count no line
+	verdictLokiNotReady  = "loki_not_ready"    // Loki's metric path answers nothing while VictoriaLogs holds the lines
+	verdictCachedStale   = "loki_cached_stale" // Loki's answer came from reused results-cache extents and lacks lines or samples the proxy holds
+	verdictNotComparable = "not_comparable"    // Loki answered with warnings, or the proxy with a stale or partial answer
+	verdictDataUnchecked = "data_unchecked"    // no count to prove the data equal (no VictoriaLogs URL, or a recording without counts)
 )
 
 // verdicts in the order the report lists them.
 var verdicts = []string{verdictMatches, verdictDiffers, verdictUnstable, verdictBothFail, verdictDataDiffers, verdictEmpty,
-	verdictLokiNotReady, verdictNotComparable, verdictDataUnchecked, verdictBlocked, verdictNotExecutable}
+	verdictLokiNotReady, verdictCachedStale, verdictNotComparable, verdictDataUnchecked, verdictBlocked, verdictNotExecutable}
 
 // staleHeader marks a proxy answer served stale (internal/proxy staleResponseHeader).
 const staleHeader = "X-Proxy-Stale-Response"
@@ -335,22 +336,29 @@ const (
 	flagRegression       = "regression"
 	flagProposedClose    = "proposed_close"
 	flagBehaviourChanged = "behaviour_changed"
+	// flagOwnerKept holds the fixed cases that differ from Loki on equal data and name, in owner_kept, the
+	// owner-kept deviations their answers are subject to. They stay differences, listed with the deviations;
+	// they are never passed, and never counted as regressions.
+	flagOwnerKept = "differs_owner_kept"
 	// flagStaleRegression holds the cases that differ on a proxy built from another commit than the one measured.
 	flagStaleRegression = "differs_on_stale_proxy"
 )
 
 // Result is one case's verdict.
 type Result struct {
-	Verdict       string       `json:"verdict"`
-	GapStatus     string       `json:"gap_status,omitempty"`
-	Expected      string       `json:"expected"`
-	Flag          string       `json:"flag,omitempty"`
-	Reason        string       `json:"reason,omitempty"`
+	Verdict   string `json:"verdict"`
+	GapStatus string `json:"gap_status,omitempty"`
+	Expected  string `json:"expected"`
+	Flag      string `json:"flag,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	// Class is what a blocked case needs (see the class constants in probe.go).
+	Class         string       `json:"class,omitempty"`
 	Facets        []string     `json:"facets,omitempty"`
 	UnknownFields []string     `json:"unknown_fields,omitempty"`
 	LokiStatus    int          `json:"loki_status,omitempty"`
 	ProxyStatus   int          `json:"proxy_status,omitempty"`
 	Variant       string       `json:"variant,omitempty"`
+	OwnerKept     []string     `json:"owner_kept,omitempty"`
 	Data          []DataCheck  `json:"data,omitempty"`
 	Reuse         *Reuse       `json:"reuse,omitempty"`
 	Differences   []Difference `json:"differences,omitempty"`
@@ -389,18 +397,18 @@ func tolerance(p Probe) float64 {
 
 // Verify runs one probe.
 func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant string) (r Result) {
-	r = Result{GapStatus: p.Status, Expected: p.Expectation(), Variant: p.Variant}
+	r = Result{GapStatus: p.Status, Expected: p.Expectation(), Variant: p.Variant, OwnerKept: p.OwnerKept}
 	switch {
 	case p.NotExecutable != "":
 		r.Verdict, r.Reason = verdictNotExecutable, p.NotExecutable
 		return r
 	case p.Blocked != "":
-		r.Verdict, r.Reason = verdictBlocked, p.Blocked
+		r.Verdict, r.Reason, r.Class = verdictBlocked, p.Blocked, p.BlockedClass
 		return r
 	}
 	q, why := p.Query(now)
 	if why != "" {
-		r.Verdict, r.Reason = verdictBlocked, why
+		r.Verdict, r.Reason, r.Class = verdictBlocked, why, classPlaceholder
 		return r
 	}
 	headers := map[string]string{}
@@ -443,11 +451,11 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 		}
 		r.LokiStatus, r.ProxyStatus = loki.Status, proxy.Status
 		if blocked := unusable("Loki", loki) + unusable("the proxy", proxy); blocked != "" {
-			r.Verdict, r.Reason, r.Differences = verdictBlocked, strings.TrimSuffix(blocked, "; "), nil
+			r.Verdict, r.Reason, r.Differences, r.Class = verdictBlocked, strings.TrimSuffix(blocked, "; "), nil, classNoAnswer
 			return r
 		}
 		if !statusIntent(p) && loki.Status >= 500 {
-			r.Verdict, r.Reason = verdictBlocked, fmt.Sprintf("Loki answered %d", loki.Status)
+			r.Verdict, r.Reason, r.Class = verdictBlocked, fmt.Sprintf("Loki answered %d", loki.Status), classLokiError
 			if proxy.Status >= 500 {
 				r.Verdict = verdictBothFail
 				r.Reason += fmt.Sprintf(" and the proxy %d", proxy.Status)
@@ -461,16 +469,21 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 		// The data precheck, once: an answer is compared only on equal, non-empty data.
 		if !checked && needsData(r.Facets, loki) {
 			checked = true
-			if verdict, why := precheck(&r, p, q, cnt, now, headers["X-Scope-OrgID"], tenant); verdict != "" {
-				r.Verdict, r.Reason = verdict, why
+			if dataVerdict(&r, p, q, cnt, now, headers["X-Scope-OrgID"], tenant, loki) {
 				return r
 			}
 		}
 		r.Differences = CompareWith(r.Facets, loki, proxy, opts)
+		if why := lokiCachedStale(r.Differences, loki, proxy); why != "" {
+			r.Verdict, r.Reason, r.Differences = verdictCachedStale, why, nil
+			return r
+		}
 		if len(r.Differences) == 0 {
-			if Vacuous(r.Facets, loki, proxy) {
-				r.Verdict, r.Reason = verdictBlocked, "both answers are empty: nothing is proven"
-				return r
+			if vacuous, blocked := settleVacuous(&r, p, loki, proxy, func() string { return controlFailure(p, r.Facets, src, now, headers, req.Variant) }); vacuous {
+				if blocked {
+					return r
+				}
+				break
 			}
 			r.Verdict = verdictMatches
 			if attempt == 2 {
@@ -484,11 +497,100 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 	return r
 }
 
+// dataVerdict runs the data precheck and the health check of Loki's index; true when the data does not allow a
+// comparison (the verdict is set).
+func dataVerdict(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, caseTenant, tenant string, loki Answer) bool {
+	if verdict, why := precheck(r, p, q, cnt, now, caseTenant, tenant); verdict != "" {
+		r.Verdict, r.Reason = verdict, why
+		if verdict == verdictBlocked {
+			r.Class = classNoAnswer
+		}
+		return true
+	}
+	if why := lokiIndexBehind(p, *r, loki); why != "" {
+		r.Verdict, r.Reason = verdictNotComparable, why
+		return true
+	}
+	return false
+}
+
+// settleVacuous sets the verdict of two answers that agree on nothing but being empty: a match where the case says an
+// empty answer is the answer (a fixed case, never an open one), else blocked, saying which fields the runner does
+// not read when the case names some.
+func settleVacuous(r *Result, p Probe, loki, proxy Answer, control func() string) (vacuous, blocked bool) {
+	if !Vacuous(r.Facets, loki, proxy) {
+		return false, false
+	}
+	if p.Control != nil {
+		if why := control(); why != "" {
+			r.Verdict, r.Reason, r.Class = verdictBlocked, "both answers are empty and the control query does not prove the data: "+why, classEmptyAnswer
+			return true, true
+		}
+		r.Verdict, r.Reason = verdictMatches, "both answers are empty, and the control query returns data on both sides: the data is there"
+		return true, false
+	}
+	if p.EmptyIsAnswer != "" && r.Expected == "match" {
+		r.Verdict, r.Reason = verdictMatches, "both answers are empty by design: "+p.EmptyIsAnswer
+		return true, false
+	}
+	r.Verdict, r.Reason, r.Class = verdictBlocked, "both answers are empty: nothing is proven", classEmptyAnswer
+	if len(r.UnknownFields) > 0 {
+		r.Reason = fmt.Sprintf("both answers are empty on what the runner reads; it does not read %s", strings.Join(r.UnknownFields, ", "))
+		r.Class = classUnreadFields
+	}
+	return true, true
+}
+
+// controlID is the id the control request of a case is recorded under.
+func controlID(id string) string { return id + "#control" }
+
+// controlFailure asks the case's control request of both sides: "" when each answers data on the facets the case
+// compares, else why the control proves nothing. The control is asked once; its answers are not compared.
+func controlFailure(p Probe, facets []string, src Source, now time.Time, headers map[string]string, variant string) string {
+	cp := p.withParams(p.Control)
+	q, why := cp.Query(now)
+	if why != "" {
+		return why
+	}
+	req := Request{Method: p.Method, Path: p.Path, Query: q.Encode(), Headers: headers, Variant: variant}
+	for _, side := range []string{"loki", "proxy"} {
+		a := src.Ask(side, controlID(p.ID), 1, req)
+		name := map[string]string{"loki": "Loki", "proxy": "the proxy"}[side]
+		switch {
+		case unusable(name, a) != "":
+			return strings.TrimSuffix(unusable(name, a), "; ")
+		case !a.OK():
+			return fmt.Sprintf("%s answered %d", name, a.Status)
+		case Vacuous(facets, a, a):
+			return name + " answers nothing to it"
+		}
+	}
+	return ""
+}
+
 func meterAfter(meter Meter, p Probe, measured bool) (Snapshot, bool) {
 	if !measured {
 		return nil, false
 	}
 	return meter.Measure(p.ID, p.Variant, "cold_after")
+}
+
+// lokiIndexBehind is why Loki's /index/stats answer cannot be compared: it counts the chunks of its store, and
+// those it has not flushed yet are missing, so its entries fall below its own count_over_time of the same window
+// (which the precheck proved equal to VictoriaLogs'). A Loki that is not caught up with its own data says nothing
+// about the proxy; both sides must be healthy before they are compared. Entries above the count are not that:
+// Loki counts every chunk that overlaps the window, so a flushed Loki reads above it at the window's edges.
+func lokiIndexBehind(p Probe, r Result, loki Answer) string {
+	if p.Path != indexStatsPath || len(r.Data) != 1 || r.Data[0].Loki == nil || !loki.OK() {
+		return ""
+	}
+	var doc struct {
+		Entries float64 `json:"entries"`
+	}
+	if json.Unmarshal([]byte(loki.Body), &doc) != nil || doc.Entries >= r.Data[0].Loki.Count {
+		return ""
+	}
+	return fmt.Sprintf("Loki's index/stats counts %.0f entries, below its own count_over_time of the window (%.0f): its index has not caught up with its data", doc.Entries, r.Data[0].Loki.Count)
 }
 
 // notComparable is why two answers cannot be compared at all: Loki's own answer carries warnings (a partial or
@@ -605,6 +707,8 @@ func unusable(side string, a Answer) string {
 
 func flagOf(r Result) string {
 	switch {
+	case r.Expected == "match" && r.Verdict == verdictDiffers && len(r.OwnerKept) > 0:
+		return flagOwnerKept
 	case r.Expected == "match" && r.Verdict == verdictDiffers:
 		return flagRegression
 	case r.Expected == "differ" && r.Verdict == verdictMatches:
@@ -636,7 +740,7 @@ type File struct {
 func Summarize(f *File) {
 	f.Reuse = SummarizeReuse(f.Cases)
 	f.Counts = map[string]int{}
-	f.Flags = map[string][]string{flagRegression: {}, flagProposedClose: {}, flagBehaviourChanged: {}}
+	f.Flags = map[string][]string{flagRegression: {}, flagOwnerKept: {}, flagProposedClose: {}, flagBehaviourChanged: {}}
 	for id, r := range f.Cases {
 		f.Counts[r.Verdict]++
 		if r.Flag != "" {
@@ -660,7 +764,7 @@ func Report(f File) string {
 		b.WriteString("The proxy's build is not known (no -proxy-revision): its verdicts are not tied to the commit.\n\n")
 	}
 	b.WriteString("Only `differs` is a difference of the proxy: its data was proven equal and non-empty on both sides. " +
-		"`data_differs`, `empty`, `loki_not_ready`, `not_comparable` and `data_unchecked` prove nothing about the proxy.\n\n")
+		"`data_differs`, `empty`, `loki_not_ready`, `loki_cached_stale`, `not_comparable` and `data_unchecked` prove nothing about the proxy.\n\n")
 	b.WriteString("| Verdict | Cases |\n|---|---|\n")
 	for _, v := range verdicts {
 		fmt.Fprintf(&b, "| %s | %d |\n", v, f.Counts[v])
@@ -693,6 +797,7 @@ func Report(f File) string {
 	}
 	sections := []struct{ flag, title string }{
 		{flagRegression, "Fixed cases (or cases without a gap) that differ from Loki on equal data"},
+		{flagOwnerKept, "Fixed cases that differ from Loki where an owner-kept deviation applies (listed with the deviations; not regressions, not passed)"},
 		{flagProposedClose, "Open cases that now match Loki (proposed close; the case file is not changed)"},
 		{flagBehaviourChanged, "Documented, owner-kept or upstream cases that now match Loki (behaviour changed)"},
 	}
@@ -706,6 +811,9 @@ func Report(f File) string {
 			}
 			r := f.Cases[id]
 			fmt.Fprintf(&b, "- `%s` (Loki %d, proxy %d, compared: %s)\n", id, r.LokiStatus, r.ProxyStatus, strings.Join(r.Facets, ", "))
+			if len(r.OwnerKept) > 0 {
+				fmt.Fprintf(&b, "  - subject to the owner-kept deviation(s): %s\n", strings.Join(r.OwnerKept, ", "))
+			}
 			for _, d := range r.Differences {
 				fmt.Fprintf(&b, "  - %s: Loki `%s`, proxy `%s`\n", d.Facet, oneLine(d.Loki, 200), oneLine(d.Proxy, 200))
 			}

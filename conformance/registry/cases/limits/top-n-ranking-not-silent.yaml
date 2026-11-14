@@ -27,6 +27,9 @@ request:
   precondition: |
     More distinct pods than -max-stats-query-series, with a pod that peaks in a
     few steps only.
+  verify:
+    blocked_by: volume
+    reason: "more distinct pods than -max-stats-query-series"
 compare:
   mode: exact
   fields: [status, data.resultType, 'data.result[].metric']

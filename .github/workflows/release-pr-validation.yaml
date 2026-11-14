@@ -1,8 +1,8 @@
 name: Release PR Validation
 
 # Scope guard for the pull requests the release bot opens: the release metadata
-# PR (release/metadata-v<version>) and the weekly performance PR
-# (bench/daily-perf). Both are opened with auto-merge armed, so a merge happens
+# PR (release/metadata-v<version>), the weekly performance PR
+# (bench/daily-perf) and the daily report PR (bench/daily-report). Both are opened with auto-merge armed, so a merge happens
 # right after the maintainer approves and the required checks pass. This check
 # makes sure those PRs carry only what the bot is supposed to write.
 #
@@ -72,6 +72,7 @@ jobs:
           fi
           case "${head_ref}" in
             bench/daily-perf) kind=perf ;;
+            bench/daily-report) kind=daily ;;
             release/metadata-v*) kind=metadata ;;
             *) echo "branch ${head_ref} is not a release bot branch: nothing to check"; exit 0 ;;
           esac
@@ -94,6 +95,23 @@ jobs:
             fail "the pull request changes no files"
           fi
 
+          if [ "${kind}" = daily ]; then
+            # The daily report's commit is a plain git commit by the workflow, like the perf report's.
+            while IFS= read -r path; do
+              case "${path}" in
+                conformance/registry/generated/verification/*) ;;
+                bench/ab/history/daily-smoke/*) ;;
+                docs/ci-workflows.md) ;;
+                # The pages whose dated block states the verified numbers (test/dailyreport -docs).
+                README.md|docs/KNOWN_ISSUES.md|docs/real-window-compatibility-gaps.md) ;;
+                conformance/reports/verification.md|website/src/data/verification.json) ;;
+                *) fail "file outside the daily report: ${path}" ;;
+              esac
+            done <<<"${files}"
+            if [ "${failed}" != 0 ]; then exit 1; fi
+            echo "daily report pull request is in scope"
+            exit 0
+          fi
           if [ "${kind}" = perf ]; then
             # The daily commit is a plain git commit by the workflow, so it is not
             # signed. The squash merge creates and signs the commit that lands on
@@ -102,6 +120,9 @@ jobs:
               case "${path}" in
                 bench/ab/results/*|bench/ab/history/*) ;;
                 conformance/registry/generated/perf-evidence.json) ;;
+                # The weekly full run's history and trend (perf-daily.yaml, weekly-summary).
+                conformance/registry/generated/verification/weekly-history.jsonl) ;;
+                conformance/registry/generated/verification/weekly-trend.md) ;;
                 conformance/reports/performance.md|conformance/reports/gaps.md) ;;
                 *) fail "file outside the daily performance report: ${path}" ;;
               esac

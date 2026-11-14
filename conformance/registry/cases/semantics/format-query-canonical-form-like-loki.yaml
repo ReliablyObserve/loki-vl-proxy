@@ -1,0 +1,42 @@
+id: semantics/format-query-canonical-form-like-loki
+title: "format_query answers a query it can parse with the query in Loki's canonical form (open, the proxy echoes it)"
+pending: true
+proves:
+  - loki_api_v1_format_query
+consumer: api
+why: |
+  Split from semantics/error-request-validation-parity, whose own request
+  (`step=0` on query_range) probes the parameter-validation half that is fixed.
+
+  Loki's format_query parses its query and answers the formatted text; the
+  proxy parses it for the error half (semantics/format-query-parse-like-loki)
+  and answers a query it accepts with the text it was sent. A query written
+  with extra spaces and a trailing one (the corpus text of
+  semantics/detected-fields-no-logfmt-token-fields, so no new corpus row)
+  is the probe: the
+  difference shows when the two answers' `data` differ. Loki's exact text is
+  not recorded in the repository yet; this case compares the proxy with the
+  stack's Loki, live, and the answer is to be recorded (a 200 row of
+  internal/lokierr/testdata/loki_error_answers.jsonl is an error corpus, so it
+  holds none) when this case is closed.
+request:
+  method: GET
+  path: /loki/api/v1/format_query
+  params:
+    query: '{service_name="api-gateway"} | detected_level="error"    | json  | logfmt | drop __error__, __error_details__ '
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, headers, body]
+  expect: |
+    Loki's status, Content-Type and the formatted query in `data`.
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: 'internal/proxy/patterns.go handleFormatQuery (answers the query as sent)'
+  loki: 'the stack Loki answers the formatted query; to be recorded'
+  proxy: '200 with the query echoed as sent'
+  planned_test: 'TestLokiFormatQuery (internal/proxy) once Loki''s formatted text is recorded'
+  clusters: []

@@ -338,3 +338,20 @@ class RankedMaxPointsTest(unittest.TestCase):
                 ("topk(5, x)", 3600, 0, False, None)):
             with self.subTest(query=query, secs=secs, step=step):
                 self.assertEqual(perf_matrix.ranked_max_points(query, secs, step, instant), want)
+
+
+class ReuseCarriedTest(unittest.TestCase):
+    def test_cold_repeat_and_refresh_reuse_reach_the_summary_row(self):
+        raw = timed({"main": (1, 1), "branch": (1, 1), "loki": (1, 1)})
+        for r in raw["rows"]:
+            if r["target"] == "branch":
+                r["reuse"] = {"vl_calls": 2} if r["run"] == 0 else {"loki:l1_memory:requests": 1, "loki:l1_memory:hits": 1}
+        refresh = timed({"main": (1, 1), "branch": (1, 1), "loki": (1, 1)})
+        for r in refresh["rows"]:
+            if r["target"] == "branch":
+                r["reuse"] = {"vl_calls": 1}
+        row = summarize(raw, refresh)
+        self.assertEqual(row["reuse"]["branch"], {"cold": {"vl_calls": 2}, "repeat": {"loki:l1_memory:requests": 1, "loki:l1_memory:hits": 1},
+                                                  "refresh": {"vl_calls": 1}})
+        self.assertNotIn("main", row["reuse"])
+        self.assertNotIn("reuse", summarize(timed({"main": (1, 1), "branch": (1, 1), "loki": (1, 1)})))

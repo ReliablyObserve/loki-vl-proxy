@@ -33,6 +33,9 @@ request:
   precondition: |
     The window holds lines of the e2e generator, JSON and plain; no line holds
     a key the two parsers read differently.
+  verify:
+    met_by: stack
+    evidence: "The generator writes JSON services (api-gateway test/e2e-compat/log-generator.py:227, auth-service test/e2e-compat/log-generator.py:301) and logfmt and plain ones (payment-service test/e2e-compat/log-generator.py:240, nginx-ingress test/e2e-compat/log-generator.py:307) under env=production (test/e2e-compat/log-generator.py:672); none of its lines holds a key the two parsers read differently."
 compare:
   mode: exact
   fields: [status, series_labels, values, timestamps]

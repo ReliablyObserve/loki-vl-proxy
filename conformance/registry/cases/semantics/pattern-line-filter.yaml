@@ -45,6 +45,8 @@ request:
   headers:
     X-Scope-OrgID: "0"
     X-Loki-Response-Encoding-Flags: categorize-labels
+  verify:
+    empty_is_answer: "the empty pattern filter |> \"\" is answered like Loki, an empty result and no error"
 compare:
   mode: observed
   fields: [streams.values]

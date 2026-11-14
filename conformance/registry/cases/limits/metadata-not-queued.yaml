@@ -23,6 +23,9 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     Every admission slot is held and heavy queries are being refused with 429.
+  verify:
+    blocked_by: load
+    reason: "every admission slot held while heavy queries are refused with 429"
 compare:
   mode: exact
   fields: [status]

@@ -2,12 +2,15 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -87,8 +90,14 @@ func TestOrderedJSONVectorResponseCacheFencesOldCopies(t *testing.T) {
 		t.Run(setup.mode+"/tier0="+strconv.FormatBool(setup.tier0)+"/offset="+setup.offset.String()+"/addition="+strconv.FormatBool(setup.addition), func(t *testing.T) {
 			backend, fixture := newDLVBaselineBackend(t, shape, base)
 			p := newDLVBaselineProxy(t, backend.URL, setup.tier0)
+			// The hazard probe runs beside the foreign-level probe, whose verdict
+			// can end the pushdown before the hazard probe is answered.
+			origins := &vlCallOrigins{inner: p.client.Transport, hold: 30 * time.Millisecond, holdIf: func(query string) bool {
+				return strings.Contains(query, jsonLokiRejectHazard)
+			}}
+			p.client.Transport = origins
 			seen := map[string]bool{}
-			for _, identity := range []struct{ tenant, account, credential string }{{"team-a", "10", "alpha"}, {"team-b", "20", "alpha"}, {"team-a", "10", "beta"}} {
+			for n, identity := range []struct{ tenant, account, credential string }{{"team-a", "10", "alpha"}, {"team-b", "20", "alpha"}, {"team-a", "10", "beta"}} {
 				from, to := base.Add(time.Minute), base.Add(3*time.Minute)
 				query := `max(sum by(detected_level)(count_over_time({app="api"}|json|__error__=""[1m])))`
 				if setup.offset != 0 {
@@ -129,8 +138,11 @@ func TestOrderedJSONVectorResponseCacheFencesOldCopies(t *testing.T) {
 				}
 				store.SetLocalOnlyWithTTL(legacy, bad, 5*time.Minute)
 				before := fixture.calls.Load()
-				first := doCompatProxyRequest(p, target, headers)
-				if first.Code != 200 || bytes.Equal(first.Body.Bytes(), bad) || fixture.calls.Load() <= before {
+				// Each client request is tagged, so the calls made for it are
+				// counted apart from the ones an earlier request left in flight.
+				firstOrigin, repeatOrigin := "first-"+strconv.Itoa(n), "repeat-"+strconv.Itoa(n)
+				first := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, firstOrigin))
+				if first.Code != 200 || bytes.Equal(first.Body.Bytes(), bad) || fixture.calls.Load() <= before || origins.made(firstOrigin) == 0 {
 					t.Fatalf("old reply bypassed evaluator: status=%d body=%s", first.Code, first.Body)
 				}
 				var response struct {
@@ -192,13 +204,121 @@ func TestOrderedJSONVectorResponseCacheFencesOldCopies(t *testing.T) {
 				if stored, _, ok := store.GetWithTTL(key); !ok || !bytes.Equal(stripQueryStats(stored), first.Body.Bytes()) {
 					t.Fatal("correct new reply not retained under new identity")
 				}
-				before = fixture.calls.Load()
 				served := len(fixture.requestsSince(0))
-				second := doCompatProxyRequest(p, target, headers)
-				if second.Code != 200 || !bytes.Equal(second.Body.Bytes(), first.Body.Bytes()) || fixture.calls.Load() != before {
-					t.Fatalf("new exact reply not reused: first=%s second=%s backend calls %d -> %d: %q", first.Body, second.Body, before, fixture.calls.Load(), fixture.requestsSince(served))
+				// A probe the first request abandoned may be served while the
+				// repeat runs; it is the first request's call, not the repeat's.
+				origins.deliverAbandoned()
+				second := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, repeatOrigin))
+				if second.Code != 200 || !bytes.Equal(second.Body.Bytes(), first.Body.Bytes()) || origins.made(repeatOrigin) != 0 {
+					t.Fatalf("new exact reply not reused: first=%s second=%s repeat made %d backend calls; backend served since the first: %q", first.Body, second.Body, origins.made(repeatOrigin), fixture.requestsSince(served))
 				}
+				if !setup.tier0 {
+					// The control: with the one copy gone, the same count sees the
+					// request evaluated again.
+					store.Invalidate(key)
+					control := "control-" + strconv.Itoa(n)
+					third := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, control))
+					if third.Code != 200 || !bytes.Equal(third.Body.Bytes(), first.Body.Bytes()) || origins.made(control) == 0 {
+						t.Fatalf("evaluated again: status=%d body=%s backend calls %d", third.Code, third.Body, origins.made(control))
+					}
+				}
+			}
+			if untagged := origins.made(""); untagged != 0 {
+				t.Fatalf("%d backend calls were made for no client request", untagged)
 			}
 		})
 	}
+}
+
+// vlCallOriginHeader names, on a client request of a test, which request it
+// is; vlCallOrigins reads it back from the VictoriaLogs calls the proxy makes
+// for that request.
+const vlCallOriginHeader = "X-Test-Request-Seq"
+
+// vlCallOrigins counts the VictoriaLogs calls the proxy makes per client
+// request, by the vlCallOriginHeader of the request each call is made for, so
+// a call that reaches the backend after its own request has answered is not
+// charged to the next one. With hold set, a call holdIf picks that its request
+// gives up on within hold is kept and delivered by
+// deliverAbandoned: a probe already written to the connection when it is
+// cancelled is still read and served by the backend, possibly after the
+// response that abandoned it.
+type vlCallOrigins struct {
+	inner     http.RoundTripper
+	hold      time.Duration
+	holdIf    func(query string) bool
+	mu        sync.Mutex
+	calls     map[string]int
+	abandoned []*http.Request
+}
+
+func (o *vlCallOrigins) RoundTrip(req *http.Request) (*http.Response, error) {
+	origin := ""
+	if original, ok := req.Context().Value(origRequestKey).(*http.Request); ok && original != nil {
+		origin = original.Header.Get(vlCallOriginHeader)
+	}
+	o.mu.Lock()
+	if o.calls == nil {
+		o.calls = map[string]int{}
+	}
+	o.calls[origin]++
+	o.mu.Unlock()
+	if o.hold <= 0 || req.GetBody == nil {
+		return o.inner.RoundTrip(req)
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return nil, err
+	}
+	raw, _ := io.ReadAll(body)
+	form, _ := url.ParseQuery(string(raw))
+	if o.holdIf == nil || !o.holdIf(form.Get("query")) {
+		return o.inner.RoundTrip(req)
+	}
+	timer := time.NewTimer(o.hold)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return o.inner.RoundTrip(req)
+	case <-req.Context().Done():
+		late := req.Clone(context.WithoutCancel(req.Context()))
+		late.Body, _ = req.GetBody()
+		o.mu.Lock()
+		o.abandoned = append(o.abandoned, late)
+		o.mu.Unlock()
+		return nil, context.Cause(req.Context())
+	}
+}
+
+// deliverAbandoned has the backend serve the probes their requests gave up
+// on, and reports how many there were.
+func (o *vlCallOrigins) deliverAbandoned() int {
+	o.mu.Lock()
+	late := o.abandoned
+	o.abandoned = nil
+	o.mu.Unlock()
+	for _, req := range late {
+		if resp, err := o.inner.RoundTrip(req); err == nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}
+	}
+	return len(late)
+}
+
+// withHeader is headers with name set to value, headers left as they were.
+func withHeader(headers map[string]string, name, value string) map[string]string {
+	out := make(map[string]string, len(headers)+1)
+	for key, v := range headers {
+		out[key] = v
+	}
+	out[name] = value
+	return out
+}
+
+// made is the calls made for the client request tagged origin.
+func (o *vlCallOrigins) made(origin string) int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.calls[origin]
 }

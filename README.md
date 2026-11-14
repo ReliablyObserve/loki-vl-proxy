@@ -19,8 +19,8 @@
 [![Helm Chart Pulls](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/ghcr-chart-pulls.json)](https://github.com/ReliablyObserve/Loki-VL-proxy/pkgs/container/charts%2Floki-vl-proxy)
 [![Source Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-code.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Test Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-tests.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-51470%20passed-brightgreen)](#tests)
-[![Coverage](https://img.shields.io/badge/coverage-91.6%25-brightgreen)](#tests)
+[![Tests](https://img.shields.io/badge/tests-52353%20passed-brightgreen)](#tests)
+[![Coverage](https://img.shields.io/badge/coverage-91.8%25-brightgreen)](#tests)
 [![LogQL Compatibility](https://img.shields.io/badge/LogQL%20compatibility-tested-blue)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
@@ -55,6 +55,12 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 - **Proxy intelligence built in.** Disk-backed label cache with keep-warm loop, full-range metadata on the first response, time-bucketed keys, adaptive parallelism, circuit breaker, rate limits, tenant isolation. Fleet restart safety: jitter + peer-first warmup keeps rolling restarts from thundering VL. One ~14 MB static binary.
 
 ## Quality and performance vs Loki (current)
+
+<!-- verified-numbers:start -->
+
+The numbers on this page are not verified by a live run yet: the daily report (`.github/workflows/daily-report.yaml`) has recorded no run on `main`.
+
+<!-- verified-numbers:end -->
 
 <!-- quality-summary:start -->
 
@@ -177,8 +183,8 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 10 proven, 21 partial, 3 gaps |
-| Known differences from Loki (ranked) | **155**: 130 open, 15 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **75 of 130**: 61 Explore, 13 Logs Drilldown, 1 Grafana datasource; 20 API only, 35 edge cases |
+| Known differences from Loki (ranked) | **157**: 132 open, 15 documented, 7 owner-kept, 3 upstream |
+| Open differences visible in Grafana (registry impact) | **75 of 132**: 61 Explore, 13 Logs Drilldown, 1 Grafana datasource; 22 API only, 35 edge cases |
 
 **Readiness by client**
 
@@ -189,7 +195,7 @@ The Loki endpoints each client calls (registry `consumers`), with the same evide
 | Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 61 |
 | Logs Drilldown | 11 | 11 (100%) | 11 (100%) | 9 (82%) | 13 |
 | Grafana Loki datasource | 6 | 6 (100%) | 6 (100%) | 4 (67%) | 1 |
-| Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 20 |
+| Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 22 |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 

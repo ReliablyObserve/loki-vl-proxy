@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`,
+  `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep` now read Loki's series on
+  `query` and on `query_range` with the range up to the step: the stream plus every parsed label except the unwrapped
+  one. Lines that share those labels are one series whatever their values, and a line with a label of its own (a
+  request id) is a series of its own. The proxy read one series per stream, per line or per group instead, so for
+  example `sum by (app) (stdvar_over_time({app="api"} | json | unwrap duration_ms [5m]))` answered the variance of the
+  app's pooled samples and `sum(stddev_over_time(...))` disagreed between `query` and `query_range`. VictoriaLogs now
+  groups the stats by a hash of the stream and each line's parsed labels and aggregates the series itself, so an
+  instant query reads one stats answer instead of every row of the window. A range longer than the step,
+  `quantile_over_time`, `rate_counter` and a label filter between the parser and the unwrap keep their previous
+  series (`semantics/unwrap-per-series-identity-raw-rows`, `semantics/unwrap-per-series-identity-label-filter`).
+
+## [2.260.1] - 2026-11-14
+
+### Fixed
+- Identical `query_range` metric requests that arrive together now share the VictoriaLogs reads of their stats
+  buckets: the buckets not cached yet are read once for all of them, per tenant, instead of once per request.
+
+## [2.260.0] - 2026-11-14
+
+### Fixed
+
 - **Breaking:** when VictoriaLogs refuses the query the proxy wrote for a request it has already checked as Loki does,
   the client now gets `500 Internal Server Error`, what Loki answers when its storage fails. It got
   `400 failed to parse the log query`, which said the user's query was wrong when Loki accepts it. Requests that
@@ -31,19 +53,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or latest one of each window, for a series a `| keep` decides, a stream without a parser and the labels of a
   grouping, under `sum`, `avg`, `min`, `max`, `count`, `topk`, a binary operation or an offset. A series per line
   (a parser with no keep) still reads the step.
-- Identical `query_range` metric requests that arrive together now share the VictoriaLogs reads of their stats
-  buckets: the buckets not cached yet are read once for all of them, per tenant, instead of once per request.
-- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`,
-  `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep` now read Loki's series on
-  `query` and on `query_range` with the range up to the step: the stream plus every parsed label except the unwrapped
-  one. Lines that share those labels are one series whatever their values, and a line with a label of its own (a
-  request id) is a series of its own. The proxy read one series per stream, per line or per group instead, so for
-  example `sum by (app) (stdvar_over_time({app="api"} | json | unwrap duration_ms [5m]))` answered the variance of the
-  app's pooled samples and `sum(stddev_over_time(...))` disagreed between `query` and `query_range`. VictoriaLogs now
-  groups the stats by a hash of the stream and each line's parsed labels and aggregates the series itself, so an
-  instant query reads one stats answer instead of every row of the window. A range longer than the step,
-  `quantile_over_time`, `rate_counter` and a label filter between the parser and the unwrap keep their previous
-  series (`semantics/unwrap-per-series-identity-raw-rows`, `semantics/unwrap-per-series-identity-label-filter`).
 
 ## [2.250.0] - 2026-11-14
 

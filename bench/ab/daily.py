@@ -36,6 +36,11 @@ fresh runner and opens a bot pull request with what it writes:
 
   python3 bench/ab/daily.py --out /tmp/ab-daily                 # everything
   python3 bench/ab/daily.py --out /tmp/ab-daily --sets control --max-range 3h --runs 3 --no-write
+  python3 bench/ab/daily.py --out /tmp/ab-smoke --smoke         # the daily report's perf smoke (smoke.py)
+
+--smoke measures the main shapes of every set at 1h and 6h (bench/ab/smoke.py), three runs each, and writes only
+its own history (bench/ab/history/daily-smoke/) and <out>/smoke.json and smoke.md: results/, the weekly history,
+its trend, ratchet and above-2x list, and every report and README section are left alone.
 
 Both Loki profiles run on the one seeded stack (stack.PROFILES; pr_smoke.py has the
 rules): Loki is recreated between them on the same data and every build restarts with the
@@ -60,6 +65,7 @@ sys.path.insert(0, HERE)
 import history  # noqa: E402
 import over2x  # noqa: E402
 import pr_smoke  # noqa: E402
+import smoke  # noqa: E402
 import stack  # noqa: E402
 
 ROOT = stack.ROOT
@@ -80,8 +86,9 @@ def main():
     ap.add_argument("--out", required=True, help="scratch directory for raw rows, logs and binaries")
     ap.add_argument("--baseline-ref", default="", help="default: newest v* tag reachable from HEAD")
     ap.add_argument("--sets", default="", help="comma-separated sets (default: all)")
-    ap.add_argument("--max-range", default=history.FULL_MAX_RANGE)
-    ap.add_argument("--runs", type=int, default=history.FULL_RUNS)
+    ap.add_argument("--max-range", default=None, help=f"default {history.FULL_MAX_RANGE} ({smoke.MAX_RANGE} with --smoke)")
+    ap.add_argument("--runs", type=int, default=None, help=f"default {history.FULL_RUNS} ({smoke.RUNS} with --smoke)")
+    ap.add_argument("--smoke", action="store_true", help="the daily perf smoke (smoke.py): main shapes, 1h and 6h")
     ap.add_argument("--long-runs", type=int, default=3, help="runs of ranges >= 24h for the baseline build")
     ap.add_argument("--noise", type=float, default=0.25)
     ap.add_argument("--min-delta", type=float, default=0.05)
@@ -96,6 +103,10 @@ def main():
     ap.add_argument("--keep-stack", action="store_true")
     stack.stack_args(ap, profile=False)
     args = ap.parse_args()
+    if args.max_range is None:
+        args.max_range = smoke.MAX_RANGE if args.smoke else history.FULL_MAX_RANGE
+    if args.runs is None:
+        args.runs = smoke.RUNS if args.smoke else history.FULL_RUNS
     out = os.path.abspath(args.out)
     os.makedirs(out, exist_ok=True)
     t0 = time.time()
@@ -109,6 +120,10 @@ def main():
     range_defs = spec["ranges"]
     max_secs = range_defs[args.max_range][0]
     sets = [s for s in args.sets.split(",") if s] or list(spec["sets"])
+    # The smoke's shapes and ranges per set; a set with neither of its ranges is the weekly run's alone.
+    smoke_plan = smoke.plan(spec) if args.smoke else {}
+    if args.smoke:
+        sets = [s for s in sets if s in smoke_plan]
     baseline = args.baseline_ref or pr_smoke.git("describe", "--tags", "--abbrev=0", "--match", "v*", "HEAD")
     head = pr_smoke.git("rev-parse", "HEAD")
     stack.log(f"daily: {baseline} vs main {head[:10]} vs Loki; sets {sets}; ranges up to {args.max_range}")
@@ -127,7 +142,8 @@ def main():
         # Planned from source (the seed does not depend on it, the order of the profiles does); the built
         # binaries' probe decides what runs.
         planned = (pr_smoke.source_supports_align(None) or pr_smoke.source_supports_align(baseline))
-        every = {name: [sh["name"] for sh in spec["sets"][name]["shapes"]] for name in sets}
+        every = {name: (smoke_plan[name][0] if args.smoke else [sh["name"] for sh in spec["sets"][name]["shapes"]])
+                 for name in sets}
         runs, skipped = pr_smoke.plan_profiles(args.profiles, {"sets": every}, spec, planned)
         profiles = pr_smoke.execution_order(runs)
         if profiles:
@@ -160,12 +176,14 @@ def main():
                                      "not_like_for_like": unlike}
             targets = [("release", here[0].url), ("main", here[1].url), ("loki", st.loki)]
             for _, set_name, names in (r for r in runs if r[0] == profile):
-                ranges = [r for r in spec["sets"][set_name]["ranges"] if range_defs[r][0] <= max_secs]
+                ranges = [r for r in (smoke_plan[set_name][1] if args.smoke else spec["sets"][set_name]["ranges"])
+                          if range_defs[r][0] <= max_secs]
                 if not ranges:
                     stack.log(f"skipping set {set_name}: no range up to {args.max_range}")
                     continue
                 summary = pr_smoke.run_matrix(set_name, names, targets, args, end, st, out, args.runs, ranges=ranges,
-                                              label="daily", extra=["--long-runs", f"release={args.long_runs}"],
+                                              label="daily-smoke" if args.smoke else "daily",
+                                              extra=["--long-runs", f"release={args.long_runs}", "--proxy-metrics"],
                                               profile=profile, unlike=unlike)
                 summary["baseline_ref"], summary["commit"] = baseline, head
                 summary["measured_at"], summary["date"] = measured_at, measured_at[:10]
@@ -197,6 +215,11 @@ def main():
         # of results and history, fail the job so the next day retries.
         stack.log("run invalid (VictoriaLogs restarted); nothing written")
         return 2
+    if args.smoke:
+        verdict = smoke.write(summaries, out, measured_at[:10], head)
+        stack.log(f"smoke: {verdict['rows']} rows, {len(verdict['over_2x'])} above 2x Loki, "
+                  f"{len(verdict['ratchet_lost'])} ratchet rows lost; history in {smoke.DIRECTORY}")
+        return 0
     written = []
     # results/ is what the README and the reports show, and they state one run: only a full run of every set
     # replaces it. A run of some sets, or a cut-down one, still enters the history (judged if it is a full

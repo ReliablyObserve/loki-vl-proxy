@@ -402,6 +402,9 @@
     "semantics/first-last-over-time-translation | compare:observed",
     "semantics/first-last-over-time-translation | gap:fixed",
     "semantics/first-last-over-time-translation | query",
+    "semantics/format-query-canonical-form-like-loki | compare:exact",
+    "semantics/format-query-canonical-form-like-loki | gap:open",
+    "semantics/format-query-canonical-form-like-loki | query",
     "semantics/format-query-parse-like-loki | compare:exact",
     "semantics/format-query-parse-like-loki | gap:fixed",
     "semantics/format-query-parse-like-loki | query",
@@ -735,6 +738,8 @@
     "semantics/router-unknown-paths-and-redirects-like-loki | gap:fixed",
     "semantics/ruler-empty-list-status | compare:observed",
     "semantics/ruler-empty-list-status | gap:open",
+    "semantics/ruler-rules-unknown-type-like-loki | compare:exact",
+    "semantics/ruler-rules-unknown-type-like-loki | gap:open",
     "semantics/ruler-store-failure-status | compare:observed",
     "semantics/ruler-store-failure-status | gap:owner-kept",
     "semantics/scalar-sample-time-units | compare:observed",
@@ -2428,6 +2433,8 @@
     "test/e2e-compat/logql_whitespace_test.go | semantics/range-duration-grammar-wider-than-loki",
     "test/e2e-compat/logql_whitespace_test.go | semantics/stage-after-unwrap-accepted",
     "test/e2e-compat/logql_whitespace_test.go | semantics/unwrap-in-log-query",
+    "test/e2e-compat/loki_metric_probe_window_test.go | semantics/query-range-step-alignment",
+    "test/e2e-compat/loki_metric_probe_window_test.go | semantics/reserved-field-name-case-outbound",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-name-parse-error",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-names-accepted-outside-loki-profile",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/label-browse-params-ignored",
@@ -2678,14 +2685,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 93,
+      "api": 95,
       "drilldown": 50,
       "explore": 185,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 602,
+      "go": 603,
       "playwright": 1
     },
     "page_kinds": {
@@ -2704,7 +2711,7 @@
     },
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
-    "unwired_items": 103,
+    "unwired_items": 105,
     "wired_items": 359
   },
   "gates": [
@@ -2724,6 +2731,7 @@
     "registry wiring",
     "score ratchet",
     "semantic comparison ownership",
+    "verified numbers",
     "visual-smoke entry selection"
   ],
   "pages": [

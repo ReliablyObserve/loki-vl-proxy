@@ -114,6 +114,17 @@ case's step), so both sides get the same bytes and no window reads data still
 arriving. A case compares the facets its `compare.fields` name (or its mode's
 default), and always the HTTP status; a difference is asked again before it is
 reported.
+Each field name reads only its own part of an answer: `timestamps` the sample or entry
+timestamps (never the values at them), `structured_metadata_keys` the keys of the structured
+metadata (never their values), `fields.label`, `fields.parsers`, `fields.type` and `limit` the
+parts of a detected_fields answer, `detectedLabels.cardinality` the cardinalities, and on
+`/index/stats` `streams`, `entries`, `bytes` and `chunks` the one number each names. A table
+test (`TestEveryFacetReadsOnlyWhatItNames`) pins that a change elsewhere in the answer is not a
+difference of the facet.
+`ranked_values` compares a `topk` or `bottomk` answer where Loki's choice among series tied at the cutoff is
+its Go map order: per grouping key of by()/without(), the ranked values of every step must equal
+(`test/metricparity.RankedValuesDifference`) and every series ranked strictly above the cutoff of a full step must
+be in both answers with the same value; only the series tied at the cutoff may differ.
 
 No answer is compared on data that is not proven equal. Before a comparison
 that reads data, the case's stream selectors (every stream for a request without
@@ -121,9 +132,15 @@ a query) are counted over its window on Loki (`sum(count_over_time(...))`) and o
 VictoriaLogs (`-vl`, the same matchers as field filters and `stats count()`).
 Unequal counts are `data_differs`, no line on either side `empty`, no answer from
 Loki's metric path while VictoriaLogs holds the lines `loki_not_ready`, a Loki
+answer assembled from reused results-cache extents (`stats.cache.result.entriesFound` above zero) that holds the
+same series as the proxy's but fewer of their entries or samples `loki_cached_stale` (an earlier run asked an
+overlapping window before the data existed; Loki ignores no-cache headers and aligns a window to its step, so the
+request cannot be made unique per run without changing what the case asks), a Loki
 answer with warnings or a stale proxy answer `not_comparable`, and no count at
 all `data_unchecked`; none of them is a difference of the proxy. Every count is
 recorded with the answers, so `-replay` needs no stack. The recording's first line holds the settled end every window was resolved against and the proxy build, so a replay at any later time gives the live run's verdicts.
+
+A case whose error text names a series Loki picks anew on every identical request (`pipeline error: '...' for series: '{...}'`) may set `compare.values.mask_error_series: true`: the labels inside the braces are masked on both sides and the rest of the text compares exactly.
 
 Log entries compare as Loki defines their equality: per stream, ordered by timestamp with ties ordered by line. An answer that reaches its line limit is compared up to the timestamp both sides hold whole (the timestamp the limit cut at may hold any of its lines), and a patterns answer without its first and last sample buckets. `-proxy-revision` (and `-proxy-image`) record the proxy's build: a revision other than `-commit` marks the run stale and lists its differences apart, never as regressions; `-require-current-proxy` refuses such a run.
 
@@ -136,11 +153,70 @@ the counters are recorded, so a replay gives the same reuse verdicts. Not measur
 allocations per request, plan and translation cache hits, the reuse of proxy-evaluated operators, and a per-request
 attribution of the counters (background work counts too). `-no-reuse` skips the repeats. A case whose request
 names `proxy_flags` runs against the proxy variant of `-variants` that has them
-(`[{"name","url","flags"}]`), or is blocked. Each verdict is set against the case's `gap.status`: a fixed case (or
+(`[{"name","url","flags"}]`), or is blocked. A flag may be named off (`-label-values-indexed-cache=false`): a proxy that lists it as false, or does not list a flag that defaults to off, has it. When several variants have the flags, the `underscore` variant (the Loki-compatible profile without the main proxy's browse-keeping index) is the one used. Each verdict is set against the case's `gap.status`: a fixed case (or
 one without a gap) that differs is a regression (`-check` exits 1), an open case
 that matches is a proposed close, and a documented, owner-kept or upstream case
 that matches has changed behaviour. The runner never edits a case file: a
 proposed close is closed by hand with its evidence.
+
+A case whose answers show an owner-kept deviation names it in `owner_kept` (a list of owner-kept case ids, for
+example `metric-identity/structured-metadata-splits-series`). A fixed case that differs from Loki on equal data and
+names one is reported as `differs_owner_kept` with the deviation, listed in the report and in `cases.json`, never
+passed and never counted as a regression; `-check` prints it and does not fail on it. A name that is not an owner-kept
+case blocks the case.
+
+A request the runner does not run says why in `request.verify`: `met_by: stack` with its `evidence` (the generator line
+or compose flag that meets the case's `precondition`, so the runner sends it); `blocked_by` one of `load`, `fault`,
+`volume`, `version`, `fixture`, `proxy_only`, `moved_window` or `write`, with a `reason`; or `empty_is_answer` for a
+fixed case whose point is that a query the proxy once mishandled is answered like Loki, with nothing and no error (two
+empty answers then match; never for an open case); or `control`, params laid over the request's own (the same
+query with the stage that exposes the key, say): when the case's answers are both empty, a control that returns data on
+both sides proves the data is there and the two empty answers match, whatever the case's state (the control's own answers
+are not compared; it is recorded as `<case>#control`). Every blocked verdict in `cases.json` and the report carries its
+class, so the daily report counts what is blocked by what it needs: also `websocket`, `grafana`, `placeholder_time`,
+`empty_answer`, `unread_fields`, `no_answer`, `loki_error` and `no_variant`. `-compose
+test/e2e-compat/docker-compose.yml` reads the proxy variants (URL by published port, flags by command) and the default
+proxy's flags from the stack's compose file; `-list` sends nothing and prints how many cases go to which proxy and which
+are blocked, by class. Redirects are answers, not followed. Loki's `/index/stats` counts flushed chunks only: an answer
+whose entries lag behind its own `count_over_time` of the window is `not_comparable`.
+
+### The daily report
+
+`.github/workflows/daily-report.yaml` runs every day on `main`: the per-case
+verdicts on a fresh e2e-compat stack for VictoriaLogs v1.49.0 and the pinned
+version, the recorded Loki error answers asked again (`test/errorrecord -check`)
+and replayed (`TestLokiErrorAnswersReplay`), a slice of the differential parity
+corpus, the perf smoke (`bench/ab/daily.py --smoke`) and the health of every
+scheduled workflow (`docs/ci-workflows.md`). `test/dailyreport` writes
+`registry/generated/verification/summary.json` (every number with the date,
+commit and versions it is verified on, and why the day is red) and `cases.json`
+(the verdicts of both versions), and the workflow delivers them, the smoke's
+history and the inventory's last-run columns through one rolling pull request
+on `bench/daily-report`. The grammar sweep and the Loki differentials are
+re-verified live by `query-corpus.yaml` each night; the report reads that run's
+result. The day is red when a fixed case differs from Loki, a recording drifted,
+a parity cluster is claimed by no case, a perf row is above 2x Loki or lost the
+weekly ratchet, a scheduled workflow is missing or red, or a job produced no
+result.
+
+### The weekly full run
+
+`.github/workflows/perf-daily.yaml` (Perf weekly) runs the full A/B on the
+pinned VictoriaLogs and, beside it, on both VictoriaLogs versions of the support
+policy: the per-case verdicts, the whole parity corpus (recorded, never pruned;
+`parity-refresh.yaml` is the run that prunes), the full-size grammar sweep with
+the live oracles, the full A/B on v1.49.0 (written nowhere, judged by
+`bench/ab/smoke.py judge`) and a `release.yaml` dry run. `test/dailyreport
+-weekly` appends the week's numbers to
+`registry/generated/verification/weekly-history.jsonl` and writes
+`weekly-trend.md`, every number over the last eight weeks, which the weekly pull
+request carries. The weekly run also holds the fleet cache proof of the pull
+request gate (three proxies, peer memory and disk fetches, disk loss and refill,
+an owner down, replication factors 1 and 2) and the cache reuse of the A/B on
+both versions (VictoriaLogs calls of the repeats, the rows that repeat without
+calling VictoriaLogs). The run is red when a weekly job fails, the release dry
+run does not succeed, the fleet proof fails, or the reuse dropped against the
+week before.
 
 ## Reporting what a change touches
 

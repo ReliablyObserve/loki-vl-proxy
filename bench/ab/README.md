@@ -564,6 +564,41 @@ list here.
 3. The pull request that adds it runs it (it is "added or edited"), and every
    later change to the code its items name runs it again.
 
+### The daily report's perf smoke
+
+`.github/workflows/daily-report.yaml` runs `daily.py --smoke` once a day on
+`main` (`smoke.py`): the first two shapes of every set (each set lists its
+headline shapes first) at 1h and 6h, three runs, cold and warm, under both Loki
+profiles, against the newest release and Loki, on a seeded window of about 6h.
+A set with neither range is left to the weekly run. Its history is kept apart:
+`history/daily-smoke/<set>[.<profile>].jsonl`, one line per set and profile per
+day in the format below. The weekly run, its trend, ratchet and above-2x list,
+`perf_evidence.py` and the README never read it.
+
+The smoke is red when a row is above 2x Loki (cold or warm, either profile,
+`over2x.judge`) or a row of the weekly ratchet (`history/ratchet.json`, read
+only) lost it: a different result or a new error at once, a cold run slower
+than Loki's computed cold on two smoke days (`history.ratchet_loss`). It writes
+`smoke.json` and `smoke.md`, which the daily report folds into its summary and
+pull request.
+
+Every run of `daily.py` (the smoke and the weekly run) reads each proxy's
+`/metrics` around each request (`perf_matrix.py --proxy-metrics`, `reuse.py`):
+VictoriaLogs calls, in all and per VictoriaLogs endpoint, and bytes, cache
+lookups and hits per semantic layer (`loki`, `vl`) and tier, CPU and
+translations. Summary rows carry them per target as `reuse`: the first run
+(cold), the median of the later runs (repeat: the window moved by a minute) and
+the refresh pass. The smoke keeps the candidate's reuse per row in
+`history/daily-smoke/reuse.jsonl` and is red when a row's repeat calls
+VictoriaLogs more often than the day before or a layer and tier's hit ratio fell
+by more than 0.1. Not measured yet, for want of a metric: allocations per
+request, plan and translation cache hits, the reuse of proxy-evaluated
+operators, and per-request attribution (background work counts too).
+
+```bash
+python3 bench/ab/daily.py --out /tmp/ab-smoke --smoke
+```
+
 ### Every day: the full run and its history
 
 `.github/workflows/perf-daily.yaml` runs `daily.py` at 03:17 UTC (and on

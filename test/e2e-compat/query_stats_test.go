@@ -406,7 +406,11 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 	ensureDataIngested(t)
 	// Loki's window count below needs Loki's range metrics, which a fresh stack answers empty for a few minutes.
 	waitForLokiMetricData(t)
-	end := time.Now().Add(-time.Minute).Truncate(time.Minute)
+	// The windows end on the fixture, not on the clock: the metric row's estimate prices the lines of its one-range
+	// lookback before the start, which no log row reads, at the log rows' mean (the documented lookback difference,
+	// pinned by TestLokiStats_MetricBytesUseTheQueriedWindow), so a 5m window that cuts the fixture compares that
+	// difference (39% on the fixture's short and long lines) with the 25% tolerance of the estimate.
+	end := queryStatsFixtureEnd(t)
 	nonce := fmt.Sprintf("qsl-%d", time.Now().UnixNano())
 	for _, rng := range []time.Duration{5 * time.Minute, time.Hour} {
 		start := end.Add(-rng)
@@ -554,6 +558,83 @@ func TestDrilldown_QueryStatsLikeLoki(t *testing.T) {
 	}
 }
 
+// queryStatsFixtureEnd is the end of TestDrilldown_QueryStatsLikeLoki's windows, placed on the lines of the
+// {app="api-gateway"} fixture (each setup's copy, written three minutes before it ran) in Loki's answer over the
+// last two hours (queryStatsWindowEnd). On a stream too dense for that (Loki's answer fills its limit, as with the
+// UI log generator on) or with no such minute, the windows end a minute before the clock as they did before.
+func queryStatsFixtureEnd(t *testing.T) time.Time {
+	t.Helper()
+	now := time.Now()
+	const limit = 5000
+	clockEnd := now.Add(-time.Minute).Truncate(time.Minute)
+	params := url.Values{"query": {`{app="api-gateway"} != "fixture-span-probe"`}, "start": {fmt.Sprint(now.Add(-2 * time.Hour).UnixNano())},
+		"end": {fmt.Sprint(now.UnixNano())}, "limit": {strconv.Itoa(limit)}, "direction": {"forward"}}
+	status, raw, _ := doJSONGET(t, lokiURL+"/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+	var a struct {
+		Data struct {
+			Result []struct {
+				Values [][2]string `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if status != http.StatusOK || json.Unmarshal([]byte(raw), &a) != nil {
+		t.Fatalf("fixture lines: %d %.300s", status, raw)
+	}
+	var lines []time.Time
+	for _, s := range a.Data.Result {
+		for _, v := range s.Values {
+			if ts, err := strconv.ParseInt(v[0], 10, 64); err == nil {
+				lines = append(lines, time.Unix(0, ts))
+			}
+		}
+	}
+	if len(lines) >= limit {
+		t.Logf("%d or more {app=\"api-gateway\"} lines: the windows end a minute before the clock, %s", limit, clockEnd.UTC())
+		return clockEnd
+	}
+	end, ok := queryStatsWindowEnd(lines, now)
+	// Copies about five minutes apart leave no such minute until the clock moves on by up to two minutes.
+	for deadline := now.Add(2 * time.Minute); !ok && len(lines) > 0 && time.Now().Before(deadline); {
+		time.Sleep(time.Until(time.Now().Truncate(time.Minute).Add(time.Minute + time.Second)))
+		end, ok = queryStatsWindowEnd(lines, time.Now())
+	}
+	if !ok {
+		t.Logf("no 5m window holds the newest of the %d {app=\"api-gateway\"} lines with none in its lookback minute: the windows end a minute before the clock, %s", len(lines), clockEnd.UTC())
+		return clockEnd
+	}
+	t.Logf("%d fixture lines, windows end %s", len(lines), end.UTC())
+	return end
+}
+
+// queryStatsWindowEnd is the first whole minute after the newest line, at most the minute before now, at which a
+// 5m window holds the newest line and its one-minute lookback (Loki's metric lookback of the [1m] row) none: the
+// lookback's lines are the ones no log row reads. False when there is no line or no such minute.
+func queryStatsWindowEnd(lines []time.Time, now time.Time) (time.Time, bool) {
+	var newest time.Time
+	for _, ts := range lines {
+		if ts.After(newest) {
+			newest = ts
+		}
+	}
+	if newest.IsZero() {
+		return time.Time{}, false
+	}
+	latest := now.Add(-time.Minute).Truncate(time.Minute)
+	for end := newest.Truncate(time.Minute).Add(time.Minute); !end.After(latest) && newest.After(end.Add(-5*time.Minute)); end = end.Add(time.Minute) {
+		clear := true
+		for _, ts := range lines {
+			if ts.After(end.Add(-6*time.Minute)) && !ts.After(end.Add(-5*time.Minute)) {
+				clear = false
+				break
+			}
+		}
+		if clear {
+			return end, true
+		}
+	}
+	return time.Time{}, false
+}
+
 // lokiLineBytes is the bytes of the selector's lines in (from, to], read from Loki's log answer; 0 when the answer
 // is cut at its limit, as it then does not hold every line. Its query adds a line filter no line matches, so it is
 // not the text of a measured row: Loki's results cache would otherwise answer the measured row as a repeat, whose
@@ -654,4 +735,70 @@ func vlSelectorLines(t *testing.T, filter string, from, to int64) int64 {
 		t.Fatal(err)
 	}
 	return n
+}
+
+// TestDrilldown_QueryStatsWindowHoldsTheFixture: the windows of
+// TestDrilldown_QueryStatsLikeLoki hold the newest setup copy of the fixture
+// (twelve {app="api-gateway"} lines from +0s to +6s of the copy's time) and
+// leave the metric row's lookback minute empty, however far apart the copies
+// and however long after the setup the test runs. Its windows once ended a
+// minute before the clock: in CI run 43631696897 the 5m window started
+// between +3s and +4s of the second copy, so the log rows read 3 short lines
+// (186 bytes) and the metric row's lookback held the other 21 (2,242 bytes),
+// priced at the 3 lines' mean.
+//
+// conformance: drilldown/logs-footer-query-stats, query-stats-envelope
+func TestDrilldown_QueryStatsWindowHoldsTheFixture(t *testing.T) {
+	copyAt := func(at time.Time) []time.Time { // the copy's longest stream, one line a second
+		var out []time.Time
+		for d := 0; d <= 6; d++ {
+			out = append(out, at.Add(time.Duration(d)*time.Second))
+		}
+		return out
+	}
+	base := time.Date(2026, 11, 14, 19, 20, 0, 0, time.UTC)
+	for _, gap := range []time.Duration{0, 5 * time.Second, 20 * time.Second, time.Minute, 2 * time.Minute, 4*time.Minute + 57*time.Second, 5 * time.Minute, 5*time.Minute + 30*time.Second, 9 * time.Minute} {
+		for _, at := range []time.Duration{0, 17 * time.Second, 30 * time.Second, 54 * time.Second, 59 * time.Second} {
+			first := base.Add(at)
+			second := first.Add(gap)
+			lines := append(copyAt(first), copyAt(second)...)
+			for _, after := range []time.Duration{3 * time.Minute, 4 * time.Minute, 6*time.Minute + 3500*time.Millisecond, 12 * time.Minute, 25 * time.Minute} {
+				now := second.Add(after)
+				name := fmt.Sprintf("copies %s and %s, now %s", first.Format(time.TimeOnly), second.Format(time.TimeOnly), now.Format(time.TimeOnly))
+				end, ok := queryStatsWindowEnd(lines, now)
+				if !ok { // queryStatsFixtureEnd waits up to two minutes for one
+					now = now.Truncate(time.Minute).Add(2*time.Minute + time.Second)
+					if end, ok = queryStatsWindowEnd(lines, now); !ok {
+						t.Errorf("%s: no window within two minutes", name)
+						continue
+					}
+				}
+				if end.After(now.Add(-time.Minute)) || end.Truncate(time.Minute) != end {
+					t.Errorf("%s: end %s is not a whole minute at least a minute ago", name, end.Format(time.TimeOnly))
+				}
+				start := end.Add(-5 * time.Minute)
+				for _, ts := range copyAt(second) {
+					if !ts.After(start) || ts.After(end) {
+						t.Errorf("%s: newest copy's line %s outside the window (%s, %s]", name, ts.Format(time.TimeOnly), start.Format(time.TimeOnly), end.Format(time.TimeOnly))
+					}
+				}
+				for _, ts := range lines {
+					if ts.After(start.Add(-time.Minute)) && !ts.After(start) {
+						t.Errorf("%s: line %s in the lookback minute (%s, %s]", name, ts.Format(time.TimeOnly), start.Add(-time.Minute).Format(time.TimeOnly), start.Format(time.TimeOnly))
+					}
+				}
+			}
+		}
+	}
+	// The window the failed run used is rejected: it put 9 lines of the newest copy in the lookback minute.
+	second := base.Add(17 * time.Second)
+	if end, ok := queryStatsWindowEnd(copyAt(second), second.Add(3*time.Minute)); ok && end.Add(-5*time.Minute).After(second) {
+		t.Errorf("end %s cuts the copy at %s", end.Format(time.TimeOnly), second.Format(time.TimeOnly))
+	}
+	if _, ok := queryStatsWindowEnd(nil, base); ok {
+		t.Error("a window was placed with no fixture line")
+	}
+	if _, ok := queryStatsWindowEnd(copyAt(base), base.Add(30*time.Second)); ok {
+		t.Error("a window was placed ending after now - 1m")
+	}
 }

@@ -42,6 +42,7 @@ The last-run columns are filled by the daily report from the GitHub API; it has 
 
 | Workflow | Triggers | Verifies | Required | Last run on main | Last scheduled run |
 |---|---|---|---|---|---|
+| `daily-report.yaml` Daily report | pull_request (main; 5 paths)<br />schedule `7 8 * * *` (daily 08:07 UTC)<br />workflow_dispatch | Daily on main, on fresh stacks: every executable registry case against Loki on VictoriaLogs v1.49.0 and the pin, the Loki error answers asked again and replayed, a parity slice, the perf smoke, the proxy's cache reuse on every case and shape, and the scheduled workflows' health; one summary and one rolling report pull request. | no | not recorded yet | not recorded yet |
 | `query-corpus.yaml` Query Corpus | push (main)<br />schedule `23 2 * * *` (daily 02:23 UTC)<br />workflow_dispatch | Builds the query corpus of main and re-verifies the recorded Loki and VictoriaLogs answers, differentials and the grammar sweep with the live oracles. | no | not recorded yet | not recorded yet |
 | `security-heavy.yaml` Security Heavy | schedule `0 4 * * *` (daily 04:00 UTC), `0 6 * * 1` (weekly, Monday 06:00 UTC)<br />workflow_dispatch | Image and SBOM scan, semgrep, long fuzzing and the DAST scan of a running proxy. | no | not recorded yet | not recorded yet |
 
@@ -51,7 +52,7 @@ The last-run columns are filled by the daily report from the GitHub API; it has 
 |---|---|---|---|---|---|
 | `error-answers-record.yaml` Error answers re-record | pull_request (main; 4 paths)<br />schedule `37 5 * * 3` (weekly, Wednesday 05:37 UTC)<br />workflow_dispatch | Asks the pinned Loki the recorded error requests again and fails when an answer changed. | no | not recorded yet | not recorded yet |
 | `parity-refresh.yaml` Parity refresh | pull_request (main; 6 paths)<br />schedule `43 13 * * 6` (weekly, Saturday 13:43 UTC)<br />workflow_dispatch | Differential run of the proxy against Loki over the whole corpus on a fresh stack; opens the rolling parity report pull request. | no | not recorded yet | not recorded yet |
-| `perf-daily.yaml` Perf weekly | pull_request (main; 11 paths)<br />schedule `17 3 * * 1` (weekly, Monday 03:17 UTC)<br />workflow_dispatch (inputs: max_range, runs, sets) | Full A/B run of the last release, main and Loki over every shape set and range; opens the rolling performance report pull request. | no | not recorded yet | not recorded yet |
+| `perf-daily.yaml` Perf weekly | pull_request (main; 11 paths)<br />schedule `17 3 * * 1` (weekly, Monday 03:17 UTC)<br />workflow_dispatch (inputs: max_range, runs, sets) | Full A/B run of the last release, main and Loki over every shape set and range, and the weekly full run on VictoriaLogs v1.49.0 and the pin: per-case verdicts, the whole parity corpus, the full-size grammar sweep, the A/B on v1.49.0, the fleet cache proof, the cache reuse of every shape and a release.yaml dry run; opens the rolling performance report pull request with the weekly trend. | no | not recorded yet | not recorded yet |
 | `scorecard.yaml` Scorecard | push (main)<br />schedule `37 5 * * 1` (weekly, Monday 05:37 UTC)<br />workflow_dispatch | Publishes the OpenSSF Scorecard result of main. | no | not recorded yet | not recorded yet |
 
 ## Release

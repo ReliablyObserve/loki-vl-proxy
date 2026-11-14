@@ -45,6 +45,9 @@ request:
     wait; Retry-After; the retry budget under sustained failure; the circuit
     breaker open; the cold tier. TestErrorLayer_NoVictoriaLogsLeakWithBackendRetries
     runs the whole error-layer gate with retries on.
+  verify:
+    blocked_by: fault
+    reason: "a backend that fails once or twice and then answers"
 compare:
   mode: observed
   fields: [status, body]

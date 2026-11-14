@@ -28,6 +28,9 @@ request:
   precondition: |
     -backend-max-concurrent-heavy-queries slots are already held by other
     in-flight heavy queries for longer than -backend-heavy-query-queue-wait.
+  verify:
+    blocked_by: load
+    reason: "every heavy-query slot held beyond the queue wait"
 compare:
   mode: exact
   fields: [status]

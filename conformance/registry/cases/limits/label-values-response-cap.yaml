@@ -31,6 +31,9 @@ request:
     end: now
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    blocked_by: volume
+    reason: "a label with more values than Loki's 4 MiB gRPC message holds; the stack's pod label stays under it"
 compare:
   mode: structural
   fields: [status, error]

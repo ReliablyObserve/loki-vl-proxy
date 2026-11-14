@@ -38,6 +38,11 @@
       "type": "boolean"
     },
     "loki_parity": {"type": "string", "minLength": 1},
+    "owner_kept": {
+      "description": "Owner-kept deviation cases whose difference from Loki this case's answers show (for example metric-identity/structured-metadata-splits-series). test/caseverify reports a fixed case that differs from Loki as differs_owner_kept, naming them, instead of as a regression; the difference stays listed and the case is never passed.",
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[a-z0-9-]+/[a-z0-9_.-]+$"}
+    },
     "corpus": {
       "type": "object",
       "additionalProperties": false,
@@ -67,6 +72,24 @@
         "scope": {"type": "string", "minLength": 1},
         "entry": {"type": "string", "minLength": 1},
         "setup": {"type": "string", "minLength": 1},
+        "verify": {
+          "description": "How test/caseverify treats a request whose precondition or setup it does not run. met_by: stack says the stack's standing data meets the precondition (evidence names where: the generator line, a compose flag); the runner then sends the request. blocked_by names what the request needs that a read-only comparison run cannot give: load, fault, volume, version, fixture, proxy_only, moved_window or write; reason says what. empty_is_answer says why two empty answers prove a case that is not open (a query the proxy once mishandled is answered like Loki, with nothing and no error). control names a second request of the case (params laid over the request's own, for example the same query with the stage that exposes the key) that must return data on both sides: where the case's own answers are both empty, the control proves the data is there, so two empty answers match; the control's answers are not compared.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "met_by": {"type": "string", "enum": ["stack"]},
+            "evidence": {"type": "string", "minLength": 1},
+            "blocked_by": {"type": "string", "enum": ["load", "fault", "volume", "version", "fixture", "proxy_only", "moved_window", "write"]},
+            "reason": {"type": "string", "minLength": 1},
+            "empty_is_answer": {"type": "string", "minLength": 1},
+            "control": {
+              "type": "object",
+              "required": ["params"],
+              "additionalProperties": false,
+              "properties": {"params": {"$ref": "#/definitions/stringMap"}}
+            }
+          }
+        },
         "proxy_flags": {
           "description": "Proxy flags the request needs (for example -label-style=passthrough); test/caseverify sends it to the proxy variant that runs with them, or blocks it.",
           "type": "array",

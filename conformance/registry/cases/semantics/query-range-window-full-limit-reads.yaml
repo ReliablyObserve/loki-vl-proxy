@@ -79,6 +79,9 @@ request:
     The same query over 1h, 3h and 6h ending at the same time answered first,
     then the 24h range asked again with start and end moved a minute back
     (the A/B matrix's shifted warm runs).
+  verify:
+    blocked_by: moved_window
+    reason: "1h, 3h and 6h asks, then the 24h range moved a minute back"
 compare:
   mode: exact
   fields: [status, data.result]

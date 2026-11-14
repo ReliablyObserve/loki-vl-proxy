@@ -42,6 +42,8 @@ request:
   headers:
     X-Scope-OrgID: "0"
     X-Loki-Response-Encoding-Flags: categorize-labels
+  verify:
+    empty_is_answer: "an ip() label filter on a label the lines lack matches no line on Loki, and the proxy must answer the same, with no error"
 compare:
   mode: observed
   fields: [status, streams.values]
