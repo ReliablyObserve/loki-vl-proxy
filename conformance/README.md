@@ -132,6 +132,10 @@ a query) are counted over its window on Loki (`sum(count_over_time(...))`) and o
 VictoriaLogs (`-vl`, the same matchers as field filters and `stats count()`).
 Unequal counts are `data_differs`, no line on either side `empty`, no answer from
 Loki's metric path while VictoriaLogs holds the lines `loki_not_ready`, a Loki
+answer assembled from reused results-cache extents (`stats.cache.result.entriesFound` above zero) that holds the
+same series as the proxy's but fewer of their entries or samples `loki_cached_stale` (an earlier run asked an
+overlapping window before the data existed; Loki ignores no-cache headers and aligns a window to its step, so the
+request cannot be made unique per run without changing what the case asks), a Loki
 answer with warnings or a stale proxy answer `not_comparable`, and no count at
 all `data_unchecked`; none of them is a difference of the proxy. Every count is
 recorded with the answers, so `-replay` needs no stack. The recording's first line holds the settled end every window was resolved against and the proxy build, so a replay at any later time gives the live run's verdicts.

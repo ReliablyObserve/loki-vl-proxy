@@ -313,16 +313,17 @@ const (
 	verdictBlocked       = "blocked"
 	verdictNotExecutable = "not_executable"
 	// The data precheck's verdicts: nothing about the proxy is proven, so none of them is ever a regression.
-	verdictDataDiffers   = "data_differs"   // Loki and VictoriaLogs count other lines for the case's selectors and window
-	verdictEmpty         = "empty"          // both count no line
-	verdictLokiNotReady  = "loki_not_ready" // Loki's metric path answers nothing while VictoriaLogs holds the lines
-	verdictNotComparable = "not_comparable" // Loki answered with warnings, or the proxy with a stale or partial answer
-	verdictDataUnchecked = "data_unchecked" // no count to prove the data equal (no VictoriaLogs URL, or a recording without counts)
+	verdictDataDiffers   = "data_differs"      // Loki and VictoriaLogs count other lines for the case's selectors and window
+	verdictEmpty         = "empty"             // both count no line
+	verdictLokiNotReady  = "loki_not_ready"    // Loki's metric path answers nothing while VictoriaLogs holds the lines
+	verdictCachedStale   = "loki_cached_stale" // Loki's answer came from reused results-cache extents and lacks lines or samples the proxy holds
+	verdictNotComparable = "not_comparable"    // Loki answered with warnings, or the proxy with a stale or partial answer
+	verdictDataUnchecked = "data_unchecked"    // no count to prove the data equal (no VictoriaLogs URL, or a recording without counts)
 )
 
 // verdicts in the order the report lists them.
 var verdicts = []string{verdictMatches, verdictDiffers, verdictUnstable, verdictBothFail, verdictDataDiffers, verdictEmpty,
-	verdictLokiNotReady, verdictNotComparable, verdictDataUnchecked, verdictBlocked, verdictNotExecutable}
+	verdictLokiNotReady, verdictCachedStale, verdictNotComparable, verdictDataUnchecked, verdictBlocked, verdictNotExecutable}
 
 // staleHeader marks a proxy answer served stale (internal/proxy staleResponseHeader).
 const staleHeader = "X-Proxy-Stale-Response"
@@ -473,6 +474,10 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 			}
 		}
 		r.Differences = CompareWith(r.Facets, loki, proxy, opts)
+		if why := lokiCachedStale(r.Differences, loki, proxy); why != "" {
+			r.Verdict, r.Reason, r.Differences = verdictCachedStale, why, nil
+			return r
+		}
 		if len(r.Differences) == 0 {
 			if vacuous, blocked := settleVacuous(&r, p, loki, proxy); vacuous {
 				if blocked {
@@ -724,7 +729,7 @@ func Report(f File) string {
 		b.WriteString("The proxy's build is not known (no -proxy-revision): its verdicts are not tied to the commit.\n\n")
 	}
 	b.WriteString("Only `differs` is a difference of the proxy: its data was proven equal and non-empty on both sides. " +
-		"`data_differs`, `empty`, `loki_not_ready`, `not_comparable` and `data_unchecked` prove nothing about the proxy.\n\n")
+		"`data_differs`, `empty`, `loki_not_ready`, `loki_cached_stale`, `not_comparable` and `data_unchecked` prove nothing about the proxy.\n\n")
 	b.WriteString("| Verdict | Cases |\n|---|---|\n")
 	for _, v := range verdicts {
 		fmt.Fprintf(&b, "| %s | %d |\n", v, f.Counts[v])

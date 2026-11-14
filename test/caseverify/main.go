@@ -21,6 +21,7 @@
 //	data_differs    Loki and VictoriaLogs count other lines for the case's selectors and window
 //	empty           both count no line
 //	loki_not_ready  Loki's metric path answers nothing while VictoriaLogs holds the lines (a fresh Loki)
+//	loki_cached_stale  Loki answered from reused results-cache extents and holds fewer lines or samples than the proxy, on data its own count proved equal
 //	not_comparable  Loki answered with warnings, or the proxy answered stale
 //	data_unchecked  no count to prove the data (no -vl, another tenant, a recording without counts)
 //	unstable        they disagreed once and agreed on the second ask
