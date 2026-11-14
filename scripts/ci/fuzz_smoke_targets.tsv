@@ -20,6 +20,7 @@ smoke	internal/proxy	FuzzParseTimestamp	12s	-	parse timestamp
 smoke	internal/proxy	FuzzScalarStatsBinaryOf	12s	-	a stats query joined to a number is read back to the same operator and number
 smoke	internal/proxy	FuzzMergeDeviationBuckets	12s	-	stddev and stdvar windows merged from bucket mean, count and deviation equal the window's variance
 smoke	internal/proxy	FuzzUnwrapWindowForm	12s	-	the unwrap window forms, and a range aggregation with its own by under a vector aggregation, are told from the query's tree
+smoke	internal/proxy	FuzzTumblingStatsRangeParams	12s	-	the tumbling stats_query_range form built once equals the form built and overwritten
 smoke	internal/proxy	FuzzSeriesKeyFromMetric	20s	60s	series key from metric
 smoke	internal/proxy	FuzzTenantHeader	12s	-	X-Scope-OrgID check: Loki's tenant ID rules, own-tenant routing
 smoke	internal/proxy	FuzzParseValueToFloat	12s	-	parse value to float

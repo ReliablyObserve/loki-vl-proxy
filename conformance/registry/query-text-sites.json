@@ -3,7 +3,7 @@
   "totals": {
     "deferred_raw": 9,
     "lowering_marker_reads": 11,
-    "parse_calls": 61,
+    "parse_calls": 58,
     "string_reads": 51,
     "text_built": 214,
     "translator_string_ops": 680
@@ -31,8 +31,7 @@
       "internal/proxy/limits_enforcement.go": 1,
       "internal/proxy/log_line.go": 1,
       "internal/proxy/loki_profile.go": 3,
-      "internal/proxy/metric_agg.go": 8,
-      "internal/proxy/metric_binary.go": 1,
+      "internal/proxy/metric_agg.go": 6,
       "internal/proxy/multitenant.go": 1,
       "internal/proxy/nested_vector_fold.go": 3,
       "internal/proxy/ordered_json_metric.go": 1,

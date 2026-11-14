@@ -79,28 +79,20 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, sta
 	// labelled T covers [T, T+W). Fetch from start-W on a grid whose buckets are
 	// (edge, edge+W] and relabel every bucket to its Loki evaluation timestamp
 	// (relabelSnappedTumblingStatsQueryRange).
-	if origSpec, origStartNs, ok := statsRateRangeEqualsStepShift(originalLogql, r); ok {
+	if origSpec, rng, origStartNs, ok := statsRangeShift(originalLogql, r); ok {
 		query := effectiveQuery
-		if inner, ok := parseOriginalRangeMetricSpec(originalLogql); ok && inner.Window > 0 && inner.Window < origSpec.Window {
-			// sum, avg, max and min over time with unwrap and a range shorter
-			// than the step: the bucket (t-step, t] keeps only the lines of
-			// Loki's window (t-range, t] (pkg/logql/range_vector.go:102-189),
+		if rng > 0 && rng < origSpec.Window {
+			// sum, avg, max, min, stddev and stdvar over time with unwrap and a
+			// range shorter than the step: the bucket (t-step, t] keeps only the
+			// lines of Loki's window (t-range, t] (pkg/logql/range_vector.go:102-189),
 			// and a step whose window holds none has no sample.
-			query = withWindowPhaseFilter(r.Context(), query, time.Unix(0, origStartNs), origSpec.Window, inner.Window)
+			query = withWindowPhaseFilter(r.Context(), query, time.Unix(0, origStartNs), origSpec.Window, rng)
 		}
 		buf := &bufferedResponseWriter{}
-		shiftedR := r.Clone(r.Context())
-		_ = shiftedR.ParseForm()
-		shiftedR.Form.Set("start", strconv.FormatInt(origStartNs-origSpec.Window.Nanoseconds(), 10))
-		// Lines after Loki's last evaluation timestamp belong to no sample.
-		if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok && endNs > origStartNs {
-			window := origSpec.Window.Nanoseconds()
-			shiftedR.Form.Set("end", strconv.FormatInt(origStartNs+(endNs-origStartNs)/window*window, 10))
-		}
 		endNs, _ := parseLokiTimeToUnixNano(r.FormValue("end"))
 		relabel := &statsTumblingRelabel{}
 		relabel.keep, relabel.relabel = snappedTumblingRelabel(origStartNs, endNs, origSpec.Window.Nanoseconds())
-		shiftedR = shiftedR.WithContext(context.WithValue(shiftedR.Context(), statsTumblingRelabelKey{}, relabel))
+		shiftedR := shiftedStatsRequest(r, context.WithValue(r.Context(), statsTumblingRelabelKey{}, relabel), origStartNs, endNs, origSpec.Window.Nanoseconds())
 		p.proxyStatsQueryRangeDirectAnchored(buf, shiftedR, query, origSpec.Window)
 		code := buf.code
 		if code == 0 {
@@ -362,16 +354,16 @@ func (e *statsUpstreamError) Error() string {
 func (p *Proxy) fetchStatsQueryRangeBody(r *http.Request, logsqlQuery string, tumblingWindow time.Duration, maxSeries int) ([]byte, error) {
 	// Keep metric query_range as a single backend request. Window splitting and
 	// window-level cache reuse are for raw log queries only.
-	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+	var params url.Values
 	if tumblingWindow > 0 {
 		startNs, startOK := parseLokiTimeToUnixNano(r.FormValue("start"))
 		endNs, endOK := parseLokiTimeToUnixNano(r.FormValue("end"))
 		if startOK && endOK {
-			setSlidingStatsRangeParams(params, time.Unix(0, startNs), time.Unix(0, endNs), tumblingWindow)
-			// The first window is (start, start+window]: a line exactly at start
-			// belongs to the window before, which no sample covers.
-			params.Set("start", time.Unix(0, startNs+1).UTC().Format(time.RFC3339Nano))
+			params = tumblingStatsRangeParams(logsqlQuery, startNs, endNs, tumblingWindow)
 		}
+	}
+	if params == nil {
+		params = buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	}
 
 	// Use vlPost directly (not coalesced) so readBodyLimited can bound the response
@@ -857,13 +849,21 @@ func allRangeWindowsEqual(logql string) (time.Duration, bool) {
 // handlers; the legacy proxyBinaryMetric paths apply the shift independently.
 // Returns (spec, origStartNs, true) when shifting is needed.
 func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origSpec originalRangeMetricSpec, origStartNs int64, ok bool) {
+	origSpec, _, origStartNs, ok = statsRangeShift(originalLogql, r)
+	return origSpec, origStartNs, ok
+}
+
+// statsRangeShift is statsRateRangeEqualsStepShift that also returns the
+// range of the query's range aggregation (the returned spec's Window is the
+// step). The expression is the shared parse of the query (sharedLogQLExpr),
+// read only.
+func statsRangeShift(originalLogql string, r *http.Request) (origSpec originalRangeMetricSpec, rng time.Duration, origStartNs int64, ok bool) {
 	spec, hasSpec := parseOriginalRangeMetricSpec(originalLogql)
 	if !hasSpec || spec.Window <= 0 {
 		return
 	}
-	stripped := stripOuterLabelReplace(originalLogql)
-	expr, err := parseLogQLExpr(r.Context(), stripped)
-	if err != nil {
+	expr, parsed := sharedLogQLExpr(stripOuterLabelReplace(originalLogql))
+	if !parsed {
 		return
 	}
 	found, _, logRangeOnly, unwrapOnly := logRangeFunctions(expr)
@@ -874,12 +874,31 @@ func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origS
 	if !stepOk || (!unwrapOnly && spec.Window != step) {
 		return
 	}
-	spec.Window = step
+	rng, spec.Window = spec.Window, step
 	startNs, hasStart := parseLokiTimeToUnixNano(r.FormValue("start"))
 	if !hasStart {
 		return
 	}
-	return spec, startNs, true
+	return spec, rng, startNs, true
+}
+
+// shiftedStatsRequest is r on ctx with the form of the tumbling fetch: start
+// one window before the first evaluation time, and an end after it moved down
+// to the last evaluation time (lines after it belong to no sample). The form
+// is a copy (r's is left as it is); the request is a shallow copy, as
+// WithContext makes, so nothing else is cloned.
+func shiftedStatsRequest(r *http.Request, ctx context.Context, startNs, endNs, windowNs int64) *http.Request {
+	form := make(url.Values, len(r.Form)+1)
+	for k, v := range r.Form {
+		form[k] = v
+	}
+	form["start"] = []string{strconv.FormatInt(startNs-windowNs, 10)}
+	if endNs > startNs {
+		form["end"] = []string{strconv.FormatInt(startNs+(endNs-startNs)/windowNs*windowNs, 10)}
+	}
+	shifted := r.WithContext(ctx)
+	shifted.Form = form
+	return shifted
 }
 
 // logRangeFunctions walks a metric expression. found reports at least one range
@@ -1008,10 +1027,27 @@ func relabelSnappedTumblingStatsQueryRange(body []byte, startNs, endNs, windowNs
 // snappedTumblingRelabel is relabelSnappedTumblingStatsQueryRange's rewrite:
 // the relabel of every point and the points it keeps.
 func snappedTumblingRelabel(startNs, endNs, windowNs int64) (keep func(int64) bool, relabel func(int64) int64) {
-	anchor := time.Unix(0, startNs-windowNs)
-	return relabelStatsQueryRangeKeep(startNs, endNs, func(tsNs int64) int64 {
-		return snapSlidingBucketNanos(tsNs, anchor, time.Duration(windowNs)) + windowNs
-	})
+	// One value holds the bounds and both closures read it: relabelStatsQueryRangeKeep's keep, with the relabel
+	// inlined.
+	s := &snappedRelabel{anchor: time.Unix(0, startNs-windowNs), startNs: startNs, endNs: endNs, windowNs: windowNs}
+	return s.keep, s.relabel
+}
+
+// snappedRelabel is the relabel of snappedTumblingRelabel: a bucket's timestamp snapped to the grid one window
+// before the start, moved to the end of its window, kept when it lands in [startNs, endNs] (no upper bound when
+// endNs <= 0).
+type snappedRelabel struct {
+	anchor                   time.Time
+	startNs, endNs, windowNs int64
+}
+
+func (s *snappedRelabel) relabel(tsNs int64) int64 {
+	return snapSlidingBucketNanos(tsNs, s.anchor, time.Duration(s.windowNs)) + s.windowNs
+}
+
+func (s *snappedRelabel) keep(tsNs int64) bool {
+	ts := s.relabel(tsNs)
+	return ts >= s.startNs && (s.endNs <= 0 || ts <= s.endNs)
 }
 
 // relabelStatsQueryRange maps every point timestamp through relabel and keeps

@@ -898,6 +898,11 @@ var maxStatsBucketResponseBytes int64 = 64 << 20
 // the same for every start on one step grid, as a refresh moved by whole
 // steps is.
 func windowPhaseFilter(start time.Time, step, window time.Duration) string {
+	return string(appendWindowPhaseFilter(make([]byte, 0, 128), start, step, window))
+}
+
+// appendWindowPhaseFilter appends windowPhaseFilter's text to b.
+func appendWindowPhaseFilter(b []byte, start time.Time, step, window time.Duration) []byte {
 	const quantum, readError int64 = 256, 128
 	anchor := ((start.Add(-window).UnixNano())%int64(step) + int64(step)) % int64(step)
 	rest := anchor % quantum
@@ -907,9 +912,14 @@ func windowPhaseFilter(start time.Time, step, window time.Duration) string {
 	if upper >= int64(step) {
 		upper = int64(step) - 1
 	}
-	return " | math ((_time - " + strconv.FormatInt(anchor, 10) + ") % " + strconv.FormatInt(int64(step), 10) +
-		") as __lvp_window_phase | filter __lvp_window_phase:>" + strconv.FormatInt(lower, 10) +
-		" __lvp_window_phase:<=" + strconv.FormatInt(upper, 10)
+	b = append(b, " | math ((_time - "...)
+	b = strconv.AppendInt(b, anchor, 10)
+	b = append(b, ") % "...)
+	b = strconv.AppendInt(b, int64(step), 10)
+	b = append(b, ") as __lvp_window_phase | filter __lvp_window_phase:>"...)
+	b = strconv.AppendInt(b, lower, 10)
+	b = append(b, " __lvp_window_phase:<="...)
+	return strconv.AppendInt(b, upper, 10)
 }
 
 // withWindowPhaseFilter puts windowPhaseFilter at the head of query's pipeline,
@@ -929,12 +939,26 @@ func withWindowPhaseFilter(ctx context.Context, query string, start time.Time, s
 			at += len(levelChainDelete)
 		}
 	}
-	filter := windowPhaseFilter(start, step, window)
-	if at < 0 || strings.TrimSpace(query[at:]) == "" {
-		return strings.TrimRight(query, " ") + filter
+	head, tail := strings.TrimRight(query, " "), ""
+	if at >= 0 && strings.TrimSpace(query[at:]) != "" {
+		head, tail = strings.TrimRight(query[:at], " "), strings.TrimLeft(query[at:], " ")
 	}
-	return strings.TrimRight(query[:at], " ") + filter + " " + strings.TrimLeft(query[at:], " ")
+	// The query with the filter written into it, in one allocation of its size.
+	var fb [windowPhaseFilterMaxLen]byte
+	filter := appendWindowPhaseFilter(fb[:0], start, step, window)
+	var b strings.Builder
+	b.Grow(len(head) + len(filter) + 1 + len(tail))
+	b.WriteString(head)
+	b.Write(filter)
+	if tail != "" {
+		b.WriteByte(' ')
+		b.WriteString(tail)
+	}
+	return b.String()
 }
+
+// windowPhaseFilterMaxLen bounds windowPhaseFilter's text: its fixed words and four integers of at most 20 bytes.
+const windowPhaseFilterMaxLen = 192
 
 // shiftSeriesSamples moves every bucket label and present bucket forward by
 // shift, in place: a (t-step, t] bucket of windowPhaseFilter lines is labelled
@@ -1354,6 +1378,27 @@ func setSlidingStatsRangeParams(params url.Values, start, end time.Time, hitStep
 	}
 	shift := ((start.UnixNano()+1)%int64(hitStep) + int64(hitStep)) % int64(hitStep)
 	params.Set("offset", strconv.FormatInt(-shift, 10)+"ns")
+}
+
+// tumblingStatsRangeParams is the stats_query_range form of a tumbling fetch:
+// the query and setSlidingStatsRangeParams(start, end, window), with the first
+// window (start, start+window] read from one nanosecond after start (a line
+// exactly at start belongs to the window before, which no sample covers).
+// Built in one go: one backing array for the values, one buffer for the times.
+func tumblingStatsRangeParams(query string, startNs, endNs int64, window time.Duration) url.Values {
+	var buf [48]byte
+	vals := make([]string, 5)
+	vals[0] = query
+	vals[1] = string(time.Unix(0, startNs+1).UTC().AppendFormat(buf[:0], time.RFC3339Nano))
+	vals[2] = string(time.Unix(0, endNs).Add(time.Nanosecond).UTC().AppendFormat(buf[:0], time.RFC3339Nano))
+	if window%time.Second == 0 {
+		vals[3] = string(append(strconv.AppendInt(buf[:0], int64(window/time.Second), 10), 's'))
+	} else {
+		vals[3] = string(append(strconv.AppendInt(buf[:0], int64(window), 10), 'n', 's'))
+	}
+	shift := ((startNs+1)%int64(window) + int64(window)) % int64(window)
+	vals[4] = string(append(strconv.AppendInt(buf[:0], -shift, 10), 'n', 's'))
+	return url.Values{"query": vals[0:1:1], "start": vals[1:2:2], "end": vals[2:3:3], "step": vals[3:4:4], "offset": vals[4:5:5]}
 }
 
 // snapSlidingBucketTimestamp maps a stats_query_range timestamp (float seconds)
