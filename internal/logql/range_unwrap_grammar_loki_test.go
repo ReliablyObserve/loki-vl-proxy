@@ -182,7 +182,7 @@ func promRangeNanos(d string) *big.Int {
 }
 
 // A range text is accepted exactly when it is Prometheus' duration form with a length that fits a duration, the parser
-// reads the range so (its duration is that length), and a rejection is one of Loki's four texts.
+// reads the range so (its duration is that length, to the nanosecond), and a rejection is one of Loki's four texts.
 func FuzzRangeDuration(f *testing.F) {
 	for _, d := range rangeDurationTexts {
 		f.Add(d)
@@ -205,9 +205,7 @@ func FuzzRangeDuration(f *testing.F) {
 		if (err == nil) != (msg == "") {
 			t.Fatalf("%q: Parse %v, rangeLexError %q", d, err, msg)
 		}
-		// The duration of a range with a day, week or year unit is read by parseDuration in floating point, and is 0
-		// when a part is 0 (`1y0ms`): differences of their own. A range in h, m, s and ms is read exactly.
-		if err == nil && !strings.ContainsAny(d, "ywd") {
+		if err == nil {
 			if got := expr.(*RangeAggregation).RangeDuration; int64(got) != want.Int64() {
 				t.Fatalf("%q: the range is %v, want %v", d, got, want)
 			}

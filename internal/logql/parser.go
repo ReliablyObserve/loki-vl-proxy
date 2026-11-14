@@ -2007,8 +2007,10 @@ func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 	// Loki's lexer reads the text up to the ']' as one token and parses it as a duration: a character in it that is
 	// not part of one, white space among them, is an error of that token. A Grafana variable ([$__auto]) keeps its
 	// older error: label_replace passes its argument through with it.
+	var length time.Duration
 	if raw, closed := rangeToken(p.sc.src, textStart); closed && !strings.HasPrefix(raw, "$") {
-		if msg := rangeLexError(raw); msg != "" {
+		var msg string
+		if length, msg = readRange(raw); msg != "" {
 			return newParseError(0, bracketCol, msg)
 		}
 	}
@@ -2016,8 +2018,9 @@ func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 	if err != nil {
 		return fmt.Errorf("logql: expected duration: %w", err)
 	}
+	// The duration token is the whole range text here: the range read above, exactly as Loki reads it.
 	ra.Range = dur.Val
-	ra.RangeDuration = parseDuration(dur.Val)
+	ra.RangeDuration = length
 	if _, err := p.expect(TokRBracket); err != nil {
 		return err
 	}
@@ -2190,8 +2193,14 @@ func rangeToken(src string, start int) (string, bool) {
 // Loki answers (recorded with the Loki oracle, TestRangeDurationMatchesLoki): a part without digits or a unit, or
 // with a number above 64 bits, is no duration string; then an unknown unit; then a unit out of order; then the sum.
 func rangeLexError(d string) string {
+	_, msg := readRange(d)
+	return msg
+}
+
+// readRange is rangeLexError with the length of the range, exact in nanoseconds, when it reads (msg is "").
+func readRange(d string) (length time.Duration, msg string) {
 	if d == "" {
-		return "empty duration string"
+		return 0, "empty duration string"
 	}
 	var total uint64
 	last := len(rangeUnits)
@@ -2205,24 +2214,24 @@ func rangeLexError(d string) string {
 		for i = 0; i < len(rest) && (rest[i] < '0' || rest[i] > '9'); i++ {
 		}
 		if err != nil || i == 0 {
-			return fmt.Sprintf("not a valid duration string: %q", d)
+			return 0, fmt.Sprintf("not a valid duration string: %q", d)
 		}
 		unit := rangeUnitIndex(rest[:i])
 		if unit < 0 {
-			return fmt.Sprintf("unknown unit %q in duration %q", rest[:i], d)
+			return 0, fmt.Sprintf("unknown unit %q in duration %q", rest[:i], d)
 		}
 		if unit >= last {
-			return fmt.Sprintf("not a valid duration string: %q", d)
+			return 0, fmt.Sprintf("not a valid duration string: %q", d)
 		}
 		last = unit
 		size := rangeUnits[unit].size
 		if n > math.MaxInt64/size || total+n*size > math.MaxInt64 {
-			return "duration out of range"
+			return 0, "duration out of range"
 		}
 		total += n * size
 		rest = rest[i:]
 	}
-	return ""
+	return time.Duration(total), ""
 }
 
 // rangeUnits are the units of a range duration, from the smallest, with their length in nanoseconds.

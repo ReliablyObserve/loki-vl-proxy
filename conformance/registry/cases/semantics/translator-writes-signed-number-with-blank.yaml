@@ -20,6 +20,11 @@ why: |
 
   The VictoriaLogs oracle lists the corpus row of the finding in
   internal/querycorpus/testdata/known-typed-divergences.json.
+
+  Also minus zero written apart: `{A="0"} | A<- 0` is the number -0 to Loki (written together, `A<-0` is a
+  duration); the translator writes `A:<- 0`, which VictoriaLogs rejects, and the plan `A:<-0` (corpus row
+  q-5c9382f8c212, listed in internal/querycorpus/testdata/known-typed-divergences.json).
+
 request:
   method: GET
   path: /loki/api/v1/query_range
