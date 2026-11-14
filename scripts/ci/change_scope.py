@@ -180,6 +180,9 @@ NON_PRODUCT = [
         "test/e2e-compat/loki-bench-config.yaml",
         "test/e2e-compat/loki-bench-nocache-config.yaml",
     )),
+    # The hand-written rows of the CI workflow inventory (docs/ci-workflows.md). lint checks them against
+    # .github/workflows on every pull request (go run ./test/ciworkflows -check).
+    ("I15", ("test/ciworkflows/inventory.json",)),
 ]
 
 # Lanes. (rule id, lane, globs). Paths verified by some product jobs but not
@@ -556,6 +559,7 @@ JOB_MAP = [
         "test/e2e-compat/docker-compose.bench.yml", "test/e2e-compat/docker-compose.review.yml",
         "test/e2e-fleet/docker-compose.http-discovery.yml",
         "test/e2e-compat/loki-bench-config.yaml", "test/e2e-compat/loki-bench-nocache-config.yaml",
+        "test/ciworkflows/inventory.json",
     ), NO_JOBS),
     ("J6", ("scripts/ci/unit_test_mode.sh", "scripts/ci/test-cache-uncached.tsv"),
      UNIT_JOBS | CONFORMANCE_JOBS),

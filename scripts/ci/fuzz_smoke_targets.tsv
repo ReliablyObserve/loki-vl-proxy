@@ -168,3 +168,4 @@ smoke	internal/proxy	FuzzTailRows	12s	-	tail stream row split: bounded work for 
 smoke	internal/proxy	FuzzBackendRetryDecision	12s	-	shared VictoriaLogs retry: Retry-After is zero or a span of at most a day, only 429, 502, 503 and 504 answers are transient, never a panic
 smoke	internal/proxy	FuzzRefusalErrors	12s	-	client errors built from a raw start, end, step, time or range literal
 smoke	internal/proxy	FuzzRequestParamChecks	12s	-	request parameter checks (time, step, limit, since, window, length) against a model of the recorded Loki rules
+smoke	test/ciworkflows	FuzzParseWorkflow	12s	-	the CI workflow inventory reads any workflow text or refuses it, and every schedule it accepts has a period

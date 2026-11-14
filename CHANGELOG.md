@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.250.0] - 2026-11-14
+
 ### Fixed
 
 - **Breaking:** queries Loki's parser rejects are now rejected the same way, with Loki's `400` and text, before the

@@ -114,6 +114,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'testing',
+        'ci-workflows',
         'testing-e2e-guide',
         'performance-testing-guide',
         'manual-testing-reliability',
