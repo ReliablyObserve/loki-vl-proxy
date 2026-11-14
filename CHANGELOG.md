@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stay with the string translator. Answers, translation cache entries and the queries VictoriaLogs receives do not
   change; a translation that misses the cache takes about half the time (a grouped rate: 6.6 to 2.7 us, 60 to 42
   allocations). `-query-plan-lowering=false` turns it off.
+- Range functions (`rate`, `count_over_time`, `bytes_over_time`, `bytes_rate`, `absent_over_time` and the unwrapped
+  ones) at the top of a metric query, or translated as an operand, are served from the query plan the same way (a
+  `count_over_time` miss: 5.6 to 1.9 us, 36 to 32 allocations); a range function over an `unpack` stays with the
+  string translator.
 
 ## [2.260.1] - 2026-11-14
 

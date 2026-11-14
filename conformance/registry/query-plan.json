@@ -661,7 +661,8 @@
     },
     "flipped": [
       "LogSelect",
-      "VectorAgg"
+      "VectorAgg",
+      "RangeAgg"
     ]
   }
 }

@@ -64,8 +64,9 @@ var loweringParityQueries = []struct {
 	native      bool
 	// rejectedIn names a profile in which the proxy rejects the query before translating it.
 	rejectedIn string
-	// construct names the metric construct that serves the query from the lowering once it is flipped
-	// (QueryPlanFlippedConstructs); empty for a query no flip serves.
+	// construct names the metric constructs that serve the query (or the operands the proxy translates on their own)
+	// from the lowering once one of them is flipped (QueryPlanFlippedConstructs), comma separated; empty for a query no
+	// flip serves.
 	construct string
 }{
 	// Stream selectors.
@@ -137,7 +138,7 @@ var loweringParityQueries = []struct {
 	{"max over a sum", `max(sum by (app, pod) (count_over_time({app="a"} | logfmt [5m])))`, false, "", "VectorAgg"},
 	{"sum unwrap quantile", `sum by (app) (quantile_over_time(0.95, {app="a"} | json | unwrap latency [5m]))`, false, "", "VectorAgg"},
 	{"count over a range", `count(count_over_time({app="a"} | drop pod [5m]))`, false, "", "VectorAgg"},
-	{"binary", `rate({app="a"}[5m]) / rate({app="b"}[5m])`, false, "", "BinOp"},
+	{"binary", `rate({app="a"}[5m]) / rate({app="b"}[5m])`, false, "", "BinOp,RangeAgg"},
 	{"count_over_time", `count_over_time({app="a"} |> "<_> GET <_>" [5m])`, false, "", "RangeAgg"},
 	{"label_replace", `label_replace(rate({app="a"}[5m]), "x", "$1", "app", "(.*)")`, false, "", "LabelReplace"},
 	// The proxy evaluates these itself and translates their operand alone: the operand is served from the lowering
@@ -254,7 +255,9 @@ func testLoweringRouteParity(t *testing.T, extra []string) {
 					if reqs, wantReqs := on.up.take(), off.up.take(); !reflect.DeepEqual(reqs, wantReqs) {
 						t.Fatalf("VictoriaLogs requests differ\nflag on  %q\nflag off %q", reqs, wantReqs)
 					}
-					native := (q.native || slices.Contains(on.p.flippedConstructs, q.construct)) && q.rejectedIn != prof.name
+					native := (q.native || slices.ContainsFunc(strings.Split(q.construct, ","), func(c string) bool {
+						return slices.Contains(on.p.flippedConstructs, c)
+					})) && q.rejectedIn != prof.name
 					if n := flipped(on) - before; native && n == 0 {
 						t.Fatalf("%s was not served from the lowering", q.query)
 					} else if !native && n != 0 {
