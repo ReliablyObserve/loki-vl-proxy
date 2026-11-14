@@ -176,3 +176,89 @@ func loadWorkflowFile(t *testing.T, file string) (Workflow, []byte) {
 	}
 	return w, raw
 }
+
+// The weekly full detailed run beside Perf weekly's A/B: still weekly, every check on both VictoriaLogs
+// versions, nothing pruned or written by the extra jobs, the release dispatched as a dry run, and the trend
+// delivered on the weekly pull request like the A/B report.
+func TestWeeklyRunWiring(t *testing.T) {
+	jobs, raw := loadJobs(t, "perf-daily.yaml")
+	w, err := ParseWorkflow("perf-daily.yaml", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w.Schedules) != 1 || w.Schedules[0].Cadence != "weekly" {
+		t.Fatalf("Perf weekly stays weekly: %+v", w.Schedules)
+	}
+	for _, name := range []string{"weekly-plan", "weekly-sweep", "weekly-release-dry-run", "weekly-fleet"} {
+		if jobs[name].If != "github.event_name != 'pull_request'" {
+			t.Errorf("%s runs on a pull request: %q", name, jobs[name].If)
+		}
+	}
+	for name, j := range jobs {
+		if name == "daily" || name == "weekly-summary" {
+			continue
+		}
+		for k, v := range j.Permissions {
+			dispatches := name == "weekly-release-dry-run" && k == "actions"
+			if v == "write" && !dispatches {
+				t.Errorf("job %s holds %s: write", name, k)
+			}
+		}
+	}
+	_, sweep := jobs["weekly-sweep"].step(t, "Full-size grammar sweep with the live oracles")
+	if !strings.Contains(sweep, "TestGrammarSweep") {
+		t.Error("the weekly sweep runs TestGrammarSweep")
+	}
+	_, parity := jobs["weekly-verify"].step(t, "Differential run (whole corpus, no pruning)")
+	if !strings.Contains(parity, "--mode full --no-prune") {
+		t.Errorf("the weekly parity run is the whole corpus and never prunes: %q", parity)
+	}
+	_, floor := jobs["weekly-ab-floor"].step(t, "Full A/B on the oldest supported VictoriaLogs")
+	if !strings.Contains(floor, "daily.py --out \"$OUT\" --no-write") || !strings.Contains(jobs["weekly-ab-floor"].Env["VICTORIALOGS_IMAGE"], "floor_vl") {
+		t.Errorf("the floor A/B writes nothing and runs on the oldest version: %q", floor)
+	}
+	if _, fleet := jobs["weekly-fleet"].step(t, "Three-proxy cache proof for RF1 and RF2"); !strings.Contains(fleet, "TestFleetPeerCacheProof") ||
+		!strings.Contains(fleet, "FLEET_PROOF_REPORT") {
+		t.Errorf("the weekly run holds the fleet cache proof: %q", fleet)
+	}
+	_, dispatch := jobs["weekly-release-dry-run"].step(t, "Dispatch release.yaml with dry_run and wait for it")
+	if !strings.Contains(dispatch, "gh workflow run release.yaml") || !strings.Contains(dispatch, "-f dry_run=true") {
+		t.Errorf("the release is dispatched as a dry run: %q", dispatch)
+	}
+	summary := jobs["weekly-summary"]
+	if summary.Env["BRANCH"] != "bench/daily-perf" || summary.Permissions["contents"] != "write" {
+		t.Errorf("weekly summary: %+v", summary)
+	}
+	prAt, pr := summary.step(t, "Add the weekly trend to the weekly report PR")
+	files := regexp.MustCompile(`FILES=\(([^)]*)\)`).FindStringSubmatch(pr)
+	if files == nil {
+		t.Fatal("no FILES list")
+	}
+	for _, f := range strings.Fields(files[1]) {
+		if !strings.HasPrefix(f, "conformance/registry/generated/verification/weekly-") {
+			t.Errorf("the weekly summary commits %s", f)
+		}
+	}
+	push, patch := strings.Index(pr, `push origin "${TMP_BRANCH}"`), strings.Index(pr, "-X PATCH")
+	if push < 0 || patch < push || strings.Contains(pr, `push origin "$BRANCH"`) || regexp.MustCompile(`push [^\n]*(--force|-f )`).MatchString(pr) ||
+		!strings.Contains(pr, "git/ref/heads/${BRANCH}") {
+		t.Error("the weekly report branch is moved only through the API")
+	}
+	buildAt, _ := summary.step(t, "Build the report tool from main")
+	baseAt, base := summary.step(t, "Start from the weekly report branch")
+	if buildAt > baseAt || !strings.Contains(base, "--state open") {
+		t.Error("the tool is built from main first, and the branch tip is a base only while its pull request is open")
+	}
+	failAt, fail := summary.step(t, "Fail when a weekly check is red")
+	if !strings.Contains(fail, `v["result"] != "success"`) {
+		t.Error("a skipped weekly job is red")
+	}
+	if failAt < prAt {
+		t.Error("the trend is delivered before the job turns red")
+	}
+	for _, s := range summary.Steps {
+		if strings.HasPrefix(s.Uses, "actions/setup-go") && s.With["cache"] != false {
+			t.Error("the job holding the bot token restores no cache")
+		}
+	}
+}

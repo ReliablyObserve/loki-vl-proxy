@@ -328,3 +328,432 @@ jobs:
               print(f"::warning title=above 2x Loki::{r['set']} / {r['shape']} / {r['range']} / {r['mode']}: {r['detail']} ({r['commits']})")
           sys.exit(1 if a["regressions"] or a["ratchet_lost"] else 0)
           PY
+
+  # ---- The weekly full detailed run beside the A/B --------------------------------------------------------
+  # The weekly run re-verifies everything on both VictoriaLogs versions of the support policy (the newest 1.4x
+  # release and the pin): the per-case verdicts, the full parity corpus (recorded, never pruned: the pruning
+  # run is parity-refresh.yaml), the full-size grammar sweep with the live oracles, the full A/B on the oldest
+  # supported version (the A/B above is the pin's), and a dry run of release.yaml. weekly-summary adds the
+  # week's numbers to conformance/registry/generated/verification/weekly-history.jsonl and the trend of every
+  # number over the last weeks (weekly-trend.md) to the weekly pull request.
+  weekly-plan:
+    name: weekly plan
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      vl_versions: ${{ steps.matrix.outputs.vl_versions }}
+      floor_vl: ${{ steps.matrix.outputs.floor_vl }}
+      vl_image_repo: ${{ steps.matrix.outputs.vl_image_repo }}
+      loki_image: ${{ steps.matrix.outputs.loki_image }}
+      grafana_image: ${{ steps.matrix.outputs.grafana_image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          persist-credentials: false
+      - id: matrix
+        run: |
+          set -euo pipefail
+          m=test/e2e-compat/compatibility-matrix.json
+          {
+            echo "vl_versions=$(jq -ce '.stack.victorialogs | [.support_window.minimum_supported_version, .pinned_version] | unique' "$m")"
+            echo "floor_vl=$(jq -er '.stack.victorialogs.support_window.minimum_supported_version' "$m")"
+            echo "vl_image_repo=$(jq -er '.stack.victorialogs.image_repo' "$m")"
+            echo "loki_image=$(jq -er '.stack.loki | "\(.image_repo):\(.pinned_version)"' "$m")"
+            echo "grafana_image=$(jq -er '.stack.grafana | "\(.image_repo):\(.pinned_version)"' "$m")"
+          } >> "$GITHUB_OUTPUT"
+
+  weekly-sweep:
+    name: weekly full grammar sweep
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          cache: false
+      # The full size, recorded again with the live Loki and VictoriaLogs oracles (both versions of the matrix).
+      - name: Full-size grammar sweep with the live oracles
+        env:
+          LVP_RUN_ORACLES: "1"
+          LVP_GRAMMAR_SWEEP_SIZE: full
+          LVP_GRAMMAR_SWEEP_DUMP: /tmp/weekly-sweep/sweep-full.jsonl
+        run: |
+          mkdir -p /tmp/weekly-sweep
+          go test ./internal/querycorpus -run '^TestGrammarSweep$' -count=1 -v -timeout=100m | tail -n 40
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        if: always()
+        with:
+          name: weekly-sweep
+          path: /tmp/weekly-sweep
+          if-no-files-found: ignore
+
+  weekly-verify:
+    name: weekly cases and parity (VictoriaLogs ${{ matrix.vl }})
+    needs: [weekly-plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        vl: ${{ fromJson(needs.weekly-plan.outputs.vl_versions) }}
+    env:
+      LOKI_IMAGE: ${{ needs.weekly-plan.outputs.loki_image }}
+      GRAFANA_IMAGE: ${{ needs.weekly-plan.outputs.grafana_image }}
+      VICTORIALOGS_IMAGE: ${{ format('{0}:{1}', needs.weekly-plan.outputs.vl_image_repo, matrix.vl) }}
+      PROXY_IMAGE: loki-vl-proxy:weekly
+      OUT: /tmp/weekly-verify
+      VL: ${{ matrix.vl }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
+        with:
+          node-version: "22"
+      - name: Build the proxy image of main
+        run: docker build --build-arg REVISION="$(git rev-parse HEAD)" -t "$PROXY_IMAGE" .
+      - name: Every executable registry case against Loki and the proxy
+        working-directory: test/e2e-compat
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT/cases"
+          docker compose --profile ui up -d --no-build
+          ../../scripts/ci/wait_e2e_stack.sh 240
+          (cd ../.. && go test -tags=e2e -run '^TestSetup_IngestLogs$' -count=1 ./test/e2e-compat/)
+          q='sum(count_over_time({service_name=~".+"}[5m]))'
+          for _ in $(seq 1 60); do
+            n="$(curl -fsS -G http://127.0.0.1:13101/loki/api/v1/query --data-urlencode "query=${q}" -H 'X-Scope-OrgID: 0' \
+              | jq '.data.result | length' 2>/dev/null || echo 0)"
+            [ "${n:-0}" -gt 0 ] && break
+            sleep 10
+          done
+          running="$(curl -fsS http://127.0.0.1:19428/metrics | sed -n 's/^vm_app_version{.*short_version="\([^"]*\)".*/\1/p' | head -n 1)"
+          if [ "$running" != "$VL" ]; then
+            echo "::error::the stack runs VictoriaLogs '${running}', not ${VL}"
+            exit 1
+          fi
+          flags="$(docker inspect e2e-proxy --format '{{join .Args " "}}')"
+          revision="$(docker logs e2e-proxy 2>&1 | grep -oE '"?revision"?[=:]"?[0-9a-f]{7,}' | head -n 1 | grep -oE '[0-9a-f]{7,}$' || true)"
+          for c in $(docker ps --format '{{.Names}}' | grep '^e2e-proxy-'); do
+            port="$(docker port "$c" 3100/tcp 2>/dev/null | head -n 1 | sed 's/.*://')"
+            [ -n "$port" ] || continue
+            docker inspect "$c" --format '{{json .Args}}' | jq -c --arg n "$c" --arg u "http://127.0.0.1:${port}" '{name: $n, url: $u, flags: .}'
+          done | jq -s . > "$OUT/variants.json"
+          # -vl counts every case's data on VictoriaLogs: a comparison on unequal data is no verdict.
+          (cd ../.. && go run ./test/caseverify -loki http://127.0.0.1:13101 -proxy http://127.0.0.1:13100 -vl http://127.0.0.1:19428 \
+            -vl-version "$VL" -variants "$OUT/variants.json" -proxy-flags "$flags" -proxy-revision "$revision" \
+            -proxy-image "$(docker inspect e2e-proxy --format '{{.Image}}')" -require-current-proxy -commit "$(git rev-parse HEAD)" -out "$OUT/cases/cases-${VL}.json" -report "$OUT/cases-${VL}.md")
+      - name: Tear down the stack
+        if: always()
+        working-directory: test/e2e-compat
+        run: docker compose --profile ui down -v
+      - name: Install the capture tooling
+        working-directory: bench/visual
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
+          if [ -n "$CHROME_BIN" ]; then
+            echo "PLAYWRIGHT_EXECUTABLE_PATH=$CHROME_BIN" >> "$GITHUB_ENV"
+          else
+            npx playwright install --with-deps chromium
+          fi
+      # The whole corpus, recorded and never pruned: parity-refresh.yaml is the run that prunes and opens its PR.
+      - name: Differential run (whole corpus, no pruning)
+        run: |
+          set +e
+          python3 bench/parity/refresh.py --out /tmp/weekly-parity --mode full --no-prune
+          cp /tmp/weekly-parity/result.json "$OUT/result-${VL}.json" 2>/dev/null
+          cp /tmp/weekly-parity/summary.md "$OUT/parity-${VL}.md" 2>/dev/null
+          exit 0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        if: always()
+        with:
+          name: weekly-verify-${{ matrix.vl }}
+          path: ${{ env.OUT }}
+          if-no-files-found: ignore
+
+  weekly-ab-floor:
+    name: weekly A/B (VictoriaLogs ${{ needs.weekly-plan.outputs.floor_vl }})
+    needs: [weekly-plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    permissions:
+      contents: read
+    env:
+      OUT: /tmp/ab-floor
+      VICTORIALOGS_IMAGE: ${{ format('{0}:{1}', needs.weekly-plan.outputs.vl_image_repo, needs.weekly-plan.outputs.floor_vl) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          cache: false
+      # The same full A/B as the pin's, written nowhere: its verdict joins the weekly trend.
+      - name: Full A/B on the oldest supported VictoriaLogs
+        run: |
+          set -euo pipefail
+          python3 bench/ab/daily.py --out "$OUT" --no-write
+          python3 bench/ab/smoke.py judge --out "$OUT/floor.json" "$OUT"/summary-*.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        if: always()
+        with:
+          name: weekly-ab-floor
+          path: |
+            ${{ env.OUT }}/floor.json
+            ${{ env.OUT }}/summary-*.json
+            ${{ env.OUT }}/meta.json
+          if-no-files-found: ignore
+
+  # The fleet cache proof of the PR gate (ci.yaml e2e-fleet), weekly on main: three proxies, peer memory and
+  # disk fetches, disk loss and refill, an owner down, for replication factors 1 and 2.
+  weekly-fleet:
+    name: weekly fleet cache proof
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      PROXY_IMAGE: loki-vl-proxy:fleet-ci
+      OUT: /tmp/weekly-fleet
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          cache: false
+      - name: Build the proxy image of main
+        run: docker build --build-arg REVISION="$(git rev-parse HEAD)" -t "$PROXY_IMAGE" .
+      - name: Three-proxy cache proof for RF1 and RF2
+        run: |
+          mkdir -p "$OUT"
+          for rf in 1 2; do
+            export FLEET_PROXY_EXTRA_ARG="-peer-replication-factor=$rf"
+            export FLEET_PROOF_REPORT="$OUT/rf$rf.json"
+            docker compose -f test/e2e-fleet/docker-compose.yml --profile edge down -v
+            docker compose -f test/e2e-fleet/docker-compose.yml up -d --no-build --wait --wait-timeout 180
+            set +e
+            go test -v -count=1 -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof|TestFleet_QueryRangeSettledStepsReachPeers|TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry|TestFleet_QueryRangeWindowsServeMovedRangesOnPeers)$' ./test/e2e-fleet/ > "$OUT/rf$rf.txt" 2>&1
+            echo $? > "$OUT/rf$rf.exit"
+            set -e
+            tail -n 30 "$OUT/rf$rf.txt"
+            docker compose -f test/e2e-fleet/docker-compose.yml --profile edge down -v
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        if: always()
+        with:
+          name: weekly-fleet
+          path: /tmp/weekly-fleet
+          if-no-files-found: ignore
+
+  weekly-release-dry-run:
+    name: weekly release dry run
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Dispatch release.yaml with dry_run and wait for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/weekly-release
+          TAG="$(git describe --tags --abbrev=0 --match 'v*' HEAD)"
+          SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run release.yaml --repo "$GITHUB_REPOSITORY" --ref main -f tag="$TAG" -f dry_run=true
+          RUN_ID=""
+          for _ in $(seq 1 30); do
+            sleep 10
+            RUN_ID="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release.yaml --event workflow_dispatch --branch main \
+              --limit 5 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"${SINCE}\")] | last | .databaseId // empty")"
+            [ -n "$RUN_ID" ] && break
+          done
+          if [ -z "$RUN_ID" ]; then
+            echo "not-started" > /tmp/weekly-release/conclusion
+            echo "::error::the release dry run did not start"
+            exit 1
+          fi
+          set +e
+          gh run watch "$RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status --interval 60 > /dev/null
+          set -e
+          gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion > /tmp/weekly-release/conclusion
+          echo "release dry run of ${TAG}: $(cat /tmp/weekly-release/conclusion) (run ${RUN_ID})" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        if: always()
+        with:
+          name: weekly-release
+          path: /tmp/weekly-release
+          if-no-files-found: ignore
+
+  weekly-summary:
+    name: weekly summary
+    needs: [daily, weekly-sweep, weekly-verify, weekly-ab-floor, weekly-fleet, weekly-release-dry-run]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      IN: /tmp/weekly-in
+      BRANCH: bench/daily-perf
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          # No restored cache in the job that holds the bot token.
+          cache: false
+      - name: Download the weekly results
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: weekly-*
+          path: ${{ env.IN }}
+      # Built from main before anything else is checked out: the branch tip may predate the tool.
+      - name: Build the report tool from main
+        run: go build -o /tmp/dailyreport ./test/dailyreport
+
+      - name: Start from the weekly report branch
+        env:
+          READ_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # With the weekly pull request open, the trend goes on top of its branch (the A/B job may have moved
+          # it today), so every unmerged week stays in it. Without an open pull request the branch is merged
+          # or closed: main is the base, and only the weekly history is carried from the branch.
+          # shellcheck disable=SC2016 # git expands GIT_AUTH_TOKEN when it runs the helper
+          if GIT_AUTH_TOKEN="${READ_TOKEN}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' fetch --no-tags origin "$BRANCH" 2>/dev/null; then
+            OPEN="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+            if [ -n "$OPEN" ]; then
+              git checkout --detach FETCH_HEAD
+            else
+              git checkout FETCH_HEAD -- conformance/registry/generated/verification/weekly-history.jsonl 2>/dev/null || true
+            fi
+          fi
+      - name: Write the weekly trend
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/weekly-cases /tmp/weekly-parity
+          cp "$IN"/weekly-verify-*/cases/*.json /tmp/weekly-cases/ 2>/dev/null || true
+          cp "$IN"/weekly-verify-*/result-*.json /tmp/weekly-parity/ 2>/dev/null || true
+          conclusion="$(cat "$IN/weekly-release/conclusion" 2>/dev/null || true)"
+          # The pin's reuse, judged from the weekly A/B's results on the branch (the A/B job's commit).
+          pin=""
+          if ls bench/ab/results/daily-*.json >/dev/null 2>&1; then
+            python3 bench/ab/smoke.py judge --out /tmp/weekly-pin.json bench/ab/results/daily-*.json && pin=/tmp/weekly-pin.json
+          fi
+          set +e
+          /tmp/dailyreport -weekly -check -date "$(date -u +%Y-%m-%d)" -commit "$(git rev-parse HEAD)" \
+            -weekly-cases /tmp/weekly-cases -weekly-parity /tmp/weekly-parity -weekly-sweep "$IN/weekly-sweep/sweep-full.jsonl" \
+            -weekly-floor-perf "$IN/weekly-ab-floor/floor.json" -weekly-pin-perf "$pin" -weekly-fleet "$IN/weekly-fleet" \
+            -release-dry-run "$conclusion" | tee /tmp/weekly-red.txt
+          echo "${PIPESTATUS[0]}" > /tmp/weekly-red.exit
+          set -e
+          cat conformance/registry/generated/verification/weekly-trend.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Add the weekly trend to the weekly report PR
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
+          PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          FILES=(conformance/registry/generated/verification/weekly-history.jsonl conformance/registry/generated/verification/weekly-trend.md)
+          DATE="$(date -u +%Y-%m-%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Same delivery as the A/B report: a commit on the branch's tip (or on main), pushed to a new
+          # temporary ref, then the branch moved once through the API.
+          REF="repos/${GITHUB_REPOSITORY}/git/refs"
+          TMP_BRANCH="${BRANCH}-weekly"
+          git checkout -B "$TMP_BRANCH"
+          git add -- "${FILES[@]}"
+          git commit -m "bench: weekly trend ${DATE}"
+          SHA="$(git rev-parse HEAD)"
+          gh api -X DELETE "${REF}/heads/${TMP_BRANCH}" >/dev/null 2>&1 || true
+          # shellcheck disable=SC2016 # git expands GIT_AUTH_TOKEN when it runs the helper
+          GIT_AUTH_TOKEN="${PUSH_TOKEN}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' push origin "${TMP_BRANCH}"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${BRANCH}" >/dev/null 2>&1; then
+            if ! gh api -X PATCH "${REF}/heads/${BRANCH}" -f sha="${SHA}" -F force=true >/dev/null 2>&1; then
+              echo "::warning::${BRANCH} could not be moved; deleting it and creating it again"
+              gh api -X DELETE "${REF}/heads/${BRANCH}" >/dev/null
+              gh api -X POST "${REF}" -f ref="refs/heads/${BRANCH}" -f sha="${SHA}" >/dev/null
+            fi
+          else
+            gh api -X POST "${REF}" -f ref="refs/heads/${BRANCH}" -f sha="${SHA}" >/dev/null
+          fi
+          gh api -X DELETE "${REF}/heads/${TMP_BRANCH}" >/dev/null 2>&1 || true
+          TREND="$(head -c 30000 conformance/registry/generated/verification/weekly-trend.md)"
+          PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$PR_NUMBER" ]; then
+            # The A/B part of the body stays; the trend replaces the previous week's.
+            OLD="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json body --jq .body | sed '/^## Weekly trend$/,$d' | head -c 30000)"
+            gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$(printf '%s\n\n%s\n' "$OLD" "$TREND")"
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" --title "bench: weekly report ${DATE}" \
+              --body "$(printf '%s\n\nRun: %s/%s/actions/runs/%s\n' "$TREND" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")"
+          fi
+      - name: Fail when a weekly check is red
+        if: ${{ !cancelled() }}
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          # Red run = the notification; the trend is already on the pull request.
+          python3 - "$IN" <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["RESULTS"])
+          # A skipped weekly job is a check that did not run (its plan failed): red. The A/B job skips by design
+          # when nothing it measures changed.
+          red = [f"{job}: {v['result']}" for job, v in needs.items() if job != "daily" and v["result"] != "success"]
+          try:
+              conclusion = open(os.path.join(sys.argv[1], "weekly-release", "conclusion")).read().strip()
+          except OSError:
+              conclusion = "missing"
+          if conclusion != "success":
+              red.append(f"release dry run: {conclusion}")
+          # The week against the one before: reuse that dropped, a fleet proof that failed (dailyreport -weekly -check).
+          try:
+              if open("/tmp/weekly-red.exit").read().strip() != "0":
+                  red += [l[5:].strip() for l in open("/tmp/weekly-red.txt") if l.startswith("red: ")] or ["the weekly numbers are red"]
+          except OSError:
+              red.append("the weekly trend was not written")
+          for r in red:
+              print(f"::error title=weekly run::{r}")
+          sys.exit(1 if red else 0)
+          PY

@@ -19,7 +19,13 @@
 // The day is red when a fixed case differs from Loki, an error recording drifted or its replay failed, the
 // sweep's live check is red, the parity slice holds a cluster no case claims, the perf smoke has a row above
 // 2x Loki or lost a ratchet row, a scheduled workflow is missing or red, or an input is missing. -check exits
-// 1 on a red day. The command is test support: it reads and writes files only.
+// 1 on a red day.
+//
+// -weekly is the weekly full run (perf-daily.yaml): it appends the week's numbers (the newest daily summary,
+// the weekly per-case verdicts and full parity corpus of both VictoriaLogs versions, the full-size grammar
+// sweep, the full A/B on the oldest supported VictoriaLogs, the weekly A/B figures, the release dry run) to
+// conformance/registry/generated/verification/weekly-history.jsonl and writes weekly-trend.md, every number
+// over the last weeks. The command is test support: it reads and writes files only.
 package main
 
 import (
@@ -37,6 +43,9 @@ type config struct {
 	in                Inputs
 	out, casesOut, md string
 	check             bool
+	weekly            bool
+	week              WeeklyInputs
+	history, trend    string
 }
 
 func main() {
@@ -76,11 +85,25 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&cfg.casesOut, "cases-out", "conformance/registry/generated/verification/cases.json", "the merged per-case verdicts")
 	fs.StringVar(&cfg.md, "md", "", "also write the Markdown report here")
 	fs.BoolVar(&cfg.check, "check", false, "exit 1 on a red day")
+	fs.BoolVar(&cfg.weekly, "weekly", false, "the weekly full run: append the week's numbers and write the trend")
+	fs.StringVar(&cfg.week.Summary, "daily-summary", "conformance/registry/generated/verification/summary.json", "weekly: the newest daily summary")
+	fs.StringVar(&cfg.week.CasesDir, "weekly-cases", "", "weekly: directory of test/caseverify files")
+	fs.StringVar(&cfg.week.ParityDir, "weekly-parity", "", "weekly: directory of parity result-<version>.json files")
+	fs.StringVar(&cfg.week.SweepDump, "weekly-sweep", "", "weekly: the full-size sweep's dump")
+	fs.StringVar(&cfg.week.FloorPerf, "weekly-floor-perf", "", "weekly: smoke.py judge of the A/B on the oldest supported VictoriaLogs")
+	fs.StringVar(&cfg.week.PinPerf, "weekly-pin-perf", "", "weekly: smoke.py judge of the weekly A/B's results on the pin (reuse)")
+	fs.StringVar(&cfg.week.FleetDir, "weekly-fleet", "", "weekly: directory of the fleet cache proof reports (rf<N>.json, rf<N>.exit)")
+	fs.StringVar(&cfg.week.ReleaseDry, "release-dry-run", "", "weekly: the conclusion of the release.yaml dry run")
+	fs.StringVar(&cfg.history, "weekly-history", "conformance/registry/generated/verification/weekly-history.jsonl", "weekly: the history")
+	fs.StringVar(&cfg.trend, "weekly-trend", "conformance/registry/generated/verification/weekly-trend.md", "weekly: the trend page")
 	err := fs.Parse(args)
 	return cfg, err
 }
 
 func run(cfg config, stdout, stderr io.Writer) int {
+	if cfg.weekly {
+		return runWeekly(cfg, stdout, stderr)
+	}
 	s, merged, err := Build(cfg.in)
 	if err == nil {
 		err = writeJSON(cfg.out, s)
@@ -121,4 +144,40 @@ func writeJSON(path string, v any) error {
 		return err
 	}
 	return os.WriteFile(path, b.Bytes(), 0o644)
+}
+
+func runWeekly(cfg config, stdout, stderr io.Writer) int {
+	w := cfg.week
+	w.Date, w.Commit, w.SiteData, w.Over2x = cfg.in.Date, cfg.in.Commit, cfg.in.SiteData, cfg.in.Over2x
+	line, err := BuildWeekly(w)
+	var lines []WeeklyLine
+	if err == nil {
+		lines, err = ReadWeekly(cfg.history)
+	}
+	if err == nil {
+		var before *WeeklyLine
+		for i := range lines {
+			if lines[i].Date < line.Date {
+				before = &lines[i]
+			}
+		}
+		judgeReuse(&line, before)
+		lines = AppendWeekly(lines, line)
+		err = WriteWeekly(cfg.history, lines)
+	}
+	if err == nil {
+		err = os.WriteFile(cfg.trend, []byte(RenderTrend(lines)), 0o644)
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, "dailyreport:", err)
+		return 2
+	}
+	fmt.Fprintf(stdout, "weekly report %s: %d numbers, %d weeks of history\n", line.Date, len(line.Numbers), len(lines))
+	for _, r := range line.Red {
+		fmt.Fprintln(stdout, "red: "+r)
+	}
+	if cfg.check && len(line.Red) > 0 {
+		return 1
+	}
+	return 0
 }

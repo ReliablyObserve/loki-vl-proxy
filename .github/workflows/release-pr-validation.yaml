@@ -117,6 +117,9 @@ jobs:
               case "${path}" in
                 bench/ab/results/*|bench/ab/history/*) ;;
                 conformance/registry/generated/perf-evidence.json) ;;
+                # The weekly full run's history and trend (perf-daily.yaml, weekly-summary).
+                conformance/registry/generated/verification/weekly-history.jsonl) ;;
+                conformance/registry/generated/verification/weekly-trend.md) ;;
                 conformance/reports/performance.md|conformance/reports/gaps.md) ;;
                 *) fail "file outside the daily performance report: ${path}" ;;
               esac
