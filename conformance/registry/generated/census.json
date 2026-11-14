@@ -2415,6 +2415,8 @@
     "test/e2e-compat/logql_whitespace_test.go | semantics/range-duration-grammar-wider-than-loki",
     "test/e2e-compat/logql_whitespace_test.go | semantics/stage-after-unwrap-accepted",
     "test/e2e-compat/logql_whitespace_test.go | semantics/unwrap-in-log-query",
+    "test/e2e-compat/loki_metric_probe_window_test.go | semantics/query-range-step-alignment",
+    "test/e2e-compat/loki_metric_probe_window_test.go | semantics/reserved-field-name-case-outbound",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-name-parse-error",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-names-accepted-outside-loki-profile",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/label-browse-params-ignored",
@@ -2672,7 +2674,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 597,
+      "go": 598,
       "playwright": 1
     },
     "page_kinds": {
