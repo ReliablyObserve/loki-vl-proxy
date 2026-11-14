@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Breaking:** queries Loki rejects after it has parsed them are now rejected the same way, with Loki's `400` and text, before the
+  proxy looks in a cache or calls VictoriaLogs: `sort` or `sort_desc` with labels to group by (`parse error : sort and
+  sort_desc doesn't allow grouping by `), `quantile_over_time` without its quantile (`parse error : parameter
+  required for operation quantile_over_time`, which the proxy answered only after translating the query), and `and`,
+  `or` or `unless` with an operand of numbers such as `1 + 2` or `1 > 2` (`parse error : unexpected literal for right
+  leg of logical/set binary operation (and): 3.000000`). The proxy accepted the first and the last and answered them
+  with data. `label_replace` over a log query, such as `label_replace({app="a"}, ...)`, is now a `400` with Loki's
+  syntax error, `parse error : syntax error: unexpected ,`, still without the line and column Loki adds.
+- `labels`, label values, `detected_labels`, `patterns`, `index/stats`, `index/volume`, `index/volume_range`,
+  `detected_fields` and `detected_field/{name}/values` answer these rejections as Loki does, ahead of `only label
+  matchers are supported` and `only log selector is supported`. `series` is unchanged, as in Loki.
+- A metric query over a zero range, such as `rate({a="b"}[0s])` or `sum(count_over_time({a="b"}[0s]))`, now answers
+  Loki's empty result (`200`, an empty matrix on `query_range`, an empty vector on `query`) at once, without a call
+  to VictoriaLogs. It answered `500`. `absent_over_time` over a zero range, which Loki answers with `1` at every
+  step, still answers `500`.
+- An instant log query with a `limit` above `max_entries_limit_per_query` answers Loki's `log queries are not
+  supported as an instant query type, ...` instead of the limit error, as in Loki.
+
+## [2.230.0] - 2026-11-14
+
+### Fixed
+
 - A ruler or alerts backend that answers with a body the proxy cannot pass on now fails the request instead of
   answering `200`. Before, `/prometheus/api/v1/alerts`, `/loki/api/v1/alerts`, `/prometheus/api/v1/rules` and the
   legacy rules views sent the backend's body on as it came: a body cut off mid-answer, a body that is not JSON or

@@ -9,18 +9,18 @@
   "differences_by_kind": {
     "VictoriaLogs rejects the translator text": 393,
     "accepted, translation fails": 32,
-    "error text differs": 207,
+    "error text differs": 212,
     "error text differs, rejected at translation": 27,
-    "proxy accepts, Loki rejects": 559,
+    "proxy accepts, Loki rejects": 547,
     "proxy rejects, Loki accepts": 18,
     "tree fact differs: binary operation": 17,
     "tree fact differs: has a log pipeline": 3,
     "tree fact differs: offsets": 4,
     "tree fact differs: outermost operation": 4
   },
-  "logsql_texts_checked": 57996,
+  "logsql_texts_checked": 57972,
   "logsql_texts_unrecorded": 0,
-  "victorialogs_rejections_for_queries_loki_rejects": 108,
+  "victorialogs_rejections_for_queries_loki_rejects": 100,
   "case_rules": [
     {
       "match": "^(proxy accepts, Loki rejects|error text differs).*\\| spacing ",
@@ -137,6 +137,10 @@
     {
       "match": "^error text differs \\| grouping not allowed for approx_topk",
       "case": "semantics/approx-topk-opaque-plan"
+    },
+    {
+      "match": "^error text differs \\| syntax error at  \\|\\| syntax error at  \\| label_replace inner",
+      "case": "semantics/label-replace-over-log-selector-accepted"
     },
     {
       "match": "^error text differs",
@@ -1227,6 +1231,44 @@
         }
       ]
     },
+    "error text differs | syntax error at  || syntax error at  | label_replace inner {a=\"b\"}": {
+      "count": 3,
+      "case": "semantics/label-replace-over-log-selector-accepted",
+      "kind": "error text differs",
+      "key": "syntax error at  || syntax error at ",
+      "element": "label_replace inner {a=\"b\"}",
+      "examples": [
+        {
+          "query": "label_replace({a=\"b\"}, \"d\", \"x\", \"a\", \"(.*)\")",
+          "loki": "parse error at line 1, col 22: syntax error: unexpected ,",
+          "proxy": "parse error : syntax error: unexpected ,"
+        },
+        {
+          "query": "label_replace({a=\"b\"}, \"d\", \"$1\", \"a\", \"(.*)\")",
+          "loki": "parse error at line 1, col 22: syntax error: unexpected ,",
+          "proxy": "parse error : syntax error: unexpected ,"
+        }
+      ]
+    },
+    "error text differs | syntax error at  || syntax error at  | label_replace inner {a=\"b\"} | json": {
+      "count": 2,
+      "case": "semantics/label-replace-over-log-selector-accepted",
+      "kind": "error text differs",
+      "key": "syntax error at  || syntax error at ",
+      "element": "label_replace inner {a=\"b\"} | json",
+      "examples": [
+        {
+          "query": "label_replace({a=\"b\"} | json, \"d\", \"$1\", \"a\", \".+\")",
+          "loki": "parse error at line 1, col 29: syntax error: unexpected ,",
+          "proxy": "parse error : syntax error: unexpected ,"
+        },
+        {
+          "query": "label_replace({a=\"b\"} | json, \"d\", \"$1\", \"a\", \"(.*)\")",
+          "loki": "parse error at line 1, col 29: syntax error: unexpected ,",
+          "proxy": "parse error : syntax error: unexpected ,"
+        }
+      ]
+    },
     "error text differs | syntax error at  || syntax error at % | literal number 1 % 0": {
       "count": 1,
       "case": "semantics/parse-error-text-parity",
@@ -2224,39 +2266,6 @@
         }
       ]
     },
-    "proxy accepts, Loki rejects | parameter required for operation quantile_over_time | rangeagg unwrap fn quantile_over_time(%s)": {
-      "count": 4,
-      "case": "semantics/quantile-over-time-parameter-required",
-      "kind": "proxy accepts, Loki rejects",
-      "key": "parameter required for operation quantile_over_time",
-      "element": "rangeagg unwrap fn quantile_over_time(%s)",
-      "examples": [
-        {
-          "query": "quantile_over_time({a=\"b\"} | json | unwrap c[5m])",
-          "loki": "parse error : parameter required for operation quantile_over_time",
-          "proxy": "accepted"
-        },
-        {
-          "query": "quantile_over_time({a=\"b\"} | json | unwrap c[90s])",
-          "loki": "parse error : parameter required for operation quantile_over_time",
-          "proxy": "accepted"
-        }
-      ]
-    },
-    "proxy accepts, Loki rejects | sort and sort_desc doesn't allow grouping by | vecagg agg sort_desc|": {
-      "count": 1,
-      "case": "semantics/sort-grouping-accepted",
-      "kind": "proxy accepts, Loki rejects",
-      "key": "sort and sort_desc doesn't allow grouping by",
-      "element": "vecagg agg sort_desc|",
-      "examples": [
-        {
-          "query": "sort_desc by (a) (rate({a=\"b\"}[5m]))",
-          "loki": "parse error : sort and sort_desc doesn't allow grouping by ",
-          "proxy": "accepted"
-        }
-      ]
-    },
     "proxy accepts, Loki rejects | stage 'S' : cannot parse expression [ ]: syntax error: unexpected $end, expecting LSB or FIELD | spacing one blank": {
       "count": 5,
       "case": "semantics/parser-reads-unicode-blank-as-white-space",
@@ -2272,44 +2281,6 @@
         {
           "query": "{a=\"b\"} |= \"x\" | json\f| c=\"d\"",
           "loki": "parse error : stage '| json \f=\"\\f\"' : cannot parse expression [\f]: syntax error: unexpected $end, expecting LSB or FIELD",
-          "proxy": "accepted"
-        }
-      ]
-    },
-    "proxy accepts, Loki rejects | syntax error at  | label_replace inner {a=\"b\"}": {
-      "count": 3,
-      "case": "semantics/label-replace-over-log-selector-accepted",
-      "kind": "proxy accepts, Loki rejects",
-      "key": "syntax error at ",
-      "element": "label_replace inner {a=\"b\"}",
-      "examples": [
-        {
-          "query": "label_replace({a=\"b\"}, \"d\", \"x\", \"a\", \"(.*)\")",
-          "loki": "parse error at line 1, col 22: syntax error: unexpected ,",
-          "proxy": "accepted"
-        },
-        {
-          "query": "label_replace({a=\"b\"}, \"d\", \"$1\", \"a\", \"(.*)\")",
-          "loki": "parse error at line 1, col 22: syntax error: unexpected ,",
-          "proxy": "accepted"
-        }
-      ]
-    },
-    "proxy accepts, Loki rejects | syntax error at  | label_replace inner {a=\"b\"} | json": {
-      "count": 2,
-      "case": "semantics/label-replace-over-log-selector-accepted",
-      "kind": "proxy accepts, Loki rejects",
-      "key": "syntax error at ",
-      "element": "label_replace inner {a=\"b\"} | json",
-      "examples": [
-        {
-          "query": "label_replace({a=\"b\"} | json, \"d\", \"$1\", \"a\", \".+\")",
-          "loki": "parse error at line 1, col 29: syntax error: unexpected ,",
-          "proxy": "accepted"
-        },
-        {
-          "query": "label_replace({a=\"b\"} | json, \"d\", \"$1\", \"a\", \"(.*)\")",
-          "loki": "parse error at line 1, col 29: syntax error: unexpected ,",
           "proxy": "accepted"
         }
       ]
@@ -2571,25 +2542,6 @@
         {
           "query": "{a_b=\"c\"} | unwrap a",
           "loki": "parse error at line 1, col 13: syntax error: unexpected unwrap",
-          "proxy": "accepted"
-        }
-      ]
-    },
-    "proxy accepts, Loki rejects | unexpected literal for right leg of logical/set binary operation (and): N.N | binary right 1 + 2": {
-      "count": 2,
-      "case": "semantics/set-operation-folded-literal-operand",
-      "kind": "proxy accepts, Loki rejects",
-      "key": "unexpected literal for right leg of logical/set binary operation (and): N.N",
-      "element": "binary right 1 + 2",
-      "examples": [
-        {
-          "query": "(rate({a=\"b\"}[5m])) and ignoring () 1 + 2",
-          "loki": "parse error : unexpected literal for right leg of logical/set binary operation (and): 3.000000",
-          "proxy": "accepted"
-        },
-        {
-          "query": "sum_over_time({a=\"b\"} | unwrap c [5m]) and on (a) group_right 1 + 2",
-          "loki": "parse error : unexpected literal for right leg of logical/set binary operation (and): 3.000000",
           "proxy": "accepted"
         }
       ]

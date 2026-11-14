@@ -13,7 +13,7 @@ The answers are those of Grafana Loki 3.7.9, recorded over HTTP on 2026-11-13. E
 
 | Score | Value | Meaning |
 |---|---|---|
-| Errors that match Loki | 95.4% (209/219) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
+| Errors that match Loki | 95.7% (221/231) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
 | Matrix coverage | 57.3% (71/124) | route x error kind cells with a recorded or documented Loki answer, a unit gate and an end-to-end comparison |
 | Cells that match | 96/124 | cells where every comparable row matches and no known leak remains |
 | Messages recorded | 27/36 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
@@ -27,18 +27,18 @@ Each cell shows whether the proxy matches (`match` or `differs`), the matching a
 | Route | Parameters | LogQL syntax | LogQL validation | Limits | Backend failure | Methods and routing | Tenant | Cancel and deadline |
 |---|---|---|---|---|---|---|---|---|
 | `alerts` |  |  |  | match gate U | match gate U | gap | gap | match gate U |
-| `detected_field_values` | match 4/4 UE | match 2/2 UE | match 1/1 UE | match 1/1 UE | match gate U | gap | gap | match gate U |
-| `detected_fields` | match 7/7 UE | match 2/2 UE | match 1/1 UE | match 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
-| `detected_labels` | match 1/1 UE | match 1/1 UE | match 2/2 UE | match 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
+| `detected_field_values` | match 4/4 UE | match 2/2 UE | match 2/2 UE | match 1/1 UE | match gate U | gap | gap | match gate U |
+| `detected_fields` | match 7/7 UE | match 2/2 UE | match 2/2 UE | match 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
+| `detected_labels` | match 1/1 UE | match 1/1 UE | match 3/3 UE | match 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
 | `format_query` | gap | match 2/2 UE |  |  |  | match 5/5 UE |  |  |
-| `index_stats` | match 3/3 UE | match 2/2 UE | match 1/1 UE | match 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
-| `index_volume` | match 6/6 UE | match 2/2 UE | match 1/1 UE | match 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
-| `index_volume_range` | match 9/9 UE | match 2/2 UE | match 1/1 UE | match gate UE | match gate U | gap | gap | match gate U |
-| `label_values` | match 4/4 UE | match 1/1 UE | match 2/2 UE | match 1/1 UE | match gate U | match 2/2 UE | not comparable (6) | match gate U |
-| `labels` | match 4/4 UE | match 1/1 UE | match 2/2 UE | match 1/1 UE | match gate UE | match 5/5 UE | not comparable (20) | match gate UE |
-| `patterns` | match 5/5 UE | match 2/2 UE | match 1/1 UE | match gate U | match gate U | match 5/5 UE | gap | match gate U |
-| `query` | match 3/3 UE | differs 1/2 UE | differs 1/2 UE | match gate U | match gate U | match 5/5 UE | not comparable (6) | match gate U |
-| `query_range` | match 16/16 UE | differs 1/2 UE | differs 2/3 UE | match gate UE | match gate UE | match 5/5 UE | not comparable (20) | match gate UE |
+| `index_stats` | match 3/3 UE | match 2/2 UE | match 2/2 UE | match 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
+| `index_volume` | match 6/6 UE | match 2/2 UE | match 2/2 UE | match 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
+| `index_volume_range` | match 9/9 UE | match 2/2 UE | match 2/2 UE | match gate UE | match gate U | gap | gap | match gate U |
+| `label_values` | match 4/4 UE | match 1/1 UE | match 3/3 UE | match 1/1 UE | match gate U | match 2/2 UE | not comparable (6) | match gate U |
+| `labels` | match 4/4 UE | match 1/1 UE | match 3/3 UE | match 1/1 UE | match gate UE | match 5/5 UE | not comparable (20) | match gate UE |
+| `patterns` | match 5/5 UE | match 2/2 UE | match 2/2 UE | match gate U | match gate U | match 5/5 UE | gap | match gate U |
+| `query` | match 4/4 UE | differs 1/2 UE | differs 1/2 UE | match gate U | match gate U | match 5/5 UE | not comparable (6) | match gate U |
+| `query_range` | match 16/16 UE | differs 1/2 UE | differs 4/5 UE | match gate UE | match gate UE | match 5/5 UE | not comparable (20) | match gate UE |
 | `rules` |  |  |  | match gate U | match gate U | gap | gap | match gate U |
 | `series` | match 2/2 UE | match 2/2 UE | match 1/1 UE | match 1/1 UE | match gate U | match 5/5 UE | not comparable (6) | match gate U |
 | `tail` | match 4/4 UE | match 2/2 UE | match 1/1 UE | match gate U | match gate U | match 5/5 UE | gap | match gate U |
@@ -78,7 +78,7 @@ The order was observed by sending 33 requests that carry two errors each to a re
 | `msg-delay-for` | 400 | param | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-direction` | 400 | param | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-end-before-start` | 400 | param | 5 | 5/5 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
-| `msg-instant-log-query` | 400 | param | 7 | 0/1 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-instant-log-query` | 400 | param | 8 | 1/2 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-internal` | 500 | internal | 0 | - | documented | TestErrorLayer_NoVictoriaLogsLeak | - |
 | `msg-interval-negative` | 400 | param | 1 | 1/1 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-limit-index-series` | 500 | limit | 1 | - | recorded-not-comparable | - | - |
@@ -95,7 +95,7 @@ The order was observed by sending 33 requests that carry two errors each to a re
 | `msg-only-log-selector` | 400 | param | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-param-duration` | 400 | param | 9 | 9/9 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-param-number` | 400 | param | 14 | 14/14 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
-| `msg-parse` | 400 | parse | 38 | 33/38 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-parse` | 400 | parse | 49 | 44/49 | differs | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-parse-input-size` | 400 | parse | 1 | 1/1 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-post-too-large` | 400 | form | 1 | 1/1 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-queue-full` | 429 | queue_full | 0 | - | documented | TestErrorLayer_NoVictoriaLogsLeak | - |

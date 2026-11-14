@@ -10,7 +10,7 @@ import (
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -274,12 +274,12 @@ func (p *Proxy) proxyBinaryLogQL(w http.ResponseWriter, r *http.Request, expr *l
 	// Share the total work budget across siblings as well as nested children.
 	r = r.WithContext(binaryEvaluationContext(r.Context()))
 	if (leftScalar || rightScalar) && (expr.Op == "and" || expr.Op == "or" || expr.Op == "unless") {
-		leg, literal := "right", rightValue
-		if leftScalar {
-			leg, literal = "left", leftValue
+		// Validation refuses a logical/set operation with a number operand before any work (queryplan.Validate,
+		// Loki's text); an operand rewritten to a number on the way here gets the same answer.
+		if rejection := queryplan.Validate(expr); rejection != nil {
+			p.writeErr(w, r.Context(), treeRejection(rejection))
+			return
 		}
-		p.writeErr(w, r.Context(), lokierr.Parse(0, 0, "unexpected literal for "+leg+" leg of logical/set binary operation ("+expr.Op+"): "+strconv.FormatFloat(literal, 'f', 6, 64)))
-		return
 	}
 	if leftScalar && rightScalar {
 		value, _ := binarySampleValue(leftValue, rightValue, expr.Op, true)

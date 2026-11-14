@@ -19,8 +19,8 @@
 [![Helm Chart Pulls](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/ghcr-chart-pulls.json)](https://github.com/ReliablyObserve/Loki-VL-proxy/pkgs/container/charts%2Floki-vl-proxy)
 [![Source Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-code.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Test Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-tests.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-45422%20passed-brightgreen)](#tests)
-[![Coverage](https://img.shields.io/badge/coverage-88.3%25-green)](#tests)
+[![Tests](https://img.shields.io/badge/tests-45597%20passed-brightgreen)](#tests)
+[![Coverage](https://img.shields.io/badge/coverage-88.5%25-green)](#tests)
 [![LogQL Compatibility](https://img.shields.io/badge/LogQL%20compatibility-tested-blue)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
@@ -177,8 +177,8 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 10 proven, 21 partial, 3 gaps |
-| Known differences from Loki (ranked) | **155**: 130 open, 15 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **68 of 130**: 54 Explore, 13 Logs Drilldown, 1 Grafana datasource; 24 API only, 38 edge cases |
+| Known differences from Loki (ranked) | **151**: 126 open, 15 documented, 7 owner-kept, 3 upstream |
+| Open differences visible in Grafana (registry impact) | **68 of 126**: 54 Explore, 13 Logs Drilldown, 1 Grafana datasource; 22 API only, 36 edge cases |
 
 **Readiness by client**
 
@@ -189,7 +189,7 @@ The Loki endpoints each client calls (registry `consumers`), with the same evide
 | Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 54 |
 | Logs Drilldown | 11 | 11 (100%) | 11 (100%) | 9 (82%) | 13 |
 | Grafana Loki datasource | 6 | 6 (100%) | 6 (100%) | 4 (67%) | 1 |
-| Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 24 |
+| Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 22 |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 

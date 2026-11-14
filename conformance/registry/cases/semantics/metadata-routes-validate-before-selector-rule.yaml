@@ -1,0 +1,54 @@
+id: semantics/metadata-routes-validate-before-selector-rule
+title: "Metadata routes report Loki's validation error of a query before `only label matchers` or `only log selector` (fixed for the tree checks)"
+pending: true
+proves:
+  - loki_api_v1_labels
+  - loki_api_v1_label_name_values
+  - loki_api_v1_detected_labels
+  - loki_api_v1_detected_fields
+  - loki_api_v1_detected_field_name_values
+  - loki_api_v1_patterns
+  - loki_api_v1_index_stats
+  - loki_api_v1_index_volume
+  - loki_api_v1_index_volume_range
+consumer: api
+why: |
+  Loki validates the whole expression of a metadata route's query before the route requires a selector. Its
+  recorded answers (Loki 3.7.9 over HTTP, rows r0428 to r0436 of internal/lokierr/testdata/loki_error_answers.jsonl) for `topk(0, rate({app="api-gateway"}[5m]))` are
+  `parse error : invalid parameter (must be greater than 0) topk(0` on /labels, /label/<name>/values,
+  /detected_labels, /patterns, /index/stats, /index/volume(_range), /detected_fields and
+  /detected_field/<name>/values, and `only label matchers are supported` on /series alone, which reads its groups
+  without that validation. The Loki oracle places the tree checks with that validation (syntax.ParseLogSelector
+  answers `only log selector is supported` for `sort by (a) (…)`, `quantile_over_time` without its quantile and
+  `… and 1 + 2`, while syntax.ParseExpr rejects them), so these routes answer them with Loki's text as well.
+
+  Fixed for the checks on the parsed tree (internal/queryplan/validate.go Validate): the selector routes answer
+  the tree check's text where they answered `only label matchers are supported`, and /detected_fields and
+  /detected_field/<name>/values validate the whole expression (parser, its semantic pass and the tree checks)
+  before `only log selector is supported`. /series is unchanged.
+
+  Not covered, held open elsewhere: a stage Loki rejects while it parses (`invalid regexp parser`, `invalid pattern
+  parser`) and an unwrap in a log query still answer `only label matchers are supported` on the selector routes:
+  the parser's semantic pass reports them together with the pipeline build errors Loki reports after the selector
+  rule, and telling them apart needs the parser's phase signal. `topk(0, …)` on /series answers the parser's
+  error where Loki answers `only label matchers are supported` (the parser makes that check while it parses).
+request:
+  scope: query-grammar
+  entry: "lokiQueryParamValidation (internal/proxy/label_handlers.go) on the metadata routes"
+  setup: "Send as the query of /loki/api/v1/labels (start now-1h, end now): sort by (app) (rate({app=\"x\"}[5m])) . A query Loki rejects is kept out of the plan corpus (the plan ratchets count the corpus rows)."
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: "Loki's 400: parse error : sort and sort_desc doesn't allow grouping by "
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: api-only
+  effort: S
+  area: "internal/proxy/query_tree_validation.go (validateMatchersQuery, validateLogSelectorQuery), internal/proxy/label_handlers.go lokiQueryParamError"
+  loki: "the query is validated as a LogQL expression before the route's selector rule (not on /series)"
+  proxy: "the tree checks answer before the selector rule; the parser's own order is kept"
+  planned_test: 'TestQueryTreeValidationOnEveryRoute, FuzzMetadataValidationKeepsTheRouteRules, TestMetadataQueryValidation_RejectsLikeLoki, TestLokiErrorAnswersReplay rows r0428 to r0436 (internal/proxy)'
+  visual: none
+  visual_reason: 'a query no Grafana panel sends to a metadata route: an error text proven by recorded Loki answers and the Loki oracle'
+  clusters: []

@@ -25,6 +25,7 @@ smoke	internal/proxy	FuzzSeriesKeyFromMetric	20s	60s	series key from metric
 smoke	internal/proxy	FuzzTenantHeader	12s	-	X-Scope-OrgID check: Loki's tenant ID rules, own-tenant routing
 smoke	internal/proxy	FuzzParseValueToFloat	12s	-	parse value to float
 smoke	internal/proxy	FuzzLokiErrorType	12s	-	Loki error type
+smoke	internal/proxy	FuzzMetadataValidationKeepsTheRouteRules	12s	-	metadata query validation keeps the route rules except where the tree checks reject
 smoke	internal/proxy	FuzzFormatVLStep	12s	-	format VL step
 smoke	internal/proxy	FuzzNormalizeMetadataPairs	12s	-	normalize metadata pairs
 smoke	internal/proxy	FuzzCombineBinaryMetricResultsScalarPath	12s	-	combine binary metric results scalar path
@@ -123,6 +124,7 @@ smoke	internal/queryplan	FuzzBuild	12s	-	logical plan build and key
 smoke	internal/queryplan	FuzzResolve	12s	-	resolver total, deterministic, idempotent, key unchanged
 smoke	internal/queryplan	FuzzKeyDecode	12s	-	logical key decodes to the fields of its plan, to the last byte
 smoke	internal/queryplan	FuzzKeyDistinctMutations	12s	-	semantic mutations change the logical key, spelling ones keep it
+smoke	internal/queryplan	FuzzValidate	12s	-	tree checks of a parsed query: no panic, stable answer, Loki's 400, never refuse what Loki accepts
 smoke	internal/queryplan/lower	FuzzPatternLineFilterLowering	12s	-	pattern line filters lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzLabelFilterLowering	12s	-	label filters lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzDetectedLevelLowering	12s	-	label filters on detected_level lower to the query the string translator writes

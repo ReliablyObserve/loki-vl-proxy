@@ -1108,7 +1108,7 @@ func lokiQueryParamError(rule lokiQueryParamRule, r *http.Request, maxQueryBytes
 		if query == "" {
 			return ""
 		}
-		return cachedSelectorValidation("matchers", query, logqlpkg.ValidateMatchersQuery)
+		return cachedSelectorValidation("matchers", query, validateMatchersQuery)
 	case lokiMatchersRequired, lokiVolumeMatchers:
 		if query == "" {
 			return lokiEmptyQueryError
@@ -1116,9 +1116,9 @@ func lokiQueryParamError(rule lokiQueryParamRule, r *http.Request, maxQueryBytes
 		if rule == lokiVolumeMatchers && query == "{}" {
 			return ""
 		}
-		return cachedSelectorValidation("matchers", query, logqlpkg.ValidateMatchersQuery)
+		return cachedSelectorValidation("matchers", query, validateMatchersQuery)
 	case lokiLogSelectorRequired:
-		return cachedSelectorValidation("log_selector", query, logqlpkg.ValidateLogSelectorQuery)
+		return validateLogSelectorQuery(query)
 	case lokiTailQuery:
 		return validateLogQLSyntax(query)
 	}

@@ -21,12 +21,12 @@ check_order:
   loses_to: ["number"]
   rows: ["c0019"]
 recorded:
-  rows: 7
-  comparable_rows: 1
-  matching_rows: 0
-  row_ids: ["r0043", "r1286", "r1291", "r1298", "r1303", "r1312", "r1339"]
+  rows: 8
+  comparable_rows: 2
+  matching_rows: 1
+  row_ids: ["r0043", "r0673", "r1286", "r1291", "r1298", "r1303", "r1312", "r1339"]
   known_difference_ids: ["r0043"]
-  e2e_rows: ["r0043"]
+  e2e_rows: ["r0043", "r0673"]
 coverage:
   state: differs
   unit: ["TestLokiErrorAnswersReplay"]
