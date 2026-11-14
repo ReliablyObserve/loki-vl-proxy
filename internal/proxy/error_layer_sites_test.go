@@ -36,7 +36,6 @@ var layerWriters = map[string]bool{
 	"writeErrShaped":           true,
 	"writeBackendError":        true,
 	"writeGrafanaStatsFailure": true,
-	"writeVLStatsErrorBody":    true,
 	"fail":                     true,
 	"writeFailure":             true,
 }

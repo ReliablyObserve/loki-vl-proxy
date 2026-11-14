@@ -4057,43 +4057,10 @@ func TestContract_Labels_DefaultsToWildcard(t *testing.T) {
 // VL error message mapping
 // =============================================================================
 
-func TestContract_WrapAsLokiResponse_VLError(t *testing.T) {
-	// VL error format: {"error":"some message"}
-	vlBody := []byte(`{"error":"query syntax error at position 42"}`)
-	result := wrapAsLokiResponse(vlBody, "matrix")
-
-	var resp map[string]interface{}
-	json.Unmarshal(result, &resp)
-
-	if resp["status"] != "error" {
-		t.Errorf("expected status=error, got %v", resp["status"])
-	}
-	// VictoriaLogs' message never reaches a client: Loki's text for a failed call.
-	if resp["error"] != lokiErrInternal || strings.Contains(string(result), "syntax error") {
-		t.Errorf("expected Loki's text and none of VictoriaLogs', got %s", result)
-	}
-}
-
-func TestContract_WrapAsLokiResponse_VLStatusError(t *testing.T) {
-	// VL may also return: {"status":"error","msg":"message"}
-	vlBody := []byte(`{"status":"error","msg":"invalid LogsQL expression"}`)
-	result := wrapAsLokiResponse(vlBody, "vector")
-
-	var resp map[string]interface{}
-	json.Unmarshal(result, &resp)
-
-	if resp["status"] != "error" {
-		t.Errorf("expected status=error, got %v", resp["status"])
-	}
-	if resp["error"] != lokiErrInternal || strings.Contains(string(result), "LogsQL") {
-		t.Errorf("expected Loki's text and none of VictoriaLogs', got %s", result)
-	}
-}
-
 func TestContract_WrapAsLokiResponse_FillsMissingResultTypeFromContext(t *testing.T) {
 	// Some backend variants omit data.resultType on empty or degraded stats responses.
 	vlBody := []byte(`{"status":"success","data":{"result":[{"metric":{"service_name":"api"},"values":[[1705312200,"1"]]}]}}`)
-	result := wrapAsLokiResponse(vlBody, "matrix")
+	result := okBytes(wrapAsLokiResponse(vlBody, "matrix"))
 
 	var resp struct {
 		Status string `json:"status"`
@@ -4119,7 +4086,7 @@ func TestContract_WrapAsLokiResponse_FillsMissingResultTypeFromContext(t *testin
 func TestContract_WrapAsLokiResponse_NormalizesTopLevelResultsKey(t *testing.T) {
 	// Older/raw payloads can use "results" instead of Loki's "result".
 	vlBody := []byte(`{"results":[{"metric":{"service_name":"api"},"values":[[1705312200,"1"]]}]}`)
-	result := wrapAsLokiResponse(vlBody, "matrix")
+	result := okBytes(wrapAsLokiResponse(vlBody, "matrix"))
 
 	var resp struct {
 		Status string `json:"status"`

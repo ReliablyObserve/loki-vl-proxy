@@ -1,15 +1,4 @@
 {
-  "ceiling": 4,
-  "leaks": {
-    "alerts malformed": [
-      "semantics/error-layer-backend-text",
-      "semantics/error-layer-silent-success"
-    ],
-    "alerts truncated": [
-      "semantics/error-layer-silent-success"
-    ],
-    "index_stats oversize": [
-      "semantics/error-layer-proxy-limit-status"
-    ]
-  }
+  "ceiling": 0,
+  "leaks": {}
 }

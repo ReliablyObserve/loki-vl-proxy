@@ -1109,6 +1109,9 @@
     "internal/proxy/absent_over_time_differential_test.go | window-bounds-and-step-alignment",
     "internal/proxy/absent_over_time_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/absent_over_time_test.go | status-400",
+    "internal/proxy/alerting_backend_failure_test.go | semantics/error-layer-backend-failure-status",
+    "internal/proxy/alerting_backend_failure_test.go | semantics/error-layer-backend-text",
+    "internal/proxy/alerting_backend_failure_test.go | semantics/error-layer-silent-success",
     "internal/proxy/alerting_tenant_label_test.go | api_prom_rules",
     "internal/proxy/alerting_tenant_label_test.go | api_prom_rules_namespace",
     "internal/proxy/alerting_tenant_label_test.go | api_prom_rules_namespace_groupname",
@@ -1657,6 +1660,10 @@
     "internal/proxy/stage_field_exposure_test.go | profiles/label-filter-on-line-field",
     "internal/proxy/stage_field_exposure_test.go | profiles/parsed-fields-without-parser",
     "internal/proxy/stage_field_exposure_test.go | profiles/stage-field-exposure",
+    "internal/proxy/stats_body_failure_test.go | semantics/error-layer-backend-failure-status",
+    "internal/proxy/stats_body_failure_test.go | semantics/error-layer-backend-text",
+    "internal/proxy/stats_body_failure_test.go | semantics/error-layer-proxy-limit-status",
+    "internal/proxy/stats_body_failure_test.go | semantics/error-layer-silent-success",
     "internal/proxy/stats_error_body_test.go | quality/stats-answer-transform-cost",
     "internal/proxy/stats_error_body_test.go | semantics/error-layer-silent-success",
     "internal/proxy/stats_extent_cache_test.go | backend-admission-and-heavy-query-queueing",
@@ -2531,7 +2538,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 561,
+      "go": 563,
       "playwright": 1
     },
     "page_kinds": {
