@@ -148,9 +148,8 @@ type instantMetricPostAgg struct {
 // of each group (pkg/logql/evaluator.go VectorAggEvaluator.Next). The operand
 // is sliced from the query as written, the way the translator reads it.
 func parseStddevStdvarQuery(logql string) (instantMetricPostAgg, bool) {
-	// The shared parse of the query (read only: the grouping is read, never changed).
-	expr, ok := sharedLogQLExpr(logql)
-	if !ok {
+	expr, err := parseLogQLExpr(noFlowCtx, logql)
+	if err != nil {
 		return instantMetricPostAgg{}, false
 	}
 	agg, ok := expr.(*logqlpkg.VectorAggregation)
@@ -285,7 +284,7 @@ func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 	// A query the typed parser reads is not topk here (a binary expression
 	// around it, say); only one it rejects keeps the textual split, and only
 	// when the name's own parenthesis is the last character.
-	if _, parsed := sharedLogQLExpr(logql); parsed {
+	if _, err := parseLogQLExpr(noFlowCtx, logql); err == nil {
 		return instantMetricPostAgg{}, false
 	}
 	for _, name := range []string{"topk", "bottomk"} {
