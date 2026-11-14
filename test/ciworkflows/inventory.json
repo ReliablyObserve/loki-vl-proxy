@@ -1,0 +1,33 @@
+{
+  "$comment": "One row per file under .github/workflows: its group (pr-gates, main-push, daily, weekly, release, maintenance), what it verifies in one sentence, and whether its check is required by the branch protection of main. Triggers and schedules are read from the files. go run ./test/ciworkflows writes docs/ci-workflows.md; -check fails when a workflow has no row, a row names no workflow, a row breaks its group or the page is stale.",
+  "workflows": {
+    "auto-release.yaml": {"group": "release", "required": false, "verifies": "On every push to main: decides from the changelog whether a release is due, validates, tags, builds, signs and publishes it, and refreshes the release metadata pull request."},
+    "cancel-conflicted-pr-runs.yaml": {"group": "maintenance", "required": false, "verifies": "After a push to main, cancels the pull request runs of open pull requests that now conflict with main."},
+    "change-scope.yaml": {"group": "pr-gates", "required": false, "verifies": "Reusable: reports which lanes of jobs a pull request needs (product, stack, baseline) from its changed files."},
+    "changelog-pr.yaml": {"group": "pr-gates", "required": true, "verifies": "A pull request that changes shipped code carries a CHANGELOG entry under Unreleased."},
+    "ci.yaml": {"group": "pr-gates", "required": true, "verifies": "Unit tests, race, fuzz smoke, lint, conformance gate, image, compose stacks (e2e-compat, fleet, UI), helm and docker checks."},
+    "codeql.yaml": {"group": "pr-gates", "required": true, "verifies": "CodeQL analysis of the Go code and the workflows, also weekly on main."},
+    "compat-drilldown.yaml": {"group": "pr-gates", "required": true, "verifies": "Logs Drilldown compatibility against the pinned and matrix Grafana and plugin versions."},
+    "compat-loki.yaml": {"group": "pr-gates", "required": true, "verifies": "Loki API compatibility against the pinned Loki and the Loki version matrix."},
+    "compat-vl.yaml": {"group": "pr-gates", "required": true, "verifies": "Compatibility with the pinned VictoriaLogs and the supported VictoriaLogs version matrix."},
+    "docs-site.yaml": {"group": "main-push", "required": false, "verifies": "Builds the documentation site on pull requests that touch it and deploys it from main."},
+    "e2e-pipeline.yml": {"group": "pr-gates", "required": true, "verifies": "The end-to-end ingest pipeline stack answers through the proxy."},
+    "error-answers-record.yaml": {"group": "weekly", "required": false, "verifies": "Asks the pinned Loki the recorded error requests again and fails when an answer changed."},
+    "ghcr-badges.yaml": {"group": "maintenance", "required": false, "verifies": "Refreshes the container pull count badges."},
+    "loc-badges.yaml": {"group": "maintenance", "required": false, "verifies": "Refreshes the lines-of-code badges."},
+    "parity-refresh.yaml": {"group": "weekly", "required": false, "verifies": "Differential run of the proxy against Loki over the whole corpus on a fresh stack; opens the rolling parity report pull request."},
+    "perf-ab.yaml": {"group": "pr-gates", "required": true, "verifies": "Per pull request A/B smoke of the base build, the PR build and Loki over the shapes the change selects."},
+    "perf-daily.yaml": {"group": "weekly", "required": false, "verifies": "Full A/B run of the last release, main and Loki over every shape set and range; opens the rolling performance report pull request."},
+    "pr-evidence-summary.yaml": {"group": "pr-gates", "required": false, "verifies": "Summarises the evidence artifacts of a pull request's finished runs; runs no pull request code."},
+    "pr-labeler.yaml": {"group": "maintenance", "required": false, "verifies": "Labels pull requests from their changed paths."},
+    "pr-quality-report.yaml": {"group": "pr-gates", "required": true, "verifies": "Base against head quality report: coverage floor, tests, query corpus, compatibility scores and tracked performance."},
+    "query-corpus.yaml": {"group": "daily", "required": false, "verifies": "Builds the query corpus of main and re-verifies the recorded Loki and VictoriaLogs answers, differentials and the grammar sweep with the live oracles."},
+    "release-pr-validation.yaml": {"group": "pr-gates", "required": true, "verifies": "The bot's release metadata and report pull requests carry only the files the bot may write."},
+    "release.yaml": {"group": "release", "required": false, "verifies": "Manual republish of a release tag: binaries, SBOMs, provenance, signatures, images (GHCR and Docker Hub), Helm chart and release assets."},
+    "scorecard.yaml": {"group": "weekly", "required": false, "verifies": "Publishes the OpenSSF Scorecard result of main."},
+    "security-heavy.yaml": {"group": "daily", "required": false, "verifies": "Image and SBOM scan, semgrep, long fuzzing and the DAST scan of a running proxy."},
+    "security-pr.yaml": {"group": "pr-gates", "required": true, "verifies": "Static security checks and the runtime security smoke of the pull request build."},
+    "visual-smoke-cleanup.yaml": {"group": "maintenance", "required": false, "verifies": "Removes the visual proof montages of closed pull requests."},
+    "visual-smoke.yaml": {"group": "pr-gates", "required": true, "verifies": "Grafana Explore and Logs Drilldown screenshots of the base build, the PR build and Loki for the pages the change touches."}
+  }
+}

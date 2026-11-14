@@ -414,6 +414,9 @@ RULE_CASES = [
     ("test/e2e-compat/results/bench-warm-v1.50.0.md", False, "I13"),
     ("test/e2e-compat/loki-bench-config.yaml", False, "I14"),
     ("test/e2e-compat/loki-bench-nocache-config.yaml", False, "I14"),
+    ("test/ciworkflows/inventory.json", False, "I15"),
+    # The inventory's generator is Go code with unit tests: product.
+    ("test/ciworkflows/inventory.go", True, "P-default"),
     # Lanes: not the full product, but not nothing.
     ("test/e2e-compat/docker-compose.yml", False, "S1"),
     ("test/e2e-fleet/docker-compose.yml", False, "S1"),
