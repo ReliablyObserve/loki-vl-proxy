@@ -13,8 +13,10 @@
 # could not be downloaded) is retried; a finding is never retried.
 #
 # A dry run of release.yaml pushes nothing: it gives IMAGE_ARCHIVE, the OCI
-# archive the build wrote, and the same scan reads the image from that file
-# (trivy image --input) instead of the registry.
+# archive the build wrote. Trivy's --input reads a docker-save tar or an OCI
+# layout directory, not an OCI tar, so the archive is unpacked into a temporary
+# OCI layout directory and the same scan reads the image from it instead of the
+# registry.
 #
 # Required: IMAGE_REF, or IMAGE_ARCHIVE (an OCI archive file)
 # Optional: IGNORE_FILE (default .trivyignore.yaml), TRIVY_CACHE_DIR
@@ -31,10 +33,12 @@ fail() {
 SOURCE=()
 if [ -n "${IMAGE_ARCHIVE:-}" ]; then
   [ -f "${IMAGE_ARCHIVE}" ] || fail "release image scan: archive ${IMAGE_ARCHIVE} not found"
-  ARCHIVE_DIR="$(cd "$(dirname "${IMAGE_ARCHIVE}")" && pwd)"
+  LAYOUT_DIR="$(mktemp -d)"
+  tar -xf "${IMAGE_ARCHIVE}" -C "${LAYOUT_DIR}" || fail "release image scan: archive ${IMAGE_ARCHIVE} is not a tar file"
+  [ -f "${LAYOUT_DIR}/index.json" ] || fail "release image scan: archive ${IMAGE_ARCHIVE} is not an OCI image layout (no index.json)"
   IMAGE_REF="${IMAGE_ARCHIVE}"
-  SOURCE=(-v "${ARCHIVE_DIR}:/image:ro")
-  TARGET=(--input "/image/$(basename "${IMAGE_ARCHIVE}")")
+  SOURCE=(-v "${LAYOUT_DIR}:/image:ro")
+  TARGET=(--input /image)
 else
   [ -n "${IMAGE_REF:-}" ] || fail "release image scan: IMAGE_REF is not set"
   [[ "${IMAGE_REF}" =~ @sha256:[0-9a-f]{64}$ ]] || fail "release image scan: '${IMAGE_REF}' is not a digest reference"
@@ -49,7 +53,7 @@ IGNORE_NAME="$(basename "${IGNORE_FILE}")"
 CACHE_DIR="${TRIVY_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/trivy-cache}"
 mkdir -p "${CACHE_DIR}"
 LOG="$(mktemp)"
-trap 'rm -f "${LOG}"' EXIT
+trap 'rm -f "${LOG}"; [ -z "${LAYOUT_DIR:-}" ] || rm -rf "${LAYOUT_DIR}"' EXIT
 
 scan() {
   local platform="$1"
