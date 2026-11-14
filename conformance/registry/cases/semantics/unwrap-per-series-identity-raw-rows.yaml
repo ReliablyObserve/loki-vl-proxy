@@ -1,5 +1,5 @@
 id: semantics/unwrap-per-series-identity-raw-rows
-title: A function taken per series (avg, max, min, stddev, stdvar, quantile over time, rate_counter) under sum, sum by, max, min or avg reads the stream and every parsed label as the series (open)
+title: A function taken per series (avg, max, min, stddev, stdvar, quantile over time) under sum, sum by, max, min or avg reads the stream and every parsed label as the series (open, partly fixed)
 pending: true
 proves:
   - metric-series-identity
@@ -49,7 +49,7 @@ why: |
   under a prefix of its own, deletes every spelling of the unwrapped label, packs
   the rest with the stored level and detected_level and hashes it
   (lower.DynamicUnwrapIdentity). The stats then take the function per series
-  (the stream and the hash) and the aggregation over the series in VictoriaLogs,
+  (the hash, which holds the stream) and the aggregation over the series in VictoriaLogs,
   on query and on query_range with the range up to the step. quantile_over_time
   and a range longer than the step need each series' samples: one stats read
   over the fetch span counts the rows and the distinct series hashes first. When they are equal (every line a series of its own) each window holds

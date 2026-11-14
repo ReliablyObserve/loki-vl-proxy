@@ -18,7 +18,7 @@ import (
 const dynamicSeriesHashPipe = "| hash(__lvp_sid) as __lvp_sid"
 
 // A range function over an unwrapped label after a json or logfmt parser with no keep, under sum, max, min or avg, is
-// translated by the typed lowering: its stats group by the stream and the hash of each line's parsed labels. With
+// translated by the typed lowering: its stats group by a hash of the stream and each line's parsed labels. With
 // -query-plan-lowering=false, and for every other query, the string translator translates it as before.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile, semantics/stdvar-grouped-pooled-variance
@@ -255,5 +255,68 @@ func TestDynamicIdentityProofRoutes(t *testing.T) {
 	p := newTestProxy(t, "http://127.0.0.1:1")
 	if p.serveDynamicIdentity(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil), `sum(rate({a="b"}[5m]))`, "", time.Time{}, time.Time{}, true) {
 		t.Error("a query without the identity was served")
+	}
+}
+
+// The edges of the window decision and the range quantile: the ranges dynamicWindowRange reads, a request without a
+// readable span, and a function the proof does not serve.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func TestDynamicIdentityWindowEdges(t *testing.T) {
+	for q, want := range map[string]time.Duration{
+		`sum(avg_over_time({app="a"} | json | unwrap n [5m]))`:                5 * time.Minute,
+		`max by (app) (stdvar_over_time({app="a"} | logfmt | unwrap n [1m]))`: time.Minute,
+		`sum(quantile_over_time(0.9, {app="a"} | json | unwrap n [5m]))`:      0,
+		`sum(rate({app="a"} | json | unwrap n [5m]))`:                         0,
+		`avg_over_time({app="a"} | json | unwrap n [5m])`:                     0,
+		`sum(vector(1))`: 0,
+		`sum(avg_over_time({app="a"} | json | unwrap n [5m])) * 2`: 0,
+		`sum(`: 0,
+	} {
+		got, ok := dynamicWindowRange(q)
+		if got != want || ok != (want > 0) {
+			t.Errorf("%s: range %s %v, want %s", q, got, ok, want)
+		}
+	}
+	p := newTestProxy(t, "http://127.0.0.1:1")
+	const q = `sum by (app) (quantile_over_time(0.9, {app="a"} | json | unwrap n [5m]))`
+	orig, _ := parseOriginalRangeMetricSpec(q)
+	for _, form := range []url.Values{
+		{"query": {q}, "start": {"bad"}, "end": {"1800000600"}, "step": {"60"}},
+		{"query": {q}, "start": {"1800000000"}, "end": {"bad"}, "step": {"60"}},
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+form.Encode(), nil)
+		if p.dynamicIdentityRange(httptest.NewRecorder(), r, q, statsCompatSpec{}, orig, "quantile", time.Minute) {
+			t.Errorf("%v: served without a span", form)
+		}
+	}
+	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range", nil)
+	if p.dynamicIdentityRange(httptest.NewRecorder(), r, q, statsCompatSpec{}, orig, "avg", time.Minute) {
+		t.Error("avg served by the range quantile proof")
+	}
+	if handled, _ := p.serveRangeQuantile(httptest.NewRecorder(), r, q, statsCompatSpec{}, orig, "avg", time.Minute); handled {
+		t.Error("avg handled as a quantile")
+	}
+	// A request without a step, or one already marked, is left alone; a ranking over a dynamic sum with a longer
+	// range is marked.
+	if served, out := p.dynamicIdentityWindows(httptest.NewRecorder(), r, `sum(avg_over_time({app="a"} | json | unwrap n [5m]))`); served || streamIdentityOnly(out.Context()) {
+		t.Error("a request without a step was decided")
+	}
+	ranked := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?step=60", nil)
+	if served, out := p.dynamicIdentityWindows(httptest.NewRecorder(), ranked, `topk(1, sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])))`); served || !streamIdentityOnly(out.Context()) {
+		t.Error("a ranking over a dynamic identity with a longer range was not marked")
+	}
+	if p.dynamicIdentityFor(context.WithValue(context.Background(), streamIdentityKey{}, true), q) {
+		t.Error("a marked request reads the identity")
+	}
+	// A long query is decided without the memo.
+	long := `sum(avg_over_time({app="` + strings.Repeat("a", validationCacheMaxQueryBytes) + `"} | json | unwrap n [5m]))`
+	if !p.dynamicUnwrapIdentity(long) {
+		t.Error("a long dynamic query is not decided")
+	}
+	// The lowering turns away a query whose plan does not parse.
+	prof := loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, nil), nil, p.logsqlCapabilities(), false)
+	if _, ok := p.lowerDynamicIdentity(context.Background(), `sum(avg_over_time({app="a"} | json | unwrap n [5m]`, prof); ok {
+		t.Error("a query that does not parse was lowered")
 	}
 }

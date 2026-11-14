@@ -15,7 +15,7 @@ import (
 //
 // VictoriaLogs groups by named fields only, so the lowering names the identity: it unpacks the line a second time
 // under a prefix of its own, deletes the unwrapped key (every spelling the parser can give the label), packs the
-// prefixed fields and the stored level fields into one value and hashes it. The stats then group by the stream and that hash, as they group by
+// prefixed fields, the stored level fields and the stream into one value and hashes it. The stats then group by that hash, as they group by
 // the labels a keep leaves (keptIdentity): a value per series, then the vector aggregation over the series. The
 // string translator groups these by the stream and each line instead, so the proxy serves them from the lowering
 // (DynamicUnwrapIdentity).

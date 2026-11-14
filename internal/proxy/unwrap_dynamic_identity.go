@@ -17,8 +17,8 @@ import (
 
 // The handlers' side of the dynamic identity of a parser (lower.DynamicUnwrapIdentity): sum, max, min or avg over a
 // range function taken per series of an unwrapped label after a json or logfmt parser with no keep, whose series are
-// the stream and every parsed label less the unwrapped one. The lowered query writes them as the stream and a hash
-// of each line's parsed labels (__lvp_sid), and VictoriaLogs answers the function per series and the aggregation over
+// the stream and every parsed label less the unwrapped one. The lowered query writes them as a hash of the stream and
+// each line's parsed labels (__lvp_sid), and VictoriaLogs answers the function per series and the aggregation over
 // them for an instant query and a range up to the step.
 //
 // quantile_over_time and a range longer than the step need each series' samples, which VictoriaLogs'
@@ -51,6 +51,10 @@ func (p *Proxy) dynamicUnwrapIdentity(query string) bool {
 	query = strings.TrimSpace(query)
 	if !p.queryPlanLowering || !dynamicIdentityScreen(query) {
 		return false
+	}
+	if len(query) > validationCacheMaxQueryBytes {
+		// A long query is not remembered: the memory of the verdicts stays bounded.
+		return p.lowersDynamicIdentity(query)
 	}
 	key := dynamicIdentityVerdictKey(p, query)
 	if v, ok := dynamicIdentityVerdicts.get(key); ok {
@@ -267,12 +271,12 @@ func (p *Proxy) dynamicIdentityWindows(w http.ResponseWriter, r *http.Request, q
 	if !ok || streamIdentityOnly(r.Context()) {
 		return false, r
 	}
-	marked := r.WithContext(context.WithValue(r.Context(), streamIdentityKey{}, true))
+	mark := func() *http.Request { return r.WithContext(context.WithValue(r.Context(), streamIdentityKey{}, true)) }
 	if !p.dynamicUnwrapIdentity(query) {
 		// A dynamic identity at depth (an operand, a ranking) is answered by the operand's own request: over a
 		// window longer than the step, every operand keeps the stream's series.
 		if p.dynamicIdentityAtDepth(query, step) {
-			return false, marked
+			return false, mark()
 		}
 		return false, r
 	}
@@ -286,19 +290,19 @@ func (p *Proxy) dynamicIdentityWindows(w http.ResponseWriter, r *http.Request, q
 	startTS, errS := parseTimestamp(r.FormValue("start"))
 	endTS, errE := parseTimestamp(r.FormValue("end"))
 	if !ok || errS != nil || errE != nil {
-		return false, marked
+		return false, mark()
 	}
 	text, err := p.translateQueryWithContext(r.Context(), query)
 	if err != nil {
-		return false, marked
+		return false, mark()
 	}
 	spec, ok := statsSpecOf(statsQueryOf(text))
 	if !ok {
-		return false, marked
+		return false, mark()
 	}
 	rows, series, ok := p.dynamicIdentitySeries(r.Context(), spec.BaseQuery, startTS.Add(-window), endTS)
 	if !ok || rows != series {
-		return false, marked
+		return false, mark()
 	}
 	markQueryStepsRoute(r.Context(), "parser-identity-one-sample")
 	p.handleQueryRange(w, cloneMetricQueryRequest(r, closed))
