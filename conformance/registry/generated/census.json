@@ -351,6 +351,9 @@
     "semantics/detected-level-missing-from-stats-answers | compare:observed",
     "semantics/detected-level-missing-from-stats-answers | gap:fixed",
     "semantics/detected-level-missing-from-stats-answers | query",
+    "semantics/detected-level-one-value-per-stream | compare:observed",
+    "semantics/detected-level-one-value-per-stream | gap:fixed",
+    "semantics/detected-level-one-value-per-stream | query",
     "semantics/detected-level-pipes-known-differences | compare:exact",
     "semantics/detected-level-pipes-known-differences | gap:open",
     "semantics/detected-level-pipes-known-differences | query",
@@ -1248,6 +1251,10 @@
     "internal/proxy/detected_level_keys_gate_test.go | severity-detected-level-derivation",
     "internal/proxy/detected_level_label_probes_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/detected_level_long_selector_test.go | semantics/json-metric-detected-level-derivation",
+    "internal/proxy/detected_level_one_value_test.go | cache-response-key-versions",
+    "internal/proxy/detected_level_one_value_test.go | metric-series-identity",
+    "internal/proxy/detected_level_one_value_test.go | semantics/detected-level-one-value-per-stream",
+    "internal/proxy/detected_level_one_value_test.go | severity-detected-level-derivation",
     "internal/proxy/detected_level_presence_sweep_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/detected_level_presence_test.go | semantics/detected-level-pipes-known-differences",
     "internal/proxy/detected_level_presence_test.go | semantics/json-metric-detected-level-derivation",
@@ -2684,12 +2691,12 @@
       "any": 35,
       "api": 95,
       "drilldown": 50,
-      "explore": 185,
+      "explore": 186,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 599,
+      "go": 600,
       "playwright": 1
     },
     "page_kinds": {
@@ -2709,7 +2716,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 105,
-    "wired_items": 359
+    "wired_items": 360
   },
   "gates": [
     "A/B shape selection",

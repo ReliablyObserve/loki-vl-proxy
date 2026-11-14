@@ -203,6 +203,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/aggregation-over-binary-dropped` — A vector aggregation over a binary expression aggregates the whole binary, like Loki (fixed) | #741 | 0 | 0 |
 | `semantics/binary-operand-literals-reprint` — Binary metric queries keep compound duration and exponent literals in their operands | #1177 | 0 | 0 |
 | `semantics/detected-level-missing-from-stats-answers` — A bare or without() metric names its series by detected_level, "unknown" included, like Loki (fixed) | #750 | 0 | 0 |
+| `semantics/detected-level-one-value-per-stream` — Every metric series built from one stream carries the same detected_level, the stream's normalised level, whatever the query type or step... | TBD-PR | 0 | 0 |
 | `semantics/error-layer-cancel-deadline` — A tail whose VictoriaLogs call times out or is cancelled ends the way Loki's does, with Loki's texts (fixed) | TBD-PR | 0 | 0 |
 | `semantics/error-layer-internal-go-text` — A tail stream that breaks after the upgrade closes with Loki's error, not a bare disconnect or Go reader wording (fixed) | TBD-PR | 0 | 0 |
 | `semantics/error-layer-transport-text` — Backend transport failures use sanitized Loki errors for every client | #941 | 0 | 0 |

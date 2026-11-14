@@ -281,3 +281,39 @@ func TestEmulatorStatsRangeBuckets(t *testing.T) {
 		})
 	}
 }
+
+// DeriveFields sees every field VictoriaLogs holds for the row, the stream fields included, on the raw-row read and
+// before the stats pipes; without it the chain reads the level field only.
+func TestEmulatorDeriveFieldsSeesStreamFields(t *testing.T) {
+	e := newEmu(t,
+		Row{TS: sec(0), Stream: `{app="a",severity="error"}`, Value: 1},
+		Row{TS: sec(1), Stream: `{app="b"}`, Value: 2, Labels: map[string]string{"level": "warn"}},
+	)
+	e.DeriveFields = func(f map[string]string) string {
+		if f["severity"] != "" {
+			return "sev:" + f["severity"]
+		}
+		return "lvl:" + f["level"] + ":" + f["_msg"]
+	}
+	rec := serve(e.Handler(), "/select/logsql/query", url.Values{"query": {`* | format "<__dl>" as detected_level`}})
+	var got []string
+	for _, l := range strings.Split(strings.TrimSpace(rec.Body.String()), "\n") {
+		var m map[string]string
+		if err := json.Unmarshal([]byte(l), &m); err != nil {
+			t.Fatalf("%v: %s", err, l)
+		}
+		got = append(got, m["detected_level"])
+		if _, ok := m["severity"]; ok {
+			t.Errorf("a stream field became a row field: %v", m)
+		}
+	}
+	if want := []string{"sev:error", "lvl:warn:v=2"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("raw rows: %v, want %v", got, want)
+	}
+	rec = serve(e.Handler(), "/select/logsql/stats_query", url.Values{"query": {`* | format "<__dl>" as detected_level | stats by (detected_level) count()`}, "time": {"1000"}})
+	for _, want := range []string{`"detected_level":"sev:error"`, `"detected_level":"lvl:warn:v=2"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("stats: %s lacks %s", rec.Body.String(), want)
+		}
+	}
+}

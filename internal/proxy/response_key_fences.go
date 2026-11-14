@@ -106,19 +106,23 @@ func keepUnwrapIdentityResponseKeyVersion(query string) string {
 	return ""
 }
 
-// streamLevelSeriesResponseVersion fences the answers cached before the series of a per-stream stats read took
-// detected_level from the stream's level field (semantics/without-fold-stream-detected-level): they said unknown.
-const streamLevelSeriesResponseVersion = "@stream-level-series-v1:"
+// streamLevelSeriesResponseVersion fences the answers cached before every metric series built from one stream took
+// detected_level from the stream's level fields, normalised (semantics/without-fold-stream-detected-level: they said
+// unknown on the per-stream stats reads; semantics/detected-level-one-value-per-stream: the bare-parser stats read,
+// the raw-row reads and the stats answers relabelled by stream copied the stored level, ERROR or Debug, and ignored
+// severity, LEVEL and lvl). v1 named only the first change.
+const streamLevelSeriesResponseVersion = "@stream-level-series-v2:"
 
-// streamLevelSeriesResponseKeyVersion is the fence of a query that may read its series per stream without a level
-// column: a without fold, an unwrap function, and topk, bottomk, sort, sort_desc or label_replace over a range
-// function (each reads the per-stream series the proxy labels). The words are those of every query whose label sets
-// changed in a diff of range functions, parsers and outer forms against the previous build. A text screen, so a
-// query that reads no such series is fenced too (one more cache miss), and no other query's key changes. It jumps
-// between the rare bytes the words hold (a log query has no parenthesis and returns at once): k for topk and bottomk,
-// w for without and unwrap, and the name before each ( for sort, sort_desc and label_replace. The parser reads
-// keywords in any case and any Unicode blank before a parenthesis (TOPK, sum WITHOUT, sort\v(), so the screen does
-// too: it also jumps to K and W and compares the words case-folded.
+// streamLevelSeriesResponseKeyVersion is the fence of a query that may build its series per stream on a proxy-side
+// path: a without fold, an unwrap function, topk, bottomk, sort, sort_desc or label_replace over a range function, and
+// any metric query with a parser stage (json, logfmt, unpack, regexp, pattern). The words and stages are those of
+// every query whose label sets changed in a diff of range functions, parsers and outer forms against the previous
+// build. A text screen, so a query that builds no such series is fenced too (one more cache miss), and no other
+// query's key changes. It jumps between the rare bytes the words hold (a log query has no parenthesis and returns at
+// once): k for topk and bottomk, w for without and unwrap, the name before each ( for sort, sort_desc and
+// label_replace, and each | for a parser stage. The parser reads keywords in any case and any Unicode blank before a
+// parenthesis or after a | (TOPK, sum WITHOUT, sort\v(, | JSON), so the screen does too: it also jumps to K and W and
+// compares the words case-folded.
 func streamLevelSeriesResponseKeyVersion(query string) string {
 	if strings.IndexByte(query, '(') < 0 {
 		return ""
@@ -146,6 +150,9 @@ func streamLevelSeriesResponseKeyVersion(query string) string {
 		}
 		s = s[i+1:]
 	}
+	if mayHoldParserStage(query) {
+		return streamLevelSeriesResponseVersion
+	}
 	return ""
 }
 
@@ -163,4 +170,34 @@ func trimRightBlanks(s string) string {
 
 func hasSuffixFold(s, suffix string) bool {
 	return len(s) >= len(suffix) && strings.EqualFold(s[len(s)-len(suffix):], suffix)
+}
+
+// mayHoldParserStage reports a | followed by blanks (unicode.IsSpace, as the parser skips them) and a parser name
+// (json, logfmt, unpack, regexp, pattern) in any case that no identifier byte continues. A parser named inside a
+// string literal also counts (one more cache miss).
+func mayHoldParserStage(query string) bool {
+	for s := query; ; {
+		i := strings.IndexByte(s, '|')
+		if i < 0 {
+			return false
+		}
+		s = trimLeftBlanks(s[i+1:])
+		for _, name := range [...]string{"json", "logfmt", "unpack", "regexp", "pattern"} {
+			if len(s) >= len(name) && strings.EqualFold(s[:len(name)], name) && (len(s) == len(name) || !isPatternWordByte(s[len(name)])) {
+				return true
+			}
+		}
+	}
+}
+
+// trimLeftBlanks drops the blanks the LogQL parser skips (unicode.IsSpace) from the start of s.
+func trimLeftBlanks(s string) string {
+	for len(s) > 0 {
+		r, size := utf8.DecodeRuneInString(s)
+		if !unicode.IsSpace(r) {
+			break
+		}
+		s = s[size:]
+	}
+	return s
 }

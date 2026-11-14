@@ -1,0 +1,492 @@
+{
+ "source": "VictoriaLogs lib/logstorage (test/oracle/vl store), versions v1.49.0 and v1.53.0: the rows stored through the Loki push route (stream labels, then fields) and the proxy's detected_level chain followed by stats by (_stream, level, detected_level) count(), recorded 2026-11-14",
+ "query": "app:=\"uw\" | format if (detected_level:*) \"<detected_level>\" as __dl_s keep_original_fields | format if (level:*) \"<level>\" as __dl_s keep_original_fields | format if (LEVEL:*) \"<LEVEL>\" as __dl_s keep_original_fields | format if (Level:*) \"<Level>\" as __dl_s keep_original_fields | format if (log.level:*) \"<log.level>\" as __dl_s keep_original_fields | format if (severity:* !(severity:~`^(Unspecified|(Trace|Debug|Info|Warn|Error|Fatal)[234]?)$` -severity_number:*)) \"<severity>\" as __dl_s keep_original_fields | format if (SEVERITY:*) \"<SEVERITY>\" as __dl_s keep_original_fields | format if (Severity:*) \"<Severity>\" as __dl_s keep_original_fields | format if (SeverityText:*) \"<SeverityText>\" as __dl_s keep_original_fields | format if (lvl:*) \"<lvl>\" as __dl_s keep_original_fields | format if (LVL:*) \"<LVL>\" as __dl_s keep_original_fields | format if (Lvl:*) \"<Lvl>\" as __dl_s keep_original_fields | format if (severity_text:* !((severity_text:~`^Trace[234]?$` severity_number:~`^(1|2|3|4)$`) OR (severity_text:~`^Debug[234]?$` severity_number:~`^(5|6|7|8)$`) OR (severity_text:~`^Info[234]?$` severity_number:~`^(9|10|11|12)$`) OR (severity_text:~`^Warn[234]?$` severity_number:~`^(13|14|15|16)$`) OR (severity_text:~`^Error[234]?$` severity_number:~`^(17|18|19|20)$`) OR (severity_text:~`^Fatal[234]?$` severity_number:~`^(21|22|23|24)$`) OR (severity_text:=\"Unspecified\" severity_number:~`^(-[1-9][0-9]*|2[5-9]|[3-9][0-9]|[1-9][0-9]{2,})$`)) !(severity_text:=\"Unspecified\" severity_number:=\"0\")) \"<severity_text>\" as __dl_s keep_original_fields | format if (Severity_Text:*) \"<Severity_Text>\" as __dl_s keep_original_fields | format if (SEVERITY_TEXT:*) \"<SEVERITY_TEXT>\" as __dl_s keep_original_fields | format if (__dl_s:*) \"1\" as __dl_h | format if (-__dl_h:* severity_number:* !(severity_number:=\"0\" severity_text:=\"Unspecified\")) \"1\" as __dl_h | format if (-__dl_h:* (severity:~`^(Unspecified|(Trace|Debug|Info|Warn|Error|Fatal)[234]?)$` -severity_number:*) -severity:=\"Unspecified\") \"1\" as __dl_h | format if (__dl_s:*) \"<__dl_s>\" as __dl_v keep_original_fields | unpack_json if (-__dl_h:*) from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix \"__j_\" | unpack_logfmt if (-__dl_h:* -_msg:~`^[\\s\\v\\x{85}\\p{Z}]*\\{`) from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix \"__l_\" | format if (__j_level:*) \"<__j_level>\" as __dl_v keep_original_fields | format if (__j_LEVEL:*) \"<__j_LEVEL>\" as __dl_v keep_original_fields | format if (__j_Level:*) \"<__j_Level>\" as __dl_v keep_original_fields | format if (__j_log.level:*) \"<__j_log.level>\" as __dl_v keep_original_fields | format if (__j_severity:*) \"<__j_severity>\" as __dl_v keep_original_fields | format if (__j_SEVERITY:*) \"<__j_SEVERITY>\" as __dl_v keep_original_fields | format if (__j_Severity:*) \"<__j_Severity>\" as __dl_v keep_original_fields | format if (__j_SeverityText:*) \"<__j_SeverityText>\" as __dl_v keep_original_fields | format if (__j_lvl:*) \"<__j_lvl>\" as __dl_v keep_original_fields | format if (__j_LVL:*) \"<__j_LVL>\" as __dl_v keep_original_fields | format if (__j_Lvl:*) \"<__j_Lvl>\" as __dl_v keep_original_fields | format if (__j_severity_text:*) \"<__j_severity_text>\" as __dl_v keep_original_fields | format if (__j_Severity_Text:*) \"<__j_Severity_Text>\" as __dl_v keep_original_fields | format if (__j_SEVERITY_TEXT:*) \"<__j_SEVERITY_TEXT>\" as __dl_v keep_original_fields | format if (__l_level:*) \"<__l_level>\" as __dl_v keep_original_fields | format if (__l_LEVEL:*) \"<__l_LEVEL>\" as __dl_v keep_original_fields | format if (__l_Level:*) \"<__l_Level>\" as __dl_v keep_original_fields | format if (__l_log.level:*) \"<__l_log.level>\" as __dl_v keep_original_fields | format if (__l_severity:*) \"<__l_severity>\" as __dl_v keep_original_fields | format if (__l_SEVERITY:*) \"<__l_SEVERITY>\" as __dl_v keep_original_fields | format if (__l_Severity:*) \"<__l_Severity>\" as __dl_v keep_original_fields | format if (__l_SeverityText:*) \"<__l_SeverityText>\" as __dl_v keep_original_fields | format if (__l_lvl:*) \"<__l_lvl>\" as __dl_v keep_original_fields | format if (__l_LVL:*) \"<__l_LVL>\" as __dl_v keep_original_fields | format if (__l_Lvl:*) \"<__l_Lvl>\" as __dl_v keep_original_fields | format if (__l_severity_text:*) \"<__l_severity_text>\" as __dl_v keep_original_fields | format if (__l_Severity_Text:*) \"<__l_Severity_Text>\" as __dl_v keep_original_fields | format if (__l_SEVERITY_TEXT:*) \"<__l_SEVERITY_TEXT>\" as __dl_v keep_original_fields | format if (__dl_v:~`(?i)^(trace|trc)$`) \"trace\" as __dl keep_original_fields | format if (__dl_v:~`(?i)^(debug|dbg)$`) \"debug\" as __dl keep_original_fields | format if (__dl_v:~`(?i)^(info|inf|information)$`) \"info\" as __dl keep_original_fields | format if (__dl_v:~`(?i)^(warn|wrn|warning)$`) \"warn\" as __dl keep_original_fields | format if (__dl_v:~`(?i)^(error|err)$`) \"error\" as __dl keep_original_fields | format if (__dl_v:~`(?i)^(critical)$`) \"critical\" as __dl keep_original_fields | format if (__dl_v:~`(?i)^(fatal)$`) \"fatal\" as __dl keep_original_fields | extract_regexp if (-__dl_h:* __dl:\"\" _msg:(i(trace) OR i(debug) OR i(fatal) OR i(critical) OR i(error) OR i(err) OR i(warning) OR i(warn) OR i(info))) `(?i)(?:^|[ \\t\\n\\[({\"=])(?P<__dl_e>trace|debug|fatal|critical|error|err|warning|warn|info)(?:$|[ \\t\\n\\[\\](){}:,!\"=])` from _msg | format if (__dl:\"\" __dl_e:~\"(?i)^(error|err)$\") \"error\" as __dl keep_original_fields | format if (__dl:\"\" __dl_e:~\"(?i)^(warning|warn)$\") \"warn\" as __dl keep_original_fields | format if (__dl:\"\" __dl_e:*) \"<lc:__dl_e>\" as __dl keep_original_fields | format if (__dl:\"\" __dl_s:*) \"<__dl_s>\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* (severity_number:~`^(-[1-9][0-9]*|[1-4])$` OR (-severity_number:* severity:~`^(Trace)[234]?$`))) \"trace\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* (severity_number:~`^[5-8]$` OR (-severity_number:* severity:~`^(Debug)[234]?$`))) \"debug\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* (severity_number:~`^(9|1[0-2])$` OR (-severity_number:* severity:~`^(Info)[234]?$`))) \"info\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* (severity_number:~`^1[3-6]$` OR (-severity_number:* severity:~`^(Warn)[234]?$`))) \"warn\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* (severity_number:~`^(1[7-9]|20)$` OR (-severity_number:* severity:~`^(Error)[234]?$`))) \"error\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* (severity_number:~`^2[1-4]$` OR (-severity_number:* severity:~`^(Fatal)[234]?$`))) \"fatal\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* severity_number:~`^(-?0|2[5-9]|[3-9][0-9]|[1-9][0-9]{2,})$`) \"unknown\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* severity_number:*) \"info\" as __dl keep_original_fields | format \"unknown\" as __dl keep_original_fields | format \"<__dl>\" as detected_level | delete __dl, __dl_*, __j_*, __l_* | stats by (_stream, level, detected_level) count()",
+ "rows": [
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "level",
+     "ERROR"
+    ],
+    [
+     "pod",
+     "a"
+    ]
+   ],
+   "fields": [
+    [
+     "_msg",
+     "{\"amount\":3,\"id\":1}"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "level",
+     "ERROR"
+    ],
+    [
+     "pod",
+     "b"
+    ]
+   ],
+   "fields": [
+    [
+     "_msg",
+     "{\"amount\":3,\"id\":1}"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "severity",
+     "error"
+    ],
+    [
+     "pod",
+     "a"
+    ]
+   ],
+   "fields": [
+    [
+     "_msg",
+     "{\"amount\":3,\"id\":1}"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "severity",
+     "error"
+    ],
+    [
+     "pod",
+     "b"
+    ]
+   ],
+   "fields": [
+    [
+     "_msg",
+     "{\"amount\":3,\"id\":1}"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "LEVEL",
+     "warning"
+    ],
+    [
+     "pod",
+     "a"
+    ]
+   ],
+   "fields": [
+    [
+     "_msg",
+     "{\"amount\":3,\"id\":1}"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "LEVEL",
+     "warning"
+    ],
+    [
+     "pod",
+     "b"
+    ]
+   ],
+   "fields": [
+    [
+     "_msg",
+     "{\"amount\":3,\"id\":1}"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "lvl",
+     "x"
+    ],
+    [
+     "pod",
+     "a"
+    ]
+   ],
+   "fields": [
+    [
+     "_msg",
+     "{\"amount\":3,\"id\":1}"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "lvl",
+     "x"
+    ],
+    [
+     "pod",
+     "b"
+    ]
+   ],
+   "fields": [
+    [
+     "_msg",
+     "{\"amount\":3,\"id\":1}"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "level",
+     "Debug"
+    ],
+    [
+     "pod",
+     "a"
+    ]
+   ],
+   "fields": [
+    [
+     "_msg",
+     "{\"amount\":3,\"id\":1}"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "level",
+     "Debug"
+    ],
+    [
+     "pod",
+     "b"
+    ]
+   ],
+   "fields": [
+    [
+     "_msg",
+     "{\"amount\":3,\"id\":1}"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "Severity",
+     "fatal"
+    ],
+    [
+     "pod",
+     "a"
+    ]
+   ],
+   "fields": [
+    [
+     "_msg",
+     "{\"amount\":3,\"id\":1}"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "Severity",
+     "fatal"
+    ],
+    [
+     "pod",
+     "b"
+    ]
+   ],
+   "fields": [
+    [
+     "_msg",
+     "{\"amount\":3,\"id\":1}"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "pod",
+     "n"
+    ]
+   ],
+   "fields": [
+    [
+     "_msg",
+     "amount=3 id=1"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "pod",
+     "w"
+    ]
+   ],
+   "fields": [
+    [
+     "level",
+     "Warning"
+    ],
+    [
+     "_msg",
+     "amount=3 id=1"
+    ]
+   ]
+  },
+  {
+   "stream": [
+    [
+     "app",
+     "uw"
+    ],
+    [
+     "pod",
+     "m"
+    ],
+    [
+     "severity",
+     "error"
+    ]
+   ],
+   "fields": [
+    [
+     "level",
+     "debug"
+    ],
+    [
+     "_msg",
+     "amount=3 id=1"
+    ]
+   ]
+  }
+ ],
+ "answers": {
+  "v1.49.0": [
+   {
+    "stream": "{LEVEL=\"warning\",app=\"uw\",pod=\"a\"}",
+    "level": "",
+    "detected_level": "warn"
+   },
+   {
+    "stream": "{LEVEL=\"warning\",app=\"uw\",pod=\"b\"}",
+    "level": "",
+    "detected_level": "warn"
+   },
+   {
+    "stream": "{Severity=\"fatal\",app=\"uw\",pod=\"a\"}",
+    "level": "",
+    "detected_level": "fatal"
+   },
+   {
+    "stream": "{Severity=\"fatal\",app=\"uw\",pod=\"b\"}",
+    "level": "",
+    "detected_level": "fatal"
+   },
+   {
+    "stream": "{app=\"uw\",level=\"Debug\",pod=\"a\"}",
+    "level": "Debug",
+    "detected_level": "debug"
+   },
+   {
+    "stream": "{app=\"uw\",level=\"Debug\",pod=\"b\"}",
+    "level": "Debug",
+    "detected_level": "debug"
+   },
+   {
+    "stream": "{app=\"uw\",level=\"ERROR\",pod=\"a\"}",
+    "level": "ERROR",
+    "detected_level": "error"
+   },
+   {
+    "stream": "{app=\"uw\",level=\"ERROR\",pod=\"b\"}",
+    "level": "ERROR",
+    "detected_level": "error"
+   },
+   {
+    "stream": "{app=\"uw\",lvl=\"x\",pod=\"a\"}",
+    "level": "",
+    "detected_level": "x"
+   },
+   {
+    "stream": "{app=\"uw\",lvl=\"x\",pod=\"b\"}",
+    "level": "",
+    "detected_level": "x"
+   },
+   {
+    "stream": "{app=\"uw\",pod=\"a\",severity=\"error\"}",
+    "level": "",
+    "detected_level": "error"
+   },
+   {
+    "stream": "{app=\"uw\",pod=\"b\",severity=\"error\"}",
+    "level": "",
+    "detected_level": "error"
+   },
+   {
+    "stream": "{app=\"uw\",pod=\"m\",severity=\"error\"}",
+    "level": "debug",
+    "detected_level": "debug"
+   },
+   {
+    "stream": "{app=\"uw\",pod=\"n\"}",
+    "level": "",
+    "detected_level": "unknown"
+   },
+   {
+    "stream": "{app=\"uw\",pod=\"w\"}",
+    "level": "Warning",
+    "detected_level": "warn"
+   }
+  ],
+  "v1.53.0": [
+   {
+    "stream": "{LEVEL=\"warning\",app=\"uw\",pod=\"a\"}",
+    "level": "",
+    "detected_level": "warn"
+   },
+   {
+    "stream": "{LEVEL=\"warning\",app=\"uw\",pod=\"b\"}",
+    "level": "",
+    "detected_level": "warn"
+   },
+   {
+    "stream": "{Severity=\"fatal\",app=\"uw\",pod=\"a\"}",
+    "level": "",
+    "detected_level": "fatal"
+   },
+   {
+    "stream": "{Severity=\"fatal\",app=\"uw\",pod=\"b\"}",
+    "level": "",
+    "detected_level": "fatal"
+   },
+   {
+    "stream": "{app=\"uw\",level=\"Debug\",pod=\"a\"}",
+    "level": "Debug",
+    "detected_level": "debug"
+   },
+   {
+    "stream": "{app=\"uw\",level=\"Debug\",pod=\"b\"}",
+    "level": "Debug",
+    "detected_level": "debug"
+   },
+   {
+    "stream": "{app=\"uw\",level=\"ERROR\",pod=\"a\"}",
+    "level": "ERROR",
+    "detected_level": "error"
+   },
+   {
+    "stream": "{app=\"uw\",level=\"ERROR\",pod=\"b\"}",
+    "level": "ERROR",
+    "detected_level": "error"
+   },
+   {
+    "stream": "{app=\"uw\",lvl=\"x\",pod=\"a\"}",
+    "level": "",
+    "detected_level": "x"
+   },
+   {
+    "stream": "{app=\"uw\",lvl=\"x\",pod=\"b\"}",
+    "level": "",
+    "detected_level": "x"
+   },
+   {
+    "stream": "{app=\"uw\",pod=\"a\",severity=\"error\"}",
+    "level": "",
+    "detected_level": "error"
+   },
+   {
+    "stream": "{app=\"uw\",pod=\"b\",severity=\"error\"}",
+    "level": "",
+    "detected_level": "error"
+   },
+   {
+    "stream": "{app=\"uw\",pod=\"m\",severity=\"error\"}",
+    "level": "debug",
+    "detected_level": "debug"
+   },
+   {
+    "stream": "{app=\"uw\",pod=\"n\"}",
+    "level": "",
+    "detected_level": "unknown"
+   },
+   {
+    "stream": "{app=\"uw\",pod=\"w\"}",
+    "level": "Warning",
+    "detected_level": "warn"
+   }
+  ]
+ }
+}

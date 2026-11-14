@@ -289,8 +289,11 @@ func TestStreamLevelSeriesFenceCoversTheChangedShapes(t *testing.T) {
 			}
 		}
 		for _, f := range kept {
-			if q := fmt.Sprintf(f, in); streamLevelSeriesResponseKeyVersion(q) != "" {
-				t.Errorf("fenced, but its answer did not change: %s", q)
+			q := fmt.Sprintf(f, in)
+			// A parser stage is fenced in every form since the stream rule reached the bare-parser and raw-row
+			// reads (TestStreamLevelSeriesFenceCoversParserShapes).
+			if fenced := streamLevelSeriesResponseKeyVersion(q) != ""; fenced != mayHoldParserStage(q) {
+				t.Errorf("fenced %v, parser stage %v: %s", fenced, mayHoldParserStage(q), q)
 			}
 		}
 	}
@@ -384,10 +387,13 @@ func TestStreamLevelSeriesFence(t *testing.T) {
 		{"LABEL_REPLACE\u0085(rate({app=\"a\"} | json [1m]), \"x\", \"$1\", \"pod\", \"(.*)\")", true},
 		{`SUM BY (app) (count_over_time({app="a"}[5m]))`, false},
 		{`sum by (app) (count_over_time({app="a"}[5m]))`, false},
-		{`sum by (detected_level) (rate({app="a"} | json [1m]))`, false},
-		{`count(rate({app="a"} | logfmt | status = "sort" [1m]))`, false},
+		{`sum by (detected_level) (rate({app="a"} | json [1m]))`, true},
+		{`count(rate({app="a"} | logfmt | status = "sort" [1m]))`, true},
+		{`sum by (detected_level) (rate({app="a"} |= "json" [1m]))`, false},
+		{`count(rate({app="a"} | line_format "x" | status = "sort" [1m]))`, false},
 		{`{app="topk"} |= "without"`, false},
-		{`rate({app="a"} | json [1m]) / rate({app="a"} | logfmt [1m])`, false},
+		{`rate({app="a"} | json [1m]) / rate({app="a"} | logfmt [1m])`, true},
+		{`rate({app="a"} |= "json" [1m]) / rate({app="a"} | decolorize [1m])`, false},
 		{`rate({app="a"}[5m])`, false},
 		{`{app="a"} |= "x"`, false},
 	} {
@@ -439,7 +445,7 @@ func TestStreamLevelSeriesFence(t *testing.T) {
 // a next-line character.
 func FuzzStreamLevelSeriesFenceSpelling(f *testing.F) {
 	for _, q := range []string{`topk(1, rate({app="a"} | json [1m]))`, `bottomk by (pod) (1, count_over_time({app="a"} | logfmt [5m]))`, `sum without (pod) (rate({app="a"}[1m]))`,
-		`max_over_time({app="a"} | unwrap amount [5m])`, `sort (rate({app="a"} | json [1m]))`, `sort_desc(rate({app="a"}[1m]))`, `label_replace(rate({app="a"}[1m]), "x", "$1", "pod", "(.*)")`} {
+		`max_over_time({app="a"} | unwrap amount [5m])`, `sort (rate({app="a"} | json [1m]))`, `sort_desc(rate({app="a"}[1m]))`, `sum by (app) (rate({app="a"} | logfmt [1m]))`, `label_replace(rate({app="a"}[1m]), "x", "$1", "pod", "(.*)")`} {
 		f.Add(q, uint64(0x5a5a5a5a5a5a5a5a), uint8(1))
 	}
 	blanks := [...]string{" ", "\v", "\f", "\u00a0", "\u0085", "\t\n"}
