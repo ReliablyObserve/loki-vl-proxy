@@ -171,6 +171,25 @@ proxy's flags from the stack's compose file; `-list` sends nothing and prints ho
 are blocked, by class. Redirects are answers, not followed. Loki's `/index/stats` counts flushed chunks only: an answer
 whose entries lag behind its own `count_over_time` of the window is `not_comparable`.
 
+### The daily report
+
+`.github/workflows/daily-report.yaml` runs every day on `main`: the per-case
+verdicts on a fresh e2e-compat stack for VictoriaLogs v1.49.0 and the pinned
+version, the recorded Loki error answers asked again (`test/errorrecord -check`)
+and replayed (`TestLokiErrorAnswersReplay`), a slice of the differential parity
+corpus, the perf smoke (`bench/ab/daily.py --smoke`) and the health of every
+scheduled workflow (`docs/ci-workflows.md`). `test/dailyreport` writes
+`registry/generated/verification/summary.json` (every number with the date,
+commit and versions it is verified on, and why the day is red) and `cases.json`
+(the verdicts of both versions), and the workflow delivers them, the smoke's
+history and the inventory's last-run columns through one rolling pull request
+on `bench/daily-report`. The grammar sweep and the Loki differentials are
+re-verified live by `query-corpus.yaml` each night; the report reads that run's
+result. The day is red when a fixed case differs from Loki, a recording drifted,
+a parity cluster is claimed by no case, a perf row is above 2x Loki or lost the
+weekly ratchet, a scheduled workflow is missing or red, or a job produced no
+result.
+
 ## Reporting what a change touches
 
 Before opening a pull request that changes client-visible behaviour, run:

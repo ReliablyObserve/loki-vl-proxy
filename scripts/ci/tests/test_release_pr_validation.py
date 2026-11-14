@@ -42,6 +42,14 @@ CHART = 'apiVersion: v2\nversion: 1.2.3\nappVersion: "1.2.3"\n'
 CHANGELOG = "# Changelog\n\n## [Unreleased]\n\n## [1.2.3] - 2026-10-21\n\n- thing\n"
 OBSERVABILITY = 'example: {"service.version": "1.2.3"}\n'
 META_FILES = ["CHANGELOG.md", "README.md", "docs/observability.md", "charts/loki-vl-proxy/Chart.yaml"]
+DAILY_FILES = [
+    "conformance/registry/generated/verification/summary.json",
+    "conformance/registry/generated/verification/cases.json",
+    "conformance/registry/generated/verification/workflow-runs.json",
+    "bench/ab/history/daily-smoke/control.jsonl",
+    "docs/ci-workflows.md",
+]
+
 PERF_FILES = [
     "bench/ab/results/daily-2026-10-21.json",
     "bench/ab/history/trend.md",
@@ -247,6 +255,21 @@ class ScopeCheckTests(unittest.TestCase):
 
     def test_daily_pull_request_from_another_author_fails(self):
         proc = self.run_check(pr("bench/daily-perf", author="mallory"), files(*PERF_FILES), commits(False))
+        self.assertNotEqual(proc.returncode, 0)
+
+    def test_good_daily_report_pull_request_passes_even_with_unsigned_commits(self):
+        proc = self.run_check(pr("bench/daily-report"), files(*DAILY_FILES), commits(False))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("daily report pull request is in scope", proc.stdout)
+
+    def test_daily_report_pull_request_touching_a_registry_case_fails(self):
+        case = "conformance/registry/cases/semantics/x.yaml"
+        proc = self.run_check(pr("bench/daily-report"), files(*DAILY_FILES, case), commits(False))
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn(case, proc.stdout)
+
+    def test_daily_report_pull_request_touching_the_weekly_history_fails(self):
+        proc = self.run_check(pr("bench/daily-report"), files(*DAILY_FILES, "bench/ab/history/control.jsonl"), commits(False))
         self.assertNotEqual(proc.returncode, 0)
 
     def test_unrelated_pull_request_passes_without_reading_anything_else(self):

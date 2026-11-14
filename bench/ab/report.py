@@ -39,6 +39,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import reuse  # noqa: E402
+
 SIG_RE = re.compile(r"series=(\d+|ranked) points=(\d+) sum=(\S+)")
 NOT_NUMBERS_RE = re.compile(r"not_numbers=(\d+)")
 SKIP_REASONS = {"cache": "run(s) its results cache answered whole",
@@ -129,7 +132,8 @@ def refresh_timings(raw):
             rs.sort(key=lambda r: r["run"])
             p50[t] = round(pct([r["seconds"] for r in rs[1:]] or [rs[0]["seconds"]], 0.5), 3)
             status[t] = "/".join(sorted({str(r["status"]) for r in rs}))
-        out[key] = {"p50": p50, "status": status}
+        metered = {t: reuse.median([r.get("reuse") for r in rs]) for t, rs in by_target.items()}
+        out[key] = {"p50": p50, "status": status, "reuse": {t: d for t, d in metered.items() if d is not None}}
     return out
 
 
@@ -190,6 +194,9 @@ def summarize(args):
                 entry["p50"][t] = rs[0]["seconds"]
             entry["status"][t] = "/".join(sorted({str(r["status"]) for r in rs}))
             entry["vl_cpu_max"][t] = max((r["vl_cpu_max"] or 0) for r in rs)
+            # The proxy's own counters (perf_matrix.py --proxy-metrics): the first run's cost, the later runs' median.
+            if any(r.get("reuse") is not None for r in rs):
+                entry.setdefault("reuse", {})[t] = {"cold": rs[0].get("reuse"), "repeat": reuse.median([r.get("reuse") for r in rs[1:]])}
             cold_stats = rs[0].get("cache")
             if cold_stats or any(r.get("cache") for r in rs[1:]):
                 entry.setdefault("cache", {})[t] = {"cold": cold_stats, "warm": sum_cache(rs[1:])}
@@ -247,6 +254,8 @@ def summarize(args):
         entry["verdict"] = verdict
         if (shape, rng) in refresh:
             entry["refresh"], entry["refresh_status"] = refresh[(shape, rng)]["p50"], refresh[(shape, rng)]["status"]
+            for t, d in refresh[(shape, rng)]["reuse"].items():
+                entry.setdefault("reuse", {}).setdefault(t, {})["refresh"] = d
         b, c = entry["p50"].get(args.baseline), entry["p50"].get(args.candidate)
         entry["speedup"] = round(b / c, 2) if b and c and b_ok and c_ok else None
         out.append(entry)
