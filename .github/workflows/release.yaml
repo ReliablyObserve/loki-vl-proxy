@@ -1,5 +1,15 @@
 name: Release
 
+# Manual republish of an existing release tag: binaries, SBOMs, provenance,
+# signatures, the image (GHCR and Docker Hub) and the Helm chart.
+#
+# dry_run (default false) runs every step that builds, scans, signs or collects
+# and publishes nothing: no tag, release, registry push, Docker Hub, chart push,
+# attestation or metadata branch. The image is built to an OCI archive and
+# scanned from it, signatures use a throwaway key with no transparency log
+# upload, and the outputs are kept as a run artifact. Every step that publishes
+# carries `if: ${{ !inputs.dry_run }}` (scripts/ci/tests/test_release_pipeline_wiring.py).
+
 on:
   workflow_dispatch:
     inputs:
@@ -7,6 +17,11 @@ on:
         description: Release tag to publish, for example v0.26.0
         required: true
         type: string
+      dry_run:
+        description: Run every step but publish nothing (no tag, release, push, attestation or metadata branch)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -23,12 +38,21 @@ jobs:
       HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
       HAS_RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' }}
       HAS_GHCR_PACKAGE_ADMIN_TOKEN: ${{ secrets.GHCR_PACKAGE_ADMIN_TOKEN != '' }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      # The dry run's throwaway signing key and outputs; nothing there leaves the run but the artifact.
+      DRY_RUN_DIR: /tmp/release-dry-run
     steps:
       - name: Refuse to publish from other refs
         run: |
           case "$GITHUB_REF" in
             refs/heads/main|refs/tags/v*) ;;
-            *) echo "::error::releases are published only from main or a v* tag"; exit 1 ;;
+            *)
+              # A dry run publishes nothing, so a branch that changes this workflow can try it before it merges.
+              if [ "${DRY_RUN}" = "true" ]; then
+                echo "::notice::dry run from ${GITHUB_REF}: nothing is published"
+                exit 0
+              fi
+              echo "::error::releases are published only from main or a v* tag"; exit 1 ;;
           esac
 
       # The tag is typed by whoever dispatches the run. Accept only a plain
@@ -66,6 +90,10 @@ jobs:
             esac
           fi
           if [ "${IMMUTABLE}" = "true" ]; then
+            if [ "${DRY_RUN}" = "true" ]; then
+              echo "::notice::${TAG} is an immutable release; a dry run replaces nothing and goes on."
+              exit 0
+            fi
             echo "::error::${TAG} is an immutable release, so its assets cannot be replaced. Publish a new version instead."
             exit 1
           fi
@@ -197,12 +225,14 @@ jobs:
 
       - name: Attest binary build provenance
         id: attest-binaries
+        if: ${{ !inputs.dry_run }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-checksums: dist/checksums.txt
 
       - name: Attest SBOM for linux/amd64
         id: attest-sbom-linux-amd64
+        if: ${{ !inputs.dry_run }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/loki-vl-proxy-linux-amd64
@@ -210,6 +240,7 @@ jobs:
 
       - name: Attest SBOM for linux/arm64
         id: attest-sbom-linux-arm64
+        if: ${{ !inputs.dry_run }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/loki-vl-proxy-linux-arm64
@@ -217,6 +248,7 @@ jobs:
 
       - name: Attest SBOM for darwin/amd64
         id: attest-sbom-darwin-amd64
+        if: ${{ !inputs.dry_run }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/loki-vl-proxy-darwin-amd64
@@ -224,14 +256,32 @@ jobs:
 
       - name: Attest SBOM for darwin/arm64
         id: attest-sbom-darwin-arm64
+        if: ${{ !inputs.dry_run }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/loki-vl-proxy-darwin-arm64
           sbom-path: dist/loki-vl-proxy-darwin-arm64.spdx.json
 
-      - name: Sign the release checksums
+      - name: Create a throwaway signing key (dry run)
+        if: ${{ inputs.dry_run }}
+        env:
+          COSIGN_PASSWORD: ""
         run: |
           set -euo pipefail
+          mkdir -p "${DRY_RUN_DIR}"
+          # A key that exists only in this run: a dry run signs with it, never with the release identity.
+          (cd "${DRY_RUN_DIR}" && cosign generate-key-pair --output-key-prefix throwaway)
+
+      - name: Sign the release checksums
+        env:
+          COSIGN_PASSWORD: ""
+        run: |
+          set -euo pipefail
+          if [ "${DRY_RUN}" = "true" ]; then
+            cosign sign-blob --yes --key "${DRY_RUN_DIR}/throwaway.key" --tlog-upload=false --use-signing-config=false \
+              --bundle dist/checksums.txt.sigstore.json dist/checksums.txt
+            exit 0
+          fi
           cosign sign-blob --yes --bundle dist/checksums.txt.sigstore.json dist/checksums.txt
 
       - name: Package Helm chart
@@ -245,6 +295,7 @@ jobs:
             --destination dist
 
       - name: Login Helm to GHCR
+        if: ${{ !inputs.dry_run }}
         env:
           REGISTRY_USER: ${{ github.actor }}
           REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
@@ -258,6 +309,7 @@ jobs:
         uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
 
       - name: Login to GHCR
+        if: ${{ !inputs.dry_run }}
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
@@ -265,7 +317,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Docker Hub
-        if: ${{ env.HAS_DOCKERHUB == 'true' }}
+        if: ${{ env.HAS_DOCKERHUB == 'true' && !inputs.dry_run }}
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: docker.io
@@ -294,10 +346,30 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      # The same build, written to an OCI archive instead of a registry: the image, its provenance and its SBOM.
+      - name: Build the Docker image (dry run)
+        id: build_dry
+        if: ${{ inputs.dry_run }}
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          outputs: type=oci,dest=/tmp/release-dry-run/image.oci.tar
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            REVISION=${{ steps.version.outputs.revision }}
+            BUILD_TIME=${{ steps.version.outputs.build_time }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
       # The image is pushed by digest only. The version tags are created after the
       # image is signed and attested (see "Publish the image tags").
       - name: Build and push Docker image
         id: build
+        if: ${{ !inputs.dry_run }}
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -322,9 +394,13 @@ jobs:
       - name: Scan the pushed image with Trivy
         env:
           WORKFLOW_SHA: ${{ github.sha }}
-          IMAGE_REF: ${{ steps.image-tags.outputs.ghcr_image }}@${{ steps.build.outputs.digest }}
+          IMAGE_REF: ${{ steps.image-tags.outputs.ghcr_image }}@${{ steps.build.outputs.digest || steps.build_dry.outputs.digest }}
         run: |
           set -euo pipefail
+          # A dry run scans the OCI archive the build wrote; a release scans the pushed digest.
+          if [ "${DRY_RUN}" = "true" ]; then
+            export IMAGE_ARCHIVE="${DRY_RUN_DIR}/image.oci.tar"
+          fi
           mkdir -p "${RUNNER_TEMP}/trivy-config"
           git show "${WORKFLOW_SHA}:scripts/ci/scan_release_image.sh" > "${RUNNER_TEMP}/scan_release_image.sh"
           git show "${WORKFLOW_SHA}:.trivyignore.yaml" > "${RUNNER_TEMP}/trivy-config/.trivyignore.yaml"
@@ -332,10 +408,18 @@ jobs:
 
       - name: Sign the container image
         env:
-          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest || steps.build_dry.outputs.digest }}
           GHCR_IMAGE: ${{ steps.image-tags.outputs.ghcr_image }}
+          COSIGN_PASSWORD: ""
         run: |
           set -euo pipefail
+          if [ "${DRY_RUN}" = "true" ]; then
+            # No registry: the index digest is signed as a blob with the throwaway key, kept in the artifact.
+            printf '%s@%s\n' "${GHCR_IMAGE}" "${IMAGE_DIGEST}" > "${DRY_RUN_DIR}/image-digest.txt"
+            cosign sign-blob --yes --key "${DRY_RUN_DIR}/throwaway.key" --tlog-upload=false --use-signing-config=false \
+              --bundle "${DRY_RUN_DIR}/image-digest.txt.sigstore.json" "${DRY_RUN_DIR}/image-digest.txt"
+            exit 0
+          fi
           # Sign by digest, never by tag. The index digest is the same in every
           # registry the build pushed to.
           cosign sign --yes "${GHCR_IMAGE}@${IMAGE_DIGEST}"
@@ -345,6 +429,7 @@ jobs:
 
       - name: Attest container image provenance (GHCR)
         id: attest-image-ghcr
+        if: ${{ !inputs.dry_run }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.image-tags.outputs.ghcr_image }}
@@ -354,7 +439,7 @@ jobs:
 
       - name: Attest container image provenance (Docker Hub)
         id: attest-image-dockerhub
-        if: ${{ env.HAS_DOCKERHUB == 'true' }}
+        if: ${{ env.HAS_DOCKERHUB == 'true' && !inputs.dry_run }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: docker.io/reliablyobserve/loki-vl-proxy
@@ -363,6 +448,7 @@ jobs:
           create-storage-record: false
 
       - name: Publish the image tags
+        if: ${{ !inputs.dry_run }}
         env:
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
           TAGS: ${{ steps.image-tags.outputs.tags }}
@@ -381,6 +467,7 @@ jobs:
 
       - name: Publish Helm chart to GHCR
         id: chart_ghcr
+        if: ${{ !inputs.dry_run }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -404,7 +491,22 @@ jobs:
             echo "ref=${REF}"
           } >> "$GITHUB_OUTPUT"
 
+      # The dry run's chart reference and digest come from the packaged archive: what a push would name.
+      - name: Chart reference and digest (dry run)
+        id: chart_dry
+        if: ${{ inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          OWNER_LC="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "ref=ghcr.io/${OWNER_LC}/charts/loki-vl-proxy"
+            echo "digest=sha256:$(sha256sum "dist/loki-vl-proxy-${VERSION}.tgz" | cut -d' ' -f1)"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Sign the Helm chart (GHCR)
+        if: ${{ !inputs.dry_run }}
         env:
           CHART_REF: ${{ steps.chart_ghcr.outputs.ref }}
           CHART_DIGEST: ${{ steps.chart_ghcr.outputs.digest }}
@@ -413,7 +515,7 @@ jobs:
           cosign sign --yes "${CHART_REF}@${CHART_DIGEST}"
 
       - name: Login Helm to Docker Hub
-        if: ${{ env.HAS_DOCKERHUB == 'true' }}
+        if: ${{ env.HAS_DOCKERHUB == 'true' && !inputs.dry_run }}
         env:
           REGISTRY_USER: ${{ secrets.DOCKERHUB_USERNAME }}
           REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -425,7 +527,7 @@ jobs:
 
       - name: Publish Helm chart to Docker Hub
         id: chart_dockerhub
-        if: ${{ env.HAS_DOCKERHUB == 'true' }}
+        if: ${{ env.HAS_DOCKERHUB == 'true' && !inputs.dry_run }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -450,7 +552,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Sign the Helm chart (Docker Hub)
-        if: ${{ env.HAS_DOCKERHUB == 'true' }}
+        if: ${{ env.HAS_DOCKERHUB == 'true' && !inputs.dry_run }}
         env:
           CHART_REF: ${{ steps.chart_dockerhub.outputs.ref }}
           CHART_DIGEST: ${{ steps.chart_dockerhub.outputs.digest }}
@@ -461,19 +563,27 @@ jobs:
       - name: Sign the Helm chart archive
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          COSIGN_PASSWORD: ""
         run: |
           set -euo pipefail
+          if [ "${DRY_RUN}" = "true" ]; then
+            cosign sign-blob --yes --key "${DRY_RUN_DIR}/throwaway.key" --tlog-upload=false --use-signing-config=false \
+              --bundle "dist/loki-vl-proxy-${VERSION}.tgz.sigstore.json" "dist/loki-vl-proxy-${VERSION}.tgz"
+            exit 0
+          fi
           # The archive attached to the release gets its own keyless signature
           # bundle, so it can be verified with cosign verify-blob and no registry.
           cosign sign-blob --yes --bundle "dist/loki-vl-proxy-${VERSION}.tgz.sigstore.json" "dist/loki-vl-proxy-${VERSION}.tgz"
 
       - name: Attest Helm chart provenance
         id: attest-chart
+        if: ${{ !inputs.dry_run }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/loki-vl-proxy-*.tgz
 
       - name: Ensure GHCR Helm chart package is public
+        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.GHCR_PACKAGE_ADMIN_TOKEN }}
         run: |
@@ -494,11 +604,13 @@ jobs:
           WORKFLOW_SHA: ${{ github.sha }}
           VERSION: ${{ steps.version.outputs.version }}
           GHCR_IMAGE: ${{ steps.image-tags.outputs.ghcr_image }}
-          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
-          CHART_GHCR_REF: ${{ steps.chart_ghcr.outputs.ref }}
-          CHART_GHCR_DIGEST: ${{ steps.chart_ghcr.outputs.digest }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest || steps.build_dry.outputs.digest }}
+          CHART_GHCR_REF: ${{ steps.chart_ghcr.outputs.ref || steps.chart_dry.outputs.ref }}
+          CHART_GHCR_DIGEST: ${{ steps.chart_ghcr.outputs.digest || steps.chart_dry.outputs.digest }}
           CHART_DH_REF: ${{ steps.chart_dockerhub.outputs.ref }}
           CHART_DH_DIGEST: ${{ steps.chart_dockerhub.outputs.digest }}
+          SYFT: ${{ steps.syft.outputs.cmd }}
+          SYFT_CHECK_FOR_APP_UPDATE: "false"
           BUNDLE_BINARIES: ${{ steps.attest-binaries.outputs.bundle-path }}
           BUNDLE_CHART: ${{ steps.attest-chart.outputs.bundle-path }}
           BUNDLE_IMAGE_GHCR: ${{ steps.attest-image-ghcr.outputs.bundle-path }}
@@ -512,7 +624,17 @@ jobs:
           # The SBOM BuildKit attached to the pushed index, per platform. Read by
           # digest, so it is the document of the image that was signed and attested.
           IMAGE_SBOM_JSON="${RUNNER_TEMP}/image-sbom.json"
+          if [ "${DRY_RUN}" = "true" ]; then
+            # No registry to read the BuildKit SBOM from: each platform of the OCI archive is scanned with the
+            # same Syft as the binaries, in the shape imagetools prints ({"linux/<arch>": {"SPDX": {...}}}).
+            for PLATFORM in linux/amd64 linux/arm64; do
+              "${SYFT}" scan "oci-archive:${DRY_RUN_DIR}/image.oci.tar" --platform "${PLATFORM}" -o "spdx-json=${RUNNER_TEMP}/sbom-${PLATFORM#linux/}.json" -q
+            done
+            jq -n --slurpfile a "${RUNNER_TEMP}/sbom-amd64.json" --slurpfile b "${RUNNER_TEMP}/sbom-arm64.json" \
+              '{"linux/amd64": {"SPDX": $a[0]}, "linux/arm64": {"SPDX": $b[0]}}' > "${IMAGE_SBOM_JSON}"
+          fi
           for ATTEMPT in 1 2 3; do
+            [ "${DRY_RUN}" = "true" ] && break
             if docker buildx imagetools inspect "${GHCR_IMAGE}@${IMAGE_DIGEST}" --format '{{ json .SBOM }}' > "${IMAGE_SBOM_JSON}"; then
               break
             fi
@@ -534,9 +656,9 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           NOTES_FILE: ${{ steps.release_notes.outputs.notes_file }}
           GHCR_IMAGE: ${{ steps.image-tags.outputs.ghcr_image }}
-          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
-          CHART_GHCR_REF: ${{ steps.chart_ghcr.outputs.ref }}
-          CHART_GHCR_DIGEST: ${{ steps.chart_ghcr.outputs.digest }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest || steps.build_dry.outputs.digest }}
+          CHART_GHCR_REF: ${{ steps.chart_ghcr.outputs.ref || steps.chart_dry.outputs.ref }}
+          CHART_GHCR_DIGEST: ${{ steps.chart_ghcr.outputs.digest || steps.chart_dry.outputs.digest }}
           CHART_DH_REF: ${{ steps.chart_dockerhub.outputs.ref }}
           CHART_DH_DIGEST: ${{ steps.chart_dockerhub.outputs.digest }}
         run: |
@@ -592,6 +714,7 @@ jobs:
           } >> "${NOTES_FILE}"
 
       - name: Create GitHub Release
+        if: ${{ !inputs.dry_run }}
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3  # zizmor: ignore[superfluous-actions] softprops/action-gh-release attaches the signed assets; replacing it with gh release is a separate change
         # The SPDX SBOMs of the binaries (dist/loki-vl-proxy-<os>-<arch>.spdx.json)
         # are matched by the binary globs below, so they are not listed a second
@@ -618,8 +741,47 @@ jobs:
             dist/loki-vl-proxy-image-*.spdx.json
             dist/image-digests.txt
 
+      # The dry run's stand-in for the release: every file the release would attach must exist, as
+      # fail_on_unmatched_files requires, and the whole set is kept as the run's artifact.
+      - name: Check the release assets (dry run)
+        if: ${{ inputs.dry_run }}
+        env:
+          NOTES_FILE: ${{ steps.release_notes.outputs.notes_file }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for glob in 'dist/loki-vl-proxy-linux-*' 'dist/loki-vl-proxy-darwin-*' dist/checksums.txt dist/checksums.txt.sigstore.json \
+                      'dist/loki-vl-proxy-*.tgz' 'dist/loki-vl-proxy-*.tgz.sigstore.json' 'dist/loki-vl-proxy-*.intoto.jsonl' \
+                      'dist/loki-vl-proxy-image-*.spdx.json' dist/image-digests.txt; do
+            # shellcheck disable=SC2206 # the glob is expanded on purpose
+            matched=( ${glob} )
+            if [ "${#matched[@]}" -eq 0 ]; then
+              echo "::error::no release asset matches ${glob}"
+              exit 1
+            fi
+          done
+          cosign verify-blob --key "${DRY_RUN_DIR}/throwaway.pub" --insecure-ignore-tlog=true \
+            --bundle dist/checksums.txt.sigstore.json dist/checksums.txt
+          cp "${NOTES_FILE}" "${DRY_RUN_DIR}/release-notes.md"
+          cp -R dist "${DRY_RUN_DIR}/dist"
+          rm -f "${DRY_RUN_DIR}/throwaway.key"
+          find dist "${DRY_RUN_DIR}" -maxdepth 1 -type f | sort | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the dry run's outputs
+        if: ${{ always() && inputs.dry_run }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: release-dry-run
+          # The image archive stays out: its digest, scan and SBOMs are in the artifact.
+          path: |
+            /tmp/release-dry-run
+            !/tmp/release-dry-run/image.oci.tar
+            !/tmp/release-dry-run/*.key
+          if-no-files-found: ignore
+
       - name: Prepare release metadata branch
         id: metadata
+        if: ${{ !inputs.dry_run }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
@@ -638,7 +800,7 @@ jobs:
           fi
 
       - name: Open the release metadata pull request and arm auto-merge
-        if: steps.metadata.outputs.has_changes == 'true'
+        if: ${{ !inputs.dry_run && steps.metadata.outputs.has_changes == 'true' }}
         env:
           # The bot token is given to this step only. A pull request opened with
           # the job's own token does not start the pull_request workflows, so it

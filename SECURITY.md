@@ -114,6 +114,8 @@ The certificate identity is the workflow file and the ref the run started from:
 | `auto-release.yaml` | push to `main`, or `workflow_dispatch` from `main` | `https://github.com/ReliablyObserve/loki-vl-proxy/.github/workflows/auto-release.yaml@refs/heads/main` |
 | `release.yaml` | `workflow_dispatch` | `https://github.com/ReliablyObserve/loki-vl-proxy/.github/workflows/release.yaml@<ref the workflow was dispatched from>`, for example `@refs/heads/main` or `@refs/tags/vX.Y.Z` |
 
+`release.yaml` dispatched with `dry_run` builds, scans, signs and collects everything and publishes nothing: no tag, release, image or chart push, attestation or Rekor entry. It signs with a key created for that run only, so nothing it produces verifies against the identities above.
+
 All examples use one regular expression that accepts both workflows, from `main` or from a version tag, and nothing else:
 
 ```sh

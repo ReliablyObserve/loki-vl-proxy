@@ -76,6 +76,19 @@ class ScanReleaseImageScriptTests(unittest.TestCase):
                 self.assertIn(flag, call)
             self.assertIn("--scanners vuln,misconfig,secret", call)
 
+    def test_a_dry_run_scans_the_oci_archive(self):
+        archive = self.root / "out" / "image.oci.tar"
+        archive.parent.mkdir()
+        archive.write_text("x")
+        result = self.run_script(IMAGE_REF=None, IMAGE_ARCHIVE=str(archive))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for call in self.calls():
+            self.assertIn(f"-v {archive.parent}:/image:ro", call)
+            self.assertIn("image --input /image/image.oci.tar", call)
+        missing = self.run_script(IMAGE_REF=None, IMAGE_ARCHIVE=str(self.root / "none.tar"))
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("not found", missing.stdout)
+
     def test_uses_the_trivy_image_of_the_pull_request_scan(self):
         pr_pin = TRIVY_PIN.search((WORKFLOWS_DIR / "security-pr.yaml").read_text()).group(0)
         self.assertEqual(TRIVY_PIN.search(SCRIPT.read_text()).group(0), pr_pin)
@@ -143,7 +156,11 @@ class ReleaseWorkflowOrderTests(unittest.TestCase):
     def test_the_scan_target_is_the_pushed_digest(self):
         for name in RELEASE_WORKFLOWS:
             text = (WORKFLOWS_DIR / name).read_text()
-            self.assertIn("IMAGE_REF: ${{ steps.image-tags.outputs.ghcr_image }}@${{ steps.build.outputs.digest }}", text, name)
+            # release.yaml's dry run has no pushed digest and scans its OCI archive (IMAGE_ARCHIVE) instead.
+            target = ("IMAGE_REF: ${{ steps.image-tags.outputs.ghcr_image }}@${{ steps.build.outputs.digest || steps.build_dry.outputs.digest }}"
+                      if name == "release.yaml" else
+                      "IMAGE_REF: ${{ steps.image-tags.outputs.ghcr_image }}@${{ steps.build.outputs.digest }}")
+            self.assertIn(target, text, name)
 
 
 if __name__ == "__main__":
