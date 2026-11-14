@@ -47,6 +47,15 @@ spellings or nestings of one difference (for example
 `semantics/stddev-stdvar-nested-or-binary`); a different difference gets its
 own case.
 
+A case whose request is a query Loki refuses (a parse or validation error) is
+an HTTP request like any other, so the verifier compares the proxy's answer with
+Loki's, but it is not a corpus row (a corpus row is a query that runs). Say so in
+the compare block: `compare.values.status: 400` (any 4xx) with `fields` naming
+only `status` and an error facet (`error_text`, `error`, `message` or
+`errorType`). The corpus walker then leaves out the query of that case's
+`request`; a case without `values.status`, or one that also compares data, keeps
+its row (`internal/querycorpus/plancorpus`).
+
 - Record the actual ingest path, query stages, response encoding, tenant and
   time window that expose the difference. A passing variant with a different
   ingest path does not close the original gap.
