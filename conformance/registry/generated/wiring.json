@@ -13,6 +13,7 @@
     "architecture-syntax-package-layering": [
       "internal/logql/input_size_test.go",
       "internal/logql/line_template_test.go",
+      "internal/logsql/append_pipe_test.go",
       "internal/logsql/ip_range_vl_test.go",
       "internal/logsql/parser_read_test.go",
       "internal/logsql/parser_stats_funcs_test.go",
@@ -79,6 +80,7 @@
       "internal/queryplan/lower/label_filter_test.go",
       "internal/queryplan/lower/lower_test.go",
       "internal/queryplan/lower/marker_bytes_test.go",
+      "internal/queryplan/lower/metric_screen_test.go",
       "internal/queryplan/lower/metric_stages_test.go",
       "internal/queryplan/lower/parser_labels_test.go",
       "internal/queryplan/lower/parser_test.go",
@@ -705,7 +707,8 @@
     "observability-query-flow": [
       "internal/cache/cache_coverage_test.go",
       "internal/metrics/request_flow_test.go",
-      "internal/proxy/query_flow_test.go"
+      "internal/proxy/query_flow_test.go",
+      "internal/proxy/query_lowering_test.go"
     ],
     "observability-slow-query-log": [
       "internal/metrics/callertracker_test.go",
@@ -2460,6 +2463,9 @@
     "internal/logql/whitespace_loki_test.go": [
       "semantics/parser-reads-unicode-blank-as-white-space"
     ],
+    "internal/logsql/append_pipe_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/logsql/field_names_test.go": [
       "semantics/translator-writes-exotic-field-names-bare"
     ],
@@ -3338,6 +3344,7 @@
     "internal/proxy/query_lowering_test.go": [
       "architecture-syntax-package-layering",
       "loki_api_v1_query_range",
+      "observability-query-flow",
       "semantics/keep-before-unwrap-series-identity",
       "semantics/translator-reads-marker-bytes-in-quoted-value",
       "semantics/translator-reads-quoted-text-as-syntax",
@@ -4105,6 +4112,9 @@
     "internal/queryplan/lower/marker_bytes_test.go": [
       "architecture-syntax-package-layering",
       "semantics/translator-reads-marker-bytes-in-quoted-value"
+    ],
+    "internal/queryplan/lower/metric_screen_test.go": [
+      "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/metric_stages_test.go": [
       "architecture-syntax-package-layering"
@@ -5128,7 +5138,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 599,
+  "tests_with_markers": 601,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

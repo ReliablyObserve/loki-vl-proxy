@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plan. New tests hold every metric query of the corpus to the same text with the four metric constructs served
   from the plan under seven proxy profiles, and the translation benchmark measures the metric shapes of each
   construct, served and not served.
+- The translation of a metric query that misses the translation cache costs no more on the query plan's path than on
+  the string translator's. A one-pass text screen with no allocation names the construct at the top of a metric query
+  before it is parsed, so a query the plan leaves to the string translator (a ranking, `stddev`, `vector()`, an
+  `unpack`, a numeric equality after a parser, ...) is not parsed, built and resolved on top of its translation; the
+  plan path reads a plan the handlers already made for the query instead of parsing it again; and the stats and math
+  pipes the plan writes print straight into the query's text (a grouped rate: 60 to 42 allocations and 3.6 to 3.0 KiB
+  per translation once served from the plan). Construct names cost no allocation, so the log queries already served
+  from the plan allocate one less.
 
 ## [2.260.1] - 2026-11-14
 

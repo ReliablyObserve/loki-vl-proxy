@@ -42,12 +42,25 @@ func loweringProfile(label translator.LabelTranslateFunc, streamFields map[strin
 // loweringPlan is the typed pipeline up to the lowering for a canonical query (logql.CanonicalizeLogRanges):
 // parse, build the logical plan, resolve it. It is the one place the lowering parses a query, for the flip and
 // for the live shadow (which has no request and passes noFlowCtx), and the parse the request makes is counted in
-// its flow like any other. It leaves the plan memo of the handlers' reads (resolvedPlan) alone: the plan of a
-// translation is not one the handlers read, and storing it would cost the allocations of a memo entry.
+// its flow like any other. A query the handlers already planned or parsed (the plan memo, resolvedPlan and
+// sharedLogQLExpr) is not parsed again: its resolved plan is read, or built from its shared parse. The lowering
+// only reads a plan, so a shared one serves it. It does not store into the memo: the plan of a translation is not
+// one the handlers read, and storing it would cost the allocations of a memo entry on every translation.
 func loweringPlan(ctx context.Context, canon string) (*queryplan.Plan, error) {
-	expr, err := parseLogQLExpr(ctx, canon)
-	if err != nil {
-		return nil, err
+	var expr logqlpkg.Expr
+	if len(canon) <= validationCacheMaxQueryBytes {
+		if e, ok := planMemoLoad(canon); ok {
+			if e.plan != nil {
+				return e.plan, nil
+			}
+			expr = e.expr
+		}
+	}
+	if expr == nil {
+		var err error
+		if expr, err = parseLogQLExpr(ctx, canon); err != nil {
+			return nil, err
+		}
 	}
 	plan, err := queryplan.Build(expr, queryplan.Inputs{})
 	if err != nil {
@@ -103,14 +116,16 @@ const keepIdentityConstruct = "UnwrapKeepIdentity"
 // lowerMetric translates a canonical metric query with the typed lowering and reports whether it did: a query whose
 // series a keep before its unwrap decides (keepIdentityConstruct), or one whose plan is a flipped metric construct
 // and whose lowered text is the string translator's (writesTranslatorText). The query is planned once for both
-// decisions. While no metric construct is flipped, a query without both words of the keep identity is turned away
-// before any plan is built, so the other metric queries pay one scan of their text.
+// decisions, and only when one can serve it: a query without both words of the keep identity is planned only when the
+// allocation-free text screen (lower.ScreenMetricIn) names a flipped construct for it, so a metric query the plan leaves
+// to the string translator pays one scan of its text and no parse.
 func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profile) (text string, ok bool) {
 	if canon == "" || canon[0] == '{' {
 		return "", false
 	}
-	metricFlipped := metricConstructFlipped(p.flippedConstructs)
-	if !metricFlipped && (!strings.Contains(canon, "keep") || !strings.Contains(canon, "unwrap")) {
+	flipped := lower.MetricSetOf(p.flippedConstructs)
+	metricFlipped := flipped != 0
+	if (!strings.Contains(canon, "keep") || !strings.Contains(canon, "unwrap")) && lower.ScreenMetricIn(canon, flipped) == "" {
 		return "", false
 	}
 	construct := keepIdentityConstruct
@@ -125,8 +140,8 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	if err != nil {
 		return "", false
 	}
-	// The keep identity is decided first: it is served whatever is flipped, and naming the construct costs an
-	// allocation the keep path does not pay.
+	// The keep identity is decided first: it is served whatever is flipped. The screen named the construct; the plan's
+	// root has the last word.
 	if !lower.KeepDecidesUnwrapIdentity(plan) {
 		if !metricFlipped {
 			return "", false
@@ -142,16 +157,6 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	querycorpus.Record(querycorpus.LogQLTranslate, canon)
 	p.recordLoweringShadow(shadowFlipped, construct)
 	return physical.Encode(op), true
-}
-
-// metricConstructFlipped reports whether the list flips a metric construct (any but LogSelect).
-func metricConstructFlipped(flipped []string) bool {
-	for _, c := range flipped {
-		if c != "LogSelect" {
-			return true
-		}
-	}
-	return false
 }
 
 // writesTranslatorText reports a metric plan whose lowered text is the one the corpus shadow holds to the string

@@ -3,15 +3,18 @@ package proxy
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // Every metric query of the plan corpus is translated to the same text with the flag on and off, under every
@@ -146,4 +149,81 @@ func FuzzMetricFlipGate(f *testing.F) {
 			t.Fatalf("%q:\n flag on  %q %v\n flag off %q %v", q, got, gotErr, want, wantErr)
 		}
 	})
+}
+
+// The metric screen (lower.ScreenMetric) holds to the plan on every metric query of the corpus under every translator
+// profile, with the metric constructs flipped: it names the plan's root for every query the plan serves; the queries
+// it passes that the plan then leaves to the translator (a parse, build and resolve on top of the translation) stay
+// under 0.5% of those it passes; and the served queries it turns away (translated by the string translator at its own
+// cost) under 2% of the served ones. The keep identity has its own path and is not counted.
+//
+// conformance: architecture-syntax-package-layering
+func TestQueryPlanLowering_MetricScreenCorpus(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	corpus, err := plancorpus.Queries(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var served, passed, wasted, lost int
+	for _, prof := range loweringParityProfiles {
+		cfg := Config{BackendURL: "http://unused", Cache: cache.New(time.Minute, 100), LogLevel: "error"}
+		prof.config(&cfg)
+		p, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+		if prof.version != "" {
+			p.backendVersionMu.Lock()
+			p.backendVersionSemver = prof.version
+			p.backendVersionMu.Unlock()
+		}
+		withFlipped(p, metricFlipCandidates...)
+		ctx := context.Background()
+		for _, q := range corpus {
+			normalized := strings.TrimSpace(q)
+			if normalized == "" || normalized[0] == '{' {
+				continue
+			}
+			canon := logqlpkg.CanonicalizeLogRanges(normalized)
+			plan, err := loweringPlan(ctx, canon)
+			if err != nil || lower.KeepDecidesUnwrapIdentity(plan) {
+				continue
+			}
+			caps := p.logsqlCapabilities()
+			caps.NoDetectedLevelBodyScan = !p.detectedLevelBodyScan
+			prof := loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, p.plainStreamLabelNames(ctx, normalized)), p.streamFieldsMap, caps, false)
+			// What the typed gate serves, without the screen; and what the proxy serves, with it.
+			construct := lower.Construct(plan.Root)
+			ok := slices.Contains(p.flippedConstructs, construct) && writesTranslatorText(plan, prof)
+			if ok {
+				_, err := lower.PlanQuery(canon, plan, prof)
+				ok = err == nil
+			}
+			screen := lower.ScreenMetric(canon)
+			if _, servedNow := p.lowerMetric(ctx, canon, prof); servedNow != (ok && screen == construct) && !strings.Contains(canon, "keep") {
+				t.Errorf("%q: the proxy serves it: %v; the gate %v, the screen %q", canon, servedNow, ok, screen)
+			}
+			if ok {
+				served++
+			}
+			if screen != "" {
+				passed++
+			}
+			switch {
+			case ok && screen != "" && screen != construct:
+				t.Errorf("%q: the screen names %s, the plan's root is %s", canon, screen, construct)
+			case ok && screen == "":
+				lost++
+			case !ok && screen != "":
+				if wasted++; wasted <= 5 {
+					t.Logf("passed by the screen, left to the translator: %q", canon)
+				}
+			}
+		}
+	}
+	t.Logf("metric rows served %d, passed by the screen %d, passed and left to the translator %d, served and turned away %d", served, passed, wasted, lost)
+	if served == 0 || wasted*200 > passed || lost*50 > served {
+		t.Fatalf("the screen passes %d rows the plan leaves to the translator (of %d passed) and turns away %d served rows (of %d)", wasted, passed, lost, served)
+	}
 }

@@ -613,7 +613,7 @@ func TestQueryPlanLowering_MetricFlipScreenAndPanic(t *testing.T) {
 	prof := loweringProfile(nil, nil, logsql.Capabilities{}, false)
 	const kept = `first_over_time({app="a"} | json | keep app, n | unwrap n [5m])`
 	p.flippedConstructs = []string{"LogSelect"}
-	if metricConstructFlipped(p.flippedConstructs) {
+	if lower.MetricSetOf(p.flippedConstructs) != 0 {
 		t.Fatal("a metric construct is flipped")
 	}
 	if got, ok := p.lowerMetric(context.Background(), `sum(rate({a="b"}[5m]))`, prof); ok {
@@ -626,7 +626,7 @@ func TestQueryPlanLowering_MetricFlipScreenAndPanic(t *testing.T) {
 		t.Errorf("a keep the proxy does not serve was served: %s", got)
 	}
 	withFlipped(p, metricFlipCandidates...)
-	if !metricConstructFlipped(p.flippedConstructs) {
+	if lower.MetricSetOf(p.flippedConstructs) == 0 {
 		t.Fatal("no metric construct is flipped")
 	}
 	boom := loweringProfile(func(string) string { panic("boom") }, nil, logsql.Capabilities{}, false)
@@ -662,5 +662,48 @@ func TestQueryPlanLowering_MisreadFilterValue(t *testing.T) {
 	}
 	if misreadLeaf(nil) {
 		t.Error("a nil filter is misread")
+	}
+}
+
+// The lowering reads the plan a handler already made for the query (the plan memo) instead of parsing it again: the
+// handlers' resolved plan is used as it is, a query they only parsed is built from the shared parse, and only a query
+// they never saw is parsed, counted in the request's flow, and left out of the memo (a translation's plan is not one
+// the handlers read).
+//
+// conformance: architecture-syntax-package-layering, observability-query-flow
+func TestQueryPlanLowering_ReadsTheHandlersPlan(t *testing.T) {
+	planned := `sum(quantile_over_time(0.9, {app="memo-planned"} | json | keep app, d | unwrap d [5m]))`
+	want := resolvedPlan(planned)
+	if want == nil {
+		t.Fatal("no plan")
+	}
+	ctx, _ := flowCtx()
+	got, err := loweringPlan(ctx, planned)
+	if err != nil || got != want {
+		t.Fatalf("the handlers' plan is not read: %p %v, want %p", got, err, want)
+	}
+	parsed := `sum by (app) (rate({app="memo-parsed"}[5m]))`
+	if _, ok := sharedLogQLExpr(parsed); !ok {
+		t.Fatal("no parse")
+	}
+	built, err := loweringPlan(ctx, parsed)
+	if err != nil || lower.Construct(built.Root) != "VectorAgg" || !built.Sem.Resolved {
+		t.Fatalf("a shared parse is not built and resolved: %v %v", built, err)
+	}
+	if f := flowOf(ctx); f.parseCount != 0 {
+		t.Fatalf("a query the handlers saw was parsed again: %d parses", f.parseCount)
+	}
+	unseen := `sum by (app) (rate({app="memo-unseen"}[5m]))`
+	if _, err := loweringPlan(ctx, unseen); err != nil {
+		t.Fatal(err)
+	}
+	if f := flowOf(ctx); f.parseCount != 1 {
+		t.Fatalf("a query the handlers never saw: %d parses, want 1", f.parseCount)
+	}
+	if _, stored := planMemoLoad(unseen); stored {
+		t.Fatal("the lowering stored its plan in the handlers' memo")
+	}
+	if _, err := loweringPlan(ctx, `sum(rate(`); err == nil {
+		t.Fatal("a query that does not parse has no plan")
 	}
 }
