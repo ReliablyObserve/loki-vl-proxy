@@ -26,6 +26,9 @@
 #   only by the workflow that also pushes the chart to Docker Hub) requires
 #   CHART_DH_DIGEST.
 # Optional: DIST_DIR (default dist), DOCKERHUB_IMAGE.
+# Dry run (release.yaml with dry_run): DRY_RUN=true. The attest steps do not
+#   run, so an attestation bundle variable that is empty is skipped and named;
+#   one that is set is still checked like in a release.
 set -euo pipefail
 
 fail() {
@@ -60,6 +63,10 @@ PROVENANCE="${DIST}/loki-vl-proxy-${VERSION}.intoto.jsonl"
 
 add_bundle() {
   local var="$1" path
+  if [ "${DRY_RUN:-}" = "true" ] && [ -z "${!var:-}" ]; then
+    echo "dry run: no ${var} (attestations are not created in a dry run)"
+    return 0
+  fi
   need "${var}"
   path="${!var}"
   [ -s "${path}" ] || fail "attestation bundle ${var} is missing or empty: ${path}"

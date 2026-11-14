@@ -88,9 +88,6 @@ class BotBranchWiring(unittest.TestCase):
             self.assertIn(f"scripts.ci.tests.{module}", ci)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class BranchExistenceChecks(unittest.TestCase):
     # GitHub answers GET git/refs/heads/<name> with every ref that starts with
@@ -183,3 +180,132 @@ class ParityRefreshWiring(unittest.TestCase):
         self.assertLess(refresh.index("name: Open or update the parity report PR"),
                         refresh.index("name: Fail when the registry needs a case"))
         self.assertIn("conformance_ok", refresh)
+
+
+# Steps that publish something a user or the world can see: a registry login or push, a tag, an attestation,
+# a release, the chart's visibility, the metadata branch and its pull request.
+PUBLISHING_USES = ("actions/attest", "softprops/action-gh-release", "docker/login-action")
+PUBLISHING_COMMANDS = ("helm push", "helm registry login", "imagetools create", "gh api -X PATCH",
+                       "release_metadata.py prepare", "gh pr create", "gh pr merge", "git push")
+NOT_DRY = "!inputs.dry_run"
+
+
+def job_steps(workflow_text):
+    """The steps of a workflow's jobs as (name, if, uses, text) from the block layout: a step starts at
+    `      - ` and its keys sit at eight spaces."""
+    out = []
+    for block in re.split(r"(?m)^      - ", workflow_text)[1:]:
+        lines = ("  " + block).splitlines()
+        first = lines[0].strip()
+        name = re.search(r"(?m)^\s*name: (.+)$", "\n".join(lines[:3]))
+        cond = re.search(r"(?m)^\s{0,8}if: (.+)$", block)
+        uses = re.search(r"(?m)^\s*(?:- )?uses: (\S+)", first + "\n" + block)
+        out.append((name.group(1).strip() if name else first, cond.group(1).strip() if cond else "",
+                    uses.group(1) if uses else "", block))
+    return out
+
+
+def publishes(uses, text):
+    if uses.startswith(PUBLISHING_USES):
+        return True
+    if uses.startswith("docker/build-push-action") and "push=true" in text:
+        return True
+    run = text.split("run: |", 1)[1] if "run: |" in text else ""
+    return any(c in run for c in PUBLISHING_COMMANDS)
+
+
+def unguarded_publishing(workflow_text):
+    return [name for name, cond, uses, text in job_steps(workflow_text) if publishes(uses, text) and NOT_DRY not in cond]
+
+
+def keyless_in_dry_run(workflow_text):
+    """Steps that run in a dry run and could sign keylessly (a Rekor upload is a publication): every cosign
+    sign of such a step must sit after a dry-run branch that signs with the throwaway key and exits."""
+    bad = []
+    signs = re.compile(r"cosign sign(?:-blob)? ")
+    for name, cond, _, text in job_steps(workflow_text):
+        if not signs.search(text) or NOT_DRY in cond:
+            continue
+        branch = text.find('if [ "${DRY_RUN}" = "true" ]; then')
+        end = text.find("\n          fi", branch)
+        dry = text[branch:end] if branch >= 0 and end > branch else ""
+        keyless_before = branch < 0 or bool(signs.search(text[:branch]))
+        if keyless_before or "--key" not in dry or "--tlog-upload=false" not in dry or "exit 0" not in dry:
+            bad.append(name)
+    return bad
+
+
+class ReleaseDryRunWiring(unittest.TestCase):
+    # release.yaml's dry_run runs every step and publishes nothing. A new publishing step without the guard
+    # fails here, whatever it is called.
+    def test_the_input_is_a_boolean_that_defaults_to_off(self):
+        release = text("release.yaml")
+        block = release[release.index("      dry_run:"):release.index("permissions:")]
+        self.assertIn("type: boolean", block)
+        self.assertIn("default: false", block)
+        self.assertIn("DRY_RUN: ${{ inputs.dry_run }}", release)
+
+    def test_every_publishing_step_is_skipped_in_a_dry_run(self):
+        release = text("release.yaml")
+        self.assertEqual(unguarded_publishing(release), [])
+        found = [name for name, _, uses, body in job_steps(release) if publishes(uses, body)]
+        # The registry logins, the push, the tags, the chart pushes and visibility, every attestation, the
+        # release and the metadata branch and pull request.
+        self.assertGreaterEqual(len(found), 19, found)
+
+    def test_no_step_of_a_dry_run_signs_keylessly(self):
+        self.assertEqual(keyless_in_dry_run(text("release.yaml")), [])
+
+    def test_the_dry_run_builds_scans_and_collects_locally(self):
+        steps = {name: (cond, body) for name, cond, _, body in job_steps(text("release.yaml"))}
+        cond, body = steps["Build the Docker image (dry run)"]
+        self.assertEqual(cond, "${{ inputs.dry_run }}")
+        self.assertIn("type=oci,dest=", body)
+        self.assertNotIn("push=true", body)
+        self.assertIn("sbom: true", body)
+        self.assertIn("provenance: mode=max", body)
+        self.assertIn("IMAGE_ARCHIVE", steps["Scan the pushed image with Trivy"][1])
+        self.assertIn("oci-archive:", steps["Collect provenance bundles, image SBOMs and digests"][1])
+        cond, body = steps["Check the release assets (dry run)"]
+        self.assertEqual(cond, "${{ inputs.dry_run }}")
+        self.assertIn("cosign verify-blob --key", body)
+        self.assertIn('rm -f "${DRY_RUN_DIR}/throwaway.key"', body)
+        cond, body = steps["Keep the dry run's outputs"]
+        self.assertIn("inputs.dry_run", cond)
+        self.assertIn("!/tmp/release-dry-run/*.key", body)
+        self.assertIn("a dry run replaces nothing and goes on", steps["Refuse to republish an immutable release"][1])
+        # A release still refuses every other ref; only a dry run, which publishes nothing, goes on from a branch.
+        refs = steps["Refuse to publish from other refs"][1]
+        self.assertIn("releases are published only from main or a v* tag", refs)
+        self.assertLess(refs.index('if [ "${DRY_RUN}" = "true" ]'), refs.index("exit 1"))
+
+    def test_the_detection_catches_a_new_publishing_step(self):
+        sample = "\n".join([
+            "    steps:",
+            "      - name: Push somewhere new",
+            "        run: |",
+            "          helm push dist/x.tgz oci://example",
+            "      - name: Guarded push",
+            "        if: ${{ !inputs.dry_run }}",
+            "        run: |",
+            "          git push origin x",
+            "      - name: A new attestation",
+            "        uses: actions/attest-sbom@0123456789abcdef0123456789abcdef01234567 # v1",
+            "      - name: Keyless in a dry run",
+            "        run: |",
+            "          cosign sign --yes ghcr.io/x@sha256:y",
+            "      - name: Key in a dry run",
+            "        run: |",
+            '          if [ "${DRY_RUN}" = "true" ]; then',
+            "            cosign sign-blob --key k --tlog-upload=false f",
+            "            exit 0",
+            "          fi",
+            "          cosign sign-blob --yes f",
+            "",
+        ])
+        self.assertEqual(unguarded_publishing(sample), ["Push somewhere new", "A new attestation"])
+        self.assertEqual(keyless_in_dry_run(sample), ["Keyless in a dry run"])
+
+
+if __name__ == "__main__":
+    unittest.main()
