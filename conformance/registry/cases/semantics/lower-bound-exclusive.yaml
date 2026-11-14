@@ -37,6 +37,9 @@ request:
     time: 'now'
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    blocked_by: fixture
+    reason: "a row exactly on the lower bound of the window"
 compare:
   mode: observed
   fields: [series, values]

@@ -20,6 +20,9 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     The ruler backend fails or answers an error status.
+  verify:
+    blocked_by: fault
+    reason: "the ruler backend failing"
 compare:
   mode: observed
   fields: [status, headers, body]

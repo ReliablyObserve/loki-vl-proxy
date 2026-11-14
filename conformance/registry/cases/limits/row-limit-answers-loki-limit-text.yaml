@@ -40,6 +40,9 @@ request:
     metric cannot be answered from VictoriaLogs stats buckets, so the raw-row
     evaluator reads the lines. Instant queries (/loki/api/v1/query) answer the
     same error.
+  verify:
+    blocked_by: volume
+    reason: "more lines than -manual-range-metric-row-limit on the raw-row route"
 compare:
   mode: exact
   fields: [status, headers, body]

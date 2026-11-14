@@ -70,6 +70,9 @@ request:
     with a detected_level label, a stream `severity` with metadata `level`, a
     logfmt line with `LvL=warn` or a syntax error before its level key, or a
     row VictoriaLogs unpacked from a JSON body with a stored `level`.
+  verify:
+    blocked_by: fixture
+    reason: "lines with severity before level, a stream detected_level label and the other shapes the precondition lists"
 compare:
   mode: exact
   fields: [series_labels, values]

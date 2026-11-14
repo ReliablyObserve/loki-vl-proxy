@@ -50,7 +50,7 @@ func TestCompareFacets(t *testing.T) {
 		{"same labels other values", []string{"labels", "resultType"}, ok(matrixA), ok(matrixValue), 0, false, nil},
 		{"status", []string{"status"}, ok(matrixA), Answer{Status: 500, Body: "x"}, 0, false, []string{"status"}},
 		{"stream lines", []string{"entries"}, ok(streamsA), ok(streamsLine), 0, false, []string{"entries"}},
-		{"stream lines equal, metadata differs", []string{"entries", "metadata"}, ok(streamsA), ok(streamsMeta), 0, false, []string{"metadata"}},
+		{"stream lines equal, metadata differs", []string{"entries", "structuredMetadata", "parsed"}, ok(streamsA), ok(streamsMeta), 0, false, []string{"structuredMetadata", "parsed"}},
 		{"encoding flags ignored", []string{"data"}, ok(streamsA), ok(strings.Replace(streamsA, `"encodingFlags":["categorize-labels"],`, "", 1)), 0, false, nil},
 		{"label names as a set", []string{"labels", "values"}, ok(`{"status":"success","data":["b","a"]}`), ok(`{"status":"success","data":["a","b"]}`), 0, false, nil},
 		{"label names differ", []string{"values"}, ok(`{"data":["a","b"]}`), ok(`{"data":["a"]}`), 0, false, []string{"values"}},
@@ -148,7 +148,9 @@ func FuzzCompareIsReflexive(f *testing.F) {
 		f.Add(400, seed)
 	}
 	all := []string{facetStatus, facetError, facetErrorType, facetWarnings, facetResultType, facetLabels, facetCount,
-		facetValues, facetEntries, facetMetadata, facetFields, facetData, facetBody}
+		facetValues, facetEntries, facetFields, facetData, facetBody, facetResult, facetTimestamps, facetStructuredMeta,
+		facetParsed, facetMetaKeys, facetParsedKeys, facetMetaCategories, facetDetectedLevel, facetFieldLabels, facetFieldParsers,
+		facetFieldJSONPath, facetFieldType, facetLimit, facetLabelNames, facetLabelCardinality, facetStatPrefix + "streams"}
 	f.Fuzz(func(t *testing.T, status int, body string) {
 		a := Answer{Status: status, Body: body}
 		for _, subset := range []bool{false, true} {

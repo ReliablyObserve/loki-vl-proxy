@@ -68,6 +68,9 @@ request:
   precondition: |
     The same request answered once, then asked again with start and end
     moved by a few seconds (a Grafana refresh).
+  verify:
+    blocked_by: moved_window
+    reason: "a second ask with the window moved by a few seconds, compared with one whole-window ask"
 compare:
   mode: exact
   fields: [status, data]

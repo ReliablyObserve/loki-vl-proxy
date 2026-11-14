@@ -38,6 +38,9 @@ request:
     group tail-multitenancy) tails through the proxy, cuts the stack's
     VictoriaLogs off behind a fault-injecting forwarder and asserts the tail
     delivers the lines written during and after the outage once each.
+  verify:
+    blocked_by: fault
+    reason: "VictoriaLogs cut off behind a fault proxy while tailing"
 compare:
   mode: observed
   fields: [close frame, streams.values]

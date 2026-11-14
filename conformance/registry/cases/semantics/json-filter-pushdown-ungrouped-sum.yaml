@@ -25,6 +25,9 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     As semantics/json-filter-pushdown-without-error-drop.
+  verify:
+    met_by: stack
+    evidence: "test/e2e-compat/log-generator.py:641 writes pipeline as a key of the JSON body of every otel-collector line (test/e2e-compat/log-generator.py:625 lists logs/loki among its values); it is no stored field."
 compare:
   mode: exact
   fields: [status, series_labels, values]
