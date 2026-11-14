@@ -1,0 +1,42 @@
+id: semantics/keep-before-parser-unwrap-identity
+title: A keep before a parser and an unwrap leaves the stream in the proxy's series; Loki keeps only the kept and the parsed labels (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum by (app) (quantile_over_time(0.9, {job="kj"} | keep app | json | unwrap duration_ms [5m]))`:
+  the keep deletes every stream label but app, then the parser adds the keys of
+  each line, so a Loki series is app plus the parsed keys less the unwrapped one.
+  The proxy groups by the stream and each line, so lines of two streams that
+  parse the same keys stay apart, and the stream's labels name the series.
+  Measured with the Loki engine oracle and VictoriaLogs v1.53.0 and v1.49.0
+  (TestKeepUnwrapIdentityMatchLoki): quantile and stddev under sum by (app)
+  differ on every request kind; first_over_time differs only where
+  semantics/unwrap-first-last-range-longer-than-step does. The plan's series
+  attribute (queryplan.SeriesLabels) says it: Kept with Dynamic. VictoriaLogs
+  stats cannot name the parsed keys (semantics/unwrap-per-series-identity-raw-rows).
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (app) (quantile_over_time(0.9, {app="api-gateway"} | keep app | json | unwrap duration_ms [5m]))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's sum of the quantiles of the series app plus parsed keys.
+gap:
+  status: open
+  impact: explore-visible
+  effort: L
+  area: 'internal/queryplan/lower unwrap.go (keptIdentity decides nothing when a parser follows the keep)'
+  loki: 'the series are the kept labels plus the keys the parser extracts after the keep'
+  proxy: 'the stream and each line'
+  planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus) lists the runs under this case'
+  clusters: []

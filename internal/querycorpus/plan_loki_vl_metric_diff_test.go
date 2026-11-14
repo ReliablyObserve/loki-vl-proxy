@@ -535,6 +535,12 @@ func recordMetricAnswers(t *testing.T, path string, queries []metricQuery) {
 				}
 			}
 			recs[i].VL[version] = front.recorded
+			// LVP_RECORD_PACE (a duration) waits after each query: every run is a fresh proxy with its own
+			// connections, and a recording of many queries can use up the host's ephemeral ports while the closed
+			// ones wait out TIME_WAIT (a run that cannot dial records no answer).
+			if pace, err := time.ParseDuration(os.Getenv("LVP_RECORD_PACE")); err == nil && pace > 0 {
+				time.Sleep(pace)
+			}
 		}
 		srv.Stop()
 	}

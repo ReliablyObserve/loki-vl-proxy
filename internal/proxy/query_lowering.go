@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"slices"
+	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -86,6 +87,40 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 	// query the lowering answered is one of them.
 	querycorpus.Record(querycorpus.LogQLTranslate, canon)
 	p.recordLoweringShadow(shadowFlipped, construct)
+	return physical.Encode(op), true
+}
+
+// keepIdentityConstruct is the flip of a range function over an unwrapped label whose series a keep before the
+// unwrap decides (lower.KeepDecidesUnwrapIdentity): the string translator groups its samples by the stream, Loki by
+// the labels the keep leaves, and the lowering writes Loki's identity, so the query is served from it
+// (semantics/keep-before-unwrap-series-identity). The corpus shadow holds these rows as a known divergence of the
+// translator, and the Loki differential (internal/querycorpus TestKeepUnwrapIdentityMatchLoki) holds the answers.
+const keepIdentityConstruct = "UnwrapKeepIdentity"
+
+// lowerKeepIdentity translates a canonical metric query with the typed lowering when a keep before its unwrap
+// decides its series (keepIdentityConstruct), and reports whether it did. A query without both words is turned away
+// before any plan is built, so other metric queries pay one scan of their text.
+func (p *Proxy) lowerKeepIdentity(ctx context.Context, canon string, prof lower.Profile) (text string, ok bool) {
+	if canon == "" || canon[0] == '{' || !strings.Contains(canon, "keep") || !strings.Contains(canon, "unwrap") {
+		return "", false
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// The panic value can hold query text, so it is not logged: the string translator answers instead.
+			p.recordLoweringShadow(shadowPanic, keepIdentityConstruct)
+			text, ok = "", false
+		}
+	}()
+	plan, err := loweringPlan(ctx, canon)
+	if err != nil || !lower.KeepDecidesUnwrapIdentity(plan) {
+		return "", false
+	}
+	op, err := lower.PlanQuery(canon, plan, prof)
+	if err != nil {
+		return "", false
+	}
+	querycorpus.Record(querycorpus.LogQLTranslate, canon)
+	p.recordLoweringShadow(shadowFlipped, keepIdentityConstruct)
 	return physical.Encode(op), true
 }
 

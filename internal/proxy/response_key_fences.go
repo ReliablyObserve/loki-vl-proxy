@@ -48,6 +48,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	b.WriteString(keywordLabelResponseKeyVersion(query))
 	b.WriteString(reservedFieldCaseResponseKeyVersion(query))
 	b.WriteString(reservedFieldLabelResponseKeyVersion(query))
+	b.WriteString(keepUnwrapIdentityResponseKeyVersion(query))
 	if site == responseKeyCompatQueryRange {
 		b.WriteString(logfmtPresenceResponseKeyVersion(r, query))
 	}
@@ -56,4 +57,17 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		b.WriteString(runeResponseKeyVersion(query))
 	}
 	return b.String()
+}
+
+// keepUnwrapIdentityResponseVersion fences the answers cached before a keep before an unwrap decided the series of
+// the range function (semantics/keep-before-unwrap-series-identity): a series per stream, or per line, then.
+const keepUnwrapIdentityResponseVersion = "@keep-unwrap-identity-v1:"
+
+// keepUnwrapIdentityResponseKeyVersion is the fence of a query that holds a keep stage and an unwrap: a text screen,
+// so a query whose keep decides nothing is fenced too (one more cache miss), and no other query's key changes.
+func keepUnwrapIdentityResponseKeyVersion(query string) string {
+	if strings.Contains(query, "unwrap") && keepMetadataProjectionStageRE.MatchString(query) {
+		return keepUnwrapIdentityResponseVersion
+	}
+	return ""
 }

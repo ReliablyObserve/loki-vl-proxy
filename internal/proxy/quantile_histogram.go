@@ -563,7 +563,10 @@ func (p *Proxy) withQuantileShape(r *http.Request, logql string, spec statsCompa
 	if !ok {
 		return r, spec, false
 	}
-	if !rangeGrouped {
+	if kept, decided := p.keepUnwrapIdentity(logql); decided && !rangeGrouped {
+		// A keep before the unwrap decides the series: the labels it leaves, as the range aggregation's by would.
+		spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = p.upstreamLabelNames(kept), kept, len(kept) == 0
+	} else if !rangeGrouped {
 		spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = nil, nil, false
 	}
 	if outer == nil {
@@ -573,6 +576,15 @@ func (p *Proxy) withQuantileShape(r *http.Request, logql string, spec statsCompa
 	outer.limit = p.resolvedMaxStatsQuerySeries(ctx)
 	ctx = context.WithValue(context.WithValue(ctx, foldedSumKey{}, true), quantileOuterKey{}, outer)
 	return r.WithContext(ctx), spec, true
+}
+
+// upstreamLabelNames are Loki label names as VictoriaLogs names their fields.
+func (p *Proxy) upstreamLabelNames(labels []string) []string {
+	out := make([]string, len(labels))
+	for i, l := range labels {
+		out[i] = p.labelTranslator.ToVL(l)
+	}
+	return out
 }
 
 // fold returns the evaluator of the folded series: a group per value set of

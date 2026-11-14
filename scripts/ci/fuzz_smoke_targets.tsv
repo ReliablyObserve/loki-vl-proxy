@@ -122,6 +122,7 @@ smoke	internal/proxy	FuzzKeepSeriesGrouping	12s	-	a range aggregation over a tra
 smoke	internal/translator	FuzzNarrowUnwrapLogfmtUnpack	12s	-	narrowed logfmt unpack of an unwrap metric names every label it reads
 smoke	internal/queryplan	FuzzBuild	12s	-	logical plan build and key
 smoke	internal/queryplan	FuzzResolve	12s	-	resolver total, deterministic, idempotent, key unchanged
+smoke	internal/queryplan	FuzzSeriesLabels	12s	-	the series identity of a pipeline: total, deterministic, never the unwrapped or an error label, only labels the last keep names, claimed only after a keep nothing changes
 smoke	internal/queryplan	FuzzKeyDecode	12s	-	logical key decodes to the fields of its plan, to the last byte
 smoke	internal/queryplan	FuzzKeyDistinctMutations	12s	-	semantic mutations change the logical key, spelling ones keep it
 smoke	internal/queryplan	FuzzValidate	12s	-	tree checks of a parsed query: no panic, stable answer, Loki's 400, never refuse what Loki accepts

@@ -21,6 +21,14 @@ why: |
   series" into "quantile of the group". The three route series of an app give 3 x
   6.75 = 20.25 on Loki for the first app, which is the ratio seen above.
 
+  Measured again with the Loki engine oracle and VictoriaLogs v1.53.0 and
+  v1.49.0 (TestKeepUnwrapIdentityMatchLoki, `sum by (app) (quantile_over_time(0.9,
+  {job="kj"} | json | unwrap duration_ms [5m]))`, each line a Loki series of its
+  own): the proxy now answers the sum of a quantile per stream, still not Loki's
+  sum per series, on every request kind. With a keep before the unwrap the
+  series are the kept labels and the answer is Loki's
+  (semantics/keep-before-unwrap-series-identity).
+
   Another change (the quantile value-count pushdown,
   semantics/unwrap-quantile-response-limit) is expected to keep the per-series
   identity and fold the quantiles in the proxy; the row stays open until that

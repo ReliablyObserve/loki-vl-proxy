@@ -35,8 +35,9 @@ why: |
   stages after the last parser do not name (internal/proxy/loki_profile.go
   extractedName), and a range aggregation over a pipeline that ends in a bare
   keep is grouped by the kept labels: count_over_time, rate, bytes_over_time
-  and bytes_rate under `sum by (<kept>)`, an unwrapped function with a range
-  `by (<kept> less the unwrapped label)` (internal/proxy/keep_series_grouping.go),
+  and bytes_rate under `sum by (<kept>)` (internal/proxy/keep_series_grouping.go),
+  and a function over an unwrapped label behind such a keep is grouped by the
+  kept labels less the unwrapped one (semantics/keep-before-unwrap-series-identity),
   so VictoriaLogs' stats group by those labels and `count(...)` is the
   number of kept label sets. On query_range a JSON pipeline under an outer
   fold (`count(rate({...} | json | keep foo [5m]))`) is not rewritten, as

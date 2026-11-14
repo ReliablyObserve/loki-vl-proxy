@@ -1115,6 +1115,9 @@
       "internal/proxy/detected_level_presence_test.go",
       "internal/proxy/ordered_json_detected_level_test.go"
     ],
+    "semantics/drop-before-unwrap-stream-label": [
+      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
+    ],
     "semantics/drop-error-pipeline-spellings": [
       "test/e2e-compat/drop_error_spellings_test.go"
     ],
@@ -1374,6 +1377,18 @@
     "semantics/json-metric-step-wider-than-range": [
       "internal/proxy/ordered_json_step_wider_test.go",
       "test/e2e-compat/json_metric_step_wider_test.go"
+    ],
+    "semantics/keep-before-parser-unwrap-identity": [
+      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
+    ],
+    "semantics/keep-before-unwrap-identity-in-operands": [
+      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
+    ],
+    "semantics/keep-before-unwrap-series-identity": [
+      "internal/proxy/keep_unwrap_identity_test.go",
+      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
+      "internal/queryplan/lower/unwrap_keep_test.go",
+      "internal/queryplan/series_labels_test.go"
     ],
     "semantics/keep-leaves-labels-loki-drops": [
       "internal/logql/stage_raw_test.go",
@@ -1749,6 +1764,7 @@
       "test/e2e-compat/stdvar_over_time_binary_marker_test.go"
     ],
     "semantics/stdvar-grouped-pooled-variance": [
+      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
       "internal/querycorpus/stddev_stdvar_loki_diff_test.go"
     ],
     "semantics/stream-label-shadowed-by-ingest-json-key": [
@@ -1897,6 +1913,9 @@
     "semantics/unwrap-extraction-list-series-identity": [
       "internal/proxy/extraction_list_outside_without_test.go"
     ],
+    "semantics/unwrap-first-last-range-longer-than-step": [
+      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
+    ],
     "semantics/unwrap-first-last-range-timestamps": [
       "internal/proxy/first_last_range_timestamps_test.go",
       "test/e2e-compat/first_last_range_timestamps_test.go"
@@ -1933,6 +1952,7 @@
       "internal/proxy/unwrap_over_time_window_test.go"
     ],
     "semantics/unwrap-per-series-identity-raw-rows": [
+      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
       "internal/querycorpus/stddev_stdvar_loki_diff_test.go"
     ],
     "semantics/unwrap-quantile-response-limit": [
@@ -1940,6 +1960,9 @@
       "internal/proxy/quantile_slider_harden_test.go",
       "internal/proxy/unwrap_quantile_response_limit_test.go",
       "test/e2e-compat/unwrap_quantile_test.go"
+    ],
+    "semantics/unwrap-quantile-sum-by-group-quantile": [
+      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
     ],
     "semantics/unwrap-range-last-point": [
       "internal/proxy/unwrap_range_last_point_test.go",
@@ -1949,6 +1972,9 @@
     "semantics/unwrap-rate-counter-one-sample-series": [
       "internal/proxy/rate_counter_singletons_test.go",
       "test/e2e-compat/unwrap_rate_counter_one_sample_test.go"
+    ],
+    "semantics/unwrap-rate-counter-window-extrapolation": [
+      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
     ],
     "semantics/unwrap-rate-ungrouped-sum-per-stream": [
       "internal/proxy/rate_counter_singletons_test.go",
@@ -2234,7 +2260,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 567,
+  "registry_items": 572,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2780,6 +2806,9 @@
       "loki_api_v1_query_range",
       "semantics/keep-leaves-labels-loki-drops",
       "semantics/stage-name-followed-by-more-of-stage"
+    ],
+    "internal/proxy/keep_unwrap_identity_test.go": [
+      "semantics/keep-before-unwrap-series-identity"
     ],
     "internal/proxy/label_cache_behavior_test.go": [
       "loki_api_v1_labels"
@@ -3764,6 +3793,17 @@
       "semantics/unwrap-unknown-conversion-function-accepted",
       "semantics/vector-aggregation-over-scalar-rejected"
     ],
+    "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go": [
+      "semantics/drop-before-unwrap-stream-label",
+      "semantics/keep-before-parser-unwrap-identity",
+      "semantics/keep-before-unwrap-identity-in-operands",
+      "semantics/keep-before-unwrap-series-identity",
+      "semantics/stdvar-grouped-pooled-variance",
+      "semantics/unwrap-first-last-range-longer-than-step",
+      "semantics/unwrap-per-series-identity-raw-rows",
+      "semantics/unwrap-quantile-sum-by-group-quantile",
+      "semantics/unwrap-rate-counter-window-extrapolation"
+    ],
     "internal/querycorpus/known_divergence_test.go": [
       "architecture-syntax-package-layering",
       "semantics/translator-reads-parenthesized-metric-as-text"
@@ -3989,6 +4029,9 @@
     "internal/queryplan/lower/unpack_test.go": [
       "semantics/translator-writes-unpack-as-unpack-json"
     ],
+    "internal/queryplan/lower/unwrap_keep_test.go": [
+      "semantics/keep-before-unwrap-series-identity"
+    ],
     "internal/queryplan/lower/unwrap_stats_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -4009,6 +4052,9 @@
     ],
     "internal/queryplan/physical/eval_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/series_labels_test.go": [
+      "semantics/keep-before-unwrap-series-identity"
     ],
     "internal/queryplan/validate_test.go": [
       "semantics/label-replace-over-log-selector-accepted",
@@ -4942,7 +4988,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 583,
+  "tests_with_markers": 587,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5034,10 +5080,8 @@
     "semantics/unwrap-conversion-error-parser-divergence",
     "semantics/unwrap-conversion-error-undetected-shapes",
     "semantics/unwrap-count-avg-without-after-parser",
-    "semantics/unwrap-first-last-range-longer-than-step",
     "semantics/unwrap-over-time-short-range-windows",
     "semantics/unwrap-parserless-reads-stored-field",
-    "semantics/unwrap-quantile-sum-by-group-quantile",
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
     "semantics/uppercase-topk-ranks-once",
@@ -5050,5 +5094,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 347
+  "wired_items": 354
 }

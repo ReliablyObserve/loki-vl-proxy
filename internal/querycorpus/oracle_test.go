@@ -311,6 +311,11 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		// VictoriaLogs answers to both are recorded in internal/queryplan/lower).
 		return "", "", false
 	}
+	if lower.WritesKeepUnwrapIdentity(plan) {
+		// A keep before the unwrap decides the series: the plan groups by the labels it leaves, the translator by the
+		// stream (semantics/keep-before-unwrap-series-identity, held to Loki by TestKeepUnwrapIdentityMatchLoki).
+		return "", "", false
+	}
 	caps := logsql.CapabilitiesFor(strings.TrimPrefix(v, "v"))
 	// A spelling the translator reads as a phrase (ScreenText) is left to it: nothing to hold the plan to.
 	op, err := lower.PlanQuery(q, plan, lower.Profile{Caps: caps, Label: identity})
