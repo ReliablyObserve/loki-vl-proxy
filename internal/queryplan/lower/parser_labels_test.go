@@ -332,6 +332,17 @@ func parserLabelQueries(t testing.TB) []string {
 // same text, with and without the tenant's stream labels (Parse, Build, Resolve and Plan against the translation):
 // the shapes where it would are left to the translator, named.
 //
+// minAllocsPerRun is the lowest of three testing.AllocsPerRun(5, f) samples. AllocsPerRun counts
+// every allocation of the process, so another test's goroutine still running during a full package
+// run can only add to a sample; the lowest sample is f's own count.
+func minAllocsPerRun(f func()) float64 {
+	low := testing.AllocsPerRun(5, f)
+	for i := 0; i < 2; i++ {
+		low = min(low, testing.AllocsPerRun(5, f))
+	}
+	return low
+}
+
 // conformance: architecture-syntax-package-layering
 func TestParserLabelsLoweringAllocatesNoMoreThanTheTranslator(t *testing.T) {
 	if raceDetectorEnabled {
@@ -347,8 +358,8 @@ func TestParserLabelsLoweringAllocatesNoMoreThanTheTranslator(t *testing.T) {
 			if _, err := PlanQuery(q, p, Profile{Label: label}); err != nil {
 				continue
 			}
-			tr := testing.AllocsPerRun(5, func() { _, _ = translator.TranslateLogQLWithLabels(q, label) })
-			lo := testing.AllocsPerRun(5, func() {
+			tr := minAllocsPerRun(func() { _, _ = translator.TranslateLogQLWithLabels(q, label) })
+			lo := minAllocsPerRun(func() {
 				expr, _ := logql.Parse(logql.CanonicalizeLogRanges(q))
 				pl, _ := queryplan.Build(expr, queryplan.Inputs{})
 				queryplan.Resolve(pl)
