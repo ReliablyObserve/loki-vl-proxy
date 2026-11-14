@@ -249,3 +249,21 @@ func TestMayFailWhileParsed(t *testing.T) {
 		}
 	}
 }
+
+// The logfmt flags of a query with an unwrap outside a range aggregation stay, so that Loki's syntax error is at its
+// column; Grafana's unwrap stubs, which the handlers drop, do not keep them.
+//
+// conformance: semantics/unwrap-in-log-query
+func TestStripParserFlagsAroundUnwrap(t *testing.T) {
+	for q, want := range map[string]string{
+		`{a="b"} | logfmt --strict | unwrap x`:                        `{a="b"} | logfmt --strict | unwrap x`,
+		`{a="b"} | logfmt --strict | unwrap [1s]`:                     `{a="b"} | logfmt  | unwrap [1s]`,
+		`{a="b"} | logfmt --strict | unwrap duration() [1s]`:          `{a="b"} | logfmt  | unwrap duration() [1s]`,
+		`rate({a="b"}[5m]) + {a="b"} | logfmt --strict | unwrap [1s]`: `rate({a="b"}[5m]) + {a="b"} | logfmt --strict | unwrap [1s]`,
+		`sum_over_time({a="b"} | logfmt --strict | unwrap x [5m])`:    `sum_over_time({a="b"} | logfmt  | unwrap x [5m])`,
+	} {
+		if got := StripParserFlags(q); got != want {
+			t.Errorf("StripParserFlags(%q) = %q, want %q", q, got, want)
+		}
+	}
+}

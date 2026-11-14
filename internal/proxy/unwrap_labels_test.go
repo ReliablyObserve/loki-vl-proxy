@@ -119,6 +119,7 @@ func TestQueryRange_IncompleteUnwrapConversion_ReturnsLogResults(t *testing.T) {
 		`{app="api-gateway"} | json | unwrap duration_seconds() [1s]`,
 		`{app="api-gateway"} | json | unwrap bytes() [1s]`,
 		`{app="api-gateway"} | json | unwrap duration() [1s]`,
+		`{app="api-gateway"} | logfmt --strict | unwrap [1s]`, // a stub after a flag, which the stub drop keeps
 	} {
 		t.Run(stub, func(t *testing.T) {
 			vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
