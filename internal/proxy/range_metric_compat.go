@@ -457,6 +457,9 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 		p.fail(w, r, withoutUnwrapError(unwrapErrorFuncName(origSpec.Func)))
 		return true
 	}
+	if p.dynamicIdentityRange(w, r, originalLogql, spec, origSpec, manualFunc, step) {
+		return true
+	}
 	if grouped {
 		// VictoriaLogs groups the buckets by the outer labels (unwrapGroupPushdown).
 		return p.proxyManualRangeMetricRange(w, r, unwrapSpec, origSpec, manualFunc)
@@ -619,6 +622,9 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	}
 	if metricFuncRequiresUnwrap(origSpec.Func) && (!origSpec.HasUnwrap || strings.TrimSpace(origSpec.UnwrapField) == "") {
 		p.fail(w, r, withoutUnwrapError(unwrapErrorFuncName(origSpec.Func)))
+		return true
+	}
+	if p.dynamicIdentityInstant(w, r, originalLogql, spec, origSpec, manualFunc) {
 		return true
 	}
 	// A bare outer aggregation without by() collapses all streams into one empty-label

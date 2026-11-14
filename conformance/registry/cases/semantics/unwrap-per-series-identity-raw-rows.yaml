@@ -49,12 +49,19 @@ why: |
   the rest with the stored level and detected_level and hashes it
   (lower.DynamicUnwrapIdentity). The stats then take the function per series
   (the stream and the hash) and the aggregation over the series in VictoriaLogs,
-  on query and on query_range with the range up to the step. quantile_over_time
-  reads VictoriaLogs' value counts per series, rate_counter and a range longer
-  than the step read the rows (bounded by -manual-range-metric-row-limit), each
-  row in the series of its stream and hash, and the sum folds the series. The
-  proxy serves these queries from the lowering (UnwrapDynamicIdentity, behind
-  -query-plan-lowering); answers cached before are fenced.
+  on query and on query_range with the range up to the step. quantile_over_time,
+  rate_counter and a range longer than the step need each series' samples: one
+  stats read over the fetch span counts the rows and the distinct series hashes
+  first. When they are equal (every line a series of its own) each window holds
+  at most one sample of a series and the function has a closed form (the value,
+  or 0 for stddev, stdvar and rate_counter), answered as sum by (C) over
+  sum_over_time, or max, min or avg over time by (C), from VictoriaLogs' stats.
+  Otherwise the series are read one by one (quantile from VictoriaLogs' value
+  counts, the others from the rows), bounded by the series limit
+  (-max-stats-query-series: a query with more series fails with Loki's series
+  limit error, where Loki would answer). The proxy serves these queries from the
+  lowering (UnwrapDynamicIdentity, behind -query-plan-lowering); answers cached
+  before are fenced.
 
   Proven against the Loki engine oracle and VictoriaLogs v1.53.0 and v1.49.0,
   through the handlers, on instant, step = range, step < range and step > range:
@@ -68,8 +75,9 @@ why: |
   Loki profile (semantics/unwrap-per-series-identity-label-filter); first and
   last over a range longer than the step (semantics/unwrap-first-last-range-longer-than-step);
   rate_counter's extrapolated value (semantics/unwrap-rate-counter-window-extrapolation).
-  Not modelled: structured metadata other than the level fields, and a line that
-  holds one key twice.
+  Not modelled: structured metadata other than the level fields, a line that
+  holds one key twice, and more than -max-stats-query-series series of several
+  samples each on the routes that read each series.
 corpus:
   size: 4
   dimensions:

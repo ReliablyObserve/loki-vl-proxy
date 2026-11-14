@@ -10,7 +10,7 @@ import (
 )
 
 // dynamicHash is the identity pipes of a json parser over the unwrapped label n, as the lowering writes them.
-const dynamicHash = `| unpack_json from _msg result_prefix "__lvp_p_" | delete __lvp_p_n | pack_json fields (__lvp_p_*, level, detected_level) as __lvp_sid | hash(__lvp_sid) as __lvp_sid`
+const dynamicHash = `| unpack_json from _msg result_prefix "__lvp_p_" | delete __lvp_p_n | pack_json fields (__lvp_p_*, level, detected_level, _stream) as __lvp_sid | hash(__lvp_sid) as __lvp_sid`
 
 // The plan's series of a range function over an unwrapped label after a json or logfmt parser with no keep: the
 // stream and every parsed label less the unwrapped one (and the stored level), whatever the clause of the outer

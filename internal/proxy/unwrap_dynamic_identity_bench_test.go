@@ -17,16 +17,22 @@ import (
 
 // BenchmarkDynamicIdentityRoutes measures sum, sum by and max by over a function taken per series after a json
 // parser with no keep (lower.DynamicUnwrapIdentity) through the real handlers, against a stub VictoriaLogs that
-// answers a row query with 2,000 rows over the window (one series per line) and a stats query with a small answer:
-// the proxy's work on each route the shapes take, instant, a range equal to the step and a range longer than it.
+// answers a row query with 2,000 rows over the window and a stats query with a small answer: the proxy's work on each
+// route the shapes take, instant, a range equal to the step and a range longer than it. unique has one series per
+// line (the one-sample proof holds); dup has 40 series of 50 lines each (the per-series evaluators answer).
 func BenchmarkDynamicIdentityRoutes(b *testing.B) {
+	b.Run("unique", func(b *testing.B) { benchDynamicIdentityRoutes(b, 2000) })
+	b.Run("dup", func(b *testing.B) { benchDynamicIdentityRoutes(b, 40) })
+}
+
+func benchDynamicIdentityRoutes(b *testing.B, series int) {
 	const rows = 2000
 	end := time.Unix(1_800_000_600, 0)
 	var raw bytes.Buffer
 	for i := 0; i < rows; i++ {
 		ts := end.Add(-time.Duration(rows-i) * 900 * time.Millisecond).UTC().Format(time.RFC3339Nano)
 		fmt.Fprintf(&raw, `{"_time":%q,"_stream":"{app=\"x\",pod=\"p%d\"}","app":"x","_msg":"{\"n\":%d,\"req\":\"r%d\"}","n":"%d","req":"r%d","__lvp_sid":"%d","__lvp_v":"%d","__lvp_bad":"0"}`+"\n",
-			ts, i%4, i%500, i, i%500, i, 1000+i, i%500)
+			ts, i%4, i%500, i, i%500, i, 1000+i%series, i%500)
 	}
 	rowBody := raw.Bytes()
 	const (
@@ -36,6 +42,12 @@ func BenchmarkDynamicIdentityRoutes(b *testing.B) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/query":
+			_ = r.ParseForm()
+			if strings.Contains(r.Form.Get("query"), "count_uniq_hash(") {
+				// The one-sample proof: the rows and the distinct series hashes.
+				_, _ = fmt.Fprintf(w, `{"n":"%d","u":"%d"}`, rows, series)
+				return
+			}
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			_, _ = w.Write(rowBody)
 		case "/select/logsql/stats_query":

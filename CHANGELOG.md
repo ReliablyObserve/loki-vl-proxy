@@ -34,9 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sum by (app) (quantile_over_time(0.9, {job="kj"} | json | unwrap duration_ms [5m]))` answered a quantile of all
   the app's samples, `sum by (app) (stdvar_over_time(...))` the variance of the app's pooled samples, and
   `sum(stddev_over_time(...))` disagreed between `query` and `query_range`. VictoriaLogs now groups the stats by
-  the stream and a hash of each line's parsed labels and aggregates the series itself; `quantile_over_time`,
-  `rate_counter` and a range longer than the step fold the same series in the proxy. A label filter between the
-  parser and the unwrap keeps the previous series (`semantics/unwrap-per-series-identity-label-filter`).
+  the stream and a hash of each line's parsed labels and aggregates the series itself. For `quantile_over_time`,
+  `rate_counter` and a range longer than the step one more VictoriaLogs read proves when every line is a series of
+  its own, and the answer then comes from VictoriaLogs' stats too; otherwise the proxy reads each series, up to
+  `-max-stats-query-series` series (more fail with the series limit error). A label filter between the parser and the
+  unwrap keeps the previous series (`semantics/unwrap-per-series-identity-label-filter`).
 
 ## [2.241.0] - 2026-11-14
 

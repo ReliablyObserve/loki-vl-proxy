@@ -26,9 +26,10 @@ const dynamicSeriesField = "__lvp_sid"
 // dynamicPrefix is the prefix the second unpack writes the parsed labels under.
 const dynamicPrefix = "__lvp_p_"
 
-// dynamicPacked are the fields the series hash reads: the parsed labels, and the structured metadata a series holds
-// in Loki that VictoriaLogs stores as fields of the row (the level the proxy reads, and detected_level).
-var dynamicPacked = []string{dynamicPrefix + "*", "level", translate.DetectedLevelLabel}
+// dynamicPacked are the fields the series hash reads: the parsed labels, the structured metadata a series holds in
+// Loki that VictoriaLogs stores as fields of the row (the level the proxy reads, and detected_level) and the stream,
+// so the hash alone names a series.
+var dynamicPacked = []string{dynamicPrefix + "*", "level", translate.DetectedLevelLabel, "_stream"}
 
 // dynamicSeries is the series identity of a dynamic identity, as the stats group by it.
 var dynamicSeries = []string{"_stream", dynamicSeriesField}

@@ -863,28 +863,6 @@ func (p *Proxy) keepUnwrapIdentity(query string) (labels []string, ok bool) {
 	return labels, true
 }
 
-// dynamicUnwrapIdentity reports a query whose series are the dynamic identity of a parser
-// (lower.DynamicUnwrapIdentity) and which the typed lowering serves (dynamicIdentityConstruct): its stats group by the
-// stream and the hash of each line's parsed labels, and the handlers read those groups as the series. With
-// -query-plan-lowering=false, or for a query the lowering turns away, the string translator serves it and no handler
-// reads the identity, so the handlers and the translation decide alike.
-func (p *Proxy) dynamicUnwrapIdentity(query string) bool {
-	query = strings.TrimSpace(query)
-	if !p.queryPlanLowering || !dynamicIdentityScreen(query) {
-		return false
-	}
-	plan := resolvedPlan(query)
-	if plan == nil || !lower.DynamicUnwrapIdentity(plan) {
-		return false
-	}
-	p.configMu.RLock()
-	streamFields := p.streamFieldsMap
-	p.configMu.RUnlock()
-	prof := loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, nil), streamFields, p.logsqlCapabilities(), false)
-	_, err := lower.PlanQuery(logqlpkg.CanonicalizeLogRanges(query), plan, prof)
-	return err == nil
-}
-
 // parseBareParserMetricCompatSpecAST uses the logql typed AST. It returns
 // (spec, false) on any parse or validation failure, signalling the caller to
 // fall back to the regex implementation.

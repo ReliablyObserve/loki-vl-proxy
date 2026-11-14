@@ -2,7 +2,9 @@ package proxy
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -146,5 +148,133 @@ func TestDynamicIdentityCacheKeysFenced(t *testing.T) {
 		if got := responseKeyFences(httptest.NewRequest("GET", "/loki/api/v1/query_range?step=60", nil), q, responseKeyInnerQueryRange); !strings.Contains(got, want) || want == "" && strings.Contains(got, dynamicUnwrapIdentityResponseVersion) {
 			t.Errorf("%s: response key fences %q", q, got)
 		}
+	}
+}
+
+// The closed form of one-sample series: the range function of the outer aggregation's name grouped by its clause, and
+// 0 wherever a line is for the functions whose value over one sample is 0; nothing for a shape the proof cannot read.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile
+func TestDynamicIdentityClosedForm(t *testing.T) {
+	const j = `{app="a"} | json | unwrap n [5m]`
+	for q, want := range map[string]string{
+		`sum by (app) (quantile_over_time(0.9, ` + j + `))`: `sum by (app) (sum_over_time({app="a"} | json | unwrap n[5m]))`,
+		`sum(avg_over_time(` + j + `))`:                     `sum (sum_over_time({app="a"} | json | unwrap n[5m]))`,
+		`max by (app, pod) (max_over_time(` + j + `))`:      `max_over_time({app="a"} | json | unwrap n[5m]) by (app, pod)`,
+		`min(min_over_time(` + j + `))`:                     `min_over_time({app="a"} | json | unwrap n[5m]) by ()`,
+		`avg by (app) (avg_over_time(` + j + `))`:           `avg_over_time({app="a"} | json | unwrap n[5m]) by (app)`,
+		`sum by (app) (stddev_over_time(` + j + `))`:        `sum by (app) (sum_over_time({app="a"} | json | unwrap n[5m])) * 0`,
+		`max(stdvar_over_time(` + j + `))`:                  `sum (sum_over_time({app="a"} | json | unwrap n[5m])) * 0`,
+		`sum(rate_counter(` + j + `))`:                      `sum (sum_over_time({app="a"} | json | unwrap n[5m])) * 0`,
+	} {
+		got, ok := dynamicClosedForm(q)
+		if !ok {
+			t.Fatalf("%s: no closed form", q)
+		}
+		if strings.ReplaceAll(got, " [", "[") != want {
+			t.Errorf("%s: closed form %s, want %s", q, got, want)
+		}
+		if _, err := newTestProxy(t, "http://127.0.0.1:1").translateQuery(got); err != nil {
+			t.Errorf("%s: the closed form %s does not translate: %v", q, got, err)
+		}
+	}
+	for _, q := range []string{
+		`sum(avg_over_time({app="a"} | json | unwrap n [5m] offset 1m))`,
+		`sum without (app) (avg_over_time(` + j + `))`,
+		`sum(avg_over_time(` + j + `) by (app))`,
+		`count(avg_over_time(` + j + `))`,
+		`sum(sum_over_time(` + j + `))`,
+		`avg_over_time(` + j + `)`,
+		`sum(`,
+	} {
+		if got, ok := dynamicClosedForm(q); ok {
+			t.Errorf("%s: closed form %s", q, got)
+		}
+	}
+}
+
+// The functions and windows the one-sample proof serves, and the bounded memory of the verdicts.
+func TestDynamicIdentityProvesAndVerdicts(t *testing.T) {
+	long, _ := parseOriginalRangeMetricSpec(`sum(avg_over_time({app="a"} | json | unwrap n [5m]))`)
+	for _, tc := range []struct {
+		fn      string
+		step    time.Duration
+		instant bool
+		want    bool
+	}{
+		{"quantile", 5 * time.Minute, false, true},
+		{"rate_counter", 0, true, true},
+		{"avg", time.Minute, false, true},
+		{"stdvar", time.Minute, false, true},
+		{"avg", 5 * time.Minute, false, false},
+		{"max", 0, true, false},
+		{"sum", time.Minute, false, false},
+	} {
+		if got := dynamicIdentityProves(tc.fn, long, tc.step, tc.instant); got != tc.want {
+			t.Errorf("%s step %s instant %v: %v, want %v", tc.fn, tc.step, tc.instant, got, tc.want)
+		}
+	}
+	v := &boundedVerdicts{entries: map[string]bool{}, max: 2}
+	v.put("a", true)
+	v.put("b", false)
+	if got, ok := v.get("a"); !ok || !got {
+		t.Errorf("a: %v %v", got, ok)
+	}
+	v.put("c", true) // full: starts over
+	if _, ok := v.get("a"); ok || len(v.entries) != 1 {
+		t.Errorf("a full map kept %d entries", len(v.entries))
+	}
+}
+
+// serveDynamicIdentity answers one-sample series from the closed form, fails a query whose series outnumber the
+// series limit with Loki's error, and leaves the others (and a proof VictoriaLogs does not answer) to the per-series
+// evaluators.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func TestDynamicIdentityProofRoutes(t *testing.T) {
+	const q = `sum by (app) (quantile_over_time(0.9, {app="a"} | json | unwrap n [5m]))`
+	for _, tc := range []struct {
+		name   string
+		proof  string
+		served bool
+		status int
+		sent   string
+	}{
+		{"one sample per series", `{"n":"7","u":"7"}`, true, 200, "| limit "},
+		{"more series than the limit", `{"n":"900","u":"600"}`, true, 400, ""},
+		{"series of several samples", `{"n":"9","u":"3"}`, false, 0, ""},
+		{"no verdict", `not json`, false, 0, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var sent []string
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = r.ParseForm()
+				sent = append(sent, r.Form.Get("query"))
+				if strings.Contains(r.Form.Get("query"), "count_uniq_hash(") {
+					_, _ = w.Write([]byte(tc.proof))
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"app":"a"},"value":[1800000600,"3"]}]}}`))
+			}))
+			defer backend.Close()
+			p := newTestProxy(t, backend.URL)
+			r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+url.Values{"query": {q}, "time": {"1800000600"}}.Encode(), nil)
+			r.Header.Set("X-Scope-OrgID", "0")
+			rec := httptest.NewRecorder()
+			served := p.serveDynamicIdentity(rec, r, q, `app:="a" | unpack_json`, time.Unix(1800000300, 0), time.Unix(1800000600, 0), true)
+			if served != tc.served || served && rec.Code != tc.status {
+				t.Fatalf("served %v status %d, want %v %d: %s", served, rec.Code, tc.served, tc.status, rec.Body)
+			}
+			// The closed form's own read follows the proof (a sum over sum_over_time of an instant reads the rows).
+			if tc.sent != "" && (len(sent) < 2 || !strings.Contains(sent[len(sent)-1], tc.sent) || strings.Contains(sent[len(sent)-1], "__lvp_sid")) {
+				t.Errorf("the closed form was not asked: %v", sent)
+			}
+		})
+	}
+	// A query without the identity asks nothing.
+	p := newTestProxy(t, "http://127.0.0.1:1")
+	if p.serveDynamicIdentity(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil), `sum(rate({a="b"}[5m]))`, "", time.Time{}, time.Time{}, true) {
+		t.Error("a query without the identity was served")
 	}
 }

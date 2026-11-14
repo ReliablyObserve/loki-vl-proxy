@@ -581,10 +581,6 @@ func (p *Proxy) withQuantileShape(r *http.Request, logql string, spec statsCompa
 	return r.WithContext(ctx), spec, true
 }
 
-// dynamicSeriesGroupBy are the fields the stats of a dynamic identity group a series by: the stream and the hash of
-// the line's parsed labels less the unwrapped one (lower.DynamicUnwrapIdentity).
-var dynamicSeriesGroupBy = []string{"_stream", "__lvp_sid"}
-
 // upstreamLabelNames are Loki label names as VictoriaLogs names their fields.
 func (p *Proxy) upstreamLabelNames(labels []string) []string {
 	out := make([]string, len(labels))
