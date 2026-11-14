@@ -24,6 +24,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -454,7 +455,11 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		canon := logqlpkg.CanonicalizeLogRanges(normalized)
 		// A query the typed lowering covers is served from it: the same text, so the shadow has nothing to compare.
 		if p.queryPlanLowering {
-			if lowered, ok := p.lowerLogSelect(ctx, canon, loweringProfile(labelFn, streamFieldsMap, caps, keepLine)); ok {
+			prof := loweringProfile(labelFn, streamFieldsMap, caps, keepLine)
+			if lowered, ok := p.lowerLogSelect(ctx, canon, prof); ok {
+				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
+			}
+			if lowered, ok := p.lowerKeepIdentity(ctx, canon, prof); ok {
 				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
 			}
 		}
@@ -811,10 +816,30 @@ func hasExtractingParserStage(logql string) bool {
 // extraction. Template-window queries that the parser rejects fall back to the
 // regex-based path so runtime behaviour is identical.
 func parseBareParserMetricCompatSpec(query string) (bareParserMetricCompatSpec, bool) {
+	// A keep before the unwrap decides the series (lower.KeepDecidesUnwrapIdentity): the query is translated by the
+	// typed lowering, whose stats group by the labels the keep leaves, and answered from VictoriaLogs' stats.
+	if _, kept := keepUnwrapIdentity(query); kept {
+		return bareParserMetricCompatSpec{}, false
+	}
 	if spec, ok := parseBareParserMetricCompatSpecAST(strings.TrimSpace(query)); ok {
 		return spec, true
 	}
 	return parseBareParserMetricCompatSpecRegex(strings.TrimSpace(query))
+}
+
+// keepUnwrapIdentity is the series identity a keep before the unwrap of the query decides
+// (lower.KeepUnwrapIdentity), read from the query's shared plan: the labels the keep leaves, as Loki names them. The
+// typed lowering serves such a query (keepIdentityConstruct), and the handlers evaluate the windows of those series.
+// A query without both words is not planned.
+func keepUnwrapIdentity(query string) (labels []string, ok bool) {
+	if !strings.Contains(query, "keep") || !strings.Contains(query, "unwrap") {
+		return nil, false
+	}
+	plan := resolvedPlan(strings.TrimSpace(query))
+	if plan == nil {
+		return nil, false
+	}
+	return lower.KeepUnwrapIdentity(plan)
 }
 
 // parseBareParserMetricCompatSpecAST uses the logql typed AST. It returns

@@ -187,10 +187,24 @@ type LevelNeed uint8
 // ErrSampleRule says how errored samples surface in an unwrap metric.
 type ErrSampleRule uint8
 
-// OutLabels are the labels after the last stage.
+// OutLabels are the labels a sample carries after the last stage of a pipeline: Loki's series identity of a metric
+// over it (SeriesLabels).
 type OutLabels struct {
-	Names   []string
+	// Kept says a keep stage without a matcher deleted every label it does not name, the stream labels included.
+	Kept bool
+	// Names are, when Kept, the labels that keep leaves, in its order: without the error labels (a keep never
+	// removes them), the labels a later drop removes and the unwrapped label.
+	Names []string
+	// Dynamic says a parser stage after the last keep (or in a pipeline without one) adds the keys it extracts
+	// from each line.
 	Dynamic bool
+	// Dropped are the labels a drop stage without a matcher removes after the last keep.
+	Dropped []string
+	// Opaque says a stage changes the labels by their values (a label_format, a keep or a drop with a matcher), or
+	// the keep deleted the label the unwrap reads: no identity is claimed.
+	Opaque bool
+	// Unwrapped is the label the unwrap stage takes out of the sample ("" without one).
+	Unwrapped string
 }
 
 // ---- metric side ----

@@ -244,40 +244,33 @@ func firstBy(dst []string, pipes []logsql.Pipe) []string {
 	return dst
 }
 
-// errorLabels are the labels a keep never removes.
-var errorLabels = [...]string{"__error__", "__error_details__", "__preserve_error__"}
-
-// trailingKeepLabels are the labels the last keep stage of the log query leaves, when the translator takes that
-// keep to decide the series of every sample (trailingKeepGrouping): the keep has no matcher and only plain label
-// names, and no parser, label_format, drop or unwrap follows it. Loki deletes every label a keep does not name, so
-// the series that keep the same labels are one. ok is false when the keep decides nothing: the series are then the
-// stream (and its level). A keep that lists only error labels leaves none (kept is empty, ok is true).
+// trailingKeepLabels are the labels a keep stage leaves to tell the series of every sample apart (the series
+// identity queryplan.SeriesLabels reads): the keep has no matcher, no parser, label_format or drop follows it, and
+// an unwrap after it takes its label out of the sample. Loki deletes every label a keep does not name, so the series
+// that keep the same labels are one. Every keep of the query names only plain labels and has no matcher, as the
+// string translator reads keeps. ok is false when the keep decides nothing: the series are then the stream (and its
+// level). A keep that leaves no label (only error labels, or only the unwrapped one) leaves none (kept is empty, ok
+// is true).
 func trailingKeepLabels(sel *queryplan.LogSelect) (kept []string, ok bool) {
-	found := false
 	for _, st := range sel.Stages {
-		switch st := st.(type) {
-		case *queryplan.Keep:
-			if len(st.Matchers) > 0 {
+		k, isKeep := st.(*queryplan.Keep)
+		if !isKeep {
+			continue
+		}
+		if len(k.Matchers) > 0 {
+			return nil, false
+		}
+		for _, l := range k.Labels {
+			if !bareIdentifier(l) {
 				return nil, false
 			}
-			for _, l := range st.Labels {
-				if !bareIdentifier(l) {
-					return nil, false
-				}
-			}
-			// The labels are the stage's own unless it names an error label, which a keep never removes.
-			kept, found = st.Labels, true
-			for i, l := range st.Labels {
-				if slices.Contains(errorLabels[:], l) {
-					kept = append(slices.Clone(st.Labels[:i]), keptAfter(st.Labels[i+1:])...)
-					break
-				}
-			}
-		case *queryplan.Parse, *queryplan.LabelFormat, *queryplan.Drop, *queryplan.Unwrap:
-			found = false
 		}
 	}
-	return kept, found
+	out := queryplan.SeriesLabels(sel.Stages)
+	if kept, ok = out.KeptIdentity(); !ok || len(out.Dropped) > 0 {
+		return nil, false
+	}
+	return kept, true
 }
 
 // filteredAfterParser reports whether a label filter or a drop stage stands after a parser stage of the log query.
@@ -294,17 +287,6 @@ func filteredAfterParser(sel *queryplan.LogSelect) bool {
 		}
 	}
 	return false
-}
-
-// keptAfter are the labels of rest that are not error labels.
-func keptAfter(rest []string) []string {
-	var kept []string
-	for _, l := range rest {
-		if !slices.Contains(errorLabels[:], l) {
-			kept = append(kept, l)
-		}
-	}
-	return kept
 }
 
 // bareIdentifier reports whether s is a label name made of letters, digits and underscores, as the translator reads

@@ -232,6 +232,10 @@ type unwrapQuery struct {
 	// fold is the series identity of a `without` fold over a parser that names the labels it extracts
 	// (parsedSeriesLabels); nil for the others.
 	fold []string
+	// kept is the series identity a keep before the unwrap decides (keptIdentity), when keptSet: the labels it
+	// leaves as VictoriaLogs names them, none for one series.
+	kept    []string
+	keptSet bool
 	// firstBy and firstEmpty are the grouping of the first stats pipe, which reads the unwrapped value (set marks
 	// them known); the bare logfmt unpack ahead of it is narrowed to the labels it reads.
 	firstBy    []string
@@ -384,20 +388,26 @@ func unwrapRange(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	// The pipes start in room a query rarely outgrows.
 	var pipeBuf [4]string
 	q := unwrapQuery{parser: log.parser, unpacked: log.unpacked(), pipes: pipeBuf[:0]}
+	q.kept, q.keptSet = keptIdentity(ra.In, prof)
 	switch {
 	case rate:
 		q.rate(op.fn, seconds, ident)
 	case op.row:
 		// A function alone groups by the series, unless the clause says otherwise.
 		if len(by) == 0 && !empty {
-			by = q.rowIdentity()
+			by, empty = q.rowIdentity()
 		}
 		q.stats(by, empty, op.fn, "__lvp_inner")
 		q.pipes = append(q.pipes, firstLastUnpack)
 		q.stats(by, empty, logsql.Max{Field: "__lvp_inner"}, "")
 	default:
-		// Over a parser the series is each line of the stream, unless the clause says otherwise.
-		if len(by) == 0 && !empty && q.parser {
+		// Over a parser the series is each line of the stream, and behind a keep the labels it leaves, unless the
+		// clause says otherwise.
+		switch {
+		case len(by) > 0 || empty:
+		case q.keptSet:
+			by, empty = q.kept, len(q.kept) == 0
+		case q.parser:
 			by = streamLine
 		}
 		q.stats(by, empty, op.fn, "")
@@ -498,16 +508,23 @@ func (q *unwrapQuery) rate(fn logsql.StatsFunc, seconds float64, ident []string)
 // streamLine is the series of an unwrapped value over a parser: each line of the stream, which the proxy folds.
 var streamLine = []string{"_stream", "_msg"}
 
-// rowIdentity is the grouping of first and last alone, without a clause.
-func (q *unwrapQuery) rowIdentity() []string {
-	if q.parser {
-		return streamLine
+// rowIdentity is the grouping of first and last alone, without a clause; empty is a keep that leaves no label (one
+// series, an explicit `by ()`).
+func (q *unwrapQuery) rowIdentity() (by []string, empty bool) {
+	if q.keptSet {
+		return q.kept, len(q.kept) == 0
 	}
-	return []string{"_stream", "level"}
+	if q.parser {
+		return streamLine, false
+	}
+	return []string{"_stream", "level"}, false
 }
 
 // outerIdentity is the grouping of the stats that read one value per series under an aggregation without a clause.
 func (q *unwrapQuery) outerIdentity() []string {
+	if q.keptSet {
+		return q.kept
+	}
 	if q.fold != nil {
 		return q.fold
 	}
@@ -515,6 +532,36 @@ func (q *unwrapQuery) outerIdentity() []string {
 		return streamLine
 	}
 	return []string{"_stream"}
+}
+
+// keptIdentity is the series identity a keep before the unwrap decides (trailingKeepLabels, which reads
+// queryplan.SeriesLabels), as VictoriaLogs names the labels: ok is false when the keep decides nothing, and by is
+// empty for a keep that leaves no label (one series). A label the label function turns into nothing decides
+// nothing either.
+func keptIdentity(sel *queryplan.LogSelect, prof Profile) (by []string, ok bool) {
+	kept, ok := trailingKeepLabels(sel)
+	if !ok || unwrapStage(sel) == nil {
+		return nil, false
+	}
+	by = translate.NormalizeByLabels(kept, prof.Label)
+	if len(by) < len(kept) {
+		return nil, false
+	}
+	return by, true
+}
+
+// keptCovers reports a keep identity whose labels the clause labels all hold: each group of the clause is then one
+// series, and the aggregation reads its rows directly.
+func (q *unwrapQuery) keptCovers(labels []string) bool {
+	if !q.keptSet || len(labels) == 0 {
+		return false
+	}
+	for _, l := range q.kept {
+		if !slices.Contains(labels, l) {
+			return false
+		}
+	}
+	return true
 }
 
 // rateFilterField is the label the final stats of a rate reads, which the translator looks for among the fields
@@ -648,6 +695,7 @@ func unwrapVectorStats(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Pro
 	// The pipes start in room a query rarely outgrows.
 	var pipeBuf [4]string
 	q := unwrapQuery{parser: log.parser, unpacked: log.unpacked(), pipes: pipeBuf[:0]}
+	q.kept, q.keptSet = keptIdentity(ra.In, prof)
 	if rate {
 		// The unwrap stage stands where it was written: the translator takes a keep after it to decide the series.
 		ident, err := seriesIdent(ra.In, log.parser, without, "VectorAgg", prof)
@@ -752,10 +800,11 @@ func (q *unwrapQuery) vector(vop logql.VectorOp, op unwrapOp, labels []string, w
 		return
 	}
 	// The aggregation of the values of the series: count counts them, sum adds them, and so on. A sum over
-	// the rows needs no inner stats, except for first and last, which read a value per series.
-	perSeries := vop != logql.VectorSum || op.row
+	// the rows needs no inner stats, except for first and last, which read a value per series, and a function of the
+	// series a keep decides that the clause does not cover (one value per series, then their sum).
+	perSeries := vop != logql.VectorSum || op.row || q.keptSet && !q.keptCovers(labels) && !additive(op.fn)
 	identity := q.outerIdentity()
-	if !op.row {
+	if !op.row && !q.keptSet {
 		identity = seriesIdentity(q.parser)
 	}
 	switch {
@@ -778,6 +827,14 @@ func (q *unwrapQuery) vector(vop logql.VectorOp, op unwrapOp, labels []string, w
 // taken per stream, squared, and the aggregation reads those values; with a clause the deviation is taken per
 // group and the proxy squares it.
 func (q *unwrapQuery) varianceVector(vop logql.VectorOp, op unwrapOp, labels []string, without bool) {
+	if len(labels) > 0 && q.keptSet && !q.keptCovers(labels) {
+		// The variance of each series a keep decides, squared, then the aggregation by the clause.
+		q.stats(translate.JoinByLabels(labels, q.kept), false, op.fn, "__lvp_inner")
+		q.pipes = append(q.pipes, logsql.PipeMath{Alias: "__lvp_inner_var", Expr: "__lvp_inner*__lvp_inner"}.String())
+		q.squares = true
+		q.stats(labels, false, outerFuncOf(vop, "__lvp_inner_var"), "")
+		return
+	}
 	if len(labels) > 0 {
 		q.stats(labels, false, op.fn, "")
 		return
@@ -824,12 +881,25 @@ func (q *unwrapQuery) seriesStats(op unwrapOp, by []string) {
 // quantileVector appends the stats of a vector aggregation over quantile_over_time: with no clause the quantile is
 // taken per stream and the aggregation reads those values; with a clause the quantile is taken per group.
 func (q *unwrapQuery) quantileVector(vop logql.VectorOp, op unwrapOp, labels []string) {
+	if len(labels) > 0 && q.keptSet && !q.keptCovers(labels) {
+		// The quantile of each series a keep decides, then the aggregation by the clause.
+		q.stats(translate.JoinByLabels(labels, q.kept), false, op.fn, "__lvp_inner")
+		q.stats(labels, false, outerFunc(vop), "")
+		return
+	}
 	if len(labels) > 0 {
 		q.stats(labels, false, op.fn, "")
 		return
 	}
 	q.stats(q.outerIdentity(), false, op.fn, "__lvp_inner")
 	q.stats(nil, false, outerFunc(vop), "")
+}
+
+// additive reports a stats function whose values add up over the rows of several series: the sum of the series'
+// values is the function over all their rows.
+func additive(fn logsql.StatsFunc) bool {
+	_, ok := fn.(logsql.Sum)
+	return ok
 }
 
 // outerFunc is the stats function of a vector aggregation over the per-series values (__lvp_inner).
@@ -972,4 +1042,28 @@ func narrowedFields(field string, by []string, empty bool, resolvable func(strin
 		}
 	}
 	return names, true
+}
+
+// KeepDecidesUnwrapIdentity reports a range function over an unwrapped label, alone or under one vector
+// aggregation, whose series a keep before the unwrap decides (KeepUnwrapIdentity).
+func KeepDecidesUnwrapIdentity(p *queryplan.Plan) bool {
+	_, ok := KeepUnwrapIdentity(p)
+	return ok
+}
+
+// KeepUnwrapIdentity is the series identity of a range function over an unwrapped label, alone or under one vector
+// aggregation, when a keep before the unwrap decides it (trailingKeepLabels): the labels the keep leaves, as Loki
+// names them, none for one series. Loki puts the samples of every line that keeps the same labels into one series,
+// where the string translator groups them by the stream (and each line, over a parser). The lowering then writes
+// the keep's labels as the series identity (semantics/keep-before-unwrap-series-identity), and the proxy serves the
+// query from it and evaluates the windows of those series.
+func KeepUnwrapIdentity(p *queryplan.Plan) (labels []string, ok bool) {
+	ra, isRange := p.Root.(*queryplan.RangeAgg)
+	if va, isVec := p.Root.(*queryplan.VectorAgg); isVec {
+		ra, isRange = va.In.(*queryplan.RangeAgg)
+	}
+	if !isRange || ra.In == nil || unwrapStage(ra.In) == nil {
+		return nil, false
+	}
+	return trailingKeepLabels(ra.In)
 }
