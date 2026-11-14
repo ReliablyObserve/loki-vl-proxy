@@ -81,6 +81,18 @@ var dynamicIdentityKnown = func() map[string]map[string]string {
 		// rate_counter keeps the stream's series.
 		add(perSeries, all, q)
 	}
+	// quantile_over_time keeps the stream's series (the group's samples under sum by): Loki's answer where a stream
+	// is one series.
+	for _, shape := range dynamicIdentityShapes {
+		q := fmt.Sprintf(shape, keepIdentityHead("quantile_over_time"))
+		switch {
+		case strings.Contains(q, `"dk"`) || strings.Contains(q, `"de"`):
+		case strings.HasPrefix(q, "sum by (app) ("):
+			add("semantics/unwrap-quantile-sum-by-group-quantile", all, q)
+		default:
+			add(perSeries, all, q)
+		}
+	}
 	// A range longer than the step whose series are not all of one sample: the window evaluator merges the step
 	// buckets of streams.
 	sliding := []string{"step<range"}
