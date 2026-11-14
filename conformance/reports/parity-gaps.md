@@ -258,6 +258,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/unwrap-sum-without-collapses` — sum without over an unwrap range function keeps a series per remaining stream label set, like Loki (fixed) | #739 | 0 | 0 |
 | `semantics/vector-aggregation-over-log-selector-status` — topk, bottomk, sort, sort_desc and stddev over a bare log selector answer 500 where Loki answers a 400 parse error (fixed) | #1106 | 0 | 0 |
 | `semantics/without-comparison-inside-ignored` — sum without over a range function filtered by a comparison inside the aggregation sums only the series that pass, like Loki (fixed) | #741 | 0 | 0 |
+| `semantics/without-fold-stream-detected-level` — The series of a per-stream read (a without fold, an unwrap function, topk/bottomk/sort/label_replace over a range function) carry the str... | TBD-PR | 0 | 0 |
 | `semantics/without-instant-detected-level-unknown` — an instant without answer retains the detected_level=unknown label Loki puts on a stream with no level | #750 | 0 | 0 |
 | `semantics/without-nested-under-aggregation` — a without nested under an outer aggregation folds level by level, like Loki (fixed) | #746 | 0 | 0 |
 | `semantics/without-over-inner-aggregation-collapses` — sum without over an inner sum by or count_over_time aggregation keeps a series per remaining label set, like Loki (fixed) | #746 | 0 | 0 |
