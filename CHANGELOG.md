@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ones) at the top of a metric query, or translated as an operand, are served from the query plan the same way (a
   `count_over_time` miss: 5.6 to 1.9 us, 36 to 32 allocations); a range function over an `unpack` stays with the
   string translator.
+- Binary operations between two aggregations, or an aggregation and a number (`+`, `-`, `*`, `/`, `%`, `^` and the
+  comparisons, with `on`, `ignoring`, `group_left`, `group_right`), are served from the query plan the same way (two
+  sums of rates divided: 14.9 to 9.2 us, 104 to 70 allocations); `bool`, `and`/`or`/`unless`, a `without` operand, a
+  `vector()` operand and chains of binaries stay with the string translator.
 
 ## [2.260.1] - 2026-11-14
 

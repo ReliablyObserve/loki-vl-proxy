@@ -31,7 +31,7 @@ import (
 // translator. The corpus shadow requires each to be lowered natively, equal to the translator, byte for byte, and
 // records the list in conformance/registry/query-plan.json; widening it is how a construct is flipped. A proxy reads it
 // once, when it is built.
-var QueryPlanFlippedConstructs = []string{"LogSelect", "VectorAgg", "RangeAgg"}
+var QueryPlanFlippedConstructs = []string{"LogSelect", "VectorAgg", "RangeAgg", "BinOp"}
 
 // loweringProfile is the lowering's view of the options the string translator is given: the one place the
 // translator's options become a lower.Profile, shared by the flip and the live shadow.
