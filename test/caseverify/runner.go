@@ -313,16 +313,17 @@ const (
 	verdictBlocked       = "blocked"
 	verdictNotExecutable = "not_executable"
 	// The data precheck's verdicts: nothing about the proxy is proven, so none of them is ever a regression.
-	verdictDataDiffers   = "data_differs"   // Loki and VictoriaLogs count other lines for the case's selectors and window
-	verdictEmpty         = "empty"          // both count no line
-	verdictLokiNotReady  = "loki_not_ready" // Loki's metric path answers nothing while VictoriaLogs holds the lines
-	verdictNotComparable = "not_comparable" // Loki answered with warnings, or the proxy with a stale or partial answer
-	verdictDataUnchecked = "data_unchecked" // no count to prove the data equal (no VictoriaLogs URL, or a recording without counts)
+	verdictDataDiffers   = "data_differs"      // Loki and VictoriaLogs count other lines for the case's selectors and window
+	verdictEmpty         = "empty"             // both count no line
+	verdictLokiNotReady  = "loki_not_ready"    // Loki's metric path answers nothing while VictoriaLogs holds the lines
+	verdictCachedStale   = "loki_cached_stale" // Loki's answer came from reused results-cache extents and lacks lines or samples the proxy holds
+	verdictNotComparable = "not_comparable"    // Loki answered with warnings, or the proxy with a stale or partial answer
+	verdictDataUnchecked = "data_unchecked"    // no count to prove the data equal (no VictoriaLogs URL, or a recording without counts)
 )
 
 // verdicts in the order the report lists them.
 var verdicts = []string{verdictMatches, verdictDiffers, verdictUnstable, verdictBothFail, verdictDataDiffers, verdictEmpty,
-	verdictLokiNotReady, verdictNotComparable, verdictDataUnchecked, verdictBlocked, verdictNotExecutable}
+	verdictLokiNotReady, verdictCachedStale, verdictNotComparable, verdictDataUnchecked, verdictBlocked, verdictNotExecutable}
 
 // staleHeader marks a proxy answer served stale (internal/proxy staleResponseHeader).
 const staleHeader = "X-Proxy-Stale-Response"
@@ -473,8 +474,12 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 			}
 		}
 		r.Differences = CompareWith(r.Facets, loki, proxy, opts)
+		if why := lokiCachedStale(r.Differences, loki, proxy); why != "" {
+			r.Verdict, r.Reason, r.Differences = verdictCachedStale, why, nil
+			return r
+		}
 		if len(r.Differences) == 0 {
-			if vacuous, blocked := settleVacuous(&r, p, loki, proxy); vacuous {
+			if vacuous, blocked := settleVacuous(&r, p, loki, proxy, func() string { return controlFailure(p, r.Facets, src, now, headers, req.Variant) }); vacuous {
 				if blocked {
 					return r
 				}
@@ -512,9 +517,17 @@ func dataVerdict(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, c
 // settleVacuous sets the verdict of two answers that agree on nothing but being empty: a match where the case says an
 // empty answer is the answer (a fixed case, never an open one), else blocked, saying which fields the runner does
 // not read when the case names some.
-func settleVacuous(r *Result, p Probe, loki, proxy Answer) (vacuous, blocked bool) {
+func settleVacuous(r *Result, p Probe, loki, proxy Answer, control func() string) (vacuous, blocked bool) {
 	if !Vacuous(r.Facets, loki, proxy) {
 		return false, false
+	}
+	if p.Control != nil {
+		if why := control(); why != "" {
+			r.Verdict, r.Reason, r.Class = verdictBlocked, "both answers are empty and the control query does not prove the data: "+why, classEmptyAnswer
+			return true, true
+		}
+		r.Verdict, r.Reason = verdictMatches, "both answers are empty, and the control query returns data on both sides: the data is there"
+		return true, false
 	}
 	if p.EmptyIsAnswer != "" && r.Expected == "match" {
 		r.Verdict, r.Reason = verdictMatches, "both answers are empty by design: "+p.EmptyIsAnswer
@@ -526,6 +539,33 @@ func settleVacuous(r *Result, p Probe, loki, proxy Answer) (vacuous, blocked boo
 		r.Class = classUnreadFields
 	}
 	return true, true
+}
+
+// controlID is the id the control request of a case is recorded under.
+func controlID(id string) string { return id + "#control" }
+
+// controlFailure asks the case's control request of both sides: "" when each answers data on the facets the case
+// compares, else why the control proves nothing. The control is asked once; its answers are not compared.
+func controlFailure(p Probe, facets []string, src Source, now time.Time, headers map[string]string, variant string) string {
+	cp := p.withParams(p.Control)
+	q, why := cp.Query(now)
+	if why != "" {
+		return why
+	}
+	req := Request{Method: p.Method, Path: p.Path, Query: q.Encode(), Headers: headers, Variant: variant}
+	for _, side := range []string{"loki", "proxy"} {
+		a := src.Ask(side, controlID(p.ID), 1, req)
+		name := map[string]string{"loki": "Loki", "proxy": "the proxy"}[side]
+		switch {
+		case unusable(name, a) != "":
+			return strings.TrimSuffix(unusable(name, a), "; ")
+		case !a.OK():
+			return fmt.Sprintf("%s answered %d", name, a.Status)
+		case Vacuous(facets, a, a):
+			return name + " answers nothing to it"
+		}
+	}
+	return ""
 }
 
 func meterAfter(meter Meter, p Probe, measured bool) (Snapshot, bool) {
@@ -724,7 +764,7 @@ func Report(f File) string {
 		b.WriteString("The proxy's build is not known (no -proxy-revision): its verdicts are not tied to the commit.\n\n")
 	}
 	b.WriteString("Only `differs` is a difference of the proxy: its data was proven equal and non-empty on both sides. " +
-		"`data_differs`, `empty`, `loki_not_ready`, `not_comparable` and `data_unchecked` prove nothing about the proxy.\n\n")
+		"`data_differs`, `empty`, `loki_not_ready`, `loki_cached_stale`, `not_comparable` and `data_unchecked` prove nothing about the proxy.\n\n")
 	b.WriteString("| Verdict | Cases |\n|---|---|\n")
 	for _, v := range verdicts {
 		fmt.Fprintf(&b, "| %s | %d |\n", v, f.Counts[v])

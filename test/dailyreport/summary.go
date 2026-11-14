@@ -506,12 +506,12 @@ func Markdown(s Summary) string {
 	}
 	b.WriteString(strings.Join(parts, ", ") + ".\n\n")
 	b.WriteString("### Per-case verdicts against Loki\n\nOnly differs is a difference of the proxy (its data was proven equal on both sides); " +
-		"data differs, empty, Loki not ready, not comparable and unchecked prove nothing about it.\n\n" +
-		"| VictoriaLogs | Matches | Differs | Data differs | Empty | Loki not ready | Not comparable | Unchecked | Unstable | Both fail | Blocked | Not executable | Regressions | Proposed closes | Behaviour changed |\n" +
-		"|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+		"data differs, empty, Loki not ready, Loki cached stale, not comparable and unchecked prove nothing about it.\n\n" +
+		"| VictoriaLogs | Matches | Differs | Data differs | Empty | Loki not ready | Loki cached stale | Not comparable | Unchecked | Unstable | Both fail | Blocked | Not executable | Regressions | Proposed closes | Behaviour changed |\n" +
+		"|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, v := range s.VictoriaLogs {
 		fmt.Fprintf(&b, "| %s |", v)
-		for _, k := range []string{"matches", "differs", "data_differs", "empty", "loki_not_ready", "not_comparable", "data_unchecked",
+		for _, k := range []string{"matches", "differs", "data_differs", "empty", "loki_not_ready", "loki_cached_stale", "not_comparable", "data_unchecked",
 			"unstable", "both_fail", "blocked", "not_executable", "regressions", "proposed_close", "behaviour_changed"} {
 			fmt.Fprintf(&b, " %d |", caseCount(s, v, k))
 		}

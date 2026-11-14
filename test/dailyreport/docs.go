@@ -86,7 +86,7 @@ func Block(s *Summary) string {
 				return total
 			}
 			runs = append(runs, fmt.Sprintf("%s: %d match, %d differ on equal data, %d not comparable on that day's data, %d blocked", v,
-				n("matches"), n("differs"), n("data_differs", "empty", "loki_not_ready", "not_comparable", "data_unchecked"),
+				n("matches"), n("differs"), n("data_differs", "empty", "loki_not_ready", "loki_cached_stale", "not_comparable", "data_unchecked"),
 				n("blocked", "both_fail", "unstable")))
 		}
 		fmt.Fprintf(&b, "- Registry cases sent to Loki and the proxy, per VictoriaLogs version: %s.\n", strings.Join(runs, "; "))

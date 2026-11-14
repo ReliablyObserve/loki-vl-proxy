@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"sort"
 	"strconv"
 )
@@ -17,11 +18,16 @@ type Options struct {
 	Patterns bool
 	// Rank is the query's outermost topk or bottomk, for the ranked_values facet.
 	Rank *RankSpec
+	// MaskErrorSeries (compare.values.mask_error_series) masks the series labels of a pipeline error's text before
+	// the error compares: Loki names a sample series of its own choosing, another one on the same request, so the
+	// text compares exactly except the labels inside `for series: '{...}'`.
+	MaskErrorSeries bool
 }
 
 // OptionsOf reads the comparison options of a probe's resolved request.
 func OptionsOf(p Probe, query map[string][]string) Options {
 	o := Options{Tolerance: tolerance(p), Subset: p.Mode == "subset"}
+	o.MaskErrorSeries, _ = p.Values["mask_error_series"].(bool)
 	get := func(k string) string {
 		if v := query[k]; len(v) > 0 {
 			return v[0]
@@ -238,6 +244,10 @@ func trimPatternEdges(l, p parsed) {
 // equality, a limit-cut answer up to the timestamp both sides hold whole, patterns without their edge buckets.
 func CompareWith(facets []string, loki, proxy Answer, o Options) []Difference {
 	l, p := parse(loki), parse(proxy)
+	if o.MaskErrorSeries {
+		l.maskErrorSeries()
+		p.maskErrorSeries()
+	}
 	l.sortStreams()
 	p.sortStreams()
 	trimLimitEdge(l, p, o)
@@ -265,4 +275,27 @@ func CompareWith(facets []string, loki, proxy Answer, o Options) []Difference {
 		out = append(out, Difference{Facet: facetRanked, Loki: "the ranked values of every step and the series above the cutoff", Proxy: clip(msg)})
 	}
 	return out
+}
+
+// pipelineSeries is the series labels of a pipeline error: `pipeline error: 'SampleExtractionErr' for series:
+// '{...}'.` The labels may hold quotes and braces; they end at the first quote that closes the brace and is
+// followed by the sentence's end.
+var pipelineSeries = regexp.MustCompile(`(?s)(for series: ')\{.*?\}('\.?(?:\n|$))`)
+
+// maskPipelineSeries replaces the series labels of every pipeline error in text.
+func maskPipelineSeries(text string) string {
+	return pipelineSeries.ReplaceAllString(text, "${1}{...}${2}")
+}
+
+// maskErrorSeries masks the series labels in the answer's error text, whether it is plain text or the error
+// field of a JSON answer.
+func (p *parsed) maskErrorSeries() {
+	p.text = maskPipelineSeries(p.text)
+	if m, ok := p.doc.(map[string]any); ok {
+		for _, k := range []string{"error", "message"} {
+			if s, ok := m[k].(string); ok {
+				m[k] = maskPipelineSeries(s)
+			}
+		}
+	}
 }
