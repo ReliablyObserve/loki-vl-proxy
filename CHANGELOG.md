@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Queries Loki rejects after it has parsed them are now rejected the same way, with Loki's `400` and text, before the
+- **Breaking:** queries Loki rejects after it has parsed them are now rejected the same way, with Loki's `400` and text, before the
   proxy looks in a cache or calls VictoriaLogs: `sort` or `sort_desc` with labels to group by (`parse error : sort and
   sort_desc doesn't allow grouping by `), `quantile_over_time` without its quantile (`parse error : parameter
   required for operation quantile_over_time`, which the proxy answered only after translating the query), and `and`,
