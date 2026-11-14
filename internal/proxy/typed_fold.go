@@ -500,7 +500,8 @@ func (a *foldAccumulator) add(metric map[string]string, points []typedPoint) {
 	}
 	group := a.groups[a.key.String()]
 	if group == nil {
-		group = &typedGroup{key: a.key.String(), metric: make(map[string]string, len(pairs)), at: make(map[float64]int32, len(points))}
+		group = &typedGroup{key: a.key.String(), metric: make(map[string]string, len(pairs)), at: make(map[float64]int32, len(points)),
+			cells: make([]typedCell, 0, len(points))}
 		for _, pair := range pairs {
 			group.metric[pair[0]] = pair[1]
 		}

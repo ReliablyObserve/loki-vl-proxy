@@ -1,0 +1,43 @@
+id: semantics/last-over-time-vl149-row-max-wrong-row
+title: last_over_time with unwrap on VictoriaLogs v1.49 can answer an earlier line's value, by the store's block layout (open)
+pending: true
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  The proxy reads last_over_time with row_max(_time, __lvp_v) per series. On
+  VictoriaLogs v1.49 that function takes the value of the block's first row, not
+  its latest, when every group key of the block is the same (the stats pipe then
+  reads the block as one group; lib/logstorage stats_row_max.go
+  updateStatsForAllRows passes row 0). v1.50.0 fixed it (VictoriaLogs changelog,
+  issue 1294); v1.53 answers the latest row. Whether a block takes that path
+  depends on how the store laid out its blocks, so the same data can answer
+  Loki's value or an earlier line's: two recordings of TestFirstLastMatchLoki on
+  v1.49 gave `last_over_time({job="sm"} | unwrap latency [5m])` 3757.5 (Loki's)
+  once and 2919.5 once at the same instant. Recent data in small blocks is the
+  likely case in production. first_over_time (row_min, row 0) is right.
+
+  Fix to make: on v1.49 read last with a function that keeps the latest row in
+  that path, or gate the backend floor on v1.50.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (service_name) (last_over_time({service_name="payment-service"} | logfmt | keep service_name, amount | unwrap amount [5m]))'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's last sample per series on VictoriaLogs v1.49 as on v1.53.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy and internal/translator: last_over_time reads row_max(_time, ...) on every VictoriaLogs version'
+  loki: 'the latest sample of each series in the window'
+  proxy: 'on v1.49, the block''s first row when every group key of the block is the same'
+  planned_test: 'TestFirstLastMatchLoki (internal/querycorpus, accepted value differences on v1.49)'
+  clusters: []

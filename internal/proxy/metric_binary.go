@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/jsonparser"
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -481,13 +482,15 @@ func rankedSingleFieldQuery(logsqlQuery string, limit int) (string, bool) {
 	return spec.BaseQuery + " | filter " + field + ":in(" + ranking + ")" + logsqlQuery[len(spec.BaseQuery):], true
 }
 
-// lokiResultSeriesCount returns the number of series in a Loki JSON response.
+// lokiResultSeriesCount returns the number of series in a Loki JSON response:
+// the entries of data.result, counted in place without parsing them, 0 for a
+// body that is not one.
 func lokiResultSeriesCount(body []byte) int {
-	v, err := fj.ParseBytes(body)
-	if err != nil {
+	n := 0
+	if _, err := jsonparser.ArrayEach(body, func([]byte, jsonparser.ValueType, int, error) { n++ }, "data", "result"); err != nil {
 		return 0
 	}
-	return len(v.GetArray("data", "result"))
+	return n
 }
 
 // fitTopValueFilter returns the in() filter for the busiest values (ranked

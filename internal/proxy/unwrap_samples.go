@@ -10,6 +10,7 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -65,15 +66,56 @@ const deviationBucketStats = "avg(" + translator.UnwrapValueAlias + ") as __lvp_
 // collector keeps as a series' deviations.
 const deviationBucketName = "__lvp_sd"
 
+// firstBucketStats and lastBucketStats are the bucket stats of first and last
+// over time: the row of the earliest (row_min) or the latest (row_max) time of
+// each series in the bucket, the stats the translation writes for them (VictoriaLogs
+// has no first or last function). VictoriaLogs answers a row as a label, so the
+// collector unpacks the row's value and takes it per group and bucket again
+// (rowBucketPick), as the stats result c.
+var (
+	firstBucketStats = logsql.RowMin{By: "_time", Fields: []string{translator.UnwrapValueAlias}}.String() + " as " + rowBucketInner
+	lastBucketStats  = logsql.RowMax{By: "_time", Fields: []string{translator.UnwrapValueAlias}}.String() + " as " + rowBucketInner
+)
+
+// rowBucketInner is the stats result that holds the row of firstBucketStats and
+// lastBucketStats.
+const rowBucketInner = "__lvp_inner"
+
+// rowBucketUnpack reads the converted value out of a bucket's row, and
+// rowBucketValue is the second stats' function over it: one row per group and
+// bucket, so its maximum is the row's value.
+var (
+	rowBucketUnpack = logsql.PipeUnpackJSON{From: rowBucketInner, Fields: []string{translator.UnwrapValueAlias}}.String() + " " +
+		logsql.PipeMath{Expr: translator.UnwrapValueAlias, Alias: rowBucketInner}.String()
+	rowBucketValue = logsql.Max{Field: rowBucketInner}.String() + " as c"
+)
+
+// rowBucketPick returns the pipes that follow the stats of a bucket query to
+// read its value: for firstBucketStats and lastBucketStats, the unpack of the
+// row and the second stats, grouped by the same clause (by, the text of the
+// first stats pipe's grouping); "" for every other stats.
+func rowBucketPick(statsAggFunc, by string) string {
+	if statsAggFunc != firstBucketStats && statsAggFunc != lastBucketStats {
+		return ""
+	}
+	return " " + rowBucketUnpack + by + rowBucketValue
+}
+
 // unwrapBucketAgg is the stats of one bucket of an unwrap range function whose
 // windows merge from buckets: its partial aggregate (the sum for rate, sum and
 // avg over time, the extreme for max and min over time). VictoriaLogs answers a
 // bucket only when it holds a row, so the aggregate's point is the presence of
 // sum, max and min over time; an average also takes the sample count to divide
 // by, and rate keeps it as presence; stddev and stdvar take the mean, the count
-// and the deviation (deviationBucketStats). "" for every other function.
+// and the deviation (deviationBucketStats); first and last the value of the
+// bucket's earliest or latest row (firstBucketStats, lastBucketStats). "" for
+// every other function.
 func unwrapBucketAgg(manualFunc string) string {
 	switch manualFunc {
+	case "first":
+		return firstBucketStats
+	case "last":
+		return lastBucketStats
 	case "unwrap_rate":
 		return "sum(" + translator.UnwrapValueAlias + ") as c, count() as __sample_count"
 	case "sum", "max", "min":
@@ -91,8 +133,18 @@ func unwrapBucketAgg(manualFunc string) string {
 // sumOverTime, avgOverTime, maxOverTime, minOverTime): the sum (of a rate too,
 // before its division), the sum over the window's sample count, or the
 // extreme, where a NaN gives way as in Loki; stddev and stdvar merge the
-// buckets' deviations (mergeDeviationBuckets). Every bucket holds a sample.
+// buckets' deviations (mergeDeviationBuckets). first and last take the earliest
+// or the latest bucket's value: Loki's is the window's first or last sample, and
+// the buckets are disjoint and in time order, so it is in the earliest or the
+// latest bucket that holds one.
+// Every bucket holds a sample.
 func mergeUnwrapBuckets(manualFunc string, buckets, counts, devs []rangeMetricSample) float64 {
+	switch manualFunc {
+	case "first":
+		return buckets[0].value
+	case "last":
+		return buckets[len(buckets)-1].value
+	}
 	if manualFunc == "stddev" || manualFunc == "stdvar" {
 		variance := mergeDeviationBuckets(buckets, counts, devs)
 		if manualFunc == "stddev" {
@@ -426,8 +478,8 @@ func decomposableUnwrapAggregation(query, manualFunc string) (*logqlpkg.VectorAg
 }
 
 // unwrapWindowBuckets reports whether the window evaluator answers sum, avg,
-// max, min, stddev or stdvar over time with unwrap from anchored buckets of
-// their partial aggregates (unwrapBucketAgg): a range longer than the step, whose windows
+// max, min, stddev, stdvar, first or last over time with unwrap from anchored
+// buckets of their partial aggregates (unwrapBucketAgg): a range longer than the step, whose windows
 // overlap, so one step bucket per point holds only the newest step of Loki's
 // window (t-range, t] (pkg/logql/range_vector.go:102-189). A range up to the
 // step stays on the native step buckets, which hold exactly one window each
@@ -440,7 +492,7 @@ func decomposableUnwrapAggregation(query, manualFunc string) (*logqlpkg.VectorAg
 // the evaluator does not apply after the window (unwrapWindowForm).
 func unwrapWindowBuckets(spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc, originalLogql, query string, step time.Duration) bool {
 	switch manualFunc {
-	case "sum", "avg", "max", "min", "stddev", "stdvar":
+	case "sum", "avg", "max", "min", "stddev", "stdvar", "first", "last":
 	default:
 		return false
 	}
@@ -451,7 +503,7 @@ func unwrapWindowBuckets(spec statsCompatSpec, origSpec originalRangeMetricSpec,
 	if !form {
 		return false
 	}
-	if (manualFunc == "stddev" || manualFunc == "stdvar") && rangeBy {
+	if (manualFunc == "stddev" || manualFunc == "stdvar" || manualFunc == "first" || manualFunc == "last") && rangeBy {
 		// The evaluator folds no aggregation over a range aggregation's own by
 		// (seriesAggregationChain): such a query keeps the step buckets it had.
 		return false

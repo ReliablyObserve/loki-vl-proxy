@@ -1,0 +1,50 @@
+id: semantics/unwrap-stored-integer-field-gate
+title: An unwrap over a field VictoriaLogs stores as whole numbers reads no row of the blocks that hold it as integers (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `first_over_time({job="smi"} | unwrap latency [5m])` where latency is structured
+  metadata of whole numbers ("3645"): Loki answers a series per stream, the proxy
+  answers none (Loki engine oracle, VictoriaLogs v1.53.0 and v1.49.0,
+  TestFirstLastMatchLoki), on instant and every query_range kind. VictoriaLogs
+  stores a block's column of whole numbers as integers. The unwrap gate the
+  VictoriaLogs client sends classifies each value with a regular expression in a
+  pipe's if condition (`format if ("latency":~"...") "0" as __lvp_bad`), and
+  VictoriaLogs answers a regular expression over an integer column there with no
+  row (lib/logstorage applyToBlockResultGeneric: the phrase of a regular
+  expression is empty, which is not a number, so the block's bits are reset),
+  while the same expression as a query filter matches every row. Measured with
+  the VictoriaLogs oracle: `job:="smi" | format if (latency:~"^[0-9]+$") "0" as b
+  | stats by (b) count()` counts 4 of 50 rows with b, the filter
+  `job:="smi" latency:~"^[0-9]+$"` all 50. The same holds for every unwrap
+  function over a stored field of whole numbers (structured metadata, an
+  attribute stored as a field); a value a parser extracts is text and is read.
+
+  Fix to make: classify a stored value with a filter VictoriaLogs answers on an
+  integer column (a range test where the value is a number), or report the
+  VictoriaLogs defect upstream and gate on the fixed version.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum(first_over_time({service_name="payment-service"} | unwrap latency_ms [5m]))'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's series and values.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy unwrap_conversion_error.go unwrapCountedGateMode (the if conditions of the counting gate)'
+  loki: 'every line whose label converts is a sample'
+  proxy: 'the rows of a block whose stored column holds whole numbers are dropped by the gate'
+  planned_test: 'TestFirstLastMatchLoki (internal/querycorpus, listed runs)'
+  clusters: []

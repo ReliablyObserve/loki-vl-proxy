@@ -110,12 +110,12 @@ var routeRangeOps = map[logql.RangeOp]bool{
 
 // routeUnwrapOps are the functions over an unwrapped label whose stats the rule decides: the partial aggregates
 // VictoriaLogs keeps per bucket (the sum, the extremes, the average from a sum and a count, the standard deviation
-// from a mean, a count and a deviation) that merge into a longer window. The others (quantile, stdvar, first, last,
-// rate_counter) are read another way and stay delegated: stdvar is the deviation squared, which the lowering leaves
-// to the translator.
+// from a mean, a count and a deviation, the value of the earliest or the latest row) that merge into a longer window.
+// The others (quantile, stdvar, rate_counter) are read another way and stay delegated: stdvar is the deviation
+// squared, which the lowering leaves to the translator.
 var routeUnwrapOps = map[logql.RangeOp]bool{
 	logql.RangeSumOverTime: true, logql.RangeAvgOverTime: true, logql.RangeMinOverTime: true, logql.RangeMaxOverTime: true,
-	logql.RangeStddevOverTime: true,
+	logql.RangeStddevOverTime: true, logql.RangeFirstOverTime: true, logql.RangeLastOverTime: true,
 }
 
 // Route decides the route of a plan whose root is a range aggregation, or vector aggregations over one, for req.

@@ -1,9 +1,9 @@
 {
   "description": "Ratchets of the query plan (internal/queryplan), one section per gate; a count may only fall, and LVP_QUERY_PLAN_UPDATE=1 rewrites the section of the test that ran. `logical` is the logical plan built from every query of the plan corpus (the curated sources and the capture sample): how many rows parse and build (all of them), and the spots the plan still holds as text, per construct (typing them lowers the count). `logical_key_sound` is, per profile, how the logical keys group the corpus and what the string translator wrote for the queries of a group: no group may differ in structure. `predicate_parity` is, per attribute of the resolver (queryplan.Resolve), the text predicate it replaces and every corpus row where the two differ, each with its reason (internal/proxy TestPlanPredicateParity: an unexplained or stale row fails).",
   "logical": {
-    "rows": 2645,
-    "parsed": 2567,
-    "built": 2567,
+    "rows": 2649,
+    "parsed": 2571,
+    "built": 2571,
     "untyped_by_construct": {
       "labelfilter_untyped": 0,
       "line_format_raw": 3,
@@ -16,8 +16,8 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2567,
-      "keys": 2514,
+      "rows": 2571,
+      "keys": 2518,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -25,8 +25,8 @@
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2567,
-      "keys": 2514,
+      "rows": 2571,
+      "keys": 2518,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -34,8 +34,8 @@
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2567,
-      "keys": 2514,
+      "rows": 2571,
+      "keys": 2518,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -43,8 +43,8 @@
       "unsound": 0
     },
     "v1.53 identity": {
-      "rows": 2567,
-      "keys": 2514,
+      "rows": 2571,
+      "keys": 2518,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -52,8 +52,8 @@
       "unsound": 0
     },
     "v1.53 no body scan": {
-      "rows": 2567,
-      "keys": 2514,
+      "rows": 2571,
+      "keys": 2518,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -61,8 +61,8 @@
       "unsound": 0
     },
     "v1.53 no body scan, stream fields, keepLine": {
-      "rows": 2567,
-      "keys": 2514,
+      "rows": 2571,
+      "keys": 2518,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 0,
@@ -70,8 +70,8 @@
       "unsound": 0
     },
     "v1.53 stream fields": {
-      "rows": 2567,
-      "keys": 2514,
+      "rows": 2571,
+      "keys": 2518,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -79,8 +79,8 @@
       "unsound": 0
     },
     "v1.53 stream fields and labels": {
-      "rows": 2567,
-      "keys": 2514,
+      "rows": 2571,
+      "keys": 2518,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -88,8 +88,8 @@
       "unsound": 0
     },
     "v1.53 stream labels": {
-      "rows": 2567,
-      "keys": 2514,
+      "rows": 2571,
+      "keys": 2518,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -97,8 +97,8 @@
       "unsound": 0
     },
     "v1.53 stream labels keepLine": {
-      "rows": 2567,
-      "keys": 2514,
+      "rows": 2571,
+      "keys": 2518,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 0,
@@ -106,8 +106,8 @@
       "unsound": 0
     },
     "v1.53 underscores": {
-      "rows": 2567,
-      "keys": 2514,
+      "rows": 2571,
+      "keys": 2518,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 5,
@@ -115,8 +115,8 @@
       "unsound": 0
     },
     "v1.53 underscores keepLine": {
-      "rows": 2567,
-      "keys": 2514,
+      "rows": 2571,
+      "keys": 2518,
       "shared_texts": 53,
       "text_only": 0,
       "phrase_text": 0,
@@ -255,8 +255,8 @@
     }
   },
   "loki_metric_differential": {
-    "queries": 770,
-    "entries": 30048,
+    "queries": 794,
+    "entries": 31152,
     "excluded": {
       "the plan does not route it: BinOp bool": 9,
       "the plan does not route it: BinOp constant operands": 2,
@@ -291,9 +291,8 @@
       "the plan does not route it: RangeAgg route reserved field": 1,
       "the plan does not route it: RangeAgg route spelling": 2,
       "the plan does not route it: RangeAgg route unwrap absent": 9,
-      "the plan does not route it: RangeAgg route unwrap first": 11,
-      "the plan does not route it: RangeAgg route unwrap last": 12,
-      "the plan does not route it: RangeAgg route unwrap pipeline": 149,
+      "the plan does not route it: RangeAgg route unwrap grouping": 2,
+      "the plan does not route it: RangeAgg route unwrap pipeline": 162,
       "the plan does not route it: RangeAgg route unwrap quantile": 65,
       "the plan does not route it: RangeAgg route unwrap rate": 2,
       "the plan does not route it: RangeAgg route unwrap rate_counter": 7,
@@ -317,9 +316,7 @@
       "the plan does not route it: VectorAgg route operand": 8,
       "the plan does not route it: VectorAgg route pipeline": 196,
       "the plan does not route it: VectorAgg route rewrite": 1,
-      "the plan does not route it: VectorAgg route unwrap first": 22,
-      "the plan does not route it: VectorAgg route unwrap last": 19,
-      "the plan does not route it: VectorAgg route unwrap pipeline": 71,
+      "the plan does not route it: VectorAgg route unwrap pipeline": 100,
       "the plan does not route it: VectorAgg route unwrap quantile": 8,
       "the plan does not route it: VectorAgg route unwrap rate": 20,
       "the plan does not route it: VectorAgg route unwrap rate_counter": 2,
@@ -330,22 +327,22 @@
     "profiles": {
       "v1.49 loki profile": {
         "instant": {
-          "runs": 770,
-          "plan_runs": 770,
-          "plan_matches_loki": 770,
-          "plan_matches_loki_empty": 374,
-          "translator_matches_loki": 770,
+          "runs": 794,
+          "plan_runs": 794,
+          "plan_matches_loki": 794,
+          "plan_matches_loki_empty": 398,
+          "translator_matches_loki": 794,
           "float_tolerance": 1
         },
         "step\u003crange": {
-          "runs": 770,
-          "plan_runs": 732,
+          "runs": 794,
+          "plan_runs": 756,
           "not_plan": {
             "the route rule delegates the request": 38
           },
-          "plan_matches_loki": 724,
-          "plan_matches_loki_empty": 223,
-          "translator_matches_loki": 762,
+          "plan_matches_loki": 748,
+          "plan_matches_loki_empty": 247,
+          "translator_matches_loki": 786,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -359,25 +356,25 @@
           }
         },
         "step=range": {
-          "runs": 770,
-          "plan_runs": 769,
+          "runs": 794,
+          "plan_runs": 793,
           "not_plan": {
             "the route rule delegates the request": 1
           },
-          "plan_matches_loki": 769,
-          "plan_matches_loki_empty": 244,
-          "translator_matches_loki": 770,
+          "plan_matches_loki": 793,
+          "plan_matches_loki_empty": 268,
+          "translator_matches_loki": 794,
           "float_tolerance": 3
         },
         "step\u003erange": {
-          "runs": 770,
-          "plan_runs": 754,
+          "runs": 794,
+          "plan_runs": 778,
           "not_plan": {
             "the route rule delegates the request": 16
           },
-          "plan_matches_loki": 746,
-          "plan_matches_loki_empty": 234,
-          "translator_matches_loki": 762,
+          "plan_matches_loki": 770,
+          "plan_matches_loki_empty": 258,
+          "translator_matches_loki": 786,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -393,22 +390,22 @@
       },
       "v1.53 loki profile": {
         "instant": {
-          "runs": 770,
-          "plan_runs": 770,
-          "plan_matches_loki": 770,
-          "plan_matches_loki_empty": 374,
-          "translator_matches_loki": 770,
+          "runs": 794,
+          "plan_runs": 794,
+          "plan_matches_loki": 794,
+          "plan_matches_loki_empty": 398,
+          "translator_matches_loki": 794,
           "float_tolerance": 1
         },
         "step\u003crange": {
-          "runs": 770,
-          "plan_runs": 732,
+          "runs": 794,
+          "plan_runs": 756,
           "not_plan": {
             "the route rule delegates the request": 38
           },
-          "plan_matches_loki": 724,
-          "plan_matches_loki_empty": 223,
-          "translator_matches_loki": 762,
+          "plan_matches_loki": 748,
+          "plan_matches_loki_empty": 247,
+          "translator_matches_loki": 786,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -422,25 +419,25 @@
           }
         },
         "step=range": {
-          "runs": 770,
-          "plan_runs": 769,
+          "runs": 794,
+          "plan_runs": 793,
           "not_plan": {
             "the route rule delegates the request": 1
           },
-          "plan_matches_loki": 769,
-          "plan_matches_loki_empty": 244,
-          "translator_matches_loki": 770,
+          "plan_matches_loki": 793,
+          "plan_matches_loki_empty": 268,
+          "translator_matches_loki": 794,
           "float_tolerance": 3
         },
         "step\u003erange": {
-          "runs": 770,
-          "plan_runs": 754,
+          "runs": 794,
+          "plan_runs": 778,
           "not_plan": {
             "the route rule delegates the request": 16
           },
-          "plan_matches_loki": 746,
-          "plan_matches_loki_empty": 234,
-          "translator_matches_loki": 762,
+          "plan_matches_loki": 770,
+          "plan_matches_loki_empty": 258,
+          "translator_matches_loki": 786,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -468,8 +465,8 @@
     }
   },
   "route_parity": {
-    "rows": 2526,
-    "runs": 25260,
+    "rows": 2530,
+    "runs": 25300,
     "profiles": [
       "instant",
       "step=range",
@@ -477,7 +474,7 @@
       "step\u003erange",
       "24h chunk"
     ],
-    "native": 7618,
+    "native": 7858,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp bool": 90,
@@ -519,9 +516,8 @@
       "RangeAgg route reserved field": 10,
       "RangeAgg route spelling": 20,
       "RangeAgg route unwrap absent": 90,
-      "RangeAgg route unwrap first": 110,
-      "RangeAgg route unwrap last": 120,
-      "RangeAgg route unwrap pipeline": 1490,
+      "RangeAgg route unwrap grouping": 20,
+      "RangeAgg route unwrap pipeline": 1620,
       "RangeAgg route unwrap quantile": 660,
       "RangeAgg route unwrap rate": 20,
       "RangeAgg route unwrap rate_counter": 70,
@@ -544,9 +540,7 @@
       "VectorAgg route operand": 80,
       "VectorAgg route pipeline": 1980,
       "VectorAgg route rewrite": 10,
-      "VectorAgg route unwrap first": 220,
-      "VectorAgg route unwrap last": 190,
-      "VectorAgg route unwrap pipeline": 710,
+      "VectorAgg route unwrap pipeline": 1000,
       "VectorAgg route unwrap quantile": 80,
       "VectorAgg route unwrap rate": 200,
       "VectorAgg route unwrap rate_counter": 20,
@@ -556,7 +550,7 @@
       "VectorLit": 10
     },
     "statuses": {
-      "200": 24647,
+      "200": 24687,
       "400": 580,
       "500": 33
     },
@@ -564,10 +558,10 @@
       "24h chunk/BinOp": "a0123d6f9e17fa36",
       "24h chunk/LabelReplace": "34b8c8aa4bd45211",
       "24h chunk/LogSelect": "1eae3ae49613d923",
-      "24h chunk/RangeAgg": "914e1f629036ee43",
-      "24h chunk/Rank": "acf0095c7e7d47f0",
+      "24h chunk/RangeAgg": "313e7b17c73882fe",
+      "24h chunk/Rank": "1114f8a09776e25b",
       "24h chunk/Scalar": "b01ddfee0a162681",
-      "24h chunk/VectorAgg": "b0a5dcbdbbdb359e",
+      "24h chunk/VectorAgg": "0ef3fc03f9acecb8",
       "24h chunk/VectorLit": "fafe78111335aec9",
       "instant/BinOp": "a139312fd7796b7a",
       "instant/LabelReplace": "1eda7f007cfc3480",
@@ -575,15 +569,15 @@
       "instant/RangeAgg": "5ed50ff37240c231",
       "instant/Rank": "872242485620d173",
       "instant/Scalar": "058ee94c303a0c46",
-      "instant/VectorAgg": "145fede667dffbdd",
+      "instant/VectorAgg": "4e8e2f40e297a368",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "ded1a846679dcc18",
       "step\u003crange/LabelReplace": "7e2339de2a64039d",
       "step\u003crange/LogSelect": "1eae3ae49613d923",
-      "step\u003crange/RangeAgg": "4b6fdb7bc547341b",
-      "step\u003crange/Rank": "28279fc6c7916a12",
+      "step\u003crange/RangeAgg": "7c66a2fbb16cd4ad",
+      "step\u003crange/Rank": "7ae4c778853987b1",
       "step\u003crange/Scalar": "b01ddfee0a162681",
-      "step\u003crange/VectorAgg": "b40c3cc33f675784",
+      "step\u003crange/VectorAgg": "807fc6a870fdb13b",
       "step\u003crange/VectorLit": "fafe78111335aec9",
       "step=range/BinOp": "ac2c93507815eca7",
       "step=range/LabelReplace": "f814664e0f744be4",
@@ -591,7 +585,7 @@
       "step=range/RangeAgg": "19541a94db78d324",
       "step=range/Rank": "48b7c16f1a61f7ad",
       "step=range/Scalar": "b01ddfee0a162681",
-      "step=range/VectorAgg": "bac5695759638b0b",
+      "step=range/VectorAgg": "704236f36b00e9c7",
       "step=range/VectorLit": "fafe78111335aec9",
       "step\u003erange/BinOp": "e7e755c8e8149468",
       "step\u003erange/LabelReplace": "266dba9d6112ebe9",
@@ -599,14 +593,14 @@
       "step\u003erange/RangeAgg": "295ba101aeeddd74",
       "step\u003erange/Rank": "bde2008f55288e03",
       "step\u003erange/Scalar": "b01ddfee0a162681",
-      "step\u003erange/VectorAgg": "f524629e15c0e00b",
+      "step\u003erange/VectorAgg": "0883830eecb4dc2f",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     }
   },
   "shadow": {
-    "rows": 23787,
+    "rows": 23823,
     "profiles": 12,
-    "native": 21316,
+    "native": 21334,
     "native_proxy_evaluated": 3951,
     "mismatches": 0,
     "delegated_by_construct": {
@@ -655,7 +649,7 @@
       "VectorAgg without empty": 9,
       "VectorLit": 9,
       "known divergence semantics/binary-operand-without-empty-collapses": 378,
-      "known divergence semantics/keep-before-unwrap-series-identity": 72,
+      "known divergence semantics/keep-before-unwrap-series-identity": 90,
       "known divergence semantics/label-filter-numeric-equality": 57,
       "known divergence semantics/label-replace-around-ranking-and-vector": 18,
       "known divergence semantics/pattern-capture-before-bracket-text": 12,
