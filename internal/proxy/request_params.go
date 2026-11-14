@@ -519,7 +519,34 @@ func (p *Proxy) withDefaultEntryLimit(r *http.Request) *http.Request {
 	if maxEntries := p.queryLimitsFor(r.Header.Get("X-Scope-OrgID")).MaxEntriesLimitPerQuery; maxEntries > 0 && maxEntries < limit {
 		limit = maxEntries
 	}
-	return withRequestParams(r, map[string]string{"limit": strconv.Itoa(limit)})
+	value := strconv.Itoa(limit)
+	if _, sent := r.Form["limit"]; sent {
+		// An empty limit: replaced where it stands.
+		return withRequestParams(r, map[string]string{"limit": value})
+	}
+	return withAddedFormParam(r, "limit", value)
+}
+
+// withAddedFormParam is r with a parameter it does not carry added to its
+// parsed form and to the end of its URL query, without parsing or encoding the
+// rest again. The request is a shallow copy, as WithContext makes; the form
+// and the URL are copies.
+func withAddedFormParam(r *http.Request, name, value string) *http.Request {
+	out := new(http.Request)
+	*out = *r
+	u := *r.URL
+	if u.RawQuery != "" {
+		u.RawQuery += "&"
+	}
+	u.RawQuery += name + "=" + value
+	out.URL = &u
+	form := make(map[string][]string, len(r.Form)+1)
+	for k, v := range r.Form {
+		form[k] = v
+	}
+	form[name] = []string{value}
+	out.Form = form
+	return out
 }
 
 // withSinceWindow gives a request that sends a since and no start the start

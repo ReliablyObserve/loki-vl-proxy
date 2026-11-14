@@ -136,14 +136,11 @@ func TestCompatEdgeDoesNotServeAnAnswerCachedBeforeTheRuneFix(t *testing.T) {
 			p := newCompatTestProxy(t, vl.URL)
 			params := url.Values{"query": {tc.query}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"60"}, "time": {"1700003600"}}
 			target := "/loki/api/v1/" + endpoint + "?" + params.Encode()
-			keyParams := url.Values{}
-			for k, v := range params {
-				keyParams[k] = v
-			}
+			keyTarget := target
 			if endpoint == "query_range" {
-				keyParams.Set("limit", "100") // the route gives a range query without a limit Loki's default
+				keyTarget += "&limit=100" // the default limit the route adds to a range query without one
 			}
-			key, ok := p.compatCacheKey(endpoint, httptest.NewRequest(http.MethodGet, "/loki/api/v1/"+endpoint+"?"+keyParams.Encode(), nil))
+			key, ok := p.compatCacheKey(endpoint, httptest.NewRequest(http.MethodGet, keyTarget, nil))
 			if !ok {
 				t.Fatalf("%s %q: no compat key", endpoint, tc.query)
 			}

@@ -195,3 +195,97 @@ func mustAtoi(t *testing.T, s string) int {
 	}
 	return n
 }
+
+// BenchmarkQueryRangeParamValidation: the parameter step of a range query, with
+// the limit Grafana sends and with none (the default is then set on the request).
+func BenchmarkQueryRangeParamValidation(b *testing.B) {
+	p := paramTestProxy(b)
+	base := url.Values{"query": {`{app="x"}`}, "start": {"1794567075000000000"}, "end": {"1794570675000000000"}, "step": {"15"}, "direction": {"backward"}}
+	for _, bc := range []struct {
+		name  string
+		limit string
+	}{{"limit_sent", "1000"}, {"no_limit", ""}} {
+		form := url.Values{}
+		for k, v := range base {
+			form[k] = v
+		}
+		if bc.limit != "" {
+			form.Set("limit", bc.limit)
+		}
+		target := "/loki/api/v1/query_range?" + form.Encode()
+		b.Run(bc.name, func(b *testing.B) {
+			w := httptest.NewRecorder()
+			b.ReportAllocs()
+			for b.Loop() {
+				r := httptest.NewRequest(http.MethodGet, target, nil)
+				_ = r.ParseForm()
+				if _, ok := p.requestParamValidation(w, r, "query_range", requestParamChecks["query_range"]); !ok {
+					b.Fatal(w.Body.String())
+				}
+			}
+		})
+	}
+}
+
+// TestWithDefaultEntryLimit: the default is added to a request that sends no
+// limit (form and URL query), replaces an empty one, and leaves a sent limit
+// and the client's request as they are.
+// conformance: semantics/log-query-default-limit
+func TestWithDefaultEntryLimit(t *testing.T) {
+	p := &Proxy{maxLines: DefaultMaxLines}
+	for _, tc := range []struct {
+		name, rawQuery, wantRaw, wantLimit string
+	}{
+		{"no limit", "query=%7Bapp%3D%22a%22%7D&step=15", "query=%7Bapp%3D%22a%22%7D&step=15&limit=100", "100"},
+		{"no parameters", "", "limit=100", "100"},
+		{"an empty limit", "limit=&query=x", "limit=100&query=x", "100"},
+		{"a sent limit", "limit=5&query=x", "limit=5&query=x", "5"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+tc.rawQuery, nil)
+			_ = r.ParseForm()
+			got := p.withDefaultEntryLimit(r)
+			if got.URL.RawQuery != tc.wantRaw || got.FormValue("limit") != tc.wantLimit || got.URL.Query().Get("limit") != tc.wantLimit {
+				t.Errorf("raw %q limit %q (URL %q), want %q and %q", got.URL.RawQuery, got.FormValue("limit"), got.URL.Query().Get("limit"), tc.wantRaw, tc.wantLimit)
+			}
+			if r.URL.RawQuery != tc.rawQuery {
+				t.Errorf("the client's request changed: %q", r.URL.RawQuery)
+			}
+		})
+	}
+	// A proxy built without -max-lines uses Loki's default.
+	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query=x", nil)
+	_ = r.ParseForm()
+	if got := (&Proxy{}).withDefaultEntryLimit(r).FormValue("limit"); got != "100" {
+		t.Errorf("zero -max-lines: limit %q, want 100", got)
+	}
+}
+
+// BenchmarkQueryRangeWithoutLimit: a range log query that sends no limit,
+// served end to end on a cache miss from a VictoriaLogs that holds 1000 lines.
+func BenchmarkQueryRangeWithoutLimit(b *testing.B) {
+	stub := &limitStubVL{rows: 1000}
+	vl := httptest.NewServer(stub)
+	defer vl.Close()
+	p, err := New(Config{BackendURL: vl.URL, Cache: cache.New(time.Minute, 64), CompatCache: cache.New(time.Minute, 64), LogLevel: "error"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = p.Shutdown(b.Context()) }()
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+	end := time.Now().UnixNano()
+	b.ReportAllocs()
+	i := int64(0)
+	for b.Loop() {
+		i++
+		params := url.Values{"query": {`{app="api"}`}, "start": {fmt.Sprint(end - int64(time.Hour) + i)}, "end": {fmt.Sprint(end + i)}}
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+		req.Header.Set("X-Scope-OrgID", "0")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			b.Fatalf("status %d: %s", rec.Code, rec.Body)
+		}
+	}
+}

@@ -26,7 +26,7 @@ request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: '{namespace="prod"}'
+    query: '{app="api-gateway"}'
     start: 'now-1h'
     end: 'now'
   headers:
