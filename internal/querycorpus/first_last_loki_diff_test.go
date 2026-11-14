@@ -82,7 +82,16 @@ var firstLastTies = map[string]bool{
 	`last_over_time({job="tie"} | json | keep app, duration_ms | unwrap duration_ms [5m])`:  true,
 }
 
-// tieValueOnly reports whether every difference of d is a value: the only one firstLastTies accept.
+// rowMaxV149 reports a run whose value VictoriaLogs v1.49 may pick wrongly: last_over_time over a field stored with
+// the line (no parser), on v1.49. row_max(_time, ...) there takes the value of the block's first row when every
+// group key of the block is the same (fixed in v1.50.0), which depends on how the store laid out its blocks, so a
+// recording may hold Loki's value or another one (semantics/last-over-time-vl149-row-max-wrong-row). Such a run may
+// write another value, and must match Loki in everything else.
+func rowMaxV149(version, q string) bool {
+	return version == "v1.49.0" && strings.Contains(q, `last_over_time({job="sm"}`)
+}
+
+// tieValueOnly reports whether every difference of d is a value: the only one firstLastTies and rowMaxV149 accept.
 func tieValueOnly(d metricDiff) bool {
 	for c := range d.classes {
 		if c != "writes another value" {
@@ -191,7 +200,7 @@ func firstLastFixture() metricFixture {
 // TestFirstLastMatchLoki replays the recorded answers through the handlers and holds every run to Loki's answer, or
 // to its listed difference.
 //
-// conformance: semantics/unwrap-first-last-range-longer-than-step, semantics/unwrap-first-last-range-timestamps, semantics/unwrap-first-last-under-aggregation, semantics/keep-before-unwrap-series-identity, semantics/unwrap-stored-integer-field-gate
+// conformance: semantics/unwrap-first-last-range-longer-than-step, semantics/unwrap-first-last-range-timestamps, semantics/unwrap-first-last-under-aggregation, semantics/keep-before-unwrap-series-identity, semantics/unwrap-stored-integer-field-gate, semantics/last-over-time-vl149-row-max-wrong-row
 func TestFirstLastMatchLoki(t *testing.T) {
 	if testing.Short() && os.Getenv("CI") == "" && os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("runs every shape on a fresh proxy per request; run without -short")
@@ -233,7 +242,7 @@ func TestFirstLastMatchLoki(t *testing.T) {
 				known := firstLastKnown[mq.q][mr.kind]
 				seenKnown[mq.q+"\x00"+mr.kind] = true
 				switch {
-				case firstLastTies[mq.q] && tieValueOnly(d):
+				case (firstLastTies[mq.q] || rowMaxV149(prof.version, mq.q)) && tieValueOnly(d):
 					table[key].match++
 				case len(d.classes) == 0 && known != "":
 					t.Errorf("%s %s %s matches Loki: remove it from firstLastKnown (%s)", prof.name, mr.kind, mq.q, known)
