@@ -1503,10 +1503,6 @@
     "semantics/unwrap-quantile-sum-by-group-quantile",
     "metric-series-identity",
     "loki_api_v1_query_range"
-   ],
-   "fixes": [
-    "semantics/unwrap-per-series-identity-raw-rows",
-    "semantics/unwrap-quantile-sum-by-group-quantile"
    ]
   },
   {
@@ -1517,9 +1513,6 @@
     "semantics/stdvar-grouped-pooled-variance",
     "metric-series-identity",
     "loki_api_v1_query_range"
-   ],
-   "fixes": [
-    "semantics/stdvar-grouped-pooled-variance"
    ]
   },
   {

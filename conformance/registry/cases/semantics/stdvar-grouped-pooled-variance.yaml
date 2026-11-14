@@ -1,5 +1,5 @@
 id: semantics/stdvar-grouped-pooled-variance
-title: an aggregation by labels over stdvar_over_time takes the variance of each series, not of the group's pooled samples (fixed)
+title: an aggregation by labels over stdvar_over_time takes the variance of each series, not of the group's pooled samples (open)
 pending: true
 proves:
   - metric-series-identity
@@ -59,8 +59,7 @@ compare:
   expect: |
     Loki's values.
 gap:
-  status: fixed
-  fixed_by: "this change"
+  status: open
   impact: explore-visible
   effort: M
   area: 'internal/queryplan/lower unwrap.go (varianceVector over the series identity), unwrap_dynamic.go (the series hash)'

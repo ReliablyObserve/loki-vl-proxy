@@ -1,5 +1,5 @@
 id: semantics/unwrap-quantile-sum-by-group-quantile
-title: sum by over quantile_over_time with unwrap adds the per-series quantiles instead of taking the group quantile, like Loki (fixed)
+title: sum by over quantile_over_time with unwrap adds the per-series quantiles instead of taking the group quantile, like Loki (open)
 pending: true
 proves:
   - metric-series-identity
@@ -54,8 +54,7 @@ compare:
   expect: |
     Loki's sum of the per-series quantiles per namespace.
 gap:
-  status: fixed
-  fixed_by: "this change"
+  status: open
   impact: explore-visible
   effort: M
   area: 'internal/queryplan/lower unwrap_dynamic.go (the series hash); internal/proxy quantile_histogram.go (withQuantileShape groups the counts by the stream and the hash)'
