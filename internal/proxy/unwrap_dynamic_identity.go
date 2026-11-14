@@ -263,15 +263,23 @@ func (p *Proxy) dynamicIdentityFor(ctx context.Context, query string) bool {
 // proof of serveDynamicIdentity) the query is answered in closed form; otherwise it is marked streamIdentityKey and
 // translated and answered as before. served reports an answered request; r is the request to go on with.
 func (p *Proxy) dynamicIdentityWindows(w http.ResponseWriter, r *http.Request, query string) (served bool, out *http.Request) {
-	window, ok := dynamicWindowRange(query)
-	if !ok || !p.dynamicIdentityFor(r.Context(), query) {
-		return false, r
-	}
 	step, ok := parsePositiveStepDuration(r.FormValue("step"))
-	if !ok || window <= step {
+	if !ok || streamIdentityOnly(r.Context()) {
 		return false, r
 	}
 	marked := r.WithContext(context.WithValue(r.Context(), streamIdentityKey{}, true))
+	window, ok := dynamicWindowRange(query)
+	if !ok || !p.dynamicUnwrapIdentity(query) {
+		// A dynamic identity at depth (an operand, a ranking) is answered by the operand's own request: over a
+		// window longer than the step, every operand keeps the stream's series.
+		if p.dynamicIdentityAtDepth(query, step) {
+			return false, marked
+		}
+		return false, r
+	}
+	if window <= step {
+		return false, r
+	}
 	closed, ok := dynamicClosedForm(query)
 	startTS, errS := parseTimestamp(r.FormValue("start"))
 	endTS, errE := parseTimestamp(r.FormValue("end"))
@@ -319,4 +327,37 @@ func dynamicWindowRange(query string) (time.Duration, bool) {
 		return ra.RangeDuration, ra.RangeDuration > 0
 	}
 	return 0, false
+}
+
+// dynamicIdentityAtDepth reports a query that holds, below its root, a range function of a dynamic identity's shape
+// over a range longer than step (lower.WritesDynamicUnwrapIdentity).
+func (p *Proxy) dynamicIdentityAtDepth(query string, step time.Duration) bool {
+	query = strings.TrimSpace(query)
+	if !p.queryPlanLowering || !strings.Contains(query, "unwrap") {
+		return false
+	}
+	plan := resolvedPlan(query)
+	if plan == nil || !lower.WritesDynamicUnwrapIdentity(plan) {
+		return false
+	}
+	expr, ok := sharedLogQLExpr(query)
+	if !ok {
+		return false
+	}
+	return rangeLongerThan(expr, step)
+}
+
+// rangeLongerThan reports a range aggregation over a range longer than step anywhere in expr.
+func rangeLongerThan(expr logqlpkg.Expr, step time.Duration) bool {
+	switch e := expr.(type) {
+	case *logqlpkg.RangeAggregation:
+		return e.RangeDuration > step
+	case *logqlpkg.VectorAggregation:
+		return rangeLongerThan(e.Inner, step)
+	case *logqlpkg.BinOpExpr:
+		return rangeLongerThan(e.Left, step) || rangeLongerThan(e.Right, step)
+	case *logqlpkg.OpaqueMetricExpr:
+		return e.Inner != nil && rangeLongerThan(e.Inner, step)
+	}
+	return false
 }

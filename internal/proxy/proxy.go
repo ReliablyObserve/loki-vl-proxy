@@ -2797,6 +2797,10 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var dynamicServed bool
+	if dynamicServed, r = p.dynamicIdentityWindows(w, r, logqlQuery); dynamicServed {
+		return
+	}
 	if postAgg, ok := parseInstantMetricPostAggQuery(logqlQuery); ok {
 		if postAgg.name == "topk" || postAgg.name == "bottomk" {
 			stepsRun.arm() // ranked per step (applyTopKToMatrix)
@@ -2804,11 +2808,6 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		p.handleRangeMetricPostAggregation(w, withQueryStepsSilent(r, stepsRun), start, logqlQuery, postAgg)
 		return
 	}
-	var dynamicServed bool
-	if dynamicServed, r = p.dynamicIdentityWindows(w, r, logqlQuery); dynamicServed {
-		return
-	}
-
 	logsqlQuery, err := p.translateLogResponseQuery(r.Context(), logqlQuery)
 	if err != nil {
 		status := p.fail(w, r, queryRefusal(err))
