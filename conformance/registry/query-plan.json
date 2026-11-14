@@ -568,7 +568,7 @@
       "24h chunk/RangeAgg": "d5ce74403ac20331",
       "24h chunk/Rank": "acf0095c7e7d47f0",
       "24h chunk/Scalar": "b01ddfee0a162681",
-      "24h chunk/VectorAgg": "41b9c8ae2cf24e86",
+      "24h chunk/VectorAgg": "d72b8fc71403c76c",
       "24h chunk/VectorLit": "fafe78111335aec9",
       "instant/BinOp": "66910de16b43e223",
       "instant/LabelReplace": "1eda7f007cfc3480",
@@ -576,7 +576,7 @@
       "instant/RangeAgg": "bb36f50e5c9353fd",
       "instant/Rank": "872242485620d173",
       "instant/Scalar": "058ee94c303a0c46",
-      "instant/VectorAgg": "78366966cc91758a",
+      "instant/VectorAgg": "4d513e1b39c6fb98",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "ded1a846679dcc18",
       "step\u003crange/LabelReplace": "7e2339de2a64039d",
@@ -584,7 +584,7 @@
       "step\u003crange/RangeAgg": "681837366adda1d8",
       "step\u003crange/Rank": "28279fc6c7916a12",
       "step\u003crange/Scalar": "b01ddfee0a162681",
-      "step\u003crange/VectorAgg": "04ae6d5d857cc366",
+      "step\u003crange/VectorAgg": "3c68868d6bec7fbb",
       "step\u003crange/VectorLit": "fafe78111335aec9",
       "step=range/BinOp": "ac2c93507815eca7",
       "step=range/LabelReplace": "f814664e0f744be4",
@@ -592,7 +592,7 @@
       "step=range/RangeAgg": "074963b2e31e1e79",
       "step=range/Rank": "48b7c16f1a61f7ad",
       "step=range/Scalar": "b01ddfee0a162681",
-      "step=range/VectorAgg": "3e7ae7725cbce670",
+      "step=range/VectorAgg": "aa95174b75ac9557",
       "step=range/VectorLit": "fafe78111335aec9",
       "step\u003erange/BinOp": "e7e755c8e8149468",
       "step\u003erange/LabelReplace": "266dba9d6112ebe9",
@@ -600,14 +600,14 @@
       "step\u003erange/RangeAgg": "bb46f3fbdc40f75d",
       "step\u003erange/Rank": "bde2008f55288e03",
       "step\u003erange/Scalar": "b01ddfee0a162681",
-      "step\u003erange/VectorAgg": "9e309c966942a278",
+      "step\u003erange/VectorAgg": "097f2854754eafb8",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     }
   },
   "shadow": {
     "rows": 23832,
     "profiles": 12,
-    "native": 20668,
+    "native": 20686,
     "native_proxy_evaluated": 3861,
     "mismatches": 0,
     "delegated_by_construct": {
@@ -666,7 +666,7 @@
       "known divergence semantics/translator-reads-quoted-text-as-syntax": 12,
       "known divergence semantics/translator-writes-reserved-field-names": 93,
       "known divergence semantics/translator-writes-signed-number-with-blank": 12,
-      "known divergence semantics/unwrap-per-series-identity-raw-rows": 675
+      "known divergence semantics/unwrap-per-series-identity-raw-rows": 657
     },
     "flipped": [
       "LogSelect"

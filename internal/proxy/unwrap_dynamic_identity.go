@@ -268,8 +268,7 @@ func (p *Proxy) dynamicIdentityWindows(w http.ResponseWriter, r *http.Request, q
 		return false, r
 	}
 	marked := r.WithContext(context.WithValue(r.Context(), streamIdentityKey{}, true))
-	window, ok := dynamicWindowRange(query)
-	if !ok || !p.dynamicUnwrapIdentity(query) {
+	if !p.dynamicUnwrapIdentity(query) {
 		// A dynamic identity at depth (an operand, a ranking) is answered by the operand's own request: over a
 		// window longer than the step, every operand keeps the stream's series.
 		if p.dynamicIdentityAtDepth(query, step) {
@@ -277,7 +276,10 @@ func (p *Proxy) dynamicIdentityWindows(w http.ResponseWriter, r *http.Request, q
 		}
 		return false, r
 	}
-	if window <= step {
+	window, ok := dynamicWindowRange(query)
+	if !ok || window <= step {
+		// quantile_over_time reads each series' value counts (serveDynamicIdentity), and a window up to the step is
+		// one stats bucket.
 		return false, r
 	}
 	closed, ok := dynamicClosedForm(query)
