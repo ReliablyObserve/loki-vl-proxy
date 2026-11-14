@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
@@ -369,5 +370,31 @@ func TestLokiResultSeriesCount(t *testing.T) {
 		if got := lokiResultSeriesCount([]byte(c.body)); got != c.want {
 			t.Errorf("lokiResultSeriesCount(%s) = %d, want %d", c.body, got, c.want)
 		}
+	}
+}
+
+// The range evaluator takes the manual range functions and first and last over time; any other stats function of a
+// translated query is answered as translated, before the request is read any further, and so is first or last over
+// a window up to the step.
+//
+// conformance: semantics/unwrap-first-last-range-longer-than-step
+func TestHandleStatsCompatRangeScreensTheFunction(t *testing.T) {
+	p := newTestProxy(t, "http://127.0.0.1:1")
+	for _, c := range []struct {
+		fn, query string
+	}{
+		{"count_uniq", `sum(count_over_time({app="uw"}[5m]))`},
+		{"row_any", `sum(first_over_time({app="uw"} | unwrap amount [5m]))`},
+		{"row_min", `sum(first_over_time({app="uw"} | unwrap amount [5m]))`},
+		{"row_max", `sum(last_over_time({app="uw"} | unwrap amount [2m]))`},
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?step=300&start=1&end=600&query="+url.QueryEscape(c.query), nil)
+		stats := physical.VLStats{Shaped: true, Base: `app:="uw"`, Func: c.fn, By: []string{"_stream"}}
+		if p.handleStatsCompatRange(httptest.NewRecorder(), r, c.query, stats) {
+			t.Errorf("%s over %s: answered by the range evaluator", c.fn, c.query)
+		}
+	}
+	if !rangeStatsFunc("row_min") || !rangeStatsFunc("max") || rangeStatsFunc("row_any") || firstLastRowStats("min") {
+		t.Fatal("the range evaluator reads the manual functions and row_min, row_max only")
 	}
 }
