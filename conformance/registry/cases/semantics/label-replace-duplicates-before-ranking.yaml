@@ -1,5 +1,5 @@
 id: semantics/label-replace-duplicates-before-ranking
-title: topk, bottomk and stddev over label sets a label_replace made equal rank merged series on query_range (open)
+title: topk, bottomk and stddev over label sets a label_replace made equal ranked merged series on query_range (fixed)
 proves:
   - loki_api_v1_query_range
 consumer: explore
@@ -15,6 +15,8 @@ why: |
   that merged series (internal/proxy handleRangeMetricPostAggregation,
   transformSeriesLabels). On an instant query the samples stay apart, so the
   instant answer ranks as Loki does.
+
+  Fixed (#744): the duplicates stay apart until the vector aggregation has ranked or folded them, so topk and bottomk answer the larger sample per step and stddev and stdvar fold every sample, with the extent cache on and off. The live answer (topk(1, label_replace(..))) is one series of 61 points equal to Loki's.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -32,11 +34,15 @@ compare:
     One series per step holding the larger of the two samples, as Loki ranks
     them before it files them.
 gap:
-  status: open
+  status: fixed
+  fixed_by: '#744'
   impact: explore-visible
   effort: S
   area: 'internal/proxy metric_agg.go (handleRangeMetricPostAggregation) after transformSeriesLabels'
   loki: 'pkg/logql/evaluator.go VectorAggEvaluator.Next; pkg/logql/engine.go:440-470 vectorsToSeries'
-  proxy: 'duplicates merged into one series before the ranking'
-  planned_test: 'TestCompat_LabelReplaceDuplicatesBeforeRanking (test/e2e-compat, group semantics)'
+  proxy: 'every sample ranked or folded at each step, then filed under one series, as Loki'
+  planned_test: 'TestRankedTopKOverLabelSetsLabelReplaceMadeEqual and TestFoldOverLabelSetsLabelReplaceMadeEqual (internal/proxy); TestCompat_LabelReplaceDuplicatesBeforeRanking (test/e2e-compat, group semantics)'
+  note: 'Verified 2026-11-14 on build 726dfb48f against Loki 3.7.9 and VictoriaLogs v1.53.0 (two live case runs, same data on both sides): 1 series, 61 points, labels and values equal.'
+  visual: none
+  visual_reason: 'fixed by #744 before this record; the proof is the live API comparison of the case (series and values equal to Loki on 2026-11-14), and no Grafana capture was taken for this record'
   clusters: []
