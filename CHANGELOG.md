@@ -13,10 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the unwrap decides are served from the plan as before, and the proxy now checks, on the typed plan, which range
   and vector aggregations, binary operations and `label_replace` calls the plan would write with the string
   translator's text (no ranking, `stddev` or `stdvar` at any level, no binary the proxy evaluates operand by
-  operand, none of the recorded differences). None of them is served from the plan yet, so answers, translation
-  cache entries and VictoriaLogs requests do not change. The query plan's corpus check now reads the query as the
-  proxy does (a range written `({...})[5m]` is read as `{...}[5m]`), which counts 54 more rows as written by the
-  plan. New tests hold every metric query of the corpus to the same text with the four metric constructs served
+  operand, none of the recorded differences): the entries below serve them from the plan. The query plan's corpus
+  check now reads the query as the proxy does (a range written `({...})[5m]` is read as `{...}[5m]`), which counts
+  54 more rows as written by the plan. New tests hold every metric query of the corpus to the same text with the four metric constructs served
   from the plan under seven proxy profiles, and the translation benchmark measures the metric shapes of each
   construct, served and not served.
 - The translation of a metric query that misses the translation cache costs no more on the query plan's path than on
@@ -41,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   comparisons, with `on`, `ignoring`, `group_left`, `group_right`), are served from the query plan the same way (two
   sums of rates divided: 14.9 to 9.2 us, 104 to 70 allocations); `bool`, `and`/`or`/`unless`, a `without` operand, a
   `vector()` operand and chains of binaries stay with the string translator.
+- `label_replace` calls, nested ones too, around an aggregation or a binary operation are served from the query plan
+  the same way (6.6 to 4.1 us, 68 to 51 allocations); a `label_replace` around a ranking, `stddev` or a `service_name`
+  grouping stays with the string translator.
 
 ## [2.260.1] - 2026-11-14
 

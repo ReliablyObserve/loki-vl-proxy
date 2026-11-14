@@ -934,10 +934,10 @@ decisions:
     performance:
       tracked: ['BenchmarkTranslateQueryMissShapes (internal/proxy) and the logql screen and parse benchmarks, ns/op, B/op, allocs/op']
       bound: 'see the PR: allocs and B/op equal to main on every BenchmarkTranslateQueryMissShapes shape'
-  - id: metric-flip-gate-ready-not-flipped
+  - id: metric-flip-gate
     pending: true
-    chosen: 'One entry for metric queries in the flip (lowerMetric, internal/proxy/query_lowering.go): it plans a metric query once, serves a range function whose series a keep before the unwrap decides as before, and serves a flipped metric construct from the lowering only when its lowered text is the string translator''s (writesTranslatorText: no ranking, stddev or stdvar at any level, no binary the binary route evaluates operand by operand, none of the recorded divergences: a keep before an unwrap elsewhere, a numeric equality after a parser, a reserved field name, an unwrap of one in another case, a label filter value the translator reads as syntax: detected_level or service_name in it, a \x00 to \x02 byte, a signed number). The one difference left is a label named like a LogsQL keyword, which the plan quotes and the translator writes bare (VictoriaLogs rejects it), as the corpus shadow already holds. The gate is proven with VectorAgg, RangeAgg, BinOp and LabelReplace flipped on test proxies; QueryPlanFlippedConstructs stays LogSelect: no metric construct is flipped.'
-    over: ['flipping VectorAgg, RangeAgg, BinOp and LabelReplace now (the text and the requests are the translator''s, but a translation that misses the cache allocates more on shapes the flip serves and on every metric query it plans and leaves to the translator)', 'gating on the shadow''s test-only recognisers (they read query text; the gate reads the typed plan)', 'a second keep-identity entry beside the metric one (a metric query would be planned twice)']
+    chosen: 'One entry for metric queries in the flip (lowerMetric, internal/proxy/query_lowering.go): it plans a metric query once, serves a range function whose series a keep before the unwrap decides as before, and serves a flipped metric construct from the lowering only when its lowered text is the string translator''s (writesTranslatorText: no ranking, stddev or stdvar at any level, no binary the binary route evaluates operand by operand, none of the recorded divergences: a keep before an unwrap elsewhere, a numeric equality after a parser, a reserved field name, an unwrap of one in another case, a label filter value the translator reads as syntax: detected_level or service_name in it, a \x00 to \x02 byte, a signed number). The one difference left is a label named like a LogsQL keyword, which the plan quotes and the translator writes bare (VictoriaLogs rejects it), as the corpus shadow already holds. VectorAgg, RangeAgg, BinOp and LabelReplace are flipped (QueryPlanFlippedConstructs), one commit each, once the plan path cost no more than the string translator (decision metric-flip-plan-path-at-translator-cost).'
+    over: ['flipping before the plan path cost was at or under the translator''s (a translation that missed the cache allocated more on shapes the flip serves and on every metric query it planned and left to the translator)', 'gating on the shadow''s test-only recognisers (they read query text; the gate reads the typed plan)', 'a second keep-identity entry beside the metric one (a metric query would be planned twice)']
     why: |
       Owner direction: switch to the planner and AST, construct by construct,
       biggest first, without a performance regression. The text half is
@@ -946,19 +946,19 @@ decisions:
       proxy profiles (and any metric query the fuzz target writes, up to the
       keyword quoting above), the route parity runs send no VictoriaLogs query the base
       did not send, and the Loki metric differential replays its recorded
-      requests unchanged. The cost half is not: the plan path parses, builds
-      and resolves the query before it can decide, which the string translator
-      never does, so a metric query the lowering then leaves to the translator
-      pays that work on top (+7 to +22 allocations), and two vector
-      aggregation shapes the flip serves allocate +2 and +4 more than the
-      translator (fewer bytes, about the same time).
+      requests unchanged. The cost half came first: the plan path parsed,
+      built and resolved the query before it could decide (+7 to +22
+      allocations on a query then left to the translator, +2 to +4 on three
+      served shapes); the metric screen and the printing cuts
+      (metric-flip-plan-path-at-translator-cost) took every shape to or under
+      the translator, and the four constructs were flipped.
     evidence: 'TestQueryPlanLowering_CorpusTextParity with the candidates flipped (VectorAgg 5,647, RangeAgg 4,011, BinOp 966, LabelReplace 854 translations, text equal under 7 profiles); TestPlanRouteParity call dump vs two base runs (no new LogsQL text); TestPlanMatchesLokiOnMetricQueries unchanged with no stale recording; BenchmarkTranslateQueryMissShapes base vs candidates, n=8, Apple M5 Pro, GOMAXPROCS=4 (see the PR).'
     code: [internal/proxy/query_lowering.go, internal/proxy/query_translation.go, internal/proxy/proxy.go]
     tests: [TestQueryPlanLowering_CorpusTextParity, FuzzMetricFlipGate, TestQueryPlanLowering_MisreadFilterValue, TestQueryPlanLowering_ServesMetricConstructs, TestQueryPlanLowering_WritesTranslatorTextGate, TestQueryPlanLowering_MetricFlipScreenAndPanic, TestQueryPlanLowering_RouteParity, TestKeepIdentityServedFromPlan, TestKeepIdentityHandlersFollowTheFlip, TestPlanShadow]
-    quality: 'Behaviour-neutral: QueryPlanFlippedConstructs is unchanged, the keep identity is served as before, and the shadow screens the canonical text as the proxy does (native 21,334 to 21,388: 54 rows written as `({...})[5m]` were delegated by the raw text''s spelling only).'
+    quality: 'Behaviour-neutral: the flipped constructs write the string translator''s text byte for byte (answers, translation cache entries and VictoriaLogs requests unchanged), the keep identity is served as before, and the shadow screens the canonical text as the proxy does (native 21,334 to 21,388: 54 rows written as `({...})[5m]` were delegated by the raw text''s spelling only).'
     performance:
       tracked: ['BenchmarkTranslateQueryMissShapes (internal/proxy): the metric shapes per construct, served and not served, ns/op, B/op, allocs/op']
-      bound: 'no shape allocates more than main as committed; a metric flip waits until every shape is at or under main'
+      bound: 'no shape allocates more than main, served or turned away; with the four constructs flipped every BenchmarkTranslateQueryMissShapes row is at or under main in allocs/op and B/op'
   - id: metric-flip-plan-path-at-translator-cost
     pending: true
     chosen: 'The plan path of a metric translation costs no more than the string translator on a translation-cache miss. (1) An allocation-free text screen, lower.ScreenMetricIn (internal/queryplan/lower/metric_screen.go), runs before any parse: it names the construct at the top of the query (VectorAgg, RangeAgg, BinOp, LabelReplace) and answers "" for every class the typed gate or the lowering leaves to the translator (rankings, stddev, stdvar, vector(), bool, set operators, unpack, line_format, decolorize, an empty without, nested binaries, numeric equality after a parser, signed numbers, reserved field names, misread quoted values, the ScreenText spellings, the lowering''s own cost delegations), and it reads the first word first, so a query whose construct is not flipped is not scanned. The typed gate (writesTranslatorText) and the lowering still decide every query it passes. (2) loweringPlan reads the handlers'' plan memo (resolvedPlan, sharedLogQLExpr) read-only before it parses. (3) The stats and math pipes the lowering writes print onto a pooled buffer straight into the query text (logsql PipeStats and PipeMath appenders, logsql.AppendPipe/AppendStats, lower writePipe/pipeText/statsText), and statsPipe holds a one-label grouping and its function in one allocation. (4) lower.Construct names the plan node types without fmt.'
