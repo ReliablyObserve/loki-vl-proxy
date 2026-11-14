@@ -30,6 +30,11 @@
 - findings and how they were handled, or "no security-relevant surface" with the reason
 - report a vulnerability privately as described in `SECURITY.md`, never here
 
+## Cache reuse (every PR that adds or changes a VictoriaLogs read, a proxy-evaluated step or a response path)
+
+- [ ] Per layer (Loki-facing, VictoriaLogs-facing, proxy's own work): repeat = 0 VictoriaLogs calls and no recomputation, refresh = only new buckets, a shape sharing the read reuses it (tests named)
+- [ ] Performance per query structure touched (Loki shapes and the VictoriaLogs queries they send): hits/lookups, VictoriaLogs calls and bytes, proxy CPU/allocs, latency for cold / repeat / refresh (or not applicable, with the reason)
+
 ## Cache efficiency evidence (Cache behavior changes)
 
 - [ ] Add a **main versus PR** matrix with measured commit SHAs, workload/config,
