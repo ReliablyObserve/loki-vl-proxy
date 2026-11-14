@@ -29,7 +29,7 @@ request:
     X-Loki-Response-Encoding-Flags: categorize-labels
 compare:
   mode: observed
-  fields: [status, streams.values]
+  fields: [status, streams.values, structuredMetadata, parsed labels]
   expect: |
     Loki's categories: a label the line's structured metadata holds stays
     under structuredMetadata when the parser did not write it.

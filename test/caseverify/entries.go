@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
@@ -152,16 +153,36 @@ func (p parsed) keepEntries(keep func(ts any) bool) {
 	data["result"] = kept
 }
 
-// trimLimitEdge compares two log answers that reached the line limit up to the timestamp both hold whole:
-// lines of the timestamp the limit cut at may be any of that timestamp's lines.
-func trimLimitEdge(l, p parsed, o Options) {
+// limitCounts are the line counts of two log answers when exactly one of them reached the line limit: that
+// answer is cut at the limit and the other is not, so the answers are compared whole and the counts are
+// reported with the difference.
+type limitCounts struct {
+	loki, proxy, limit int
+}
+
+// text says a side's count against the limit.
+func (c limitCounts) text(n int) string {
+	if n >= c.limit {
+		return fmt.Sprintf("%d lines (at the limit %d)", n, c.limit)
+	}
+	return fmt.Sprintf("%d lines (under the limit %d)", n, c.limit)
+}
+
+// trimLimitEdge compares two log answers that both reached the line limit up to the timestamp both hold whole:
+// lines of the timestamp the limit cut at may be any of that timestamp's lines. When only one side reached the
+// limit the other answer is complete (or short), so nothing is cut: the extra lines the limit-reaching side holds
+// are a difference in the count of lines, not an edge to trim, and the counts are returned to be reported.
+func trimLimitEdge(l, p parsed, o Options) *limitCounts {
 	if o.Limit <= 0 {
-		return
+		return nil
 	}
 	nl, el := l.streamEntries(o.Forward)
 	np, ep := p.streamEntries(o.Forward)
-	if (nl < o.Limit && np < o.Limit) || el == nil || ep == nil {
-		return
+	if (nl >= o.Limit) != (np >= o.Limit) {
+		return &limitCounts{loki: nl, proxy: np, limit: o.Limit}
+	}
+	if nl < o.Limit || el == nil || ep == nil {
+		return nil
 	}
 	// Backward answers are cut at their oldest timestamp, forward ones at their newest: keep what lies on the
 	// near side of the more restrictive of the two cuts.
@@ -177,6 +198,22 @@ func trimLimitEdge(l, p parsed, o Options) {
 	}
 	l.keepEntries(keep)
 	p.keepEntries(keep)
+	return nil
+}
+
+// withLimitCounts puts the line counts in front of the entry and data differences of an answer pair where one side
+// reached the limit and the other did not.
+func withLimitCounts(diffs []Difference, c *limitCounts) []Difference {
+	if c == nil {
+		return diffs
+	}
+	for i, d := range diffs {
+		if d.Facet == facetEntries || d.Facet == facetData {
+			diffs[i].Loki = c.text(c.loki) + ": " + d.Loki
+			diffs[i].Proxy = c.text(c.proxy) + ": " + d.Proxy
+		}
+	}
+	return diffs
 }
 
 // sampleRange is the first and last sample bucket of a patterns answer.
@@ -250,7 +287,7 @@ func CompareWith(facets []string, loki, proxy Answer, o Options) []Difference {
 	}
 	l.sortStreams()
 	p.sortStreams()
-	trimLimitEdge(l, p, o)
+	counts := trimLimitEdge(l, p, o)
 	if o.Patterns {
 		trimPatternEdges(l, p)
 	}
@@ -264,6 +301,7 @@ func CompareWith(facets []string, loki, proxy Answer, o Options) []Difference {
 		rest = append(rest, f)
 	}
 	out := compareParsed(rest, l, p, loki.Status, proxy.Status, o.Tolerance, o.Subset)
+	out = withLimitCounts(out, counts)
 	if !ranked {
 		return out
 	}

@@ -206,8 +206,18 @@ func TestEntriesCompareAsLokiDefinesThem(t *testing.T) {
 			streams(stream(a, `["30","x"]`, `["20","r"]`), stream(b, `["20","s"]`)), Options{Limit: 3}, false},
 		{"limit edge keeps what is above the cut", streams(stream(a, `["30","x"]`, `["20","p"]`, `["10","q"]`)),
 			streams(stream(a, `["30","y"]`, `["20","p"]`, `["10","q"]`)), Options{Limit: 3}, true},
+		// Only one side reached the limit: the other answer is complete (or short), nothing is cut, and the extra
+		// older lines of the limit-reaching side are a difference.
 		{"one side shorter at the limit", streams(stream(a, `["30","x"]`, `["20","p"]`, `["10","q"]`)),
-			streams(stream(a, `["30","x"]`, `["20","p"]`)), Options{Limit: 3}, false},
+			streams(stream(a, `["30","x"]`, `["20","p"]`)), Options{Limit: 3}, true},
+		{"proxy at the limit, Loki complete below it", streams(stream(a, `["30","x"]`, `["20","p"]`)),
+			streams(stream(a, `["30","x"]`, `["20","p"]`, `["10","q"]`)), Options{Limit: 3}, true},
+		{"proxy at the limit, Loki complete below it, forward", streams(stream(a, `["10","x"]`, `["20","p"]`)),
+			streams(stream(a, `["10","x"]`, `["20","p"]`, `["30","q"]`)), Options{Limit: 3, Forward: true}, true},
+		{"both at the limit, the proxy cut at a newer edge", streams(stream(a, `["30","x"]`, `["20","p"]`, `["10","q"]`)),
+			streams(stream(a, `["30","x"]`, `["20","p"]`, `["20","r"]`)), Options{Limit: 3}, false},
+		{"both at the limit, equal", streams(stream(a, `["30","x"]`, `["20","p"]`, `["10","q"]`)),
+			streams(stream(a, `["30","x"]`, `["20","p"]`, `["10","q"]`)), Options{Limit: 3}, false},
 		{"limit edge, forward", streams(stream(a, `["10","x"]`, `["20","p"]`)),
 			streams(stream(a, `["10","x"]`, `["20","r"]`)), Options{Limit: 2, Forward: true}, false},
 		{"under the limit nothing is cut", streams(stream(a, `["30","x"]`, `["20","p"]`)),
@@ -291,5 +301,48 @@ func TestReplayReadsLongLines(t *testing.T) {
 	}
 	if _, err := LoadReplay(strings.NewReader(`{"case":"a","attempt":1}` + "\n" + `{`)); err == nil || !strings.Contains(err.Error(), "line 2") {
 		t.Errorf("a broken last line: %v", err)
+	}
+}
+
+// A categorized answer whose structured metadata Loki keeps and the proxy answers as parsed is a difference of
+// the metadata facets, not of the lines: a case that names `structuredMetadata` and `parsed labels` sees it.
+func TestMetadataFacetsSeeALabelAnsweredAsParsed(t *testing.T) {
+	a := `{"app":"a"}`
+	loki := streams(stream(a, `["30","metadata line",{"structuredMetadata":{"msg":"hello"},"parsed":{"__error__":"JSONParserErr"}}]`))
+	proxy := streams(stream(a, `["30","metadata line",{"structuredMetadata":{},"parsed":{"msg":"hello"}}]`))
+	facets, unknown := Probe{Fields: []string{"status", "streams.values", "structuredMetadata", "parsed labels"}}.Facets()
+	if len(unknown) != 0 {
+		t.Fatalf("unknown fields %v", unknown)
+	}
+	got := map[string]bool{}
+	for _, d := range CompareWith(facets, loki, proxy, Options{Limit: 100}) {
+		got[d.Facet] = true
+	}
+	if got[facetEntries] || !got[facetStructuredMeta] || !got[facetParsed] {
+		t.Errorf("differences %v: the lines agree, the two metadata facets do not", got)
+	}
+	if d := CompareWith(facets, loki, loki, Options{Limit: 100}); len(d) != 0 {
+		t.Errorf("an answer differs from itself: %+v", d)
+	}
+}
+
+// A difference where only one side reached the limit names both line counts and the limit.
+func TestLimitDifferenceReportsTheCounts(t *testing.T) {
+	a := `{"app":"a"}`
+	loki := streams(stream(a, `["30","x"]`, `["20","p"]`))
+	proxy := streams(stream(a, `["30","x"]`, `["20","p"]`, `["10","q"]`))
+	for _, facets := range [][]string{{facetEntries}, {facetData}} {
+		d := CompareWith(facets, loki, proxy, Options{Limit: 3})
+		if len(d) != 1 || !strings.HasPrefix(d[0].Loki, "2 lines (under the limit 3): ") || !strings.HasPrefix(d[0].Proxy, "3 lines (at the limit 3): ") {
+			t.Errorf("%v: %+v", facets, d)
+		}
+	}
+	// Both at the limit, or both under it: no count prefix.
+	for _, o := range []Options{{Limit: 2}, {Limit: 100}} {
+		for _, d := range CompareWith([]string{facetEntries}, loki, streams(stream(a, `["30","x"]`, `["20","r"]`)), o) {
+			if strings.Contains(d.Loki, "lines (") {
+				t.Errorf("%+v: %+v", o, d)
+			}
+		}
 	}
 }
