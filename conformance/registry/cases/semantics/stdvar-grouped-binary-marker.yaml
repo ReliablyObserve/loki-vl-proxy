@@ -1,5 +1,6 @@
 id: semantics/stdvar-grouped-binary-marker
-title: stdvar_over_time under a grouping or without a parser answers 200, and with its own by() has Loki's values (fixed)
+title: stdvar_over_time under a grouping, a ranking or without a parser answers 200, and with its own by() has Loki's values (fixed)
+pending: true
 proves:
   - loki_api_v1_query_range
   - loki_api_v1_query
@@ -39,6 +40,22 @@ why: |
   (semantics/stdvar-grouped-pooled-variance, open). The form without a parser
   reads the field VictoriaLogs stores for the line where Loki has no label to
   unwrap (semantics/unwrap-parserless-reads-stored-field, open).
+
+  A ranking or a sort around it was still answered 500 (Loki 200), on an instant
+  and a range query: `topk(1, stdvar_over_time(... | json | unwrap duration_ms [5m]) by (app))`
+  and `sort_desc(stdvar_over_time(...) by (app))`. Their handlers
+  (handleInstantMetricPostAggregation, handleRangeMetricPostAggregation) sent the
+  operand's translation to the stats handlers, which refuse the binary expression.
+  Fixed: they answer a stats query and a number as the query and query_range routes
+  do (proxyScalarStatsBinary), then rank or sort the answer; their values are Loki's
+  at every request kind (TestStddevStdvarMatchLoki, Loki engine and VictoriaLogs
+  oracles).
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: 'topk(1, stdvar_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]) by (app))'
+      - query: 'sort_desc(stdvar_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]) by (app))'
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -60,8 +77,8 @@ gap:
   fixed_by: "this change"
   impact: explore-visible
   effort: S
-  area: 'internal/proxy scalar_binary_stats.go (scalarStatsBinaryOf, proxyScalarStatsBinary, rejectBinaryMarker) and the dispatch of handleQueryRange and handleQuery'
+  area: 'internal/proxy scalar_binary_stats.go (scalarStatsBinaryOf, proxyScalarStatsBinary, rejectBinaryMarker) and the dispatch of handleQueryRange, handleQuery and the ranking handlers (metric_agg.go)'
   loki: 'stdvar_over_time is a range aggregation: any grouping or none answers 200'
   proxy: 'the stats query as translated, then the power applied to its answer; the binary marker never reaches VictoriaLogs'
-  planned_test: 'TestStdvarOverTimeGroupedAnswersAsScalarBinary and TestStatsHandlersNeverSendTheBinaryMarker (internal/proxy); TestCompat_StdvarOverTimeGroupedAnswers200 and TestCompat_StdvarOverTimeByMatchesLoki (test/e2e-compat, group core)'
+  planned_test: 'TestStdvarOverTimeGroupedAnswersAsScalarBinary, TestStatsHandlersNeverSendTheBinaryMarker and TestStdvarUnderARankingAnswersAsScalarBinary (internal/proxy); TestStddevStdvarMatchLoki (internal/querycorpus); TestCompat_StdvarOverTimeGroupedAnswers200 and TestCompat_StdvarOverTimeByMatchesLoki (test/e2e-compat, group core)'
   clusters: []

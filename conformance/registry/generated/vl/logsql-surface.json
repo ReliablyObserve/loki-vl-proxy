@@ -623,6 +623,7 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
+        "internal/proxy/unwrap_samples.go",
         "internal/translator/translator.go"
       ]
     },
@@ -827,6 +828,7 @@
       "since": "v1.49.0",
       "used_by_proxy": true,
       "used_in": [
+        "internal/proxy/unwrap_samples.go",
         "internal/translator/translator.go"
       ]
     },

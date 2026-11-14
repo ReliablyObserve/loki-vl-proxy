@@ -53,6 +53,23 @@ def check_non_decreasing(failures, label, base, head, epsilon=0.0):
         failures.append(f"{label} regressed: base={base}, head={head}")
 
 
+# Total Go coverage may never sit below this. While it does, a PR may not lower it at all; above
+# it, the run-to-run tolerance of check_coverage applies but never takes it under the floor.
+COVERAGE_FLOOR = 90.0
+COVERAGE_TOLERANCE = 1.0
+
+
+def check_coverage(failures, base, head, floor=COVERAGE_FLOOR, tolerance=COVERAGE_TOLERANCE):
+    if head < floor - 1e-9:
+        if head < base - 1e-9:
+            failures.append(
+                f"coverage regressed below the {floor:g}% floor: base={base}, head={head} "
+                f"(under the floor a pull request may not lower coverage at all)"
+            )
+        return
+    check_non_decreasing(failures, "coverage", base, head, epsilon=tolerance)
+
+
 def check_minimum(failures, label, head, minimum, epsilon=0.0):
     if head < (minimum - epsilon - 1e-9):
         failures.append(f"{label} below minimum: minimum={minimum}, head={head}")
@@ -226,21 +243,13 @@ def main():
             int(base["tests"]["count"]),
             int(head["tests"]["count"]),
         )
-        check_non_decreasing(
+        # A PR may lower aggregate coverage by the run-to-run tolerance (end-to-end and
+        # compatibility-heavy suites vary a little between runs), never below the floor,
+        # and not at all while coverage is under the floor.
+        check_coverage(
             failures,
-            "coverage",
             float(base["tests"]["coverage_pct"]),
             float(head["tests"]["coverage_pct"]),
-            # End-to-end and compatibility-heavy suites can introduce small run-to-run
-            # variance in aggregate Go coverage. The 2026-06-05 perf round
-            # added several new helper functions (writeDrilldownPartialFromUpstream,
-            # holdBufPool, pre-size paths) that ARE exercised by the new lock and
-            # stress tests but contribute a net-negative to the aggregate
-            # percentage because the total line count grows faster than the
-            # incremental coverage. 1.0 % tolerance is still strict enough to
-            # catch a real loss of test coverage (PRs that delete tests, or
-            # add untested code paths > 1 % of total lines, will still fail).
-            epsilon=1.0,
         )
 
     for key, label in (

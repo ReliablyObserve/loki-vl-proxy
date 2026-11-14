@@ -384,9 +384,11 @@ func parseOriginalByLabels(logql string) []string {
 }
 
 func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, originalLogql string, stats physical.VLStats) bool {
-	if statsNative(r.Context()) {
-		return false
-	}
+	// A stats query answered as translated (statsNative: a stdvar_over_time's
+	// standard deviation, squared by the caller) takes only the window
+	// evaluator, for the function the stats compute: its windows merge from
+	// buckets like the client's function would.
+	native := statsNative(r.Context())
 	// Queries containing | math are multi-stage VL rate pipelines built by the translator
 	// (e.g. sum(rate({...} | json [w]))). For tumbling windows (range == step), VL can
 	// execute them natively — no manual decomposition needed. For any other range, fall
@@ -407,17 +409,21 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if !isManualRangeStatsFunc(spec.Func) {
 		return false
 	}
+	origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
+	step, _ := parsePositiveStepDuration(r.FormValue("step"))
+	if native && !windowLongerThanStep(origSpec, step) {
+		// Only a window longer than the step is evaluated here (unwrapWindowRoute).
+		return false
+	}
 	// Capture original Loki by-labels so we can translate VL label names back
 	// in the metric response (e.g. VL "level" → Loki "detected_level").
 	spec.OrigGroupBy = parseOriginalByLabels(originalLogql)
-	origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
 	forceRawLevelRows := hasOrigSpec && p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, spec.OrigGroupBy)
 
-	manualFunc := normalizeManualMetricFunction(spec, origSpec)
+	manualFunc := manualFunctionOf(spec, origSpec, native)
 	if manualFunc == "" {
 		return false
 	}
-	step, _ := parsePositiveStepDuration(r.FormValue("step"))
 	rangeEqualsStep := statsRangeIsTumbling(origSpec.Window, step)
 	// For tumbling windows, an explicit "| drop __error__" in the original LogQL opts in to
 	// VL's count-all semantics (parse failures counted). The query's plan finds the
@@ -430,6 +436,16 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// for a range up to the step; a longer range merges its windows from
 	// anchored buckets (unwrapWindowBuckets).
 	unwrapSpec, grouped, unwrapWindows := p.unwrapWindowRoute(r, spec, origSpec, hasOrigSpec, manualFunc, originalLogql, step)
+	if native {
+		// Only the window evaluator, for a window longer than the step (checked
+		// above, so the range is read and holds an unwrap). The caller squares the
+		// deviation; no aggregation folds before it (the stats already group by
+		// the outer labels).
+		if !unwrapWindows {
+			return false
+		}
+		return p.proxyManualRangeMetricRange(w, r, unwrapSpec, origSpec, manualFunc)
+	}
 	if !forceRawLevelRows && !unwrapWindows && !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep) {
 		return false
 	}
@@ -461,6 +477,21 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	return foldVectorAggregations(p, w, r, r.FormValue("query"), func(w http.ResponseWriter, r *http.Request) bool {
 		return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
 	})
+}
+
+// windowLongerThanStep reports an unwrap range function whose range is longer
+// than the step: the windows the evaluator merges from buckets.
+func windowLongerThanStep(origSpec originalRangeMetricSpec, step time.Duration) bool {
+	return origSpec.HasUnwrap && origSpec.Window > step
+}
+
+// manualFunctionOf is the function the evaluator computes: the client's, or,
+// for a stats query answered as translated (native), the one the stats compute.
+func manualFunctionOf(spec statsCompatSpec, origSpec originalRangeMetricSpec, native bool) string {
+	if native {
+		return normalizeManualMetricFunction(spec, originalRangeMetricSpec{})
+	}
+	return normalizeManualMetricFunction(spec, origSpec)
 }
 
 func (p *Proxy) nativeMathTumblingStatsCompatible(r *http.Request, originalLogql string, stats physical.VLStats) bool {
@@ -867,6 +898,11 @@ var maxStatsBucketResponseBytes int64 = 64 << 20
 // the same for every start on one step grid, as a refresh moved by whole
 // steps is.
 func windowPhaseFilter(start time.Time, step, window time.Duration) string {
+	return string(appendWindowPhaseFilter(make([]byte, 0, 128), start, step, window))
+}
+
+// appendWindowPhaseFilter appends windowPhaseFilter's text to b.
+func appendWindowPhaseFilter(b []byte, start time.Time, step, window time.Duration) []byte {
 	const quantum, readError int64 = 256, 128
 	anchor := ((start.Add(-window).UnixNano())%int64(step) + int64(step)) % int64(step)
 	rest := anchor % quantum
@@ -876,9 +912,14 @@ func windowPhaseFilter(start time.Time, step, window time.Duration) string {
 	if upper >= int64(step) {
 		upper = int64(step) - 1
 	}
-	return " | math ((_time - " + strconv.FormatInt(anchor, 10) + ") % " + strconv.FormatInt(int64(step), 10) +
-		") as __lvp_window_phase | filter __lvp_window_phase:>" + strconv.FormatInt(lower, 10) +
-		" __lvp_window_phase:<=" + strconv.FormatInt(upper, 10)
+	b = append(b, " | math ((_time - "...)
+	b = strconv.AppendInt(b, anchor, 10)
+	b = append(b, ") % "...)
+	b = strconv.AppendInt(b, int64(step), 10)
+	b = append(b, ") as __lvp_window_phase | filter __lvp_window_phase:>"...)
+	b = strconv.AppendInt(b, lower, 10)
+	b = append(b, " __lvp_window_phase:<="...)
+	return strconv.AppendInt(b, upper, 10)
 }
 
 // withWindowPhaseFilter puts windowPhaseFilter at the head of query's pipeline,
@@ -898,12 +939,26 @@ func withWindowPhaseFilter(ctx context.Context, query string, start time.Time, s
 			at += len(levelChainDelete)
 		}
 	}
-	filter := windowPhaseFilter(start, step, window)
-	if at < 0 || strings.TrimSpace(query[at:]) == "" {
-		return strings.TrimRight(query, " ") + filter
+	head, tail := strings.TrimRight(query, " "), ""
+	if at >= 0 && strings.TrimSpace(query[at:]) != "" {
+		head, tail = strings.TrimRight(query[:at], " "), strings.TrimLeft(query[at:], " ")
 	}
-	return strings.TrimRight(query[:at], " ") + filter + " " + strings.TrimLeft(query[at:], " ")
+	// The query with the filter written into it, in one allocation of its size.
+	var fb [windowPhaseFilterMaxLen]byte
+	filter := appendWindowPhaseFilter(fb[:0], start, step, window)
+	var b strings.Builder
+	b.Grow(len(head) + len(filter) + 1 + len(tail))
+	b.WriteString(head)
+	b.Write(filter)
+	if tail != "" {
+		b.WriteByte(' ')
+		b.WriteString(tail)
+	}
+	return b.String()
 }
+
+// windowPhaseFilterMaxLen bounds windowPhaseFilter's text: its fixed words and four integers of at most 20 bytes.
+const windowPhaseFilterMaxLen = 192
 
 // shiftSeriesSamples moves every bucket label and present bucket forward by
 // shift, in place: a (t-step, t] bucket of windowPhaseFilter lines is labelled
@@ -922,6 +977,9 @@ func shiftSeriesSamples(series map[string]manualSeriesSamples, shift time.Durati
 		}
 		for i := range entry.Counts {
 			entry.Counts[i].ts += int64(shift)
+		}
+		for i := range entry.Deviations {
+			entry.Deviations[i].ts += int64(shift)
 		}
 		series[key] = entry
 	}
@@ -950,8 +1008,9 @@ func (p *Proxy) writeHitsRangeMetricMatrixFolded(w http.ResponseWriter, manualFu
 // range aggregation yields into one series per step
 // (pkg/logql/evaluator.go newVectorAggEvaluator, VectorAggEvaluator.Next).
 func ungroupedSumRange(query string) (*logqlpkg.RangeAggregation, bool) {
-	expr, err := parseLogQLExpr(noFlowCtx, stripOuterLabelReplace(strings.TrimSpace(query)))
-	if err != nil {
+	// The shared parse of the query: the range aggregation is read, never changed.
+	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
+	if !ok {
 		return nil, false
 	}
 	agg, ok := expr.(*logqlpkg.VectorAggregation)
@@ -1322,6 +1381,27 @@ func setSlidingStatsRangeParams(params url.Values, start, end time.Time, hitStep
 	params.Set("offset", strconv.FormatInt(-shift, 10)+"ns")
 }
 
+// tumblingStatsRangeParams is the stats_query_range form of a tumbling fetch:
+// the query and setSlidingStatsRangeParams(start, end, window), with the first
+// window (start, start+window] read from one nanosecond after start (a line
+// exactly at start belongs to the window before, which no sample covers).
+// Built in one go: one backing array for the values, one buffer for the times.
+func tumblingStatsRangeParams(query string, startNs, endNs int64, window time.Duration) url.Values {
+	var buf [48]byte
+	vals := make([]string, 5)
+	vals[0] = query
+	vals[1] = string(time.Unix(0, startNs+1).UTC().AppendFormat(buf[:0], time.RFC3339Nano))
+	vals[2] = string(time.Unix(0, endNs).Add(time.Nanosecond).UTC().AppendFormat(buf[:0], time.RFC3339Nano))
+	if window%time.Second == 0 {
+		vals[3] = string(append(strconv.AppendInt(buf[:0], int64(window/time.Second), 10), 's'))
+	} else {
+		vals[3] = string(append(strconv.AppendInt(buf[:0], int64(window), 10), 'n', 's'))
+	}
+	shift := ((startNs+1)%int64(window) + int64(window)) % int64(window)
+	vals[4] = string(append(strconv.AppendInt(buf[:0], -shift, 10), 'n', 's'))
+	return url.Values{"query": vals[0:1:1], "start": vals[1:2:2], "end": vals[2:3:3], "step": vals[3:4:4], "offset": vals[4:5:5]}
+}
+
 // snapSlidingBucketTimestamp maps a stats_query_range timestamp (float seconds)
 // to the left edge of its bucket on the start+k*hitStep grid. The float form
 // cannot carry the 1ns edge shift or exact nanoseconds, so the nearest edge wins.
@@ -1499,7 +1579,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 
 	limit := p.resolvedMaxStatsQuerySeries(ctx)
 	withPresence := strings.Contains(statsAggFunc, " as __sample_count")
-	body, err := p.readStatsBucketBody(ctx, resp.Body, limit, statsResultsPerSeries(withPresence, aux != ""))
+	body, err := p.readStatsBucketBody(ctx, resp.Body, limit, statsResultsPerSeries(withPresence, aux != "")+deviationResults(statsAggFunc))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1534,6 +1614,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	streamGrouped := slices.Contains(groupBy, "_stream")
 	streamGroupedByDetectedLevel := streamGrouped && slices.Contains(groupBy, "detected_level")
 	seriesMap := make(map[string]manualSeriesSamples)
+	devs := newDeviationPartials(statsAggFunc)
 	var auxEdges []int64
 	var resultErr error
 	_, _ = jsonparser.ArrayEach(body, func(res []byte, _ jsonparser.ValueType, _ int, _ error) {
@@ -1573,6 +1654,10 @@ func (p *Proxy) collectRangeMetricHitsAux(
 			metric = p.statsGroupMetric(metricObj, vlToLoki)
 		}
 		seriesKey := canonicalLabelsKey(metric)
+		if devs != nil {
+			devs.add(seriesKey, statsGroupID(metricObj), metric, name, values, start, hitStep)
+			return
+		}
 		if withPresence && name == "__sample_count" {
 			entry := seriesMap[seriesKey]
 			entry.Metric = metric
@@ -1594,6 +1679,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	if resultErr != nil {
 		return nil, nil, resultErr
 	}
+	devs.fold(seriesMap)
 	series, err := capHitSeries(ctx, seriesMap, limit, aux)
 	return series, auxEdges, err
 }
@@ -2209,11 +2295,6 @@ func unpacksMessage(query string) bool {
 
 func queryUsesParserStages(baseQuery string) bool {
 	baseQuery = translator.WithoutStreamTagRestore(translator.WithoutPatternLineFilterExtracts(withoutDerivedLevelChain(baseQuery)))
-	// The bytes() gate reads the value with an extract_regexp pipe: that is not a
-	// parser stage of the query.
-	if base, _, ok := translator.SplitUnwrapGate(baseQuery); ok {
-		baseQuery = base
-	}
 	// `| unpack_logfmt` exposes pre-parsed fields without transforming the
 	// log line — VL's stats_query_range handles it natively in tens of ms.
 	// Excluding it from the "parser stages" check lets queries with a
@@ -2226,6 +2307,12 @@ func queryUsesParserStages(baseQuery string) bool {
 	}
 	if strings.Contains(baseQuery, "| extract ") {
 		return true
+	}
+	// The bytes() gate reads the value with an extract_regexp pipe: that is not a
+	// parser stage of the query. No gate holds the two pipes above, so the gate is
+	// split off only for this last one.
+	if base, _, ok := translator.SplitUnwrapGate(baseQuery); ok {
+		baseQuery = base
 	}
 	if strings.Contains(baseQuery, "| extract_regexp ") {
 		return true
@@ -2303,8 +2390,12 @@ type manualSeriesSamples struct {
 	// for byte sums; raw log samples retain their compact shape.
 	PresentBuckets []int64
 	// Counts holds the sample count of every present bucket, ascending, for
-	// avg over time, which divides a window's sum by them.
+	// avg over time, which divides a window's sum by them, and for stddev and
+	// stdvar over time, which weigh the buckets' means and deviations by them.
 	Counts []rangeMetricSample
+	// Deviations holds the population standard deviation of every present
+	// bucket, ascending, for stddev and stdvar over time (deviationBucketStats).
+	Deviations []rangeMetricSample
 }
 
 func buildManualMetricLabels(streamLabels map[string]string, groupBy []string, byExplicit bool) map[string]string {
@@ -2600,7 +2691,8 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 			}
 		}
 		present := seriesEntry.PresentBuckets // ascending; nil without presence data
-		counts := seriesEntry.Counts          // ascending; avg over time only
+		counts := seriesEntry.Counts          // ascending; avg, stddev and stdvar over time only
+		devs := seriesEntry.Deviations        // ascending; stddev and stdvar over time only
 
 		encodedBytes += hitsSeriesLabelBytes(seriesEntry.Metric)
 		var points []byte
@@ -2616,7 +2708,7 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 		// The windows move forward with t, so each bound only moves forward:
 		// samples[lo:hi] (and counts[cLo:cHi]) are the buckets labelled in
 		// [t-window, t), present[pLo] the first present bucket from t-window.
-		var sampleWindow, countWindow windowCursor
+		var sampleWindow, countWindow, devWindow windowCursor
 		pLo := 0
 		for i, n := int64(0), stepCount(startNS, endNS, stepNS); i < n; i++ {
 			tNS := startNS + i*stepNS
@@ -2627,8 +2719,9 @@ func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manua
 				// Unwrap values are floats: one infinity would turn every later
 				// prefix difference into NaN, and large values lose precision to
 				// cancellation, so each window is merged on its own.
-				if cLo, cHi := countWindow.span(counts, windowStartNS, tNS); lo < hi {
-					sum = mergeUnwrapBuckets(manualFunc, samples[lo:hi], counts[cLo:cHi])
+				cLo, cHi := countWindow.span(counts, windowStartNS, tNS)
+				if dLo, dHi := devWindow.span(devs, windowStartNS, tNS); lo < hi {
+					sum = mergeUnwrapBuckets(manualFunc, samples[lo:hi], counts[cLo:cHi], devs[dLo:dHi])
 				}
 			} else {
 				sum = prefix[hi] - prefix[lo]

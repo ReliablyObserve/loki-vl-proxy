@@ -19,7 +19,7 @@
 [![Helm Chart Pulls](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/ghcr-chart-pulls.json)](https://github.com/ReliablyObserve/Loki-VL-proxy/pkgs/container/charts%2Floki-vl-proxy)
 [![Source Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-code.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Test Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-tests.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-45597%20passed-brightgreen)](#tests)
+[![Tests](https://img.shields.io/badge/tests-48368%20passed-brightgreen)](#tests)
 [![Coverage](https://img.shields.io/badge/coverage-88.5%25-green)](#tests)
 [![LogQL Compatibility](https://img.shields.io/badge/LogQL%20compatibility-tested-blue)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
@@ -195,7 +195,7 @@ Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api
 
 These are registry evidence counts, not a full runtime compatibility percentage. Optional deletion management is excluded from the read totals; deprecated aliases and write-only APIs are outside this score.
 
-The 5 open differences with the most impact (all explore-visible): `parsed-identity/bare-parser-metric-duplicates-extracted` (bare JSON metrics cannot distinguish equal-valued metadata from ingested body fields), `semantics/parse-error-labels-on-log-lines` (A line a parser rejects carries __error__ and __error_details__ in Loki's log answer), `semantics/tail-history-start-limit` (native tail ignores start and limit: Grafana Live shows no history where Loki shows its last 100 lines), `semantics/unwrap-per-series-identity-raw-rows` (A function taken per series (avg, max, min over time, rate_counter) under sum or sum by uses the stream as the series), `semantics/binary-ignoring-matching` (`+ ignoring(label)` between two sums joins the wrong series). Differences kept on purpose are listed as documented or owner-kept.
+The 5 open differences with the most impact (all explore-visible): `parsed-identity/bare-parser-metric-duplicates-extracted` (bare JSON metrics cannot distinguish equal-valued metadata from ingested body fields), `semantics/parse-error-labels-on-log-lines` (A line a parser rejects carries __error__ and __error_details__ in Loki's log answer), `semantics/tail-history-start-limit` (native tail ignores start and limit: Grafana Live shows no history where Loki shows its last 100 lines), `semantics/unwrap-per-series-identity-raw-rows` (A function taken per series (avg, max, min, stddev, stdvar over time, rate_counter) under sum or sum by uses the stream as the series), `semantics/binary-ignoring-matching` (`+ ignoring(label)` between two sums joins the wrong series). Differences kept on purpose are listed as documented or owner-kept.
 
 Details, the per-workload tables and the method: [performance summary](conformance/reports/performance.md#summary-versus-loki) · [performance guide](docs/performance.md#current-position-versus-loki) · [ranked differences](conformance/reports/parity-gaps.md) · [coverage map](conformance/reports/coverage-map.md) · [Known Issues](docs/KNOWN_ISSUES.md).
 

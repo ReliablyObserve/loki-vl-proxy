@@ -53,7 +53,7 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 | 405 | 4 | 3 | 0 | 0 | 0 | 1 |
 | 429 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 500 | 6 | 6 | 0 | 0 | 0 | 0 |
-| set at run time | 175 | 1 | 171 | 2 | 1 | 1 |
+| set at run time | 177 | 1 | 173 | 2 | 1 | 1 |
 
 The registry holds one item per status (12) and one per Loki error message (44) under `conformance/registry/loki/errors/`; the messages are checked against recorded Loki answers, route by route and error kind by error kind, in the generated [error compatibility coverage](../../docs/error-compatibility-coverage.md).
 
@@ -104,7 +104,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `tenant-label-isolation` — Tenant-label mode confines every request to its org | 4 | 4 | proven |
 | semantics | `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | 4 | 13 | proven |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 3 | proven |
-| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 11 | 28 | partial |
+| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 11 | 29 | partial |
 
 ## LogQL surface (v3.7.7)
 

@@ -313,7 +313,8 @@ func TestKeyCraftedValues(t *testing.T) {
 				t.Fatal(err)
 			}
 			checkKey(t, p, e, q)
-			if prev, dup := seen[string(p.Key)]; dup {
+			// Two sampled plans can encode alike (spellings of one query): the same query twice is no collision.
+			if prev, dup := seen[string(p.Key)]; dup && prev != q {
 				t.Errorf("template %d: %q and %q share a key", ti, prev, q)
 			}
 			seen[string(p.Key)] = q

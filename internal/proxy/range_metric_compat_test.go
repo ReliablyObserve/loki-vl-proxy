@@ -586,10 +586,19 @@ func TestQueryRange_StdvarCompatSquaresStddev(t *testing.T) {
 		if r.URL.Path != "/select/logsql/stats_query_range" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
+		// The range (5m) is longer than the step: the window merges the mean, count and deviation of its buckets
+		// (deviationBucketStats). One bucket inside the window: two samples, mean 5, deviation 1.
+		if !strings.HasSuffix(r.FormValue("query"), deviationBucketStats) {
+			t.Fatalf("bucket stats %q, want the mean, count and deviation", r.FormValue("query"))
+		}
+		at := base.Add(60 * time.Second).Unix()
 		_, _ = fmt.Fprintf(
 			w,
-			`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"nginx"},"values":[[%d,"1"]]}]}}`,
-			base.Add(120*time.Second).Unix(),
+			`{"status":"success","data":{"resultType":"matrix","result":[`+
+				`{"metric":{"__name__":"__lvp_avg","app":"nginx"},"values":[[%d,"5"]]},`+
+				`{"metric":{"__name__":"__sample_count","app":"nginx"},"values":[[%d,"2"]]},`+
+				`{"metric":{"__name__":"__lvp_sd","app":"nginx"},"values":[[%d,"1"]]}]}}`,
+			at, at, at,
 		)
 	}))
 	defer vlBackend.Close()
@@ -617,6 +626,9 @@ func TestQueryRange_StdvarCompatSquaresStddev(t *testing.T) {
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Data.Result) != 1 || len(resp.Data.Result[0].Values) != 1 {
+		t.Fatalf("want one point: %s", rec.Body.String())
 	}
 	got := resp.Data.Result[0].Values[0][1]
 	if got != "1" {

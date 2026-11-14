@@ -421,9 +421,15 @@ func (mq metricQuery) inputsHash() string {
 
 func readMetricAnswers(t *testing.T) map[string]*metricRecord {
 	t.Helper()
-	f, err := os.Open(metricAnswersPath)
+	return readMetricAnswersFrom(t, metricAnswersPath)
+}
+
+// readMetricAnswersFrom reads the recorded answers of path.
+func readMetricAnswersFrom(t *testing.T, path string) map[string]*metricRecord {
+	t.Helper()
+	f, err := os.Open(path)
 	if err != nil {
-		t.Fatalf("%s: %v: LVP_RUN_ORACLES=1 records it", metricAnswersPath, err)
+		t.Fatalf("%s: %v: LVP_RUN_ORACLES=1 records it", path, err)
 	}
 	defer func() { _ = f.Close() }()
 	zr, err := gzip.NewReader(f)
@@ -450,9 +456,9 @@ func readMetricAnswers(t *testing.T) map[string]*metricRecord {
 	return out
 }
 
-func writeMetricAnswers(t *testing.T, recs []*metricRecord) {
+func writeMetricAnswers(t *testing.T, path string, recs []*metricRecord) {
 	t.Helper()
-	f, err := os.Create(metricAnswersPath)
+	f, err := os.Create(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,9 +483,9 @@ func writeMetricAnswers(t *testing.T, recs []*metricRecord) {
 	}
 }
 
-// recordMetricAnswers runs the oracles: Loki's engine over every query's requests, and every request the handler
+// recordMetricAnswers runs the oracles into path: Loki's engine over every query's requests, and every request the handler
 // sends, under every profile, through VictoriaLogs' query server of each version.
-func recordMetricAnswers(t *testing.T, queries []metricQuery) {
+func recordMetricAnswers(t *testing.T, path string, queries []metricQuery) {
 	t.Helper()
 	root := filepath.Join("..", "..")
 	recs := make([]*metricRecord, len(queries))
@@ -533,7 +539,7 @@ func recordMetricAnswers(t *testing.T, queries []metricQuery) {
 		srv.Stop()
 	}
 	if os.Getenv("LVP_LOKI_DIFF_CHECK") == "1" {
-		committed := readMetricAnswers(t)
+		committed := readMetricAnswersFrom(t, path)
 		changed := 0
 		for _, r := range recs {
 			got, _ := json.Marshal(r.stored())
@@ -543,18 +549,18 @@ func recordMetricAnswers(t *testing.T, queries []metricQuery) {
 			}
 			if string(got) != string(want) {
 				if changed++; changed <= 5 {
-					t.Errorf("the oracles answer %s otherwise than %s records", r.Q, metricAnswersPath)
+					t.Errorf("the oracles answer %s otherwise than %s records", r.Q, path)
 				}
 			}
 		}
 		if changed > 0 || len(committed) != len(recs) {
 			t.Fatalf("%d of %d queries answered otherwise (%d recorded): record them again with LVP_RUN_ORACLES=1", changed, len(recs), len(committed))
 		}
-		t.Logf("the oracles answer the %d queries as %s records", len(recs), metricAnswersPath)
+		t.Logf("the oracles answer the %d queries as %s records", len(recs), path)
 		return
 	}
-	writeMetricAnswers(t, recs)
-	t.Logf("recorded %s: %d queries", metricAnswersPath, len(recs))
+	writeMetricAnswers(t, path, recs)
+	t.Logf("recorded %s: %d queries", path, len(recs))
 }
 
 // ---- comparison ----
@@ -880,7 +886,7 @@ func TestPlanMatchesLokiOnMetricQueries(t *testing.T) {
 		t.Fatalf("%d metric queries the plan routes, expected the curated rows and the capture sample", len(queries))
 	}
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {
-		recordMetricAnswers(t, queries)
+		recordMetricAnswers(t, metricAnswersPath, queries)
 	}
 	answers := readMetricAnswers(t)
 	known := readMetricKnown(t)
