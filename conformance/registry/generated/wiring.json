@@ -1764,8 +1764,11 @@
       "test/e2e-compat/stdvar_over_time_binary_marker_test.go"
     ],
     "semantics/stdvar-grouped-pooled-variance": [
+      "internal/proxy/unwrap_dynamic_identity_test.go",
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
-      "internal/querycorpus/stddev_stdvar_loki_diff_test.go"
+      "internal/querycorpus/stddev_stdvar_loki_diff_test.go",
+      "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go",
+      "internal/queryplan/lower/unwrap_dynamic_test.go"
     ],
     "semantics/stream-label-shadowed-by-ingest-json-key": [
       "internal/proxy/stream_tag_restore_test.go",
@@ -1952,8 +1955,11 @@
       "internal/proxy/unwrap_over_time_window_test.go"
     ],
     "semantics/unwrap-per-series-identity-raw-rows": [
+      "internal/proxy/unwrap_dynamic_identity_test.go",
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
-      "internal/querycorpus/stddev_stdvar_loki_diff_test.go"
+      "internal/querycorpus/stddev_stdvar_loki_diff_test.go",
+      "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go",
+      "internal/queryplan/lower/unwrap_dynamic_test.go"
     ],
     "semantics/unwrap-quantile-response-limit": [
       "internal/proxy/quantile_histogram_test.go",
@@ -1962,7 +1968,10 @@
       "test/e2e-compat/unwrap_quantile_test.go"
     ],
     "semantics/unwrap-quantile-sum-by-group-quantile": [
-      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
+      "internal/proxy/unwrap_dynamic_identity_test.go",
+      "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
+      "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go",
+      "internal/queryplan/lower/unwrap_dynamic_test.go"
     ],
     "semantics/unwrap-range-last-point": [
       "internal/proxy/unwrap_range_last_point_test.go",
@@ -2260,7 +2269,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 572,
+  "registry_items": 573,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3637,6 +3646,11 @@
       "semantics/aggregation-over-range-by-not-applied",
       "semantics/stddev-stdvar-over-time-range-window"
     ],
+    "internal/proxy/unwrap_dynamic_identity_test.go": [
+      "semantics/stdvar-grouped-pooled-variance",
+      "semantics/unwrap-per-series-identity-raw-rows",
+      "semantics/unwrap-quantile-sum-by-group-quantile"
+    ],
     "internal/proxy/unwrap_extent_cache_test.go": [
       "loki_api_v1_query_range",
       "quality/query-range-extent-cache",
@@ -3910,6 +3924,11 @@
       "semantics/stdvar-grouped-pooled-variance",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
+    "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go": [
+      "semantics/stdvar-grouped-pooled-variance",
+      "semantics/unwrap-per-series-identity-raw-rows",
+      "semantics/unwrap-quantile-sum-by-group-quantile"
+    ],
     "internal/querycorpus/unwrap_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -4028,6 +4047,11 @@
     ],
     "internal/queryplan/lower/unpack_test.go": [
       "semantics/translator-writes-unpack-as-unpack-json"
+    ],
+    "internal/queryplan/lower/unwrap_dynamic_test.go": [
+      "semantics/stdvar-grouped-pooled-variance",
+      "semantics/unwrap-per-series-identity-raw-rows",
+      "semantics/unwrap-quantile-sum-by-group-quantile"
     ],
     "internal/queryplan/lower/unwrap_keep_test.go": [
       "semantics/keep-before-unwrap-series-identity"
@@ -4988,7 +5012,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 587,
+  "tests_with_markers": 590,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5082,6 +5106,7 @@
     "semantics/unwrap-count-avg-without-after-parser",
     "semantics/unwrap-over-time-short-range-windows",
     "semantics/unwrap-parserless-reads-stored-field",
+    "semantics/unwrap-per-series-identity-label-filter",
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
     "semantics/uppercase-topk-ranks-once",

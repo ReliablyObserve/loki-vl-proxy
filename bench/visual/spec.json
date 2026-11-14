@@ -1495,6 +1495,34 @@
    ]
   },
   {
+   "id": "explore-unwrap-parser-series-identity",
+   "kind": "explore",
+   "query": "sum by (app) (quantile_over_time(0.9, {app=\"api-gateway\"} | json | unwrap duration_ms [5m]))",
+   "covers": [
+    "semantics/unwrap-per-series-identity-raw-rows",
+    "semantics/unwrap-quantile-sum-by-group-quantile",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-per-series-identity-raw-rows",
+    "semantics/unwrap-quantile-sum-by-group-quantile"
+   ]
+  },
+  {
+   "id": "explore-unwrap-parser-stdvar-by-group",
+   "kind": "explore",
+   "query": "sum by (app) (stdvar_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [5m]))",
+   "covers": [
+    "semantics/stdvar-grouped-pooled-variance",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/stdvar-grouped-pooled-variance"
+   ]
+  },
+  {
    "id": "explore-unwrap-first-last-under-sum",
    "kind": "explore",
    "query": "sum by (service_name) (last_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [$__auto]))",

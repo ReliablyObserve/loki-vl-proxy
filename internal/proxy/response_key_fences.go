@@ -3,6 +3,8 @@ package proxy
 import (
 	"net/http"
 	"strings"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
 // responseKeySite names the response key a fence chain is appended to. The
@@ -49,6 +51,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	b.WriteString(reservedFieldCaseResponseKeyVersion(query))
 	b.WriteString(reservedFieldLabelResponseKeyVersion(query))
 	b.WriteString(keepUnwrapIdentityResponseKeyVersion(query))
+	b.WriteString(dynamicUnwrapIdentityResponseKeyVersion(query))
 	if site == responseKeyCompatQueryRange {
 		b.WriteString(logfmtPresenceResponseKeyVersion(r, query))
 	}
@@ -68,6 +71,25 @@ const keepUnwrapIdentityResponseVersion = "@keep-unwrap-identity-v1:"
 func keepUnwrapIdentityResponseKeyVersion(query string) string {
 	if strings.Contains(query, "unwrap") && keepMetadataProjectionStageRE.MatchString(query) {
 		return keepUnwrapIdentityResponseVersion
+	}
+	return ""
+}
+
+// dynamicUnwrapIdentityResponseVersion fences the answers cached before the series of a range function over an
+// unwrapped label after a json or logfmt parser were the stream and every parsed label
+// (semantics/unwrap-per-series-identity-raw-rows): a series per stream, or per line, then.
+const dynamicUnwrapIdentityResponseVersion = "@unwrap-dynamic-identity-v1:"
+
+// dynamicUnwrapIdentityResponseKeyVersion is the fence of a query whose plan has that identity
+// (lower.DynamicUnwrapIdentity), read from the query's shared plan after a text screen, so no other query's key
+// changes. It does not read the -query-plan-lowering flag: with the flag off the fence costs one more cache miss.
+func dynamicUnwrapIdentityResponseKeyVersion(query string) string {
+	query = strings.TrimSpace(query)
+	if !dynamicIdentityScreen(query) {
+		return ""
+	}
+	if plan := resolvedPlan(query); plan != nil && lower.DynamicUnwrapIdentity(plan) {
+		return dynamicUnwrapIdentityResponseVersion
 	}
 	return ""
 }

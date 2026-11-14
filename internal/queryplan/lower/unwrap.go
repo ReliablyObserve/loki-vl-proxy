@@ -239,6 +239,8 @@ type unwrapQuery struct {
 	// leaves as VictoriaLogs names them, none for one series.
 	kept    []string
 	keptSet bool
+	// dynamic says kept is the dynamic identity (withDynamicIdentity): the stream and the hash of the parsed labels.
+	dynamic bool
 	// firstBy and firstEmpty are the grouping of the first stats pipe, which reads the unwrapped value (set marks
 	// them known); the bare logfmt unpack ahead of it is narrowed to the labels it reads.
 	firstBy    []string
@@ -430,7 +432,12 @@ func (q *unwrapQuery) op(op unwrapOp, log metricLog, field, conv string, prof Pr
 	var names []string
 	narrowed := false
 	if q.parser && log.bareLogfmt >= 0 && q.firstSet {
-		names, narrowed = narrowedFields(field, q.firstBy, q.firstEmpty, log.resolvable)
+		by, empty := q.firstBy, q.firstEmpty
+		if q.dynamic {
+			// The series hash unpacks the line on its own: the unpack reads the labels of the clause.
+			by, empty = withoutDynamicSeries(by), true
+		}
+		names, narrowed = narrowedFields(field, by, empty, log.resolvable)
 	}
 	pre := log
 	if narrowed {
@@ -699,6 +706,7 @@ func unwrapVectorStats(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Pro
 	var pipeBuf [4]string
 	q := unwrapQuery{parser: log.parser, unpacked: log.unpacked(), pipes: pipeBuf[:0]}
 	q.kept, q.keptSet = keptIdentity(ra.In, prof)
+	q.withDynamicIdentity(va, ra, u.Label)
 	if rate {
 		// The unwrap stage stands where it was written: the translator takes a keep after it to decide the series.
 		ident, err := seriesIdent(ra.In, log.parser, without, true, "VectorAgg", prof)

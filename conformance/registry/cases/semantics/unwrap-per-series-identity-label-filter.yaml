@@ -1,0 +1,47 @@
+id: semantics/unwrap-per-series-identity-label-filter
+title: A label filter between a json or logfmt parser and an unwrap keeps the stream and each line as the series of a function taken per series (open)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Residual of semantics/unwrap-per-series-identity-raw-rows. After a json or
+  logfmt parser with no keep, a Loki series is the stream and every parsed label
+  less the unwrapped one, and the proxy writes that identity from the data (a
+  hash of each line's parsed labels). With a label filter between the parser and
+  the unwrap, `sum(stddev_over_time({job="de"} | json | __error__="" | unwrap duration_ms [5m]))`,
+  the typed lowering does not write the query under the Loki profile (the
+  resolved labels of a filter after a parser), the string translator serves it,
+  and its series are the stream and each line: a range query answers 0 where
+  Loki sums the deviation of each series (Loki engine oracle, VictoriaLogs
+  v1.53.0 and v1.49.0, TestUnwrapDynamicIdentityMatchLoki, the de stream: one
+  parsed series whose lines differ only in the value). The same holds for avg,
+  max and min over time, on step = range, step < range and step > range; the
+  instant query reads the rows per stream, which is Loki's answer only when the
+  stream is one series.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(stddev_over_time({app="api-gateway"} | json | __error__="" | unwrap duration_ms [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '300'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [values]
+  expect: |
+    Loki's sum of the deviation of each series.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/queryplan/lower parser_labels.go (keyPipes refuses the resolved labels of a filter after a parser), unwrap_dynamic.go (the identity pipes)'
+  loki: 'the series are the stream and every parsed label less the unwrapped one; a label filter only drops lines'
+  proxy: 'the string translator groups by the stream and each line'
+  planned_test: 'TestUnwrapDynamicIdentityMatchLoki (internal/querycorpus) lists the de rows with the filter as known differences'
+  clusters: []

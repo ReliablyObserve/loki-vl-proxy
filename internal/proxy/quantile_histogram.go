@@ -566,6 +566,9 @@ func (p *Proxy) withQuantileShape(r *http.Request, logql string, spec statsCompa
 	if kept, decided := p.keepUnwrapIdentity(logql); decided && !rangeGrouped {
 		// A keep before the unwrap decides the series: the labels it leaves, as the range aggregation's by would.
 		spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = p.upstreamLabelNames(kept), kept, len(kept) == 0
+	} else if !rangeGrouped && p.dynamicUnwrapIdentity(logql) {
+		// The series are the stream and the hash of each line's parsed labels (lower.DynamicUnwrapIdentity).
+		spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = dynamicSeriesGroupBy, dynamicSeriesGroupBy, false
 	} else if !rangeGrouped {
 		spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = nil, nil, false
 	}
@@ -577,6 +580,10 @@ func (p *Proxy) withQuantileShape(r *http.Request, logql string, spec statsCompa
 	ctx = context.WithValue(context.WithValue(ctx, foldedSumKey{}, true), quantileOuterKey{}, outer)
 	return r.WithContext(ctx), spec, true
 }
+
+// dynamicSeriesGroupBy are the fields the stats of a dynamic identity group a series by: the stream and the hash of
+// the line's parsed labels less the unwrapped one (lower.DynamicUnwrapIdentity).
+var dynamicSeriesGroupBy = []string{"_stream", "__lvp_sid"}
 
 // upstreamLabelNames are Loki label names as VictoriaLogs names their fields.
 func (p *Proxy) upstreamLabelNames(labels []string) []string {

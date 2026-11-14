@@ -1,5 +1,5 @@
 id: semantics/stdvar-grouped-pooled-variance
-title: an aggregation by labels over stdvar_over_time takes the variance of the group's pooled samples, not of each series (open)
+title: an aggregation by labels over stdvar_over_time takes the variance of each series, not of the group's pooled samples (fixed)
 pending: true
 proves:
   - metric-series-identity
@@ -31,10 +31,15 @@ why: |
   (semantics/stddev-stdvar-over-time-range-window); only the series the variance is
   taken over differ.
 
-  Fix to make: the plan lowers the variance per series (population variance
-  s2/n-(s/n)^2 over partials of the sum, the sum of squares and the count) and the
-  aggregation then sums the series, with the series identity of the other
-  per-series functions.
+  Fixed with semantics/unwrap-per-series-identity-raw-rows: after a json or
+  logfmt parser with no keep the series are the stream and a hash of each line's
+  parsed labels less the unwrapped one. VictoriaLogs takes the deviation of each
+  series, squares it, and the clause's aggregation (sum, max, min or avg) reads
+  those variances; a window longer than the step reads the rows of each series.
+  Proven against the Loki engine oracle and VictoriaLogs v1.53.0 and v1.49.0 on
+  instant, step = range, step < range and step > range (TestStddevStdvarMatchLoki:
+  the sum by, max by and avg by forms; TestKeepUnwrapIdentityMatchLoki and
+  TestUnwrapDynamicIdentityMatchLoki, json and logfmt).
 corpus:
   size: 2
   dimensions:
@@ -54,11 +59,12 @@ compare:
   expect: |
     Loki's values.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "this change"
   impact: explore-visible
   effort: M
-  area: 'internal/queryplan/lower unwrap.go (varianceVector, the per-series identity of a function taken per series); the translator text for stdvar_over_time (translator.go, frozen)'
+  area: 'internal/queryplan/lower unwrap.go (varianceVector over the series identity), unwrap_dynamic.go (the series hash)'
   loki: 'stdvar_over_time is evaluated per series (range_vector.go); the vector aggregation then folds the series'
-  proxy: 'the stddev of the group''s pooled samples, squared'
-  planned_test: 'TestStddevStdvarMatchLoki (internal/querycorpus) lists the sum by, max by and avg by forms as known differences; a row of TestCompat_StdvarOverTimeGroupedAnswers200 (test/e2e-compat) comparing values once the plan serves the variance'
+  proxy: 'the variance of each series, then the aggregation by the clause'
+  planned_test: 'TestStddevStdvarMatchLoki, TestUnwrapDynamicIdentityMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicUnwrapIdentityLowering (internal/queryplan/lower); e2e: a values row of TestCompat_StdvarOverTimeGroupedAnswers200 (test/e2e-compat) to add'
   clusters: []

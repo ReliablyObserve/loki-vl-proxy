@@ -257,6 +257,11 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				delegated["known divergence "+knownKeepIdentity]++
 				continue
 			}
+			if lower.WritesDynamicUnwrapIdentity(plan) && !sameAsTranslator(got, legacy) {
+				// The series are the stream and every parsed label: held to Loki (TestKeepUnwrapIdentityMatchLoki).
+				delegated["known divergence "+knownDynamicIdentity]++
+				continue
+			}
 			if routed, divergence := routedRoot(plan); routed {
 				if msg := checkProxyEvaluated(q, prof, got); msg != "" {
 					problems = append(problems, msg)

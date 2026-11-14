@@ -44,6 +44,12 @@ var translateMissShapes = []struct {
 	{"metric unwrap keep", func(i string) string {
 		return `sum(quantile_over_time(0.9, {app="api"} |= "x ` + i + `" | json | keep app, d | unwrap d [5m]))`
 	}},
+	{"metric unwrap parser identity", func(i string) string {
+		return `sum by (app) (stddev_over_time({app="api"} |= "x ` + i + `" | json | unwrap d [5m]))`
+	}},
+	{"metric unwrap parser sum", func(i string) string {
+		return `sum by (app) (sum_over_time({app="api"} |= "x ` + i + `" | logfmt | unwrap d [5m]))`
+	}},
 }
 
 // benchTranslateMissShapes runs every shape of translateMissShapes on a proxy built from cfg.

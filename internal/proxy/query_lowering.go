@@ -124,6 +124,66 @@ func (p *Proxy) lowerKeepIdentity(ctx context.Context, canon string, prof lower.
 	return physical.Encode(op), true
 }
 
+// dynamicIdentityConstruct is the flip of a range function over an unwrapped label after a json or logfmt parser
+// with no keep, under one vector aggregation (lower.DynamicUnwrapIdentity): Loki's series are the stream and every
+// label the parser extracts less the unwrapped one, which the string translator approximates by the stream (and
+// each line); the lowering names the identity from the data, so the query is served from it
+// (semantics/unwrap-per-series-identity-raw-rows). The corpus shadow holds these rows as a known divergence of the
+// translator, and the Loki differentials (internal/querycorpus TestKeepUnwrapIdentityMatchLoki and
+// TestStddevStdvarMatchLoki) hold the answers.
+const dynamicIdentityConstruct = "UnwrapDynamicIdentity"
+
+// lowerDynamicIdentity translates a canonical metric query with the typed lowering when its series are the dynamic
+// identity of a parser (dynamicIdentityConstruct), and reports whether it did. A query without an unwrap and a json or
+// logfmt parser is turned away before any plan is built.
+func (p *Proxy) lowerDynamicIdentity(ctx context.Context, canon string, prof lower.Profile) (text string, ok bool) {
+	if !dynamicIdentityScreen(canon) {
+		return "", false
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// The panic value can hold query text, so it is not logged: the string translator answers instead.
+			p.recordLoweringShadow(shadowPanic, dynamicIdentityConstruct)
+			text, ok = "", false
+		}
+	}()
+	plan, err := loweringPlan(ctx, canon)
+	if err != nil || !lower.DynamicUnwrapIdentity(plan) {
+		return "", false
+	}
+	op, err := lower.PlanQuery(canon, plan, prof)
+	if err != nil {
+		return "", false
+	}
+	querycorpus.Record(querycorpus.LogQLTranslate, canon)
+	p.recordLoweringShadow(shadowFlipped, dynamicIdentityConstruct)
+	return physical.Encode(op), true
+}
+
+// dynamicIdentityScreen is the text screen of lowerDynamicIdentity: a query that starts with sum, max, min or avg
+// (the vector aggregation the plan's root must be) and names an unwrap, a json or logfmt parser and one of the
+// functions taken per series. The plan decides; the screen spares the other queries a plan.
+func dynamicIdentityScreen(query string) bool {
+	if len(query) < 4 || !dynamicIdentityOp(query[:3]) || query[3] != '(' && query[3] != ' ' ||
+		!strings.Contains(query, "unwrap") || !strings.Contains(query, "json") && !strings.Contains(query, "logfmt") {
+		return false
+	}
+	for _, fn := range dynamicIdentityFuncs {
+		if strings.Contains(query, fn) {
+			return true
+		}
+	}
+	return false
+}
+
+// dynamicIdentityOp reports the vector aggregations of a dynamic identity.
+func dynamicIdentityOp(op string) bool {
+	return op == "sum" || op == "max" || op == "min" || op == "avg"
+}
+
+// dynamicIdentityFuncs are the range functions of a dynamic identity, as a query names them.
+var dynamicIdentityFuncs = [...]string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time", "quantile_over_time", "rate_counter"}
+
 // filterOnly reports a log query whose stages are line filters and label filters only: the queries served from the
 // lowering. The text screen (logql.MayHaveNonFilterStage) turns the others away before a plan is built; this is the
 // typed check behind it, so a stage the screen misses stays with the string translator.

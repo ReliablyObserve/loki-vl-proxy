@@ -26,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   labels, on `query` and `query_range` alike, instead of reading the rows of every line. A keep with a condition,
   or one followed by a parser, `label_format` or `drop`, keeps its previous behaviour.
 
+- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`,
+  `stddev_over_time`, `stdvar_over_time`, `quantile_over_time` and `rate_counter` after `| json` or `| logfmt` with no
+  `| keep` now read Loki's series: the stream plus every parsed label except the unwrapped one. Lines that share
+  those labels are one series whatever their values, and a line with a label of its own (a request id) is a series
+  of its own. The proxy read one series per stream, per line or per group instead, so for example
+  `sum by (app) (quantile_over_time(0.9, {job="kj"} | json | unwrap duration_ms [5m]))` answered a quantile of all
+  the app's samples, `sum by (app) (stdvar_over_time(...))` the variance of the app's pooled samples, and
+  `sum(stddev_over_time(...))` disagreed between `query` and `query_range`. VictoriaLogs now groups the stats by
+  the stream and a hash of each line's parsed labels and aggregates the series itself; `quantile_over_time`,
+  `rate_counter` and a range longer than the step fold the same series in the proxy. A label filter between the
+  parser and the unwrap keeps the previous series (`semantics/unwrap-per-series-identity-label-filter`).
+
 ## [2.241.0] - 2026-11-14
 
 ### Fixed

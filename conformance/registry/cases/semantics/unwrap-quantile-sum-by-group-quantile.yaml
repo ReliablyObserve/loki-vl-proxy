@@ -1,5 +1,6 @@
 id: semantics/unwrap-quantile-sum-by-group-quantile
-title: sum by over quantile_over_time with unwrap adds the per-series quantiles instead of taking the group quantile, like Loki (open)
+title: sum by over quantile_over_time with unwrap adds the per-series quantiles instead of taking the group quantile, like Loki (fixed)
+pending: true
 proves:
   - metric-series-identity
   - loki_api_v1_query_range
@@ -29,11 +30,14 @@ why: |
   series are the kept labels and the answer is Loki's
   (semantics/keep-before-unwrap-series-identity).
 
-  Another change (the quantile value-count pushdown,
-  semantics/unwrap-quantile-response-limit) is expected to keep the per-series
-  identity and fold the quantiles in the proxy; the row stays open until that
-  lands and the e2e below passes. Related: semantics/unwrap-per-series-identity-raw-rows
-  (the same fold for avg, max, min and rate_counter).
+  Fixed with semantics/unwrap-per-series-identity-raw-rows: the series are the
+  stream and a hash of each line's parsed labels less the unwrapped one, which
+  the lowered query writes; the quantile evaluator reads VictoriaLogs' value
+  counts per such series, takes Loki's quantile of each and folds them by the
+  clause. Proven against the Loki engine oracle and VictoriaLogs v1.53.0 and
+  v1.49.0 on instant, step = range, step < range and step > range, json and
+  logfmt, every line a series of its own and every line of a stream one series
+  (TestKeepUnwrapIdentityMatchLoki, TestUnwrapDynamicIdentityMatchLoki).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -50,12 +54,13 @@ compare:
   expect: |
     Loki's sum of the per-series quantiles per namespace.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "this change"
   impact: explore-visible
   effort: M
-  area: 'internal/translator unwrapInnerGrouping (an outer by moved into the quantile) and the raw evaluator of quantile_over_time'
+  area: 'internal/queryplan/lower unwrap_dynamic.go (the series hash); internal/proxy quantile_histogram.go (withQuantileShape groups the counts by the stream and the hash)'
   loki: 'pkg/logql/range_vector.go:449-487 quantileOverTime; pkg/logql/syntax/extractor.go:21-60 (a range by groups the samples); pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next (a vector aggregation folds per-series values)'
-  proxy: 'the quantile of the group of samples instead of the sum of the per-series quantiles'
-  planned_test: 'TestCompat_UnwrapQuantileOuterSum (test/e2e-compat, group core) over sum by and sum without, logfmt and json, range and instant'
-  note: 'Found while fixing semantics/unwrap-sum-without-collapses. Expected to be fixed by the quantile value-count pushdown branch (semantics/unwrap-quantile-response-limit); verify there, keep the row open until the e2e passes.'
+  proxy: 'the sum of the quantile of each series (the stream and the hash of its parsed labels)'
+  planned_test: 'TestKeepUnwrapIdentityMatchLoki, TestUnwrapDynamicIdentityMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicIdentityHandlersReadThePlan (internal/proxy); e2e: TestCompat_UnwrapQuantileOuterSum (test/e2e-compat, group core) to add'
+  note: 'Found while fixing semantics/unwrap-sum-without-collapses. The sum without form keeps its own route (semantics/unwrap-sum-without-collapses).'
   clusters: []
