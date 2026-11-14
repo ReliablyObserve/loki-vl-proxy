@@ -308,6 +308,7 @@
       "used_in": [
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/unwrap_conversion_error.go",
+        "internal/proxy/unwrap_samples.go",
         "internal/translate/range.go",
         "internal/translate/unwrap_gate.go",
         "internal/translator/translator.go"
@@ -552,6 +553,7 @@
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
+        "internal/proxy/unwrap_samples.go",
         "internal/proxy/volume.go",
         "internal/translate/extracted_label.go",
         "internal/translate/parser.go",
@@ -742,6 +744,7 @@
         "internal/proxy/backend_response_guard.go",
         "internal/proxy/patterns_counts.go",
         "internal/proxy/query_translation.go",
+        "internal/proxy/unwrap_samples.go",
         "internal/translator/translator.go"
       ]
     },
@@ -808,6 +811,7 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
+        "internal/proxy/unwrap_samples.go",
         "internal/translator/translator.go"
       ]
     },
@@ -818,6 +822,7 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
+        "internal/proxy/unwrap_samples.go",
         "internal/translator/translator.go"
       ]
     },

@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-29 of 108 items are locked; 5 carry an effort exception.
+29 of 109 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -276,7 +276,8 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `semantics/sub-second-step-grid` | 3 × 1 ranges | 3 same | worst 0.01s / 0.00s (5m-200ms) | 0.02s / 0.01s | same | not locked |
 | `semantics/unwrap-conversion-error` | 21 × 5 ranges | 1 faster, 2 fixed, 72 same | worst 1.37s / 0.01s (24h) | 4.74s / 0.05s | differs; 1 slower than Loki cold | not locked; exception |
 | `semantics/unwrap-duration-seconds` | 4 × 3 ranges | 6 same | worst 0.18s / 0.01s (24h) | 0.23s / 0.01s | same | not locked; exception |
-| `semantics/unwrap-first-last-range-longer-than-step` | 1 × 3 ranges | 3 same | worst 0.36s / 0.01s (24h) | 1.16s / 0.01s | differs | not locked |
+| `semantics/unwrap-first-last-per-line-range-longer-than-step` | 1 × 3 ranges | 3 same | worst 0.36s / 0.01s (24h) | 1.16s / 0.01s | differs | not locked |
+| `semantics/unwrap-first-last-range-longer-than-step` | — | not measured | | | | not locked |
 | `semantics/unwrap-first-last-range-timestamps` | 2 × 3 ranges | 6 same | worst 0.37s / 0.01s (24h) | 1.06s / 0.01s | same | not locked |
 | `semantics/unwrap-first-last-under-aggregation` | 3 × 3 ranges | 9 same | worst 0.37s / 0.01s (24h) | 1.06s / 0.01s | differs | not locked |
 | `semantics/unwrap-gate-parsefloat-divergences` | 12 × 5 ranges | 42 same | worst 1.37s / 0.01s (24h) | 4.74s / 0.05s | differs | not locked; exception |
