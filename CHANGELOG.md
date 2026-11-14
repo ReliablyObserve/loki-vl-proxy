@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A range with a day, week or year unit is read to the nanosecond, as Loki reads it: `[3d1h2ms]` was a little short,
   and a range with a part of 0 (`[1d0h]`, `[1y0ms]`) counted as no range at all.
 
+- `first_over_time` and `last_over_time` over an unwrapped label on `query_range` now answer Loki's window when the
+  range is longer than the step. Every point read only the step before it, so with `[5m]` at a 1-minute step a
+  window whose last minute held no line lost its point or showed an older line for `last_over_time`, and
+  `first_over_time` showed the first line of the last minute instead of the window's. The proxy now asks
+  VictoriaLogs for the first or last value of each series in each bucket the windows share and takes the earliest
+  or latest one of each window, for a series a `| keep` decides, a stream without a parser and the labels of a
+  grouping, under `sum`, `avg`, `min`, `max`, `count`, `topk`, a binary operation or an offset. A series per line
+  (a parser with no keep) still reads the step.
+
 ## [2.242.0] - 2026-11-14
 
 ### Fixed

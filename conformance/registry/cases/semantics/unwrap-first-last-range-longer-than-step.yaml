@@ -1,5 +1,5 @@
 id: semantics/unwrap-first-last-range-longer-than-step
-title: first_over_time and last_over_time with unwrap on query_range for a range longer than the step read one step, not Loki's window (open)
+title: first_over_time and last_over_time with unwrap on query_range answer Loki's window for a range longer than the step (fixed)
 pending: true
 proves:
   - window-bounds-and-step-alignment
@@ -7,26 +7,58 @@ proves:
 consumer: explore
 why: |
   Loki's sample at t is the first or last sample of each series in the window
-  (t-range, t] (v3.7.9 pkg/logql/range_vector.go:102-189). For a range longer
-  than the step the windows overlap. The proxy answers first and last from one
-  VictoriaLogs step bucket per point (statsRateRangeEqualsStepShift treats every
-  unwrap range as the step), so a point holds the step (t-step, t], not the
-  window: `sum(last_over_time({app="uw"} | unwrap amount [15s]))` at step 5s
-  misses the points whose window has a line only in its earlier steps, and a
-  value can be an earlier line's. With an emulated VictoriaLogs it differs from
-  the Loki-semantics reference before and after
-  semantics/unwrap-first-last-range-timestamps (which fixed range <= step).
+  (t-range, t]. For a range longer than the step the windows overlap. The proxy
+  answered first and last from one VictoriaLogs step bucket per point, so a point
+  held the step (t-step, t], not the window: a window whose latest step held no
+  line lost its point or took an earlier line's value for last, and first took
+  the first line of the latest step. With the Loki engine oracle and VictoriaLogs
+  v1.53.0 and v1.49.0, 15 runs of TestKeepUnwrapIdentityMatchLoki differed only at
+  step < range for this reason, with or without a keep before the unwrap.
 
-  sum, avg, max and min over time take the window evaluator for this
-  (semantics/unwrap-over-time-range-windows: gcd buckets merged per window).
-  first and last need the same merge with the latest (or earliest) bucket of
-  each series in the window: VictoriaLogs answers row_max / row_min per series
-  and gcd bucket, the proxy keeps the last non-empty one per window.
+  Fixed: the window evaluator that merges sum, avg, max, min and stddev over time
+  from buckets takes first and last too. VictoriaLogs answers, per series and
+  bucket of gcd(step, range) from one range before the start, the value of the
+  bucket's earliest or latest row: the stats the translation writes for them
+  (row_min or row_max over _time, the value unpacked and taken again per group),
+  so VictoriaLogs does the same work per bucket as before and only the buckets the
+  windows need are added. A window (t-range, t] takes the earliest or the latest
+  bucket that holds a line; the buckets are disjoint and in time order, so that
+  bucket's row is the window's first or last sample. A sum over first or last adds
+  the series up after their windows, as the other operators do. This holds for a
+  series a keep decides, a stream without a parser, and the labels of a grouping;
+  a range up to the step keeps its step buckets, and an aggregation over a range
+  aggregation with a by of its own keeps them too
+  (semantics/aggregation-over-range-by-not-applied).
+
+  The query plan's route rule routes first and last over time like the other
+  partial aggregates (the window, the bucket, the counted conversion flag), held to
+  the handlers by the route parity test with no mismatch.
+
+  Proven against the Loki engine oracle and VictoriaLogs v1.53.0 and v1.49.0:
+  TestKeepUnwrapIdentityMatchLoki (10 of the 15 runs now match at step < range;
+  the 5 whose series is each line stay open in
+  semantics/unwrap-first-last-per-line-range-longer-than-step), TestFirstLastMatchLoki
+  (30 shapes over sparse data, a series of one sample, an offset, a 90-second range
+  and a range that is not a multiple of the step, on instant, step = range,
+  step < range, two thirds of the range and step > range: every run matches Loki
+  but the ones held by semantics/unwrap-stored-integer-field-gate, and lines of one
+  series at the same time, whose pick neither order decides,
+  semantics/unwrap-first-last-under-aggregation).
+
+  VictoriaLogs v1.49 returns the wrong row from row_max(_time, ...) when every
+  group key of a block is the same (VictoriaLogs v1.50.0 changelog, issue 1294),
+  for last_over_time on every step kind, as before this change.
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: 'sum by (app) (last_over_time({app="api-gateway"} | unwrap duration_ms [5m]))'
+      - query: 'first_over_time({app="api-gateway"} | json | keep app, duration_ms | unwrap duration_ms [5m])'
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'sum(last_over_time({service_name="payment-service"} | logfmt | unwrap amount [5m]))'
+    query: 'sum(last_over_time({service_name="payment-service"} | logfmt | keep service_name, amount | unwrap amount [5m]))'
     start: 'now-1h'
     end: 'now'
     step: '60'
@@ -38,13 +70,14 @@ compare:
   expect: |
     Loki's window value at every step.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "this change"
   impact: explore-visible
   effort: M
-  area: 'internal/proxy/metric_binary.go statsRateRangeEqualsStepShift; internal/proxy unwrapWindowBuckets (first/last not merged per window)'
-  loki: 'pkg/logql/range_vector.go:102-189 window (t-range, t]'
-  proxy: 'one step bucket per point'
-  planned_test: 'TestFirstLastOverTimeRangeLongerThanStep (internal/proxy) and TestCompat_UnwrapFirstLastRangeLongerThanStep (test/e2e-compat, group core)'
+  area: 'internal/proxy unwrap_samples.go (firstBucketStats, lastBucketStats, rowBucketPick, mergeUnwrapBuckets, unwrapWindowBuckets), range_metric_compat.go (handleStatsCompatRange, collectRangeMetricHitsAux), vector_agg_fold.go (seriesAggregationChain); internal/queryplan/lower route.go (routeUnwrapOps)'
+  loki: 'the window (t-range, t] of every evaluation time, its first or last sample per series'
+  proxy: 'the earliest or the latest of the gcd buckets of the window that holds a line, per series'
+  planned_test: 'TestFirstLastMatchLoki and TestKeepUnwrapIdentityMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestFirstLastOverTimeRangeLongerThanStep, TestFirstLastOverTimeRangeLongerThanStepDifferential, FuzzFirstLastOverTimeRangeLongerThanStep, TestFirstLastOverTimeWindowRouteScreen, TestMergeUnwrapBucketsFirstLast, TestMetricRouteRangeFunctionEdges and TestMetricRouteVectorUnwrapEdges (internal/proxy); TestCompat_UnwrapFirstLastRangeLongerThanStep (test/e2e-compat, group core; written, not yet run)'
   clusters: []
 perf:
   max_ratio: 2.0

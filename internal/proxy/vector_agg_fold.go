@@ -44,6 +44,9 @@ func seriesAggregationChain(query string) ([]*logqlpkg.VectorAggregation, bool) 
 	if !ok || ra.Grouping != nil {
 		return nil, false
 	}
+	// first and last over time read a value per series, so a sum over them adds
+	// the series up after their windows, as the other operators read them.
+	seriesLevel = seriesLevel || len(chain) > 0 && (ra.Op == logqlpkg.RangeFirstOverTime || ra.Op == logqlpkg.RangeLastOverTime)
 	// A `without` the translator did not strip is folded by the without marker.
 	// One over a level that names its labels is a static `by` in a nested
 	// query's translation, which this fold answers on a sliding window.

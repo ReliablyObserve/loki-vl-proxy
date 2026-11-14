@@ -42,7 +42,7 @@ why: |
   an operand): runs matching Loki went from 24 to 68 of 93 on instant, 28 to 73
   on step = range and step > range, 19 to 55 on step < range, and no run that
   matched before differs. The runs still differing are held by
-  semantics/keep-before-unwrap-identity-in-operands, semantics/unwrap-first-last-range-longer-than-step,
+  semantics/keep-before-unwrap-identity-in-operands, semantics/unwrap-first-last-per-line-range-longer-than-step,
   semantics/unwrap-per-series-identity-raw-rows, semantics/unwrap-quantile-sum-by-group-quantile,
   semantics/stdvar-grouped-pooled-variance, semantics/keep-before-parser-unwrap-identity,
   semantics/drop-before-unwrap-stream-label and semantics/unwrap-rate-counter-window-extrapolation.

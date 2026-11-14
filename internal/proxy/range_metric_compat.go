@@ -406,12 +406,16 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if !ok {
 		return false
 	}
-	if !isManualRangeStatsFunc(spec.Func) {
+	// first and last over time read a row per series (row_min, row_max): only
+	// their windows longer than the step are evaluated here, merged from buckets
+	// (unwrapWindowBuckets); the others keep the step buckets.
+	rows := firstLastRowStats(spec.Func)
+	if !rangeStatsFunc(spec.Func) {
 		return false
 	}
 	origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
 	step, _ := parsePositiveStepDuration(r.FormValue("step"))
-	if native && !windowLongerThanStep(origSpec, step) {
+	if windowRouteOnly(native, rows, origSpec, step) {
 		// Only a window longer than the step is evaluated here (unwrapWindowRoute).
 		return false
 	}
@@ -436,6 +440,9 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// for a range up to the step; a longer range merges its windows from
 	// anchored buckets (unwrapWindowBuckets).
 	unwrapSpec, grouped, unwrapWindows := p.unwrapWindowRoute(r, spec, origSpec, hasOrigSpec, manualFunc, originalLogql, step)
+	if firstLastKeepsStepBuckets(rows, unwrapWindows, forceRawLevelRows) {
+		return false
+	}
 	if native {
 		// Only the window evaluator, for a window longer than the step (checked
 		// above, so the range is read and holds an unwrap). The caller squares the
@@ -483,6 +490,29 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 // than the step: the windows the evaluator merges from buckets.
 func windowLongerThanStep(origSpec originalRangeMetricSpec, step time.Duration) bool {
 	return origSpec.HasUnwrap && origSpec.Window > step
+}
+
+// windowRouteOnly reports a stats query that only the window evaluator answers
+// here (one answered as translated, native, or first or last over time, rows)
+// whose window is not longer than the step: it keeps its step buckets.
+func windowRouteOnly(native, rows bool, origSpec originalRangeMetricSpec, step time.Duration) bool {
+	return (native || rows) && !windowLongerThanStep(origSpec, step)
+}
+
+// firstLastRowStats reports the stats of first and last over time: the row of
+// the earliest (row_min) or the latest (row_max) time per series.
+func firstLastRowStats(fn string) bool { return fn == "row_min" || fn == "row_max" }
+
+// rangeStatsFunc reports a stats function the range evaluator reads: the
+// manual range functions, and first and last over time.
+func rangeStatsFunc(fn string) bool { return isManualRangeStatsFunc(fn) || firstLastRowStats(fn) }
+
+// firstLastKeepsStepBuckets reports first or last over time (rows) that the
+// window evaluator does not take: its windows do not merge from buckets
+// (unwrapWindows), or a level the proxy reads from raw rows is asked for. The
+// step buckets answer them, as before.
+func firstLastKeepsStepBuckets(rows, unwrapWindows, forceRawLevelRows bool) bool {
+	return rows && (!unwrapWindows || forceRawLevelRows)
 }
 
 // manualFunctionOf is the function the evaluator computes: the client's, or,
@@ -1539,12 +1569,13 @@ func (p *Proxy) collectRangeMetricHitsAux(
 
 	// Build LogsQL stats query so VL returns pre-aggregated bucket values.
 	// stats_query_range understands stream labels (stored in _stream), unlike /hits.
-	var statsQuery string
+	by := " | stats "
 	if len(groupBy) > 0 && !byExplicit {
-		statsQuery = baseQuery + " | stats by (" + strings.Join(groupBy, ", ") + ") " + statsAggFunc
-	} else {
-		statsQuery = baseQuery + " | stats " + statsAggFunc
+		by = " | stats by (" + strings.Join(groupBy, ", ") + ") "
 	}
+	// first and last over time read the row's value with a second stats of the
+	// same groups (rowBucketPick).
+	statsQuery := baseQuery + by + statsAggFunc + rowBucketPick(statsAggFunc, by)
 
 	params := url.Values{}
 	params.Set("query", statsQuery)

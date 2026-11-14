@@ -133,6 +133,7 @@ A range function over an unwrapped label, alone or under one `sum`, `count`, `mi
 | `min_over_time({...} \| unwrap f [5m])` | `... <gate> \| stats min(__lvp_v)` |
 | `first_over_time({...} \| unwrap f [5m])` | `... <gate> \| stats by (<series>) row_min(_time, __lvp_v) as __lvp_inner \| unpack_json from __lvp_inner fields (__lvp_v) \| math __lvp_v as __lvp_inner \| stats by (<series>) max(__lvp_inner)` (VictoriaLogs has no `first`; the earliest row per series) |
 | `last_over_time({...} \| unwrap f [5m])` | the same with `row_max` (the latest row per series) |
+| `first_over_time` / `last_over_time` with a range longer than the step | the same stats per series in each `stats_query_range` bucket of gcd(step, range); the proxy takes each window's earliest (latest) bucket that holds a line, then folds the outer aggregation (a series per line, over a parser with no `keep`, still reads one step bucket per point) |
 | `stddev_over_time({...} \| unwrap f [5m])` | `... <gate> \| stats stddev(__lvp_v)` |
 | `stdvar_over_time({...} \| unwrap f [5m])` | proxy binary expression: `(... <gate> \| stats stddev(__lvp_v)) ^ 2` |
 | `quantile_over_time(0.95, {...} \| unwrap f [5m])` | proxy exact raw-sample evaluator for instant and range queries (Loki interpolates between ranked samples; VL `quantile` uses a different rank selection and tumbling buckets). Grouping is preserved and samples at the evaluation timestamp are included |

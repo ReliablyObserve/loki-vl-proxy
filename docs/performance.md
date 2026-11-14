@@ -330,6 +330,7 @@ The proxy's minimum tracked capability profile is `vl-v1.30-plus`. All features 
 | `max_over_time({...}\|unwrap f [r]) by (l)` | `{...} \| <parser> \| stats by (l) max(f)` | always |
 | `min_over_time({...}\|unwrap f [r]) by (l)` | `{...} \| <parser> \| stats by (l) min(f)` | always |
 | `stddev_over_time({...}\|unwrap f [r]) by (l)` | `{...} \| <parser> \| stats by (l) stddev(f)` | range ≤ step; a longer range reads `avg(f)`, `count()` and `stddev(f)` per bucket and the proxy merges the buckets of each window exactly (`stdvar_over_time` squares the result) |
+| `first_over_time({...}\|unwrap f [r])`, `last_over_time` | `{...} \| <parser> \| stats by (<series>) row_min(_time, f)` (`row_max`), its value unpacked | range ≤ step; a longer range reads the earliest (latest) row per series in each bucket and the proxy takes the window's earliest (latest) bucket |
 | `bytes_rate({...}[r])` | `{...} \| stats by (l) sum_len(_msg) as __lvp_inner \| math __lvp_inner/r_s as __lvp_rate` | range == step |
 | `rate_counter({...}\|unwrap f [r])` | — | manual path (monotonic counter reset detection required) |
 
