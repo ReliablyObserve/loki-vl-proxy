@@ -67,21 +67,24 @@ func TestKeepUnwrapIdentityLowering(t *testing.T) {
 // conformance: semantics/keep-before-unwrap-series-identity
 func TestKeepUnwrapIdentity(t *testing.T) {
 	for _, tc := range []struct {
-		q    string
-		want []string
-		ok   bool
+		q      string
+		want   []string
+		ok     bool
+		writes bool
 	}{
-		{`first_over_time({app="a"} | json | keep app, n | unwrap n [5m])`, []string{"app"}, true},
-		{`sum by (app) (quantile_over_time(0.9, {app="a"} | json | keep app, pod, n | unwrap n [5m]))`, []string{"app", "pod"}, true},
-		{`stddev_over_time({app="a"} | json | keep n | unwrap n [5m])`, []string{}, true},
-		{`stddev_over_time({app="a"} | json | unwrap n [5m])`, nil, false},
-		{`rate({app="a"} | json | keep app [5m])`, nil, false},
-		{`stddev_over_time({app="a"} | json | keep app, n="x" | unwrap n [5m])`, nil, false},
-		{`stddev_over_time({app="a"} | json | keep app, n | drop app | unwrap n [5m])`, nil, false},
-		{`stddev_over_time({app="a"} | json | keep app | json | unwrap n [5m])`, nil, false},
-		{`topk(1, stddev_over_time({app="a"} | json | keep app, n | unwrap n [5m]))`, nil, false},
-		{`stddev_over_time({app="a"} | json | keep app, n | unwrap n [5m]) * 2`, nil, false},
-		{`{app="a"} | json | keep app`, nil, false},
+		{`first_over_time({app="a"} | json | keep app, n | unwrap n [5m])`, []string{"app"}, true, false},
+		{`sum by (app) (quantile_over_time(0.9, {app="a"} | json | keep app, pod, n | unwrap n [5m]))`, []string{"app", "pod"}, true, false},
+		{`stddev_over_time({app="a"} | json | keep n | unwrap n [5m])`, []string{}, true, false},
+		{`stddev_over_time({app="a"} | json | unwrap n [5m])`, nil, false, false},
+		{`rate({app="a"} | json | keep app [5m])`, nil, false, false},
+		{`stddev_over_time({app="a"} | json | keep app, n="x" | unwrap n [5m])`, nil, false, false},
+		{`stddev_over_time({app="a"} | json | keep app, n | drop app | unwrap n [5m])`, nil, false, false},
+		{`stddev_over_time({app="a"} | json | keep app | json | unwrap n [5m])`, nil, false, false},
+		{`topk(1, stddev_over_time({app="a"} | json | keep app, n | unwrap n [5m]))`, nil, false, true},
+		{`stddev_over_time({app="a"} | json | keep app, n | unwrap n [5m]) * 2`, nil, false, true},
+		{`label_replace(stddev_over_time({app="a"} | json | keep app, n | unwrap n [5m]), "b", "$1", "app", "(.*)")`, nil, false, true},
+		{`count(absent_over_time({app="a"} | json | keep app, n | unwrap n [5m]))`, nil, false, false},
+		{`{app="a"} | json | keep app`, nil, false, false},
 	} {
 		p := rangeAggPlan(tc.q)
 		if p == nil {
@@ -93,6 +96,10 @@ func TestKeepUnwrapIdentity(t *testing.T) {
 		}
 		if KeepDecidesUnwrapIdentity(p) != tc.ok {
 			t.Errorf("%s: KeepDecidesUnwrapIdentity is not %v", tc.q, tc.ok)
+		}
+		// The lowering writes the identity at any depth: under a ranking and in a binary operation too.
+		if want := tc.ok || tc.writes; WritesKeepUnwrapIdentity(p) != want {
+			t.Errorf("%s: WritesKeepUnwrapIdentity is not %v", tc.q, want)
 		}
 	}
 }

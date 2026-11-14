@@ -154,7 +154,7 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 				// translator a field VictoriaLogs rejects or reads as its own filter.
 				caseID, ok = "semantics/translator-writes-reserved-field-names", true
 			}
-			if !ok && lower.KeepDecidesUnwrapIdentity(plan) && !sameAsTranslator(got, legacy) {
+			if !ok && lower.WritesKeepUnwrapIdentity(plan) && !sameAsTranslator(got, legacy) {
 				// A keep before the unwrap decides the series: the plan groups by the labels it leaves, the translator
 				// by the stream (and each line), and the proxy serves the plan's text (lowerKeepIdentity).
 				caseID, ok = knownKeepIdentity, true

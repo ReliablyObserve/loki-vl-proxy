@@ -252,7 +252,7 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				delegated["known divergence "+knownEmptyWithoutOperand]++
 				continue
 			}
-			if lower.KeepDecidesUnwrapIdentity(plan) && !sameAsTranslator(got, legacy) {
+			if lower.WritesKeepUnwrapIdentity(plan) && !sameAsTranslator(got, legacy) {
 				// A keep before the unwrap decides the series: held to Loki (TestKeepUnwrapIdentityMatchLoki).
 				delegated["known divergence "+knownKeepIdentity]++
 				continue

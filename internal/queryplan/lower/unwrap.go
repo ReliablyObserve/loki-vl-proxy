@@ -1070,3 +1070,32 @@ func KeepUnwrapIdentity(p *queryplan.Plan) (labels []string, ok bool) {
 	}
 	return trailingKeepLabels(ra.In, true)
 }
+
+// WritesKeepUnwrapIdentity reports a plan with a range function over an unwrapped label, at any depth, whose series
+// a keep before the unwrap decides: the lowering writes the keep's labels as its series identity wherever it stands,
+// where the string translator writes the stream (and each line). The proxy serves only the shapes
+// KeepDecidesUnwrapIdentity names; the shadows hold every such plan to Loki (the keep differential), not to the
+// translator.
+func WritesKeepUnwrapIdentity(p *queryplan.Plan) bool {
+	var walk func(n queryplan.Node) bool
+	walk = func(n queryplan.Node) bool {
+		switch n := n.(type) {
+		case *queryplan.RangeAgg:
+			if n.In == nil || unwrapStage(n.In) == nil || n.Op == logql.RangeAbsentOverTime {
+				return false
+			}
+			_, ok := trailingKeepLabels(n.In, true)
+			return ok
+		case *queryplan.VectorAgg:
+			return walk(n.In)
+		case *queryplan.Rank:
+			return walk(n.In)
+		case *queryplan.LabelReplace:
+			return walk(n.In)
+		case *queryplan.BinOp:
+			return walk(n.L) || walk(n.R)
+		}
+		return false
+	}
+	return walk(p.Root)
+}
