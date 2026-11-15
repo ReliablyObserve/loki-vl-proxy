@@ -1,5 +1,5 @@
 id: drilldown/patterns-non-selector-query
-title: /patterns with a query that is not a bare stream selector answers patterns for its selector; Loki answers 400 (open)
+title: /patterns with a query that is not a bare stream selector is a 400, as in Loki (fixed; the proxy once answered patterns for its selector)
 proves:
   - loki_api_v1_patterns
 consumer: api
@@ -10,6 +10,8 @@ why: |
   (patternScopeQuery) and answers patterns for it. Logs Drilldown sends a
   bare selector, so its pages are not affected; an API client sending a
   pipeline gets an answer where Loki rejects the request.
+
+  Fixed (#554, route validation before any handler): a /patterns query that is not a stream selector is a 400 `only label matchers are supported` with no VictoriaLogs call, in Loki's plain-text shape since the typed error layer: the route rejects such a query before the handler runs. The case was recorded on 2026-11-07, after #554, while the route already answered 400.
 request:
   method: GET
   path: /loki/api/v1/patterns
@@ -25,11 +27,13 @@ compare:
   expect: |
     Loki's 400 and its parse error.
 gap:
-  status: open
+  status: fixed
+  fixed_by: '#554'
   impact: api-only
   effort: S
   area: 'internal/proxy/patterns.go handlePatterns / patternScopeQuery'
   loki: 'pkg/pattern/ingester_querier.go (syntax.ParseMatchers)'
-  proxy: 'the patterns of the query''s stream selector'
-  planned_test: 'TestPatternsCountsScopeAQueryToItsSelector (internal/proxy) pins the current scoping'
+  proxy: '400 only label matchers are supported, as Loki'
+  planned_test: 'TestPatternsRouteRejectsAQueryThatIsNotASelector and TestMetadataQueryValidation_RejectsLikeLoki (internal/proxy)'
+  note: 'Verified 2026-11-14 on build 726dfb48f against Loki 3.7.9 and VictoriaLogs v1.53.0 (two live case runs, same data on both sides): HTTP 400 and the same text on both sides.'
   clusters: []

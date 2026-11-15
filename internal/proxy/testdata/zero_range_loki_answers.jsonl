@@ -14,9 +14,16 @@
 {"q":"vector(1) and rate({app=\"a\"}[0s])","range_empty":true,"instant_empty":true}
 {"q":"rate({app=\"a\"}[0s]) / rate({app=\"a\"}[1m])","range_empty":true,"instant_empty":true}
 {"q":"rate({app=\"a\"}[0s]) or rate({app=\"a\"}[0s])","range_empty":true,"instant_empty":true}
+{"q":"rate({app=\"a\"}[0])","range_empty":true,"instant_empty":true}
+{"q":"rate({app=\"a\"}[0] offset 1m)","range_empty":true,"instant_empty":true}
+{"q":"sum by (pod) (count_over_time({app=\"a\"}[0]))","range_empty":true,"instant_empty":true}
+{"q":"sum_over_time({app=\"a\"} | logfmt | unwrap c [0])","range_empty":true,"instant_empty":true}
+{"q":"rate({app=\"a\"}[0]) or rate({app=\"a\"}[0s])","range_empty":true,"instant_empty":true}
 {"q":"absent_over_time({app=\"a\"}[0s])","range_empty":false,"instant_empty":false}
 {"q":"absent_over_time({app=\"nope\"}[0s])","range_empty":false,"instant_empty":false}
 {"q":"absent_over_time({app=\"a\"}[0s]) * 2","range_empty":false,"instant_empty":false}
+{"q":"absent_over_time({app=\"a\"}[0])","range_empty":false,"instant_empty":false}
+{"q":"rate({app=\"a\"}[0]) or vector(1)","range_empty":false,"instant_empty":false}
 {"q":"rate({app=\"a\"}[0s]) or vector(1)","range_empty":false,"instant_empty":false}
 {"q":"rate({app=\"a\"}[0s]) or rate({app=\"a\"}[1m])","range_empty":false,"instant_empty":false}
 {"q":"rate({app=\"a\"}[1m]) unless rate({app=\"a\"}[0s])","range_empty":false,"instant_empty":false}

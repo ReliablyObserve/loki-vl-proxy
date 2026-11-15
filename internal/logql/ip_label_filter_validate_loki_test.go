@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -32,11 +33,41 @@ func ipLabelFilterGrid() []string {
 			}
 		}
 	}
-	return append(out,
+	return append(append(out,
 		`{app="a"} | x=ip("1.1.1.1") | y=ip("yyy")`, `{app="a"} | x=ip("zzz") | y=ip("yyy")`,
 		`{app="a"} |~ "(" | x=ip("zzz")`, `{app="a"} | x=ip("zzz") |~ "("`, `{app="a"} | line_format "{{.a}" | x=ip("zzz")`,
 		`{app="a"} | x=ip("zzz") | line_format "{{.a}"`, `{app="a"} |> "<a>" | x=ip("zzz")`, `{app="a"} | x=ip("zzz") |> "<a>"`,
-	)
+	), ipControlByteGrid(`{app="a"} | addr%sip(%s)`)...)
+}
+
+// ipControlBytePatterns are patterns with a NUL or another control byte inside an address, a prefix or a range: the
+// bytes Go's address parser rejects, which a filter that cuts at them would read as valid (FuzzIPLabelFilterNeverKeepsWhatLokiDrops).
+var ipControlBytePatterns = []string{"::\x00!", "\x00", "1.2.3.4\x00", "::\x00", "1.2.3.4\x00/24", "1.2.3.4-\x001.2.3.5", "\x00-1.2.3.4",
+	"2001:db8::\x00/32", "1.2.3.4\x1f", "1.2.3.4\x7f", "fe80::1%e\x00th0"}
+
+// ipControlByteGrid is a query of format (an operator and a quoted pattern) for each control-byte pattern, quoted and
+// in backticks (a raw NUL byte in the query is Loki's lexer error, not the pattern's, and is not asked here),
+// with = and != (or the line filter operators).
+func ipControlByteGrid(format string) []string {
+	var out []string
+	for _, cmp := range ipControlByteOperators(format) {
+		for _, p := range ipControlBytePatterns {
+			out = append(out, fmt.Sprintf(format, cmp, strconv.Quote(p)))
+			if !strings.Contains(p, "\x00") {
+				out = append(out, fmt.Sprintf(format, cmp, "`"+p+"`"))
+			}
+		}
+	}
+	return out
+}
+
+// ipControlByteOperators are the comparison operators of a query format: = and != for a label filter, |= and != for a
+// line filter.
+func ipControlByteOperators(format string) []string {
+	if strings.Contains(format, "addr%s") {
+		return []string{"=", "!="}
+	}
+	return []string{"|=", "!="}
 }
 
 const ipLabelFilterLokiAnswers = "testdata/ip-label-filter-validate-loki.jsonl"

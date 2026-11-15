@@ -207,6 +207,11 @@ func unwrapLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy 
 	if ReadsReservedField(p, prof.lowerProfile()) {
 		return "", "", false, false
 	}
+	// The series are the stream and every parsed label: the lowering groups by a hash of them, the translator by the
+	// stream and each line (semantics/unwrap-per-series-identity-raw-rows, held to Loki by the Loki differentials).
+	if lerr == nil && WritesDynamicUnwrapIdentity(p) {
+		return "", "", false, false
+	}
 	if errors.Is(lerr, ErrNotLowered) {
 		return "", legacy, true, terr == nil
 	}

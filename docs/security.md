@@ -73,7 +73,7 @@ The handler then forwards to `/select/logsql/delete`, which VictoriaLogs rejects
 - max request body/header limits
 - request timeout boundaries
 - built-in rate limiting (per-client token bucket keyed on the connection address; `-rate-limit-per-second`, `-rate-limit-burst`) and global concurrency guards (`-max-concurrent`, which also bounds backend operations until their bodies are consumed)
-- 64 KB maximum query string length and optional `-default-max-query-length` time-range ceiling
+- 64 KB maximum query string length and the `-default-max-query-length` time-range ceiling (Loki's `721h` by default, `0` turns it off)
 - request coalescing + circuit breaker to reduce backend cascade risk
 
 ### 5) Execution Limits

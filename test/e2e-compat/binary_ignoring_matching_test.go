@@ -157,12 +157,10 @@ func TestCompat_BinaryIgnoringAbsentLabel(t *testing.T) {
 }
 
 // TestCompat_BinaryIgnoringOuterSum: the registry row's shape, the join under
-// an outer `sum by (cluster)`, on streams without the ignored label. It stays
-// red until an outer aggregation over a binary expression is evaluated from both
-// operands (the proxy answers the first operand's raw count today).
+// an outer `sum by (cluster)`, on streams without the ignored label. An outer
+// aggregation over a binary expression is evaluated from both operands since #741.
 // conformance: semantics/binary-ignoring-matching, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_BinaryIgnoringOuterSum(t *testing.T) {
-	t.Skip("needs the aggregation over a binary expression to evaluate both operands (semantics/aggregation-over-binary-dropped, #741); unskip when it lands")
 	fx := ensureIgnoringFixture(t)
 	rate := `rate({service_name="` + fx.absent + `"}[5m])`
 	runIgnoringCases(t, fx, []ignoringCase{

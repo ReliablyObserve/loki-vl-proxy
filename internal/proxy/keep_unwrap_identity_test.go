@@ -47,7 +47,8 @@ func TestKeepIdentityServedFromPlan(t *testing.T) {
 			t.Errorf("%s: with the lowering off, translated %s", q, legacy)
 		}
 	}
-	// Queries the lowering does not serve this way keep the string translator's text.
+	// Queries the lowering does not serve with the keep's identity keep the string translator's text: a flipped
+	// construct may be served from the lowering, with the translator's text.
 	prof := loweringProfile(translator.WithStreamLabels(on.labelTranslator.ToVL, nil), nil, on.logsqlCapabilities(), false)
 	for _, q := range []string{
 		``,
@@ -59,8 +60,9 @@ func TestKeepIdentityServedFromPlan(t *testing.T) {
 		`first_over_time({app="a"} | json | keep app, n | unwrap n [5m]) without (app)`,
 		`keep unwrap (`,
 	} {
-		if text, ok := on.lowerKeepIdentity(context.Background(), q, prof); ok {
-			t.Errorf("%q: served from the lowering: %s", q, text)
+		legacy, _ := off.translateQuery(q)
+		if text, ok := on.lowerMetric(context.Background(), q, prof); ok && text != legacy {
+			t.Errorf("%q: served from the lowering %s, the string translator writes %s", q, text, legacy)
 		}
 	}
 }
@@ -130,7 +132,7 @@ func TestKeepIdentityHandlersFollowTheFlip(t *testing.T) {
 		`quantile_over_time(0.50, {app="a"} | json | keep app, n | unwrap n [5m])`,
 		`first_over_time({app="a"} | json | keep app, n | unwrap n [5m])`,
 	} {
-		_, served := p.lowerKeepIdentity(context.Background(), q, prof)
+		_, served := p.lowerMetric(context.Background(), q, prof)
 		_, read := p.keepUnwrapIdentity(q)
 		if served != read {
 			t.Errorf("%s: served from the lowering %v, the handlers read the identity %v", q, served, read)

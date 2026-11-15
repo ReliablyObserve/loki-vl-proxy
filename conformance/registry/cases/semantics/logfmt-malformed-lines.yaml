@@ -24,11 +24,17 @@ why: |
   the others. A Loki-exact logfmt reader in the proxy fixes log queries within
   their line limit; metrics also need VictoriaLogs to pick out the malformed
   lines, so they keep native stats for the rest.
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: '{app="logfmt-malformed"} | logfmt --strict'
+      - query: '{service_name="cache-redis"} | logfmt --strict'
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: '{service_name="cache-redis"} | logfmt --strict'
+    query: '{app="logfmt-malformed"} | logfmt --strict'
     start: 'now-1h'
     end: 'now'
     limit: '100'

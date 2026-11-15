@@ -256,8 +256,8 @@ func (s *scanner) dropLexErr(known int) {
 	}
 }
 
-func newScanner(src string) *scanner {
-	return &scanner{src: src, hasNUL: strings.IndexByte(src, 0) >= 0}
+func newScanner(src string) scanner {
+	return scanner{src: src, hasNUL: strings.IndexByte(src, 0) >= 0}
 }
 
 func (s *scanner) peek() (rune, int) {
@@ -675,19 +675,80 @@ func callFollows(src string, end int, lower string) bool {
 	return parenFollows(src, end)
 }
 
-// parenFollows reports whether a '(' follows src[end], or a `by (` or `without (` grouping.
+// parenFollows reports whether a '(' follows src[end], or a `by (` or `without (` grouping, over white space only:
+// Loki's lexer looks no further, so a comment in between makes the word a name.
 func parenFollows(src string, end int) bool {
-	i := skipSpace(src, end)
+	return parenAfter(src, end, skipSpace)
+}
+
+// parenAfter is parenFollows with skip stepping over what may stand between the words.
+func parenAfter(src string, end int, skip func(string, int) int) bool {
+	i := skip(src, end)
 	if i < len(src) && src[i] == '(' {
 		return true
 	}
 	for _, grouping := range [...]string{"by", "without"} {
 		if len(src)-i >= len(grouping) && strings.EqualFold(src[i:i+len(grouping)], grouping) {
-			j := skipSpace(src, i+len(grouping))
+			j := skip(src, i+len(grouping))
 			return j < len(src) && src[j] == '('
 		}
 	}
 	return false
+}
+
+// skipSpaceAndComments is skipSpace that also steps over `#` comments, to the end of their line.
+func skipSpaceAndComments(q string, i int) int {
+	for i = skipSpace(q, i); i < len(q) && q[i] == '#'; i = skipSpace(q, i) {
+		for i < len(q) && q[i] != '\n' {
+			i++
+		}
+	}
+	return i
+}
+
+// commentMakesName reports a comment, starting at src[at], that stands between a function's name and its call
+// (`rate # c\n(...)`, `vector # c\n(1)`, `|= ip # c\n("...")`, `unwrap bytes # c\n(c)`), or between a vector
+// aggregation's name and its `by (` grouping (`sum # c\nby (a) (...)`, `sum by # c\n(a) (...)`): Loki's lexer reads
+// the name as a name there, and without the comment it is the function.
+func commentMakesName(src string, at int) bool {
+	end := trimSpaceLeft(src, at)
+	start := wordStart(src, end)
+	grouping := false
+	if word := src[start:end]; strings.EqualFold(word, "by") || strings.EqualFold(word, "without") {
+		end = trimSpaceLeft(src, start)
+		start = wordStart(src, end)
+		grouping = true
+	}
+	if start == end || start > 0 && (src[start-1] >= utf8.RuneSelf || src[start-1] == '.') {
+		return false // no word, or the end of a longer name
+	}
+	name := strings.ToLower(src[start:end])
+	if !vectorAggNames[name] && (grouping || !isCallName(name)) {
+		return false
+	}
+	return !parenFollows(src, end) && parenAfter(src, end, skipSpaceAndComments)
+}
+
+// isCallName reports a function name other than a vector aggregation's that Loki's lexer reads as the function only
+// with a parenthesis after white space.
+func isCallName(name string) bool {
+	return rangeAggNames[name] || unwrapConversions[name] || name == "vector" || name == "label_replace" || name == "ip"
+}
+
+// trimSpaceLeft is the offset of the white space that ends at src[end].
+func trimSpaceLeft(src string, end int) int {
+	for end > 0 && (src[end-1] == ' ' || src[end-1] == '\t' || src[end-1] == '\n' || src[end-1] == '\r') {
+		end--
+	}
+	return end
+}
+
+// wordStart is the offset of the word of letters, digits and '_' that ends at src[end].
+func wordStart(src string, end int) int {
+	for end > 0 && isWordByte(src[end-1]) {
+		end--
+	}
+	return end
 }
 
 // lokiAlwaysKeywords are the words Loki's lexer returns as keyword tokens wherever they stand; ip and

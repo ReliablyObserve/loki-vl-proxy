@@ -54,12 +54,23 @@ BACKFILL_END      = int(os.getenv("LOG_BACKFILL_END", "0"))  # unix seconds; 0 =
 # text), as for a collector that does not promote it. bench/ab uses it to
 # measure the detected_level routes on rows with no stored level.
 NO_LEVEL_LABEL    = os.getenv("LOG_NO_LEVEL_LABEL", "0") == "1"
+# LOG_DISTINCT_TIMESTAMPS (default 1): every line of a live push gets a
+# timestamp of its own, at least 1 µs after the previous line, as the backfill
+# does. Loki keeps lines with equal timestamps in the order it received them,
+# VictoriaLogs has no order for them, so first_over_time/last_over_time, the
+# patterns miner and a log answer cut at its limit would differ between the two
+# on ties that no client produces on purpose. LOG_DISTINCT_TIMESTAMPS=0 gives
+# all lines of one stream in a push the same timestamp, to produce ties on
+# purpose. The backfill always steps its lines, whatever this is set to.
+DISTINCT_TIMESTAMPS = os.getenv("LOG_DISTINCT_TIMESTAMPS", "1") != "0"
 
 # Simulated clock for the backfill, in nanoseconds. None in live mode. While
 # set, every line gets its own timestamp 1 µs after the previous one, so no two
 # lines share a timestamp and limit-capped log queries cut at the same line on
 # Loki and VictoriaLogs.
 _virtual_ns = None
+# Last live timestamp handed out, in nanoseconds, so live lines never tie.
+_live_last_ns = 0
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -69,7 +80,20 @@ def ns() -> str:
     if _virtual_ns is not None:
         _virtual_ns += 1_000
         return str(_virtual_ns)
-    return str(int(time.time() * 1_000_000_000))
+    return str(_live_ns())
+
+def _live_ns() -> int:
+    """Wall clock in nanoseconds; with distinct timestamps never equal to or below the last one handed out."""
+    global _live_last_ns
+    now = time.time_ns()
+    if DISTINCT_TIMESTAMPS:
+        now = max(now, _live_last_ns + 1_000)
+        _live_last_ns = now
+    return now
+
+def _per_line_ts() -> bool:
+    """True when every line takes its own timestamp (backfill, or live with distinct timestamps)."""
+    return _virtual_ns is not None or DISTINCT_TIMESTAMPS
 
 def now_utc() -> datetime:
     """Wall clock, or the simulated clock during a backfill."""
@@ -171,7 +195,7 @@ def dual_push(streams: list):
 
 def stream(labels: dict, lines: list[str]) -> dict:
     """Build a Loki stream object from labels + log lines (2-tuple values)."""
-    if _virtual_ns is not None:
+    if _per_line_ts():
         return {"stream": labels, "values": [[ns(), line] for line in lines]}
     ts = ns()
     return {
@@ -185,7 +209,7 @@ def stream_with_metadata(labels: dict, entries: list[tuple[str, dict]]) -> dict:
     entries: list of (log_line, metadata_dict) tuples.
     The structured metadata dict is appended as the third element per Loki push spec.
     """
-    if _virtual_ns is not None:
+    if _per_line_ts():
         return {"stream": labels, "values": [[ns(), line, meta] for line, meta in entries]}
     ts = ns()
     return {

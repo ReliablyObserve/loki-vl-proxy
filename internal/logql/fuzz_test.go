@@ -67,6 +67,12 @@ func FuzzParse(f *testing.F) {
 		`{app="nginx"} | a .5`,
 		`{app="nginx"} | a .b`,
 		`{app="nginx"} | a:b .5`,
+		// the room of a log query's head and pipeline: several matchers, more stages than the room, pipes and !
+		// inside strings, an escaped string in a label filter
+		`{a="1", b="2", c="3"} |= "x|y" != "z" | json | x="a\x41" | y="p|q"`,
+		`{a="b"} | json | json | json | json | json | json | json | json | json | json | json | json | json | json | json | json | json | json`,
+		"{a=\"b\"} |~ `a|b!=c` | regexp `(?P<x>[|!])`",
+		`{a="b"} |= "unterminated`,
 		// partial inputs
 		`rate(`,
 		`sum by (`,

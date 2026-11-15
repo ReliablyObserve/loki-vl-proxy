@@ -218,6 +218,14 @@ stateDiagram-v2
     HalfOpen --> Open: failure
 ```
 
+A timeout suspends the peer for the cooldown at once. While a peer's breaker is open, lookups skip it (the next replica or VictoriaLogs answers, with no extra wait), and the pushes it cannot take wait in a bounded push buffer instead of being lost:
+
+- every push to the peer joins its backlog: one entry per key, the newest value, so a burst of writes of one key costs one entry; while the backlog exists new pushes join it, so an older value never lands after a newer one;
+- one replayer per peer sends the backlog once the breaker lets a call through: a single push first (it is the half-open probe), then rounds of 2, 4, … 32 pushes, at most 8 in flight (below the 20 connections per peer, so lookups keep room), 10 ms apart; a failed round goes back and waits 250 ms doubling to 10 s, jittered, so tens of proxies replaying to one recovered peer do not hit it in step;
+- each push carries the TTL the writer's copy has left; a push with under 5 s left, or for a peer that left the ring or is no longer the key's replica, is dropped and counted;
+- the buffer is bounded per proxy across all peers (`-peer-push-buffer-max-entries`, default 8192; `-peer-push-buffer-max-bytes`, default 32 MiB); above it the oldest push of the largest backlog is dropped, counted and logged at most every 30 s, and the replica that misses it reads the key from another replica or VictoriaLogs on first lookup;
+- pushes that find the push queue full or fail with a transport error, timeout, `429` or `5xx` take the same path; `0` on either flag turns buffering off.
+
 ## Peer Discovery
 
 Four discovery modes are supported. All share the same mechanics: a background goroutine re-runs discovery every `DiscoveryInterval` (default 15 s) and atomically rebuilds the consistent hash ring. Peers that disappear from the source are automatically removed; new peers that appear are added. No restart required.
@@ -531,6 +539,10 @@ loki_vl_proxy_peer_cache_misses_total          # owner returned miss / near-expi
 loki_vl_proxy_peer_cache_errors_total          # peer fetch failures
 loki_vl_proxy_peer_cache_write_through_pushes_total   # successful owner write-through pushes
 loki_vl_proxy_peer_cache_write_through_errors_total   # failed owner write-through pushes
+loki_vl_proxy_peer_cache_push_buffered_total{reason}  # pushes buffered while a peer could not take them
+loki_vl_proxy_peer_cache_push_replayed_total          # buffered pushes delivered after the peer recovered
+loki_vl_proxy_peer_cache_push_buffer_dropped_total{reason}  # buffered pushes given up (full, expired, ...)
+loki_vl_proxy_peer_cache_push_buffer_entries          # pushes waiting now (all peers)
 ```
 
 Use these together with the normal client metrics to tell apart:

@@ -96,6 +96,18 @@ Every Loki error message is a registry item, every route x error kind is a cell 
   `queryRefusal` reads the failure's type, and offsets use `offsetError`. `TestErrorLayerSites` holds each file's count
   of free-text sites (no file may gain one) and `TestClientErrorTextsCarryNoInternalWording` the words of the sites left.
 
+### Error answers are proved like data, performance and visuals (hard rule)
+
+Every pull request proves the error answers of the query shapes it touches the way it proves their data, performance
+and Grafana view: status, errorType and text equal Loki's, including runtime errors (a parser's pipeline error, an
+unwrap conversion error, a limit) and every wrapper Loki keeps an error through (`sort`, `sort_desc`, `topk`,
+`bottomk`, `label_replace`, binary operations including a scalar operand, `and`/`or`/`unless`, nested aggregations,
+`offset`). Whether a query must answer an error is decided from the parsed query, never from a list of text shapes: a
+shape list misses wrappers, as `sort(rate({…} | json [1m]))` did, which answered 200 where Loki answers 400
+`pipeline error: 'JSONParserErr'`. The pull request body has an "Error answers" section next to "Performance" and
+"Visual evidence" (rows added or changed, base vs head vs Loki, wrapper variants checked), the stack checks compare
+error answers live like data, and an error difference blocks a merge like a data difference.
+
 ## Fail fast like Loki (hard rule)
 
 A query Loki rejects quickly (a parse error, a validation error, a limit) the proxy rejects just as early: at the first
@@ -111,6 +123,24 @@ Loki oracle (`test/oracle/loki`, API only).
   the parser and through the HTTP route (no upstream call is made for a rejected query).
 - A pull request that touches parsing or validation says in its body that rejected inputs still fail before any other
   work.
+
+## Response key fences read every spelling the parser reads
+
+A response key fence (`responseKeyFences`, `internal/proxy/response_key_fences.go`) is a text screen: it adds a version
+constant to a response cache key when the query holds the construct a fix changed, so an answer cached before the fix
+is not served. The parser reads more spellings than the lower case, single-space form clients usually send: every
+keyword and function name in any case (`| KEEP`, `TOPK(`, `Sum by`), letters that lower case to ASCII ones (U+212A,
+U+0130), `#` comments between tokens (a quote in a comment opens no string), and names of any Unicode letters.
+
+- A new or changed fence screen reads those spellings, allocates nothing, and keeps firing for every spelling its
+  older form fired for (so no key of the fleet's caches becomes unreachable). The shared readers are in
+  `internal/proxy/response_key_fence_text.go`.
+- Register a new fence in `responseKeyFences` (and a public wrapper), then in `response_key_fence_parser_test.go`: its
+  construct in `fenceFacts` and `fenceWants`, its name in `fenceFires`, a row per spelling class in
+  `TestResponseKeyFencesFireOnTheSpellingsTheParserReads`, and for a pure text screen an entry in `fenceScreens` with a
+  frozen reference of its first form in `response_key_fence_reference_test.go`.
+  `FuzzResponseKeyFencesMatchParsedTree` (fuzz-smoke) then checks the screen against the parsed tree and the keys its
+  older form wrote; an unchecked fence is unfinished.
 
 ## Cache semantic layers
 
@@ -329,7 +359,20 @@ A construct moves from the string translator to the typed plan (`internal/queryp
   request VictoriaLogs sees. `TestPlanShadow` and the generated grids assert it for every native row under the 12
   profiles; fix a difference of spelling in the AST builders, never in `internal/translator`.
 - Decide eligibility before planning (`logql.MayHaveNonFilterStage` and a first-byte test for log queries): a query the
-  plan does not cover pays no plan. `TestFlipScreenAdmitsEveryNativeRow` holds the screen to the native rows.
+  plan does not cover pays no plan. `TestFlipScreenAdmitsEveryNativeRow` holds the screen to the native rows. A log
+  query with more than line and label filters moves by stage family (`proxy.QueryPlanFlippedLogStages`): it goes
+  through `lower.ScreenLogStages` (the metric screen's pass in log mode, no allocation) and the typed gate
+  `servesLogStages`; a new family adds its class to the screen, its shapes to the benchmark, and
+  `TestQueryPlanLowering_LogScreenCorpus` and `TestQueryPlanLowering_LogCorpusTextParity` hold it on the corpus. A
+  family flips only once its plan path costs no more than the translator in allocs/op and B/op on
+  `BenchmarkTranslateQueryMissShapes` (a template, regexp or pattern that changes on every request included) and on
+  `BenchmarkTranslateQueryMissShapesValidated`; the translation never adds a parse to a request: the validation keeps its
+  parse in the plan memo for a query the plan serves (`lowersParse`), and a parse site goes through a counted helper of
+  `internal/proxy/query_flow.go`. Metric
+  queries go through `lower.ScreenMetricIn` (no allocation; it names the construct at the top and turns away what the
+  typed gate or the lowering leaves to the translator): a new delegation in the metric lowering adds its class to the
+  screen, and `TestQueryPlanLowering_MetricScreenCorpus` holds the screen to the gate on the corpus (no served row
+  misnamed, under 0.5% of passed rows left to the translator, under 2% of served rows turned away).
 - No shape may allocate more than its base (benchstat of `BenchmarkTranslateQueryMissShapes`, base against branch); add
   the new construct's shapes to it. Add the construct to the route-parity test
   (`TestQueryPlanLowering_RouteParity`), which runs the same queries with the flag on and off against a fake

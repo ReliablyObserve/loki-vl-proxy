@@ -21,6 +21,11 @@
 // 2x Loki or lost a ratchet row, a scheduled workflow is missing or red, or an input is missing. -check exits
 // 1 on a red day.
 //
+// The pull request body (-md) opens with an executive summary: what is ok and not ok per area in numbers, the Loki
+// side and the VictoriaLogs side, what moved since the previous report (the summary.json and cases.json that -previous
+// and -previous-cases name, the committed ones by default, read before -out and -cases-out replace them) and what is
+// wrong now; the rest of the report follows unchanged.
+//
 // -weekly is the weekly full run (perf-daily.yaml): it appends the week's numbers (the newest daily summary,
 // the weekly per-case verdicts and full parity corpus of both VictoriaLogs versions, the full-size grammar
 // sweep, the full A/B on the oldest supported VictoriaLogs, the weekly A/B figures, the release dry run) to
@@ -56,6 +61,8 @@ type config struct {
 	history, trend    string
 	docs              bool
 	summary           string
+	prevSummary       string
+	prevCases         string
 	ages              Ages
 	now, event, ref   string
 }
@@ -96,6 +103,8 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&cfg.out, "out", "conformance/registry/generated/verification/summary.json", "the summary")
 	fs.StringVar(&cfg.casesOut, "cases-out", "conformance/registry/generated/verification/cases.json", "the merged per-case verdicts")
 	fs.StringVar(&cfg.md, "md", "", "also write the Markdown report here")
+	fs.StringVar(&cfg.prevSummary, "previous", "conformance/registry/generated/verification/summary.json", "the previous report's summary, read before -out replaces it")
+	fs.StringVar(&cfg.prevCases, "previous-cases", "conformance/registry/generated/verification/cases.json", "the previous report's per-case verdicts, read before -cases-out replaces it")
 	fs.BoolVar(&cfg.check, "check", false, "exit 1 on a red day")
 	fs.BoolVar(&cfg.weekly, "weekly", false, "the weekly full run: append the week's numbers and write the trend")
 	fs.StringVar(&cfg.week.Summary, "daily-summary", "conformance/registry/generated/verification/summary.json", "weekly: the newest daily summary")
@@ -126,6 +135,13 @@ func run(cfg config, stdout, stderr io.Writer) int {
 	if cfg.docs {
 		return runDocs(cfg, stdout, stderr)
 	}
+	// The previous report is what the committed files hold now, read before this run writes them. One that cannot
+	// be read is a warning: the day is still reported, without the changes.
+	prev, perr := LoadPrevious(cfg.prevSummary, cfg.prevCases)
+	if perr != nil {
+		fmt.Fprintln(stderr, "dailyreport: no comparison with the previous report:", perr)
+		prev = nil
+	}
 	s, merged, err := Build(cfg.in)
 	if err == nil {
 		err = writeJSON(cfg.out, s)
@@ -134,7 +150,7 @@ func run(cfg config, stdout, stderr io.Writer) int {
 		err = writeJSON(cfg.casesOut, merged)
 	}
 	if err == nil && cfg.md != "" {
-		err = os.WriteFile(cfg.md, []byte(Markdown(s)), 0o644)
+		err = os.WriteFile(cfg.md, []byte(Report(s, prev)), 0o644)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "dailyreport:", err)

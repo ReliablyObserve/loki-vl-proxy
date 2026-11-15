@@ -15,6 +15,27 @@ why: |
   Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki
   3.7.9): 16 queries, held under semantics/parser-reads-unicode-blank-as-white-space until the white space fix
   separated them.
+
+  Fixed for the vector aggregations (the 16 recorded queries): a query with a comment between a vector
+  aggregation's name and its parenthesis or `by (` / `without (` grouping keeps its comments
+  (logql.StripComments), so the validation reads the name as Loki's lexer does and answers Loki's 400 with its text
+  before any VictoriaLogs call. A comment after the grouping keyword of a call (`sum (...) by # c\n(a)`) or anywhere
+  else is still removed and the query answered, as Loki does.
+
+  Fixed for every other function name, with Loki's answers recorded by its engine (test/oracle/loki engine,
+  internal/proxy/testdata/comment_forms_loki_answers.jsonl, query_range and query) and its parser
+  (internal/logql/testdata/comment-forms-loki.jsonl): a comment between a range aggregation's name (`rate # c\n(...)`,
+  in any case), `vector`, `label_replace` or `ip` (a line filter or a label filter) and its parenthesis gets Loki's
+  "syntax error: unexpected IDENTIFIER" at the name ("..., expecting STRING or ip" after `|=`). After `unwrap`, a
+  comment between a conversion's name (`bytes`, `duration`, `duration_seconds`, in any case) and its parenthesis
+  makes the name the label: Loki answers "syntax error: unexpected (, expecting RANGE or |" at the parenthesis, and so
+  does the proxy. `sum without # c\n(a)` and `avg # c\n(...)` are recorded too. The proxy keeps the comments of such a
+  query, which is always rejected before any VictoriaLogs call; a comment anywhere else is removed as before.
+
+  Recorded in the same grids, with no change: `rate({a="b"}[0:1m])` is Loki's 400 `unknown unit ":" in duration
+  "0:1m"`, as the proxy answers, and `offset -0s` and `offset -0` are accepted, with Loki's answer of the query
+  without an offset; the proxy sends VictoriaLogs the requests of the query without an offset.
+
 request:
   scope: query-grammar
   entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/comment-between-function-and-parenthesis-accepted"
@@ -29,8 +50,8 @@ gap:
   effort: S
   area: "internal/logql StripComments and the keyword lookahead (a comment before a function's parenthesis)"
   loki: "a function name followed by a comment is an identifier"
-  proxy: "comments are removed before the validation, so the name is read as the function"
-  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  proxy: "a function name before a comment is read as Loki reads it: the comments are kept and the validation answers Loki's 400"
+  planned_test: 'TestCommentBetweenVectorAggregationAndCallLikeLoki, TestCommentBetweenFunctionAndCallLikeLoki, FuzzStripComments (internal/logql), TestCommentBeforeVectorAggregationCallAnswersLikeLoki, TestCommentFormsAnswerLikeLoki, TestNegativeZeroOffsetAnswersLikeNoOffset (internal/proxy), TestGrammarSweep (internal/querycorpus)'
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
   clusters: []
