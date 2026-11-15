@@ -105,6 +105,12 @@ func outsideLabelFilterDomain(e Expr) bool {
 			// `| unwrap [5m]` and `| unwrap[`: an unwrap without its label prints
 			// without what followed it (a known printer gap, not a literal).
 			outside = outside || x.Label == ""
+		case *KeepStage:
+			// `| keep` and `| drop` followed by a form feed or a vertical tab and nothing more: Loki reads the
+			// blank as a label name, the proxy as an empty list, which prints as `| keep ` (a known gap).
+			outside = outside || len(x.Labels)+len(x.Matchers) == 0
+		case *DropStage:
+			outside = outside || len(x.Labels)+len(x.Matchers) == 0
 		case *LabelFilterExpr:
 			if x.IsLeaf() {
 				numeric := x.Kind == LabelFilterValueNumber || x.Kind == LabelFilterValueDuration || x.Kind == LabelFilterValueBytes
