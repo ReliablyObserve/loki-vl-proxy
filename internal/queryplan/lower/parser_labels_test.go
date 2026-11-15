@@ -350,7 +350,9 @@ func TestParserLabelsLoweringAllocatesNoMoreThanTheTranslator(t *testing.T) {
 	for _, label := range []func(string) string{nil, benchStreamLabels} {
 		for _, q := range parserLabelAllocGrid(t) {
 			p := rangeAggPlan(q)
-			if p == nil || !readsParserLabels(p) {
+			// A dynamic identity writes pipes the translator does not (the series hash): its cost is the cost of
+			// Loki's series, measured against the translator's route by BenchmarkTranslateQueryMissShapes.
+			if p == nil || !readsParserLabels(p) || WritesDynamicUnwrapIdentity(p) {
 				continue
 			}
 			if _, err := PlanQuery(q, p, Profile{Label: label}); err != nil {

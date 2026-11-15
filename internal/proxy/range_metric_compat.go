@@ -583,6 +583,11 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if manualFunc == "" {
 		return false
 	}
+	// The series are the dynamic identity of a parser: VictoriaLogs takes the function per series and the
+	// aggregation over them (lower.DynamicUnwrapIdentity).
+	if p.dynamicIdentityFor(r.Context(), originalLogql) {
+		return false
+	}
 	// An ungrouped sum of an additive unwrap function (rate, sum_over_time): the
 	// translated query ends in the outer sum, so VictoriaLogs answers one series
 	// from stats; the manual evaluator below would keep a series per stream.

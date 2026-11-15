@@ -19,11 +19,17 @@ why: |
   The stream value restore of semantics/stream-label-shadowed-by-ingest-json-key
   can serve these names too once the detected_level derivation reads the
   restored value; that touches the level derivation and its measurements.
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: 'sum by (level) (count_over_time({app="level-shadow"} [1m]))'
+      - query: 'sum by (level) (count_over_time({service_name="api-gateway"} [1m]))'
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'sum by (level) (count_over_time({service_name="api-gateway"} [1m]))'
+    query: 'sum by (level) (count_over_time({app="level-shadow"} [1m]))'
     start: 'now-1h'
     end: 'now'
     step: '60'

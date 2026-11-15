@@ -711,10 +711,10 @@ func TestPeerReplication_StaggeredStartOpensNoBreaker(t *testing.T) {
 	t.Logf("staggered start: %d of %d keys found by the first lookups, %d pushes made before their replica listened, all sent later (%d dropped), %d refused dials counted as starting", hits, len(keys), wantDropped, dropped, pcs[0].PeerNotUp.Load())
 }
 
-// Pushes kept for a peer that never starts are bounded and dropped after the
-// wait, each counted, and the retrier ends with the cache.
+// Pushes kept for a peer that never starts are bounded by the push buffer,
+// the oldest dropped first and counted, and the replayer ends with the cache.
 //
-// conformance: peer-cache-replication
+// conformance: peer-cache-replication, peer-cache-push-replay
 func TestPeerReplication_PendingPushesBounded(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -722,33 +722,32 @@ func TestPeerReplication_PendingPushesBounded(t *testing.T) {
 	}
 	dead := l.Addr().String()
 	_ = l.Close()
+	const bound = 64
 	pc := NewPeerCache(PeerConfig{SelfAddr: "self:1", DiscoveryType: "static", StaticPeers: "self:1," + dead,
-		Timeout: time.Second, WriteThrough: true, ReplicationFactor: 2, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		Timeout: time.Second, WriteThrough: true, ReplicationFactor: 2, PushBufferMaxEntries: bound,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	defer pc.Close()
-	for i := 0; i < pendingPushMaxEntries+10; i++ {
+	for i := 0; i < bound+10; i++ {
 		pc.Replicate(fmt.Sprintf("k-%d", i), []byte("v"), time.Minute)
 	}
 	waitFor(t, "the first refusal", func() bool { return pc.PeerNotUp.Load() > 0 })
 	time.Sleep(50 * time.Millisecond)
 	pb := pc.breaker(dead)
-	pb.mu.Lock()
-	kept := len(pb.pending)
-	pb.mu.Unlock()
-	if kept > pendingPushMaxEntries {
-		t.Fatalf("%d pushes kept, bound %d", kept, pendingPushMaxEntries)
+	kept := pb.buffered.Load()
+	if kept > bound {
+		t.Fatalf("%d pushes kept, bound %d", kept, bound)
 	}
-	if dropped := pc.PushPeerNotUp.Load(); dropped+int64(kept) < 10 {
-		t.Fatalf("kept %d, dropped %d of %d", kept, dropped, pendingPushMaxEntries+10)
+	if dropped := pc.PushPeerNotUp.Load(); dropped+kept < bound+10 || pc.PushBufferDropped[droppedFull].Load() < 10 {
+		t.Fatalf("kept %d, dropped %d (full %d) of %d", kept, dropped, pc.PushBufferDropped[droppedFull].Load(), bound+10)
 	}
 	if pb.failures.Load() != 0 {
 		t.Fatalf("refusals of a peer that never started counted %d failures", pb.failures.Load())
 	}
 	pc.Close()
-	waitFor(t, "the retrier to end", func() bool {
-		pb.mu.Lock()
-		defer pb.mu.Unlock()
-		return !pb.retrying
-	})
+	waitFor(t, "the replayer to end", func() bool { return pc.replayers.Load() == 0 && pb.buffered.Load() == 0 })
+	if pc.PushBufferDropped[droppedClosed].Load() == 0 {
+		t.Fatal("the pushes left at close were not counted")
+	}
 }
 
 // A burst of writes (a cold build storing every hour of a range) is pushed

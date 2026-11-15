@@ -1,5 +1,5 @@
 id: semantics/range-duration-grammar-wider-than-loki
-title: "The proxy rejects `[0]`, a range Loki accepts (open); range durations Loki rejects (`[1.5m]`, `[5m5m]`, `[ 5m ]`, `[1ns]`, `[1us]`, `[1µs]`, `[9999999999h]`) are Loki's 400 (fixed)"
+title: "The proxy rejects `[0]`, a range Loki accepts (fixed, state pending review); range durations Loki rejects (`[1.5m]`, `[5m5m]`, `[ 5m ]`, `[1ns]`, `[1us]`, `[1µs]`, `[9999999999h]`) are Loki's 400 (fixed)"
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -18,7 +18,13 @@ why: |
   Fixed: a range is read as Loki reads it, with Prometheus' duration rules in Loki's order of checks: a part with no
   digits, no unit or a number above 64 bits is `not a valid duration string`, then an unknown unit, then a unit out of
   order or repeated, then a sum above the longest duration (`duration out of range`), at the column of the `[`. An
-  offset still reads Go's durations (`offset 1us`, `offset 5m5m` stay accepted, as in Loki). Still open: `[0]`.
+  offset still reads Go's durations (`offset 1us`, `offset 5m5m` stay accepted, as in Loki).
+
+  Fixed: a bare `0` is a range of nothing, as in Prometheus' duration parser: `rate({a="b"}[0])`,
+  `rate({a="b"}[0] offset 5m)` and `rate_counter({a="b"} | unwrap c[0])` are accepted like Loki, and the range is the
+  zero range `[0s]` is (Loki's empty answer, without a VictoriaLogs call; semantics/zero-range-metric). `[00]` and
+  any other number without a unit stay Loki's `not a valid duration string`, and `offset 0` stays Loki's
+  `syntax error: unexpected NUMBER, expecting DURATION`.
 
 request:
   scope: query-grammar
@@ -34,8 +40,8 @@ gap:
   effort: S
   area: "internal/logql duration scanner (range and offset durations)"
   loki: "whole-unit durations in descending order; a bare 0 is a duration"
-  proxy: "a bare 0 is rejected; every other range is read as Loki reads it"
-  planned_test: "TestRangeAndUnwrapGrammarMatchLoki (internal/logql: rangeUnwrapKnown holds the [0] rows), TestGrammarSweep (internal/querycorpus)"
+  proxy: "every range is read as Loki reads it, a bare 0 included"
+  planned_test: "TestRangeAndUnwrapGrammarMatchLoki, TestZeroRangeLikeLoki, FuzzRangeDuration (internal/logql), TestBareZeroRangeAnswersLikeZeroSeconds (internal/proxy), TestGrammarSweep (internal/querycorpus)"
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
   clusters: []

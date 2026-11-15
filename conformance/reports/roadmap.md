@@ -7,7 +7,7 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 ## Where we are
 
 - Read endpoints with a test comparing the proxy against Loki: **70%**
-- Behaviour and feature items: **10 proven**, 21 partial, 3 gaps, 0 waived, 7 with no state recorded
+- Behaviour and feature items: **10 proven**, 21 partial, 3 gaps, 0 waived, 8 with no state recorded
 
 
 ## Next: unproven behaviour
@@ -17,7 +17,7 @@ Ranked by which clients depend on it.
 | Item | Consumers | Cases written / named | Tests | Why |
 |---|---|---:|---:|---|
 | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | — | 0 / 6 | 0 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
-| `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | — | 8 / 11 | 20 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
+| `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | — | 8 / 11 | 24 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | — | 0 / 5 | 1 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 
 ## In progress
@@ -30,17 +30,17 @@ Proven in part; the rest is named in the item's cases.
 | `explore-logs-volume-json` — Grafana Explore renders the logs volume for a `| json` query | explore | 9 / 17 | 7 | 3/6 deltas proven. |
 | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | — | 6 / 6 | 10 | Proven for grouped counts and byte sums: the two-grid recurrence, the tumbling single grid, the per-grid row limit and t |
 | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | — | 8 / 8 | 14 | Dotted names return Loki v3.7.7's parse error (message, line and column recorded from Loki for 192 query shapes, unit-te |
-| `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | — | 0 / 4 | 39 | count, min, max and avg of count_over_time, bytes_over_time, rate, bytes_rate and the unwrap functions read one value pe |
+| `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | — | 0 / 4 | 40 | count, min, max and avg of count_over_time, bytes_over_time, rate, bytes_rate and the unwrap functions read one value pe |
 | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | — | 0 / 4 | 5 | `| regexp` and `| pattern` captures are part of the series identity on the instant, range and byte routes, proven agains |
 | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | — | 18 / 23 | 42 | The filtered-volume pushdown cases (underscore labels, filters without `drop __error__`, ungrouped sums, translated labe |
 | `patterns-loki-mining` — /loki/api/v1/patterns answers the patterns Loki's pattern ingester mines, from the lines VictoriaLogs holds | — | 0 / 0 | 6 | 27 of 27 recorded Loki answers matched live (TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines) and the recorded orac |
-| `peer-cache-fleet-recovery` — With a ring owner down or every cache lost, the fleet answers like Loki from VictoriaLogs | — | 0 / 0 | 3 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
+| `peer-cache-fleet-recovery` — With a ring owner down or every cache lost, the fleet answers like Loki from VictoriaLogs | — | 0 / 0 | 4 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-label-values-index` — A replica that lost its disk restores the label-values index from its peers | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-metadata` — Label and detected-field answers are read from the ring owner and the disk tier | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-patterns` — Patterns mined on one replica are served by every replica and restored on a replica that lost its disk | — | 0 / 0 | 4 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-query-range-windows` — Log query windows computed by their ring owner are read by the other replicas | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-query-replies` — Completed query replies computed on one replica answer the same request on every replica | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
-| `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | — | 0 / 0 | 5 | Unit-proven on a three-replica in-process ring (internal/cache/ peer_replication_test.go, internal/proxy/peer_push_ident |
+| `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | — | 0 / 0 | 6 | Unit-proven on a three-replica in-process ring (internal/cache/ peer_replication_test.go, internal/proxy/peer_push_ident |
 | `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | — | 4 / 5 | 27 | limits/series-limit-error and limits/drilldown-partial-with-warning are written and wired: a metric query above -max-sta |
 | `service-name-derivation` — service_name follows Loki's discovery order | — | 0 / 0 | 0 | The derivation matches Loki's 13-entry discover_service_name order and is used by selectors, label filters, grouping, la |
@@ -63,7 +63,7 @@ Held by at least one test that declares it.
 | `tenant-auth-follows-loki` — X-Scope-OrgID is admitted and refused as Loki does, before any cache or VictoriaLogs call | — | 1 / 1 | 5 | internal/proxy/tenant_auth_parity_test.go replays 664 requests recorded from Loki 3.7.9 with auth_enabled: true (13 read |
 | `tenant-label-isolation` — Tenant-label mode confines every request to its org | — | 1 / 1 | 4 | Unit tested in internal/proxy/multitenant_tenant_label_test.go: a table over twelve routes (query, range, labels, label  |
 | `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | — | 1 / 1 | 13 | Unit tested in internal/proxy/tenant_routing_test.go: a table over five routing configurations (default, strict, strict  |
-| `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | — | 9 / 9 | 4 | internal/proxy/tenant_query_limits_test.go resolves every enforced limit through each configuration layer and tenant, co |
+| `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | — | 12 / 12 | 7 | internal/proxy/tenant_query_limits_test.go resolves every enforced limit through each configuration layer and tenant, co |
 
 ## No state recorded
 
@@ -71,12 +71,13 @@ No file under `conformance/registry/state/` gives these a state yet.
 
 | Item | Consumers | Cases written / named | Tests | Why |
 |---|---|---:|---:|---|
-| `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 90 | — |
+| `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 99 | — |
 | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | — | 0 / 0 | 1 | — |
 | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 6 | — |
-| `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 3 | — |
+| `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 5 | — |
 | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | — | 0 / 0 | 4 | — |
+| `peer-cache-push-replay` — Pushes a replica cannot take while its breaker is open are buffered and replayed, so the fleet heals to full replication | — | 0 / 0 | 6 | — |
 | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | — | 0 / 0 | 8 | — |
-| `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | — | 0 / 0 | 2 | — |
+| `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | — | 0 / 0 | 4 | — |
 
 Tests counts the test files that declare the item or one of its cases (`// conformance:` in Go, `@cov:` in Playwright); a case is written when its file exists under `conformance/registry/cases/`.

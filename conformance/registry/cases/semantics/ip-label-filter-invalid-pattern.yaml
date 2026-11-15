@@ -17,6 +17,16 @@ why: |
   (`a="1", addr=ip("zzz")`, `and`, `or`) is not rejected. The proxy answered
   200 for every one of these.
 
+  A pattern with a NUL, a unit separator or a delete byte inside an address, a
+  prefix, a range or a zone (written as the escape `\x00`) is the same 400 with
+  Loki's text, for a label filter and for a line filter (`stage '|= ip("::\x00!")'`),
+  on query_range, query and tail, before any translation or VictoriaLogs call
+  (recorded with the oracle pipeline command: 26 more rows in the label filter
+  grid and a grid of 146 line filter queries). The string translator, which
+  would read `::\x00!` as the address `::`, never gets it
+  (FuzzIPLabelFilterNeverKeepsWhatLokiDrops asserts the validation rejects every
+  pattern Loki rejects that the translator accepts).
+
   Found when the Loki oracle's check began building the pipelines of the
   corpus queries (#1239): 25 log and 13 metric queries of the corpus.
 
@@ -48,7 +58,7 @@ gap:
   area: 'internal/logql label_filter_ip_validate.go (ipLabelFilterError)'
   loki: 'ip() label filter patterns are validated when the pipeline is built (recorded with the Loki oracle pipeline command)'
   proxy: 'the LogQL validation rejects them with Loki''s text before anything is translated'
-  planned_test: 'TestCompat_IPLabelFilterInvalidPatternLikeLoki (test/e2e-compat, group core); TestIPLabelFilterValidationMatchesLoki (internal/logql)'
+  planned_test: 'TestCompat_IPLabelFilterInvalidPatternLikeLoki (test/e2e-compat, group core); TestIPLabelFilterValidationMatchesLoki, TestIPLineFilterValidationMatchesLoki (internal/logql); TestRejectedIPPatternNeverReachesVictoriaLogs (internal/proxy); FuzzIPLabelFilterNeverKeepsWhatLokiDrops (internal/translator)'
   fixed_by: '#1239'
   visual: none
   visual_reason: 'a 400 parse error, which Grafana shows as the error text only; the e2e test compares the status and the body bytes with Loki for log and metric queries'

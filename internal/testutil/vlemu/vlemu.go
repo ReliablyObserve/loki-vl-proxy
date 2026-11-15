@@ -314,6 +314,10 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 				}
 			})
 		}
+		if pipe == seriesHashPipe {
+			// The series hash of a parser's dynamic identity: the identity pipes before it are not run.
+			fieldOps = append(fieldOps, func(f map[string]string) { f[seriesHashField] = e.seriesHash(f) })
+		}
 		if m := PhaseMathRE.FindStringSubmatch(pipe); m != nil {
 			phaseAnchor, _ = strconv.ParseInt(m[1], 10, 64)
 			phaseStep, _ = strconv.ParseInt(m[2], 10, 64)
@@ -656,4 +660,33 @@ func WindowPhaseKeeps(ts, anchor, step, lower, upper int64, float bool) bool {
 		phase += step
 	}
 	return phase > 0 && phase <= window
+}
+
+// The series hash a parser's dynamic identity writes (the proxy's lowering), as the stats read it.
+const (
+	seriesHashField = "__lvp_sid"
+	seriesHashPipe  = "hash(__lvp_sid) as __lvp_sid"
+)
+
+// seriesHash is a stats row's series under a parser's dynamic identity: the stream, the stored level fields and every
+// key of the line (json, else logfmt) but the unwrapped one.
+func (e *Emulator) seriesHash(f map[string]string) string {
+	keys := []string{"_stream=" + f["_stream"], "level=" + f["level"], "detected_level=" + f["detected_level"]}
+	skip := map[string]bool{e.Field: true, strings.ReplaceAll(e.Field, "_", "."): true, strings.ReplaceAll(e.Field, "_", "-"): true}
+	var obj map[string]any
+	if json.Unmarshal([]byte(f["_msg"]), &obj) == nil {
+		for k, v := range obj {
+			if !skip[k] {
+				keys = append(keys, "p."+k+"="+fmt.Sprint(v))
+			}
+		}
+	} else {
+		for _, kv := range strings.Fields(f["_msg"]) {
+			if k, v, ok := strings.Cut(kv, "="); ok && v != "" && !skip[k] {
+				keys = append(keys, "p."+k+"="+v)
+			}
+		}
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, "\x00")
 }

@@ -1,0 +1,87 @@
+id: peer-cache-push-replay
+kind: resource_control
+title: Pushes a replica cannot take while its breaker is open are buffered and replayed, so the fleet heals to full replication
+pending: true
+
+loki: |
+  Losing or restarting a results-cache node makes Loki slower, never
+  different; the cache refills as queries run again.
+
+victorialogs: |
+  VictoriaLogs holds the data; every cached answer can be computed again.
+
+proxy: |
+  A write-through push to a replica that cannot take it (its breaker is open
+  or it is suspended after a timeout, it has not answered since this process
+  started, the push queue is full, or the push failed with a transport error,
+  a timeout, a 429 or a 5xx) waits in a per-peer backlog instead of being
+  dropped. The backlog is FIFO and keeps one entry per key, the newest value
+  (each push carries its Replicate sequence number); while a peer has a
+  backlog every new push to it joins it, so an older value never lands after
+  a newer one, and a queued push to a peer whose breaker holds calls back is
+  buffered instead of tying up a worker for -peer-timeout. One replayer per
+  peer sends the backlog once the breaker lets a call through: one push
+  first (the half-open probe), then rounds doubling from 1 to 32 pushes, at
+  most 8 in flight (below the 20 connections per peer, so lookups keep room),
+  10 ms apart; a failed round goes back to the front and waits 250 ms doubling
+  to 10 s, jittered. Each push is sent with the TTL the writer's copy has
+  left; one with under 5 s left, for a peer that left the ring or that is no
+  longer the key's replica, or that the peer refused with a 4xx, is dropped
+  and counted. All backlogs share one budget per proxy
+  (-peer-push-buffer-max-entries, default 8192;
+  -peer-push-buffer-max-bytes, default 32 MiB): above it the oldest entry of
+  the largest backlog is dropped and counted, with one warning log line at
+  most every 30 s. Nothing on the request path waits on the buffer or the
+  peer; lookups skip a peer whose breaker is open as before. A replayer
+  waiting out a cooldown starts as soon as another call finds the peer
+  answering, and a call that took the half-open probe without making a call
+  hands it back. Close cancels
+  every peer call in flight and stops every replayer. 0 on either flag keeps
+  the earlier behaviour: pushes a peer cannot take are dropped and counted.
+  Metrics: loki_vl_proxy_peer_cache_push_buffered_total{reason},
+  _push_buffer_coalesced_total, _push_replayed_total,
+  _push_buffer_dropped_total{reason}, _push_buffer_entries and
+  _push_buffer_bytes.
+  Unit proof (internal/cache/peer_push_buffer_test.go) on a three-replica
+  loopback ring: a paused replica (open, buffered, half-open probe alone,
+  replayed, closed, every key on the replica with its remaining TTL, reads
+  beside the open breaker fast), coalescing, the budget (oldest of the
+  largest backlog, one log line), expiry, ring changes, 4xx vs 5xx, queue
+  full, buffering off, and Close (no goroutine left, a push waiting on a hung
+  peer cancelled); FuzzPeerPushBufferInvariants checks the buffer against a
+  model. Fleet proof, written for the e2e-fleet stack
+  (test/e2e-fleet/peer_push_replay_test.go): a paused replica receives every
+  push buffered for it once it answers, and the writer that then loses its
+  disk answers the requests it wrote meanwhile with no more VictoriaLogs calls
+  than a control set written while every replica was up.
+
+implementation:
+  - internal/cache/peer_push_buffer.go
+  - internal/cache/peer.go
+  - internal/proxy/proxy.go
+  - cmd/proxy/main.go
+
+decisions:
+  - id: buffer-and-replay-pushes-to-unavailable-peers
+    chosen: 'One bounded, coalescing backlog per peer under one per-proxy budget, replayed by one paced replayer per peer (probe first, slow start, jittered backoff); reads unchanged'
+    over: [dropping the push and relying on the first lookup to read another replica (costs a VictoriaLogs read when the writer was the only other replica and then loses its disk), retrying inside the push workers (one of 64 workers held per pending push for seconds; pushes to healthy peers starve), an unbounded per-peer queue (memory grows with outage length times write rate across tens of proxies), anti-entropy between replicas (a new protocol and background traffic), fixed per-peer bounds (memory grows with the fleet; 256 entries / 8 MiB per peer before)]
+    why: |
+      Owner decision (2026-11-15): minimise what users see, behave as
+      transparently as possible, slow down first when there are issues, heal
+      on its own back to full replication, and fail fast only when the proxy
+      cannot cope any more. A fleet e2e run showed replica a's extent splits
+      never reached their other replica (pushes dropped while a breaker was
+      open or the queue full), so a's later disk loss cost a whole 32 MB
+      VictoriaLogs read. Reads already skip an open peer; only the write side
+      lost data. A per-proxy budget keeps memory bounded whatever the fleet
+      size; evicting the largest backlog keeps a long-down peer from crowding
+      out one that just went down. Joining the backlog while it exists keeps
+      per-peer order without per-key versions on the wire. Accepted: a
+      delayed replay from writer A can still overwrite a newer copy written
+      by writer B on the same replica; because the replay sends the TTL A's
+      copy has left, that copy never outlives what A itself serves.
+    evidence: 'internal/cache/peer_push_buffer_test.go and FuzzPeerPushBufferInvariants (2026-11-15, Go 1.27.4, darwin/arm64): 40 pushes buffered while the replica was paused, all 40 replayed after it answered, the probe alone, at most 8 in flight, 0 dropped; Close stops a replay waiting on a hung peer in under 1 s with a 30 s peer timeout'
+    code: [internal/cache/peer_push_buffer.go, internal/cache/peer.go]
+    tests: [TestPeerPushReplay_OpenBufferHalfOpenReplayClosed, TestPeerPushReplay_CoalescesLatestValueWins, TestPeerPushBuffer_FullDropsOldestOfLargest, TestPeerPushReplay_CloseStopsReplay, TestPeerPushReplay_WakesWhenThePeerAnswers, TestPeerPushReplay_UnusedProbeIsHandedBack, TestProxyLifecycle_ShutdownStopsPeerPushReplay, FuzzPeerPushBufferInvariants, TestFleet_PushesBufferedForAPausedReplicaReachItWhenItAnswers]
+    quality: 'No push a replica could take later is lost below the budget; the request path never waits on a peer or the buffer; memory and goroutines are bounded per proxy and released on Close.'
+    performance: 'Healthy path unchanged (benchstat -count=10, Apple M5 Pro, GOMAXPROCS=4, 2026-11-15): BenchmarkPeerReplication_SetOwner rf=1/2/3, FetchOwner, FetchBackup and GetLocalHit within noise in time, B/op and allocs/op; Replicate adds one atomic sequence add and one atomic load per replica. New path: BenchmarkPeerPushBuffer_ReplicateToOpenPeer about 220 ns and 2 allocations per buffered push (a dropped push before), BenchmarkPeerPushBuffer_AddTakeRequeue about 70 ns.'

@@ -73,18 +73,16 @@ var stddevKnown = func() map[string]map[string]string {
 			known[q][k] = id
 		}
 	}
-	// The group's pooled samples, where Loki aggregates the deviation or variance of each series: the translator
-	// groups the stats by the outer labels (stdvar under any outer by, stddev under sum by).
-	const pooled = "semantics/stdvar-grouped-pooled-variance"
-	add(`sum by (app) (stddev_over_time({job="json"} | json | unwrap duration_ms [5m]))`, pooled, all...)
-	add(`sum by (app) (stdvar_over_time({job="json"} | json | unwrap duration_ms [5m]))`, pooled, all...)
-	add(`max by (app) (stdvar_over_time({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`, pooled, all...)
-	add(`avg by (app) (stdvar_over_time({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`, pooled, all...)
-	// An ungrouped sum over a parser query reads each line as a series on a range query (0 where Loki sums the
-	// streams' deviations); the instant query matches.
-	const perLine = "semantics/unwrap-per-series-identity-raw-rows"
-	add(`sum(stddev_over_time({job="json"} | json | unwrap duration_ms [5m]))`, perLine, all[1:]...)
-	add(`sum(stdvar_over_time({job="json"} | json | unwrap duration_ms [5m]))`, perLine, all[1:]...)
+	// A range longer than the step: the window evaluator merges the step buckets of streams, the group's pooled
+	// samples under sum by, max by and avg by, and each line under sum.
+	sliding := []string{"step<range"}
+	const pooled, perLine = "semantics/stdvar-grouped-pooled-variance", "semantics/unwrap-per-series-identity-raw-rows"
+	add(`sum by (app) (stddev_over_time({job="json"} | json | unwrap duration_ms [5m]))`, pooled, sliding...)
+	add(`sum by (app) (stdvar_over_time({job="json"} | json | unwrap duration_ms [5m]))`, pooled, sliding...)
+	add(`max by (app) (stdvar_over_time({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`, pooled, sliding...)
+	add(`avg by (app) (stdvar_over_time({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`, pooled, sliding...)
+	add(`sum(stddev_over_time({job="json"} | json | unwrap duration_ms [5m]))`, perLine, sliding...)
+	add(`sum(stdvar_over_time({job="json"} | json | unwrap duration_ms [5m]))`, perLine, sliding...)
 	// An aggregation over a range aggregation with a by of its own: not applied (the series of the range by), or on
 	// a sliding window applied over the step buckets.
 	const rangeBy = "semantics/aggregation-over-range-by-not-applied"
