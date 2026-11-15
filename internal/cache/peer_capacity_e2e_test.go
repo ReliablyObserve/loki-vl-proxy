@@ -62,6 +62,15 @@ func (f *capacityFleet) startBounded(i int) {
 	c, peer := node.c, node.pc
 	node.handler.Store(http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { peer.ServeHTTP(w, r, c) })))
 	f.alive[i] = true
+	// The running peers' next call to the restarted node gets an answer: the
+	// breaker they opened while it was down closes and the pushes they
+	// buffered for it replay now, not after the 10 s cooldown, which is
+	// longer than quiesce waits.
+	for j, other := range f.nodes {
+		if j != i && f.alive[j] && other.pc != nil {
+			other.pc.recordPeerSuccess(f.addr(i))
+		}
+	}
 }
 
 func (f *capacityFleet) stop(i int) {

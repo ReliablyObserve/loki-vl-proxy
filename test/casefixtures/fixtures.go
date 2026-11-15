@@ -392,10 +392,11 @@ func semanticsStreamsRest() []Stream {
 			Route:   RouteJSONLine,
 		},
 		{
-			// One stream for the two nginx cases: `{service_name="nginx"} | logfmt | addr=ip(...)` and
-			// `{app="nginx"} | pattern "<_> <a><b"`.
+			// One stream for `{app="nginx"} | pattern "<_> <a><b"`; it also holds the IPv4 half of
+			// semantics/ip-label-filter-embedded-address (its second corpus shape, `{service_name="nginx"}`), while that
+			// case's request reads the ip-label-v6 stream.
 			Name:   "nginx",
-			Cases:  []string{"semantics/ip-label-filter-embedded-address", "semantics/pattern-capture-before-bracket-text"},
+			Cases:  []string{"semantics/pattern-capture-before-bracket-text"},
 			Labels: m{"app": "nginx", "service_name": "nginx"},
 			Entries: lines(
 				`addr=10.0.0.5 msg=ab<b`,
@@ -443,6 +444,101 @@ func semanticsStreamsRest() []Stream {
 			Labels:  m{"app": "uwsum-lf-2", "route": "r2"},
 			Entries: lines("level-less line three"),
 			Route:   RouteJSONLine,
+		},
+		{
+			Name:   "ip-label-v6",
+			Cases:  []string{"semantics/ip-label-filter-embedded-address"},
+			Labels: m{"app": "ip-label-v6"},
+			Entries: lines(
+				`addr=2001:db8::1 msg=whole`,
+				`addr="[2001:db8::1]:443" msg=bracketed`,
+				`addr="client 2001:db8::1" msg=embedded`,
+				`addr=fe80::1%eth0 msg=zoned`,
+				`addr=2001:dc8::1 msg=other_prefix`,
+				`addr="no address" msg=none`,
+				`msg=no_addr_label`,
+			),
+			Route: RouteJSONLine,
+		},
+		{
+			// Loki: `| json | ip=ip("10.2.0.0/16")` 4 lines (3 matches + the rejected one, __error__=JSONParserErr);
+			// `ip!=ip(...)` 3 lines (2 + the rejected one); method="GET" 4; proxy drops the rejected line under both.
+			Name:   "ip-json-parser-error",
+			Cases:  []string{"semantics/ip-filter-keeps-parser-error-lines"},
+			Labels: m{"app": "ip-json-parser-error"},
+			Entries: lines(
+				`{"ip":"10.2.3.4","method":"GET"}`,
+				`{"ip":"10.2.5.6","method":"GET"}`,
+				`{"ip":"10.2.7.8","method":"GET"}`,
+				`{"ip":"192.168.1.1","method":"GET"}`,
+				`{"ip":"172.16.0.1","method":"POST"}`,
+				`not json ip=10.2.3.4`,
+			),
+			Route: RouteLokiPushRaw, // the line stays verbatim in _msg on both sides
+		},
+		{
+			// 12 lines: Loki groups sum by (a) as `1`: 7 and none: 5; the proxy reads 5 groups (a=2, a="unterminated, a==1).
+			Name:   "logfmt-malformed",
+			Cases:  []string{"semantics/logfmt-malformed-lines"},
+			Labels: m{"app": "logfmt-malformed"},
+			Entries: lines(
+				`a=1 msg=ok`, `a=1 msg=ok2`, `a=1 b=2`, `a=1 c=3`, `a=1 d=4`,
+				`a=1 a=2`, `a=1 "b"=2`,
+				`a="unterminated b=2`, `a==1 b=2`,
+				`b=2`, `msg=hello`, `x=1 y=2`,
+			),
+			Route: RouteLokiPushRaw,
+		},
+		{
+			// Three streams, each with a `pod` stream label that the logfmt extraction list `amount, pod` also writes:
+			// Loki answers {app, pod=<stream pod>, pod_extracted=<parsed pod>}; the proxy the parsed pod under `pod`.
+			// One stream per pod value a|b|c (Name suffix), the parsed pod p1 or p2 alternating by line.
+			Name:   "uw-collision-a",
+			Cases:  []string{"semantics/unwrap-sum-without-extracted-label-collision"},
+			Labels: m{"app": "uw-collision", "namespace": "ns1", "pod": "a"},
+			Entries: lines(
+				`amount=10 pod=p1`,
+				`amount=20 pod=p2`,
+			),
+			Route: RouteJSONLine,
+		},
+		{
+			// Three streams, each with a `pod` stream label that the logfmt extraction list `amount, pod` also writes:
+			// Loki answers {app, pod=<stream pod>, pod_extracted=<parsed pod>}; the proxy the parsed pod under `pod`.
+			// One stream per pod value a|b|c (Name suffix), the parsed pod p1 or p2 alternating by line.
+			Name:   "uw-collision-b",
+			Cases:  []string{"semantics/unwrap-sum-without-extracted-label-collision"},
+			Labels: m{"app": "uw-collision", "namespace": "ns1", "pod": "b"},
+			Entries: lines(
+				`amount=10 pod=p1`,
+				`amount=20 pod=p2`,
+			),
+			Route: RouteJSONLine,
+		},
+		{
+			// Three streams, each with a `pod` stream label that the logfmt extraction list `amount, pod` also writes:
+			// Loki answers {app, pod=<stream pod>, pod_extracted=<parsed pod>}; the proxy the parsed pod under `pod`.
+			// One stream per pod value a|b|c (Name suffix), the parsed pod p1 or p2 alternating by line.
+			Name:   "uw-collision-c",
+			Cases:  []string{"semantics/unwrap-sum-without-extracted-label-collision"},
+			Labels: m{"app": "uw-collision", "namespace": "ns1", "pod": "c"},
+			Entries: lines(
+				`amount=10 pod=p1`,
+				`amount=20 pod=p2`,
+			),
+			Route: RouteJSONLine,
+		},
+		{
+			// Stream label level="info"; every JSON line says another level. VictoriaLogs' Loki push unpacks the line's key
+			// over the stream label, so `sum by (level)` reads error/warn there and info on Loki.
+			Name:   "level-shadow",
+			Cases:  []string{"semantics/stream-level-shadowed-by-ingest-json-key"},
+			Labels: m{"app": "level-shadow", "level": "info"},
+			Entries: lines(
+				`{"level":"error","msg":"stream info, line error"}`,
+				`{"level":"warn","msg":"stream info, line warn"}`,
+			),
+			Route: RouteLokiPush, // VictoriaLogs parses the JSON line into fields after the stream labels
 		},
 	}
 }

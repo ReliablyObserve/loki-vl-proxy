@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+## [2.300.0] - 2026-11-15
 
+### Fixed
 - **Breaking:** a comment between any other function's name and its parenthesis now answers Loki's `400` before any
   VictoriaLogs call: a range aggregation (`rate # note` on one line and `({app="x"}[5m])` on the next), `vector`,
   `label_replace` and `ip` get `syntax error: unexpected IDENTIFIER` at the name, and an unwrap conversion
