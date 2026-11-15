@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "0s"` in `-tenant-default-limits` or `-tenant-limits`, to keep serving longer ranges. A live tail is not checked
   against this limit.
 
+### Changed
+
+- A timestamp written as digits only (the integer nanoseconds Grafana sends for `start`, `end` and `time`) is read in
+  one pass, eight digits at a time, instead of a digit scan and a second parse: 27 to 8 ns per timestamp, with no
+  allocation, and the same value for every input (a sign, a space, a time layout or a float still takes the general
+  parse). Every request reads its bounds several times, so this more than pays for the length check the new
+  `-default-max-query-length` default adds: at the shipped default a `query_range` or `labels` request costs no more
+  than before.
+
 ## [2.262.0] - 2026-11-15
 ### Changed
 

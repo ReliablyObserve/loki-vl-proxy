@@ -14,8 +14,9 @@ import (
 // BenchmarkTenantLimitsMiddleware_MaxQueryLength measures the limits
 // middleware on a request inside the limit, with max_query_length off (the
 // old flag default) and at Loki's 721h (the shipped default). The next handler
-// reads the request's form, as every route handler does, so form parsing the
-// middleware does is not counted twice.
+// reads the request's form and parses its start and end, as every route handler
+// does (several do it again behind the response cache and the step alignment),
+// so the parse the length check makes is counted against the parse it spares.
 func BenchmarkTenantLimitsMiddleware_MaxQueryLength(b *testing.B) {
 	end := time.Unix(1794570675, 0)
 	start := end.Add(-time.Hour)
@@ -27,7 +28,8 @@ func BenchmarkTenantLimitsMiddleware_MaxQueryLength(b *testing.B) {
 		{"labels", "/loki/api/v1/labels", url.Values{}},
 	}
 	noop := func(_ http.ResponseWriter, r *http.Request) {
-		_, _ = r.FormValue("start"), r.FormValue("end")
+		parseLokiTimeToUnixNano(r.FormValue("start"))
+		parseLokiTimeToUnixNano(r.FormValue("end"))
 	}
 	for _, length := range []struct {
 		name string
