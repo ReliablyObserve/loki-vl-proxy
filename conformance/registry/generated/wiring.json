@@ -1160,6 +1160,11 @@
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
     ],
+    "semantics/comment-between-function-and-parenthesis-accepted": [
+      "internal/logql/zero_range_comments_loki_test.go",
+      "internal/proxy/comment_before_call_test.go",
+      "internal/proxy/fail_fast_unicode_test.go"
+    ],
     "semantics/comments-signed-compound-offsets": [
       "internal/logql/comments_offsets_test.go",
       "internal/proxy/unknown_logql_names_test.go",
@@ -1615,6 +1620,7 @@
     ],
     "semantics/log-query-default-limit": [
       "internal/proxy/default_entry_limit_test.go",
+      "internal/proxy/limit_fallbacks_unreachable_test.go",
       "test/e2e-compat/log_query_default_limit_test.go"
     ],
     "semantics/logfmt-existence-filter-ungrouped-sum": [
@@ -1803,9 +1809,11 @@
     ],
     "semantics/range-duration-grammar-wider-than-loki": [
       "internal/logql/range_unwrap_grammar_loki_test.go",
+      "internal/logql/zero_range_comments_loki_test.go",
       "internal/proxy/error_refusals_test.go",
       "internal/proxy/fail_fast_unicode_test.go",
       "internal/proxy/logql_grammar_rejects_test.go",
+      "internal/proxy/zero_range_test.go",
       "internal/querycorpus/grammar_sweep_test.go",
       "test/e2e-compat/logql_whitespace_test.go"
     ],
@@ -2247,6 +2255,7 @@
       "test/e2e-compat/sliding_sum_without_test.go"
     ],
     "semantics/zero-range-metric": [
+      "internal/logql/zero_range_comments_loki_test.go",
       "internal/proxy/error_refusals_test.go",
       "internal/proxy/zero_range_test.go"
     ],
@@ -2627,6 +2636,11 @@
     "internal/logql/whitespace_loki_test.go": [
       "semantics/parser-reads-unicode-blank-as-white-space"
     ],
+    "internal/logql/zero_range_comments_loki_test.go": [
+      "semantics/comment-between-function-and-parenthesis-accepted",
+      "semantics/range-duration-grammar-wider-than-loki",
+      "semantics/zero-range-metric"
+    ],
     "internal/logsql/append_pipe_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -2816,6 +2830,9 @@
     ],
     "internal/proxy/cold_bad_row_test.go": [
       "semantics/error-layer-silent-success"
+    ],
+    "internal/proxy/comment_before_call_test.go": [
+      "semantics/comment-between-function-and-parenthesis-accepted"
     ],
     "internal/proxy/compat_cache_freshness_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
@@ -3028,6 +3045,7 @@
     ],
     "internal/proxy/fail_fast_unicode_test.go": [
       "cache-response-key-versions",
+      "semantics/comment-between-function-and-parenthesis-accepted",
       "semantics/ip-label-filter-invalid-pattern",
       "semantics/label-list-trailing-comma",
       "semantics/logql-unicode-runes",
@@ -3182,6 +3200,9 @@
       "semantics/error-layer-proxy-limit-status",
       "status-429",
       "status-500"
+    ],
+    "internal/proxy/limit_fallbacks_unreachable_test.go": [
+      "semantics/log-query-default-limit"
     ],
     "internal/proxy/line_fields_without_parser_test.go": [
       "loki-compatible-profile",
@@ -4107,6 +4128,7 @@
       "semantics/without-sliding-sum-folded-buckets"
     ],
     "internal/proxy/zero_range_test.go": [
+      "semantics/range-duration-grammar-wider-than-loki",
       "semantics/zero-range-metric"
     ],
     "internal/querycorpus/binop_grid_test.go": [
@@ -5450,7 +5472,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 641,
+  "tests_with_markers": 644,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5497,7 +5519,6 @@
     "quality/parity-corpus-asymmetric-visual-fixtures",
     "quality/stats-volume-freshness",
     "semantics/binary-step-grid",
-    "semantics/comment-between-function-and-parenthesis-accepted",
     "semantics/detected-fields-extracted-suffix",
     "semantics/drop-keep-plain-name-after-parser",
     "semantics/eager-pipeline-validation",
@@ -5550,5 +5571,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 378
+  "wired_items": 379
 }

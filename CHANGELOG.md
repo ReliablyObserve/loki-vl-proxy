@@ -9,12 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Breaking:** a range log query (`query_range`) that sends no `limit` now returns Loki's default of 100 entries,
-  not 1000. The default is `-max-lines`, whose default moves from 1000 to 100; set `-max-lines=1000` to keep the old
-  answer. Grafana always sends its Max lines as the limit, so only API clients that omit `limit` see a change. The
-  default is applied before the cache and the query plan read the request, so the VictoriaLogs calls, the windows,
-  the query statistics and the cache keys use the limit the answer has. A tenant whose `max_entries_limit_per_query`
-  is below the default still gets that many entries.
+- A range of a bare `0` (`rate({app="x"}[0])`, also with an offset or an unwrap) is now accepted as Loki accepts it,
+  as the same zero range as `[0s]`: `query_range` and `query` answer Loki's empty result without a VictoriaLogs
+  call. It was rejected with `400 not a valid duration string: "0"`. `[00]` and `offset 0` stay Loki's `400`.
+- **Breaking:** a comment between a vector aggregation's name and its parenthesis or `by (` grouping
+  (`sum # note` on one line and `(rate({app="x"}[5m]))` on the next) now answers Loki's
+  `400 parse error at line 1, col 1: syntax error: unexpected IDENTIFIER` before any VictoriaLogs call. Loki's
+  lexer reads the name as a label name there; the proxy removed the comment and answered the query. A comment
+  anywhere else, after the grouping keyword of a call included, is still skipped as Loki skips it.
 - `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`,
   `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep` now read Loki's series on
   `query` and on `query_range` with the range up to the step: the stream plus every parsed label except the unwrapped
@@ -29,6 +31,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `semantics/unwrap-per-series-identity-label-filter`). The keywords may be written in any case (`SUM by (app)
   (AVG_OVER_TIME(... | JSON | UNWRAP x [5m]))`): the handlers, the response cache key and the translation read the
   lower-case spelling alike.
+
+## [2.280.1] - 2026-11-15
+
+### Changed
+
+- A range log query no longer keeps fallbacks to a limit of 1000 in the limit cap, the cold read and the windowed read.
+  The route already rejects a `limit` that is not a positive integer as Loki does and gives an absent one the default,
+  so the readers always get a positive integer and those fallbacks could not run. No answer changes.
+
+## [2.280.0] - 2026-11-15
+
+### Fixed
+
+- **Breaking:** a range log query (`query_range`) that sends no `limit` now returns Loki's default of 100 entries,
+  not 1000. The default is `-max-lines`, whose default moves from 1000 to 100; set `-max-lines=1000` to keep the old
+  answer. Grafana always sends its Max lines as the limit, so only API clients that omit `limit` see a change. The
+  default is applied before the cache and the query plan read the request, so the VictoriaLogs calls, the windows,
+  the query statistics and the cache keys use the limit the answer has. A tenant whose `max_entries_limit_per_query`
+  is below the default still gets that many entries.
 
 ## [2.271.0] - 2026-11-15
 

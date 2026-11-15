@@ -15,7 +15,8 @@ why: |
   of them, `unless` with one on the left) is answered at once on query_range and query with Loki's empty matrix or
   vector, before the cache, the plan and any VictoriaLogs call (internal/proxy/query_tree_validation.go
   emptyWhateverTheData, held by cachedQueryValidation). Loki's engine (test/oracle/loki engine) answers every one of
-  them so over data with lines in every window. Not covered: absent_over_time over a zero range, which Loki answers
+  them so over data with lines in every window. A bare `0` range (`[0]`, which Loki reads as `[0s]`) gets the same
+  answers (recorded with Loki's engine too). Not covered: absent_over_time over a zero range, which Loki answers
   with 1 at every step, still answers 500, and so does an `or` with an operand that has series.
 request:
   scope: query-grammar
@@ -33,7 +34,7 @@ gap:
   area: "internal/proxy manual range metric path (a zero range)"
   loki: "200, an empty result"
   proxy: "200, Loki's empty result, without a VictoriaLogs call (absent_over_time: 500)"
-  planned_test: 'TestZeroRangeAnswersLikeLoki (internal/proxy, Loki engine answers recorded with the oracle), TestRangeWindowRefusal (internal/proxy)'
+  planned_test: 'TestZeroRangeAnswersLikeLoki (internal/proxy, Loki engine answers recorded with the oracle), TestBareZeroRangeAnswersLikeZeroSeconds, TestRangeWindowRefusal (internal/proxy)'
   visual: none
   visual_reason: 'a zero range is no panel a user builds'
   clusters: []

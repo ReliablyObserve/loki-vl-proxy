@@ -24,8 +24,12 @@ var zeroRangeQueries = []string{
 	`sum_over_time({app="a"} | logfmt | unwrap c [0s])`, `quantile_over_time(0.5, {app="a"} | logfmt | unwrap c [0s])`,
 	`rate({app="a"}[0s]) + 1`, `count_over_time({app="a"}[0s]) > 0`, `vector(1) and rate({app="a"}[0s])`,
 	`rate({app="a"}[0s]) / rate({app="a"}[1m])`, `rate({app="a"}[0s]) or rate({app="a"}[0s])`,
+	// A bare 0 is a zero range too.
+	`rate({app="a"}[0])`, `rate({app="a"}[0] offset 1m)`, `sum by (pod) (count_over_time({app="a"}[0]))`,
+	`sum_over_time({app="a"} | logfmt | unwrap c [0])`, `rate({app="a"}[0]) or rate({app="a"}[0s])`,
 	// Answers with series.
 	`absent_over_time({app="a"}[0s])`, `absent_over_time({app="nope"}[0s])`, `absent_over_time({app="a"}[0s]) * 2`,
+	`absent_over_time({app="a"}[0])`, `rate({app="a"}[0]) or vector(1)`,
 	`rate({app="a"}[0s]) or vector(1)`, `rate({app="a"}[0s]) or rate({app="a"}[1m])`,
 	`rate({app="a"}[1m]) unless rate({app="a"}[0s])`, `rate({app="a"}[1m])`, `vector(1)`, `1 + 1`,
 }
@@ -151,6 +155,53 @@ func TestZeroRangeAnswersLikeLoki(t *testing.T) {
 		}
 		if calls.Load() != before {
 			t.Errorf("%s: %d VictoriaLogs calls for an answer that holds no series", q, calls.Load()-before)
+		}
+	}
+}
+
+// A bare 0 range is the same zero range as 0s: every query of zeroRangeQueries written with [0] gets the answer, the
+// status and the number of VictoriaLogs requests of its [0s] spelling, on query_range and query.
+//
+// conformance: semantics/zero-range-metric, semantics/range-duration-grammar-wider-than-loki
+func TestBareZeroRangeAnswersLikeZeroSeconds(t *testing.T) {
+	var calls atomic.Int64
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	}))
+	defer backend.Close()
+	answer := func(p *Proxy, path string) (int, string, int64) {
+		before := calls.Load()
+		w := doCompatProxyRequest(p, path, map[string]string{"X-Scope-OrgID": "0"})
+		return w.Code, w.Body.String(), calls.Load() - before
+	}
+	for _, q := range zeroRangeQueries {
+		if !strings.Contains(q, "[0s]") {
+			continue
+		}
+		bare := strings.ReplaceAll(q, "[0s]", "[0]")
+		for _, form := range []url.Values{
+			{"start": {"1700000600"}, "end": {"1700003600"}, "step": {"600"}},
+			{"time": {"1700003000"}},
+		} {
+			endpoint := "/loki/api/v1/query_range?"
+			if form.Has("time") {
+				endpoint = "/loki/api/v1/query?"
+			}
+			pathOf := func(query string) string {
+				v := url.Values{"query": {query}}
+				for k, vs := range form {
+					v[k] = vs
+				}
+				return endpoint + v.Encode()
+			}
+			// Fresh proxies, so neither answer is served from the other's cache.
+			wantCode, wantBody, wantCalls := answer(newTestProxy(t, backend.URL), pathOf(q))
+			gotCode, gotBody, gotCalls := answer(newTestProxy(t, backend.URL), pathOf(bare))
+			if gotCode != wantCode || gotBody != wantBody || gotCalls != wantCalls {
+				t.Errorf("%s%s: %d %q (%d calls), the [0s] spelling %d %q (%d calls)", endpoint, bare, gotCode, gotBody, gotCalls, wantCode, wantBody, wantCalls)
+			}
 		}
 	}
 }

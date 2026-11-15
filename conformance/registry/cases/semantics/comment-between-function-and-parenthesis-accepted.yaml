@@ -15,6 +15,16 @@ why: |
   Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki
   3.7.9): 16 queries, held under semantics/parser-reads-unicode-blank-as-white-space until the white space fix
   separated them.
+
+  Fixed for the vector aggregations (the 16 recorded queries): a query with a comment between a vector
+  aggregation's name and its parenthesis or `by (` / `without (` grouping keeps its comments
+  (logql.StripComments), so the validation reads the name as Loki's lexer does and answers Loki's 400 with its text
+  before any VictoriaLogs call. A comment after the grouping keyword of a call (`sum (...) by # c\n(a)`) or anywhere
+  else is still removed and the query answered, as Loki does.
+
+  Not changed, no Loki answer recorded yet: a comment before the parenthesis of a range aggregation
+  (`rate # c\n({a="b"}[5m])`), `label_replace`, `vector`, `ip` and the unwrap conversions (`bytes`, `duration`,
+  `duration_seconds`). The proxy still removes those comments and answers the query.
 request:
   scope: query-grammar
   entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/comment-between-function-and-parenthesis-accepted"
@@ -29,8 +39,8 @@ gap:
   effort: S
   area: "internal/logql StripComments and the keyword lookahead (a comment before a function's parenthesis)"
   loki: "a function name followed by a comment is an identifier"
-  proxy: "comments are removed before the validation, so the name is read as the function"
-  planned_test: 'TestGrammarSweep (internal/querycorpus: the class of conformance/registry/grammar-sweep.json that names this case holds the queries; it shrinks as the proxy follows Loki)'
+  proxy: "a vector aggregation name before a comment is read as Loki reads it; for the other function names the comment is removed and the name is read as the function"
+  planned_test: 'TestCommentBetweenVectorAggregationAndCallLikeLoki, FuzzStripComments (internal/logql), TestCommentBeforeVectorAggregationCallAnswersLikeLoki (internal/proxy), TestGrammarSweep (internal/querycorpus)'
   visual: none
   visual_reason: 'a grammar corner no Grafana panel sends, found by the grammar sweep'
   clusters: []
