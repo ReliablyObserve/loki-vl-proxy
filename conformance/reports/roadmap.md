@@ -7,7 +7,7 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 ## Where we are
 
 - Read endpoints with a test comparing the proxy against Loki: **70%**
-- Behaviour and feature items: **10 proven**, 21 partial, 3 gaps, 0 waived, 7 with no state recorded
+- Behaviour and feature items: **10 proven**, 21 partial, 3 gaps, 0 waived, 8 with no state recorded
 
 
 ## Next: unproven behaviour
@@ -40,7 +40,7 @@ Proven in part; the rest is named in the item's cases.
 | `peer-cache-patterns` — Patterns mined on one replica are served by every replica and restored on a replica that lost its disk | — | 0 / 0 | 4 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-query-range-windows` — Log query windows computed by their ring owner are read by the other replicas | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-query-replies` — Completed query replies computed on one replica answer the same request on every replica | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
-| `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | — | 0 / 0 | 5 | Unit-proven on a three-replica in-process ring (internal/cache/ peer_replication_test.go, internal/proxy/peer_push_ident |
+| `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | — | 0 / 0 | 6 | Unit-proven on a three-replica in-process ring (internal/cache/ peer_replication_test.go, internal/proxy/peer_push_ident |
 | `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | — | 4 / 5 | 27 | limits/series-limit-error and limits/drilldown-partial-with-warning are written and wired: a metric query above -max-sta |
 | `service-name-derivation` — service_name follows Loki's discovery order | — | 0 / 0 | 0 | The derivation matches Loki's 13-entry discover_service_name order and is used by selectors, label filters, grouping, la |
@@ -76,7 +76,8 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 4 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 4 | — |
 | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | — | 0 / 0 | 4 | — |
+| `peer-cache-push-replay` — Pushes a replica cannot take while its breaker is open are buffered and replayed, so the fleet heals to full replication | — | 0 / 0 | 5 | — |
 | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | — | 0 / 0 | 8 | — |
-| `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | — | 0 / 0 | 2 | — |
+| `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | — | 0 / 0 | 4 | — |
 
 Tests counts the test files that declare the item or one of its cases (`// conformance:` in Go, `@cov:` in Playwright); a case is written when its file exists under `conformance/registry/cases/`.

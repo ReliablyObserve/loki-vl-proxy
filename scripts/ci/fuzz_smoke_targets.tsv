@@ -174,3 +174,4 @@ smoke	test/caseverify	FuzzCompareIsReflexive	12s	-	the per-case live runner find
 smoke	internal/proxy	FuzzMetricFlipGate	12s	-	the metric flip gate serves only the string translator's text, with the candidate metric constructs flipped
 smoke	internal/queryplan/lower	FuzzScreenMetric	12s	-	the metric screen answers a construct of its set with no allocation, and the plan's root for a query that parses
 smoke	internal/logsql	FuzzAppendPipeMatchesString	12s	-	stats and math pipes appended in place print the text their String writes
+smoke	internal/cache	FuzzPeerPushBufferInvariants	12s	-	peer push buffer invariants

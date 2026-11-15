@@ -2456,10 +2456,10 @@ func (p *Proxy) peerCacheMetrics() string {
 			"# HELP loki_vl_proxy_peer_cache_peer_not_up_total Refused connections to peers that had not answered yet since this process started (peers still starting: skipped briefly, not counted as failures).\n"+
 			"# TYPE loki_vl_proxy_peer_cache_peer_not_up_total counter\n"+
 			"loki_vl_proxy_peer_cache_peer_not_up_total %d\n"+
-			"# HELP loki_vl_proxy_peer_cache_push_peer_not_up_total Pushes to a peer that was still starting that were dropped (above the kept-push bound, or the peer never answered within 30s); the others are sent once it answers.\n"+
+			"# HELP loki_vl_proxy_peer_cache_push_peer_not_up_total Buffered pushes to a peer that had not answered since this process started that were dropped (buffer full, TTL ran out, buffering off); the others are sent once it answers.\n"+
 			"# TYPE loki_vl_proxy_peer_cache_push_peer_not_up_total counter\n"+
 			"loki_vl_proxy_peer_cache_push_peer_not_up_total %d\n"+
-			"# HELP loki_vl_proxy_peer_cache_push_throttled_total Pushes dropped because the push queue was full (4096 pushes or 64 MiB waiting behind 64 running).\n"+
+			"# HELP loki_vl_proxy_peer_cache_push_throttled_total Pushes dropped because the push queue was full (4096 pushes or 64 MiB waiting behind 64 running) while the push buffer is off; with it on they are buffered.\n"+
 			"# TYPE loki_vl_proxy_peer_cache_push_throttled_total counter\n"+
 			"loki_vl_proxy_peer_cache_push_throttled_total %d\n"+
 			"# HELP loki_vl_proxy_peer_cache_push_too_large_total Peer pushes skipped because the value is above the peers' accepted body size.\n"+
@@ -2490,7 +2490,41 @@ func (p *Proxy) peerCacheMetrics() string {
 			"# TYPE loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total counter\n"+
 			"loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total %d\n",
 		remotePeers, clusterMembers, replication, hits, backupHits, misses, errors, reasonLines.String(), peerNotUp, pushPeerNotUp, pushThrottled, pushTooLarge, wtPushes, wtErrors, raHotRequests, raHotErrors, raPrefetches, raPrefetchBytes, raBudgetDrops, raTenantSkips,
-	) + p.peerCache.FetchDurationText()
+	) + peerPushBufferMetrics(stats) + p.peerCache.FetchDurationText()
+}
+
+// peerPushBufferMetrics renders the push buffer's counters and gauges: pushes
+// a peer could not take, buffered by reason, coalesced, replayed once the peer
+// answered, and dropped by reason.
+func peerPushBufferMetrics(stats map[string]interface{}) string {
+	var b strings.Builder
+	labelled := func(name, help string, counts map[string]int64) {
+		reasons := make([]string, 0, len(counts))
+		for reason := range counts {
+			reasons = append(reasons, reason)
+		}
+		sort.Strings(reasons)
+		fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s counter\n", name, help, name)
+		for _, reason := range reasons {
+			fmt.Fprintf(&b, "%s{reason=%q} %d\n", name, reason, counts[reason])
+		}
+	}
+	plain := func(name, kind, help string, value int64) {
+		fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s %s\n%s %d\n", name, help, name, kind, name, value)
+	}
+	buffered, _ := stats["push_buffered"].(map[string]int64)
+	dropped, _ := stats["push_buffer_dropped"].(map[string]int64)
+	coalesced, _ := stats["push_coalesced"].(int64)
+	replayed, _ := stats["push_replayed"].(int64)
+	entries, _ := stats["push_buffer_entries"].(int)
+	bytes, _ := stats["push_buffer_bytes"].(int64)
+	labelled("loki_vl_proxy_peer_cache_push_buffered_total", "Pushes a peer could not take, kept in the push buffer to be replayed, by reason (peer_unavailable, peer_not_up, queue_full, push_failed, backlog).", buffered)
+	plain("loki_vl_proxy_peer_cache_push_buffer_coalesced_total", "counter", "Buffered pushes that met a buffered value of the same key (the newer value is kept).", coalesced)
+	plain("loki_vl_proxy_peer_cache_push_replayed_total", "counter", "Buffered pushes delivered once their peer answered again.", replayed)
+	labelled("loki_vl_proxy_peer_cache_push_buffer_dropped_total", "Buffered pushes given up, by reason (full, expired, peer_removed, not_replica, rejected, closed, disabled).", dropped)
+	plain("loki_vl_proxy_peer_cache_push_buffer_entries", "gauge", "Pushes waiting in the push buffer, all peers together.", int64(entries))
+	plain("loki_vl_proxy_peer_cache_push_buffer_bytes", "gauge", "Bytes of the values waiting in the push buffer, all peers together.", bytes)
+	return b.String()
 }
 
 // handleQueryRange translates Loki range queries.

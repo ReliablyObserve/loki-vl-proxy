@@ -434,6 +434,8 @@ extraArgs:
   # peer-timeout: "2s"                          # timeout for peer-cache fetches to owner peers
   # peer-replication-factor: "2"               # replicas per peer-cache key (owner + backups); a replica that lost its disk or whose owner is down reads the key from the next replica
   # peer-write-through: "true"                  # push eligible writes to the key's replicas
+  # peer-push-buffer-max-entries: "8192"       # pushes kept (all peers) while a peer's breaker is open or it restarts, replayed when it answers; 0 = off
+  # peer-push-buffer-max-bytes: "33554432"     # bytes of those buffered pushes (32 MiB); 0 = off
   # peer-write-through-min-ttl: "30s"           # only TTL >= threshold is pushed to owner peer
   # peer-hot-read-ahead-enabled: "false"        # bounded periodic prefetch from peer hot indexes
   # peer-hot-read-ahead-interval: "30s"         # base period for hot-index pull cycle

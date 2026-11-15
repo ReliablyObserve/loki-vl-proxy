@@ -1080,12 +1080,18 @@
     "cmd/proxy/main_test.go | limits/every-cap-is-a-flag",
     "cmd/proxy/main_test.go | operator-configurable-limits",
     "cmd/proxy/main_test.go | semantics/query-range-step-alignment",
+    "cmd/proxy/peer_config_test.go | peer-cache-push-replay",
     "cmd/proxy/tenant_routing_test.go | tenant-auth-follows-loki",
     "cmd/proxy/tenant_routing_test.go | tenant-numeric-routing",
     "internal/cache/cache_coverage_test.go | observability-query-flow",
     "internal/cache/cache_test.go | shutdown-releases-background-work",
     "internal/cache/peer_protocol_edges_test.go | peer-cache-fleet-recovery",
     "internal/cache/peer_protocol_edges_test.go | peer-cache-replication",
+    "internal/cache/peer_push_buffer_fuzz_test.go | peer-cache-push-replay",
+    "internal/cache/peer_push_buffer_test.go | peer-cache-push-replay",
+    "internal/cache/peer_push_buffer_test.go | peer-cache-replication",
+    "internal/cache/peer_push_buffer_test.go | shutdown-releases-background-work",
+    "internal/cache/peer_replication_test.go | peer-cache-push-replay",
     "internal/cache/peer_replication_test.go | peer-cache-replication",
     "internal/cache/peer_test.go | peer-cache-patterns",
     "internal/config/generate_edge_test.go | operator-configurable-limits",
@@ -1627,6 +1633,8 @@
     "internal/proxy/patterns_state_test.go | loki_api_v1_patterns",
     "internal/proxy/patterns_state_test.go | patterns-loki-mining",
     "internal/proxy/patterns_state_test.go | peer-cache-patterns",
+    "internal/proxy/peer_push_buffer_test.go | peer-cache-push-replay",
+    "internal/proxy/peer_push_buffer_test.go | shutdown-releases-background-work",
     "internal/proxy/peer_push_identity_test.go | peer-cache-replication",
     "internal/proxy/peer_warm_fetch_test.go | peer-cache-fleet-recovery",
     "internal/proxy/perf_hardening_test.go | semantics/error-layer-silent-success",
@@ -2708,7 +2716,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 607,
+      "go": 611,
       "playwright": 1
     },
     "page_kinds": {
@@ -2728,7 +2736,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 99,
-    "wired_items": 366
+    "wired_items": 367
   },
   "gates": [
     "A/B shape selection",

@@ -137,11 +137,28 @@ type PeerCache struct {
 	PushPeerNotUp atomic.Int64
 	// PushThrottled counts pushes dropped because the push queue was full
 	// (maxQueuedPushes pushes or maxQueuedPushBytes waiting behind
-	// maxInFlightPushes running ones).
+	// maxInFlightPushes running ones) while the push buffer is off; with it
+	// on they are buffered (PushBuffered[bufferedQueueFull]).
 	PushThrottled atomic.Int64
 	pushQueue     chan pushJob
 	pushQueued    atomic.Int64 // bytes waiting in pushQueue
 	pushers       atomic.Int32 // push workers running
+	// Pushes a peer could not take wait in pushBuf (peer_push_buffer.go):
+	// PushBuffered counts them by reason, PushCoalesced the ones that
+	// replaced or lost to a value of the same key, PushReplayed the ones
+	// delivered later and PushBufferDropped the ones given up, by reason.
+	pushBuf           *pushBuffer // nil when buffering is off
+	pushSeq           atomic.Uint64
+	replayers         atomic.Int32 // replay goroutines running
+	PushBuffered      [bufferedReasons]atomic.Int64
+	PushCoalesced     atomic.Int64
+	PushReplayed      atomic.Int64
+	PushBufferDropped [droppedReasons]atomic.Int64
+	dropsSinceLog     atomic.Int64
+	dropLoggedAt      atomic.Int64 // Unix ns of the last buffer-full log line
+	// ctx is cancelled by Close: every peer call runs under it.
+	ctx    context.Context
+	cancel context.CancelFunc
 	// fetchDurations times every replica fetch by the replica's role and the
 	// outcome.
 	fetchDurations [2][3]durationHistogram // [owner, backup][hit, miss, error]
@@ -188,7 +205,12 @@ type PeerConfig struct {
 	ReadAheadMaxObjectBytes  int           // skip very large entries
 	ReadAheadTenantFairShare int           // fairness pass cap (% of key budget per tenant)
 	ReadAheadErrorBackoff    time.Duration // base cooldown after read-ahead errors
-	Logger                   *slog.Logger
+	// Pushes a peer cannot take are buffered and replayed within these
+	// bounds, across all peers: 0 uses DefaultPushBufferMaxEntries and
+	// DefaultPushBufferMaxBytes, a negative value turns buffering off.
+	PushBufferMaxEntries int
+	PushBufferMaxBytes   int64
+	Logger               *slog.Logger
 }
 
 type hotIndexResponse struct {
@@ -288,6 +310,18 @@ func NewPeerCache(cfg PeerConfig) *PeerCache {
 	}
 	pc.replication = min(max(cfg.ReplicationFactor, 1), MaxReplicationFactor)
 	pc.pushQueue = make(chan pushJob, maxQueuedPushes)
+	pc.ctx, pc.cancel = context.WithCancel(context.Background())
+	if cfg.PushBufferMaxEntries == 0 {
+		cfg.PushBufferMaxEntries = DefaultPushBufferMaxEntries
+	}
+	if cfg.PushBufferMaxBytes == 0 {
+		cfg.PushBufferMaxBytes = DefaultPushBufferMaxBytes
+	}
+	if cfg.PushBufferMaxEntries > 0 && cfg.PushBufferMaxBytes > 0 {
+		pc.pushBuf = newPushBuffer(cfg.PushBufferMaxEntries, cfg.PushBufferMaxBytes, func(addr string) *atomic.Int64 {
+			return &pc.breaker(addr).buffered
+		})
+	}
 
 	switch cfg.DiscoveryType {
 	case "dns":
@@ -667,27 +701,37 @@ func (pc *PeerCache) Replicate(key string, value []byte, ttl time.Duration) {
 	if pc == nil || len(value) == 0 || !pc.pushAllowed(key, value) {
 		return
 	}
+	seq := pc.pushSeq.Add(1)
 	for _, addr := range pc.replicasOf(key) {
 		if addr == pc.selfAddr {
 			continue
 		}
+		job := pushJob{addr: addr, key: key, value: value, ttl: ttl, seq: seq}
+		pb := pc.breaker(addr)
+		if pb.buffered.Load() > 0 {
+			// Behind the peer's backlog, so it never lands before an older value.
+			pc.bufferPush(addr, job, bufferedBacklog)
+			continue
+		}
 		if !pc.peerAllowed(addr) {
-			if pb := pc.breaker(addr); !pb.seenUp.Load() && time.Now().UnixNano() < pb.notUpUntil.Load() {
-				pc.deferPush(addr, key, value, ttl) // sent once the peer answers
+			if !pb.seenUp.Load() && time.Now().UnixNano() < pb.notUpUntil.Load() {
+				pc.bufferPush(addr, job, bufferedPeerNotUp) // sent once the peer answers
 			} else {
 				pc.WTErrors.Add(1)
+				pc.bufferPush(addr, job, bufferedPeerUnavailable) // sent once its breaker closes
 			}
 			continue
 		}
-		pc.enqueuePush(pushJob{addr: addr, key: key, value: value, ttl: ttl})
+		pc.enqueuePush(job)
 	}
 }
 
 // Replica pushes run on at most maxInFlightPushes workers (each push holds a
 // connection for up to the peer timeout, and under load pushes compete with
 // requests for CPU); the others wait in a queue of at most maxQueuedPushes
-// pushes and maxQueuedPushBytes. A push that does not fit is dropped and
-// counted (PushThrottled); the replica that misses the copy fetches it from
+// pushes and maxQueuedPushBytes. A push that does not fit is buffered for
+// its peer (bufferPush) or, with buffering off, dropped and counted
+// (PushThrottled); the replica that misses a dropped copy fetches it from
 // another replica on its first lookup.
 const (
 	maxInFlightPushes  = 64
@@ -699,6 +743,7 @@ type pushJob struct {
 	addr, key string
 	value     []byte
 	ttl       time.Duration
+	seq       uint64 // of the Replicate call, so a newer value wins in the backlog
 }
 
 func (pc *PeerCache) enqueuePush(job pushJob) {
@@ -709,14 +754,14 @@ func (pc *PeerCache) enqueuePush(job pushJob) {
 	size := int64(len(job.value))
 	if pc.pushQueued.Add(size) > maxQueuedPushBytes {
 		pc.pushQueued.Add(-size)
-		pc.PushThrottled.Add(1)
+		pc.queueFull(job)
 		return
 	}
 	select {
 	case pc.pushQueue <- job:
 	default:
 		pc.pushQueued.Add(-size)
-		pc.PushThrottled.Add(1)
+		pc.queueFull(job)
 		return
 	}
 	for {
@@ -741,7 +786,7 @@ func (pc *PeerCache) pushWorker() {
 			return
 		case job := <-pc.pushQueue:
 			pc.pushQueued.Add(-int64(len(job.value)))
-			pc.pushToOwner(job.addr, job.key, job.value, job.ttl)
+			pc.sendJob(job)
 			continue
 		default:
 		}
@@ -758,6 +803,37 @@ func (pc *PeerCache) pushWorker() {
 	}
 }
 
+// queueFull handles a push the queue had no room for.
+func (pc *PeerCache) queueFull(job pushJob) {
+	if pc.pushBuf == nil {
+		pc.PushThrottled.Add(1)
+		return
+	}
+	pc.bufferPush(job.addr, job, bufferedQueueFull)
+}
+
+// sendJob sends one queued push. A push to a peer with a backlog joins it
+// (order), and one to a peer whose breaker holds calls back is buffered
+// instead of tying up a worker for -peer-timeout; a push that fails in a way
+// worth retrying is buffered too.
+func (pc *PeerCache) sendJob(job pushJob) {
+	pb := pc.breaker(job.addr)
+	if pb.buffered.Load() > 0 {
+		pc.bufferPush(job.addr, job, bufferedBacklog)
+		return
+	}
+	if pb.blockedFor(time.Now().UnixNano()) > 0 {
+		pc.bufferPush(job.addr, job, bufferedPeerUnavailable)
+		return
+	}
+	switch pc.pushOnce(job.addr, job.key, job.value, job.ttl) {
+	case pushPeerNotUp:
+		pc.bufferPush(job.addr, job, bufferedPeerNotUp)
+	case pushRetry:
+		pc.bufferPush(job.addr, job, bufferedPushFailed)
+	}
+}
+
 // WriteThroughMinTTL returns the minimum TTL a write needs to be pushed to its
 // owner peer, or 0 when write-through is disabled.
 func (pc *PeerCache) WriteThroughMinTTL() time.Duration {
@@ -768,14 +844,31 @@ func (pc *PeerCache) WriteThroughMinTTL() time.Duration {
 }
 
 // pushToOwner pushes the key to one replica and reports whether it landed.
-// A push to a replica that is still starting is kept and sent once it
-// answers (deferPush).
+// A push that failed in a way worth retrying (the replica is still starting,
+// unreachable or answered 429/5xx) is buffered and replayed (bufferPush).
 func (pc *PeerCache) pushToOwner(owner, key string, value []byte, ttl time.Duration) bool {
 	return pc.push(owner, key, value, ttl, true)
 }
 
-// push is pushToOwner; deferIfNotUp keeps a push to a starting peer.
-func (pc *PeerCache) push(owner, key string, value []byte, ttl time.Duration, deferIfNotUp bool) bool {
+// push is pushToOwner; bufferOnFailure keeps a push worth retrying.
+func (pc *PeerCache) push(owner, key string, value []byte, ttl time.Duration, bufferOnFailure bool) bool {
+	switch outcome := pc.pushOnce(owner, key, value, ttl); outcome {
+	case pushDelivered:
+		return true
+	case pushPeerNotUp, pushRetry:
+		if bufferOnFailure {
+			reason := bufferedPushFailed
+			if outcome == pushPeerNotUp {
+				reason = bufferedPeerNotUp
+			}
+			pc.bufferPush(owner, pushJob{addr: owner, key: key, value: value, ttl: ttl, seq: pc.pushSeq.Add(1)}, reason)
+		}
+	}
+	return false
+}
+
+// pushOnce sends the key to one replica once and says how it went.
+func (pc *PeerCache) pushOnce(owner, key string, value []byte, ttl time.Duration) pushOutcome {
 	ctx, cancel := context.WithTimeout(pc.peerContext(owner), pc.client.Timeout)
 	defer cancel()
 	ttlMs := int64(0)
@@ -791,7 +884,7 @@ func (pc *PeerCache) push(owner, key string, value []byte, ttl time.Duration, de
 				pc.recordPeerFailure(owner)
 				pc.RecordPeerErrorReason("encode")
 				pc.WTErrors.Add(1)
-				return false
+				return pushRejected
 			}
 			body = encoded
 			encoding = supported
@@ -809,7 +902,7 @@ func (pc *PeerCache) push(owner, key string, value []byte, ttl time.Duration, de
 	if err != nil {
 		pc.recordPeerFailure(owner)
 		pc.WTErrors.Add(1)
-		return false
+		return pushRejected
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	if encoding != "" {
@@ -821,23 +914,23 @@ func (pc *PeerCache) push(owner, key string, value []byte, ttl time.Duration, de
 	resp, err := pc.client.Do(req)
 	if err != nil {
 		if pc.recordPeerCallError(owner, ctx, err) {
-			if deferIfNotUp {
-				pc.deferPush(owner, key, value, ttl)
-			}
-		} else {
-			pc.WTErrors.Add(1)
+			return pushPeerNotUp
 		}
-		return false
+		pc.WTErrors.Add(1)
+		return pushRetry
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		pc.recordPeerFailure(owner)
 		pc.WTErrors.Add(1)
-		return false
+		if retryableStatus(resp.StatusCode) {
+			return pushRetry
+		}
+		return pushRejected
 	}
 	pc.recordPeerSuccess(owner)
 	pc.WTPushes.Add(1)
-	return true
+	return pushDelivered
 }
 
 // GossipHaveKey is a no-op in the sharded model.
@@ -1591,38 +1684,61 @@ func (pc *PeerCache) RequestTimeout() time.Duration {
 	return pc.client.Timeout
 }
 
-// Close stops the discovery loop.
+// Close stops the discovery loop, the push workers and replayers, and
+// cancels every peer call in flight.
 func (pc *PeerCache) Close() {
 	select {
 	case <-pc.done:
 	default:
 		close(pc.done)
 	}
+	if pc.cancel != nil {
+		pc.cancel()
+	}
 }
 
 // Stats returns peer cache statistics.
 func (pc *PeerCache) Stats() map[string]interface{} {
-	return map[string]interface{}{
-		"peers":              pc.PeerCount(),
-		"peer_hits":          pc.PeerHits.Load(),
-		"peer_misses":        pc.PeerMisses.Load(),
-		"peer_errors":        pc.PeerErrors.Load(),
-		"peer_error_reasons": pc.PeerErrorReasons(),
-		"wt_pushes":          pc.WTPushes.Load(),
-		"wt_errors":          pc.WTErrors.Load(),
-		"backup_hits":        pc.BackupHits.Load(),
-		"push_too_large":     pc.PushTooLarge.Load(),
-		"peer_not_up":        pc.PeerNotUp.Load(),
-		"push_peer_not_up":   pc.PushPeerNotUp.Load(),
-		"push_throttled":     pc.PushThrottled.Load(),
-		"replication_factor": pc.replication,
-		"ra_hot_requests":    pc.RAHotReq.Load(),
-		"ra_hot_errors":      pc.RAHotErr.Load(),
-		"ra_prefetches":      pc.RAPrefetch.Load(),
-		"ra_prefetch_bytes":  pc.RABytes.Load(),
-		"ra_budget_drops":    pc.RABudget.Load(),
-		"ra_tenant_skips":    pc.RATenant.Load(),
+	var bufferedEntries int
+	var bufferedBytes int64
+	if pc.pushBuf != nil {
+		bufferedEntries, bufferedBytes = pc.pushBuf.size()
 	}
+	return map[string]interface{}{
+		"peers":               pc.PeerCount(),
+		"peer_hits":           pc.PeerHits.Load(),
+		"peer_misses":         pc.PeerMisses.Load(),
+		"peer_errors":         pc.PeerErrors.Load(),
+		"peer_error_reasons":  pc.PeerErrorReasons(),
+		"wt_pushes":           pc.WTPushes.Load(),
+		"wt_errors":           pc.WTErrors.Load(),
+		"backup_hits":         pc.BackupHits.Load(),
+		"push_too_large":      pc.PushTooLarge.Load(),
+		"peer_not_up":         pc.PeerNotUp.Load(),
+		"push_peer_not_up":    pc.PushPeerNotUp.Load(),
+		"push_throttled":      pc.PushThrottled.Load(),
+		"push_buffered":       reasonCounts(pc.PushBuffered[:], bufferedReasonNames[:]),
+		"push_coalesced":      pc.PushCoalesced.Load(),
+		"push_replayed":       pc.PushReplayed.Load(),
+		"push_buffer_dropped": reasonCounts(pc.PushBufferDropped[:], droppedReasonNames[:]),
+		"push_buffer_entries": bufferedEntries,
+		"push_buffer_bytes":   bufferedBytes,
+		"replication_factor":  pc.replication,
+		"ra_hot_requests":     pc.RAHotReq.Load(),
+		"ra_hot_errors":       pc.RAHotErr.Load(),
+		"ra_prefetches":       pc.RAPrefetch.Load(),
+		"ra_prefetch_bytes":   pc.RABytes.Load(),
+		"ra_budget_drops":     pc.RABudget.Load(),
+		"ra_tenant_skips":     pc.RATenant.Load(),
+	}
+}
+
+func reasonCounts(counters []atomic.Int64, names []string) map[string]int64 {
+	out := make(map[string]int64, len(names))
+	for i, name := range names {
+		out[name] = counters[i].Load()
+	}
+	return out
 }
 
 // RecordPeerErrorReason increments a low-cardinality peer fetch failure reason.
@@ -1665,6 +1781,21 @@ func (pc *PeerCache) MetricsJSON() []byte {
 // --- Internal ---
 
 func (pc *PeerCache) updatePeers(peers []string) {
+	pc.setPeers(peers)
+	if pc.pushBuf == nil {
+		return
+	}
+	// The backlog of a peer that left the ring is never sent.
+	members := make(map[string]struct{}, len(peers))
+	for _, p := range peers {
+		members[p] = struct{}{}
+	}
+	for _, addr := range pc.pushBuf.absentPeers(func(addr string) bool { _, ok := members[addr]; return ok }) {
+		pc.dropBacklog(addr, droppedPeerRemoved)
+	}
+}
+
+func (pc *PeerCache) setPeers(peers []string) {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 	pc.peers = peers
@@ -2094,15 +2225,12 @@ type peerBreaker struct {
 	// tried again, without counting towards the breaker.
 	seenUp     atomic.Bool
 	notUpUntil atomic.Int64 // Unix ns
-	// Pushes made while the peer was still starting wait here (bounded)
-	// and are sent once it answers; one retrier per peer runs meanwhile.
-	pending      []pendingPush
-	pendingBytes int64
-	retrying     bool
-	probeAt      atomic.Int64 // Unix ns the running probe started; 0 when none
-	mu           sync.Mutex
-	ctx          context.Context // cancelled when the peer is suspended
-	cancel       context.CancelFunc
+	// buffered is the length of the peer's push backlog (pushBuffer).
+	buffered atomic.Int64
+	probeAt  atomic.Int64 // Unix ns the running probe started; 0 when none
+	mu       sync.Mutex
+	ctx      context.Context // cancelled when the peer is suspended
+	cancel   context.CancelFunc
 }
 
 func (pc *PeerCache) breaker(addr string) *peerBreaker {
@@ -2152,7 +2280,11 @@ func (pc *PeerCache) peerContext(addr string) context.Context {
 	pb.mu.Lock()
 	defer pb.mu.Unlock()
 	if pb.ctx == nil || pb.ctx.Err() != nil {
-		pb.ctx, pb.cancel = context.WithCancel(context.Background())
+		parent := pc.ctx
+		if parent == nil { // a PeerCache not built by NewPeerCache
+			parent = context.Background()
+		}
+		pb.ctx, pb.cancel = context.WithCancel(parent)
 	}
 	return pb.ctx
 }
@@ -2189,87 +2321,6 @@ func (pc *PeerCache) recordPeerCallError(addr string, callCtx context.Context, e
 // peerStartupRetry is how long a peer that refused a connection before it
 // ever answered is skipped before it is tried again.
 const peerStartupRetry = 250 * time.Millisecond
-
-// Pushes to a peer that is still starting are kept, at most
-// pendingPushMaxEntries and pendingPushMaxBytes per peer (the oldest are
-// dropped first), and sent once it answers; after pendingPushMaxWait without
-// an answer they are dropped. Every drop counts in PushPeerNotUp.
-const (
-	pendingPushMaxEntries = 256
-	pendingPushMaxBytes   = 8 << 20
-	pendingPushMaxWait    = 30 * time.Second
-)
-
-type pendingPush struct {
-	key   string
-	value []byte
-	ttl   time.Duration
-}
-
-// deferPush keeps a push to a peer that is still starting and starts its
-// retrier.
-func (pc *PeerCache) deferPush(addr, key string, value []byte, ttl time.Duration) {
-	pb := pc.breaker(addr)
-	pb.mu.Lock()
-	pb.pending = append(pb.pending, pendingPush{key: key, value: value, ttl: ttl})
-	pb.pendingBytes += int64(len(value))
-	for len(pb.pending) > pendingPushMaxEntries || pb.pendingBytes > pendingPushMaxBytes {
-		pb.pendingBytes -= int64(len(pb.pending[0].value))
-		pb.pending = pb.pending[1:]
-		pc.PushPeerNotUp.Add(1)
-	}
-	start := !pb.retrying
-	pb.retrying = true
-	pb.mu.Unlock()
-	if start {
-		go pc.retryPending(addr, pb)
-	}
-}
-
-// retryPending sends the pushes kept for a starting peer once it answers:
-// the oldest is tried every peerStartupRetry; when it lands the rest follow.
-func (pc *PeerCache) retryPending(addr string, pb *peerBreaker) {
-	deadline := time.Now().Add(pendingPushMaxWait)
-	ticker := time.NewTicker(peerStartupRetry)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-pc.done:
-			pc.dropPending(pb)
-			return
-		case <-ticker.C:
-		}
-		pb.mu.Lock()
-		if len(pb.pending) == 0 {
-			pb.retrying = false
-			pb.mu.Unlock()
-			return
-		}
-		next := pb.pending[0]
-		pb.mu.Unlock()
-		if pc.push(addr, next.key, next.value, next.ttl, false) {
-			pb.mu.Lock()
-			rest := pb.pending
-			pb.pending, pb.pendingBytes = nil, 0
-			pb.mu.Unlock()
-			for _, pending := range rest[1:] {
-				pc.push(addr, pending.key, pending.value, pending.ttl, false)
-			}
-			continue // pushes deferred meanwhile are sent on the next tick
-		}
-		if time.Now().After(deadline) {
-			pc.dropPending(pb)
-			return
-		}
-	}
-}
-
-func (pc *PeerCache) dropPending(pb *peerBreaker) {
-	pb.mu.Lock()
-	pc.PushPeerNotUp.Add(int64(len(pb.pending)))
-	pb.pending, pb.pendingBytes, pb.retrying = nil, 0, false
-	pb.mu.Unlock()
-}
 
 // peerNotUpYet handles a refused connection to a peer that never answered
 // since this process started: it is starting, not failing, so it is skipped

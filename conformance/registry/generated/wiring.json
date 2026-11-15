@@ -810,6 +810,13 @@
       "internal/proxy/patterns_state_test.go",
       "test/e2e-fleet/peer_cache_proof_test.go"
     ],
+    "peer-cache-push-replay": [
+      "cmd/proxy/peer_config_test.go",
+      "internal/cache/peer_push_buffer_fuzz_test.go",
+      "internal/cache/peer_push_buffer_test.go",
+      "internal/cache/peer_replication_test.go",
+      "internal/proxy/peer_push_buffer_test.go"
+    ],
     "peer-cache-query-range-windows": [
       "test/e2e-fleet/peer_cache_proof_test.go"
     ],
@@ -818,6 +825,7 @@
     ],
     "peer-cache-replication": [
       "internal/cache/peer_protocol_edges_test.go",
+      "internal/cache/peer_push_buffer_test.go",
       "internal/cache/peer_replication_test.go",
       "internal/proxy/patterns_persistence_test.go",
       "internal/proxy/peer_push_identity_test.go",
@@ -2203,7 +2211,9 @@
     ],
     "shutdown-releases-background-work": [
       "internal/cache/cache_test.go",
-      "internal/proxy/lifecycle_leak_test.go"
+      "internal/cache/peer_push_buffer_test.go",
+      "internal/proxy/lifecycle_leak_test.go",
+      "internal/proxy/peer_push_buffer_test.go"
     ],
     "status-400": [
       "internal/lokierr/lokierr_test.go",
@@ -2355,7 +2365,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 581,
+  "registry_items": 582,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2365,6 +2375,9 @@
       "limits/every-cap-is-a-flag",
       "operator-configurable-limits",
       "semantics/query-range-step-alignment"
+    ],
+    "cmd/proxy/peer_config_test.go": [
+      "peer-cache-push-replay"
     ],
     "cmd/proxy/tenant_routing_test.go": [
       "tenant-auth-follows-loki",
@@ -2380,7 +2393,16 @@
       "peer-cache-fleet-recovery",
       "peer-cache-replication"
     ],
+    "internal/cache/peer_push_buffer_fuzz_test.go": [
+      "peer-cache-push-replay"
+    ],
+    "internal/cache/peer_push_buffer_test.go": [
+      "peer-cache-push-replay",
+      "peer-cache-replication",
+      "shutdown-releases-background-work"
+    ],
     "internal/cache/peer_replication_test.go": [
+      "peer-cache-push-replay",
       "peer-cache-replication"
     ],
     "internal/cache/peer_test.go": [
@@ -3324,6 +3346,10 @@
       "loki_api_v1_patterns",
       "patterns-loki-mining",
       "peer-cache-patterns"
+    ],
+    "internal/proxy/peer_push_buffer_test.go": [
+      "peer-cache-push-replay",
+      "shutdown-releases-background-work"
     ],
     "internal/proxy/peer_push_identity_test.go": [
       "peer-cache-replication"
@@ -5196,7 +5222,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 608,
+  "tests_with_markers": 612,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5299,5 +5325,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 366
+  "wired_items": 367
 }
