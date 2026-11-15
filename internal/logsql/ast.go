@@ -113,6 +113,9 @@ type Expr interface {
 // without it prints through String.
 type appender interface{ appendTo(b []byte) []byte }
 
+// AppendFilter appends the text of f, as String writes it, to b.
+func AppendFilter(b []byte, f FilterExpr) []byte { return appendFilter(b, f) }
+
 // appendFilter appends the text of f.
 func appendFilter(b []byte, f FilterExpr) []byte {
 	if a, ok := f.(appender); ok {

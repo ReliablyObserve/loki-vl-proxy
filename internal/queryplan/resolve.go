@@ -75,7 +75,7 @@ func Resolve(p *Plan) {
 		stack = stack[:len(stack)-1]
 		switch x := n.(type) {
 		case *LogSelect:
-			resolvePipeline(x, sem)
+			resolvePipeline(x, p)
 		case *RangeAgg:
 			switch {
 			case first:
@@ -121,9 +121,18 @@ func ungrouped(n Node) bool {
 	}
 }
 
-// resolvePipeline fills the parser and error attributes of a pipeline.
-func resolvePipeline(s *LogSelect, sem *PlanSem) {
-	ps := &PipelineSem{ErrorAt: -1}
+// resolvePipeline fills the parser and error attributes of a pipeline of p.
+func resolvePipeline(s *LogSelect, p *Plan) {
+	sem := &p.Sem
+	// The plan's own PipelineSem is taken once its ErrorAt is set: -1, or the index of a stage after a parser (at
+	// least 1).
+	var ps *PipelineSem
+	if p.ps.ErrorAt != 0 {
+		ps = &PipelineSem{ErrorAt: -1}
+	} else {
+		ps = &p.ps
+		*ps = PipelineSem{ErrorAt: -1}
+	}
 	last := -1
 	for i, st := range s.Stages {
 		if _, ok := st.(*Parse); ok {
@@ -138,6 +147,9 @@ func resolvePipeline(s *LogSelect, sem *PlanSem) {
 				ps.ErrorPolicy, ps.ErrorAt = ErrorDroppedLabel, i
 				break
 			}
+		}
+		if sem.Rules == nil {
+			sem.Rules = p.rule[:0:1]
 		}
 		if ps.ErrorPolicy == ErrorDroppedLabel {
 			sem.rule(RuleDropErrorKeepsLine)

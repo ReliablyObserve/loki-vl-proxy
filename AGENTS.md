@@ -320,7 +320,16 @@ A construct moves from the string translator to the typed plan (`internal/queryp
   request VictoriaLogs sees. `TestPlanShadow` and the generated grids assert it for every native row under the 12
   profiles; fix a difference of spelling in the AST builders, never in `internal/translator`.
 - Decide eligibility before planning (`logql.MayHaveNonFilterStage` and a first-byte test for log queries): a query the
-  plan does not cover pays no plan. `TestFlipScreenAdmitsEveryNativeRow` holds the screen to the native rows. Metric
+  plan does not cover pays no plan. `TestFlipScreenAdmitsEveryNativeRow` holds the screen to the native rows. A log
+  query with more than line and label filters moves by stage family (`proxy.QueryPlanFlippedLogStages`): it goes
+  through `lower.ScreenLogStages` (the metric screen's pass in log mode, no allocation) and the typed gate
+  `servesLogStages`; a new family adds its class to the screen, its shapes to the benchmark, and
+  `TestQueryPlanLowering_LogScreenCorpus` and `TestQueryPlanLowering_LogCorpusTextParity` hold it on the corpus. A
+  family flips only once its plan path costs no more than the translator in allocs/op and B/op on
+  `BenchmarkTranslateQueryMissShapes` (a template, regexp or pattern that changes on every request included) and on
+  `BenchmarkTranslateQueryMissShapesValidated`; the translation never adds a parse to a request: the validation keeps its
+  parse in the plan memo for a query the plan serves (`lowersParse`), and a parse site goes through a counted helper of
+  `internal/proxy/query_flow.go`. Metric
   queries go through `lower.ScreenMetricIn` (no allocation; it names the construct at the top and turns away what the
   typed gate or the lowering leaves to the translator): a new delegation in the metric lowering adds its class to the
   screen, and `TestQueryPlanLowering_MetricScreenCorpus` holds the screen to the gate on the corpus (no served row

@@ -7,8 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
+  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
+  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
+  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
+  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
+  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
+  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
+- Translating a query costs fewer allocations. The LogQL parser allocates about half as much for a log query (a json
+  query with a label filter: 14 to 7 allocations), a `line_format` template is typed once per template text, a
+  query plan is one allocation sized for the query's kind, and the plan's log query lowering writes its text with
+  fewer intermediate values. The request's validation keeps its parse for a query the query plan serves, so the
+  translation does not parse the query again. Answers, translation cache entries and the queries VictoriaLogs
+  receives do not change.
+- Log queries with `json` or `logfmt` parsers (with or without an extraction list, `logfmt` with its flags), `regexp`
+  and `pattern` parsers written with a blank before a plainly spelled expression, the label filters after them, `drop`
+  and `keep` stages (a `keep` of names or of matchers), `label_format` stages whose values are text and `{{.name}}`
+  fields or renames, and `line_format` stages with such a template are served from the query plan instead of the
+  string translator, where the plan writes the translator's text byte for byte. A numeric equality after a parser, a
+  `detected_level` or `service_name` filter after a stage, and stages of a family not served stay with the string
+  translator. Answers, translation cache entries and the queries VictoriaLogs receives do not change; a translation
+  that misses the cache costs no more allocations than the string translator's. `-query-plan-lowering=false` turns it
+  off.
+
 ### Fixed
 
+- A `regexp` or `pattern` parser written with no blank before its expression (`{app="a"} |pattern"<_> <m> <_>"`) now
+  gets Loki's answer. Loki reads it as the parser with the blank; the proxy sent it to VictoriaLogs as written, which
+  VictoriaLogs rejects (it has no `pattern` or `regexp` pipe), so the request failed. Log queries with such a parser,
+  and range and vector aggregations, binary operations, `label_replace` calls, rankings and `stddev`/`stdvar` over
+  one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
+  `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
 - An IPv4 `ip()` filter now finds an address written after hex digits and colons exactly where Loki finds it, in
   `|= ip(...)` line filters and `label = ip(...)` label filters alike. Loki reads a line from its start, and an
   earlier run of digits and dots, or of hex digits and colons, decides whether a later address is read: in
@@ -58,42 +89,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   grouping stays with the string translator.
 
 ## [2.262.0] - 2026-11-15
-### Changed
-
-- Metric queries are planned once for the query plan's decisions: the range functions whose series a `keep` before
-  the unwrap decides are served from the plan as before, and the proxy now checks, on the typed plan, which range
-  and vector aggregations, binary operations and `label_replace` calls the plan would write with the string
-  translator's text (no ranking, `stddev` or `stdvar` at any level, no binary the proxy evaluates operand by
-  operand, none of the recorded differences): the entries below serve them from the plan. The query plan's corpus
-  check now reads the query as the proxy does (a range written `({...})[5m]` is read as `{...}[5m]`), which counts
-  54 more rows as written by the plan. New tests hold every metric query of the corpus to the same text with the four metric constructs served
-  from the plan under seven proxy profiles, and the translation benchmark measures the metric shapes of each
-  construct, served and not served.
-- The translation of a metric query that misses the translation cache costs no more on the query plan's path than on
-  the string translator's. A one-pass text screen with no allocation names the construct at the top of a metric query
-  before it is parsed, so a query the plan leaves to the string translator (a ranking, `stddev`, `vector()`, an
-  `unpack`, a numeric equality after a parser, ...) is not parsed, built and resolved on top of its translation; the
-  plan path reads a plan the handlers already made for the query instead of parsing it again; and the stats and math
-  pipes the plan writes print straight into the query's text (a grouped rate: 60 to 42 allocations and 3.6 to 3.0 KiB
-  per translation once served from the plan). Construct names cost no allocation, so the log queries already served
-  from the plan allocate one less.
-- Vector aggregations (`sum`, `avg`, `min`, `max`, `count`, with `by` or `without`, over range functions with and
-  without `unwrap`) are served from the query plan instead of the string translator, where the plan writes the
-  translator's text byte for byte; rankings, `stddev`, `stdvar`, an empty `without ()` and the recorded differences
-  stay with the string translator. Answers, translation cache entries and the queries VictoriaLogs receives do not
-  change; a translation that misses the cache takes about half the time (a grouped rate: 6.6 to 2.7 us, 60 to 42
-  allocations). `-query-plan-lowering=false` turns it off.
-- Range functions (`rate`, `count_over_time`, `bytes_over_time`, `bytes_rate`, `absent_over_time` and the unwrapped
-  ones) at the top of a metric query, or translated as an operand, are served from the query plan the same way (a
-  `count_over_time` miss: 5.6 to 1.9 us, 36 to 32 allocations); a range function over an `unpack` stays with the
-  string translator.
-- Binary operations between two aggregations, or an aggregation and a number (`+`, `-`, `*`, `/`, `%`, `^` and the
-  comparisons, with `on`, `ignoring`, `group_left`, `group_right`), are served from the query plan the same way (two
-  sums of rates divided: 14.9 to 9.2 us, 104 to 70 allocations); `bool`, `and`/`or`/`unless`, a `without` operand, a
-  `vector()` operand and chains of binaries stay with the string translator.
-- `label_replace` calls, nested ones too, around an aggregation or a binary operation are served from the query plan
-  the same way (6.6 to 4.1 us, 68 to 51 allocations); a `label_replace` around a ranking, `stddev` or a `service_name`
-  grouping stays with the string translator.
 
 ### Fixed
 
