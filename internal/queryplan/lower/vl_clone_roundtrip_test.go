@@ -68,6 +68,8 @@ var vlClonePositions = []string{
 	`sum by (app) (rate({app="a"} | logfmt | unwrap duration(W) [5m]))`, `avg_over_time({app="a"} | logfmt | unwrap bytes(W) [1m])`,
 	`max_over_time({app="a"} | logfmt | unwrap W [1m]) by (app)`, `quantile_over_time(0.5, {app="a"} | logfmt | unwrap W [1m])`,
 	`stdvar_over_time({app="a"} | logfmt | unwrap W [1m])`,
+	`sum(avg_over_time({app="a"} | json | unwrap W [1m]))`, `sum by (app) (stdvar_over_time({app="a"} | logfmt | unwrap W [1m]))`,
+	`max by (W) (quantile_over_time(0.5, {app="a"} | json | unwrap n [1m]))`,
 }
 
 // vlCloneSpelling is a query of the spelling grid, and whether VictoriaLogs is expected to accept it and fail on

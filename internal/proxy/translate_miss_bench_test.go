@@ -76,6 +76,15 @@ var translateMissShapes = []struct {
 	{"metric unwrap keep", func(i string) string {
 		return `sum(quantile_over_time(0.9, {app="api"} |= "x ` + i + `" | json | keep app, d | unwrap d [5m]))`
 	}},
+	{"metric unwrap parser identity", func(i string) string {
+		return `sum by (app) (stddev_over_time({app="api"} |= "x ` + i + `" | json | unwrap d [5m]))`
+	}},
+	{"metric unwrap parser identity nested", func(i string) string {
+		return `sum by (app) (stddev_over_time({app="api"} |= "x ` + i + `" | json | unwrap d [5m])) + sum by (app) (stddev_over_time({app="api"} | json | unwrap d [5m]))`
+	}},
+	{"metric unwrap parser sum", func(i string) string {
+		return `sum by (app) (sum_over_time({app="api"} |= "x ` + i + `" | logfmt | unwrap d [5m]))`
+	}},
 	// One shape per metric construct the lowering serves, and the metric shapes it plans and leaves to the string
 	// translator (delegated by the lowering, or turned away by writesTranslatorText): what a flip costs the queries it
 	// does not serve.

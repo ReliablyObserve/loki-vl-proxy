@@ -154,8 +154,13 @@ type shadowInput struct {
 	legacyErr    error
 }
 
+// profile is the lowering's view of the translation the shadow compares: the translator's series for a parser's
+// identity (lower.Profile StreamIdentity), since the translator writes them and the lowering serves the identity
+// only where the handlers read it (lowerDynamicIdentity).
 func (in shadowInput) profile() lower.Profile {
-	return loweringProfile(in.label, in.streamFields, in.caps, in.keepLine)
+	prof := loweringProfile(in.label, in.streamFields, in.caps, in.keepLine)
+	prof.StreamIdentity = true
+	return prof
 }
 
 // shadowLowering is called on a translation cache miss once the translator's answer is computed and in use. It

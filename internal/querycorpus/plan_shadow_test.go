@@ -172,6 +172,12 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 				// by the stream (and each line), and the proxy serves the plan's text (lowerMetric).
 				caseID, ok = knownKeepIdentity, true
 			}
+			if !ok && lower.WritesDynamicUnwrapIdentity(plan) && !sameAsTranslator(got, legacy) {
+				// The series are the stream and every parsed label: the plan groups by the stream and a hash of the
+				// parsed labels, the translator by the stream (and each line), and the proxy serves the plan's text
+				// (lowerDynamicIdentity).
+				caseID, ok = knownDynamicIdentity, true
+			}
 			if !ok && lower.WritesNumericEquality(plan) {
 				// A numeric, duration or bytes equality after a json or logfmt parser: the plan compares the value as
 				// a number as Loki does, the translator writes the exact text of the literal.
@@ -229,6 +235,11 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 // knownKeepIdentity is the registry case of the plan's series identity behind a keep, which the proxy serves from
 // the lowering where it differs from the string translator's.
 const knownKeepIdentity = "semantics/keep-before-unwrap-series-identity"
+
+// knownDynamicIdentity is the registry case of the plan's series identity after a json or logfmt parser with no keep
+// (the stream and every parsed label), which the proxy serves from the lowering where it differs from the string
+// translator's.
+const knownDynamicIdentity = "semantics/unwrap-per-series-identity-raw-rows"
 
 // sameAsTranslator reports a lowering that writes the string translator's operators and text: a keep whose
 // identity the translator happens to write too (an outer by that holds every kept label) is native.
@@ -410,9 +421,10 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		return physical.VLQuery{Text: "*"}, nil
 	}
 	t.Run("a wrong query is a mismatch", func(t *testing.T) {
-		// A row whose series a keep before the unwrap decides is held to Loki (TestKeepUnwrapIdentityMatchLoki), not
-		// to the translator: a lowering that differs there is that divergence, not a mismatch.
-		if bad, _ := runShadow(t, wrong, rows); bad.Native != 0 || bad.Mismatches < sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity] {
+		// A row whose series a keep before the unwrap, or a parser's labels, decide is held to Loki
+		// (TestKeepUnwrapIdentityMatchLoki), not to the translator: a lowering that differs there is that divergence,
+		// not a mismatch.
+		if bad, _ := runShadow(t, wrong, rows); bad.Native != 0 || bad.Mismatches < sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity] {
 			t.Fatalf("a lowering that answers `*` for everything: %+v", bad)
 		}
 	})
@@ -424,7 +436,7 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		return physical.LabelMap{Replace: []physical.LabelReplace{{DstLabel: "x"}}, In: op}, nil
 	}
 	t.Run("a changed post-processing is a mismatch", func(t *testing.T) {
-		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity] {
+		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity] {
 			t.Fatalf("a lowering that adds a label_replace to each answer: %+v", bad)
 		}
 	})

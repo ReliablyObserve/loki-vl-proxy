@@ -113,7 +113,9 @@ const (
 // conformance: semantics/stdvar-grouped-binary-marker
 func TestStdvarOverTimeGroupedAnswersAsScalarBinary(t *testing.T) {
 	for _, query := range []string{
-		`sum by (app) (stdvar_over_time({app="x"} | json | unwrap n [5m]))`,
+		// A named extraction: after a bare parser the series are the parsed labels' (semantics/unwrap-per-series-identity-raw-rows),
+		// whose variance VictoriaLogs squares itself.
+		`sum by (app) (stdvar_over_time({app="x"} | json n | unwrap n [5m]))`,
 		`stdvar_over_time({app="x"} | json | unwrap n [5m]) by (app)`,
 		`sum by (app) (stdvar_over_time({app="x"} | unwrap n [5m]))`,
 		`stdvar_over_time({app="x"} | unwrap n [5m]) by (app)`,
