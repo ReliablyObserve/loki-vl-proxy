@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 // ipv4Walk is the reference of Loki's ip() filter on a line for an IPv4 pattern, written from the behaviour the Loki
@@ -213,4 +215,17 @@ func FuzzIPv4LineRegexLikeLoki(f *testing.F) {
 			t.Fatalf("ip(%q) on %q: line filter %v, Loki %v", pattern, line, got, want)
 		}
 	})
+}
+
+// A pattern without IPv4 boxes has no cheap regexps: its value filter is the prefilter and the line regexp alone,
+// never an empty regexp that would keep every value.
+// conformance: semantics/ip-filter-ipv4-after-hex-colon
+func TestIPv4ValueFilterWithoutBoxes(t *testing.T) {
+	f, ok := ipv4ValueFilter("addr", "2001:db8::1").(logsql.AllOf)
+	if !ok || len(f) != 2 {
+		t.Fatalf("value filter = %v", f)
+	}
+	if want := (logsql.FieldFilter{Field: "addr", Op: logsql.FieldOpRegexp, Value: IPLineFilterRegex("2001:db8::1")}); f[1] != want {
+		t.Errorf("value filter = %v, want the line regexp alone (%v)", f[1], want)
+	}
 }
