@@ -1,0 +1,95 @@
+id: semantics/translator-reads-blank-grouping-as-none
+title: A `by` clause with only blanks inside its parentheses (`by( )`) is an empty grouping to Loki and to the query plan, and no grouping at all to the string translator, which writes a different text for a rate under it (open for the translator; the proxy answers like `by ()`)
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's lexer skips a space, a tab, a line feed and a carriage return, so
+  `sum by( ) (rate(..))`, `sum by (	) (rate(..))` and `sum(rate(..)) by ( )` are
+  the same query as `sum by () (rate(..))`: Loki's tree holds an empty
+  grouping for each (Loki oracle `facts`: outer sum, groups [], without false;
+  `topk(1, ..) by( )` the same), and `rate(..) by( )` is rejected with
+  `grouping not allowed for rate aggregation`, as `by ()` is.
+
+  The query plan reads the clause from the tree, so every spelling is one plan
+  and one text. The string translator reads the text: a clause with only blanks
+  is not the empty clause it matches (`by ()`), so a rate under it is written
+  as an ungrouped total, with no series identity:
+
+    by ()    =>  A:="0" | format if (...) as __dl_s ... | stats by (_stream, level, detected_level) count() as __lvp_inner | math __lvp_inner/31536000 as __lvp_rate | stats sum(__lvp_rate)
+    by( )    =>  A:="0" | stats count() as __lvp_inner | math __lvp_inner/31536000 as __lvp_rate | stats sum(__lvp_rate)   (translator)
+    by( )    =>  the text of by ()   (query plan, which the proxy serves)
+
+  Both texts sum to the same total; they differ in what VictoriaLogs reads
+  (the first derives detected_level for every row and groups by stream, level
+  and detected_level, as it does for `sum(rate(..))` with no clause and for
+  `by ()`). The translator's text for `by( )` is the translator's misreading of
+  the spelling, not a cheaper plan: the plan's text is the translator's own text
+  for `by ()` and for no clause, byte for byte, so nothing the proxy sends for
+  `by( )` changed. A count_over_time, a ranking (`topk`, `bottomk`), an unwrapped
+  range and a level over a level are written the same from both spellings (the
+  proxy evaluates a ranking from its operand, and reads the clause from the tree).
+
+  Held by TestBlankGroupingRequestsEqualEmptyGrouping (internal/proxy): for 17
+  shapes (every aggregation, the clause before and after its operand, nested,
+  a ranking, an unwrap, a binary operation) and six blank spellings, on
+  query_range and query, the requests VictoriaLogs gets and the answer equal
+  those of `by ()`. The flip gate (FuzzMetricFlipGate) holds the translator,
+  which the rollback flag serves, to the spelling it reads as Loki does; it found
+  `sum by( ) (rate({A="0"}[1y]))`.
+
+  Not covered here: `without( )`. The translator reads a clause with a blank as
+  one label and so keeps a row per stream, where `without ()` collapses the
+  series (semantics/without-empty-grouping-range-collapses, open): the empty
+  `without` family is the translator's open case, and the plan leaves every
+  `without ()` to it (the metric screen).
+corpus:
+  size: 16
+  dimensions:
+    shapes:
+      - query: 'sum by( ) (rate({env="production"}[5m]))'
+      - query: 'sum by(	) (rate({env="production"}[5m]))'
+      - query: 'sum by (  ) (count_over_time({env="production"}[5m]))'
+      - query: 'sum(rate({env="production"}[5m])) by( )'
+      - query: 'avg by( ) (rate({env="production"}[5m]))'
+      - query: 'count by( ) (bytes_rate({env="production"} | json [5m]))'
+      - query: 'max by( ) (rate({env="production"} | logfmt | keep app [5m]))'
+      - query: 'sum by( ) (sum by( ) (rate({env="production"}[5m])))'
+      - query: 'sum by( ) (rate({env="production"}[5m])) / sum by( ) (rate({env="production"}[10m]))'
+      - query: 'topk(1, rate({env="production"}[5m])) by( )'
+      - query: 'bottomk by( ) (1, rate({env="production"}[5m]))'
+      - query: 'stddev by( ) (rate({env="production"}[5m]))'
+      - query: 'max_over_time({env="production"} | logfmt | unwrap n [5m]) by( )'
+      - query: 'sum by( ) (max_over_time({env="production"} | logfmt | unwrap n [5m]))'
+      - query: 'sum by( ) (rate({env="production"}[1y]))'
+      - query: 'rate({env="production"}[5m]) by( )'
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by( ) (rate({env="production"}[5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series labels, values]
+  expect: |
+    The same answer as `sum by () (rate({env="production"}[5m]))`: one series
+    with no labels, the total rate.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator (reads the text of a grouping clause: a rate under `by( )` loses its series identity); fixed when the string translator is removed'
+  loki: 'Loki skips blanks between tokens: `by( )` and `by ()` are one empty grouping in its tree (oracle facts), and `rate(..) by( )` is rejected like `by ()`'
+  proxy: 'the query plan, which serves the construct, reads the clause from the tree: both spellings send VictoriaLogs and answer the same; only the rollback flag (-query-plan-lowering=false) writes the translator text'
+  planned_test: 'TestBlankGroupingRequestsEqualEmptyGrouping and FuzzMetricFlipGate (internal/proxy); TestCut (internal/testutil/blankgrouping); TestPlanMatchesLokiOracle and TestPlanShadow (the corpus rows)'
+  visual: none
+  visual_reason: 'a crafted spelling no Grafana panel sends; found by the metric flip gate fuzz target'
+  clusters: []
