@@ -1,0 +1,504 @@
+{"id":"label-level-ERROR|0|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|0|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|0|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|1|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|1|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|1|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|2|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|2|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|2|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|3|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|3|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|3|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|4|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-level-ERROR\", detected_level=\"error\", level=\"ERROR\", pod=\"p0\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-level-ERROR|4|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-level-ERROR\", detected_level=\"error\", level=\"ERROR\", pod=\"p0\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-level-ERROR|4|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-level-ERROR\", detected_level=\"error\", level=\"ERROR\", pod=\"p0\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-level-ERROR|5|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-level-ERROR\", detected_level=\"error\", level=\"ERROR\", pod=\"p0\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-level-ERROR|5|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-level-ERROR\", detected_level=\"error\", level=\"ERROR\", pod=\"p0\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-level-ERROR|5|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-level-ERROR\", detected_level=\"error\", level=\"ERROR\", pod=\"p0\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-level-ERROR|6|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|6|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|6|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|7|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-level-ERROR\", detected_level=\"error\", level=\"ERROR\", pod=\"p0\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-level-ERROR|7|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-level-ERROR\", detected_level=\"error\", level=\"ERROR\", pod=\"p0\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-level-ERROR|7|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-level-ERROR\", detected_level=\"error\", level=\"ERROR\", pod=\"p0\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-level-ERROR|8|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|8|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|8|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|9|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|9|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|9|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|10|instant","status":200,"series":0}
+{"id":"label-level-ERROR|10|60","status":200,"series":0}
+{"id":"label-level-ERROR|10|300","status":200,"series":0}
+{"id":"label-level-ERROR|11|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|11|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|11|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|12|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|12|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|12|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-level-ERROR|13|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|13|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-level-ERROR|13|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-LEVEL-warning|0|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|0|60","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|0|300","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|1|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|1|60","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|1|300","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|2|instant","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|2|60","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|2|300","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|3|instant","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|3|60","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|3|300","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|4|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{LEVEL=\"warning\", __error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-LEVEL-warning\", detected_level=\"warn\", pod=\"p1\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-LEVEL-warning|4|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{LEVEL=\"warning\", __error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-LEVEL-warning\", detected_level=\"warn\", pod=\"p1\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-LEVEL-warning|4|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{LEVEL=\"warning\", __error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-LEVEL-warning\", detected_level=\"warn\", pod=\"p1\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-LEVEL-warning|5|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{LEVEL=\"warning\", __error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-LEVEL-warning\", detected_level=\"warn\", pod=\"p1\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-LEVEL-warning|5|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{LEVEL=\"warning\", __error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-LEVEL-warning\", detected_level=\"warn\", pod=\"p1\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-LEVEL-warning|5|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{LEVEL=\"warning\", __error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-LEVEL-warning\", detected_level=\"warn\", pod=\"p1\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-LEVEL-warning|6|instant","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|6|60","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|6|300","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|7|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{LEVEL=\"warning\", __error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-LEVEL-warning\", detected_level=\"warn\", pod=\"p1\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-LEVEL-warning|7|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{LEVEL=\"warning\", __error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-LEVEL-warning\", detected_level=\"warn\", pod=\"p1\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-LEVEL-warning|7|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{LEVEL=\"warning\", __error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-LEVEL-warning\", detected_level=\"warn\", pod=\"p1\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-LEVEL-warning|8|instant","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|8|60","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|8|300","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|9|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|9|60","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|9|300","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|10|instant","status":200,"series":0}
+{"id":"label-LEVEL-warning|10|60","status":200,"series":0}
+{"id":"label-LEVEL-warning|10|300","status":200,"series":0}
+{"id":"label-LEVEL-warning|11|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|11|60","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|11|300","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|12|instant","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|12|60","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|12|300","status":200,"series":3,"levels":["warn"]}
+{"id":"label-LEVEL-warning|13|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|13|60","status":200,"series":1,"levels":["warn"]}
+{"id":"label-LEVEL-warning|13|300","status":200,"series":1,"levels":["warn"]}
+{"id":"label-severity-error|0|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|0|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|0|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|1|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|1|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|1|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|2|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|2|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|2|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|3|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|3|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|3|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|4|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-severity-error\", detected_level=\"error\", pod=\"p2\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-severity-error|4|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-severity-error\", detected_level=\"error\", pod=\"p2\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-severity-error|4|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-severity-error\", detected_level=\"error\", pod=\"p2\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-severity-error|5|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-severity-error\", detected_level=\"error\", pod=\"p2\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-severity-error|5|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-severity-error\", detected_level=\"error\", pod=\"p2\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-severity-error|5|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-severity-error\", detected_level=\"error\", pod=\"p2\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-severity-error|6|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|6|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|6|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|7|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-severity-error\", detected_level=\"error\", pod=\"p2\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-severity-error|7|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-severity-error\", detected_level=\"error\", pod=\"p2\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-severity-error|7|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-severity-error\", detected_level=\"error\", pod=\"p2\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-severity-error|8|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|8|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|8|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|9|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|9|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|9|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|10|instant","status":200,"series":0}
+{"id":"label-severity-error|10|60","status":200,"series":0}
+{"id":"label-severity-error|10|300","status":200,"series":0}
+{"id":"label-severity-error|11|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|11|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|11|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|12|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|12|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|12|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-severity-error|13|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|13|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-severity-error|13|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-lvl-x|0|instant","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|0|60","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|0|300","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|1|instant","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|1|60","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|1|300","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|2|instant","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|2|60","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|2|300","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|3|instant","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|3|60","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|3|300","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|4|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-lvl-x\", detected_level=\"x\", lvl=\"x\", pod=\"p3\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-lvl-x|4|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-lvl-x\", detected_level=\"x\", lvl=\"x\", pod=\"p3\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-lvl-x|4|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-lvl-x\", detected_level=\"x\", lvl=\"x\", pod=\"p3\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-lvl-x|5|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-lvl-x\", detected_level=\"x\", lvl=\"x\", pod=\"p3\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-lvl-x|5|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-lvl-x\", detected_level=\"x\", lvl=\"x\", pod=\"p3\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-lvl-x|5|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-lvl-x\", detected_level=\"x\", lvl=\"x\", pod=\"p3\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-lvl-x|6|instant","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|6|60","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|6|300","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|7|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-lvl-x\", detected_level=\"x\", lvl=\"x\", pod=\"p3\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-lvl-x|7|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-lvl-x\", detected_level=\"x\", lvl=\"x\", pod=\"p3\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-lvl-x|7|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-lvl-x\", detected_level=\"x\", lvl=\"x\", pod=\"p3\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-lvl-x|8|instant","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|8|60","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|8|300","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|9|instant","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|9|60","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|9|300","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|10|instant","status":200,"series":0}
+{"id":"label-lvl-x|10|60","status":200,"series":0}
+{"id":"label-lvl-x|10|300","status":200,"series":0}
+{"id":"label-lvl-x|11|instant","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|11|60","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|11|300","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|12|instant","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|12|60","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|12|300","status":200,"series":3,"levels":["x"]}
+{"id":"label-lvl-x|13|instant","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|13|60","status":200,"series":1,"levels":["x"]}
+{"id":"label-lvl-x|13|300","status":200,"series":1,"levels":["x"]}
+{"id":"body-logfmt-error|0|instant","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|0|60","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|0|300","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|1|instant","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|1|60","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|1|300","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|2|instant","status":200,"series":4,"levels":["error"]}
+{"id":"body-logfmt-error|2|60","status":200,"series":15,"levels":["error"]}
+{"id":"body-logfmt-error|2|300","status":200,"series":14,"levels":["error"]}
+{"id":"body-logfmt-error|3|instant","status":200,"series":4,"levels":["error"]}
+{"id":"body-logfmt-error|3|60","status":200,"series":15,"levels":["error"]}
+{"id":"body-logfmt-error|3|300","status":200,"series":14,"levels":["error"]}
+{"id":"body-logfmt-error|4|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-logfmt-error\", detected_level=\"error\", pod=\"p4\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-logfmt-error|4|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-logfmt-error\", detected_level=\"error\", pod=\"p4\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-logfmt-error|4|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-logfmt-error\", detected_level=\"error\", pod=\"p4\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-logfmt-error|5|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-logfmt-error\", detected_level=\"error\", pod=\"p4\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-logfmt-error|5|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-logfmt-error\", detected_level=\"error\", pod=\"p4\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-logfmt-error|5|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-logfmt-error\", detected_level=\"error\", pod=\"p4\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-logfmt-error|6|instant","status":200,"series":4,"levels":["error"]}
+{"id":"body-logfmt-error|6|60","status":200,"series":15,"levels":["error"]}
+{"id":"body-logfmt-error|6|300","status":200,"series":14,"levels":["error"]}
+{"id":"body-logfmt-error|7|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-logfmt-error\", detected_level=\"error\", pod=\"p4\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-logfmt-error|7|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-logfmt-error\", detected_level=\"error\", pod=\"p4\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-logfmt-error|7|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-logfmt-error\", detected_level=\"error\", pod=\"p4\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-logfmt-error|8|instant","status":200,"series":3,"levels":["error"]}
+{"id":"body-logfmt-error|8|60","status":200,"series":14,"levels":["error"]}
+{"id":"body-logfmt-error|8|300","status":200,"series":12,"levels":["error"]}
+{"id":"body-logfmt-error|9|instant","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|9|60","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|9|300","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|10|instant","status":200,"series":0}
+{"id":"body-logfmt-error|10|60","status":200,"series":0}
+{"id":"body-logfmt-error|10|300","status":200,"series":0}
+{"id":"body-logfmt-error|11|instant","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|11|60","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|11|300","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|12|instant","status":200,"series":4,"levels":["error"]}
+{"id":"body-logfmt-error|12|60","status":200,"series":15,"levels":["error"]}
+{"id":"body-logfmt-error|12|300","status":200,"series":14,"levels":["error"]}
+{"id":"body-logfmt-error|13|instant","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|13|60","status":200,"series":1,"levels":["error"]}
+{"id":"body-logfmt-error|13|300","status":200,"series":1,"levels":["error"]}
+{"id":"body-json-warn|0|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|0|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|0|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|1|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|1|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|1|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|2|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|2|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|2|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|3|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|3|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|3|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|4|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|4|60","status":200,"series":12,"levels":["warn"]}
+{"id":"body-json-warn|4|300","status":200,"series":3,"levels":["warn"]}
+{"id":"body-json-warn|5|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|5|60","status":200,"series":12,"levels":["warn"]}
+{"id":"body-json-warn|5|300","status":200,"series":3,"levels":["warn"]}
+{"id":"body-json-warn|6|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|6|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|6|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|7|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|7|60","status":200,"series":12,"levels":["warn"]}
+{"id":"body-json-warn|7|300","status":200,"series":3,"levels":["warn"]}
+{"id":"body-json-warn|8|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|8|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|8|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|9|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|9|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|9|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|10|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|10|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|10|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|11|instant","status":200,"series":0}
+{"id":"body-json-warn|11|60","status":200,"series":0}
+{"id":"body-json-warn|11|300","status":200,"series":0}
+{"id":"body-json-warn|12|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|12|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|12|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|13|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|13|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-warn|13|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|0|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|0|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|0|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|1|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|1|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|1|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|2|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|2|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|2|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|3|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|3|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|3|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|4|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|4|60","status":200,"series":12,"levels":["warn"]}
+{"id":"body-json-WARNING|4|300","status":200,"series":3,"levels":["warn"]}
+{"id":"body-json-WARNING|5|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|5|60","status":200,"series":12,"levels":["warn"]}
+{"id":"body-json-WARNING|5|300","status":200,"series":3,"levels":["warn"]}
+{"id":"body-json-WARNING|6|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|6|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|6|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|7|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|7|60","status":200,"series":12,"levels":["warn"]}
+{"id":"body-json-WARNING|7|300","status":200,"series":3,"levels":["warn"]}
+{"id":"body-json-WARNING|8|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|8|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|8|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|9|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|9|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|9|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|10|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|10|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|10|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|11|instant","status":200,"series":0}
+{"id":"body-json-WARNING|11|60","status":200,"series":0}
+{"id":"body-json-WARNING|11|300","status":200,"series":0}
+{"id":"body-json-WARNING|12|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|12|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|12|300","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|13|instant","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|13|60","status":200,"series":1,"levels":["warn"]}
+{"id":"body-json-WARNING|13|300","status":200,"series":1,"levels":["warn"]}
+{"id":"label-info-body-error|0|instant","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|0|60","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|0|300","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|1|instant","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|1|60","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|1|300","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|2|instant","status":200,"series":3,"levels":["info"]}
+{"id":"label-info-body-error|2|60","status":200,"series":14,"levels":["info"]}
+{"id":"label-info-body-error|2|300","status":200,"series":15,"levels":["info"]}
+{"id":"label-info-body-error|3|instant","status":200,"series":3,"levels":["info"]}
+{"id":"label-info-body-error|3|60","status":200,"series":14,"levels":["info"]}
+{"id":"label-info-body-error|3|300","status":200,"series":15,"levels":["info"]}
+{"id":"label-info-body-error|4|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-info-body-error\", detected_level=\"info\", level=\"info\", pod=\"p7\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-info-body-error|4|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-info-body-error\", detected_level=\"info\", level=\"info\", pod=\"p7\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-info-body-error|4|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-info-body-error\", detected_level=\"info\", level=\"info\", pod=\"p7\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-info-body-error|5|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-info-body-error\", detected_level=\"info\", level=\"info\", pod=\"p7\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-info-body-error|5|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-info-body-error\", detected_level=\"info\", level=\"info\", pod=\"p7\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-info-body-error|5|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-info-body-error\", detected_level=\"info\", level=\"info\", pod=\"p7\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-info-body-error|6|instant","status":200,"series":3,"levels":["info"]}
+{"id":"label-info-body-error|6|60","status":200,"series":14,"levels":["info"]}
+{"id":"label-info-body-error|6|300","status":200,"series":15,"levels":["info"]}
+{"id":"label-info-body-error|7|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-info-body-error\", detected_level=\"info\", level=\"info\", pod=\"p7\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-info-body-error|7|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-info-body-error\", detected_level=\"info\", level=\"info\", pod=\"p7\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-info-body-error|7|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-info-body-error\", detected_level=\"info\", level=\"info\", pod=\"p7\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-info-body-error|8|instant","status":200,"series":3,"levels":["info"]}
+{"id":"label-info-body-error|8|60","status":200,"series":13,"levels":["info"]}
+{"id":"label-info-body-error|8|300","status":200,"series":12,"levels":["info"]}
+{"id":"label-info-body-error|9|instant","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|9|60","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|9|300","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|10|instant","status":200,"series":0}
+{"id":"label-info-body-error|10|60","status":200,"series":0}
+{"id":"label-info-body-error|10|300","status":200,"series":0}
+{"id":"label-info-body-error|11|instant","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|11|60","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|11|300","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|12|instant","status":200,"series":3,"levels":["info"]}
+{"id":"label-info-body-error|12|60","status":200,"series":14,"levels":["info"]}
+{"id":"label-info-body-error|12|300","status":200,"series":15,"levels":["info"]}
+{"id":"label-info-body-error|13|instant","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|13|60","status":200,"series":1,"levels":["info"]}
+{"id":"label-info-body-error|13|300","status":200,"series":1,"levels":["info"]}
+{"id":"sm-level-debug|0|instant","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|0|60","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|0|300","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|1|instant","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|1|60","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|1|300","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|2|instant","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|2|60","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|2|300","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|3|instant","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|3|60","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|3|300","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|4|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"sm-level-debug\", detected_level=\"debug\", level=\"debug\", pod=\"p8\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"sm-level-debug|4|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"sm-level-debug\", detected_level=\"debug\", level=\"debug\", pod=\"p8\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"sm-level-debug|4|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"sm-level-debug\", detected_level=\"debug\", level=\"debug\", pod=\"p8\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"sm-level-debug|5|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"sm-level-debug\", detected_level=\"debug\", level=\"debug\", pod=\"p8\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"sm-level-debug|5|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"sm-level-debug\", detected_level=\"debug\", level=\"debug\", pod=\"p8\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"sm-level-debug|5|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"sm-level-debug\", detected_level=\"debug\", level=\"debug\", pod=\"p8\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"sm-level-debug|6|instant","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|6|60","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|6|300","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|7|instant","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"sm-level-debug\", detected_level=\"debug\", level=\"debug\", pod=\"p8\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"sm-level-debug|7|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"sm-level-debug\", detected_level=\"debug\", level=\"debug\", pod=\"p8\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"sm-level-debug|7|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"sm-level-debug\", detected_level=\"debug\", level=\"debug\", pod=\"p8\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"sm-level-debug|8|instant","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|8|60","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|8|300","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|9|instant","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|9|60","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|9|300","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|10|instant","status":200,"series":0}
+{"id":"sm-level-debug|10|60","status":200,"series":0}
+{"id":"sm-level-debug|10|300","status":200,"series":0}
+{"id":"sm-level-debug|11|instant","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|11|60","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|11|300","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|12|instant","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|12|60","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|12|300","status":200,"series":3,"levels":["debug"]}
+{"id":"sm-level-debug|13|instant","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|13|60","status":200,"series":1,"levels":["debug"]}
+{"id":"sm-level-debug|13|300","status":200,"series":1,"levels":["debug"]}
+{"id":"label-error-sm-debug|0|instant","status":200,"series":0}
+{"id":"label-error-sm-debug|0|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-error-sm-debug|0|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-error-sm-debug|1|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-error-sm-debug|1|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-error-sm-debug|1|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-error-sm-debug|2|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|2|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|2|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|3|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|3|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|3|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|4|instant","status":200,"series":0}
+{"id":"label-error-sm-debug|4|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-error-sm-debug\", detected_level=\"error\", level=\"debug\", pod=\"p9\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-error-sm-debug|4|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-error-sm-debug\", detected_level=\"error\", level=\"debug\", pod=\"p9\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-error-sm-debug|5|instant","status":200,"series":0}
+{"id":"label-error-sm-debug|5|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-error-sm-debug\", detected_level=\"error\", level=\"debug\", pod=\"p9\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-error-sm-debug|5|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-error-sm-debug\", detected_level=\"error\", level=\"debug\", pod=\"p9\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-error-sm-debug|6|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|6|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|6|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|7|instant","status":200,"series":0}
+{"id":"label-error-sm-debug|7|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-error-sm-debug\", detected_level=\"error\", level=\"debug\", pod=\"p9\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-error-sm-debug|7|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"label-error-sm-debug\", detected_level=\"error\", level=\"debug\", pod=\"p9\", severity=\"error\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"label-error-sm-debug|8|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|8|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|8|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|9|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-error-sm-debug|9|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-error-sm-debug|9|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-error-sm-debug|10|instant","status":200,"series":0}
+{"id":"label-error-sm-debug|10|60","status":200,"series":0}
+{"id":"label-error-sm-debug|10|300","status":200,"series":0}
+{"id":"label-error-sm-debug|11|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-error-sm-debug|11|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-error-sm-debug|11|300","status":200,"series":1,"levels":["error"]}
+{"id":"label-error-sm-debug|12|instant","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|12|60","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|12|300","status":200,"series":3,"levels":["error"]}
+{"id":"label-error-sm-debug|13|instant","status":200,"series":1,"levels":["error"]}
+{"id":"label-error-sm-debug|13|60","status":200,"series":1,"levels":["error"]}
+{"id":"label-error-sm-debug|13|300","status":200,"series":1,"levels":["error"]}
+{"id":"nothing|0|instant","status":200,"series":0}
+{"id":"nothing|0|60","status":200,"series":1,"levels":["unknown"]}
+{"id":"nothing|0|300","status":200,"series":1,"levels":["unknown"]}
+{"id":"nothing|1|instant","status":200,"series":1,"levels":["unknown"]}
+{"id":"nothing|1|60","status":200,"series":1,"levels":["unknown"]}
+{"id":"nothing|1|300","status":200,"series":1,"levels":["unknown"]}
+{"id":"nothing|2|instant","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|2|60","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|2|300","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|3|instant","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|3|60","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|3|300","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|4|instant","status":200,"series":0}
+{"id":"nothing|4|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"nothing\", detected_level=\"unknown\", pod=\"p10\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"nothing|4|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"nothing\", detected_level=\"unknown\", pod=\"p10\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"nothing|5|instant","status":200,"series":0}
+{"id":"nothing|5|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"nothing\", detected_level=\"unknown\", pod=\"p10\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"nothing|5|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"nothing\", detected_level=\"unknown\", pod=\"p10\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"nothing|6|instant","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|6|60","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|6|300","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|7|instant","status":200,"series":0}
+{"id":"nothing|7|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"nothing\", detected_level=\"unknown\", pod=\"p10\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"nothing|7|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"nothing\", detected_level=\"unknown\", pod=\"p10\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"nothing|8|instant","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|8|60","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|8|300","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|9|instant","status":200,"series":1,"levels":["unknown"]}
+{"id":"nothing|9|60","status":200,"series":1,"levels":["unknown"]}
+{"id":"nothing|9|300","status":200,"series":1,"levels":["unknown"]}
+{"id":"nothing|10|instant","status":200,"series":0}
+{"id":"nothing|10|60","status":200,"series":0}
+{"id":"nothing|10|300","status":200,"series":0}
+{"id":"nothing|11|instant","status":200,"series":1,"levels":["unknown"]}
+{"id":"nothing|11|60","status":200,"series":1,"levels":["unknown"]}
+{"id":"nothing|11|300","status":200,"series":1,"levels":["unknown"]}
+{"id":"nothing|12|instant","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|12|60","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|12|300","status":200,"series":3,"levels":["unknown"]}
+{"id":"nothing|13|instant","status":200,"series":1,"levels":["unknown"]}
+{"id":"nothing|13|60","status":200,"series":1,"levels":["unknown"]}
+{"id":"nothing|13|300","status":200,"series":1,"levels":["unknown"]}
+{"id":"body-text-error-word|0|instant","status":200,"series":0}
+{"id":"body-text-error-word|0|60","status":200,"series":1,"levels":["error"]}
+{"id":"body-text-error-word|0|300","status":200,"series":1,"levels":["error"]}
+{"id":"body-text-error-word|1|instant","status":200,"series":1,"levels":["error"]}
+{"id":"body-text-error-word|1|60","status":200,"series":1,"levels":["error"]}
+{"id":"body-text-error-word|1|300","status":200,"series":1,"levels":["error"]}
+{"id":"body-text-error-word|2|instant","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|2|60","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|2|300","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|3|instant","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|3|60","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|3|300","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|4|instant","status":200,"series":0}
+{"id":"body-text-error-word|4|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-text-error-word\", detected_level=\"error\", pod=\"p11\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-text-error-word|4|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-text-error-word\", detected_level=\"error\", pod=\"p11\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-text-error-word|5|instant","status":200,"series":0}
+{"id":"body-text-error-word|5|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-text-error-word\", detected_level=\"error\", pod=\"p11\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-text-error-word|5|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-text-error-word\", detected_level=\"error\", pod=\"p11\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-text-error-word|6|instant","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|6|60","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|6|300","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|7|instant","status":200,"series":0}
+{"id":"body-text-error-word|7|60","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-text-error-word\", detected_level=\"error\", pod=\"p11\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-text-error-word|7|300","status":400,"error":"pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"lv\", case=\"body-text-error-word\", detected_level=\"error\", pod=\"p11\"}'.\nUse a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\nTo skip all potential errors you can match empty errors.(e.g __error__=\"\")\nThe label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )","series":0}
+{"id":"body-text-error-word|8|instant","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|8|60","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|8|300","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|9|instant","status":200,"series":1,"levels":["error"]}
+{"id":"body-text-error-word|9|60","status":200,"series":1,"levels":["error"]}
+{"id":"body-text-error-word|9|300","status":200,"series":1,"levels":["error"]}
+{"id":"body-text-error-word|10|instant","status":200,"series":0}
+{"id":"body-text-error-word|10|60","status":200,"series":0}
+{"id":"body-text-error-word|10|300","status":200,"series":0}
+{"id":"body-text-error-word|11|instant","status":200,"series":1,"levels":["error"]}
+{"id":"body-text-error-word|11|60","status":200,"series":1,"levels":["error"]}
+{"id":"body-text-error-word|11|300","status":200,"series":1,"levels":["error"]}
+{"id":"body-text-error-word|12|instant","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|12|60","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|12|300","status":200,"series":3,"levels":["error"]}
+{"id":"body-text-error-word|13|instant","status":200,"series":1,"levels":["error"]}
+{"id":"body-text-error-word|13|60","status":200,"series":1,"levels":["error"]}
+{"id":"body-text-error-word|13|300","status":200,"series":1,"levels":["error"]}

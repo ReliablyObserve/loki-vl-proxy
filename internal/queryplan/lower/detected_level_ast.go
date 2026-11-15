@@ -224,8 +224,18 @@ func levelChainPipes(mode translate.DetectedLevelChainMode) []logsql.Pipe {
 		quoted[i] = translate.LogsQLFieldName(n)
 	}
 	pipes := make([]logsql.Pipe, 0, 64)
-	// The stored level fields in Loki's order, then the rows a stored level decides (storedLevelPicks).
+	// The stored level fields in Loki's order, the stream's own before the row's, then the rows a stored level
+	// decides (storedLevelPicks).
+	streamPicks := translate.StreamLevelPickFields(texts)
 	for _, field := range texts {
+		if field != translate.DetectedLevelLabel {
+			for _, f := range streamPicks {
+				name := translate.LogsQLFieldName(f)
+				inStream := logsql.StreamFilter{Matchers: []logsql.LabelMatcher{{Name: name, Op: "!=", Value: ""}}}
+				pipes = append(pipes, lvFormat(logsql.AllOf{lvAny(name), inStream}, "<"+f+">", dlStored, true))
+			}
+			streamPicks = nil
+		}
 		name := translate.LogsQLFieldName(field)
 		cond := lvAny(name)
 		switch field {

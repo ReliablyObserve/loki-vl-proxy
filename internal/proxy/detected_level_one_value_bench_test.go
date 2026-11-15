@@ -75,3 +75,32 @@ func BenchmarkResponseKeyFencesParser(b *testing.B) {
 		_ = responseKeyFences(r, query, responseKeyInnerQueryRange)
 	}
 }
+
+// BenchmarkBuildMetricSeriesEntryRawRow times the series a raw-row metric read builds once per distinct
+// (stream, level) pair: VictoriaLogs answers the row with its stream fields as fields, so a stream labelled level
+// gives the row the same level.
+func BenchmarkBuildMetricSeriesEntryRawRow(b *testing.B) {
+	p, err := New(Config{BackendURL: "http://unused", Cache: cache.New(60*time.Second, 10), LogLevel: "error"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	for _, c := range []struct{ name, stream, level string }{{"level", benchLevelStream, "error"}, {"severity", benchSeverityStream, ""}, {"severity and row level", benchSeverityStream, "debug"}, {"nolevel", `{app="a",namespace="prod",pod="a-1"}`, ""}, {"field level", `{app="a",namespace="prod",pod="a-1"}`, "warn"}} {
+		b.Run(c.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = p.buildMetricSeriesEntry(c.stream, c.level, nil, nil, false, nil)
+			}
+		})
+	}
+}
+
+// BenchmarkResponseKeyFencesPlainMetric times the fence chain of a metric query with no parser stage, which the
+// detected_level chain fence now covers.
+func BenchmarkResponseKeyFencesPlainMetric(b *testing.B) {
+	const query = `sum by (detected_level) (count_over_time({service_name="payment-service"} [5m]))`
+	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+url.Values{"query": {query}, "start": {"1"}, "end": {"3600"}, "step": {"60"}}.Encode(), nil)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = responseKeyFences(r, query, responseKeyInnerQueryRange)
+	}
+}

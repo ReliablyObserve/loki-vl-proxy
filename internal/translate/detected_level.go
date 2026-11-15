@@ -29,9 +29,11 @@ import (
 // case-sensitive and do not stop at syntax errors, and the keyword regexp
 // folds ASCII only. unpack_logfmt skips the lines Loki reads as JSON, which
 // start with a brace (the guard probes check the ones that do not also end
-// with one). The stored-field filters do not tell stream fields from
-// other fields: a detected_level stream field is an index label for Loki and
-// does not decide the value, so callers leave it out of existingFields.
+// with one). The chain reads a field from the stream before the same
+// field stored on the row (storedLevelPicks); the stored-level filters
+// (BuildHasLevelFilter) do not tell stream fields from other fields. A
+// detected_level stream field is an index label for Loki and does not decide
+// the value, so callers leave it out of existingFields.
 
 // BracedLineRegexp matches the start of a line Loki's ingest reads as JSON
 // (field_detection.go isJSON: the first non-space rune is a brace and the last
@@ -352,11 +354,28 @@ func buildDetectedLevelChainShared(existingFields []string, mode DetectedLevelCh
 // storedLevelPicks returns the pipes that read the stored level fields, in
 // Loki's priority order (the first non-empty one decides, and
 // keep_original_fields keeps that first write), then the ones that mark the
-// rows a stored level decides (__dl_h).
+// rows a stored level decides (__dl_h). Loki reads a stream label before
+// structured metadata, so a stream labelled severity="error" whose lines carry
+// level="debug" is error: the picks of StreamLevelPickFields, each limited to
+// the rows whose stream holds the field ({f!=""}, one stream per block), come
+// before the picks of the same fields as any stored field.
 func storedLevelPicks(texts, stored []string) []string {
 	var pipes []string
 	add := func(format string, args ...any) { pipes = append(pipes, fmt.Sprintf(format, args...)) }
+	// detected_level (a non-stream field: callers leave a stream one out) comes
+	// first, then the stream's own level fields, then the row's. The stream
+	// picks cover the fields the caller knows to exist (every production
+	// caller passes DetectedLevelFieldNames or a presence); a chain built
+	// without known fields keeps the flat order.
+	streamPicks := StreamLevelPickFields(levelTextFields(stored))
 	for _, field := range texts {
+		if field != "detected_level" {
+			for _, f := range streamPicks {
+				q := LogsQLFieldName(f)
+				add(`format if (%s:* {%s!=""}) "<%s>" as __dl_s keep_original_fields`, q, q, f)
+			}
+			streamPicks = nil
+		}
 		quotedField := LogsQLFieldName(field)
 		cond := quotedField + ":*"
 		// A severity text VictoriaLogs derived from the OTLP number is no level
@@ -382,6 +401,24 @@ func storedLevelPicks(texts, stored []string) []string {
 		}
 	}
 	return pipes
+}
+
+// StreamLevelPickFields returns the level text fields of texts (in their
+// order, detected_level left out) that get a stream-only pick ahead of the
+// others: all of them when there are two or more, else none. With one name a
+// row cannot hold it both as a stream field and as another field, so the order
+// cannot change the value and the chain stays as it was.
+func StreamLevelPickFields(texts []string) []string {
+	out := make([]string, 0, len(texts))
+	for _, f := range texts {
+		if f != "detected_level" {
+			out = append(out, f)
+		}
+	}
+	if len(out) < 2 {
+		return nil
+	}
+	return out
 }
 
 // chainEnding returns the closing pipes of the chain: the value written to

@@ -55,6 +55,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	b.add(keepUnwrapIdentityResponseKeyVersion(query))
 	b.add(dynamicUnwrapIdentityResponseKeyVersion(query))
 	b.add(streamLevelSeriesResponseKeyVersion(query))
+	b.add(streamLevelChainResponseKeyVersion(query))
 	if site == responseKeyCompatQueryRange {
 		b.add(logfmtPresenceResponseKeyVersion(r, query))
 	}
@@ -155,6 +156,22 @@ func streamLevelSeriesResponseKeyVersion(query string) string {
 	}
 	if mayHoldParserStage(query) {
 		return streamLevelSeriesResponseVersion
+	}
+	return ""
+}
+
+// streamLevelChainResponseVersion fences the answers cached before VictoriaLogs' detected_level chain read a stream's
+// level fields before the level fields stored on its rows (semantics/detected-level-one-value-per-stream: a stream
+// labelled severity="error" whose lines carry structured metadata level="debug" said debug on every chain-served
+// metric query, and a `| detected_level` filter kept the rows by that value).
+const streamLevelChainResponseVersion = "@stream-level-chain-v1:"
+
+// streamLevelChainResponseKeyVersion is the fence of a query whose VictoriaLogs read may carry the chain: any metric
+// query (it holds the [ of a range) and any query naming detected_level (a filter on it). A text screen, so a query
+// that reads no chain is fenced too (one more cache miss), and a log query without detected_level keeps its key.
+func streamLevelChainResponseKeyVersion(query string) string {
+	if strings.IndexByte(query, '[') >= 0 || strings.Contains(query, detectedLevelLabel) {
+		return streamLevelChainResponseVersion
 	}
 	return ""
 }

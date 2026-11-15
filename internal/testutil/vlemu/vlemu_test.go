@@ -289,8 +289,8 @@ func TestEmulatorDeriveFieldsSeesStreamFields(t *testing.T) {
 		Row{TS: sec(0), Stream: `{app="a",severity="error"}`, Value: 1},
 		Row{TS: sec(1), Stream: `{app="b"}`, Value: 2, Labels: map[string]string{"level": "warn"}},
 	)
-	e.DeriveFields = func(f map[string]string) string {
-		if f["severity"] != "" {
+	e.DeriveFields = func(stream, f map[string]string) string {
+		if stream["severity"] != "" && f["severity"] == stream["severity"] {
 			return "sev:" + f["severity"]
 		}
 		return "lvl:" + f["level"] + ":" + f["_msg"]
@@ -315,5 +315,31 @@ func TestEmulatorDeriveFieldsSeesStreamFields(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("stats: %s lacks %s", rec.Body.String(), want)
 		}
+	}
+}
+
+// RowStreamFields writes the stream fields into the raw rows as VictoriaLogs answers them (test/oracle/vl store
+// returns a Loki-push row with stream {app="uw",lvl="WRN"} as app=uw and lvl=WRN beside _stream), and DeriveFields
+// gets the stream apart from the row's fields on both reads.
+func TestEmulatorRowStreamFields(t *testing.T) {
+	e := newEmu(t, Row{TS: sec(0), Stream: `{app="a",severity="error"}`, Value: 1, Labels: map[string]string{"level": "debug"}})
+	e.RowStreamFields = true
+	var streams []map[string]string
+	e.DeriveFields = func(stream, f map[string]string) string {
+		streams = append(streams, stream)
+		return f["severity"] + "/" + f["level"]
+	}
+	rec := serve(e.Handler(), "/select/logsql/query", url.Values{"query": {`* | format "<__dl>" as detected_level`}})
+	var m map[string]string
+	if err := json.Unmarshal([]byte(strings.TrimSpace(rec.Body.String())), &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["app"] != "a" || m["severity"] != "error" || m["level"] != "debug" || m["detected_level"] != "error/debug" {
+		t.Errorf("raw row %v", m)
+	}
+	serve(e.Handler(), "/select/logsql/stats_query", url.Values{"query": {`* | format "<__dl>" as detected_level | stats by (detected_level) count()`}, "time": {"1000"}})
+	want := map[string]string{"app": "a", "severity": "error"}
+	if len(streams) != 2 || !reflect.DeepEqual(streams[0], want) || !reflect.DeepEqual(streams[1], want) {
+		t.Errorf("DeriveFields streams %v, want %v twice", streams, want)
 	}
 }

@@ -45,17 +45,43 @@ why: |
   (@stream-level-series-v2, which now also covers every metric query with a
   parser stage).
 
+  Two more paths read the stored level ahead of the stream (2026-11-15, live
+  Loki 3.7.9: a stream labelled severity="error" whose lines carry structured
+  metadata level="debug" is error, the stream label first, then structured
+  metadata, then the body; level="ERROR" over a JSON body is error):
+  - the chain VictoriaLogs runs (every chain-served metric query, the
+    `| detected_level` filters) read its level fields by name, stored and
+    stream fields alike, so level="debug" won over the stream's severity and
+    the series said debug. It now reads each level field from the stream
+    first (`format if (f:* {f!=""})`, one stream per block, before the row's
+    fields; only where two or more level names are known, so a presence of
+    one sends the chain unchanged). VictoriaLogs v1.49.0 and v1.53.0 answer
+    error for that row and Loki's value for every recorded row, and every
+    text survives their clone (testdata/detected_level_vl_chain_answers.json,
+    TestPlanTextsSurviveVictoriaLogsClone). Fenced: @stream-level-chain-v1
+    (every metric query and every query naming detected_level).
+  - the raw-row reads (`sum without (pod) (rate({...} | json amount | unwrap
+    amount [5m]))` at an instant and step 60, `sort(rate({...} | json [1m]))`
+    at an instant and step 300) copied the row's level field into
+    detected_level. VictoriaLogs answers a raw row with the stream fields as
+    fields, so a stream labelled level="ERROR" said ERROR (Debug for
+    level="Debug"), and a stream label lost to a stored level. They now take
+    the stream's level fields first, then the row's level field, normalised.
+
+  The sweep of 14 query types x instant, step 60 and step 300 x 12 streams
+  (TestDetectedLevelSweepMatchesLoki, Loki engine answers recorded, the proxy
+  over VictoriaLogs v1.49.0 and v1.53.0 themselves): 417 of 504 rows equal to
+  Loki on each version (origin/main 348, this change before the two paths
+  396), no row equal before and different now, and no series with another
+  detected_level than Loki's.
+
   Not covered:
-  - a stream with no level field: Loki decides per line from the body, which a
-    series per stream cannot split. Those series keep their label as before
-    (none on the paths above, unknown on the per-stream reads of
-    semantics/without-fold-stream-detected-level).
-  - a stream with a level key other than `level` (severity="error") whose rows
-    also carry a `level` field (level="debug"): the proxy-side paths follow the
-    log read path's rule (deriveRowLevel: the stream's level field before the
-    row's) and answer error, while the chain VictoriaLogs runs reads `level`
-    first and answers debug (recorded). Which one Loki answers for this mix is
-    not recorded yet.
+  - a stream with no level field read by a per-stream stats read: Loki
+    decides per line from the body or structured metadata, which a series per
+    stream cannot split; those series carry no detected_level
+    (semantics/detected-level-stream-stats-without-level, open).
+  - `sort(rate({...} | json [1m]))` over lines that are not JSON answers 200
+    where Loki answers its JSONParserErr 400 (an error-path change of its own).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -75,10 +101,10 @@ gap:
   fixed_by: TBD-PR
   impact: explore-visible
   effort: S
-  area: "internal/proxy ensureStreamDetectedLevel (fetchBareParserStatsBuckets, logQueryStreamDescriptorMiss, levelGroupingRequest.apply)"
+  area: "internal/proxy ensureStreamDetectedLevel (fetchBareParserStatsBuckets, logQueryStreamDescriptorMiss, levelGroupingRequest.apply), buildMetricSeriesEntry (raw-row reads); internal/translate storedLevelPicks and internal/queryplan/lower levelChainPipes (the chain)"
   loki: "one detected_level per stream, normalised, on every query type"
-  proxy: "the same: the stream's level fields, else the row's level field, normalised"
-  planned_test: 'TestOneDetectedLevelPerStreamAcrossQueryTypes (internal/proxy, 13 query types at an instant and steps 60 and 300, VictoriaLogs v1.49.0 and v1.53.0), TestVLChainDetectedLevelMatchesVictoriaLogs (recorded VictoriaLogs answers), TestEnsureStreamDetectedLevelEdges, TestLevelGroupingApplyStreamRule, TestStreamLevelOneValueFence, TestStreamLevelSeriesFenceCoversParserShapes, FuzzEnsureStreamDetectedLevel'
+  proxy: "the same: the stream's level fields, else the row's level field, normalised; the chain reads the stream's level fields first"
+  planned_test: 'TestDetectedLevelSweepMatchesLoki (internal/proxy, 14 query types x 3 forms x 12 streams against recorded Loki engine answers; LVP_RUN_ORACLES=1 also over VictoriaLogs v1.49.0 and v1.53.0), TestOneDetectedLevelPerStreamAcrossQueryTypes (internal/proxy, 13 query types at an instant and steps 60 and 300, VictoriaLogs v1.49.0 and v1.53.0), TestVLChainDetectedLevelMatchesVictoriaLogs (recorded VictoriaLogs answers), TestStreamLevelPickFields, TestDetectedLevelChainReadsStreamFieldsFirst, TestEnsureStreamDetectedLevelEdges, TestLevelGroupingApplyStreamRule, TestStreamLevelOneValueFence, TestStreamLevelSeriesFenceCoversParserShapes, FuzzEnsureStreamDetectedLevel'
   visual: none
   visual_reason: 'a label value of a series in Explore; the label sets are compared in the tests and by the per-case verifier'
   clusters: []

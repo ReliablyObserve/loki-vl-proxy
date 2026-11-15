@@ -20,20 +20,21 @@ import (
 )
 
 // vlChainDetectedLevel is what the detected_level chain the proxy sends
-// computes in VictoriaLogs for a row whose fields (stream fields included,
-// VictoriaLogs does not tell them apart) are f and whose line holds no level
-// word: the first of detected_level and the level fields Loki reads,
-// normalised, an unknown word kept, else unknown. The emulator applies it
-// where the chain is (vlemu.Emulator.DeriveFields);
+// computes in VictoriaLogs for a row whose stream fields are stream and whose
+// fields (the stream fields among them, VictoriaLogs holds them as fields too)
+// are f: Loki's rule of the read path (deriveRowLevel), a non-stream
+// detected_level, then the stream's level fields, then the row's, then the
+// line. The emulator applies it where the chain is (vlemu.Emulator.DeriveFields);
 // TestVLChainDetectedLevelMatchesVictoriaLogs pins it to VictoriaLogs.
-func vlChainDetectedLevel(f map[string]string) string {
-	if v := f["detected_level"]; v != "" {
-		return normalizedLevel(v)
+func vlChainDetectedLevel(stream, f map[string]string) string {
+	row := make(map[string]string, len(f))
+	for k, v := range f {
+		if sv, ok := stream[k]; !ok || sv != v {
+			row[k] = v
+		}
 	}
-	if v, ok := streamLevel(f); ok {
-		return v
-	}
-	return levelUnknown
+	delete(row, "_msg")
+	return deriveRowLevel(levelFieldsFromLabels(stream), levelFieldsFromLabels(row), []byte(f["_msg"]), false, true).String()
 }
 
 type vlChainRecording struct {
@@ -54,7 +55,12 @@ type vlChainRecording struct {
 // proxy's detected_level chain over streams labelled level="ERROR",
 // severity="error", LEVEL="warning", lvl="x", level="Debug" and Severity="fatal"
 // and answer error, error, warn, x, debug and fatal: the chain reads every
-// level field Loki reads and normalises the value. The emulator's rule
+// level field Loki reads and normalises the value. A stream level field wins
+// over a level stored on the row, as in Loki (a stream labelled
+// severity="error" whose row holds level="debug" is error, LEVEL="warning"
+// over level="info" is warn, lvl="WRN" over level="error" is warn), a stored
+// detected_level comes first, and a row with no level field reads its line
+// (level=error is error). The emulator's rule
 // (vlChainDetectedLevel) gives the same answer for every recorded row, so the
 // tests that run on the emulator see what VictoriaLogs computes. The recorded
 // query holds the chain the proxy sends today.
@@ -73,19 +79,20 @@ func TestVLChainDetectedLevelMatchesVictoriaLogs(t *testing.T) {
 	if !strings.Contains(rec.Query, chain) {
 		t.Fatalf("the recorded query no longer holds the chain the proxy sends:\n%s", chain)
 	}
-	fields := map[string]map[string]string{}
+	fields, streams := map[string]map[string]string{}, map[string]map[string]string{}
 	for _, row := range rec.Rows {
-		f := map[string]string{}
+		f, st := map[string]string{}, map[string]string{}
 		var parts []string
 		for _, kv := range row.Stream {
-			f[kv[0]] = kv[1]
+			f[kv[0]], st[kv[0]] = kv[1], kv[1]
 			parts = append(parts, fmt.Sprintf("%s=%q", kv[0], kv[1]))
 		}
 		for _, kv := range row.Fields {
 			f[kv[0]] = kv[1]
 		}
 		sort.Strings(parts)
-		fields["{"+strings.Join(parts, ",")+"}"] = f
+		key := "{" + strings.Join(parts, ",") + "}"
+		fields[key], streams[key] = f, st
 	}
 	for _, version := range []string{"v1.49.0", "v1.53.0"} {
 		answers := rec.Answers[version]
@@ -97,7 +104,7 @@ func TestVLChainDetectedLevelMatchesVictoriaLogs(t *testing.T) {
 			if !ok {
 				t.Fatalf("%s: answer for an unknown stream %s", version, a.Stream)
 			}
-			if got := vlChainDetectedLevel(f); got != a.DetectedLevel {
+			if got := vlChainDetectedLevel(streams[a.Stream], f); got != a.DetectedLevel {
 				t.Errorf("%s %s: emulator rule %q, VictoriaLogs %q", version, a.Stream, got, a.DetectedLevel)
 			}
 		}
@@ -247,7 +254,7 @@ func TestOneDetectedLevelPerStreamAcrossQueryTypes(t *testing.T) {
 // computed as VictoriaLogs does (vlChainDetectedLevel).
 func oneLevelSeries(t *testing.T, rows []vlemu.Row, version, query string, base int64, mode string) []map[string]string {
 	t.Helper()
-	return streamSeriesLabelsWith(t, &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: version, DeriveFields: vlChainDetectedLevel}, query, base, mode)
+	return streamSeriesLabelsWith(t, &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: version, DeriveFields: vlChainDetectedLevel, RowStreamFields: true}, query, base, mode)
 }
 
 // TestEnsureStreamDetectedLevelEdges: the stream rule on one series' labels.
@@ -530,6 +537,60 @@ func TestStreamLevelOneValueFence(t *testing.T) {
 				t.Fatalf("repeat: %d new VictoriaLogs calls, same body %v", len(emu.Calls)-before, again.Body.String() == rec.Body.String())
 			}
 		})
+	}
+}
+
+// TestStreamLevelChainFence: VictoriaLogs' detected_level chain now reads a stream's level fields before the ones
+// stored on its rows, which changes the answer of every chain-served query over such a stream (a parser-less rate,
+// a by (detected_level) count, a `| detected_level` filter). An answer the previous build cached under the key
+// without the chain fence is never served; the fresh answer, debug no more but the stream's error, is cached under
+// the new key, so a repeat makes no VictoriaLogs call. A log query that names no detected_level keeps its key.
+//
+// conformance: semantics/detected-level-one-value-per-stream, cache-response-key-versions
+func TestStreamLevelChainFence(t *testing.T) {
+	base := int64(1_800_000_000) * 1e9
+	var rows []vlemu.Row
+	for i := 0; i < 40; i++ {
+		rows = append(rows, vlemu.Row{TS: base - int64(i)*7e9 - 3e8, Stream: `{app="uw",pod="m",severity="error"}`, Labels: map[string]string{"level": "debug"}, Value: 1, Msg: "plain"})
+	}
+	for _, q := range []string{`rate({app="uw"}[1m])`, `sum by (detected_level) (count_over_time({app="uw"}[5m]))`} {
+		t.Run(q, func(t *testing.T) {
+			if streamLevelChainResponseKeyVersion(q) != streamLevelChainResponseVersion {
+				t.Fatalf("not fenced")
+			}
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0", DeriveFields: vlChainDetectedLevel, RowStreamFields: true}
+			backend := httptest.NewServer(emu.Handler())
+			defer backend.Close()
+			p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), CompatCache: cache.New(60*time.Second, 100), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			target := "/loki/api/v1/query_range?" + url.Values{"query": {q}, "start": {"1799999100"}, "end": {"1800000000"}, "step": {"300"}}.Encode()
+			req := httptest.NewRequest(http.MethodGet, target, nil)
+			req.Header.Set("X-Scope-OrgID", "0")
+			key, ok := p.compatCacheKey("query_range", req)
+			if !ok || !strings.Contains(key, streamLevelChainResponseVersion) {
+				t.Fatalf("compat key %q lacks the fence", key)
+			}
+			const stale = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"uw","detected_level":"debug","stale":"yes"},"values":[[1800000000,"1"]]}]}}`
+			p.compatCache.Set(strings.Replace(key, streamLevelChainResponseVersion, "", 1), []byte(stale))
+			rec := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "0"})
+			if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "stale") || !strings.Contains(rec.Body.String(), `"detected_level":"error"`) || strings.Contains(rec.Body.String(), `"detected_level":"debug"`) {
+				t.Fatalf("%d %s: want the fresh answer, error, not the cached one", rec.Code, rec.Body.String())
+			}
+			before := len(emu.Calls)
+			if again := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "0"}); again.Body.String() != rec.Body.String() || len(emu.Calls) != before {
+				t.Fatalf("repeat: %d new VictoriaLogs calls, same body %v", len(emu.Calls)-before, again.Body.String() == rec.Body.String())
+			}
+		})
+	}
+	for q, fenced := range map[string]bool{`{app="uw"}`: false, `{app="uw"} |= "x"`: false, `{app="uw"} | json`: false, `{app="uw"} | detected_level="error"`: true, `{app="uw"} |= "[x"`: true} {
+		if got := streamLevelChainResponseKeyVersion(q) != ""; got != fenced {
+			t.Errorf("%q: fenced %v, want %v", q, got, fenced)
+		}
 	}
 }
 

@@ -2217,18 +2217,28 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, derived *stri
 	}
 	if levelStr != "" {
 		streamLabels["level"] = levelStr
-		streamLabels["detected_level"] = levelStr
 	}
 	switch {
 	case derived != nil && *derived != "":
 		streamLabels["detected_level"] = *derived
 	case derived != nil:
 		delete(streamLabels, "detected_level")
-	case strings.TrimSpace(streamLabels["detected_level"]) == "":
-		// A row of a group read by stream alone (stats by (_stream)) carries
-		// no level column: the stream's level field decides it for every row
-		// of the stream, as Loki's ingest does (rule 2), else unknown.
-		streamLabels["detected_level"] = streamDetectedLevel(rawStreamLabels)
+	case levelStr == "" && strings.TrimSpace(streamLabels["detected_level"]) != "":
+		// A detected_level stream label stays as it was.
+	default:
+		// Without VictoriaLogs' derivation the stream's level fields decide
+		// for every row of the stream, as Loki's ingest does (rule 2): a raw
+		// row holds them as fields too, so its level field is the stream's
+		// level="ERROR" (error) rather than a value of the row. Then the row's
+		// level field (rule 3), normalised, then unknown. A group read by
+		// stream alone (stats by (_stream)) carries no level column.
+		if v, ok := streamLevel(rawStreamLabels); ok {
+			streamLabels["detected_level"] = v
+		} else if levelStr != "" {
+			streamLabels["detected_level"] = normalizedLevel(levelStr)
+		} else {
+			streamLabels["detected_level"] = levelUnknown
+		}
 	}
 	ensureSyntheticServiceName(streamLabels)
 
