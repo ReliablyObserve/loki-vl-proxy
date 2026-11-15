@@ -9,13 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
-  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
-  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
-  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
-  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
-  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
-  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
 - Translating a query costs fewer allocations. The LogQL parser allocates about half as much for a log query (a json
   query with a label filter: 14 to 7 allocations), a `line_format` template is typed once per template text, a
   query plan is one allocation sized for the query's kind, and the plan's log query lowering writes its text with
@@ -31,6 +24,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   translator. Answers, translation cache entries and the queries VictoriaLogs receives do not change; a translation
   that misses the cache costs no more allocations than the string translator's. `-query-plan-lowering=false` turns it
   off.
+- A timestamp written as digits only (the integer nanoseconds Grafana sends for `start`, `end` and `time`) is read in
+  one pass, eight digits at a time, instead of a digit scan and a second parse: 27 to 8 ns per timestamp, with no
+  allocation, and the same value for every input (a sign, a space, a time layout or a float still takes the general
+  parse). The step alignment and the time-bounds check of `query_range`, the metadata routes' response-cache keys and
+  their handlers read their bounds this way, which more than pays for the length check the new
+  `-default-max-query-length` default adds: at the shipped default a `query_range` or `labels` request costs no more
+  than before.
+
+### Fixed
+
+- An IPv4 `ip()` filter now finds an address written after hex digits and colons exactly where Loki finds it, in
+  `|= ip(...)` line filters and `label = ip(...)` label filters alike. Loki reads a line from its start, and an
+  earlier run of digits and dots, or of hex digits and colons, decides whether a later address is read: in
+  `X0:1.2.3.0` and `1.0:1.2.3.0` Loki finds 1.2.3.0, in `a0:1.2.3.0` and `1:a1.2.3.0` it does not. The proxy judged
+  only the characters right before the address, so `ip("1.2.3.0/27")` dropped the first two and kept the last two,
+  and `!= ip(...)` did the opposite. Checked against Loki's own answers on 52,000 lines. VictoriaLogs now checks two
+  short regexps first and runs the full one only on the few lines they leave, so an IPv4 `ip()` filter costs it 58%
+  to 82% less per line than before. Answers cached before the fix are not reused.
+- **Breaking:** `-default-max-query-length` now defaults to Loki's `max_query_length` default, `721h` (published as
+  `30d1h`), instead of `0` (no limit). A proxy run without a length configured served a range Loki refuses: a
+  `query_range`, `series`, `labels`, label values, `detected_labels`, `detected_fields`, detected field values,
+  `index/stats` or `index/volume` request over more than 721h (for example `start=-1` or `start=1`) now fails, as in Loki,
+  with `400 the query time range exceeds the limit (query length: X, limit: 30d1h)` before any VictoriaLogs call,
+  and `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` publish `max_query_length: 30d1h` instead of
+  `0s`. Set `-default-max-query-length=0` (Helm `extraArgs.default-max-query-length: "0"`), or `max_query_length:
+  "0s"` in `-tenant-default-limits` or `-tenant-limits`, to keep serving longer ranges. A live tail is not checked
+  against this limit. A request with a `start` and no `end` is held to it too (a missing `end` is now, as in Loki).
+  `index/volume` rounds its `start` and `end` down to whole seconds before the check, as Loki does, and reports
+  the length in whole seconds (`721h0m1s`); `index/volume_range` is not length-limited, as in Loki (a range over 721h is
+  answered, and only its 11,000-point resolution rejects).
+
+## [2.264.0] - 2026-11-15
+
+### Changed
+
+- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
+  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
+  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
+  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
+  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
+  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
+  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
 
 ### Fixed
 

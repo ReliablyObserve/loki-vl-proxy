@@ -475,11 +475,11 @@ Route queries for old data to a separate cold backend (e.g. Victoria Lakehouse o
 
 ## Query Length Limits
 
-The proxy can enforce a maximum query time range, matching Loki's `max_query_length` behavior.
+The proxy enforces a maximum query time range, Loki's `max_query_length`, with Loki's default of `721h` (published as `30d1h`).
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
-| `-default-max-query-length` | — | `0` | Default maximum query time range enforced for all tenants unless overridden by tenant limits. `0` disables the limit (unlimited, matching Loki's default). Uses Go duration syntax (`h`, `m`, `s`; there is no `d` unit), for example `720h`. |
+| `-default-max-query-length` | — | `721h` | Maximum query time range enforced for all tenants unless overridden by tenant limits. The default is Loki's `max_query_length` default; `0` disables the limit. Uses Go duration syntax (`h`, `m`, `s`; there is no `d` unit), for example `2160h`. |
 
 ### Precedence
 
@@ -487,12 +487,13 @@ When multiple limits are configured, the most specific takes effect:
 
 1. **Per-tenant** — `max_query_length` for the tenant in `-tenant-limits` (highest priority)
 2. **Tenant defaults** — `max_query_length` in `-tenant-default-limits`
-3. **Global flag** — `-default-max-query-length`
-4. **No limit** — when all of the above are `0` or unset
+3. **Global flag** — `-default-max-query-length` (`721h`, Loki's default, unless set)
+4. **No limit** — when the value that applies is `0`
 
 ### Behavior
 
 - Enforced, as in Loki's limits middleware, on `query_range`, `series`, `labels`, label values, `detected_labels` and `index/stats` requests
+- `index/volume` rounds its `start` and `end` down to whole seconds before the check, as Loki does, so it reports the length in whole seconds (`721h0m1s`) and runs a range that is over only in its fraction; `index/volume_range` is not length-limited, as in Loki (only its 11,000-point resolution bounds it)
 - Independently of this flag, `query_range` requests where `(end - start) / step` exceeds 11,000 (integer division, as in Loki) return HTTP 400 with `exceeded maximum resolution of 11,000 points per time series. Try increasing the value of the step parameter` before any backend call, for log and metric queries alike
 - Applied after LogQL offset extraction (the enforced range reflects any `offset` modifier in the query)
 - Tenant-limit values accept Loki duration units, including `d`, `w` and `y` (for example `"90d"`); the global flag does not
@@ -503,14 +504,13 @@ When multiple limits are configured, the most specific takes effect:
 ### Examples
 
 ```bash
-# Limit all queries to 30 days by default
-loki-vl-proxy -default-max-query-length=720h
+# Loki's default: ranges up to 721h (30d1h), as with no flag set
+loki-vl-proxy -default-max-query-length=721h
 
 # Allow a specific tenant to query further back (tenant limits accept Loki units such as d)
-loki-vl-proxy -default-max-query-length=720h \
-  -tenant-limits='{"team-a":{"max_query_length":"90d"}}'
+loki-vl-proxy -tenant-limits='{"team-a":{"max_query_length":"90d"}}'
 
-# No global limit (default — operator manages limits via per-tenant config)
+# No global limit (operator manages limits via per-tenant config)
 loki-vl-proxy -default-max-query-length=0
 ```
 
@@ -671,7 +671,7 @@ Both publish the tenant's own limits, and the Loki query limits among them are t
 |---|---|---|---|
 | `max_query_series` | `-max-stats-query-series` | `500` / `500` | every metric route, range and instant: `400` `maximum number of series (N) reached for a single query; ...`, or for Logs Drilldown the busiest N series with Loki's partial-result warning |
 | `max_entries_limit_per_query` | `-max-entries-limit-per-query` | `5000` / `10000` | log queries: `400` `max entries limit per query exceeded, limit > max_entries_limit_per_query (L > N)` (`-max-entries-limit-per-query-cap` lowers the limit instead); `0` is unlimited |
-| `max_query_length` | `-default-max-query-length` | `721h` / `0` (unlimited) | query_range, series, labels, label values, detected labels, index stats: `400` `the query time range exceeds the limit (query length: X, limit: Y)` |
+| `max_query_length` | `-default-max-query-length` | `721h` / `721h` | query_range, series, labels, label values, detected labels, index stats: `400` `the query time range exceeds the limit (query length: X, limit: Y)` |
 | `max_query_lookback` | — | `0` / `0` | the same requests (an instant query only when it is a metric query, as Loki's frontend sends instant log queries past its limits): a start before now - lookback is moved to it; a request ending before it is answered empty without running |
 | `max_query_range` | — | `0` / `0` | metric queries: `400` `[interval] value exceeds limit: [R] > [M]` for a longer range selector |
 | `query_timeout` | `-backend-timeout` | `1m` / `2m` | set in a tenant limit, the requests Loki bounds by it (query, query_range, series, labels, label values, index stats, volume) run under it, never a live tail (`504` when it expires); it may not exceed `-backend-timeout`, which still bounds each VictoriaLogs call. Without one, `-backend-timeout` is the published value |

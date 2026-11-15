@@ -95,16 +95,18 @@ func keepMetadataProjectionResponseKeyVersion(query string) string {
 // label filter and, from v4, a `|= ip("...")` or `!= ip("...")` line filter.
 var ipLabelFilterStageRE = regexp.MustCompile(`(?:[A-Za-z0-9_]\s*!?=|[|!]=)\s*ip\s*\(`)
 
-const ipLabelFilterResponseVersion = "@ip-label-filter-v4:"
+const ipLabelFilterResponseVersion = "@ip-label-filter-v5:"
 
 // ipLabelFilterResponseKeyVersion fences the replies cached before an ip()
 // label filter answered like Loki in local and peer-fed response caches: v1
 // before an absent label matched neither operator, v2 before the `| json` and
 // `| logfmt` metric plans compared the label with the text ip(...) and so
 // answered no series, v3 before an IPv4 pattern read a value with an address
-// inside other text ("1.2.3.4:443"), and v4 before an IPv4 address after a run
+// inside other text ("1.2.3.4:443"), v4 before an IPv4 address after a run
 // of dots that a digit or a dot precedes ("0..1.2.3.4") stopped matching, in
-// label and line filters alike.
+// label and line filters alike, and v5 before an IPv4 address was found where
+// Loki's scan finds it after hex digits and colons ("X0:1.2.3.0" matches,
+// "1:a1.2.3.0" does not).
 //
 // Every query and query_range request builds this key: a query without the
 // text "ip", which every match holds, skips the regexp.

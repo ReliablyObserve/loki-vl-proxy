@@ -283,6 +283,9 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/line-filter-error-quotes-the-run` — A line filter error quotes the run of line filters Loki builds together and names the filter Loki names (fixed) | #1242 | 3 | 7 |
 | `semantics/pattern-line-filter-invalid-captures` — A pattern line filter with consecutive or named captures is Loki's 400 with Loki's text (fixed) | #1239 | 1 | 1 |
 | `drilldown/index_volume/end-millisecond-rounding` — The last index volume sample is stamped at the end rounded up to the millisecond (fixed) | #1048 | 0 | 0 |
+| `limits/max-query-length-default` — With no limit configured, a range longer than Loki's default max_query_length (721h) fails as in Loki (fixed) | pending | 0 | 0 |
+| `limits/max-query-length-volume-range-exempt` — index/volume_range is not bound by max_query_length, only by the 11,000-point resolution, as Loki (fixed) | pending | 0 | 0 |
+| `limits/max-query-length-volume-whole-seconds` — index/volume checks max_query_length on a start and end rounded down to whole seconds, as Loki (fixed) | pending | 0 | 0 |
 | `quality/index-stats-default-window` — index/stats without start reads Loki's default hour before end (or now), or `since` (fixed) | #988 | 0 | 0 |
 | `semantics/binary-division-by-zero-nan` — A zero divisor of `/` and `%` is NaN, like Loki (fixed) | #745 | 0 | 0 |
 | `semantics/binary-on-without-label-list-accepted` — A binary operation with `on` and no label list (`+ on 1`, `% on rate(...)`) is accepted (fixed) | TBD-PR | 0 | 0 |
@@ -305,6 +308,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/stage-name-followed-by-more-of-stage` — A stage that opens with a name followed by more of the stage (`\| a, b`, `\| a .5`, `\| a:b`) is Loki's 400 with Loki's text (fixed) | this change | 0 | 0 |
 | `semantics/unwrap-in-log-query` — A log query with an unwrap stage is accepted where Loki answers a syntax error (fixed) | TBD-PR | 0 | 0 |
 | `semantics/ip-filter-ipv4-after-dot-run` — An IPv4 ip() filter does not match an address after a run of dots that a digit or a dot precedes (fixed) | #1273 | 0 | 0 |
+| `semantics/ip-filter-ipv4-after-hex-colon` — An IPv4 ip() filter finds an address after hex digits and colons where Loki's scan finds it (fixed) | #1491 | 0 | 0 |
 | `semantics/keep-drop-blank-name-prints-back` — A keep or drop that lists only a blank Loki reads as a name (`\| keep\\v`, `\| drop\\u00a0`) prints as `\| keep \\v`, and a range aggrega... | TBD-PR | 0 | 0 |
 | `semantics/line-filter-invalid-utf8` — A \|= or != line filter whose text is not UTF-8 answers like Loki (fixed) | #1236 | 0 | 0 |
 | `semantics/loki-keyword-label-names` — A label cannot be called after a word Loki's lexer reads as a keyword (of, bool, offset, unwrap, json, regexp, logfmt, unpack, pattern, l... | this change | 0 | 0 |

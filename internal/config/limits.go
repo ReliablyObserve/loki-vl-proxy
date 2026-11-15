@@ -272,13 +272,13 @@ var Limits = []Limit{
 	{
 		Flag:       "default-max-query-length",
 		Unit:       "duration",
-		Bounds:     "the query time range accepted for every tenant unless a per-tenant limit overrides it",
+		Bounds:     "the query time range accepted for every tenant unless a per-tenant limit overrides it; 0 turns the limit off, as Loki's max_query_length: 0 does",
 		Error:      "400 `the query time range exceeds the limit (query length: X, limit: Y)`",
 		Metric:     "loki_vl_proxy_requests_total{status=\"400\"}",
 		Alert:      "LokiVLProxyHighClientErrors",
-		LokiParity: "max_query_length (Loki's default is 721h; the proxy keeps 0, unlimited); a multi-tenant request is held to the smallest non-zero value of its tenants",
+		LokiParity: "max_query_length (Loki's default 721h, published as 30d1h, is the default); a multi-tenant request is held to the smallest non-zero value of its tenants",
 		PerTenant:  true,
-		Sizing:     "Set it to the retention you want users to query; per-tenant limits in -tenant-limits override it.",
+		Sizing:     "721h is Loki's default: a client gets Loki's answer for a range longer than about 30 days. Raise it, or set 0, when users query a longer retention; per-tenant limits in -tenant-limits override it.",
 	},
 	{
 		Flag:       "multi-tenant-max-fanout",
