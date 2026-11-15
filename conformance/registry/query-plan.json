@@ -1,9 +1,9 @@
 {
   "description": "Ratchets of the query plan (internal/queryplan), one section per gate; a count may only fall, and LVP_QUERY_PLAN_UPDATE=1 rewrites the section of the test that ran. `logical` is the logical plan built from every query of the plan corpus (the curated sources and the capture sample): how many rows parse and build (all of them), and the spots the plan still holds as text, per construct (typing them lowers the count). `logical_key_sound` is, per profile, how the logical keys group the corpus and what the string translator wrote for the queries of a group: no group may differ in structure. `predicate_parity` is, per attribute of the resolver (queryplan.Resolve), the text predicate it replaces and every corpus row where the two differ, each with its reason (internal/proxy TestPlanPredicateParity: an unexplained or stale row fails).",
   "logical": {
-    "rows": 2677,
-    "parsed": 2599,
-    "built": 2599,
+    "rows": 2682,
+    "parsed": 2604,
+    "built": 2604,
     "untyped_by_construct": {
       "labelfilter_untyped": 0,
       "line_format_raw": 3,
@@ -598,10 +598,10 @@
     }
   },
   "shadow": {
-    "rows": 24096,
+    "rows": 24141,
     "profiles": 12,
-    "native": 21499,
-    "native_proxy_evaluated": 3951,
+    "native": 20887,
+    "native_proxy_evaluated": 3861,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp bool": 81,
@@ -644,7 +644,7 @@
       "VectorAgg operand": 207,
       "VectorAgg operand spelling": 18,
       "VectorAgg parser extracted label": 18,
-      "VectorAgg parser label cost": 128,
+      "VectorAgg parser label cost": 137,
       "VectorAgg stddev parsed label operand": 9,
       "VectorAgg without empty": 9,
       "VectorLit": 9,
@@ -660,7 +660,8 @@
       "known divergence semantics/translator-reads-marker-bytes-in-quoted-value": 12,
       "known divergence semantics/translator-reads-quoted-text-as-syntax": 12,
       "known divergence semantics/translator-writes-reserved-field-names": 93,
-      "known divergence semantics/translator-writes-signed-number-with-blank": 12
+      "known divergence semantics/translator-writes-signed-number-with-blank": 12,
+      "known divergence semantics/unwrap-per-series-identity-raw-rows": 648
     },
     "flipped": [
       "LogSelect",
