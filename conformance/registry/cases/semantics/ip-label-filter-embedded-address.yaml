@@ -48,11 +48,17 @@ why: |
   (`fe80::1%eth0`), which Loki's scan reads without the zone. An exact IPv6
   regexp costs 7 to 20 times what the whole-address forms cost on VictoriaLogs
   (semantics/ip-filter-precision), so it stays open.
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: '{app="ip-label-v6"} | logfmt | addr=ip("2001:db8::/32")'
+      - query: '{service_name="nginx"} | logfmt | addr=ip("10.0.0.0/8")'
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: '{service_name="nginx"} | logfmt | addr=ip("10.0.0.0/8")'
+    query: '{app="ip-label-v6"} | logfmt | addr=ip("2001:db8::/32")'
     start: 'now-1h'
     end: 'now'
     limit: '100'
@@ -63,8 +69,9 @@ compare:
   mode: observed
   fields: [status, streams.values]
   expect: |
-    Loki's lines, including the ones whose addr holds a matching address
-    inside other text.
+    Loki's lines, including the ones whose addr holds an IPv6 address inside
+    other text ("[2001:db8::1]:443", "client 2001:db8::1"). The IPv4 half is
+    fixed and has its own e2e test (TestCompat_IPLabelFilterEmbeddedAddressLikeLoki).
 gap:
   status: open
   impact: edge

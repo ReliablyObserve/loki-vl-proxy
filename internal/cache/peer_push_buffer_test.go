@@ -329,8 +329,14 @@ func TestPeerPushReplay_QueuedPushToOpenPeerIsBufferedWithoutACall(t *testing.T)
 	if pb.probeAt.Load() != 0 {
 		t.Fatal("routing a push took the half-open probe")
 	}
-	// The cooldown ends: the replayer sends the backlog.
+	// The cooldown ends: the replayer sends the backlog. The replayer may
+	// already sleep on the hour set above, so wake it as its timer would at
+	// the cooldown's end.
 	pb.suspendedUntil.Store(time.Now().Add(-time.Millisecond).UnixNano())
+	select {
+	case pb.wake <- struct{}{}:
+	default:
+	}
 	waitFor(t, "the replay", func() bool { return pc.PushReplayed.Load() == 1 })
 	if calls.Load() != 1 || pb.suspendedUntil.Load() != 0 {
 		t.Fatalf("calls %d, suspended %d", calls.Load(), pb.suspendedUntil.Load())
