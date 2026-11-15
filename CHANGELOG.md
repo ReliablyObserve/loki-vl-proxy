@@ -41,7 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
   `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
 
-## [2.262.0] - 2026-11-15
+## [2.263.0] - 2026-11-15
+
 ### Changed
 
 - Metric queries are planned once for the query plan's decisions: the range functions whose series a `keep` before
@@ -78,6 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `label_replace` calls, nested ones too, around an aggregation or a binary operation are served from the query plan
   the same way (6.6 to 4.1 us, 68 to 51 allocations); a `label_replace` around a ranking, `stddev` or a `service_name`
   grouping stays with the string translator.
+
+## [2.262.0] - 2026-11-15
 
 ### Fixed
 
