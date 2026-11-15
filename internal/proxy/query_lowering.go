@@ -271,7 +271,8 @@ const keepIdentityConstruct = "UnwrapKeepIdentity"
 // and whose lowered text is the string translator's (writesTranslatorText). The query is planned once for both
 // decisions, and only when one can serve it: a query without both words of the keep identity is planned only when the
 // allocation-free text screen (lower.ScreenMetricIn) names a flipped construct for it, so a metric query the plan leaves
-// to the string translator pays one scan of its text and no parse.
+// to the string translator pays one scan of its text and no parse. The text it writes is the translator's: a parser's
+// series identity (lower.Profile StreamIdentity) is written by lowerDynamicIdentity only.
 func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profile) (text string, ok bool) {
 	if canon == "" || canon[0] == '{' {
 		return "", false
@@ -281,6 +282,10 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	if !screenMetricQuery(canon, flipped) {
 		return "", false
 	}
+	// A parser's series identity is served by lowerDynamicIdentity where the handlers read it; a query it does not
+	// reach (nested under a binary operation, or a window the evaluators keep on the stream) is written with the
+	// translator's series, as the flip of its construct requires.
+	prof.StreamIdentity = true
 	construct := keepIdentityConstruct
 	defer func() {
 		if r := recover(); r != nil {
@@ -312,6 +317,65 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	return physical.Encode(op), true
 }
 
+// dynamicIdentityConstruct is the flip of a range function over an unwrapped label after a json or logfmt parser
+// with no keep, under one vector aggregation (lower.DynamicUnwrapIdentity): Loki's series are the stream and every
+// label the parser extracts less the unwrapped one, which the string translator approximates by the stream (and
+// each line); the lowering names the identity from the data, so the query is served from it
+// (semantics/unwrap-per-series-identity-raw-rows). The corpus shadow holds these rows as a known divergence of the
+// translator, and the Loki differentials (internal/querycorpus TestKeepUnwrapIdentityMatchLoki and
+// TestStddevStdvarMatchLoki) hold the answers.
+const dynamicIdentityConstruct = "UnwrapDynamicIdentity"
+
+// lowerDynamicIdentity translates a canonical metric query with the typed lowering when its series are the dynamic
+// identity of a parser (dynamicIdentityConstruct), and reports whether it did. A query without an unwrap and a json or
+// logfmt parser is turned away before any plan is built.
+func (p *Proxy) lowerDynamicIdentity(ctx context.Context, canon string, prof lower.Profile) (text string, ok bool) {
+	if !dynamicIdentityScreen(canon) {
+		return "", false
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// The panic value can hold query text, so it is not logged: the string translator answers instead.
+			p.recordLoweringShadow(shadowPanic, dynamicIdentityConstruct)
+			text, ok = "", false
+		}
+	}()
+	// The handlers asked for this plan before the translation (dynamicUnwrapIdentity): the memoised one is read.
+	plan := resolvedPlan(canon)
+	if plan == nil || !lower.DynamicUnwrapIdentity(plan) {
+		return "", false
+	}
+	op, err := lower.PlanQuery(canon, plan, prof)
+	if err != nil {
+		return "", false
+	}
+	querycorpus.Record(querycorpus.LogQLTranslate, canon)
+	p.recordLoweringShadow(shadowFlipped, dynamicIdentityConstruct)
+	return physical.Encode(op), true
+}
+
+// dynamicIdentityScreen is the text screen of lowerDynamicIdentity: a query that starts with sum, max, min or avg
+// (the vector aggregation the plan's root must be) and names an unwrap, a json or logfmt parser and one of the
+// functions taken per series, and whose root the metric screen does not name as another construct. The plan decides;
+// the screen spares the other queries a plan.
+func dynamicIdentityScreen(query string) bool {
+	if len(query) < 4 || !dynamicIdentityOp(query[:3]) || query[3] != '(' && query[3] != ' ' ||
+		!strings.Contains(query, "unwrap") || !strings.Contains(query, "json") && !strings.Contains(query, "logfmt") {
+		return false
+	}
+	// A query whose root is another construct (a binary operation, a label_replace) is not a root identity: the
+	// metric screen names it with no allocation, so no plan is built for it here.
+	if root := lower.ScreenMetric(query); root != "" && root != "VectorAgg" {
+		return false
+	}
+	for _, fn := range dynamicIdentityFuncs {
+		if strings.Contains(query, fn) {
+			return true
+		}
+	}
+	return false
+}
+
 // writesTranslatorText reports a metric plan whose lowered text is the one the corpus shadow holds to the string
 // translator's, byte for byte (TestPlanShadow): it turns away the plans the shadow holds to anything else.
 //   - A ranking, stddev or stdvar at any level: the handlers evaluate it themselves and translate its operand, so the
@@ -321,7 +385,7 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 //     vector(n) operand).
 //   - The recorded known divergences the plan writes as Loki reads them, where the translator writes another text:
 //     a keep before an unwrap anywhere but where the proxy serves its identity (lower.WritesKeepUnwrapIdentity), a
-//     numeric equality after a parser (semantics/label-filter-numeric-equality), a label named like a field
+//     a numeric equality after a parser (semantics/label-filter-numeric-equality), a label named like a field
 //     VictoriaLogs reserves (semantics/translator-writes-reserved-field-names), and an unwrap of one in another case,
 //     which the lowering writes in the outbound guard's form (semantics/reserved-field-name-case-outbound).
 //   - A label filter value the translator reads as syntax (misreadFilterValue).
@@ -332,8 +396,8 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 // (semantics/translator-writes-keyword-field-names-bare), as the corpus shadow and the log query flip already hold.
 func writesTranslatorText(plan *queryplan.Plan, prof lower.Profile) bool {
 	return !holdsEvaluatedLayer(plan.Root) && !lower.RoutedBinary(plan.Root) && !lower.WritesKeepUnwrapIdentity(plan) &&
-		!lower.WritesNumericEquality(plan) && !lower.ReadsReservedField(plan, prof) && !lower.UnwrapsReservedFieldOtherCase(plan) &&
-		!misreadFilterValue(plan.Root)
+		!lower.WritesNumericEquality(plan) && !lower.ReadsReservedField(plan, prof) &&
+		!lower.UnwrapsReservedFieldOtherCase(plan) && !misreadFilterValue(plan.Root)
 }
 
 // misreadFilterValue reports a plan with a label filter whose value the string translator reads as syntax, where Loki
@@ -363,6 +427,14 @@ func misreadFilterValue(n queryplan.Node) bool {
 	}
 	return false
 }
+
+// dynamicIdentityOp reports the vector aggregations of a dynamic identity.
+func dynamicIdentityOp(op string) bool {
+	return op == "sum" || op == "max" || op == "min" || op == "avg"
+}
+
+// dynamicIdentityFuncs are the range functions of a dynamic identity, as a query names them.
+var dynamicIdentityFuncs = [...]string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time"}
 
 // misreadLeaf reports a leaf of e whose value misreadFilterValue names.
 func misreadLeaf(e *logqlpkg.LabelFilterExpr) bool {

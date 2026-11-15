@@ -1495,6 +1495,26 @@
    ]
   },
   {
+   "id": "explore-unwrap-parser-series-identity",
+   "kind": "explore",
+   "query": "sum by (app) (avg_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [$__auto]))",
+   "covers": [
+    "semantics/unwrap-per-series-identity-raw-rows",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-unwrap-parser-stdvar-by-group",
+   "kind": "explore",
+   "query": "sum by (app) (stdvar_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [$__auto]))",
+   "covers": [
+    "semantics/stdvar-grouped-pooled-variance",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "explore-unwrap-first-last-range-longer-than-step",
    "kind": "explore",
    "query": "sum(last_over_time({service_name=\"payment-service\"} | logfmt | keep service_name, amount | unwrap amount [5m]))",

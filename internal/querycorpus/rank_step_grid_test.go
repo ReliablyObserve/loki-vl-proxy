@@ -359,11 +359,15 @@ func FuzzProxyEvaluatedLowering(f *testing.F) {
 			if !routed {
 				continue
 			}
-			if _, ok := prof.translate(q); !ok {
+			legacy, ok := prof.translate(q)
+			if !ok {
 				continue
 			}
 			// A root the proxy evaluates is held to its route, which strips the parentheses that wrap the whole query.
-			if translatorMisreadsQuotedText(q) || translatorReadsStageMarker(q) {
+			// A parser's series identity under it (lower.WritesDynamicUnwrapIdentity) is the plan's, held to Loki by the
+			// differentials, not to the translator's stream and line: a known divergence, as in TestPlanShadow.
+			if translatorMisreadsQuotedText(q) || translatorReadsStageMarker(q) ||
+				lower.WritesDynamicUnwrapIdentity(plan) && !sameAsTranslator(got, legacy) {
 				continue
 			}
 			if msg := checkProxyEvaluated(q, prof, got); msg != "" {

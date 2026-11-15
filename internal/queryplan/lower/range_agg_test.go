@@ -110,10 +110,11 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 		t.Fatalf("%s: the lowered %s does not parse: %v", q, lowered, err)
 	}
 	same = reflect.DeepEqual(want, got) && reflect.DeepEqual(post, wantPost)
-	if !same && WritesKeepUnwrapIdentity(p) {
-		// A keep before the unwrap decides the series: the lowering groups by the labels it leaves where the
-		// translator groups by the stream (semantics/keep-before-unwrap-series-identity), held to Loki by
-		// TestKeepUnwrapIdentityMatchLoki, not to the translator.
+	if !same && (WritesKeepUnwrapIdentity(p) || WritesDynamicUnwrapIdentity(p)) {
+		// A keep before the unwrap, or a parser's labels, decide the series: the lowering groups by the labels the
+		// keep leaves, or by the stream and a hash of the parsed labels, where the translator groups by the stream
+		// (semantics/keep-before-unwrap-series-identity, semantics/unwrap-per-series-identity-raw-rows), held to Loki
+		// by TestKeepUnwrapIdentityMatchLoki, not to the translator.
 		return "", legacy, false, true, true
 	}
 	return lowered, legacy, same, false, true

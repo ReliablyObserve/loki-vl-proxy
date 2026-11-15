@@ -57,7 +57,7 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 			// No translation cache: every row is translated, not read back.
 			on.translationCache, off.translationCache = nil, nil
 			ctx := context.Background()
-			differs, keep := 0, 0
+			differs, keep, dynamic := 0, 0, 0
 			for _, q := range corpus {
 				if strings.HasPrefix(strings.TrimSpace(q), "{") {
 					continue
@@ -77,6 +77,19 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 						want = got
 					}
 				}
+				// A parser's series identity is the plan's, held to Loki by the differentials (lower.DynamicUnwrapIdentity);
+				// a request the handlers keep on the stream's series (streamIdentityKey) is served from the plan with the
+				// translator's text, as the flip of its construct requires.
+				if on.dynamicUnwrapIdentity(q) {
+					dynamic++
+					marked, markedErr := on.translateQueryOpts(context.WithValue(ctx, streamIdentityKey{}, true), q, false)
+					if marked != want || (markedErr == nil) != (wantErr == nil) {
+						if differs++; differs <= 10 {
+							t.Errorf("%q on the stream's series:\n flag on  %q %v\n flag off %q %v", q, marked, markedErr, want, wantErr)
+						}
+					}
+					continue
+				}
 				if got != want || (gotErr == nil) != (wantErr == nil) {
 					if differs++; differs <= 10 {
 						t.Errorf("%q:\n flag on  %q %v\n flag off %q %v", q, got, gotErr, want, wantErr)
@@ -88,6 +101,7 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 			}
 			counts := shadowCounts(t, on)
 			total["keep identity rows"] += keep
+			total["dynamic identity rows"] += dynamic
 			for _, c := range metricFlipCandidates {
 				n := counts["flipped "+c]
 				total[c] += n

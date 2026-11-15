@@ -2850,6 +2850,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A parser's dynamic identity over a range longer than the step keeps the stream's series (dynamicIdentityWindows).
+	r = p.dynamicIdentityWindows(r, logqlQuery)
+
 	if postAgg, ok := parseInstantMetricPostAggQuery(logqlQuery); ok {
 		if postAgg.name == "topk" || postAgg.name == "bottomk" {
 			stepsRun.arm() // ranked per step (applyTopKToMatrix)
@@ -2857,7 +2860,6 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		p.handleRangeMetricPostAggregation(w, withQueryStepsSilent(r, stepsRun), start, logqlQuery, postAgg)
 		return
 	}
-
 	logsqlQuery, err := p.translateLogResponseQuery(r.Context(), logqlQuery)
 	if err != nil {
 		status := p.fail(w, r, queryRefusal(err))
@@ -2936,8 +2938,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if isBinary {
 		// Binary metric expression: sum(rate(...)) / sum(rate(...))
 		// translateBinOpSide handles scalar literals (e.g. * 100) without translation.
-		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
-		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)
+		left, right := p.binaryOperandSides(r, binOp)
+		leftLogsql, leftErr := p.translateBinOpSideText(left.ctx, binOp.Left, left.text)
+		rightLogsql, rightErr := p.translateBinOpSideText(right.ctx, binOp.Right, right.text)
 		if leftErr != nil {
 			p.writeErr(sc, r.Context(), queryRefusal(leftErr))
 		} else if rightErr != nil {

@@ -191,8 +191,8 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 10 proven, 21 partial, 3 gaps |
-| Known differences from Loki (ranked) | **153**: 128 open, 15 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **72 of 128**: 58 Explore, 13 Logs Drilldown, 1 Grafana datasource; 19 API only, 37 edge cases |
+| Known differences from Loki (ranked) | **154**: 129 open, 15 documented, 7 owner-kept, 3 upstream |
+| Open differences visible in Grafana (registry impact) | **73 of 129**: 59 Explore, 13 Logs Drilldown, 1 Grafana datasource; 19 API only, 37 edge cases |
 
 **Readiness by client**
 
@@ -200,7 +200,7 @@ The Loki endpoints each client calls (registry `consumers`), with the same evide
 
 | Client | Loki endpoints it calls | Routed | Compared with Loki in tests | Proven | Open differences it shows |
 |---|---:|---:|---:|---:|---:|
-| Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 58 |
+| Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 59 |
 | Logs Drilldown | 11 | 11 (100%) | 11 (100%) | 9 (82%) | 13 |
 | Grafana Loki datasource | 6 | 6 (100%) | 6 (100%) | 4 (67%) | 1 |
 | Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 19 |
@@ -209,7 +209,7 @@ Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api
 
 These are registry evidence counts, not a full runtime compatibility percentage. Optional deletion management is excluded from the read totals; deprecated aliases and write-only APIs are outside this score.
 
-The 5 open differences with the most impact (all explore-visible): `parsed-identity/bare-parser-metric-duplicates-extracted` (bare JSON metrics cannot distinguish equal-valued metadata from ingested body fields), `semantics/parse-error-labels-on-log-lines` (A line a parser rejects carries __error__ and __error_details__ in Loki's log answer), `semantics/tail-history-start-limit` (native tail ignores start and limit: Grafana Live shows no history where Loki shows its last 100 lines), `semantics/unwrap-per-series-identity-raw-rows` (A function taken per series (avg, max, min, stddev, stdvar over time, rate_counter) under sum or sum by uses the stream as the series), `semantics/without-fold-detected-level-unknown` (sum, max and topk without over an unwrap function after an extraction list label a series detected_level="unknown" where Loki keeps the stream's level). Differences kept on purpose are listed as documented or owner-kept.
+The 5 open differences with the most impact (all explore-visible): `parsed-identity/bare-parser-metric-duplicates-extracted` (bare JSON metrics cannot distinguish equal-valued metadata from ingested body fields), `semantics/parse-error-labels-on-log-lines` (A line a parser rejects carries __error__ and __error_details__ in Loki's log answer), `semantics/tail-history-start-limit` (native tail ignores start and limit: Grafana Live shows no history where Loki shows its last 100 lines), `semantics/unwrap-per-series-identity-raw-rows` (A function taken per series (avg, max, min, stddev, stdvar over time, rate_counter) under sum or sum by uses the stream as the series (open, partly fixed - avg to stdvar on query and on a range up to the step)), `semantics/without-fold-detected-level-unknown` (sum, max and topk without over an unwrap function after an extraction list label a series detected_level="unknown" where Loki keeps the stream's level). Differences kept on purpose are listed as documented or owner-kept.
 
 Details, the per-workload tables and the method: [performance summary](conformance/reports/performance.md#summary-versus-loki) · [performance guide](docs/performance.md#current-position-versus-loki) · [ranked differences](conformance/reports/parity-gaps.md) · [coverage map](conformance/reports/coverage-map.md) · [Known Issues](docs/KNOWN_ISSUES.md).
 
