@@ -71,7 +71,10 @@ why: |
   a label filter between the parser and the unwrap under the Loki profile
   (semantics/unwrap-per-series-identity-label-filter); first and last over a
   range longer than the step (semantics/unwrap-first-last-range-longer-than-step);
-  rate_counter's extrapolated value (semantics/unwrap-rate-counter-window-extrapolation).
+  rate_counter's extrapolated value (semantics/unwrap-rate-counter-window-extrapolation);
+  a binary operation of such operands (`sum by (app) (max_over_time(...)) - sum by (app)
+  (min_over_time(...))`): its operands are translated with the stream's series, so Loki's
+  per-series sums differ (TestCompat_UnwrapPerSeriesIdentity skips the row).
   Not modelled: structured metadata other than the level fields and a line that
   holds one key twice.
 corpus:
@@ -102,7 +105,7 @@ gap:
   area: 'internal/queryplan/lower unwrap_dynamic.go (DynamicUnwrapIdentity, the identity pipes), unwrap.go; internal/proxy query_lowering.go (lowerDynamicIdentity), query_translation.go, unwrap_dynamic_identity.go (dynamicUnwrapIdentity, dynamicIdentityWindows), range_metric_compat.go (the instant stats route); the window evaluator (unwrap_samples.go) for a range longer than the step'
   loki: 'pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next; pkg/logql/log/metrics_extraction.go:150-178 labelSampleExtractor (series = stream + parsed labels)'
   proxy: 'the value per stream and hash of the parsed labels, then the aggregation over the series'
-  planned_test: 'TestUnwrapDynamicIdentityMatchLoki, TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicUnwrapIdentity, TestDynamicUnwrapIdentityLowering, FuzzDynamicUnwrapIdentity (internal/queryplan/lower); TestDynamicIdentityServedFromPlan, TestDynamicIdentityHandlersReadThePlan (internal/proxy); e2e: TestCompat_UnwrapPerSeriesIdentity (test/e2e-compat, group core) to add'
+  planned_test: 'TestUnwrapDynamicIdentityMatchLoki, TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicUnwrapIdentity, TestDynamicUnwrapIdentityLowering, FuzzDynamicUnwrapIdentity (internal/queryplan/lower); TestDynamicIdentityServedFromPlan, TestDynamicIdentityHandlersReadThePlan (internal/proxy); e2e: TestCompat_UnwrapPerSeriesIdentity (test/e2e-compat, group core; written, not yet run on a stack)'
   note: 'Found while fixing semantics/unwrap-rate-ungrouped-sum-per-stream, on origin/main e173e40b. VictoriaLogs stats group by named fields only: the lowering names the parsed labels by a hash of the line unpacked under a prefix.'
   clusters:
     - 0e2f0a0c

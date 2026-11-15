@@ -2688,6 +2688,7 @@
     "test/e2e-compat/stdvar_over_time_binary_marker_test.go | loki_api_v1_query_range",
     "test/e2e-compat/stdvar_over_time_binary_marker_test.go | semantics/stddev-stdvar-over-time-step-bucket",
     "test/e2e-compat/stdvar_over_time_binary_marker_test.go | semantics/stdvar-grouped-binary-marker",
+    "test/e2e-compat/stdvar_over_time_binary_marker_test.go | semantics/stdvar-grouped-pooled-variance",
     "test/e2e-compat/stdvar_over_time_binary_marker_test.go | window-bounds-and-step-alignment",
     "test/e2e-compat/stream_label_shadowed_test.go | loki_api_v1_query_range",
     "test/e2e-compat/stream_label_shadowed_test.go | semantics/stream-label-shadowed-by-ingest-json-key",
@@ -2742,6 +2743,11 @@
     "test/e2e-compat/unwrap_over_time_window_test.go | semantics/lower-bound-exclusive",
     "test/e2e-compat/unwrap_over_time_window_test.go | semantics/unwrap-over-time-range-windows",
     "test/e2e-compat/unwrap_over_time_window_test.go | window-bounds-and-step-alignment",
+    "test/e2e-compat/unwrap_per_series_identity_test.go | loki_api_v1_query",
+    "test/e2e-compat/unwrap_per_series_identity_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/unwrap_per_series_identity_test.go | metric-series-identity",
+    "test/e2e-compat/unwrap_per_series_identity_test.go | semantics/stdvar-grouped-pooled-variance",
+    "test/e2e-compat/unwrap_per_series_identity_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "test/e2e-compat/unwrap_quantile_test.go | loki_api_v1_query",
     "test/e2e-compat/unwrap_quantile_test.go | loki_api_v1_query_range",
     "test/e2e-compat/unwrap_quantile_test.go | metric-series-identity",
@@ -2811,7 +2817,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 639,
+      "go": 640,
       "playwright": 1
     },
     "page_kinds": {
