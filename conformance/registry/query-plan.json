@@ -673,7 +673,8 @@
       "JSON",
       "Logfmt",
       "LabelFormat",
-      "LineFormat"
+      "LineFormat",
+      "RegexpPattern"
     ]
   }
 }
