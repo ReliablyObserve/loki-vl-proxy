@@ -19,6 +19,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "0s"` in `-tenant-default-limits` or `-tenant-limits`, to keep serving longer ranges. A live tail is not checked
   against this limit.
 
+## [2.262.0] - 2026-11-15
+### Changed
+
+- Metric queries are planned once for the query plan's decisions: the range functions whose series a `keep` before
+  the unwrap decides are served from the plan as before, and the proxy now checks, on the typed plan, which range
+  and vector aggregations, binary operations and `label_replace` calls the plan would write with the string
+  translator's text (no ranking, `stddev` or `stdvar` at any level, no binary the proxy evaluates operand by
+  operand, none of the recorded differences): the entries below serve them from the plan. The query plan's corpus
+  check now reads the query as the proxy does (a range written `({...})[5m]` is read as `{...}[5m]`), which counts
+  54 more rows as written by the plan. New tests hold every metric query of the corpus to the same text with the four metric constructs served
+  from the plan under seven proxy profiles, and the translation benchmark measures the metric shapes of each
+  construct, served and not served.
+- The translation of a metric query that misses the translation cache costs no more on the query plan's path than on
+  the string translator's. A one-pass text screen with no allocation names the construct at the top of a metric query
+  before it is parsed, so a query the plan leaves to the string translator (a ranking, `stddev`, `vector()`, an
+  `unpack`, a numeric equality after a parser, ...) is not parsed, built and resolved on top of its translation; the
+  plan path reads a plan the handlers already made for the query instead of parsing it again; and the stats and math
+  pipes the plan writes print straight into the query's text (a grouped rate: 60 to 42 allocations and 3.6 to 3.0 KiB
+  per translation once served from the plan). Construct names cost no allocation, so the log queries already served
+  from the plan allocate one less.
+- Vector aggregations (`sum`, `avg`, `min`, `max`, `count`, with `by` or `without`, over range functions with and
+  without `unwrap`) are served from the query plan instead of the string translator, where the plan writes the
+  translator's text byte for byte; rankings, `stddev`, `stdvar`, an empty `without ()` and the recorded differences
+  stay with the string translator. Answers, translation cache entries and the queries VictoriaLogs receives do not
+  change; a translation that misses the cache takes about half the time (a grouped rate: 6.6 to 2.7 us, 60 to 42
+  allocations). `-query-plan-lowering=false` turns it off.
+- Range functions (`rate`, `count_over_time`, `bytes_over_time`, `bytes_rate`, `absent_over_time` and the unwrapped
+  ones) at the top of a metric query, or translated as an operand, are served from the query plan the same way (a
+  `count_over_time` miss: 5.6 to 1.9 us, 36 to 32 allocations); a range function over an `unpack` stays with the
+  string translator.
+- Binary operations between two aggregations, or an aggregation and a number (`+`, `-`, `*`, `/`, `%`, `^` and the
+  comparisons, with `on`, `ignoring`, `group_left`, `group_right`), are served from the query plan the same way (two
+  sums of rates divided: 14.9 to 9.2 us, 104 to 70 allocations); `bool`, `and`/`or`/`unless`, a `without` operand, a
+  `vector()` operand and chains of binaries stay with the string translator.
+- `label_replace` calls, nested ones too, around an aggregation or a binary operation are served from the query plan
+  the same way (6.6 to 4.1 us, 68 to 51 allocations); a `label_replace` around a ranking, `stddev` or a `service_name`
+  grouping stays with the string translator.
+
+### Fixed
+
+- A range aggregation over a `| keep` that lists only a blank Loki reads as a label name, such as a vertical tab, a
+  form feed or U+00A0 (`count_over_time({app="api"} | keep\v [1m])`), now answers one `{}` series holding every
+  stream's samples, as Loki does. It answered `400` on `/loki/api/v1/query` and no series on
+  `/loki/api/v1/query_range`. A `| keep` or `| drop` written so now prints as `| keep \v` instead of `| keep `, which
+  no parser reads. Loki accepts such a blank alone and rejects it beside another name (`| keep\v\v`, `| keep\va`);
+  the proxy already answered those as Loki does.
+
+## [2.261.0] - 2026-11-15
+
+### Fixed
+
+- A repeated `query`, `query_range` or `series` request whose answer is larger than one entry of the
+  compatibility-edge cache (a tenth of its budget, 2.56 MiB by default) is answered from the cache again instead of
+  asking VictoriaLogs. Such answers (Drilldown breakdowns by a high-cardinality label, parser metrics and instant
+  queries over thousands of series) were kept nowhere when their range ended within `-query-range-freshness` of now
+  or they answered an instant query. They are now kept in the primary memory cache with the edge cache's TTL and
+  freshness rule, up to the primary cache's own entry bound. Known limit: such an answer stays on the replica that
+  computed it (not on disk, not pushed to peers), so another replica computes it again.
+- Identical cold `query_range` metric requests no longer read buckets from VictoriaLogs that another request's
+  read had just fetched. Those buckets are stored after the read is answered, and a request that looked them up in
+  between (one that took a freed stats_query_range slot, or found one free while the first callers still parsed
+  the answer) read part of the window again. Such a lookup now waits (up to 2 s, or until the request ends) for the
+  store in progress for the same buckets, so any number of identical cold requests make one read.
+
+### Added
+
+- `-debug-vl-calls-header` (default off) adds `X-Loki-VL-Backend-Calls` (the VictoriaLogs calls the request started
+  before its response headers were written) and `X-Loki-VL-Cache-Result` (`hit`, `miss` or `bypass`) to every read
+  response, so a cache reuse check can count one request's VictoriaLogs calls. Loki sends neither header.
+
+## [2.260.2] - 2026-11-15
+
+### Fixed
+
+- A label filter compared with a negative number that starts with a 0 and a letter or `_` (`| A < - 0x1F`,
+  `- 0X0`, `- 0o7`) now prints with the minus apart from the number, so the printed query reads back as the same
+  query. Written together (`-0X0`), Loki rejects it. What the proxy answers and sends to VictoriaLogs does not change.
+
 ## [2.260.1] - 2026-11-14
 
 ### Fixed

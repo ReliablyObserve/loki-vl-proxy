@@ -320,7 +320,11 @@ A construct moves from the string translator to the typed plan (`internal/queryp
   request VictoriaLogs sees. `TestPlanShadow` and the generated grids assert it for every native row under the 12
   profiles; fix a difference of spelling in the AST builders, never in `internal/translator`.
 - Decide eligibility before planning (`logql.MayHaveNonFilterStage` and a first-byte test for log queries): a query the
-  plan does not cover pays no plan. `TestFlipScreenAdmitsEveryNativeRow` holds the screen to the native rows.
+  plan does not cover pays no plan. `TestFlipScreenAdmitsEveryNativeRow` holds the screen to the native rows. Metric
+  queries go through `lower.ScreenMetricIn` (no allocation; it names the construct at the top and turns away what the
+  typed gate or the lowering leaves to the translator): a new delegation in the metric lowering adds its class to the
+  screen, and `TestQueryPlanLowering_MetricScreenCorpus` holds the screen to the gate on the corpus (no served row
+  misnamed, under 0.5% of passed rows left to the translator, under 2% of served rows turned away).
 - No shape may allocate more than its base (benchstat of `BenchmarkTranslateQueryMissShapes`, base against branch); add
   the new construct's shapes to it. Add the construct to the route-parity test
   (`TestQueryPlanLowering_RouteParity`), which runs the same queries with the flag on and off against a fake

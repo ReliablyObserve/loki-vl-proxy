@@ -218,6 +218,25 @@ calling VictoriaLogs). The run is red when a weekly job fails, the release dry
 run does not succeed, the fleet proof fails, or the reuse dropped against the
 week before.
 
+### Data the cases read (Go)
+
+A case that names a stream the stack never ingested answers `empty` on both sides, which proves nothing.
+`test/casefixtures` holds the streams those cases read (the e2e-compat fixtures and the visual stack's seeds, under
+the stable names the case texts already hold) and a seed command that writes the same bytes to Loki and
+VictoriaLogs, by the route the case is about (a JSON line, Loki's push with the line kept verbatim, Loki's push with
+the line parsed):
+
+```bash
+go run ./test/casefixtures/cmd/seed -loki http://127.0.0.1:13101 -vl http://127.0.0.1:19428 -follow
+```
+
+It writes a 30 minute backlog (one tick per 30 seconds), waits until both sides count the same lines for every
+stream, and with `-follow` keeps writing a tick per interval until interrupted, so a verifier run started at any time
+finds data in its window. Run it first, start `go run ./test/caseverify` once it prints `ready` for every stream, and
+interrupt it after the run. `go test ./test/casefixtures` needs no stack: every stream is selected by the cases it
+names, every case that came back `empty` is served by a stream or has its reason (the window is the case), and the
+window of every served case holds ticks.
+
 ## Reporting what a change touches
 
 Before opening a pull request that changes client-visible behaviour, run:
