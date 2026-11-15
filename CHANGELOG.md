@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.280.0] - 2026-11-15
+
 ### Fixed
 
 - **Breaking:** a range log query (`query_range`) that sends no `limit` now returns Loki's default of 100 entries,
