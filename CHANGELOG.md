@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.301.0] - 2026-11-15
+
 ### Fixed
 
 - Metric series the proxy reads per stream now carry the `detected_level` of their stream, as Loki does: `error`
