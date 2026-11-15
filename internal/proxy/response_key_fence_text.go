@@ -1,0 +1,394 @@
+package proxy
+
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
+
+// The response key fences decide from the query text, before any parse, whether a key carries a version constant.
+// The LogQL parser reads more spellings than the lower case, single-space form clients usually send, and a screen
+// that misses one serves an answer cached before a behaviour change. The helpers below read the spellings the
+// parser reads, without allocating:
+//
+//   - a keyword or a function name in any case (`| KEEP`, `TOPK(`, `Sum by`), and a letter that lower cases to an
+//     ASCII one (U+212A Kelvin sign reads as k, U+0130 as i): the scanner lower cases a word with strings.ToLower
+//     before it looks the word up, and so do the matchers here (matchFoldAt);
+//   - white space between tokens that is a space, tab, line feed or carriage return, and a `#` comment to the end
+//     of its line (skipLexerBlanks); every other character Go calls white space is no blank to the lexer;
+//   - a name made of any Unicode letters and digits (scanIdent), not only ASCII ones.
+
+// isLexerBlank reports a byte the LogQL lexer skips between tokens.
+func isLexerBlank(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
+
+// skipLexerBlanks returns the index of the first byte at or after i that is neither a blank the lexer skips nor part
+// of a comment. A comment runs from # to the end of the line.
+func skipLexerBlanks(s string, i int) int {
+	for i < len(s) {
+		switch c := s[i]; {
+		case isLexerBlank(c) || c == '\f':
+			// \f is no blank to the lexer; the older screens read it as one (\s), and so does this.
+			i++
+		case c == '#':
+			end := strings.IndexByte(s[i:], '\n')
+			if end < 0 {
+				return len(s)
+			}
+			i += end + 1
+		default:
+			return i
+		}
+	}
+	return i
+}
+
+// matchFoldAt reports whether s starts with lower (ASCII lower case) once its letters are lower cased the way
+// strings.ToLower does, and the index just after the match.
+func matchFoldAt(s, lower string) (end int, ok bool) {
+	i := 0
+	for j := 0; j < len(lower); j++ {
+		if i >= len(s) {
+			return 0, false
+		}
+		var r rune
+		size := 1
+		if c := s[i]; c < utf8.RuneSelf {
+			r = rune(c)
+			if c >= 'A' && c <= 'Z' {
+				r += 'a' - 'A'
+			}
+		} else {
+			r, size = utf8.DecodeRuneInString(s[i:])
+			r = unicode.ToLower(r)
+		}
+		if r != rune(lower[j]) {
+			return 0, false
+		}
+		i += size
+	}
+	return i, true
+}
+
+// foldAnchors are the first bytes a lower case ASCII letter can start with in a query: the letter in both cases,
+// and for k and i the first byte of the one non-ASCII letter that lower cases to it.
+func foldAnchors(c byte) (up byte, wide byte) {
+	switch c {
+	case 'k':
+		return c &^ 0x20, 0xE2 // U+212A
+	case 'i':
+		return c &^ 0x20, 0xC4 // U+0130
+	}
+	return c &^ 0x20, 0
+}
+
+// indexFoldFrom is the index of the first match of lower in s at or after from, -1 when there is none. lower is ASCII
+// lower case and starts with a letter. The scan jumps from one candidate to the next with strings.IndexByte, which
+// is as fast on a clean query as strings.Contains.
+func indexFoldFrom(s string, from int, lower string) int {
+	up, wide := foldAnchors(lower[0])
+	anchors := [3]byte{lower[0], up, wide}
+	var next [3]int
+	n := 2
+	if wide != 0 {
+		n = 3
+	}
+	for k := 0; k < n; k++ {
+		next[k] = indexByteFrom(s, from, anchors[k])
+	}
+	for {
+		best := -1
+		for k := 0; k < n; k++ {
+			if next[k] >= 0 && (best < 0 || next[k] < next[best]) {
+				best = k
+			}
+		}
+		if best < 0 {
+			return -1
+		}
+		i := next[best]
+		if _, ok := matchFoldAt(s[i:], lower); ok {
+			return i
+		}
+		next[best] = indexByteFrom(s, i+1, anchors[best])
+	}
+}
+
+func indexByteFrom(s string, from int, c byte) int {
+	if from >= len(s) {
+		return -1
+	}
+	if i := strings.IndexByte(s[from:], c); i >= 0 {
+		return from + i
+	}
+	return -1
+}
+
+// containsFold reports whether s holds lower (ASCII lower case) in any spelling the lexer reads as it.
+func containsFold(s, lower string) bool { return indexFoldFrom(s, 0, lower) >= 0 }
+
+// isIdentRune reports a rune of a name: a letter, a digit or an underscore, as the lexer reads one.
+func isIdentRune(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) }
+
+// identEnd is the index just after the name that starts at s[i] (a letter, digit or underscore): the lexer's name,
+// with the dot it keeps inside one.
+func identEnd(s string, i int) int {
+	for i < len(s) {
+		if c := s[i]; c < utf8.RuneSelf {
+			if c == '_' || c == '.' || c >= '0' && c <= '9' || c|0x20 >= 'a' && c|0x20 <= 'z' {
+				i++
+				continue
+			}
+			return i
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if !isIdentRune(r) {
+			return i
+		}
+		i += size
+	}
+	return i
+}
+
+// pipeWordFold reports a `|` followed by blanks or comments and then lower (in any spelling), where after is the
+// byte class that must follow it: followBlank asks for a blank or a comment after the word (a stage with arguments),
+// otherwise anything may follow. It scans every `|` of the query, in quotes too: a quoted text that looks like a stage fences
+// the key, as it always did.
+func pipeWordFold(query, lower string, followBlank bool) bool {
+	for i := 0; ; i++ {
+		p := indexByteFrom(query, i, '|')
+		if p < 0 {
+			return false
+		}
+		i = p
+		j := skipLexerBlanks(query, p+1)
+		end, ok := matchFoldAt(query[j:], lower)
+		if !ok {
+			continue
+		}
+		end += j
+		if !followBlank {
+			return true
+		}
+		// A blank after the word: the lexer's, a comment, or any other character Go calls white space (a keep
+		// list reads that one as a name no stream has).
+		if end < len(query) {
+			if r, _ := utf8.DecodeRuneInString(query[end:]); r == '#' || unicode.IsSpace(r) {
+				return true
+			}
+		}
+	}
+}
+
+// keepStageIn reports a keep stage with arguments: a `|`, then keep, then a blank or a comment.
+func keepStageIn(query string) bool { return pipeWordFold(query, "keep", true) }
+
+// isReBlank is the white space the screens read before an ip( parenthesis and after a comparison: [ \t\n\f\r].
+func isReBlank(c byte) bool { return isLexerBlank(c) || c == '\f' }
+
+// ipFilterIn reports an ip( function: `label = ip(`, `label != ip(`, `|= ip(` or `!= ip(`, with ip in any case and
+// blanks or comments between the operator and the word and blanks between the word and its parenthesis. A query
+// without the word ip in any case is turned away before the scan.
+func ipFilterIn(query string) bool {
+	if !containsFold(query, "ip") {
+		return false
+	}
+	for i := 0; ; i++ {
+		p := indexByteFrom(query, i, '=')
+		if p < 0 {
+			return false
+		}
+		i = p
+		j := skipLexerBlanks(query, p+1)
+		end, ok := matchFoldAt(query[j:], "ip")
+		if !ok {
+			continue
+		}
+		j += end
+		for j < len(query) && isReBlank(query[j]) {
+			j++
+		}
+		if j < len(query) && query[j] == '(' && ipOperatorEndingAt(query, p) {
+			return true
+		}
+	}
+}
+
+// ipOperatorEndingAt reports that the `=` at query[p] ends the operator of an ip filter: `|=` or `!=` of a line
+// filter or a label filter, or `=` after a label name and blanks or a comment.
+func ipOperatorEndingAt(query string, p int) bool {
+	if p > 0 && (query[p-1] == '|' || query[p-1] == '!') {
+		return true
+	}
+	for p > 0 && isReBlank(query[p-1]) {
+		p--
+		if query[p] == '\n' {
+			// A line break may end a comment between the name and the operator: read it as a name before.
+			return true
+		}
+	}
+	if p == 0 {
+		return false
+	}
+	r, _ := utf8.DecodeLastRuneInString(query[:p])
+	return r == '.' || isIdentRune(r)
+}
+
+// repeatedLabelFilterStages reports two or more `| label op value` stages, a superset of the label filter stages:
+// a quoted text that looks like one counts too. A stage opens with a `|`, blanks or comments, then a name and a
+// comparison operator, or a parenthesis (a grouped filter).
+func repeatedLabelFilterStages(query string) bool {
+	stages := 0
+	for i := 0; ; i++ {
+		p := indexByteFrom(query, i, '|')
+		if p < 0 {
+			return false
+		}
+		i = p
+		if labelFilterStageAt(query, p+1) {
+			if stages++; stages == 2 {
+				return true
+			}
+		}
+	}
+}
+
+func labelFilterStageAt(query string, i int) bool {
+	j := skipLexerBlanks(query, i)
+	if j >= len(query) {
+		return false
+	}
+	if query[j] == '(' {
+		return true
+	}
+	if r, _ := utf8.DecodeRuneInString(query[j:]); r != '_' && !unicode.IsLetter(r) {
+		return false
+	}
+	k := skipLexerBlanks(query, identEnd(query, j))
+	if k >= len(query) {
+		return false
+	}
+	switch query[k] {
+	case '=', '<', '>':
+		return true
+	case '!':
+		return k+1 < len(query) && (query[k+1] == '=' || query[k+1] == '~')
+	}
+	return false
+}
+
+// emptyStringComparisonIn reports `!=` followed by blanks or comments and an empty string literal, in either quote.
+func emptyStringComparisonIn(query string) bool {
+	for i := 0; ; i++ {
+		p := strings.Index(query[min(i, len(query)):], "!=")
+		if p < 0 {
+			return false
+		}
+		i += p
+		j := skipLexerBlanks(query, i+2)
+		if j+1 < len(query) && (query[j] == '"' && query[j+1] == '"' || query[j] == '`' && query[j+1] == '`') {
+			return true
+		}
+	}
+}
+
+// nestedVectorKeywordsFold is translator.HasNestedVectorKeywords with every word in any case: two or more of sum,
+// avg, max, min and count, each at the start of a name and followed by blanks and then a parenthesis, by or
+// without. It may say yes to a query that is no nest, never no to one.
+func nestedVectorKeywordsFold(query string) bool {
+	found := 0
+	for i := 0; i < len(query); {
+		c := query[i]
+		if c >= utf8.RuneSelf {
+			_, size := utf8.DecodeRuneInString(query[i:])
+			i += size
+			continue
+		}
+		if c|0x20 != 's' && c|0x20 != 'a' && c|0x20 != 'm' && c|0x20 != 'c' || i > 0 && fenceNameByteBefore(query, i) {
+			i++
+			continue
+		}
+		for _, kw := range [...]string{"sum", "avg", "max", "min", "count"} {
+			end, ok := matchFoldAt(query[i:], kw)
+			if !ok {
+				continue
+			}
+			j := i + end
+			for j < len(query) && isLexerBlank(query[j]) {
+				j++
+			}
+			if j < len(query) && (query[j] == '(' || hasFoldPrefix(query[j:], "by") || hasFoldPrefix(query[j:], "without")) {
+				if found++; found == 2 {
+					return true
+				}
+			}
+			break
+		}
+		i++
+	}
+	return false
+}
+
+func hasFoldPrefix(s, lower string) bool {
+	_, ok := matchFoldAt(s, lower)
+	return ok
+}
+
+// fenceNameByteBefore reports that the rune before query[i] continues a name.
+func fenceNameByteBefore(query string, i int) bool {
+	r, _ := utf8.DecodeLastRuneInString(query[:i])
+	return r == '.' || isIdentRune(r)
+}
+
+// skipComment returns the index after the comment that starts at query[i] (a `#` outside quoted text): its line.
+func skipComment(query string, i int) int {
+	end := strings.IndexByte(query[i:], '\n')
+	if end < 0 {
+		return len(query)
+	}
+	return i + end + 1
+}
+
+// isQueryWordStart reports a name that starts at query[i]: a letter or an underscore, ASCII or not.
+func isQueryWordStart(query string, i int) bool {
+	c := query[i]
+	if c < utf8.RuneSelf {
+		return c == '_' || c|0x20 >= 'a' && c|0x20 <= 'z'
+	}
+	r, _ := utf8.DecodeRuneInString(query[i:])
+	return unicode.IsLetter(r)
+}
+
+// queryWordEnd is the index after the run of letters, digits and underscores that starts at query[i], without the
+// dot a name may hold (the screens read each side of a dotted name as a word).
+func queryWordEnd(query string, i int) int {
+	for i < len(query) {
+		if c := query[i]; c < utf8.RuneSelf {
+			if c == '_' || c >= '0' && c <= '9' || c|0x20 >= 'a' && c|0x20 <= 'z' {
+				i++
+				continue
+			}
+			return i
+		}
+		r, size := utf8.DecodeRuneInString(query[i:])
+		if !isIdentRune(r) {
+			return i
+		}
+		i += size
+	}
+	return i
+}
+
+func isASCIIWord(w string) bool {
+	for i := 0; i < len(w); i++ {
+		if w[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
+// eqFoldWord reports that w lower cases to lower (ASCII lower case) the way the lexer lower cases a word.
+func eqFoldWord(w, lower string) bool {
+	end, ok := matchFoldAt(w, lower)
+	return ok && end == len(w)
+}

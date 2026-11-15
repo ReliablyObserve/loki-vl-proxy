@@ -82,12 +82,11 @@ type rangeMetricSample struct {
 }
 
 var (
-	rangeMetricUnwrapRE    = regexp.MustCompile(`(?s)\|\s*unwrap\s+([^|\[]+)`)
-	logfmtPresenceFilterRE = regexp.MustCompile(`!=\s*""`)
-	outerAggregationRE     = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
-	withoutClauseRE        = regexp.MustCompile(`\bwithout\s*\(`)
-	outerByAfterRE         = regexp.MustCompile(`\)\s+by\s*\(([^)]+)\)\s*$`)
-	outerByBeforeRE        = regexp.MustCompile(`^(?:sum|avg|min|max|count[^(]*|stddev|stdvar)\s+by\s*\(([^)]+)\)\s*\(`)
+	rangeMetricUnwrapRE = regexp.MustCompile(`(?s)\|\s*unwrap\s+([^|\[]+)`)
+	outerAggregationRE  = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
+	withoutClauseRE     = regexp.MustCompile(`\bwithout\s*\(`)
+	outerByAfterRE      = regexp.MustCompile(`\)\s+by\s*\(([^)]+)\)\s*$`)
+	outerByBeforeRE     = regexp.MustCompile(`^(?:sum|avg|min|max|count[^(]*|stddev|stdvar)\s+by\s*\(([^)]+)\)\s*\(`)
 )
 
 // parseSingleFieldCountSpec accepts only a translated query of the exact shape
@@ -1097,7 +1096,7 @@ const logfmtPresenceResponseVersion = "@logfmt-presence-v1:"
 // produced by older binaries whose burst coalescer checked only stored fields.
 // Scope the one-time cache miss to ungrouped logfmt presence counts.
 func logfmtPresenceResponseKeyVersion(r *http.Request, query string) string {
-	if !strings.Contains(query, "logfmt") || !logfmtPresenceFilterRE.MatchString(query) {
+	if !containsFold(query, "logfmt") || !emptyStringComparisonIn(query) {
 		return ""
 	}
 	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))

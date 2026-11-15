@@ -103,6 +103,21 @@ Loki oracle (`test/oracle/loki`, API only).
 - A pull request that touches parsing or validation says in its body that rejected inputs still fail before any other
   work.
 
+## Response key fences read every spelling the parser reads
+
+A response key fence (`responseKeyFences`, `internal/proxy/response_key_fences.go`) is a text screen: it adds a version
+constant to a response cache key when the query holds the construct a fix changed, so an answer cached before the fix
+is not served. The parser reads more spellings than the lower case, single-space form clients usually send: every
+keyword and function name in any case (`| KEEP`, `TOPK(`, `Sum by`), letters that lower case to ASCII ones (U+212A,
+U+0130), `#` comments between tokens (a quote in a comment opens no string), and names of any Unicode letters.
+
+- A new or changed fence screen reads those spellings, allocates nothing, and keeps firing for every spelling its
+  older form fired for (so no key of the fleet's caches becomes unreachable). The shared readers are in
+  `internal/proxy/response_key_fence_text.go`.
+- Add the fence's construct to `fenceFacts` and `fenceMisses` in `response_key_fence_parser_test.go`, with a row per
+  spelling class in `TestResponseKeyFencesFireOnTheSpellingsTheParserReads`. `FuzzResponseKeyFencesMatchParsedTree`
+  (fuzz-smoke) then checks the screen against the parsed tree; an unchecked fence is unfinished.
+
 ## Cache semantic layers
 
 Keep the proxy's Loki-facing cache and VictoriaLogs-facing backend cache

@@ -17,7 +17,7 @@ const orderedJSONVectorResponseVersion = "@ordered-json-vector-v1:"
 // including local-memory copies installed by optional peer hot read-ahead.
 // Scope it to the newly owned expressions; unrelated response keys stay intact.
 func orderedJSONVectorResponseKeyVersion(r *http.Request, query string) string {
-	if !strings.Contains(query, "json") {
+	if !orderedJSONVectorFenceCandidate(query) {
 		return ""
 	}
 	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -27,8 +27,14 @@ func orderedJSONVectorResponseKeyVersion(r *http.Request, query string) string {
 	return ""
 }
 
+// orderedJSONVectorFenceCandidate is orderedJSONVectorCandidate for the fence, with every word in any case: the
+// parser reads `| JSON`, `TOPK(` and `Sum by` as the lower case words. The handler's own screen is not changed here.
+func orderedJSONVectorFenceCandidate(query string) bool {
+	return containsFold(query, "json") && (nestedVectorKeywordsFold(query) || containsFold(query, "topk") || containsFold(query, "bottomk"))
+}
+
 func affectedOrderedJSONVectorQuery(query string) bool {
-	if !orderedJSONVectorCandidate(query) {
+	if !orderedJSONVectorFenceCandidate(query) {
 		return false
 	}
 	if strings.Contains(query, "offset") {

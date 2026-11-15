@@ -73,7 +73,6 @@ var compatCaptureBufPool = sync.Pool{
 
 var backendSemverPattern = regexp.MustCompile(`v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z\.-]+)?`)
 var backendMetricsQuotedVersionPattern = regexp.MustCompile(`(?:^|[,{])(?:short_version|version)="(v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z\.-]+)?)"`)
-var keepMetadataProjectionStageRE = regexp.MustCompile(`\|\s*keep\s+`)
 
 const keepMetadataProjectionResponseVersion = "@keep-metadata-projection-v2:"
 
@@ -83,16 +82,16 @@ const keepMetadataProjectionResponseVersion = "@keep-metadata-projection-v2:"
 // namespace covers all keep stages. v2: a name_extracted label the keep does
 // not name is left out, and a range aggregation over a keep is grouped by the
 // kept labels.
+//
+// The screen reads a `|`, then blanks or comments, then keep in any case (and U+212A for the k), then a blank or a
+// comment: every spelling the parser reads as a keep stage with arguments (`| KEEP a`, `|keep#c` + line break + `a`),
+// and a quoted text that looks like one.
 func keepMetadataProjectionResponseKeyVersion(query string) string {
-	if keepMetadataProjectionStageRE.MatchString(query) {
+	if keepStageIn(query) {
 		return keepMetadataProjectionResponseVersion
 	}
 	return ""
 }
-
-// ipLabelFilterStageRE matches a `label = ip("...")` or `label != ip("...")`
-// label filter and, from v4, a `|= ip("...")` or `!= ip("...")` line filter.
-var ipLabelFilterStageRE = regexp.MustCompile(`(?:[A-Za-z0-9_]\s*!?=|[|!]=)\s*ip\s*\(`)
 
 const ipLabelFilterResponseVersion = "@ip-label-filter-v4:"
 
@@ -106,17 +105,14 @@ const ipLabelFilterResponseVersion = "@ip-label-filter-v4:"
 // label and line filters alike.
 //
 // Every query and query_range request builds this key: a query without the
-// text "ip", which every match holds, skips the regexp.
+// text ip in any case skips the scan. ip is read in any case (`IP(`, `Ip (`, and U+0130 for the i): the parser
+// lower cases a function word before it looks it up.
 func ipLabelFilterResponseKeyVersion(query string) string {
-	if strings.Contains(query, "ip") && ipLabelFilterStageRE.MatchString(query) {
+	if ipFilterIn(query) {
 		return ipLabelFilterResponseVersion
 	}
 	return ""
 }
-
-// labelFilterStageRE matches a `| label op value` stage, a superset of the label filter stages: a quoted text that
-// looks like one matches too.
-var labelFilterStageRE = regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.]*\s*(?:=~|!~|!=|==|>=|<=|=|>|<)`)
 
 const repeatedLabelFilterResponseVersion = "@repeated-label-filters-v1:"
 
@@ -124,7 +120,7 @@ const repeatedLabelFilterResponseVersion = "@repeated-label-filters-v1:"
 // where it stands: a later filter on a label replaced the earlier one, so a query with two label filter stages
 // answered other lines than Loki does. A query with fewer than two stages cannot repeat a filter.
 func repeatedLabelFilterResponseKeyVersion(query string) string {
-	if len(labelFilterStageRE.FindAllStringIndex(query, 2)) == 2 {
+	if repeatedLabelFilterStages(query) {
 		return repeatedLabelFilterResponseVersion
 	}
 	return ""

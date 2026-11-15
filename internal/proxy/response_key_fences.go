@@ -66,7 +66,7 @@ const keepUnwrapIdentityResponseVersion = "@keep-unwrap-identity-v1:"
 // keepUnwrapIdentityResponseKeyVersion is the fence of a query that holds a keep stage and an unwrap: a text screen,
 // so a query whose keep decides nothing is fenced too (one more cache miss), and no other query's key changes.
 func keepUnwrapIdentityResponseKeyVersion(query string) string {
-	if strings.Contains(query, "unwrap") && keepMetadataProjectionStageRE.MatchString(query) {
+	if containsFold(query, "unwrap") && keepStageIn(query) {
 		return keepUnwrapIdentityResponseVersion
 	}
 	return ""

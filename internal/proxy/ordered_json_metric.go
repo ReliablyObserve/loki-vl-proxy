@@ -53,12 +53,12 @@ const bareJSONMetricResponseVersion = "@bare-json-metric-labels-v1:"
 // Fence cached bare JSON metric replies produced before stored JSON body
 // fields were distinguished from parser label collisions.
 func bareJSONMetricResponseKeyVersion(r *http.Request, query string) string {
-	if !strings.Contains(query, "json") {
+	if !containsFold(query, "json") {
 		return ""
 	}
 	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	spec, ok := parseBareParserMetricCompatSpec(query)
-	if ok && strings.Contains(spec.baseQuery, "| json") {
+	if ok && pipeWordFold(spec.baseQuery, "json", false) {
 		return bareJSONMetricResponseVersion
 	}
 	return ""

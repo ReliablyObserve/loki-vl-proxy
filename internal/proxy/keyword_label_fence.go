@@ -24,19 +24,20 @@ const keywordLabelResponseVersion = "@keyword-label-names-v1:"
 // and the parser decides: the fence applies when the query is rejected.
 func keywordLabelResponseKeyVersion(query string) string {
 	candidate := false
+	commentEnd := 0 // quote characters inside a comment open no quoted text; its words are read like any other
 	for i := 0; i < len(query); {
 		c := query[i]
 		switch {
-		case c == '"' || c == '`':
+		case (c == '"' || c == '`') && i >= commentEnd:
 			i = skipQuoted(query, i) + 1
-		case c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z':
-			j := i + 1
-			for j < len(query) && (query[j] == '_' || query[j] >= 'a' && query[j] <= 'z' || query[j] >= 'A' && query[j] <= 'Z' || query[j] >= '0' && query[j] <= '9') {
-				j++
-			}
+		case c == '#' && i >= commentEnd:
+			commentEnd = skipComment(query, i)
+			i++
+		case isQueryWordStart(query, i):
+			j := queryWordEnd(query, i)
 			w := query[i:j]
 			switch {
-			case (strings.EqualFold(w, "ip") && w != "ip" || strings.EqualFold(w, "label_replace") && w != "label_replace") && !followedByParen(query, j):
+			case (eqFoldWord(w, "ip") && w != "ip" || eqFoldWord(w, "label_replace") && w != "label_replace") && !followedByParen(query, j):
 				return keywordLabelResponseVersion
 			case isLexerKeywordWord(w) && !startsStageOrFollowsRange(query, i):
 				candidate = true
@@ -76,6 +77,15 @@ func followedByParen(query string, i int) bool {
 
 // isLexerKeywordWord reports one of the 15 words, in any case.
 func isLexerKeywordWord(w string) bool {
+	if !isASCIIWord(w) {
+		// The one non-ASCII letters that lower case to ASCII ones (U+212A to k, U+0130 to i) can stand in a word.
+		for _, k := range lexerKeywordWords {
+			if eqFoldWord(w, k) {
+				return true
+			}
+		}
+		return false
+	}
 	var words []string
 	switch len(w) {
 	case 2:
@@ -102,6 +112,8 @@ func isLexerKeywordWord(w string) bool {
 	}
 	return false
 }
+
+var lexerKeywordWords = [...]string{"of", "bool", "json", "drop", "keep", "offset", "unwrap", "regexp", "logfmt", "unpack", "pattern", "variants", "decolorize", "line_format", "label_format"}
 
 // startsStageOrFollowsRange reports a word right after a pipe (a stage) or a closing bracket (`[5m] offset 1h`): where
 // these words are keywords and not label names.

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- An answer cached before a behaviour change is no longer served for a query written in another spelling of the same
+  query. The version marker that keeps such answers out of the cache is now added for every spelling the LogQL parser
+  reads: keywords and function names in any case (`| KEEP a`, `| UNWRAP n`, `TOPK(`, `SUM BY`, `| JSON`, `| LOGFMT`,
+  `IP("...")`), comments between tokens (a quote inside a comment no longer hides what follows), a grouped label filter
+  (`| (a="b") | (c="d")`), an empty back-quoted string after `!=`, and names written with other Unicode letters. A query
+  spelled one of these ways may miss the cache once after the upgrade; queries spelled as before keep their keys.
+
 ## [2.260.1] - 2026-11-14
 
 ### Fixed
