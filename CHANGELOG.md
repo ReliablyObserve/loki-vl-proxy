@@ -15,8 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `IP("...")`), comments between tokens (a quote inside a comment no longer hides what follows), a grouped label filter
   (`| (a="b") | (c="d")`), an empty back-quoted string after `!=`, and names written with other Unicode letters. The
   per-stream detected_level marker also reads `topK` and `bottomK` written with the Kelvin sign (U+212A), and the
-  marker of a parser's unwrap series identity reads its words in any case and a function name written with U+0130
-  (`avg_over_tİme`). A query spelled one of these ways may miss the cache once after the upgrade; queries spelled as
+  marker of a parser's unwrap series identity reads a function name written with U+0130 (`avg_over_tİme`). A query spelled one of these ways may miss the cache once after the upgrade; queries spelled as
   before keep their keys.
 
 ## [2.301.0] - 2026-11-15
