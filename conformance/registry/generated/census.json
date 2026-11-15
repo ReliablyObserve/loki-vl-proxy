@@ -1060,6 +1060,9 @@
     "semantics/without-fold-detected-level-unknown | compare:observed",
     "semantics/without-fold-detected-level-unknown | gap:open",
     "semantics/without-fold-detected-level-unknown | query",
+    "semantics/without-fold-stream-detected-level | compare:observed",
+    "semantics/without-fold-stream-detected-level | gap:fixed",
+    "semantics/without-fold-stream-detected-level | query",
     "semantics/without-instant-detected-level-unknown | compare:observed",
     "semantics/without-instant-detected-level-unknown | gap:fixed",
     "semantics/without-instant-detected-level-unknown | query",
@@ -1328,6 +1331,13 @@
     "internal/proxy/detected_level_response_test.go | severity-exposure-surfaces",
     "internal/proxy/detected_level_response_test.go | severity/detected-level-stage-side-effects",
     "internal/proxy/detected_level_shared_unpack_test.go | semantics/json-metric-detected-level-derivation",
+    "internal/proxy/detected_level_stream_series_test.go | cache-response-key-versions",
+    "internal/proxy/detected_level_stream_series_test.go | metric-series-identity",
+    "internal/proxy/detected_level_stream_series_test.go | quality/query-range-settled-steps",
+    "internal/proxy/detected_level_stream_series_test.go | semantics/topk-bottomk-without-strips-label",
+    "internal/proxy/detected_level_stream_series_test.go | semantics/unwrap-sum-without-collapses",
+    "internal/proxy/detected_level_stream_series_test.go | semantics/without-fold-stream-detected-level",
+    "internal/proxy/detected_level_stream_series_test.go | severity-detected-level-derivation",
     "internal/proxy/detected_level_test.go | severity-detected-level-derivation",
     "internal/proxy/detected_level_unknown_differential_test.go | semantics/detected-level-missing-from-stats-answers",
     "internal/proxy/detected_level_unknown_differential_test.go | severity-exposure-surfaces",
@@ -2827,12 +2837,12 @@
       "any": 35,
       "api": 103,
       "drilldown": 51,
-      "explore": 185,
+      "explore": 186,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 647,
+      "go": 648,
       "playwright": 1
     },
     "page_kinds": {
@@ -2852,7 +2862,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 95,
-    "wired_items": 379
+    "wired_items": 380
   },
   "gates": [
     "A/B shape selection",
