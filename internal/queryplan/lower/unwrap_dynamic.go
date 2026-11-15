@@ -105,6 +105,12 @@ func dynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) (parser *q
 // unpacked under dynamicPrefix, every spelling of the unwrapped label deleted, the rest packed and hashed. They are
 // written as one text from the typed pipes.
 func dynamicIdentityPipes(parser *queryplan.Parse, label string) string {
+	return dynamicHashPipes(parser, label) + dynamicRenumber
+}
+
+// dynamicHashPipes are dynamicIdentityPipes up to the hash: the second unpack, the deletion of every spelling of the
+// unwrapped label, the pack and the hash.
+func dynamicHashPipes(parser *queryplan.Parse, label string) string {
 	unpack := dynamicUnpackJSON
 	if parser.Type == logql.ParserLogfmt {
 		unpack = dynamicUnpackLogfmt
@@ -125,8 +131,8 @@ var (
 	dynamicUnpackJSON   = logsql.PipeUnpackJSON{From: "_msg", ResultPrefix: dynamicPrefix}.String()
 	dynamicUnpackLogfmt = logsql.PipeUnpackLogfmt{From: "_msg", ResultPrefix: dynamicPrefix}.String()
 	dynamicPackHash     = " " + logsql.PipePackJSON{Fields: dynamicPacked, ResultField: dynamicSeriesField}.String() + " " +
-		logsql.PipeHash{Fields: []string{dynamicSeriesField}, Result: dynamicSeriesField}.String() + " " +
-		logsql.PipeMath{Expr: translate.UnwrapValueAlias, Alias: translate.UnwrapValueAlias}.String()
+		logsql.PipeHash{Fields: []string{dynamicSeriesField}, Result: dynamicSeriesField}.String()
+	dynamicRenumber = " " + logsql.PipeMath{Expr: translate.UnwrapValueAlias, Alias: translate.UnwrapValueAlias}.String()
 )
 
 // dynamicInnerNumber reads each series' value (the inner stats' text) as a number for the outer aggregation, for the
@@ -136,7 +142,12 @@ var dynamicInnerNumber = logsql.PipeMath{Expr: "__lvp_inner", Alias: "__lvp_inne
 
 // withDynamicIdentity sets the series identity of q to the dynamic identity of the query, when it has one and no
 // keep decided it: the identity pipes go first, before any stats.
-func (q *unwrapQuery) withDynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, label string) {
+//
+// ahead (Profile IdentityAhead) writes the hash before the unwrap gate instead (q.ahead), so the gate ends the pipes
+// before the first stats pipe: the window evaluator reads that pipe and its gate, takes the function per series and
+// per anchored bucket and merges the windows of a range longer than the step itself. The gate's math then writes the
+// unwrapped value last, so it is not read again.
+func (q *unwrapQuery) withDynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, label string, ahead bool) {
 	if q.keptSet {
 		return
 	}
@@ -144,7 +155,11 @@ func (q *unwrapQuery) withDynamicIdentity(va *queryplan.VectorAgg, ra *queryplan
 	if !ok {
 		return
 	}
-	q.pipes = append(q.pipes, dynamicIdentityPipes(parser, label))
+	if ahead {
+		q.ahead = " " + dynamicHashPipes(parser, label)
+	} else {
+		q.pipes = append(q.pipes, dynamicIdentityPipes(parser, label))
+	}
 	q.kept, q.keptSet, q.dynamic = dynamicSeries, true, true
 }
 

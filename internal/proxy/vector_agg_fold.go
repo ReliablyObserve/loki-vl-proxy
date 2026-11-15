@@ -86,6 +86,11 @@ func foldVectorAggregations(p *Proxy, w http.ResponseWriter, r *http.Request, qu
 	if !ok {
 		return foldUngroupedSum(w, r, query, serve)
 	}
+	return foldVectorChain(p, w, r, chain, serve)
+}
+
+// foldVectorChain is foldVectorAggregations over the levels chain, innermost first.
+func foldVectorChain(p *Proxy, w http.ResponseWriter, r *http.Request, chain []*logqlpkg.VectorAggregation, serve func(http.ResponseWriter, *http.Request) bool) bool {
 	buf := &bufferedResponseWriter{}
 	ctx := context.WithValue(context.WithValue(r.Context(), foldedSumKey{}, true), vectorAggFoldKey{}, true)
 	levels := make([]foldLevel, len(chain))

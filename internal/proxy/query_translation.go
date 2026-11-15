@@ -440,6 +440,12 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		// text, kept apart from the lowering's.
 		cacheKey = "\x00stream-identity\x00" + cacheKey
 	}
+	ahead := !baseIdentity && identityAhead(ctx)
+	if ahead {
+		// A root dynamic identity over a range longer than the step (dynamicIdentityWindows): the lowering's text with
+		// the series hash before the unwrap gate, kept apart from the text of the instant and step-bucket requests.
+		cacheKey = "\x00identity-ahead\x00" + cacheKey
+	}
 	streamLabels := p.plainStreamLabelNames(ctx, normalized)
 	if len(streamLabels) > 0 {
 		cacheKey += streamLabelsCacheKey(streamLabels)
@@ -479,6 +485,7 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 			}
 			// A parser's series identity first: lowerMetric writes the translator's series for what this does not serve.
 			if !baseIdentity {
+				prof.IdentityAhead = ahead
 				if lowered, ok := p.lowerDynamicIdentity(ctx, canon, prof); ok {
 					return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
 				}

@@ -468,6 +468,13 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 		// VictoriaLogs groups the buckets by the outer labels (unwrapGroupPushdown).
 		return p.proxyManualRangeMetricRange(w, r, unwrapSpec, origSpec, manualFunc)
 	}
+	if identityAhead(r.Context()) {
+		// The buckets are grouped by the series hash of a parser's identity: the evaluator answers each series'
+		// windows, and the outer aggregation folds the series (foldDynamicIdentity).
+		return p.foldDynamicIdentity(w, r, func(w http.ResponseWriter, r *http.Request) bool {
+			return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
+		})
+	}
 	// A bare outer aggregation without by() collapses all streams into one empty-label
 	// series in Loki. Set ByExplicit=true so buildManualMetricLabels returns {} and
 	// collectRangeMetricSamples produces a single series — not one per stream.
@@ -1810,7 +1817,9 @@ func (p *Proxy) statsGroupMetric(metricObj *fj.Object, vlToLoki map[string]strin
 	metric := make(map[string]string)
 	metricObj.Visit(func(k []byte, mv *fj.Value) {
 		key := string(k)
-		if key == "__name__" || strings.HasPrefix(key, "__lvp_") {
+		if key == "__name__" || strings.HasPrefix(key, "__lvp_") && key != dynamicSeriesHashLabel {
+			// The series hash of a parser's identity stays: it tells the series apart until the outer aggregation
+			// folds them (foldDynamicIdentity), which drops it.
 			return
 		}
 		value := string(mv.GetStringBytes())

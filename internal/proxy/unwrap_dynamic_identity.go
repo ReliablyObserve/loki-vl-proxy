@@ -17,8 +17,9 @@ import (
 // range function taken per series of an unwrapped label after a json or logfmt parser with no keep, whose series are
 // the stream and every parsed label less the unwrapped one. The lowered query writes them as a hash of the stream and
 // each line's parsed labels (__lvp_sid), and VictoriaLogs answers the function per series and the aggregation over
-// them, on an instant query and on a range up to the step. A range longer than the step keeps the stream's series:
-// the window evaluator merges the step buckets of streams, not of a series hash (dynamicIdentityWindows).
+// them, on an instant query and on a range up to the step. On a range longer than the step the window evaluator
+// takes the function per series hash and per anchored bucket from VictoriaLogs and merges each series' windows, and
+// the outer aggregation folds the series (dynamicIdentityWindows, lower.Profile IdentityAhead).
 
 // dynamicQuery is the text the handlers, the fence and the translation read a query as: trimmed, with the keywords in
 // lower case (logql.LowercaseKeywords, which the translation applies before it asks the lowering), so `SUM by (a)
@@ -106,34 +107,59 @@ func streamIdentityOnly(ctx context.Context) bool {
 	return marked
 }
 
+// dynamicSeriesHashLabel is the field the lowering writes the series hash of a parser's identity into
+// (lower.DynamicUnwrapIdentity): the window evaluator's buckets group by it, and its series carry it until
+// foldDynamicIdentity folds them.
+const dynamicSeriesHashLabel = "__lvp_sid"
+
+// identityAheadKey marks a range request of a root dynamic identity whose range is longer than the step
+// (dynamicIdentityWindows): it is translated with the series hash before the unwrap gate (lower.Profile
+// IdentityAhead), so the window evaluator reads the function per series of each anchored bucket.
+type identityAheadKey struct{}
+
+// identityAhead reports a request marked with identityAheadKey.
+func identityAhead(ctx context.Context) bool {
+	marked, _ := ctx.Value(identityAheadKey{}).(bool)
+	return marked
+}
+
 // dynamicIdentityFor is dynamicUnwrapIdentity for a request: false for one marked streamIdentityKey.
 func (p *Proxy) dynamicIdentityFor(ctx context.Context, query string) bool {
 	return !streamIdentityOnly(ctx) && p.dynamicUnwrapIdentity(query)
 }
 
 // dynamicIdentityWindows marks a range query of the dynamic identity of a parser whose range is longer than the step,
-// at its root or under a ranking or a label_replace, before it is translated: it is translated by the string
-// translator and answered with the stream's series, as before. An operand of a binary operation is evaluated as a
-// request of its own (proxyBinaryLogQL), which decides for itself, so each operand reads the series it reads alone
-// whatever the range of the other one. out is the request to go on with.
+// before it is translated. At its root it is marked identityAheadKey: it is translated with the series hash before
+// the unwrap gate, VictoriaLogs takes the function per series and per anchored bucket, the window evaluator merges
+// each series' buckets into Loki's windows (t-range, t] and the outer aggregation folds the series. Under a ranking
+// or a label_replace it is marked streamIdentityKey: it is translated by the string translator and answered with the
+// stream's series, as before. An operand of a binary operation is evaluated as a request of its own
+// (proxyBinaryLogQL), which decides for itself, so each operand reads the series it reads alone whatever the range of
+// the other one. out is the request to go on with.
 func (p *Proxy) dynamicIdentityWindows(r *http.Request, query string) (out *http.Request) {
 	step, ok := parsePositiveStepDuration(r.FormValue("step"))
-	if !ok || streamIdentityOnly(r.Context()) {
+	if !ok || streamIdentityOnly(r.Context()) || identityAhead(r.Context()) {
 		return r
 	}
-	if window, ok := dynamicWindowRange(query); ok && window <= step {
+	window, windowed := dynamicWindowRange(query)
+	if windowed && window <= step {
 		// A range up to the step is served as it is whatever the verdict: the lowering is not asked twice.
 		return r
 	}
-	longer := false
 	if p.dynamicUnwrapIdentity(query) {
-		window, ok := dynamicWindowRange(query)
-		longer = ok && window > step
-	} else {
-		// A dynamic identity under a ranking or a label_replace is marked here; a binary operand decides in its own request.
-		longer = p.dynamicIdentityAtDepth(query, step)
+		if !windowed {
+			return r
+		}
+		if extremeOfExtremes(query) {
+			// max by (L) of max_over_time and min by (L) of min_over_time are the extreme of the group's samples in the
+			// window, whatever the series: VictoriaLogs takes it per bucket and group (unwrapGroupPushdown), with no
+			// hash to write.
+			return r.WithContext(context.WithValue(r.Context(), streamIdentityKey{}, true))
+		}
+		return r.WithContext(context.WithValue(r.Context(), identityAheadKey{}, true))
 	}
-	if !longer {
+	// A dynamic identity under a ranking or a label_replace is marked here; a binary operand decides in its own request.
+	if !p.dynamicIdentityAtDepth(query, step) {
 		return r
 	}
 	return r.WithContext(context.WithValue(r.Context(), streamIdentityKey{}, true))
@@ -189,6 +215,37 @@ func dynamicWindowRange(query string) (time.Duration, bool) {
 		return ra.RangeDuration, ra.RangeDuration > 0
 	}
 	return 0, false
+}
+
+// extremeOfExtremes reports a root dynamic identity whose outer aggregation is max over max_over_time or min over
+// min_over_time (dynamicWindowRange's shape).
+func extremeOfExtremes(query string) bool {
+	expr, ok := sharedLogQLExpr(dynamicQuery(query))
+	if !ok {
+		return false
+	}
+	va, ok := expr.(*logqlpkg.VectorAggregation)
+	if !ok {
+		return false
+	}
+	ra, ok := va.Inner.(*logqlpkg.RangeAggregation)
+	return ok && (va.Op == logqlpkg.VectorMax && ra.Op == logqlpkg.RangeMaxOverTime || va.Op == logqlpkg.VectorMin && ra.Op == logqlpkg.RangeMinOverTime)
+}
+
+// foldDynamicIdentity serves a range request marked identityAheadKey and folds its series by the query's outer
+// aggregation: the evaluator answers a series per hash of a parser's identity (the stream and the parsed labels less
+// the unwrapped one), each with its own windows, and the sum, max, min or avg by the clause's labels or none then
+// takes Loki's value of each group at each step, which drops the hash. Loki counts max_query_series on the folded
+// answer, so the reads of the series are bounded by the raw-row budget of a request that folds its series
+// (-manual-range-metric-row-limit, recordFoldBudget), and the folded answer by the tenant's series limit.
+func (p *Proxy) foldDynamicIdentity(w http.ResponseWriter, r *http.Request, serve func(http.ResponseWriter, *http.Request) bool) bool {
+	expr, ok := sharedLogQLExpr(dynamicQuery(r.FormValue("query")))
+	va, isAgg := expr.(*logqlpkg.VectorAggregation)
+	if !ok || !isAgg {
+		return serve(w, r)
+	}
+	p.recordFoldBudget(r.Context())
+	return foldVectorChain(p, w, r, []*logqlpkg.VectorAggregation{va}, serve)
 }
 
 // dynamicIdentityAtDepth reports a query that holds, below its root and outside a binary operation, a range function
