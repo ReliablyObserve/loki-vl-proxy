@@ -12,6 +12,7 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 )
 
 // A fence screen decides from the query text, before any parse, whether a response key carries a version constant.
@@ -360,6 +361,8 @@ var fenceSpellingBases = []string{
 //
 // conformance: cache-response-key-versions
 func TestResponseKeyFencesFireOnEverySpelling(t *testing.T) {
+	// These tests check the fences against the parser, not the translation: their spellings stay out of the query corpus.
+	t.Cleanup(querycorpus.PauseRecording())
 	rng := rand.New(rand.NewSource(1))
 	seen := map[string]string{}
 	accepted, withFacts := 0, 0
@@ -476,6 +479,8 @@ func fenceGains(query string) []string {
 //
 // conformance: cache-response-key-versions
 func TestResponseKeyFencesKeepTheirOldKeys(t *testing.T) {
+	// These tests check the fences against the parser, not the translation: their spellings stay out of the query corpus.
+	t.Cleanup(querycorpus.PauseRecording())
 	seen := map[string]bool{}
 	var corpus []string
 	add := func(qs ...string) {
@@ -528,6 +533,8 @@ func TestResponseKeyFencesKeepTheirOldKeys(t *testing.T) {
 //
 // conformance: cache-response-key-versions
 func FuzzResponseKeyFencesMatchParsedTree(f *testing.F) {
+	// These tests check the fences against the parser, not the translation: their spellings stay out of the query corpus.
+	f.Cleanup(querycorpus.PauseRecording())
 	for i, q := range fenceSpellingBases {
 		f.Add(q, uint64(0))
 		f.Add(q, uint64(i+1))
@@ -576,6 +583,8 @@ func fenceFires(name, query string) bool {
 //
 // conformance: cache-response-key-versions
 func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
+	// These tests check the fences against the parser, not the translation: their spellings stay out of the query corpus.
+	t.Cleanup(querycorpus.PauseRecording())
 	for _, tc := range []struct {
 		fence, query string
 		want         bool
@@ -662,6 +671,8 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 //
 // conformance: cache-response-key-versions
 func TestResponseKeyFenceScreensDoNotAllocate(t *testing.T) {
+	// These tests check the fences against the parser, not the translation: their spellings stay out of the query corpus.
+	t.Cleanup(querycorpus.PauseRecording())
 	for _, query := range []string{
 		`{app="a",env=~"p.*"} | json | status="500" |= "error"`,
 		`{app="a"} | json | KEEP level | UNWRAP n | x = IP("1.2.3.4") | y = "z" | _TIME > 5s`,
