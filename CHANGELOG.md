@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Metric series the proxy reads per stream now carry the `detected_level` of their stream, as Loki does: `error`
+  for a stream with `level="error"`, `debug` for `severity="dbg"`. This covers `sum without (...)` and the other
+  `without` folds, unwrap range functions, and `topk`, `bottomk`, `sort`, `sort_desc` and `label_replace` over a
+  range function after a parser, at an instant and on query_range. They said `unknown`, because those series are
+  read from VictoriaLogs by stream and the stream's own level label was not consulted. The level keys Loki reads
+  (`level`, `LEVEL`, `severity`, `lvl`, ...) are used in Loki's order, known spellings are normalised and a stream
+  without one stays `unknown`. Answers cached before the fix are not served again
+  (semantics/without-fold-stream-detected-level).
+
 ## [2.300.0] - 2026-11-15
 
 ### Fixed
@@ -16,14 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`| unwrap bytes # note`, then `(c)`) gets `syntax error: unexpected (, expecting RANGE or |`, because Loki reads
   the conversion's name as the label there. The proxy removed the comment and answered these queries. Loki's answers
   are recorded with its engine.
-- Metric series the proxy reads per stream now carry the `detected_level` of their stream, as Loki does: `error`
-  for a stream with `level="error"`, `debug` for `severity="dbg"`. This covers `sum without (...)` and the other
-  `without` folds, unwrap range functions, and `topk`, `bottomk`, `sort`, `sort_desc` and `label_replace` over a
-  range function after a parser, at an instant and on query_range. They said `unknown`, because those series are
-  read from VictoriaLogs by stream and the stream's own level label was not consulted. The level keys Loki reads
-  (`level`, `LEVEL`, `severity`, `lvl`, ...) are used in Loki's order, known spellings are normalised and a stream
-  without one stays `unknown`. Answers cached before the fix are not served again
-  (semantics/without-fold-stream-detected-level).
 
 ## [2.290.0] - 2026-11-15
 
