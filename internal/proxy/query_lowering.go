@@ -41,7 +41,7 @@ var QueryPlanFlippedConstructs = []string{"LogSelect", "VectorAgg", "RangeAgg", 
 // divergence (UnspacedParser: a regexp or pattern parser written with no blank before its expression, which the
 // translator copies into a pipe VictoriaLogs rejects, semantics/translator-copies-unspaced-parser); conformance/
 // registry/query-plan.json records the list.
-var QueryPlanFlippedLogStages = []string{"LevelFilter", "UnspacedParser", "JSON", "Logfmt"}
+var QueryPlanFlippedLogStages = []string{"LevelFilter", "UnspacedParser", "JSON", "Logfmt", "LabelFormat"}
 
 // loweringProfile is the lowering's view of the options the string translator is given: the one place the
 // translator's options become a lower.Profile, shared by the flip and the live shadow.

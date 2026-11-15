@@ -22,6 +22,7 @@ var (
 		`{app="shared-c"} |pattern"<_> <m> <_>" | m="GET"`,
 		`sum by (app) (rate({app="shared-d"} |= "x" [5m]))`,
 		`{app="shared-json"} |= "x" | json | status="500"`,
+		`{app="shared-label-format"} | label_format x="{{.a}}"`,
 		`{app="shared-logfmt"} | logfmt | status >= 500`,
 	}
 	sharedParseTurnedAway = []string{

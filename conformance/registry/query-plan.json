@@ -671,7 +671,8 @@
       "LevelFilter",
       "UnspacedParser",
       "JSON",
-      "Logfmt"
+      "Logfmt",
+      "LabelFormat"
     ]
   }
 }
