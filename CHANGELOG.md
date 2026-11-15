@@ -9,9 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- A label filter compared with a negative number that starts with a 0 and a letter or `_` (`| A < - 0x1F`,
-  `- 0X0`, `- 0o7`) now prints with the minus apart from the number, so the printed query reads back as the same
-  query. Written together (`-0X0`), Loki rejects it. What the proxy answers and sends to VictoriaLogs does not change.
+- A repeated `query`, `query_range` or `series` request whose answer is larger than one entry of the
+  compatibility-edge cache (a tenth of its budget, 2.56 MiB by default) is answered from the cache again instead of
+  asking VictoriaLogs. Such answers (Drilldown breakdowns by a high-cardinality label, parser metrics and instant
+  queries over thousands of series) were kept nowhere when their range ended within `-query-range-freshness` of now
+  or they answered an instant query. They are now kept in the primary memory cache with the edge cache's TTL and
+  freshness rule, up to the primary cache's own entry bound. Known limit: such an answer stays on the replica that
+  computed it (not on disk, not pushed to peers), so another replica computes it again.
+
+### Added
+
+- `-debug-vl-calls-header` (default off) adds `X-Loki-VL-Backend-Calls` (the VictoriaLogs calls the request started
+  before its response headers were written) and `X-Loki-VL-Cache-Result` (`hit`, `miss` or `bypass`) to every read
+  response, so a cache reuse check can count one request's VictoriaLogs calls. Loki sends neither header.
 
 ## [2.260.1] - 2026-11-14
 
