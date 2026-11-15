@@ -169,13 +169,15 @@ func levelSweepReduce(id string, status int, body []byte, errText string) levelS
 
 // recordLevelSweepAnswers runs Loki's engine (test/oracle/loki engine) over the sweep. The engine has no ingest
 // path, so each line carries the detected_level Loki's ingest gave it (levelSweepCases.loki, live Loki) as
-// structured metadata, as Loki stores it; the engine decides the rest (which series exist, the parser errors and
-// their status and text).
+// structured metadata, as Loki stores it, and each stream the service_name label its ingest adds; the engine decides
+// the rest (which series exist, the parser errors and their status and text).
 func recordLevelSweepAnswers(t *testing.T) {
 	t.Helper()
 	set := oraclerun.EngineDataSet{}
 	for ci, c := range levelSweepCases {
+		// Loki's ingest also names the service of every stream (service_name from app), which the engine leaves out.
 		st := oraclerun.EngineStream{Labels: levelSweepStream(ci)}
+		st.Labels["service_name"] = st.Labels["app"]
 		for _, r := range levelSweepRowsOf(ci) {
 			md := map[string]string{"detected_level": c.loki}
 			for k, v := range c.sm {
@@ -268,7 +270,7 @@ func levelSweepProxyAnswer(t *testing.T, backend, id, q, mode string) levelSweep
 // every one). A row that differs and is not listed fails, and so does an entry no differing row needs (on a backend
 // that ran), so the list only shrinks.
 var levelSweepKnown = []struct {
-	kind    string // "status", "series", "absent" (the proxy's series carry no detected_level) or "value"
+	kind    string // "status", "text" (an error's text), "series", "absent" (the series carry no detected_level) or "value"
 	queries []int
 	cases   []string
 	backend string // "emulator", "vl" or "" (both)
@@ -279,6 +281,10 @@ var levelSweepKnown = []struct {
 		"a stats read by stream alone (stats by (_stream)) has no level column and a stream without a level field " +
 			"no value of its own: Loki reads the line or its metadata, the series carries no detected_level " +
 			"(semantics/detected-level-stream-stats-without-level, pending)"},
+	{"text", []int{4, 7}, []string{"body-logfmt-error", "body-text-error-word", "nothing"}, "",
+		"the series the JSONParserErr text names come from the same per-stream read without a level column, so the text " +
+			"lacks the detected_level Loki's names (semantics/detected-level-stream-stats-without-level)"},
+	{"text", nil, nil, "emulator", "the emulator's raw rows hold the unwrapped field of every row, which the series of the error text name"},
 	{"series", []int{10, 11}, nil, "emulator", "the emulator runs no parser and unwraps the amount of every row; Loki answers only the lines whose parser extracts it"},
 	{"value", []int{5, 10}, []string{"body-json-warn", "body-json-WARNING"}, "emulator", "the emulator does not unpack a JSON line on the raw-row read, so the row holds no level field; VictoriaLogs answers warn"},
 }
@@ -307,6 +313,8 @@ func levelSweepDiff(loki, got levelSweepAnswer) (kind, diff string) {
 	switch {
 	case loki.Status != got.Status:
 		return "status", fmt.Sprintf("status %d, Loki %d %s", got.Status, loki.Status, loki.Error)
+	case loki.Status != http.StatusOK && got.Error != loki.Error:
+		return "text", fmt.Sprintf("error text %q, Loki %q", got.Error, loki.Error)
 	case loki.Status != http.StatusOK:
 		return "", ""
 	case (loki.Series == 0) != (got.Series == 0):
@@ -323,12 +331,12 @@ func levelSweepDiff(loki, got levelSweepAnswer) (kind, diff string) {
 
 // levelSweepRun runs the sweep against one backend kind for one VictoriaLogs version and returns the rows equal to
 // Loki, the rows that differ for a listed reason (counted per entry into used) and the rows that differ otherwise.
-// It logs how many of the rows equal to Loki are errors and how many of those carry Loki's text too.
+// It logs how many of the rows equal to Loki are errors (the same status and text).
 func levelSweepRun(t *testing.T, loki map[string]levelSweepAnswer, backend, version string, used []int, serve func(ci int) string) (same, known int, unexplained []string) {
 	t.Helper()
-	errorRows, errorText := 0, 0
+	errorRows := 0
 	defer func() {
-		t.Logf("%s %s: %d of the rows equal to Loki are errors (Loki's status), %d of them with Loki's text", backend, version, errorRows, errorText)
+		t.Logf("%s %s: %d of the rows equal to Loki are errors, with Loki's status and text", backend, version, errorRows)
 	}()
 	for ci := range levelSweepCases {
 		url := serve(ci)
@@ -341,9 +349,6 @@ func levelSweepRun(t *testing.T, loki map[string]levelSweepAnswer, backend, vers
 					same++
 					if loki[id].Status != http.StatusOK {
 						errorRows++
-						if got.Error == loki[id].Error {
-							errorText++
-						}
 					}
 					continue
 				}
@@ -362,7 +367,7 @@ func levelSweepRun(t *testing.T, loki map[string]levelSweepAnswer, backend, vers
 // TestDetectedLevelSweepMatchesLoki: the 14 query types of TestOneDetectedLevelPerStreamAcrossQueryTypes, each at an
 // instant and on query_range at steps 60 and 300, over the 12 streams of levelSweepCases, against Loki's answers
 // (the engine oracle over the lines with the detected_level live Loki gave them, LVP_RUN_ORACLES=1 records them
-// again): the status, which queries answer series, and the detected_level of every series. The proxy runs over
+// again): the status and an error's text, which queries answer series, and the detected_level of every series. The proxy runs over
 // the emulator, whose rows hold the stream fields as VictoriaLogs answers them and whose detected_level chain is
 // VictoriaLogs' (TestVLChainDetectedLevelMatchesVictoriaLogs), on v1.49.0 and v1.53.0; with LVP_RUN_ORACLES=1
 // it also runs over VictoriaLogs itself (test/oracle/vl serve, both versions). Every row equals Loki's but the
