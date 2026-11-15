@@ -191,8 +191,11 @@ func ReportText(s *Summary) string {
 func SiteText(s *Summary) (string, error) {
 	data := map[string]any{"verified": false}
 	if s != nil {
+		// The per-case status list is the next report's comparison, not a figure the site shows.
+		registry := s.Registry
+		registry.CaseStatus = nil
 		data = map[string]any{"verified": true, "date": s.Date, "commit": short(s.Commit), "loki": s.Loki,
-			"victorialogs": s.VictoriaLogs, "red": s.Red, "registry": s.Registry, "errors": s.Errors, "sweep": s.Sweep,
+			"victorialogs": s.VictoriaLogs, "red": s.Red, "registry": registry, "errors": s.Errors, "sweep": s.Sweep,
 			"perf_weekly": s.PerfWeekly}
 	}
 	var b bytes.Buffer
