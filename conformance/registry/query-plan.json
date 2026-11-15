@@ -600,8 +600,8 @@
   "shadow": {
     "rows": 23787,
     "profiles": 12,
-    "native": 20749,
-    "native_proxy_evaluated": 3852,
+    "native": 20830,
+    "native_proxy_evaluated": 3879,
     "mismatches": 0,
     "rejected": 354,
     "delegated_by_construct": {
@@ -653,12 +653,11 @@
       "known divergence semantics/pattern-capture-before-bracket-text": 12,
       "known divergence semantics/stddev-stdvar-nested-or-binary": 90,
       "known divergence semantics/translator-copies-unspaced-parser": 42,
-      "known divergence semantics/translator-reads-blank-grouping-as-none": 90,
       "known divergence semantics/translator-reads-marker-bytes-in-quoted-value": 12,
       "known divergence semantics/translator-reads-quoted-text-as-syntax": 12,
       "known divergence semantics/translator-writes-reserved-field-names": 93,
       "known divergence semantics/translator-writes-signed-number-with-blank": 12,
-      "known divergence semantics/unwrap-per-series-identity-raw-rows": 648
+      "known divergence semantics/unwrap-per-series-identity-raw-rows": 657
     },
     "flipped": [
       "LogSelect",
