@@ -14,6 +14,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
@@ -261,10 +262,29 @@ func FuzzLogFlipGate(f *testing.F) {
 		}
 		got, gotErr := on.translateLogResponseQuery(context.Background(), q)
 		want, wantErr := off.translateLogResponseQuery(context.Background(), respaced(q))
-		if (got != want && got != lower.QuoteKeywordFieldText(want)) || (gotErr == nil) != (wantErr == nil) {
+		// An unspaced parser's expression is quoted by the plan, where the translator copies the spaced spelling's as it
+		// is written: a control byte is escaped in one and raw in the other, the same string to LogsQL.
+		respelled := respaced(q) != q && sameLogsQL(got, want)
+		// A query with an unspaced parser the screen leaves to the translator gets the translator's own text, as with
+		// nothing flipped.
+		if !respelled && respaced(q) != q {
+			unflipped, _ := off.translateLogResponseQuery(context.Background(), q)
+			respelled = got == unflipped
+		}
+		if (got != want && got != lower.QuoteKeywordFieldText(want) && !respelled) || (gotErr == nil) != (wantErr == nil) {
 			t.Fatalf("%q:\n flip on  %q %v\n flip off %q %v", q, got, gotErr, want, wantErr)
 		}
 	})
+}
+
+// sameLogsQL reports two LogsQL texts the LogsQL parser reads as the same query.
+func sameLogsQL(a, b string) bool {
+	qa, err := logsql.Parse(a)
+	if err != nil {
+		return false
+	}
+	qb, err := logsql.Parse(b)
+	return err == nil && qa.String() == qb.String()
 }
 
 // A regexp or pattern parser written with no blank before its quoted expression is served from the plan with the
