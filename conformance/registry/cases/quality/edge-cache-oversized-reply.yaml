@@ -1,0 +1,52 @@
+id: quality/edge-cache-oversized-reply
+title: A repeated request whose answer is larger than one edge cache entry is answered from the cache, asking VictoriaLogs nothing
+pending: true
+proves:
+  - data-probing-and-freshness
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: drilldown
+why: |
+  The compatibility-edge cache keeps completed query, query_range and series
+  answers for five minutes, refreshing an answer whose range ends within
+  -recent-tail-refresh-window of now once it is older than
+  -recent-tail-refresh-max-staleness. One entry holds at most a tenth of its
+  budget (-compat-cache-max-percent of -cache-max-bytes, 2.56 MiB by
+  default), and an answer over that was kept nowhere on the Loki side when
+  its range ended within -query-range-freshness of now (the exact range cache
+  keeps no near-now answer) or it answered an instant query (no exact cache),
+  because the shared copy only takes answers up to 128 KiB. On the e2e stack
+  the six largest answers of the registry run (3 to 5.3 MB: a Drilldown
+  breakdown by pod, a breakdown by trace_id, parser metrics and instants over
+  thousands of series) asked VictoriaLogs again on every repeat, while every
+  smaller answer was reused.
+
+  Such an answer is now kept in the primary cache's memory, under the shared
+  key the edge cache reads second, with the edge cache's TTL and freshness
+  rule. It stays on the replica that computed it (not on disk, not pushed to
+  peers): a known limit the owner accepted on 2026-11-14, so another replica
+  computes it again (TestFleet_OversizedReplyStaysOnItsReplica). An answer
+  over the primary cache's own entry bound (a tenth of -cache-max-bytes) is
+  still not kept.
+
+  -debug-vl-calls-header (default off) adds X-Loki-VL-Backend-Calls and
+  X-Loki-VL-Cache-Result to every read response, so a reuse check counts the
+  VictoriaLogs calls of one request instead of process-wide metrics that also
+  count other clients and background work.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (count_over_time({env="production"}[5m]))'
+    start: 'now-65m'
+    end: 'now-5m'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data.result]
+  expect: |
+    The repeat answers the same bytes as the first request, and with
+    -debug-vl-calls-header reports X-Loki-VL-Cache-Result: hit and
+    X-Loki-VL-Backend-Calls: 0.

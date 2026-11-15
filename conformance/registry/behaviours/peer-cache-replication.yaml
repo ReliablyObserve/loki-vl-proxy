@@ -29,8 +29,9 @@ proxy: |
   all, not one per lookup; after the cooldown one call probes it. A peer
   that never answered since this process started and refuses connections
   is still starting: it is skipped for 250 ms without counting towards its
-  breaker, and pushes made meanwhile are kept (256 entries or 8 MiB per
-  peer) and sent once it answers. At most 64 pushes run at once, with up
+  breaker, and pushes made meanwhile are kept in the push buffer and sent
+  once it answers (peer-cache-push-replay, which also covers pushes to a
+  peer whose breaker is open). At most 64 pushes run at once, with up
   to 4096 pushes or 64 MiB queued behind them. A fetched copy is stored with the
   TTL it had left on the replica that served it (never extended), on disk
   only when this instance is a replica or write-through is off and the

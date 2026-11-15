@@ -1,0 +1,48 @@
+id: semantics/log-query-default-limit
+title: 'A range log query that sends no limit gets Loki''s default of 100 entries (fixed)'
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki reads a missing `limit` of a range query as 100 (its HTTP API
+  default). The recorded Loki v3.7 answers to `{namespace="prod"} | logfmt
+  --strict` and `{app="api-gateway"}` over an hour with no `limit` hold
+  exactly 100 entries; the proxy answered 1000, its `-max-lines` default, which
+  copied the Loki data source's Max lines. Grafana always sends its Max lines
+  as `limit`, so the old default reached only API clients that omit it. The
+  proxy's newest 100 entries were Loki's 100 (same timestamps, streams and
+  lines).
+
+  The route now gives a range query without a `limit` the default before the
+  cache and the plan read it (`-max-lines`, default 100), so the VictoriaLogs
+  calls, the query_range windows, the query statistics and the cache keys all
+  use the limit the answer has. An explicit `limit` is unchanged. A tenant whose
+  `max_entries_limit_per_query` is below the default gets that many entries,
+  as before (Loki's answer for that combination is not recorded). A metric
+  query reads no entry limit. The instant query rejects a log query as Loki
+  does, so it has no default to apply.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="api-gateway"}'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, entries]
+  expect: |
+    200 with 100 entries, the newest of the window, as Loki.
+gap:
+  status: fixed
+  fixed_by: 'pending'
+  impact: api-only
+  effort: S
+  area: 'internal/proxy request parameter validation (withDefaultEntryLimit), -max-lines default'
+  loki: 'the HTTP API default limit of a range query: 100'
+  proxy: '1000 entries (-max-lines default) before the fix'
+  planned_test: 'TestLogQueryWithoutLimitReturnsLokisDefault, TestWithDefaultEntryLimit (internal/proxy); TestLogQueryDefaultLimitLikeLoki (test/e2e-compat, group semantics; named so no CI pattern matches it yet, pending a stack run)'
+  clusters: []

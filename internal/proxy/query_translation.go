@@ -48,6 +48,9 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		ctx = withExecutionLimits(ctx, p.execLimits)
 		reqWithTelemetry := r.WithContext(ctx)
 		sc := &statusCapture{ResponseWriter: w, code: 200}
+		if p.debugVLCallsHeader {
+			sc.beforeHeader = rt.setVLCallsHeaders
+		}
 		next.ServeHTTP(sc, reqWithTelemetry)
 
 		elapsed := time.Since(start)
@@ -459,7 +462,7 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 			if lowered, ok := p.lowerLogSelect(ctx, canon, prof); ok {
 				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
 			}
-			if lowered, ok := p.lowerKeepIdentity(ctx, canon, prof); ok {
+			if lowered, ok := p.lowerMetric(ctx, canon, prof); ok {
 				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
 			}
 		}

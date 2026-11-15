@@ -2,6 +2,7 @@ package translate
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
@@ -147,3 +148,37 @@ func IsFieldFilter(s string) bool {
 	return strings.Contains(s, ":=") || strings.Contains(s, ":~") ||
 		strings.Contains(s, ":!") || strings.Contains(s, ":>") || strings.Contains(s, ":<")
 }
+
+// IsFieldFilterExpr is IsFieldFilter of f's text, written into a pooled buffer instead of a string.
+func IsFieldFilterExpr(f logsql.FilterExpr) bool {
+	bp := filterTextPool.Get().(*[]byte)
+	b := logsql.AppendFilter((*bp)[:0], f)
+	is := isFieldFilterText(b)
+	if cap(b) <= maxPooledFilterText {
+		*bp = b
+		filterTextPool.Put(bp)
+	}
+	return is
+}
+
+// isFieldFilterText is IsFieldFilter of the text b.
+func isFieldFilterText(b []byte) bool {
+	if string(b) == "*" || string(b) == "-*" {
+		return true
+	}
+	for i := 0; i+1 < len(b); i++ {
+		if b[i] == ':' {
+			switch b[i+1] {
+			case '=', '~', '!', '>', '<':
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// filterTextPool holds the buffers IsFieldFilterExpr writes a filter into; a buffer grown past
+// maxPooledFilterText is dropped.
+var filterTextPool = sync.Pool{New: func() any { b := make([]byte, 0, 256); return &b }}
+
+const maxPooledFilterText = 4 << 10

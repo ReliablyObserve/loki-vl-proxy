@@ -271,10 +271,14 @@ func TestResponseKeyFencesSiteOrder(t *testing.T) {
 }
 
 // TestIPFilterResponseKeyVersionFencesLineAndLabelFilters pins which queries carry the ip() fence: a label filter
-// and, since v4, a line filter, both operators, any blank before the parenthesis; no other query.
+// and, since v4, a line filter, both operators, any blank before the parenthesis; no other query. v5 fences the
+// answers cached before an IPv4 address was found where Loki's scan finds it after hex digits and colons.
 //
-// conformance: cache-response-key-versions
+// conformance: cache-response-key-versions, semantics/ip-filter-ipv4-after-hex-colon
 func TestIPFilterResponseKeyVersionFencesLineAndLabelFilters(t *testing.T) {
+	if ipLabelFilterResponseVersion != "@ip-label-filter-v5:" {
+		t.Fatalf("ip() fence %q: answers cached before the scan fix must not be served", ipLabelFilterResponseVersion)
+	}
 	for query, fenced := range map[string]bool{
 		`{app="a"} | addr = ip("10.0.0.1")`:             true,
 		`{app="a"} | logfmt | addr != ip("10.0.0.0/8")`: true,
@@ -388,7 +392,7 @@ func TestKeywordLabelFenceDoesNotServeAnOldCachedAnswer(t *testing.T) {
 		target := "/loki/api/v1/query_range?" + url.Values{"query": {c.query}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}}.Encode()
 		// The route rewrites the keywords of the query (lowercaseQueryKeywords) before the cache key is built.
 		rewritten := logqlpkg.LowercaseKeywords(logqlpkg.StripParserFlags(logqlpkg.StripComments(c.query)))
-		keyTarget := "/loki/api/v1/query_range?" + url.Values{"query": {rewritten}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}}.Encode()
+		keyTarget := "/loki/api/v1/query_range?" + url.Values{"query": {rewritten}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}}.Encode() + "&limit=100" // and the default limit the route adds
 		req := httptest.NewRequest(http.MethodGet, keyTarget, nil)
 		req.Header.Set("X-Scope-OrgID", "team-a")
 		key, ok := p.compatCacheKey("query_range", req)

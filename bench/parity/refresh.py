@@ -167,6 +167,27 @@ def gate(out):
     return done.returncode == 0
 
 
+def verdict_totals(discovery):
+    """The run's requests by verdict over every corpus source: what the daily report's executive summary counts."""
+    totals = {"same": 0, "differ": 0, "both_empty": 0, "blocked": 0}
+    for s in (discovery.get("summary") or {}).values():
+        totals["same"] += s.get("same", 0)
+        totals["differ"] += s.get("diff", 0)
+        totals["both_empty"] += s.get("vacuous", 0)
+        totals["blocked"] += s.get("blocked", 0)
+    return totals
+
+
+def unclaimed_cluster_ids(problems):
+    """The clusters no registry case claims, by id, from the gate's problem lines (order kept, no duplicates)."""
+    ids = []
+    for p in problems:
+        m = re.match(r"cluster (\S+) .*no registry case", p)
+        if m and m.group(1) not in ids:
+            ids.append(m.group(1))
+    return ids
+
+
 def run_table(discovery):
     lines = ["| corpus source | requests | same | differ | both empty | blocked |", "|---|---:|---:|---:|---:|---:|"]
     for source, s in sorted((discovery.get("summary") or {}).items()):
@@ -317,6 +338,8 @@ def main():
         phase("regenerate_and_gate", t0)
         problems = parity_gaps.analyse()[2]
         result["unclaimed"] = sum(1 for p in problems if "no registry case" in p)
+        result["unclaimed_ids"] = unclaimed_cluster_ids(problems)
+        result["verdicts"] = verdict_totals(discovery)
         result["problems"] = len(problems)
         result["elapsed_s"] = round(time.time() - t_all)
         write_text(os.path.join(out, "summary.md"), summary_md(a, result, discovery, prune_text, problems))

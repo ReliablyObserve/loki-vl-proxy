@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
@@ -485,12 +486,17 @@ func randomIPValue(rng *rand.Rand) (string, bool) {
 
 // FuzzIPLabelFilterNeverKeepsWhatLokiDrops: for any pattern Loki accepts and
 // any value, the translated filter keeps a line only when Loki does, and
-// equals Loki where exactFor says it must.
+// equals Loki where exactFor says it must. A pattern Loki rejects is held to the
+// LogQL validation, which rejects it as a label filter and as a line filter
+// before any translation.
+//
+// conformance: semantics/ip-label-filter-invalid-pattern
 func FuzzIPLabelFilterNeverKeepsWhatLokiDrops(f *testing.F) {
 	for _, seed := range [][2]string{
 		{"1.2.3.4", "1.2.3.4"}, {"1.2.3.0/24", "1.2.3.4:443"}, {"1.2.3.89", "1.2.3.4a"},
 		{"2001:db8::/32", "2001:db8::1"}, {"::ffff:1.2.3.4", "1.2.3.4"}, {"1.2.3.4-1.2.4.9", "01.2.3.4"},
 		{"fe80::1", "fe80::1%eth0"}, {"0.0.0.0/0", "x 9.9.9.9 y"}, {"f00::", "0X::0"}, {"::", "::%00000"}, {"0.0.0.0", "0.0.0.0A"}, {"::", "::%0::00"},
+		{"::\x00!", ""}, {"1.2.3.4\x00/24", "1.2.3.4"}, {"1.2.3.4-\x001.2.3.5", "1.2.3.4"},
 	} {
 		f.Add(seed[0], seed[1], false)
 		f.Add(seed[0], seed[1], true)
@@ -498,6 +504,22 @@ func FuzzIPLabelFilterNeverKeepsWhatLokiDrops(f *testing.F) {
 	f.Fuzz(func(t *testing.T, pattern, value string, negate bool) {
 		want, ok := lokiIPLabelFilter(pattern, value, true, negate)
 		filter, tok := ipLabelFilter("addr", pattern, negate)
+		if !ok && tok {
+			// A pattern Loki rejects is rejected by the request's LogQL validation, before any translation, as a label
+			// filter and as a line filter alike (TestIPLabelFilterValidationMatchesLoki, TestIPLineFilterValidationMatchesLoki
+			// hold both to Loki's text), so the translator never gets it. Prove that, then leave the pattern out.
+			for _, q := range []string{
+				fmt.Sprintf(`{app="a"} | addr = ip(%s)`, strconv.Quote(pattern)),
+				fmt.Sprintf(`{app="a"} | addr != ip(%s)`, strconv.Quote(pattern)),
+				fmt.Sprintf(`{app="a"} |= ip(%s)`, strconv.Quote(pattern)),
+				fmt.Sprintf(`{app="a"} != ip(%s)`, strconv.Quote(pattern)),
+			} {
+				if err := logql.ParseAndValidate(q); err == nil || !strings.Contains(err.Error(), "ip: invalid pattern") {
+					t.Fatalf("pattern %q: Loki rejects it, the translator accepts it and the validation of %s answers %v", pattern, q, err)
+				}
+			}
+			return
+		}
 		if ok != tok {
 			t.Fatalf("pattern %q: Loki accepts=%v, translated=%v", pattern, ok, tok)
 		}

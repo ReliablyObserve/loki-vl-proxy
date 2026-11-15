@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
@@ -120,4 +121,55 @@ func TestPlanLowersBareSelectors(t *testing.T) {
 			t.Fatalf("Plan = %#v, %v", op, err)
 		}
 	})
+}
+
+// PlanLogText writes the text Plan's operator encodes, for every log query of the plan corpus under several profiles,
+// and Plan's error where Plan answers one; a plan that is not a log query is not one it writes.
+//
+// conformance: architecture-syntax-package-layering
+func TestPlanLogTextIsPlansText(t *testing.T) {
+	qs, err := plancorpus.Queries("../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiles := []Profile{
+		{}, {KeepLine: true}, {StreamFields: map[string]bool{"app": true}}, {Label: translate.LabelTranslateFunc(strings.ToUpper)},
+	}
+	n := 0
+	for _, q := range qs {
+		if !strings.HasPrefix(strings.TrimSpace(q), "{") {
+			continue
+		}
+		expr, err := logql.Parse(q)
+		if err != nil {
+			continue
+		}
+		p, err := queryplan.Build(expr, queryplan.Inputs{})
+		if err != nil {
+			continue
+		}
+		if _, ok := p.Root.(*queryplan.LogSelect); !ok {
+			continue
+		}
+		queryplan.Resolve(p)
+		for _, prof := range profiles {
+			op, perr := Plan(p, prof)
+			text, terr := PlanLogText(p, prof)
+			switch {
+			case (perr == nil) != (terr == nil) || perr != nil && perr.Error() != terr.Error():
+				t.Errorf("%q: Plan %v, PlanLogText %v", q, perr, terr)
+			case perr == nil && physical.Encode(op) != text:
+				t.Errorf("%q: Plan writes %q, PlanLogText %q", q, physical.Encode(op), text)
+			case perr == nil:
+				n++
+			}
+		}
+	}
+	if n == 0 {
+		t.Fatal("no log query lowered")
+	}
+	var nl *NotLoweredError
+	if _, err := PlanLogText(planOf(t, `sum(rate({a="b"}[5m]))`), Profile{}); !errors.As(err, &nl) || nl.Construct != "VectorAgg" {
+		t.Errorf("a metric plan: %v", err)
+	}
 }

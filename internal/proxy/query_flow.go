@@ -47,8 +47,11 @@ type flowCounters struct {
 	cacheDur                   time.Duration
 	cacheBytes                 int64
 	vlCalls                    int
-	vlDur                      time.Duration
-	vlBytes                    int64
+	// vlStarted counts the VictoriaLogs calls the request handed to the
+	// transport, counted as each starts (only with -debug-vl-calls-header).
+	vlStarted int
+	vlDur     time.Duration
+	vlBytes   int64
 	// vlRows counts the log rows read from VictoriaLogs raw query bodies, queueDur the time spent waiting for
 	// heavy-query admission, lokiCache the lookups and stores by Loki cache section (query_stats.go).
 	vlRows    int64
@@ -138,6 +141,18 @@ var noFlowCtx = context.Background()
 func parseLogQLExpr(ctx context.Context, query string) (logqlpkg.Expr, error) {
 	if rt := getRequestTelemetry(ctx); rt != nil {
 		defer rt.recordParseSince(time.Now())
+	}
+	return logqlpkg.Parse(query)
+}
+
+// parseLogQLExprTemplates is parseLogQLExpr; untyped leaves the line_format templates untyped
+// (logql.ParseUntypedTemplates).
+func parseLogQLExprTemplates(ctx context.Context, query string, untyped bool) (logqlpkg.Expr, error) {
+	if rt := getRequestTelemetry(ctx); rt != nil {
+		defer rt.recordParseSince(time.Now())
+	}
+	if untyped {
+		return logqlpkg.ParseUntypedTemplates(query)
 	}
 	return logqlpkg.Parse(query)
 }

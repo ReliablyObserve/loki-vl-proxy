@@ -57,6 +57,7 @@ const (
 	ckEndAfterStart                       // the end is not before the start
 	ckResolution                          // at most 11,000 points per series
 	ckLength                              // max_query_length
+	ckLengthSeconds                       // max_query_length on a start and end rounded down to whole seconds
 )
 
 // requestParamChecks is the ordered checks of every route that reads
@@ -67,7 +68,10 @@ const (
 // checking: a parameter the recorded answers accept in every form is not
 // checked (patterns and series ignore limit; labels, label values and series
 // do not check end against start; the instant query ignores step and interval;
-// detected_labels and detected field values do not read since).
+// detected_labels and detected field values do not read since). Two routes
+// differ in the length check, as recorded: the volume route rounds its start
+// and end down to whole seconds before it (ckLengthSeconds), and the volume
+// range route has none (its 11,000-point resolution bounds it instead).
 var requestParamChecks = map[string][]paramCheck{
 	"query_range":           {ckSince, ckEnd, ckStart, ckLimitPositive, ckDirection, ckStep, ckInterval, ckEndAfterStart, ckResolution},
 	"query":                 {ckLimitPositive, ckDirection, ckTime},
@@ -76,8 +80,8 @@ var requestParamChecks = map[string][]paramCheck{
 	"series":                {ckSince, ckEnd, ckStart, ckLength},
 	"detected_labels":       {ckEnd, ckStart, ckLength},
 	"index_stats":           {ckSince, ckEnd, ckStart, ckEndAfterStart, ckLength},
-	"volume":                {ckSince, ckEnd, ckStart, ckLimitSigned, ckAggregateBy, ckEndAfterStart, ckLength},
-	"volume_range":          {ckSince, ckEnd, ckStart, ckLimitSigned, ckAggregateBy, ckStep, ckEndAfterStart, ckResolution, ckLength},
+	"volume":                {ckSince, ckEnd, ckStart, ckLimitSigned, ckAggregateBy, ckEndAfterStart, ckLengthSeconds},
+	"volume_range":          {ckSince, ckEnd, ckStart, ckLimitSigned, ckAggregateBy, ckStep, ckEndAfterStart, ckResolution},
 	"patterns":              {ckSince, ckEnd, ckStart, ckStep, ckResolution},
 	"detected_fields":       {ckSince, ckEnd, ckStart, ckLimitPositive, ckStep, ckEndAfterStart, ckLength},
 	"detected_field_values": {ckEnd, ckStart, ckLimitPositive, ckLength},
@@ -152,7 +156,9 @@ func (p *Proxy) runParamCheck(c paramCheck, s *paramScan) *lokierr.Error {
 			return lokierr.TooManyPoints()
 		}
 	case ckLength:
-		return p.checkQueryLength(s)
+		return p.checkQueryLength(s, false)
+	case ckLengthSeconds:
+		return p.checkQueryLength(s, true)
 	}
 	return nil
 }
@@ -307,8 +313,10 @@ func checkDelayFor(raw string) *lokierr.Error {
 // checkQueryLength is max_query_length: a range longer than the tenant's limit
 // fails with Loki's text. With max_query_lookback set the start counts from the
 // lookback, and a range wholly before it is answered empty by the limits
-// middleware, which this check leaves alone.
-func (p *Proxy) checkQueryLength(s *paramScan) *lokierr.Error {
+// middleware, which this check leaves alone. A route whose length is read in
+// whole seconds (the volume route) rounds its start and end down first, so the
+// reported length is whole seconds too.
+func (p *Proxy) checkQueryLength(s *paramScan, wholeSeconds bool) *lokierr.Error {
 	orgID := ""
 	if v := s.r.Header["X-Scope-Orgid"]; len(v) > 0 { // the canonical key: Header.Get allocates it
 		orgID = v[0]
@@ -327,7 +335,11 @@ func (p *Proxy) checkQueryLength(s *paramScan) *lokierr.Error {
 			start = minStart
 		}
 	}
-	return queryLengthTypedError(limits.MaxQueryLength, start, s.end)
+	end := s.end
+	if wholeSeconds {
+		start, end = time.Unix(start.Unix(), 0), time.Unix(end.Unix(), 0)
+	}
+	return queryLengthTypedError(limits.MaxQueryLength, start, end)
 }
 
 // queryLengthTypedError is Loki's max_query_length error for the range
@@ -496,7 +508,57 @@ func (p *Proxy) requestParamValidation(w http.ResponseWriter, r *http.Request, e
 		p.metrics.RecordRequest(endpoint, p.fail(w, r, err), 0)
 		return r, false
 	}
-	return withSinceWindow(r, checks, now), true
+	r = withSinceWindow(r, checks, now)
+	if endpoint == "query_range" {
+		r = p.withDefaultEntryLimit(r)
+	}
+	return r, true
+}
+
+// withDefaultEntryLimit gives a range query that sends no limit the limit Loki
+// reads for it (100, -max-lines), so that every reader of the limit (the
+// VictoriaLogs calls, the windows, the statistics, the cache keys) sees the
+// limit the answer has. A metric query does not read it. A tenant whose
+// max_entries_limit_per_query is below it gets that limit, as before.
+func (p *Proxy) withDefaultEntryLimit(r *http.Request) *http.Request {
+	if formValue(r, "limit") != "" {
+		return r
+	}
+	limit := p.maxLines
+	if limit <= 0 {
+		limit = DefaultMaxLines
+	}
+	if maxEntries := p.queryLimitsFor(r.Header.Get("X-Scope-OrgID")).MaxEntriesLimitPerQuery; maxEntries > 0 && maxEntries < limit {
+		limit = maxEntries
+	}
+	value := strconv.Itoa(limit)
+	if _, sent := r.Form["limit"]; sent {
+		// An empty limit: replaced where it stands.
+		return withRequestParams(r, map[string]string{"limit": value})
+	}
+	return withAddedFormParam(r, "limit", value)
+}
+
+// withAddedFormParam is r with a parameter it does not carry added to its
+// parsed form and to the end of its URL query, without parsing or encoding the
+// rest again. The request is a shallow copy, as WithContext makes; the form
+// and the URL are copies.
+func withAddedFormParam(r *http.Request, name, value string) *http.Request {
+	out := new(http.Request)
+	*out = *r
+	u := *r.URL
+	if u.RawQuery != "" {
+		u.RawQuery += "&"
+	}
+	u.RawQuery += name + "=" + value
+	out.URL = &u
+	form := make(map[string][]string, len(r.Form)+1)
+	for k, v := range r.Form {
+		form[k] = v
+	}
+	form[name] = []string{value}
+	out.Form = form
+	return out
 }
 
 // withSinceWindow gives a request that sends a since and no start the start
