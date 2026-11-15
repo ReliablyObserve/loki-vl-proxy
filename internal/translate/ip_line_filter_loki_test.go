@@ -50,13 +50,25 @@ func ipLineCases() []ipLineCase {
 	grid(v4Patterns, v4, []string{"..", "...", "0..", "1..", "a..", "f..", ":..", "1.2..", "1. ."})
 	// A colon in front of an IPv4 address after a hex digit, a letter or another colon.
 	grid(v4Patterns, v4, []string{"0:", "1:", "a:", "f:", "g:", "z:", "0::", "a::", "1:2:"})
-	// Where the walk starts depends on the runs before the address (semantics/ip-filter-ipv4-after-hex-colon): a
-	// digit and a colon before a one-digit first octet, hex digits before a colon, a run a letter or a colon ends.
-	grid([]string{"1.2.3.0/27", "9.0.0.0-100.255.255.255", "0.0.0.0/0"},
-		[]string{"1.2.3.0", "1.2.3.4", "1.2.3.31", "1.2.3.32", "9.0.0.1", "100.255.255.255", "101.0.0.1", "12.2.3.4", "123.0.0.1", "01.2.3.4"},
-		[]string{"X0:", "0:", "a0:", "00:", "0a:", "1.0:", "1:a", "1:1.", "1:a.", "1::", "1a:", "11:", "111:", "a1:", "1:1",
-			"1.2a", "1.2:", ":1:", "::", ":::", "x:1:", "1:.", "0a:.", "1a.", "a1.", "aaaa", "aaaa0:", "g0:", "Z1:"})
-	// Random lines of the pieces the walk tells apart, with no fixed text around them.
+	return out
+}
+
+// ipLineWalkCases is the grid of the walk (semantics/ip-filter-ipv4-after-hex-colon): where Loki starts reading an
+// address depends on the runs before it, so a digit and a colon before a one-digit first octet, hex digits before
+// a colon, and a run a letter or a colon ends, around IPv4 patterns of one-, two- and three-digit first octets; then
+// random lines of the pieces the walk tells apart, with no fixed text around them.
+func ipLineWalkCases() []ipLineCase {
+	var out []ipLineCase
+	for _, p := range []string{"1.2.3.0/27", "9.0.0.0-100.255.255.255", "0.0.0.0/0"} {
+		for _, a := range []string{"1.2.3.0", "1.2.3.4", "1.2.3.31", "1.2.3.32", "9.0.0.1", "100.255.255.255", "101.0.0.1", "12.2.3.4", "123.0.0.1", "01.2.3.4"} {
+			for _, b := range []string{"X0:", "0:", "a0:", "00:", "0a:", "1.0:", "1:a", "1:1.", "1:a.", "1::", "1a:", "11:", "111:", "a1:", "1:1",
+				"1.2a", "1.2:", ":1:", "::", ":::", "x:1:", "1:.", "0a:.", "1a.", "a1.", "aaaa", "aaaa0:", "g0:", "Z1:"} {
+				for _, e := range []string{"", " ", "a", "f", "g", "0", "1", ".", ":", "]", "/24", ",", "%eth0", ":80"} {
+					out = append(out, ipLineCase{pattern: p, line: "x " + b + a + e + " y"})
+				}
+			}
+		}
+	}
 	rng := rand.New(rand.NewSource(1))
 	for _, p := range ipv4WalkPatterns {
 		for i := 0; i < 400; i++ {
@@ -66,11 +78,42 @@ func ipLineCases() []ipLineCase {
 	return out
 }
 
-const ipLineLokiAnswers = "testdata/ip-line-filter-loki.txt"
+const (
+	ipLineLokiAnswers     = "testdata/ip-line-filter-loki.txt"
+	ipLineWalkLokiAnswers = "testdata/ip-line-filter-walk-loki.txt"
+)
+
+// ipLineGrids are the recorded grids: the cases and the file of Loki's answers to them.
+func ipLineGrids() []struct {
+	cases []ipLineCase
+	file  string
+} {
+	return []struct {
+		cases []ipLineCase
+		file  string
+	}{{ipLineCases(), ipLineLokiAnswers}, {ipLineWalkCases(), ipLineWalkLokiAnswers}}
+}
+
+// ipLineAnswers reads Loki's recorded answers to cases from file (LVP_RUN_ORACLES=1 records them again first).
+func ipLineAnswers(t *testing.T, cases []ipLineCase, file string) string {
+	t.Helper()
+	if os.Getenv("LVP_RUN_ORACLES") == "1" {
+		recordIPLineAnswers(t, cases, file)
+	}
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answers := strings.TrimSpace(string(b))
+	if len(answers) != len(cases) {
+		t.Fatalf("%s: %d recorded answers for %d cases: record them again with LVP_RUN_ORACLES=1", file, len(answers), len(cases))
+	}
+	return answers
+}
 
 // recordIPLineAnswers runs the Loki oracle (test/oracle/loki ipfilter: Loki's exported log.NewIPLineFilter) over
 // the grid and writes one character per case: 1 when Loki keeps the line under `|= ip(pattern)`, 0 when not.
-func recordIPLineAnswers(t *testing.T, cases []ipLineCase) {
+func recordIPLineAnswers(t *testing.T, cases []ipLineCase, file string) {
 	t.Helper()
 	work := t.TempDir()
 	bin, err := oraclerun.Build(filepath.Join("..", "..", "test", "oracle", "loki"), "", work, "loki")
@@ -121,7 +164,7 @@ func recordIPLineAnswers(t *testing.T, cases []ipLineCase) {
 	if err := os.MkdirAll("testdata", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(ipLineLokiAnswers, []byte(b.String()+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte(b.String()+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -138,35 +181,27 @@ const ipv6KnownDifferences = 2764
 //
 // conformance: semantics/ip-line-filter-ipv4-like-loki, semantics/ip-filter-precision, semantics/ip-filter-ipv4-after-dot-run, semantics/ip-filter-ipv4-after-hex-colon
 func TestIPLineFilterMatchesLoki(t *testing.T) {
-	cases := ipLineCases()
-	if os.Getenv("LVP_RUN_ORACLES") == "1" {
-		recordIPLineAnswers(t, cases)
-	}
-	b, err := os.ReadFile(ipLineLokiAnswers)
-	if err != nil {
-		t.Fatal(err)
-	}
-	answers := strings.TrimSpace(string(b))
-	if len(answers) != len(cases) {
-		t.Fatalf("%d recorded answers for %d cases: record them again with LVP_RUN_ORACLES=1", len(answers), len(cases))
-	}
 	res := map[string]*regexp.Regexp{}
 	diffs := map[string][]string{}
-	v4, v6 := 0, 0
-	for i, c := range cases {
-		re := res[c.pattern]
-		if re == nil {
-			re = regexp.MustCompile(IPLineFilterRegex(c.pattern))
-			res[c.pattern] = re
-		}
-		loki := answers[i] == '1'
-		if got := re.MatchString(c.line); got != loki {
-			if strings.Contains(c.pattern, ":") {
-				v6++
-			} else {
-				v4++
+	v4, v6, total := 0, 0, 0
+	for _, g := range ipLineGrids() {
+		answers := ipLineAnswers(t, g.cases, g.file)
+		total += len(g.cases)
+		for i, c := range g.cases {
+			re := res[c.pattern]
+			if re == nil {
+				re = regexp.MustCompile(IPLineFilterRegex(c.pattern))
+				res[c.pattern] = re
 			}
-			diffs[c.pattern] = append(diffs[c.pattern], fmt.Sprintf("%q (Loki %v)", c.line, loki))
+			loki := answers[i] == '1'
+			if got := re.MatchString(c.line); got != loki {
+				if strings.Contains(c.pattern, ":") {
+					v6++
+				} else {
+					v4++
+				}
+				diffs[c.pattern] = append(diffs[c.pattern], fmt.Sprintf("%q (Loki %v)", c.line, loki))
+			}
 		}
 	}
 	patterns := make([]string, 0, len(diffs))
@@ -179,7 +214,7 @@ func TestIPLineFilterMatchesLoki(t *testing.T) {
 		d := diffs[p]
 		fmt.Fprintf(&msg, "ip(%q): %d differences, e.g. %s\n", p, len(d), strings.Join(d[:min(4, len(d))], ", "))
 	}
-	t.Logf("%d of %d lines differ from Loki: %d IPv4, %d IPv6", v4+v6, len(cases), v4, v6)
+	t.Logf("%d of %d lines differ from Loki: %d IPv4, %d IPv6", v4+v6, total, v4, v6)
 	if v4 != 0 {
 		t.Errorf("%d IPv4 lines differ from Loki:\n%s", v4, msg.String())
 	}

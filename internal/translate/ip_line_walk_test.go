@@ -3,7 +3,6 @@ package translate
 import (
 	"math/rand"
 	"net/netip"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -60,28 +59,22 @@ func ipv4Walk(line string, p IPPattern) bool {
 // run below compare the regexp with Loki's answers.
 // conformance: semantics/ip-filter-ipv4-after-hex-colon
 func TestIPv4WalkMatchesLoki(t *testing.T) {
-	cases := ipLineCases()
-	b, err := os.ReadFile(ipLineLokiAnswers)
-	if err != nil {
-		t.Fatal(err)
-	}
-	answers := strings.TrimSpace(string(b))
-	if len(answers) != len(cases) {
-		t.Fatalf("%d recorded answers for %d cases: record them again with LVP_RUN_ORACLES=1", len(answers), len(cases))
-	}
 	checked := 0
-	for i, c := range cases {
-		if strings.Contains(c.pattern, ":") {
-			continue
+	for _, g := range ipLineGrids() {
+		answers := ipLineAnswers(t, g.cases, g.file)
+		for i, c := range g.cases {
+			if strings.Contains(c.pattern, ":") {
+				continue
+			}
+			p, ok := ParseLokiIPPattern(c.pattern)
+			if !ok {
+				t.Fatalf("pattern %q", c.pattern)
+			}
+			if got, loki := ipv4Walk(c.line, p), answers[i] == '1'; got != loki {
+				t.Errorf("ip(%q) on %q: walk %v, Loki %v", c.pattern, c.line, got, loki)
+			}
+			checked++
 		}
-		p, ok := ParseLokiIPPattern(c.pattern)
-		if !ok {
-			t.Fatalf("pattern %q", c.pattern)
-		}
-		if got, loki := ipv4Walk(c.line, p), answers[i] == '1'; got != loki {
-			t.Errorf("ip(%q) on %q: walk %v, Loki %v", c.pattern, c.line, got, loki)
-		}
-		checked++
 	}
 	if checked < 40000 {
 		t.Fatalf("only %d IPv4 lines checked", checked)
@@ -157,9 +150,11 @@ func TestIPv4SplitMatchesExact(t *testing.T) {
 			check(pattern, randomIPv4Line(rng, ipv4WalkAddrs))
 		}
 	}
-	for _, c := range ipLineCases() {
-		if !strings.Contains(c.pattern, ":") {
-			check(c.pattern, c.line)
+	for _, g := range ipLineGrids() {
+		for _, c := range g.cases {
+			if !strings.Contains(c.pattern, ":") {
+				check(c.pattern, c.line)
+			}
 		}
 	}
 }
