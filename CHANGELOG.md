@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.280.1] - 2026-11-15
+
 ### Changed
 
 - A range log query no longer keeps fallbacks to a limit of 1000 in the limit cap, the cold read and the windowed read.
