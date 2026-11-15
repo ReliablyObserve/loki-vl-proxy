@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Breaking:** a range log query (`query_range`) that sends no `limit` now returns Loki's default of 100 entries,
+  not 1000. The default is `-max-lines`, whose default moves from 1000 to 100; set `-max-lines=1000` to keep the old
+  answer. Grafana always sends its Max lines as the limit, so only API clients that omit `limit` see a change. The
+  default is applied before the cache and the query plan read the request, so the VictoriaLogs calls, the windows,
+  the query statistics and the cache keys use the limit the answer has. A tenant whose `max_entries_limit_per_query`
+  is below the default still gets that many entries.
+
 ## [2.271.0] - 2026-11-15
 
 ### Fixed
@@ -42,12 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   running after it returns. When a parse-risk, level or unparsed-line probe ended the attempt early (its verdict
   sends the query to the row evaluator, or the probe failed), the stats query and the other probes were cancelled
   but not waited for. They are now waited for until they return, so every call an attempt starts ends inside it.
-- **Breaking:** a range log query (`query_range`) that sends no `limit` now returns Loki's default of 100 entries,
-  not 1000. The default is `-max-lines`, whose default moves from 1000 to 100; set `-max-lines=1000` to keep the old
-  answer. Grafana always sends its Max lines as the limit, so only API clients that omit `limit` see a change. The
-  default is applied before the cache and the query plan read the request, so the VictoriaLogs calls, the windows,
-  the query statistics and the cache keys use the limit the answer has. A tenant whose `max_entries_limit_per_query`
-  is below the default still gets that many entries.
 
 ## [2.270.0] - 2026-11-15
 
