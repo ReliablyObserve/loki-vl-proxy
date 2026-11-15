@@ -19,6 +19,7 @@ var entryPoints = []struct {
 	run  func(q string)
 }{
 	{"Parse", func(q string) { _, _ = Parse(q) }},
+	{"ParseUntypedTemplates", func(q string) { _, _ = ParseUntypedTemplates(q) }},
 	{"ParseAndValidate", func(q string) { _ = ParseAndValidate(q) }},
 	{"ParseLogQuery", func(q string) { _, _ = ParseLogQuery(q) }},
 	{"ValidateLogQL", func(q string) { _ = ValidateLogQL(q) }},

@@ -53,6 +53,18 @@ func Parse(input string) (Expr, error) {
 	return expr, err
 }
 
+// ParseUntypedTemplates is Parse that leaves every line_format template untyped (LineFormatStage.Tmpl nil): for a
+// caller that reads a stage's template text and never its typed form, nor a plan key built from it. It saves the
+// text/template parse of a template no query sent before (tens of allocations), which a reader of the text does not
+// need. Every other node is Parse's.
+func ParseUntypedTemplates(input string) (Expr, error) {
+	expr, unknown, _, err := parseExpressionOpts(input, true)
+	if err == nil && unknown != nil {
+		return nil, unknown
+	}
+	return expr, err
+}
+
 // parseExpression is Parse that reports a query whose names hold a character Loki's lexer reads as an identifier
 // of its own (a label called ٣ or €) apart: Loki accepts such a name, but the translation to LogsQL does not carry
 // it, so the proxy turns the query away. The error comes after the semantic checks, which have Loki's own errors
@@ -62,13 +74,18 @@ func Parse(input string) (Expr, error) {
 // otherwise. Parse accepts such a log query (Grafana's metric builder sends `| unwrap [1s]` stubs, which the handlers
 // drop before they validate), and the validation answers it ahead of every other check, as Loki's parser does.
 func parseExpression(input string) (expr Expr, unknown, plainUnwrap *ParseError, err error) {
+	return parseExpressionOpts(input, false)
+}
+
+// parseExpressionOpts is parseExpression; untypedTemplates leaves the line_format templates untyped.
+func parseExpressionOpts(input string, untypedTemplates bool) (expr Expr, unknown, plainUnwrap *ParseError, err error) {
 	querycorpus.Record(querycorpus.LogQL, input)
 	// Loki rejects a query this long before lexing it; doing the same bounds how deep a query can nest, and so
 	// the recursion of every parse, for whatever query length the handlers accept.
 	if msg := InputSizeError(input); msg != "" {
 		return nil, nil, nil, &ParseError{Msg: msg}
 	}
-	p := &parser{sc: newScanner(input)}
+	p := &parser{sc: newScanner(input), untypedTemplates: untypedTemplates}
 	p.advance()
 	expr, err = p.parseExpr()
 	if err == nil && p.cur.Typ != TokEOF {
@@ -263,6 +280,8 @@ type parser struct {
 	checkedLogQueries     [2]*LogQuery
 	moreCheckedLogQueries []*LogQuery
 	checkedLogQueryCount  int
+	// untypedTemplates leaves line_format templates untyped (ParseUntypedTemplates).
+	untypedTemplates bool
 }
 
 // keep marks as read over the characters that start no token between offset start and the current token: the tokens
@@ -946,7 +965,7 @@ func (p *parser) parsePipeBody() (Stage, error) {
 			return nil, err
 		}
 		stage := &LineFormatStage{Template: val}
-		if p.canon == nil {
+		if p.canon == nil && !p.untypedTemplates {
 			stage.Tmpl = typeLineTemplate(val)
 		}
 		return stage, nil

@@ -41,7 +41,7 @@ var QueryPlanFlippedConstructs = []string{"LogSelect", "VectorAgg", "RangeAgg", 
 // divergence (UnspacedParser: a regexp or pattern parser written with no blank before its expression, which the
 // translator copies into a pipe VictoriaLogs rejects, semantics/translator-copies-unspaced-parser); conformance/
 // registry/query-plan.json records the list.
-var QueryPlanFlippedLogStages = []string{"LevelFilter", "UnspacedParser", "JSON", "Logfmt", "LabelFormat"}
+var QueryPlanFlippedLogStages = []string{"LevelFilter", "UnspacedParser", "JSON", "Logfmt", "LabelFormat", "LineFormat"}
 
 // loweringProfile is the lowering's view of the options the string translator is given: the one place the
 // translator's options become a lower.Profile, shared by the flip and the live shadow.
@@ -57,6 +57,18 @@ func loweringProfile(label translator.LabelTranslateFunc, streamFields map[strin
 // only reads a plan, so a shared one serves it. It does not store into the memo: the plan of a translation is not
 // one the handlers read, and storing it would cost the allocations of a memo entry on every translation.
 func loweringPlan(ctx context.Context, canon string) (*queryplan.Plan, error) {
+	return loweringPlanWith(ctx, canon, false)
+}
+
+// logLoweringPlan is loweringPlan for a log query: a query no handler parsed is parsed with its line_format templates
+// untyped (logql.ParseUntypedTemplates), which the log query lowering reads as text only; the template of a query sent
+// for the first time then costs no text/template parse here. The plan's key is not read: the plan is not stored.
+func logLoweringPlan(ctx context.Context, canon string) (*queryplan.Plan, error) {
+	return loweringPlanWith(ctx, canon, true)
+}
+
+// loweringPlanWith is loweringPlan; untypedTemplates parses a query no handler parsed with its templates untyped.
+func loweringPlanWith(ctx context.Context, canon string, untypedTemplates bool) (*queryplan.Plan, error) {
 	var expr logqlpkg.Expr
 	if len(canon) <= validationCacheMaxQueryBytes {
 		if e, ok := planMemoLoad(canon); ok {
@@ -68,7 +80,7 @@ func loweringPlan(ctx context.Context, canon string) (*queryplan.Plan, error) {
 	}
 	if expr == nil {
 		var err error
-		if expr, err = parseLogQLExpr(ctx, canon); err != nil {
+		if expr, err = parseLogQLExprTemplates(ctx, canon, untypedTemplates); err != nil {
 			return nil, err
 		}
 	}
@@ -103,7 +115,7 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 			text, ok = "", false
 		}
 	}()
-	plan, err := loweringPlan(ctx, canon)
+	plan, err := logLoweringPlan(ctx, canon)
 	if err != nil {
 		return "", false
 	}

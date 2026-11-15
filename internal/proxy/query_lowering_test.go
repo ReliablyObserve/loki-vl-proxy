@@ -392,8 +392,8 @@ func BenchmarkTranslateQueryMissShapesTranslator(b *testing.B) {
 	benchTranslateMissShapes(b, Config{DisableQueryPlanLowering: true})
 }
 
-// A log query that keeps its stored line aside (translateQueryOpts keepLine, in the Loki-compatible profile) is not
-// covered by the lowering, and is translated alike with the flag on and off.
+// A log query that keeps its stored line aside (translateQueryOpts keepLine, in the Loki-compatible profile) is
+// served from the lowering (the LineFormat stage family) and translated alike with the flag on and off.
 // conformance: architecture-syntax-package-layering
 func TestQueryPlanLowering_KeepLineIsTranslatedAlike(t *testing.T) {
 	newProxy := func(disable bool) *Proxy {
@@ -408,7 +408,7 @@ func TestQueryPlanLowering_KeepLineIsTranslatedAlike(t *testing.T) {
 		return p
 	}
 	on, off := newProxy(false), newProxy(true)
-	for _, q := range []string{
+	for i, q := range []string{
 		`{app="a"} | line_format "{{.status}}" | line_format "{{.app}}: {{.__line__}}"`,
 		`{app="a"} |= "x" | line_format "{{.a}}" | status="200" | line_format "{{.b}}"`,
 	} {
@@ -426,8 +426,9 @@ func TestQueryPlanLowering_KeepLineIsTranslatedAlike(t *testing.T) {
 		if got != want || !strings.Contains(got, translator.StoredLineField) {
 			t.Fatalf("keep-line translation differs or lost the stored line\n on  %s\n off %s", got, want)
 		}
-		if n := shadowCounts(t, on)["flipped LogSelect"]; n != 0 {
-			t.Fatalf("a keep-line query was served from the lowering (%d)", n)
+		// The LineFormat stage family serves it from the plan, with the line kept aside as the translator keeps it.
+		if n := shadowCounts(t, on)["flipped LogSelect"]; n != i+1 {
+			t.Fatalf("a keep-line query was not served from the lowering (%d)", n)
 		}
 	}
 }

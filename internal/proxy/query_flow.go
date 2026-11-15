@@ -142,6 +142,18 @@ func parseLogQLExpr(ctx context.Context, query string) (logqlpkg.Expr, error) {
 	return logqlpkg.Parse(query)
 }
 
+// parseLogQLExprTemplates is parseLogQLExpr; untyped leaves the line_format templates untyped
+// (logql.ParseUntypedTemplates).
+func parseLogQLExprTemplates(ctx context.Context, query string, untyped bool) (logqlpkg.Expr, error) {
+	if rt := getRequestTelemetry(ctx); rt != nil {
+		defer rt.recordParseSince(time.Now())
+	}
+	if untyped {
+		return logqlpkg.ParseUntypedTemplates(query)
+	}
+	return logqlpkg.Parse(query)
+}
+
 func parseLogQLQuery(ctx context.Context, query string) (*logqlpkg.LogQuery, error) {
 	if rt := getRequestTelemetry(ctx); rt != nil {
 		defer rt.recordParseSince(time.Now())
