@@ -4,6 +4,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 // The response key fences decide from the query text, before any parse, whether a key carries a version constant.
@@ -188,8 +190,8 @@ func isReBlank(c byte) bool { return isLexerBlank(c) || c == '\f' }
 // ipFilterIn reports an ip( function: `label = ip(`, `label != ip(`, `|= ip(` or `!= ip(`, with ip in any case and
 // blanks or comments between the operator and the word and blanks between the word and its parenthesis. A query
 // without the word ip in any case is turned away before the scan.
-func ipFilterIn(query string) bool {
-	if !containsFold(query, "ip") {
+func ipFilterIn(query string, other bool) bool {
+	if !containsWord(query, "ip", other) {
 		return false
 	}
 	for i := 0; ; i++ {
@@ -359,23 +361,25 @@ func isQueryWordStart(query string, i int) bool {
 }
 
 // queryWordEnd is the index after the run of letters, digits and underscores that starts at query[i], without the
-// dot a name may hold (the screens read each side of a dotted name as a word).
-func queryWordEnd(query string, i int) int {
+// dot a name may hold (the screens read each side of a dotted name as a word), and whether the run is all ASCII.
+func queryWordEnd(query string, i int) (end int, ascii bool) {
+	ascii = true
 	for i < len(query) {
 		if c := query[i]; c < utf8.RuneSelf {
 			if c == '_' || c >= '0' && c <= '9' || c|0x20 >= 'a' && c|0x20 <= 'z' {
 				i++
 				continue
 			}
-			return i
+			return i, ascii
 		}
 		r, size := utf8.DecodeRuneInString(query[i:])
 		if !isIdentRune(r) {
-			return i
+			return i, ascii
 		}
+		ascii = false
 		i += size
 	}
-	return i
+	return i, ascii
 }
 
 func isASCIIWord(w string) bool {
@@ -391,4 +395,127 @@ func isASCIIWord(w string) bool {
 func eqFoldWord(w, lower string) bool {
 	end, ok := matchFoldAt(w, lower)
 	return ok && end == len(w)
+}
+
+// afterNumberUnit is the name the word query[i:j] holds. A word that follows digits directly is the unit of a number
+// or a duration (`0y`, `5m`), and a name starts at its first underscore: the lexer reads `0y_time` as `0y` and
+// `_time`.
+func afterNumberUnit(query string, i, j int) string {
+	w := query[i:j]
+	if i > 0 && query[i-1] >= '0' && query[i-1] <= '9' {
+		if k := strings.IndexByte(w, '_'); k > 0 {
+			return w[k:]
+		}
+	}
+	return w
+}
+
+// trailingASCIIName is the ASCII name at the end of w, after its last non-ASCII letter: the word an ASCII-only
+// reading of the query ends with (the older screens split a name at each non-ASCII byte).
+func trailingASCIIName(w string) string {
+	k := len(w)
+	for k > 0 && w[k-1] < utf8.RuneSelf {
+		k--
+	}
+	for k < len(w) && w[k] >= '0' && w[k] <= '9' {
+		k++
+	}
+	return w[k:]
+}
+
+// wordFences is what one scan of a query's words finds, for the three fences that read them.
+type wordFences struct {
+	reservedCase     bool // a name _time, _stream or _stream_id in another case, followed by a comparison
+	reservedLabel    bool // _time, _stream, _stream_id in any case or _msg, followed by a comparison
+	keywordFire      bool // a label spelled Ip, IP or Label_replace, no parenthesis after it
+	keywordCandidate bool // a keyword word where no keyword stands: the parser decides
+}
+
+// scanFenceWords reads the words of query once, outside quoted text, for the reserved field case and label fences
+// and the keyword label fence, without allocating. A comment runs to the end of its line: its quote characters open
+// no quoted text, and its words are read like any other.
+func scanFenceWords(query string) (w wordFences) {
+	commentEnd := 0
+	for i := 0; i < len(query); {
+		c := query[i]
+		switch {
+		case (c == '"' || c == '`') && i >= commentEnd:
+			i = skipQuoted(query, i) + 1
+		case c == '#' && i >= commentEnd:
+			commentEnd = skipComment(query, i)
+			i++
+		case isQueryWordStart(query, i):
+			j, ascii := queryWordEnd(query, i)
+			if !w.keywordFire {
+				w.readKeywordWord(query, i, j, ascii)
+			}
+			if (!w.reservedCase || !w.reservedLabel) && strings.IndexByte(query[i:j], '_') >= 0 && comparisonFollows(query, j) {
+				w.readReservedName(afterNumberUnit(query, i, j))
+			}
+			i = j
+		default:
+			i++
+		}
+	}
+	return w
+}
+
+// readKeywordWord reads the word query[i:j] for the keyword label fence.
+func (w *wordFences) readKeywordWord(query string, i, j int, ascii bool) {
+	fire, cand := keywordWordCheck(query, i, j, ascii)
+	if !ascii {
+		// A name with a non-ASCII letter is also read as the older screen read it: each ASCII run of it a word.
+		for k := i; k < j; {
+			if c := query[k]; c < utf8.RuneSelf && (c == '_' || c|0x20 >= 'a' && c|0x20 <= 'z') {
+				m := k + 1
+				for m < j && query[m] < utf8.RuneSelf {
+					m++
+				}
+				f, cd := keywordWordCheck(query, k, m, true)
+				fire, cand = fire || f, cand || cd
+				k = m
+				continue
+			}
+			k++
+		}
+	}
+	w.keywordFire = fire
+	w.keywordCandidate = w.keywordCandidate || cand
+}
+
+// readReservedName reads a name a comparison follows for the two reserved field fences.
+func (w *wordFences) readReservedName(name string) {
+	for k := 0; k < 2; k++ {
+		if !w.reservedCase && logsql.ReservedFieldNameOtherCase(name) {
+			w.reservedCase = true
+		}
+		if !w.reservedLabel && reservedLabelWord(name) {
+			w.reservedLabel = true
+		}
+		// The older screens split a name at each non-ASCII byte: read its ASCII end too.
+		if isASCIIWord(name) {
+			return
+		}
+		name = trailingASCIIName(name)
+	}
+}
+
+// spelledOtherwise reports a query that holds an ASCII upper case letter or a non-ASCII byte: the only queries whose
+// words can be spelled other than in lower case ASCII. A query without either is screened with strings.Contains, as
+// it always was; the others are read case-folded (containsFold).
+func spelledOtherwise(query string) bool {
+	for i := 0; i < len(query); i++ {
+		if c := query[i]; c >= utf8.RuneSelf || c-'A' <= 'Z'-'A' {
+			return true
+		}
+	}
+	return false
+}
+
+// containsWord is containsFold for a query that spelledOtherwise reported on, strings.Contains for the rest.
+func containsWord(query, lower string, other bool) bool {
+	if !other {
+		return strings.Contains(query, lower)
+	}
+	return containsFold(query, lower)
 }

@@ -108,7 +108,7 @@ const ipLabelFilterResponseVersion = "@ip-label-filter-v4:"
 // text ip in any case skips the scan. ip is read in any case (`IP(`, `Ip (`, and U+0130 for the i): the parser
 // lower cases a function word before it looks it up.
 func ipLabelFilterResponseKeyVersion(query string) string {
-	if ipFilterIn(query) {
+	if ipFilterIn(query, spelledOtherwise(query)) {
 		return ipLabelFilterResponseVersion
 	}
 	return ""

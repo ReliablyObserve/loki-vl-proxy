@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sort"
 	"strings"
 	"testing"
 
@@ -47,7 +48,8 @@ func (f *fenceFacts) name(name string, comparison bool) {
 }
 
 func (f *fenceFacts) labelName(name string) {
-	if (strings.EqualFold(name, "ip") && name != "ip") || (strings.EqualFold(name, "label_replace") && name != "label_replace") {
+	// The scanner lower cases a word with strings.ToLower before it looks the word up.
+	if lower := strings.ToLower(name); (lower == "ip" && name != "ip") || (lower == "label_replace" && name != "label_replace") {
 		f.keywordSpelling = true
 	}
 }
@@ -70,7 +72,8 @@ func (f *fenceFacts) labelFilter(e *logqlpkg.LabelFilterExpr) {
 	if e.Op == logqlpkg.LabelFilterLeaf {
 		f.name(e.Name, true)
 		f.labelName(e.Name)
-		if e.Kind == logqlpkg.LabelFilterValueIP {
+		// A string literal the parser cannot read leaves the leaf's kind empty (the stage is still accepted): read its text.
+		if e.Kind == logqlpkg.LabelFilterValueIP || e.Kind == logqlpkg.LabelFilterValueNone && containsFold(e.Leaf, "ip") {
 			f.ip = true
 		}
 		if e.Cmp == "!=" && e.Kind == logqlpkg.LabelFilterValueString && e.Value == "" {
@@ -199,7 +202,7 @@ func respell(query string, rng *rand.Rand) string {
 				w = strings.ToUpper(w)
 			case 3:
 				// The letters that lower case to an ASCII k or i read as those letters in a keyword.
-				w = strings.NewReplacer("k", "\u212a", "i", "\u0130").Replace(w)
+				w = strings.NewReplacer("k", "\u212a", "i", "\u0130", "s", "\u017f").Replace(w)
 			case 1:
 				w = strings.ToTitle(w[:1]) + w[1:]
 			case 2:
@@ -261,43 +264,53 @@ func fenceShapeRequest(query string) *http.Request {
 	return httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+v.Encode(), nil)
 }
 
-// fenceMisses lists the fences a query's tree requires and its key lacks.
-func fenceMisses(query string) []string {
-	f, expr, ok := factsOf(query)
+// fenceWants is, per fence, whether the parsed tree of query holds the construct the fence guards; nil for a query
+// the parser rejects (it has no tree).
+func fenceWants(query string) map[string]bool {
+	f, _, ok := factsOf(query)
 	if !ok {
 		return nil
 	}
 	r := fenceShapeRequest(query)
-	var miss []string
-	need := func(name string, want bool, got string) {
-		if want && got == "" {
-			miss = append(miss, name)
-		}
+	want := map[string]bool{
+		"keep-metadata-projection": f.keep,
+		"keep-unwrap-identity":     f.keepBeforeUnwrap,
+		"ip-label-filter":          f.ip,
+		"repeated-label-filters":   f.labelFilterStages >= 2,
+		"reserved-field-case":      f.reservedCase,
+		"reserved-field-labels":    f.reservedLabel,
+		"keyword-label-names":      f.keywordSpelling,
+		// Read by fenceGains: the text screen of repeated filters also counts a quoted text that looks like a stage.
+		"a-label-filter-stage": f.labelFilterStages >= 1,
 	}
-	need("keep-metadata-projection", f.keep, keepMetadataProjectionResponseKeyVersion(query))
-	need("keep-unwrap-identity", f.keepBeforeUnwrap, keepUnwrapIdentityResponseKeyVersion(query))
-	need("ip-label-filter", f.ip, ipLabelFilterResponseKeyVersion(query))
-	need("repeated-label-filters", f.labelFilterStages >= 2, repeatedLabelFilterResponseKeyVersion(query))
-	need("reserved-field-case", f.reservedCase, reservedFieldCaseResponseKeyVersion(query))
-	need("reserved-field-labels", f.reservedLabel, reservedFieldLabelResponseKeyVersion(query))
-	need("keyword-label-names", f.keywordSpelling, keywordLabelResponseKeyVersion(query))
 	resolved := resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	if rexpr, err := logqlpkg.Parse(resolved); err == nil {
-		need("ordered-json-vector", containsOrderedJSONVectorExpr(rexpr), orderedJSONVectorResponseKeyVersion(r, query))
+		want["ordered-json-vector"] = containsOrderedJSONVectorExpr(rexpr)
 	}
 	if spec, ok := parseBareParserMetricCompatSpec(resolved); ok && strings.Contains(spec.baseQuery, "| json") {
-		need("bare-json-metric", true, bareJSONMetricResponseKeyVersion(r, query))
+		want["bare-json-metric"] = true
 	}
 	if ra, ok := ungroupedSumRange(resolved); ok && ra.Op == logqlpkg.RangeCountOverTime && f.logfmt && f.presence {
 		if lq, ok := ra.Inner.(*logqlpkg.LogQuery); ok {
 			for _, st := range lq.Pipeline {
 				if p, ok := st.(*logqlpkg.ParserStage); ok && p.Type == logqlpkg.ParserLogfmt {
-					need("logfmt-presence", true, logfmtPresenceResponseKeyVersion(r, query))
+					want["logfmt-presence"] = true
 				}
 			}
 		}
 	}
-	_ = expr
+	return want
+}
+
+// fenceMisses lists the fences a query's tree requires and its key lacks.
+func fenceMisses(query string) []string {
+	var miss []string
+	for name, want := range fenceWants(query) {
+		if want && name != "a-label-filter-stage" && !fenceFires(name, query) {
+			miss = append(miss, name)
+		}
+	}
+	sort.Strings(miss)
 	return miss
 }
 
@@ -375,39 +388,87 @@ func TestResponseKeyFencesFireOnEverySpelling(t *testing.T) {
 	}
 }
 
+// hasCommentQuote reports a `#` followed, on its line, by a quote character. The older screens read such a quote as the
+// start of quoted text and fenced (or missed) what follows it by accident; the screens now skip the comment's quotes,
+// so those queries may change key once. It is a text test: a `#` inside a string counts too.
+func hasCommentQuote(query string) bool {
+	for i := 0; i < len(query); i++ {
+		if query[i] != '#' {
+			continue
+		}
+		line := query[i:]
+		if end := strings.IndexByte(line, '\n'); end >= 0 {
+			line = line[:end]
+		}
+		if strings.ContainsAny(line, "\"`") {
+			return true
+		}
+	}
+	return false
+}
+
+// fenceScreens is the pure text screens, by fence name, with the frozen older screen of each.
+var fenceScreens = []struct {
+	name string
+	old  func(string) bool
+	now  func(string) string
+}{
+	{"keep-metadata-projection", refKeepMetadata, keepMetadataProjectionResponseKeyVersion},
+	{"keep-unwrap-identity", refKeepUnwrap, keepUnwrapIdentityResponseKeyVersion},
+	{"ip-label-filter", refIP, ipLabelFilterResponseKeyVersion},
+	{"repeated-label-filters", refRepeatedLabelFilter, repeatedLabelFilterResponseKeyVersion},
+	{"reserved-field-case", refReservedCase, reservedFieldCaseResponseKeyVersion},
+	{"reserved-field-labels", refReservedLabel, reservedFieldLabelResponseKeyVersion},
+	{"keyword-label-names", refKeywordLabel, keywordLabelResponseKeyVersion},
+}
+
 // fenceLosses lists the fences an older binary's screen fired for that the screen now lacks: a response key it wrote
-// would no longer be reachable. It reads queries the parser accepts and that hold no comment: the older screens read
-// a quote inside a comment as the start of quoted text, so a rejected or odd query could fire them by accident, and
-// no 200 is cached for a rejected query.
+// would no longer be reachable. It reads every query, the ones the parser rejects too (the compat edge looks its cache
+// up before it validates), except a query with a quote in a comment: a one-time cache miss, see hasCommentQuote.
 func fenceLosses(query string) []string {
-	if _, _, ok := factsOf(query); !ok || strings.Contains(query, "#") {
+	if hasCommentQuote(query) {
 		return nil
 	}
 	var lost []string
-	check := func(name string, old bool, now string) {
-		if old && now == "" {
+	for _, sc := range fenceScreens {
+		if sc.old(query) && sc.now(query) == "" {
+			lost = append(lost, sc.name)
+		}
+	}
+	// The three screens that parse after a text prefilter: the prefilter alone must keep every query it let through.
+	check := func(name string, old bool, now bool) {
+		if old && !now {
 			lost = append(lost, name)
 		}
 	}
-	check("keep-metadata-projection", refKeepMetadata(query), keepMetadataProjectionResponseKeyVersion(query))
-	check("keep-unwrap-identity", refKeepUnwrap(query), keepUnwrapIdentityResponseKeyVersion(query))
-	check("ip-label-filter", refIP(query), ipLabelFilterResponseKeyVersion(query))
-	check("repeated-label-filters", refRepeatedLabelFilter(query), repeatedLabelFilterResponseKeyVersion(query))
-	check("reserved-field-case", refReservedCase(query), reservedFieldCaseResponseKeyVersion(query))
-	check("reserved-field-labels", refReservedLabel(query), reservedFieldLabelResponseKeyVersion(query))
-	check("keyword-label-names", refKeywordLabel(query), keywordLabelResponseKeyVersion(query))
-	// The three screens that parse after a text prefilter: the prefilter alone must keep every query it let through.
-	check("ordered-json-vector prefilter", refOrderedJSONCandidate(query), boolKey(orderedJSONVectorFenceCandidate(query)))
-	check("bare-json-metric prefilter", refBareJSONText(query), boolKey(containsFold(query, "json")))
-	check("logfmt-presence prefilter", refLogfmtPresenceText(query), boolKey(containsFold(query, "logfmt") && emptyStringComparisonIn(query)))
+	check("ordered-json-vector prefilter", refOrderedJSONCandidate(query), orderedJSONVectorFenceCandidate(query, spelledOtherwise(query)))
+	check("bare-json-metric prefilter", refBareJSONText(query), containsFold(query, "json"))
+	check("logfmt-presence prefilter", refLogfmtPresenceText(query), containsFold(query, "logfmt") && emptyStringComparisonIn(query))
 	return lost
 }
 
-func boolKey(b bool) string {
-	if b {
-		return "x"
+// fenceGains lists the fences the screens fire for now that their older form did not, and that the parsed tree of the
+// query does not justify. A query the parser rejects has no tree and holds no gain to justify. The screens are text
+// screens, a superset of the construct (`_time!0` fires the reserved field label fence), so this reads the
+// corpus of real queries, not the fuzzer's.
+func fenceGains(query string) []string {
+	want := fenceWants(query)
+	if want == nil || strings.Contains(query, "#") {
+		// The words of a comment are read like any other (as the older screens read them), so a screen can fire on
+		// a word in a comment that holds no construct of the tree.
+		return nil
 	}
-	return ""
+	var unjustified []string
+	for _, sc := range fenceScreens {
+		// The keep and unwrap fence is a text screen by design: a query whose keep decides nothing is fenced too, so
+		// a keep stage is the construct it answers to.
+		justified := want[sc.name] || sc.name == "keep-unwrap-identity" && want["keep-metadata-projection"] ||
+			sc.name == "repeated-label-filters" && want["a-label-filter-stage"]
+		if !sc.old(query) && sc.now(query) != "" && !justified {
+			unjustified = append(unjustified, sc.name)
+		}
+	}
+	return unjustified
 }
 
 // TestResponseKeyFencesKeepTheirOldKeys requires every screen to fire on every query its older form fired on, over
@@ -438,14 +499,25 @@ func TestResponseKeyFencesKeepTheirOldKeys(t *testing.T) {
 	if len(corpus) < 300 {
 		t.Fatalf("query corpus has %d entries", len(corpus))
 	}
+	changed := 0
 	for _, q := range corpus {
 		if lost := fenceLosses(q); len(lost) > 0 {
 			t.Errorf("%q: fences %v fired before and do not now", q, lost)
+		}
+		if gain := fenceGains(q); len(gain) > 0 {
+			t.Errorf("%q: fences %v fire now and the parsed tree does not hold their construct", q, gain)
+		}
+		for _, sc := range fenceScreens {
+			if !sc.old(q) && sc.now(q) != "" {
+				changed++
+				break
+			}
 		}
 		if miss := fenceMisses(q); len(miss) > 0 {
 			t.Errorf("%q: fences %v do not fire for the construct in the tree", q, miss)
 		}
 	}
+	t.Logf("%d of %d corpus queries carry a fence their older screens did not fire, each justified by its parsed tree", changed, len(corpus))
 }
 
 // FuzzResponseKeyFencesMatchParsedTree checks every response key fence against the parsed tree: a query whose tree

@@ -17,11 +17,16 @@ const orderedJSONVectorResponseVersion = "@ordered-json-vector-v1:"
 // including local-memory copies installed by optional peer hot read-ahead.
 // Scope it to the newly owned expressions; unrelated response keys stay intact.
 func orderedJSONVectorResponseKeyVersion(r *http.Request, query string) string {
-	if !orderedJSONVectorFenceCandidate(query) {
+	return orderedJSONVectorFence(r, query, spelledOtherwise(query))
+}
+
+// orderedJSONVectorFence is the fence of a query that spelledOtherwise reported on (other).
+func orderedJSONVectorFence(r *http.Request, query string, other bool) string {
+	if !orderedJSONVectorFenceCandidate(query, other) {
 		return ""
 	}
 	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	if affectedOrderedJSONVectorQuery(query) {
+	if affectedOrderedJSONVectorTree(query) {
 		return orderedJSONVectorResponseVersion
 	}
 	return ""
@@ -29,14 +34,25 @@ func orderedJSONVectorResponseKeyVersion(r *http.Request, query string) string {
 
 // orderedJSONVectorFenceCandidate is orderedJSONVectorCandidate for the fence, with every word in any case: the
 // parser reads `| JSON`, `TOPK(` and `Sum by` as the lower case words. The handler's own screen is not changed here.
-func orderedJSONVectorFenceCandidate(query string) bool {
-	return containsFold(query, "json") && (nestedVectorKeywordsFold(query) || containsFold(query, "topk") || containsFold(query, "bottomk"))
+func orderedJSONVectorFenceCandidate(query string, other bool) bool {
+	if !containsWord(query, "json", other) {
+		return false
+	}
+	if !other {
+		return orderedJSONVectorCandidate(query)
+	}
+	return nestedVectorKeywordsFold(query) || containsFold(query, "topk") || containsFold(query, "bottomk")
 }
 
 func affectedOrderedJSONVectorQuery(query string) bool {
-	if !orderedJSONVectorFenceCandidate(query) {
+	if !orderedJSONVectorCandidate(query) {
 		return false
 	}
+	return affectedOrderedJSONVectorTree(query)
+}
+
+// affectedOrderedJSONVectorTree is affectedOrderedJSONVectorQuery for a query the caller's own screen let through.
+func affectedOrderedJSONVectorTree(query string) bool {
 	if strings.Contains(query, "offset") {
 		_, stripped, err := extractLogQLOffset(query)
 		if err != nil {

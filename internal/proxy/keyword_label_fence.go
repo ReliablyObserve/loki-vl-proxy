@@ -23,34 +23,32 @@ const keywordLabelResponseVersion = "@keyword-label-names-v1:"
 // word; a keyword word that does not start a stage or follow a range (`| json`, `] offset`) is only a candidate,
 // and the parser decides: the fence applies when the query is rejected.
 func keywordLabelResponseKeyVersion(query string) string {
-	candidate := false
-	commentEnd := 0 // quote characters inside a comment open no quoted text; its words are read like any other
-	for i := 0; i < len(query); {
-		c := query[i]
-		switch {
-		case (c == '"' || c == '`') && i >= commentEnd:
-			i = skipQuoted(query, i) + 1
-		case c == '#' && i >= commentEnd:
-			commentEnd = skipComment(query, i)
-			i++
-		case isQueryWordStart(query, i):
-			j := queryWordEnd(query, i)
-			w := query[i:j]
-			switch {
-			case (eqFoldWord(w, "ip") && w != "ip" || eqFoldWord(w, "label_replace") && w != "label_replace") && !followedByParen(query, j):
-				return keywordLabelResponseVersion
-			case isLexerKeywordWord(w) && !startsStageOrFollowsRange(query, i):
-				candidate = true
-			}
-			i = j
-		default:
-			i++
-		}
-	}
-	if candidate && logqlpkg.ValidateLogQL(query) != "" {
+	return keywordLabelFromScan(query, scanFenceWords(query))
+}
+
+// keywordLabelFromScan is the keyword label fence of a query whose words scanFenceWords read.
+func keywordLabelFromScan(query string, w wordFences) string {
+	if w.keywordFire || w.keywordCandidate && logqlpkg.ValidateLogQL(query) != "" {
 		return keywordLabelResponseVersion
 	}
 	return ""
+}
+
+// keywordWordCheck reads the word query[i:j]: fire when it is a label spelled like ip or label_replace with no
+// parenthesis after it, candidate when it is a keyword where no keyword stands. ascii says the word holds no
+// non-ASCII byte: its length then tells at once which words can be one of the three.
+func keywordWordCheck(query string, i, j int, ascii bool) (fire, candidate bool) {
+	w := query[i:j]
+	if ascii && (len(w) < 2 || len(w) > 13) {
+		return false, false
+	}
+	switch {
+	case (eqFoldWord(w, "ip") && w != "ip" || eqFoldWord(w, "label_replace") && w != "label_replace") && !followedByParen(query, j):
+		return true, false
+	case isLexerKeywordWord(w) && !startsStageOrFollowsRange(query, i):
+		return false, true
+	}
+	return false, false
 }
 
 // skipQuoted is the index of the byte that closes the quoted text opened at query[i] (the last byte when unclosed).

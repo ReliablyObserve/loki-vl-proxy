@@ -32,25 +32,53 @@ const (
 // that resolve Grafana range tokens; it may be nil at responseKeyLogWindowShape.
 // The line version and the endpoint forms stay with the key builders.
 func responseKeyFences(r *http.Request, query string, site responseKeySite) string {
+	// The screens share three reads of the query: whether any word can be spelled other than in lower case ASCII,
+	// whether it holds a keep stage, and its words.
+	words := scanFenceWords(query)
+	keep := keepStageIn(query)
 	if site == responseKeyLogWindowShape {
-		return keepMetadataProjectionResponseKeyVersion(query) + keywordLabelResponseKeyVersion(query) + reservedFieldCaseResponseKeyVersion(query) + reservedFieldLabelResponseKeyVersion(query)
+		var b strings.Builder
+		if keep {
+			b.WriteString(keepMetadataProjectionResponseVersion)
+		}
+		b.WriteString(keywordLabelFromScan(query, words))
+		if words.reservedCase {
+			b.WriteString(reservedFieldCaseResponseVersion)
+		}
+		if words.reservedLabel {
+			b.WriteString(reservedFieldLabelResponseVersion)
+		}
+		return b.String()
 	}
+	other := spelledOtherwise(query)
 	var b strings.Builder
-	b.WriteString(orderedJSONVectorResponseKeyVersion(r, query))
-	b.WriteString(bareJSONMetricResponseKeyVersion(r, query))
+	b.WriteString(orderedJSONVectorFence(r, query, other))
+	b.WriteString(bareJSONMetricFence(r, query, other))
 	if site == responseKeyInnerQueryRange {
-		b.WriteString(logfmtPresenceResponseKeyVersion(r, query))
+		b.WriteString(logfmtPresenceFence(r, query, other))
 	}
 	b.WriteString(detectedLevelMutationResponseKeyVersion(query))
-	b.WriteString(keepMetadataProjectionResponseKeyVersion(query))
-	b.WriteString(ipLabelFilterResponseKeyVersion(query))
-	b.WriteString(repeatedLabelFilterResponseKeyVersion(query))
-	b.WriteString(keywordLabelResponseKeyVersion(query))
-	b.WriteString(reservedFieldCaseResponseKeyVersion(query))
-	b.WriteString(reservedFieldLabelResponseKeyVersion(query))
-	b.WriteString(keepUnwrapIdentityResponseKeyVersion(query))
+	if keep {
+		b.WriteString(keepMetadataProjectionResponseVersion)
+	}
+	if ipFilterIn(query, other) {
+		b.WriteString(ipLabelFilterResponseVersion)
+	}
+	if repeatedLabelFilterStages(query) {
+		b.WriteString(repeatedLabelFilterResponseVersion)
+	}
+	b.WriteString(keywordLabelFromScan(query, words))
+	if words.reservedCase {
+		b.WriteString(reservedFieldCaseResponseVersion)
+	}
+	if words.reservedLabel {
+		b.WriteString(reservedFieldLabelResponseVersion)
+	}
+	if keep && containsWord(query, "unwrap", other) {
+		b.WriteString(keepUnwrapIdentityResponseVersion)
+	}
 	if site == responseKeyCompatQueryRange {
-		b.WriteString(logfmtPresenceResponseKeyVersion(r, query))
+		b.WriteString(logfmtPresenceFence(r, query, other))
 	}
 	if site == responseKeyCompatQuery || site == responseKeyCompatQueryRange {
 		// The compat edge looks its cache up before the handler validates the query.
@@ -66,7 +94,7 @@ const keepUnwrapIdentityResponseVersion = "@keep-unwrap-identity-v1:"
 // keepUnwrapIdentityResponseKeyVersion is the fence of a query that holds a keep stage and an unwrap: a text screen,
 // so a query whose keep decides nothing is fenced too (one more cache miss), and no other query's key changes.
 func keepUnwrapIdentityResponseKeyVersion(query string) string {
-	if containsFold(query, "unwrap") && keepStageIn(query) {
+	if keepStageIn(query) && containsWord(query, "unwrap", spelledOtherwise(query)) {
 		return keepUnwrapIdentityResponseVersion
 	}
 	return ""

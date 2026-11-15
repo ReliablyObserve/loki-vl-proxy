@@ -1,7 +1,5 @@
 package proxy
 
-import "github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
-
 const reservedFieldCaseResponseVersion = "@reserved-field-case-v1:"
 
 // reservedFieldCaseResponseKeyVersion fences the replies cached before the outbound guard (guardOutboundQuery)
@@ -11,24 +9,8 @@ const reservedFieldCaseResponseVersion = "@reserved-field-case-v1:"
 // query is fenced when it names, outside quoted text, such a name followed by a matcher or a comparison (=, !, >, <).
 // It is scanned once and allocates nothing.
 func reservedFieldCaseResponseKeyVersion(query string) string {
-	commentEnd := 0 // quote characters inside a comment open no quoted text; its words are read like any other
-	for i := 0; i < len(query); {
-		c := query[i]
-		switch {
-		case (c == '"' || c == '`') && i >= commentEnd:
-			i = closingQuote(query, i) + 1
-		case c == '#' && i >= commentEnd:
-			commentEnd = skipComment(query, i)
-			i++
-		case isQueryWordStart(query, i):
-			j := queryWordEnd(query, i)
-			if logsql.ReservedFieldNameOtherCase(query[i:j]) && comparisonFollows(query, j) {
-				return reservedFieldCaseResponseVersion
-			}
-			i = j
-		default:
-			i++
-		}
+	if scanFenceWords(query).reservedCase {
+		return reservedFieldCaseResponseVersion
 	}
 	return ""
 }
