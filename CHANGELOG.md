@@ -54,6 +54,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `loki_vl_proxy_peer_cache_push_peer_not_up_total` counts those that are dropped.
     `loki_vl_proxy_peer_cache_push_throttled_total` now counts only pushes dropped for a full queue while the buffer
     is off; with it on they are buffered (`reason="queue_full"`).
+- An instant query evaluated at a fixed past `time` is now answered from the cache on a repeat. The near-now
+  freshness check read only `end`/`to`, which an instant query does not send, so every instant query was treated
+  as ending now: a repeat older than `-recent-tail-refresh-max-staleness` asked VictoriaLogs again. The check now
+  reads `time` on `/loki/api/v1/query` (and only there, as Loki does); an instant query without `time` is still
+  evaluated at now and refreshed as before.
+- A `| json` or `| logfmt` metric query answered from VictoriaLogs stats buckets no longer leaves VictoriaLogs calls
+  running after it returns. When a parse-risk, level or unparsed-line probe ended the attempt early (its verdict
+  sends the query to the row evaluator, or the probe failed), the stats query and the other probes were cancelled
+  but not waited for. They are now waited for until they return, so every call an attempt starts ends inside it.
 - `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`,
   `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep` now read Loki's series on
   `query` and on `query_range` with the range up to the step: the stream plus every parsed label except the unwrapped
