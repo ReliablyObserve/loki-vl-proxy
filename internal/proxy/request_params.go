@@ -508,7 +508,57 @@ func (p *Proxy) requestParamValidation(w http.ResponseWriter, r *http.Request, e
 		p.metrics.RecordRequest(endpoint, p.fail(w, r, err), 0)
 		return r, false
 	}
-	return withSinceWindow(r, checks, now), true
+	r = withSinceWindow(r, checks, now)
+	if endpoint == "query_range" {
+		r = p.withDefaultEntryLimit(r)
+	}
+	return r, true
+}
+
+// withDefaultEntryLimit gives a range query that sends no limit the limit Loki
+// reads for it (100, -max-lines), so that every reader of the limit (the
+// VictoriaLogs calls, the windows, the statistics, the cache keys) sees the
+// limit the answer has. A metric query does not read it. A tenant whose
+// max_entries_limit_per_query is below it gets that limit, as before.
+func (p *Proxy) withDefaultEntryLimit(r *http.Request) *http.Request {
+	if formValue(r, "limit") != "" {
+		return r
+	}
+	limit := p.maxLines
+	if limit <= 0 {
+		limit = DefaultMaxLines
+	}
+	if maxEntries := p.queryLimitsFor(r.Header.Get("X-Scope-OrgID")).MaxEntriesLimitPerQuery; maxEntries > 0 && maxEntries < limit {
+		limit = maxEntries
+	}
+	value := strconv.Itoa(limit)
+	if _, sent := r.Form["limit"]; sent {
+		// An empty limit: replaced where it stands.
+		return withRequestParams(r, map[string]string{"limit": value})
+	}
+	return withAddedFormParam(r, "limit", value)
+}
+
+// withAddedFormParam is r with a parameter it does not carry added to its
+// parsed form and to the end of its URL query, without parsing or encoding the
+// rest again. The request is a shallow copy, as WithContext makes; the form
+// and the URL are copies.
+func withAddedFormParam(r *http.Request, name, value string) *http.Request {
+	out := new(http.Request)
+	*out = *r
+	u := *r.URL
+	if u.RawQuery != "" {
+		u.RawQuery += "&"
+	}
+	u.RawQuery += name + "=" + value
+	out.URL = &u
+	form := make(map[string][]string, len(r.Form)+1)
+	for k, v := range r.Form {
+		form[k] = v
+	}
+	form[name] = []string{value}
+	out.Form = form
+	return out
 }
 
 // withSinceWindow gives a request that sends a since and no start the start

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Breaking:** a range log query (`query_range`) that sends no `limit` now returns Loki's default of 100 entries,
+  not 1000. The default is `-max-lines`, whose default moves from 1000 to 100; set `-max-lines=1000` to keep the old
+  answer. Grafana always sends its Max lines as the limit, so only API clients that omit `limit` see a change. The
+  default is applied before the cache and the query plan read the request, so the VictoriaLogs calls, the windows,
+  the query statistics and the cache keys use the limit the answer has. A tenant whose `max_entries_limit_per_query`
+  is below the default still gets that many entries.
 - `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`,
   `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep` now read Loki's series on
   `query` and on `query_range` with the range up to the step: the stream plus every parsed label except the unwrapped

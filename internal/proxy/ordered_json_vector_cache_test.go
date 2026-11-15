@@ -106,7 +106,7 @@ func TestOrderedJSONVectorResponseCacheFencesOldCopies(t *testing.T) {
 				if setup.addition {
 					query += " + 1"
 				}
-				params := url.Values{"query": {query}, "start": {strconv.FormatInt(from.UnixNano(), 10)}, "end": {strconv.FormatInt(to.UnixNano(), 10)}, "step": {"60"}}
+				params := url.Values{"query": {query}, "start": {strconv.FormatInt(from.UnixNano(), 10)}, "end": {strconv.FormatInt(to.UnixNano(), 10)}, "step": {"60"}, "limit": {"100"}}
 				if setup.mode == "query" {
 					from = to
 					params.Set("time", strconv.FormatInt(to.UnixNano(), 10))

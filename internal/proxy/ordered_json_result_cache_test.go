@@ -52,6 +52,10 @@ func orderedJSONResultKey(p *Proxy, target string, headers map[string]string) st
 	for k, v := range headers {
 		r.Header.Set(k, v)
 	}
+	if r.URL.Path == "/loki/api/v1/query_range" {
+		_ = r.ParseForm()
+		r = p.withDefaultEntryLimit(r) // the route adds the default limit before the key is built
+	}
 	return p.queryRangeCacheKey(r, r.FormValue("query"))
 }
 
