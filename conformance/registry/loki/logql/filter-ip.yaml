@@ -79,8 +79,10 @@ decisions:
       the last character no run holds (translate ipv4LineRegexps exact), and the
       line and label filters check two short regexps before it (ipv4Split):
       direct (an address of the pattern right after such a character, always a
-      match) OR (guard (an address of the pattern after a hex digit, a colon or a
-      dot) AND exact).
+      match) OR (guard (the address and its end, wherever it stands: a literal
+      search) AND exact). The edges are classes that are not closed under case
+      folding, which VictoriaLogs prints in 0.1 us instead of 5 us each, and an
+      address set that shares its last three octets writes them once.
     over: [the exact regexp alone (18% to 22% slower than the old regexp on plain service lines), a short address-like guard (cheaper to parse, but 40% to 60% slower than base on near misses such as 10.0.0.12 for 10.0.0.1), the old regexp that judged the characters right before the address (wrong after hex digits and colons)]
     why: |
       Loki's scan starts afresh after any character outside hex digits, colons
@@ -91,7 +93,7 @@ decisions:
       hex digit, a colon or a dot, so the exact regexp runs on few lines.
       VictoriaLogs evaluates an OR branch only on undecided rows and an AND branch
       only on kept rows (lib/logstorage filter_or.go, filter_and.go, v1.53.0).
-    evidence: 'Loki oracle (ipfilter) on 52,000 line-grid lines, 2026-11-15: every IPv4 line equal to Loki (main: 1,221 differ). Go regexp, GOMAXPROCS=4, n=8, base 55632c966: the line filter costs 48% to 82% less per line on service, hex and 1.5 KB / 4.5 KB JSON lines; VictoriaLogs parses three regexps per query (22 to 33 us for 10.0.0.1, 55 to 117 us for 0.0.0.0/0)'
+    evidence: 'Loki oracle (ipfilter) on 52,000 line-grid lines, 2026-11-15: every IPv4 line equal to Loki (main: 1,221 differ). Go regexp, Apple M5 Pro, GOMAXPROCS=4, benchstat n=10 vs origin/main 2f9cd610d: the line filter costs 58% to 82% less per line on service, hex and 1.5 KB / 4.5 KB JSON lines (0 allocs); VictoriaLogs parses the regexps of a query in 38% to 57% less time (9.1 us for 10.0.0.1, 12.5 us for /24, 27.6 us for 0.0.0.0/0, base 21 to 54 us) with more allocations (10.0.0.1: 214 vs 90, 14.6 vs 6.2 KiB); the proxy writes the memoized filter text 83% to 96% faster (135 to 235 ns, 3 allocs) but the first query of a pattern, with the regexp memos empty, costs more than base (2.2 vs 0.8 us for 10.0.0.1, 6.6 vs 5.9 us for 0.0.0.0/0; once per pattern per 512-entry window); the exact regexp alone (the Go row condition of a label filter, frozen translator) runs 5% to 30% slower on service and json lines for one-address and /24 patterns and 20% slower on a /24 label value, 4% to 49% faster for hex lines, label values of one address and 0.0.0.0/0'
     code: [internal/translate/ip_line_v4.go, internal/translate/ip_label_filter.go, internal/translate/linefilter.go]
     tests: [TestIPLineFilterMatchesLoki, TestIPv4WalkMatchesLoki, TestIPv4LineRegexMatchesWalk, TestIPv4SplitMatchesExact, TestIPv4LineRegexWalkEdges, FuzzIPv4LineRegexLikeLoki]
     quality: |

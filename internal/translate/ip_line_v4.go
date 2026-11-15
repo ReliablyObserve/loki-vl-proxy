@@ -115,6 +115,10 @@ func ipv4RangeBoxes(lo, hi [4]byte) []ipv4Box {
 
 // decimalRange is a regexp of the numbers a..b (0 <= a <= b <= 255) written without leading zeros.
 func decimalRange(a, b int) string {
+	if a == 0 && b == 255 {
+		// Every octet: written as the short form, not split by digit count.
+		return `(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])`
+	}
 	var alts []string
 	add := func(lo, hi int) {
 		if lo > hi {
@@ -154,15 +158,17 @@ func digitsRange(lo, hi string) string {
 }
 
 // The edges of the IPv4 regexp. A negated class such as [^0-9.:] holds the letters and the rest of Unicode, and
-// VictoriaLogs prints it while it simplifies a regexp; Go's regexp/syntax then checks its case folding rune by rune,
-// about a millisecond per class on every query. Each edge is therefore written as a class without ASCII letters and
-// the letters in a class of their own, with the anchor between them so the parser does not merge the two back into
-// one class: the same characters match, and the regexp parses in microseconds.
+// VictoriaLogs prints it while it simplifies a regexp; Go's regexp/syntax then checks whether the class is closed
+// under case folding, rune by rune: about a millisecond per class on every query, and still 5 microseconds when the
+// class leaves out every ASCII letter. A class that is not closed (it leaves out the lower case letters but holds
+// the upper case ones) is printed at once. Each edge is therefore written as such a class and the letters it holds
+// back in a class of their own, with an anchor between them so the parser does not merge the two back into one
+// class: the same characters match, and the class parses in 0.1 microseconds.
 const (
 	// ipv4Other is the start of the line or a character no run holds and no run starts at (^ or [^0-9A-Fa-f.:]).
 	// The walk is at a character right after one in every line, so the regexp starts there.
-	ipv4Other = `(?:[^0-9.:A-Za-z]|^|[G-Zg-z])`
-	ipv4Trail = `(?:[^0-9.A-Za-z]|$|[A-Za-z])` // [^0-9.] or $
+	ipv4Other = `(?:[^0-9.:A-Fa-z]|^|[g-z])`
+	ipv4Trail = `(?:[^0-9.A-Za-f]|$|[A-Za-f])` // [^0-9.] or $
 	ipv4Hex   = `[0-9a-fA-F]`
 	// ipv4RunEnd is the rest of a run of digits and dots and the hex letter or colon that ends it, which the walk
 	// skips.
@@ -193,41 +199,92 @@ const (
 // exact crosses every stretch of hex digits, colons and dots on the line, which costs VictoriaLogs more than a
 // plain search for the address, so the filters run it on the few lines the two cheap ones leave: direct is an
 // address right after the start of the line or a character no run holds, where the walk always starts afresh, so
-// every line it keeps is kept by exact; guard is an address after a hex digit, a colon or a dot, which every other
-// line exact keeps holds, and which a line with a near miss (10.0.0.12 for 10.0.0.1) does not, so exact runs on few
-// lines. A line is kept by exact exactly when direct keeps it, or guard and exact both do (ipv4Split).
+// every line it keeps is kept by exact; guard is the address and its end wherever it stands, which every line exact
+// keeps holds, and which starts with the address's own digits, so VictoriaLogs and Go search for them as a literal
+// first. A line with a near miss (10.0.0.12 for 10.0.0.1) does not hold it, so exact runs on few lines. A line is
+// kept by exact exactly when direct keeps it, or guard and exact both do (ipv4Split).
 type ipv4Regexps struct{ exact, direct, guard string }
 
 func ipv4LineRegexps(boxes []ipv4Box) ipv4Regexps {
-	var one, two, three []string
+	// The boxes that share the three octets after the first are written once: (?:first octets)\.rest. A prefix
+	// such as 0.0.0.0/0 is one box, and its three decimal ranges are then written once, not once per length of the
+	// first octet.
+	type octets struct {
+		rest            string
+		one, two, three []string // the first octets of one, two and three digits
+	}
+	var groups []*octets
 	for _, b := range boxes {
 		rest := `\.` + decimalRange(b[1][0], b[1][1]) + `\.` + decimalRange(b[2][0], b[2][1]) + `\.` + decimalRange(b[3][0], b[3][1])
+		var g *octets
+		for _, h := range groups {
+			if h.rest == rest {
+				g = h
+				break
+			}
+		}
+		if g == nil {
+			g = &octets{rest: rest}
+			groups = append(groups, g)
+		}
 		for _, d := range []struct {
 			lo, hi int
 			out    *[]string
-		}{{0, 9, &one}, {10, 99, &two}, {100, 255, &three}} {
+		}{{0, 9, &g.one}, {10, 99, &g.two}, {100, 255, &g.three}} {
 			if lo, hi := max(b[0][0], d.lo), min(b[0][1], d.hi); lo <= hi {
-				*d.out = append(*d.out, decimalRange(lo, hi)+rest)
+				*d.out = append(*d.out, decimalRange(lo, hi))
 			}
 		}
 	}
-	group := func(alts []string) string { return "(?:" + strings.Join(alts, "|") + ")" }
-	short := append(one[:len(one):len(one)], two...)
-	var alts []string
-	if len(short) > 0 {
-		alts = append(alts, ipv4LeadShort+group(short))
+	// group is the alternatives written as one unit: each is a concatenation, so one needs no group.
+	group := func(alts []string) string {
+		if len(alts) == 1 {
+			return alts[0]
+		}
+		return "(?:" + strings.Join(alts, "|") + ")"
 	}
-	if len(one) > 0 {
-		alts = append(alts, ipv4LeadOne+group(one))
+	alt := func(alts ...[]string) string {
+		var all []string
+		for _, a := range alts {
+			all = append(all, a...)
+		}
+		return group(all)
 	}
-	if len(three) > 0 {
-		alts = append(alts, ipv4LeadLong+group(three))
+	var addr []string
+	var short, one, long []string // the alternatives after each lead
+	for _, g := range groups {
+		addr = append(addr, alt(g.one, g.two, g.three)+g.rest)
+		// A single set of the three octets after the first: the lead alternatives share it, written once.
+		tail := g.rest
+		if len(groups) == 1 {
+			tail = ""
+		}
+		for _, d := range []struct {
+			octets [][]string
+			out    *[]string
+		}{{[][]string{g.one, g.two}, &short}, {[][]string{g.one}, &one}, {[][]string{g.three}, &long}} {
+			if o := alt(d.octets...); o != "(?:)" {
+				*d.out = append(*d.out, o+tail)
+			}
+		}
 	}
-	addr := group(append(short, three...))
+	var leads []string
+	for _, d := range []struct {
+		lead string
+		alts []string
+	}{{ipv4LeadShort, short}, {ipv4LeadOne, one}, {ipv4LeadLong, long}} {
+		if len(d.alts) > 0 {
+			leads = append(leads, d.lead+group(d.alts))
+		}
+	}
+	exact := group(leads)
+	if len(groups) == 1 {
+		exact += groups[0].rest
+	}
 	return ipv4Regexps{
-		exact:  ipv4Other + ipv4Step + "*" + group(alts) + ipv4Trail,
-		direct: ipv4Other + addr + ipv4Trail,
-		guard:  `[0-9a-fA-F:.]` + addr + ipv4Trail,
+		exact:  ipv4Other + ipv4Step + "*" + exact + ipv4Trail,
+		direct: ipv4Other + group(addr) + ipv4Trail,
+		guard:  group(addr) + ipv4Trail,
 	}
 }
 

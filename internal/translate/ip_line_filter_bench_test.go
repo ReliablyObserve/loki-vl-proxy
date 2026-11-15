@@ -70,6 +70,8 @@ func ipBenchSets() []struct {
 // AND stops at the first filter that drops the line, an OR at the first that keeps it.
 func compiledLineFilter(b *testing.B, f logsql.FilterExpr) func(string) bool {
 	switch n := f.(type) {
+	case logsql.Group:
+		return compiledLineFilter(b, n.Expr)
 	case logsql.Regexp:
 		re := regexp.MustCompile(n.Pattern)
 		if lit, complete := re.LiteralPrefix(); complete {
@@ -112,7 +114,7 @@ func compiledLineFilter(b *testing.B, f logsql.FilterExpr) func(string) bool {
 func BenchmarkIPv4LineFilter(b *testing.B) {
 	for _, set := range ipBenchSets() {
 		for _, p := range []string{"10.0.0.1", "10.0.0.0/24", "10.0.0.1-10.0.0.5", "0.0.0.0/0"} {
-			match := compiledLineFilter(b, IPLineFilter(p, false))
+			match := compiledLineFilter(b, ipLineFilterNodes(p, false))
 			b.Run(set.name+"/"+p, func(b *testing.B) {
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
@@ -151,6 +153,8 @@ func BenchmarkIPv4LineRegexpParse(b *testing.B) {
 		var walk func(f logsql.FilterExpr)
 		walk = func(f logsql.FilterExpr) {
 			switch n := f.(type) {
+			case logsql.Group:
+				walk(n.Expr)
 			case logsql.Regexp:
 				patterns = append(patterns, n.Pattern)
 			case logsql.AllOf:
@@ -163,7 +167,7 @@ func BenchmarkIPv4LineRegexpParse(b *testing.B) {
 				}
 			}
 		}
-		walk(IPLineFilter(p, false))
+		walk(ipLineFilterNodes(p, false))
 		b.Run(p, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
@@ -186,6 +190,25 @@ func BenchmarkIPLineFilterBuild(b *testing.B) {
 		b.Run(p, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
+				_ = IPLineFilter(p, false).String()
+			}
+		})
+	}
+}
+
+// The same with every memo empty (the first query of a pattern, or after the 512-entry window turns over): the
+// regexps are built, the filter written and its text rendered once.
+func BenchmarkIPLineFilterBuildCold(b *testing.B) {
+	for _, p := range []string{"10.0.0.1", "10.0.0.0/24", "0.0.0.0/0", "10.0.1.250-10.0.3.4"} {
+		b.Run(p, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				ipv4ValuePatternsMu.Lock()
+				clear(ipv4ValuePatterns)
+				ipv4ValuePatternsMu.Unlock()
+				ipLineFiltersMu.Lock()
+				clear(ipLineFilters)
+				ipLineFiltersMu.Unlock()
 				_ = IPLineFilter(p, false).String()
 			}
 		})

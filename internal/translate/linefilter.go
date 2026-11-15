@@ -6,6 +6,7 @@ import (
 	"regexp/syntax"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -254,17 +255,58 @@ func LineFilter(st *logql.LineFilterStage) (f logsql.FilterExpr, ok bool) {
 	return f, true
 }
 
-// IPLineFilter is the VictoriaLogs filter of a line filter `|= ip(pattern)` (negate: `!= ip(pattern)`): the regexp
-// IPLineFilterRegex builds, which matches as Loki's ip() filter reads a line, or for an IPv4 pattern the same lines
-// through two cheap regexps first (ipv4Split), after a substring every address of the pattern holds (its fixed
-// octets), which VictoriaLogs checks first and looks up in its bloom filters, so the regexps run on the lines that
-// may hold an address only. The regexps are memoized with the label filter's (ipv4ValuePatternOf).
+// IPLineFilter is the VictoriaLogs filter of a line filter `|= ip(pattern)` (negate: `!= ip(pattern)`), memoized
+// by pattern and operator (the text of its regexps is long, and rendering it costs more than the rest of the
+// translation). An IPv4 pattern keeps the lines of ipLineFilterNodes: the regexps' split (ipv4Split) after a
+// substring every address of the pattern holds (its fixed octets), which VictoriaLogs checks first and looks up in
+// its bloom filters, so the regexps run on the lines that may hold an address only. The split is kept as text in
+// parentheses, so it binds as one filter beside the others of the query (it is an OR) and prints as the tree does.
 func IPLineFilter(pattern string, negate bool) logsql.FilterExpr {
+	key := ipLineFilterKey{pattern, negate}
+	ipLineFiltersMu.Lock()
+	f, ok := ipLineFilters[key]
+	ipLineFiltersMu.Unlock()
+	if ok {
+		return f
+	}
+	f = ipLineFilterBuild(pattern, negate, func(split logsql.FilterExpr) logsql.FilterExpr {
+		return logsql.Group{Expr: renderedFilter(split)}
+	})
+	ipLineFiltersMu.Lock()
+	if len(ipLineFilters) >= ipv4ValuePatternLimit {
+		clear(ipLineFilters)
+	}
+	ipLineFilters[key] = f
+	ipLineFiltersMu.Unlock()
+	return f
+}
+
+type ipLineFilterKey struct {
+	pattern string
+	negate  bool
+}
+
+var (
+	ipLineFiltersMu sync.Mutex
+	ipLineFilters   = map[ipLineFilterKey]logsql.FilterExpr{}
+)
+
+// ipLineFilterNodes is IPLineFilter as a tree of nodes, not memoized.
+func ipLineFilterNodes(pattern string, negate bool) logsql.FilterExpr {
+	return ipLineFilterBuild(pattern, negate, func(split logsql.FilterExpr) logsql.FilterExpr { return split })
+}
+
+// ipLineFilterBuild writes the filter of a pattern; split holds the split of an IPv4 pattern's regexps as the
+// caller wants it (the nodes, or their text held in parentheses). The split is an OR, so it is held in parentheses
+// where it stands alone too (a line filter beside a stream filter, `a OR b` would read as `sel AND a OR b`).
+func ipLineFilterBuild(pattern string, negate bool, split func(logsql.FilterExpr) logsql.FilterExpr) logsql.FilterExpr {
 	var f logsql.FilterExpr
 	if p := ipv4ValuePatternOf(pattern); p.ipv4 {
-		f = ipv4Split("", p.regexps)
+		f = split(ipv4Split("", p.regexps))
 		if p.literal != "" {
 			f = logsql.AllOf{logsql.Regexp{Pattern: regexp.QuoteMeta(p.literal)}, f}
+		} else if or, ok := f.(logsql.AnyOf); ok {
+			f = logsql.Group{Expr: or}
 		}
 	} else {
 		f = logsql.Regexp{Pattern: p.regexps.exact}

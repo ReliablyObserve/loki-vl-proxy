@@ -4,8 +4,11 @@ import (
 	"math/rand"
 	"net/netip"
 	"regexp"
+	"regexp/syntax"
+	"strconv"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
@@ -140,7 +143,7 @@ func TestIPv4SplitMatchesExact(t *testing.T) {
 		if exact && !direct && !guard {
 			t.Fatalf("ip(%q) on %q: exact keeps a line neither direct nor guard keeps", pattern, line)
 		}
-		if got := lineKept(t, IPLineFilter(pattern, false), line); got != exact {
+		if got := lineKept(t, ipLineFilterNodes(pattern, false), line); got != exact {
 			t.Fatalf("ip(%q) on %q: line filter %v, exact %v", pattern, line, got, exact)
 		}
 	}
@@ -206,7 +209,7 @@ func FuzzIPv4LineRegexLikeLoki(f *testing.F) {
 		if got := re.MatchString(line); got != want {
 			t.Fatalf("ip(%q) on %q: regexp %v, Loki %v", pattern, line, got, want)
 		}
-		if got := lineKept(t, IPLineFilter(pattern, false), line); got != want {
+		if got := lineKept(t, ipLineFilterNodes(pattern, false), line); got != want {
 			t.Fatalf("ip(%q) on %q: line filter %v, Loki %v", pattern, line, got, want)
 		}
 	})
@@ -222,5 +225,75 @@ func TestIPv4ValueFilterWithoutBoxes(t *testing.T) {
 	}
 	if want := (logsql.FieldFilter{Field: "addr", Op: logsql.FieldOpRegexp, Value: IPLineFilterRegex("2001:db8::1")}); f[1] != want {
 		t.Errorf("value filter = %v, want the line regexp alone (%v)", f[1], want)
+	}
+}
+
+// decimalRange writes the numbers a..b without leading zeros, the whole octet range in its short form.
+// conformance: semantics/ip-filter-ipv4-after-hex-colon
+func TestDecimalRangeExact(t *testing.T) {
+	for _, c := range [][2]int{{0, 255}, {0, 9}, {10, 99}, {0, 99}, {5, 250}, {100, 255}, {128, 255}, {0, 127}, {7, 7}, {255, 255}} {
+		re := regexp.MustCompile(`^` + decimalRange(c[0], c[1]) + `$`)
+		for n := 0; n <= 999; n++ {
+			for _, s := range []string{strconv.Itoa(n), "0" + strconv.Itoa(n), "00" + strconv.Itoa(n)} {
+				want := s == strconv.Itoa(n) && n >= c[0] && n <= c[1]
+				if got := re.MatchString(s); got != want {
+					t.Fatalf("decimalRange(%d, %d) on %q: %v, want %v", c[0], c[1], s, got, want)
+				}
+			}
+		}
+	}
+}
+
+// The regexps the line and label filters send are parsed by VictoriaLogs on every query (regexp/syntax Parse, Simplify
+// and String). Printing a class that holds the Unicode range above the ASCII letters costs a millisecond when the
+// class is closed under case folding, or 5 microseconds when it leaves out every ASCII letter; the edges are written
+// as classes that are not closed (ipv4Other, ipv4Trail), which print at once. No class of a regexp may be closed.
+// conformance: semantics/ip-filter-ipv4-after-hex-colon
+func TestIPv4RegexpsParseCheap(t *testing.T) {
+	var closed func(re *syntax.Regexp) bool
+	closed = func(re *syntax.Regexp) bool {
+		if re.Op == syntax.OpCharClass && len(re.Rune) > 0 && re.Rune[len(re.Rune)-1] == unicode.MaxRune {
+			in := func(r rune) bool {
+				for i := 0; i < len(re.Rune); i += 2 {
+					if re.Rune[i] <= r && r <= re.Rune[i+1] {
+						return true
+					}
+				}
+				return false
+			}
+			fold := true
+			for r := 'a'; r <= 'z'; r++ {
+				fold = fold && in(r) == in(unicode.ToUpper(r))
+			}
+			if fold {
+				return true
+			}
+		}
+		for _, sub := range re.Sub {
+			if closed(sub) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, pattern := range []string{"10.0.0.1", "10.0.0.0/24", "0.0.0.0/0", "10.0.1.250-10.0.3.4", "9.0.0.0-100.255.255.255"} {
+		boxes, _ := ipv4Boxes(pattern)
+		r := ipv4LineRegexps(boxes)
+		for name, text := range map[string]string{"exact": r.exact, "direct": r.direct, "guard": r.guard} {
+			re, err := syntax.Parse(text, syntax.Perl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if closed(re) {
+				t.Errorf("ip(%q) %s regexp holds a class closed under case folding, which VictoriaLogs prints slowly", pattern, name)
+			}
+		}
+	}
+	// The check sees the classes that cost: the old edge (every ASCII letter out) and a bare [^0-9.].
+	for _, text := range []string{`[^0-9.A-Za-z]`, `[^0-9.]`} {
+		re, _ := syntax.Parse(text, syntax.Perl)
+		if !closed(re) {
+			t.Errorf("%s is closed under case folding", text)
+		}
 	}
 }

@@ -2022,6 +2022,7 @@
     "internal/querycorpus/grammar_sweep_test.go | semantics/unwrap-in-log-query",
     "internal/querycorpus/grammar_sweep_test.go | semantics/unwrap-unknown-conversion-function-accepted",
     "internal/querycorpus/grammar_sweep_test.go | semantics/vector-aggregation-over-scalar-rejected",
+    "internal/querycorpus/ip_line_filter_precedence_test.go | semantics/ip-line-filter-ipv4-like-loki",
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/drop-before-unwrap-stream-label",
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/keep-before-parser-unwrap-identity",
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/keep-before-unwrap-identity-in-operands",
@@ -2715,7 +2716,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 608,
+      "go": 609,
       "playwright": 1
     },
     "page_kinds": {

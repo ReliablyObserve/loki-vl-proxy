@@ -245,7 +245,7 @@ func IPLabelFilter(field, pattern string, negate bool) (logsql.FilterExpr, bool)
 	if !ok {
 		return nil, false
 	}
-	f = logsql.DeferredExpr{Raw: built.String()}
+	f = renderedFilter(built)
 	ipLabelFiltersMu.Lock()
 	if len(ipLabelFilters) >= ipv4ValuePatternLimit {
 		clear(ipLabelFilters)
@@ -253,6 +253,12 @@ func IPLabelFilter(field, pattern string, negate bool) (logsql.FilterExpr, bool)
 	ipLabelFilters[key] = f
 	ipLabelFiltersMu.Unlock()
 	return f, true
+}
+
+// renderedFilter is the filter as its text, rendered once: the memos of the ip() filters hold it, so a query that
+// repeats a pattern does not print its long regexps again.
+func renderedFilter(f logsql.FilterExpr) logsql.FilterExpr {
+	return logsql.DeferredExpr{Raw: f.String()}
 }
 
 // buildIPLabelFilter is IPLabelFilter as a tree of nodes, not memoized.

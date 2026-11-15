@@ -20,6 +20,8 @@ func lineKept(t *testing.T, f logsql.FilterExpr, line string) bool {
 		return regexp.MustCompile(n.Pattern).MatchString(line)
 	case logsql.NotExpr:
 		return !lineKept(t, n.Expr, line)
+	case logsql.Group:
+		return lineKept(t, n.Expr, line)
 	case logsql.AllOf:
 		for _, e := range n {
 			if !lineKept(t, e, line) {
@@ -175,8 +177,8 @@ func TestIPLineFilter(t *testing.T) {
 		{"10.0.0.1-10.0.0.5", []string{"x 10.0.0.3 y"}, []string{"10.0.0.9", "10.0.0.31"}},
 		{"10.0.0.1", []string{"a 10.0.0.1 b"}, []string{"a 10.0.0.12 b", "a 10.0.0.10 b"}},
 	} {
-		in := IPLineFilter(c.pattern, false)
-		out := IPLineFilter(c.pattern, true)
+		in := ipLineFilterNodes(c.pattern, false)
+		out := ipLineFilterNodes(c.pattern, true)
 		mustParseLogsQL(t, "* "+in.String())
 		mustParseLogsQL(t, "* "+out.String())
 		if _, ok := out.(logsql.NotExpr); !ok {
@@ -194,8 +196,38 @@ func TestIPLineFilter(t *testing.T) {
 		}
 	}
 	// An IPv4 pattern is checked on its fixed octets first, which VictoriaLogs looks up in its bloom filters.
+	if all, ok := ipLineFilterNodes("10.0.0.0/24", false).(logsql.AllOf); !ok || len(all) != 2 || all[0].String() != `~"10\\.0\\.0\\."` {
+		t.Errorf("IPv4 prefilter: %v", ipLineFilterNodes("10.0.0.0/24", false))
+	}
+}
+
+// The memoized filter prints the text of the tree it was built from and keeps its shape (the literal, then the
+// split), and binds as one filter beside the others of the query: a pattern without a fixed octet (0.0.0.0/0) is an
+// OR, held in parentheses, so `sel |= ip(...) |= "x"` is not read as `(sel AND a) OR (b AND x)`.
+// conformance: semantics/ip-line-filter-ipv4-like-loki
+func TestIPLineFilterMemoText(t *testing.T) {
+	for _, pattern := range []string{"10.0.0.1", "10.0.0.0/24", "0.0.0.0/0", "10.0.1.250-10.0.3.4", "::1", "2001:db8::/32"} {
+		for _, negate := range []bool{false, true} {
+			nodes := ipLineFilterNodes(pattern, negate)
+			want := nodes.String()
+			for range 2 { // the second call is the memoized one
+				got := IPLineFilter(pattern, negate)
+				if got.String() != want {
+					t.Fatalf("ip(%q) negate=%v: text\n%s\nwant\n%s", pattern, negate, got, want)
+				}
+				mustParseLogsQL(t, "* "+got.String()+` ~"x"`)
+			}
+		}
+	}
 	if all, ok := IPLineFilter("10.0.0.0/24", false).(logsql.AllOf); !ok || len(all) != 2 || all[0].String() != `~"10\\.0\\.0\\."` {
-		t.Errorf("IPv4 prefilter: %v", IPLineFilter("10.0.0.0/24", false))
+		t.Errorf("IPv4 prefilter of the memoized filter: %v", IPLineFilter("10.0.0.0/24", false))
+	}
+	if _, ok := IPLineFilter("10.0.0.0/24", true).(logsql.NotExpr); !ok {
+		t.Errorf("!= must negate the memoized filter")
+	}
+	both := logsql.AllOf{IPLineFilter("0.0.0.0/0", false), logsql.Regexp{Pattern: "x"}}.String()
+	if !strings.HasPrefix(both, "(") || !strings.HasSuffix(both, `) ~"x"`) {
+		t.Errorf("an OR line filter beside another filter: %s", both)
 	}
 }
 
