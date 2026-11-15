@@ -7,14 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.280.1] - 2026-11-15
-
-### Changed
-
-- A range log query no longer keeps fallbacks to a limit of 1000 in the limit cap, the cold read and the windowed read.
-  The route already rejects a `limit` that is not a positive integer as Loki does and gives an absent one the default,
-  so the readers always get a positive integer and those fallbacks could not run. No answer changes.
-
 ### Fixed
 
 - A range of a bare `0` (`rate({app="x"}[0])`, also with an offset or an unwrap) is now accepted as Loki accepts it,
@@ -25,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `400 parse error at line 1, col 1: syntax error: unexpected IDENTIFIER` before any VictoriaLogs call. Loki's
   lexer reads the name as a label name there; the proxy removed the comment and answered the query. A comment
   anywhere else, after the grouping keyword of a call included, is still skipped as Loki skips it.
+
+## [2.280.1] - 2026-11-15
+
+### Changed
+
+- A range log query no longer keeps fallbacks to a limit of 1000 in the limit cap, the cold read and the windowed read.
+  The route already rejects a `limit` that is not a positive integer as Loki does and gives an absent one the default,
+  so the readers always get a positive integer and those fallbacks could not run. No answer changes.
 
 ## [2.280.0] - 2026-11-15
 
