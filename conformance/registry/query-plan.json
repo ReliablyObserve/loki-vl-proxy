@@ -600,8 +600,9 @@
   "shadow": {
     "rows": 23787,
     "profiles": 12,
-    "native": 20830,
+    "native": 21292,
     "native_proxy_evaluated": 3879,
+    "native_loki_held": 462,
     "mismatches": 0,
     "rejected": 354,
     "delegated_by_construct": {
@@ -646,7 +647,7 @@
       "VectorAgg without empty": 9,
       "VectorLit": 9,
       "known divergence semantics/binary-operand-without-empty-collapses": 324,
-      "known divergence semantics/keep-before-unwrap-series-identity": 90,
+      "known divergence semantics/keep-before-unwrap-series-identity": 9,
       "known divergence semantics/keep-drop-blank-name-prints-back": 9,
       "known divergence semantics/label-filter-numeric-equality": 57,
       "known divergence semantics/label-replace-around-ranking-and-vector": 18,
@@ -655,9 +656,9 @@
       "known divergence semantics/translator-copies-unspaced-parser": 42,
       "known divergence semantics/translator-reads-marker-bytes-in-quoted-value": 12,
       "known divergence semantics/translator-reads-quoted-text-as-syntax": 12,
-      "known divergence semantics/translator-writes-reserved-field-names": 93,
+      "known divergence semantics/translator-writes-reserved-field-names": 9,
       "known divergence semantics/translator-writes-signed-number-with-blank": 12,
-      "known divergence semantics/unwrap-per-series-identity-raw-rows": 657
+      "known divergence semantics/unwrap-per-series-identity-raw-rows": 360
     },
     "flipped": [
       "LogSelect",

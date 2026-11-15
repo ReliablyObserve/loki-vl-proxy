@@ -1,6 +1,7 @@
 package querycorpus_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,6 +38,11 @@ type shadowSection struct {
 	// operand's request and the evaluation the proxy applies to its answer (proxy.PostAggregationPhysical), not to
 	// the string translator's text for the whole query. Included in Native.
 	NativeProxyEvaluated int `json:"native_proxy_evaluated"`
+	// NativeLokiHeld are the native rows of a recorded known divergence that the proxy serves from the plan
+	// (proxy.PlanServedText): the plan writes Loki's reading where the string translator writes another text, so the
+	// row is held to the text the proxy serves (the lowering's, byte for byte) and its answers to Loki by the
+	// differential its registry case names (servedDivergences), not to the translator. Included in Native.
+	NativeLokiHeld int `json:"native_loki_held"`
 	// Mismatches are the rows where the lowering answers differently, or answers a query the translator rejects.
 	Mismatches int `json:"mismatches"`
 	// Rejected are the rows the proxy refuses before anything is translated (the request's validation:
@@ -74,10 +80,44 @@ func (p planProfile) lowerProfile() lower.Profile {
 }
 
 // runShadow compares lowerFn with the string translator on the first limit corpus rows (all when limit is 0) and
-// returns the counts and the mismatching rows.
+// returns the counts and the mismatching rows. No row is held to what the proxy serves: a stand-in lowering is held
+// to the translator, or delegated as the recorded divergence its row is.
 func runShadow(t *testing.T, lowerFn lowering, limit int) (shadowSection, []string) {
-	sec, problems, _ := runShadowSlices(t, lowerFn, limit)
+	sec, problems, _ := runShadowSlices(t, lowerFn, nil, limit)
 	return sec, problems
+}
+
+// servedText is the text the proxy serves from the plan for a query under a profile (proxy.PlanServedText), and
+// false when the string translator translates it.
+type servedText func(q string, prof planProfile) (string, bool)
+
+// proxyServed is servedText of a proxy built with the defaults the proxy runs with (-query-plan-lowering on, the
+// constructs and stage families of QueryPlanFlippedConstructs and QueryPlanFlippedLogStages).
+func proxyServed(t *testing.T) servedText {
+	t.Helper()
+	p, err := proxy.New(proxy.Config{BackendURL: "http://unused", LogLevel: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	return func(q string, prof planProfile) (string, bool) { return p.PlanServedText(q, prof.lowerProfile()) }
+}
+
+// servedDivergences are the recorded known divergences a row of which the proxy may serve from the plan, each with
+// the differential that holds the plan's answers to Loki (recorded Loki answers, the Loki oracle and VictoriaLogs
+// v1.49 and v1.53). A served row of another divergence stays delegated: no differential holds its answer.
+var servedDivergences = map[string]string{
+	knownKeepIdentity:    "TestKeepUnwrapIdentityMatchLoki (internal/querycorpus)",
+	knownDynamicIdentity: "TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus)",
+	"semantics/translator-writes-reserved-field-names": "TestReservedFieldLabelsMatchLoki (internal/queryplan/lower)",
+}
+
+// encodeOrEmpty is the text of op, or "" for none.
+func encodeOrEmpty(op physical.Op) string {
+	if op == nil {
+		return ""
+	}
+	return translator.EncodePhysical(op)
 }
 
 // rejectedByValidation reports a query the request's validation refuses before anything is translated: the parser
@@ -91,8 +131,9 @@ func rejectedByValidation(q string) bool {
 	return expr != nil && queryplan.Validate(expr) != nil
 }
 
-// runShadowSlices is runShadow with the counts of each profile × construct (the construct at the top of the plan).
-func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, []string, map[[2]string]*shadowSlice) {
+// runShadowSlices is runShadow with the counts of each profile × construct (the construct at the top of the plan); a
+// row of servedDivergences that served names is held to the text the proxy serves for it.
+func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit int) (shadowSection, []string, map[[2]string]*shadowSlice) {
 	t.Helper()
 	corpus := planCorpus(t)
 	if limit > 0 && limit < len(corpus) {
@@ -203,6 +244,24 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 				// a number as Loki does, the translator writes the exact text of the literal.
 				caseID, ok = "semantics/label-filter-numeric-equality", true
 			}
+			if ok && served != nil && servedDivergences[caseID] != "" {
+				// The proxy serves the plan's text for the row: it must be the lowering's, byte for byte, and the
+				// case's differential holds its answers to Loki.
+				switch text, isServed := served(q, prof); {
+				case !isServed || text == legacy:
+					// The string translator's text, or the plan's where it writes the translator's reading (a
+					// parser's series identity under a binary operation, which lowerMetric writes with the stream's
+					// series): the row stays the divergence.
+				case text == translator.EncodePhysical(got):
+					sec.Native++
+					sec.NativeLokiHeld++
+					sl.native++
+					continue
+				default:
+					fail(fmt.Sprintf("%s: %q: the proxy serves %q, the lowering writes %q", prof.name, q, text, encodeOrEmpty(got)))
+					continue
+				}
+			}
 			if ok {
 				// The translator is the wrong one here (knownTypedDivergencesPath, with its registry case):
 				// not a mismatch of the lowering, and not native until the plan serves it.
@@ -272,7 +331,7 @@ func sameAsTranslator(got physical.Op, legacy string) bool {
 // conformance: architecture-syntax-package-layering
 func TestPlanShadow(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
-	got, problems, slices := runShadowSlices(t, nativeLowering, 0)
+	got, problems, slices := runShadowSlices(t, nativeLowering, proxyServed(t), 0)
 	got.Flipped = proxy.QueryPlanFlippedConstructs
 	got.FlippedLogStages = proxy.QueryPlanFlippedLogStages
 	// A flipped construct is served from the lowering with the corpus as its proof: it must be native under every
