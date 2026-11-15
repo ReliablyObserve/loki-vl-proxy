@@ -1,0 +1,274 @@
+{
+ "generated_by": "go run ./test/dailyreport",
+ "date": "2026-11-15",
+ "commit": "8d3d89252cf102da1a537962dbc3b7f5747f6258",
+ "run": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43693747116",
+ "loki_version": "3.7.9",
+ "victorialogs_versions": [
+  "v1.49.0",
+  "v1.53.0"
+ ],
+ "red": true,
+ "reasons": [
+  "scheduled workflow error-answers-record.yaml: no scheduled run recorded",
+  "scheduled workflow parity-refresh.yaml: last scheduled run 2026-11-14 ended failure",
+  "scheduled workflow perf-daily.yaml: last scheduled run 2026-11-09 ended failure",
+  "scheduled workflow query-corpus.yaml: last scheduled run 2026-11-15 ended failure",
+  "error answers: the stack's Loki answers 12 recorded row(s) differently (re-record exit 1)",
+  "query-corpus.yaml: the live re-verification of the sweep and the differentials ended failure on 2026-11-15",
+  "parity slice: 1 difference cluster(s) are claimed by no registry case",
+  "perf smoke: 2 row(s) above 2x Loki"
+ ],
+ "workflows": {
+  "checked_at": "2026-11-15T08:17:29Z",
+  "scheduled": 12,
+  "problems": [
+   {
+    "problem": "no scheduled run recorded",
+    "workflow": "error-answers-record.yaml"
+   },
+   {
+    "problem": "last scheduled run 2026-11-14 ended failure",
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43601485848",
+    "workflow": "parity-refresh.yaml"
+   },
+   {
+    "problem": "last scheduled run 2026-11-09 ended failure",
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/42556435495",
+    "workflow": "perf-daily.yaml"
+   },
+   {
+    "problem": "last scheduled run 2026-11-15 ended failure",
+    "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43667889923",
+    "workflow": "query-corpus.yaml"
+   }
+  ]
+ },
+ "registry": {
+  "cases": 371,
+  "by_status": {
+   "documented": 15,
+   "fixed": 131,
+   "no gap": 84,
+   "open": 131,
+   "owner-kept": 7,
+   "upstream": 3
+  },
+  "open_by_impact": {
+   "api-only": 22,
+   "drilldown-visible": 13,
+   "edge": 35,
+   "explore-visible": 60,
+   "grafana-datasource": 1
+  }
+ },
+ "cases": {
+  "v1.49.0": {
+   "behaviour_changed": 1,
+   "counts": {
+    "blocked": 52,
+    "data_unchecked": 12,
+    "differs": 1,
+    "empty": 228,
+    "matches": 33,
+    "not_executable": 44
+   },
+   "proposed_close": 6,
+   "regressions": 0,
+   "reuse": {
+    "counts": {
+     "reused": 231
+    },
+    "not_reused": [],
+    "cold_vl_calls": 524,
+    "repeat_vl_calls": 2,
+    "repeat_hit_ratio": {
+     "loki:l1_memory": 0.987069
+    }
+   }
+  },
+  "v1.53.0": {
+   "behaviour_changed": 1,
+   "counts": {
+    "blocked": 52,
+    "data_unchecked": 12,
+    "differs": 1,
+    "empty": 228,
+    "matches": 33,
+    "not_executable": 44
+   },
+   "proposed_close": 6,
+   "regressions": 0,
+   "reuse": {
+    "counts": {
+     "not_measured": 2,
+     "reused": 229
+    },
+    "not_reused": [],
+    "cold_vl_calls": 521,
+    "repeat_vl_calls": 1,
+    "repeat_hit_ratio": {
+     "loki:l1_memory": 0.986957
+    }
+   }
+  }
+ },
+ "errors": {
+  "recorded": {
+   "comparable_rows": 231,
+   "matching_rows": 223,
+   "known_differences": 8,
+   "known_leaks": 0
+  },
+  "live": {
+   "rows": 335,
+   "changed": 12,
+   "not_re_recorded": 71,
+   "ok": false
+  },
+  "replay_ok": true
+ },
+ "sweep": {
+  "queries": 25824,
+  "loki_answers": {
+   "accepted": 16982,
+   "rejected": 8842
+  },
+  "differences_by_kind": {
+   "VictoriaLogs rejects the translator text": 393,
+   "accepted, translation fails": 32,
+   "error text differs": 124,
+   "error text differs, rejected at translation": 12,
+   "proxy accepts, Loki rejects": 48,
+   "proxy rejects, Loki accepts": 18,
+   "tree fact differs: binary operation": 17,
+   "tree fact differs: has a log pipeline": 3,
+   "tree fact differs: offsets": 4,
+   "tree fact differs: outermost operation": 4
+  },
+  "live_check": {
+   "conclusion": "failure",
+   "date": "2026-11-15",
+   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43667889923",
+   "workflow": "query-corpus.yaml"
+  },
+  "recorded_file": "conformance/registry/grammar-sweep.json"
+ },
+ "parity": {
+  "clusters": 19,
+  "conformance_ok": false,
+  "exit": 0,
+  "loki": "v3.7.9",
+  "mode": "validate",
+  "not_reproducible": 0,
+  "problems": 350,
+  "ref": "55632c96",
+  "requests": 162,
+  "unclaimed": 1
+ },
+ "perf_daily": {
+  "commit": "55632c9665913a125d482217a0cb5d178648ceb8",
+  "comparable": 400,
+  "date": "2026-11-15",
+  "distribution": {
+   "cold": {
+    "above": 2,
+    "below": 94,
+    "between": 7,
+    "close": 84,
+    "green": 178,
+    "rows": 187,
+    "share_below": 50.3,
+    "share_green": 95.2
+   },
+   "warm": {
+    "above": 0,
+    "below": 24,
+    "between": 0,
+    "close": 189,
+    "green": 213,
+    "rows": 213,
+    "share_below": 11.3,
+    "share_green": 100
+   }
+  },
+  "loki_failed": 8,
+  "over_2x": [
+   {
+    "loki_s": 0.019,
+    "mode": "cold",
+    "profile": "loki-defaults",
+    "proxy_s": 0.288,
+    "range": "1h",
+    "set": "drilldown-patterns",
+    "shape": "DP1 patterns of a plain-text service"
+   },
+   {
+    "loki_s": 0.264,
+    "mode": "cold",
+    "profile": "loki-defaults",
+    "proxy_s": 1.894,
+    "range": "1h",
+    "set": "drilldown-patterns",
+    "shape": "DP2 patterns of an environment"
+   }
+  ],
+  "ratchet_lost": [],
+  "ratchet_problem": "",
+  "reuse": {
+   "cold_vl_calls": 544,
+   "repeat_vl_calls": 507.5,
+   "repeat_without_vl_calls": 8,
+   "rows": 217
+  },
+  "reuse_lost": [],
+  "rows": 217
+ },
+ "perf_weekly": {
+  "date": "2026-11-09",
+  "loki_version": "3.7.9",
+  "pairs": 522,
+  "faster": 324,
+  "par": 187,
+  "slower": 11,
+  "distribution": [
+   {
+    "above": 5,
+    "below": 329,
+    "between": 8,
+    "close": 226,
+    "profile": "loki-defaults",
+    "request": "first",
+    "rows": 568
+   },
+   {
+    "above": 0,
+    "below": 76,
+    "between": 2,
+    "close": 684,
+    "profile": "loki-defaults",
+    "request": "repeat",
+    "rows": 762
+   },
+   {
+    "above": 3,
+    "below": 308,
+    "between": 10,
+    "close": 123,
+    "profile": "aligned",
+    "request": "first",
+    "rows": 444
+   },
+   {
+    "above": 0,
+    "below": 15,
+    "between": 3,
+    "close": 508,
+    "profile": "aligned",
+    "request": "repeat",
+    "rows": 526
+   }
+  ],
+  "over_2x_rows": 4
+ }
+}

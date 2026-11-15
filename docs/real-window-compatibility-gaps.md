@@ -18,7 +18,15 @@ mdx:
 
 <!-- verified-numbers:start -->
 
-The numbers on this page are not verified by a live run yet: the daily report (`.github/workflows/daily-report.yaml`) has recorded no run on `main`.
+Verified 2026-11-15 on `8d3d89252cf1` (Loki 3.7.9, VictoriaLogs v1.49.0 and v1.53.0), 8 check(s) red; see the [daily summary](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/registry/generated/verification/summary.json).
+
+- Registry: 131 open, 131 fixed, 15 documented, 7 owner-kept, 3 upstream; open by impact: 60 explore-visible, 13 drilldown-visible, 1 grafana-datasource, 22 api-only, 35 edge.
+- Registry cases sent to Loki and the proxy, per VictoriaLogs version: v1.49.0: 33 match, 1 differ on equal data, 240 not comparable on that day's data, 52 blocked; v1.53.0: 33 match, 1 differ on equal data, 240 not comparable on that day's data, 52 blocked.
+- Errors: 223 of 231 recorded Loki answers match, 8 known differences, 0 known leaks; 323 of 335 rows answered as recorded by the live Loki.
+- Grammar sweep of 25824 queries, re-verified live by `query-corpus.yaml` on 2026-11-15 (failure): 393 VictoriaLogs rejects the translator text, 124 error text differs, 48 proxy accepts, Loki rejects, 32 accepted, translation fails, 18 proxy rejects, Loki accepts, 17 tree fact differs: binary operation, 12 error text differs, rejected at translation, 4 tree fact differs: offsets, 4 tree fact differs: outermost operation, 3 tree fact differs: has a log pipeline.
+- Performance, weekly full run verified 2026-11-09 (Loki 3.7.9): 522 comparable shape x range pairs, 324 faster, 187 on par, 11 slower; 4 rows above 2x Loki.
+- Performance, daily smoke verified 2026-11-15: 217 rows, 2 above 2x Loki, 0 weekly ratchet rows lost.
+- Cache reuse, verified 2026-11-15: registry cases on v1.49.0: 231 repeats served from the cache, 0 not (2 VictoriaLogs calls on the repeats); registry cases on v1.53.0: 229 repeats served from the cache, 0 not (1 VictoriaLogs calls on the repeats); perf smoke: 8 of 217 rows repeat without calling VictoriaLogs.
 
 <!-- verified-numbers:end -->
 
