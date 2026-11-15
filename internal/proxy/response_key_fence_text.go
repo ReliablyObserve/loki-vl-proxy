@@ -88,30 +88,31 @@ func foldAnchors(c byte) (up byte, wide byte) {
 // is as fast on a clean query as strings.Contains.
 func indexFoldFrom(s string, from int, lower string) int {
 	up, wide := foldAnchors(lower[0])
-	anchors := [3]byte{lower[0], up, wide}
-	var next [3]int
-	n := 2
-	if wide != 0 {
-		n = 3
+	type candidate struct {
+		pos int
+		c   byte
 	}
-	for k := 0; k < n; k++ {
-		next[k] = indexByteFrom(s, from, anchors[k])
+	cands := [3]candidate{{-1, lower[0]}, {-1, up}, {-1, wide}}
+	for i := range cands {
+		if p := &cands[i]; p.c != 0 {
+			p.pos = indexByteFrom(s, from, p.c)
+		}
 	}
 	for {
-		best := -1
-		for k := 0; k < n; k++ {
-			if next[k] >= 0 && (best < 0 || next[k] < next[best]) {
-				best = k
+		var best *candidate
+		for i := range cands {
+			if p := &cands[i]; p.pos >= 0 && (best == nil || p.pos < best.pos) {
+				best = p
 			}
 		}
-		if best < 0 {
+		if best == nil {
 			return -1
 		}
-		i := next[best]
-		if _, ok := matchFoldAt(s[i:], lower); ok {
-			return i
+		at := best.pos
+		if _, ok := matchFoldAt(s[at:], lower); ok {
+			return at
 		}
-		next[best] = indexByteFrom(s, i+1, anchors[best])
+		best.pos = indexByteFrom(s, at+1, best.c)
 	}
 }
 
