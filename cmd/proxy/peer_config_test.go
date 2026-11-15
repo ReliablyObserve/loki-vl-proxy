@@ -5,8 +5,10 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 )
 
@@ -34,5 +36,47 @@ func TestPeerReplicationFlags(t *testing.T) {
 				t.Fatalf("replication factor = %d, want %d", got.proxyCfg.peerReplicationFactor, tc.want)
 			}
 		})
+	}
+}
+
+// The peer push buffer flags default to the cache's defaults, 0 turns
+// buffering off, and a negative value is refused at start.
+//
+// conformance: peer-cache-push-replay
+func TestPeerPushBufferFlags(t *testing.T) {
+	capture := func(t *testing.T, args ...string) (runtimeOptions, error) {
+		t.Helper()
+		sentinel := errors.New("captured config")
+		var got runtimeOptions
+		err := run(append([]string{"-server.admin-auth-token=test-token"}, args...), func(string) string { return "" }, io.Discard, func(chan<- os.Signal, ...os.Signal) {}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher { return &fakeOTLPPusher{} }, func(opts runtimeOptions, _ *slog.Logger, _ signalNotifier, _ otlpPusherFactory) (*runtimeState, error) {
+			got = opts
+			return nil, sentinel
+		}, nil, nil)
+		if errors.Is(err, sentinel) {
+			err = nil
+		}
+		return got, err
+	}
+	got, err := capture(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.proxyCfg.peerPushBufferMaxEntries != cache.DefaultPushBufferMaxEntries || got.proxyCfg.peerPushBufferMaxBytes != cache.DefaultPushBufferMaxBytes {
+		t.Fatalf("defaults %d / %d, want the cache's %d / %d", got.proxyCfg.peerPushBufferMaxEntries, got.proxyCfg.peerPushBufferMaxBytes, cache.DefaultPushBufferMaxEntries, cache.DefaultPushBufferMaxBytes)
+	}
+	if peerPushBufferBound(0) != -1 || peerPushBufferBound(int64(0)) != -1 || peerPushBufferBound(5) != 5 {
+		t.Fatal("0 must turn the buffer off in the peer cache config, other values pass through")
+	}
+	for _, arg := range []string{"-peer-push-buffer-max-entries=-1", "-peer-push-buffer-max-bytes=-1"} {
+		got, err := capture(t, arg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validateExecutionLimits(got.proxyCfg); err == nil || !strings.Contains(err.Error(), "peer-push-buffer") {
+			t.Fatalf("%s: %v", arg, err)
+		}
+	}
+	if err := validateExecutionLimits(got.proxyCfg); err != nil {
+		t.Fatalf("defaults refused: %v", err)
 	}
 }

@@ -92,7 +92,48 @@ func keepSeriesGroupingRange(ra *logqlpkg.RangeAggregation) (logqlpkg.Expr, bool
 	if !ok {
 		return ra, false
 	}
+	if pipeline, cut := withoutBlankKeep(lq.Pipeline); cut {
+		// The aggregation and its log query in one allocation, apart from the parsed tree, which may be shared.
+		inner := &struct {
+			ra logqlpkg.RangeAggregation
+			lq logqlpkg.LogQuery
+		}{ra: *ra, lq: logqlpkg.LogQuery{Selector: lq.Selector, Pipeline: pipeline}}
+		inner.ra.Inner = &inner.lq
+		ra = &inner.ra
+	}
 	return &logqlpkg.VectorAggregation{Op: logqlpkg.VectorSum, Grouping: &logqlpkg.Grouping{Labels: kept}, Inner: ra}, true
+}
+
+// withoutBlankKeep returns the pipeline without its keep when it has one keep, which lists only characters Loki
+// reads as names no stream has (`| keep\v`, the one spelling of an empty list, see logql.dropKeepList), and only line
+// filters and decolorize follow it, and whether it cut one. Such a keep deletes every label but the error labels,
+// which a sum by () over the range aggregation folds in the same way, and the stages after it read no label: the
+// query means the same without it, in a form the translation reads (it reads a keep of no name as a phrase). With no
+// keep left, the rewrite is not rewritten again.
+func withoutBlankKeep(pipeline []logqlpkg.Stage) ([]logqlpkg.Stage, bool) {
+	last := -1
+	for i, stage := range pipeline {
+		if _, ok := stage.(*logqlpkg.KeepStage); ok {
+			if last >= 0 {
+				return pipeline, false
+			}
+			last = i
+		}
+	}
+	if last < 0 {
+		return pipeline, false
+	}
+	if keep := pipeline[last].(*logqlpkg.KeepStage); len(keep.Labels)+len(keep.Matchers) > 0 {
+		return pipeline, false
+	}
+	for _, stage := range pipeline[last+1:] {
+		switch stage.(type) {
+		case *logqlpkg.LineFilterStage, *logqlpkg.DecolorizeStage:
+		default:
+			return pipeline, false
+		}
+	}
+	return append(slices.Clip(pipeline[:last]), pipeline[last+1:]...), true
 }
 
 // keepGrouped reports whether v is the sum by (kept labels) keepSeriesGrouping

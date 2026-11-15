@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -22,21 +23,21 @@ func TestOrderedJSONResultCacheExactRepeat(t *testing.T) {
 		t.Run(shape.name, func(t *testing.T) {
 			backend, fixture := newDLVBaselineBackend(t, shape, base)
 			p := newDLVBaselineProxy(t, backend.URL, false)
+			origins := traceVLCallOrigins(p)
 			from, to := base.Add(time.Minute), base.Add(3*time.Minute)
 			target, headers := dlvBaselineRequest(shape, from, to)
 			want := dlvBaselineWant(fixture.rows, shape, from, to, "10", "alpha")
-			first := doCompatProxyRequest(p, target, headers)
-			if got := dlvBaselineReadMatrix(t, first); len(want) == 0 || !reflect.DeepEqual(got, want) {
-				t.Fatalf("cold response: got %v want %v", got, want)
+			first := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "cold"))
+			if got := dlvBaselineReadMatrix(t, first); len(want) == 0 || !reflect.DeepEqual(got, want) || origins.made("cold") == 0 {
+				t.Fatalf("cold response (%d backend calls): got %v want %v", origins.made("cold"), got, want)
 			}
-			before := fixture.calls.Load()
 			layerBefore := p.cache.LayerStats()[cache.LayerLoki].L1
-			second := doCompatProxyRequest(p, target, headers)
+			second := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "repeat"))
 			if !bytes.Equal(first.Body.Bytes(), second.Body.Bytes()) || first.Code != second.Code {
 				t.Fatalf("exact repeat changed response: first=%d %s second=%d %s", first.Code, first.Body, second.Code, second.Body)
 			}
-			if after := fixture.calls.Load(); after != before {
-				t.Fatalf("exact repeat read backend again: calls %d -> %d", before, after)
+			if calls := origins.made("repeat"); calls != 0 {
+				t.Fatalf("exact repeat read backend again: %d calls", calls)
 			}
 			layerAfter := p.cache.LayerStats()[cache.LayerLoki].L1
 			if layerAfter.Requests-layerBefore.Requests != 1 || layerAfter.Hits-layerBefore.Hits != 1 || layerAfter.ReadBytes-layerBefore.ReadBytes != int64(first.Body.Len()) {
@@ -51,6 +52,10 @@ func orderedJSONResultKey(p *Proxy, target string, headers map[string]string) st
 	for k, v := range headers {
 		r.Header.Set(k, v)
 	}
+	if r.URL.Path == "/loki/api/v1/query_range" {
+		_ = r.ParseForm()
+		r = p.withDefaultEntryLimit(r) // the route adds the default limit before the key is built
+	}
 	return p.queryRangeCacheKey(r, r.FormValue("query"))
 }
 
@@ -60,10 +65,11 @@ func TestOrderedJSONResultCacheIsolationAndExpiry(t *testing.T) {
 	shape := dlvBaselineShapes[1]
 	backend, fixture := newDLVBaselineBackend(t, shape, base)
 	p := newDLVBaselineProxy(t, backend.URL, false)
+	origins := traceVLCallOrigins(p)
 	from, to := base.Add(time.Minute), base.Add(3*time.Minute)
 	target, _ := dlvBaselineRequest(shape, from, to)
 	keys := map[string]bool{}
-	for _, identity := range []struct{ tenant, account, auth, tag string }{
+	for n, identity := range []struct{ tenant, account, auth, tag string }{
 		{"team-a", "10", "alpha", ""},
 		{"team-b", "20", "alpha", ""},
 		{"team-a", "10", "beta", ""},
@@ -76,37 +82,38 @@ func TestOrderedJSONResultCacheIsolationAndExpiry(t *testing.T) {
 		}
 		keys[key] = true
 		want := dlvBaselineWant(fixture.rows, shape, from, to, identity.account, identity.auth)
-		cold := doCompatProxyRequest(p, target, headers)
-		if got := dlvBaselineReadMatrix(t, cold); !reflect.DeepEqual(got, want) {
-			t.Fatalf("identity %+v: got %v want %v", identity, got, want)
+		coldOrigin, warmOrigin := "cold-"+strconv.Itoa(n), "warm-"+strconv.Itoa(n)
+		cold := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, coldOrigin))
+		if got := dlvBaselineReadMatrix(t, cold); !reflect.DeepEqual(got, want) || origins.made(coldOrigin) == 0 {
+			t.Fatalf("identity %+v (%d backend calls): got %v want %v", identity, origins.made(coldOrigin), got, want)
 		}
 		body, remaining, ok := p.cache.GetWithTTL(key)
 		if !ok || !bytes.Equal(stripQueryStats(body), cold.Body.Bytes()) || remaining <= 4*time.Minute || remaining > 5*time.Minute {
 			t.Fatalf("missing/incorrect response entry: found=%t ttl=%s body=%s", ok, remaining, body)
 		}
-		before := fixture.calls.Load()
-		warm := doCompatProxyRequest(p, target, headers)
-		if !bytes.Equal(warm.Body.Bytes(), cold.Body.Bytes()) || fixture.calls.Load() != before {
-			t.Fatalf("identity %+v did not reuse its own complete reply", identity)
+		warm := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, warmOrigin))
+		if !bytes.Equal(warm.Body.Bytes(), cold.Body.Bytes()) || origins.made(warmOrigin) != 0 {
+			t.Fatalf("identity %+v did not reuse its own complete reply (%d backend calls)", identity, origins.made(warmOrigin))
 		}
 	}
 	// A different caller has reused the pooled capture storage since this entry
 	// was written. Its bytes must remain owned by the first cached response.
 	firstHeaders := map[string]string{"X-Scope-OrgID": "team-a", "X-Auth-Token": "alpha"}
 	firstWant := dlvBaselineWant(fixture.rows, shape, from, to, "10", "alpha")
-	beforeFirst := fixture.calls.Load()
-	if got := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, firstHeaders)); !reflect.DeepEqual(got, firstWant) || fixture.calls.Load() != beforeFirst {
+	if got := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, withHeader(firstHeaders, vlCallOriginHeader, "first-again"))); !reflect.DeepEqual(got, firstWant) || origins.made("first-again") != 0 {
 		t.Fatal("capture-pool reuse changed the first caller's cached answer")
 	}
 	// Expiry is checked by the real cache, without sleeping or changing query bounds.
 	headers := map[string]string{"X-Scope-OrgID": "team-a", "X-Auth-Token": "alpha"}
-	before := fixture.calls.Load()
 	restore := cache.AdvanceClockForTesting(6 * time.Minute)
 	defer restore()
-	got := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, headers))
+	got := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "expired")))
 	want := dlvBaselineWant(fixture.rows, shape, from, to, "10", "alpha")
-	if !reflect.DeepEqual(got, want) || fixture.calls.Load() <= before {
+	if !reflect.DeepEqual(got, want) || origins.made("expired") == 0 {
 		t.Fatal("expired response was not fetched again correctly")
+	}
+	if untagged := origins.made(""); untagged != 0 {
+		t.Fatalf("%d backend calls were made for no client request", untagged)
 	}
 }
 
@@ -153,6 +160,7 @@ func TestOrderedJSONResultCacheOffsetBypass(t *testing.T) {
 	shape := dlvBaselineShapes[1]
 	backend, fixture := newDLVBaselineBackend(t, shape, base)
 	p := newDLVBaselineProxy(t, backend.URL, false)
+	origins := traceVLCallOrigins(p)
 	from, to := base.Add(2*time.Minute), base.Add(4*time.Minute)
 	target, headers := dlvBaselineRequest(shape, from, to)
 	u, err := url.Parse(target)
@@ -171,11 +179,11 @@ func TestOrderedJSONResultCacheOffsetBypass(t *testing.T) {
 		}
 		want[level] = shifted
 	}
-	for range 2 {
-		before := fixture.calls.Load()
-		got := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, headers))
-		if !reflect.DeepEqual(got, want) || fixture.calls.Load() <= before {
-			t.Fatalf("offset response: got %v want %v", got, want)
+	for i := range 2 {
+		origin := "offset-" + strconv.Itoa(i)
+		got := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, origin)))
+		if !reflect.DeepEqual(got, want) || origins.made(origin) == 0 {
+			t.Fatalf("offset response (%d backend calls): got %v want %v", origins.made(origin), got, want)
 		}
 	}
 	if _, _, ok := p.cache.GetWithTTL(orderedJSONResultKey(p, target, headers)); ok {
@@ -186,22 +194,22 @@ func TestOrderedJSONResultCacheOffsetBypass(t *testing.T) {
 func TestOrderedJSONResultCachePreservesSeriesWarning(t *testing.T) {
 	base := time.Unix(1700000400, 0).UTC()
 	shape := dlvBaselineShapes[1]
-	backend, fixture := newDLVBaselineBackend(t, shape, base)
+	backend, _ := newDLVBaselineBackend(t, shape, base)
 	p := newDLVBaselineProxy(t, backend.URL, false)
 	p.maxStatsQuerySeries = 1
+	origins := traceVLCallOrigins(p)
 	target, headers := dlvBaselineRequest(shape, base.Add(time.Minute), base.Add(3*time.Minute))
 	headers["X-Query-Tags"] = "Source=grafana-lokiexplore-app"
-	cold := doCompatProxyRequest(p, target, headers)
+	cold := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "cold"))
 	var body struct {
 		Warnings []string
 		Data     struct{ Result []json.RawMessage }
 	}
-	if cold.Code != http.StatusOK || json.Unmarshal(cold.Body.Bytes(), &body) != nil || len(body.Warnings) != 1 || len(body.Data.Result) != 1 {
+	if cold.Code != http.StatusOK || json.Unmarshal(cold.Body.Bytes(), &body) != nil || len(body.Warnings) != 1 || len(body.Data.Result) != 1 || origins.made("cold") == 0 {
 		t.Fatalf("expected intentional capped result with warning: %d %s", cold.Code, cold.Body)
 	}
-	before := fixture.calls.Load()
-	warm := doCompatProxyRequest(p, target, headers)
-	if warm.Code != cold.Code || !bytes.Equal(cold.Body.Bytes(), warm.Body.Bytes()) || fixture.calls.Load() != before {
+	warm := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "warm"))
+	if warm.Code != cold.Code || !bytes.Equal(cold.Body.Bytes(), warm.Body.Bytes()) || origins.made("warm") != 0 {
 		t.Fatalf("cached capped result changed or lost its warning: cold=%s warm=%s", cold.Body, warm.Body)
 	}
 }
@@ -216,8 +224,9 @@ func TestOrderedJSONResultCacheKeepsLocalStoragePolicy(t *testing.T) {
 	key := orderedJSONResultKey(p, target, headers)
 	c, disk, peer, remoteSets := newLocalOnlyCacheFixture(t, key)
 	p.cache = c
+	origins := traceVLCallOrigins(p)
 	want := dlvBaselineWant(fixture.rows, shape, from, to, "10", "alpha")
-	if got := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, headers)); !reflect.DeepEqual(got, want) {
+	if got := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "cold"))); !reflect.DeepEqual(got, want) || origins.made("cold") == 0 {
 		t.Fatalf("cold: got %v want %v", got, want)
 	}
 	if _, _, ok := c.GetWithTTL(key); !ok {
@@ -226,8 +235,7 @@ func TestOrderedJSONResultCacheKeepsLocalStoragePolicy(t *testing.T) {
 	if _, ok := disk.Get(key); ok || remoteSets.Load() != 0 || peer.WTPushes.Load() != 0 {
 		t.Fatal("full response changed its existing local-only storage policy")
 	}
-	before := fixture.calls.Load()
-	if got := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, headers)); !reflect.DeepEqual(got, want) || fixture.calls.Load() != before {
+	if got := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "repeat"))); !reflect.DeepEqual(got, want) || origins.made("repeat") != 0 {
 		t.Fatal("local-only result was not reusable")
 	}
 }
@@ -245,17 +253,20 @@ func testOrderedJSONResultCacheNearNowRefresh(t *testing.T, maxStaleness time.Du
 	t.Helper()
 	base := time.Now().UTC().Truncate(time.Minute).Add(-3 * time.Minute)
 	shape := dlvBaselineShapes[1]
-	backend, fixture := newDLVBaselineBackend(t, shape, base)
+	backend, _ := newDLVBaselineBackend(t, shape, base)
 	p := newDLVBaselineProxy(t, backend.URL, false)
 	p.recentTailRefreshEnabled = true
 	p.recentTailRefreshMaxStaleness = maxStaleness
+	origins := traceVLCallOrigins(p)
 	from, to := base.Add(time.Minute), base.Add(3*time.Minute)
 	target, headers := dlvBaselineRequest(shape, from, to)
-	cold := doCompatProxyRequest(p, target, headers)
+	cold := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "cold"))
 	dlvBaselineReadMatrix(t, cold)
-	before := fixture.calls.Load()
-	warm := doCompatProxyRequest(p, target, headers)
-	if !bytes.Equal(cold.Body.Bytes(), warm.Body.Bytes()) || fixture.calls.Load() != before {
+	if origins.made("cold") == 0 {
+		t.Fatal("cold response made no backend call")
+	}
+	warm := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "warm"))
+	if !bytes.Equal(cold.Body.Bytes(), warm.Body.Bytes()) || origins.made("warm") != 0 {
 		t.Fatal("fresh near-now response was not reused")
 	}
 	// Leave room for real handler time on loaded/race CI workers: the test
@@ -263,15 +274,15 @@ func testOrderedJSONResultCacheNearNowRefresh(t *testing.T, maxStaleness time.Du
 	func() {
 		restore := cache.AdvanceClockForTesting(maxStaleness / 2)
 		defer restore()
-		stillFresh := doCompatProxyRequest(p, target, headers)
-		if !bytes.Equal(cold.Body.Bytes(), stillFresh.Body.Bytes()) || fixture.calls.Load() != before {
+		stillFresh := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "still-fresh"))
+		if !bytes.Equal(cold.Body.Bytes(), stillFresh.Body.Bytes()) || origins.made("still-fresh") != 0 {
 			t.Fatal("entry below the configured max-staleness was not reused")
 		}
 	}()
 	restore := cache.AdvanceClockForTesting(maxStaleness + time.Second)
 	defer restore()
-	refreshed := doCompatProxyRequest(p, target, headers)
-	if !bytes.Equal(cold.Body.Bytes(), refreshed.Body.Bytes()) || fixture.calls.Load() <= before {
+	refreshed := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "refreshed"))
+	if !bytes.Equal(cold.Body.Bytes(), refreshed.Body.Bytes()) || origins.made("refreshed") == 0 {
 		t.Fatal("near-now response exceeding max-staleness was not fetched again")
 	}
 }
@@ -292,15 +303,15 @@ func TestOrderedJSONResultCacheExclusions(t *testing.T) {
 			case "disabled":
 				p.cache = cache.NewDisabled()
 			}
+			origins := traceVLCallOrigins(p)
 			from, to := base.Add(time.Minute), base.Add(3*time.Minute)
 			target, headers := dlvBaselineRequest(shape, from, to)
-			first := doCompatProxyRequest(p, target, headers)
+			first := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "cold"))
 			want := dlvBaselineWant(fixture.rows, shape, from, to, "10", "alpha")
-			if got := dlvBaselineReadMatrix(t, first); !reflect.DeepEqual(got, want) {
-				t.Fatalf("cold response: got %v want %v", got, want)
+			if got := dlvBaselineReadMatrix(t, first); !reflect.DeepEqual(got, want) || origins.made("cold") == 0 {
+				t.Fatalf("cold response (%d backend calls): got %v want %v", origins.made("cold"), got, want)
 			}
-			before := fixture.calls.Load()
-			second := doCompatProxyRequest(p, target, headers)
+			second := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "repeat"))
 			if !bytes.Equal(first.Body.Bytes(), second.Body.Bytes()) {
 				t.Fatal("uncacheable/reused reply changed")
 			}
@@ -308,10 +319,10 @@ func TestOrderedJSONResultCacheExclusions(t *testing.T) {
 				t.Fatal("response unexpectedly admitted into primary cache")
 			}
 			if mode == "tier0" {
-				if fixture.calls.Load() != before {
+				if origins.made("repeat") != 0 {
 					t.Fatal("Tier0 repeat read backend")
 				}
-			} else if fixture.calls.Load() <= before {
+			} else if origins.made("repeat") == 0 {
 				t.Fatal("uncacheable response bypassed backend")
 			}
 		})
@@ -356,14 +367,14 @@ func TestOrderedJSONResultCacheFailureRecovery(t *testing.T) {
 			if _, _, ok := p.cache.GetWithTTL(key); ok {
 				t.Fatal("failed answer entered result cache")
 			}
-			good := doCompatProxyRequest(p, target, headers)
+			origins := traceVLCallOrigins(p)
+			good := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "recovery"))
 			want := dlvBaselineWant(fixture.rows, shape, from, to, "10", "alpha")
-			if got := dlvBaselineReadMatrix(t, good); !reflect.DeepEqual(got, want) {
-				t.Fatalf("recovery: got %v want %v", got, want)
+			if got := dlvBaselineReadMatrix(t, good); !reflect.DeepEqual(got, want) || origins.made("recovery") == 0 {
+				t.Fatalf("recovery (%d backend calls): got %v want %v", origins.made("recovery"), got, want)
 			}
-			before := fixture.calls.Load()
-			warm := doCompatProxyRequest(p, target, headers)
-			if !bytes.Equal(good.Body.Bytes(), warm.Body.Bytes()) || fixture.calls.Load() != before {
+			warm := doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "repeat"))
+			if !bytes.Equal(good.Body.Bytes(), warm.Body.Bytes()) || origins.made("repeat") != 0 {
 				t.Fatal("recovered response did not become reusable")
 			}
 		})

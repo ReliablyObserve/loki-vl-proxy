@@ -12,9 +12,16 @@ cache keys, including their tenant and authentication identity, remain intact.
 Historical log `query_range` fragments use the same tiered path as settled
 pattern source windows, metadata replies and VictoriaLogs metric extents.
 Completed `query`, `query_range` and `series` replies up to 128 KiB also enter
-the Loki layer's disk and peer tiers; larger replies remain subject to the
-existing bounded in-memory edge cache. The exact-response edge cache remains
-memory-only. Shared reply keys include the routing configuration fingerprint,
+the Loki layer's disk and peer tiers; larger replies stay in memory on the
+replica that computed them: in the edge cache, or, when a reply is larger than
+one edge cache entry (a tenth of its budget), in the primary memory cache with
+the edge cache's TTL and freshness rule, up to the primary cache's own entry
+bound (a tenth of `-cache-max-bytes`). Those answers share primary L1 with
+VictoriaLogs extents and settled steps under its LRU: at the default 256 MiB,
+ten answers of the largest admitted size fill it. Known limit: such an answer
+is never written to disk or pushed to peers, so another replica computes it
+again (`TestFleet_OversizedReplyStaysOnItsReplica`). The exact-response edge cache
+remains memory-only. Shared reply keys include the routing configuration fingerprint,
 so a tenant or field-mapping reload cannot reuse an older disk or peer answer.
 The fragment key also includes routing scope, direction, row budget, aligned
 window bounds, parser shape and response profile, so a fragment fetched for a
