@@ -106,6 +106,47 @@ func TestRejectedQueryNeverReachesVictoriaLogs(t *testing.T) {
 	}
 }
 
+// An ip() line filter or label filter whose pattern holds a NUL byte (written as the escape \x00) or another byte no
+// address holds is Loki's 400 on the routes that take a log query, with no VictoriaLogs call: the translator, which
+// would read the address before the byte, never gets it (FuzzIPLabelFilterNeverKeepsWhatLokiDrops).
+//
+// conformance: semantics/ip-label-filter-invalid-pattern
+func TestRejectedIPPatternNeverReachesVictoriaLogs(t *testing.T) {
+	var upstream atomic.Int64
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstream.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer vl.Close()
+	for _, pattern := range []string{`::\x00!`, `\x00`, `1.2.3.4\x00/24`, `1.2.3.4-\x001.2.3.5`, `1.2.3.4\x7f`} {
+		for _, tc := range []struct{ route, path, query string }{
+			{"query_range", "/loki/api/v1/query_range", `{app="a"} | addr = ip("` + pattern + `")`},
+			{"query", "/loki/api/v1/query", `sum(rate({app="a"} | addr != ip("` + pattern + `") [5m]))`},
+			{"tail", "/loki/api/v1/tail", `{app="a"} | addr = ip("` + pattern + `")`},
+			{"query_range", "/loki/api/v1/query_range", `{app="a"} |= ip("` + pattern + `")`},
+			{"query_range", "/loki/api/v1/query_range", `{app="a"} != ip("` + pattern + `")`},
+			{"query_range", "/loki/api/v1/query_range", `sum(rate({app="a"} |= ip("` + pattern + `")[5m]))`},
+			{"query", "/loki/api/v1/query", `count_over_time({app="a"} != ip("` + pattern + `")[5m])`},
+			{"tail", "/loki/api/v1/tail", `{app="a"} |= ip("` + pattern + `")`},
+		} {
+			t.Run(tc.route+" "+tc.query, func(t *testing.T) {
+				p := newCompatTestProxy(t, vl.URL)
+				params := url.Values{"query": {tc.query}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"60"}, "time": {"1700003600"}, "limit": {"10"}}
+				before := upstream.Load()
+				rec := doCompatProxyRequest(p, tc.path+"?"+params.Encode(), map[string]string{"X-Scope-OrgID": "team-a"})
+				body := rec.Body.String()
+				if rec.Code != http.StatusBadRequest || !strings.Contains(body, "ip: invalid pattern") {
+					t.Errorf("%s: %d %s, want Loki's 400 with the invalid pattern", tc.path, rec.Code, body)
+				}
+				if calls := upstream.Load() - before; calls != 0 {
+					t.Errorf("%s: %d requests reached VictoriaLogs", tc.path, calls)
+				}
+			})
+		}
+	}
+}
+
 // A query that was answered before the scanner read its characters as Loki's lexer does, and is a 400 now (a stage name
 // followed by a character that starts no token), is not served the answer an older binary cached: the compat edge key
 // of a rejected query carries a version, and the key of a valid query does not change.

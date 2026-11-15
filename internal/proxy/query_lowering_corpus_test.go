@@ -14,6 +14,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankgrouping"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -62,11 +63,19 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 					continue
 				}
 				got, gotErr := on.translateQueryOpts(ctx, q, false)
-				// A query with an unspaced parser is held to the translator's text of its spaced spelling (respaced).
-				want, wantErr := off.translateQueryOpts(ctx, respaced(q), false)
+				// A query with an unspaced parser is held to the translator's text of its spaced spelling (respaced), and
+				// one with a `by` clause of blanks to its text of `by ()` (semantics/translator-reads-blank-grouping-as-none).
+				want, wantErr := off.translateQueryOpts(ctx, respaced(blankgrouping.Cut(q)), false)
 				if _, kept := on.keepUnwrapIdentity(q); kept {
 					keep++
 					continue
+				}
+				if got != want && blankgrouping.Cut(q) != q {
+					// A blank grouping on a construct the plan leaves to the translator (a ranking) is the translator's own
+					// text of the query as written.
+					if own, _ := off.translateQueryOpts(ctx, respaced(q), false); got == own {
+						want = got
+					}
 				}
 				if got != want || (gotErr == nil) != (wantErr == nil) {
 					if differs++; differs <= 10 {
@@ -105,9 +114,10 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 // constructs flipped, a query the lowering serves (writesTranslatorText passed) is the translator's text, or the keep
 // identity; the gate and the lowering never panic out of lowerMetric. The translator's text is also taken with its
 // keyword label names quoted (lower.QuoteKeywordFieldText), as the corpus shadow compares it: VictoriaLogs rejects
-// them bare (semantics/translator-writes-keyword-field-names-bare).
+// them bare (semantics/translator-writes-keyword-field-names-bare). A `by` clause of only blanks is held to the
+// translator's text of `by ()` (semantics/translator-reads-blank-grouping-as-none).
 //
-// conformance: architecture-syntax-package-layering
+// conformance: architecture-syntax-package-layering, semantics/translator-reads-blank-grouping-as-none
 func FuzzMetricFlipGate(f *testing.F) {
 	for _, q := range []string{
 		`sum by (app) (rate({app="a"} |= "x" [5m]))`, `count_over_time({app="a"} | json | status="500" [5m])`,
@@ -126,6 +136,8 @@ func FuzzMetricFlipGate(f *testing.F) {
 		// copies it), a keyword in another case, a grouping with no labels.
 		`count_over_time({app="a"} |pattern"<_> <m>" [5m])`, "count_over_time({app=\"a\"} |regexp`(?P<a>x)` [5m])",
 		`first_over_time({app="a"} | json | keep app, n | unwrAp n [5m])`, `max_over_time({app="a"} | logfmt | unwrap A [5m]) by ()`,
+		// A grouping of blanks, which the translator reads as no grouping and the plan as `by ()`.
+		`sum by( ) (rate({A="0"}[1y]))`, "sum by(\t) (count_over_time({A=\"0\"}[5m]))", `sum(rate({A="0"}[5m])) by(  )`,
 	} {
 		f.Add(q)
 	}
@@ -154,7 +166,9 @@ func FuzzMetricFlipGate(f *testing.F) {
 			return
 		}
 		got, gotErr := on.translateQueryOpts(context.Background(), q, false)
-		want, wantErr := off.translateQueryOpts(context.Background(), respaced(q), false)
+		// The translator reads a grouping of blanks (`by( )`) as no grouping, Loki and the plan as `by ()`
+		// (semantics/translator-reads-blank-grouping-as-none): it is held to the spelling it reads as Loki does.
+		want, wantErr := off.translateQueryOpts(context.Background(), respaced(blankgrouping.Cut(q)), false)
 		if _, kept := on.keepUnwrapIdentity(q); kept {
 			return
 		}
@@ -164,6 +178,16 @@ func FuzzMetricFlipGate(f *testing.F) {
 		if respaced(q) != q {
 			unflipped, _ := off.translateQueryOpts(context.Background(), q, false)
 			respelled = got == unflipped || sameLogsQL(got, want)
+		}
+		// A blank grouping on a construct the plan leaves to the translator (a ranking) is the translator's own text.
+		if cut := blankgrouping.Cut(q); cut != q && !respelled {
+			unflipped, _ := off.translateQueryOpts(context.Background(), respaced(q), false)
+			respelled = got == unflipped
+		}
+		// A control byte in a quoted string: the plan writes it as an escape (`\x1d`), the translator copies the byte.
+		// VictoriaLogs reads both as the same query.
+		if !respelled && strings.IndexFunc(q, func(r rune) bool { return r < 0x20 && r != '\t' && r != '\n' && r != '\r' }) >= 0 {
+			respelled = sameLogsQL(got, want)
 		}
 		if (got != want && got != lower.QuoteKeywordFieldText(want) && !respelled) || (gotErr == nil) != (wantErr == nil) {
 			t.Fatalf("%q:\n flag on  %q %v\n flag off %q %v", q, got, gotErr, want, wantErr)
