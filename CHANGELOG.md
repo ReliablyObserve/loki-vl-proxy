@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
 
 ## [2.262.0] - 2026-11-15
+
 ### Changed
 
 - Metric queries are planned once for the query plan's decisions: the range functions whose series a `keep` before
