@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A timestamp written as digits only (the integer nanoseconds Grafana sends for `start`, `end` and `time`) is read in
+  one pass, eight digits at a time, instead of a digit scan and a second parse: 27 to 8 ns per timestamp, with no
+  allocation, and the same value for every input (a sign, a space, a time layout or a float still takes the general
+  parse). The step alignment and the time-bounds check of `query_range`, the metadata routes' response-cache keys and
+  their handlers read their bounds this way, which more than pays for the length check the new
+  `-default-max-query-length` default adds: at the shipped default a `query_range` or `labels` request costs no more
+  than before.
+
 ### Fixed
 
 - **Breaking:** `-default-max-query-length` now defaults to Loki's `max_query_length` default, `721h` (published as
@@ -17,16 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` publish `max_query_length: 30d1h` instead of
   `0s`. Set `-default-max-query-length=0` (Helm `extraArgs.default-max-query-length: "0"`), or `max_query_length:
   "0s"` in `-tenant-default-limits` or `-tenant-limits`, to keep serving longer ranges. A live tail is not checked
-  against this limit.
-
-### Changed
-
-- A timestamp written as digits only (the integer nanoseconds Grafana sends for `start`, `end` and `time`) is read in
-  one pass, eight digits at a time, instead of a digit scan and a second parse: 27 to 8 ns per timestamp, with no
-  allocation, and the same value for every input (a sign, a space, a time layout or a float still takes the general
-  parse). Every request reads its bounds several times, so this more than pays for the length check the new
-  `-default-max-query-length` default adds: at the shipped default a `query_range` or `labels` request costs no more
-  than before.
+  against this limit. A request with a `start` and no `end` is held to it too (a missing `end` is now, as in Loki).
 
 ## [2.262.0] - 2026-11-15
 ### Changed

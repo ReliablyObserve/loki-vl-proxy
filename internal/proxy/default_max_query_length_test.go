@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -150,6 +151,33 @@ func TestDefaultMaxQueryLength_Boundary(t *testing.T) {
 			}
 			if calls := backend.hits.Load() - before; calls != 0 {
 				t.Errorf("%s at 721h+1ms: %d VictoriaLogs calls, want 0", r.name, calls)
+			}
+		}
+	})
+	// A request with only a start (Loki reads the missing end as now) or only an end (a missing start is the
+	// route's default window before it) is held to the limit too: start=1 with no end is Loki's recorded r1387.
+	t.Run("one bound missing", func(t *testing.T) {
+		base, backend := newDefaultLengthProxy(t, -1, nil)
+		lengthRE := regexp.MustCompile(`^the query time range exceeds the limit \(query length: [0-9hms.]+, limit: 30d1h\)$`)
+		for _, r := range routes {
+			params := url.Values{}
+			for k, v := range r.params {
+				params[k] = v
+			}
+			params.Del("step") // r1387 sends none: the step Loki derives from the range never exceeds its resolution
+			params.Set("start", "1")
+			before := backend.hits.Load()
+			resp, err := http.Get(base + r.path + "?" + params.Encode())
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if got := strings.TrimSpace(string(body)); resp.StatusCode != http.StatusBadRequest || !lengthRE.MatchString(got) {
+				t.Errorf("%s with start=1 and no end: %d %.200q, want 400 with Loki's length text", r.name, resp.StatusCode, got)
+			}
+			if calls := backend.hits.Load() - before; calls != 0 {
+				t.Errorf("%s with start=1 and no end: %d VictoriaLogs calls, want 0", r.name, calls)
 			}
 		}
 	})

@@ -523,6 +523,9 @@ func (p *Proxy) tenantLimitsMiddleware(endpoint string, next http.HandlerFunc) h
 func rangeOverLength(r *http.Request, maxLen time.Duration) bool {
 	startNs, startOK := parseLokiTimeToUnixNano(r.FormValue("start"))
 	endNs, endOK := parseLokiTimeToUnixNano(r.FormValue("end"))
+	if startOK && !endOK && strings.TrimSpace(r.FormValue("end")) == "" {
+		endNs, endOK = time.Now().UnixNano(), true // a missing end is now, as in Loki
+	}
 	return startOK && endOK && queryLengthLimitError(maxLen, startNs, endNs) != ""
 }
 
@@ -665,6 +668,9 @@ func applyLookbackAndLength(r *http.Request, endpoint string, limits queryLimits
 			r = withRequestParams(r, map[string]string{startKey: strconv.FormatInt(minStart, 10)})
 			startNs = minStart
 		}
+	}
+	if endpoint != "query" && startOK && !endOK && strings.TrimSpace(r.FormValue(endKey)) == "" {
+		endNs, endOK = now.UnixNano(), true // a missing end is now, as in Loki
 	}
 	if endpoint != "query" && startOK && endOK {
 		if msg := queryLengthLimitError(limits.MaxQueryLength, startNs, endNs); msg != "" {
