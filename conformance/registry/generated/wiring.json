@@ -511,6 +511,7 @@
       "internal/proxy/first_last_range_timestamps_test.go",
       "internal/proxy/first_last_window_cache_test.go",
       "internal/proxy/ip_label_filter_test.go",
+      "internal/proxy/keep_blank_list_loki_test.go",
       "internal/proxy/keep_extracted_collision_test.go",
       "internal/proxy/keep_series_grouping_test.go",
       "internal/proxy/label_filter_expression_test.go",
@@ -1417,8 +1418,13 @@
       "internal/queryplan/lower/unwrap_keep_test.go",
       "internal/queryplan/series_labels_test.go"
     ],
+    "semantics/keep-drop-blank-name-prints-back": [
+      "internal/logql/keep_drop_blank_loki_test.go",
+      "internal/proxy/keep_blank_list_loki_test.go"
+    ],
     "semantics/keep-leaves-labels-loki-drops": [
       "internal/logql/stage_raw_test.go",
+      "internal/proxy/keep_blank_list_loki_test.go",
       "internal/proxy/keep_extracted_collision_test.go",
       "internal/proxy/keep_series_grouping_test.go",
       "internal/translator/keep_grouping_test.go",
@@ -1625,6 +1631,7 @@
       "test/e2e-compat/error_answers_like_loki_test.go"
     ],
     "semantics/parser-reads-unicode-blank-as-white-space": [
+      "internal/logql/keep_drop_blank_loki_test.go",
       "internal/logql/range_unwrap_grammar_loki_test.go",
       "internal/logql/whitespace_loki_test.go",
       "internal/proxy/fail_fast_unicode_test.go",
@@ -2338,7 +2345,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 580,
+  "registry_items": 581,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2391,6 +2398,10 @@
     ],
     "internal/logql/ip_label_filter_validate_loki_test.go": [
       "semantics/ip-label-filter-invalid-pattern"
+    ],
+    "internal/logql/keep_drop_blank_loki_test.go": [
+      "semantics/keep-drop-blank-name-prints-back",
+      "semantics/parser-reads-unicode-blank-as-white-space"
     ],
     "internal/logql/keyword_case_test.go": [
       "semantics/loki-keyword-label-names"
@@ -2910,6 +2921,11 @@
       "parser-error-and-label-collision",
       "quality/json-label-probe-gates",
       "semantics/json-extracted-metric-pushdown"
+    ],
+    "internal/proxy/keep_blank_list_loki_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/keep-drop-blank-name-prints-back",
+      "semantics/keep-leaves-labels-loki-drops"
     ],
     "internal/proxy/keep_extracted_collision_test.go": [
       "loki_api_v1_query_range",
@@ -5156,7 +5172,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 603,
+  "tests_with_markers": 605,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5260,5 +5276,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 364
+  "wired_items": 365
 }

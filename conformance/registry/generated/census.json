@@ -499,6 +499,9 @@
     "semantics/keep-before-unwrap-series-identity | compare:observed",
     "semantics/keep-before-unwrap-series-identity | gap:fixed",
     "semantics/keep-before-unwrap-series-identity | query",
+    "semantics/keep-drop-blank-name-prints-back | compare:observed",
+    "semantics/keep-drop-blank-name-prints-back | gap:fixed",
+    "semantics/keep-drop-blank-name-prints-back | query",
     "semantics/keep-leaves-labels-loki-drops | compare:observed",
     "semantics/keep-leaves-labels-loki-drops | gap:fixed",
     "semantics/keep-leaves-labels-loki-drops | perf",
@@ -1094,6 +1097,8 @@
     "internal/logql/dotted_names_test.go | profiles/dotted-name-parse-error",
     "internal/logql/input_size_test.go | architecture-syntax-package-layering",
     "internal/logql/ip_label_filter_validate_loki_test.go | semantics/ip-label-filter-invalid-pattern",
+    "internal/logql/keep_drop_blank_loki_test.go | semantics/keep-drop-blank-name-prints-back",
+    "internal/logql/keep_drop_blank_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
     "internal/logql/keyword_case_test.go | semantics/loki-keyword-label-names",
     "internal/logql/keyword_label_names_loki_test.go | semantics/loki-keyword-label-names",
     "internal/logql/label_filter_expr_golden_test.go | semantics/label-filter-expression-syntax",
@@ -1385,6 +1390,9 @@
     "internal/proxy/json_label_probe_gates_test.go | parser-error-and-label-collision",
     "internal/proxy/json_label_probe_gates_test.go | quality/json-label-probe-gates",
     "internal/proxy/json_label_probe_gates_test.go | semantics/json-extracted-metric-pushdown",
+    "internal/proxy/keep_blank_list_loki_test.go | loki_api_v1_query_range",
+    "internal/proxy/keep_blank_list_loki_test.go | semantics/keep-drop-blank-name-prints-back",
+    "internal/proxy/keep_blank_list_loki_test.go | semantics/keep-leaves-labels-loki-drops",
     "internal/proxy/keep_extracted_collision_test.go | loki_api_v1_query_range",
     "internal/proxy/keep_extracted_collision_test.go | semantics/keep-leaves-labels-loki-drops",
     "internal/proxy/keep_series_grouping_test.go | loki_api_v1_query",
@@ -2685,14 +2693,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 95,
+      "api": 96,
       "drilldown": 51,
       "explore": 184,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 602,
+      "go": 604,
       "playwright": 1
     },
     "page_kinds": {
@@ -2712,7 +2720,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 100,
-    "wired_items": 364
+    "wired_items": 365
   },
   "gates": [
     "A/B shape selection",
