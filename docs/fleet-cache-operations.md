@@ -134,6 +134,7 @@ Logical RAM accounting counts keys and values, not process RSS. Entry/list metad
 | `-disk-cache-codec` / `-disk-cache-compress` | `s2` / `true` | New records use S2 by default; compression false writes raw |
 | `-peer-replication-factor` | `2` | Owner plus one backup |
 | `-peer-write-through-min-ttl` | `30s` | Ordinary peer-push eligibility threshold |
+| `-peer-push-buffer-max-entries` / `-peer-push-buffer-max-bytes` | `8192` / `33554432` | Pushes kept while a peer's breaker is open or it restarts, replayed when it answers; `0` turns buffering off |
 
 The disk index and queue budgets are separate: their defaults permit about **32 MiB of accounted metadata/queued data combined**, in addition to L1 and other runtime memory. Larger caches may require raising the entry/index caps as well as the byte cap. LRU removes cold persisted records to admit new ones; reads update recency in RAM without a disk write. Batching limits transaction frequency, while the bounded queue can reject admission under slow storage.
 
