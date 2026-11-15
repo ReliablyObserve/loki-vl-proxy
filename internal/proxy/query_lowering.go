@@ -123,7 +123,7 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 	if stages == 0 && !filterOnly(plan.Root) || stages != 0 && !servesLogStages(plan, prof, allowed) {
 		return "", false
 	}
-	op, err := lower.Plan(plan, prof)
+	text, err = lower.PlanLogText(plan, prof)
 	if err != nil {
 		return "", false
 	}
@@ -131,7 +131,7 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 	// query the lowering answered is one of them.
 	querycorpus.Record(querycorpus.LogQLTranslate, canon)
 	p.recordLoweringShadow(shadowFlipped, construct)
-	return physical.Encode(op), true
+	return text, true
 }
 
 // keepIdentityConstruct is the flip of a range function over an unwrapped label whose series a keep before the
