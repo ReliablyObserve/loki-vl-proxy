@@ -729,13 +729,15 @@ func patternsPayloadEmpty(body []byte) bool {
 // ttl it would look old and be refetched on every request.
 func (p *Proxy) compatCacheShouldBypassForFreshness(endpoint string, r *http.Request, ttl, remaining, age time.Duration) bool {
 	window, ok := p.nearNowWindow(endpoint)
-	if !ok || ttl <= 0 || remaining <= 0 || !requestEndsWithin(r, window) {
+	if !ok || ttl <= 0 || remaining <= 0 {
 		return false
 	}
 	if age < 0 {
 		age = ttl - remaining
 	}
-	return age >= p.recentTailRefreshMaxStaleness
+	// The age is known without parsing the request's end: a young entry is
+	// served whatever the request's end.
+	return age >= p.recentTailRefreshMaxStaleness && requestEndsWithin(r, endpoint, window)
 }
 
 // compatCacheLookup checks the edge cache first, then the routing-scoped
