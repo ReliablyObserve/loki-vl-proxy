@@ -116,7 +116,7 @@ func ingestFixture(base string, wait time.Duration, at time.Time, out io.Writer)
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("Loki did not serve the fixture on its range metric path within %s", wait)
+			return fmt.Errorf("the Loki did not serve the fixture on its range metric path within %s", wait)
 		}
 		time.Sleep(ingestPoll)
 	}

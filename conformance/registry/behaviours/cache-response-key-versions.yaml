@@ -20,10 +20,13 @@ proxy: |
   new key, so entries cached before the fix — in memory, on disk or on peers
   running older code — are not served. One function builds the chain for
   every key (responseKeyFences); which fences apply, and their order, is
-  explicit per key site.
+  explicit per key site. A fence screen reads every spelling the LogQL parser
+  reads: keywords and function names in any case, `#` comments between tokens,
+  letters that lower case to ASCII ones, names of any Unicode letters.
 
 implementation:
   - internal/proxy/response_key_fences.go
+  - internal/proxy/response_key_fence_text.go
   - internal/proxy/middleware.go
   - internal/proxy/proxy.go
   - internal/proxy/query_range_windowing.go
@@ -44,3 +47,29 @@ decisions:
     code: [internal/proxy/response_key_fences.go]
     tests: [TestResponseKeyFencesByteIdentical, TestResponseKeyFencesSiteOrder]
     quality: 'Every response key byte-identical to before; every fence fires somewhere in the corpus test, so it cannot pass vacuously.'
+  - id: fence-screens-read-every-parser-spelling
+    chosen: 'Each fence screen reads the spellings the LogQL parser reads (keywords in any case, comments, U+212A and U+0130 for k and i, Unicode names, grouped label filters, back-quoted empty strings) with shared allocation-free readers, and keeps firing for every spelling its older form fired for'
+    over:
+      - 'leaving the lower case, single-space screens (a query spelled `| KEEP a` or `TOPK(` got the key of an answer cached before the fix)'
+      - 'a case-insensitive regexp per screen (allocation free but slower, and blind to U+212A, U+0130 and comments)'
+      - 'deriving every fence from the parsed tree now (the compat edge looks its cache up before validation, and a plan is memoised by text only up to a size cap)'
+    why: |
+      A fence is a text screen that runs before any parse, so any spelling it
+      misses serves an answer cached before the fix it guards. Every fence
+      on main missed some spelling the parser accepts: keep, unwrap, ip(),
+      json, logfmt, topk and the aggregation words in upper or mixed case;
+      a grouped label filter `| (a="b")`; an empty back-quoted string after `!=`; a `#` comment with a quote
+      character in it, which made the quote-skipping screens read the rest of
+      the query as quoted text; U+212A and U+0130 in keywords; Unicode letters
+      in names. The screens now read those, and one fuzz target compares every
+      fence with the parsed tree of a re-spelled query. The two fences added
+      since (stream-level-series, unwrap-dynamic-identity) are held to the same
+      test: the first missed topK and bottomK written with U+212A, the second's
+      text screen in front of the plan missed a function name written with
+      U+0130 (`avg_over_tİme`), which the keyword lower casing leaves as it is.
+    evidence: 'internal/proxy/response_key_fence_parser_test.go (2026-11-15): FuzzResponseKeyFencesMatchParsedTree, 120 s clean on the fixed screens; the same test on main finds a miss in each of the ten fences it covers (detected_level is covered by its own change), and after the merge of main in the stream-level-series fence (U+212A in topk, bottomk) and the unwrap-dynamic-identity screen (U+0130 in its function names); every fence still fires for every query its older screen fired for over the key corpus (shapes, matrix, registry rows); BenchmarkResponseKeyFences, 8 interleaved runs on Apple M5 Pro, GOMAXPROCS=4: geomean -51% (every shape faster, allocations equal or fewer)'
+    code: [internal/proxy/response_key_fence_text.go, internal/proxy/proxy.go, internal/proxy/keyword_label_fence.go, internal/proxy/reserved_field_fence.go, internal/proxy/reserved_field_case_fence.go, internal/proxy/ordered_json_vector.go, internal/proxy/ordered_json_metric.go, internal/proxy/range_metric_compat.go]
+    tests: [TestResponseKeyFencesFireOnEverySpelling, TestResponseKeyFencesFireOnTheSpellingsTheParserReads, TestResponseKeyFencesKeepTheirOldKeys, FuzzResponseKeyFencesMatchParsedTree, TestResponseKeyFenceScreensDoNotAllocate]
+    quality: 'A query whose parsed tree holds the construct a fence guards carries the fence in every spelling the parser reads; no key written by an older binary for a spelling it fenced becomes unreachable.'
+    performance:
+      - 'internal/proxy/response_key_fences_bench_test.go BenchmarkResponseKeyFences: the fence chain of 10 query shapes at the compat query_range and inner query_range sites; no shape slower than main (selector 158 -> 98 ns, rate by 350 -> 245 ns, json metric 7.6 -> 4.0 us)'
