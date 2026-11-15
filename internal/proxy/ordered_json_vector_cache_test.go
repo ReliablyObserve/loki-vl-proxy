@@ -316,6 +316,14 @@ func withHeader(headers map[string]string, name, value string) map[string]string
 	return out
 }
 
+// traceVLCallOrigins counts p's VictoriaLogs calls per client request
+// (vlCallOrigins) from here on.
+func traceVLCallOrigins(p *Proxy) *vlCallOrigins {
+	origins := &vlCallOrigins{inner: p.client.Transport}
+	p.client.Transport = origins
+	return origins
+}
+
 // made is the calls made for the client request tagged origin.
 func (o *vlCallOrigins) made(origin string) int {
 	o.mu.Lock()

@@ -24,7 +24,8 @@ victorialogs: |
   other block the regexp of the `ip()` line filter (translate.IPLineFilterRegex)
   run on the field after a substring prefilter (the fixed octets, an
   alternation of a few first octets, or the dot of an address), which reads an
-  address alone or inside other text as Loki's scan does; `field:*` is the
+  address alone or inside other text as Loki's scan does, after two short
+  regexps that decide most values (decision ip-filter-ipv4-exact-walk-split); `field:*` is the
   `!=` presence. An IPv6 pattern is `ipv6_range(lo, hi)` on the field, guarded so
   only values Loki reads as that same whole address match (IPv6 starting with
   a group, five characters or more, no zone), so it keeps a subset of Loki's
@@ -37,6 +38,7 @@ cases:
   - semantics/ip-label-filter-missing-label
   - semantics/ip-filter-json-stats-pushdown
   - semantics/ip-filter-keeps-parser-error-lines
+  - semantics/ip-filter-ipv4-after-hex-colon
 decisions:
   - id: ip-filter-typed-in-metric-plans
     chosen: |
@@ -71,6 +73,36 @@ decisions:
     performance:
       tracked: ['ip-label-filter IP4, IP5']
       bound: 'perf block max_ratio 2.0, target 1.0; green at Loki speed or below'
+  - id: ip-filter-ipv4-exact-walk-split
+    chosen: |
+      An IPv4 pattern is read with an exact regexp that follows Loki's walk from
+      the last character no run holds (translate ipv4LineRegexps exact), and the
+      line and label filters check two short regexps before it (ipv4Split):
+      direct (an address of the pattern right after such a character, always a
+      match) OR (guard (the address and its end, wherever it stands: a literal
+      search) AND exact). The edges are classes that are not closed under case
+      folding, which VictoriaLogs prints in 0.1 us instead of 5 us each, and an
+      address set that shares its last three octets writes them once.
+    over: [the exact regexp alone (18% to 22% slower than the old regexp on plain service lines), a short address-like guard (cheaper to parse, but 40% to 60% slower than base on near misses such as 10.0.0.12 for 10.0.0.1), the old regexp that judged the characters right before the address (wrong after hex digits and colons)]
+    why: |
+      Loki's scan starts afresh after any character outside hex digits, colons
+      and dots, so a regexp from there is exact, but crossing every stretch of hex
+      digits, colons and dots costs more than a plain search. Most matching lines
+      have the address right after such a character, and most lines that hold the
+      pattern's literal without a match have no address of the pattern after a
+      hex digit, a colon or a dot, so the exact regexp runs on few lines.
+      VictoriaLogs evaluates an OR branch only on undecided rows and an AND branch
+      only on kept rows (lib/logstorage filter_or.go, filter_and.go, v1.53.0).
+    evidence: 'Loki oracle (ipfilter) on 52,000 line-grid lines, 2026-11-15: every IPv4 line equal to Loki (main: 1,221 differ). Go regexp, Apple M5 Pro, GOMAXPROCS=4, benchstat n=10 vs origin/main 2f9cd610d: the line filter costs 58% to 82% less per line on service, hex and 1.5 KB / 4.5 KB JSON lines (0 allocs); VictoriaLogs parses the regexps of a query in 38% to 57% less time (9.1 us for 10.0.0.1, 12.5 us for /24, 27.6 us for 0.0.0.0/0, base 21 to 54 us) with more allocations (10.0.0.1: 214 vs 90, 14.6 vs 6.2 KiB); the proxy writes the memoized filter text 83% to 96% faster (135 to 235 ns, 3 allocs) but the first query of a pattern, with the regexp memos empty, costs more than base (2.2 vs 0.8 us for 10.0.0.1, 6.6 vs 5.9 us for 0.0.0.0/0; once per pattern per 512-entry window); the exact regexp alone (the Go row condition of a label filter, frozen translator) runs 5% to 30% slower on service and json lines for one-address and /24 patterns and 20% slower on a /24 label value, 4% to 49% faster for hex lines, label values of one address and 0.0.0.0/0'
+    code: [internal/translate/ip_line_v4.go, internal/translate/ip_label_filter.go, internal/translate/linefilter.go]
+    tests: [TestIPLineFilterMatchesLoki, TestIPv4WalkMatchesLoki, TestIPv4LineRegexMatchesWalk, TestIPv4SplitMatchesExact, TestIPv4LineRegexWalkEdges, FuzzIPv4LineRegexLikeLoki]
+    quality: |
+      Every IPv4 line of the recorded grid answers like Loki under |= and !=, as
+      a line filter and as a label filter on text values; the split equals the
+      exact regexp on every grid and random line (test and fuzz).
+    performance:
+      tracked: ['BenchmarkIPv4LineFilter', 'BenchmarkIPv4LineRegexpParse', 'ip-label-filter IP4, IP5']
+      bound: 'per-line cost of the line filter at or below the old regexp for every line set; perf block max_ratio 2.0, target 1.0'
 victorialogs_candidates:
   - id: pipe-filter
     since: v1.40.0

@@ -167,8 +167,9 @@ func TestFirstLastWindowCacheMatchesUncached(t *testing.T) {
 
 // Identical requests that arrive together share VictoriaLogs' bucket reads, for first and last over time and for max
 // over time on the same window evaluator. As many cold clients as the proxy's stats_query_range slots
-// (-stats-query-range-concurrency, 4 by default) are read once; the clients that wait for a slot come after that read
-// and ask only for the buckets not stored yet. The VictoriaLogs answer is held until every client has asked.
+// (-stats-query-range-concurrency, 4 by default) are read once; the clients that wait for a slot come after that read,
+// wait for its buckets to be stored, and read them from the cache: any number of identical cold clients make one read.
+// The VictoriaLogs answer is held until every client has asked.
 //
 // conformance: semantics/unwrap-first-last-range-longer-than-step, quality/query-range-extent-cache
 func TestFirstLastWindowCoalesced(t *testing.T) {
@@ -211,13 +212,10 @@ func TestFirstLastWindowCoalesced(t *testing.T) {
 				}
 				calls, buckets := shim.bucketsRead()
 				t.Logf("%d clients at once: %d stats_query_range calls, %d buckets (one read: %d)", clients, calls, buckets, one)
-				// One read per slot round. The clients waiting for a slot read what the first round has not stored yet
-				// (its buckets are stored off the request path, so how much depends on that race), never the window
-				// once each.
+				// One read for every client. The clients waiting for a slot come after the first round's read, whose
+				// buckets are stored off the request path; their lookups wait for that store instead of reading the
+				// buckets it has not stored yet again.
 				maxCalls, maxBuckets := 1, one
-				if clients > 4 {
-					maxCalls, maxBuckets = clients/2-1, 4*one
-				}
 				if calls > maxCalls || buckets > maxBuckets {
 					t.Fatalf("%d identical cold requests made %d stats_query_range calls reading %d buckets, want at most %d and %d", clients, calls, buckets, maxCalls, maxBuckets)
 				}

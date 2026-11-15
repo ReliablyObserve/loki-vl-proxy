@@ -299,14 +299,33 @@ func vectorStats(op logql.VectorOp, fn logsql.StatsFunc, rate bool, seconds floa
 // statsPipe is a stats pipe of f over by; the stream and its level also group by detected_level, as the translator
 // rewrites every stats pipe that names both.
 func statsPipe(by []string, f logsql.StatsFunc, alias string) logsql.PipeStats {
-	keys := make([]logsql.GroupKey, len(by), len(by)+1)
+	// One allocation holds the keys and the function of a pipe that groups by one label (or none).
+	var keys []logsql.GroupKey
+	var funcs []logsql.StatsFuncAlias
+	switch {
+	case len(by) == 0:
+		funcs = make([]logsql.StatsFuncAlias, 1)
+	case len(by) < len(statsParts{}.keys):
+		parts := new(statsParts)
+		keys, funcs = parts.keys[:len(by)], parts.funcs[:]
+	default:
+		keys, funcs = make([]logsql.GroupKey, len(by), len(by)+1), make([]logsql.StatsFuncAlias, 1)
+	}
+	funcs[0] = logsql.StatsFuncAlias{Func: f, Alias: alias}
 	for i, field := range by {
 		keys[i] = logsql.GroupKey{Field: field}
 	}
 	if hasField(by, "_stream") && hasField(by, "level") && !hasField(by, translate.DetectedLevelLabel) {
 		keys = append(keys, logsql.GroupKey{Field: translate.DetectedLevelLabel})
 	}
-	return logsql.PipeStats{By: keys, Funcs: []logsql.StatsFuncAlias{{Func: f, Alias: alias}}}
+	return logsql.PipeStats{By: keys, Funcs: funcs}
+}
+
+// statsParts is the room of a stats pipe statsPipe writes: its key, with one to spare for detected_level, and its
+// function.
+type statsParts struct {
+	keys  [2]logsql.GroupKey
+	funcs [1]logsql.StatsFuncAlias
 }
 
 // groupsBy reports whether a stats pipe groups by the field.

@@ -28,9 +28,33 @@ proxy: |
   them the same; after every replica lost its caches the rebuilt replies are
   read the same way. The bucketed metric's reply is read on B and C with no
   stats_query_range call and no lookup that missed every tier.
+  A reply larger than one edge cache entry (a tenth of the edge budget) is
+  kept in the primary cache's memory of the replica that computed it only
+  (storeCompatOversizedReply, SetLocalOnlyWithTTL): a documented known limit,
+  the other replicas compute it again. Fleet proof
+  (TestFleet_OversizedReplyStaysOnItsReplica): a 3.6 MB reply computed on A
+  is a hit on A with no VictoriaLogs call and a miss on B.
   Not covered (open): instant and series replies have no fleet proof, and
   the disk-lost and owner-down phases do not single out the reply tier.
 
 implementation:
   - internal/proxy/middleware.go
   - internal/cache/cache.go
+
+decisions:
+  - id: oversized-reply-local-memory
+    chosen: 'A reply larger than one edge cache entry is kept once, in the primary cache memory of the replica that computed it, with the edge cache TTL and freshness rule; not on disk and not pushed to peers'
+    over: [keeping such replies nowhere (before: every repeat asked VictoriaLogs again), pushing them to peers and disks like replies of 128 KiB or less, handing the capture buffer to the cache without a copy]
+    why: |
+      Owner decisions, 2026-11-14: keep the one copy into primary L1 on a
+      miss (about 8 MiB of transient allocation for a 4 MB reply, no
+      measurable change through the routes), and accept local-only copies
+      for oversized replies as a documented known limit, like the larger
+      replies of #984. A peer push of multi-megabyte replies would multiply
+      fleet traffic and disk use; a buffer handed over without a copy would
+      keep up to twice the reply in memory.
+    evidence: 'Live registry run on the e2e stack (2026-11-14): the 7 largest answers (3 to 16.7 MB) were the only query repeats that called VictoriaLogs again; TestOversizedReplyRepeatAsksVictoriaLogsNothing fails on main and passes here; BenchmarkOversizedBreakdown/Repeat -94% ns/op, -92% B/op'
+    code: [internal/proxy/middleware.go]
+    tests: [TestOversizedReplyRepeatAsksVictoriaLogsNothing, TestOversizedReplyAbovePrimaryEntryIsNotKept, TestOversizedReplyOutlivesThePrimaryDefaultTTL, TestStoreCompatOversizedReplyOnlyBeyondEdgeEntry, TestFleet_OversizedReplyStaysOnItsReplica]
+    quality: 'A repeat of an oversized reply on the same replica is a hit with the same bytes and no VictoriaLogs call; another replica computes it again.'
+    pending: true

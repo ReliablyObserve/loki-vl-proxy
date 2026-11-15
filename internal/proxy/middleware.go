@@ -729,13 +729,15 @@ func patternsPayloadEmpty(body []byte) bool {
 // ttl it would look old and be refetched on every request.
 func (p *Proxy) compatCacheShouldBypassForFreshness(endpoint string, r *http.Request, ttl, remaining, age time.Duration) bool {
 	window, ok := p.nearNowWindow(endpoint)
-	if !ok || ttl <= 0 || remaining <= 0 || !requestEndsWithin(r, window) {
+	if !ok || ttl <= 0 || remaining <= 0 {
 		return false
 	}
 	if age < 0 {
 		age = ttl - remaining
 	}
-	return age >= p.recentTailRefreshMaxStaleness
+	// The age is known without parsing the request's end: a young entry is
+	// served whatever the request's end.
+	return age >= p.recentTailRefreshMaxStaleness && requestEndsWithin(r, endpoint, window)
 }
 
 // compatCacheLookup checks the edge cache first, then the routing-scoped
@@ -766,6 +768,32 @@ func (p *Proxy) storeCompatSharedReply(key string, body []byte, ttl time.Duratio
 	if key != "" && len(body) <= 128<<10 && p.cache != nil {
 		p.cache.SetWithTTL(key, body, ttl)
 	}
+}
+
+// compatCaptureLimit is the largest reply the edge cache middleware captures:
+// the edge cache's entry bound, or, for a reply that also has a shared key
+// (query, query_range, series), the primary cache's when that is larger, so
+// a reply too large for the edge cache is still kept (storeCompatOversizedReply).
+func (p *Proxy) compatCaptureLimit(sharedKey string) int {
+	limit := p.compatCache.MaxEntrySizeBytes()
+	if sharedKey != "" {
+		limit = max(limit, p.cache.MaxEntrySizeBytes())
+	}
+	return limit
+}
+
+// storeCompatOversizedReply keeps a completed reply the edge cache cannot hold
+// (larger than its entry bound) in the primary cache's memory under the shared
+// key compatCacheLookup reads, with the edge cache's TTL and freshness rule.
+// Without it such a reply was cached nowhere on the Loki side when its range
+// ends within -query-range-freshness or it answers an instant query, and every
+// repeat asked VictoriaLogs again. It stays in this replica's memory: not on
+// disk and not pushed to peers, like the edge cache.
+func (p *Proxy) storeCompatOversizedReply(sharedKey, cacheKey string, value []byte, ttl time.Duration) {
+	if sharedKey == "" || p.cache == nil || len(cacheKey)+len(value) <= p.compatCache.MaxEntrySizeBytes() {
+		return
+	}
+	p.cache.SetLocalOnlyWithTTL(sharedKey, value, ttl)
 }
 
 func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerFunc) http.HandlerFunc {
@@ -836,7 +864,7 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 		}
 		var storedBody []byte // the body this miss stored, for the gzip stats sidecar
 		p.captureGzipStatsSidecar(w, r, cacheKey, func() ([]byte, time.Duration) { return storedBody, ttl })
-		capture = newCompatCacheCaptureWriter(w, p.compatCache.MaxEntrySizeBytes())
+		capture = newCompatCacheCaptureWriter(w, p.compatCaptureLimit(sharedKey))
 		// A miss that passed validation and limits: the exact bytes of a
 		// metric query are read next to it (query_stats_loki.go).
 		p.startExactMetricBytesFor(w, r)
@@ -863,6 +891,7 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 				value := p.compatCacheValue(w, r, cacheKey, body)
 				p.compatCache.SetWithTTL(cacheKey, value, ttl)
 				p.storeCompatSharedReply(sharedKey, value, ttl)
+				p.storeCompatOversizedReply(sharedKey, cacheKey, value, ttl)
 				recordFlowCacheStore(r.Context(), cacheKey, len(value))
 				storedBody = body
 			}
