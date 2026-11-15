@@ -22,6 +22,7 @@ var (
 		`{app="shared-c"} |pattern"<_> <m> <_>" | m="GET"`,
 		`sum by (app) (rate({app="shared-d"} |= "x" [5m]))`,
 		`{app="shared-json"} |= "x" | json | status="500"`,
+		`{app="shared-drop-keep"} |= "x" | drop a, b | keep c`,
 		"{app=\"shared-regexp\"} | regexp `(?P<m>[A-Z]+) ` | m=\"GET\"",
 		`{app="shared-line-format"} |= "x" | line_format "{{.a}} {{.b}}"`,
 		`{app="shared-label-format"} | label_format x="{{.a}}"`,

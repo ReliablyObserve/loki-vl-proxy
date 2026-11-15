@@ -57,13 +57,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   translation does not parse the query again. Answers, translation cache entries and the queries VictoriaLogs
   receives do not change.
 - Log queries with `json` or `logfmt` parsers (with or without an extraction list, `logfmt` with its flags), `regexp`
-  and `pattern` parsers written with a blank before a plainly spelled expression, the label filters after them,
-  `label_format` stages whose values are text and `{{.name}}` fields or renames, and `line_format` stages with such a
-  template are served from the query plan instead of the string translator, where the plan writes the translator's
-  text byte for byte. A numeric equality after a parser, a `detected_level` or `service_name` filter after a stage,
-  and stages of a family not served stay with the string translator. Answers, translation cache entries and the
-  queries VictoriaLogs receives do not change; a translation that misses the cache costs no more allocations than the
-  string translator's. `-query-plan-lowering=false` turns it off.
+  and `pattern` parsers written with a blank before a plainly spelled expression, the label filters after them, `drop`
+  and `keep` stages (a `keep` of names or of matchers), `label_format` stages whose values are text and `{{.name}}`
+  fields or renames, and `line_format` stages with such a template are served from the query plan instead of the
+  string translator, where the plan writes the translator's text byte for byte. A numeric equality after a parser, a
+  `detected_level` or `service_name` filter after a stage, and stages of a family not served stay with the string
+  translator. Answers, translation cache entries and the queries VictoriaLogs receives do not change; a translation
+  that misses the cache costs no more allocations than the string translator's. `-query-plan-lowering=false` turns it
+  off.
 
 ### Fixed
 
