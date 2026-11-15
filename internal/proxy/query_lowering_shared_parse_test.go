@@ -21,6 +21,7 @@ var (
 		`{app="shared-b"} |= "x" | detected_level="error"`,
 		`{app="shared-c"} |pattern"<_> <m> <_>" | m="GET"`,
 		`sum by (app) (rate({app="shared-d"} |= "x" [5m]))`,
+		`{app="shared-json"} |= "x" | json | status="500"`,
 	}
 	sharedParseTurnedAway = []string{
 		`{app="shared-e"} |= "x" | service_name="api"`,

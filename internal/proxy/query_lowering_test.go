@@ -289,8 +289,8 @@ func TestQueryPlanLowering_ShadowCountsOnlyWhatStaysOnTheTranslator(t *testing.T
 		disable bool
 		want    map[string]int
 	}{
-		// `| json` is lowered natively but not served from the lowering (a parser stage): the shadow compares it.
-		{"flag on", false, map[string]int{"flipped LogSelect": 2, "match LogSelect": 1, "not_lowered RangeAgg grouping": 1}},
+		// `| json` is served from the lowering (the JSON stage family): nothing is left for the shadow to compare.
+		{"flag on", false, map[string]int{"flipped LogSelect": 3, "not_lowered RangeAgg grouping": 1}},
 		{"flag off", true, map[string]int{"match LogSelect": 3, "not_lowered RangeAgg grouping": 1}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -347,7 +347,7 @@ func TestQueryPlanLowering_ServesDetectedLevelFilters(t *testing.T) {
 func TestQueryPlanLowering_FallsBackToTheTranslator(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
 	prof := loweringProfile(nil, nil, logsql.Capabilities{}, false)
-	for _, q := range []string{"", "*", `rate({a="b"}[5m])`, `{a="b"} | json`, `{a="b" |= `, ` {a="b"}`} {
+	for _, q := range []string{"", "*", `rate({a="b"}[5m])`, `{a="b"} | unpack`, `{a="b" |= `, ` {a="b"}`} {
 		if got, ok := p.lowerLogSelect(context.Background(), q, prof); ok {
 			t.Errorf("lowerLogSelect(%q) = %q, want the translator to answer", q, got)
 		}

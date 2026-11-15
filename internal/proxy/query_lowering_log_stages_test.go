@@ -326,7 +326,7 @@ func TestQueryPlanLowering_ServesUnspacedParsers(t *testing.T) {
 		}
 	}
 	// Left to the string translator: a stage the plan does not serve.
-	if q := `{app="a"} |pattern"<_> <m>" | json`; true {
+	if q := `{app="a"} |pattern"<_> <m>" | decolorize`; true {
 		got, _ := p.translateLogResponseQuery(ctx, q)
 		want, _ := off.translateLogResponseQuery(ctx, q)
 		if got != want {

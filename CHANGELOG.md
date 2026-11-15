@@ -56,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fewer intermediate values. The request's validation keeps its parse for a query the query plan serves, so the
   translation does not parse the query again. Answers, translation cache entries and the queries VictoriaLogs
   receives do not change.
+- Log queries with a `json` parser (with or without an extraction list) and label filters after it are served from
+  the query plan instead of the string translator, where the plan writes the translator's text byte for byte. A
+  numeric equality after the parser, a `detected_level` or `service_name` filter after it, and stages of a family
+  not served yet stay with the string translator. Answers, translation cache entries and the queries VictoriaLogs
+  receives do not change; a translation that misses the cache costs fewer allocations than the string translator's.
+  `-query-plan-lowering=false` turns it off.
 
 ### Fixed
 

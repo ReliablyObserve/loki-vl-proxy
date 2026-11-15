@@ -669,7 +669,8 @@
     ],
     "flipped_log_stages": [
       "LevelFilter",
-      "UnspacedParser"
+      "UnspacedParser",
+      "JSON"
     ]
   }
 }
