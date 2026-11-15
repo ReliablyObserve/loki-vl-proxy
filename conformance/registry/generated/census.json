@@ -2698,6 +2698,8 @@
     "test/e2e-fleet/peer_cache_proof_test.go | peer-cache-stats-extent",
     "test/e2e-fleet/peer_cache_proof_test.go | quality/index-volume-settled-segments",
     "test/e2e-fleet/peer_cache_proof_test.go | quality/query-range-settled-steps",
+    "test/e2e-fleet/peer_push_replay_test.go | peer-cache-fleet-recovery",
+    "test/e2e-fleet/peer_push_replay_test.go | peer-cache-push-replay",
     "test/e2e-fleet/query_range_window_moved_reuse_test.go | semantics/query-range-window-full-limit-reads",
     "test/e2e-fleet/settled_steps_test.go | quality/query-range-settled-steps",
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache",
@@ -2716,7 +2718,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 611,
+      "go": 612,
       "playwright": 1
     },
     "page_kinds": {

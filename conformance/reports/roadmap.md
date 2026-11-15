@@ -34,7 +34,7 @@ Proven in part; the rest is named in the item's cases.
 | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | — | 0 / 4 | 5 | `| regexp` and `| pattern` captures are part of the series identity on the instant, range and byte routes, proven agains |
 | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | — | 18 / 23 | 42 | The filtered-volume pushdown cases (underscore labels, filters without `drop __error__`, ungrouped sums, translated labe |
 | `patterns-loki-mining` — /loki/api/v1/patterns answers the patterns Loki's pattern ingester mines, from the lines VictoriaLogs holds | — | 0 / 0 | 6 | 27 of 27 recorded Loki answers matched live (TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines) and the recorded orac |
-| `peer-cache-fleet-recovery` — With a ring owner down or every cache lost, the fleet answers like Loki from VictoriaLogs | — | 0 / 0 | 3 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
+| `peer-cache-fleet-recovery` — With a ring owner down or every cache lost, the fleet answers like Loki from VictoriaLogs | — | 0 / 0 | 4 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-label-values-index` — A replica that lost its disk restores the label-values index from its peers | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-metadata` — Label and detected-field answers are read from the ring owner and the disk tier | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-patterns` — Patterns mined on one replica are served by every replica and restored on a replica that lost its disk | — | 0 / 0 | 4 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
@@ -76,7 +76,7 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 4 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 4 | — |
 | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | — | 0 / 0 | 4 | — |
-| `peer-cache-push-replay` — Pushes a replica cannot take while its breaker is open are buffered and replayed, so the fleet heals to full replication | — | 0 / 0 | 5 | — |
+| `peer-cache-push-replay` — Pushes a replica cannot take while its breaker is open are buffered and replayed, so the fleet heals to full replication | — | 0 / 0 | 6 | — |
 | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | — | 0 / 0 | 8 | — |
 | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | — | 0 / 0 | 4 | — |
 

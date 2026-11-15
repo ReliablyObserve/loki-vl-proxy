@@ -410,6 +410,7 @@ func (pc *PeerCache) replay(addr string) {
 			pc.dropBacklog(addr, droppedClosed)
 			return
 		case <-timer.C:
+		case <-pb.wake: // another call found the peer answering again
 		}
 		now := time.Now()
 		if wait := pb.blockedFor(now.UnixNano()); wait > 0 {
@@ -430,7 +431,7 @@ func (pc *PeerCache) replay(addr string) {
 		pc.countDrops(drops)
 		if len(items) == 0 {
 			if halfOpen {
-				pb.probeAt.Store(0) // no call made: hand the probe back
+				pb.releaseProbe() // no call made: hand the probe back
 			}
 			if pc.pushBuf.finish(addr) {
 				if outage && replayed > 0 {
@@ -441,7 +442,10 @@ func (pc *PeerCache) replay(addr string) {
 			timer.Reset(replayPace)
 			continue
 		}
-		sent, retry := pc.sendReplay(addr, items)
+		sent, retry, called := pc.sendReplay(addr, items)
+		if halfOpen && !called {
+			pb.releaseProbe()
+		}
 		replayed += sent
 		pc.PushReplayed.Add(int64(sent))
 		if len(retry) > 0 {
@@ -457,8 +461,9 @@ func (pc *PeerCache) replay(addr string) {
 }
 
 // sendReplay pushes items to addr, at most replayMaxInFlight at once, and
-// returns how many landed and the ones to try again.
-func (pc *PeerCache) sendReplay(addr string, items []*bufferedPush) (sent int, retry []*bufferedPush) {
+// returns how many landed, the ones to try again and whether any call was
+// made.
+func (pc *PeerCache) sendReplay(addr string, items []*bufferedPush) (sent int, retry []*bufferedPush, called bool) {
 	outcomes := make([]pushOutcome, len(items))
 	send := func(i int) {
 		p := items[i]
@@ -502,9 +507,10 @@ func (pc *PeerCache) sendReplay(addr string, items []*bufferedPush) (sent int, r
 		default:
 			retry = append(retry, items[i])
 		}
+		called = called || (o != pushNotReplica && o != pushExpired)
 	}
 	pc.countDrops(drops)
-	return sent, retry
+	return sent, retry, called
 }
 
 // replicaOf reports whether addr is still one of key's replicas.
@@ -524,6 +530,15 @@ func (pc *PeerCache) dropBacklog(addr string, reason int) {
 		drops[i] = pushDrop{addr, p, reason}
 	}
 	pc.countDrops(drops)
+}
+
+// releaseProbe hands back the half-open probe a caller took with peerAllowed
+// but made no call with, so the next call probes the peer instead of the
+// suspension lasting another cooldown. Outside half-open it does nothing.
+func (pb *peerBreaker) releaseProbe() {
+	if pb.suspendedUntil.Load() != 0 {
+		pb.probeAt.Store(0)
+	}
 }
 
 // jittered spreads d over [d/2, 3d/2).

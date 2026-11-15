@@ -722,7 +722,9 @@ func (pc *PeerCache) Replicate(key string, value []byte, ttl time.Duration) {
 			}
 			continue
 		}
-		pc.enqueuePush(job)
+		if !pc.enqueuePush(job) {
+			pb.releaseProbe() // the push went to the backlog: no call was made
+		}
 	}
 }
 
@@ -746,32 +748,34 @@ type pushJob struct {
 	seq       uint64 // of the Replicate call, so a newer value wins in the backlog
 }
 
-func (pc *PeerCache) enqueuePush(job pushJob) {
+// enqueuePush queues a push for the workers and reports whether it was
+// queued (false: the queue was full).
+func (pc *PeerCache) enqueuePush(job pushJob) bool {
 	if pc.pushQueue == nil { // a PeerCache not built by NewPeerCache
 		go pc.pushToOwner(job.addr, job.key, job.value, job.ttl)
-		return
+		return true
 	}
 	size := int64(len(job.value))
 	if pc.pushQueued.Add(size) > maxQueuedPushBytes {
 		pc.pushQueued.Add(-size)
 		pc.queueFull(job)
-		return
+		return false
 	}
 	select {
 	case pc.pushQueue <- job:
 	default:
 		pc.pushQueued.Add(-size)
 		pc.queueFull(job)
-		return
+		return false
 	}
 	for {
 		n := pc.pushers.Load()
 		if n >= maxInFlightPushes {
-			return
+			return true
 		}
 		if pc.pushers.CompareAndSwap(n, n+1) {
 			go pc.pushWorker()
-			return
+			return true
 		}
 	}
 }
@@ -820,6 +824,7 @@ func (pc *PeerCache) sendJob(job pushJob) {
 	pb := pc.breaker(job.addr)
 	if pb.buffered.Load() > 0 {
 		pc.bufferPush(job.addr, job, bufferedBacklog)
+		pb.releaseProbe() // had this push the half-open probe, no call was made
 		return
 	}
 	if pb.blockedFor(time.Now().UnixNano()) > 0 {
@@ -2225,8 +2230,10 @@ type peerBreaker struct {
 	// tried again, without counting towards the breaker.
 	seenUp     atomic.Bool
 	notUpUntil atomic.Int64 // Unix ns
-	// buffered is the length of the peer's push backlog (pushBuffer).
+	// buffered is the length of the peer's push backlog (pushBuffer), and
+	// wake tells its replayer the peer answered (nil: never woken early).
 	buffered atomic.Int64
+	wake     chan struct{}
 	probeAt  atomic.Int64 // Unix ns the running probe started; 0 when none
 	mu       sync.Mutex
 	ctx      context.Context // cancelled when the peer is suspended
@@ -2240,6 +2247,7 @@ func (pc *PeerCache) breaker(addr string) *peerBreaker {
 	v, _ := pc.breakers.LoadOrStore(addr, &peerBreaker{
 		threshold: 5,
 		cooldown:  10 * time.Second,
+		wake:      make(chan struct{}, 1),
 	})
 	return v.(*peerBreaker)
 }
@@ -2354,6 +2362,12 @@ func (pc *PeerCache) recordPeerSuccess(addr string) {
 		pb.suspendedUntil.Store(0)
 	}
 	pb.probeAt.Store(0)
+	if pb.buffered.Load() > 0 { // a replayer may be waiting out the cooldown
+		select {
+		case pb.wake <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // peerFetchBuckets are the upper bounds of the peer fetch duration

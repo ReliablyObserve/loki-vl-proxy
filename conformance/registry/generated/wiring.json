@@ -796,7 +796,8 @@
     "peer-cache-fleet-recovery": [
       "internal/cache/peer_protocol_edges_test.go",
       "internal/proxy/peer_warm_fetch_test.go",
-      "test/e2e-fleet/peer_cache_proof_test.go"
+      "test/e2e-fleet/peer_cache_proof_test.go",
+      "test/e2e-fleet/peer_push_replay_test.go"
     ],
     "peer-cache-label-values-index": [
       "test/e2e-fleet/peer_cache_proof_test.go"
@@ -815,7 +816,8 @@
       "internal/cache/peer_push_buffer_fuzz_test.go",
       "internal/cache/peer_push_buffer_test.go",
       "internal/cache/peer_replication_test.go",
-      "internal/proxy/peer_push_buffer_test.go"
+      "internal/proxy/peer_push_buffer_test.go",
+      "test/e2e-fleet/peer_push_replay_test.go"
     ],
     "peer-cache-query-range-windows": [
       "test/e2e-fleet/peer_cache_proof_test.go"
@@ -5206,6 +5208,10 @@
       "quality/index-volume-settled-segments",
       "quality/query-range-settled-steps"
     ],
+    "test/e2e-fleet/peer_push_replay_test.go": [
+      "peer-cache-fleet-recovery",
+      "peer-cache-push-replay"
+    ],
     "test/e2e-fleet/query_range_window_moved_reuse_test.go": [
       "semantics/query-range-window-full-limit-reads"
     ],
@@ -5222,7 +5228,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 612,
+  "tests_with_markers": 613,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

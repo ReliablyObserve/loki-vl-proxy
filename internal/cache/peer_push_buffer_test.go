@@ -19,7 +19,7 @@ import (
 // shortCooldown makes node from's breaker for node to open for d instead of
 // the 10s cooldown, so a test sees the half-open probe without waiting.
 func (f *replFleet) shortCooldown(from, to int, d time.Duration) *peerBreaker {
-	pb := &peerBreaker{threshold: 5, cooldown: d}
+	pb := &peerBreaker{threshold: 5, cooldown: d, wake: make(chan struct{}, 1)}
 	f.nodes[from].pc.breakers.Store(f.addr(to), pb)
 	return pb
 }
@@ -337,6 +337,57 @@ func TestPeerPushReplay_QueuedPushToOpenPeerIsBufferedWithoutACall(t *testing.T)
 	}
 }
 
+// A replayer waiting out a peer's cooldown starts as soon as another call
+// (a lookup's half-open probe) finds the peer answering, not when the
+// cooldown it slept on ends.
+//
+// conformance: peer-cache-push-replay
+func TestPeerPushReplay_WakesWhenThePeerAnswers(t *testing.T) {
+	pc, addr := clientPeer(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	pb := pc.breaker(addr)
+	pb.seenUp.Store(true)
+	pb.suspendedUntil.Store(time.Now().Add(time.Hour).UnixNano())
+	pc.bufferPush(addr, pushJob{addr: addr, key: "k", value: []byte("v"), ttl: time.Minute, seq: 1}, bufferedPeerUnavailable)
+	time.Sleep(20 * time.Millisecond) // the replayer sleeps on the suspension
+	pc.recordPeerSuccess(addr)        // a lookup's probe got an answer
+	started := time.Now()
+	waitFor(t, "the replay after the peer answered", func() bool { return pc.PushReplayed.Load() == 1 })
+	if took := time.Since(started); took > time.Second {
+		t.Fatalf("the replay started %s after the peer answered", took)
+	}
+}
+
+// A push that takes the half-open probe but goes to the backlog (the queue
+// was full) hands the probe back, so the replayer probes at once instead of
+// the peer staying suspended for another cooldown.
+//
+// conformance: peer-cache-push-replay
+func TestPeerPushReplay_UnusedProbeIsHandedBack(t *testing.T) {
+	pc, addr := clientPeer(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	pc.replication = 2
+	pc.updatePeers([]string{"self:3100", addr})
+	pb := pc.breaker(addr)
+	pb.seenUp.Store(true)
+	pb.suspendedUntil.Store(time.Now().Add(-time.Millisecond).UnixNano()) // half open
+	pc.pushQueued.Store(maxQueuedPushBytes)                               // the queue is full
+	pc.Replicate("k", []byte("v"), time.Minute)
+	waitFor(t, "the replay", func() bool { return pc.PushReplayed.Load() == 1 })
+	if pb.suspendedUntil.Load() != 0 {
+		t.Fatal("the replayed probe did not close the breaker")
+	}
+	pb.suspendedUntil.Store(time.Now().Add(-time.Millisecond).UnixNano())
+	pb.probeAt.Store(time.Now().UnixNano())
+	pb.releaseProbe()
+	if pb.probeAt.Load() != 0 {
+		t.Fatal("a half-open probe was not handed back")
+	}
+	pb.suspendedUntil.Store(0)
+	pb.probeAt.Store(7)
+	if pb.releaseProbe(); pb.probeAt.Load() != 7 {
+		t.Fatal("releaseProbe changed a closed breaker")
+	}
+}
+
 // A push the queue has no room for waits in the backlog and is sent from
 // there; with buffering off it is dropped and counted as before.
 //
@@ -406,8 +457,8 @@ func TestPeerPushReplay_RingChangesDropBacklog(t *testing.T) {
 	if pc.replicaOf("k", "peer:1") {
 		t.Fatal("a removed peer is still a replica")
 	}
-	sent, retry := pc.sendReplay("peer:1", []*bufferedPush{{key: "k", value: []byte("v"), expiresAt: time.Now().Add(time.Minute).UnixNano()}})
-	if sent != 0 || len(retry) != 0 || pc.PushBufferDropped[droppedNotReplica].Load() != 1 {
+	sent, retry, called := pc.sendReplay("peer:1", []*bufferedPush{{key: "k", value: []byte("v"), expiresAt: time.Now().Add(time.Minute).UnixNano()}})
+	if sent != 0 || len(retry) != 0 || called || pc.PushBufferDropped[droppedNotReplica].Load() != 1 {
 		t.Fatalf("sent %d, retry %d, not-replica drops %d", sent, len(retry), pc.PushBufferDropped[droppedNotReplica].Load())
 	}
 }
@@ -420,11 +471,11 @@ func TestPeerPushReplay_RejectedIsDroppedServerErrorRetried(t *testing.T) {
 	status.Store(http.StatusBadRequest)
 	pc, addr := clientPeer(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(int(status.Load())) })
 	items := []*bufferedPush{{key: "k", value: []byte("v"), expiresAt: time.Now().Add(time.Minute).UnixNano()}}
-	if sent, retry := pc.sendReplay(addr, items); sent != 0 || len(retry) != 0 || pc.PushBufferDropped[droppedRejected].Load() != 1 {
+	if sent, retry, called := pc.sendReplay(addr, items); sent != 0 || len(retry) != 0 || !called || pc.PushBufferDropped[droppedRejected].Load() != 1 {
 		t.Fatalf("400: sent %d, retry %d", sent, len(retry))
 	}
 	status.Store(http.StatusServiceUnavailable)
-	if sent, retry := pc.sendReplay(addr, items); sent != 0 || len(retry) != 1 {
+	if sent, retry, _ := pc.sendReplay(addr, items); sent != 0 || len(retry) != 1 {
 		t.Fatalf("503: sent %d, retry %d", sent, len(retry))
 	}
 }
