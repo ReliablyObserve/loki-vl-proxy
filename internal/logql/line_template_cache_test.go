@@ -83,7 +83,8 @@ func TestParseUntypedTemplates(t *testing.T) {
 	if _, ok := lineTemplates.Load("{{.never_typed}}"); ok {
 		t.Error("the template was typed")
 	}
-	if n := testing.AllocsPerRun(20, func() { _, _ = ParseUntypedTemplates(q) }); n > 5 {
+	// Coverage instrumentation changes allocation counts.
+	if n := testing.AllocsPerRun(20, func() { _, _ = ParseUntypedTemplates(q) }); n > 5 && testing.CoverMode() == "" {
 		t.Errorf("%v allocations", n)
 	}
 }

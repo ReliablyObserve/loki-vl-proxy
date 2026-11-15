@@ -53,7 +53,8 @@ func TestParseLogQueryAllocations(t *testing.T) {
 		if _, err := Parse(tc.query); err != nil {
 			t.Fatalf("%q: %v", tc.query, err)
 		}
-		if got := testing.AllocsPerRun(50, func() { _, _ = Parse(tc.query) }); got > tc.max {
+		// Coverage instrumentation changes allocation counts.
+		if got := testing.AllocsPerRun(50, func() { _, _ = Parse(tc.query) }); got > tc.max && testing.CoverMode() == "" {
 			t.Errorf("%q: %v allocations, want at most %v", tc.query, got, tc.max)
 		}
 	}
