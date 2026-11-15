@@ -185,6 +185,11 @@ func cachedQueryValidation(query string) queryValidation {
 		if lq, ok := expr.(*logql.LogQuery); ok {
 			result.logQuery, result.selector = true, len(lq.Pipeline) == 0
 		}
+		if cacheable && !turnedAwayByStages(expr) && lowersParse(query) {
+			// The translation plans the query: it reads this parse from the plan memo, as the handlers that read the
+			// query's tree do (sharedLogQLExpr), and does not parse the query again.
+			planMemoStore(query, &planMemoEntry{expr: expr})
+		}
 	}
 	if cacheable {
 		storeValidationResult(query, result)
@@ -251,17 +256,13 @@ func rewriteQuantilePhiGT1(query string) string {
 // text the handlers translate.
 func RewriteQuantilePhiGT1(query string) string { return rewriteQuantilePhiGT1(query) }
 
-// sanitizeLimit caps and validates the limit parameter against the request
-// tenant's max_entries_limit_per_query; 0 is unlimited, as in Loki.
+// sanitizeLimit caps the limit parameter of a log query to the request tenant's
+// max_entries_limit_per_query; 0 is unlimited, as in Loki. The request route has
+// already given the limit a positive integer value (requestParamValidation
+// rejects any other and withDefaultEntryLimit fills an absent one), so limitStr
+// is always one.
 func sanitizeLimit(limitStr string, maxLimit int) string {
-	if limitStr == "" {
-		return "1000"
-	}
-	n, err := strconv.Atoi(limitStr)
-	if err != nil || n <= 0 {
-		return "1000"
-	}
-	if maxLimit > 0 && n > maxLimit {
+	if n, _ := strconv.Atoi(limitStr); maxLimit > 0 && n > maxLimit {
 		return strconv.Itoa(maxLimit)
 	}
 	return limitStr
@@ -1628,11 +1629,22 @@ type statusCapture struct {
 	code         int
 	bytesWritten int
 	wroteHeader  bool
+	// beforeHeader, when set, adds headers once, just before they are sent.
+	beforeHeader func(http.Header)
+}
+
+// sendingHeader runs beforeHeader the first time the headers go out.
+func (sc *statusCapture) sendingHeader() {
+	if sc.beforeHeader != nil {
+		sc.beforeHeader(sc.Header())
+		sc.beforeHeader = nil
+	}
 }
 
 func (sc *statusCapture) WriteHeader(code int) {
 	sc.code = code
 	sc.wroteHeader = true
+	sc.sendingHeader()
 	sc.ResponseWriter.WriteHeader(code)
 }
 
@@ -1647,6 +1659,7 @@ func (sc *statusCapture) Write(b []byte) (int, error) {
 		}
 		sc.ResponseWriter.Header().Set("X-Content-Type-Options", "nosniff")
 		sc.wroteHeader = true
+		sc.sendingHeader()
 	}
 	n, err := sc.ResponseWriter.Write(b)
 	sc.bytesWritten += n
@@ -1655,6 +1668,7 @@ func (sc *statusCapture) Write(b []byte) (int, error) {
 
 // Flush implements http.Flusher for chunked streaming support.
 func (sc *statusCapture) Flush() {
+	sc.sendingHeader()
 	if f, ok := sc.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}

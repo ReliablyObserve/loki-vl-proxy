@@ -109,12 +109,12 @@ func TestCacheLayerMetricsRouteCompleteResponseReuse(t *testing.T) {
 	shape := dlvBaselineShapes[2]
 	backend, fixture := newDLVBaselineBackend(t, shape, base)
 	p := newDLVBaselineProxy(t, backend.URL, true)
+	origins := traceVLCallOrigins(p)
 	target, headers := dlvBaselineRequest(shape, base.Add(time.Minute), base.Add(3*time.Minute))
-	first := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, headers))
-	before := fixture.calls.Load()
-	second := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, headers))
+	first := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "cold")))
+	second := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, withHeader(headers, vlCallOriginHeader, "repeat")))
 	want := dlvBaselineWant(fixture.rows, shape, base.Add(time.Minute), base.Add(3*time.Minute), "10", "alpha")
-	if len(first) == 0 || !reflect.DeepEqual(first, want) || !reflect.DeepEqual(second, want) || fixture.calls.Load() != before {
+	if len(first) == 0 || !reflect.DeepEqual(first, want) || !reflect.DeepEqual(second, want) || origins.made("cold") == 0 || origins.made("repeat") != 0 {
 		t.Fatal("complete response repeat changed or read backend again")
 	}
 	body := scrapeProxyCacheLayers(t, p)

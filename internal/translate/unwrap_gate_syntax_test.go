@@ -121,6 +121,10 @@ func TestUnwrapGateRoundTrip(t *testing.T) {
 			if !ok || base != `{app="x"}` || got != field {
 				t.Errorf("%s %s: SplitUnwrapGate = %q, %q, %v", field, conv, base, got, ok)
 			}
+			// A gate the query goes on after is not the end of the query.
+			if _, _, ok := SplitUnwrapGate(`{app="x"}` + gate + ` | hash(_msg) as h`); ok {
+				t.Errorf("%s %s: SplitUnwrapGate split a gate with pipes after it", field, conv)
+			}
 		}
 	}
 	if gate := UnwrapGate("n"); gate != UnwrapGateFor("n", "") {

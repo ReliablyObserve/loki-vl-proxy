@@ -32,6 +32,7 @@ import (
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
@@ -94,16 +95,18 @@ func keepMetadataProjectionResponseKeyVersion(query string) string {
 // label filter and, from v4, a `|= ip("...")` or `!= ip("...")` line filter.
 var ipLabelFilterStageRE = regexp.MustCompile(`(?:[A-Za-z0-9_]\s*!?=|[|!]=)\s*ip\s*\(`)
 
-const ipLabelFilterResponseVersion = "@ip-label-filter-v4:"
+const ipLabelFilterResponseVersion = "@ip-label-filter-v5:"
 
 // ipLabelFilterResponseKeyVersion fences the replies cached before an ip()
 // label filter answered like Loki in local and peer-fed response caches: v1
 // before an absent label matched neither operator, v2 before the `| json` and
 // `| logfmt` metric plans compared the label with the text ip(...) and so
 // answered no series, v3 before an IPv4 pattern read a value with an address
-// inside other text ("1.2.3.4:443"), and v4 before an IPv4 address after a run
+// inside other text ("1.2.3.4:443"), v4 before an IPv4 address after a run
 // of dots that a digit or a dot precedes ("0..1.2.3.4") stopped matching, in
-// label and line filters alike.
+// label and line filters alike, and v5 before an IPv4 address was found where
+// Loki's scan finds it after hex digits and colons ("X0:1.2.3.0" matches,
+// "1:a1.2.3.0" does not).
 //
 // Every query and query_range request builds this key: a query without the
 // text "ip", which every match holds, skips the regexp.
@@ -189,7 +192,7 @@ type Config struct {
 	ForwardTenantHeader bool // forward per-tenant X-Scope-OrgID to upstream (safe for VL, needed for Victoria Lakehouse)
 
 	// Grafana datasource compatibility
-	MaxLines int // default max lines per query (0=1000)
+	MaxLines int // entries of a log query that sends no limit (0 = DefaultMaxLines, Loki's 100)
 	// RangeMetricRowLimit caps the number of log rows fetched per collectRangeMetricSamples
 	// call used by manual range-metric compatibility (rate, count_over_time, etc.).
 	// 0 means use the built-in default of 1,000,000. Lower values bound memory at the cost
@@ -599,6 +602,10 @@ type Config struct {
 	// backend query params in debug-level logs. Intended for local development
 	// only. Default is false (redacted).
 	DebugLogRawQueries bool
+	// DebugVLCallsHeader adds X-Loki-VL-Backend-Calls and
+	// X-Loki-VL-Cache-Result to every read response (vl_calls_header.go).
+	// Off by default: Loki sends neither header.
+	DebugVLCallsHeader bool
 	// SlowQueryThreshold is the duration at or over which a client request is slow: counted and logged with
 	// its LogQL and trace (slow_query_log.go). 0 turns it off.
 	SlowQueryThreshold time.Duration
@@ -757,6 +764,8 @@ type Proxy struct {
 	tenantMapFileSet                      bool
 	loweringShadow                        *loweringShadow // nil unless -translate-shadow-sample is set
 	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
+	flippedConstructs                     []string        // QueryPlanFlippedConstructs, read once by New
+	flippedLogStages                      lower.LogStages // QueryPlanFlippedLogStages, read once by New
 	queryStatsVictoriaLogsMode            bool            // -query-stats-mode=victorialogs: measured stats, not Loki's accounting
 	queryStatsExactMetricBytes            bool            // -query-stats-exact-metric-bytes
 	queryStatsExactLogLines               bool            // -query-stats-exact-log-lines
@@ -846,7 +855,10 @@ type Proxy struct {
 	queryRangeExtentCacheTTL              time.Duration
 	// statsExtentStores bounds and tracks the extent
 	// cache stores running off the request path (stats_extent_cache.go).
-	statsExtentStores                    *statsExtentStoreGroup
+	statsExtentStores *statsExtentStoreGroup
+	// statsExtentPending holds the extent stores in progress per extent key,
+	// which a lookup of the same key waits for (stats_extent_cache.go).
+	statsExtentPending                   statsExtentPendingStores
 	parseRiskProbeCacheTTL               time.Duration
 	parseRiskProbeSettle                 time.Duration
 	queryRangeWindowTimeout              time.Duration
@@ -913,6 +925,7 @@ type Proxy struct {
 	cacheTTLLabelValues                  time.Duration // per-instance TTL for label_values endpoint
 	metadataNegativeCacheTTL             time.Duration // TTL for empty label lists; see effectiveMetadataNegativeTTL
 	debugLogRawQueries                   bool          // when true, debug logs include raw LogQL/LogsQL and backend params
+	debugVLCallsHeader                   bool          // when true, read responses carry the request's VictoriaLogs calls (vl_calls_header.go)
 	slowQueryThreshold                   time.Duration
 	slowUpstreamThreshold                time.Duration
 	slowQueryLogRawQueries               bool
@@ -1193,7 +1206,7 @@ func New(cfg Config) (*Proxy, error) {
 
 	maxLines := cfg.MaxLines
 	if maxLines <= 0 {
-		maxLines = 1000
+		maxLines = DefaultMaxLines
 	}
 
 	backendHeaders := maps.Clone(cfg.BackendHeaders)
@@ -1464,6 +1477,8 @@ func New(cfg Config) (*Proxy, error) {
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
 		loweringShadow:                        newLoweringShadow(cfg.TranslateShadowSample),
 		queryPlanLowering:                     !cfg.DisableQueryPlanLowering,
+		flippedConstructs:                     QueryPlanFlippedConstructs,
+		flippedLogStages:                      lower.LogStagesOf(QueryPlanFlippedLogStages),
 		queryStatsVictoriaLogsMode:            cfg.QueryStatsMode == QueryStatsModeVictoriaLogs,
 		queryStatsExactMetricBytes:            cfg.QueryStatsExactMetricBytes,
 		queryStatsExactLogLines:               cfg.QueryStatsExactLogLines,
@@ -1565,6 +1580,7 @@ func New(cfg Config) (*Proxy, error) {
 		cacheTTLLabelValues:                   labelCacheTTL,
 		metadataNegativeCacheTTL:              effectiveMetadataNegativeTTL(cfg.Cache.DiskMinTTL(), cfg.PeerCache.WriteThroughMinTTL()),
 		debugLogRawQueries:                    cfg.DebugLogRawQueries,
+		debugVLCallsHeader:                    cfg.DebugVLCallsHeader,
 		slowQueryThreshold:                    cfg.SlowQueryThreshold,
 		slowUpstreamThreshold:                 cfg.SlowUpstreamThreshold,
 		slowQueryLogRawQueries:                cfg.SlowQueryLogRawQueries,
@@ -1577,6 +1593,9 @@ func New(cfg Config) (*Proxy, error) {
 		metadataMaxStaleness:                  max(cfg.MetadataMaxStaleness, 0),
 		metadataEdgeRefreshBudget:             max(cfg.MetadataEdgeRefreshBudget, 0),
 		drilldownScanTimeout:                  cfg.DrilldownScanTimeout,
+	}
+	if p.debugVLCallsHeader {
+		p.countVLCalls()
 	}
 	p.metrics.SetCacheLayerStatsProvider(p.cacheLayerStats)
 	coalescerStats := func() metrics.CoalescerStats {
@@ -2442,10 +2461,10 @@ func (p *Proxy) peerCacheMetrics() string {
 			"# HELP loki_vl_proxy_peer_cache_peer_not_up_total Refused connections to peers that had not answered yet since this process started (peers still starting: skipped briefly, not counted as failures).\n"+
 			"# TYPE loki_vl_proxy_peer_cache_peer_not_up_total counter\n"+
 			"loki_vl_proxy_peer_cache_peer_not_up_total %d\n"+
-			"# HELP loki_vl_proxy_peer_cache_push_peer_not_up_total Pushes to a peer that was still starting that were dropped (above the kept-push bound, or the peer never answered within 30s); the others are sent once it answers.\n"+
+			"# HELP loki_vl_proxy_peer_cache_push_peer_not_up_total Buffered pushes to a peer that had not answered since this process started that were dropped (buffer full, TTL ran out, buffering off); the others are sent once it answers.\n"+
 			"# TYPE loki_vl_proxy_peer_cache_push_peer_not_up_total counter\n"+
 			"loki_vl_proxy_peer_cache_push_peer_not_up_total %d\n"+
-			"# HELP loki_vl_proxy_peer_cache_push_throttled_total Pushes dropped because the push queue was full (4096 pushes or 64 MiB waiting behind 64 running).\n"+
+			"# HELP loki_vl_proxy_peer_cache_push_throttled_total Pushes dropped because the push queue was full (4096 pushes or 64 MiB waiting behind 64 running) while the push buffer is off; with it on they are buffered.\n"+
 			"# TYPE loki_vl_proxy_peer_cache_push_throttled_total counter\n"+
 			"loki_vl_proxy_peer_cache_push_throttled_total %d\n"+
 			"# HELP loki_vl_proxy_peer_cache_push_too_large_total Peer pushes skipped because the value is above the peers' accepted body size.\n"+
@@ -2476,7 +2495,41 @@ func (p *Proxy) peerCacheMetrics() string {
 			"# TYPE loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total counter\n"+
 			"loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total %d\n",
 		remotePeers, clusterMembers, replication, hits, backupHits, misses, errors, reasonLines.String(), peerNotUp, pushPeerNotUp, pushThrottled, pushTooLarge, wtPushes, wtErrors, raHotRequests, raHotErrors, raPrefetches, raPrefetchBytes, raBudgetDrops, raTenantSkips,
-	) + p.peerCache.FetchDurationText()
+	) + peerPushBufferMetrics(stats) + p.peerCache.FetchDurationText()
+}
+
+// peerPushBufferMetrics renders the push buffer's counters and gauges: pushes
+// a peer could not take, buffered by reason, coalesced, replayed once the peer
+// answered, and dropped by reason.
+func peerPushBufferMetrics(stats map[string]interface{}) string {
+	var b strings.Builder
+	labelled := func(name, help string, counts map[string]int64) {
+		reasons := make([]string, 0, len(counts))
+		for reason := range counts {
+			reasons = append(reasons, reason)
+		}
+		sort.Strings(reasons)
+		fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s counter\n", name, help, name)
+		for _, reason := range reasons {
+			fmt.Fprintf(&b, "%s{reason=%q} %d\n", name, reason, counts[reason])
+		}
+	}
+	plain := func(name, kind, help string, value int64) {
+		fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s %s\n%s %d\n", name, help, name, kind, name, value)
+	}
+	buffered, _ := stats["push_buffered"].(map[string]int64)
+	dropped, _ := stats["push_buffer_dropped"].(map[string]int64)
+	coalesced, _ := stats["push_coalesced"].(int64)
+	replayed, _ := stats["push_replayed"].(int64)
+	entries, _ := stats["push_buffer_entries"].(int)
+	bytes, _ := stats["push_buffer_bytes"].(int64)
+	labelled("loki_vl_proxy_peer_cache_push_buffered_total", "Pushes a peer could not take, kept in the push buffer to be replayed, by reason (peer_unavailable, peer_not_up, queue_full, push_failed, backlog).", buffered)
+	plain("loki_vl_proxy_peer_cache_push_buffer_coalesced_total", "counter", "Buffered pushes that met a buffered value of the same key (the newer value is kept).", coalesced)
+	plain("loki_vl_proxy_peer_cache_push_replayed_total", "counter", "Buffered pushes delivered once their peer answered again.", replayed)
+	labelled("loki_vl_proxy_peer_cache_push_buffer_dropped_total", "Buffered pushes given up, by reason (full, expired, peer_removed, not_replica, rejected, closed, disabled).", dropped)
+	plain("loki_vl_proxy_peer_cache_push_buffer_entries", "gauge", "Pushes waiting in the push buffer, all peers together.", int64(entries))
+	plain("loki_vl_proxy_peer_cache_push_buffer_bytes", "gauge", "Bytes of the values waiting in the push buffer, all peers together.", bytes)
+	return b.String()
 }
 
 // handleQueryRange translates Loki range queries.
@@ -2797,6 +2850,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A parser's dynamic identity over a range longer than the step keeps the stream's series (dynamicIdentityWindows).
+	r = p.dynamicIdentityWindows(r, logqlQuery)
+
 	if postAgg, ok := parseInstantMetricPostAggQuery(logqlQuery); ok {
 		if postAgg.name == "topk" || postAgg.name == "bottomk" {
 			stepsRun.arm() // ranked per step (applyTopKToMatrix)
@@ -2804,7 +2860,6 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		p.handleRangeMetricPostAggregation(w, withQueryStepsSilent(r, stepsRun), start, logqlQuery, postAgg)
 		return
 	}
-
 	logsqlQuery, err := p.translateLogResponseQuery(r.Context(), logqlQuery)
 	if err != nil {
 		status := p.fail(w, r, queryRefusal(err))
@@ -2883,8 +2938,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if isBinary {
 		// Binary metric expression: sum(rate(...)) / sum(rate(...))
 		// translateBinOpSide handles scalar literals (e.g. * 100) without translation.
-		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
-		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)
+		left, right := p.binaryOperandSides(r, binOp)
+		leftLogsql, leftErr := p.translateBinOpSideText(left.ctx, binOp.Left, left.text)
+		rightLogsql, rightErr := p.translateBinOpSideText(right.ctx, binOp.Right, right.text)
 		if leftErr != nil {
 			p.writeErr(sc, r.Context(), queryRefusal(leftErr))
 		} else if rightErr != nil {

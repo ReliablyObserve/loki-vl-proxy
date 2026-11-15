@@ -198,8 +198,12 @@ func TestMultiTenantFanout_DrilldownTenantFailureFailsWholeRequest(t *testing.T)
 			mux.ServeHTTP(rec, newReq("tenant-a"))
 			assertFailure(rec)
 
-			mtKey, mtCacheable := p.multiTenantCacheKey(newReq("tenant-a|tenant-b"), "query_range")
-			compatKey, compatCacheable := p.compatCacheKey("query_range", newReq("tenant-a|tenant-b"))
+			// The keys of the request the route serves, which carries the default limit it adds.
+			keyReq := newReq("tenant-a|tenant-b")
+			_ = keyReq.ParseForm()
+			keyReq = p.withDefaultEntryLimit(keyReq)
+			mtKey, mtCacheable := p.multiTenantCacheKey(keyReq, "query_range")
+			compatKey, compatCacheable := p.compatCacheKey("query_range", keyReq)
 			if !mtCacheable || !compatCacheable {
 				t.Fatalf("request not cacheable: merge cache %v, compatibility-edge cache %v", mtCacheable, compatCacheable)
 			}

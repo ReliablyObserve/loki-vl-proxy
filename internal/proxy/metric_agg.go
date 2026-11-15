@@ -464,10 +464,9 @@ func topKGroupKey(group *logqlpkg.Grouping, metric map[string]string) string {
 func topLevelCommaIndex(s string) int { return logqlpkg.TopLevelCommaIndex(s) }
 
 func preserveMetricStreamIdentity(originalLogQL, translatedLogsQL string, withoutLabels []string) string {
-	if !isStatsQuery(translatedLogsQL) {
-		return translatedLogsQL
-	}
-	if strings.Contains(translatedLogsQL, "| stats by (") {
+	// A grouped stats text keeps its grouping whether it decodes or not: the cheap test goes first, so the text is
+	// parsed only when the answer depends on it.
+	if strings.Contains(translatedLogsQL, "| stats by (") || !isStatsQuery(translatedLogsQL) {
 		return translatedLogsQL
 	}
 	// A label_replace around the metric does not change which

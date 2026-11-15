@@ -110,29 +110,17 @@ func unwrapGrid() []string {
 // rangeUnwrapLokiAnswers holds Loki's answers to rangeDurationGrid and unwrapGrid, in that order.
 const rangeUnwrapLokiAnswers = "testdata/range-unwrap-grammar-loki.jsonl"
 
-// rangeUnwrapKnown are the queries Loki accepts and the proxy still rejects: a range of a bare 0, which Loki reads as
-// a duration of nothing (semantics/range-duration-grammar-wider-than-loki).
-var rangeUnwrapKnown = func() map[string]bool {
-	known := map[string]bool{}
-	for _, q := range rangeDurationGrid() {
-		if strings.Contains(q, "[0]") {
-			known[q] = true
-		}
-	}
-	return known
-}()
-
 // A [range] is read as Loki reads it, with Prometheus' duration parser: the durations it rejects (`[1µs]`, `[1us]`,
-// `[5m5m]`, `[1.5m]`, `[ 5m]`, `[9999999999h]`) are Loki's 400 with its text, the ones it reads are accepted, and an
-// offset still reads Go's durations. An unwrap stands only inside a range aggregation, and only label filters follow
-// it: a log query with an unwrap and any other stage after one are Loki's syntax error, after the errors of the
-// stages Loki builds while it parses; on and ignoring take their list. Loki's answers are recorded with the Loki
+// `[5m5m]`, `[1.5m]`, `[ 5m]`, `[9999999999h]`, `[00]`) are Loki's 400 with its text, the ones it reads (`[0]` among
+// them) are accepted, and an offset still reads Go's durations. An unwrap stands only inside a range aggregation, and
+// only label filters follow it: a log query with an unwrap and any other stage after one are Loki's syntax error,
+// after the errors of the stages Loki builds while it parses; on and ignoring take their list. Loki's answers are recorded with the Loki
 // oracle check command (LVP_RUN_ORACLES=1 records them again).
 //
 // conformance: semantics/range-duration-grammar-wider-than-loki, semantics/unwrap-in-log-query, semantics/stage-after-unwrap-accepted, semantics/binary-on-without-label-list-accepted
 func TestRangeAndUnwrapGrammarMatchLoki(t *testing.T) {
 	grid := append(rangeDurationGrid(), unwrapGrid()...)
-	requireLokiAnswers(t, "check", grid, rangeUnwrapLokiAnswers, rangeUnwrapKnown)
+	requireLokiAnswers(t, "check", grid, rangeUnwrapLokiAnswers, nil)
 }
 
 // Parse keeps reading a log query with an unwrap stage (the handlers drop Grafana's `| unwrap [1s]` stubs before they
@@ -155,11 +143,14 @@ func TestParseKeepsUnwrapInLogQueryForTheStubs(t *testing.T) {
 }
 
 // promRange is Prometheus' duration form, written apart from rangeLexError: whole numbers and the units largest first,
-// each at most once.
+// each at most once; a bare 0 (promRangeNanos) is the one number without a unit.
 var promRange = regexp.MustCompile(`^(?:(\d+)y)?(?:(\d+)w)?(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?(?:(\d+)ms)?$`)
 
 // promRangeNanos is the length of a text promRange matches, or nil when it is empty or too long for a duration.
 func promRangeNanos(d string) *big.Int {
+	if d == "0" {
+		return new(big.Int)
+	}
 	m := promRange.FindStringSubmatch(d)
 	if d == "" || m == nil {
 		return nil

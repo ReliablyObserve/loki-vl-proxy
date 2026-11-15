@@ -24,6 +24,7 @@ var benchQueries = map[string]string{
 	"unwrap_filter": `sum_over_time({app="api"} | json | unwrap latency | __error__="" [1h30m])`,
 	"binary_three":  `rate({app="a"}[5m]) + rate({app="b"}[5m]) + rate({app="c"}[5m])`,
 	"spaced":        "sum by (app)\n\t(rate({app=\"api\"}\r\n|= \"x\" [5m]))",
+	"keep_drop":     "{app=\"api\"} | json | drop a, b=\"x\" | keep c | keep\v",
 }
 
 func BenchmarkParse(b *testing.B) {
