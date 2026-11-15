@@ -124,5 +124,22 @@ class SummaryTest(unittest.TestCase):
         self.assertIn("gate passes", text)
 
 
+class ExecutiveSummaryFiguresTest(unittest.TestCase):
+    def test_verdict_totals_add_every_corpus_source(self):
+        discovery = {"summary": {"a": {"requests": 5, "same": 3, "diff": 1, "vacuous": 1, "blocked": 0},
+                                 "b": {"requests": 4, "same": 1, "diff": 1, "vacuous": 1, "blocked": 1}}}
+        self.assertEqual(refresh.verdict_totals(discovery), {"same": 4, "differ": 2, "both_empty": 2, "blocked": 1})
+        self.assertEqual(refresh.verdict_totals({}), {"same": 0, "differ": 0, "both_empty": 0, "blocked": 0})
+
+    def test_unclaimed_cluster_ids_come_from_the_gate_lines_once(self):
+        problems = ["cluster a929e17f (query / topk) is accounted for by no registry case",
+                    "cluster a929e17f (query / topk) is accounted for by no registry case",
+                    "cluster b1 is marked as recorded deviation x/y, which is no registry case",
+                    "t/x: cluster g is not in discovery.json",
+                    "cluster c2 is claimed by 2 cases (a, b); one owns it"]
+        self.assertEqual(refresh.unclaimed_cluster_ids(problems), ["a929e17f", "b1"])
+        self.assertEqual(refresh.unclaimed_cluster_ids([]), [])
+
+
 if __name__ == "__main__":
     unittest.main()
