@@ -2060,6 +2060,8 @@
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go | semantics/stdvar-grouped-pooled-variance",
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go | semantics/unwrap-quantile-sum-by-group-quantile",
+    "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go | semantics/unwrap-gate-parsefloat-divergences",
+    "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/unwrap_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_blank_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_blank_grid_test.go | semantics/translator-reads-blank-before-range-call-as-text",
@@ -2692,7 +2694,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 603,
+      "go": 604,
       "playwright": 1
     },
     "page_kinds": {

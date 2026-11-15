@@ -887,6 +887,9 @@ func (q *unwrapQuery) seriesStats(op unwrapOp, by []string) {
 	if op.row {
 		q.pipes = append(q.pipes, firstLastUnpack)
 	}
+	if q.dynamic {
+		q.pipes = append(q.pipes, dynamicInnerNumber)
+	}
 }
 
 // quantileVector appends the stats of a vector aggregation over quantile_over_time: with no clause the quantile is

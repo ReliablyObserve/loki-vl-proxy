@@ -18,8 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app's pooled samples and `sum(stddev_over_time(...))` disagreed between `query` and `query_range`. VictoriaLogs now
   groups the stats by a hash of the stream and each line's parsed labels and aggregates the series itself, so an
   instant query reads one stats answer instead of every row of the window. A range longer than the step,
-  `quantile_over_time`, `rate_counter` and a label filter between the parser and the unwrap keep their previous
-  series (`semantics/unwrap-per-series-identity-raw-rows`, `semantics/unwrap-per-series-identity-label-filter`).
+  `quantile_over_time`, `rate_counter`, and a label filter between the parser and an unwrapped label whose name holds
+  `_`, keep their previous series (`semantics/unwrap-per-series-identity-raw-rows`,
+  `semantics/unwrap-per-series-identity-label-filter`).
 
 ## [2.260.1] - 2026-11-14
 

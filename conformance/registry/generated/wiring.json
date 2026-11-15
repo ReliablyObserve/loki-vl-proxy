@@ -1980,6 +1980,7 @@
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
       "internal/proxy/unwrap_over_time_window_test.go",
+      "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go",
       "internal/translate/unwrap_gate_syntax_test.go",
       "internal/translator/unwrap_gate_property_test.go",
       "internal/translator/unwrap_gate_test.go",
@@ -2010,6 +2011,7 @@
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
       "internal/querycorpus/stddev_stdvar_loki_diff_test.go",
       "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go",
+      "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go",
       "internal/queryplan/lower/unwrap_dynamic_test.go"
     ],
     "semantics/unwrap-quantile-response-limit": [
@@ -4048,6 +4050,10 @@
       "semantics/unwrap-per-series-identity-raw-rows",
       "semantics/unwrap-quantile-sum-by-group-quantile"
     ],
+    "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-per-series-identity-raw-rows"
+    ],
     "internal/querycorpus/unwrap_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -5146,7 +5152,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 604,
+  "tests_with_markers": 605,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

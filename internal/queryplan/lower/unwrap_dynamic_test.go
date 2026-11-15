@@ -10,7 +10,7 @@ import (
 )
 
 // dynamicHash is the identity pipes of a json parser over the unwrapped label n, as the lowering writes them.
-const dynamicHash = `| unpack_json from _msg result_prefix "__lvp_p_" | delete __lvp_p_n | pack_json fields (__lvp_p_*, level, detected_level, _stream) as __lvp_sid | hash(__lvp_sid) as __lvp_sid`
+const dynamicHash = `| unpack_json from _msg result_prefix "__lvp_p_" | delete __lvp_p_n | pack_json fields (__lvp_p_*, level, detected_level, _stream) as __lvp_sid | hash(__lvp_sid) as __lvp_sid | math __lvp_v as __lvp_v`
 
 // The plan's series of a range function over an unwrapped label after a json or logfmt parser with no keep: the
 // stream and every parsed label less the unwrapped one (and the stored level), whatever the clause of the outer
@@ -80,12 +80,12 @@ func TestDynamicUnwrapIdentity(t *testing.T) {
 func TestDynamicUnwrapIdentityLowering(t *testing.T) {
 	const j = `{app="a"} | json | unwrap n [5m]`
 	for q, want := range map[string]string{
-		`sum(avg_over_time(` + j + `))`:                        dynamicHash + ` | stats by (__lvp_sid) avg(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)`,
-		`sum by (app) (max_over_time(` + j + `))`:              dynamicHash + ` | stats by (app, __lvp_sid) max(__lvp_v) as __lvp_inner | stats by (app) sum(__lvp_inner)`,
+		`sum(avg_over_time(` + j + `))`:                        dynamicHash + ` | stats by (__lvp_sid) avg(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats sum(__lvp_inner)`,
+		`sum by (app) (max_over_time(` + j + `))`:              dynamicHash + ` | stats by (app, __lvp_sid) max(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats by (app) sum(__lvp_inner)`,
 		`max by (app) (stdvar_over_time(` + j + `))`:           dynamicHash + ` | stats by (app, __lvp_sid) stddev(__lvp_v) as __lvp_inner | math __lvp_inner*__lvp_inner as __lvp_inner_var | stats by (app) max(__lvp_inner_var)`,
 		`sum(stdvar_over_time(` + j + `))`:                     dynamicHash + ` | stats by (__lvp_sid) stddev(__lvp_v) as __lvp_inner | math __lvp_inner*__lvp_inner as __lvp_inner_var | stats sum(__lvp_inner_var)`,
-		`avg(stddev_over_time(` + j + `))`:                     dynamicHash + ` | stats by (__lvp_sid) stddev(__lvp_v) as __lvp_inner | stats avg(__lvp_inner)`,
-		`sum(min_over_time({app="a"} | json | unwrap n [5m]))`: dynamicHash + ` | stats by (__lvp_sid) min(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)`,
+		`avg(stddev_over_time(` + j + `))`:                     dynamicHash + ` | stats by (__lvp_sid) stddev(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats avg(__lvp_inner)`,
+		`sum(min_over_time({app="a"} | json | unwrap n [5m]))`: dynamicHash + ` | stats by (__lvp_sid) min(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats sum(__lvp_inner)`,
 	} {
 		if got := keepStats(t, q); got != want {
 			t.Errorf("%s:\n got %s\nwant %s", q, got, want)
@@ -95,10 +95,21 @@ func TestDynamicUnwrapIdentityLowering(t *testing.T) {
 	got := unwrapText(t, `sum(avg_over_time({app="a"} | logfmt | unwrap a_b [5m]))`, Profile{})
 	for _, part := range []string{
 		`| unpack_logfmt from _msg result_prefix "__lvp_p_" | delete __lvp_p_a_b, "__lvp_p_a.b", "__lvp_p_a-b" |`,
-		`| stats by (__lvp_sid) avg(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)`,
+		`| stats by (__lvp_sid) avg(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats sum(__lvp_inner)`,
 	} {
 		if !strings.Contains(got, part) {
 			t.Errorf("logfmt: %s holds no %s", got, part)
+		}
+	}
+	// The unwrapped value is read again as a number after the identity pipes, and each series' value before the outer
+	// aggregation: VictoriaLogs' stats answered NaN over "+Inf" or 1e308 written out (TestUnwrapDynamicValueFormsMatchLoki).
+	// A label filter between the parser and the unwrap, the shape of the value-forms e2e row, keeps both.
+	got = unwrapText(t, `sum by (service_name) (max_over_time({app="a"} | logfmt | form="inf" | unwrap u [1m]))`, Profile{})
+	for _, part := range []string{
+		`| hash(__lvp_sid) as __lvp_sid | math __lvp_v as __lvp_v | stats by (service_name, __lvp_sid) max(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats by (service_name) sum(__lvp_inner)`,
+	} {
+		if !strings.Contains(got, part) {
+			t.Errorf("value forms: %s holds no %s", got, part)
 		}
 	}
 	// The text VictoriaLogs reads: every pipe parses.

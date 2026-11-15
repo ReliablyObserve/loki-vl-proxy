@@ -117,13 +117,22 @@ func dynamicIdentityPipes(parser *queryplan.Parse, label string) string {
 	return unpack + " " + logsql.PipeDelete{Labels: deleted}.String() + dynamicPackHash
 }
 
-// The fixed pipes of dynamicIdentityPipes: the second unpack of each parser, and the pack and hash.
+// The fixed pipes of dynamicIdentityPipes: the second unpack of each parser, the pack and hash, and the unwrapped
+// value read again as a number. After the unpack VictoriaLogs holds the value math wrote as text, and its stats read
+// such text with a parser that refuses an infinity and any number longer than 27 characters (1e25, 1e-30, 1e308):
+// avg, sum and stddev then answer NaN. The math pipe gives the stats a number again.
 var (
 	dynamicUnpackJSON   = logsql.PipeUnpackJSON{From: "_msg", ResultPrefix: dynamicPrefix}.String()
 	dynamicUnpackLogfmt = logsql.PipeUnpackLogfmt{From: "_msg", ResultPrefix: dynamicPrefix}.String()
 	dynamicPackHash     = " " + logsql.PipePackJSON{Fields: dynamicPacked, ResultField: dynamicSeriesField}.String() + " " +
-		logsql.PipeHash{Fields: []string{dynamicSeriesField}, Result: dynamicSeriesField}.String()
+		logsql.PipeHash{Fields: []string{dynamicSeriesField}, Result: dynamicSeriesField}.String() + " " +
+		logsql.PipeMath{Expr: translate.UnwrapValueAlias, Alias: translate.UnwrapValueAlias}.String()
 )
+
+// dynamicInnerNumber reads each series' value (the inner stats' text) as a number for the outer aggregation, for the
+// reason dynamicPackHash reads the unwrapped value again: an outer sum or avg over "+Inf" or "1e308" written out
+// answers NaN, or leaves the series out.
+var dynamicInnerNumber = logsql.PipeMath{Expr: "__lvp_inner", Alias: "__lvp_inner"}.String()
 
 // withDynamicIdentity sets the series identity of q to the dynamic identity of the query, when it has one and no
 // keep decided it: the identity pipes go first, before any stats.

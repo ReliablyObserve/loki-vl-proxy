@@ -1,5 +1,5 @@
 id: semantics/unwrap-per-series-identity-label-filter
-title: A label filter between a json or logfmt parser and an unwrap keeps the stream and each line as the series of a function taken per series (open)
+title: A label filter between a json or logfmt parser and an unwrapped label whose name holds an underscore keeps the stream and each line as the series of a function taken per series (open)
 pending: true
 proves:
   - metric-series-identity

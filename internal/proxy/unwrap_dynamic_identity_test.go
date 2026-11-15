@@ -12,8 +12,9 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// dynamicSeriesHashPipe is the pipe that ends the identity pipes of a dynamic identity.
-const dynamicSeriesHashPipe = "| hash(__lvp_sid) as __lvp_sid"
+// dynamicSeriesHashPipe is the end of the identity pipes of a dynamic identity: the hash, and the unwrapped value read
+// again as a number.
+const dynamicSeriesHashPipe = "| hash(__lvp_sid) as __lvp_sid | math __lvp_v as __lvp_v"
 
 // A range function over an unwrapped label after a json or logfmt parser with no keep, under sum, max, min or avg, is
 // translated by the typed lowering: its stats group by a hash of the stream and each line's parsed labels. With
@@ -31,7 +32,7 @@ func TestDynamicIdentityServedFromPlan(t *testing.T) {
 	}
 	on, off := newProxy(false), newProxy(true)
 	for q, want := range map[string]string{
-		`sum(avg_over_time({app="a"} | json | unwrap n [5m]))`:                dynamicSeriesHashPipe + " | stats by (__lvp_sid) avg(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)",
+		`sum(avg_over_time({app="a"} | json | unwrap n [5m]))`:                dynamicSeriesHashPipe + " | stats by (__lvp_sid) avg(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats sum(__lvp_inner)",
 		`sum(min_over_time({app="a"} | json | n > 1 | unwrap n [5m]))`:        dynamicSeriesHashPipe + " | stats by (__lvp_sid) min(__lvp_v) as __lvp_inner",
 		`max by (app) (stdvar_over_time({app="a"} | logfmt | unwrap n [5m]))`: "| math __lvp_inner*__lvp_inner as __lvp_inner_var | stats by (app) max(__lvp_inner_var)",
 	} {
