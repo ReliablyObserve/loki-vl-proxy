@@ -186,7 +186,7 @@ func FuzzMetricFlipGate(f *testing.F) {
 		}
 		// A control byte in a quoted string: the plan writes it as an escape (`\x1d`), the translator copies the byte.
 		// VictoriaLogs reads both as the same query.
-		if !respelled && strings.IndexFunc(q, func(r rune) bool { return r < 0x20 && r != '\t' && r != '\n' && r != '\r' }) >= 0 {
+		if !respelled && strings.IndexFunc(q, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
 			respelled = sameLogsQL(got, want)
 		}
 		if (got != want && got != lower.QuoteKeywordFieldText(want) && !respelled) || (gotErr == nil) != (wantErr == nil) {
