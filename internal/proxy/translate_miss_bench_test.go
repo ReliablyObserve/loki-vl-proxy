@@ -130,6 +130,9 @@ func benchTranslateMissShapesWith(b *testing.B, cfg Config, validated bool) {
 			}
 			b.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 			ctx := context.Background()
+			if validated && cachedQueryValidation(shape.query("0")).msg != "" {
+				b.Skip("the validation rejects the shape, so no request translates it")
+			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
