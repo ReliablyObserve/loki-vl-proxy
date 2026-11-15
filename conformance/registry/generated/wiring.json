@@ -630,6 +630,7 @@
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/line_filter_error_runs_test.go",
       "test/e2e-compat/line_filter_invalid_utf8_test.go",
+      "test/e2e-compat/log_query_default_limit_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go",
       "test/e2e-compat/logfmt_risk_candidates_test.go",
       "test/e2e-compat/logql_unicode_runes_test.go",
@@ -1605,6 +1606,10 @@
     "semantics/live-request-not-cancelled-by-sibling": [
       "internal/proxy/backend_stale_cancel_test.go"
     ],
+    "semantics/log-query-default-limit": [
+      "internal/proxy/default_entry_limit_test.go",
+      "test/e2e-compat/log_query_default_limit_test.go"
+    ],
     "semantics/logfmt-existence-filter-ungrouped-sum": [
       "internal/proxy/ordered_json_vector_cache_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go"
@@ -2436,7 +2441,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 588,
+  "registry_items": 589,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2810,6 +2815,9 @@
     ],
     "internal/proxy/credential_passthrough_test.go": [
       "credential-passthrough-as-configured"
+    ],
+    "internal/proxy/default_entry_limit_test.go": [
+      "semantics/log-query-default-limit"
     ],
     "internal/proxy/default_max_query_length_test.go": [
       "limits/effective-limit-resolution",
@@ -4963,6 +4971,10 @@
     "test/e2e-compat/line_format_error_test.go": [
       "semantics/line-format-template-error-keeps-entry"
     ],
+    "test/e2e-compat/log_query_default_limit_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/log-query-default-limit"
+    ],
     "test/e2e-compat/logfmt_existence_filter_test.go": [
       "loki_api_v1_query_range",
       "parser-logfmt",
@@ -5386,7 +5398,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 632,
+  "tests_with_markers": 634,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5486,5 +5498,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 376
+  "wired_items": 377
 }

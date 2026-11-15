@@ -14,6 +14,7 @@ const (
 	DefaultMultiTenantMaxFanout              = 64        // -multi-tenant-max-fanout
 	DefaultMultiTenantMaxMergedResponseBytes = 32 << 20  // -multi-tenant-max-merged-response-bytes
 	DefaultMaxEntriesLimitPerQuery           = 10_000    // -max-entries-limit-per-query
+	DefaultMaxLines                          = 100       // -max-lines: Loki's default limit
 	DefaultDetectedFieldsMaxScanLines        = 2_000     // -detected-fields-max-scan-lines
 	DefaultPatternsMaxBackendRows            = 20_000    // -patterns-max-backend-rows
 	DefaultPatternsSecondPassMaxRows         = 8_000     // -patterns-second-pass-max-rows

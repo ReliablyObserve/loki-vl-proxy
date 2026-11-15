@@ -295,6 +295,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/label-filter-number-literal-scan` — A label filter reads its number, duration and bytes literals as Loki's lexer does (fixed) | #1248 | 0 | 0 |
 | `semantics/label-filter-regex-parse-error` — A label filter, drop or keep regex Loki cannot parse is Loki's 400, reported in Loki's order (fixed) | #1242 | 0 | 0 |
 | `semantics/label-list-trailing-comma` — A label list with a trailing, doubled or leading comma, an empty drop or keep, or two names without a comma is Loki's 400 with Loki's tex... | this change | 0 | 0 |
+| `semantics/log-query-default-limit` — A range log query that sends no limit gets Loki's default of 100 entries (fixed) | pending | 0 | 0 |
 | `semantics/logql-unicode-runes` — LogQL reads the characters of every Unicode category as Loki's lexer does: only an ASCII digit starts a number, and the parser returns on... | this change | 0 | 0 |
 | `semantics/metadata-routes-validate-before-selector-rule` — Metadata routes report Loki's validation error of a query before `only label matchers` or `only log selector` (fixed for the tree checks) | TBD-PR | 0 | 0 |
 | `semantics/quantile-over-time-parameter-required` — quantile_over_time without its quantile is rejected with Loki's parse error at validation (fixed) | TBD-PR | 0 | 0 |

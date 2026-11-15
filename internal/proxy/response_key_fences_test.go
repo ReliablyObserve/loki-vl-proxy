@@ -388,7 +388,7 @@ func TestKeywordLabelFenceDoesNotServeAnOldCachedAnswer(t *testing.T) {
 		target := "/loki/api/v1/query_range?" + url.Values{"query": {c.query}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}}.Encode()
 		// The route rewrites the keywords of the query (lowercaseQueryKeywords) before the cache key is built.
 		rewritten := logqlpkg.LowercaseKeywords(logqlpkg.StripParserFlags(logqlpkg.StripComments(c.query)))
-		keyTarget := "/loki/api/v1/query_range?" + url.Values{"query": {rewritten}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}}.Encode()
+		keyTarget := "/loki/api/v1/query_range?" + url.Values{"query": {rewritten}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}}.Encode() + "&limit=100" // and the default limit the route adds
 		req := httptest.NewRequest(http.MethodGet, keyTarget, nil)
 		req.Header.Set("X-Scope-OrgID", "team-a")
 		key, ok := p.compatCacheKey("query_range", req)

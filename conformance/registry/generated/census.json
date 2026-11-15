@@ -606,6 +606,9 @@
     "semantics/log-entries-differ-same-count | compare:observed",
     "semantics/log-entries-differ-same-count | gap:open",
     "semantics/log-entries-differ-same-count | query",
+    "semantics/log-query-default-limit | compare:observed",
+    "semantics/log-query-default-limit | gap:fixed",
+    "semantics/log-query-default-limit | query",
     "semantics/logfmt-existence-filter-ungrouped-sum | compare:numeric",
     "semantics/logfmt-existence-filter-ungrouped-sum | gap:fixed",
     "semantics/logfmt-existence-filter-ungrouped-sum | query",
@@ -1283,6 +1286,7 @@
     "internal/proxy/compat_oversized_reply_test.go | semantics/unpack-non-string-values",
     "internal/proxy/count_values_test.go | semantics/count-values-unsupported",
     "internal/proxy/credential_passthrough_test.go | credential-passthrough-as-configured",
+    "internal/proxy/default_entry_limit_test.go | semantics/log-query-default-limit",
     "internal/proxy/default_max_query_length_test.go | limits/effective-limit-resolution",
     "internal/proxy/default_max_query_length_test.go | limits/max-query-length-default",
     "internal/proxy/default_max_query_length_test.go | limits/max-query-length-error",
@@ -2513,6 +2517,8 @@
     "test/e2e-compat/line_filter_invalid_utf8_test.go | loki_api_v1_query_range",
     "test/e2e-compat/line_filter_invalid_utf8_test.go | semantics/line-filter-invalid-utf8",
     "test/e2e-compat/line_format_error_test.go | semantics/line-format-template-error-keeps-entry",
+    "test/e2e-compat/log_query_default_limit_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/log_query_default_limit_test.go | semantics/log-query-default-limit",
     "test/e2e-compat/logfmt_existence_filter_test.go | loki_api_v1_query_range",
     "test/e2e-compat/logfmt_existence_filter_test.go | parser-logfmt",
     "test/e2e-compat/logfmt_existence_filter_test.go | semantics/logfmt-existence-filter-ungrouped-sum",
@@ -2783,14 +2789,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 102,
+      "api": 103,
       "drilldown": 51,
       "explore": 184,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 631,
+      "go": 633,
       "playwright": 1
     },
     "page_kinds": {
@@ -2810,7 +2816,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 96,
-    "wired_items": 376
+    "wired_items": 377
   },
   "gates": [
     "A/B shape selection",
