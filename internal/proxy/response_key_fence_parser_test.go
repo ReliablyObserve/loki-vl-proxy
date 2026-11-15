@@ -13,6 +13,7 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
@@ -283,7 +284,7 @@ func fenceShapeRequest(query string) *http.Request {
 // fenceWants is, per fence, whether the parsed tree of query holds the construct the fence guards; nil for a query
 // the parser rejects (it has no tree).
 func fenceWants(query string) map[string]bool {
-	f, _, ok := factsOf(query)
+	f, expr, ok := factsOf(query)
 	if !ok {
 		return nil
 	}
@@ -301,8 +302,10 @@ func fenceWants(query string) map[string]bool {
 		"a-label-filter-stage": f.labelFilterStages >= 1,
 	}
 	// The dynamic unwrap identity is a plan attribute: the screen in front of the plan must let every query through
-	// whose plan holds it.
-	if plan := resolvedPlan(dynamicQuery(query)); plan != nil {
+	// whose plan holds it. The plan is built here from the tree of the query as written, not read from the memo the
+	// fence reads (which holds the plan of the keyword lower cased text).
+	if plan, err := queryplan.Build(expr, queryplan.Inputs{}); err == nil {
+		queryplan.Resolve(plan)
 		want["unwrap-dynamic-identity"] = lower.WritesDynamicUnwrapIdentity(plan)
 	}
 	resolved := resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -477,7 +480,7 @@ func fenceLosses(query string) []string {
 	check("bare-json-metric prefilter", refBareJSONText(query), containsFold(query, "json"))
 	check("logfmt-presence prefilter", refLogfmtPresenceText(query), containsFold(query, "logfmt") && emptyStringComparisonIn(query))
 	q := dynamicQuery(query)
-	check("unwrap-dynamic-identity prefilter", refDynamicIdentityScreen(q), dynamicIdentityFenceScreen(q, spelledOtherwise(q)))
+	check("unwrap-dynamic-identity prefilter", refDynamicIdentityScreen(q), dynamicIdentityFenceScreen(q, strings.Contains(q, "\u0130")))
 	return lost
 }
 
@@ -697,6 +700,8 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"unwrap-dynamic-identity", "MAX(MAX_OVER_T\u0130ME({a=\"b\"} | LOGFMT | UNWRAP n [5m]))", true},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | json | keep x | unwrap n [5m]))`, false},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | unwrap n [5m]))`, false},
+		// Longer than the plan memo holds: the plan is built for the fence, uncached.
+		{"unwrap-dynamic-identity", `SUM BY (x) (AVG_OVER_TIME({a="b"} |= "` + strings.Repeat("x", validationCacheMaxQueryBytes) + `" | JSON | UNWRAP n [5m]))`, true},
 	} {
 		if got := fenceFires(tc.fence, tc.query); got != tc.want {
 			t.Errorf("%s: %+q fires %v, want %v", tc.fence, tc.query, got, tc.want)

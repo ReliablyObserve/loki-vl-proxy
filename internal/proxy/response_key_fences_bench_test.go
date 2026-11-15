@@ -21,6 +21,9 @@ func BenchmarkResponseKeyFences(b *testing.B) {
 		{"ip", `{app="a"} | json | addr = ip("10.0.0.0/8") | status = "500"`},
 		{"logfmt_presence", `sum(count_over_time({app="a"} | logfmt | msg != "" [5m]))`},
 		{"topk_json", `topk(3, sum by (x) (count_over_time({app="a"} | json x="x" [5m])))`},
+		{"unwrap_dynamic", `sum by (app) (avg_over_time({app="x"} | json | unwrap n [5m]))`},
+		{"upper_case", `SUM BY (level) (RATE({app="API"} |= "Error" [5m]))`},
+		{"topk_upper", `TOPK(3, sum by (x) (count_over_time({app="a"} | JSON [5m])))`},
 		{"dashboard", `sum by (namespace, pod) (rate({cluster="prod", namespace=~"team-.+", app!="noisy"} |= "level=error" != "healthcheck" | logfmt | status >= 500 | line_format "{{.method}} {{.path}}" [$__rate_interval])) / sum by (namespace, pod) (rate({cluster="prod", namespace=~"team-.+", app!="noisy"} [$__rate_interval]))`},
 	} {
 		v := url.Values{"query": {tc.query}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}}

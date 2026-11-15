@@ -81,7 +81,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	if keep && containsWord(query, "unwrap", other) {
 		b.add(keepUnwrapIdentityResponseVersion)
 	}
-	b.add(dynamicUnwrapIdentityFence(query, other))
+	b.add(dynamicUnwrapIdentityResponseKeyVersion(query))
 	b.add(streamLevelSeriesResponseKeyVersion(query))
 	if site == responseKeyCompatQueryRange {
 		b.add(logfmtPresenceFence(r, query, other))
@@ -197,18 +197,11 @@ const dynamicUnwrapIdentityResponseVersion = "@unwrap-dynamic-identity-v1:"
 // read the -query-plan-lowering flag or the step: with the flag off, or on a range longer than the step, the fence
 // costs one more cache miss.
 func dynamicUnwrapIdentityResponseKeyVersion(query string) string {
-	return dynamicUnwrapIdentityFence(query, spelledOtherwise(query))
-}
-
-// dynamicUnwrapIdentityFence is the fence, for the chain that knows whether the query is spelledOtherwise.
-func dynamicUnwrapIdentityFence(query string, other bool) string {
 	query = dynamicQuery(query)
-	if other {
-		// dynamicQuery lower cased the keywords spelled with an ASCII upper case letter; a letter that lower cases to
-		// an ASCII one (U+0130 in avg_over_time) is left, and so is the upper case of a name or a string.
-		other = spelledOtherwise(query)
-	}
-	if !dynamicIdentityFenceScreen(query, other) {
+	// dynamicQuery lower cased every keyword spelled with an ASCII upper case letter. It leaves a word with U+0130,
+	// which lower cases to i (avg_over_tİme): the one letter outside ASCII that lower cases into the screen's words,
+	// none of which holds a k (U+212A).
+	if !dynamicIdentityFenceScreen(query, strings.Contains(query, "\u0130")) {
 		return ""
 	}
 	if plan := resolvedPlan(query); plan != nil && lower.WritesDynamicUnwrapIdentity(plan) {
