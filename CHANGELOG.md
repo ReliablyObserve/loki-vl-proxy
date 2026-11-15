@@ -54,6 +54,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `index/volume` rounds its `start` and `end` down to whole seconds before the check, as Loki does, and reports
   the length in whole seconds (`721h0m1s`); `index/volume_range` is not length-limited, as in Loki (a range over 721h is
   answered, and only its 11,000-point resolution rejects).
+- Peer-cache pushes to a replica whose breaker is open are no longer lost. A write-through push the replica cannot
+  take (its breaker is open or it is suspended after a timeout, it is restarting, the push queue is full, or the
+  push failed with a transport error, a timeout, a `429` or a `5xx`) waits in a bounded push buffer and is replayed
+  once the replica answers, so the fleet returns to full replication on its own: before, such pushes were dropped
+  for the 10 s breaker cooldown, and a writer that then lost its disk read those keys from VictoriaLogs again.
+  Reads do not change: a lookup still skips a peer whose breaker is open, and nothing on the request path waits on
+  the buffer. The buffer keeps one entry per key and peer, the newest value; while a peer has buffered pushes, new
+  pushes to it join them, so an older value never lands after a newer one, and a queued push to a suspended peer no
+  longer holds a push worker for `-peer-timeout`. One replayer per peer sends them slowly first: one push (the
+  half-open probe), then rounds doubling up to 32, at most 8 in flight, with jittered backoff from 250 ms to 10 s
+  after a failure; each push carries the TTL the writer's copy has left, and one with under 5 s left is not sent.
+  Above the bound the oldest push of the largest backlog is dropped, counted, and logged at most every 30 s. Closing
+  the proxy cancels every peer call in flight and stops the replay.
+  - New flags `-peer-push-buffer-max-entries` (default 8192) and `-peer-push-buffer-max-bytes` (default 32 MiB),
+    per proxy across all peers, in the limits registry with sizing guidance and as Helm `extraArgs`; `0` on either
+    turns buffering off (pushes a peer cannot take are dropped, as before).
+  - New metrics `loki_vl_proxy_peer_cache_push_buffered_total{reason}`, `_push_buffer_coalesced_total`,
+    `_push_replayed_total`, `_push_buffer_dropped_total{reason}`, `_push_buffer_entries` and `_push_buffer_bytes`.
+  - Pushes to a replica that is still starting now use the same buffer: they are kept until their TTL runs out
+    instead of 30 s, within the shared bound instead of 256 pushes or 8 MiB per peer;
+    `loki_vl_proxy_peer_cache_push_peer_not_up_total` counts those that are dropped.
+    `loki_vl_proxy_peer_cache_push_throttled_total` now counts only pushes dropped for a full queue while the buffer
+    is off; with it on they are buffered (`reason="queue_full"`).
 
 ## [2.264.0] - 2026-11-15
 
