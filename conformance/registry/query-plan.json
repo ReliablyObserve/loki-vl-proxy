@@ -600,7 +600,7 @@
   "shadow": {
     "rows": 23832,
     "profiles": 12,
-    "native": 21334,
+    "native": 21388,
     "native_proxy_evaluated": 3951,
     "mismatches": 0,
     "delegated_by_construct": {
@@ -642,7 +642,7 @@
       "VectorAgg grouping": 27,
       "VectorAgg nested unwrap": 36,
       "VectorAgg operand": 207,
-      "VectorAgg operand spelling": 72,
+      "VectorAgg operand spelling": 18,
       "VectorAgg parser extracted label": 18,
       "VectorAgg parser label cost": 128,
       "VectorAgg stddev parsed label operand": 9,
@@ -661,7 +661,11 @@
       "known divergence semantics/translator-writes-signed-number-with-blank": 12
     },
     "flipped": [
-      "LogSelect"
+      "LogSelect",
+      "VectorAgg",
+      "RangeAgg",
+      "BinOp",
+      "LabelReplace"
     ]
   }
 }

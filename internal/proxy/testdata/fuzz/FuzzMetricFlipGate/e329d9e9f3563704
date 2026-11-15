@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Count_over_time({}|pAttern\"\"[0y])")

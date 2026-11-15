@@ -55,8 +55,10 @@ type shadowSlice struct {
 // lowering is what the harness holds to the string translator: the native lowering, or a test's stand-in.
 type lowering func(q string, p *queryplan.Plan, prof planProfile) (physical.Op, error)
 
+// It screens the canonical text (logql.CanonicalizeLogRanges), as the proxy does when it serves a query from the
+// lowering (lowerMetric): the shadow holds what the proxy sends.
 func nativeLowering(q string, p *queryplan.Plan, prof planProfile) (physical.Op, error) {
-	return lower.PlanQuery(q, p, prof.lowerProfile())
+	return lower.PlanQuery(logql.CanonicalizeLogRanges(q), p, prof.lowerProfile())
 }
 
 func (p planProfile) lowerProfile() lower.Profile {
@@ -156,7 +158,7 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			}
 			if !ok && lower.WritesKeepUnwrapIdentity(plan) && !sameAsTranslator(got, legacy) {
 				// A keep before the unwrap decides the series: the plan groups by the labels it leaves, the translator
-				// by the stream (and each line), and the proxy serves the plan's text (lowerKeepIdentity).
+				// by the stream (and each line), and the proxy serves the plan's text (lowerMetric).
 				caseID, ok = knownKeepIdentity, true
 			}
 			if !ok && lower.WritesNumericEquality(plan) {
@@ -231,10 +233,16 @@ func TestPlanShadow(t *testing.T) {
 	got, problems, slices := runShadowSlices(t, nativeLowering, 0)
 	got.Flipped = proxy.QueryPlanFlippedConstructs
 	// A flipped construct is served from the lowering with the corpus as its proof: it must be native under every
-	// profile, and its rows must all equal the string translator's text (a mismatch fails the run above).
+	// profile that translates it, and its rows must all equal the string translator's text (a mismatch fails the run
+	// above). The keepLine profiles translate log queries only (a metric query never keeps its line), so a metric
+	// construct has no row there.
 	for _, c := range got.Flipped {
 		for _, prof := range planProfiles() {
-			if sl := slices[[2]string{prof.name, c}]; sl == nil || sl.native == 0 || sl.mismatches != 0 {
+			sl := slices[[2]string{prof.name, c}]
+			if sl != nil && sl.rows == 0 && prof.keepLine && c != "LogSelect" {
+				continue
+			}
+			if sl == nil || sl.native == 0 || sl.mismatches != 0 {
 				t.Errorf("%s is served from the lowering, but is not native on the corpus under %q: %+v", c, prof.name, sl)
 			}
 		}

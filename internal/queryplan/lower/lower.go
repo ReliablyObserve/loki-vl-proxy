@@ -529,5 +529,25 @@ func fieldFilterLeaf(e *logql.LabelFilterExpr, label string, caps logsql.Capabil
 // harness counts delegations by: LogSelect, RangeAgg, VectorAgg, Rank, BinOp,
 // LabelReplace, VectorLit, Scalar or Opaque.
 func Construct(n queryplan.Node) string {
+	switch n.(type) {
+	case *queryplan.LogSelect:
+		return "LogSelect"
+	case *queryplan.RangeAgg:
+		return "RangeAgg"
+	case *queryplan.VectorAgg:
+		return "VectorAgg"
+	case *queryplan.Rank:
+		return "Rank"
+	case *queryplan.BinOp:
+		return "BinOp"
+	case *queryplan.LabelReplace:
+		return "LabelReplace"
+	case *queryplan.VectorLit:
+		return "VectorLit"
+	case *queryplan.Scalar:
+		return "Scalar"
+	case *queryplan.Opaque:
+		return "Opaque"
+	}
 	return strings.TrimPrefix(fmt.Sprintf("%T", n), "*queryplan.")
 }
