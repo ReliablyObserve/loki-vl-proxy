@@ -7,30 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- A timestamp written as digits only (the integer nanoseconds Grafana sends for `start`, `end` and `time`) is read in
-  one pass, eight digits at a time, instead of a digit scan and a second parse: 27 to 8 ns per timestamp, with no
-  allocation, and the same value for every input (a sign, a space, a time layout or a float still takes the general
-  parse). The step alignment and the time-bounds check of `query_range`, the metadata routes' response-cache keys and
-  their handlers read their bounds this way, which more than pays for the length check the new
-  `-default-max-query-length` default adds: at the shipped default a `query_range` or `labels` request costs no more
-  than before.
-
 ### Fixed
 
-- **Breaking:** `-default-max-query-length` now defaults to Loki's `max_query_length` default, `721h` (published as
-  `30d1h`), instead of `0` (no limit). A proxy run without a length configured served a range Loki refuses: a
-  `query_range`, `series`, `labels`, label values, `detected_labels`, `detected_fields`, detected field values,
-  `index/stats` or `index/volume` request over more than 721h (for example `start=-1` or `start=1`) now fails, as in Loki,
-  with `400 the query time range exceeds the limit (query length: X, limit: 30d1h)` before any VictoriaLogs call,
-  and `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` publish `max_query_length: 30d1h` instead of
-  `0s`. Set `-default-max-query-length=0` (Helm `extraArgs.default-max-query-length: "0"`), or `max_query_length:
-  "0s"` in `-tenant-default-limits` or `-tenant-limits`, to keep serving longer ranges. A live tail is not checked
-  against this limit. A request with a `start` and no `end` is held to it too (a missing `end` is now, as in Loki).
-  `index/volume` rounds its `start` and `end` down to whole seconds before the check, as Loki does, and reports
-  the length in whole seconds (`721h0m1s`); `index/volume_range` is not length-limited, as in Loki (a range over 721h is
-  answered, and only its 11,000-point resolution rejects).
 - Peer-cache pushes to a replica whose breaker is open are no longer lost. A write-through push the replica cannot
   take (its breaker is open or it is suspended after a timeout, it is restarting, the push queue is full, or the
   push failed with a transport error, a timeout, a `429` or a `5xx`) waits in a bounded push buffer and is replayed
@@ -63,6 +41,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   running after it returns. When a parse-risk, level or unparsed-line probe ended the attempt early (its verdict
   sends the query to the row evaluator, or the probe failed), the stats query and the other probes were cancelled
   but not waited for. They are now waited for until they return, so every call an attempt starts ends inside it.
+
+## [2.270.0] - 2026-11-15
+
+### Changed
+- A timestamp written as digits only (the integer nanoseconds Grafana sends for `start`, `end` and `time`) is read in
+  one pass, eight digits at a time, instead of a digit scan and a second parse: 27 to 8 ns per timestamp, with no
+  allocation, and the same value for every input (a sign, a space, a time layout or a float still takes the general
+  parse). The step alignment and the time-bounds check of `query_range`, the metadata routes' response-cache keys and
+  their handlers read their bounds this way, which more than pays for the length check the new
+  `-default-max-query-length` default adds: at the shipped default a `query_range` or `labels` request costs no more
+  than before.
+
+### Fixed
+- **Breaking:** `-default-max-query-length` now defaults to Loki's `max_query_length` default, `721h` (published as
+  `30d1h`), instead of `0` (no limit). A proxy run without a length configured served a range Loki refuses: a
+  `query_range`, `series`, `labels`, label values, `detected_labels`, `detected_fields`, detected field values,
+  `index/stats` or `index/volume` request over more than 721h (for example `start=-1` or `start=1`) now fails, as in Loki,
+  with `400 the query time range exceeds the limit (query length: X, limit: 30d1h)` before any VictoriaLogs call,
+  and `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` publish `max_query_length: 30d1h` instead of
+  `0s`. Set `-default-max-query-length=0` (Helm `extraArgs.default-max-query-length: "0"`), or `max_query_length:
+  "0s"` in `-tenant-default-limits` or `-tenant-limits`, to keep serving longer ranges. A live tail is not checked
+  against this limit. A request with a `start` and no `end` is held to it too (a missing `end` is now, as in Loki).
+  `index/volume` rounds its `start` and `end` down to whole seconds before the check, as Loki does, and reports
+  the length in whole seconds (`721h0m1s`); `index/volume_range` is not length-limited, as in Loki (a range over 721h is
+  answered, and only its 11,000-point resolution rejects).
 
 ## [2.265.0] - 2026-11-15
 
