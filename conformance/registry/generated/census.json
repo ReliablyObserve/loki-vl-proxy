@@ -847,6 +847,9 @@
     "semantics/transient-backend-failure-is-retried | compare:observed",
     "semantics/transient-backend-failure-is-retried | gap:fixed",
     "semantics/transient-backend-failure-is-retried | query",
+    "semantics/translator-copies-unspaced-parser | compare:observed",
+    "semantics/translator-copies-unspaced-parser | gap:open",
+    "semantics/translator-copies-unspaced-parser | query",
     "semantics/translator-folds-binary-by-operand-without | compare:observed",
     "semantics/translator-folds-binary-by-operand-without | gap:open",
     "semantics/translator-folds-binary-by-operand-without | query",
@@ -1667,6 +1670,8 @@
     "internal/proxy/query_flow_test.go | observability-query-flow",
     "internal/proxy/query_flow_test.go | observability-slow-query-log",
     "internal/proxy/query_lowering_corpus_test.go | architecture-syntax-package-layering",
+    "internal/proxy/query_lowering_log_stages_test.go | architecture-syntax-package-layering",
+    "internal/proxy/query_lowering_log_stages_test.go | semantics/translator-copies-unspaced-parser",
     "internal/proxy/query_lowering_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_test.go | loki_api_v1_query_range",
     "internal/proxy/query_lowering_test.go | observability-query-flow",
@@ -2040,6 +2045,7 @@
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/unwrap-quantile-sum-by-group-quantile",
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/unwrap-rate-counter-window-extrapolation",
     "internal/querycorpus/known_divergence_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/known_divergence_test.go | semantics/translator-copies-unspaced-parser",
     "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
@@ -2110,6 +2116,7 @@
     "internal/queryplan/lower/label_filter_numeric_eq_test.go | semantics/label-filter-numeric-equality",
     "internal/queryplan/lower/label_filter_parsed_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/log_screen_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/marker_bytes_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/marker_bytes_test.go | semantics/translator-reads-marker-bytes-in-quoted-value",
@@ -2131,6 +2138,7 @@
     "internal/queryplan/lower/series_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unpack_test.go | semantics/translator-writes-unpack-as-unpack-json",
+    "internal/queryplan/lower/unspaced_parser_test.go | semantics/translator-copies-unspaced-parser",
     "internal/queryplan/lower/unwrap_keep_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/queryplan/lower/unwrap_stats_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
@@ -2714,14 +2722,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 97,
+      "api": 98,
       "drilldown": 51,
       "explore": 184,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 609,
+      "go": 612,
       "playwright": 1
     },
     "page_kinds": {
@@ -2741,7 +2749,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 99,
-    "wired_items": 367
+    "wired_items": 368
   },
   "gates": [
     "A/B shape selection",
