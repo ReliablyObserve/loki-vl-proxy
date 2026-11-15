@@ -217,6 +217,8 @@ type proxyRuntimeConfig struct {
 	peerWriteThrough                    bool
 	peerWriteThroughMinTTL              time.Duration
 	peerReplicationFactor               int
+	peerPushBufferMaxEntries            int
+	peerPushBufferMaxBytes              int64
 	peerHotReadAheadEnabled             bool
 	peerHotReadAheadInterval            time.Duration
 	peerHotReadAheadJitter              time.Duration
@@ -759,6 +761,8 @@ func run(
 	peerInsecureIPAllowlist := fs.Bool("peer-insecure-ip-allowlist", false, "When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured.")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
 	peerReplicationFactor := fs.Int("peer-replication-factor", 2, "Replicas of every peer-cache key, owner included: the key's owner on the peer ring and the next distinct peers clockwise (1-5). Write-through writes are pushed to every replica, which keeps the copy in memory and on disk and never pushes it on; a lookup that misses memory and disk asks the replicas in ring order, so a replica that lost its disk, or whose owner is down, gets the key from another replica instead of recomputing it. Each extra replica adds one push per write-through write and the copies' memory and disk on the peers. 1 keeps one copy on the owner.")
+	peerPushBufferMaxEntries := fs.Int("peer-push-buffer-max-entries", 8192, "Pushes to replicas kept per proxy, across all peers, while a peer cannot take them (its breaker is open, it is still starting, the push queue is full or the push failed); they are replayed once the peer answers, slowly first, the newest value per key. Above the bound the oldest push of the largest backlog is dropped and counted. 0 turns buffering off: such pushes are dropped.")
+	peerPushBufferMaxBytes := fs.Int64("peer-push-buffer-max-bytes", 32<<20, "Bytes of the values in the peer push buffer (-peer-push-buffer-max-entries), across all peers. 0 turns buffering off.")
 	peerWriteThroughMinTTL := fs.Duration("peer-write-through-min-ttl", 30*time.Second, "Minimum TTL eligible for peer owner write-through pushes. Empty label and label-value answers are cached for max(30s, this, -disk-cache-min-ttl) so they replace older non-empty copies")
 	peerHotReadAheadEnabled := fs.Bool("peer-hot-read-ahead-enabled", false, "Enable bounded hot read-ahead from peer hot index to prewarm local shadows")
 	peerHotReadAheadInterval := fs.Duration("peer-hot-read-ahead-interval", 30*time.Second, "Base interval for periodic peer hot read-ahead pulls")
@@ -1061,6 +1065,8 @@ func run(
 			peerWriteThrough:                    *peerWriteThrough,
 			peerWriteThroughMinTTL:              *peerWriteThroughMinTTL,
 			peerReplicationFactor:               *peerReplicationFactor,
+			peerPushBufferMaxEntries:            *peerPushBufferMaxEntries,
+			peerPushBufferMaxBytes:              *peerPushBufferMaxBytes,
 			peerHotReadAheadEnabled:             *peerHotReadAheadEnabled,
 			peerHotReadAheadInterval:            *peerHotReadAheadInterval,
 			peerHotReadAheadJitter:              *peerHotReadAheadJitter,
@@ -2244,6 +2250,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			WriteThrough:             cfg.peerWriteThrough,
 			WriteThroughMinTTL:       cfg.peerWriteThroughMinTTL,
 			ReplicationFactor:        cfg.peerReplicationFactor,
+			PushBufferMaxEntries:     peerPushBufferBound(cfg.peerPushBufferMaxEntries),
+			PushBufferMaxBytes:       peerPushBufferBound(cfg.peerPushBufferMaxBytes),
 			ReadAheadEnabled:         cfg.peerHotReadAheadEnabled,
 			ReadAheadInterval:        cfg.peerHotReadAheadInterval,
 			ReadAheadJitter:          cfg.peerHotReadAheadJitter,
@@ -2459,6 +2467,15 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 // validateExecutionLimits rejects negative limits; 0 selects the built-in
 // default of each flag, and any positive value is accepted so operators can
 // raise a limit as well as lower it.
+// peerPushBufferBound maps a push buffer flag to cache.PeerConfig, where 0
+// means the default and a negative value turns buffering off.
+func peerPushBufferBound[T int | int64](flag T) T {
+	if flag == 0 {
+		return -1
+	}
+	return flag
+}
+
 func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 	for _, limit := range []struct {
 		flag  string
@@ -2483,6 +2500,9 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 		if limit.value < 0 {
 			return fmt.Errorf("invalid %s: %d (must be >= 0; 0 uses the built-in default)", limit.flag, limit.value)
 		}
+	}
+	if cfg.peerPushBufferMaxEntries < 0 || cfg.peerPushBufferMaxBytes < 0 {
+		return fmt.Errorf("invalid -peer-push-buffer-max-entries=%d / -peer-push-buffer-max-bytes=%d (must be >= 0; 0 turns the peer push buffer off)", cfg.peerPushBufferMaxEntries, cfg.peerPushBufferMaxBytes)
 	}
 	if cfg.patternsExactMaxLines < 0 {
 		return fmt.Errorf("invalid -patterns-exact-max-lines: %d (must be >= 0; 0 turns the exact reading off)", cfg.patternsExactMaxLines)
