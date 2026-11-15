@@ -76,13 +76,17 @@ func TestBuildLogQueryParams_Backward(t *testing.T) {
 	}
 }
 
+// The route gives a request without a limit the default (withDefaultEntryLimit), so the builder reads the limit
+// it carries; TestLogQueryLimitReachesEveryReaderAsAPositiveInteger drives every route.
 func TestBuildLogQueryParams_DefaultLimit(t *testing.T) {
-	p := &Proxy{maxLines: 1000}
-	r := httptest.NewRequest("GET", "/", nil)
+	p := &Proxy{maxLines: DefaultMaxLines}
+	req := httptest.NewRequest("GET", "/", nil)
+	_ = req.ParseForm()
+	r := p.withDefaultEntryLimit(req)
 	params := p.buildLogQueryParams(r, "*")
 
-	if params.Get("limit") != "1000" {
-		t.Errorf("default limit = %q, want 1000", params.Get("limit"))
+	if params.Get("limit") != "100" {
+		t.Errorf("default limit = %q, want 100", params.Get("limit"))
 	}
 }
 
@@ -131,7 +135,7 @@ func TestProxyLogQueryCold_PropagatesError(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/?query=*&start=1714521600&end=1714608000", nil)
+	r := httptest.NewRequest("GET", "/?query=*&start=1714521600&end=1714608000&limit=100", nil)
 
 	p.proxyLogQueryCold(w, r, "*")
 
@@ -182,7 +186,7 @@ func TestProxyLogQueryBoth_MergesResults(t *testing.T) {
 	endNs := fmt.Sprintf("%d", now.Add(-1*time.Hour).UnixNano())       // 1 hour ago (hot range)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/?query=*&start="+startNs+"&end="+endNs, nil)
+	r := httptest.NewRequest("GET", "/?query=*&start="+startNs+"&end="+endNs+"&limit=100", nil)
 
 	p.proxyLogQueryBoth(w, r, "*")
 
@@ -254,7 +258,7 @@ func TestProxyLogQueryBoth_ColdFails_PropagatesError(t *testing.T) {
 	endNs := fmt.Sprintf("%d", now.Add(-1*time.Hour).UnixNano())
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/?query=*&start="+startNs+"&end="+endNs, nil)
+	r := httptest.NewRequest("GET", "/?query=*&start="+startNs+"&end="+endNs+"&limit=100", nil)
 
 	p.proxyLogQueryBoth(w, r, "*")
 
@@ -298,7 +302,7 @@ func TestProxyLogQueryBoth_HotFails_PropagatesError(t *testing.T) {
 	endNs := fmt.Sprintf("%d", now.Add(-1*time.Hour).UnixNano())
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/?query=*&start="+startNs+"&end="+endNs, nil)
+	r := httptest.NewRequest("GET", "/?query=*&start="+startNs+"&end="+endNs+"&limit=100", nil)
 
 	p.proxyLogQueryBoth(w, r, "*")
 
@@ -481,7 +485,7 @@ func TestProxyLogQueryCold_BackwardDirection_ReversesOrder(t *testing.T) {
 	// No direction param → defaults to backward (Loki default).
 	// Use a 30-minute window (< 1-hour chunk size) so only one chunk is fetched.
 	// 1714521600 = 2024-05-01T00:00:00Z; +1800s = 2024-05-01T00:30:00Z.
-	r := httptest.NewRequest("GET", "/?query=*&start=1714521600000000000&end=1714523400000000000", nil)
+	r := httptest.NewRequest("GET", "/?query=*&start=1714521600000000000&end=1714523400000000000&limit=100", nil)
 	p.proxyLogQueryCold(w, r, "*")
 
 	if w.Code != http.StatusOK {
@@ -549,7 +553,7 @@ func TestProxyLogQueryCold_ForwardDirection_KeepsOrder(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/?query=*&start=1714521600&end=1714608000&direction=forward", nil)
+	r := httptest.NewRequest("GET", "/?query=*&start=1714521600&end=1714608000&direction=forward&limit=100", nil)
 	p.proxyLogQueryCold(w, r, "*")
 
 	if w.Code != http.StatusOK {
