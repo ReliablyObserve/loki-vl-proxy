@@ -1249,7 +1249,83 @@ type PipeStats struct {
 }
 
 func (p PipeStats) String() string { return pipeStatsString("stats", p.By, p.Funcs) }
-func (p PipeStats) pipe()          {}
+
+// appendTo is String, appended: the text pipeStatsString writes.
+func (p PipeStats) appendTo(b []byte) []byte {
+	b = append(b, "| stats"...)
+	if len(p.Funcs) == 0 {
+		return b // pipeStatsString writes no grouping without a function
+	}
+	if len(p.By) > 0 {
+		b = append(b, " by ("...)
+		for i, k := range p.By {
+			if i > 0 {
+				b = append(b, ", "...)
+			}
+			b = append(b, k.Field...)
+			if k.Bucket != "" {
+				b = append(append(b, ':'), k.Bucket...)
+				if k.Offset != "" {
+					b = append(append(b, " offset "...), k.Offset...)
+				}
+			}
+		}
+		b = append(b, ')')
+	}
+	for i, fa := range p.Funcs {
+		if i == 0 {
+			b = append(b, ' ')
+		} else {
+			b = append(b, ", "...)
+		}
+		b = appendStatsFunc(b, fa.Func)
+		b = appendIf(b, fa.If)
+		if fa.Alias != "" {
+			b = append(append(b, " as "...), fa.Alias...)
+		}
+	}
+	return b
+}
+
+// appendStatsFunc appends the text of f: the functions of one field (or none) are written in place, the others
+// through String.
+func appendStatsFunc(b []byte, f StatsFunc) []byte {
+	var name, field string
+	switch f := f.(type) {
+	case Count:
+		b = append(b, "count("...)
+		for i, field := range f.Fields {
+			if i > 0 {
+				b = append(b, ", "...)
+			}
+			b = append(b, field...)
+		}
+		return append(b, ')')
+	case Sum:
+		name, field = "sum(", f.Field
+	case Min:
+		name, field = "min(", f.Field
+	case Max:
+		name, field = "max(", f.Field
+	case Avg:
+		name, field = "avg(", f.Field
+	default:
+		return append(b, f.String()...)
+	}
+	return append(append(append(b, name...), field...), ')')
+}
+
+// AppendStats appends the text of p, as its String writes it, to b, with no interface value to box.
+func AppendStats(b []byte, p PipeStats) []byte { return p.appendTo(b) }
+
+// AppendPipe appends the text of p, as Query.String writes it, to b.
+func AppendPipe(b []byte, p Pipe) []byte {
+	if a, ok := p.(appender); ok {
+		return a.appendTo(b)
+	}
+	return append(b, p.String()...)
+}
+func (p PipeStats) pipe() {}
 
 // PipeMath evaluates a math expression and stores the result in Alias.
 type PipeMath struct {
@@ -1258,7 +1334,12 @@ type PipeMath struct {
 }
 
 func (p PipeMath) String() string { return fmt.Sprintf("| math %s as %s", p.Expr, p.Alias) }
-func (p PipeMath) pipe()          {}
+
+// appendTo is String, appended.
+func (p PipeMath) appendTo(b []byte) []byte {
+	return append(append(append(append(b, "| math "...), p.Expr...), " as "...), p.Alias...)
+}
+func (p PipeMath) pipe() {}
 
 // PipeSort sorts log entries by one or more fields.
 type PipeSort struct {

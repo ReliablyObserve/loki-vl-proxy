@@ -305,6 +305,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/unwrap-in-log-query` — A log query with an unwrap stage is accepted where Loki answers a syntax error (fixed) | TBD-PR | 0 | 0 |
 | `semantics/ip-filter-ipv4-after-dot-run` — An IPv4 ip() filter does not match an address after a run of dots that a digit or a dot precedes (fixed) | #1273 | 0 | 0 |
 | `semantics/ip-filter-ipv4-after-hex-colon` — An IPv4 ip() filter finds an address after hex digits and colons where Loki's scan finds it (fixed) | #1491 | 0 | 0 |
+| `semantics/keep-drop-blank-name-prints-back` — A keep or drop that lists only a blank Loki reads as a name (`\| keep\\v`, `\| drop\\u00a0`) prints as `\| keep \\v`, and a range aggrega... | TBD-PR | 0 | 0 |
 | `semantics/line-filter-invalid-utf8` — A \|= or != line filter whose text is not UTF-8 answers like Loki (fixed) | #1236 | 0 | 0 |
 | `semantics/loki-keyword-label-names` — A label cannot be called after a word Loki's lexer reads as a keyword (of, bool, offset, unwrap, json, regexp, logfmt, unpack, pattern, l... | this change | 0 | 0 |
 | `semantics/parser-reads-unicode-blank-as-white-space` — The proxy's LogQL parser reads a blank that is no ASCII one (U+00A0, U+0085, U+2003, U+3000, a vertical tab, a form feed) between two tok... | TBD-PR | 0 | 0 |

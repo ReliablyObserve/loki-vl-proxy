@@ -125,20 +125,20 @@
     }
   },
   "loki_differential": {
-    "queries": 237,
-    "lines": 9060,
+    "queries": 236,
+    "lines": 9020,
     "profiles": {
       "v1.49 loki profile": {
-        "compared": 214,
+        "compared": 213,
         "not_comparable": {
           "Loki rejects the query": 6,
           "reads detected_level, which Loki derives at ingest": 14,
           "the handler's options are not reproduced": 3
         },
-        "plan_matches_loki": 143,
-        "plan_matches_loki_plain": 144,
-        "plan_matches_loki_categorized": 143,
-        "translator_matches_loki": 133,
+        "plan_matches_loki": 142,
+        "plan_matches_loki_plain": 143,
+        "plan_matches_loki_categorized": 142,
+        "translator_matches_loki": 132,
         "vl_rejects_plan": 1,
         "vl_rejects_translator": 8,
         "weak_fixture": 22,
@@ -185,22 +185,22 @@
           "writes another value of an _extracted label": 1
         },
         "handler_serves": {
-          "both": 198,
+          "both": 197,
           "plan": 11,
           "translator": 5
         }
       },
       "v1.53 loki profile": {
-        "compared": 214,
+        "compared": 213,
         "not_comparable": {
           "Loki rejects the query": 6,
           "reads detected_level, which Loki derives at ingest": 14,
           "the handler's options are not reproduced": 3
         },
-        "plan_matches_loki": 143,
-        "plan_matches_loki_plain": 144,
-        "plan_matches_loki_categorized": 143,
-        "translator_matches_loki": 133,
+        "plan_matches_loki": 142,
+        "plan_matches_loki_plain": 143,
+        "plan_matches_loki_categorized": 142,
+        "translator_matches_loki": 132,
         "vl_rejects_plan": 1,
         "vl_rejects_translator": 8,
         "weak_fixture": 22,
@@ -247,7 +247,7 @@
           "writes another value of an _extracted label": 1
         },
         "handler_serves": {
-          "both": 198,
+          "both": 197,
           "plan": 11,
           "translator": 5
         }
@@ -287,7 +287,7 @@
       "the plan does not route it: RangeAgg parser label cost": 2,
       "the plan does not route it: RangeAgg route level filter": 2,
       "the plan does not route it: RangeAgg route offset bounds": 1,
-      "the plan does not route it: RangeAgg route pipeline": 114,
+      "the plan does not route it: RangeAgg route pipeline": 115,
       "the plan does not route it: RangeAgg route reserved field": 1,
       "the plan does not route it: RangeAgg route spelling": 2,
       "the plan does not route it: RangeAgg route unwrap absent": 9,
@@ -498,7 +498,7 @@
       "LabelReplace operand BinOp": 20,
       "LabelReplace operand VectorAgg": 60,
       "LabelReplace service_name grouping": 40,
-      "LogSelect (route rule)": 2330,
+      "LogSelect (route rule)": 2320,
       "LogSelect keep order": 10,
       "LogSelect level filter after stage": 10,
       "LogSelect line format function": 10,
@@ -512,7 +512,7 @@
       "RangeAgg route level filter": 20,
       "RangeAgg route no bucket grid": 118,
       "RangeAgg route offset bounds": 10,
-      "RangeAgg route pipeline": 1140,
+      "RangeAgg route pipeline": 1150,
       "RangeAgg route reserved field": 10,
       "RangeAgg route spelling": 20,
       "RangeAgg route unwrap absent": 90,
@@ -550,47 +550,47 @@
       "VectorLit": 10
     },
     "statuses": {
-      "200": 24695,
-      "400": 582,
+      "200": 24697,
+      "400": 580,
       "500": 33
     },
     "routes": {
       "24h chunk/BinOp": "a0123d6f9e17fa36",
       "24h chunk/LabelReplace": "34b8c8aa4bd45211",
-      "24h chunk/LogSelect": "8d06aa04c936a923",
-      "24h chunk/RangeAgg": "313e7b17c73882fe",
+      "24h chunk/LogSelect": "1eae3ae49613d923",
+      "24h chunk/RangeAgg": "1dc38c36aa6244e9",
       "24h chunk/Rank": "1114f8a09776e25b",
       "24h chunk/Scalar": "b01ddfee0a162681",
       "24h chunk/VectorAgg": "0ef3fc03f9acecb8",
       "24h chunk/VectorLit": "fafe78111335aec9",
       "instant/BinOp": "a139312fd7796b7a",
       "instant/LabelReplace": "1eda7f007cfc3480",
-      "instant/LogSelect": "caa20b5d817cd552",
-      "instant/RangeAgg": "5ed50ff37240c231",
+      "instant/LogSelect": "0faecdd5951893c5",
+      "instant/RangeAgg": "9b71657827b0530c",
       "instant/Rank": "872242485620d173",
       "instant/Scalar": "058ee94c303a0c46",
       "instant/VectorAgg": "4e8e2f40e297a368",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "ded1a846679dcc18",
       "step\u003crange/LabelReplace": "7e2339de2a64039d",
-      "step\u003crange/LogSelect": "8d06aa04c936a923",
-      "step\u003crange/RangeAgg": "7c66a2fbb16cd4ad",
+      "step\u003crange/LogSelect": "1eae3ae49613d923",
+      "step\u003crange/RangeAgg": "23be80cbe8f6d9d5",
       "step\u003crange/Rank": "7ae4c778853987b1",
       "step\u003crange/Scalar": "b01ddfee0a162681",
       "step\u003crange/VectorAgg": "807fc6a870fdb13b",
       "step\u003crange/VectorLit": "fafe78111335aec9",
       "step=range/BinOp": "ac2c93507815eca7",
       "step=range/LabelReplace": "f814664e0f744be4",
-      "step=range/LogSelect": "8d06aa04c936a923",
-      "step=range/RangeAgg": "19541a94db78d324",
+      "step=range/LogSelect": "1eae3ae49613d923",
+      "step=range/RangeAgg": "cc9ef605e4232a48",
       "step=range/Rank": "48b7c16f1a61f7ad",
       "step=range/Scalar": "b01ddfee0a162681",
       "step=range/VectorAgg": "704236f36b00e9c7",
       "step=range/VectorLit": "fafe78111335aec9",
       "step\u003erange/BinOp": "e7e755c8e8149468",
       "step\u003erange/LabelReplace": "266dba9d6112ebe9",
-      "step\u003erange/LogSelect": "8d06aa04c936a923",
-      "step\u003erange/RangeAgg": "295ba101aeeddd74",
+      "step\u003erange/LogSelect": "1eae3ae49613d923",
+      "step\u003erange/RangeAgg": "82bf9344b416c8f3",
       "step\u003erange/Rank": "bde2008f55288e03",
       "step\u003erange/Scalar": "b01ddfee0a162681",
       "step\u003erange/VectorAgg": "0883830eecb4dc2f",
@@ -598,9 +598,9 @@
     }
   },
   "shadow": {
-    "rows": 23835,
+    "rows": 23832,
     "profiles": 12,
-    "native": 21346,
+    "native": 21388,
     "native_proxy_evaluated": 3951,
     "mismatches": 0,
     "delegated_by_construct": {
@@ -642,7 +642,7 @@
       "VectorAgg grouping": 27,
       "VectorAgg nested unwrap": 36,
       "VectorAgg operand": 207,
-      "VectorAgg operand spelling": 72,
+      "VectorAgg operand spelling": 18,
       "VectorAgg parser extracted label": 18,
       "VectorAgg parser label cost": 128,
       "VectorAgg stddev parsed label operand": 9,
@@ -650,6 +650,7 @@
       "VectorLit": 9,
       "known divergence semantics/binary-operand-without-empty-collapses": 378,
       "known divergence semantics/keep-before-unwrap-series-identity": 90,
+      "known divergence semantics/keep-drop-blank-name-prints-back": 9,
       "known divergence semantics/label-filter-numeric-equality": 57,
       "known divergence semantics/label-replace-around-ranking-and-vector": 18,
       "known divergence semantics/pattern-capture-before-bracket-text": 12,
@@ -660,7 +661,11 @@
       "known divergence semantics/translator-writes-signed-number-with-blank": 12
     },
     "flipped": [
-      "LogSelect"
+      "LogSelect",
+      "VectorAgg",
+      "RangeAgg",
+      "BinOp",
+      "LabelReplace"
     ]
   }
 }

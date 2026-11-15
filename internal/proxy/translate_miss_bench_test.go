@@ -44,6 +44,34 @@ var translateMissShapes = []struct {
 	{"metric unwrap keep", func(i string) string {
 		return `sum(quantile_over_time(0.9, {app="api"} |= "x ` + i + `" | json | keep app, d | unwrap d [5m]))`
 	}},
+	// One shape per metric construct the lowering serves, and the metric shapes it plans and leaves to the string
+	// translator (delegated by the lowering, or turned away by writesTranslatorText): what a flip costs the queries it
+	// does not serve.
+	{"vector sum by count", func(i string) string {
+		return `sum by (app) (count_over_time({app="api"} | json | status="` + i + `" [5m]))`
+	}},
+	{"vector unwrap quantile", func(i string) string {
+		return `sum by (app) (quantile_over_time(0.9, {app="api"} |= "` + i + `" | logfmt | unwrap d [5m]))`
+	}},
+	{"vector without empty", func(i string) string { return `sum without () (count_over_time({app="api"} |= "` + i + `" [5m]))` }},
+	{"vector stddev", func(i string) string { return `stddev by (app) (count_over_time({app="api"} |= "` + i + `" [5m]))` }},
+	{"vector numeric equality", func(i string) string {
+		return `sum(count_over_time({app="api"} |= "` + i + `" | json | status == 500 [5m]))`
+	}},
+	{"range count", func(i string) string { return `count_over_time({app="api"} |= "error ` + i + `" [5m])` }},
+	{"range unwrap", func(i string) string {
+		return `max_over_time({app="api"} |= "` + i + `" | json | unwrap d [5m]) by (app)`
+	}},
+	{"range unpack", func(i string) string { return `count_over_time({app="api"} |= "` + i + `" | unpack | x="y" [5m])` }},
+	{"binary operands", func(i string) string {
+		return `sum(rate({app="api"} |= "` + i + `" [5m])) / sum(rate({app="api"}[5m]))`
+	}},
+	{"binary vector operand", func(i string) string { return `vector(1) + sum(rate({app="api"} |= "` + i + `" [5m]))` }},
+	{"label_replace", func(i string) string {
+		return `label_replace(sum by (app) (rate({app="api"} |= "` + i + `" [5m])), "x", "$1", "app", "(.*)")`
+	}},
+	{"topk", func(i string) string { return `topk(3, sum by (app) (rate({app="api"} |= "` + i + `" [5m])))` }},
+	{"vector literal", func(i string) string { return `vector(` + i + `)` }},
 }
 
 // benchTranslateMissShapes runs every shape of translateMissShapes on a proxy built from cfg.

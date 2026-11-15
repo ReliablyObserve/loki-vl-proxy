@@ -172,3 +172,6 @@ smoke	internal/proxy	FuzzRefusalErrors	12s	-	client errors built from a raw star
 smoke	internal/proxy	FuzzRequestParamChecks	12s	-	request parameter checks (time, step, limit, since, window, length) against a model of the recorded Loki rules
 smoke	test/ciworkflows	FuzzParseWorkflow	12s	-	the CI workflow inventory reads any workflow text or refuses it, and every schedule it accepts has a period
 smoke	test/caseverify	FuzzCompareIsReflexive	12s	-	the per-case live runner finds no difference between an answer and itself, whatever the answer holds
+smoke	internal/proxy	FuzzMetricFlipGate	12s	-	the metric flip gate serves only the string translator's text, with the candidate metric constructs flipped
+smoke	internal/queryplan/lower	FuzzScreenMetric	12s	-	the metric screen answers a construct of its set with no allocation, and the plan's root for a query that parses
+smoke	internal/logsql	FuzzAppendPipeMatchesString	12s	-	stats and math pipes appended in place print the text their String writes
