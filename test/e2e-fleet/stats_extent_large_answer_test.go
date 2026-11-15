@@ -30,8 +30,9 @@ import (
 //     spelled differently on every call).
 //
 // The fixture is 450 lines over six hours, one per series, each with a long
-// field value, so the answer is over one entry while each of its three splits
-// is under it, within the default series limit (500).
+// field value, so the answer is over one entry while each of its splits (three
+// or four, by where the hour falls on the 128-bucket split grid) is under it,
+// within the default series limit (500).
 //
 // conformance: quality/query-range-extent-cache-large-answer, quality/query-range-extent-cache
 func TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry(t *testing.T) {
@@ -129,11 +130,10 @@ func TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	// Every split has a replica other than a when keys have two replicas, so
-	// at least one push per split (three) must leave a before b and the
-	// restarted a can read the splits from a peer. A push that was dropped
-	// (a peer's breaker open, the queue full) is not sent again: the splits
-	// then stay on a alone, and the restarted a reads them again, which is
-	// the product's documented behaviour, not what this test proves.
+	// at least one push per split (three or more) must leave a before b and
+	// the restarted a can read the splits from a peer. A push that cannot
+	// leave at once (a peer's breaker open, the queue full) waits in the push
+	// buffer and is replayed; the pushes counter counts only delivered ones.
 	if fleetReplicationFactor(t) >= 2 {
 		deadline = time.Now().Add(10 * time.Second)
 		for {
@@ -165,8 +165,12 @@ func TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry(t *testing.T) {
 	// movedFromPeers asks replica idx for the window moved back by `back`
 	// and requires it answered from stored splits, with at most maxCalls
 	// VictoriaLogs calls (the missing bucket, and a split whose only copy was
-	// on a replica that lost it).
-	movedFromPeers := func(idx int, back time.Duration, maxCalls float64) {
+	// on a replica that lost it). mayReadWhole accepts a whole read: with one
+	// copy per key a replica that lost its disk lost every split it owned,
+	// and an owner never asks its peers for its own keys, so when it owned
+	// every split of the window (the ring puts each split on it with odds of
+	// about one in three) nothing is left to read from its peers.
+	movedFromPeers := func(idx int, back time.Duration, maxCalls float64, mayReadWhole bool) {
 		t.Helper()
 		addr := proxyAddrs[idx]
 		outcomes := []string{"hit", "partial", "miss", "unreadable", "error"}
@@ -177,7 +181,9 @@ func TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry(t *testing.T) {
 		peerBefore := readCounters(t, addr)
 		partial, calls := before["partial"]+before["hit"], statsCalls(addr)
 		got, _ := get(addr, query, from.Add(-back), to.Add(-back))
-		if after := extent(addr, "partial") + extent(addr, "hit"); after <= partial {
+		if after := extent(addr, "partial") + extent(addr, "hit"); after <= partial && mayReadWhole {
+			t.Logf("replica %d read the moved window whole: with one copy per key it owned every split it lost", idx)
+		} else if after <= partial {
 			deltas := map[string]float64{}
 			for _, o := range outcomes {
 				deltas[o] = extent(addr, o) - before[o]
@@ -194,7 +200,8 @@ func TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry(t *testing.T) {
 			t.Fatalf("replica %d's answer from stored splits differs from VictoriaLogs'", idx)
 		}
 	}
-	movedFromPeers(1, time.Minute, 1)
-	recreateWithoutDisk(t, 0)           // memory and disk lost: the splits are on the peers
-	movedFromPeers(0, 2*time.Minute, 3) // at most three missing ranges are read apart
+	movedFromPeers(1, time.Minute, 1, false)
+	recreateWithoutDisk(t, 0) // memory and disk lost: the splits are on the peers
+	// At most three missing ranges are read apart.
+	movedFromPeers(0, 2*time.Minute, 3, fleetReplicationFactor(t) < 2)
 }
