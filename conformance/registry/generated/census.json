@@ -1129,6 +1129,8 @@
     "internal/config/generate_edge_test.go | operator-configurable-limits",
     "internal/config/registry_test.go | limits/every-cap-is-a-flag",
     "internal/config/registry_test.go | operator-configurable-limits",
+    "internal/logql/blank_after_keyword_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
+    "internal/logql/blank_after_keyword_loki_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/logql/comments_offsets_test.go | semantics/comments-signed-compound-offsets",
     "internal/logql/comments_offsets_test.go | semantics/proxy-rejects-valid-logql",
     "internal/logql/count_values_test.go | semantics/count-values-unsupported",
@@ -1277,6 +1279,8 @@
     "internal/proxy/binary_outer_sum_ignoring_test.go | loki_api_v1_query_range",
     "internal/proxy/binary_outer_sum_ignoring_test.go | semantics/binary-ignoring-matching",
     "internal/proxy/binary_physical_test.go | architecture-syntax-package-layering",
+    "internal/proxy/blank_after_keyword_test.go | semantics/parser-reads-unicode-blank-as-white-space",
+    "internal/proxy/blank_after_keyword_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/proxy/blank_grouping_test.go | semantics/translator-reads-blank-grouping-as-none",
     "internal/proxy/capture_error_replay_test.go | limits/series-limit-error",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-backend-text",
@@ -1736,6 +1740,7 @@
     "internal/proxy/query_flow_test.go | observability-slow-query-log",
     "internal/proxy/query_lowering_corpus_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_corpus_test.go | semantics/translator-reads-blank-grouping-as-none",
+    "internal/proxy/query_lowering_corpus_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/proxy/query_lowering_log_stages_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_log_stages_test.go | semantics/translator-copies-unspaced-parser",
     "internal/proxy/query_lowering_shared_parse_test.go | architecture-syntax-package-layering",
@@ -2837,7 +2842,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 646,
+      "go": 648,
       "playwright": 1
     },
     "page_kinds": {

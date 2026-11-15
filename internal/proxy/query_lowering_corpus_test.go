@@ -15,6 +15,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankgrouping"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankspace"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -63,9 +64,11 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 					continue
 				}
 				got, gotErr := on.translateQueryOpts(ctx, q, false)
-				// A query with an unspaced parser is held to the translator's text of its spaced spelling (respaced), and
-				// one with a `by` clause of blanks to its text of `by ()` (semantics/translator-reads-blank-grouping-as-none).
-				want, wantErr := off.translateQueryOpts(ctx, respaced(blankgrouping.Cut(q)), false)
+				// A query with an unspaced parser is held to the translator's text of its spaced spelling (respaced), one
+				// with a `by` clause of blanks to its text of `by ()` (semantics/translator-reads-blank-grouping-as-none) and
+				// one with a tab, a line feed or a carriage return between tokens to its text with a space
+				// (semantics/translator-reads-only-space-between-tokens).
+				want, wantErr := off.translateQueryOpts(ctx, spelledAsTranslatorReads(q), false)
 				if _, kept := on.keepUnwrapIdentity(q); kept {
 					keep++
 					continue
@@ -129,9 +132,11 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 // identity; the gate and the lowering never panic out of lowerMetric. The translator's text is also taken with its
 // keyword label names quoted (lower.QuoteKeywordFieldText), as the corpus shadow compares it: VictoriaLogs rejects
 // them bare (semantics/translator-writes-keyword-field-names-bare). A `by` clause of only blanks is held to the
-// translator's text of `by ()` (semantics/translator-reads-blank-grouping-as-none).
+// translator's text of `by ()` (semantics/translator-reads-blank-grouping-as-none), and one with a tab, a line feed or
+// a carriage return between tokens (after json, logfmt, regexp, pattern, unwrap, ...) to its text with a space
+// (semantics/translator-reads-only-space-between-tokens).
 //
-// conformance: architecture-syntax-package-layering, semantics/translator-reads-blank-grouping-as-none
+// conformance: architecture-syntax-package-layering, semantics/translator-reads-blank-grouping-as-none, semantics/translator-reads-only-space-between-tokens
 func FuzzMetricFlipGate(f *testing.F) {
 	for _, q := range []string{
 		`sum by (app) (rate({app="a"} |= "x" [5m]))`, `count_over_time({app="a"} | json | status="500" [5m])`,
@@ -152,6 +157,12 @@ func FuzzMetricFlipGate(f *testing.F) {
 		`first_over_time({app="a"} | json | keep app, n | unwrAp n [5m])`, `max_over_time({app="a"} | logfmt | unwrap A [5m]) by ()`,
 		// A grouping of blanks, which the translator reads as no grouping and the plan as `by ()`.
 		`sum by( ) (rate({A="0"}[1y]))`, "sum by(\t) (count_over_time({A=\"0\"}[5m]))", `sum(rate({A="0"}[5m])) by(  )`,
+		// A tab, a line feed or a carriage return where the translator reads a space: after a parser keyword, a stage name
+		// and a function name.
+		"first_over_time({A00=\"0\"} | json\rA0| unwrap A0[0y])", "count_over_time({A=\"0\"} | json\tA0 [5m])",
+		"count_over_time({A=\"0\"} | logfmt\r\na [5m])", "count_over_time({A=\"0\"} | regexp\n`(?P<a>x)` [5m])",
+		"count_over_time({A=\"0\"} | pattern\r\"<a> x\" [5m])", "sum(count_over_time({A=\"0\"} | json | label_format\ta=b [5m]))",
+		"max_over_time({A=\"0\"}| unwrap\rA[0])", "sum_over_time({A=\"0\"} | json |\tunwrap\nduration(a) [5m])",
 	} {
 		f.Add(q)
 	}
@@ -181,17 +192,23 @@ func FuzzMetricFlipGate(f *testing.F) {
 		}
 		got, gotErr := on.translateQueryOpts(context.Background(), q, false)
 		// The translator reads a grouping of blanks (`by( )`) as no grouping, Loki and the plan as `by ()`
-		// (semantics/translator-reads-blank-grouping-as-none): it is held to the spelling it reads as Loki does.
-		want, wantErr := off.translateQueryOpts(context.Background(), respaced(blankgrouping.Cut(q)), false)
+		// (semantics/translator-reads-blank-grouping-as-none), and a tab, a line feed or a carriage return after a
+		// parser keyword as part of the text (semantics/translator-reads-only-space-between-tokens): it is held to the
+		// spelling it reads as Loki does.
+		want, wantErr := off.translateQueryOpts(context.Background(), spelledAsTranslatorReads(q), false)
 		if _, kept := on.keepUnwrapIdentity(q); kept {
 			return
 		}
 		// A query with an unspaced parser the screen leaves to the translator gets the translator's own text, as with
 		// nothing flipped; one the plan serves may escape a byte the spaced spelling's text copies raw.
-		respelled := false
-		if respaced(q) != q {
-			unflipped, _ := off.translateQueryOpts(context.Background(), q, false)
-			respelled = got == unflipped || sameLogsQL(got, want)
+		respelled, delegated := false, false
+		if respaced(blankspace.Collapse(q)) != q {
+			unflipped, unflippedErr := off.translateQueryOpts(context.Background(), q, false)
+			// A construct the plan leaves to the translator (its text and its failure are the translator's own) is not
+			// served from this text: the handlers read it through their own path, which TestBlankAfterKeywordRequests
+			// holds to the spaced spelling's requests.
+			delegated = got == unflipped && (gotErr == nil) == (unflippedErr == nil)
+			respelled = delegated || sameLogsQL(got, want)
 		}
 		// A blank grouping on a construct the plan leaves to the translator (a ranking) is the translator's own text.
 		if cut := blankgrouping.Cut(q); cut != q && !respelled {
@@ -203,10 +220,17 @@ func FuzzMetricFlipGate(f *testing.F) {
 		if !respelled && strings.IndexFunc(q, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
 			respelled = sameLogsQL(got, want)
 		}
-		if (got != want && got != lower.QuoteKeywordFieldText(want) && !respelled) || (gotErr == nil) != (wantErr == nil) {
+		if (got != want && got != lower.QuoteKeywordFieldText(want) && !respelled) || ((gotErr == nil) != (wantErr == nil) && !delegated) {
 			t.Fatalf("%q:\n flag on  %q %v\n flag off %q %v", q, got, gotErr, want, wantErr)
 		}
 	})
+}
+
+// spelledAsTranslatorReads is q in the spelling the string translator reads as Loki does: each run of the blanks Loki
+// skips written as one space, a parser expression with a blank before it, and a `by` clause of only blanks as `by ()`.
+// Loki's tree holds the same query for every spelling of it (Loki oracle, TestBlankAfterKeywordMatchesLoki).
+func spelledAsTranslatorReads(q string) string {
+	return respaced(blankgrouping.Cut(blankspace.Collapse(q)))
 }
 
 // The metric screen (lower.ScreenMetric) holds to the plan on every metric query of the corpus under every translator
