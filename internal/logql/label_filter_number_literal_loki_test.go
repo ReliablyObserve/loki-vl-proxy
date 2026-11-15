@@ -133,6 +133,16 @@ func numLitQueries() []string {
 			}
 		}
 	}
+	// A minus before a number, written together and apart: Loki reads `-0X0` and `-0o7` as no query, and `- 0X0`
+	// as the negated number, which the printer writes (FuzzPrintReparse).
+	for _, v := range []string{"0", "00", "07", "0o7", "0O7", "0b1", "0x0", "0X0", "0x1F", "0X1f", "0x1p3", "0X1P-2",
+		"0x_1", "0o_7", "0_1", "1_0", "0e1", "0E1", "0.5", ".5", "1e3", "1E-3", "1.5e+2", "1", "10", "0s", "5m", "1KB", "0x1KB"} {
+		for _, op := range []string{"<", ">=", "!=", "=="} {
+			for _, sp := range []string{"-", "- ", " -", " - "} {
+				add(`{app="a"} | A` + op + sp + v)
+			}
+		}
+	}
 	for _, q := range lokiLexerQueries() {
 		add(q)
 	}
@@ -205,16 +215,9 @@ func recordNumLitAnswers(t *testing.T, queries []string) {
 	}
 }
 
-// Label filter number, duration and bytes literals are read as Loki reads them: the proxy accepts and rejects
-// exactly what Loki's parser accepts and rejects, with Loki's error text. Loki's answers are recorded with the
-// Loki oracle (LVP_RUN_ORACLES=1 records them again).
-//
-// conformance: semantics/label-filter-number-literal-scan
-func TestLabelFilterNumberLiteralsMatchLoki(t *testing.T) {
-	queries := numLitQueries()
-	if os.Getenv("LVP_RUN_ORACLES") == "1" {
-		recordNumLitAnswers(t, queries)
-	}
+// readNumLitAnswers reads Loki's recorded answers for queries, in their order.
+func readNumLitAnswers(t *testing.T, queries []string) []numLitAnswer {
+	t.Helper()
 	f, err := os.Open(numLitAnswers)
 	if err != nil {
 		t.Fatal(err)
@@ -237,6 +240,61 @@ func TestLabelFilterNumberLiteralsMatchLoki(t *testing.T) {
 	if len(answers) != len(queries) {
 		t.Fatalf("%d recorded answers for %d queries: record them again with LVP_RUN_ORACLES=1", len(answers), len(queries))
 	}
+	return answers
+}
+
+// Every label filter literal Loki accepts prints to text that parses back to the same tree and prints the same
+// again; where the printed text is itself a recorded query, Loki accepts it too. A minus before a number that
+// starts with a 0 and a letter (`- 0X0`) stays apart: Loki reads `-0X0` as no query.
+//
+// conformance: semantics/label-filter-number-literal-scan
+func TestLabelFilterNumberLiteralsPrintReparse(t *testing.T) {
+	queries := numLitQueries()
+	answers := readNumLitAnswers(t, queries)
+	accept := make(map[string]bool, len(answers))
+	for _, a := range answers {
+		accept[a.Q] = a.Accept
+	}
+	checked := 0
+	for _, a := range answers {
+		if !a.Accept {
+			continue
+		}
+		first, msg := ValidateLogQLExpr(a.Q)
+		if msg != "" || first == nil || outsideLabelFilterDomain(first) {
+			continue
+		}
+		checked++
+		printed := first.String()
+		second, err := Parse(printed)
+		switch {
+		case err != nil:
+			t.Errorf("%q printed as %q, which does not parse: %v", a.Q, printed, err)
+		case second.String() != printed:
+			t.Errorf("%q printed as %q then %q: not stable", a.Q, printed, second.String())
+		case !sameTree(first, second):
+			t.Errorf("%q printed as %q, which parses to a different tree", a.Q, printed)
+		}
+		if ok, recorded := accept[printed]; recorded && !ok {
+			t.Errorf("%q printed as %q, which Loki rejects", a.Q, printed)
+		}
+	}
+	if checked < 1000 {
+		t.Fatalf("only %d accepted queries checked", checked)
+	}
+}
+
+// Label filter number, duration and bytes literals are read as Loki reads them: the proxy accepts and rejects
+// exactly what Loki's parser accepts and rejects, with Loki's error text. Loki's answers are recorded with the
+// Loki oracle (LVP_RUN_ORACLES=1 records them again).
+//
+// conformance: semantics/label-filter-number-literal-scan
+func TestLabelFilterNumberLiteralsMatchLoki(t *testing.T) {
+	queries := numLitQueries()
+	if os.Getenv("LVP_RUN_ORACLES") == "1" {
+		recordNumLitAnswers(t, queries)
+	}
+	answers := readNumLitAnswers(t, queries)
 	var accepted, rejected, diffs int
 	for i, a := range answers {
 		if a.Q != queries[i] {
