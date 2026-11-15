@@ -55,6 +55,16 @@ var EmptyCases = []string{
 	"severity/otlp-severity-before-vl-1.50",
 }
 
+// OwnStreamCases are cases that were not empty in that run, whose request now selects a stream of its own (a probe
+// strong enough to separate the proxy from Loki needs lines no shared stream holds). They are served like the empty
+// cases above and must not be listed as unservable.
+var OwnStreamCases = []string{
+	"semantics/ip-filter-keeps-parser-error-lines",
+	"semantics/logfmt-malformed-lines",
+	"semantics/stream-level-shadowed-by-ingest-json-key",
+	"semantics/unwrap-sum-without-extracted-label-collision",
+}
+
 // Unservable are the empty cases no seeded stream can fix, each with the reason. The window is the case, or the
 // data is not a stream of lines the seeder can write to both sides.
 var Unservable = map[string]string{

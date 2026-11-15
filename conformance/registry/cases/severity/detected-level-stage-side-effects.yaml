@@ -31,11 +31,17 @@ why: |
   The run of 2026-11-07 (proxy a3ad4c1b) records `| keep detected_level` as
   a different difference: Loki returns `detected_level` in the entries'
   structured metadata and the proxy does not (cluster a4c74036).
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: '{service_name="worker-service"} | logfmt | detected_level="error"'
+      - query: '{service_name="api-gateway"} | drop detected_level'
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: '{service_name="api-gateway"} | drop detected_level'
+    query: '{service_name="worker-service"} | logfmt | detected_level="error"'
     start: 'now-15m'
     end: 'now'
     limit: '100'
@@ -44,9 +50,11 @@ request:
     X-Loki-Response-Encoding-Flags: categorize-labels
 compare:
   mode: observed
-  fields: [streams.stream]
+  fields: [status, streams.stream, streams.values]
   expect: |
-    Loki's labels.
+    Loki's labels and entries: after `| logfmt` the filter reads the stage's
+    own detected_level, so the lines Loki labels info (their logfmt `level`
+    becomes `level_extracted`) are not kept.
 gap:
   status: open
   impact: explore-visible
