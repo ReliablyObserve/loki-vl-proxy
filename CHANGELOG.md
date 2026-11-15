@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and range and vector aggregations, binary operations, `label_replace` calls, rankings and `stddev`/`stdvar` over
   one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
   `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
+- An IPv4 `ip()` filter now finds an address written after hex digits and colons exactly where Loki finds it, in
+  `|= ip(...)` line filters and `label = ip(...)` label filters alike. Loki reads a line from its start, and an
+  earlier run of digits and dots, or of hex digits and colons, decides whether a later address is read: in
+  `X0:1.2.3.0` and `1.0:1.2.3.0` Loki finds 1.2.3.0, in `a0:1.2.3.0` and `1:a1.2.3.0` it does not. The proxy judged
+  only the characters right before the address, so `ip("1.2.3.0/27")` dropped the first two and kept the last two,
+  and `!= ip(...)` did the opposite. Checked against Loki's own answers on 52,000 lines. VictoriaLogs now checks two
+  short regexps first and runs the full one only on the few lines they leave, so an IPv4 `ip()` filter costs it 58%
+  to 82% less per line than before. Answers cached before the fix are not reused.
 - **Breaking:** `-default-max-query-length` now defaults to Loki's `max_query_length` default, `721h` (published as
   `30d1h`), instead of `0` (no limit). A proxy run without a length configured served a range Loki refuses: a
   `query_range`, `series`, `labels`, label values, `detected_labels`, `detected_fields`, detected field values,
