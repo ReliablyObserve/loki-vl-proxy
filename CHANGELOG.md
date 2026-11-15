@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A timestamp written as digits only (the integer nanoseconds Grafana sends for `start`, `end` and `time`) is read in
+  one pass, eight digits at a time, instead of a digit scan and a second parse: 27 to 8 ns per timestamp, with no
+  allocation, and the same value for every input (a sign, a space, a time layout or a float still takes the general
+  parse). The step alignment and the time-bounds check of `query_range`, the metadata routes' response-cache keys and
+  their handlers read their bounds this way, which more than pays for the length check the new
+  `-default-max-query-length` default adds: at the shipped default a `query_range` or `labels` request costs no more
+  than before.
+
+### Fixed
+
+- **Breaking:** `-default-max-query-length` now defaults to Loki's `max_query_length` default, `721h` (published as
+  `30d1h`), instead of `0` (no limit). A proxy run without a length configured served a range Loki refuses: a
+  `query_range`, `series`, `labels`, label values, `detected_labels`, `detected_fields`, detected field values,
+  `index/stats` or `index/volume` request over more than 721h (for example `start=-1` or `start=1`) now fails, as in Loki,
+  with `400 the query time range exceeds the limit (query length: X, limit: 30d1h)` before any VictoriaLogs call,
+  and `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` publish `max_query_length: 30d1h` instead of
+  `0s`. Set `-default-max-query-length=0` (Helm `extraArgs.default-max-query-length: "0"`), or `max_query_length:
+  "0s"` in `-tenant-default-limits` or `-tenant-limits`, to keep serving longer ranges. A live tail is not checked
+  against this limit. A request with a `start` and no `end` is held to it too (a missing `end` is now, as in Loki).
+  `index/volume` rounds its `start` and `end` down to whole seconds before the check, as Loki does, and reports
+  the length in whole seconds (`721h0m1s`); `index/volume_range` is not length-limited, as in Loki (a range over 721h is
+  answered, and only its 11,000-point resolution rejects).
+
+## [2.265.0] - 2026-11-15
+
+### Changed
 - Translating a query costs fewer allocations. The LogQL parser allocates about half as much for a log query (a json
   query with a label filter: 14 to 7 allocations), a `line_format` template is typed once per template text, a
   query plan is one allocation sized for the query's kind, and the plan's log query lowering writes its text with
@@ -24,16 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   translator. Answers, translation cache entries and the queries VictoriaLogs receives do not change; a translation
   that misses the cache costs no more allocations than the string translator's. `-query-plan-lowering=false` turns it
   off.
-- A timestamp written as digits only (the integer nanoseconds Grafana sends for `start`, `end` and `time`) is read in
-  one pass, eight digits at a time, instead of a digit scan and a second parse: 27 to 8 ns per timestamp, with no
-  allocation, and the same value for every input (a sign, a space, a time layout or a float still takes the general
-  parse). The step alignment and the time-bounds check of `query_range`, the metadata routes' response-cache keys and
-  their handlers read their bounds this way, which more than pays for the length check the new
-  `-default-max-query-length` default adds: at the shipped default a `query_range` or `labels` request costs no more
-  than before.
 
 ### Fixed
-
 - An IPv4 `ip()` filter now finds an address written after hex digits and colons exactly where Loki finds it, in
   `|= ip(...)` line filters and `label = ip(...)` label filters alike. Loki reads a line from its start, and an
   earlier run of digits and dots, or of hex digits and colons, decides whether a later address is read: in
@@ -42,41 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `!= ip(...)` did the opposite. Checked against Loki's own answers on 52,000 lines. VictoriaLogs now checks two
   short regexps first and runs the full one only on the few lines they leave, so an IPv4 `ip()` filter costs it 58%
   to 82% less per line than before. Answers cached before the fix are not reused.
-- **Breaking:** `-default-max-query-length` now defaults to Loki's `max_query_length` default, `721h` (published as
-  `30d1h`), instead of `0` (no limit). A proxy run without a length configured served a range Loki refuses: a
-  `query_range`, `series`, `labels`, label values, `detected_labels`, `detected_fields`, detected field values,
-  `index/stats` or `index/volume` request over more than 721h (for example `start=-1` or `start=1`) now fails, as in Loki,
-  with `400 the query time range exceeds the limit (query length: X, limit: 30d1h)` before any VictoriaLogs call,
-  and `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` publish `max_query_length: 30d1h` instead of
-  `0s`. Set `-default-max-query-length=0` (Helm `extraArgs.default-max-query-length: "0"`), or `max_query_length:
-  "0s"` in `-tenant-default-limits` or `-tenant-limits`, to keep serving longer ranges. A live tail is not checked
-  against this limit. A request with a `start` and no `end` is held to it too (a missing `end` is now, as in Loki).
-  `index/volume` rounds its `start` and `end` down to whole seconds before the check, as Loki does, and reports
-  the length in whole seconds (`721h0m1s`); `index/volume_range` is not length-limited, as in Loki (a range over 721h is
-  answered, and only its 11,000-point resolution rejects).
-- Peer-cache pushes to a replica whose breaker is open are no longer lost. A write-through push the replica cannot
-  take (its breaker is open or it is suspended after a timeout, it is restarting, the push queue is full, or the
-  push failed with a transport error, a timeout, a `429` or a `5xx`) waits in a bounded push buffer and is replayed
-  once the replica answers, so the fleet returns to full replication on its own: before, such pushes were dropped
-  for the 10 s breaker cooldown, and a writer that then lost its disk read those keys from VictoriaLogs again.
-  Reads do not change: a lookup still skips a peer whose breaker is open, and nothing on the request path waits on
-  the buffer. The buffer keeps one entry per key and peer, the newest value; while a peer has buffered pushes, new
-  pushes to it join them, so an older value never lands after a newer one, and a queued push to a suspended peer no
-  longer holds a push worker for `-peer-timeout`. One replayer per peer sends them slowly first: one push (the
-  half-open probe), then rounds doubling up to 32, at most 8 in flight, with jittered backoff from 250 ms to 10 s
-  after a failure; each push carries the TTL the writer's copy has left, and one with under 5 s left is not sent.
-  Above the bound the oldest push of the largest backlog is dropped, counted, and logged at most every 30 s. Closing
-  the proxy cancels every peer call in flight and stops the replay.
-  - New flags `-peer-push-buffer-max-entries` (default 8192) and `-peer-push-buffer-max-bytes` (default 32 MiB),
-    per proxy across all peers, in the limits registry with sizing guidance and as Helm `extraArgs`; `0` on either
-    turns buffering off (pushes a peer cannot take are dropped, as before).
-  - New metrics `loki_vl_proxy_peer_cache_push_buffered_total{reason}`, `_push_buffer_coalesced_total`,
-    `_push_replayed_total`, `_push_buffer_dropped_total{reason}`, `_push_buffer_entries` and `_push_buffer_bytes`.
-  - Pushes to a replica that is still starting now use the same buffer: they are kept until their TTL runs out
-    instead of 30 s, within the shared bound instead of 256 pushes or 8 MiB per peer;
-    `loki_vl_proxy_peer_cache_push_peer_not_up_total` counts those that are dropped.
-    `loki_vl_proxy_peer_cache_push_throttled_total` now counts only pushes dropped for a full queue while the buffer
-    is off; with it on they are buffered (`reason="queue_full"`).
 
 ## [2.264.0] - 2026-11-15
 
