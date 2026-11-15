@@ -16,6 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
   the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
   allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
+- Translating a query costs fewer allocations. The LogQL parser allocates about half as much for a log query (a json
+  query with a label filter: 14 to 7 allocations), a `line_format` template is typed once per template text, a
+  query plan is one allocation sized for the query's kind, and the plan's log query lowering writes its text with
+  fewer intermediate values. The request's validation keeps its parse for a query the query plan serves, so the
+  translation does not parse the query again. Answers, translation cache entries and the queries VictoriaLogs
+  receives do not change.
+- Log queries with `json` or `logfmt` parsers (with or without an extraction list, `logfmt` with its flags), `regexp`
+  and `pattern` parsers written with a blank before a plainly spelled expression, the label filters after them, `drop`
+  and `keep` stages (a `keep` of names or of matchers), `label_format` stages whose values are text and `{{.name}}`
+  fields or renames, and `line_format` stages with such a template are served from the query plan instead of the
+  string translator, where the plan writes the translator's text byte for byte. A numeric equality after a parser, a
+  `detected_level` or `service_name` filter after a stage, and stages of a family not served stay with the string
+  translator. Answers, translation cache entries and the queries VictoriaLogs receives do not change; a translation
+  that misses the cache costs no more allocations than the string translator's. `-query-plan-lowering=false` turns it
+  off.
 
 ### Fixed
 

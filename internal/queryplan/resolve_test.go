@@ -187,13 +187,14 @@ func TestResolveCorpus(t *testing.T) {
 	}
 }
 
-// Resolve allocates one PipelineSem per pipeline and the rule list: two allocations for a query of the usual shape,
-// one more per further pipeline.
+// Resolve allocates one PipelineSem per pipeline past the one the plan holds, and the rule list past its first rule:
+// a plan resolved again (its own PipelineSem taken) allocates one for a query of the usual shape, one more per further
+// pipeline. The first resolve of a plan of one pipeline allocates nothing (TestResolveIntoThePlan).
 func TestResolveAllocLocks(t *testing.T) {
 	for q, want := range map[string]float64{
-		`sum by (a) (rate({a="x"} | json [5m]))`:                          2,
+		`sum by (a) (rate({a="x"} | json [5m]))`:                          1,
 		`rate({a="x"}[5m])`:                                               1,
-		`sum(rate({a="x"} | json [5m])) / sum(rate({a="y"} | json [5m]))`: 3,
+		`sum(rate({a="x"} | json [5m])) / sum(rate({a="y"} | json [5m]))`: 2,
 	} {
 		p := resolved(t, q)
 		got := testing.AllocsPerRun(100, func() {
