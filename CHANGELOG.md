@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`,
+  `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep` now read Loki's series on
+  `query` and on `query_range` with the range up to the step: the stream plus every parsed label except the unwrapped
+  one. Lines that share those labels are one series whatever their values, and a line with a label of its own (a
+  request id) is a series of its own. The proxy read one series per stream, per line or per group instead, so for
+  example `sum by (app) (stdvar_over_time({app="api"} | json | unwrap duration_ms [5m]))` answered the variance of the
+  app's pooled samples and `sum(stddev_over_time(...))` disagreed between `query` and `query_range`. VictoriaLogs now
+  groups the stats by a hash of the stream and each line's parsed labels and aggregates the series itself, so an
+  instant query reads one stats answer instead of every row of the window. A range longer than the step,
+  `quantile_over_time`, `rate_counter`, and a label filter between the parser and an unwrapped label whose name holds
+  `_`, keep their previous series (`semantics/unwrap-per-series-identity-raw-rows`,
+  `semantics/unwrap-per-series-identity-label-filter`). The keywords may be written in any case (`SUM by (app)
+  (AVG_OVER_TIME(... | JSON | UNWRAP x [5m]))`): the handlers, the response cache key and the translation read the
+  lower-case spelling alike.
+
 ## [2.271.0] - 2026-11-15
 
 ### Fixed
@@ -42,20 +59,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   running after it returns. When a parse-risk, level or unparsed-line probe ended the attempt early (its verdict
   sends the query to the row evaluator, or the probe failed), the stats query and the other probes were cancelled
   but not waited for. They are now waited for until they return, so every call an attempt starts ends inside it.
-- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`,
-  `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep` now read Loki's series on
-  `query` and on `query_range` with the range up to the step: the stream plus every parsed label except the unwrapped
-  one. Lines that share those labels are one series whatever their values, and a line with a label of its own (a
-  request id) is a series of its own. The proxy read one series per stream, per line or per group instead, so for
-  example `sum by (app) (stdvar_over_time({app="api"} | json | unwrap duration_ms [5m]))` answered the variance of the
-  app's pooled samples and `sum(stddev_over_time(...))` disagreed between `query` and `query_range`. VictoriaLogs now
-  groups the stats by a hash of the stream and each line's parsed labels and aggregates the series itself, so an
-  instant query reads one stats answer instead of every row of the window. A range longer than the step,
-  `quantile_over_time`, `rate_counter`, and a label filter between the parser and an unwrapped label whose name holds
-  `_`, keep their previous series (`semantics/unwrap-per-series-identity-raw-rows`,
-  `semantics/unwrap-per-series-identity-label-filter`). The keywords may be written in any case (`SUM by (app)
-  (AVG_OVER_TIME(... | JSON | UNWRAP x [5m]))`): the handlers, the response cache key and the translation read the
-  lower-case spelling alike.
 
 ## [2.270.0] - 2026-11-15
 
