@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- One stream now gets one `detected_level` on every metric query type, as Loki gives. For a stream labelled
+  `level="ERROR"`, `count_over_time({...} | logfmt [5m])`, `rate({...} | json [1m])`, `sort(rate({...} | json [1m]))`
+  and an unwrap at step 300 said `ERROR` while plain `rate` and `count_over_time` said `error`. A stream labelled
+  `severity`, `LEVEL` or `lvl` had no `detected_level` label at all on those queries. Those series are built by the
+  proxy from a per-stream or raw-row read, which copied the stored `level` value and read no other level key. They
+  now take the stream's level fields, else the row's `level` field, normalised as Loki does (`Debug` is `debug`); the
+  `level` label keeps its stored value. Plain range functions were already right: VictoriaLogs v1.49.0 and v1.53.0
+  compute the same values with the chain the proxy sends. Answers cached before the fix are not served again; the
+  fence now covers every metric query with a parser stage (semantics/detected-level-one-value-per-stream).
+
 ## [2.301.0] - 2026-11-15
 
 ### Fixed
@@ -19,25 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`level`, `LEVEL`, `severity`, `lvl`, ...) are used in Loki's order, known spellings are normalised and a stream
   without one stays `unknown`. Answers cached before the fix are not served again
   (semantics/without-fold-stream-detected-level).
-- One stream now gets one `detected_level` on every metric query type, as Loki gives. For a stream labelled
-  `level="ERROR"`, `count_over_time({...} | logfmt [5m])`, `rate({...} | json [1m])`, `sort(rate({...} | json [1m]))`
-  and an unwrap at step 300 said `ERROR` while plain `rate` and `count_over_time` said `error`. A stream labelled
-  `severity`, `LEVEL` or `lvl` had no `detected_level` label at all on those queries. Those series are built by the
-  proxy from a per-stream or raw-row read, which copied the stored `level` value and read no other level key. They
-  now take the stream's level fields, else the row's `level` field, normalised as Loki does (`Debug` is `debug`); the
-  `level` label keeps its stored value. Plain range functions were already right: VictoriaLogs v1.49.0 and v1.53.0
-  compute the same values with the chain the proxy sends. Answers cached before the fix are not served again; the
-  fence now covers every metric query with a parser stage (semantics/detected-level-one-value-per-stream).
-
-## [2.300.0] - 2026-11-15
-
-### Fixed
-- **Breaking:** a comment between any other function's name and its parenthesis now answers Loki's `400` before any
-  VictoriaLogs call: a range aggregation (`rate # note` on one line and `({app="x"}[5m])` on the next), `vector`,
-  `label_replace` and `ip` get `syntax error: unexpected IDENTIFIER` at the name, and an unwrap conversion
-  (`| unwrap bytes # note`, then `(c)`) gets `syntax error: unexpected (, expecting RANGE or |`, because Loki reads
-  the conversion's name as the label there. The proxy removed the comment and answered these queries. Loki's answers
-  are recorded with its engine.
 - `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`,
   `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep` now read Loki's series on
   `query` and on `query_range` with the range up to the step: the stream plus every parsed label except the unwrapped
@@ -57,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the operation answer Loki's values, and an operand whose range is the step keeps its series when the other
   operand's range is longer. Answers cached before for a binary operation, a ranking or a `label_replace` over such an
   operand are not served again.
+
+## [2.300.0] - 2026-11-15
+
+### Fixed
+
+- **Breaking:** a comment between any other function's name and its parenthesis now answers Loki's `400` before any
+  VictoriaLogs call: a range aggregation (`rate # note` on one line and `({app="x"}[5m])` on the next), `vector`,
+  `label_replace` and `ip` get `syntax error: unexpected IDENTIFIER` at the name, and an unwrap conversion
+  (`| unwrap bytes # note`, then `(c)`) gets `syntax error: unexpected (, expecting RANGE or |`, because Loki reads
+  the conversion's name as the label there. The proxy removed the comment and answered these queries. Loki's answers
+  are recorded with its engine.
 
 ## [2.290.0] - 2026-11-15
 
