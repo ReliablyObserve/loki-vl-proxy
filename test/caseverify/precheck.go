@@ -26,11 +26,26 @@ import (
 // stackWide is the selector of a request that names none (the label endpoints without a query): every stream.
 const stackWide = ""
 
-// CountKey names one count: a selector (LogQL text, or stackWide) over a window in Unix nanoseconds.
+// CountKey names one count: a selector (LogQL text, or stackWide) over a window in Unix nanoseconds, for a tenant.
 type CountKey struct {
 	Selector string `json:"selector"`
 	Start    int64  `json:"start"`
 	End      int64  `json:"end"`
+	// Tenant is the case's own X-Scope-OrgID when it is not the run's (-tenant); "" counts the run's tenant, so a
+	// recording made before tenants were counted keeps matching.
+	Tenant string `json:"tenant,omitempty"`
+}
+
+// countableTenant reports whether VictoriaLogs can count a tenant's lines: the proxy routes a numeric X-Scope-OrgID
+// to the VictoriaLogs account of that number (-tenant.numeric-passthrough, which the stack runs), so the count is
+// asked of that account. Any other tenant (a name, a multi-tenant "a|b" list) needs a tenant map this check does
+// not read.
+func countableTenant(tenant string) bool {
+	if tenant == "" {
+		return false
+	}
+	_, err := strconv.ParseUint(tenant, 10, 32)
+	return err == nil
 }
 
 // CountAnswer is one side's count. Empty is set when Loki's count query answered no series at all (its
@@ -215,11 +230,19 @@ func (c *LiveCounter) get(target string, headers map[string]string) ([]byte, int
 	return raw, resp.StatusCode, err
 }
 
+// tenantOf is the tenant a count is asked for: the key's own, else the run's.
+func (c *LiveCounter) tenantOf(key CountKey) string {
+	if key.Tenant != "" {
+		return key.Tenant
+	}
+	return c.Tenant
+}
+
 func (c *LiveCounter) lokiCount(key CountKey) CountAnswer {
 	q := url.Values{}
 	q.Set("query", lokiCountQuery(key.Selector, time.Duration(key.End-key.Start)))
 	q.Set("time", strconv.FormatInt(key.End, 10))
-	raw, status, err := c.get(strings.TrimRight(c.Loki, "/")+"/loki/api/v1/query?"+q.Encode(), map[string]string{"X-Scope-OrgID": c.Tenant})
+	raw, status, err := c.get(strings.TrimRight(c.Loki, "/")+"/loki/api/v1/query?"+q.Encode(), map[string]string{"X-Scope-OrgID": c.tenantOf(key)})
 	if err != nil {
 		return CountAnswer{Err: err.Error()}
 	}
@@ -268,7 +291,12 @@ func (c *LiveCounter) vlCount(key CountKey) CountAnswer {
 	q.Set("query", filter+" | stats count() as c")
 	q.Set("start", time.Unix(0, key.Start).UTC().Format(time.RFC3339Nano))
 	q.Set("end", time.Unix(0, key.End).UTC().Format(time.RFC3339Nano))
-	raw, status, err := c.get(strings.TrimRight(c.VL, "/")+"/select/logsql/query?"+q.Encode(), nil)
+	// VictoriaLogs' default account is 0; another tenant's count is asked of its own account.
+	var headers map[string]string
+	if t := c.tenantOf(key); t != "" && countableTenant(t) {
+		headers = map[string]string{"AccountID": t}
+	}
+	raw, status, err := c.get(strings.TrimRight(c.VL, "/")+"/select/logsql/query?"+q.Encode(), headers)
 	if err != nil {
 		return CountAnswer{Err: err.Error()}
 	}

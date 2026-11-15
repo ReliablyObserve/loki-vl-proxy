@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -194,11 +195,25 @@ func TestVerifyProvesTheDataFirst(t *testing.T) {
 			t.Errorf("%s: %+v", c.name, r)
 		}
 	}
-	// Another tenant's data is not counted; the counts are kept with the verdict.
+	// A numeric tenant of its own is counted on both sides under that tenant, and the key says which; a tenant that
+	// is no account number is named, and not counted as the run's.
 	other := get("fixed", "structural")
 	other.Headers = map[string]string{"X-Scope-OrgID": "7"}
-	if r := Verify(other, differ, equalCounts, nil, testNow, "0"); r.Verdict != verdictDataUnchecked || !strings.Contains(r.Reason, `"7"`) {
-		t.Errorf("other tenant: %+v", r)
+	if r := Verify(other, differ, equalCounts, nil, testNow, "0"); r.Verdict != verdictDiffers || len(r.Data) != 1 || r.Data[0].Tenant != "7" {
+		t.Errorf("numeric other tenant: %+v", r)
+	}
+	if r := Verify(other, differ, counts{sel: {{Count: 0}, {Count: 0}}}, nil, testNow, "0"); r.Verdict != verdictEmpty {
+		t.Errorf("a tenant with no data is empty, not a match: %+v", r)
+	}
+	named := get("fixed", "structural")
+	named.Headers = map[string]string{"X-Scope-OrgID": "tenant-a"}
+	if r := Verify(named, differ, equalCounts, nil, testNow, "0"); r.Verdict != verdictDataUnchecked || !strings.Contains(r.Reason, `"tenant-a"`) || len(r.Data) != 0 {
+		t.Errorf("named tenant: %+v", r)
+	}
+	same0 := get("fixed", "structural")
+	same0.Headers = map[string]string{"X-Scope-OrgID": "0"}
+	if r := Verify(same0, differ, equalCounts, nil, testNow, "0"); len(r.Data) != 1 || r.Data[0].Tenant != "" {
+		t.Errorf("the run's own tenant keeps the old key: %+v", r.Data)
 	}
 	r := Verify(get("fixed", "structural"), differ, counts{sel: {{Count: 9}, {Count: 9}}}, nil, testNow, "0")
 	if len(r.Data) != 1 || r.Data[0].Selector != sel || r.Data[0].Loki.Count != 9 || r.Data[0].End-r.Data[0].Start != int64(time.Hour) {
@@ -356,5 +371,52 @@ func TestRunRefusesShortSettleAndBadVariants(t *testing.T) {
 	var o, e bytes.Buffer
 	if code := run(cfg, &o, &e); code != 0 {
 		t.Fatalf("with variants: %d %s", code, e.String())
+	}
+}
+
+// A count is asked of the case's tenant: Loki by header, VictoriaLogs by account number.
+func TestLiveCounterAsksTheCasesTenant(t *testing.T) {
+	var lokiOrg, vlAccount []string
+	loki := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lokiOrg = append(lokiOrg, r.Header.Get("X-Scope-OrgID"))
+		_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1,"5"]}]}}`)
+	}))
+	defer loki.Close()
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		vlAccount = append(vlAccount, r.Header.Get("AccountID"))
+		_, _ = fmt.Fprint(w, `{"c":"5"}`+"\n")
+	}))
+	defer vl.Close()
+	rec := &Recorder{}
+	c := &LiveCounter{Loki: loki.URL, VL: vl.URL, Tenant: "0", Client: http.DefaultClient, rec: rec}
+	for _, tenant := range []string{"", "7"} {
+		key := CountKey{Selector: `{app="a"}`, Start: 1, End: int64(time.Hour), Tenant: tenant}
+		c.Count("loki", key)
+		c.Count("vl", key)
+	}
+	if want := []string{"0", "7"}; !reflect.DeepEqual(lokiOrg, want) {
+		t.Errorf("Loki tenants %v, want %v", lokiOrg, want)
+	}
+	if want := []string{"0", "7"}; !reflect.DeepEqual(vlAccount, want) {
+		t.Errorf("VictoriaLogs accounts %v, want %v", vlAccount, want)
+	}
+	if len(rec.lines) != 2 {
+		t.Errorf("one recorded count per tenant, got %d", len(rec.lines))
+	}
+	var buf bytes.Buffer
+	if err := rec.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
+	rp, err := LoadReplay(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, ok := rp.Count("vl", CountKey{Selector: `{app="a"}`, Start: 1, End: int64(time.Hour), Tenant: "7"}); !ok || a.Count != 5 {
+		t.Errorf("replayed tenant count %+v %v", a, ok)
+	}
+	for tenant, want := range map[string]bool{"": false, "0": true, "7": true, "tenant-a": false, "a|b": false, "-1": false} {
+		if countableTenant(tenant) != want {
+			t.Errorf("countableTenant(%q) = %v", tenant, !want)
+		}
 	}
 }
