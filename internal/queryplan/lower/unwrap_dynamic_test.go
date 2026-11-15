@@ -193,3 +193,29 @@ func FuzzDynamicUnwrapIdentity(f *testing.F) {
 		}
 	})
 }
+
+// StreamIdentity writes the series of a parser's identity shape as the string translator does: no hash, the stream
+// and each line, the text the flip of the construct serves for a query the identity does not reach (nested under a
+// binary operation, a window the handlers keep on the stream). The default profile writes the hash.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func TestDynamicUnwrapIdentityStreamProfile(t *testing.T) {
+	for _, q := range []string{
+		`sum(avg_over_time({app="a"} | json | unwrap n [5m]))`,
+		`sum by (app) (max_over_time({app="a"} | logfmt | unwrap n [5m])) * 2`,
+		`max by (app) (stdvar_over_time({app="a"} | logfmt | unwrap n [5m]))`,
+	} {
+		p := rangeAggPlan(q)
+		hash, err := PlanQuery(q, p, Profile{})
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		stream, err := PlanQuery(q, p, Profile{StreamIdentity: true})
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		if !strings.Contains(physical.Encode(hash), "__lvp_sid") || strings.Contains(physical.Encode(stream), "__lvp_sid") {
+			t.Errorf("%s: default %s, stream identity %s", q, physical.Encode(hash), physical.Encode(stream))
+		}
+	}
+}

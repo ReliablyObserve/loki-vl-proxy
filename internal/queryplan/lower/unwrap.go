@@ -706,7 +706,9 @@ func unwrapVectorStats(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Pro
 	var pipeBuf [4]string
 	q := unwrapQuery{parser: log.parser, unpacked: log.unpacked(), pipes: pipeBuf[:0]}
 	q.kept, q.keptSet = keptIdentity(ra.In, prof)
-	q.withDynamicIdentity(va, ra, u.Label)
+	if !prof.StreamIdentity {
+		q.withDynamicIdentity(va, ra, u.Label)
+	}
 	if rate {
 		// The unwrap stage stands where it was written: the translator takes a keep after it to decide the series.
 		ident, err := seriesIdent(ra.In, log.parser, without, true, "VectorAgg", prof)

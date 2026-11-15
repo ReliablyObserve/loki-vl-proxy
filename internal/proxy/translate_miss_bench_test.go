@@ -79,6 +79,9 @@ var translateMissShapes = []struct {
 	{"metric unwrap parser identity", func(i string) string {
 		return `sum by (app) (stddev_over_time({app="api"} |= "x ` + i + `" | json | unwrap d [5m]))`
 	}},
+	{"metric unwrap parser identity nested", func(i string) string {
+		return `sum by (app) (stddev_over_time({app="api"} |= "x ` + i + `" | json | unwrap d [5m])) + sum by (app) (stddev_over_time({app="api"} | json | unwrap d [5m]))`
+	}},
 	{"metric unwrap parser sum", func(i string) string {
 		return `sum by (app) (sum_over_time({app="api"} |= "x ` + i + `" | logfmt | unwrap d [5m]))`
 	}},

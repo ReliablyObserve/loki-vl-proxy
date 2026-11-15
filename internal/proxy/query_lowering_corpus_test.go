@@ -68,9 +68,17 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 					keep++
 					continue
 				}
-				// A parser's series identity is the plan's, held to Loki by the differentials (lower.DynamicUnwrapIdentity).
+				// A parser's series identity is the plan's, held to Loki by the differentials (lower.DynamicUnwrapIdentity);
+				// a request the handlers keep on the stream's series (streamIdentityKey) is served from the plan with the
+				// translator's text, as the flip of its construct requires.
 				if on.dynamicUnwrapIdentity(q) {
 					dynamic++
+					marked, markedErr := on.translateQueryOpts(context.WithValue(ctx, streamIdentityKey{}, true), q, false)
+					if marked != want || (markedErr == nil) != (wantErr == nil) {
+						if differs++; differs <= 10 {
+							t.Errorf("%q on the stream's series:\n flag on  %q %v\n flag off %q %v", q, marked, markedErr, want, wantErr)
+						}
+					}
 					continue
 				}
 				if got != want || (gotErr == nil) != (wantErr == nil) {
@@ -181,7 +189,7 @@ func FuzzMetricFlipGate(f *testing.F) {
 // profile, with the metric constructs flipped: it names the plan's root for every query the plan serves; the queries
 // it passes that the plan then leaves to the translator (a parse, build and resolve on top of the translation) stay
 // under 0.5% of those it passes; and the served queries it turns away (translated by the string translator at its own
-// cost) under 2% of the served ones. The keep identity and a parser's series identity have their own paths and are not counted.
+// cost) under 2% of the served ones. The keep identity has its own path and is not counted.
 //
 // conformance: architecture-syntax-package-layering
 func TestQueryPlanLowering_MetricScreenCorpus(t *testing.T) {
@@ -213,7 +221,7 @@ func TestQueryPlanLowering_MetricScreenCorpus(t *testing.T) {
 			}
 			canon := logqlpkg.CanonicalizeLogRanges(normalized)
 			plan, err := loweringPlan(ctx, canon)
-			if err != nil || lower.KeepDecidesUnwrapIdentity(plan) || lower.DynamicUnwrapIdentity(plan) {
+			if err != nil || lower.KeepDecidesUnwrapIdentity(plan) {
 				continue
 			}
 			caps := p.logsqlCapabilities()
@@ -241,10 +249,6 @@ func TestQueryPlanLowering_MetricScreenCorpus(t *testing.T) {
 				t.Errorf("%q: the screen names %s, the plan's root is %s", canon, screen, construct)
 			case ok && screen == "":
 				lost++
-			case !ok && screen != "" && lower.WritesDynamicUnwrapIdentity(plan):
-				// A parser's series identity under a binary operation or a label_replace: each operand is translated on
-				// its own and serves the identity (lowerDynamicIdentity), so the whole query is not left to the
-				// translator for nothing, and the plan it reads is the handlers' memo.
 			case !ok && screen != "":
 				if wasted++; wasted <= 5 {
 					t.Logf("passed by the screen, left to the translator: %q", canon)

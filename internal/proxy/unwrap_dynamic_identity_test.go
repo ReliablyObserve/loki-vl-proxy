@@ -178,3 +178,38 @@ func TestDynamicIdentityCacheKeysFenced(t *testing.T) {
 		}
 	}
 }
+
+// The handlers, the response key fence and the translation decide a query alike whatever case its keywords are
+// written in: the translation reads the lower-case spelling (logql.LowercaseKeywords), so the handlers and the fence
+// must too, or the handlers would read stream groups from a query VictoriaLogs groups by the series hash.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func TestDynamicIdentityDecidedAlikeInEverySpelling(t *testing.T) {
+	p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: cache.New(time.Minute, 100), LogLevel: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	for _, tc := range []struct {
+		q    string
+		want bool
+	}{
+		{`sum by (app) (avg_over_time({a="b"} | json | unwrap x [5m]))`, true},
+		{`SUM by (app) (avg_over_time({a="b"} | json | unwrap x [5m]))`, true},
+		{`sum BY (app) (AVG_OVER_TIME({a="b"} | JSON | UNWRAP x [5m]))`, true},
+		{`  sum(avg_over_time({a="b"} | json | unwrap x [5m]))`, true},
+		{"# c\nsum(avg_over_time({a=\"b\"} | json | unwrap x [5m]))", false},
+		{`SUM(QUANTILE_OVER_TIME(0.9, {a="b"} | JSON | UNWRAP x [5m]))`, false},
+	} {
+		translated, err := p.translateQuery(tc.q)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.q, err)
+		}
+		served := strings.Contains(translated, "__lvp_sid")
+		handler := p.dynamicUnwrapIdentity(tc.q)
+		fence := dynamicUnwrapIdentityResponseKeyVersion(tc.q) != ""
+		if handler != tc.want || fence != tc.want || served != tc.want {
+			t.Errorf("%q: handlers %v, fence %v, translation hashes %v, want all %v", tc.q, handler, fence, served, tc.want)
+		}
+	}
+}

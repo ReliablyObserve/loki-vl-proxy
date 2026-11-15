@@ -20,6 +20,13 @@ import (
 // them, on an instant query and on a range up to the step. A range longer than the step keeps the stream's series:
 // the window evaluator merges the step buckets of streams, not of a series hash (dynamicIdentityWindows).
 
+// dynamicQuery is the text the handlers, the fence and the translation read a query as: trimmed, with the keywords in
+// lower case (logql.LowercaseKeywords, which the translation applies before it asks the lowering), so `SUM by (a)
+// (AVG_OVER_TIME(... | JSON | UNWRAP x [5m]))` is decided as the lower-case spelling is, by all three.
+func dynamicQuery(query string) string {
+	return logqlpkg.LowercaseKeywords(strings.TrimSpace(query))
+}
+
 // dynamicUnwrapIdentity reports a query whose series are the dynamic identity of a parser
 // (lower.DynamicUnwrapIdentity) and which the typed lowering serves (dynamicIdentityConstruct): its stats group by the
 // stream and the hash of each line's parsed labels, and the handlers read those groups as the series. With
@@ -27,7 +34,7 @@ import (
 // reads the identity, so the handlers and the translation decide alike. The verdict is remembered per proxy and query
 // (dynamicIdentityVerdicts): one request asks several times.
 func (p *Proxy) dynamicUnwrapIdentity(query string) bool {
-	query = strings.TrimSpace(query)
+	query = dynamicQuery(query)
 	if !p.queryPlanLowering || !dynamicIdentityScreen(query) {
 		return false
 	}
@@ -133,7 +140,7 @@ func (p *Proxy) dynamicIdentityWindows(r *http.Request, query string) (out *http
 // dynamicWindowRange is the range of a query whose function the window evaluator merges from step buckets (avg, max,
 // min, stddev and stdvar over time) under a dynamic identity's shape; ok is false for any other query.
 func dynamicWindowRange(query string) (time.Duration, bool) {
-	query = strings.TrimSpace(query)
+	query = dynamicQuery(query)
 	if !dynamicIdentityScreen(query) {
 		return 0, false
 	}
@@ -159,7 +166,7 @@ func dynamicWindowRange(query string) (time.Duration, bool) {
 // dynamicIdentityAtDepth reports a query that holds, below its root, a range function of a dynamic identity's shape
 // over a range longer than step (lower.WritesDynamicUnwrapIdentity).
 func (p *Proxy) dynamicIdentityAtDepth(query string, step time.Duration) bool {
-	query = strings.TrimSpace(query)
+	query = dynamicQuery(query)
 	if !p.queryPlanLowering || !strings.Contains(query, "unwrap") {
 		return false
 	}

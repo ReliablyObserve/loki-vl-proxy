@@ -271,7 +271,8 @@ const keepIdentityConstruct = "UnwrapKeepIdentity"
 // and whose lowered text is the string translator's (writesTranslatorText). The query is planned once for both
 // decisions, and only when one can serve it: a query without both words of the keep identity is planned only when the
 // allocation-free text screen (lower.ScreenMetricIn) names a flipped construct for it, so a metric query the plan leaves
-// to the string translator pays one scan of its text and no parse.
+// to the string translator pays one scan of its text and no parse. The text it writes is the translator's: a parser's
+// series identity (lower.Profile StreamIdentity) is written by lowerDynamicIdentity only.
 func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profile) (text string, ok bool) {
 	if canon == "" || canon[0] == '{' {
 		return "", false
@@ -281,6 +282,10 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	if !screenMetricQuery(canon, flipped) {
 		return "", false
 	}
+	// A parser's series identity is served by lowerDynamicIdentity where the handlers read it; a query it does not
+	// reach (nested under a binary operation, or a window the evaluators keep on the stream) is written with the
+	// translator's series, as the flip of its construct requires.
+	prof.StreamIdentity = true
 	construct := keepIdentityConstruct
 	defer func() {
 		if r := recover(); r != nil {
@@ -374,8 +379,7 @@ func dynamicIdentityScreen(query string) bool {
 //     vector(n) operand).
 //   - The recorded known divergences the plan writes as Loki reads them, where the translator writes another text:
 //     a keep before an unwrap anywhere but where the proxy serves its identity (lower.WritesKeepUnwrapIdentity), a
-//     parser's series identity (lower.WritesDynamicUnwrapIdentity, which lowerDynamicIdentity serves where the handlers
-//     read it), a numeric equality after a parser (semantics/label-filter-numeric-equality), a label named like a field
+//     a numeric equality after a parser (semantics/label-filter-numeric-equality), a label named like a field
 //     VictoriaLogs reserves (semantics/translator-writes-reserved-field-names), and an unwrap of one in another case,
 //     which the lowering writes in the outbound guard's form (semantics/reserved-field-name-case-outbound).
 //   - A label filter value the translator reads as syntax (misreadFilterValue).
@@ -386,7 +390,7 @@ func dynamicIdentityScreen(query string) bool {
 // (semantics/translator-writes-keyword-field-names-bare), as the corpus shadow and the log query flip already hold.
 func writesTranslatorText(plan *queryplan.Plan, prof lower.Profile) bool {
 	return !holdsEvaluatedLayer(plan.Root) && !lower.RoutedBinary(plan.Root) && !lower.WritesKeepUnwrapIdentity(plan) &&
-		!lower.WritesDynamicUnwrapIdentity(plan) && !lower.WritesNumericEquality(plan) && !lower.ReadsReservedField(plan, prof) &&
+		!lower.WritesNumericEquality(plan) && !lower.ReadsReservedField(plan, prof) &&
 		!lower.UnwrapsReservedFieldOtherCase(plan) && !misreadFilterValue(plan.Root)
 }
 

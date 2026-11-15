@@ -84,7 +84,7 @@ const dynamicUnwrapIdentityResponseVersion = "@unwrap-dynamic-identity-v1:"
 // (lower.DynamicUnwrapIdentity), read from the query's shared plan after a text screen, so no other query's key
 // changes. It does not read the -query-plan-lowering flag: with the flag off the fence costs one more cache miss.
 func dynamicUnwrapIdentityResponseKeyVersion(query string) string {
-	query = strings.TrimSpace(query)
+	query = dynamicQuery(query)
 	if !dynamicIdentityScreen(query) {
 		return ""
 	}

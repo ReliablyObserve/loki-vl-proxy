@@ -29,6 +29,11 @@ type Profile struct {
 	Label        func(string) string
 	StreamFields map[string]bool
 	KeepLine     bool
+	// StreamIdentity writes the series of a range function over an unwrapped label after a json or logfmt parser (no
+	// keep) as the string translator does, by the stream and each line, instead of the dynamic identity
+	// (WritesDynamicUnwrapIdentity): for a caller that serves the plan's text for a query the identity does not reach,
+	// where the text must be the translator's.
+	StreamIdentity bool
 	// metric says the log query is the one of a metric row (metricLogQuery).
 	metric bool
 }

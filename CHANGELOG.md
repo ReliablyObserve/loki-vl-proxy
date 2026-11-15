@@ -65,7 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instant query reads one stats answer instead of every row of the window. A range longer than the step,
   `quantile_over_time`, `rate_counter`, and a label filter between the parser and an unwrapped label whose name holds
   `_`, keep their previous series (`semantics/unwrap-per-series-identity-raw-rows`,
-  `semantics/unwrap-per-series-identity-label-filter`).
+  `semantics/unwrap-per-series-identity-label-filter`). The keywords may be written in any case (`SUM by (app)
+  (AVG_OVER_TIME(... | JSON | UNWRAP x [5m]))`): the handlers, the response cache key and the translation read the
+  lower-case spelling alike.
 
 ## [2.265.0] - 2026-11-15
 
