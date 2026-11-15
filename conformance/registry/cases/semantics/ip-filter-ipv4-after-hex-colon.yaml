@@ -68,7 +68,7 @@ gap:
   loki: 'ip() line and label filters (log.NewIPLineFilter / NewIPLabelFilter), recorded with the Loki oracle'
   proxy: 'the IPv4 regexp follows the scan from the last character no run holds'
   planned_test: 'TestIPLineFilterMatchesLoki, TestIPv4WalkMatchesLoki, TestIPv4LineRegexMatchesWalk, TestIPv4SplitMatchesExact, TestIPv4LineRegexWalkEdges and FuzzIPv4LineRegexLikeLoki (internal/translate); the fuzz seed 13b701a9b09e1c24 of FuzzIPLabelFilterNeverKeepsWhatLokiDrops (internal/translator)'
-  fixed_by: 'this change'
+  fixed_by: '#1491'
   visual: none
   visual_reason: 'no generated log line or label holds an IPv4 address after hex digits and a colon; proven against the Loki oracle grids'
   clusters: []
