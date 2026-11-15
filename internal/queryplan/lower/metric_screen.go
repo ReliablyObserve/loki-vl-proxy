@@ -178,6 +178,12 @@ type metricScan struct {
 	staged  bool
 	// names is set in a stage that lists names (a parser's extraction list, a drop or keep), until the next pipe.
 	names bool
+	// In a log query, until the next pipe: flags is set in a json or logfmt stage (its --strict and --keep-empty
+	// flags); keepStage in a keep, with keepName and keepMatcher for a name and a matcher read in it; and template in
+	// a line_format or label_format, whose quoted strings are templates.
+	flags, keepStage, keepName, keepMatcher, template bool
+	// parserArg is set by a regexp or pattern parser in a log query, until its quoted expression is read.
+	parserArg bool
 }
 
 // pipeline reports a position in a log pipeline: inside a range function, or anywhere in a log query.
@@ -227,6 +233,7 @@ func (s *metricScan) step(q string, i int) (int, bool) {
 			i++
 		}
 		s.operand, s.names = false, false
+		s.flags, s.keepStage, s.keepName, s.keepMatcher, s.template = false, false, false, false, false
 		return i, true
 	case c >= '0' && c <= '9' || c == '.':
 		return s.number(q, i)
@@ -239,17 +246,39 @@ func (s *metricScan) step(q string, i int) (int, bool) {
 		s.afterRange, s.operand = false, true
 		return j - 1, ok
 	}
+	if end, ok := s.parserFlag(q, i); ok {
+		return end, true
+	}
 	end, ok := s.operator(q, i)
 	s.operand = false
 	return end, ok
+}
+
+// parserFlag reads a json or logfmt parser's flag at q[i] (--strict, --keep-empty) whole, and returns the index of its
+// last byte; false for anything else.
+func (s *metricScan) parserFlag(q string, i int) (int, bool) {
+	if !s.flags || q[i] != '-' || i+1 >= len(q) || q[i+1] != '-' {
+		return 0, false
+	}
+	j := i + 2
+	for j < len(q) && (isNameByte(q[j]) || q[j] == '-') {
+		j++
+	}
+	return j - 1, true
 }
 
 // quoted reads the quoted string opening at q[i].
 func (s *metricScan) quoted(q string, i int) (int, bool) {
 	j := skipQuoted(q, i)
 	// The derived label names count in a log pipeline's strings: a label filter value the translator unpacks.
-	if j >= len(q) || misreadQuoted(q[i+1:j], q[i], s.pipeline() && s.brace == 0) {
+	if j >= len(q) || misreadQuoted(q[i+1:j], q[i], s.pipeline() && s.brace == 0) || s.template && !plainTemplate(q[i+1:j]) {
 		return j, false
+	}
+	if s.parserArg {
+		s.parserArg = false
+		if !plainParserArg(q[i+1:j], q[i]) {
+			return j, false
+		}
 	}
 	if s.labelReplaceCommas == 0 && strings.ContainsAny(q[i+1:j], "()") {
 		s.quotedParen = true
@@ -410,6 +439,18 @@ func (s *metricScan) word(q string, i, j int) bool {
 	}
 	if done, ok := s.keyword(q, w, j); done {
 		return ok
+	}
+	if s.keepStage {
+		// A keep of names and matchers together loses the order they were written in (the lowering leaves it to
+		// the translator).
+		if comparisonFollows(q, dottedEnd(q, j)) {
+			s.keepMatcher = true
+		} else {
+			s.keepName = true
+		}
+		if s.keepName && s.keepMatcher {
+			return false
+		}
 	}
 	if s.log && !s.names && !comparisonFollows(q, dottedEnd(q, j)) && !callFollows(q, j) {
 		// In a log pipeline, a name (dotted ones included: k8s.pod.name) with no comparison after it: a label filter the

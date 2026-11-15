@@ -3,6 +3,8 @@ package logql
 import (
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"text/template"
 	"text/template/parse"
 )
@@ -30,9 +32,48 @@ type LineTemplate struct {
 	Simple bool
 }
 
+// lineTemplates holds the typed template (nil for one that does not parse) of the line_format texts met, while it
+// holds fewer than lineTemplatesMax, so a template that queries repeat is parsed once: text/template's parse costs
+// tens of allocations and kilobytes, more than the rest of the query's parse. A LineTemplate is never changed once
+// typed, so every query with the text shares it. Like the proxy's validation cache, it stops growing when it is full.
+var (
+	lineTemplates     sync.Map // template text -> *LineTemplate
+	lineTemplateCount atomic.Int32
+)
+
+// lineTemplatesMax bounds the number of templates lineTemplates holds, and lineTemplateMaxBytes the length of a
+// template text it keeps: the cache holds at most lineTemplatesMax small texts and their types.
+const (
+	lineTemplatesMax     = 1024
+	lineTemplateMaxBytes = 1024
+)
+
 // typeLineTemplate parses a line_format template; nil when it does not parse
-// (validation reports Loki's error for it).
+// (validation reports Loki's error for it). The typed template of a text met
+// before is the one parsed then (lineTemplates).
 func typeLineTemplate(text string) *LineTemplate {
+	if len(text) > lineTemplateMaxBytes {
+		return typeLineTemplateUncached(text)
+	}
+	if v, ok := lineTemplates.Load(text); ok {
+		return v.(*LineTemplate)
+	}
+	lt := typeLineTemplateUncached(text)
+	if lineTemplateCount.Load() < lineTemplatesMax {
+		// The text is part of the query it came from: the cache keeps a copy, not the whole query.
+		key := strings.Clone(text)
+		if lt != nil && lt.Canonical == text {
+			lt.Canonical = key
+		}
+		if _, loaded := lineTemplates.LoadOrStore(key, lt); !loaded {
+			lineTemplateCount.Add(1)
+		}
+	}
+	return lt
+}
+
+// typeLineTemplateUncached is typeLineTemplate without the cache.
+func typeLineTemplateUncached(text string) *LineTemplate {
 	t, err := template.New("line").Option("missingkey=zero").Funcs(lokiTemplateFunctions).Parse(text)
 	if err != nil || t.Tree == nil {
 		return nil

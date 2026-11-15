@@ -12,7 +12,9 @@
     ],
     "architecture-syntax-package-layering": [
       "internal/logql/input_size_test.go",
+      "internal/logql/line_template_cache_test.go",
       "internal/logql/line_template_test.go",
+      "internal/logql/parse_cost_test.go",
       "internal/logsql/append_pipe_test.go",
       "internal/logsql/ip_range_vl_test.go",
       "internal/logsql/parser_read_test.go",
@@ -31,6 +33,7 @@
       "internal/proxy/post_aggregation_physical_test.go",
       "internal/proxy/query_lowering_corpus_test.go",
       "internal/proxy/query_lowering_log_stages_test.go",
+      "internal/proxy/query_lowering_shared_parse_test.go",
       "internal/proxy/query_lowering_test.go",
       "internal/proxy/unwrap_gate_spec_test.go",
       "internal/querycorpus/binop_grid_test.go",
@@ -68,6 +71,7 @@
       "internal/querycorpus/vector_agg_grid_test.go",
       "internal/querycorpus/vector_agg_loki_test.go",
       "internal/querycorpus/vector_agg_nested_grid_test.go",
+      "internal/queryplan/alloc_test.go",
       "internal/queryplan/lower/binop_alloc_test.go",
       "internal/queryplan/lower/binop_test.go",
       "internal/queryplan/lower/binop_vector_loki_test.go",
@@ -185,6 +189,7 @@
       "test/e2e-compat/patterns_counts_test.go"
     ],
     "formatter-line-format": [
+      "internal/logql/line_template_cache_test.go",
       "internal/logql/line_template_test.go"
     ],
     "heavy-metric-fetch-bounds": [
@@ -722,6 +727,7 @@
       "internal/cache/cache_coverage_test.go",
       "internal/metrics/request_flow_test.go",
       "internal/proxy/query_flow_test.go",
+      "internal/proxy/query_lowering_shared_parse_test.go",
       "internal/proxy/query_lowering_test.go"
     ],
     "observability-slow-query-log": [
@@ -2458,6 +2464,10 @@
     "internal/logql/line_filter_runs_loki_test.go": [
       "semantics/line-filter-error-quotes-the-run"
     ],
+    "internal/logql/line_template_cache_test.go": [
+      "architecture-syntax-package-layering",
+      "formatter-line-format"
+    ],
     "internal/logql/line_template_test.go": [
       "architecture-syntax-package-layering",
       "formatter-line-format"
@@ -2471,6 +2481,9 @@
     ],
     "internal/logql/opaque_typed_test.go": [
       "semantics/label-replace-new-label"
+    ],
+    "internal/logql/parse_cost_test.go": [
+      "architecture-syntax-package-layering"
     ],
     "internal/logql/parser_captures_test.go": [
       "parsed-label-series-identity"
@@ -3421,6 +3434,10 @@
       "architecture-syntax-package-layering",
       "semantics/translator-copies-unspaced-parser"
     ],
+    "internal/proxy/query_lowering_shared_parse_test.go": [
+      "architecture-syntax-package-layering",
+      "observability-query-flow"
+    ],
     "internal/proxy/query_lowering_test.go": [
       "architecture-syntax-package-layering",
       "loki_api_v1_query_range",
@@ -4142,6 +4159,9 @@
       "architecture-syntax-package-layering"
     ],
     "internal/querycorpus/vector_agg_nested_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/alloc_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/binop_alloc_test.go": [
@@ -5238,7 +5258,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 613,
+  "tests_with_markers": 617,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

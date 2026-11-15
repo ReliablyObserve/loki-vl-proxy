@@ -41,7 +41,7 @@ var QueryPlanFlippedConstructs = []string{"LogSelect", "VectorAgg", "RangeAgg", 
 // divergence (UnspacedParser: a regexp or pattern parser written with no blank before its expression, which the
 // translator copies into a pipe VictoriaLogs rejects, semantics/translator-copies-unspaced-parser); conformance/
 // registry/query-plan.json records the list.
-var QueryPlanFlippedLogStages = []string{"LevelFilter", "UnspacedParser"}
+var QueryPlanFlippedLogStages = []string{"LevelFilter", "UnspacedParser", "JSON", "Logfmt", "LabelFormat", "LineFormat", "RegexpPattern", "DropKeep"}
 
 // loweringProfile is the lowering's view of the options the string translator is given: the one place the
 // translator's options become a lower.Profile, shared by the flip and the live shadow.
@@ -57,6 +57,18 @@ func loweringProfile(label translator.LabelTranslateFunc, streamFields map[strin
 // only reads a plan, so a shared one serves it. It does not store into the memo: the plan of a translation is not
 // one the handlers read, and storing it would cost the allocations of a memo entry on every translation.
 func loweringPlan(ctx context.Context, canon string) (*queryplan.Plan, error) {
+	return loweringPlanWith(ctx, canon, false)
+}
+
+// logLoweringPlan is loweringPlan for a log query: a query no handler parsed is parsed with its line_format templates
+// untyped (logql.ParseUntypedTemplates), which the log query lowering reads as text only; the template of a query sent
+// for the first time then costs no text/template parse here. The plan's key is not read: the plan is not stored.
+func logLoweringPlan(ctx context.Context, canon string) (*queryplan.Plan, error) {
+	return loweringPlanWith(ctx, canon, true)
+}
+
+// loweringPlanWith is loweringPlan; untypedTemplates parses a query no handler parsed with its templates untyped.
+func loweringPlanWith(ctx context.Context, canon string, untypedTemplates bool) (*queryplan.Plan, error) {
 	var expr logqlpkg.Expr
 	if len(canon) <= validationCacheMaxQueryBytes {
 		if e, ok := planMemoLoad(canon); ok {
@@ -68,7 +80,7 @@ func loweringPlan(ctx context.Context, canon string) (*queryplan.Plan, error) {
 	}
 	if expr == nil {
 		var err error
-		if expr, err = parseLogQLExpr(ctx, canon); err != nil {
+		if expr, err = parseLogQLExprTemplates(ctx, canon, untypedTemplates); err != nil {
 			return nil, err
 		}
 	}
@@ -92,18 +104,9 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 	if canon == "" || canon[0] != '{' {
 		return "", false
 	}
-	var stages lower.LogStages
-	allowed := p.flippedLogStages
-	if logqlpkg.MayHaveNonFilterStage(canon) {
-		stages = lower.ScreenLogStagesIn(canon, allowed)
-		if stages&allowed&lower.LogUnspacedParser != 0 {
-			// The translator's text for the query is rejected by VictoriaLogs: its regexp and pattern parsers are served
-			// with the unspaced one.
-			allowed |= lower.LogRegexpPattern
-		}
-		if stages == 0 || stages&^allowed != 0 {
-			return "", false
-		}
+	stages, allowed, screened := screenLogQuery(canon, p.flippedLogStages)
+	if !screened {
+		return "", false
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -112,7 +115,7 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 			text, ok = "", false
 		}
 	}()
-	plan, err := loweringPlan(ctx, canon)
+	plan, err := logLoweringPlan(ctx, canon)
 	if err != nil {
 		return "", false
 	}
@@ -123,7 +126,7 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 	if stages == 0 && !filterOnly(plan.Root) || stages != 0 && !servesLogStages(plan, prof, allowed) {
 		return "", false
 	}
-	op, err := lower.Plan(plan, prof)
+	text, err = lower.PlanLogText(plan, prof)
 	if err != nil {
 		return "", false
 	}
@@ -131,7 +134,129 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 	// query the lowering answered is one of them.
 	querycorpus.Record(querycorpus.LogQLTranslate, canon)
 	p.recordLoweringShadow(shadowFlipped, construct)
-	return physical.Encode(op), true
+	return text, true
+}
+
+// screenLogQuery is the text screen of lowerLogSelect for a canonical log query, under the flipped stage families:
+// ok for a query the lowering plans (one with only line and label filters, or whose stage families the screen names
+// and flipped holds), with the families the screen named and the ones the typed gate then serves.
+func screenLogQuery(canon string, flipped lower.LogStages) (stages, allowed lower.LogStages, ok bool) {
+	allowed = flipped
+	if !logqlpkg.MayHaveNonFilterStage(canon) {
+		return 0, allowed, true
+	}
+	stages = lower.ScreenLogStagesIn(canon, allowed)
+	if stages&allowed&lower.LogUnspacedParser != 0 {
+		// The translator's text for the query is rejected by VictoriaLogs: its regexp and pattern parsers are served
+		// with the unspaced one.
+		allowed |= lower.LogRegexpPattern
+	}
+	return stages, allowed, stages != 0 && stages&^allowed == 0
+}
+
+// screenMetricQuery is the text screen of lowerMetric for a canonical metric query, under the flipped metric
+// constructs: true for a query the lowering plans.
+func screenMetricQuery(canon string, flipped lower.MetricSet) bool {
+	return strings.Contains(canon, "keep") && strings.Contains(canon, "unwrap") || lower.ScreenMetricIn(canon, flipped) != ""
+}
+
+// lowersParse reports a query the translation plans, read with the text screens of the stage families and
+// constructs the proxy serves by default (QueryPlanFlippedLogStages, QueryPlanFlippedConstructs): the request's
+// validation then keeps its parse in the plan memo, where the lowering reads it (loweringPlan), so the query is
+// parsed once. A query it names that the translation does not plan, or reads in another spelling
+// (logql.CanonicalizeLogRanges), costs a memo entry that maps the text to its own tree; one it misses costs a parse,
+// as before.
+func lowersParse(query string) bool {
+	if query == "" {
+		return false
+	}
+	if query[0] == '{' {
+		_, _, ok := screenLogQuery(query, lower.LogStagesOf(QueryPlanFlippedLogStages))
+		return ok
+	}
+	return screenMetricQuery(query, lower.MetricSetOf(QueryPlanFlippedConstructs))
+}
+
+// turnedAwayByStages reports a parsed query the text screens turn away for a stage of its log query, read from the
+// tree in a few steps: a vector(n) call at the top or as a binary operand, a decolorize or unpack stage, a detected_level filter after a stage (after a json or logfmt
+// parser in a metric query), and an
+// equality on a number, duration or byte size after a json or logfmt parser (in a log query also an unwrap and a
+// service_name filter). The validation asks it before lowersParse, so a query it names costs no text scan; a query it
+// misses is read by the screens as before. It never names a query the translation plans.
+func turnedAwayByStages(expr logqlpkg.Expr) bool {
+	logQuery := true
+	for {
+		switch x := expr.(type) {
+		case *logqlpkg.RangeAggregation:
+			expr, logQuery = x.Inner, false
+			continue
+		case *logqlpkg.VectorAggregation:
+			expr, logQuery = x.Inner, false
+			continue
+		case *logqlpkg.LogQuery:
+			return pipelineTurnedAway(x.Pipeline, logQuery)
+		case *logqlpkg.OpaqueMetricExpr:
+			return isVectorCall(x)
+		case *logqlpkg.BinOpExpr:
+			// vector(n) on either side.
+			return isVectorCall(x.Left) || isVectorCall(x.Right)
+		}
+		return false
+	}
+}
+
+// isVectorCall reports a vector(n) call, which the metric screen turns away at any level.
+func isVectorCall(e logqlpkg.Expr) bool {
+	o, ok := e.(*logqlpkg.OpaqueMetricExpr)
+	return ok && o.Func == "vector"
+}
+
+// pipelineTurnedAway is turnedAwayByStages of one pipeline.
+func pipelineTurnedAway(stages []logqlpkg.Stage, logQuery bool) bool {
+	staged, keyParsed := false, false
+	for _, st := range stages {
+		switch x := st.(type) {
+		case *logqlpkg.DecolorizeStage:
+			return true
+		case *logqlpkg.UnwrapStage:
+			if logQuery {
+				return true
+			}
+		case *logqlpkg.ParserStage:
+			if x.Type == logqlpkg.ParserUnpack {
+				return true
+			}
+			staged = true
+			keyParsed = keyParsed || x.Type == logqlpkg.ParserJSON || x.Type == logqlpkg.ParserLogfmt
+		case *logqlpkg.LabelFilterStage:
+			if x.Expr != nil && labelFilterTurnedAway(x.Expr, staged, keyParsed, logQuery) {
+				return true
+			}
+		case *logqlpkg.LineFilterStage:
+		default:
+			staged = true
+		}
+	}
+	return false
+}
+
+// labelFilterTurnedAway reports a leaf of a label filter the screens turn away: detected_level after a stage (in a
+// metric query, after a json or logfmt parser), an
+// equality on a number, duration or byte size after a json or logfmt parser, and (in a log query) service_name.
+func labelFilterTurnedAway(e *logqlpkg.LabelFilterExpr, staged, keyParsed, logQuery bool) bool {
+	if !e.IsLeaf() {
+		return labelFilterTurnedAway(e.Left, staged, keyParsed, logQuery) || labelFilterTurnedAway(e.Right, staged, keyParsed, logQuery)
+	}
+	switch {
+	case e.Name == "detected_level" && (logQuery && staged || keyParsed), e.Name == "service_name" && logQuery:
+		return true
+	case keyParsed && (e.Cmp == "=" || e.Cmp == "==" || e.Cmp == "!="):
+		switch e.Kind {
+		case logqlpkg.LabelFilterValueNumber, logqlpkg.LabelFilterValueDuration, logqlpkg.LabelFilterValueBytes:
+			return true
+		}
+	}
+	return false
 }
 
 // keepIdentityConstruct is the flip of a range function over an unwrapped label whose series a keep before the
@@ -153,7 +278,7 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	}
 	flipped := lower.MetricSetOf(p.flippedConstructs)
 	metricFlipped := flipped != 0
-	if (!strings.Contains(canon, "keep") || !strings.Contains(canon, "unwrap")) && lower.ScreenMetricIn(canon, flipped) == "" {
+	if !screenMetricQuery(canon, flipped) {
 		return "", false
 	}
 	construct := keepIdentityConstruct
