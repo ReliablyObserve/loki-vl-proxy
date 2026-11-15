@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
+  accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
+  per-stream series took the stream's `detected_level`.
 - An answer cached before a behaviour change is no longer served for a query written in another spelling of the same
   query. The version marker that keeps such answers out of the cache is now added for every spelling the LogQL parser
   reads: keywords and function names in any case (`| KEEP a`, `| UNWRAP n`, `TOPK(`, `SUM BY`, `| JSON`, `| LOGFMT`,
