@@ -56,7 +56,7 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 			// No translation cache: every row is translated, not read back.
 			on.translationCache, off.translationCache = nil, nil
 			ctx := context.Background()
-			differs, keep := 0, 0
+			differs, keep, dynamic := 0, 0, 0
 			for _, q := range corpus {
 				if strings.HasPrefix(strings.TrimSpace(q), "{") {
 					continue
@@ -66,6 +66,11 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 				want, wantErr := off.translateQueryOpts(ctx, respaced(q), false)
 				if _, kept := on.keepUnwrapIdentity(q); kept {
 					keep++
+					continue
+				}
+				// A parser's series identity is the plan's, held to Loki by the differentials (lower.DynamicUnwrapIdentity).
+				if on.dynamicUnwrapIdentity(q) {
+					dynamic++
 					continue
 				}
 				if got != want || (gotErr == nil) != (wantErr == nil) {
@@ -79,6 +84,7 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 			}
 			counts := shadowCounts(t, on)
 			total["keep identity rows"] += keep
+			total["dynamic identity rows"] += dynamic
 			for _, c := range metricFlipCandidates {
 				n := counts["flipped "+c]
 				total[c] += n
@@ -175,7 +181,7 @@ func FuzzMetricFlipGate(f *testing.F) {
 // profile, with the metric constructs flipped: it names the plan's root for every query the plan serves; the queries
 // it passes that the plan then leaves to the translator (a parse, build and resolve on top of the translation) stay
 // under 0.5% of those it passes; and the served queries it turns away (translated by the string translator at its own
-// cost) under 2% of the served ones. The keep identity has its own path and is not counted.
+// cost) under 2% of the served ones. The keep identity and a parser's series identity have their own paths and are not counted.
 //
 // conformance: architecture-syntax-package-layering
 func TestQueryPlanLowering_MetricScreenCorpus(t *testing.T) {
@@ -207,7 +213,7 @@ func TestQueryPlanLowering_MetricScreenCorpus(t *testing.T) {
 			}
 			canon := logqlpkg.CanonicalizeLogRanges(normalized)
 			plan, err := loweringPlan(ctx, canon)
-			if err != nil || lower.KeepDecidesUnwrapIdentity(plan) {
+			if err != nil || lower.KeepDecidesUnwrapIdentity(plan) || lower.DynamicUnwrapIdentity(plan) {
 				continue
 			}
 			caps := p.logsqlCapabilities()
@@ -235,6 +241,10 @@ func TestQueryPlanLowering_MetricScreenCorpus(t *testing.T) {
 				t.Errorf("%q: the screen names %s, the plan's root is %s", canon, screen, construct)
 			case ok && screen == "":
 				lost++
+			case !ok && screen != "" && lower.WritesDynamicUnwrapIdentity(plan):
+				// A parser's series identity under a binary operation or a label_replace: each operand is translated on
+				// its own and serves the identity (lowerDynamicIdentity), so the whole query is not left to the
+				// translator for nothing, and the plan it reads is the handlers' memo.
 			case !ok && screen != "":
 				if wasted++; wasted <= 5 {
 					t.Logf("passed by the screen, left to the translator: %q", canon)
