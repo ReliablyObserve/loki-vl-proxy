@@ -265,3 +265,33 @@ func TestTenantLimitsNeedTenancy(t *testing.T) {
 		t.Fatal("default limits turned tenancy on")
 	}
 }
+
+// -default-max-query-length defaults to Loki's max_query_length default
+// (721h) and reaches the proxy configuration; 0 turns the limit off.
+//
+// conformance: limits/max-query-length-default, tenant-query-limits
+func TestDefaultMaxQueryLengthFlagIsLokis(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want time.Duration
+	}{
+		{nil, 721 * time.Hour},
+		{[]string{"-default-max-query-length=0"}, 0},
+		{[]string{"-default-max-query-length=24h"}, 24 * time.Hour},
+	} {
+		got := runCapturingProxyCfg(t, tc.args...).proxyCfg
+		if got.defaultMaxQueryLength != tc.want {
+			t.Fatalf("%v: defaultMaxQueryLength = %s, want %s", tc.args, got.defaultMaxQueryLength, tc.want)
+		}
+		cfg, err := buildProxyConfig(got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.DefaultMaxQueryLength != tc.want {
+			t.Fatalf("%v: Config.DefaultMaxQueryLength = %s, want %s", tc.args, cfg.DefaultMaxQueryLength, tc.want)
+		}
+	}
+	if proxy.DefaultMaxQueryLength != 721*time.Hour {
+		t.Fatalf("proxy.DefaultMaxQueryLength = %s, want Loki's 721h", proxy.DefaultMaxQueryLength)
+	}
+}

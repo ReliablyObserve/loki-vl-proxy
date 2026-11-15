@@ -2,6 +2,7 @@ package lower
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -111,8 +112,50 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	var b strings.Builder
 	log.write(&b, "", "", 80)
 	b.WriteByte(' ')
-	b.WriteString(stats.String())
+	writePipe(&b, stats)
 	return physical.VLQuery{Text: b.String()}, nil
+}
+
+// pipeBufPool holds the buffers writePipe prints a pipe into before it copies it into the query's text.
+var pipeBufPool = sync.Pool{New: func() any { b := make([]byte, 0, 256); return &b }}
+
+// maxPooledPipeBuf bounds the buffers pipeBufPool keeps.
+const maxPooledPipeBuf = 4 << 10
+
+// pipeText is the text of p, as its String writes it, in one allocation (logsql.AppendPipe on a pooled buffer).
+func pipeText(p logsql.Pipe) string {
+	bp := pipeBufPool.Get().(*[]byte)
+	buf := logsql.AppendPipe((*bp)[:0], p)
+	s := string(buf)
+	if cap(buf) <= maxPooledPipeBuf {
+		*bp = buf[:0]
+		pipeBufPool.Put(bp)
+	}
+	return s
+}
+
+// statsText is pipeText for a stats pipe built in place: it is not boxed into a pipe value to be printed.
+func statsText(p logsql.PipeStats) string {
+	bp := pipeBufPool.Get().(*[]byte)
+	buf := logsql.AppendStats((*bp)[:0], p)
+	s := string(buf)
+	if cap(buf) <= maxPooledPipeBuf {
+		*bp = buf[:0]
+		pipeBufPool.Put(bp)
+	}
+	return s
+}
+
+// writePipe writes the text of p into b as its String does, without a string of its own: the pipes the lowering
+// writes print onto a pooled buffer (logsql.AppendPipe).
+func writePipe(b *strings.Builder, p logsql.Pipe) {
+	bp := pipeBufPool.Get().(*[]byte)
+	buf := logsql.AppendPipe((*bp)[:0], p)
+	b.Write(buf)
+	if cap(buf) <= maxPooledPipeBuf {
+		*bp = buf[:0]
+		pipeBufPool.Put(bp)
+	}
 }
 
 // metricLog is the log query of a metric row, split where a range or vector aggregation inserts its derivations:
@@ -256,7 +299,7 @@ func (m metricLog) text(chain, service, keys string, stats ...logsql.Pipe) strin
 	b.WriteString(keys)
 	for _, p := range stats {
 		b.WriteByte(' ')
-		b.WriteString(p.String())
+		writePipe(&b, p)
 	}
 	return b.String()
 }
