@@ -27,6 +27,13 @@ func lineKept(t *testing.T, f logsql.FilterExpr, line string) bool {
 			}
 		}
 		return true
+	case logsql.AnyOf:
+		for _, e := range n {
+			if lineKept(t, e, line) {
+				return true
+			}
+		}
+		return false
 	}
 	t.Fatalf("unexpected filter node %T (%s)", f, f)
 	return false

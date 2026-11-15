@@ -129,8 +129,41 @@ func TestIPv4LineRegexMatchesWalk(t *testing.T) {
 	}
 }
 
-// Edge cases of the walk, with Loki's answers (the Loki oracle, ipfilter and process, recorded 2026-11-15): the line
-// filter's regexp and the label filter's text branch are the same regexp.
+// The line filter keeps a line exactly when the exact regexp does: through the direct regexp, or the guard and the
+// exact one (ipv4Split), on random lines and on every IPv4 line of the recorded grid, so the cheap regexps lose no
+// line and keep none Loki drops.
+// conformance: semantics/ip-filter-ipv4-after-hex-colon
+func TestIPv4SplitMatchesExact(t *testing.T) {
+	check := func(pattern, line string) {
+		boxes, _ := ipv4Boxes(pattern)
+		r := ipv4LineRegexps(boxes)
+		exact := regexp.MustCompile(r.exact).MatchString(line)
+		direct, guard := regexp.MustCompile(r.direct).MatchString(line), regexp.MustCompile(r.guard).MatchString(line)
+		if direct && !exact {
+			t.Fatalf("ip(%q) on %q: direct keeps a line exact drops", pattern, line)
+		}
+		if exact && !direct && !guard {
+			t.Fatalf("ip(%q) on %q: exact keeps a line neither direct nor guard keeps", pattern, line)
+		}
+		if got := lineKept(t, IPLineFilter(pattern, false), line); got != exact {
+			t.Fatalf("ip(%q) on %q: line filter %v, exact %v", pattern, line, got, exact)
+		}
+	}
+	rng := rand.New(rand.NewSource(9))
+	for _, pattern := range ipv4WalkPatterns {
+		for i := 0; i < 3000; i++ {
+			check(pattern, randomIPv4Line(rng, ipv4WalkAddrs))
+		}
+	}
+	for _, c := range ipLineCases() {
+		if !strings.Contains(c.pattern, ":") {
+			check(c.pattern, c.line)
+		}
+	}
+}
+
+// Edge cases of the walk, with Loki's answers (the Loki oracle, ipfilter, recorded 2026-11-15): the line filter's
+// regexp and the label filter's text branch are the same regexp.
 // conformance: semantics/ip-filter-ipv4-after-hex-colon
 func TestIPv4LineRegexWalkEdges(t *testing.T) {
 	for _, c := range []struct {
@@ -153,8 +186,9 @@ func TestIPv4LineRegexWalkEdges(t *testing.T) {
 	}
 }
 
-// FuzzIPv4LineRegexLikeLoki: for any IPv4 pattern and any line, the regexp the line and label filters run keeps the
-// line exactly when Loki's walk finds an address of the pattern in it.
+// FuzzIPv4LineRegexLikeLoki: for any IPv4 pattern and any line, the regexp the line and label filters run, and the
+// line filter with its cheap regexps first, keep the line exactly when Loki's walk finds an address of the pattern
+// in it.
 func FuzzIPv4LineRegexLikeLoki(f *testing.F) {
 	for _, seed := range [][2]string{
 		{"1.2.3.0/27", "X0:1.2.3.0"}, {"1.2.3.0/27", "a0:1.2.3.0"}, {"1.2.3.0/27", "1:a1.2.3.0"}, {"1.2.3.0/27", "1.0:1.2.3.0"},
@@ -171,8 +205,12 @@ func FuzzIPv4LineRegexLikeLoki(f *testing.F) {
 			t.Fatalf("pattern %q: boxes but no Loki pattern", pattern)
 		}
 		re := regexp.MustCompile(IPLineFilterRegex(pattern))
-		if got, want := re.MatchString(line), ipv4Walk(line, p); got != want {
+		want := ipv4Walk(line, p)
+		if got := re.MatchString(line); got != want {
 			t.Fatalf("ip(%q) on %q: regexp %v, Loki %v", pattern, line, got, want)
+		}
+		if got := lineKept(t, IPLineFilter(pattern, false), line); got != want {
+			t.Fatalf("ip(%q) on %q: line filter %v, Loki %v", pattern, line, got, want)
 		}
 	})
 }

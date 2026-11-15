@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   earlier run of digits and dots, or of hex digits and colons, decides whether a later address is read: in
   `X0:1.2.3.0` and `1.0:1.2.3.0` Loki finds 1.2.3.0, in `a0:1.2.3.0` and `1:a1.2.3.0` it does not. The proxy judged
   only the characters right before the address, so `ip("1.2.3.0/27")` dropped the first two and kept the last two,
-  and `!= ip(...)` did the opposite. Checked against Loki's own answers on 52,000 lines. Answers cached before the
-  fix are not reused.
+  and `!= ip(...)` did the opposite. Checked against Loki's own answers on 52,000 lines. VictoriaLogs now checks two
+  short regexps first and runs the full one only on the few lines they leave, so an IPv4 `ip()` filter costs it
+  about half of what it cost before. Answers cached before the fix are not reused.
 
 ## [2.260.1] - 2026-11-14
 

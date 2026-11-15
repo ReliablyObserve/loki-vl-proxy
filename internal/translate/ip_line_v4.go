@@ -4,6 +4,8 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 // The IPv4 ip() line filter as Loki's filter reads a line (recorded with the Loki oracle, test/oracle/loki
@@ -183,11 +185,20 @@ const (
 	ipv4LeadLong  = `:?` + ipv4Hex + `*`
 )
 
-// ipv4LineRegex is the regexp of a line that holds an address of boxes as Loki's filter finds it: from the start of
-// the line or a character no run holds (ipv4Other), the stretches the walk crosses (ipv4Step), the characters before
-// the first octet (ipv4LeadShort, ipv4LeadOne, ipv4LeadLong, by the octet's digits), the address, and a character
-// that ends its run.
-func ipv4LineRegex(boxes []ipv4Box) string {
+// ipv4Regexps are the regexps of an IPv4 pattern read on a line or a label value. exact keeps a line exactly when
+// Loki's filter finds an address of the pattern in it: from the start of the line or a character no run holds
+// (ipv4Other), the stretches the walk crosses (ipv4Step), the characters before the first octet (ipv4LeadShort,
+// ipv4LeadOne, ipv4LeadLong, by the octet's digits), the address, and a character that ends its run.
+//
+// exact crosses every stretch of hex digits, colons and dots on the line, which costs VictoriaLogs more than a
+// plain search for the address, so the filters run it on the few lines the two cheap ones leave: direct is an
+// address right after the start of the line or a character no run holds, where the walk always starts afresh, so
+// every line it keeps is kept by exact; guard is an address after a hex digit, a colon or a dot, which every other
+// line exact keeps holds, and which a line with a near miss (10.0.0.12 for 10.0.0.1) does not, so exact runs on few
+// lines. A line is kept by exact exactly when direct keeps it, or guard and exact both do (ipv4Split).
+type ipv4Regexps struct{ exact, direct, guard string }
+
+func ipv4LineRegexps(boxes []ipv4Box) ipv4Regexps {
 	var one, two, three []string
 	for _, b := range boxes {
 		rest := `\.` + decimalRange(b[1][0], b[1][1]) + `\.` + decimalRange(b[2][0], b[2][1]) + `\.` + decimalRange(b[3][0], b[3][1])
@@ -201,8 +212,9 @@ func ipv4LineRegex(boxes []ipv4Box) string {
 		}
 	}
 	group := func(alts []string) string { return "(?:" + strings.Join(alts, "|") + ")" }
+	short := append(one[:len(one):len(one)], two...)
 	var alts []string
-	if short := append(one[:len(one):len(one)], two...); len(short) > 0 {
+	if len(short) > 0 {
 		alts = append(alts, ipv4LeadShort+group(short))
 	}
 	if len(one) > 0 {
@@ -211,7 +223,27 @@ func ipv4LineRegex(boxes []ipv4Box) string {
 	if len(three) > 0 {
 		alts = append(alts, ipv4LeadLong+group(three))
 	}
-	return ipv4Other + ipv4Step + "*" + group(alts) + ipv4Trail
+	addr := group(append(short, three...))
+	return ipv4Regexps{
+		exact:  ipv4Other + ipv4Step + "*" + group(alts) + ipv4Trail,
+		direct: ipv4Other + addr + ipv4Trail,
+		guard:  `[0-9a-fA-F:.]` + addr + ipv4Trail,
+	}
+}
+
+// ipv4Split is the filter of the regexps on a field ("" for the line): direct, or guard and exact; exact alone when
+// there is no direct one.
+func ipv4Split(field string, r ipv4Regexps) logsql.FilterExpr {
+	re := func(pattern string) logsql.FilterExpr {
+		if field == "" {
+			return logsql.Regexp{Pattern: pattern}
+		}
+		return logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: pattern}
+	}
+	if r.direct == "" {
+		return re(r.exact)
+	}
+	return logsql.AnyOf{re(r.direct), logsql.AllOf{re(r.guard), re(r.exact)}}
 }
 
 // ipv4Literal is the text every address of boxes starts with (the octets they all fix, with the dot after a fixed

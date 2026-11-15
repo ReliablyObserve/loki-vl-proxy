@@ -89,9 +89,12 @@ func ipRangeFilter(field string, lo, hi netip.Addr) logsql.FilterExpr {
 	return logsql.FieldFilter{Field: field, Op: logsql.FieldOpIPv6Range, Value: strconv.Quote(lo.String()) + ", " + strconv.Quote(hi.String())}
 }
 
-// ipv4ValuePattern is the exact regexp of an IPv4 pattern read on a label value (IPLineFilterRegex) and the
-// regexp of the substring every address of the pattern holds (ipv4Prefilter).
-type ipv4ValuePattern struct{ regex, prefilter string }
+// ipv4ValuePattern is the regexps of an IPv4 pattern read on a label value (the line filter's, ipv4LineRegexps) and
+// the regexp of the substring every address of the pattern holds (ipv4Prefilter).
+type ipv4ValuePattern struct {
+	regexps   ipv4Regexps
+	prefilter string
+}
 
 // ipv4PrefilterLimit bounds the alternatives of a prefilter: a pattern whose boxes fix more alternatives than this
 // falls back to the dot every address holds.
@@ -156,21 +159,20 @@ func ipv4ValuePatternOf(pattern string) ipv4ValuePattern {
 	if len(ipv4ValuePatterns) >= ipv4ValuePatternLimit {
 		clear(ipv4ValuePatterns)
 	}
-	p := ipv4ValuePattern{regex: IPLineFilterRegex(pattern), prefilter: `\.`}
+	p := ipv4ValuePattern{regexps: ipv4Regexps{exact: IPLineFilterRegex(pattern)}, prefilter: `\.`}
 	if boxes, ok := ipv4Boxes(pattern); ok {
-		p.prefilter = ipv4Prefilter(boxes)
+		p.regexps, p.prefilter = ipv4LineRegexps(boxes), ipv4Prefilter(boxes)
 	}
 	ipv4ValuePatterns[pattern] = p
 	return p
 }
 
-// ipv4ValueFilter is the filter of the values an IPv4 pattern keeps: the exact regexp, after the substring every
-// address of the pattern holds (ipv4Prefilter), which VictoriaLogs checks first and looks up in its bloom filters,
-// so the regexp runs on the values that may hold an address only (as IPLineFilter does on a line).
+// ipv4ValueFilter is the filter of the values an IPv4 pattern keeps: the line filter's regexps (ipv4Split), after
+// the substring every address of the pattern holds (ipv4Prefilter), which VictoriaLogs checks first and looks up in
+// its bloom filters, so the regexps run on the values that may hold an address only (as IPLineFilter does on a line).
 func ipv4ValueFilter(field, pattern string) logsql.FilterExpr {
 	p := ipv4ValuePatternOf(pattern)
-	f := logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: p.regex}
-	return logsql.AllOf{logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: p.prefilter}, f}
+	return logsql.AllOf{logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: p.prefilter}, ipv4Split(field, p.regexps)}
 }
 
 // ipv4LabelFilterNodes is the filter of an IPv4 pattern read on a label.
