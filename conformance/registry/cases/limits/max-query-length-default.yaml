@@ -1,0 +1,53 @@
+id: limits/max-query-length-default
+title: 'With no limit configured, a range longer than Loki''s default max_query_length (721h) fails as in Loki (fixed)'
+pending: true
+proves:
+  - tenant-query-limits
+  - loki_api_v1_query_range
+  - loki_api_v1_labels
+  - loki_api_v1_label_name_values
+  - loki_api_v1_series
+consumer: api
+why: |
+  Loki's documented max_query_length default is 30d1h (721h). Loki's recorded
+  answers to a range over it (start=-1 on labels, label values, series,
+  detected labels, detected fields and field values, index stats and volume;
+  a repeated start on query_range) are 400 `the query time range exceeds the
+  limit (query length: X, limit: 30d1h)`. The proxy's -default-max-query-length
+  defaulted to 0 (no limit), so a proxy run without a length configured served
+  those ranges and published `max_query_length: 0s`.
+
+  The flag now defaults to Loki's 721h: with nothing configured the proxy
+  rejects what Loki rejects, with Loki's text, before any VictoriaLogs call,
+  and both limits endpoints publish `30d1h`. `-default-max-query-length=0`, or
+  `max_query_length: 0s` in a tenant limit, still turns the limit off, as in
+  Loki. A live tail is not checked against the limit (unchanged by this case).
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    query: '{app="api-gateway"}'
+    start: '-1'
+    end: '1794570675'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, body]
+  expect: |
+    400 "the query time range exceeds the limit (query length: 498491h51m16s,
+    limit: 30d1h)" with no length configured, on every route Loki's limit
+    covers; a range of exactly 721h runs.
+gap:
+  status: fixed
+  fixed_by: 'pending'
+  impact: api-only
+  effort: S
+  area: 'cmd/proxy flag default -default-max-query-length (proxy.DefaultMaxQueryLength)'
+  loki: 'limits_config max_query_length default 30d1h'
+  proxy: '0 (no limit) before the fix'
+  planned_test: 'TestDefaultMaxQueryLength_RecordedLokiAnswers, TestDefaultMaxQueryLength_Boundary, TestDefaultMaxQueryLength_Published (internal/proxy); TestDefaultMaxQueryLengthFlagIsLokis (cmd/proxy); TestDefaultMaxQueryLengthLikeLoki (test/e2e-compat, the default-limit vmauth variant against Loki; named so no CI pattern matches it yet, pending a stack run)'
+  clusters: []
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

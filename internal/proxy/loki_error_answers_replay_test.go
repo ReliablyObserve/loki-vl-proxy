@@ -183,8 +183,8 @@ func summarizeReply(r lokiErrorReply) string {
 
 // newLokiErrorReplayProxy is a proxy as shipped (default configuration, the
 // shipped middleware chain) in front of a VictoriaLogs stand-in that answers
-// every query call with an empty valid answer, with Loki's max_query_length
-// of the recorded stack (30d1h).
+// every query call with an empty valid answer, with the shipped
+// -default-max-query-length (Loki's default 30d1h, the recorded stack's).
 func newLokiErrorReplayProxy(t *testing.T) string {
 	t.Helper()
 	backend := httptest.NewServer(&errLayerBackend{failSig: "\x00none", okBody: "empty"})
@@ -196,7 +196,7 @@ func newLokiErrorReplayProxy(t *testing.T) string {
 		Cache:                 c,
 		LogLevel:              "error",
 		BackendTimeout:        5 * time.Second,
-		DefaultMaxQueryLength: 721 * time.Hour,
+		DefaultMaxQueryLength: DefaultMaxQueryLength,
 	})
 	if err != nil {
 		t.Fatalf("new proxy: %v", err)

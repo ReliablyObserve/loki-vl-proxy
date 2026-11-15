@@ -283,6 +283,9 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/line-filter-error-quotes-the-run` — A line filter error quotes the run of line filters Loki builds together and names the filter Loki names (fixed) | #1242 | 3 | 7 |
 | `semantics/pattern-line-filter-invalid-captures` — A pattern line filter with consecutive or named captures is Loki's 400 with Loki's text (fixed) | #1239 | 1 | 1 |
 | `drilldown/index_volume/end-millisecond-rounding` — The last index volume sample is stamped at the end rounded up to the millisecond (fixed) | #1048 | 0 | 0 |
+| `limits/max-query-length-default` — With no limit configured, a range longer than Loki's default max_query_length (721h) fails as in Loki (fixed) | pending | 0 | 0 |
+| `limits/max-query-length-volume-range-exempt` — index/volume_range is not bound by max_query_length, only by the 11,000-point resolution, as Loki (fixed) | pending | 0 | 0 |
+| `limits/max-query-length-volume-whole-seconds` — index/volume checks max_query_length on a start and end rounded down to whole seconds, as Loki (fixed) | pending | 0 | 0 |
 | `quality/index-stats-default-window` — index/stats without start reads Loki's default hour before end (or now), or `since` (fixed) | #988 | 0 | 0 |
 | `semantics/binary-division-by-zero-nan` — A zero divisor of `/` and `%` is NaN, like Loki (fixed) | #745 | 0 | 0 |
 | `semantics/binary-on-without-label-list-accepted` — A binary operation with `on` and no label list (`+ on 1`, `% on rate(...)`) is accepted (fixed) | TBD-PR | 0 | 0 |
