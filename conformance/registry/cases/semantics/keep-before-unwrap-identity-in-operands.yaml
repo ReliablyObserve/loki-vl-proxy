@@ -19,6 +19,9 @@ why: |
       a series per stream with its stream labels.
   Measured with the Loki engine oracle and VictoriaLogs v1.53.0 and v1.49.0
   (TestKeepUnwrapIdentityMatchLoki); both answered the same way before the fix.
+  The binary form matches Loki since a binary operation over parser operands
+  is no longer read as one bare parser metric by its text
+  (semantics/json-parser-error-under-wrappers); the label_replace form stays open.
 request:
   method: GET
   path: /loki/api/v1/query

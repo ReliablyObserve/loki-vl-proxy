@@ -181,7 +181,9 @@ smoke	internal/translate	FuzzSplitUnwrapGate	12s	-	the unwrap gate split answers
 smoke	internal/proxy	FuzzMetricFlipGate	12s	-	the metric flip gate serves only the string translator's text, with the candidate metric constructs flipped
 smoke	internal/queryplan/lower	FuzzScreenMetric	12s	-	the metric screen answers a construct of its set with no allocation, and the plan's root for a query that parses
 smoke	internal/proxy	FuzzLogFlipGate	12s	-	the log stage flip serves only the string translator's text, with the candidate stage families flipped
+smoke	internal/proxy	FuzzJSONErrorProbesWrapperNesting	12s	-	JSON parser error probes keep Loki's rule under any wrapper nesting
 smoke	internal/queryplan/lower	FuzzScreenLogStages	12s	-	the log stage screen answers known families with no allocation, and never misses a family the plan holds
 smoke	internal/logsql	FuzzAppendPipeMatchesString	12s	-	stats and math pipes appended in place print the text their String writes
+smoke	internal/logsql	FuzzJSONMark	12s	-	the JSON parser error mark parses back, holds its flag and is never applied twice
 smoke	internal/cache	FuzzPeerPushBufferInvariants	12s	-	peer push buffer invariants
 smoke	internal/translate	FuzzPatternCaptureNames	12s	-	the pattern placeholder scanner finds the names the regexp <([A-Za-z][A-Za-z0-9_]*)> finds, in order

@@ -465,6 +465,7 @@
       "internal/proxy/binary_matching_test.go",
       "internal/proxy/binary_outer_sum_ignoring_test.go",
       "internal/proxy/instant_result_type_test.go",
+      "internal/proxy/json_parser_error_check_handler_test.go",
       "internal/proxy/keep_series_grouping_test.go",
       "internal/proxy/label_replace_routing_test.go",
       "internal/proxy/label_replace_semantics_test.go",
@@ -549,6 +550,7 @@
       "internal/proxy/first_last_range_timestamps_test.go",
       "internal/proxy/first_last_window_cache_test.go",
       "internal/proxy/ip_label_filter_test.go",
+      "internal/proxy/json_parser_error_check_handler_test.go",
       "internal/proxy/keep_blank_list_loki_test.go",
       "internal/proxy/keep_extracted_collision_test.go",
       "internal/proxy/keep_series_grouping_test.go",
@@ -1485,6 +1487,16 @@
       "internal/proxy/ordered_json_step_wider_test.go",
       "test/e2e-compat/json_metric_step_wider_test.go"
     ],
+    "semantics/json-parser-error-hazard-lines-not-marked": [
+      "internal/querycorpus/parser_error_wrappers_loki_diff_test.go"
+    ],
+    "semantics/json-parser-error-under-wrappers": [
+      "internal/logsql/json_mark_test.go",
+      "internal/proxy/json_parser_error_check_handler_test.go",
+      "internal/proxy/json_parser_error_check_test.go",
+      "internal/proxy/json_parser_error_corpus_test.go",
+      "internal/querycorpus/parser_error_wrappers_loki_diff_test.go"
+    ],
     "semantics/keep-before-parser-unwrap-identity": [
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
     ],
@@ -1632,6 +1644,9 @@
       "internal/proxy/ordered_json_vector_cache_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go"
     ],
+    "semantics/logfmt-strict-parser-error-not-raised": [
+      "internal/querycorpus/parser_error_wrappers_loki_diff_test.go"
+    ],
     "semantics/logql-unicode-runes": [
       "internal/logql/terminates_test.go",
       "internal/logql/unicode_runes_loki_test.go",
@@ -1754,6 +1769,7 @@
       "test/e2e-compat/pattern_line_filter_captures_test.go"
     ],
     "semantics/pipeline-error-text-parity": [
+      "internal/proxy/json_parser_error_check_handler_test.go",
       "internal/proxy/label_replace_routing_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "internal/proxy/ordered_json_metric_test.go",
@@ -1761,6 +1777,7 @@
       "internal/proxy/ordered_json_valid_split_test.go",
       "internal/proxy/ordered_json_vector_cache_test.go",
       "internal/proxy/ordered_json_vector_test.go",
+      "internal/querycorpus/parser_error_wrappers_loki_diff_test.go",
       "test/e2e-compat/parser_error_matrix_test.go"
     ],
     "semantics/plain-name-after-parser-reads-stream-label": [
@@ -2085,6 +2102,9 @@
       "internal/proxy/unwrap_conversion_error_differential_test.go",
       "internal/proxy/unwrap_conversion_error_test.go"
     ],
+    "semantics/unwrap-conversion-error-set-operand": [
+      "internal/querycorpus/parser_error_wrappers_loki_diff_test.go"
+    ],
     "semantics/unwrap-conversion-error-stored-value-overwritten": [
       "internal/proxy/unwrap_conversion_error_differential_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go"
@@ -2342,6 +2362,7 @@
       "internal/proxy/binary_budget_status_test.go",
       "internal/proxy/error_body_shape_test.go",
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/json_parser_error_check_handler_test.go",
       "internal/proxy/loki_client_error_test.go",
       "internal/proxy/loki_error_answers_replay_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
@@ -2489,7 +2510,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 591,
+  "registry_items": 596,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2672,6 +2693,9 @@
     ],
     "internal/logsql/ip_range_vl_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/logsql/json_mark_test.go": [
+      "semantics/json-parser-error-under-wrappers"
     ],
     "internal/logsql/keyword_fields_test.go": [
       "semantics/translator-writes-keyword-field-names-bare"
@@ -3146,6 +3170,19 @@
       "parser-error-and-label-collision",
       "quality/json-label-probe-gates",
       "semantics/json-extracted-metric-pushdown"
+    ],
+    "internal/proxy/json_parser_error_check_handler_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/json-parser-error-under-wrappers",
+      "semantics/pipeline-error-text-parity",
+      "status-400"
+    ],
+    "internal/proxy/json_parser_error_check_test.go": [
+      "semantics/json-parser-error-under-wrappers"
+    ],
+    "internal/proxy/json_parser_error_corpus_test.go": [
+      "semantics/json-parser-error-under-wrappers"
     ],
     "internal/proxy/keep_blank_list_loki_test.go": [
       "loki_api_v1_query_range",
@@ -4289,6 +4326,13 @@
     ],
     "internal/querycorpus/outbound_guard_test.go": [
       "semantics/reserved-field-name-case-outbound"
+    ],
+    "internal/querycorpus/parser_error_wrappers_loki_diff_test.go": [
+      "semantics/json-parser-error-hazard-lines-not-marked",
+      "semantics/json-parser-error-under-wrappers",
+      "semantics/logfmt-strict-parser-error-not-raised",
+      "semantics/pipeline-error-text-parity",
+      "semantics/unwrap-conversion-error-set-operand"
     ],
     "internal/querycorpus/parser_grid_test.go": [
       "architecture-syntax-package-layering"
@@ -5522,7 +5566,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 651,
+  "tests_with_markers": 656,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5592,6 +5636,7 @@
     "semantics/ruler-empty-list-status",
     "semantics/ruler-rules-unknown-type-like-loki",
     "semantics/ruler-store-failure-status",
+    "semantics/sort-over-keep-read-as-log-query",
     "semantics/stddev-stdvar-parsed-label-series-identity",
     "semantics/stream-label-selector-shadowed-by-ingest-json-key",
     "semantics/stream-label-shadowed-after-json-parser",
@@ -5621,5 +5666,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 380
+  "wired_items": 384
 }

@@ -1,0 +1,37 @@
+id: semantics/unwrap-conversion-error-set-operand
+title: "An unwrap conversion error beside a clean operand of and/or does not fail the metric (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: any
+why: |
+  `count_over_time({job="ok"}[1m]) or sum_over_time({...} | logfmt | unwrap n [1m])` and
+  `sum_over_time({...} | logfmt | unwrap n [1m] offset 40m) and count_over_time({job="ok"}[1m])` fail in
+  Loki with `pipeline error: 'SampleExtractionErr' ...` when a value in a window does not convert, as the
+  same aggregation does bare and under every other function. The proxy answers 200: the conversion check
+  does not see the rows the unwrap operand reads when the other operand of the set operation reads a clean
+  stream (an `and` whose right operand is empty is not evaluated on its left, and an offset unwrap operand
+  is not checked). Recorded with Loki's engine, Loki 3.7.9, and VictoriaLogs v1.49.0 and v1.53.0
+  (TestParserErrorsUnderWrappersMatchLoki lists the runs as this case).
+
+  Fix to make: check the unwrap operands of a set operation like the JSON parser check does (every operand
+  of the parsed tree, offsets included), and evaluate an operand Loki evaluates even when the result is
+  empty.
+request:
+  scope: query-grammar
+  entry: "TestParserErrorsUnderWrappersMatchLoki (internal/querycorpus): parserErrorKnown"
+  setup: "Send as the query of /loki/api/v1/query_range over a stream holding n=abc in a window: count_over_time({job=\"ok\"}[1m]) or sum_over_time({job=\"x\"} | logfmt | unwrap n [1m]) ."
+compare:
+  mode: exact
+  fields: [status, error_text]
+  expect: "Loki's 400 with the SampleExtractionErr pipeline error."
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy unwrap_conversion_error.go (unwrapErrorProbes) and the set operation evaluation'
+  loki: '400 SampleExtractionErr'
+  proxy: '200'
+  planned_test: 'TestParserErrorsUnderWrappersMatchLoki (internal/querycorpus) lists the runs as known differences'
+  clusters: []

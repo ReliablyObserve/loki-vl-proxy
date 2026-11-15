@@ -843,6 +843,14 @@ func parseBareParserMetricCompatSpec(query string) (bareParserMetricCompatSpec, 
 	if spec, ok := parseBareParserMetricCompatSpecAST(strings.TrimSpace(query)); ok {
 		return spec, true
 	}
+	if expr, ok := sharedLogQLExpr(strings.TrimSpace(query)); ok {
+		if _, isRange := expr.(*logqlpkg.RangeAggregation); !isRange {
+			// A binary operation, a vector aggregation or label_replace is no bare
+			// range aggregation: the text pattern would read an operand's selector
+			// through the operator into the next operand.
+			return bareParserMetricCompatSpec{}, false
+		}
+	}
 	return parseBareParserMetricCompatSpecRegex(strings.TrimSpace(query))
 }
 
@@ -1181,7 +1189,10 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		return nil, err
 	}
 	// Stream complete bounded input; sorting at VL retains every candidate row.
-	params.Set("query", logsqlQuery+" | limit "+strconv.Itoa(rowLimit+1))
+	// A metric checked for JSON parser errors marks the lines VictoriaLogs
+	// cannot vouch for in the same read; the mark is taken off each row below.
+	jsonCheck := jsonErrorCheckFrom(ctx)
+	params.Set("query", jsonCheck.rawRowsQuery(logsqlQuery)+" | limit "+strconv.Itoa(rowLimit+1))
 	if start != "" {
 		params.Set("start", formatVLTimestamp(start))
 	}
@@ -1267,6 +1278,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 			vlEntryPool.Put(entry)
 			continue
 		}
+		jsonCheck.takeRawRowEntry(entry, tsNanos)
 		weight, ok := bareParserRawSampleWeight(entry, spec)
 		if !ok {
 			reportUnwrapRejectedEntry(ctx, entry, logsqlQuery, spec, tsNanos)

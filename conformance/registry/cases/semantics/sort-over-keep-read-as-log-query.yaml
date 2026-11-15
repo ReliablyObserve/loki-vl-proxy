@@ -1,0 +1,33 @@
+id: semantics/sort-over-keep-read-as-log-query
+title: "sort over a range aggregation whose pipeline keeps two labels is read as a log query (open)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  `sort(count_over_time({app="x"} | json | keep app, status [1m]))` is a metric in Loki (Loki's engine answers it,
+  with its pipeline error when a line is no JSON). The proxy rewrites it to
+  `sort (sum by (app, status) (count_over_time({app="x"} | json | keep app, status[1m])))` and sends that text to
+  VictoriaLogs as a log query's phrase filter: query_range answers a `streams` result (or VictoriaLogs rejects the
+  text, 500) and an instant query answers 400 `log queries are not supported as an instant query type`. The same on
+  origin/main. Found by TestParserErrorsUnderWrappersMatchLoki while adding a keep leaf to its grid.
+
+  Fix to make: route the rewritten keep shape as the metric it is (the plan already reads it as one).
+request:
+  scope: query-grammar
+  entry: "internal/proxy handleQueryRange and handleQuery: the keep rewrite before the metric route"
+  setup: "Send as the query of /loki/api/v1/query: sort(count_over_time({app=\"x\"} | json | keep app, status [1m])) ."
+compare:
+  mode: observed
+  fields: [status, body]
+  expect: "Loki's vector of one series per kept label set (or its pipeline error)."
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/proxy (the keep rewrite reads sort(...) as a log query)'
+  loki: 'a metric answer'
+  proxy: 'a streams answer, 500, or 400 on an instant query'
+  planned_test: 'a row in TestParserErrorsUnderWrappersMatchLoki once fixed'
+  clusters: []

@@ -185,6 +185,11 @@ func (p *Proxy) handleOrderedJSONMetricUnderTransform(w http.ResponseWriter, r *
 // parser-dependent stages before reducing rows to samples. VictoriaLogs does not
 // attach Loki's parser error labels, so pushing those filters into VL loses rows.
 func (p *Proxy) handleOrderedJSONMetric(w http.ResponseWriter, r *http.Request, requestStart time.Time, query string, isRange bool) bool {
+	if jsonErrorCheckFrom(r.Context()) != nil {
+		// An operand of a checked binary operation: the evaluator answers its
+		// own parser errors, its reads are not marked.
+		r = r.WithContext(context.WithValue(r.Context(), jsonErrorMarkOffKey{}, true))
+	}
 	if inner := stripLabelTransforms(query); inner != query {
 		return p.handleOrderedJSONMetricUnderTransform(w, r, requestStart, query, inner, isRange)
 	}
