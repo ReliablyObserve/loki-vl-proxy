@@ -184,6 +184,9 @@
       "internal/proxy/patterns_state_test.go",
       "test/e2e-compat/patterns_loki_oracle_test.go"
     ],
+    "drilldown/patterns-non-selector-query": [
+      "internal/proxy/patterns_non_selector_test.go"
+    ],
     "drilldown/patterns-one-series-per-level": [
       "internal/proxy/patterns_counts_test.go",
       "test/e2e-compat/patterns_counts_test.go"
@@ -444,6 +447,7 @@
       "internal/proxy/pattern_tokenizer_test.go",
       "internal/proxy/patterns_counts_test.go",
       "internal/proxy/patterns_exact_test.go",
+      "internal/proxy/patterns_non_selector_test.go",
       "internal/proxy/patterns_owner_test.go",
       "internal/proxy/patterns_scope_test.go",
       "internal/proxy/patterns_state_test.go",
@@ -455,6 +459,7 @@
       "internal/proxy/binary_aggregation_test.go",
       "internal/proxy/binary_ignoring_matching_test.go",
       "internal/proxy/binary_matching_test.go",
+      "internal/proxy/binary_outer_sum_ignoring_test.go",
       "internal/proxy/instant_result_type_test.go",
       "internal/proxy/keep_series_grouping_test.go",
       "internal/proxy/label_replace_routing_test.go",
@@ -527,6 +532,7 @@
       "internal/proxy/binary_aggregation_test.go",
       "internal/proxy/binary_ignoring_matching_test.go",
       "internal/proxy/binary_matching_differential_test.go",
+      "internal/proxy/binary_outer_sum_ignoring_test.go",
       "internal/proxy/detected_level_filter_test.go",
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/drilldown_breakdown_matrix_test.go",
@@ -541,6 +547,7 @@
       "internal/proxy/keep_extracted_collision_test.go",
       "internal/proxy/keep_series_grouping_test.go",
       "internal/proxy/label_filter_expression_test.go",
+      "internal/proxy/label_replace_duplicates_fold_test.go",
       "internal/proxy/label_replace_routing_test.go",
       "internal/proxy/label_replace_semantics_test.go",
       "internal/proxy/line_fields_without_parser_test.go",
@@ -563,6 +570,7 @@
       "internal/proxy/stats_extent_large_answer_test.go",
       "internal/proxy/step_align_diff_test.go",
       "internal/proxy/step_align_test.go",
+      "internal/proxy/step_grammar_loki_test.go",
       "internal/proxy/stream_metadata_test.go",
       "internal/proxy/stream_tag_restore_test.go",
       "internal/proxy/tenant_query_limits_test.go",
@@ -1118,6 +1126,7 @@
     "semantics/binary-ignoring-matching": [
       "internal/proxy/binary_ignoring_matching_test.go",
       "internal/proxy/binary_matching_differential_test.go",
+      "internal/proxy/binary_outer_sum_ignoring_test.go",
       "test/e2e-compat/binary_ignoring_matching_test.go"
     ],
     "semantics/binary-literal-operation-folded-in-loki": [
@@ -1524,6 +1533,7 @@
       "test/e2e-compat/label_list_trailing_comma_test.go"
     ],
     "semantics/label-replace-duplicates-before-ranking": [
+      "internal/proxy/label_replace_duplicates_fold_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
       "test/e2e-compat/label_replace_new_label_test.go"
     ],
@@ -1871,6 +1881,12 @@
     "semantics/stdvar-grouped-pooled-variance": [
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
       "internal/querycorpus/stddev_stdvar_loki_diff_test.go"
+    ],
+    "semantics/step-duration-grammar-wider-than-loki": [
+      "internal/proxy/step_grammar_loki_test.go"
+    ],
+    "semantics/step-nonpositive-or-unparsable-is-400": [
+      "internal/proxy/step_grammar_loki_test.go"
     ],
     "semantics/stream-label-shadowed-by-ingest-json-key": [
       "internal/proxy/stream_tag_restore_test.go",
@@ -2738,6 +2754,11 @@
     "internal/proxy/binary_operand_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/proxy/binary_outer_sum_ignoring_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/binary-ignoring-matching"
+    ],
     "internal/proxy/binary_physical_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3057,6 +3078,10 @@
     "internal/proxy/label_metadata_freshness_test.go": [
       "loki_api_v1_series",
       "semantics/metadata-answers-include-last-24h-like-loki"
+    ],
+    "internal/proxy/label_replace_duplicates_fold_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/label-replace-duplicates-before-ranking"
     ],
     "internal/proxy/label_replace_routing_test.go": [
       "loki_api_v1_query",
@@ -3385,6 +3410,10 @@
     "internal/proxy/patterns_exact_test.go": [
       "drilldown/patterns-full-range-counts",
       "drilldown/patterns-mined-differently",
+      "loki_api_v1_patterns"
+    ],
+    "internal/proxy/patterns_non_selector_test.go": [
+      "drilldown/patterns-non-selector-query",
       "loki_api_v1_patterns"
     ],
     "internal/proxy/patterns_owner_test.go": [
@@ -3719,6 +3748,11 @@
       "loki_api_v1_query_range",
       "quality/query-range-extent-cache",
       "semantics/query-range-step-alignment"
+    ],
+    "internal/proxy/step_grammar_loki_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/step-duration-grammar-wider-than-loki",
+      "semantics/step-nonpositive-or-unparsable-is-400"
     ],
     "internal/proxy/stored_level_series_limit_test.go": [
       "semantics/json-metric-detected-level-derivation"
@@ -5318,7 +5352,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 624,
+  "tests_with_markers": 628,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5333,7 +5367,6 @@
     "drilldown/detected-fields-type-inference",
     "drilldown/detected-labels-lists-stored-field",
     "drilldown/detected-labels-sampled-cardinality",
-    "drilldown/patterns-non-selector-query",
     "drilldown/plugin-legend-sync-race",
     "drilldown/volume-detected-level-not-normalised",
     "limits/drilldown-7d-breakdown-response-limit",
@@ -5392,8 +5425,6 @@
     "semantics/ruler-rules-unknown-type-like-loki",
     "semantics/ruler-store-failure-status",
     "semantics/stddev-stdvar-parsed-label-series-identity",
-    "semantics/step-duration-grammar-wider-than-loki",
-    "semantics/step-nonpositive-or-unparsable-is-400",
     "semantics/stream-label-selector-shadowed-by-ingest-json-key",
     "semantics/stream-label-shadowed-after-json-parser",
     "semantics/stream-level-shadowed-by-ingest-json-key",
@@ -5421,5 +5452,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 372
+  "wired_items": 375
 }
