@@ -50,12 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `-default-max-query-length` now defaults to Loki's `max_query_length` default, `721h` (published as
   `30d1h`), instead of `0` (no limit). A proxy run without a length configured served a range Loki refuses: a
   `query_range`, `series`, `labels`, label values, `detected_labels`, `detected_fields`, detected field values,
-  `index/stats` or volume request over more than 721h (for example `start=-1` or `start=1`) now fails, as in Loki,
+  `index/stats` or `index/volume` request over more than 721h (for example `start=-1` or `start=1`) now fails, as in Loki,
   with `400 the query time range exceeds the limit (query length: X, limit: 30d1h)` before any VictoriaLogs call,
   and `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` publish `max_query_length: 30d1h` instead of
   `0s`. Set `-default-max-query-length=0` (Helm `extraArgs.default-max-query-length: "0"`), or `max_query_length:
   "0s"` in `-tenant-default-limits` or `-tenant-limits`, to keep serving longer ranges. A live tail is not checked
   against this limit. A request with a `start` and no `end` is held to it too (a missing `end` is now, as in Loki).
+  `index/volume` rounds its `start` and `end` down to whole seconds before the check, as Loki does, and reports
+  the length in whole seconds (`721h0m1s`); `index/volume_range` is not length-limited, as in Loki (a range over 721h is
+  answered, and only its 11,000-point resolution rejects).
 
 ## [2.263.0] - 2026-11-15
 

@@ -493,6 +493,7 @@ When multiple limits are configured, the most specific takes effect:
 ### Behavior
 
 - Enforced, as in Loki's limits middleware, on `query_range`, `series`, `labels`, label values, `detected_labels` and `index/stats` requests
+- `index/volume` rounds its `start` and `end` down to whole seconds before the check, as Loki does, so it reports the length in whole seconds (`721h0m1s`) and runs a range that is over only in its fraction; `index/volume_range` is not length-limited, as in Loki (only its 11,000-point resolution bounds it)
 - Independently of this flag, `query_range` requests where `(end - start) / step` exceeds 11,000 (integer division, as in Loki) return HTTP 400 with `exceeded maximum resolution of 11,000 points per time series. Try increasing the value of the step parameter` before any backend call, for log and metric queries alike
 - Applied after LogQL offset extraction (the enforced range reflects any `offset` modifier in the query)
 - Tenant-limit values accept Loki duration units, including `d`, `w` and `y` (for example `"90d"`); the global flag does not

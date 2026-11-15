@@ -58,6 +58,8 @@ cases:
   - limits/max-entries-limit-rejects
   - limits/max-query-length-error
   - limits/max-query-length-default
+  - limits/max-query-length-volume-whole-seconds
+  - limits/max-query-length-volume-range-exempt
   - limits/max-query-lookback
   - limits/max-query-range-interval
   - limits/query-timeout-per-tenant

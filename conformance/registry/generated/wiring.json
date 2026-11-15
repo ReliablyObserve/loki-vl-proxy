@@ -279,6 +279,14 @@
       "internal/proxy/default_max_query_length_test.go",
       "internal/proxy/tenant_query_limits_test.go"
     ],
+    "limits/max-query-length-volume-range-exempt": [
+      "internal/proxy/default_max_query_length_test.go",
+      "test/e2e-compat/default_max_query_length_like_loki_test.go"
+    ],
+    "limits/max-query-length-volume-whole-seconds": [
+      "internal/proxy/default_max_query_length_test.go",
+      "test/e2e-compat/default_max_query_length_like_loki_test.go"
+    ],
     "limits/max-query-lookback": [
       "internal/proxy/tenant_query_limits_test.go"
     ],
@@ -2379,7 +2387,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 583,
+  "registry_items": 585,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2735,6 +2743,8 @@
       "limits/effective-limit-resolution",
       "limits/max-query-length-default",
       "limits/max-query-length-error",
+      "limits/max-query-length-volume-range-exempt",
+      "limits/max-query-length-volume-whole-seconds",
       "limits/published-equals-enforced",
       "tenant-query-limits"
     ],
@@ -4553,6 +4563,8 @@
     ],
     "test/e2e-compat/default_max_query_length_like_loki_test.go": [
       "limits/max-query-length-default",
+      "limits/max-query-length-volume-range-exempt",
+      "limits/max-query-length-volume-whole-seconds",
       "tenant-query-limits"
     ],
     "test/e2e-compat/detected_fields_empty_answer_test.go": [
@@ -5361,5 +5373,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 368
+  "wired_items": 370
 }

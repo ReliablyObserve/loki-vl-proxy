@@ -86,6 +86,14 @@
     "limits/max-query-length-default | query",
     "limits/max-query-length-error | applies_to",
     "limits/max-query-length-error | compare:exact",
+    "limits/max-query-length-volume-range-exempt | applies_to",
+    "limits/max-query-length-volume-range-exempt | compare:exact",
+    "limits/max-query-length-volume-range-exempt | gap:fixed",
+    "limits/max-query-length-volume-range-exempt | query",
+    "limits/max-query-length-volume-whole-seconds | applies_to",
+    "limits/max-query-length-volume-whole-seconds | compare:exact",
+    "limits/max-query-length-volume-whole-seconds | gap:fixed",
+    "limits/max-query-length-volume-whole-seconds | query",
     "limits/max-query-lookback | applies_to",
     "limits/max-query-lookback | compare:exact",
     "limits/max-query-range-interval | applies_to",
@@ -1261,6 +1269,8 @@
     "internal/proxy/default_max_query_length_test.go | limits/effective-limit-resolution",
     "internal/proxy/default_max_query_length_test.go | limits/max-query-length-default",
     "internal/proxy/default_max_query_length_test.go | limits/max-query-length-error",
+    "internal/proxy/default_max_query_length_test.go | limits/max-query-length-volume-range-exempt",
+    "internal/proxy/default_max_query_length_test.go | limits/max-query-length-volume-whole-seconds",
     "internal/proxy/default_max_query_length_test.go | limits/published-equals-enforced",
     "internal/proxy/default_max_query_length_test.go | tenant-query-limits",
     "internal/proxy/delete_route_test.go | delete-api-requires-token",
@@ -2283,6 +2293,8 @@
     "test/e2e-compat/compat_option_matrix_test.go | profiles/structured-metadata-keys-per-profile",
     "test/e2e-compat/count_values_test.go | semantics/count-values-unsupported",
     "test/e2e-compat/default_max_query_length_like_loki_test.go | limits/max-query-length-default",
+    "test/e2e-compat/default_max_query_length_like_loki_test.go | limits/max-query-length-volume-range-exempt",
+    "test/e2e-compat/default_max_query_length_like_loki_test.go | limits/max-query-length-volume-whole-seconds",
     "test/e2e-compat/default_max_query_length_like_loki_test.go | tenant-query-limits",
     "test/e2e-compat/detected_fields_empty_answer_test.go | loki_api_v1_detected_fields",
     "test/e2e-compat/detected_fields_empty_answer_test.go | semantics/detected-fields-empty-answer",
@@ -2728,7 +2740,7 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 98,
+      "api": 100,
       "drilldown": 51,
       "explore": 184,
       "grafana-datasource": 2,
@@ -2755,7 +2767,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 99,
-    "wired_items": 368
+    "wired_items": 370
   },
   "gates": [
     "A/B shape selection",

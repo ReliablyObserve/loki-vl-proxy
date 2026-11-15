@@ -137,6 +137,8 @@ func TestDefaultMaxQueryLength_Boundary(t *testing.T) {
 	}
 	const over = 721*time.Hour + time.Millisecond
 	const want = "the query time range exceeds the limit (query length: 721h0m0.001s, limit: 30d1h)"
+	// The volume route reads whole seconds: 1 ms over rounds the start down a second.
+	const wantVolume = "the query time range exceeds the limit (query length: 721h0m1s, limit: 30d1h)"
 
 	t.Run("shipped default", func(t *testing.T) {
 		base, backend := newDefaultLengthProxy(t, -1, nil)
@@ -146,8 +148,12 @@ func TestDefaultMaxQueryLength_Boundary(t *testing.T) {
 			}
 			before := backend.hits.Load()
 			status, body := get(t, base, r, over)
-			if status != http.StatusBadRequest || body != want {
-				t.Errorf("%s at 721h+1ms: %d %q, want 400 %q", r.name, status, body, want)
+			wantText := want
+			if r.name == "index_volume" {
+				wantText = wantVolume
+			}
+			if status != http.StatusBadRequest || body != wantText {
+				t.Errorf("%s at 721h+1ms: %d %q, want 400 %q", r.name, status, body, wantText)
 			}
 			if calls := backend.hits.Load() - before; calls != 0 {
 				t.Errorf("%s at 721h+1ms: %d VictoriaLogs calls, want 0", r.name, calls)
@@ -232,5 +238,133 @@ func TestDefaultMaxQueryLength_Published(t *testing.T) {
 	}
 	if got := config["max_query_length"]; got != "30d1h" {
 		t.Errorf("/config/tenant/v1/limits max_query_length = %v, want 30d1h", got)
+	}
+}
+
+// TestDefaultMaxQueryLength_VolumeWholeSeconds replays Loki's recorded answers
+// for index/volume under the shipped default: Loki rounds both the start and
+// the end down to whole seconds before the length check, so the length it
+// reports is whole seconds and a range that is over only in its fraction runs.
+// Rejections are answered before any VictoriaLogs call.
+//
+// Recorded live from Loki 3.7.9 on 2026-11-15 (tenant 0, {app="api-gateway"}, end a whole second T unless noted).
+//
+// conformance: limits/max-query-length-volume-whole-seconds, limits/max-query-length-error
+func TestDefaultMaxQueryLength_VolumeWholeSeconds(t *testing.T) {
+	base, backend := newDefaultLengthProxy(t, -1, nil)
+	end := time.Unix(1794570675, 0)
+	const prefix = "the query time range exceeds the limit (query length: "
+	const suffix = ", limit: 30d1h)"
+	for _, tc := range []struct {
+		name       string
+		end, start time.Time
+		wantLength string // "" = Loki answers 200
+	}{
+		{"1ns over", end, end.Add(-721*time.Hour - time.Nanosecond), "721h0m1s"},
+		{"1ms over", end, end.Add(-721*time.Hour - time.Millisecond), "721h0m1s"},
+		{"1.5s over", end, end.Add(-721*time.Hour - 1500*time.Millisecond), "721h0m2s"},
+		{"exactly 721h", end, end.Add(-721 * time.Hour), ""},
+		{"end at .5s, start 0.4s over", end.Add(500 * time.Millisecond), end.Add(500*time.Millisecond - 721*time.Hour - 400*time.Millisecond), ""},
+		{"end at .5s, start exactly 721h before", end.Add(500 * time.Millisecond), end.Add(500*time.Millisecond - 721*time.Hour), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			params := url.Values{
+				"query": {`{app="api-gateway"}`},
+				"start": {strconv.FormatInt(tc.start.UnixNano(), 10)},
+				"end":   {strconv.FormatInt(tc.end.UnixNano(), 10)},
+			}
+			before := backend.hits.Load()
+			resp, err := http.Get(base + "/loki/api/v1/index/volume?" + params.Encode())
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if tc.wantLength == "" {
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("%d %.200s, want 200 as Loki", resp.StatusCode, body)
+				}
+				return
+			}
+			if want := prefix + tc.wantLength + suffix; resp.StatusCode != http.StatusBadRequest || strings.TrimSpace(string(body)) != want {
+				t.Fatalf("%d %q, want 400 %q", resp.StatusCode, strings.TrimSpace(string(body)), want)
+			}
+			if calls := backend.hits.Load() - before; calls != 0 {
+				t.Fatalf("%d VictoriaLogs calls before the rejection, want 0", calls)
+			}
+		})
+	}
+	// index/stats does not round: its length keeps the milliseconds.
+	t.Run("index_stats keeps milliseconds", func(t *testing.T) {
+		params := url.Values{
+			"query": {`{app="api-gateway"}`},
+			"start": {strconv.FormatInt(end.Add(-721*time.Hour-time.Millisecond).UnixNano(), 10)},
+			"end":   {strconv.FormatInt(end.UnixNano(), 10)},
+		}
+		resp, err := http.Get(base + "/loki/api/v1/index/stats?" + params.Encode())
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if want := prefix + "721h0m0.001s" + suffix; resp.StatusCode != http.StatusBadRequest || strings.TrimSpace(string(body)) != want {
+			t.Fatalf("%d %q, want 400 %q", resp.StatusCode, strings.TrimSpace(string(body)), want)
+		}
+	})
+}
+
+// TestDefaultMaxQueryLength_VolumeRangeNotLimited: Loki applies no
+// max_query_length to index/volume_range; ranges of 722h to 5000h at a 1h step
+// are answered, and only its 11,000-point resolution check rejects (20000h and
+// 100000h), with its own text. A tenant max_query_length does not bound it
+// either (the tenant 1h run is not itself recorded: Loki applies no length to
+// the route at all, which the recorded 722h to 10000h answers show).
+//
+// Recorded live from Loki 3.7.9 on 2026-11-15 (tenant 0, {app="api-gateway"}, step=3600, end a whole second).
+//
+// conformance: limits/max-query-length-volume-range-exempt
+func TestDefaultMaxQueryLength_VolumeRangeNotLimited(t *testing.T) {
+	end := time.Unix(1794570675, 0)
+	const resolution = "exceeded maximum resolution of 11,000 points per time series. Try increasing the value of the step parameter"
+	for name, tenantDefaults := range map[string]map[string]any{"shipped default": nil, "tenant 1h": {"max_query_length": "1h"}} {
+		t.Run(name, func(t *testing.T) {
+			base, backend := newDefaultLengthProxy(t, -1, tenantDefaults)
+			for _, tc := range []struct {
+				length time.Duration
+				want   int
+			}{
+				{722 * time.Hour, http.StatusOK},
+				{1000 * time.Hour, http.StatusOK},
+				{5000 * time.Hour, http.StatusOK},
+				{10000 * time.Hour, http.StatusOK},
+				{20000 * time.Hour, http.StatusBadRequest},
+				{100000 * time.Hour, http.StatusBadRequest},
+			} {
+				params := url.Values{
+					"query": {`{app="api-gateway"}`},
+					"step":  {"3600"},
+					"start": {strconv.FormatInt(end.Add(-tc.length).UnixNano(), 10)},
+					"end":   {strconv.FormatInt(end.UnixNano(), 10)},
+				}
+				before := backend.hits.Load()
+				resp, err := http.Get(base + "/loki/api/v1/index/volume_range?" + params.Encode())
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				if resp.StatusCode != tc.want {
+					t.Errorf("%s: %d %.200s, want %d as Loki", tc.length, resp.StatusCode, body, tc.want)
+				}
+				if tc.want == http.StatusBadRequest {
+					if got := strings.TrimSpace(string(body)); got != resolution {
+						t.Errorf("%s: %q, want %q", tc.length, got, resolution)
+					}
+					if calls := backend.hits.Load() - before; calls != 0 {
+						t.Errorf("%s: %d VictoriaLogs calls before the rejection, want 0", tc.length, calls)
+					}
+				}
+			}
+		})
 	}
 }
