@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ## [2.262.0] - 2026-11-15
+
 ### Changed
 
 - Metric queries are planned once for the query plan's decisions: the range functions whose series a `keep` before
