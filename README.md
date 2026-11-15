@@ -19,8 +19,8 @@
 [![Helm Chart Pulls](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/ghcr-chart-pulls.json)](https://github.com/ReliablyObserve/Loki-VL-proxy/pkgs/container/charts%2Floki-vl-proxy)
 [![Source Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-code.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Test Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-tests.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-52353%20passed-brightgreen)](#tests)
-[![Coverage](https://img.shields.io/badge/coverage-91.8%25-brightgreen)](#tests)
+[![Tests](https://img.shields.io/badge/tests-53201%20passed-brightgreen)](#tests)
+[![Coverage](https://img.shields.io/badge/coverage-92.0%25-brightgreen)](#tests)
 [![LogQL Compatibility](https://img.shields.io/badge/LogQL%20compatibility-tested-blue)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
@@ -58,7 +58,15 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 
 <!-- verified-numbers:start -->
 
-The numbers on this page are not verified by a live run yet: the daily report (`.github/workflows/daily-report.yaml`) has recorded no run on `main`.
+Verified 2026-11-15 on `8d3d89252cf1` (Loki 3.7.9, VictoriaLogs v1.49.0 and v1.53.0), 8 check(s) red; see the [daily summary](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/registry/generated/verification/summary.json).
+
+- Registry: 131 open, 131 fixed, 15 documented, 7 owner-kept, 3 upstream; open by impact: 60 explore-visible, 13 drilldown-visible, 1 grafana-datasource, 22 api-only, 35 edge.
+- Registry cases sent to Loki and the proxy, per VictoriaLogs version: v1.49.0: 33 match, 1 differ on equal data, 240 not comparable on that day's data, 52 blocked; v1.53.0: 33 match, 1 differ on equal data, 240 not comparable on that day's data, 52 blocked.
+- Errors: 223 of 231 recorded Loki answers match, 8 known differences, 0 known leaks; 323 of 335 rows answered as recorded by the live Loki.
+- Grammar sweep of 25824 queries, re-verified live by `query-corpus.yaml` on 2026-11-15 (failure): 393 VictoriaLogs rejects the translator text, 124 error text differs, 48 proxy accepts, Loki rejects, 32 accepted, translation fails, 18 proxy rejects, Loki accepts, 17 tree fact differs: binary operation, 12 error text differs, rejected at translation, 4 tree fact differs: offsets, 4 tree fact differs: outermost operation, 3 tree fact differs: has a log pipeline.
+- Performance, weekly full run verified 2026-11-09 (Loki 3.7.9): 522 comparable shape x range pairs, 324 faster, 187 on par, 11 slower; 4 rows above 2x Loki.
+- Performance, daily smoke verified 2026-11-15: 217 rows, 2 above 2x Loki, 0 weekly ratchet rows lost.
+- Cache reuse, verified 2026-11-15: registry cases on v1.49.0: 231 repeats served from the cache, 0 not (2 VictoriaLogs calls on the repeats); registry cases on v1.53.0: 229 repeats served from the cache, 0 not (1 VictoriaLogs calls on the repeats); perf smoke: 8 of 217 rows repeat without calling VictoriaLogs.
 
 <!-- verified-numbers:end -->
 
@@ -183,8 +191,8 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 10 proven, 21 partial, 3 gaps |
-| Known differences from Loki (ranked) | **151**: 126 open, 15 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **72 of 126**: 58 Explore, 13 Logs Drilldown, 1 Grafana datasource; 19 API only, 35 edge cases |
+| Known differences from Loki (ranked) | **152**: 127 open, 15 documented, 7 owner-kept, 3 upstream |
+| Open differences visible in Grafana (registry impact) | **72 of 127**: 58 Explore, 13 Logs Drilldown, 1 Grafana datasource; 19 API only, 36 edge cases |
 
 **Readiness by client**
 

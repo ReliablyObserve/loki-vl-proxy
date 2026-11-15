@@ -1,0 +1,62 @@
+id: semantics/keep-drop-blank-name-prints-back
+title: "A keep or drop that lists only a blank Loki reads as a name (`| keep\\v`, `| drop\\u00a0`) prints as `| keep \\v`, and a range aggregation over such a keep is one series like Loki (fixed)"
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's lexer skips only a space, a tab, a line feed and a carriage return. Any other character Go reads as white
+  space (a vertical tab, a form feed, U+0085, U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F,
+  U+3000) is a name of its own. After `keep` or `drop` that character alone is a label name no stream has, and Loki
+  accepts the query: `{app="a"} | keep\v`, `{app="a"} | drop\u00a0 | json` and `rate({app="a"} | keep\f[1m])` are
+  200. Beside another name (`| keep\v\v`, `| keep\va`) it is `syntax error: unexpected IDENTIFIER`. Recorded with the
+  Loki oracle (test/oracle/loki check) on a grid of 4,046 queries: keep and drop, 23 followers, every such
+  character and 7 positions, plus the printed form of every query the proxy accepts. The proxy already accepted and
+  rejected exactly what Loki does, with Loki's text.
+
+  The proxy's parser leaves the blank out of the list, as the lists of `by`, `without` and `on` do, so the stage
+  had an empty list and printed `| keep `, which neither Loki nor the proxy parses. The keep rewriter of a range
+  aggregation (`rate(X | keep a [5m])` to `sum by (a) (...)`) printed the query it built, so `rate({app="a"} |
+  keep\v [1m])` became text that does not parse (the FuzzKeepSeriesGrouping input `rAte({}|keep\v[0y])`), and the
+  string translation of such a keep is a phrase search: the query answered 400 on the query route and no series on
+  query_range, where Loki answers one `{}` series, the sum of every stream (Loki's engine oracle, test/oracle/loki
+  engine).
+
+  Fixed: an empty list, which only such names give (a list holds at least one item), prints as one of them, a
+  vertical tab (`| keep \v`): any of them means the same to Loki. Every printed form parses to the same tree and Loki
+  accepts it (TestKeepDropBlankMatchesLoki, FuzzPrintReparse without its exclusion). The rewriter leaves out a keep that lists only a blank when it is the
+  pipeline's one keep and only line filters or decolorize follow it: under `sum by ()` the query means the same
+  without it, and Loki's engine gives both texts the same answer (102 recorded pairs,
+  TestKeepSeriesGrouping_BlankKeepListMatchesLokiEngine). Not changed: a blank keep that the rewriter does not
+  rewrite (a log query, an unwrap, a second keep or a label filter after it, a range JSON fold under count) keeps
+  the string translation. The query plan already lowers this case's query to one series (`| fields _time, _msg,
+  _stream | stats count()`), where the string translator writes a phrase search; the corpus row is listed in
+  internal/querycorpus/testdata/known-typed-divergences.json.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: "count_over_time({service_name=\"api-gateway\"} | keep\v [1m])"
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series_count, values]
+  expect: |
+    200 with one series `{}` holding the count of every stream's lines, as Loki answers.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: edge
+  effort: S
+  area: "internal/logql ast.go (dropKeepList); internal/proxy keep_series_grouping.go (withoutBlankKeep)"
+  loki: 'a blank Loki does not skip, alone after keep or drop, is a label name no stream has; the oracle accepts it, and its engine answers one {} series for a range aggregation over such a keep'
+  proxy: 'an empty list prints as a vertical tab; the keep rewriter folds the samples into one series and leaves out the keep where the query means the same without it'
+  planned_test: "TestKeepDropBlankMatchesLoki, TestKeepDropBlankPrintsBack, FuzzPrintReparse (internal/logql); TestKeepSeriesGrouping_BlankKeepListMatchesLokiEngine, TestKeepSeriesGrouping_BlankKeepListHandler, FuzzKeepSeriesGrouping (internal/proxy)"
+  visual: none
+  visual_reason: 'a crafted spelling no Grafana panel sends; found by the keep rewriter fuzz target'
+  clusters: []

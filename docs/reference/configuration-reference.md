@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (262), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (263), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -15,7 +15,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-cache-max-bytes` | int | `defaultCacheMaxBytes` | `extraArgs.cache-max-bytes` | Maximum in-memory L1 cache size in bytes |
 | `-cache-ttl` | duration | `1m0s` | `extraArgs.cache-ttl` | Cache TTL for label/metadata queries |
 | `-compat-cache-enabled` | bool | `true` | `extraArgs.compat-cache-enabled` | Enable the safe Tier0 compatibility-edge response cache for cacheable GET read endpoints |
-| `-compat-cache-max-percent` | int | `defaultCompatCachePercent` | `extraArgs.compat-cache-max-percent` | Additional Tier0 compatibility-edge cache budget as a percent of -cache-max-bytes (0 disables, max 50); does not reduce primary L1 |
+| `-compat-cache-max-percent` | int | `defaultCompatCachePercent` | `extraArgs.compat-cache-max-percent` | Additional Tier0 compatibility-edge cache budget as a percent of -cache-max-bytes (0 disables, max 50); does not reduce primary L1. One entry holds at most a tenth of this budget: a larger query, query_range or series answer is kept in primary L1 memory instead (up to a tenth of -cache-max-bytes), where it shares L1 with the other cached answers; such an answer stays on the replica that computed it (not on disk, not pushed to peers) |
 | `-disk-cache-codec` | string | `"s2"` | `extraArgs.disk-cache-codec` | Disk cache codec: s2, zstd, gzip or raw; new records identify their own codec |
 | `-disk-cache-compress` | bool | `true` | `extraArgs.disk-cache-compress` | Compress disk cache values using -disk-cache-codec; false writes raw records |
 | `-disk-cache-flush-bytes` | int64 | `4194304` | `extraArgs.disk-cache-flush-bytes` | Flush after this many queued bytes, including keys and queue overhead |
@@ -142,7 +142,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-backend-min-concurrent-metadata-scans` | int | `1` | `extraArgs.backend-min-concurrent-metadata-scans` | Floor of the adaptive limit on concurrent long-range VictoriaLogs metadata scans per replica: latency and failure feedback never shrink the limit below it, and below it a replica may start a scan while others' long work uses up to a quarter of VictoriaLogs' select slots. VictoriaLogs' full select slots, memory headroom and a silent /metrics still hold scans back. Must be &lt;= -backend-max-concurrent-metadata-scans; 0 uses the default |
 | `-binary-metric-max-arrays` | int | `2000000` | `extraArgs.binary-metric-max-arrays` | Maximum JSON arrays one binary metric expression may allocate while joining operands. 0 uses the built-in default of 2000000 |
 | `-binary-metric-max-operand-bytes` | int | `268435456` | `extraArgs.binary-metric-max-operand-bytes` | Maximum bytes of operand responses one binary metric expression may capture. 0 uses the built-in default of 256 MiB |
-| `-default-max-query-length` | duration | `0` | `extraArgs.default-max-query-length` | Default maximum query time range enforced for all tenants unless overridden by per-tenant limits (0 = unlimited, matches Loki default) |
+| `-default-max-query-length` | duration | `721h0m0s` | `extraArgs.default-max-query-length` | Loki's max_query_length for every tenant without a per-tenant limit: a query_range, series, labels, label values, detected labels, detected fields, detected field values, index stats or volume request whose range is longer fails with Loki's 400. The default is Loki's (721h, published as 30d1h); 0 turns the limit off |
 | `-detected-fields-max-scan-lines` | int | `2000` | `extraArgs.detected-fields-max-scan-lines` | Maximum log lines the detected_fields / detected_field values scan reads per request. 0 uses the built-in default of 2000 |
 | `-drilldown-max-stats-buckets` | int | `120` | `extraArgs.drilldown-max-stats-buckets` | Deprecated, no effect: Logs Drilldown breakdowns are answered on the requested step, as Loki answers them. Accepted so existing command lines keep working |
 | `-http-conn-max-age` | duration | `10m0s` | `extraArgs.http-conn-max-age` | Maximum lifetime for downstream HTTP/1.x keepalive connections before responding with Connection: close (0 disables) |
@@ -180,6 +180,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 
 | Flag | Type | Default | Helm value | Description |
 |---|---|---|---|---|
+| `-debug-vl-calls-header` | bool | `false` | `extraArgs.debug-vl-calls-header` | When true, every Loki read response carries X-Loki-VL-Backend-Calls, the VictoriaLogs calls the request started before its response headers were written (a lower bound for a streamed answer; background work is not counted), and X-Loki-VL-Cache-Result, the response cache result (hit, miss, or bypass when none was consulted), so a cache reuse check can attribute VictoriaLogs calls to one request. Default false: Loki sends neither header, and the count describes backend work. |
 | `-deployment-environment` | string | (empty) | `extraArgs.deployment-environment` | OpenTelemetry deployment.environment.name for logs and OTLP metrics |
 | `-host-proc-root` | string | `"/proc"` | `extraArgs.host-proc-root` | Filesystem root for host-scope /proc reads (stat, meminfo, pressure/&#123;cpu,memory,io&#125;). Set to /host/proc when running with the chart's surgical hostPath mounts. Defaults to /proc. |
 | `-log-buffered` | bool | `true` | `extraArgs.log-buffered` | Write logs in the background to avoid slowing down requests under high load |

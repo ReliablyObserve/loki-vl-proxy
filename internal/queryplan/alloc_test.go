@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unsafe"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
@@ -55,6 +56,68 @@ func TestBuildAllocLocks(t *testing.T) {
 				t.Errorf("AppendKey differs from Key")
 			}
 		})
+	}
+}
+
+// Resolve writes the first pipeline's semantics and the first rule into the plan's own memory: a plan of one log
+// query, alone or under a range and a vector aggregation, resolves with no allocation. A plan is sized for its kind:
+// a log query's holds a selector, a metric query's a selector, a range and a vector aggregation, each within the
+// allocator's size class (320 and 512 bytes), and a scalar's or vector(n)'s none.
+//
+// conformance: architecture-syntax-package-layering
+func TestResolveIntoThePlan(t *testing.T) {
+	if raceBuild() || testing.CoverMode() != "" {
+		t.Skip("the race detector and coverage change allocation counts")
+	}
+	for _, q := range []string{
+		`{app="x"} |= "e" | json | status>=500`, `{app="x"} | logfmt | drop __error__`,
+		`sum by (app) (rate({app="x"} | json [5m]))`, `{app="x"}`,
+	} {
+		e, err := logql.Parse(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := testing.AllocsPerRun(200, func() {
+			p, _ := Build(e, Inputs{})
+			Resolve(p)
+		})
+		if got > 2 {
+			t.Errorf("%q: Build and Resolve allocate %.0f, the lock is 2 (the plan and its key)", q, got)
+		}
+		p, _ := Build(e, Inputs{})
+		Resolve(p)
+		if sel := firstSelect(p.Root); sel == nil || sel.Sem != &p.ps {
+			t.Errorf("%q: the pipeline's semantics are not the plan's own", q)
+		}
+	}
+	// A second pipeline gets semantics of its own.
+	p := mustBuild(t, `sum(rate({a="x"} | json [5m])) / sum(rate({a="y"} | logfmt [5m]))`, Inputs{})
+	Resolve(p)
+	bin := p.Root.(*BinOp)
+	l, r := firstSelect(bin.L), firstSelect(bin.R.(*VectorAgg).In.(*RangeAgg).In)
+	if l.Sem == r.Sem || l.Sem.Parsers != 1 || r.Sem.Parsers != 1 || len(p.Sem.Rules) != 1 {
+		t.Errorf("two pipelines: %+v %+v rules %v", l.Sem, r.Sem, p.Sem.Rules)
+	}
+	if n := unsafe.Sizeof(logPlan{}); n > 320 {
+		t.Errorf("a log plan is %d bytes, past the 320-byte size class", n)
+	}
+	if n := unsafe.Sizeof(metricPlan{}); n > 512 {
+		t.Errorf("a metric plan is %d bytes, past the 512-byte size class", n)
+	}
+	for _, q := range []string{`vector(1)`, `3`} {
+		e, err := logql.Parse(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bytes := testing.Benchmark(func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_, _ = Build(e, Inputs{})
+			}
+		}).AllocedBytesPerOp()
+		if bytes > int64(unsafe.Sizeof(Plan{}))+64 {
+			t.Errorf("%q: Build allocates %d bytes, more than a bare plan and its key", q, bytes)
+		}
 	}
 }
 

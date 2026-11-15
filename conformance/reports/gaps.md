@@ -66,7 +66,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 
 | Track | Item | Cases named | Wired | State |
 |---|---|---:|---:|---|
-| architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 90 | unknown |
+| architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 99 | unknown |
 | limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 15 | 8 | proven |
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 11 | 10 | proven |
 | semantics | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | 6 | 1 | unknown |
@@ -80,7 +80,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 14 | 7 | partial |
 | identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 37 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 1 | gap |
-| observability | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | 6 | 3 | unknown |
+| observability | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | 6 | 5 | unknown |
 | observability | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | 8 | 4 | unknown |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 11 | proven |
 | identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 6 | 5 | partial |
@@ -103,7 +103,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `tenant-auth-follows-loki` — X-Scope-OrgID is admitted and refused as Loki does, before any cache or VictoriaLogs call | 4 | 5 | proven |
 | semantics | `tenant-label-isolation` — Tenant-label mode confines every request to its org | 4 | 4 | proven |
 | semantics | `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | 4 | 13 | proven |
-| limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 3 | proven |
+| limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 16 | 6 | proven |
 | semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 11 | 30 | partial |
 
 ## LogQL surface (v3.7.7)

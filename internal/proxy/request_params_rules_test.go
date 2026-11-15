@@ -164,7 +164,7 @@ var paramColumns = map[paramCheck][]string{
 	ckSince: {"since"}, ckEnd: {"end"}, ckStart: {"start"}, ckTime: {"time"},
 	ckLimitPositive: {"limit"}, ckLimitSigned: {"limit"}, ckDirection: {"direction"},
 	ckStep: {"step"}, ckInterval: {"interval"}, ckAggregateBy: {"aggregateBy"}, ckDelayFor: {"delay_for"},
-	ckEndAfterStart: {"end"}, ckResolution: {"step"}, ckLength: {"start"},
+	ckEndAfterStart: {"end"}, ckResolution: {"step"}, ckLength: {"start"}, ckLengthSeconds: {"start"},
 }
 
 // TestEveryParamCheckIsRecorded: a route checks a parameter only where a
@@ -218,7 +218,7 @@ func TestEveryParamCheckIsRecorded(t *testing.T) {
 type requestParamModel struct {
 	since, end, start, limit, direction, step, interval, aggregateBy, delayFor, timeParam bool
 	limitLeast                                                                            int
-	endBefore, resolution, length                                                         bool
+	endBefore, resolution, length, lengthSeconds                                          bool
 }
 
 var requestParamModels = map[string]requestParamModel{
@@ -229,8 +229,8 @@ var requestParamModels = map[string]requestParamModel{
 	"series":                {since: true, end: true, start: true, length: true},
 	"detected_labels":       {end: true, start: true, length: true},
 	"index_stats":           {since: true, end: true, start: true, endBefore: true, length: true},
-	"volume":                {since: true, end: true, start: true, limit: true, limitLeast: 0, aggregateBy: true, endBefore: true, length: true},
-	"volume_range":          {since: true, end: true, start: true, limit: true, limitLeast: 0, aggregateBy: true, step: true, endBefore: true, resolution: true, length: true},
+	"volume":                {since: true, end: true, start: true, limit: true, limitLeast: 0, aggregateBy: true, endBefore: true, length: true, lengthSeconds: true},
+	"volume_range":          {since: true, end: true, start: true, limit: true, limitLeast: 0, aggregateBy: true, step: true, endBefore: true, resolution: true},
 	"patterns":              {since: true, end: true, start: true, step: true, resolution: true},
 	"detected_fields":       {since: true, end: true, start: true, limit: true, limitLeast: 1, step: true, endBefore: true, length: true},
 	"detected_field_values": {end: true, start: true, limit: true, limitLeast: 1, length: true},
@@ -427,12 +427,25 @@ func (m requestParamModel) rejectedBy(v map[string]string, now time.Time, maxLen
 		out["step-too-many-points"] = true
 	}
 	if m.length && maxLen > 0 && end.Cmp(start) > 0 {
-		ms := new(big.Int).Quo(new(big.Int).Sub(floorMillis(end), floorMillis(start)), big.NewInt(1))
+		floor := floorMillis
+		if m.lengthSeconds {
+			floor = floorSeconds
+		}
+		ms := new(big.Int).Sub(floor(end), floor(start))
 		if ms.Cmp(big.NewInt(int64(maxLen/time.Millisecond))) > 0 {
 			out["limit-query-length"] = true
 		}
 	}
 	return out
+}
+
+// floorSeconds is a time in nanoseconds in whole seconds, as milliseconds.
+func floorSeconds(ns *big.Int) *big.Int {
+	q, r := new(big.Int).QuoRem(ns, big.NewInt(1e9), new(big.Int))
+	if r.Sign() < 0 {
+		q.Sub(q, big.NewInt(1))
+	}
+	return q.Mul(q, big.NewInt(1000))
 }
 
 // floorMillis is a time in nanoseconds in whole milliseconds, rounded down.
@@ -449,13 +462,14 @@ var (
 	fuzzParamProxy     *Proxy
 )
 
-// paramTestProxy is a proxy whose limits the checks read: max_query_length of
-// Loki's recorded stack (30d1h), no lookback.
+// paramTestProxy is a proxy whose limits the checks read: the shipped
+// -default-max-query-length (Loki's default 30d1h, the recorded stack's), no
+// lookback.
 func paramTestProxy(tb testing.TB) *Proxy {
 	tb.Helper()
 	fuzzParamProxyOnce.Do(func() {
 		c := cache.New(time.Minute, 100)
-		p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: c, LogLevel: "error", DefaultMaxQueryLength: 721 * time.Hour})
+		p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: c, LogLevel: "error", DefaultMaxQueryLength: DefaultMaxQueryLength})
 		if err != nil {
 			panic(err)
 		}
@@ -485,7 +499,7 @@ func checkParamRequest(p *Proxy, route string, v map[string]string) error {
 		}
 		return nil
 	}
-	want := model.rejectedBy(v, now, 721*time.Hour)
+	want := model.rejectedBy(v, now, DefaultMaxQueryLength)
 	switch {
 	case got == nil && len(want) > 0:
 		return fmt.Errorf("%s %q: accepted; the model rejects it with %v", route, v, want)

@@ -411,7 +411,7 @@ Switch `-metadata-field-mode` to `hybrid` if you also need OTel correlation (tra
 | `-metadata-edge-refresh-budget` | — | `100ms` | How long such a request waits for its edge refresh before it gets the last answer. An idle VictoriaLogs answers in 5-40 ms (exact answers). Under heavy load the edge listing took 0.35-2.6 s; this budget turns those waits into answers bounded by `-metadata-max-staleness`. `0` serves the last answer at once whenever one is within the bound. |
 | `-labels-cache-warm` | — | `true` | Warm the labels cache for the 1h, 6h, 24h and 7d time-picker presets at startup and keep them warm in the background (every 75% of `-labels-cache-ttl`). Each refresh is a label-name scan of up to 7 days in VictoriaLogs, per replica. Set `false` on replicas that serve no interactive label pickers (batch/API-only replicas, test variants): label requests are still cached and answered, only the proactive scans stop. |
 | `-compat-cache-enabled` | — | `true` | Enable the Tier0 compatibility-edge response cache for safe GET read endpoints |
-| `-compat-cache-max-percent` | — | `10` | Additional Tier0 budget as a percent of `-cache-max-bytes` (`0` disables, max `50`); does not reduce primary L1 |
+| `-compat-cache-max-percent` | — | `10` | Additional Tier0 budget as a percent of `-cache-max-bytes` (`0` disables, max `50`); does not reduce primary L1. One Tier0 entry holds at most a tenth of this budget; a larger `query`, `query_range` or `series` answer is kept in primary L1 memory instead (up to a tenth of `-cache-max-bytes`), where it shares L1 with the other cached answers; such an answer stays on the replica that computed it (not on disk, not pushed to peers) |
 
 ### Tier0 Compatibility-Edge Cache
 
@@ -475,11 +475,11 @@ Route queries for old data to a separate cold backend (e.g. Victoria Lakehouse o
 
 ## Query Length Limits
 
-The proxy can enforce a maximum query time range, matching Loki's `max_query_length` behavior.
+The proxy enforces a maximum query time range, Loki's `max_query_length`, with Loki's default of `721h` (published as `30d1h`).
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
-| `-default-max-query-length` | — | `0` | Default maximum query time range enforced for all tenants unless overridden by tenant limits. `0` disables the limit (unlimited, matching Loki's default). Uses Go duration syntax (`h`, `m`, `s`; there is no `d` unit), for example `720h`. |
+| `-default-max-query-length` | — | `721h` | Maximum query time range enforced for all tenants unless overridden by tenant limits. The default is Loki's `max_query_length` default; `0` disables the limit. Uses Go duration syntax (`h`, `m`, `s`; there is no `d` unit), for example `2160h`. |
 
 ### Precedence
 
@@ -487,12 +487,13 @@ When multiple limits are configured, the most specific takes effect:
 
 1. **Per-tenant** — `max_query_length` for the tenant in `-tenant-limits` (highest priority)
 2. **Tenant defaults** — `max_query_length` in `-tenant-default-limits`
-3. **Global flag** — `-default-max-query-length`
-4. **No limit** — when all of the above are `0` or unset
+3. **Global flag** — `-default-max-query-length` (`721h`, Loki's default, unless set)
+4. **No limit** — when the value that applies is `0`
 
 ### Behavior
 
 - Enforced, as in Loki's limits middleware, on `query_range`, `series`, `labels`, label values, `detected_labels` and `index/stats` requests
+- `index/volume` rounds its `start` and `end` down to whole seconds before the check, as Loki does, so it reports the length in whole seconds (`721h0m1s`) and runs a range that is over only in its fraction; `index/volume_range` is not length-limited, as in Loki (only its 11,000-point resolution bounds it)
 - Independently of this flag, `query_range` requests where `(end - start) / step` exceeds 11,000 (integer division, as in Loki) return HTTP 400 with `exceeded maximum resolution of 11,000 points per time series. Try increasing the value of the step parameter` before any backend call, for log and metric queries alike
 - Applied after LogQL offset extraction (the enforced range reflects any `offset` modifier in the query)
 - Tenant-limit values accept Loki duration units, including `d`, `w` and `y` (for example `"90d"`); the global flag does not
@@ -503,14 +504,13 @@ When multiple limits are configured, the most specific takes effect:
 ### Examples
 
 ```bash
-# Limit all queries to 30 days by default
-loki-vl-proxy -default-max-query-length=720h
+# Loki's default: ranges up to 721h (30d1h), as with no flag set
+loki-vl-proxy -default-max-query-length=721h
 
 # Allow a specific tenant to query further back (tenant limits accept Loki units such as d)
-loki-vl-proxy -default-max-query-length=720h \
-  -tenant-limits='{"team-a":{"max_query_length":"90d"}}'
+loki-vl-proxy -tenant-limits='{"team-a":{"max_query_length":"90d"}}'
 
-# No global limit (default — operator manages limits via per-tenant config)
+# No global limit (operator manages limits via per-tenant config)
 loki-vl-proxy -default-max-query-length=0
 ```
 
@@ -671,7 +671,7 @@ Both publish the tenant's own limits, and the Loki query limits among them are t
 |---|---|---|---|
 | `max_query_series` | `-max-stats-query-series` | `500` / `500` | every metric route, range and instant: `400` `maximum number of series (N) reached for a single query; ...`, or for Logs Drilldown the busiest N series with Loki's partial-result warning |
 | `max_entries_limit_per_query` | `-max-entries-limit-per-query` | `5000` / `10000` | log queries: `400` `max entries limit per query exceeded, limit > max_entries_limit_per_query (L > N)` (`-max-entries-limit-per-query-cap` lowers the limit instead); `0` is unlimited |
-| `max_query_length` | `-default-max-query-length` | `721h` / `0` (unlimited) | query_range, series, labels, label values, detected labels, index stats: `400` `the query time range exceeds the limit (query length: X, limit: Y)` |
+| `max_query_length` | `-default-max-query-length` | `721h` / `721h` | query_range, series, labels, label values, detected labels, index stats: `400` `the query time range exceeds the limit (query length: X, limit: Y)` |
 | `max_query_lookback` | — | `0` / `0` | the same requests (an instant query only when it is a metric query, as Loki's frontend sends instant log queries past its limits): a start before now - lookback is moved to it; a request ending before it is answered empty without running |
 | `max_query_range` | — | `0` / `0` | metric queries: `400` `[interval] value exceeds limit: [R] > [M]` for a longer range selector |
 | `query_timeout` | `-backend-timeout` | `1m` / `2m` | set in a tenant limit, the requests Loki bounds by it (query, query_range, series, labels, label values, index stats, volume) run under it, never a live tail (`504` when it expires); it may not exceed `-backend-timeout`, which still bounds each VictoriaLogs call. Without one, `-backend-timeout` is the published value |
@@ -944,6 +944,7 @@ Each takes `0` to mean "use the built-in default", so a configuration that sets 
 | `-log-user-header` | — | — | Header naming the end user who ran a query (`X-Grafana-User` with Grafana's `[dataproxy] send_user_header = true`): `enduser.id` on the `request`, `upstream_request`, `slow_request` and `slow_upstream_request` lines and the user in `/debug/queries`. Logs and the admin view only: never a metric label, never sent to VictoriaLogs, never part of a cache key. Client-sent and spoofable: restrict it with `-log-user-header-trusted-cidrs`. See [Who is loading the proxy or VictoriaLogs](observability.md#who-is-loading-the-proxy-or-victorialogs). |
 | `-log-user-header-trusted-cidrs` | — | — | Comma-separated CIDRs or addresses of the TCP peers (Grafana, or the load balancer in front of the proxy) allowed to name the user through `-log-user-header`; a request from any other peer is logged under its tenant. Matches the connection's address, never `X-Forwarded-For`. Empty trusts every peer. An invalid value fails startup. |
 | `-debug-log-raw-queries` | — | `false` | Include raw LogQL/LogsQL strings and backend query params in `debug`-level logs. By default each query is logged as `sha256:<8hex>+len=<n>` to keep PII out of operator log pipelines. Set to `true` only for ad-hoc investigation; INFO-level access logs are unaffected. |
+| `-debug-vl-calls-header` | — | `false` | Add `X-Loki-VL-Backend-Calls` and `X-Loki-VL-Cache-Result` to every read response: the VictoriaLogs calls the request started before its response headers were written (a lower bound for a streamed answer; background work and other requests are not counted) and the response cache result (`hit`, `miss`, or `bypass` when none was consulted). For cache reuse checks, where process-wide metrics also count other clients. Loki sends neither header, so leave it off for clients. |
 | `-slow-query-threshold` | — | `3s` | A client request taking at least this long is counted in `loki_vl_proxy_slow_requests_total{system="loki"}` and logged at `WARN` as `slow_request` with its LogQL and its steps (each VictoriaLogs call with its LogsQL, window, status, bytes and time; each proxy-side operation and route decision; each rewrite), whatever the request-log sampling. Live tail is exempt. Default: the 99th percentile of the weekly A/B benchmark's cold first loads. `0` turns it off. |
 | `-slow-upstream-threshold` | — | `2s` | One VictoriaLogs call taking at least this long to the end of its body is counted in `loki_vl_proxy_slow_requests_total{system="vl"}` and logged at `WARN` as `slow_upstream_request` with its LogsQL, window, bytes and the client route it served. Default: rarer than 1 in 50 VictoriaLogs calls on the compose stack (98th percentile over 24h of heavy Drilldown use, timed to headers; above the 99.9th timed to the end of their bodies). `0` turns it off. |
 | `-slow-query-log-raw-queries` | — | `true` | Slow lines carry the LogQL and LogsQL text, capped at 8 KB each; `false` carries their sha256 and length, as debug logs do without `-debug-log-raw-queries`. |

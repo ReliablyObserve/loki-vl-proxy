@@ -17,7 +17,7 @@ Ranked by which clients depend on it.
 | Item | Consumers | Cases written / named | Tests | Why |
 |---|---|---:|---:|---|
 | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | — | 0 / 6 | 0 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
-| `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | — | 8 / 11 | 20 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
+| `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | — | 8 / 11 | 21 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | — | 0 / 5 | 1 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 
 ## In progress
@@ -63,7 +63,7 @@ Held by at least one test that declares it.
 | `tenant-auth-follows-loki` — X-Scope-OrgID is admitted and refused as Loki does, before any cache or VictoriaLogs call | — | 1 / 1 | 5 | internal/proxy/tenant_auth_parity_test.go replays 664 requests recorded from Loki 3.7.9 with auth_enabled: true (13 read |
 | `tenant-label-isolation` — Tenant-label mode confines every request to its org | — | 1 / 1 | 4 | Unit tested in internal/proxy/multitenant_tenant_label_test.go: a table over twelve routes (query, range, labels, label  |
 | `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | — | 1 / 1 | 13 | Unit tested in internal/proxy/tenant_routing_test.go: a table over five routing configurations (default, strict, strict  |
-| `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | — | 9 / 9 | 4 | internal/proxy/tenant_query_limits_test.go resolves every enforced limit through each configuration layer and tenant, co |
+| `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | — | 12 / 12 | 7 | internal/proxy/tenant_query_limits_test.go resolves every enforced limit through each configuration layer and tenant, co |
 
 ## No state recorded
 
@@ -71,10 +71,10 @@ No file under `conformance/registry/state/` gives these a state yet.
 
 | Item | Consumers | Cases written / named | Tests | Why |
 |---|---|---:|---:|---|
-| `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 90 | — |
+| `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 99 | — |
 | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | — | 0 / 0 | 1 | — |
 | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 4 | — |
-| `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 3 | — |
+| `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 5 | — |
 | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | — | 0 / 0 | 4 | — |
 | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | — | 0 / 0 | 8 | — |
 | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | — | 0 / 0 | 2 | — |

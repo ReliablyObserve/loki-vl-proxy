@@ -113,7 +113,7 @@ extraArgs:
   # query-range-partial-responses: "false"             # return partial response on retryable backend failures
   # query-range-background-warm: "true"                # continue warming failed windows in background
   # query-range-background-warm-max-windows: "24"      # cap background warm fanout
-  # default-max-query-length: "0"                      # max query time range for all tenants (0 = unlimited; per-tenant limits override)
+  # default-max-query-length: "721h"                   # max query time range for all tenants: Loki's max_query_length default (0 = unlimited; per-tenant limits override)
   # max-stats-query-series: "500"                       # max series a metric query may return (count_over_time, rate, bytes_rate); 0 = built-in default of 500, Loki's own max_query_series default; above it the query fails with Loki's HTTP 400 "maximum number of series (N) reached for a single query" (Logs Drilldown gets a partial result with a warning)
   # stats-query-range-concurrency: "4"                  # max concurrent stats_query_range calls to VL; higher = more VL CPU pressure; 0 = built-in default of 4
   # drilldown-burst-window-ms: "50"
@@ -235,6 +235,7 @@ extraArgs:
   # log-stats-interval: "10s"       # how often to print a request statistics summary
   # log-rate-threshold: "10"        # above this req/s, replace per-request logs with periodic summaries
   # debug-log-raw-queries: "false"  # when true, debug logs include raw LogQL/LogsQL and backend params verbatim (default false: redacted to sha256+len)
+  # debug-vl-calls-header: "false"  # when true, read responses carry X-Loki-VL-Backend-Calls (VictoriaLogs calls the request started) and X-Loki-VL-Cache-Result, for cache reuse checks; Loki sends neither
   # slow-query-threshold: "3s"        # client requests at or over this are counted and logged (slow_request) with their LogQL, LogsQL and steps; "0" off
   # slow-upstream-threshold: "2s"     # one VictoriaLogs call at or over this (to the end of its body) is counted and logged (slow_upstream_request); "0" off
   # slow-query-log-raw-queries: "true" # "false": slow lines carry the queries' sha256 and length instead of their text

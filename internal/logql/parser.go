@@ -53,6 +53,18 @@ func Parse(input string) (Expr, error) {
 	return expr, err
 }
 
+// ParseUntypedTemplates is Parse that leaves every line_format template untyped (LineFormatStage.Tmpl nil): for a
+// caller that reads a stage's template text and never its typed form, nor a plan key built from it. It saves the
+// text/template parse of a template no query sent before (tens of allocations), which a reader of the text does not
+// need. Every other node is Parse's.
+func ParseUntypedTemplates(input string) (Expr, error) {
+	expr, unknown, _, err := parseExpressionOpts(input, true)
+	if err == nil && unknown != nil {
+		return nil, unknown
+	}
+	return expr, err
+}
+
 // parseExpression is Parse that reports a query whose names hold a character Loki's lexer reads as an identifier
 // of its own (a label called ٣ or €) apart: Loki accepts such a name, but the translation to LogsQL does not carry
 // it, so the proxy turns the query away. The error comes after the semantic checks, which have Loki's own errors
@@ -62,13 +74,18 @@ func Parse(input string) (Expr, error) {
 // otherwise. Parse accepts such a log query (Grafana's metric builder sends `| unwrap [1s]` stubs, which the handlers
 // drop before they validate), and the validation answers it ahead of every other check, as Loki's parser does.
 func parseExpression(input string) (expr Expr, unknown, plainUnwrap *ParseError, err error) {
+	return parseExpressionOpts(input, false)
+}
+
+// parseExpressionOpts is parseExpression; untypedTemplates leaves the line_format templates untyped.
+func parseExpressionOpts(input string, untypedTemplates bool) (expr Expr, unknown, plainUnwrap *ParseError, err error) {
 	querycorpus.Record(querycorpus.LogQL, input)
 	// Loki rejects a query this long before lexing it; doing the same bounds how deep a query can nest, and so
 	// the recursion of every parse, for whatever query length the handlers accept.
 	if msg := InputSizeError(input); msg != "" {
 		return nil, nil, nil, &ParseError{Msg: msg}
 	}
-	p := &parser{sc: newScanner(input)}
+	p := &parser{sc: newScanner(input), untypedTemplates: untypedTemplates}
 	p.advance()
 	expr, err = p.parseExpr()
 	if err == nil && p.cur.Typ != TokEOF {
@@ -167,7 +184,7 @@ var opaqueMetricFunctions = map[string]bool{"label_replace": true, "vector": tru
 // labelReplaceExpr, vectorExpr). Any other call, or one that does not read so,
 // keeps only its text; validation reports why.
 func typeOpaqueCall(o *OpaqueMetricExpr) {
-	p := &parser{sc: &scanner{src: o.Raw, quiet: true}}
+	p := &parser{sc: scanner{src: o.Raw, quiet: true}}
 	p.advance()
 	if p.cur.Typ != TokIdent || p.cur.Val != o.Func {
 		return
@@ -233,7 +250,7 @@ var rangeOps = map[string]RangeOp{
 }
 
 type parser struct {
-	sc  *scanner
+	sc  scanner
 	cur Token
 	// prevEnd is the byte offset where the token before cur ends.
 	prevEnd int
@@ -263,6 +280,8 @@ type parser struct {
 	checkedLogQueries     [2]*LogQuery
 	moreCheckedLogQueries []*LogQuery
 	checkedLogQueryCount  int
+	// untypedTemplates leaves line_format templates untyped (ParseUntypedTemplates).
+	untypedTemplates bool
 }
 
 // keep marks as read over the characters that start no token between offset start and the current token: the tokens
@@ -638,12 +657,16 @@ func (p *parser) parseLabelList() ([]string, error) {
 func (p *parser) parseLogQuery() (*LogQuery, error) {
 	start := p.pos()
 	p.afterUnwrap = false
-	sel, err := p.parseStreamSelector()
-	if err != nil {
+	mem := new(logQueryMem)
+	if err := p.parseStreamSelector(&mem.sel, mem.matcher[:0]); err != nil {
 		return nil, err
 	}
 
-	lq := &LogQuery{Selector: sel}
+	lq := &mem.lq
+	lq.Selector = &mem.sel
+	if n := stagesAhead(p.sc.src[p.pos():]); n > 0 {
+		lq.Pipeline = make([]Stage, 0, n)
+	}
 	if prev := p.curLogQuery; prev != nil && mayFailWhileParsed(prev.Pipeline) {
 		if p.checkedLogQueryCount < len(p.checkedLogQueries) {
 			p.checkedLogQueries[p.checkedLogQueryCount] = prev
@@ -671,17 +694,53 @@ func (p *parser) parseLogQuery() (*LogQuery, error) {
 	return lq, nil
 }
 
-// parseStreamSelector parses {label="value",...}.
-func (p *parser) parseStreamSelector() (*StreamSelector, error) {
-	if _, err := p.expect(TokLBrace); err != nil {
-		return nil, err
-	}
+// logQueryMem is a log query, its selector and room for the selector's first matcher: the one allocation the head
+// of a log query costs.
+type logQueryMem struct {
+	lq      LogQuery
+	sel     StreamSelector
+	matcher [1]LabelMatcher
+}
 
-	sel := &StreamSelector{}
+// stagesAhead is the number of pipeline stages the text of a log query after its selector seems to hold, at most
+// maxStagesAhead: its pipes and its line filters that start with a !, outside quoted strings, up to the first [ (a
+// range ends the log query). The pipeline is sized with it, so that a query costs one allocation for it, not one per
+// doubling; a count that misses a stage only costs a doubling.
+func stagesAhead(src string) int {
+	n := 0
+	for i := 0; i < len(src) && n < maxStagesAhead; i++ {
+		switch c := src[i]; c {
+		case '|':
+			n++
+		case '!':
+			if i+1 < len(src) && (src[i+1] == '=' || src[i+1] == '~' || src[i+1] == '>') {
+				n++
+			}
+		case '[':
+			return n
+		case '"', '`':
+			for i++; i < len(src) && src[i] != c; i++ {
+				if c == '"' && src[i] == '\\' {
+					i++
+				}
+			}
+		}
+	}
+	return n
+}
+
+// maxStagesAhead bounds the room stagesAhead gives a pipeline.
+const maxStagesAhead = 16
+
+// parseStreamSelector parses {label="value",...} into sel; room is where its matchers go while they fit.
+func (p *parser) parseStreamSelector(sel *StreamSelector, room []LabelMatcher) error {
+	if _, err := p.expect(TokLBrace); err != nil {
+		return err
+	}
 
 	if p.cur.Typ == TokRBrace {
 		p.advance()
-		return sel, nil
+		return nil
 	}
 
 	for {
@@ -690,7 +749,7 @@ func (p *parser) parseStreamSelector() (*StreamSelector, error) {
 			if len(sel.Matchers) == 0 {
 				expecting = "IDENTIFIER or }"
 			}
-			return nil, p.syntaxErrorAt(expecting)
+			return p.syntaxErrorAt(expecting)
 		}
 		expecting := "IDENTIFIER"
 		if len(sel.Matchers) == 0 {
@@ -698,7 +757,10 @@ func (p *parser) parseStreamSelector() (*StreamSelector, error) {
 		}
 		m, err := p.parseLabelMatcher(expecting)
 		if err != nil {
-			return nil, err
+			return err
+		}
+		if sel.Matchers == nil {
+			sel.Matchers = room
 		}
 		sel.Matchers = append(sel.Matchers, m)
 
@@ -710,11 +772,11 @@ func (p *parser) parseStreamSelector() (*StreamSelector, error) {
 	}
 
 	if p.cur.Typ != TokRBrace {
-		return nil, p.syntaxErrorAt("} or ,")
+		return p.syntaxErrorAt("} or ,")
 	}
 	p.advance()
 
-	return sel, nil
+	return nil
 }
 
 // parseLabelMatcher parses one matcher of a stream selector; expecting is what Loki names as the alternatives to
@@ -903,7 +965,7 @@ func (p *parser) parsePipeBody() (Stage, error) {
 			return nil, err
 		}
 		stage := &LineFormatStage{Template: val}
-		if p.canon == nil {
+		if p.canon == nil && !p.untypedTemplates {
 			stage.Tmpl = typeLineTemplate(val)
 		}
 		return stage, nil
@@ -1694,7 +1756,7 @@ func isLabelFilterOperator(t TokType) bool {
 // checks its syntax the way Loki's parser does.
 func (p *parser) parseLabelFilterStage(start int, kw string, prev TokType) (Stage, error) {
 	known := p.sc.lexErrCount()
-	saved := *p.sc
+	saved := p.sc
 	raw := p.consumeRestOfStage(kw, prev)
 	// The filter lexer reads the text of the stage: the errors of the scanner inside it are not Loki's.
 	if curStart := int(p.sc.start); known == 0 && p.sc.lexErrCount() > 0 && int(p.sc.extra.err.off) < curStart {
@@ -1707,7 +1769,7 @@ func (p *parser) parseLabelFilterStage(start int, kw string, prev TokType) (Stag
 	expr, end, serr := scanLabelFilter(text, p.pipePos-start, true)
 	if serr == nil && end < len(text) {
 		// A binary operator of the query follows the filter: the query goes on from there.
-		*p.sc = saved
+		p.sc = saved
 		p.sc.dropLexErr(known)
 		p.sc.pos = start + end
 		p.sc.inRange = false
@@ -1758,13 +1820,13 @@ func (p *parser) appendStageToken(b *strings.Builder) {
 	touches := p.prevEnd == p.pos()
 	start := p.pos()
 	tok := p.advance()
-	raw := tokenRaw(tok)
+	raw := p.stageTokenRaw(tok, start)
 	if tok.Typ == TokError && !utf8.ValidString(p.sc.src[start:p.prevEnd]) {
 		raw = p.sc.src[start:p.prevEnd] // not the replacement character the scanner reads an invalid byte as
 	}
 	if b.Len() > 0 && raw != "" && isAlphanumeric(raw[0]) {
 		prev := b.String()[b.Len()-1]
-		if ((isAlphanumeric(prev) || prev == '.' || prev >= 0x80 || signedZero(prev, raw)) && !touches) || prev == '"' || prev == '`' {
+		if ((isAlphanumeric(prev) || prev == '.' || prev >= 0x80 || signedZero(prev, tok, raw)) && !touches) || prev == '"' || prev == '`' {
 			b.WriteByte(' ')
 		}
 	} else if p.opaqueText && raw != "" && raw[0] == '.' && !touches && b.Len() > 0 {
@@ -1775,10 +1837,17 @@ func (p *parser) appendStageToken(b *strings.Builder) {
 	b.WriteString(raw)
 }
 
-// signedZero reports a minus followed by the number 0: written together (`-0`), Loki's lexer reads them as a
-// duration (Go's time.ParseDuration takes a 0 without a unit), so a minus and a 0 that stand apart (`- 0`, the
-// number) are written apart.
-func signedZero(prev byte, raw string) bool { return prev == '-' && raw == "0" }
+// signedZero reports a minus followed by the number 0, or by a number that starts with a 0 and a letter or `_`
+// (`0x1F`, `0X0`, `0o7`, `0e1`, `0_1`): written together (`-0`), Loki's lexer reads them as a duration (Go's
+// time.ParseDuration takes a 0 without a unit), and with a letter after it `-0X0` is no query Loki accepts (Loki's
+// recorded answers, testdata/label_filter_number_literals_loki.jsonl.gz), so a minus and such a number that stand
+// apart (`- 0X0`, the number) are written apart.
+func signedZero(prev byte, tok Token, raw string) bool {
+	if prev != '-' || tok.Typ != TokNumber || raw == "" || raw[0] != '0' {
+		return false
+	}
+	return len(raw) == 1 || raw[1] == '_' || raw[1]|0x20 >= 'a' && raw[1]|0x20 <= 'z'
+}
 
 // isAlphanumeric reports whether c is a letter, digit, or underscore —
 // characters that must be separated by whitespace from adjacent word tokens.
@@ -1787,6 +1856,15 @@ func isAlphanumeric(c byte) bool {
 }
 
 // tokenRaw reconstructs the approximate source text for a token.
+// stageTokenRaw is tokenRaw of the token just read, which starts at start: a double-quoted string spelled the way
+// strconv.Quote spells its value (not Token.Escaped) is its own text, with no copy.
+func (p *parser) stageTokenRaw(tok Token, start int) string {
+	if tok.Typ == TokString && !tok.Escaped {
+		return p.sc.src[start:p.prevEnd]
+	}
+	return tokenRaw(tok)
+}
+
 func tokenRaw(tok Token) string {
 	switch tok.Typ {
 	case TokString:
@@ -2049,9 +2127,8 @@ func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 // → "parse error at line 1, col 15: syntax error: unexpected SUM, expecting
 // NUMBER or { or (". The probe runs on a scanner copy and consumes nothing.
 func (p *parser) checkRangeAggregationArgument(numberAllowed bool) error {
-	sc := *p.sc
-	sc.quiet = true
-	probe := parser{sc: &sc, cur: p.cur}
+	probe := parser{sc: p.sc, cur: p.cur}
+	probe.sc.quiet = true
 	expecting := "{ or ("
 	if numberAllowed {
 		expecting = "NUMBER or { or ("
@@ -2070,7 +2147,7 @@ func (p *parser) checkRangeAggregationArgument(numberAllowed bool) error {
 	case TokIdent, TokNumber:
 		return p.errorMsgAt(probe.pos(), msg, false)
 	case TokDurationLit, TokBytes:
-		return newParseError(0, sc.pos-len(probe.cur.Val)+1, msg)
+		return newParseError(0, probe.sc.pos-len(probe.cur.Val)+1, msg)
 	}
 	return newParseError(0, 0, msg)
 }

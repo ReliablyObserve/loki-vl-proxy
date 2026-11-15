@@ -39,6 +39,7 @@ EXEMPTIONS = {
     "TestPerf_CacheEffect": "manual latency harness; performance is measured by perf-smoke/A-B",
     "TestPerf_Summary": "manual latency harness; performance is measured by perf-smoke/A-B",
     "TestParityLatency": "manual A-B benchmark; uses separate output and timing budgets",
+    "TestDefaultMaxQueryLengthLikeLoki": "written, not yet run on a stack; wire it into the core group and drop this entry once it has",
 }
 
 
