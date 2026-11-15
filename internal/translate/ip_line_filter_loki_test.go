@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -49,6 +50,19 @@ func ipLineCases() []ipLineCase {
 	grid(v4Patterns, v4, []string{"..", "...", "0..", "1..", "a..", "f..", ":..", "1.2..", "1. ."})
 	// A colon in front of an IPv4 address after a hex digit, a letter or another colon.
 	grid(v4Patterns, v4, []string{"0:", "1:", "a:", "f:", "g:", "z:", "0::", "a::", "1:2:"})
+	// Where the walk starts depends on the runs before the address (semantics/ip-filter-ipv4-after-hex-colon): a
+	// digit and a colon before a one-digit first octet, hex digits before a colon, a run a letter or a colon ends.
+	grid([]string{"1.2.3.0/27", "9.0.0.0-100.255.255.255", "0.0.0.0/0"},
+		[]string{"1.2.3.0", "1.2.3.4", "1.2.3.31", "1.2.3.32", "9.0.0.1", "100.255.255.255", "101.0.0.1", "12.2.3.4", "123.0.0.1", "01.2.3.4"},
+		[]string{"X0:", "0:", "a0:", "00:", "0a:", "1.0:", "1:a", "1:1.", "1:a.", "1::", "1a:", "11:", "111:", "a1:", "1:1",
+			"1.2a", "1.2:", ":1:", "::", ":::", "x:1:", "1:.", "0a:.", "1a.", "a1.", "aaaa", "aaaa0:", "g0:", "Z1:"})
+	// Random lines of the pieces the walk tells apart, with no fixed text around them.
+	rng := rand.New(rand.NewSource(1))
+	for _, p := range ipv4WalkPatterns {
+		for i := 0; i < 400; i++ {
+			out = append(out, ipLineCase{pattern: p, line: randomIPv4Line(rng, ipv4WalkAddrs)})
+		}
+	}
 	return out
 }
 
@@ -122,7 +136,7 @@ const ipv6KnownDifferences = 2764
 // Loki's ip() line filter keeps it: every IPv4 line of the grid, and the IPv6 lines up to ipv6KnownDifferences.
 // Loki's answers are recorded with the Loki oracle (LVP_RUN_ORACLES=1 records them again).
 //
-// conformance: semantics/ip-line-filter-ipv4-like-loki, semantics/ip-filter-precision, semantics/ip-filter-ipv4-after-dot-run
+// conformance: semantics/ip-line-filter-ipv4-like-loki, semantics/ip-filter-precision, semantics/ip-filter-ipv4-after-dot-run, semantics/ip-filter-ipv4-after-hex-colon
 func TestIPLineFilterMatchesLoki(t *testing.T) {
 	cases := ipLineCases()
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {

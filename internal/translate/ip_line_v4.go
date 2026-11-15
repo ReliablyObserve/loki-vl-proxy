@@ -7,12 +7,14 @@ import (
 )
 
 // The IPv4 ip() line filter as Loki's filter reads a line (recorded with the Loki oracle, test/oracle/loki
-// ipfilter): a candidate address is a run of digits and dots that starts at a digit; its first octet is the last
-// three digits before the first dot (so digits in front of a three-digit first octet are ignored, and any digit in
-// front of a shorter one makes another octet); the other octets are read as they are; the candidate is four octets
-// of at most 255 without leading zeros, so a digit or a dot right after it makes it invalid. A single colon in
-// front is the IPv6 scanner's unless no hex digit precedes it, and a dot in front is part of the run unless no digit
-// precedes it.
+// ipfilter and process): the filter walks the line from its start. At a digit with a dot one, two or three
+// characters on, it reads the run of digits and dots there as a candidate address; else, at the start of an IPv6
+// group (one to four hex digits and a colon, or two colons and a hex digit), it reads the run of hex digits, colons
+// and dots there; else it moves one character on. After a run it skips the run and the character that ends it. A
+// candidate is an address of four octets of at most 255 without leading zeros, so a digit or a dot right after it
+// makes it invalid. So where a candidate can start depends on the line before it: in `X0:1.2.3.4` the run `0` is
+// read first and 1.2.3.4 is found, in `a0:1.2.3.4` the IPv6 run `a0:1.2.3.4` takes it, in `1:a1.2.3.4` the IPv6 run
+// `1:a1.2.3.4` does, and in `1.0:1.2.3.4` the run `1.0` and its colon are skipped and 1.2.3.4 is found.
 
 // ipv4Box is a set of addresses: a range of values per octet.
 type ipv4Box [4][2]int
@@ -155,37 +157,61 @@ func digitsRange(lo, hi string) string {
 // the letters in a class of their own, with the anchor between them so the parser does not merge the two back into
 // one class: the same characters match, and the regexp parses in microseconds.
 const (
-	ipv4LeadOther = `(?:[^0-9.:A-Za-z]|^|[A-Za-z])` // ^ or [^0-9.:]
-	ipv4LeadColon = `(?:[^0-9:A-Za-z]|^|[G-Zg-z])`  // ^ or [^0-9A-Fa-f:]
-	ipv4LeadDots  = `(?:[^0-9.A-Za-z]|^|[A-Za-z])`  // ^ or [^0-9.]: the dots are the whole run
-	ipv4Trail     = `(?:[^0-9.A-Za-z]|$|[A-Za-z])`  // [^0-9.] or $
+	// ipv4Other is the start of the line or a character no run holds and no run starts at (^ or [^0-9A-Fa-f.:]).
+	// The walk is at a character right after one in every line, so the regexp starts there.
+	ipv4Other = `(?:[^0-9.:A-Za-z]|^|[G-Zg-z])`
+	ipv4Trail = `(?:[^0-9.A-Za-z]|$|[A-Za-z])` // [^0-9.] or $
+	ipv4Hex   = `[0-9a-fA-F]`
+	// ipv4RunEnd is the rest of a run of digits and dots and the hex letter or colon that ends it, which the walk
+	// skips.
+	ipv4RunEnd = `[0-9.]*[a-fA-F:]`
+	// ipv4Step is a stretch of hex digits, colons and dots the walk crosses from where it starts afresh to where it
+	// starts afresh again, without an IPv6 run (which only a character outside the three ends): dots and colons; hex
+	// digits up to a digit and a dot, then that run and its end; hex digits up to a letter, then a dot (no run
+	// starts there); a digit and a colon, which a dot two characters on makes a run of the digit, then a dot, a run
+	// from a digit, or a letter or colon and a dot; two hex digits from a digit, a colon and a dot.
+	ipv4Step = `(?::*\.|:?(?:` + ipv4Hex + `*[0-9]\.` + ipv4RunEnd + `|` + ipv4Hex + `*[a-fA-F]\.|[0-9]:(?:\.|[0-9]\.` +
+		ipv4RunEnd + `|[a-fA-F:]\.)|[0-9]` + ipv4Hex + `:\.))`
+	// ipv4LeadShort is what may come right before a first octet of one or two digits where the walk starts afresh:
+	// nothing, a colon, or hex digits ending in a letter (no run starts at them, and the octet's dot is too close
+	// for an IPv6 group). ipv4LeadOne adds a digit and a colon before a one-digit octet: the dot three characters
+	// on makes the digit a run of its own, and the walk skips it and the colon. ipv4LeadLong is what may come
+	// before a three-digit first octet: any hex digits, which start nothing since the octet holds no colon and
+	// its dot is four characters on.
+	ipv4LeadShort = `:?(?:` + ipv4Hex + `*[a-fA-F])?`
+	ipv4LeadOne   = `:?[0-9]:`
+	ipv4LeadLong  = `:?` + ipv4Hex + `*`
 )
 
-// ipv4LineRegex is the regexp of a line that holds an address of boxes as Loki's filter finds it.
+// ipv4LineRegex is the regexp of a line that holds an address of boxes as Loki's filter finds it: from the start of
+// the line or a character no run holds (ipv4Other), the stretches the walk crosses (ipv4Step), the characters before
+// the first octet (ipv4LeadShort, ipv4LeadOne, ipv4LeadLong, by the octet's digits), the address, and a character
+// that ends its run.
 func ipv4LineRegex(boxes []ipv4Box) string {
-	// What may come right before the first octet: the start of the line, a character outside [0-9.:], a colon
-	// no hex digit or colon precedes, or a run of dots no digit precedes (Loki reads digits and dots as one run, so
-	// the dots must be the whole run: `0..1.2.3.4` holds no address).
-	const before = `(?:` + ipv4LeadOther + `|` + ipv4LeadColon + `:|` + ipv4LeadDots + `\.+)`
-	var short, long []string
+	var one, two, three []string
 	for _, b := range boxes {
 		rest := `\.` + decimalRange(b[1][0], b[1][1]) + `\.` + decimalRange(b[2][0], b[2][1]) + `\.` + decimalRange(b[3][0], b[3][1])
-		// A first octet of three digits may follow any digits: they are not read.
-		if lo, hi := max(b[0][0], 100), b[0][1]; lo <= hi {
-			long = append(long, decimalRange(lo, hi)+rest)
-		}
-		if lo, hi := b[0][0], min(b[0][1], 99); lo <= hi {
-			short = append(short, decimalRange(lo, hi)+rest)
+		for _, d := range []struct {
+			lo, hi int
+			out    *[]string
+		}{{0, 9, &one}, {10, 99, &two}, {100, 255, &three}} {
+			if lo, hi := max(b[0][0], d.lo), min(b[0][1], d.hi); lo <= hi {
+				*d.out = append(*d.out, decimalRange(lo, hi)+rest)
+			}
 		}
 	}
+	group := func(alts []string) string { return "(?:" + strings.Join(alts, "|") + ")" }
 	var alts []string
-	if len(short) > 0 {
-		alts = append(alts, before+"(?:"+strings.Join(short, "|")+")")
+	if short := append(one[:len(one):len(one)], two...); len(short) > 0 {
+		alts = append(alts, ipv4LeadShort+group(short))
 	}
-	if len(long) > 0 {
-		alts = append(alts, before+"[0-9]*(?:"+strings.Join(long, "|")+")")
+	if len(one) > 0 {
+		alts = append(alts, ipv4LeadOne+group(one))
 	}
-	return "(?:" + strings.Join(alts, "|") + ")" + ipv4Trail
+	if len(three) > 0 {
+		alts = append(alts, ipv4LeadLong+group(three))
+	}
+	return ipv4Other + ipv4Step + "*" + group(alts) + ipv4Trail
 }
 
 // ipv4Literal is the text every address of boxes starts with (the octets they all fix, with the dot after a fixed

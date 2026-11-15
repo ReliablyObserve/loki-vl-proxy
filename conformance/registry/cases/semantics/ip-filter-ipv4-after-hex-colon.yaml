@@ -1,0 +1,67 @@
+id: semantics/ip-filter-ipv4-after-hex-colon
+title: An IPv4 ip() filter finds an address after hex digits and colons where Loki's scan finds it (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's ip() filter walks a line or a label value from its start. At a digit
+  with a dot one to three characters on it reads the run of digits and dots
+  there as a candidate address; else, at the start of an IPv6 group (one to
+  four hex digits and a colon, or two colons and a hex digit) it reads the
+  run of hex digits, colons and dots there; else it moves one character on.
+  After a run it skips the run and the character that ends it. So whether an
+  address after hex digits and colons is read depends on the runs before it:
+  `X0:1.2.3.0` and `1.0:1.2.3.0` hold 1.2.3.0 (the run `0`, or `1.0`, is read
+  first, then the colon is skipped), while `a0:1.2.3.0`, `00:1.2.3.0` and
+  `1:a1.2.3.0` do not (an IPv6 run takes the address).
+
+  The proxy's IPv4 regexp decided from the one or two characters before the
+  address: a colon after a hex digit hid the address, a hex letter never did.
+  `ip("1.2.3.0/27")` dropped `X0:1.2.3.0` and kept `1:a1.2.3.0`, as a line
+  filter and as a label filter on text values, and `!= ip(...)` the other way
+  round. fuzz-smoke found it (FuzzIPLabelFilterNeverKeepsWhatLokiDrops:
+  `addr != ip("1.2.3.0/27")` kept `X0:1.2.3.0`).
+
+  Fixed: the regexp follows the walk. Every character outside hex digits,
+  colons and dots ends any run, so the walk starts afresh after one; the
+  regexp starts there and crosses, stretch by stretch, the hex digits, colons
+  and dots before the address the way the walk does (internal/translate
+  ip_line_v4.go ipv4LineRegex, the builder the plan's lowering, the
+  translator and the Go row condition share). Evidence: the Loki oracle
+  (test/oracle/loki ipfilter) recorded on the line grid with the walk's
+  prefixes and one-digit first octets added, plus 4,400 random lines (52,000
+  lines); every IPv4 line answers like Loki and the main build's regexp fails
+  1,221 of them. A reference walk held to those answers drives a 220,000-line
+  random check and the fuzz target FuzzIPv4LineRegexLikeLoki. The label filter
+  was checked against the oracle's process command on 6,000 label values.
+  Cached answers are fenced (response key `@ip-label-filter-v5:`).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="ip-line"} | addr != ip("1.2.3.0/27")'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    Loki's lines: a line whose addr is `X0:1.2.3.0` or `1.0:1.2.3.0` is
+    dropped, one whose addr is `a0:1.2.3.0` or `1:a1.2.3.0` is kept.
+gap:
+  status: fixed
+  impact: edge
+  effort: S
+  area: 'internal/translate ip_line_v4.go (ipv4LineRegex, ipv4Step, ipv4LeadShort, ipv4LeadOne, ipv4LeadLong)'
+  loki: 'ip() line and label filters (log.NewIPLineFilter / NewIPLabelFilter), recorded with the Loki oracle'
+  proxy: 'the IPv4 regexp follows the scan from the last character no run holds'
+  planned_test: 'TestIPLineFilterMatchesLoki, TestIPv4WalkMatchesLoki, TestIPv4LineRegexMatchesWalk, TestIPv4LineRegexWalkEdges and FuzzIPv4LineRegexLikeLoki (internal/translate); the fuzz seed 13b701a9b09e1c24 of FuzzIPLabelFilterNeverKeepsWhatLokiDrops (internal/translator)'
+  fixed_by: 'this change'
+  visual: none
+  visual_reason: 'no generated log line or label holds an IPv4 address after hex digits and a colon; proven against the Loki oracle grids'
+  clusters: []

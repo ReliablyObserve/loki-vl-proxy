@@ -3,6 +3,7 @@ package translate
 import (
 	"fmt"
 	"regexp"
+	"regexp/syntax"
 	"strings"
 	"testing"
 )
@@ -37,6 +38,53 @@ func BenchmarkIPv4LineFilter(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				l := lines[i%len(lines)]
 				_ = strings.Contains(l, lit) && exact.MatchString(l)
+			}
+		})
+	}
+}
+
+// ipHexBenchLines are lines full of hex digits and colons (trace ids, MAC and IPv6 addresses, times), the text the
+// walk's stretches cross.
+func ipHexBenchLines() []string {
+	var out []string
+	for i := 0; i < 400; i++ {
+		out = append(out, fmt.Sprintf(`ts=12:%02d:%02d.%03d trace_id=4bf92f3577b34da6a3ce929d0e0e%04x mac=00:1a:2b:3c:4d:%02x peer=[2001:db8::%x]:443 client=10.0.%d.%d`,
+			i%60, i%60, i, i, i%256, i, i%3, i%250))
+	}
+	return out
+}
+
+// The exact regexp alone on every line, as VictoriaLogs runs it on the label values of a block that holds text
+// and on the lines that hold the literal.
+func BenchmarkIPv4LineRegexp(b *testing.B) {
+	for _, set := range []struct {
+		name  string
+		lines []string
+	}{{"service", ipBenchLines()}, {"hex", ipHexBenchLines()}} {
+		for _, p := range []string{"10.0.0.1", "10.0.0.0/24", "0.0.0.0/0"} {
+			exact := regexp.MustCompile(IPLineFilterRegex(p))
+			b.Run(set.name+"/"+p, func(b *testing.B) {
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					_ = exact.MatchString(set.lines[i%len(set.lines)])
+				}
+			})
+		}
+	}
+}
+
+// The cost of building the regexp, and of VictoriaLogs reading it on every query: regexp/syntax Parse, Simplify and
+// String, as its regexp simplification does.
+func BenchmarkIPv4LineRegexpParse(b *testing.B) {
+	for _, p := range []string{"10.0.0.1", "10.0.0.0/24", "0.0.0.0/0", "10.0.1.250-10.0.3.4"} {
+		b.Run(p, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				re, err := syntax.Parse(IPLineFilterRegex(p), syntax.Perl)
+				if err != nil {
+					b.Fatal(err)
+				}
+				_ = re.Simplify().String()
 			}
 		})
 	}

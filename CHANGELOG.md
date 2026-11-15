@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An IPv4 `ip()` filter now finds an address written after hex digits and colons exactly where Loki finds it, in
+  `|= ip(...)` line filters and `label = ip(...)` label filters alike. Loki reads a line from its start, and an
+  earlier run of digits and dots, or of hex digits and colons, decides whether a later address is read: in
+  `X0:1.2.3.0` and `1.0:1.2.3.0` Loki finds 1.2.3.0, in `a0:1.2.3.0` and `1:a1.2.3.0` it does not. The proxy judged
+  only the characters right before the address, so `ip("1.2.3.0/27")` dropped the first two and kept the last two,
+  and `!= ip(...)` did the opposite. Checked against Loki's own answers on 52,000 lines. Answers cached before the
+  fix are not reused.
+
 ## [2.260.1] - 2026-11-14
 
 ### Fixed
