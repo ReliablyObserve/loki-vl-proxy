@@ -143,33 +143,50 @@ func BenchmarkIPv4LineRegexp(b *testing.B) {
 	}
 }
 
-// The cost of building the line filter, and of VictoriaLogs reading its regexps on every query: regexp/syntax
-// Parse, Simplify and String of each, as its regexp simplification does.
+// The cost of VictoriaLogs reading the line filter's regexps on every query: regexp/syntax Parse, Simplify and String
+// of each, as its regexp simplification does.
 func BenchmarkIPv4LineRegexpParse(b *testing.B) {
+	for _, p := range []string{"10.0.0.1", "10.0.0.0/24", "0.0.0.0/0", "10.0.1.250-10.0.3.4"} {
+		var patterns []string
+		var walk func(f logsql.FilterExpr)
+		walk = func(f logsql.FilterExpr) {
+			switch n := f.(type) {
+			case logsql.Regexp:
+				patterns = append(patterns, n.Pattern)
+			case logsql.AllOf:
+				for _, e := range n {
+					walk(e)
+				}
+			case logsql.AnyOf:
+				for _, e := range n {
+					walk(e)
+				}
+			}
+		}
+		walk(IPLineFilter(p, false))
+		b.Run(p, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				for _, pattern := range patterns {
+					re, err := syntax.Parse(pattern, syntax.Perl)
+					if err != nil {
+						b.Fatal(err)
+					}
+					_ = re.Simplify().String()
+				}
+			}
+		})
+	}
+}
+
+// The proxy's cost of writing the line filter of a query (IPLineFilter and its text), which a translation pays once
+// per query text.
+func BenchmarkIPLineFilterBuild(b *testing.B) {
 	for _, p := range []string{"10.0.0.1", "10.0.0.0/24", "0.0.0.0/0", "10.0.1.250-10.0.3.4"} {
 		b.Run(p, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				var walk func(f logsql.FilterExpr)
-				walk = func(f logsql.FilterExpr) {
-					switch n := f.(type) {
-					case logsql.Regexp:
-						re, err := syntax.Parse(n.Pattern, syntax.Perl)
-						if err != nil {
-							b.Fatal(err)
-						}
-						_ = re.Simplify().String()
-					case logsql.AllOf:
-						for _, e := range n {
-							walk(e)
-						}
-					case logsql.AnyOf:
-						for _, e := range n {
-							walk(e)
-						}
-					}
-				}
-				walk(IPLineFilter(p, false))
+				_ = IPLineFilter(p, false).String()
 			}
 		})
 	}

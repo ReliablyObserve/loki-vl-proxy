@@ -89,11 +89,14 @@ func ipRangeFilter(field string, lo, hi netip.Addr) logsql.FilterExpr {
 	return logsql.FieldFilter{Field: field, Op: logsql.FieldOpIPv6Range, Value: strconv.Quote(lo.String()) + ", " + strconv.Quote(hi.String())}
 }
 
-// ipv4ValuePattern is the regexps of an IPv4 pattern read on a label value (the line filter's, ipv4LineRegexps) and
-// the regexp of the substring every address of the pattern holds (ipv4Prefilter).
+// ipv4ValuePattern is the regexps of an IPv4 pattern read on a line or a label value (ipv4LineRegexps), the regexp
+// of the substring every address of the pattern holds on a value (ipv4Prefilter), and the text every address starts
+// with, which the line filter searches first (ipv4Literal). ipv4 is false for a pattern without IPv4 boxes.
 type ipv4ValuePattern struct {
 	regexps   ipv4Regexps
 	prefilter string
+	literal   string
+	ipv4      bool
 }
 
 // ipv4PrefilterLimit bounds the alternatives of a prefilter: a pattern whose boxes fix more alternatives than this
@@ -141,8 +144,8 @@ func ipv4Prefilter(boxes []ipv4Box) string {
 	return strings.Join(kept, "|")
 }
 
-// ipv4ValuePatterns memoizes ipv4ValueFilter's patterns: building the octet boxes into a regexp costs more than
-// the rest of the translation, and the patterns a deployment filters on are few. It holds at most
+// ipv4ValuePatterns memoizes the patterns of ipv4ValueFilter and IPLineFilter: building the octet boxes into regexps
+// costs more than the rest of the translation, and the patterns a deployment filters on are few. It holds at most
 // ipv4ValuePatternLimit patterns and starts over when full.
 var (
 	ipv4ValuePatternsMu   sync.Mutex
@@ -161,7 +164,7 @@ func ipv4ValuePatternOf(pattern string) ipv4ValuePattern {
 	}
 	p := ipv4ValuePattern{regexps: ipv4Regexps{exact: IPLineFilterRegex(pattern)}, prefilter: `\.`}
 	if boxes, ok := ipv4Boxes(pattern); ok {
-		p.regexps, p.prefilter = ipv4LineRegexps(boxes), ipv4Prefilter(boxes)
+		p.regexps, p.prefilter, p.literal, p.ipv4 = ipv4LineRegexps(boxes), ipv4Prefilter(boxes), ipv4Literal(boxes), true
 	}
 	ipv4ValuePatterns[pattern] = p
 	return p
