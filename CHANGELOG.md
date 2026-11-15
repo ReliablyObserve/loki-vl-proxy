@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or they answered an instant query. They are now kept in the primary memory cache with the edge cache's TTL and
   freshness rule, up to the primary cache's own entry bound. Known limit: such an answer stays on the replica that
   computed it (not on disk, not pushed to peers), so another replica computes it again.
+- Identical cold `query_range` metric requests no longer read buckets from VictoriaLogs that another request's
+  read had just fetched. Those buckets are stored after the read is answered, and a request that looked them up in
+  between (one that took a freed stats_query_range slot, or found one free while the first callers still parsed
+  the answer) read part of the window again. Such a lookup now waits (up to 2 s, or until the request ends) for the
+  store in progress for the same buckets, so any number of identical cold requests make one read.
 
 ### Added
 

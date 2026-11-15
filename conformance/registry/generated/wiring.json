@@ -978,6 +978,7 @@
       "internal/proxy/ranked_topk_cached_route_test.go",
       "internal/proxy/stats_extent_cache_test.go",
       "internal/proxy/stats_extent_large_answer_test.go",
+      "internal/proxy/stats_extent_pending_test.go",
       "internal/proxy/stats_extent_retention_test.go",
       "internal/proxy/step_align_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
@@ -3547,6 +3548,9 @@
       "quality/query-range-extent-cache",
       "quality/query-range-extent-cache-large-answer"
     ],
+    "internal/proxy/stats_extent_pending_test.go": [
+      "quality/query-range-extent-cache"
+    ],
     "internal/proxy/stats_extent_retention_test.go": [
       "quality/query-range-extent-cache"
     ],
@@ -5152,7 +5156,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 602,
+  "tests_with_markers": 603,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
