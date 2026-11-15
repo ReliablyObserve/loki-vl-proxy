@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
+  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
+  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
+  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
+  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
+  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
+  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
+
+### Fixed
+
+- A `regexp` or `pattern` parser written with no blank before its expression (`{app="a"} |pattern"<_> <m> <_>"`) now
+  gets Loki's answer. Loki reads it as the parser with the blank; the proxy sent it to VictoriaLogs as written, which
+  VictoriaLogs rejects (it has no `pattern` or `regexp` pipe), so the request failed. Log queries with such a parser,
+  and range and vector aggregations, binary operations, `label_replace` calls, rankings and `stddev`/`stdvar` over
+  one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
+  `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
+
 ## [2.263.0] - 2026-11-15
 
 ### Changed

@@ -62,7 +62,8 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 					continue
 				}
 				got, gotErr := on.translateQueryOpts(ctx, q, false)
-				want, wantErr := off.translateQueryOpts(ctx, q, false)
+				// A query with an unspaced parser is held to the translator's text of its spaced spelling (respaced).
+				want, wantErr := off.translateQueryOpts(ctx, respaced(q), false)
 				if _, kept := on.keepUnwrapIdentity(q); kept {
 					keep++
 					continue
@@ -153,11 +154,18 @@ func FuzzMetricFlipGate(f *testing.F) {
 			return
 		}
 		got, gotErr := on.translateQueryOpts(context.Background(), q, false)
-		want, wantErr := off.translateQueryOpts(context.Background(), q, false)
+		want, wantErr := off.translateQueryOpts(context.Background(), respaced(q), false)
 		if _, kept := on.keepUnwrapIdentity(q); kept {
 			return
 		}
-		if (got != want && got != lower.QuoteKeywordFieldText(want)) || (gotErr == nil) != (wantErr == nil) {
+		// A query with an unspaced parser the screen leaves to the translator gets the translator's own text, as with
+		// nothing flipped; one the plan serves may escape a byte the spaced spelling's text copies raw.
+		respelled := false
+		if respaced(q) != q {
+			unflipped, _ := off.translateQueryOpts(context.Background(), q, false)
+			respelled = got == unflipped || sameLogsQL(got, want)
+		}
+		if (got != want && got != lower.QuoteKeywordFieldText(want) && !respelled) || (gotErr == nil) != (wantErr == nil) {
 			t.Fatalf("%q:\n flag on  %q %v\n flag off %q %v", q, got, gotErr, want, wantErr)
 		}
 	})

@@ -53,10 +53,14 @@ func TestScreenMetric(t *testing.T) {
 		{`count_over_time({app="api"} |= "x" | unpack | x="y" [5m])`, ""},
 		{`count_over_time({app="a"} | line_format "{{.x}}" [5m])`, ""},
 		{`count_over_time({app="a"} | decolorize [5m])`, ""},
-		{`count_over_time({}|pattern""[0y])`, ""},
-		{`count_over_time({app="a"} |pattern"<_> <m>" [5m])`, ""},
-		{`rate({app="a"} | regexp"(?P<a>x)" | a="x" [5m])`, ""},
-		{"count_over_time({app=\"a\"} | regexp`(?P<a>x)` [5m])", ""},
+		// A regexp or pattern parser written with no blank before its quoted expression: the plan writes the spaced
+		// spelling's text (semantics/translator-copies-unspaced-parser). An empty pattern is rejected by the request's
+		// validation before any translation.
+		{`count_over_time({}|pattern""[0y])`, "RangeAgg"},
+		{`count_over_time({app="a"} |pattern"<_> <m>" [5m])`, "RangeAgg"},
+		{`rate({app="a"} | regexp"(?P<a>x)" | a="x" [5m])`, "RangeAgg"},
+		{"count_over_time({app=\"a\"} | regexp`(?P<a>x)` [5m])", "RangeAgg"},
+		{`count_over_time({app="a"} | pattern="x" [5m])`, ""},
 		{`count_over_time({app="a"} | pattern "<_> <m>" [5m])`, "RangeAgg"},
 		{`sum by (app) (quantile_over_time(0.9, {app="a"} | keep app | json | unwrap d [5m]))`, ""},
 		{`sum by (lvl) (count_over_time({app="a"} | logfmt | detected_level="error" [5m]))`, ""},
