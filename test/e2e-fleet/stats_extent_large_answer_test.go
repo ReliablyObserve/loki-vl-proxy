@@ -110,8 +110,13 @@ func TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
+	// Nothing an earlier test started may still run: a push queue it left
+	// full, or a peer it left suspended, drops replica a's pushes below.
+	requireFleetUp(t)
+	settleFleet(t, fleetReplicas())
 	storedBefore := extent(proxyAddrs[0], "stored")
-	pushes := readCounters(t, proxyAddrs[0]).wtPushes
+	pushesBefore := readCounters(t, proxyAddrs[0])
+	throttledBefore := metricValueOrZero(t, proxyAddrs[0], "loki_vl_proxy_peer_cache_push_throttled_total")
 	first, n := get(proxyAddrs[0], query, from, to)
 	if n != series {
 		t.Fatalf("replica a answered %d series, want %d", n, series)
@@ -123,11 +128,35 @@ func TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	for wait := time.Now().Add(10 * time.Second); time.Now().Before(wait); time.Sleep(100 * time.Millisecond) {
-		if readCounters(t, proxyAddrs[0]).wtPushes >= pushes+3 {
-			break
+	// Every split has a replica other than a when keys have two replicas, so
+	// at least one push per split (three) must leave a before b and the
+	// restarted a can read the splits from a peer. A push that was dropped
+	// (a peer's breaker open, the queue full) is not sent again: the splits
+	// then stay on a alone, and the restarted a reads them again, which is
+	// the product's documented behaviour, not what this test proves.
+	if fleetReplicationFactor(t) >= 2 {
+		deadline = time.Now().Add(10 * time.Second)
+		for {
+			now := readCounters(t, proxyAddrs[0])
+			if now.wtPushes >= pushesBefore.wtPushes+3 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("replica a pushed %v of its splits to its peers within 10s, want at least 3 (write-through errors +%v, pushes throttled +%v, peer errors +%v)",
+					now.wtPushes-pushesBefore.wtPushes, now.wtErrors-pushesBefore.wtErrors,
+					metricValueOrZero(t, proxyAddrs[0], "loki_vl_proxy_peer_cache_push_throttled_total")-throttledBefore, now.peerErrors-pushesBefore.peerErrors)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	} else {
+		// One copy per key: a split a owns is pushed nowhere.
+		for wait := time.Now().Add(10 * time.Second); time.Now().Before(wait); time.Sleep(100 * time.Millisecond) {
+			if readCounters(t, proxyAddrs[0]).wtPushes >= pushesBefore.wtPushes+3 {
+				break
+			}
 		}
 	}
+	settleFleet(t, fleetReplicas())
 	want, _ := get(proxyAddrs[2], reference(), from, to)
 	if !reflect.DeepEqual(answerData(first), answerData(want)) {
 		t.Fatalf("replica a's answer differs from VictoriaLogs'")
@@ -140,10 +169,22 @@ func TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry(t *testing.T) {
 	movedFromPeers := func(idx int, back time.Duration, maxCalls float64) {
 		t.Helper()
 		addr := proxyAddrs[idx]
-		partial, calls := extent(addr, "partial")+extent(addr, "hit"), statsCalls(addr)
+		outcomes := []string{"hit", "partial", "miss", "unreadable", "error"}
+		before := map[string]float64{}
+		for _, o := range outcomes {
+			before[o] = extent(addr, o)
+		}
+		peerBefore := readCounters(t, addr)
+		partial, calls := before["partial"]+before["hit"], statsCalls(addr)
 		got, _ := get(addr, query, from.Add(-back), to.Add(-back))
 		if after := extent(addr, "partial") + extent(addr, "hit"); after <= partial {
-			t.Fatalf("replica %d read the moved window whole: the splits did not reach it (partial+hit %v -> %v)", idx, partial, after)
+			deltas := map[string]float64{}
+			for _, o := range outcomes {
+				deltas[o] = extent(addr, o) - before[o]
+			}
+			peerAfter := readCounters(t, addr)
+			t.Fatalf("replica %d read the moved window whole: the splits did not reach it (partial+hit %v -> %v; stats_extent_cache outcomes %v; l3 hits +%v, peer misses +%v, peer errors +%v)",
+				idx, partial, after, deltas, peerAfter.tierL3Hits-peerBefore.tierL3Hits, peerAfter.peerMisses-peerBefore.peerMisses, peerAfter.peerErrors-peerBefore.peerErrors)
 		}
 		if made := statsCalls(addr) - calls; made > maxCalls {
 			t.Fatalf("replica %d made %v stats_query_range calls, want at most %v", idx, made, maxCalls)
