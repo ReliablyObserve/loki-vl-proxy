@@ -233,7 +233,11 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 		<-firstSent
 		fleetCompose(t, "kill", a.name)
 		<-done
+		// docker compose kill can return before the container has exited; a start
+		// sent while it is still stopping does nothing and leaves it down.
+		waitContainerStatus(t, a.name, "exited")
 		fleetCompose(t, "start", a.name)
+		waitContainerStatus(t, a.name, "running")
 		waitProxyReady(t, a.addr)
 		worst := time.Duration(0)
 		for _, r := range results {
