@@ -37,6 +37,11 @@ var translateMissShapes = []struct {
 	{"native pattern filter", func(i string) string { return `{app="api"} |> "<_> GET <path> ` + i + `" |= "200"` }},
 	{"native label filters", func(i string) string { return `{app="api"} |= "x" | status >= 500 | path =~ "/api/` + i + `.*"` }},
 	{"derived level filter", func(i string) string { return `{service_name="api"} |= "error ` + i + `" | detected_level="error"` }},
+	// The log stage families the lowering serves (QueryPlanFlippedLogStages), and the log shapes their screen turns away.
+	{"level filter after parser (turned away)", func(i string) string {
+		return `{app="api"} |= "error ` + i + `" | logfmt | detected_level="error"`
+	}},
+	{"service_name filter (turned away)", func(i string) string { return `{app="api"} |= "error ` + i + `" | service_name="api"` }},
 	{"parser logfmt", func(i string) string { return `{app="api"} | logfmt | status >= 500 | path = "/api/` + i + `"` }},
 	{"parser json", func(i string) string { return `{app="api"} |= "error ` + i + `" | json | status="500"` }},
 	{"metric rate", func(i string) string { return `sum by (level) (rate({app="api"} |= "error ` + i + `" [5m]))` }},

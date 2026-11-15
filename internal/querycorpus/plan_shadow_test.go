@@ -44,6 +44,9 @@ type shadowSection struct {
 	// Flipped are the constructs the proxy serves from the lowering instead of the string translator
 	// (proxy.QueryPlanFlippedConstructs): each is native on the corpus with 0 mismatches, text included.
 	Flipped []string `json:"flipped"`
+	// FlippedLogStages are the stage families of log queries the proxy serves from the lowering on top of line and label
+	// filters (proxy.QueryPlanFlippedLogStages): their LogSelect rows are native with 0 mismatches, text included.
+	FlippedLogStages []string `json:"flipped_log_stages,omitempty"`
 }
 
 // shadowSlice is one profile × construct of a shadow run: the slice a failure names.
@@ -232,6 +235,7 @@ func TestPlanShadow(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	got, problems, slices := runShadowSlices(t, nativeLowering, 0)
 	got.Flipped = proxy.QueryPlanFlippedConstructs
+	got.FlippedLogStages = proxy.QueryPlanFlippedLogStages
 	// A flipped construct is served from the lowering with the corpus as its proof: it must be native under every
 	// profile that translates it, and its rows must all equal the string translator's text (a mismatch fails the run
 	// above). The keepLine profiles translate log queries only (a metric query never keeps its line), so a metric
@@ -295,6 +299,9 @@ func TestPlanShadow(t *testing.T) {
 	if got.Native < want.Native {
 		t.Fatalf("native fell from %d to %d: a construct that was lowered no longer is", want.Native, got.Native)
 	}
+	if os.Getenv("LVP_QUERY_PLAN_UPDATE") != "1" && !reflect.DeepEqual(got.FlippedLogStages, want.FlippedLogStages) {
+		t.Fatalf("the log stage families served from the lowering are %v, %s records %v: run LVP_QUERY_PLAN_UPDATE=1 go test ./internal/querycorpus -run TestPlanShadow and commit it", got.FlippedLogStages, planPath, want.FlippedLogStages)
+	}
 	if os.Getenv("LVP_QUERY_PLAN_UPDATE") != "1" && !reflect.DeepEqual(got.Flipped, want.Flipped) {
 		t.Fatalf("the constructs served from the lowering are %v, %s records %v: run LVP_QUERY_PLAN_UPDATE=1 go test ./internal/querycorpus -run TestPlanShadow and commit it", got.Flipped, planPath, want.Flipped)
 	}
@@ -303,14 +310,14 @@ func TestPlanShadow(t *testing.T) {
 	}
 }
 
-// The proxy asks two cheap screens before it plans a query to serve from the lowering (a stream selector first,
-// logql.MayHaveNonFilterStage): neither may turn away a filter-only query the lowering writes natively, or the flip
-// would silently leave it to the string translator. A filter on detected_level is the exception the other way: lowered
-// natively, the screen must turn it away until the plan serves it (filtersDetectedLevel).
+// The proxy asks cheap screens before it plans a query to serve from the lowering (a stream selector first,
+// logql.MayHaveNonFilterStage, and for a filter on detected_level the log stage screen lower.ScreenLogStages): none
+// may turn away a filter-only query the lowering writes natively, or the flip would silently leave it to the string
+// translator.
 // conformance: architecture-syntax-package-layering
 func TestFlipScreenAdmitsEveryNativeRow(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
-	admitted, turned, held := 0, 0, 0
+	admitted, turned, level := 0, 0, 0
 	for _, q := range append(planCorpus(t), labelFilterGrid()...) {
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {
@@ -334,13 +341,12 @@ func TestFlipScreenAdmitsEveryNativeRow(t *testing.T) {
 				continue
 			}
 			if filtersDetectedLevel(plan) {
-				held++
-				continue
+				level++
 			}
 			admitted++
 		}
 	}
-	t.Logf("native rows admitted by the screen: %d, turned away: %d, detected_level filters held back: %d", admitted, turned, held)
+	t.Logf("native rows admitted by the screens: %d (detected_level filters %d), turned away: %d", admitted, level, turned)
 	if admitted == 0 {
 		t.Fatal("no native row")
 	}

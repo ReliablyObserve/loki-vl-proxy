@@ -1,0 +1,245 @@
+package proxy
+
+import (
+	"context"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+)
+
+// logStageFlipCandidates are the stage families of log queries the tests serve from the lowering on a proxy of their
+// own (withFlippedLogStages), to prove a flip of them ready.
+var logStageFlipCandidates = []string{"LevelFilter"}
+
+// withFlippedLogStages makes p serve the stage families it serves today and the given ones from the lowering.
+func withFlippedLogStages(p *Proxy, names ...string) {
+	p.flippedLogStages = lower.LogStagesOf(append(append([]string(nil), QueryPlanFlippedLogStages...), names...))
+}
+
+// newLoweringProfileProxy is a proxy of one of loweringParityProfiles, without a translation cache.
+func newLoweringProfileProxy(t testing.TB, name string, config func(*Config), version string) *Proxy {
+	t.Helper()
+	cfg := Config{BackendURL: "http://unused", Cache: cache.New(time.Minute, 100), LogLevel: "error"}
+	config(&cfg)
+	p, err := New(cfg)
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	if version != "" {
+		p.backendVersionMu.Lock()
+		p.backendVersionSemver = version
+		p.backendVersionMu.Unlock()
+	}
+	p.translationCache = nil
+	return p
+}
+
+// logLoweringProfile is the lowering profile the proxy's translation gives a log query (after backendLogQuery).
+func logLoweringProfile(ctx context.Context, p *Proxy, normalized string, keepLine bool) lower.Profile {
+	caps := p.logsqlCapabilities()
+	caps.NoDetectedLevelBodyScan = !p.detectedLevelBodyScan
+	return loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, p.plainStreamLabelNames(ctx, normalized)), p.streamFieldsMap, caps, keepLine)
+}
+
+// Every log query of the plan corpus is translated to the same text, through the request's own translation
+// (translateLogResponseQuery, which keeps the line aside for a line_format the Loki-compatible profile evaluates), with
+// the candidate stage families served from the lowering and with none: the plan writes the string translator's text,
+// byte for byte, so the flip moves neither the translation cache, nor the requests VictoriaLogs sees, nor the keys of
+// its answers. Each candidate family is served on the corpus under every profile.
+//
+// conformance: architecture-syntax-package-layering
+func TestQueryPlanLowering_LogCorpusTextParity(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	corpus, err := plancorpus.Queries(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates := lower.LogStagesOf(logStageFlipCandidates)
+	total := map[string]int{}
+	for _, prof := range loweringParityProfiles {
+		t.Run(prof.name, func(t *testing.T) {
+			on := newLoweringProfileProxy(t, prof.name, prof.config, prof.version)
+			off := newLoweringProfileProxy(t, prof.name, prof.config, prof.version)
+			withFlippedLogStages(on, logStageFlipCandidates...)
+			off.flippedLogStages = 0
+			ctx := context.Background()
+			differs := 0
+			served := map[lower.LogStages]int{}
+			for _, q := range corpus {
+				if !strings.HasPrefix(strings.TrimSpace(q), "{") {
+					continue
+				}
+				got, gotErr := on.translateLogResponseQuery(ctx, q)
+				want, wantErr := off.translateLogResponseQuery(ctx, q)
+				if got != want || (gotErr == nil) != (wantErr == nil) {
+					if differs++; differs <= 10 {
+						t.Errorf("%q:\n flip on  %q %v\n flip off %q %v", q, got, gotErr, want, wantErr)
+					}
+				}
+				query, keepLine := on.backendLogQuery(q)
+				normalized := strings.TrimSpace(query)
+				canon := logqlpkg.CanonicalizeLogRanges(normalized)
+				if !logqlpkg.MayHaveNonFilterStage(canon) {
+					continue
+				}
+				if _, ok := on.lowerLogSelect(ctx, canon, logLoweringProfile(ctx, on, normalized, keepLine)); !ok {
+					continue
+				}
+				plan, err := loweringPlan(ctx, canon)
+				if err != nil {
+					t.Fatalf("%q: served, but does not plan: %v", q, err)
+				}
+				stages, _ := lower.PlanLogStages(plan)
+				if stages == 0 || stages&^candidates != 0 {
+					t.Errorf("%q: served with stage families %b, the candidates are %b", q, stages, candidates)
+				}
+				served[stages]++
+			}
+			for _, name := range logStageFlipCandidates {
+				st := lower.LogStagesOf([]string{name})
+				n := 0
+				for set, c := range served {
+					if set&st != 0 {
+						n += c
+					}
+				}
+				total[name] += n
+				if n == 0 {
+					t.Errorf("%s is flipped, but no corpus row is served from the lowering", name)
+				}
+			}
+		})
+	}
+	names := make([]string, 0, len(total))
+	for n := range total {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		t.Logf("served from the lowering: %-14s %d translations", n, total[n])
+	}
+}
+
+// The log screen (lower.ScreenLogStages) holds to the typed gate on every log query of the corpus with more than line
+// and label filters, under every translator profile, with the candidate families flipped: it names the plan's
+// families for every query the plan serves; the queries it passes that the plan then leaves to the translator (a
+// parse, build and resolve on top of the translation) stay under 0.5% of those it passes; and the served queries it
+// turns away (translated by the string translator at its own cost) under 2% of the served ones.
+//
+// conformance: architecture-syntax-package-layering
+func TestQueryPlanLowering_LogScreenCorpus(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	corpus, err := plancorpus.Queries(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var served, passed, wasted, lost int
+	for _, prof := range loweringParityProfiles {
+		p := newLoweringProfileProxy(t, prof.name, prof.config, prof.version)
+		withFlippedLogStages(p, logStageFlipCandidates...)
+		ctx := context.Background()
+		for _, q := range corpus {
+			if !strings.HasPrefix(strings.TrimSpace(q), "{") {
+				continue
+			}
+			query, keepLine := p.backendLogQuery(q)
+			normalized := strings.TrimSpace(query)
+			canon := logqlpkg.CanonicalizeLogRanges(normalized)
+			if !logqlpkg.MayHaveNonFilterStage(canon) {
+				continue
+			}
+			plan, err := loweringPlan(ctx, canon)
+			if err != nil {
+				continue
+			}
+			lp := logLoweringProfile(ctx, p, normalized, keepLine)
+			// What the typed gate serves, without the screen; and what the proxy serves, with it.
+			ok := p.servesLogStages(plan, lp)
+			if ok {
+				_, err := lower.Plan(plan, lp)
+				ok = err == nil
+			}
+			planned, _ := lower.PlanLogStages(plan)
+			screen := lower.ScreenLogStages(canon)
+			screenOK := screen != 0 && screen&^p.flippedLogStages == 0
+			if _, servedNow := p.lowerLogSelect(ctx, canon, lp); servedNow != (ok && screenOK) {
+				t.Errorf("%q: the proxy serves it: %v; the gate %v, the screen %b", canon, servedNow, ok, screen)
+			}
+			if ok {
+				served++
+			}
+			if screenOK {
+				passed++
+			}
+			switch {
+			case ok && screenOK && screen != planned:
+				t.Errorf("%q: the screen names families %b, the plan holds %b", canon, screen, planned)
+			case ok && !screenOK:
+				if lost++; lost <= 5 {
+					t.Logf("served by the gate, turned away by the screen: %q", canon)
+				}
+			case !ok && screenOK:
+				if wasted++; wasted <= 5 {
+					t.Logf("passed by the screen, left to the translator: %q", canon)
+				}
+			}
+		}
+	}
+	t.Logf("log rows served %d, passed by the screen %d, passed and left to the translator %d, served and turned away %d", served, passed, wasted, lost)
+	if served == 0 || wasted*200 > passed || lost*50 > served {
+		t.Fatalf("the screen passes %d rows the plan leaves to the translator (of %d passed) and turns away %d served rows (of %d)", wasted, passed, lost, served)
+	}
+}
+
+// FuzzLogFlipGate holds the log stage flip to the string translator on any log query: with the candidate stage
+// families flipped, a query is translated to the same text as with none flipped (the translator's, or the plan's for a
+// filter-only query, which the filter flip already serves), or to the translator's text with its keyword label names
+// quoted (lower.QuoteKeywordFieldText: VictoriaLogs rejects them bare, semantics/translator-writes-keyword-field-names-bare);
+// the screen, the gate and the lowering never panic out of lowerLogSelect.
+//
+// conformance: architecture-syntax-package-layering
+func FuzzLogFlipGate(f *testing.F) {
+	for _, q := range []string{
+		`{app="a"} | detected_level="error"`, `{service_name="a"} |= "x" | detected_level=~"error|warn" | status >= 500`,
+		`{app="a"} | detected_level="error" | s="a detected_level b"`, `{app="a"} | detected_level="error" | n > -5`,
+		`{app="a"} | detected_level="error" | _time="x"`, `{app="a"} | detected_level="error" | o="\x01"`,
+		`{app="a"} | (detected_level="error" or detected_level="warn") and not="x"`, `{app="a"} | json | detected_level="x"`,
+		`{app="a"} | detected_level="x" | json | status == 500`, `{app="a"} | service_name="x" | detected_level="y"`,
+		`{app="a"} | detected_level`, `{app="a"} | json | status="500"`, `{app="a"} |pattern"<_> <m>"`,
+	} {
+		f.Add(q)
+	}
+	newProxy := func() *Proxy {
+		p := newLoweringProfileProxy(f, "underscores", func(c *Config) { c.LabelStyle = LabelStyleUnderscores }, "")
+		return p
+	}
+	on, off := newProxy(), newProxy()
+	withFlippedLogStages(on, logStageFlipCandidates...)
+	off.flippedLogStages = 0
+	f.Fuzz(func(t *testing.T, q string) {
+		if len(q) > 512 || !strings.HasPrefix(strings.TrimSpace(q), "{") {
+			return
+		}
+		// The query as the handlers and the translation read it (lowercaseQueryKeywords), and only one the request's
+		// validation accepts.
+		q = logqlpkg.LowercaseKeywords(logqlpkg.StripParserFlags(logqlpkg.StripComments(q)))
+		if logqlpkg.ParseAndValidate(q) != nil {
+			return
+		}
+		got, gotErr := on.translateLogResponseQuery(context.Background(), q)
+		want, wantErr := off.translateLogResponseQuery(context.Background(), q)
+		if (got != want && got != lower.QuoteKeywordFieldText(want)) || (gotErr == nil) != (wantErr == nil) {
+			t.Fatalf("%q:\n flip on  %q %v\n flip off %q %v", q, got, gotErr, want, wantErr)
+		}
+	})
+}

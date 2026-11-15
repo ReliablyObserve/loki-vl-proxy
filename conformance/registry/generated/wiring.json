@@ -30,6 +30,7 @@
       "internal/proxy/plan_route_parity_test.go",
       "internal/proxy/post_aggregation_physical_test.go",
       "internal/proxy/query_lowering_corpus_test.go",
+      "internal/proxy/query_lowering_log_stages_test.go",
       "internal/proxy/query_lowering_test.go",
       "internal/proxy/unwrap_gate_spec_test.go",
       "internal/querycorpus/binop_grid_test.go",
@@ -78,6 +79,7 @@
       "internal/queryplan/lower/format_test.go",
       "internal/queryplan/lower/label_filter_parsed_test.go",
       "internal/queryplan/lower/label_filter_test.go",
+      "internal/queryplan/lower/log_screen_test.go",
       "internal/queryplan/lower/lower_test.go",
       "internal/queryplan/lower/marker_bytes_test.go",
       "internal/queryplan/lower/metric_screen_test.go",
@@ -3341,6 +3343,9 @@
     "internal/proxy/query_lowering_corpus_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/proxy/query_lowering_log_stages_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/proxy/query_lowering_test.go": [
       "architecture-syntax-package-layering",
       "loki_api_v1_query_range",
@@ -4104,6 +4109,9 @@
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/label_filter_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/log_screen_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/lower_test.go": [
@@ -5138,7 +5146,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 602,
+  "tests_with_markers": 604,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

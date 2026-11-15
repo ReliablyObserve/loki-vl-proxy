@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `label_replace` calls, nested ones too, around an aggregation or a binary operation are served from the query plan
   the same way (6.6 to 4.1 us, 68 to 51 allocations); a `label_replace` around a ranking, `stddev` or a `service_name`
   grouping stays with the string translator.
+- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
+  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
+  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
+  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
+  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
+  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
+  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
 
 ## [2.260.1] - 2026-11-14
 

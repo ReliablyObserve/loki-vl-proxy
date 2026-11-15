@@ -665,6 +665,9 @@
       "RangeAgg",
       "BinOp",
       "LabelReplace"
+    ],
+    "flipped_log_stages": [
+      "LevelFilter"
     ]
   }
 }

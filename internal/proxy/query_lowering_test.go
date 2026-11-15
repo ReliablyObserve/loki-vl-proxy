@@ -65,8 +65,8 @@ var loweringParityQueries = []struct {
 	// rejectedIn names a profile in which the proxy rejects the query before translating it.
 	rejectedIn string
 	// construct names the metric constructs that serve the query (or the operands the proxy translates on their own)
-	// from the lowering once one of them is flipped (QueryPlanFlippedConstructs), comma separated; empty for a query no
-	// flip serves.
+	// from the lowering once one of them is flipped (QueryPlanFlippedConstructs), or the log stage families that serve a
+	// log query once all are flipped (QueryPlanFlippedLogStages), comma separated; empty for a query no flip serves.
 	construct string
 }{
 	// Stream selectors.
@@ -108,7 +108,11 @@ var loweringParityQueries = []struct {
 	{"label filters among line filters", `{app="a"} |= "x" | status="200" |> "<_> y" | code != "z" != "w"`, true, "", ""},
 	{"dotted label filter", `{app="a"} | k8s.pod.name = "p"`, true, "loki compatible", ""},
 	// Not covered by the lowering: the string translator answers in both runs.
-	{"detected_level filter", `{app="a"} | detected_level="error"`, false, "", ""},
+	// A filter on detected_level: served once its stage family (LevelFilter) is flipped. One after a parser and one on
+	// service_name are not lowered: the string translator answers in both runs.
+	{"detected_level filter", `{app="a"} | detected_level="error"`, false, "", "LevelFilter"},
+	{"detected_level filters among line filters", `{app="a"} |= "x" | detected_level=~"error|warn" != "y" | status >= 500`, false, "", "LevelFilter"},
+	{"detected_level filter after a parser", `{app="a"} | logfmt | detected_level="error"`, false, "", ""},
 	{"service_name label filter", `{app="a"} | service_name="x"`, false, "", ""},
 	{"json", `{app="a"} | json | status="200"`, false, "", ""},
 	{"logfmt", `{app="a"} | logfmt | level="error"`, false, "", ""},
@@ -203,14 +207,15 @@ func TestQueryPlanLowering_RouteParity(t *testing.T) {
 	for _, flips := range []struct {
 		name  string
 		extra []string
-	}{{"served today", nil}, {"metric flips", metricFlipCandidates}} {
+		logs  []string
+	}{{"served today", nil, nil}, {"metric flips", metricFlipCandidates, nil}, {"log stage flips", metricFlipCandidates, logStageFlipCandidates}} {
 		t.Run(flips.name, func(t *testing.T) {
-			testLoweringRouteParity(t, flips.extra)
+			testLoweringRouteParity(t, flips.extra, flips.logs)
 		})
 	}
 }
 
-func testLoweringRouteParity(t *testing.T, extra []string) {
+func testLoweringRouteParity(t *testing.T, extra, logs []string) {
 	for _, prof := range loweringParityProfiles {
 		t.Run(prof.name, func(t *testing.T) {
 			type run struct {
@@ -234,6 +239,7 @@ func testLoweringRouteParity(t *testing.T, extra []string) {
 					p.backendVersionMu.Unlock()
 				}
 				withFlipped(p, extra...)
+				withFlippedLogStages(p, logs...)
 				up.take() // the version probe, if any
 				return run{p, up}
 			}
@@ -256,7 +262,7 @@ func testLoweringRouteParity(t *testing.T, extra []string) {
 						t.Fatalf("VictoriaLogs requests differ\nflag on  %q\nflag off %q", reqs, wantReqs)
 					}
 					native := (q.native || slices.ContainsFunc(strings.Split(q.construct, ","), func(c string) bool {
-						return slices.Contains(on.p.flippedConstructs, c)
+						return slices.Contains(on.p.flippedConstructs, c) || lower.LogStagesOf([]string{c})&on.p.flippedLogStages != 0
 					})) && q.rejectedIn != prof.name
 					if n := flipped(on) - before; native && n == 0 {
 						t.Fatalf("%s was not served from the lowering", q.query)
@@ -306,10 +312,11 @@ func TestQueryPlanLowering_ShadowCountsOnlyWhatStaysOnTheTranslator(t *testing.T
 	}
 }
 
-// A log query with a filter on detected_level is lowered natively (held to the string translator by the shadows),
-// and not served from the plan before its flip: the screen turns it away, so the string translator answers it.
+// A log query with a filter on detected_level (the LevelFilter family) is served from the plan, with the string
+// translator's text, with and without the body scan; one after a parser, and one on service_name, stay with the
+// string translator (the lowering does not write them).
 // conformance: architecture-syntax-package-layering
-func TestQueryPlanLowering_LeavesDetectedLevelFiltersToTheTranslator(t *testing.T) {
+func TestQueryPlanLowering_ServesDetectedLevelFilters(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
 	for _, caps := range []logsql.Capabilities{{}, {NoDetectedLevelBodyScan: true}} {
 		prof := loweringProfile(nil, nil, caps, false)
@@ -317,13 +324,15 @@ func TestQueryPlanLowering_LeavesDetectedLevelFiltersToTheTranslator(t *testing.
 			`{a="b"} | detected_level="error"`, `{a="b"} | detected_level!="info"`, `{a="b"} | detected_level=~"error|warn"`,
 			`{a="b"} |= "x" | detected_level="unknown" | c="d"`, `{a="b"} | (detected_level="warn")`,
 		} {
-			plan, err := loweringPlan(context.Background(), q)
+			want, err := translator.TranslateLogQLWithCapabilities(q, nil, nil, caps)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := lower.Plan(plan, prof); err != nil {
-				t.Fatalf("%q is not lowered: %v", q, err)
+			if got, ok := p.lowerLogSelect(context.Background(), q, prof); !ok || got != want {
+				t.Errorf("lowerLogSelect(%q) = %q, %v; want the translator's text %q", q, got, ok, want)
 			}
+		}
+		for _, q := range []string{`{a="b"} | json | detected_level="error"`, `{a="b"} | service_name="x"`, `{a="b"} | detected_level`} {
 			if got, ok := p.lowerLogSelect(context.Background(), q, prof); ok {
 				t.Errorf("lowerLogSelect(%q) = %q, want the translator to answer", q, got)
 			}

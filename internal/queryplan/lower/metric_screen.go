@@ -170,7 +170,17 @@ type metricScan struct {
 	without, keep, candidate bool
 	// parsedOther is a regexp or pattern parser; groupsServiceName a clause naming service_name.
 	parsedOther, groupsServiceName bool
+	// log is set for a log query (ScreenLogStages): its whole text after the selector is a pipeline. stages are the
+	// stage families read, and staged is a stage other than a line or label filter read.
+	log    bool
+	stages LogStages
+	staged bool
+	// names is set in a stage that lists names (a parser's extraction list, a drop or keep), until the next pipe.
+	names bool
 }
+
+// pipeline reports a position in a log pipeline: inside a range function, or anywhere in a log query.
+func (s *metricScan) pipeline() bool { return s.rangeAt > 0 || s.log }
 
 // Pending parentheses.
 const (
@@ -215,7 +225,7 @@ func (s *metricScan) step(q string, i int) (int, bool) {
 		if i+1 < len(q) && (q[i+1] == '=' || q[i+1] == '~' || q[i+1] == '>') {
 			i++
 		}
-		s.operand = false
+		s.operand, s.names = false, false
 		return i, true
 	case c >= '0' && c <= '9' || c == '.':
 		return s.number(q, i)
@@ -237,7 +247,7 @@ func (s *metricScan) step(q string, i int) (int, bool) {
 func (s *metricScan) quoted(q string, i int) (int, bool) {
 	j := skipQuoted(q, i)
 	// The derived label names count in a log pipeline's strings: a label filter value the translator unpacks.
-	if j >= len(q) || misreadQuoted(q[i+1:j], q[i], s.rangeAt > 0 && s.brace == 0) {
+	if j >= len(q) || misreadQuoted(q[i+1:j], q[i], s.pipeline() && s.brace == 0) {
 		return j, false
 	}
 	if s.labelReplaceCommas == 0 && strings.ContainsAny(q[i+1:j], "()") {
@@ -400,10 +410,15 @@ func (s *metricScan) word(q string, i, j int) bool {
 	if done, ok := s.keyword(q, w, j); done {
 		return ok
 	}
+	if s.log && !s.names && !comparisonFollows(q, dottedEnd(q, j)) && !callFollows(q, j) {
+		// In a log pipeline, a name (dotted ones included: k8s.pod.name) with no comparison after it: a label filter the
+		// parser keeps untyped.
+		return false
+	}
 	if s.first == "" && s.top() {
 		s.first = w
 	}
-	if s.rangeAt == 0 && vectorWord(w) {
+	if !s.log && s.rangeAt == 0 && vectorWord(w) {
 		s.pendingVector = true
 	}
 	if !callFollows(q, j) {
@@ -442,6 +457,11 @@ func (s *metricScan) label(w string) (done, ok bool) {
 // keyword reads a word that names a stage, a clause or a construct the screen decides on; done is false for another
 // word.
 func (s *metricScan) keyword(q, w string, j int) (done, ok bool) {
+	if s.log {
+		if done, ok := s.logKeyword(q, w, j); done {
+			return true, ok
+		}
+	}
 	switch w {
 	case "topk", "bottomk", "sort", "sort_desc", "stddev", "stdvar", "vector", "bool", "line_format", "decolorize", "unpack":
 		return true, false
@@ -453,7 +473,7 @@ func (s *metricScan) keyword(q, w string, j int) (done, ok bool) {
 		s.parsedOther = true
 	case "and", "or", "unless":
 		// A set operator; inside a log pipeline, a label filter's.
-		return true, s.rangeAt > 0
+		return true, s.pipeline()
 	case "json", "logfmt":
 		s.parsed = true
 	case "drop":
@@ -526,19 +546,19 @@ func (s *metricScan) operator(q string, i int) (int, bool) {
 	switch op := q[i : end+1]; op {
 	case "=~", "!~", "!>":
 		return end, true
-	case "+", "-":
-		if !s.operand {
+	case "+", "-", "*", "/", "%", "^":
+		// Arithmetic: a binary operator after a value; never in a log query.
+		if s.log || op != "*" && op != "/" && op != "%" && op != "^" && !s.operand {
 			return 0, false
 		}
-	case "*", "/", "%", "^":
 	case "=", "==", "!=", ">", "<", ">=", "<=":
 		if s.brace > 0 {
 			return end, true
 		}
-		if s.paren > 0 && !s.comparison(q, end+1, op) {
+		if (s.paren > 0 || s.log) && !s.comparison(q, end+1, op) {
 			return 0, false
 		}
-		if s.rangeAt > 0 {
+		if s.pipeline() {
 			s.afterParser = s.afterParser || s.parsed
 			s.afterParser = s.afterParser || s.parsedOther
 		}
@@ -546,6 +566,8 @@ func (s *metricScan) operator(q string, i int) (int, bool) {
 		return 0, false
 	}
 	switch {
+	case s.log:
+		// A label filter, or a line filter written != after the selector.
 	case s.top():
 		s.binaries++
 		s.binary = true
