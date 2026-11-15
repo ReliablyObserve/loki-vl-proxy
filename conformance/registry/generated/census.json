@@ -371,6 +371,9 @@
     "semantics/detected-level-pipes-known-differences | compare:exact",
     "semantics/detected-level-pipes-known-differences | gap:open",
     "semantics/detected-level-pipes-known-differences | query",
+    "semantics/detected-level-stream-stats-without-level | compare:observed",
+    "semantics/detected-level-stream-stats-without-level | gap:open",
+    "semantics/detected-level-stream-stats-without-level | query",
     "semantics/drop-before-unwrap-stream-label | compare:observed",
     "semantics/drop-before-unwrap-stream-label | gap:open",
     "semantics/drop-before-unwrap-stream-label | query",
@@ -1345,6 +1348,9 @@
     "internal/proxy/detected_level_stream_series_test.go | semantics/unwrap-sum-without-collapses",
     "internal/proxy/detected_level_stream_series_test.go | semantics/without-fold-stream-detected-level",
     "internal/proxy/detected_level_stream_series_test.go | severity-detected-level-derivation",
+    "internal/proxy/detected_level_sweep_test.go | metric-series-identity",
+    "internal/proxy/detected_level_sweep_test.go | semantics/detected-level-one-value-per-stream",
+    "internal/proxy/detected_level_sweep_test.go | severity-detected-level-derivation",
     "internal/proxy/detected_level_test.go | severity-detected-level-derivation",
     "internal/proxy/detected_level_unknown_differential_test.go | semantics/detected-level-missing-from-stats-answers",
     "internal/proxy/detected_level_unknown_differential_test.go | severity-exposure-surfaces",
@@ -2263,6 +2269,8 @@
     "internal/translate/detected_level_filter_test.go | severity-detected-level-derivation",
     "internal/translate/detected_level_keyword_test.go | severity-detected-level-derivation",
     "internal/translate/detected_level_normalize_test.go | severity-detected-level-derivation",
+    "internal/translate/detected_level_stream_picks_test.go | semantics/detected-level-one-value-per-stream",
+    "internal/translate/detected_level_stream_picks_test.go | severity-detected-level-derivation",
     "internal/translate/extract_stages_test.go | architecture-syntax-package-layering",
     "internal/translate/ip_label_filter_test.go | semantics/ip-label-filter-invalid-pattern",
     "internal/translate/ip_label_filter_test.go | semantics/ip-label-filter-missing-label",
@@ -2844,12 +2852,12 @@
       "any": 35,
       "api": 103,
       "drilldown": 51,
-      "explore": 187,
+      "explore": 188,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 649,
+      "go": 651,
       "playwright": 1
     },
     "page_kinds": {
@@ -2868,7 +2876,7 @@
     },
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
-    "unwired_items": 95,
+    "unwired_items": 96,
     "wired_items": 381
   },
   "gates": [
