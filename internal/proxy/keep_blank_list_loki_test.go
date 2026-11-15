@@ -15,6 +15,7 @@ import (
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
@@ -124,6 +125,9 @@ func recordKeepBlankAnswers(t *testing.T, queries []string) {
 //
 // conformance: semantics/keep-drop-blank-name-prints-back, semantics/keep-leaves-labels-loki-drops
 func TestKeepSeriesGrouping_BlankKeepListMatchesLokiEngine(t *testing.T) {
+	// The spellings stay out of the query corpus, whose registry case row stands for them (see
+	// TestKeepDropBlankMatchesLoki).
+	t.Cleanup(querycorpus.PauseRecording())
 	queries := keepBlankQueries()
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {
 		recordKeepBlankAnswers(t, queries)
@@ -189,6 +193,7 @@ func TestKeepSeriesGrouping_BlankKeepListMatchesLokiEngine(t *testing.T) {
 //
 // conformance: semantics/keep-drop-blank-name-prints-back, semantics/keep-leaves-labels-loki-drops, loki_api_v1_query_range
 func TestKeepSeriesGrouping_BlankKeepListHandler(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	s0 := time.Unix(1700000400, 0).UTC()
 	start, end := s0.Add(2*time.Minute), s0.Add(10*time.Minute)
 	rows := keepRows(rand.New(rand.NewSource(5)), s0, 220, false)

@@ -14,6 +14,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
@@ -200,6 +201,10 @@ func readKeepDropBlankAnswers(t *testing.T, queries []string) []keepDropBlankAns
 //
 // conformance: semantics/keep-drop-blank-name-prints-back, semantics/parser-reads-unicode-blank-as-white-space
 func TestKeepDropBlankMatchesLoki(t *testing.T) {
+	// The grid's spellings stay out of the query corpus: the string translator reads a keep of no name as a phrase,
+	// which the corpus would count against every typed selector of the grid (the corpus row of the registry case
+	// stands for them).
+	t.Cleanup(querycorpus.PauseRecording())
 	queries := keepDropBlankQueries()
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {
 		recordKeepDropBlankAnswers(t, queries)
@@ -273,6 +278,7 @@ func TestKeepDropBlankMatchesLoki(t *testing.T) {
 //
 // conformance: semantics/keep-drop-blank-name-prints-back
 func TestKeepDropBlankPrintsBack(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	for _, tc := range []struct{ in, want string }{
 		{"{a=\"b\"} | keep\v", "{a=\"b\"} | keep \v"},
 		{"{a=\"b\"} | drop\f", "{a=\"b\"} | drop \v"},
