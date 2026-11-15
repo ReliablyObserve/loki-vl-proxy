@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
@@ -148,9 +149,9 @@ func filterOnly(plan *queryplan.Plan) bool {
 	return true
 }
 
-// filtersDetectedLevel reports a log query with a label filter on detected_level. The proxy derives the label, and
-// the flip's screen (logql.MayHaveNonFilterStage) turns such a query away until the plan serves it: lowered
-// natively, it is held to the string translator by the shadows and not served yet.
+// filtersDetectedLevel reports a log query with a label filter on detected_level, the label the proxy derives: the
+// flip's first screen (logql.MayHaveNonFilterStage) passes it to the log stage screen (lower.ScreenLogStages), which
+// admits it as the LevelFilter family (proxy.QueryPlanFlippedLogStages).
 func filtersDetectedLevel(plan *queryplan.Plan) bool {
 	sel, ok := plan.Root.(*queryplan.LogSelect)
 	if !ok {
@@ -172,20 +173,25 @@ func namesDetectedLevel(e *logql.LabelFilterExpr) bool {
 	return e.Name == "detected_level"
 }
 
-// screenProblem is what is wrong with the flip's screen for a filter-only query the lowering writes natively, "" when
-// nothing is: the screen must admit it, unless it filters on detected_level, which the screen must turn away until
-// the plan serves it (nothing new is served from the plan before its flip).
+// screenProblem is what is wrong with the flip's screens for a filter-only query the lowering writes natively, "" when
+// nothing is: the first screen must admit it, and a filter on detected_level, which the first screen passes on, the
+// log stage screen must admit as a flipped family.
 func screenProblem(plan *queryplan.Plan, q string) string {
 	if !filterOnly(plan) {
 		return ""
 	}
 	canon := logql.CanonicalizeLogRanges(q)
-	passes := canon != "" && canon[0] == '{' && !logql.MayHaveNonFilterStage(canon)
-	switch level := filtersDetectedLevel(plan); {
-	case level && passes:
-		return "filters on detected_level, and the flip's screen admits it before the plan serves it"
-	case !level && !passes:
+	if canon == "" || canon[0] != '{' {
 		return "lowered natively, but the flip's screen turns it away"
+	}
+	if !logql.MayHaveNonFilterStage(canon) {
+		return ""
+	}
+	if !filtersDetectedLevel(plan) {
+		return "lowered natively, but the flip's screen turns it away"
+	}
+	if stages := lower.ScreenLogStages(canon); stages == 0 || stages&^lower.LogStagesOf(proxy.QueryPlanFlippedLogStages) != 0 {
+		return "filters on detected_level, lowered natively, but the log stage screen turns it away"
 	}
 	return ""
 }

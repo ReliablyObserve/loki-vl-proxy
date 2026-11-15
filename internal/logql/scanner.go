@@ -256,8 +256,8 @@ func (s *scanner) dropLexErr(known int) {
 	}
 }
 
-func newScanner(src string) *scanner {
-	return &scanner{src: src, hasNUL: strings.IndexByte(src, 0) >= 0}
+func newScanner(src string) scanner {
+	return scanner{src: src, hasNUL: strings.IndexByte(src, 0) >= 0}
 }
 
 func (s *scanner) peek() (rune, int) {

@@ -7,14 +7,199 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A timestamp written as digits only (the integer nanoseconds Grafana sends for `start`, `end` and `time`) is read in
+  one pass, eight digits at a time, instead of a digit scan and a second parse: 27 to 8 ns per timestamp, with no
+  allocation, and the same value for every input (a sign, a space, a time layout or a float still takes the general
+  parse). The step alignment and the time-bounds check of `query_range`, the metadata routes' response-cache keys and
+  their handlers read their bounds this way, which more than pays for the length check the new
+  `-default-max-query-length` default adds: at the shipped default a `query_range` or `labels` request costs no more
+  than before.
+
 ### Fixed
 
+- **Breaking:** `-default-max-query-length` now defaults to Loki's `max_query_length` default, `721h` (published as
+  `30d1h`), instead of `0` (no limit). A proxy run without a length configured served a range Loki refuses: a
+  `query_range`, `series`, `labels`, label values, `detected_labels`, `detected_fields`, detected field values,
+  `index/stats` or `index/volume` request over more than 721h (for example `start=-1` or `start=1`) now fails, as in Loki,
+  with `400 the query time range exceeds the limit (query length: X, limit: 30d1h)` before any VictoriaLogs call,
+  and `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` publish `max_query_length: 30d1h` instead of
+  `0s`. Set `-default-max-query-length=0` (Helm `extraArgs.default-max-query-length: "0"`), or `max_query_length:
+  "0s"` in `-tenant-default-limits` or `-tenant-limits`, to keep serving longer ranges. A live tail is not checked
+  against this limit. A request with a `start` and no `end` is held to it too (a missing `end` is now, as in Loki).
+  `index/volume` rounds its `start` and `end` down to whole seconds before the check, as Loki does, and reports
+  the length in whole seconds (`721h0m1s`); `index/volume_range` is not length-limited, as in Loki (a range over 721h is
+  answered, and only its 11,000-point resolution rejects).
+- Peer-cache pushes to a replica whose breaker is open are no longer lost. A write-through push the replica cannot
+  take (its breaker is open or it is suspended after a timeout, it is restarting, the push queue is full, or the
+  push failed with a transport error, a timeout, a `429` or a `5xx`) waits in a bounded push buffer and is replayed
+  once the replica answers, so the fleet returns to full replication on its own: before, such pushes were dropped
+  for the 10 s breaker cooldown, and a writer that then lost its disk read those keys from VictoriaLogs again.
+  Reads do not change: a lookup still skips a peer whose breaker is open, and nothing on the request path waits on
+  the buffer. The buffer keeps one entry per key and peer, the newest value; while a peer has buffered pushes, new
+  pushes to it join them, so an older value never lands after a newer one, and a queued push to a suspended peer no
+  longer holds a push worker for `-peer-timeout`. One replayer per peer sends them slowly first: one push (the
+  half-open probe), then rounds doubling up to 32, at most 8 in flight, with jittered backoff from 250 ms to 10 s
+  after a failure; each push carries the TTL the writer's copy has left, and one with under 5 s left is not sent.
+  Above the bound the oldest push of the largest backlog is dropped, counted, and logged at most every 30 s. Closing
+  the proxy cancels every peer call in flight and stops the replay.
+  - New flags `-peer-push-buffer-max-entries` (default 8192) and `-peer-push-buffer-max-bytes` (default 32 MiB),
+    per proxy across all peers, in the limits registry with sizing guidance and as Helm `extraArgs`; `0` on either
+    turns buffering off (pushes a peer cannot take are dropped, as before).
+  - New metrics `loki_vl_proxy_peer_cache_push_buffered_total{reason}`, `_push_buffer_coalesced_total`,
+    `_push_replayed_total`, `_push_buffer_dropped_total{reason}`, `_push_buffer_entries` and `_push_buffer_bytes`.
+  - Pushes to a replica that is still starting now use the same buffer: they are kept until their TTL runs out
+    instead of 30 s, within the shared bound instead of 256 pushes or 8 MiB per peer;
+    `loki_vl_proxy_peer_cache_push_peer_not_up_total` counts those that are dropped.
+    `loki_vl_proxy_peer_cache_push_throttled_total` now counts only pushes dropped for a full queue while the buffer
+    is off; with it on they are buffered (`reason="queue_full"`).
+- An instant query evaluated at a fixed past `time` is now answered from the cache on a repeat. The near-now
+  freshness check read only `end`/`to`, which an instant query does not send, so every instant query was treated
+  as ending now: a repeat older than `-recent-tail-refresh-max-staleness` asked VictoriaLogs again. The check now
+  reads `time` on `/loki/api/v1/query` (and only there, as Loki does); an instant query without `time` is still
+  evaluated at now and refreshed as before.
+- A `| json` or `| logfmt` metric query answered from VictoriaLogs stats buckets no longer leaves VictoriaLogs calls
+  running after it returns. When a parse-risk, level or unparsed-line probe ended the attempt early (its verdict
+  sends the query to the row evaluator, or the probe failed), the stats query and the other probes were cancelled
+  but not waited for. They are now waited for until they return, so every call an attempt starts ends inside it.
 - **Breaking:** a range log query (`query_range`) that sends no `limit` now returns Loki's default of 100 entries,
   not 1000. The default is `-max-lines`, whose default moves from 1000 to 100; set `-max-lines=1000` to keep the old
   answer. Grafana always sends its Max lines as the limit, so only API clients that omit `limit` see a change. The
   default is applied before the cache and the query plan read the request, so the VictoriaLogs calls, the windows,
   the query statistics and the cache keys use the limit the answer has. A tenant whose `max_entries_limit_per_query`
   is below the default still gets that many entries.
+
+## [2.265.0] - 2026-11-15
+
+### Changed
+- Translating a query costs fewer allocations. The LogQL parser allocates about half as much for a log query (a json
+  query with a label filter: 14 to 7 allocations), a `line_format` template is typed once per template text, a
+  query plan is one allocation sized for the query's kind, and the plan's log query lowering writes its text with
+  fewer intermediate values. The request's validation keeps its parse for a query the query plan serves, so the
+  translation does not parse the query again. Answers, translation cache entries and the queries VictoriaLogs
+  receives do not change.
+- Log queries with `json` or `logfmt` parsers (with or without an extraction list, `logfmt` with its flags), `regexp`
+  and `pattern` parsers written with a blank before a plainly spelled expression, the label filters after them, `drop`
+  and `keep` stages (a `keep` of names or of matchers), `label_format` stages whose values are text and `{{.name}}`
+  fields or renames, and `line_format` stages with such a template are served from the query plan instead of the
+  string translator, where the plan writes the translator's text byte for byte. A numeric equality after a parser, a
+  `detected_level` or `service_name` filter after a stage, and stages of a family not served stay with the string
+  translator. Answers, translation cache entries and the queries VictoriaLogs receives do not change; a translation
+  that misses the cache costs no more allocations than the string translator's. `-query-plan-lowering=false` turns it
+  off.
+
+### Fixed
+- An IPv4 `ip()` filter now finds an address written after hex digits and colons exactly where Loki finds it, in
+  `|= ip(...)` line filters and `label = ip(...)` label filters alike. Loki reads a line from its start, and an
+  earlier run of digits and dots, or of hex digits and colons, decides whether a later address is read: in
+  `X0:1.2.3.0` and `1.0:1.2.3.0` Loki finds 1.2.3.0, in `a0:1.2.3.0` and `1:a1.2.3.0` it does not. The proxy judged
+  only the characters right before the address, so `ip("1.2.3.0/27")` dropped the first two and kept the last two,
+  and `!= ip(...)` did the opposite. Checked against Loki's own answers on 52,000 lines. VictoriaLogs now checks two
+  short regexps first and runs the full one only on the few lines they leave, so an IPv4 `ip()` filter costs it 58%
+  to 82% less per line than before. Answers cached before the fix are not reused.
+
+## [2.264.0] - 2026-11-15
+
+### Changed
+
+- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
+  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
+  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
+  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
+  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
+  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
+  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
+
+### Fixed
+
+- A `regexp` or `pattern` parser written with no blank before its expression (`{app="a"} |pattern"<_> <m> <_>"`) now
+  gets Loki's answer. Loki reads it as the parser with the blank; the proxy sent it to VictoriaLogs as written, which
+  VictoriaLogs rejects (it has no `pattern` or `regexp` pipe), so the request failed. Log queries with such a parser,
+  and range and vector aggregations, binary operations, `label_replace` calls, rankings and `stddev`/`stdvar` over
+  one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
+  `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
+
+## [2.263.0] - 2026-11-15
+
+### Changed
+
+- Metric queries are planned once for the query plan's decisions: the range functions whose series a `keep` before
+  the unwrap decides are served from the plan as before, and the proxy now checks, on the typed plan, which range
+  and vector aggregations, binary operations and `label_replace` calls the plan would write with the string
+  translator's text (no ranking, `stddev` or `stdvar` at any level, no binary the proxy evaluates operand by
+  operand, none of the recorded differences): the entries below serve them from the plan. The query plan's corpus
+  check now reads the query as the proxy does (a range written `({...})[5m]` is read as `{...}[5m]`), which counts
+  54 more rows as written by the plan. New tests hold every metric query of the corpus to the same text with the four metric constructs served
+  from the plan under seven proxy profiles, and the translation benchmark measures the metric shapes of each
+  construct, served and not served.
+- The translation of a metric query that misses the translation cache costs no more on the query plan's path than on
+  the string translator's. A one-pass text screen with no allocation names the construct at the top of a metric query
+  before it is parsed, so a query the plan leaves to the string translator (a ranking, `stddev`, `vector()`, an
+  `unpack`, a numeric equality after a parser, ...) is not parsed, built and resolved on top of its translation; the
+  plan path reads a plan the handlers already made for the query instead of parsing it again; and the stats and math
+  pipes the plan writes print straight into the query's text (a grouped rate: 60 to 42 allocations and 3.6 to 3.0 KiB
+  per translation once served from the plan). Construct names cost no allocation, so the log queries already served
+  from the plan allocate one less.
+- Vector aggregations (`sum`, `avg`, `min`, `max`, `count`, with `by` or `without`, over range functions with and
+  without `unwrap`) are served from the query plan instead of the string translator, where the plan writes the
+  translator's text byte for byte; rankings, `stddev`, `stdvar`, an empty `without ()` and the recorded differences
+  stay with the string translator. Answers, translation cache entries and the queries VictoriaLogs receives do not
+  change; a translation that misses the cache takes about half the time (a grouped rate: 6.6 to 2.7 us, 60 to 42
+  allocations). `-query-plan-lowering=false` turns it off.
+- Range functions (`rate`, `count_over_time`, `bytes_over_time`, `bytes_rate`, `absent_over_time` and the unwrapped
+  ones) at the top of a metric query, or translated as an operand, are served from the query plan the same way (a
+  `count_over_time` miss: 5.6 to 1.9 us, 36 to 32 allocations); a range function over an `unpack` stays with the
+  string translator.
+- Binary operations between two aggregations, or an aggregation and a number (`+`, `-`, `*`, `/`, `%`, `^` and the
+  comparisons, with `on`, `ignoring`, `group_left`, `group_right`), are served from the query plan the same way (two
+  sums of rates divided: 14.9 to 9.2 us, 104 to 70 allocations); `bool`, `and`/`or`/`unless`, a `without` operand, a
+  `vector()` operand and chains of binaries stay with the string translator.
+- `label_replace` calls, nested ones too, around an aggregation or a binary operation are served from the query plan
+  the same way (6.6 to 4.1 us, 68 to 51 allocations); a `label_replace` around a ranking, `stddev` or a `service_name`
+  grouping stays with the string translator.
+
+## [2.262.0] - 2026-11-15
+
+### Fixed
+
+- A range aggregation over a `| keep` that lists only a blank Loki reads as a label name, such as a vertical tab, a
+  form feed or U+00A0 (`count_over_time({app="api"} | keep\v [1m])`), now answers one `{}` series holding every
+  stream's samples, as Loki does. It answered `400` on `/loki/api/v1/query` and no series on
+  `/loki/api/v1/query_range`. A `| keep` or `| drop` written so now prints as `| keep \v` instead of `| keep `, which
+  no parser reads. Loki accepts such a blank alone and rejects it beside another name (`| keep\v\v`, `| keep\va`);
+  the proxy already answered those as Loki does.
+
+## [2.261.0] - 2026-11-15
+
+### Fixed
+
+- A repeated `query`, `query_range` or `series` request whose answer is larger than one entry of the
+  compatibility-edge cache (a tenth of its budget, 2.56 MiB by default) is answered from the cache again instead of
+  asking VictoriaLogs. Such answers (Drilldown breakdowns by a high-cardinality label, parser metrics and instant
+  queries over thousands of series) were kept nowhere when their range ended within `-query-range-freshness` of now
+  or they answered an instant query. They are now kept in the primary memory cache with the edge cache's TTL and
+  freshness rule, up to the primary cache's own entry bound. Known limit: such an answer stays on the replica that
+  computed it (not on disk, not pushed to peers), so another replica computes it again.
+- Identical cold `query_range` metric requests no longer read buckets from VictoriaLogs that another request's
+  read had just fetched. Those buckets are stored after the read is answered, and a request that looked them up in
+  between (one that took a freed stats_query_range slot, or found one free while the first callers still parsed
+  the answer) read part of the window again. Such a lookup now waits (up to 2 s, or until the request ends) for the
+  store in progress for the same buckets, so any number of identical cold requests make one read.
+
+### Added
+
+- `-debug-vl-calls-header` (default off) adds `X-Loki-VL-Backend-Calls` (the VictoriaLogs calls the request started
+  before its response headers were written) and `X-Loki-VL-Cache-Result` (`hit`, `miss` or `bypass`) to every read
+  response, so a cache reuse check can count one request's VictoriaLogs calls. Loki sends neither header.
+
+## [2.260.2] - 2026-11-15
+
+### Fixed
+
+- A label filter compared with a negative number that starts with a 0 and a letter or `_` (`| A < - 0x1F`,
+  `- 0X0`, `- 0o7`) now prints with the minus apart from the number, so the printed query reads back as the same
+  query. Written together (`-0X0`), Loki rejects it. What the proxy answers and sends to VictoriaLogs does not change.
 
 ## [2.260.1] - 2026-11-14
 

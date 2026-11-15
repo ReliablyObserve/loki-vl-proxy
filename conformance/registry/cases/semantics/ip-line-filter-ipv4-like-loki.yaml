@@ -21,7 +21,9 @@ why: |
   the lowering) writes the address set as exact octet ranges with Loki's
   context around them, after a literal of the octets every address fixes,
   which VictoriaLogs searches first. Every IPv4 line of the grid now answers
-  like Loki; IPv6 stays semantics/ip-filter-precision.
+  like Loki; IPv6 stays semantics/ip-filter-precision. IPv4 matches Loki on the
+  recorded grids, including the walk's prefixes
+  (semantics/ip-filter-ipv4-after-hex-colon).
 request:
   method: GET
   path: /loki/api/v1/query_range

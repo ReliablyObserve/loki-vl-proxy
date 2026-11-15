@@ -1,3 +1,117 @@
 {
- "verified": false
+ "commit": "8d3d89252cf1",
+ "date": "2026-11-15",
+ "errors": {
+  "recorded": {
+   "comparable_rows": 231,
+   "matching_rows": 223,
+   "known_differences": 8,
+   "known_leaks": 0
+  },
+  "live": {
+   "rows": 335,
+   "changed": 12,
+   "not_re_recorded": 71,
+   "ok": false
+  },
+  "replay_ok": true
+ },
+ "loki": "3.7.9",
+ "perf_weekly": {
+  "date": "2026-11-09",
+  "loki_version": "3.7.9",
+  "pairs": 522,
+  "faster": 324,
+  "par": 187,
+  "slower": 11,
+  "distribution": [
+   {
+    "above": 5,
+    "below": 329,
+    "between": 8,
+    "close": 226,
+    "profile": "loki-defaults",
+    "request": "first",
+    "rows": 568
+   },
+   {
+    "above": 0,
+    "below": 76,
+    "between": 2,
+    "close": 684,
+    "profile": "loki-defaults",
+    "request": "repeat",
+    "rows": 762
+   },
+   {
+    "above": 3,
+    "below": 308,
+    "between": 10,
+    "close": 123,
+    "profile": "aligned",
+    "request": "first",
+    "rows": 444
+   },
+   {
+    "above": 0,
+    "below": 15,
+    "between": 3,
+    "close": 508,
+    "profile": "aligned",
+    "request": "repeat",
+    "rows": 526
+   }
+  ],
+  "over_2x_rows": 4
+ },
+ "red": true,
+ "registry": {
+  "cases": 371,
+  "by_status": {
+   "documented": 15,
+   "fixed": 131,
+   "no gap": 84,
+   "open": 131,
+   "owner-kept": 7,
+   "upstream": 3
+  },
+  "open_by_impact": {
+   "api-only": 22,
+   "drilldown-visible": 13,
+   "edge": 35,
+   "explore-visible": 60,
+   "grafana-datasource": 1
+  }
+ },
+ "sweep": {
+  "queries": 25824,
+  "loki_answers": {
+   "accepted": 16982,
+   "rejected": 8842
+  },
+  "differences_by_kind": {
+   "VictoriaLogs rejects the translator text": 393,
+   "accepted, translation fails": 32,
+   "error text differs": 124,
+   "error text differs, rejected at translation": 12,
+   "proxy accepts, Loki rejects": 48,
+   "proxy rejects, Loki accepts": 18,
+   "tree fact differs: binary operation": 17,
+   "tree fact differs: has a log pipeline": 3,
+   "tree fact differs: offsets": 4,
+   "tree fact differs: outermost operation": 4
+  },
+  "live_check": {
+   "conclusion": "failure",
+   "date": "2026-11-15",
+   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43667889923",
+   "workflow": "query-corpus.yaml"
+  },
+  "recorded_file": "conformance/registry/grammar-sweep.json"
+ },
+ "verified": true,
+ "victorialogs": [
+  "v1.49.0",
+  "v1.53.0"
+ ]
 }

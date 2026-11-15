@@ -1474,35 +1474,42 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	}
 	// The parse-risk check and the bucket query run concurrently; the buckets
 	// are discarded when the check finds a line the parsers read differently.
+	// Every return cancels the checks and the stats and waits for them, so no
+	// VictoriaLogs call this attempt started outlives it.
 	riskCtx, cancelRisk := context.WithCancel(ctx)
-	defer cancelRisk()
+	var running sync.WaitGroup
+	defer func() {
+		cancelRisk()
+		cancelStats()
+		running.Wait()
+	}()
 	type riskResult struct {
 		risky bool
 		err   error
 	}
 	riskDone := make(chan riskResult, 1)
-	go func() {
+	running.Go(func() {
 		// A line no filter on detected_level can let through is none the probes need to read.
 		risky, err := p.pushdownParseRisk(riskCtx, plan, probeBase+plan.levelRestriction(), plain, extracted, extractedKeys, stored, storedLevel, windowStart, end)
 		riskDone <- riskResult{risky, err}
-	}()
+	})
 	// A split plan's stored level is only Loki's when no other stored level
 	// field can outrank it (storedLevelForeignFieldRisk).
 	foreignDone := make(chan riskResult, 1)
 	if plan.validOnly && storedLevel {
-		go func() {
+		running.Go(func() {
 			foreign, err := p.storedLevelForeignFieldRisk(riskCtx, probeBase, windowStart, end)
 			foreignDone <- riskResult{foreign, err}
-		}()
+		})
 	} else {
 		foreignDone <- riskResult{}
 	}
 	hazardDone := make(chan riskResult, 1)
 	if plan.validOnly {
-		go func() {
+		running.Go(func() {
 			hazard, err := p.jsonLokiRejectHazardRisk(riskCtx, probeBase, windowStart, end)
 			hazardDone <- riskResult{hazard, err}
-		}()
+		})
 	} else {
 		hazardDone <- riskResult{}
 	}
@@ -1511,10 +1518,10 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	// evaluator, which answers Loki's error for it.
 	unparsedDone := make(chan riskResult, 1)
 	if plan.split == jsonSplitStrict {
-		go func() {
+		running.Go(func() {
 			unparsed, err := p.jsonUnparsedLineRisk(riskCtx, probeBase, start, end, step, plan.window)
 			unparsedDone <- riskResult{unparsed, err}
-		}()
+		})
 	} else {
 		unparsedDone <- riskResult{}
 	}
@@ -1539,7 +1546,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		return orderedJSONStatsResult{shiftSeriesSamples(series, sampleShift), rowEdges, err}
 	}
 	statsDone := make(chan orderedJSONStatsResult, 1)
-	go func() { statsDone <- runStats(statsCtx, false) }()
+	running.Go(func() { statsDone <- runStats(statsCtx, false) })
 	// A strict split's unparsed-line lookup is read first: a line Loki's parser rejects decides the answer (Loki's
 	// error, from the row evaluator) without waiting for the scans the other checks and the stats run.
 	unparsed := <-unparsedDone
@@ -2776,21 +2783,25 @@ func (p *Proxy) rememberedRisk(ctx context.Context, key string, start, end time.
 }
 
 // anyRisk runs the probes beside each other, one round trip. The first risky
-// verdict (or error) decides; the other probes are cancelled rather than
-// waited for.
+// verdict (or error) decides; the other probes are cancelled, and waited for
+// only until they return, so none outlives the request.
 func anyRisk(ctx context.Context, probes []func(context.Context) (bool, error)) (bool, error) {
 	type result struct {
 		risky bool
 		err   error
 	}
 	probeCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	var running sync.WaitGroup
+	defer func() {
+		cancel()
+		running.Wait()
+	}()
 	results := make(chan result, len(probes))
 	for _, probe := range probes {
-		go func() {
+		running.Go(func() {
 			risky, err := probe(probeCtx)
 			results <- result{risky, err}
-		}()
+		})
 	}
 	for range probes {
 		r := <-results

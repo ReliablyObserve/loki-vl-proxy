@@ -610,12 +610,19 @@ func (p *Proxy) shouldRefreshLabelsInBackground(remaining, ttl time.Duration) bo
 
 // requestEndsWithin reports whether the request's end is within window of now.
 // An omitted end means now, as in Loki. A request moved onto the step grid is
-// judged on the end the client sent (stepAlignedRawEnd).
-func requestEndsWithin(r *http.Request, window time.Duration) bool {
+// judged on the end the client sent (stepAlignedRawEnd). An instant query
+// (endpoint "query") ends at its evaluation time, Loki's time parameter: Loki
+// reads neither end nor to there, and no other endpoint reads time.
+func requestEndsWithin(r *http.Request, endpoint string, window time.Duration) bool {
 	if r == nil || window <= 0 {
 		return false
 	}
-	endRaw := strings.TrimSpace(firstNonEmpty(r.FormValue("end"), r.FormValue("to")))
+	var endRaw string
+	if endpoint == "query" {
+		endRaw = strings.TrimSpace(r.FormValue("time"))
+	} else {
+		endRaw = strings.TrimSpace(firstNonEmpty(r.FormValue("end"), r.FormValue("to")))
+	}
 	if raw, aligned := stepAlignedRawEnd(r); aligned {
 		endRaw = raw
 	}
@@ -690,7 +697,7 @@ func (p *Proxy) shouldBypassStaleEntry(endpoint string, ttl, remaining, age time
 	if age < maxStaleness {
 		return false
 	}
-	return requestEndsWithin(r, window)
+	return requestEndsWithin(r, endpoint, window)
 }
 
 // metadataCacheLookup reads a /labels or /label/{name}/values entry and decides
@@ -704,7 +711,7 @@ func (p *Proxy) shouldBypassStaleEntry(endpoint string, ttl, remaining, age time
 func (p *Proxy) metadataCacheLookup(endpoint, cacheKey string, ttl time.Duration, r *http.Request) (cached []byte, remaining time.Duration, serve, freshFetch bool) {
 	cached, remaining, age, _, hit := p.endpointReadCacheEntryAge(r.Context(), endpoint, cacheKey)
 	window, enabled := p.nearNowWindow(endpoint)
-	nearNow := enabled && requestEndsWithin(r, window)
+	nearNow := enabled && requestEndsWithin(r, endpoint, window)
 	stale := false
 	if hit {
 		if metadataListPayloadEmpty(cached) {
