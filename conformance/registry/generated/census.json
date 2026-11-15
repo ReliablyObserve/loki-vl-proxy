@@ -2014,6 +2014,7 @@
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/unwrap-quantile-sum-by-group-quantile",
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/unwrap-rate-counter-window-extrapolation",
     "internal/querycorpus/known_divergence_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/known_divergence_test.go | semantics/translator-copies-unspaced-parser",
     "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",

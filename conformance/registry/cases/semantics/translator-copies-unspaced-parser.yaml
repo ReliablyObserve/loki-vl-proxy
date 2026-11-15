@@ -21,8 +21,9 @@ why: |
   -query-plan-lowering, on by default), with its other regexp and pattern
   parsers, and a range or vector aggregation, binary operation or label_replace
   over one when that construct is served from the plan (also as the operand of a
-  ranking or stddev the proxy evaluates itself); the corpus rows are
-  listed in internal/querycorpus/testdata/known-typed-divergences.json.
+  ranking or stddev the proxy evaluates itself). The corpus shadow and the
+  VictoriaLogs oracle's typed-selector check name such queries with the
+  recogniser translatorCopiesUnspacedParser (internal/querycorpus).
 corpus:
   size: 3
   dimensions:

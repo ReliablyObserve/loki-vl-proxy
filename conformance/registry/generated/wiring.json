@@ -1860,6 +1860,7 @@
     ],
     "semantics/translator-copies-unspaced-parser": [
       "internal/proxy/query_lowering_log_stages_test.go",
+      "internal/querycorpus/known_divergence_test.go",
       "internal/queryplan/lower/unspaced_parser_test.go"
     ],
     "semantics/translator-reads-blank-before-range-call-as-text": [
@@ -3947,6 +3948,7 @@
     ],
     "internal/querycorpus/known_divergence_test.go": [
       "architecture-syntax-package-layering",
+      "semantics/translator-copies-unspaced-parser",
       "semantics/translator-reads-parenthesized-metric-as-text"
     ],
     "internal/querycorpus/label_filter_grid_test.go": [

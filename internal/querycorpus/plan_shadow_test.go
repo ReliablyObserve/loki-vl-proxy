@@ -149,6 +149,9 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			if !ok && translatorReadsStageMarker(q) {
 				caseID, ok = "semantics/translator-reads-marker-bytes-in-quoted-value", true
 			}
+			if !ok && translatorCopiesUnspacedParser(q) {
+				caseID, ok = "semantics/translator-copies-unspaced-parser", true
+			}
 			if !ok && emptyWithoutDiffers(q, plan, prof) {
 				// A `without ()` operand: Loki keeps every series of it, the translator writes it ungrouped, and the
 				// route's reference is that text (TestEmptyWithoutOperandsKeepEverySeries holds the lowering).

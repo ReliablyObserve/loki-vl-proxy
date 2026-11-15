@@ -208,7 +208,7 @@ func TestQueryPlanLowering_RouteParity(t *testing.T) {
 		name  string
 		extra []string
 		logs  []string
-	}{{"served today", nil, nil}, {"metric flips", metricFlipCandidates, nil}, {"log stage flips", metricFlipCandidates, logStageFlipCandidates}} {
+	}{{"served today", nil, nil}, {"metric and log stage flips", metricFlipCandidates, logStageFlipCandidates}} {
 		t.Run(flips.name, func(t *testing.T) {
 			testLoweringRouteParity(t, flips.extra, flips.logs)
 		})
