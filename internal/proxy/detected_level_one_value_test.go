@@ -446,35 +446,22 @@ func streamSeriesLabelsWith(t *testing.T, emu *vlemu.Emulator, query string, bas
 // TestStreamLevelSeriesFenceCoversParserShapes: a diff of range functions x
 // pipelines x outer forms x streams keyed level="ERROR", level="Debug",
 // severity, LEVEL, lvl and none, at an instant and at steps 60 and 300,
-// against the previous build changed label sets only for queries with a parser
-// stage (json, logfmt, unpack, regexp, pattern) or an unwrap. Every such
-// query is fenced in every outer form, and the pipelines without either keep
-// their keys in the forms whose answers did not change.
+// against the previous build changed label sets for queries with a parser
+// stage (json, logfmt, unpack, regexp, pattern) or an unwrap; the chain now
+// reading a stream's level fields first changes the answers of every
+// chain-served metric query over a stream whose rows store another level. So
+// every metric query is fenced, in every outer form and pipeline, and a log
+// query that names no detected_level keeps its key.
 //
 // conformance: semantics/detected-level-one-value-per-stream, cache-response-key-versions
 func TestStreamLevelSeriesFenceCoversParserShapes(t *testing.T) {
 	outers := []string{"%s", "sum without (pod) (%s)", "max without (pod) (%s)", "sum without () (%s)", "topk(1, %s)", "bottomk(1, %s)", "sort(%s)", "sort_desc(%s)", `label_replace(%s, "x", "$1", "pod", "(.*)")`, "sum by (app) (%s)", "sum(%s)", "sum by (detected_level) (%s)", "sum by (level) (%s)", "count(%s)", "avg by (pod) (%s)", "%s > 0", "%s * 2", "-%s"}
-	kept := map[string]bool{"%s": true, "sum by (app) (%s)": true, "sum(%s)": true, "sum by (detected_level) (%s)": true, "sum by (level) (%s)": true, "count(%s)": true, "avg by (pod) (%s)": true, "%s > 0": true, "%s * 2": true, "-%s": true}
-	changed := []string{" | logfmt", " | json", " | logfmt amount", " | json amount", " | logfmt | amount > 2", ` | regexp "amount=(?P<amt>[0-9]+)"`, ` | pattern "amount=<amt> <_>"`, " | unpack", " | logfmt | label_format x=amount", " | logfmt | drop id", " | logfmt | keep app, pod, level", " |logfmt", " |\tjson", " | json\n", " | JSON", " |\u00a0Logfmt", " | Pattern \"amount=<amt> <_>\"", " |\vunpack"}
-	unchanged := []string{"", ` |= "amount"`, ` | line_format "{{.amount}}"`, " | decolorize", ` |= "| json"`, ` | label_format jsonx="a"`, " | drop logfmt_x"}
-	for _, pl := range changed {
+	pipelines := []string{" | logfmt", " | json", " | logfmt amount", " | json amount", " | logfmt | amount > 2", ` | regexp "amount=(?P<amt>[0-9]+)"`, ` | pattern "amount=<amt> <_>"`, " | unpack", " | logfmt | label_format x=amount", " | logfmt | drop id", " | logfmt | keep app, pod, level", " |logfmt", " |\tjson", " | json\n", " | JSON", " |\u00a0Logfmt", " | Pattern \"amount=<amt> <_>\"", " |\vunpack",
+		"", ` |= "amount"`, ` | line_format "{{.amount}}"`, " | decolorize", ` |= "| json"`, ` | label_format jsonx="a"`, " | drop logfmt_x"}
+	for _, pl := range pipelines {
 		for _, fn := range []string{"count_over_time", "rate", "bytes_over_time", "bytes_rate"} {
 			for _, o := range outers {
 				if q := fmt.Sprintf(o, fmt.Sprintf(`%s({app="uw"}%s [5m])`, fn, pl)); streamLevelSeriesResponseKeyVersion(q) == "" {
-					t.Errorf("not fenced: %q", q)
-				}
-			}
-		}
-	}
-	for _, pl := range unchanged {
-		for _, fn := range []string{"count_over_time", "rate", "bytes_over_time", "bytes_rate"} {
-			for _, o := range outers {
-				q := fmt.Sprintf(o, fmt.Sprintf(`%s({app="uw"}%s [5m])`, fn, pl))
-				got := streamLevelSeriesResponseKeyVersion(q) != ""
-				if kept[o] && got && !strings.Contains(pl, "| json") {
-					t.Errorf("fenced, but its answer did not change: %q", q)
-				}
-				if !kept[o] && !got {
 					t.Errorf("not fenced: %q", q)
 				}
 			}
@@ -484,6 +471,9 @@ func TestStreamLevelSeriesFenceCoversParserShapes(t *testing.T) {
 		if streamLevelSeriesResponseKeyVersion(q) != "" {
 			t.Errorf("log query fenced: %q", q)
 		}
+	}
+	if streamLevelSeriesResponseKeyVersion(`{app="a"} | detected_level="error"`) == "" {
+		t.Error("a detected_level filter is not fenced")
 	}
 }
 
@@ -543,7 +533,7 @@ func TestStreamLevelOneValueFence(t *testing.T) {
 // TestStreamLevelChainFence: VictoriaLogs' detected_level chain now reads a stream's level fields before the ones
 // stored on its rows, which changes the answer of every chain-served query over such a stream (a parser-less rate,
 // a by (detected_level) count, a `| detected_level` filter). An answer the previous build cached under the key
-// without the chain fence is never served; the fresh answer, debug no more but the stream's error, is cached under
+// without the fence (these queries had none) is never served; the fresh answer, debug no more but the stream's error, is cached under
 // the new key, so a repeat makes no VictoriaLogs call. A log query that names no detected_level keeps its key.
 //
 // conformance: semantics/detected-level-one-value-per-stream, cache-response-key-versions
@@ -555,7 +545,7 @@ func TestStreamLevelChainFence(t *testing.T) {
 	}
 	for _, q := range []string{`rate({app="uw"}[1m])`, `sum by (detected_level) (count_over_time({app="uw"}[5m]))`} {
 		t.Run(q, func(t *testing.T) {
-			if streamLevelChainResponseKeyVersion(q) != streamLevelChainResponseVersion {
+			if streamLevelSeriesResponseKeyVersion(q) != streamLevelSeriesResponseVersion {
 				t.Fatalf("not fenced")
 			}
 			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0", DeriveFields: vlChainDetectedLevel, RowStreamFields: true}
@@ -572,11 +562,11 @@ func TestStreamLevelChainFence(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, target, nil)
 			req.Header.Set("X-Scope-OrgID", "0")
 			key, ok := p.compatCacheKey("query_range", req)
-			if !ok || !strings.Contains(key, streamLevelChainResponseVersion) {
+			if !ok || !strings.Contains(key, streamLevelSeriesResponseVersion) {
 				t.Fatalf("compat key %q lacks the fence", key)
 			}
 			const stale = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"uw","detected_level":"debug","stale":"yes"},"values":[[1800000000,"1"]]}]}}`
-			p.compatCache.Set(strings.Replace(key, streamLevelChainResponseVersion, "", 1), []byte(stale))
+			p.compatCache.Set(strings.Replace(key, streamLevelSeriesResponseVersion, "", 1), []byte(stale))
 			rec := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "0"})
 			if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "stale") || !strings.Contains(rec.Body.String(), `"detected_level":"error"`) || strings.Contains(rec.Body.String(), `"detected_level":"debug"`) {
 				t.Fatalf("%d %s: want the fresh answer, error, not the cached one", rec.Code, rec.Body.String())
@@ -588,7 +578,7 @@ func TestStreamLevelChainFence(t *testing.T) {
 		})
 	}
 	for q, fenced := range map[string]bool{`{app="uw"}`: false, `{app="uw"} |= "x"`: false, `{app="uw"} | json`: false, `{app="uw"} | detected_level="error"`: true, `{app="uw"} |= "[x"`: true} {
-		if got := streamLevelChainResponseKeyVersion(q) != ""; got != fenced {
+		if got := streamLevelSeriesResponseKeyVersion(q) != ""; got != fenced {
 			t.Errorf("%q: fenced %v, want %v", q, got, fenced)
 		}
 	}

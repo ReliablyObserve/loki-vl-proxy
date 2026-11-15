@@ -30,8 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   300) answered `ERROR` and `Debug` for streams labelled `level="ERROR"` and `level="Debug"` (VictoriaLogs answers a
   raw row with its stream fields as fields, so the row's `level` was the stream's, copied as stored); they now take
   the stream's level fields first, then the row's `level`, normalised. VictoriaLogs calls per request do not change.
-  Answers cached before are not served again: a new fence, `@stream-level-chain-v1`, covers every metric query and
-  every query naming `detected_level` (one cache miss per such key after the upgrade).
+  Answers cached before are not served again: the response key fence (`@stream-level-series-v3`) now covers every
+  metric query and every query naming `detected_level` (one cache miss per such key after the upgrade).
 
 ## [2.301.0] - 2026-11-15
 

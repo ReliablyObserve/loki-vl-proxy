@@ -42,7 +42,7 @@ why: |
   streamDetectedLevel; the order of the log read path's deriveRowLevel). The level label keeps its stored value, as in Loki. A
   present detected_level is kept. The LogsQL sent and the VictoriaLogs calls
   do not change. Answers cached before the fix are fenced
-  (@stream-level-series-v2, which now also covers every metric query with a
+  (@stream-level-series-v2, then v3 below, which also covers every metric query with a
   parser stage).
 
   Two more paths read the stored level ahead of the stream (2026-11-15, live
@@ -58,8 +58,8 @@ why: |
     one sends the chain unchanged). VictoriaLogs v1.49.0 and v1.53.0 answer
     error for that row and Loki's value for every recorded row, and every
     text survives their clone (testdata/detected_level_vl_chain_answers.json,
-    TestPlanTextsSurviveVictoriaLogsClone). Fenced: @stream-level-chain-v1
-    (every metric query and every query naming detected_level).
+    TestPlanTextsSurviveVictoriaLogsClone). Fenced: @stream-level-series-v3
+    now covers every metric query and every query naming detected_level.
   - the raw-row reads (`sum without (pod) (rate({...} | json amount | unwrap
     amount [5m]))` at an instant and step 60, `sort(rate({...} | json [1m]))`
     at an instant and step 300) copied the row's level field into

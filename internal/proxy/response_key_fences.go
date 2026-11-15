@@ -55,7 +55,6 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	b.add(keepUnwrapIdentityResponseKeyVersion(query))
 	b.add(dynamicUnwrapIdentityResponseKeyVersion(query))
 	b.add(streamLevelSeriesResponseKeyVersion(query))
-	b.add(streamLevelChainResponseKeyVersion(query))
 	if site == responseKeyCompatQueryRange {
 		b.add(logfmtPresenceResponseKeyVersion(r, query))
 	}
@@ -114,12 +113,17 @@ func keepUnwrapIdentityResponseKeyVersion(query string) string {
 // detected_level from the stream's level fields, normalised (semantics/without-fold-stream-detected-level: they said
 // unknown on the per-stream stats reads; semantics/detected-level-one-value-per-stream: the bare-parser stats read,
 // the raw-row reads and the stats answers relabelled by stream copied the stored level, ERROR or Debug, and ignored
-// severity, LEVEL and lvl). v1 named only the first change.
-const streamLevelSeriesResponseVersion = "@stream-level-series-v2:"
+// severity, LEVEL and lvl; VictoriaLogs' detected_level chain read the level fields stored on a row before the
+// stream's, so a stream labelled severity="error" whose lines carry structured metadata level="debug" said debug on
+// every chain-served query, and a `| detected_level` filter kept those rows by that value). v1 named only the first
+// change, v2 (never released) the first two.
+const streamLevelSeriesResponseVersion = "@stream-level-series-v3:"
 
-// streamLevelSeriesResponseKeyVersion is the fence of a query that may build its series per stream on a proxy-side
-// path: a without fold, an unwrap function, topk, bottomk, sort, sort_desc or label_replace over a range function, and
-// any metric query with a parser stage (json, logfmt, unpack, regexp, pattern). The words and stages are those of
+// streamLevelSeriesResponseKeyVersion is the fence of a query whose VictoriaLogs read may carry the detected_level
+// chain, any metric query (it holds the [ of a range) and any query naming detected_level (a filter on it), and of a
+// query that may build its series per stream on a proxy-side path: a without fold, an unwrap function, topk,
+// bottomk, sort, sort_desc or label_replace over a range function, and any metric query with a parser stage (json,
+// logfmt, unpack, regexp, pattern). One fence for both changes, so a key carries one constant and no chain is built. The words and stages are those of
 // every query whose label sets changed in a diff of range functions, parsers and outer forms against the previous
 // build. A text screen, so a query that builds no such series is fenced too (one more cache miss), and no other
 // query's key changes. It jumps between the rare bytes the words hold (a log query has no parenthesis and returns at
@@ -128,6 +132,9 @@ const streamLevelSeriesResponseVersion = "@stream-level-series-v2:"
 // parenthesis or after a | (TOPK, sum WITHOUT, sort\v(, | JSON), so the screen does too: it also jumps to K and W and
 // compares the words case-folded.
 func streamLevelSeriesResponseKeyVersion(query string) string {
+	if strings.IndexByte(query, '[') >= 0 || strings.Contains(query, detectedLevelLabel) {
+		return streamLevelSeriesResponseVersion
+	}
 	if strings.IndexByte(query, '(') < 0 {
 		return ""
 	}
@@ -156,22 +163,6 @@ func streamLevelSeriesResponseKeyVersion(query string) string {
 	}
 	if mayHoldParserStage(query) {
 		return streamLevelSeriesResponseVersion
-	}
-	return ""
-}
-
-// streamLevelChainResponseVersion fences the answers cached before VictoriaLogs' detected_level chain read a stream's
-// level fields before the level fields stored on its rows (semantics/detected-level-one-value-per-stream: a stream
-// labelled severity="error" whose lines carry structured metadata level="debug" said debug on every chain-served
-// metric query, and a `| detected_level` filter kept the rows by that value).
-const streamLevelChainResponseVersion = "@stream-level-chain-v1:"
-
-// streamLevelChainResponseKeyVersion is the fence of a query whose VictoriaLogs read may carry the chain: any metric
-// query (it holds the [ of a range) and any query naming detected_level (a filter on it). A text screen, so a query
-// that reads no chain is fenced too (one more cache miss), and a log query without detected_level keeps its key.
-func streamLevelChainResponseKeyVersion(query string) string {
-	if strings.IndexByte(query, '[') >= 0 || strings.Contains(query, detectedLevelLabel) {
-		return streamLevelChainResponseVersion
 	}
 	return ""
 }
