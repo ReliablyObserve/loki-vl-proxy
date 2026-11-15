@@ -171,9 +171,10 @@ func FirstArgumentLen(s string) int {
 // outside strings), which Loki's lexer skips. The handlers and the string
 // translator read the query text, so the request carries it without them. A
 // query the scanner cannot read to its end is returned as it is: validation
-// reports Loki's error for it. So is a query with a comment between a vector
-// aggregation's name and its parenthesis or grouping: Loki's lexer reads the
-// name as an identifier there, which removing the comment would hide.
+// reports Loki's error for it. So is a query with a comment between a
+// function's name and its parenthesis, or a vector aggregation's name and its
+// grouping: Loki's lexer reads the name as an identifier there, which removing
+// the comment would hide.
 func StripComments(query string) string {
 	if !strings.Contains(query, "#") {
 		return query

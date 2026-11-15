@@ -706,20 +706,33 @@ func skipSpaceAndComments(q string, i int) int {
 	return i
 }
 
-// commentMakesName reports a comment, starting at src[at], that stands between a vector aggregation's name and its
-// call or `by (` grouping (`sum # c\n(...)`, `sum by # c\n(a) (...)`): Loki's lexer reads the name as a name there,
-// and without the comment it is the function.
+// commentMakesName reports a comment, starting at src[at], that stands between a function's name and its call
+// (`rate # c\n(...)`, `vector # c\n(1)`, `|= ip # c\n("...")`, `unwrap bytes # c\n(c)`), or between a vector
+// aggregation's name and its `by (` grouping (`sum # c\nby (a) (...)`, `sum by # c\n(a) (...)`): Loki's lexer reads
+// the name as a name there, and without the comment it is the function.
 func commentMakesName(src string, at int) bool {
 	end := trimSpaceLeft(src, at)
 	start := wordStart(src, end)
+	grouping := false
 	if word := src[start:end]; strings.EqualFold(word, "by") || strings.EqualFold(word, "without") {
 		end = trimSpaceLeft(src, start)
 		start = wordStart(src, end)
+		grouping = true
 	}
 	if start == end || start > 0 && (src[start-1] >= utf8.RuneSelf || src[start-1] == '.') {
 		return false // no word, or the end of a longer name
 	}
-	return vectorAggNames[strings.ToLower(src[start:end])] && !parenFollows(src, end) && parenAfter(src, end, skipSpaceAndComments)
+	name := strings.ToLower(src[start:end])
+	if !vectorAggNames[name] && (grouping || !isCallName(name)) {
+		return false
+	}
+	return !parenFollows(src, end) && parenAfter(src, end, skipSpaceAndComments)
+}
+
+// isCallName reports a function name other than a vector aggregation's that Loki's lexer reads as the function only
+// with a parenthesis after white space.
+func isCallName(name string) bool {
+	return rangeAggNames[name] || unwrapConversions[name] || name == "vector" || name == "label_replace" || name == "ip"
 }
 
 // trimSpaceLeft is the offset of the white space that ends at src[end].
