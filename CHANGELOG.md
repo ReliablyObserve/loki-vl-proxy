@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
+  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
+  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
+  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
+  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
+  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
+  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
+
+### Fixed
+
+- A `regexp` or `pattern` parser written with no blank before its expression (`{app="a"} |pattern"<_> <m> <_>"`) now
+  gets Loki's answer. Loki reads it as the parser with the blank; the proxy sent it to VictoriaLogs as written, which
+  VictoriaLogs rejects (it has no `pattern` or `regexp` pipe), so the request failed. Log queries with such a parser,
+  and range and vector aggregations, binary operations, `label_replace` calls, rankings and `stddev`/`stdvar` over
+  one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
+  `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
+
+## [2.262.0] - 2026-11-15
+### Changed
+
 - Metric queries are planned once for the query plan's decisions: the range functions whose series a `keep` before
   the unwrap decides are served from the plan as before, and the proxy now checks, on the typed plan, which range
   and vector aggregations, binary operations and `label_replace` calls the plan would write with the string
@@ -43,22 +63,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `label_replace` calls, nested ones too, around an aggregation or a binary operation are served from the query plan
   the same way (6.6 to 4.1 us, 68 to 51 allocations); a `label_replace` around a ranking, `stddev` or a `service_name`
   grouping stays with the string translator.
-- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
-  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
-  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
-  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
-  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
-  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
-  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
-
-### Fixed
-
-- A `regexp` or `pattern` parser written with no blank before its expression (`{app="a"} |pattern"<_> <m> <_>"`) now
-  gets Loki's answer. Loki reads it as the parser with the blank; the proxy sent it to VictoriaLogs as written, which
-  VictoriaLogs rejects (it has no `pattern` or `regexp` pipe), so the request failed. Log queries with such a parser,
-  and range and vector aggregations, binary operations, `label_replace` calls, rankings and `stddev`/`stdvar` over
-  one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
-  `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
 
 ### Fixed
 
@@ -68,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/loki/api/v1/query_range`. A `| keep` or `| drop` written so now prints as `| keep \v` instead of `| keep `, which
   no parser reads. Loki accepts such a blank alone and rejects it beside another name (`| keep\v\v`, `| keep\va`);
   the proxy already answered those as Loki does.
+
+## [2.261.0] - 2026-11-15
+
+### Fixed
+
 - A repeated `query`, `query_range` or `series` request whose answer is larger than one entry of the
   compatibility-edge cache (a tenth of its budget, 2.56 MiB by default) is answered from the cache again instead of
   asking VictoriaLogs. Such answers (Drilldown breakdowns by a high-cardinality label, parser metrics and instant
