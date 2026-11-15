@@ -217,6 +217,8 @@ type proxyRuntimeConfig struct {
 	peerWriteThrough                    bool
 	peerWriteThroughMinTTL              time.Duration
 	peerReplicationFactor               int
+	peerPushBufferMaxEntries            int
+	peerPushBufferMaxBytes              int64
 	peerHotReadAheadEnabled             bool
 	peerHotReadAheadInterval            time.Duration
 	peerHotReadAheadJitter              time.Duration
@@ -268,6 +270,7 @@ type proxyRuntimeConfig struct {
 	drilldownFieldBatchMaxFields        int
 	statsQueryRangeInterQueryDelayMs    int
 	debugLogRawQueries                  bool
+	debugVLCallsHeader                  bool
 	slowQueryThreshold                  time.Duration
 	slowUpstreamThreshold               time.Duration
 	slowQueryLogRawQueries              bool
@@ -474,6 +477,7 @@ func run(
 	logStatsInterval := fs.Duration("log-stats-interval", 10*time.Second, "How often to print a request statistics summary (total, errors, latency, cache rate)")
 	logRateThreshold := fs.Int("log-rate-threshold", 10, "When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged.")
 	debugLogRawQueries := fs.Bool("debug-log-raw-queries", false, "When true, debug logs include raw LogQL/LogsQL and backend params verbatim. Default false (redacted to sha256+len).")
+	debugVLCallsHeader := fs.Bool("debug-vl-calls-header", false, "When true, every Loki read response carries X-Loki-VL-Backend-Calls, the VictoriaLogs calls the request started before its response headers were written (a lower bound for a streamed answer; background work is not counted), and X-Loki-VL-Cache-Result, the response cache result (hit, miss, or bypass when none was consulted), so a cache reuse check can attribute VictoriaLogs calls to one request. Default false: Loki sends neither header, and the count describes backend work.")
 	slowQueryThreshold := fs.Duration("slow-query-threshold", proxy.DefaultSlowQueryThreshold, "A client request taking at least this long is slow: counted in loki_vl_proxy_slow_requests_total{system=\"loki\"} and logged at WARN (slow_request, whatever the request-log sampling) with its LogQL and its steps: every VictoriaLogs call with its LogsQL, window, status, bytes and time, every proxy-side operation and route decision, every rewrite of the LogQL, each with its offset from the request's start. Live tail is exempt. 0 turns it off")
 	slowUpstreamThreshold := fs.Duration("slow-upstream-threshold", proxy.DefaultSlowUpstreamThreshold, "One VictoriaLogs call taking at least this long to the end of its body is slow: counted in loki_vl_proxy_slow_requests_total{system=\"vl\"} and logged at WARN (slow_upstream_request) with its LogsQL, window, bytes and the client route it served. 0 turns it off")
 	slowQueryLogLevel := fs.String("slow-query-log-level", "warn", "Level the slow_request and slow_upstream_request lines are logged at: warn, info or debug (logged only when the logger level lets them through), or off: no slow lines and no per-request trace; loki_vl_proxy_slow_requests_total still counts slow requests")
@@ -506,7 +510,7 @@ func run(
 	cacheDisabled := fs.Bool("cache-disabled", false, "Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement)")
 	coalescerDisabled := fs.Bool("coalescer-disabled", false, "Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead")
 	compatCacheEnabled := fs.Bool("compat-cache-enabled", true, "Enable the safe Tier0 compatibility-edge response cache for cacheable GET read endpoints")
-	compatCacheMaxPercent := fs.Int("compat-cache-max-percent", defaultCompatCachePercent, "Additional Tier0 compatibility-edge cache budget as a percent of -cache-max-bytes (0 disables, max 50); does not reduce primary L1")
+	compatCacheMaxPercent := fs.Int("compat-cache-max-percent", defaultCompatCachePercent, "Additional Tier0 compatibility-edge cache budget as a percent of -cache-max-bytes (0 disables, max 50); does not reduce primary L1. One entry holds at most a tenth of this budget: a larger query, query_range or series answer is kept in primary L1 memory instead (up to a tenth of -cache-max-bytes), where it shares L1 with the other cached answers; such an answer stays on the replica that computed it (not on disk, not pushed to peers)")
 
 	// Disk cache flags
 	diskCachePath := fs.String("disk-cache-path", "", "Path to L2 disk cache (bbolt). Empty disables.")
@@ -571,7 +575,7 @@ func run(
 	responseCompressionMinBytes := fs.Int("response-compression-min-bytes", defaultResponseCompressionMinBytes, "Minimum response size before frontend compression starts (0 compresses any size)")
 
 	// Grafana datasource compatibility
-	maxLines := fs.Int("max-lines", 1000, "Default max lines per query")
+	maxLines := fs.Int("max-lines", proxy.DefaultMaxLines, "Entries of a log query (query_range) that sends no limit; Loki's default is 100")
 	orderedJSONMetricMaxBytes := fs.Int64("ordered-json-metric-max-bytes", 1<<30, "Safety cap on the VictoriaLogs raw rows response read, and the response built, by the proxy-side ordered JSON metric evaluator (0 = default 1 GiB, no upper bound). Exceeding it rejects the query instead of returning partial results. Grafana logs volume shapes are computed from VictoriaLogs stats buckets and do not read raw rows.")
 	labelFilterRefillMaxPages := fs.Int("label-filter-refill-max-pages", proxy.DefaultLabelFilterRefillMaxPages, "Loki-compatible profile: more pages of at most limit rows a log query reads when a Loki label filter on a log line key no earlier stage exposes dropped rows VictoriaLogs matched, so the page still holds limit lines. A response reads at most (1 + N) x limit rows; 0 reads no further page, and such a page can return fewer lines than the limit.")
 	rangeMetricRowLimit := fs.Int("manual-range-metric-row-limit", 1_000_000, "Maximum log rows fetched per manual range-metric compatibility call (rate, count_over_time, etc.). Lower values bound memory at the cost of result truncation for high-cardinality queries.")
@@ -668,7 +672,7 @@ func run(
 	recentTailRefreshEnabled := fs.Bool("recent-tail-refresh-enabled", true, "Bypass stale near-now cache hits and fetch latest backend data while preserving historical cache")
 	recentTailRefreshWindow := fs.Duration("recent-tail-refresh-window", 2*time.Minute, "How close request end must be to now to enable near-now cache freshness bypass")
 	recentTailRefreshMaxStaleness := fs.Duration("recent-tail-refresh-max-staleness", 2*time.Second, "Maximum acceptable cache age for near-now (live-tail) requests before the response cache is bypassed and fresh data is fetched. Lower = fresher live tail, more backend load; raise to coalesce rapid refreshes.")
-	defaultMaxQueryLength := fs.Duration("default-max-query-length", 0, "Default maximum query time range enforced for all tenants unless overridden by per-tenant limits (0 = unlimited, matches Loki default)")
+	defaultMaxQueryLength := fs.Duration("default-max-query-length", proxy.DefaultMaxQueryLength, "Loki's max_query_length for every tenant without a per-tenant limit: a query_range, series, labels, label values, detected labels, detected fields, detected field values, index stats or volume request whose range is longer fails with Loki's 400. The default is Loki's (721h, published as 30d1h); 0 turns the limit off")
 	maxStatsQuerySeries := fs.Int("max-stats-query-series", 0, "Maximum number of series returned by stats metric queries (count_over_time, rate, bytes_rate). 0 = built-in default of 500, matching the Drilldown maxDrilldownSeries cap and the documented known-limit for high-cardinality fields (trace_id, *_id, churn-heavy pod naming) where each value appears only 1-2× in the window. The previous 5000 default returned 10× more sparse series than Drilldown can render and 10× more bytes for the same UX, while leaving the door open to VL OOMs on real workloads with 100k+ cardinality.")
 	statsQueryRangeConcurrency := fs.Int("stats-query-range-concurrency", 0, "Maximum concurrent stats_query_range calls to VictoriaLogs. Drilldown Fields fires ~30 in parallel; capping prevents CPU storms. 0 = built-in default of 4.")
 	drilldownBurstWindowMs := fs.Int("drilldown-burst-window-ms", 50,
@@ -757,6 +761,8 @@ func run(
 	peerInsecureIPAllowlist := fs.Bool("peer-insecure-ip-allowlist", false, "When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured.")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
 	peerReplicationFactor := fs.Int("peer-replication-factor", 2, "Replicas of every peer-cache key, owner included: the key's owner on the peer ring and the next distinct peers clockwise (1-5). Write-through writes are pushed to every replica, which keeps the copy in memory and on disk and never pushes it on; a lookup that misses memory and disk asks the replicas in ring order, so a replica that lost its disk, or whose owner is down, gets the key from another replica instead of recomputing it. Each extra replica adds one push per write-through write and the copies' memory and disk on the peers. 1 keeps one copy on the owner.")
+	peerPushBufferMaxEntries := fs.Int("peer-push-buffer-max-entries", 8192, "Pushes to replicas kept per proxy, across all peers, while a peer cannot take them (its breaker is open, it is still starting, the push queue is full or the push failed); they are replayed once the peer answers, slowly first, the newest value per key. Above the bound the oldest push of the largest backlog is dropped and counted. 0 turns buffering off: such pushes are dropped.")
+	peerPushBufferMaxBytes := fs.Int64("peer-push-buffer-max-bytes", 32<<20, "Bytes of the values in the peer push buffer (-peer-push-buffer-max-entries), across all peers. 0 turns buffering off.")
 	peerWriteThroughMinTTL := fs.Duration("peer-write-through-min-ttl", 30*time.Second, "Minimum TTL eligible for peer owner write-through pushes. Empty label and label-value answers are cached for max(30s, this, -disk-cache-min-ttl) so they replace older non-empty copies")
 	peerHotReadAheadEnabled := fs.Bool("peer-hot-read-ahead-enabled", false, "Enable bounded hot read-ahead from peer hot index to prewarm local shadows")
 	peerHotReadAheadInterval := fs.Duration("peer-hot-read-ahead-interval", 30*time.Second, "Base interval for periodic peer hot read-ahead pulls")
@@ -1059,6 +1065,8 @@ func run(
 			peerWriteThrough:                    *peerWriteThrough,
 			peerWriteThroughMinTTL:              *peerWriteThroughMinTTL,
 			peerReplicationFactor:               *peerReplicationFactor,
+			peerPushBufferMaxEntries:            *peerPushBufferMaxEntries,
+			peerPushBufferMaxBytes:              *peerPushBufferMaxBytes,
 			peerHotReadAheadEnabled:             *peerHotReadAheadEnabled,
 			peerHotReadAheadInterval:            *peerHotReadAheadInterval,
 			peerHotReadAheadJitter:              *peerHotReadAheadJitter,
@@ -1110,6 +1118,7 @@ func run(
 			drilldownFieldBatchMaxFields:        *drilldownFieldBatchMaxFields,
 			statsQueryRangeInterQueryDelayMs:    *statsQueryRangeInterQueryDelayMs,
 			debugLogRawQueries:                  *debugLogRawQueries,
+			debugVLCallsHeader:                  *debugVLCallsHeader,
 			slowQueryThreshold:                  *slowQueryThreshold,
 			slowUpstreamThreshold:               *slowUpstreamThreshold,
 			slowQueryLogRawQueries:              *slowQueryLogRawQueries,
@@ -2241,6 +2250,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			WriteThrough:             cfg.peerWriteThrough,
 			WriteThroughMinTTL:       cfg.peerWriteThroughMinTTL,
 			ReplicationFactor:        cfg.peerReplicationFactor,
+			PushBufferMaxEntries:     peerPushBufferBound(cfg.peerPushBufferMaxEntries),
+			PushBufferMaxBytes:       peerPushBufferBound(cfg.peerPushBufferMaxBytes),
 			ReadAheadEnabled:         cfg.peerHotReadAheadEnabled,
 			ReadAheadInterval:        cfg.peerHotReadAheadInterval,
 			ReadAheadJitter:          cfg.peerHotReadAheadJitter,
@@ -2437,6 +2448,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DrilldownFieldBatchMaxFields:        cfg.drilldownFieldBatchMaxFields,
 		StatsQueryRangeInterQueryDelayMs:    cfg.statsQueryRangeInterQueryDelayMs,
 		DebugLogRawQueries:                  cfg.debugLogRawQueries,
+		DebugVLCallsHeader:                  cfg.debugVLCallsHeader,
 		SlowQueryThreshold:                  cfg.slowQueryThreshold,
 		SlowUpstreamThreshold:               cfg.slowUpstreamThreshold,
 		SlowQueryLogRawQueries:              cfg.slowQueryLogRawQueries,
@@ -2455,6 +2467,15 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 // validateExecutionLimits rejects negative limits; 0 selects the built-in
 // default of each flag, and any positive value is accepted so operators can
 // raise a limit as well as lower it.
+// peerPushBufferBound maps a push buffer flag to cache.PeerConfig, where 0
+// means the default and a negative value turns buffering off.
+func peerPushBufferBound[T int | int64](flag T) T {
+	if flag == 0 {
+		return -1
+	}
+	return flag
+}
+
 func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 	for _, limit := range []struct {
 		flag  string
@@ -2479,6 +2500,9 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 		if limit.value < 0 {
 			return fmt.Errorf("invalid %s: %d (must be >= 0; 0 uses the built-in default)", limit.flag, limit.value)
 		}
+	}
+	if cfg.peerPushBufferMaxEntries < 0 || cfg.peerPushBufferMaxBytes < 0 {
+		return fmt.Errorf("invalid -peer-push-buffer-max-entries=%d / -peer-push-buffer-max-bytes=%d (must be >= 0; 0 turns the peer push buffer off)", cfg.peerPushBufferMaxEntries, cfg.peerPushBufferMaxBytes)
 	}
 	if cfg.patternsExactMaxLines < 0 {
 		return fmt.Errorf("invalid -patterns-exact-max-lines: %d (must be >= 0; 0 turns the exact reading off)", cfg.patternsExactMaxLines)

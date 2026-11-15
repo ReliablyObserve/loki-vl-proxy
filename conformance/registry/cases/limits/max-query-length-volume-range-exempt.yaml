@@ -1,0 +1,46 @@
+id: limits/max-query-length-volume-range-exempt
+title: 'index/volume_range is not bound by max_query_length, only by the 11,000-point resolution, as Loki (fixed)'
+pending: true
+proves:
+  - tenant-query-limits
+  - loki_api_v1_index_volume_range
+consumer: api
+why: |
+  Loki applies no max_query_length to index/volume_range. Recorded live from
+  Loki 3.7.9 on 2026-11-15 (tenant 0, {app="api-gateway"}, step=3600): ranges
+  of 722h, 1000h, 5000h and 10000h answer 200; only 20000h and 100000h are 400
+  `exceeded maximum resolution of 11,000 points per time series. Try
+  increasing the value of the step parameter`, its resolution check. The proxy
+  rejected 722h to 5000h with the length text, a 400 where Loki serves 200.
+  The route keeps its resolution check, and a tenant max_query_length does not
+  bound it either.
+request:
+  method: GET
+  path: /loki/api/v1/index/volume_range
+  params:
+    query: '{app="api-gateway"}'
+    step: '3600'
+    start: '1776570675000000000'
+    end: '1794570675000000000'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status]
+  expect: |
+    200 over 722h to 10000h at step 3600; 400 `exceeded maximum resolution of
+    11,000 points per time series. Try increasing the value of the step
+    parameter` only at 20000h and beyond.
+gap:
+  status: fixed
+  fixed_by: 'pending'
+  impact: api-only
+  effort: S
+  area: 'internal/proxy request_params.go (no length check on the volume_range route)'
+  loki: 'no max_query_length on index/volume_range; resolution check only'
+  proxy: '400 length-exceeded for 722h..5000h before the fix'
+  planned_test: 'TestDefaultMaxQueryLength_VolumeRangeNotLimited (internal/proxy); TestDefaultMaxQueryLengthLikeLoki volume_range subtest (test/e2e-compat, pending a stack run)'
+  clusters: []
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

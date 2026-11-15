@@ -302,8 +302,8 @@ func TestCompat_LabelReplaceNewLabel(t *testing.T) {
 // Two series that a label_replace gives one label set are ranked as two
 // samples by the vector aggregation above it, and filed under one series only
 // at the end (pkg/logql/evaluator.go VectorAggEvaluator.Next, pkg/logql/engine.go
-// vectorsToSeries). The proxy merges them before the ranking
-// (semantics/label-replace-duplicates-before-ranking, open).
+// vectorsToSeries). The proxy ranks the samples first, as Loki does
+// (semantics/label-replace-duplicates-before-ranking, fixed).
 // conformance: semantics/label-replace-duplicates-before-ranking, loki_api_v1_query_range
 func TestCompat_LabelReplaceDuplicatesBeforeRanking(t *testing.T) {
 	fx := ensureLabelReplaceFixture(t)

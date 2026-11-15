@@ -33,6 +33,9 @@ type Summary struct {
 	PerfDaily    map[string]any `json:"perf_daily,omitempty"`
 	PerfWeekly   *WeeklyPerf    `json:"perf_weekly,omitempty"`
 	Missing      []string       `json:"missing,omitempty"`
+
+	// detail is the run's per-case verdicts and flags (cases.json), read by the executive summary; not serialised.
+	detail *CasesFile
 }
 
 // RegistryPart is the registry's case counts on the measured commit.
@@ -40,6 +43,9 @@ type RegistryPart struct {
 	Cases        int            `json:"cases"`
 	ByStatus     map[string]int `json:"by_status"`
 	OpenByImpact map[string]int `json:"open_by_impact"`
+	// CaseStatus is every case's gap status ("no gap" for a case without a gap block): the next daily report
+	// lists the cases whose status moved.
+	CaseStatus map[string]string `json:"case_status,omitempty"`
 }
 
 // WorkflowPart is the health of the scheduled workflows (test/ciworkflows -health).
@@ -179,6 +185,7 @@ func Build(in Inputs) (Summary, map[string]any, error) {
 		s.red("%s: the run produced no result, so it is not verified today", m)
 	}
 	sort.Strings(s.Missing)
+	s.detail = ParseCases(merged)
 	return s, merged, nil
 }
 
@@ -190,15 +197,18 @@ func (s *Summary) registry(root string) error {
 	if len(problems) > 0 {
 		return fmt.Errorf("the registry does not load strictly (%d problems)", len(problems))
 	}
-	s.Registry = RegistryPart{Cases: len(cases), ByStatus: map[string]int{}, OpenByImpact: map[string]int{}}
+	s.Registry = RegistryPart{Cases: len(cases), ByStatus: map[string]int{}, OpenByImpact: map[string]int{},
+		CaseStatus: map[string]string{}}
 	for _, c := range cases {
 		gap, _ := c.Doc["gap"].(map[string]any)
 		if gap == nil {
 			s.Registry.ByStatus["no gap"]++
+			s.Registry.CaseStatus[c.ID] = "no gap"
 			continue
 		}
 		status, _ := gap["status"].(string)
 		s.Registry.ByStatus[status]++
+		s.Registry.CaseStatus[c.ID] = status
 		if status == "open" {
 			impact, _ := gap["impact"].(string)
 			s.Registry.OpenByImpact[impact]++
@@ -405,7 +415,8 @@ func (s *Summary) parity(in Inputs) error {
 		return err
 	}
 	s.Parity = map[string]any{}
-	for _, k := range []string{"mode", "exit", "clusters", "requests", "unclaimed", "problems", "conformance_ok", "not_reproducible", "error", "loki", "ref"} {
+	for _, k := range []string{"mode", "exit", "clusters", "requests", "unclaimed", "problems", "conformance_ok", "not_reproducible", "error", "loki", "ref",
+		"verdicts", "unclaimed_ids"} {
 		if v, found := r[k]; found {
 			s.Parity[k] = v
 		}
@@ -475,8 +486,14 @@ func (s *Summary) perfWeekly(in Inputs) error {
 	return nil
 }
 
-// Markdown is the daily report's pull request body: what is red first, then every number.
-func Markdown(s Summary) string {
+// Markdown is the report page's text: what is red first, then every number.
+func Markdown(s Summary) string { return markdown(s, "") }
+
+// Report is the daily report's pull request body: the executive summary on top (with what moved since the
+// previous report), then Markdown's text unchanged.
+func Report(s Summary, prev *Previous) string { return markdown(s, Executive(s, prev)) }
+
+func markdown(s Summary, executive string) string {
 	var b strings.Builder
 	state := "green"
 	if s.Red {
@@ -484,6 +501,7 @@ func Markdown(s Summary) string {
 	}
 	fmt.Fprintf(&b, "## Daily report %s: %s\n\n", s.Date, state)
 	fmt.Fprintf(&b, "Main `%s`, Loki %s, VictoriaLogs %s.\n\n", short(s.Commit), s.Loki, strings.Join(s.VictoriaLogs, " and "))
+	b.WriteString(executive)
 	if len(s.Reasons) > 0 {
 		b.WriteString("### Red\n\n")
 		for i, r := range s.Reasons {

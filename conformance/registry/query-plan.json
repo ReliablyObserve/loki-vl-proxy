@@ -1,9 +1,9 @@
 {
   "description": "Ratchets of the query plan (internal/queryplan), one section per gate; a count may only fall, and LVP_QUERY_PLAN_UPDATE=1 rewrites the section of the test that ran. `logical` is the logical plan built from every query of the plan corpus (the curated sources and the capture sample): how many rows parse and build (all of them), and the spots the plan still holds as text, per construct (typing them lowers the count). `logical_key_sound` is, per profile, how the logical keys group the corpus and what the string translator wrote for the queries of a group: no group may differ in structure. `predicate_parity` is, per attribute of the resolver (queryplan.Resolve), the text predicate it replaces and every corpus row where the two differ, each with its reason (internal/proxy TestPlanPredicateParity: an unexplained or stale row fails).",
   "logical": {
-    "rows": 2649,
-    "parsed": 2571,
-    "built": 2571,
+    "rows": 2677,
+    "parsed": 2599,
+    "built": 2599,
     "untyped_by_construct": {
       "labelfilter_untyped": 0,
       "line_format_raw": 3,
@@ -16,108 +16,108 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2577,
-      "keys": 2524,
-      "shared_texts": 53,
+      "rows": 2599,
+      "keys": 2544,
+      "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
       "spelling_divergent": 5,
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2577,
-      "keys": 2524,
-      "shared_texts": 53,
+      "rows": 2599,
+      "keys": 2544,
+      "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
       "spelling_divergent": 5,
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2577,
-      "keys": 2524,
-      "shared_texts": 53,
+      "rows": 2599,
+      "keys": 2544,
+      "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
       "spelling_divergent": 5,
       "unsound": 0
     },
     "v1.53 identity": {
-      "rows": 2577,
-      "keys": 2524,
-      "shared_texts": 53,
+      "rows": 2599,
+      "keys": 2544,
+      "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
       "spelling_divergent": 5,
       "unsound": 0
     },
     "v1.53 no body scan": {
-      "rows": 2577,
-      "keys": 2524,
-      "shared_texts": 53,
+      "rows": 2599,
+      "keys": 2544,
+      "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
       "spelling_divergent": 5,
       "unsound": 0
     },
     "v1.53 no body scan, stream fields, keepLine": {
-      "rows": 2577,
-      "keys": 2524,
-      "shared_texts": 53,
+      "rows": 2599,
+      "keys": 2544,
+      "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
       "spelling_divergent": 0,
       "unsound": 0
     },
     "v1.53 stream fields": {
-      "rows": 2577,
-      "keys": 2524,
-      "shared_texts": 53,
+      "rows": 2599,
+      "keys": 2544,
+      "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
       "spelling_divergent": 5,
       "unsound": 0
     },
     "v1.53 stream fields and labels": {
-      "rows": 2577,
-      "keys": 2524,
-      "shared_texts": 53,
+      "rows": 2599,
+      "keys": 2544,
+      "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
       "spelling_divergent": 5,
       "unsound": 0
     },
     "v1.53 stream labels": {
-      "rows": 2577,
-      "keys": 2524,
-      "shared_texts": 53,
+      "rows": 2599,
+      "keys": 2544,
+      "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
       "spelling_divergent": 5,
       "unsound": 0
     },
     "v1.53 stream labels keepLine": {
-      "rows": 2577,
-      "keys": 2524,
-      "shared_texts": 53,
+      "rows": 2599,
+      "keys": 2544,
+      "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
       "spelling_divergent": 0,
       "unsound": 0
     },
     "v1.53 underscores": {
-      "rows": 2577,
-      "keys": 2524,
-      "shared_texts": 53,
+      "rows": 2599,
+      "keys": 2544,
+      "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
       "spelling_divergent": 5,
       "unsound": 0
     },
     "v1.53 underscores keepLine": {
-      "rows": 2577,
-      "keys": 2524,
-      "shared_texts": 53,
+      "rows": 2599,
+      "keys": 2544,
+      "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
       "spelling_divergent": 0,
@@ -125,27 +125,27 @@
     }
   },
   "loki_differential": {
-    "queries": 239,
-    "lines": 9134,
+    "queries": 242,
+    "lines": 9256,
     "profiles": {
       "v1.49 loki profile": {
-        "compared": 216,
+        "compared": 219,
         "not_comparable": {
           "Loki rejects the query": 6,
           "reads detected_level, which Loki derives at ingest": 14,
           "the handler's options are not reproduced": 3
         },
-        "plan_matches_loki": 143,
-        "plan_matches_loki_plain": 144,
-        "plan_matches_loki_categorized": 143,
-        "translator_matches_loki": 133,
+        "plan_matches_loki": 144,
+        "plan_matches_loki_plain": 145,
+        "plan_matches_loki_categorized": 144,
+        "translator_matches_loki": 134,
         "vl_rejects_plan": 1,
-        "vl_rejects_translator": 8,
+        "vl_rejects_translator": 10,
         "weak_fixture": 22,
         "plan_differs_by_class": {
           "VictoriaLogs rejects the text": 1,
           "adds a label Loki does not have": 10,
-          "categorized: drops a line Loki keeps": 15,
+          "categorized: drops a line Loki keeps": 17,
           "categorized: keeps a line Loki drops": 7,
           "categorized: parsed: adds a label Loki does not have": 10,
           "categorized: parsed: adds a structured metadata label": 2,
@@ -155,7 +155,7 @@
           "categorized: parsed: misses an _extracted label": 19,
           "categorized: parsed: writes another value of an _extracted label": 1,
           "categorized: structured metadata: misses a structured metadata label": 2,
-          "drops a line Loki keeps": 15,
+          "drops a line Loki keeps": 17,
           "keeps a line Loki drops": 7,
           "misses __error__": 50,
           "misses __error_details__": 47,
@@ -164,7 +164,7 @@
           "writes another value of an _extracted label": 1
         },
         "translator_differs_by_class": {
-          "VictoriaLogs rejects the text": 8,
+          "VictoriaLogs rejects the text": 10,
           "adds a label Loki does not have": 10,
           "categorized: drops a line Loki keeps": 16,
           "categorized: keeps a line Loki drops": 12,
@@ -185,29 +185,29 @@
           "writes another value of an _extracted label": 1
         },
         "handler_serves": {
-          "both": 200,
-          "plan": 11,
+          "both": 201,
+          "plan": 13,
           "translator": 5
         }
       },
       "v1.53 loki profile": {
-        "compared": 216,
+        "compared": 219,
         "not_comparable": {
           "Loki rejects the query": 6,
           "reads detected_level, which Loki derives at ingest": 14,
           "the handler's options are not reproduced": 3
         },
-        "plan_matches_loki": 143,
-        "plan_matches_loki_plain": 144,
-        "plan_matches_loki_categorized": 143,
-        "translator_matches_loki": 133,
+        "plan_matches_loki": 144,
+        "plan_matches_loki_plain": 145,
+        "plan_matches_loki_categorized": 144,
+        "translator_matches_loki": 134,
         "vl_rejects_plan": 1,
-        "vl_rejects_translator": 8,
+        "vl_rejects_translator": 10,
         "weak_fixture": 22,
         "plan_differs_by_class": {
           "VictoriaLogs rejects the text": 1,
           "adds a label Loki does not have": 10,
-          "categorized: drops a line Loki keeps": 15,
+          "categorized: drops a line Loki keeps": 17,
           "categorized: keeps a line Loki drops": 7,
           "categorized: parsed: adds a label Loki does not have": 10,
           "categorized: parsed: adds a structured metadata label": 2,
@@ -217,7 +217,7 @@
           "categorized: parsed: misses an _extracted label": 19,
           "categorized: parsed: writes another value of an _extracted label": 1,
           "categorized: structured metadata: misses a structured metadata label": 2,
-          "drops a line Loki keeps": 15,
+          "drops a line Loki keeps": 17,
           "keeps a line Loki drops": 7,
           "misses __error__": 50,
           "misses __error_details__": 47,
@@ -226,7 +226,7 @@
           "writes another value of an _extracted label": 1
         },
         "translator_differs_by_class": {
-          "VictoriaLogs rejects the text": 8,
+          "VictoriaLogs rejects the text": 10,
           "adds a label Loki does not have": 10,
           "categorized: drops a line Loki keeps": 16,
           "categorized: keeps a line Loki drops": 12,
@@ -247,16 +247,16 @@
           "writes another value of an _extracted label": 1
         },
         "handler_serves": {
-          "both": 200,
-          "plan": 11,
+          "both": 201,
+          "plan": 13,
           "translator": 5
         }
       }
     }
   },
   "loki_metric_differential": {
-    "queries": 795,
-    "entries": 31186,
+    "queries": 803,
+    "entries": 31492,
     "excluded": {
       "the plan does not route it: BinOp bool": 9,
       "the plan does not route it: BinOp constant operands": 2,
@@ -287,19 +287,19 @@
       "the plan does not route it: RangeAgg parser label cost": 2,
       "the plan does not route it: RangeAgg route level filter": 2,
       "the plan does not route it: RangeAgg route offset bounds": 1,
-      "the plan does not route it: RangeAgg route pipeline": 114,
+      "the plan does not route it: RangeAgg route pipeline": 116,
       "the plan does not route it: RangeAgg route reserved field": 1,
       "the plan does not route it: RangeAgg route spelling": 2,
       "the plan does not route it: RangeAgg route unwrap absent": 9,
       "the plan does not route it: RangeAgg route unwrap grouping": 2,
-      "the plan does not route it: RangeAgg route unwrap pipeline": 162,
+      "the plan does not route it: RangeAgg route unwrap pipeline": 163,
       "the plan does not route it: RangeAgg route unwrap quantile": 65,
       "the plan does not route it: RangeAgg route unwrap rate": 2,
       "the plan does not route it: RangeAgg route unwrap rate_counter": 7,
       "the plan does not route it: RangeAgg route unwrap stdvar": 5,
       "the plan does not route it: RangeAgg unwrap quantile spelling": 1,
       "the plan does not route it: Rank operand BinOp": 3,
-      "the plan does not route it: Rank route operand": 184,
+      "the plan does not route it: Rank route operand": 186,
       "the plan does not route it: Rank route rewrite": 1,
       "the plan does not route it: VectorAgg LogSelect json extraction": 2,
       "the plan does not route it: VectorAgg LogSelect level filter after stage": 2,
@@ -311,12 +311,12 @@
       "the plan does not route it: VectorAgg parser extracted label": 2,
       "the plan does not route it: VectorAgg parser label cost": 14,
       "the plan does not route it: VectorAgg route absent operand": 8,
-      "the plan does not route it: VectorAgg route evaluated level": 172,
+      "the plan does not route it: VectorAgg route evaluated level": 173,
       "the plan does not route it: VectorAgg route level filter": 12,
       "the plan does not route it: VectorAgg route operand": 8,
-      "the plan does not route it: VectorAgg route pipeline": 196,
+      "the plan does not route it: VectorAgg route pipeline": 199,
       "the plan does not route it: VectorAgg route rewrite": 1,
-      "the plan does not route it: VectorAgg route unwrap pipeline": 101,
+      "the plan does not route it: VectorAgg route unwrap pipeline": 102,
       "the plan does not route it: VectorAgg route unwrap quantile": 8,
       "the plan does not route it: VectorAgg route unwrap rate": 20,
       "the plan does not route it: VectorAgg route unwrap rate_counter": 2,
@@ -327,22 +327,22 @@
     "profiles": {
       "v1.49 loki profile": {
         "instant": {
-          "runs": 795,
-          "plan_runs": 795,
-          "plan_matches_loki": 795,
+          "runs": 803,
+          "plan_runs": 803,
+          "plan_matches_loki": 803,
           "plan_matches_loki_empty": 398,
-          "translator_matches_loki": 795,
+          "translator_matches_loki": 803,
           "float_tolerance": 1
         },
         "step\u003crange": {
-          "runs": 795,
-          "plan_runs": 757,
+          "runs": 803,
+          "plan_runs": 764,
           "not_plan": {
-            "the route rule delegates the request": 38
+            "the route rule delegates the request": 39
           },
-          "plan_matches_loki": 749,
+          "plan_matches_loki": 756,
           "plan_matches_loki_empty": 247,
-          "translator_matches_loki": 787,
+          "translator_matches_loki": 795,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -356,25 +356,25 @@
           }
         },
         "step=range": {
-          "runs": 795,
-          "plan_runs": 794,
+          "runs": 803,
+          "plan_runs": 801,
           "not_plan": {
-            "the route rule delegates the request": 1
+            "the route rule delegates the request": 2
           },
-          "plan_matches_loki": 794,
+          "plan_matches_loki": 801,
           "plan_matches_loki_empty": 268,
-          "translator_matches_loki": 795,
+          "translator_matches_loki": 803,
           "float_tolerance": 3
         },
         "step\u003erange": {
-          "runs": 795,
-          "plan_runs": 779,
+          "runs": 803,
+          "plan_runs": 786,
           "not_plan": {
-            "the route rule delegates the request": 16
+            "the route rule delegates the request": 17
           },
-          "plan_matches_loki": 771,
-          "plan_matches_loki_empty": 258,
-          "translator_matches_loki": 787,
+          "plan_matches_loki": 778,
+          "plan_matches_loki_empty": 259,
+          "translator_matches_loki": 795,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -390,22 +390,22 @@
       },
       "v1.53 loki profile": {
         "instant": {
-          "runs": 795,
-          "plan_runs": 795,
-          "plan_matches_loki": 795,
+          "runs": 803,
+          "plan_runs": 803,
+          "plan_matches_loki": 803,
           "plan_matches_loki_empty": 398,
-          "translator_matches_loki": 795,
+          "translator_matches_loki": 803,
           "float_tolerance": 1
         },
         "step\u003crange": {
-          "runs": 795,
-          "plan_runs": 757,
+          "runs": 803,
+          "plan_runs": 764,
           "not_plan": {
-            "the route rule delegates the request": 38
+            "the route rule delegates the request": 39
           },
-          "plan_matches_loki": 749,
+          "plan_matches_loki": 756,
           "plan_matches_loki_empty": 247,
-          "translator_matches_loki": 787,
+          "translator_matches_loki": 795,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -419,25 +419,25 @@
           }
         },
         "step=range": {
-          "runs": 795,
-          "plan_runs": 794,
+          "runs": 803,
+          "plan_runs": 801,
           "not_plan": {
-            "the route rule delegates the request": 1
+            "the route rule delegates the request": 2
           },
-          "plan_matches_loki": 794,
+          "plan_matches_loki": 801,
           "plan_matches_loki_empty": 268,
-          "translator_matches_loki": 795,
+          "translator_matches_loki": 803,
           "float_tolerance": 3
         },
         "step\u003erange": {
-          "runs": 795,
-          "plan_runs": 779,
+          "runs": 803,
+          "plan_runs": 786,
           "not_plan": {
-            "the route rule delegates the request": 16
+            "the route rule delegates the request": 17
           },
-          "plan_matches_loki": 771,
-          "plan_matches_loki_empty": 258,
-          "translator_matches_loki": 787,
+          "plan_matches_loki": 778,
+          "plan_matches_loki_empty": 259,
+          "translator_matches_loki": 795,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -454,19 +454,19 @@
     }
   },
   "predicate_parity": {
-    "rows": 2548,
-    "validated": 2439,
+    "rows": 2671,
+    "validated": 2551,
     "attributes": {
       "offset": {
         "predicate": "extractLogQLOffset(handler query text)",
-        "compared": 2439,
+        "compared": 2551,
         "explained": []
       }
     }
   },
   "route_parity": {
-    "rows": 2536,
-    "runs": 25360,
+    "rows": 2557,
+    "runs": 25570,
     "profiles": [
       "instant",
       "step=range",
@@ -474,7 +474,7 @@
       "step\u003erange",
       "24h chunk"
     ],
-    "native": 7868,
+    "native": 7938,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp bool": 90,
@@ -491,14 +491,14 @@
       "BinOp operand spelling": 20,
       "BinOp route mixed offsets": 70,
       "BinOp route rewrite": 10,
-      "BinOp route shared level probe": 8,
+      "BinOp route shared level probe": 16,
       "BinOp scalar operands": 20,
       "BinOp set operator": 80,
       "LabelReplace (route rule)": 1240,
       "LabelReplace operand BinOp": 20,
       "LabelReplace operand VectorAgg": 60,
       "LabelReplace service_name grouping": 40,
-      "LogSelect (route rule)": 2350,
+      "LogSelect (route rule)": 2380,
       "LogSelect keep order": 10,
       "LogSelect level filter after stage": 20,
       "LogSelect line format function": 10,
@@ -512,17 +512,17 @@
       "RangeAgg route level filter": 20,
       "RangeAgg route no bucket grid": 118,
       "RangeAgg route offset bounds": 10,
-      "RangeAgg route pipeline": 1140,
+      "RangeAgg route pipeline": 1160,
       "RangeAgg route reserved field": 10,
       "RangeAgg route spelling": 20,
       "RangeAgg route unwrap absent": 90,
       "RangeAgg route unwrap grouping": 20,
-      "RangeAgg route unwrap pipeline": 1620,
+      "RangeAgg route unwrap pipeline": 1630,
       "RangeAgg route unwrap quantile": 660,
       "RangeAgg route unwrap rate": 20,
       "RangeAgg route unwrap rate_counter": 70,
       "RangeAgg route unwrap stdvar": 50,
-      "Rank (route rule)": 1850,
+      "Rank (route rule)": 1870,
       "Rank operand BinOp": 30,
       "Scalar": 20,
       "VectorAgg LogSelect json extraction": 20,
@@ -534,13 +534,13 @@
       "VectorAgg parser extracted label": 20,
       "VectorAgg parser label cost": 150,
       "VectorAgg route absent operand": 80,
-      "VectorAgg route evaluated level": 1720,
+      "VectorAgg route evaluated level": 1730,
       "VectorAgg route level filter": 120,
-      "VectorAgg route no bucket grid": 6,
+      "VectorAgg route no bucket grid": 8,
       "VectorAgg route operand": 80,
-      "VectorAgg route pipeline": 1980,
+      "VectorAgg route pipeline": 2010,
       "VectorAgg route rewrite": 10,
-      "VectorAgg route unwrap pipeline": 1010,
+      "VectorAgg route unwrap pipeline": 1020,
       "VectorAgg route unwrap quantile": 80,
       "VectorAgg route unwrap rate": 200,
       "VectorAgg route unwrap rate_counter": 20,
@@ -550,57 +550,57 @@
       "VectorLit": 10
     },
     "statuses": {
-      "200": 24739,
-      "400": 588,
+      "200": 24943,
+      "400": 594,
       "500": 33
     },
     "routes": {
-      "24h chunk/BinOp": "a0123d6f9e17fa36",
+      "24h chunk/BinOp": "b04d28cfc1e45ae4",
       "24h chunk/LabelReplace": "34b8c8aa4bd45211",
-      "24h chunk/LogSelect": "b23479a1b60cb9b7",
-      "24h chunk/RangeAgg": "313e7b17c73882fe",
-      "24h chunk/Rank": "1114f8a09776e25b",
+      "24h chunk/LogSelect": "aefbd87a1712a487",
+      "24h chunk/RangeAgg": "d3ba899db1e9ff2d",
+      "24h chunk/Rank": "a166a205e092b5cd",
       "24h chunk/Scalar": "b01ddfee0a162681",
-      "24h chunk/VectorAgg": "3d0ec26acfcbc98b",
+      "24h chunk/VectorAgg": "e5dcfb7f6cd35f0a",
       "24h chunk/VectorLit": "fafe78111335aec9",
-      "instant/BinOp": "a139312fd7796b7a",
+      "instant/BinOp": "58bf61a94b245710",
       "instant/LabelReplace": "1eda7f007cfc3480",
-      "instant/LogSelect": "a2d81d4c923f8131",
-      "instant/RangeAgg": "5ed50ff37240c231",
-      "instant/Rank": "872242485620d173",
+      "instant/LogSelect": "d768315233c83eac",
+      "instant/RangeAgg": "03c7fa525a2bf67a",
+      "instant/Rank": "9c43a65e52056654",
       "instant/Scalar": "058ee94c303a0c46",
-      "instant/VectorAgg": "c8ec1e637adc0f39",
+      "instant/VectorAgg": "0416b428f8fe825b",
       "instant/VectorLit": "29ac61516bcfbcbb",
-      "step\u003crange/BinOp": "ded1a846679dcc18",
+      "step\u003crange/BinOp": "0613d0e871aeda36",
       "step\u003crange/LabelReplace": "7e2339de2a64039d",
-      "step\u003crange/LogSelect": "b23479a1b60cb9b7",
-      "step\u003crange/RangeAgg": "7c66a2fbb16cd4ad",
-      "step\u003crange/Rank": "7ae4c778853987b1",
+      "step\u003crange/LogSelect": "aefbd87a1712a487",
+      "step\u003crange/RangeAgg": "56180f27ad46eb09",
+      "step\u003crange/Rank": "5e1f6300543622cc",
       "step\u003crange/Scalar": "b01ddfee0a162681",
-      "step\u003crange/VectorAgg": "8787b0a2cf1b37cf",
+      "step\u003crange/VectorAgg": "d2ccd24561fcfdea",
       "step\u003crange/VectorLit": "fafe78111335aec9",
-      "step=range/BinOp": "ac2c93507815eca7",
+      "step=range/BinOp": "db9c1f2b76869b69",
       "step=range/LabelReplace": "f814664e0f744be4",
-      "step=range/LogSelect": "b23479a1b60cb9b7",
-      "step=range/RangeAgg": "19541a94db78d324",
-      "step=range/Rank": "48b7c16f1a61f7ad",
+      "step=range/LogSelect": "aefbd87a1712a487",
+      "step=range/RangeAgg": "a233c2b01375b05c",
+      "step=range/Rank": "778a0c52b2439e6c",
       "step=range/Scalar": "b01ddfee0a162681",
-      "step=range/VectorAgg": "d025a474df3e7bc0",
+      "step=range/VectorAgg": "10f06bdd9648fbca",
       "step=range/VectorLit": "fafe78111335aec9",
-      "step\u003erange/BinOp": "e7e755c8e8149468",
+      "step\u003erange/BinOp": "3cfbaa54b48a8eff",
       "step\u003erange/LabelReplace": "266dba9d6112ebe9",
-      "step\u003erange/LogSelect": "b23479a1b60cb9b7",
-      "step\u003erange/RangeAgg": "295ba101aeeddd74",
-      "step\u003erange/Rank": "bde2008f55288e03",
+      "step\u003erange/LogSelect": "aefbd87a1712a487",
+      "step\u003erange/RangeAgg": "12917e20e54f19cb",
+      "step\u003erange/Rank": "5b02d50e90ea0a26",
       "step\u003erange/Scalar": "b01ddfee0a162681",
-      "step\u003erange/VectorAgg": "c5b07ac32b5708ee",
+      "step\u003erange/VectorAgg": "ab19053fc833e10a",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     }
   },
   "shadow": {
-    "rows": 23889,
+    "rows": 24096,
     "profiles": 12,
-    "native": 21388,
+    "native": 21499,
     "native_proxy_evaluated": 3951,
     "mismatches": 0,
     "delegated_by_construct": {
@@ -629,7 +629,7 @@
       "RangeAgg LogSelect unpack label read": 225,
       "RangeAgg LogSelect unpack line read": 18,
       "RangeAgg LogSelect unpack parser order": 9,
-      "RangeAgg grouping": 9,
+      "RangeAgg grouping": 18,
       "RangeAgg parenthesized": 9,
       "RangeAgg parser label cost": 18,
       "RangeAgg spelling": 9,
@@ -642,7 +642,7 @@
       "VectorAgg grouping": 27,
       "VectorAgg nested unwrap": 36,
       "VectorAgg operand": 207,
-      "VectorAgg operand spelling": 72,
+      "VectorAgg operand spelling": 18,
       "VectorAgg parser extracted label": 18,
       "VectorAgg parser label cost": 128,
       "VectorAgg stddev parsed label operand": 9,
@@ -650,17 +650,34 @@
       "VectorLit": 9,
       "known divergence semantics/binary-operand-without-empty-collapses": 378,
       "known divergence semantics/keep-before-unwrap-series-identity": 90,
+      "known divergence semantics/keep-drop-blank-name-prints-back": 9,
       "known divergence semantics/label-filter-numeric-equality": 57,
       "known divergence semantics/label-replace-around-ranking-and-vector": 18,
       "known divergence semantics/pattern-capture-before-bracket-text": 12,
       "known divergence semantics/stddev-stdvar-nested-or-binary": 90,
+      "known divergence semantics/translator-copies-unspaced-parser": 42,
+      "known divergence semantics/translator-reads-blank-grouping-as-none": 90,
       "known divergence semantics/translator-reads-marker-bytes-in-quoted-value": 12,
       "known divergence semantics/translator-reads-quoted-text-as-syntax": 12,
       "known divergence semantics/translator-writes-reserved-field-names": 93,
       "known divergence semantics/translator-writes-signed-number-with-blank": 12
     },
     "flipped": [
-      "LogSelect"
+      "LogSelect",
+      "VectorAgg",
+      "RangeAgg",
+      "BinOp",
+      "LabelReplace"
+    ],
+    "flipped_log_stages": [
+      "LevelFilter",
+      "UnspacedParser",
+      "JSON",
+      "Logfmt",
+      "LabelFormat",
+      "LineFormat",
+      "RegexpPattern",
+      "DropKeep"
     ]
   }
 }

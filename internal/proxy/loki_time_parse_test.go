@@ -34,6 +34,27 @@ func parseLokiTimeLayoutsFirst(raw string) (int64, bool) {
 	return floatNanosIfHeld(n)
 }
 
+// integerBoundScanFirst is integerBoundUnixNano as it was before the one-pass digit reader.
+func integerBoundScanFirst(raw string) (int64, bool) {
+	if !isIntegerBound(raw) {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return integerNanosIfHeld(n)
+}
+
+func checkIntegerBound(t *testing.T, in string) {
+	t.Helper()
+	want, wantOK := integerBoundScanFirst(in)
+	got, gotOK := integerBoundUnixNano(in)
+	if got != want || gotOK != wantOK {
+		t.Errorf("integerBoundUnixNano(%q): got (%d, %v), want (%d, %v)", in, got, gotOK, want, wantOK)
+	}
+}
+
 func TestParseLokiTimeIntegerFastPathMatchesLayoutsFirst(t *testing.T) {
 	inputs := []string{
 		"", " ", "0", "-0", "+0", "1", "-1", "+1", "1700000000", "1700000000000", "1700000000000000",
@@ -41,6 +62,15 @@ func TestParseLokiTimeIntegerFastPathMatchesLayoutsFirst(t *testing.T) {
 		"1700000000.5", "1.7e9", "1e18", "0x10", "1_000", "+", "-", "--1", "1-", " 1700000000 ", "\t42\n",
 		"2026-11-09T19:08:00Z", "2026-11-09T19:08:00.123456789Z", "2026-11-09T19:08:00+01:00", "2026-11-09",
 		"abc", "NaN", "Inf", "١٢٣",
+		// the one-pass digit reader: every length, its 8-digit blocks, the 19-digit edge, and a bad byte in each place
+		"12345678", "123456789", "1234567890123456", "12345678901234567", "123456789012345678", "1794570675000000000",
+		"8999999999999999999", "9000000000000000000", "9223372036854775807", "9223372036854775808", "99999999999999999999",
+		"0000000000000000001", "00000000000000000001", "1794570675000000000 ", " 1794570675000000000", "17945706a5000000000",
+		"1794570675000000a00", "a794570675000000000", "1794570675000000000a", "1794570675:00000000", "12345678:", ":2345678",
+		"1234567/", "/2345678", "12 45678", "17945706750000000/", "1794570675000000000\x00",
+	}
+	for n := 1; n <= 21; n++ {
+		inputs = append(inputs, strings.Repeat("7", n), strings.Repeat("9", n), "1"+strings.Repeat("0", n-1))
 	}
 	for _, in := range inputs {
 		want, wantOK := parseLokiTimeLayoutsFirst(in)
@@ -48,6 +78,7 @@ func TestParseLokiTimeIntegerFastPathMatchesLayoutsFirst(t *testing.T) {
 		if got != want || gotOK != wantOK {
 			t.Errorf("%q: got (%d, %v), want (%d, %v)", in, got, gotOK, want, wantOK)
 		}
+		checkIntegerBound(t, in)
 	}
 }
 
@@ -56,6 +87,7 @@ func FuzzParseLokiTimeIntegerFastPath(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, in string) {
+		checkIntegerBound(t, in)
 		if s := strings.TrimSpace(in); s == "now" || strings.HasPrefix(s, "now-") || strings.HasPrefix(s, "now+") {
 			return
 		}

@@ -83,16 +83,12 @@ func (f *capacityFleet) quiesce() {
 			if node.pc.pushers.Load() != 0 || node.pc.pushQueued.Load() != 0 || len(node.pc.pushQueue) != 0 {
 				return false
 			}
-			pending := false
-			node.pc.breakers.Range(func(_, value any) bool {
-				breaker := value.(*peerBreaker)
-				breaker.mu.Lock()
-				pending = len(breaker.pending) != 0
-				breaker.mu.Unlock()
-				return !pending
-			})
-			if pending {
-				return false
+			// Pushes buffered for a running peer are still on their way; the
+			// ones for a stopped peer wait for it.
+			for j := range f.nodes {
+				if j != i && f.alive[j] && node.pc.hasBacklog(f.addr(j)) {
+					return false
+				}
 			}
 		}
 		return true

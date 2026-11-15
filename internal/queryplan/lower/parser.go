@@ -1,6 +1,8 @@
 package lower
 
 import (
+	"slices"
+
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
@@ -277,9 +279,16 @@ func readsStreamLabel(sel *queryplan.LogSelect, names []string) bool {
 	return false
 }
 
-// stageDefs are the labels each stage of a query defines by name (nil for the stages that define none), read from
-// the regexp, pattern and label_format stages once for the query.
-type stageDefs []struct{ captured, defined []string }
+// stageDefs are the labels the stages of a query that define labels by name define, in stage order, read from the
+// regexp, pattern and label_format stages once for the query: a regexp's are captured, the others defined.
+type stageDefs []stageDef
+
+// stageDef is the labels one stage defines.
+type stageDef struct {
+	stage    int
+	captured bool
+	names    []string
+}
 
 // definitions reads the labels the regexp, pattern and label_format stages of the query define; nil when there is
 // no such stage, and when no label filter and no keep follows to read them (a regexp is parsed to find its groups).
@@ -291,27 +300,36 @@ func definitions(sel *queryplan.LogSelect) stageDefs {
 	for i, st := range sel.Stages {
 		switch st := st.(type) {
 		case *queryplan.Parse:
-			if st.Type != logql.ParserRegexp && st.Type != logql.ParserPattern {
-				continue
-			}
-			if defs == nil {
-				defs = make(stageDefs, len(sel.Stages))
-			}
-			if st.Type == logql.ParserRegexp {
-				defs[i].captured = translate.RegexpCaptureNames(st.Param)
-			} else {
-				defs[i].defined = translate.PatternCaptureNames(st.Param)
+			switch st.Type {
+			case logql.ParserRegexp:
+				defs = appendDef(defs, sel, stageDef{stage: i, captured: true, names: translate.SharedRegexpCaptureNames(st.Param)})
+			case logql.ParserPattern:
+				defs = appendDef(defs, sel, stageDef{stage: i, names: translate.PatternCaptureNames(st.Param)})
 			}
 		case *queryplan.LabelFormat:
-			if defs == nil {
-				defs = make(stageDefs, len(sel.Stages))
-			}
+			def := stageDef{stage: i, names: make([]string, 0, len(st.Formats))}
 			for _, f := range st.Formats {
-				defs[i].defined = append(defs[i].defined, f.Name)
+				def.names = append(def.names, f.Name)
 			}
+			defs = appendDef(defs, sel, def)
 		}
 	}
 	return defs
+}
+
+// appendDef appends a stage's definitions, in a list with room for every stage that can define labels.
+func appendDef(defs stageDefs, sel *queryplan.LogSelect, def stageDef) stageDefs {
+	if defs == nil {
+		n := 0
+		for _, st := range sel.Stages[def.stage:] {
+			switch st.(type) {
+			case *queryplan.Parse, *queryplan.LabelFormat:
+				n++
+			}
+		}
+		defs = make(stageDefs, 0, n)
+	}
+	return append(defs, def)
 }
 
 // readsDefinitions reports whether a stage reads the labels the regexp, pattern and label_format stages define: a
@@ -327,39 +345,30 @@ func readsDefinitions(sel *queryplan.LogSelect) bool {
 }
 
 // definedNames are the labels the stages before a stage define by name: the named groups of a regexp and the
-// placeholders of a pattern. The string translator keeps them in two sets, read by the stages that follow.
+// placeholders of a pattern. The string translator keeps them in two sets, read by the stages that follow; here
+// they are the definitions of the stages noted so far (defs[:n]), read in place.
 type definedNames struct {
-	captured, defined map[string]bool
+	defs stageDefs
+	n    int
 }
 
-// note adds the labels stage i defines.
+// note adds the labels stage i defines; it is called for the stages in order.
 func (d *definedNames) note(defs stageDefs, i int) {
-	if defs == nil {
-		return
-	}
-	for _, n := range defs[i].captured {
-		if d.captured == nil {
-			d.captured = map[string]bool{}
-		}
-		d.captured[n] = true
-	}
-	for _, n := range defs[i].defined {
-		if d.defined == nil {
-			d.defined = map[string]bool{}
-		}
-		d.defined[n] = true
+	d.defs = defs
+	for d.n < len(defs) && defs[d.n].stage <= i {
+		d.n++
 	}
 }
 
 // label is the label translation the stages after a regexp read: a name the regexp captured is its own field,
 // not translated.
 func (d *definedNames) label(base func(string) string) func(string) string {
-	if len(d.captured) == 0 {
+	noted := d.defs[:d.n]
+	if !anyCaptured(noted) {
 		return base
 	}
-	captured := d.captured
 	return func(l string) string {
-		if captured[l] || base == nil {
+		if capturedIn(noted, l) || base == nil {
 			return l
 		}
 		return base(l)
@@ -367,4 +376,31 @@ func (d *definedNames) label(base func(string) string) func(string) string {
 }
 
 // exact reports whether the label is one a regexp or pattern defines, which a parser's keys do not stand for.
-func (d *definedNames) exact(label string) bool { return d.captured[label] || d.defined[label] }
+func (d *definedNames) exact(label string) bool {
+	for _, def := range d.defs[:d.n] {
+		if slices.Contains(def.names, label) {
+			return true
+		}
+	}
+	return false
+}
+
+// anyCaptured reports a regexp group among the definitions.
+func anyCaptured(defs stageDefs) bool {
+	for _, def := range defs {
+		if def.captured && len(def.names) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// capturedIn reports a regexp group named label among the definitions.
+func capturedIn(defs stageDefs, label string) bool {
+	for _, def := range defs {
+		if def.captured && slices.Contains(def.names, label) {
+			return true
+		}
+	}
+	return false
+}

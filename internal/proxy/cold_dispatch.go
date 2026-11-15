@@ -57,11 +57,7 @@ func (p *Proxy) buildLogQueryParams(r *http.Request, logsqlQuery string) url.Val
 	if e := r.FormValue("end"); e != "" {
 		params.Set("end", formatVLTimestamp(e))
 	}
-	limit := r.FormValue("limit")
-	if limit == "" {
-		limit = "1000"
-	}
-	params.Set("limit", sanitizeLimit(limit, p.requestQueryLimits(r.Context()).MaxEntriesLimitPerQuery))
+	params.Set("limit", sanitizeLimit(r.FormValue("limit"), p.requestQueryLimits(r.Context()).MaxEntriesLimitPerQuery))
 	return params
 }
 
@@ -87,11 +83,7 @@ func (p *Proxy) buildColdQueryParams(r *http.Request, logsqlQuery string) url.Va
 	if e := r.FormValue("end"); e != "" {
 		params.Set("end", formatVLTimestamp(e))
 	}
-	limit := r.FormValue("limit")
-	if limit == "" {
-		limit = "1000"
-	}
-	params.Set("limit", sanitizeLimit(limit, p.requestQueryLimits(r.Context()).MaxEntriesLimitPerQuery))
+	params.Set("limit", sanitizeLimit(r.FormValue("limit"), p.requestQueryLimits(r.Context()).MaxEntriesLimitPerQuery))
 	return params
 }
 
@@ -197,10 +189,7 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 }
 
 func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
-	originalLimit, err := strconv.Atoi(r.FormValue("limit"))
-	if err != nil || originalLimit <= 0 {
-		originalLimit = 1000 // match buildColdQueryParams default
-	}
+	originalLimit, _ := strconv.Atoi(r.FormValue("limit"))
 
 	if r.FormValue("direction") != "forward" {
 		// For backward queries the Lakehouse only scans ascending. Fetch chunks
@@ -287,9 +276,6 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 			baseParams.Del("end")
 			baseParams.Del("limit")
 			clientLimit, _ := strconv.Atoi(r.FormValue("limit"))
-			if clientLimit <= 0 {
-				clientLimit = 1000
-			}
 			ascBody, fetchErr := p.coldBackwardChunkedFetch(r.Context(), baseParams, startNs, coldEndNs, clientLimit)
 			if fetchErr != nil {
 				coldErr = fetchErr
@@ -367,9 +353,6 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		merged = MergeNDJSON(coldResp.Body, hotResp.Body)
 	} else {
 		limit, _ := strconv.Atoi(r.FormValue("limit"))
-		if limit <= 0 {
-			limit = 1000
-		}
 		coldReversed, readErr := readAndReverseNDJSON(coldResp.Body, limit)
 		if readErr != nil {
 			p.writeErr(w, r.Context(), readErr)
@@ -565,10 +548,7 @@ func readAndReverseNDJSON(r io.Reader, limit int) ([]byte, error) {
 // avoiding full buffering of 2× limit lines when both hot and cold backends return
 // full-limit responses.
 func readNDJSONToLimit(r io.Reader, limitParam string) ([]byte, error) {
-	limit, err := strconv.Atoi(limitParam)
-	if err != nil || limit <= 0 {
-		limit = 1000
-	}
+	limit, _ := strconv.Atoi(limitParam)
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	var out []byte
@@ -591,12 +571,9 @@ func readNDJSONToLimit(r io.Reader, limitParam string) ([]byte, error) {
 }
 
 // trimNDJSONBodyToLimit trims a newline-delimited JSON body to at most limit lines.
-// Non-positive or unparseable limitParam is treated as 1000 (the Loki default).
+// limitParam is the request's limit, always a positive integer by the time the route reads it.
 func trimNDJSONBodyToLimit(body []byte, limitParam string) []byte {
-	limit, err := strconv.Atoi(limitParam)
-	if err != nil || limit <= 0 {
-		limit = 1000
-	}
+	limit, _ := strconv.Atoi(limitParam)
 	var out []byte
 	count := 0
 	for _, line := range bytes.Split(body, []byte("\n")) {
