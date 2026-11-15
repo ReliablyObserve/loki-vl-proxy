@@ -30,7 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_`, keep their previous series (`semantics/unwrap-per-series-identity-raw-rows`,
   `semantics/unwrap-per-series-identity-label-filter`). The keywords may be written in any case (`SUM by (app)
   (AVG_OVER_TIME(... | JSON | UNWRAP x [5m]))`): the handlers, the response cache key and the translation read the
-  lower-case spelling alike.
+  lower-case spelling alike. A binary operation of such operands reads the same series, since each operand is
+  evaluated as a request of its own: `sum by (app) (max_over_time(...)) - sum by (app) (min_over_time(...))`, an
+  operand and a number, nested operations, `on`, `ignoring` and `group_left` matching, `bool` and an aggregation over
+  the operation answer Loki's values, and an operand whose range is the step keeps its series when the other
+  operand's range is longer. Answers cached before for a binary operation, a ranking or a `label_replace` over such an
+  operand are not served again.
 
 ## [2.280.1] - 2026-11-15
 

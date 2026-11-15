@@ -15,10 +15,11 @@ import "testing"
 // TestCompat_UnwrapPerSeriesIdentity: sum, sum by (app) and max by (app) over
 // avg, max, min, stddev and stdvar over time of an unwrapped label after json
 // and logfmt answer Loki's series and values, on a range query whose range is
-// its step and on an instant query; so does the upper-case spelling. A range
-// longer than the step keeps the stream's series and is not compared here, and
-// a binary operation of identity operands is skipped until its operands carry
-// the identity (both: semantics/unwrap-per-series-identity-raw-rows, open).
+// its step and on an instant query; so does the upper-case spelling, and so do
+// binary operations of such operands (two identities, an identity and a number,
+// `on (app)` matching), each operand read as it is read alone. A range longer
+// than the step keeps the stream's series and is not compared here
+// (semantics/unwrap-per-series-identity-raw-rows, open).
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows, semantics/stdvar-grouped-pooled-variance, metric-series-identity, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_UnwrapPerSeriesIdentity(t *testing.T) {
@@ -43,8 +44,7 @@ func TestCompat_UnwrapPerSeriesIdentity(t *testing.T) {
 	}
 	type tc struct {
 		name, query string
-		series      int    // series Loki answers
-		skip        string // why the case is not run yet
+		series      int // series Loki answers
 	}
 	var cases []tc
 	for _, g := range groups {
@@ -60,19 +60,16 @@ func TestCompat_UnwrapPerSeriesIdentity(t *testing.T) {
 		cases = append(cases,
 			tc{name: g.name + "/upper case", query: `SUM by (app) (AVG_OVER_TIME(` + g.selector + ` | ` + upper + ` | UNWRAP amount [5m]))`, series: g.streams},
 			// A difference, not a ratio: the per-series maxima and minima of this fixture often
-			// coincide with the stream's, which a quotient hides. The operands of a binary
-			// operation are translated with the stream's series today (no series hash in the
-			// text VictoriaLogs receives), so Loki's per-series sums differ from the proxy's.
-			tc{name: g.name + "/binary operation", query: `sum by (app) (max_over_time(` + g.selector + ` | ` + g.parser + ` | unwrap amount [5m])) - sum by (app) (min_over_time(` + g.selector + ` | ` + g.parser + ` | unwrap amount [5m]))`, series: g.streams,
-				skip: "the operands of a binary operation keep the stream's series (semantics/unwrap-per-series-identity-raw-rows, open); drop the skip when they carry the series hash"},
+			// coincide with the stream's, which a quotient hides. Each operand is evaluated as a
+			// request of its own, so it reads the series hash as it does alone.
+			tc{name: g.name + "/binary operation", query: `sum by (app) (max_over_time(` + g.selector + ` | ` + g.parser + ` | unwrap amount [5m])) - sum by (app) (min_over_time(` + g.selector + ` | ` + g.parser + ` | unwrap amount [5m]))`, series: g.streams},
+			tc{name: g.name + "/binary operation with a number", query: `2 * sum by (app) (avg_over_time(` + g.selector + ` | ` + g.parser + ` | unwrap amount [5m]))`, series: g.streams},
+			tc{name: g.name + "/binary operation on (app)", query: `sum by (app) (stddev_over_time(` + g.selector + ` | ` + g.parser + ` | unwrap amount [5m])) / on (app) sum by (app) (avg_over_time(` + g.selector + ` | ` + g.parser + ` | unwrap amount [5m]))`, series: g.streams},
 		)
 	}
 	for _, c := range cases {
 		for _, shape := range shapes {
 			t.Run(shape.name+"/"+c.name, func(t *testing.T) {
-				if c.skip != "" {
-					t.Skip(c.skip)
-				}
 				loki := shape.run(t, fx, lokiURL, c.query)
 				if len(loki) != c.series {
 					t.Fatalf("%s: Loki answers %d series, the fixture holds %d: parity would be empty-vs-empty or the fixture is not what the case reads", c.query, len(loki), c.series)

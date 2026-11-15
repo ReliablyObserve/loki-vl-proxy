@@ -54,6 +54,35 @@ var dynamicIdentityShapes = []string{
 	`sum(%s{job="de"} | json | __error__="" | unwrap duration_ms [5m]))`,
 }
 
+// dynamicIdentityBinaryQueries are binary operations of identity operands: each operand must read the series it reads
+// alone, so the operation joins Loki's series. A difference of a maximum and a minimum (a ratio of this data's
+// per-series maxima and minima can hide a wrong series), on (app) and ignoring (pod) group_left matching, a number on
+// either side, a nested operation, an identity operand joined with one of the stream's series, a comparison with
+// bool, an aggregation over the operation, the lines that do not parse, and an identity operand whose range is the
+// step joined with an operand of a longer range (the step=range request of that row has a step of 1m).
+var dynamicIdentityBinaryQueries = func() []string {
+	dj := func(fn, by string) string {
+		return fmt.Sprintf(`sum%s (%s({job="dj"} | json | unwrap duration_ms [5m]))`, by, fn)
+	}
+	dl := func(op, fn string) string {
+		return fmt.Sprintf(`%s by (app) (%s({job="dl"} | logfmt | unwrap duration_ms [5m]))`, op, fn)
+	}
+	maxApp, minApp, avgApp := dj("max_over_time", " by (app)"), dj("min_over_time", " by (app)"), dj("avg_over_time", " by (app)")
+	return []string{
+		maxApp + ` - ` + minApp,
+		dl("sum", "stddev_over_time") + ` / on (app) ` + dl("sum", "avg_over_time"),
+		dj("avg_over_time", "") + ` * 2`,
+		`1000 - ` + dl("max", "stdvar_over_time"),
+		`(` + maxApp + ` - ` + minApp + `) / ` + avgApp,
+		dj("max_over_time", " by (app, pod)") + ` / ignoring (pod) group_left ` + avgApp,
+		avgApp + ` - sum by (app) (count_over_time({job="dj"} | json [5m]))`,
+		maxApp + ` > bool ` + avgApp,
+		`sum(` + maxApp + ` - ` + minApp + `)`,
+		`sum(max_over_time({job="de"} | json | unwrap duration_ms [5m])) - sum(min_over_time({job="de"} | json | unwrap duration_ms [5m]))`,
+		`sum by (app) (max_over_time({job="dj"} | json | unwrap duration_ms [1m])) - sum by (app) (count_over_time({job="dj"} | json [5m]))`,
+	}
+}()
+
 // dynamicIdentityKnown are the runs that differ from Loki, by query and request kind, with the registry case that
 // holds the difference open.
 var dynamicIdentityKnown = func() map[string]map[string]string {
@@ -105,6 +134,13 @@ var dynamicIdentityKnown = func() map[string]map[string]string {
 			add(perSeries, sliding, q)
 		}
 	}
+	// A binary operation reads each operand's series as the operand alone does: over a range longer than the step,
+	// the stream's (a maximum is above the mean whatever the series, so the comparison with bool answers Loki's).
+	for _, q := range dynamicIdentityBinaryQueries {
+		if !strings.Contains(q, "> bool") {
+			add(perSeries, sliding, q)
+		}
+	}
 	// A label filter between the parser and an unwrapped label whose name holds an underscore (duration_ms, which the
 	// line can spell duration.ms or duration-ms): the lowering does not serve the query, and the string translator's
 	// series are the stream and each line.
@@ -128,6 +164,13 @@ func dynamicIdentityQueries(t *testing.T) []metricQuery {
 			}
 			out = append(out, metricQuery{q: q, id: queryID("logql", q), plan: p, fix: fix, reqs: metricRequests(q, firstRangeOf(p.Root))})
 		}
+	}
+	for _, q := range dynamicIdentityBinaryQueries {
+		p, err := planOfText(q)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		out = append(out, metricQuery{q: q, id: queryID("logql", q), plan: p, fix: fix, reqs: metricRequests(q, firstRangeOf(p.Root))})
 	}
 	return out
 }

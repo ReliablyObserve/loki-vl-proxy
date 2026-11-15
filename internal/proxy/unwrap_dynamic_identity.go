@@ -112,8 +112,10 @@ func (p *Proxy) dynamicIdentityFor(ctx context.Context, query string) bool {
 }
 
 // dynamicIdentityWindows marks a range query of the dynamic identity of a parser whose range is longer than the step,
-// at its root or in an operand, before it is translated: it is translated by the string translator and answered with
-// the stream's series, as before. out is the request to go on with.
+// at its root or under a ranking or a label_replace, before it is translated: it is translated by the string
+// translator and answered with the stream's series, as before. An operand of a binary operation is evaluated as a
+// request of its own (proxyBinaryLogQL), which decides for itself, so each operand reads the series it reads alone
+// whatever the range of the other one. out is the request to go on with.
 func (p *Proxy) dynamicIdentityWindows(r *http.Request, query string) (out *http.Request) {
 	step, ok := parsePositiveStepDuration(r.FormValue("step"))
 	if !ok || streamIdentityOnly(r.Context()) {
@@ -128,13 +130,24 @@ func (p *Proxy) dynamicIdentityWindows(r *http.Request, query string) (out *http
 		window, ok := dynamicWindowRange(query)
 		longer = ok && window > step
 	} else {
-		// A dynamic identity at depth (an operand, a ranking) is answered by the operand's own request.
+		// A dynamic identity under a ranking or a label_replace is marked here; a binary operand decides in its own request.
 		longer = p.dynamicIdentityAtDepth(query, step)
 	}
 	if !longer {
 		return r
 	}
 	return r.WithContext(context.WithValue(r.Context(), streamIdentityKey{}, true))
+}
+
+// binaryOperandContext is the context a range request translates an operand of its binary operation with: the mark the
+// operand's own request gets (dynamicIdentityWindows), so the translation the operand's request reads is the one this
+// request has cached. A number is not marked, and a request whose query holds no dynamic identity's words is read with
+// no more work than a text screen.
+func (p *Proxy) binaryOperandContext(r *http.Request, operand logqlpkg.Expr) context.Context {
+	if _, ok := operand.(*logqlpkg.LiteralExpr); ok || !dynamicIdentityFenceScreen(dynamicQuery(r.FormValue("query"))) {
+		return r.Context()
+	}
+	return p.dynamicIdentityWindows(r, operand.String()).Context()
 }
 
 // dynamicWindowRange is the range of a query whose function the window evaluator merges from step buckets (avg, max,
@@ -163,8 +176,8 @@ func dynamicWindowRange(query string) (time.Duration, bool) {
 	return 0, false
 }
 
-// dynamicIdentityAtDepth reports a query that holds, below its root, a range function of a dynamic identity's shape
-// over a range longer than step (lower.WritesDynamicUnwrapIdentity).
+// dynamicIdentityAtDepth reports a query that holds, below its root and outside a binary operation, a range function
+// of a dynamic identity's shape over a range longer than step (lower.WritesDynamicUnwrapIdentity).
 func (p *Proxy) dynamicIdentityAtDepth(query string, step time.Duration) bool {
 	query = dynamicQuery(query)
 	if !p.queryPlanLowering || !strings.Contains(query, "unwrap") {
@@ -181,15 +194,15 @@ func (p *Proxy) dynamicIdentityAtDepth(query string, step time.Duration) bool {
 	return rangeLongerThan(expr, step)
 }
 
-// rangeLongerThan reports a range aggregation over a range longer than step anywhere in expr.
+// rangeLongerThan reports a range aggregation over a range longer than step in expr, outside a binary operation: the
+// binary route evaluates each operand as a request of its own, which dynamicIdentityWindows marks on its own range,
+// so `max_over_time(... [1m]) - count_over_time(...[5m])` at a step of 1m keeps the hash on its first operand.
 func rangeLongerThan(expr logqlpkg.Expr, step time.Duration) bool {
 	switch e := expr.(type) {
 	case *logqlpkg.RangeAggregation:
 		return e.RangeDuration > step
 	case *logqlpkg.VectorAggregation:
 		return rangeLongerThan(e.Inner, step)
-	case *logqlpkg.BinOpExpr:
-		return rangeLongerThan(e.Left, step) || rangeLongerThan(e.Right, step)
 	case *logqlpkg.OpaqueMetricExpr:
 		return e.Inner != nil && rangeLongerThan(e.Inner, step)
 	}

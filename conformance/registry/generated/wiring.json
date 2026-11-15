@@ -2140,6 +2140,7 @@
       "internal/proxy/unwrap_over_time_window_test.go"
     ],
     "semantics/unwrap-per-series-identity-raw-rows": [
+      "internal/proxy/unwrap_dynamic_identity_binary_test.go",
       "internal/proxy/unwrap_dynamic_identity_cache_test.go",
       "internal/proxy/unwrap_dynamic_identity_test.go",
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
@@ -4017,6 +4018,9 @@
       "semantics/aggregation-over-range-by-not-applied",
       "semantics/stddev-stdvar-over-time-range-window"
     ],
+    "internal/proxy/unwrap_dynamic_identity_binary_test.go": [
+      "semantics/unwrap-per-series-identity-raw-rows"
+    ],
     "internal/proxy/unwrap_dynamic_identity_cache_test.go": [
       "quality/query-range-extent-cache",
       "semantics/unwrap-per-series-identity-raw-rows"
@@ -5472,7 +5476,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 644,
+  "tests_with_markers": 645,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

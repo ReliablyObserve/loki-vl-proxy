@@ -76,7 +76,7 @@ func TestDynamicIdentityServedFromPlan(t *testing.T) {
 
 // The handlers read the identity only where the lowering serves the query, and only with the lowering on, and a
 // range longer than the step keeps the stream's series: the request is marked before it is translated, at its root
-// or in an operand.
+// or under a ranking or a label_replace. A binary operation is not marked: each operand decides in its own request.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows
 func TestDynamicIdentityHandlersReadThePlan(t *testing.T) {
@@ -98,7 +98,12 @@ func TestDynamicIdentityHandlersReadThePlan(t *testing.T) {
 		{q, "900", false},
 		{q, "", false},
 		{`topk(1, sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])))`, "60", true},
-		{`sum(avg_over_time({app="a"} | json | unwrap n [5m])) * 2`, "60", true},
+		// A binary operation is not marked: each operand is a request of its own, which decides on its own range.
+		{`sum(avg_over_time({app="a"} | json | unwrap n [5m])) * 2`, "60", false},
+		{`sum(avg_over_time({app="a"} | json | unwrap n [1m])) - sum(count_over_time({app="a"}[5m]))`, "60", false},
+		{`sum(sum(avg_over_time({app="a"} | json | unwrap n [5m])) - sum(max_over_time({app="a"} | json | unwrap n [5m])))`, "60", false},
+		{`label_replace(sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])), "x", "$1", "app", "(.*)")`, "60", true},
+		{`label_replace(sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])), "x", "$1", "app", "(.*)")`, "300", false},
 		{`topk(1, sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])))`, "300", false},
 		{`sum(sum_over_time({app="a"} | json | unwrap n [5m]))`, "60", false},
 		{`sum by (app) (quantile_over_time(0.9, {app="a"} | json | unwrap n [5m]))`, "60", false},
@@ -169,6 +174,18 @@ func TestDynamicIdentityCacheKeysFenced(t *testing.T) {
 		`sum(avg_over_time({app="a"} | json | keep app, n | unwrap n [5m]))`:   "",
 		`sum(avg_over_time({app="a"} | unwrap n [5m]))`:                        "",
 		`{app="a"} | json`: "",
+		// An identity operand of a binary operation, a ranking, a label_replace or an aggregation over a binary
+		// operation: the handlers evaluate it as the operand alone, so the answer changed too.
+		`sum by (app) (max_over_time({app="a"} | json | unwrap n [5m])) - sum by (app) (min_over_time({app="a"} | json | unwrap n [5m]))`:      dynamicUnwrapIdentityResponseVersion,
+		`2 * SUM(STDDEV_OVER_TIME({app="a"} | LOGFMT | UNWRAP n [5m]))`:                                                                        dynamicUnwrapIdentityResponseVersion,
+		`sum by (app) (count_over_time({app="a"}[5m])) / on (app) group_left sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m]))`:   dynamicUnwrapIdentityResponseVersion,
+		`topk(2, sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])))`:                                                              dynamicUnwrapIdentityResponseVersion,
+		`label_replace(max by (app) (stdvar_over_time({app="a"} | json | unwrap n [5m])), "x", "$1", "app", "(.*)")`:                           dynamicUnwrapIdentityResponseVersion,
+		`sum(sum by (app) (max_over_time({app="a"} | json | unwrap n [5m])) - sum by (app) (min_over_time({app="a"} | json | unwrap n [5m])))`: dynamicUnwrapIdentityResponseVersion,
+		// Binary operations of operands without the identity keep their keys.
+		`sum by (app) (rate({app="a"} | json [5m])) / sum by (app) (count_over_time({app="a"} | json [5m]))`:                   "",
+		`sum(sum_over_time({app="a"} | json | unwrap n [5m])) - sum(avg_over_time({app="a"} | json | keep n | unwrap n [5m]))`: "",
+		`sum(avg_over_time({app="a"} | unwrap n [5m])) * 2`:                                                                    "",
 	} {
 		if got := dynamicUnwrapIdentityResponseKeyVersion(q); got != want {
 			t.Errorf("%s: fence %q, want %q", q, got, want)
@@ -193,13 +210,17 @@ func TestDynamicIdentityDecidedAlikeInEverySpelling(t *testing.T) {
 	for _, tc := range []struct {
 		q    string
 		want bool
+		// fenced is a query the fence covers though its root is not served from the identity: the fence reads the
+		// plan at any depth, where an operand evaluated alone (its text printed without the comment) reads the
+		// hash, so it fences every such plan (one more cache miss, never a stale answer).
+		fenced bool
 	}{
-		{`sum by (app) (avg_over_time({a="b"} | json | unwrap x [5m]))`, true},
-		{`SUM by (app) (avg_over_time({a="b"} | json | unwrap x [5m]))`, true},
-		{`sum BY (app) (AVG_OVER_TIME({a="b"} | JSON | UNWRAP x [5m]))`, true},
-		{`  sum(avg_over_time({a="b"} | json | unwrap x [5m]))`, true},
-		{"# c\nsum(avg_over_time({a=\"b\"} | json | unwrap x [5m]))", false},
-		{`SUM(QUANTILE_OVER_TIME(0.9, {a="b"} | JSON | UNWRAP x [5m]))`, false},
+		{`sum by (app) (avg_over_time({a="b"} | json | unwrap x [5m]))`, true, true},
+		{`SUM by (app) (avg_over_time({a="b"} | json | unwrap x [5m]))`, true, true},
+		{`sum BY (app) (AVG_OVER_TIME({a="b"} | JSON | UNWRAP x [5m]))`, true, true},
+		{`  sum(avg_over_time({a="b"} | json | unwrap x [5m]))`, true, true},
+		{"# c\nsum(avg_over_time({a=\"b\"} | json | unwrap x [5m]))", false, true},
+		{`SUM(QUANTILE_OVER_TIME(0.9, {a="b"} | JSON | UNWRAP x [5m]))`, false, false},
 	} {
 		translated, err := p.translateQuery(tc.q)
 		if err != nil {
@@ -208,8 +229,8 @@ func TestDynamicIdentityDecidedAlikeInEverySpelling(t *testing.T) {
 		served := strings.Contains(translated, "__lvp_sid")
 		handler := p.dynamicUnwrapIdentity(tc.q)
 		fence := dynamicUnwrapIdentityResponseKeyVersion(tc.q) != ""
-		if handler != tc.want || fence != tc.want || served != tc.want {
-			t.Errorf("%q: handlers %v, fence %v, translation hashes %v, want all %v", tc.q, handler, fence, served, tc.want)
+		if handler != tc.want || served != tc.want || fence != tc.fenced {
+			t.Errorf("%q: handlers %v, translation hashes %v, want %v; fence %v, want %v", tc.q, handler, served, tc.want, fence, tc.fenced)
 		}
 	}
 }

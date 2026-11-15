@@ -80,16 +80,33 @@ func keepUnwrapIdentityResponseKeyVersion(query string) string {
 // (semantics/unwrap-per-series-identity-raw-rows): a series per stream, or per line, then.
 const dynamicUnwrapIdentityResponseVersion = "@unwrap-dynamic-identity-v1:"
 
-// dynamicUnwrapIdentityResponseKeyVersion is the fence of a query whose plan has that identity
-// (lower.DynamicUnwrapIdentity), read from the query's shared plan after a text screen, so no other query's key
-// changes. It does not read the -query-plan-lowering flag: with the flag off the fence costs one more cache miss.
+// dynamicUnwrapIdentityResponseKeyVersion is the fence of a query whose plan has that identity at any depth
+// (lower.WritesDynamicUnwrapIdentity): at its root, and in an operand of a binary operation, a ranking or a
+// label_replace, which the handlers evaluate as the operand alone, so their answers changed too. It is read from the
+// query's shared plan after a text screen (dynamicIdentityFenceScreen), so no other query's key changes. It does not
+// read the -query-plan-lowering flag or the step: with the flag off, or on a range longer than the step, the fence
+// costs one more cache miss.
 func dynamicUnwrapIdentityResponseKeyVersion(query string) string {
 	query = dynamicQuery(query)
-	if !dynamicIdentityScreen(query) {
+	if !dynamicIdentityFenceScreen(query) {
 		return ""
 	}
-	if plan := resolvedPlan(query); plan != nil && lower.DynamicUnwrapIdentity(plan) {
+	if plan := resolvedPlan(query); plan != nil && lower.WritesDynamicUnwrapIdentity(plan) {
 		return dynamicUnwrapIdentityResponseVersion
 	}
 	return ""
+}
+
+// dynamicIdentityFenceScreen is the text screen of the fence: the words every plan with a dynamic identity holds, in
+// any position (an unwrap, a json or logfmt parser and a function taken per series). The plan decides.
+func dynamicIdentityFenceScreen(query string) bool {
+	if !strings.Contains(query, "unwrap") || !strings.Contains(query, "json") && !strings.Contains(query, "logfmt") {
+		return false
+	}
+	for _, fn := range dynamicIdentityFuncs {
+		if strings.Contains(query, fn) {
+			return true
+		}
+	}
+	return false
 }

@@ -1991,6 +1991,7 @@
     "internal/proxy/unwrap_convert_test.go | semantics/unwrap-duration-seconds",
     "internal/proxy/unwrap_deviation_buckets_test.go | semantics/aggregation-over-range-by-not-applied",
     "internal/proxy/unwrap_deviation_buckets_test.go | semantics/stddev-stdvar-over-time-range-window",
+    "internal/proxy/unwrap_dynamic_identity_binary_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/proxy/unwrap_dynamic_identity_cache_test.go | quality/query-range-extent-cache",
     "internal/proxy/unwrap_dynamic_identity_cache_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/proxy/unwrap_dynamic_identity_test.go | semantics/stdvar-grouped-pooled-variance",
@@ -2824,7 +2825,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 643,
+      "go": 644,
       "playwright": 1
     },
     "page_kinds": {

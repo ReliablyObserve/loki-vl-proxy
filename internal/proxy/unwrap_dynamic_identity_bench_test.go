@@ -19,7 +19,7 @@ import (
 // parser with no keep (lower.DynamicUnwrapIdentity) through the real handlers, against a stub VictoriaLogs that
 // answers a row query with 2,000 rows over the window and a stats query with a small answer: the proxy's work on each
 // route the shapes take, instant, a range equal to the step and a range longer than it. unique has one series per
-// line; dup has 40 series of 50 lines each.
+// line; dup has 40 series of 50 lines each. The binary rows join two such operands, or one and a number.
 func BenchmarkDynamicIdentityRoutes(b *testing.B) {
 	b.Run("unique", func(b *testing.B) { benchDynamicIdentityRoutes(b, 2000) })
 	b.Run("dup", func(b *testing.B) { benchDynamicIdentityRoutes(b, 40) })
@@ -68,12 +68,17 @@ func benchDynamicIdentityRoutes(b *testing.B, series int) {
 		{"sum_by_avg_tumbling", "query_range", `sum by (app) (avg_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
 		{"max_by_stdvar_tumbling", "query_range", `max by (app) (stdvar_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
 		{"sum_by_max_longer_range", "query_range", `sum by (app) (max_over_time({app="x"} | json | unwrap n [5m]))`, "60"},
+		// Binary operations of identity operands: each operand is a request of its own.
+		{"binary_difference_instant", "query", `sum by (app) (max_over_time({app="x"} | json | unwrap n [5m])) - sum by (app) (min_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
+		{"binary_difference_tumbling", "query_range", `sum by (app) (max_over_time({app="x"} | json | unwrap n [5m])) - sum by (app) (min_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
+		{"binary_scalar_tumbling", "query_range", `2 * sum by (app) (avg_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
+		{"binary_difference_longer_range", "query_range", `sum by (app) (max_over_time({app="x"} | json | unwrap n [5m])) - sum by (app) (min_over_time({app="x"} | json | unwrap n [5m]))`, "60"},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				// A selector of its own per iteration, so no response cache answers it.
-				query := strings.Replace(tc.query, `{app="x"}`, `{app="x`+strconv.Itoa(i)+`"}`, 1)
+				query := strings.ReplaceAll(tc.query, `{app="x"}`, `{app="x`+strconv.Itoa(i)+`"}`)
 				params := url.Values{"query": {query}, "start": {"1800000000"}, "end": {"1800000600"}, "step": {tc.step}, "time": {"1800000600"}}
 				req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/"+tc.endpoint+"?"+params.Encode(), nil)
 				req.Header.Set("X-Scope-OrgID", "0")
@@ -82,6 +87,26 @@ func benchDynamicIdentityRoutes(b *testing.B, series int) {
 				if rec.Code != http.StatusOK {
 					b.Fatalf("status %d: %s", rec.Code, rec.Body)
 				}
+			}
+		})
+	}
+}
+
+// BenchmarkDynamicIdentityFence measures the response key fence of a parser's dynamic identity on the shapes it reads:
+// a root identity, a binary operation of identity operands (fenced at depth), a binary operation of other operands
+// that pass the text screen, and a query the screen turns away. The plans are memoised, as the handlers leave them.
+func BenchmarkDynamicIdentityFence(b *testing.B) {
+	for _, tc := range []struct{ name, query string }{
+		{"root_identity", `sum by (app) (avg_over_time({app="x"} | json | unwrap n [5m]))`},
+		{"binary_identity", `sum by (app) (max_over_time({app="x"} | json | unwrap n [5m])) - sum by (app) (min_over_time({app="x"} | json | unwrap n [5m]))`},
+		{"binary_other", `sum(sum_over_time({app="x"} | json | unwrap n [5m])) - sum(avg_over_time({app="x"} | json | keep n | unwrap n [5m]))`},
+		{"screened_out", `sum by (app) (rate({app="x"} | json [5m])) / sum by (app) (count_over_time({app="x"} [5m]))`},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			_ = dynamicUnwrapIdentityResponseKeyVersion(tc.query)
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = dynamicUnwrapIdentityResponseKeyVersion(tc.query)
 			}
 		})
 	}
