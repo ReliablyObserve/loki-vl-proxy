@@ -3,6 +3,8 @@ package proxy
 import (
 	"net/http"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
@@ -37,29 +39,61 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	if site == responseKeyLogWindowShape {
 		return keepMetadataProjectionResponseKeyVersion(query) + keywordLabelResponseKeyVersion(query) + reservedFieldCaseResponseKeyVersion(query) + reservedFieldLabelResponseKeyVersion(query)
 	}
-	var b strings.Builder
-	b.WriteString(orderedJSONVectorResponseKeyVersion(r, query))
-	b.WriteString(bareJSONMetricResponseKeyVersion(r, query))
+	var b fenceChain
+	b.add(orderedJSONVectorResponseKeyVersion(r, query))
+	b.add(bareJSONMetricResponseKeyVersion(r, query))
 	if site == responseKeyInnerQueryRange {
-		b.WriteString(logfmtPresenceResponseKeyVersion(r, query))
+		b.add(logfmtPresenceResponseKeyVersion(r, query))
 	}
-	b.WriteString(detectedLevelMutationResponseKeyVersion(query))
-	b.WriteString(keepMetadataProjectionResponseKeyVersion(query))
-	b.WriteString(ipLabelFilterResponseKeyVersion(query))
-	b.WriteString(repeatedLabelFilterResponseKeyVersion(query))
-	b.WriteString(keywordLabelResponseKeyVersion(query))
-	b.WriteString(reservedFieldCaseResponseKeyVersion(query))
-	b.WriteString(reservedFieldLabelResponseKeyVersion(query))
-	b.WriteString(keepUnwrapIdentityResponseKeyVersion(query))
-	b.WriteString(dynamicUnwrapIdentityResponseKeyVersion(query))
+	b.add(detectedLevelMutationResponseKeyVersion(query))
+	b.add(keepMetadataProjectionResponseKeyVersion(query))
+	b.add(ipLabelFilterResponseKeyVersion(query))
+	b.add(repeatedLabelFilterResponseKeyVersion(query))
+	b.add(keywordLabelResponseKeyVersion(query))
+	b.add(reservedFieldCaseResponseKeyVersion(query))
+	b.add(reservedFieldLabelResponseKeyVersion(query))
+	b.add(keepUnwrapIdentityResponseKeyVersion(query))
+	b.add(dynamicUnwrapIdentityResponseKeyVersion(query))
+	b.add(streamLevelSeriesResponseKeyVersion(query))
 	if site == responseKeyCompatQueryRange {
-		b.WriteString(logfmtPresenceResponseKeyVersion(r, query))
+		b.add(logfmtPresenceResponseKeyVersion(r, query))
 	}
 	if site == responseKeyCompatQuery || site == responseKeyCompatQueryRange {
 		// The compat edge looks its cache up before the handler validates the query.
-		b.WriteString(runeResponseKeyVersion(query))
+		b.add(runeResponseKeyVersion(query))
 	}
 	return b.String()
+}
+
+// fenceChain concatenates the fences that fire; one fence (or none) is
+// returned as its constant, without building a string.
+type fenceChain struct {
+	one string
+	n   int
+	b   strings.Builder
+}
+
+func (c *fenceChain) add(s string) {
+	if s == "" {
+		return
+	}
+	switch c.n {
+	case 0:
+		c.one = s
+	case 1:
+		c.b.WriteString(c.one)
+		c.b.WriteString(s)
+	default:
+		c.b.WriteString(s)
+	}
+	c.n++
+}
+
+func (c *fenceChain) String() string {
+	if c.n <= 1 {
+		return c.one
+	}
+	return c.b.String()
 }
 
 // keepUnwrapIdentityResponseVersion fences the answers cached before a keep before an unwrap decided the series of
@@ -71,6 +105,49 @@ const keepUnwrapIdentityResponseVersion = "@keep-unwrap-identity-v1:"
 func keepUnwrapIdentityResponseKeyVersion(query string) string {
 	if strings.Contains(query, "unwrap") && keepMetadataProjectionStageRE.MatchString(query) {
 		return keepUnwrapIdentityResponseVersion
+	}
+	return ""
+}
+
+// streamLevelSeriesResponseVersion fences the answers cached before the series of a per-stream stats read took
+// detected_level from the stream's level field (semantics/without-fold-stream-detected-level): they said unknown.
+const streamLevelSeriesResponseVersion = "@stream-level-series-v1:"
+
+// streamLevelSeriesResponseKeyVersion is the fence of a query that may read its series per stream without a level
+// column: a without fold, an unwrap function, and topk, bottomk, sort, sort_desc or label_replace over a range
+// function (each reads the per-stream series the proxy labels). The words are those of every query whose label sets
+// changed in a diff of range functions, parsers and outer forms against the previous build. A text screen, so a
+// query that reads no such series is fenced too (one more cache miss), and no other query's key changes. It jumps
+// between the rare bytes the words hold (a log query has no parenthesis and returns at once): k for topk and bottomk,
+// w for without and unwrap, and the name before each ( for sort, sort_desc and label_replace. The parser reads
+// keywords in any case and any Unicode blank before a parenthesis (TOPK, sum WITHOUT, sort\v(), so the screen does
+// too: it also jumps to K and W and compares the words case-folded.
+func streamLevelSeriesResponseKeyVersion(query string) string {
+	if strings.IndexByte(query, '(') < 0 {
+		return ""
+	}
+	for _, c := range [...]byte{'k', 'K'} {
+		for s, i := query, strings.IndexByte(query, c); i >= 0; i = strings.IndexByte(s, c) {
+			if i >= 3 && strings.EqualFold(s[i-3:i+1], "topk") || i >= 6 && strings.EqualFold(s[i-6:i+1], "bottomk") {
+				return streamLevelSeriesResponseVersion
+			}
+			s = s[i+1:]
+		}
+	}
+	for _, c := range [...]byte{'w', 'W'} {
+		for s, i := query, strings.IndexByte(query, c); i >= 0; i = strings.IndexByte(s, c) {
+			if i+7 <= len(s) && strings.EqualFold(s[i:i+7], "without") || i >= 2 && i+4 <= len(s) && strings.EqualFold(s[i-2:i+4], "unwrap") {
+				return streamLevelSeriesResponseVersion
+			}
+			s = s[i+1:]
+		}
+	}
+	for s, i := query, strings.IndexByte(query, '('); i >= 0; i = strings.IndexByte(s, '(') {
+		name := trimRightBlanks(s[:i])
+		if hasSuffixFold(name, "sort") || hasSuffixFold(name, "sort_desc") || hasSuffixFold(name, "label_replace") {
+			return streamLevelSeriesResponseVersion
+		}
+		s = s[i+1:]
 	}
 	return ""
 }
@@ -95,6 +172,22 @@ func dynamicUnwrapIdentityResponseKeyVersion(query string) string {
 		return dynamicUnwrapIdentityResponseVersion
 	}
 	return ""
+}
+
+// trimRightBlanks drops the blanks the LogQL parser skips (unicode.IsSpace) from the end of s.
+func trimRightBlanks(s string) string {
+	for len(s) > 0 {
+		r, size := utf8.DecodeLastRuneInString(s)
+		if !unicode.IsSpace(r) {
+			break
+		}
+		s = s[:len(s)-size]
+	}
+	return s
+}
+
+func hasSuffixFold(s, suffix string) bool {
+	return len(s) >= len(suffix) && strings.EqualFold(s[len(s)-len(suffix):], suffix)
 }
 
 // dynamicIdentityFenceScreen is the text screen of the fence: the words every plan with a dynamic identity holds, in
