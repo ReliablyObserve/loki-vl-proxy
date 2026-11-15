@@ -1279,6 +1279,8 @@
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-transport-text",
     "internal/proxy/cold_bad_row_test.go | semantics/error-layer-silent-success",
     "internal/proxy/comment_before_call_test.go | semantics/comment-between-function-and-parenthesis-accepted",
+    "internal/proxy/comment_forms_test.go | semantics/comment-between-function-and-parenthesis-accepted",
+    "internal/proxy/comment_forms_test.go | semantics/range-duration-grammar-wider-than-loki",
     "internal/proxy/compat_cache_freshness_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/compat_oversized_reply_test.go | limits/drilldown-breakdown-keeps-busiest",
     "internal/proxy/compat_oversized_reply_test.go | parsed-identity/bare-parser-metric-duplicates-extracted",
@@ -2803,7 +2805,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 636,
+      "go": 637,
       "playwright": 1
     },
     "page_kinds": {
