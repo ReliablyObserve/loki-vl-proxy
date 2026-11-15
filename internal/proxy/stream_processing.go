@@ -1193,6 +1193,10 @@ func (p *Proxy) logRowStreamDescriptor(rawStream []byte, s logRowStream, levelBy
 	return desc
 }
 
+// maxPresizedStreamLabels bounds the size hint of a descriptor's label map; a
+// larger stream just grows the map once.
+const maxPresizedStreamLabels = 1 << 10
+
 // logQueryStreamDescriptorMiss is the slow path of logQueryStreamDescriptor,
 // used by the metric paths that group raw rows by stream and level: detected_level
 // there takes the stream rule (ensureStreamDetectedLevel) until metric grouping
@@ -1207,12 +1211,16 @@ func (p *Proxy) logQueryStreamDescriptorMiss(rawStream, level, cacheKey string, 
 	// Room for the labels added below (level, detected_level, service_name), so
 	// the map is not grown and copied once they join.
 	_, stored := baseLabels["level"]
-	size := len(baseLabels) + 1
+	extra := 1
 	if level != "" && !stored {
-		size++
+		extra++
 	}
 	if _, ok := baseLabels["service_name"]; !ok {
-		size++
+		extra++
+	}
+	size := len(baseLabels)
+	if size < maxPresizedStreamLabels {
+		size += extra
 	}
 	rawLabels := make(map[string]string, size)
 	for k, v := range baseLabels {
