@@ -54,27 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `index/volume` rounds its `start` and `end` down to whole seconds before the check, as Loki does, and reports
   the length in whole seconds (`721h0m1s`); `index/volume_range` is not length-limited, as in Loki (a range over 721h is
   answered, and only its 11,000-point resolution rejects).
-
-## [2.264.0] - 2026-11-15
-
-### Changed
-
-- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
-  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
-  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
-  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
-  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
-  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
-  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
-
-### Fixed
-
-- A `regexp` or `pattern` parser written with no blank before its expression (`{app="a"} |pattern"<_> <m> <_>"`) now
-  gets Loki's answer. Loki reads it as the parser with the blank; the proxy sent it to VictoriaLogs as written, which
-  VictoriaLogs rejects (it has no `pattern` or `regexp` pipe), so the request failed. Log queries with such a parser,
-  and range and vector aggregations, binary operations, `label_replace` calls, rankings and `stddev`/`stdvar` over
-  one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
-  `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
 - Peer-cache pushes to a replica whose breaker is open are no longer lost. A write-through push the replica cannot
   take (its breaker is open or it is suspended after a timeout, it is restarting, the push queue is full, or the
   push failed with a transport error, a timeout, a `429` or a `5xx`) waits in a bounded push buffer and is replayed
@@ -98,6 +77,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `loki_vl_proxy_peer_cache_push_peer_not_up_total` counts those that are dropped.
     `loki_vl_proxy_peer_cache_push_throttled_total` now counts only pushes dropped for a full queue while the buffer
     is off; with it on they are buffered (`reason="queue_full"`).
+
+## [2.264.0] - 2026-11-15
+
+### Changed
+
+- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
+  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
+  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
+  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
+  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
+  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
+  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
+
+### Fixed
+
+- A `regexp` or `pattern` parser written with no blank before its expression (`{app="a"} |pattern"<_> <m> <_>"`) now
+  gets Loki's answer. Loki reads it as the parser with the blank; the proxy sent it to VictoriaLogs as written, which
+  VictoriaLogs rejects (it has no `pattern` or `regexp` pipe), so the request failed. Log queries with such a parser,
+  and range and vector aggregations, binary operations, `label_replace` calls, rankings and `stddev`/`stdvar` over
+  one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
+  `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
 
 ## [2.263.0] - 2026-11-15
 
