@@ -74,6 +74,8 @@ The compose stack at `test/e2e-compat/docker-compose.yml` runs:
 | `grafana` (Grafana 13.3.0) | 3002 | UI with all datasources provisioned |
 | `log-generator` (profile `ui`) | (none) | Continuous dual-write of multi-service logs to Loki and VictoriaLogs |
 
+The generator gives every line of a live push its own timestamp (at least 1 µs after the previous line), as its backfill does, so Loki and VictoriaLogs never hold lines of one stream at the same instant: Loki keeps such lines in arrival order and VictoriaLogs has no order for them, which would otherwise show up as differences in the patterns miner, `first_over_time`/`last_over_time` and the lines a `limit` cuts. `LOG_DISTINCT_TIMESTAMPS=0` gives all lines of one stream in a push the same timestamp, to produce ties on purpose. The proxy's tie behaviour is pinned by tests that create ties themselves (`TestFirstLastOverTimeTiedSamplesAnswerOneOfTheTiedValues`, `TestPatternStateMinesLinesThatShareATimeOnce`, `TestStreamOrdering_SameNanosecondSortedByMessage`, `TestVLCapability_PatternLinesFilterAndTieOrder`).
+
 Grafana preinstalls `victoriametrics-logs-datasource@0.33.1` and `grafana-lokiexplore-app@3.1.0`.
 
 ## Dual-Write Pattern
