@@ -201,6 +201,7 @@ func TestDynamicIdentityBinaryOperandContext(t *testing.T) {
 		{`sum by (app) (max_over_time({app="a"} | json | unwrap n [1m])) - sum by (app) (count_over_time({app="a"}[5m]))`, "60", false, false},
 		{`sum by (app) (count_over_time({app="a"}[5m])) / sum by (app) (stddev_over_time({app="a"} | logfmt | unwrap n [5m]))`, "60", false, true},
 		{`sum by (app) (rate({app="a"}[5m])) / sum by (app) (count_over_time({app="a"}[5m]))`, "60", false, false},
+		{`2 * sum by (app) (stddev_over_time({app="a"} | logfmt | unwrap n [5m]))`, "60", false, true},
 	} {
 		expr, err := logqlpkg.Parse(tc.q)
 		if err != nil {
@@ -211,7 +212,7 @@ func TestDynamicIdentityBinaryOperandContext(t *testing.T) {
 			t.Fatalf("%s: not a binary operation", tc.q)
 		}
 		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+url.Values{"query": {tc.q}, "step": {tc.step}}.Encode(), nil)
-		left, right := p.binaryOperandContext(r, bin.Left), p.binaryOperandContext(r, bin.Right)
+		left, right := p.binaryOperandContexts(r, bin)
 		if streamIdentityOnly(left) != tc.left || streamIdentityOnly(right) != tc.right {
 			t.Errorf("%s step %s: operands marked %v, %v; want %v, %v", tc.q, tc.step, streamIdentityOnly(left), streamIdentityOnly(right), tc.left, tc.right)
 		}

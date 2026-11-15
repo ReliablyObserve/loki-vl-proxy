@@ -139,15 +139,22 @@ func (p *Proxy) dynamicIdentityWindows(r *http.Request, query string) (out *http
 	return r.WithContext(context.WithValue(r.Context(), streamIdentityKey{}, true))
 }
 
-// binaryOperandContext is the context a range request translates an operand of its binary operation with: the mark the
-// operand's own request gets (dynamicIdentityWindows), so the translation the operand's request reads is the one this
-// request has cached. A number is not marked, and a request whose query holds no dynamic identity's words is read with
-// no more work than a text screen.
-func (p *Proxy) binaryOperandContext(r *http.Request, operand logqlpkg.Expr) context.Context {
-	if _, ok := operand.(*logqlpkg.LiteralExpr); ok || !dynamicIdentityFenceScreen(dynamicQuery(r.FormValue("query"))) {
-		return r.Context()
+// binaryOperandContexts are the contexts a range request translates the operands of its binary operation with: the
+// mark each operand's own request gets (dynamicIdentityWindows), so the translation the operand's request reads is the
+// one this request has cached. A number is not marked, and a request whose query holds no dynamic identity's words
+// keeps its context for both after one text screen.
+func (p *Proxy) binaryOperandContexts(r *http.Request, binOp *logqlpkg.BinOpExpr) (left, right context.Context) {
+	ctx := r.Context()
+	if !dynamicIdentityFenceScreen(dynamicQuery(r.FormValue("query"))) {
+		return ctx, ctx
 	}
-	return p.dynamicIdentityWindows(r, operand.String()).Context()
+	mark := func(operand logqlpkg.Expr) context.Context {
+		if _, ok := operand.(*logqlpkg.LiteralExpr); ok {
+			return ctx
+		}
+		return p.dynamicIdentityWindows(r, operand.String()).Context()
+	}
+	return mark(binOp.Left), mark(binOp.Right)
 }
 
 // dynamicWindowRange is the range of a query whose function the window evaluator merges from step buckets (avg, max,

@@ -73,6 +73,10 @@ func benchDynamicIdentityRoutes(b *testing.B, series int) {
 		{"binary_difference_tumbling", "query_range", `sum by (app) (max_over_time({app="x"} | json | unwrap n [5m])) - sum by (app) (min_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
 		{"binary_scalar_tumbling", "query_range", `2 * sum by (app) (avg_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
 		{"binary_difference_longer_range", "query_range", `sum by (app) (max_over_time({app="x"} | json | unwrap n [5m])) - sum by (app) (min_over_time({app="x"} | json | unwrap n [5m]))`, "60"},
+		// Controls: a binary operation without the identity, with a capital in a string, on every route.
+		{"control_binary_instant", "query", `sum by (app) (rate({app="x"} |= "ERROR" [5m])) / sum by (app) (count_over_time({app="x"} [5m]))`, "300"},
+		{"control_binary_tumbling", "query_range", `sum by (app) (rate({app="x"} |= "ERROR" [5m])) / sum by (app) (count_over_time({app="x"} [5m]))`, "300"},
+		{"control_binary_longer_range", "query_range", `sum by (app) (rate({app="x"} |= "ERROR" [5m])) / sum by (app) (count_over_time({app="x"} [5m]))`, "60"},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			b.ReportAllocs()
