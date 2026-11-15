@@ -1812,6 +1812,7 @@
     "internal/proxy/reserved_field_case_fence_test.go | semantics/reserved-field-name-case-outbound",
     "internal/proxy/reserved_field_test.go | cache-response-key-versions",
     "internal/proxy/reserved_field_test.go | semantics/translator-writes-reserved-field-names",
+    "internal/proxy/response_key_fence_parser_test.go | cache-response-key-versions",
     "internal/proxy/response_key_fences_test.go | cache-response-key-versions",
     "internal/proxy/response_key_fences_test.go | semantics/ip-filter-ipv4-after-hex-colon",
     "internal/proxy/route_gate_test.go | semantics/format-query-parse-like-loki",
@@ -2843,7 +2844,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 649,
+      "go": 650,
       "playwright": 1
     },
     "page_kinds": {

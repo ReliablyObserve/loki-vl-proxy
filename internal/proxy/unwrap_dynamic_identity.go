@@ -178,7 +178,8 @@ type binaryOperandSide struct {
 // dynamic identity's words keeps its context for both after one text screen.
 func (p *Proxy) binaryOperandSides(r *http.Request, binOp *logqlpkg.BinOpExpr) (left, right binaryOperandSide) {
 	ctx := r.Context()
-	if !dynamicIdentityFenceScreen(dynamicQuery(r.FormValue("query"))) {
+	// The lower case reading (other false) the handlers read the identity with; the fence reads every spelling.
+	if !dynamicIdentityFenceScreen(dynamicQuery(r.FormValue("query")), false) {
 		return binaryOperandSide{ctx: ctx}, binaryOperandSide{ctx: ctx}
 	}
 	side := func(operand logqlpkg.Expr) binaryOperandSide {

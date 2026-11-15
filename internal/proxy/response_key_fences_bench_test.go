@@ -1,0 +1,44 @@
+package proxy
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"testing"
+)
+
+// BenchmarkResponseKeyFences measures the fence chain every query, query_range and log window request builds,
+// on the shapes clients send: a plain stream selector, a line filtered log query, a metric over a parser, the
+// shapes that fire fences and a long dashboard query.
+func BenchmarkResponseKeyFences(b *testing.B) {
+	for _, tc := range []struct{ name, query string }{
+		{"selector", `{app="a",env="prod"}`},
+		{"line_filter", `{app="a",env="prod"} |= "error" != "timeout"`},
+		{"json_logs", `{app="a"} | json | status >= 500 | line_format "{{.msg}}"`},
+		{"rate_by", `sum by (level) (rate({app="a"} |= "error" [5m]))`},
+		{"json_metric", `sum by (a) (count_over_time({app="a"} | json | drop __error__ [$__auto]))`},
+		{"keep_unwrap", `sum by (x) (sum_over_time({app="a"} | json | keep x | unwrap n [5m]))`},
+		{"ip", `{app="a"} | json | addr = ip("10.0.0.0/8") | status = "500"`},
+		{"logfmt_presence", `sum(count_over_time({app="a"} | logfmt | msg != "" [5m]))`},
+		{"topk_json", `topk(3, sum by (x) (count_over_time({app="a"} | json x="x" [5m])))`},
+		{"unwrap_dynamic", `sum by (app) (avg_over_time({app="x"} | json | unwrap n [5m]))`},
+		{"upper_case", `SUM BY (level) (RATE({app="API"} |= "Error" [5m]))`},
+		{"topk_upper", `TOPK(3, sum by (x) (count_over_time({app="a"} | JSON [5m])))`},
+		{"dashboard", `sum by (namespace, pod) (rate({cluster="prod", namespace=~"team-.+", app!="noisy"} |= "level=error" != "healthcheck" | logfmt | status >= 500 | line_format "{{.method}} {{.path}}" [$__rate_interval])) / sum by (namespace, pod) (rate({cluster="prod", namespace=~"team-.+", app!="noisy"} [$__rate_interval]))`},
+	} {
+		v := url.Values{"query": {tc.query}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}}
+		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+v.Encode(), nil)
+		r.ParseForm()
+		for _, site := range []struct {
+			name string
+			site responseKeySite
+		}{{"compat_range", responseKeyCompatQueryRange}, {"inner", responseKeyInnerQueryRange}} {
+			b.Run(tc.name+"/"+site.name, func(b *testing.B) {
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					_ = responseKeyFences(r, tc.query, site.site)
+				}
+			})
+		}
+	}
+}
