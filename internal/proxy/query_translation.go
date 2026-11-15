@@ -462,7 +462,7 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 			if lowered, ok := p.lowerLogSelect(ctx, canon, prof); ok {
 				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
 			}
-			if lowered, ok := p.lowerKeepIdentity(ctx, canon, prof); ok {
+			if lowered, ok := p.lowerMetric(ctx, canon, prof); ok {
 				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
 			}
 		}

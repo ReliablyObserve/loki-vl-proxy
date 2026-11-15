@@ -1133,6 +1133,7 @@
     "internal/logql/unicode_runes_loki_test.go | semantics/logql-unicode-runes",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
     "internal/logql/whitespace_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
+    "internal/logsql/append_pipe_test.go | architecture-syntax-package-layering",
     "internal/logsql/field_names_test.go | semantics/translator-writes-exotic-field-names-bare",
     "internal/logsql/ip_range_vl_test.go | architecture-syntax-package-layering",
     "internal/logsql/keyword_fields_test.go | semantics/translator-writes-keyword-field-names-bare",
@@ -1654,8 +1655,14 @@
     "internal/proxy/query_caller_test.go | observability-slow-query-log",
     "internal/proxy/query_flow_test.go | observability-query-flow",
     "internal/proxy/query_flow_test.go | observability-slow-query-log",
+    "internal/proxy/query_lowering_corpus_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_test.go | loki_api_v1_query_range",
+    "internal/proxy/query_lowering_test.go | observability-query-flow",
+    "internal/proxy/query_lowering_test.go | semantics/keep-before-unwrap-series-identity",
+    "internal/proxy/query_lowering_test.go | semantics/translator-reads-marker-bytes-in-quoted-value",
+    "internal/proxy/query_lowering_test.go | semantics/translator-reads-quoted-text-as-syntax",
+    "internal/proxy/query_lowering_test.go | semantics/translator-writes-signed-number-with-blank",
     "internal/proxy/query_range_steps_harden_test.go | quality/query-range-settled-steps",
     "internal/proxy/query_range_steps_harden_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/query_range_steps_harden_test.go | semantics/unwrap-over-time-range-windows",
@@ -2095,6 +2102,7 @@
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/marker_bytes_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/marker_bytes_test.go | semantics/translator-reads-marker-bytes-in-quoted-value",
+    "internal/queryplan/lower/metric_screen_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/metric_stages_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/outbound_guard_test.go | semantics/reserved-field-name-case-outbound",
     "internal/queryplan/lower/parser_labels_test.go | architecture-syntax-package-layering",
@@ -2700,7 +2708,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 604,
+      "go": 607,
       "playwright": 1
     },
     "page_kinds": {
@@ -2719,8 +2727,8 @@
     },
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
-    "unwired_items": 100,
-    "wired_items": 365
+    "unwired_items": 99,
+    "wired_items": 366
   },
   "gates": [
     "A/B shape selection",
