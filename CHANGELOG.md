@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A label filter compared with a negative number that starts with a 0 and a letter or `_` (`| A < - 0x1F`,
+  `- 0X0`, `- 0o7`) now prints with the minus apart from the number, so the printed query reads back as the same
+  query. Written together (`-0X0`), Loki rejects it. What the proxy answers and sends to VictoriaLogs does not change.
+
 ## [2.260.1] - 2026-11-14
 
 ### Fixed
