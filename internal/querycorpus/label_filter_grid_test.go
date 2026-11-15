@@ -252,6 +252,11 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				delegated["known divergence semantics/label-filter-numeric-equality"]++
 				continue
 			}
+			if translatorReadsBlankGrouping(q, prof) {
+				// A `by` clause of only blanks: the translator reads no clause, Loki and the plan `by ()`.
+				delegated["known divergence semantics/translator-reads-blank-grouping-as-none"]++
+				continue
+			}
 			if emptyWithoutDiffers(q, plan, prof) {
 				// Loki keeps every series of a `without ()` operand, the translator writes it ungrouped
 				// (TestEmptyWithoutOperandsKeepEverySeries holds the lowering).
