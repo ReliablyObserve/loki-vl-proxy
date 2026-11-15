@@ -2116,6 +2116,7 @@
     "semantics/unwrap-first-last-under-aggregation": [
       "internal/proxy/first_last_range_timestamps_test.go",
       "internal/proxy/first_last_unwrap_differential_test.go",
+      "internal/proxy/first_last_unwrap_ties_test.go",
       "internal/querycorpus/first_last_loki_diff_test.go",
       "internal/translator/first_last_over_time_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go"
@@ -3106,6 +3107,9 @@
     ],
     "internal/proxy/first_last_unwrap_differential_test.go": [
       "metric-series-identity",
+      "semantics/unwrap-first-last-under-aggregation"
+    ],
+    "internal/proxy/first_last_unwrap_ties_test.go": [
       "semantics/unwrap-first-last-under-aggregation"
     ],
     "internal/proxy/first_last_window_cache_test.go": [
@@ -5514,7 +5518,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 649,
+  "tests_with_markers": 650,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

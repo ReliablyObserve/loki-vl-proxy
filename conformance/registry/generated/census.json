@@ -1446,6 +1446,7 @@
     "internal/proxy/first_last_range_timestamps_test.go | semantics/unwrap-first-last-under-aggregation",
     "internal/proxy/first_last_unwrap_differential_test.go | metric-series-identity",
     "internal/proxy/first_last_unwrap_differential_test.go | semantics/unwrap-first-last-under-aggregation",
+    "internal/proxy/first_last_unwrap_ties_test.go | semantics/unwrap-first-last-under-aggregation",
     "internal/proxy/first_last_window_cache_test.go | loki_api_v1_query_range",
     "internal/proxy/first_last_window_cache_test.go | quality/query-range-extent-cache",
     "internal/proxy/first_last_window_cache_test.go | quality/query-range-settled-steps",
@@ -2842,7 +2843,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 648,
+      "go": 649,
       "playwright": 1
     },
     "page_kinds": {
