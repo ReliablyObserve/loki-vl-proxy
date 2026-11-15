@@ -1104,12 +1104,15 @@
     "internal/logql/label_filter_number_literal_loki_test.go | semantics/label-filter-number-literal-scan",
     "internal/logql/label_list_commas_loki_test.go | semantics/label-list-trailing-comma",
     "internal/logql/line_filter_runs_loki_test.go | semantics/line-filter-error-quotes-the-run",
+    "internal/logql/line_template_cache_test.go | architecture-syntax-package-layering",
+    "internal/logql/line_template_cache_test.go | formatter-line-format",
     "internal/logql/line_template_test.go | architecture-syntax-package-layering",
     "internal/logql/line_template_test.go | formatter-line-format",
     "internal/logql/log_range_alternatives_test.go | semantics/line-filter-or-alternatives",
     "internal/logql/log_range_alternatives_test.go | semantics/parenthesized-log-range",
     "internal/logql/loki_unknown_names_test.go | semantics/proxy-accepts-operators-not-in-loki",
     "internal/logql/opaque_typed_test.go | semantics/label-replace-new-label",
+    "internal/logql/parse_cost_test.go | architecture-syntax-package-layering",
     "internal/logql/parser_captures_test.go | parsed-label-series-identity",
     "internal/logql/pattern_line_filter_loki_test.go | semantics/line-filter-error-quotes-the-run",
     "internal/logql/pattern_line_filter_loki_test.go | semantics/pattern-line-filter-invalid-captures",
@@ -1643,6 +1646,8 @@
     "internal/proxy/query_lowering_corpus_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_log_stages_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_log_stages_test.go | semantics/translator-copies-unspaced-parser",
+    "internal/proxy/query_lowering_shared_parse_test.go | architecture-syntax-package-layering",
+    "internal/proxy/query_lowering_shared_parse_test.go | observability-query-flow",
     "internal/proxy/query_lowering_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_test.go | loki_api_v1_query_range",
     "internal/proxy/query_lowering_test.go | observability-query-flow",
@@ -2068,6 +2073,7 @@
     "internal/querycorpus/vector_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_nested_grid_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/alloc_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_alloc_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_vector_loki_test.go | architecture-syntax-package-layering",
@@ -2695,7 +2701,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 604,
+      "go": 608,
       "playwright": 1
     },
     "page_kinds": {
