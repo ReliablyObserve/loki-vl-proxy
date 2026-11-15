@@ -9,13 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
-  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
-  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
-  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
-  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
-  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
-  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
 - Translating a query costs fewer allocations. The LogQL parser allocates about half as much for a log query (a json
   query with a label filter: 14 to 7 allocations), a `line_format` template is typed once per template text, a
   query plan is one allocation sized for the query's kind, and the plan's log query lowering writes its text with
@@ -34,12 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- A `regexp` or `pattern` parser written with no blank before its expression (`{app="a"} |pattern"<_> <m> <_>"`) now
-  gets Loki's answer. Loki reads it as the parser with the blank; the proxy sent it to VictoriaLogs as written, which
-  VictoriaLogs rejects (it has no `pattern` or `regexp` pipe), so the request failed. Log queries with such a parser,
-  and range and vector aggregations, binary operations, `label_replace` calls, rankings and `stddev`/`stdvar` over
-  one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
-  `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
 - An IPv4 `ip()` filter now finds an address written after hex digits and colons exactly where Loki finds it, in
   `|= ip(...)` line filters and `label = ip(...)` label filters alike. Loki reads a line from its start, and an
   earlier run of digits and dots, or of hex digits and colons, decides whether a later address is read: in
@@ -48,6 +35,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `!= ip(...)` did the opposite. Checked against Loki's own answers on 52,000 lines. VictoriaLogs now checks two
   short regexps first and runs the full one only on the few lines they leave, so an IPv4 `ip()` filter costs it 58%
   to 82% less per line than before. Answers cached before the fix are not reused.
+
+## [2.264.0] - 2026-11-15
+
+### Changed
+
+- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
+  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
+  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
+  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
+  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
+  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
+  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
+
+### Fixed
+
+- A `regexp` or `pattern` parser written with no blank before its expression (`{app="a"} |pattern"<_> <m> <_>"`) now
+  gets Loki's answer. Loki reads it as the parser with the blank; the proxy sent it to VictoriaLogs as written, which
+  VictoriaLogs rejects (it has no `pattern` or `regexp` pipe), so the request failed. Log queries with such a parser,
+  and range and vector aggregations, binary operations, `label_replace` calls, rankings and `stddev`/`stdvar` over
+  one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
+  `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
 
 ## [2.263.0] - 2026-11-15
 
