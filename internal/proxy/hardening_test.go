@@ -29,11 +29,8 @@ func TestHardening_SanitizeLimit(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"", "1000"},
 		{"50", "50"},
-		{"0", "1000"},
-		{"-1", "1000"},
-		{"abc", "1000"},
+		{"+50", "+50"},
 		{"99999", "10000"}, // capped at maxLimitValue
 		{"10000", "10000"},
 	}

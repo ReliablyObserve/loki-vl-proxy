@@ -89,9 +89,15 @@ func ipRangeFilter(field string, lo, hi netip.Addr) logsql.FilterExpr {
 	return logsql.FieldFilter{Field: field, Op: logsql.FieldOpIPv6Range, Value: strconv.Quote(lo.String()) + ", " + strconv.Quote(hi.String())}
 }
 
-// ipv4ValuePattern is the exact regexp of an IPv4 pattern read on a label value (IPLineFilterRegex) and the
-// regexp of the substring every address of the pattern holds (ipv4Prefilter).
-type ipv4ValuePattern struct{ regex, prefilter string }
+// ipv4ValuePattern is the regexps of an IPv4 pattern read on a line or a label value (ipv4LineRegexps), the regexp
+// of the substring every address of the pattern holds on a value (ipv4Prefilter), and the text every address starts
+// with, which the line filter searches first (ipv4Literal). ipv4 is false for a pattern without IPv4 boxes.
+type ipv4ValuePattern struct {
+	regexps   ipv4Regexps
+	prefilter string
+	literal   string
+	ipv4      bool
+}
 
 // ipv4PrefilterLimit bounds the alternatives of a prefilter: a pattern whose boxes fix more alternatives than this
 // falls back to the dot every address holds.
@@ -138,8 +144,8 @@ func ipv4Prefilter(boxes []ipv4Box) string {
 	return strings.Join(kept, "|")
 }
 
-// ipv4ValuePatterns memoizes ipv4ValueFilter's patterns: building the octet boxes into a regexp costs more than
-// the rest of the translation, and the patterns a deployment filters on are few. It holds at most
+// ipv4ValuePatterns memoizes the patterns of ipv4ValueFilter and IPLineFilter: building the octet boxes into regexps
+// costs more than the rest of the translation, and the patterns a deployment filters on are few. It holds at most
 // ipv4ValuePatternLimit patterns and starts over when full.
 var (
 	ipv4ValuePatternsMu   sync.Mutex
@@ -156,21 +162,20 @@ func ipv4ValuePatternOf(pattern string) ipv4ValuePattern {
 	if len(ipv4ValuePatterns) >= ipv4ValuePatternLimit {
 		clear(ipv4ValuePatterns)
 	}
-	p := ipv4ValuePattern{regex: IPLineFilterRegex(pattern), prefilter: `\.`}
+	p := ipv4ValuePattern{regexps: ipv4Regexps{exact: IPLineFilterRegex(pattern)}, prefilter: `\.`}
 	if boxes, ok := ipv4Boxes(pattern); ok {
-		p.prefilter = ipv4Prefilter(boxes)
+		p.regexps, p.prefilter, p.literal, p.ipv4 = ipv4LineRegexps(boxes), ipv4Prefilter(boxes), ipv4Literal(boxes), true
 	}
 	ipv4ValuePatterns[pattern] = p
 	return p
 }
 
-// ipv4ValueFilter is the filter of the values an IPv4 pattern keeps: the exact regexp, after the substring every
-// address of the pattern holds (ipv4Prefilter), which VictoriaLogs checks first and looks up in its bloom filters,
-// so the regexp runs on the values that may hold an address only (as IPLineFilter does on a line).
+// ipv4ValueFilter is the filter of the values an IPv4 pattern keeps: the line filter's regexps (ipv4Split), after
+// the substring every address of the pattern holds (ipv4Prefilter), which VictoriaLogs checks first and looks up in
+// its bloom filters, so the regexps run on the values that may hold an address only (as IPLineFilter does on a line).
 func ipv4ValueFilter(field, pattern string) logsql.FilterExpr {
 	p := ipv4ValuePatternOf(pattern)
-	f := logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: p.regex}
-	return logsql.AllOf{logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: p.prefilter}, f}
+	return logsql.AllOf{logsql.FieldFilter{Field: field, Op: logsql.FieldOpRegexp, Value: p.prefilter}, ipv4Split(field, p.regexps)}
 }
 
 // ipv4LabelFilterNodes is the filter of an IPv4 pattern read on a label.
@@ -240,7 +245,7 @@ func IPLabelFilter(field, pattern string, negate bool) (logsql.FilterExpr, bool)
 	if !ok {
 		return nil, false
 	}
-	f = logsql.DeferredExpr{Raw: built.String()}
+	f = renderedFilter(built)
 	ipLabelFiltersMu.Lock()
 	if len(ipLabelFilters) >= ipv4ValuePatternLimit {
 		clear(ipLabelFilters)
@@ -248,6 +253,12 @@ func IPLabelFilter(field, pattern string, negate bool) (logsql.FilterExpr, bool)
 	ipLabelFilters[key] = f
 	ipLabelFiltersMu.Unlock()
 	return f, true
+}
+
+// renderedFilter is the filter as its text, rendered once: the memos of the ip() filters hold it, so a query that
+// repeats a pattern does not print its long regexps again.
+func renderedFilter(f logsql.FilterExpr) logsql.FilterExpr {
+	return logsql.DeferredExpr{Raw: f.String()}
 }
 
 // buildIPLabelFilter is IPLabelFilter as a tree of nodes, not memoized.

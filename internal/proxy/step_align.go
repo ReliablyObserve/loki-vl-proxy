@@ -293,6 +293,11 @@ func stepWithoutAllocating(raw string) (time.Duration, bool) {
 // microseconds) is outside int64 nanoseconds: normalizeLokiIntTimeToUnixNano
 // would wrap it.
 func integerBoundUnixNano(raw string) (int64, bool) {
+	if len(raw) <= 19 {
+		if n, ok := parseDigitsInt64(raw); ok { // digits only: ParseInt below reads the same value
+			return integerNanosIfHeld(n)
+		}
+	}
 	if !isIntegerBound(raw) {
 		return 0, false
 	}

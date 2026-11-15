@@ -6,7 +6,7 @@
     "parse_calls": 57,
     "string_reads": 51,
     "text_built": 214,
-    "translator_string_ops": 680
+    "translator_string_ops": 678
   },
   "files": {
     "deferred_raw": {
@@ -101,7 +101,7 @@
       "internal/translate/detected_level.go": 38,
       "internal/translate/extract_stages.go": 2,
       "internal/translate/ip_label_filter.go": 9,
-      "internal/translate/ip_line_v4.go": 9,
+      "internal/translate/ip_line_v4.go": 7,
       "internal/translate/label_filter.go": 5,
       "internal/translate/label_filter_parsed.go": 6,
       "internal/translate/label_filter_regexp.go": 4,

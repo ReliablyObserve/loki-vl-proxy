@@ -16,10 +16,11 @@ owner_decision: |
   above max_entries_limit_per_query is the default; -max-entries-limit-per-query-cap
   keeps the earlier capping.
 waiver: |
-  Deliberate deviations: the flag defaults stay the proxy's (max_query_length 0
-  instead of Loki's 721h, max_entries_limit_per_query 10000 instead of 5000,
-  query_timeout -backend-timeout per VictoriaLogs call unless an override sets a
-  whole-request deadline); drilldown-limits answers a multi-tenant header with
+  Deliberate deviations: two flag defaults stay the proxy's
+  (max_entries_limit_per_query 10000 instead of 5000, query_timeout
+  -backend-timeout per VictoriaLogs call unless an override sets a
+  whole-request deadline); max_query_length defaults to Loki's 721h since
+  limits/max-query-length-default; drilldown-limits answers a multi-tenant header with
   the combined limits where Loki answers 401, so a multi-tenant Drilldown keeps
   its bootstrap; max_query_series must be positive (Loki's 0 fails every metric
   query); max_query_lookback empties a metadata request only when its end lies
