@@ -185,6 +185,11 @@ func cachedQueryValidation(query string) queryValidation {
 		if lq, ok := expr.(*logql.LogQuery); ok {
 			result.logQuery, result.selector = true, len(lq.Pipeline) == 0
 		}
+		if cacheable && !turnedAwayByStages(expr) && lowersParse(query) {
+			// The translation plans the query: it reads this parse from the plan memo, as the handlers that read the
+			// query's tree do (sharedLogQLExpr), and does not parse the query again.
+			planMemoStore(query, &planMemoEntry{expr: expr})
+		}
 	}
 	if cacheable {
 		storeValidationResult(query, result)
