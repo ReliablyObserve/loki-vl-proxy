@@ -102,7 +102,7 @@ func vectorArgumentError(query, call string) error {
 	if pos < 0 {
 		src, pos = call, 0
 	}
-	p := &parser{sc: &scanner{src: src, pos: pos, quiet: true}}
+	p := &parser{sc: scanner{src: src, pos: pos, quiet: true}}
 	p.advance()
 	if p.cur.Typ != TokIdent {
 		return nil
@@ -134,7 +134,7 @@ func opaqueFirstArgument(query, call string) (Expr, error) {
 	if pos < 0 {
 		src, pos = call, 0
 	}
-	p := &parser{sc: &scanner{src: src, pos: pos, quiet: true}}
+	p := &parser{sc: scanner{src: src, pos: pos, quiet: true}}
 	p.advance()
 	if p.cur.Typ != TokIdent {
 		return nil, nil
@@ -160,7 +160,7 @@ func opaqueFirstArgument(query, call string) (Expr, error) {
 // escapes are invalid (the LogQL lexer unquotes it) included. It is nil for
 // any other call.
 func labelReplaceArgumentsError(call string) error {
-	p := &parser{sc: &scanner{src: call, quiet: true}}
+	p := &parser{sc: scanner{src: call, quiet: true}}
 	p.advance()
 	if p.cur.Typ != TokIdent || p.cur.Val != "label_replace" {
 		return nil

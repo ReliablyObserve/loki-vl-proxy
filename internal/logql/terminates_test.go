@@ -19,6 +19,7 @@ var entryPoints = []struct {
 	run  func(q string)
 }{
 	{"Parse", func(q string) { _, _ = Parse(q) }},
+	{"ParseUntypedTemplates", func(q string) { _, _ = ParseUntypedTemplates(q) }},
 	{"ParseAndValidate", func(q string) { _ = ParseAndValidate(q) }},
 	{"ParseLogQuery", func(q string) { _, _ = ParseLogQuery(q) }},
 	{"ValidateLogQL", func(q string) { _ = ValidateLogQL(q) }},
@@ -226,6 +227,7 @@ func FuzzParseTerminates(f *testing.F) {
 		// blanks Loki's lexer does not skip, stages after an unwrap, unwrap in a log query, ranges Loki does not read
 		"sum\v(rate({a=\"b\"}[5m]))", "sum by (a,\u00a0) (rate({a=\"b\"}[5m]))", "{a=\"b\"}\u2003|\u2003drop\u2003z", `{a="b"} | x="a` + "\n" + `b"`,
 		`sum_over_time({a="b"} | unwrap c | json [5m])`, `sum_over_time({a="b"}[5m] | unwrap c |= "x")`, `{a="b"} | regexp "x" | unwrap a`,
+		`{a="1", b="2", c="3"} |= "x|y" != "z" | json | x="a\x41"`, `{a="b"}` + strings.Repeat(` | json`, 40), `{a="b"} |= "x\"|`,
 		`rate({a="b"}[1µs])`, `rate({a="b"}[5m5m])`, `rate({a="b"}[9999999999h5x])`, `rate({a="b"}[']) / on rate({a="b"}[5m])`, `{A="0"} | A<- 0`} {
 		f.Add(q)
 	}

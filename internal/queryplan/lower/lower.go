@@ -60,7 +60,11 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 		if keepsSpelling(n, prof) {
 			return nil, &NotLoweredError{Construct: escapedSpellingConstruct}
 		}
-		return logSelect(n, prof)
+		text, err := logSelectText(n, prof)
+		if err != nil {
+			return nil, err
+		}
+		return physical.VLQuery{Text: text}, nil
 	case *queryplan.RangeAgg:
 		return rangeAgg(n, prof)
 	case *queryplan.VectorAgg:
@@ -78,7 +82,7 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 	return nil, &NotLoweredError{Construct: Construct(p.Root)}
 }
 
-// logSelect lowers a log query: its stream filter (translate.StreamSelectorFilter, the filter the string
+// logSelectText lowers a log query: its stream filter (translate.StreamSelectorFilter, the filter the string
 // translator writes; keeping the line aside adds nothing without a line_format), its line filters
 // (translate.LineFilter, and translate.PatternLineFilter for |> and !>), its label filters without a parser
 // (labelFilter) and its json and logfmt parsers, drops and keeps (stagePipes), in order. A pattern filter that
@@ -87,12 +91,25 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 // that is a field filter and directly follows a pipe or a label filter in a filter pipe opens a filter pipe of
 // its own (the translator wraps it as it translates it, where a line filter is wrapped once the query is
 // assembled). Any other stage, and a label filter after a parser, is not lowered yet.
-func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
+func logSelectText(sel *queryplan.LogSelect, prof Profile) (string, error) {
 	q, _, err := logSelectQuery(sel, prof)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return physical.VLQuery{Text: q.String()}, nil
+	return q.String(), nil
+}
+
+// PlanLogText is physical.Encode(Plan(p, prof)) for a plan of a log query, written with no operator in between: the
+// text of the log query, or Plan's error. A plan that is not a log query answers NotLoweredError.
+func PlanLogText(p *queryplan.Plan, prof Profile) (string, error) {
+	sel, ok := p.Root.(*queryplan.LogSelect)
+	if !ok {
+		return "", &NotLoweredError{Construct: Construct(p.Root)}
+	}
+	if keepsSpelling(sel, prof) {
+		return "", &NotLoweredError{Construct: escapedSpellingConstruct}
+	}
+	return logSelectText(sel, prof)
 }
 
 // logSelectQuery is the typed query logSelect prints: a range aggregation appends its stats pipe to it. The bool says
@@ -122,7 +139,7 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 			return logsql.Query{}, false, err
 		}
 	}
-	q := queryParts{pipes: pipeRoom(len(sel.Stages), staged, lf.pre)}
+	q := queryParts{pipes: pipeRoom(sel, staged, lf, len(read) > 0, levels.any)}
 	// A stage that is one comparison on a reserved field keeps only the streams with its tag (reservedGuard).
 	q.filters = append(q.filters, lf.guards...)
 	// seq numbers the pattern alternatives that extract, across the query.
@@ -153,7 +170,7 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 			if len(lf.pre) > 0 && len(lf.pre[i]) > 0 {
 				q.pipe(lf.pre[i]...)
 			}
-			if (q.lastPipe || afterParser) && translate.IsFieldFilter(f.String()) {
+			if (q.lastPipe || afterParser) && translate.IsFieldFilterExpr(f) {
 				q.own(f)
 			} else {
 				q.add(f)
@@ -258,17 +275,37 @@ func appendScratchDeletes(pipes []logsql.Pipe, lf filterStages, read bool) []log
 }
 
 // pipeRoom is the empty list the pipes of a query go into, with room for the staged pipes, the pipes ahead of a
-// label filter, a filter pipe for each stage and the two deletes; nil when nothing is staged (no pipe is likely).
-func pipeRoom(stages int, staged, pre [][]logsql.Pipe) []logsql.Pipe {
+// label filter, a filter pipe for each line or label filter after the first staged pipe and one more, the deletes
+// appendScratchDeletes writes, and a pipe for each stage when the query derives detected_level (levels); nil when
+// nothing is staged (no pipe is likely). A query that needs more (a pattern filter that extracts after a pipe) grows
+// it.
+func pipeRoom(sel *queryplan.LogSelect, staged [][]logsql.Pipe, lf filterStages, read, levels bool) []logsql.Pipe {
 	if len(staged) == 0 {
 		return nil
 	}
-	room := stages + 2
-	for _, ps := range staged {
+	room, first := 1, -1
+	for i, ps := range staged {
+		room += len(ps)
+		if len(ps) > 0 && first < 0 {
+			first = i
+		}
+	}
+	for _, ps := range lf.pre {
 		room += len(ps)
 	}
-	for _, ps := range pre {
-		room += len(ps)
+	for _, st := range sel.Stages[first+1:] {
+		switch st.(type) {
+		case *queryplan.LineFilter, *queryplan.LabelFilter:
+			room++
+		}
+	}
+	for _, d := range [...]bool{len(lf.reserved) > 0, read, len(lf.bases) > 0} {
+		if d {
+			room++
+		}
+	}
+	if levels {
+		room += len(sel.Stages)
 	}
 	return make([]logsql.Pipe, 0, room)
 }
@@ -283,7 +320,8 @@ func selectQuery(f logsql.FilterExpr, filters logsql.AllOf, pipes []logsql.Pipe)
 		if _, all := f.(logsql.Wildcard); all {
 			q.Filter = filters
 		} else {
-			q.Filter = append(logsql.AllOf{f}, filters...)
+			all := make(logsql.AllOf, 0, 1+len(filters))
+			q.Filter = append(append(all, f), filters...)
 		}
 	}
 	return q
