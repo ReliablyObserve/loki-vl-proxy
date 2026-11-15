@@ -24,13 +24,13 @@ var dynamicIdentityCacheQueries = []string{
 	`max by (app) (stdvar_over_time({app="api"} | json | unwrap n [$__auto]))`,
 }
 
-// vlCallCounter counts the requests VictoriaLogs answers and the bytes of its answers.
-type vlCallCounter struct {
+// stubCallCounter counts the requests VictoriaLogs answers and the bytes of its answers.
+type stubCallCounter struct {
 	inner        http.Handler
 	calls, bytes atomic.Int64
 }
 
-func (c *vlCallCounter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (c *stubCallCounter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rec := httptest.NewRecorder()
 	c.inner.ServeHTTP(rec, r)
 	c.calls.Add(1)
@@ -42,7 +42,7 @@ func (c *vlCallCounter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(rec.Body.Bytes())
 }
 
-func (c *vlCallCounter) take() (calls, bytes int64) {
+func (c *stubCallCounter) take() (calls, bytes int64) {
 	return c.calls.Swap(0), c.bytes.Swap(0)
 }
 
@@ -55,7 +55,7 @@ func TestDynamicIdentityCacheReuse(t *testing.T) {
 	s0 := time.Unix(1700001000, 0).UTC()
 	fakeSrv := httptest.NewServer(dynamicIdentityStatsStub(t))
 	t.Cleanup(fakeSrv.Close)
-	counter := &vlCallCounter{inner: fakeSrv.Config.Handler}
+	counter := &stubCallCounter{inner: fakeSrv.Config.Handler}
 	shimSrv, shim := newExtentShim(t, counter)
 	c := cache.NewWithMaxBytes(time.Minute, 100000, 256<<20)
 	t.Cleanup(c.Close)

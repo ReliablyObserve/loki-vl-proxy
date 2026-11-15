@@ -235,3 +235,57 @@ func TestTranslatorReadsStageMarker(t *testing.T) {
 		}
 	}
 }
+
+// translatorCopiesUnspacedParser reports a query with a regexp or pattern parser written with no blank before its
+// quoted expression (`|pattern"<_> <m>"`, outside quoted strings): the string translator copies it as written into a
+// pipe VictoriaLogs rejects, where Loki and the query plan read the parser with the blank and the plan writes its
+// extract pipe (semantics/translator-copies-unspaced-parser). The AST does not hold the spelling, so it reads the text.
+func translatorCopiesUnspacedParser(q string) bool {
+	for i := 0; i < len(q); i++ {
+		switch q[i] {
+		case '"':
+			for i++; i < len(q) && q[i] != '"'; i++ {
+				if q[i] == '\\' {
+					i++
+				}
+			}
+		case '`':
+			for i++; i < len(q) && q[i] != '`'; i++ {
+			}
+		case '|':
+			j := i + 1
+			for j < len(q) && (q[j] == ' ' || q[j] == '\t' || q[j] == '\n' || q[j] == '\r') {
+				j++
+			}
+			for _, w := range []string{"regexp", "pattern"} {
+				if k := j + len(w); strings.HasPrefix(q[j:], w) && k < len(q) && (q[k] == '"' || q[k] == '`') {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// The recogniser names a regexp or pattern parser written with no blank before its quoted expression, in log and
+// metric queries, and nothing in a quoted string or a parser with the blank.
+//
+// conformance: semantics/translator-copies-unspaced-parser
+func TestTranslatorCopiesUnspacedParser(t *testing.T) {
+	for q, want := range map[string]bool{
+		`{app="a"} |pattern"<_> <m>"`:                              true,
+		"{app=\"a\"} |regexp`(?P<a>x)`":                            true,
+		`{app="a"} |  pattern"<_> <m>" | m="x"`:                    true,
+		`count_over_time({app="a"} |pattern"<_> <m>" [5m])`:        true,
+		`{app="a"} | pattern "<_> <m>"`:                            false,
+		`{app="a"} |= "|pattern\"x\""`:                             false, // in a quoted string
+		"{app=\"a\"} |= `|regexp\"x\"`":                            false,
+		`{app="a"} | pattern="x"`:                                  false, // a label
+		`{app="a"} | json | patternx="y"`:                          false,
+		`sum(count_over_time({app="a"} | regexp "(?P<a>x)" [5m]))`: false,
+	} {
+		if got := translatorCopiesUnspacedParser(q); got != want {
+			t.Errorf("%q: got %v, want %v", q, got, want)
+		}
+	}
+}

@@ -90,9 +90,14 @@ func StreamSelectorFilter(ms []logql.LabelMatcher, labelFn LabelTranslateFunc, s
 // string translator writes as a field filter VictoriaLogs rejects or reads as its own filter. A selector names
 // stream labels only, and VictoriaLogs keeps every stream label as a tag of the stream.
 func StreamSelectorFilterNamed(ms []logql.LabelMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool, name func(string) string) (logsql.FilterExpr, error) {
-	matchers := make([]SelectorMatcher, len(ms))
-	for i, m := range ms {
-		matchers[i] = SelectorMatcher{Name: m.Name, Op: m.Op.String(), Value: m.Value}
+	// The usual selector's matchers are converted on the stack.
+	var buf [4]SelectorMatcher
+	matchers := buf[:0]
+	if len(ms) > len(buf) {
+		matchers = make([]SelectorMatcher, 0, len(ms))
+	}
+	for _, m := range ms {
+		matchers = append(matchers, SelectorMatcher{Name: m.Name, Op: m.Op.String(), Value: m.Value})
 	}
 	return selectorFilter(matchers, labelFn, streamFields, name)
 }
@@ -108,7 +113,9 @@ func SelectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, stre
 // selectorFilter is SelectorFilter with the field names passed through name (nil: as they are).
 func selectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool, name func(string) string) (logsql.FilterExpr, error) {
 	var stream []logsql.LabelMatcher
-	var parts logsql.AllOf
+	// The parts are collected on the stack: a selector of one part answers it alone, and one of several a copy.
+	var buf [4]logsql.FilterExpr
+	parts := buf[:0]
 	for _, m := range matchers {
 		negate, isRe, ok := selectorMatchOp(m.Op)
 		if !ok {
@@ -150,7 +157,7 @@ func selectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, stre
 		}
 	}
 	if len(stream) > 0 {
-		parts = append(logsql.AllOf{logsql.StreamFilter{Matchers: stream}}, parts...)
+		return append(append(make(logsql.AllOf, 0, 1+len(parts)), logsql.StreamFilter{Matchers: stream}), parts...), nil
 	}
 	switch len(parts) {
 	case 0:
@@ -158,7 +165,7 @@ func selectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, stre
 	case 1:
 		return parts[0], nil
 	}
-	return parts, nil
+	return append(make(logsql.AllOf, 0, len(parts)), parts...), nil
 }
 
 // translatedField is the field a selector label names: the label function's name for it, sanitized.

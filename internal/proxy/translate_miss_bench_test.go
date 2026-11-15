@@ -37,8 +37,40 @@ var translateMissShapes = []struct {
 	{"native pattern filter", func(i string) string { return `{app="api"} |> "<_> GET <path> ` + i + `" |= "200"` }},
 	{"native label filters", func(i string) string { return `{app="api"} |= "x" | status >= 500 | path =~ "/api/` + i + `.*"` }},
 	{"derived level filter", func(i string) string { return `{service_name="api"} |= "error ` + i + `" | detected_level="error"` }},
+	// The log stage families the lowering serves (QueryPlanFlippedLogStages), and the log shapes their screen turns away.
+	{"level filter after parser (turned away)", func(i string) string {
+		return `{app="api"} |= "error ` + i + `" | logfmt | detected_level="error"`
+	}},
+	{"service_name filter (turned away)", func(i string) string { return `{app="api"} |= "error ` + i + `" | service_name="api"` }},
+	{"pattern parser", func(i string) string {
+		return `{app="api"} |= "` + i + `" | pattern "<_> <m> <_>" | m="GET"`
+	}},
+	{"pattern parser, a new pattern each time", func(i string) string {
+		return `{app="api"} |= "x" | pattern "<_> <m> ` + i + `<_>" | m="GET"`
+	}},
+	{"regexp parser", func(i string) string {
+		return "{app=\"api\"} |= \"" + i + "\" | regexp `(?P<m>[A-Z]+) ` | m=\"GET\""
+	}},
+	{"regexp parser, a new regexp each time", func(i string) string {
+		return "{app=\"api\"} |= \"x\" | regexp `(?P<m>[A-Z]+) " + i + "` | m=\"GET\""
+	}},
+	{"unspaced pattern parser (served)", func(i string) string {
+		return `{app="api"} |= "` + i + `" |pattern"<_> <m> <_>" | m="GET"`
+	}},
+	{"label_format", func(i string) string { return `{app="api"} |= "` + i + `" | json | label_format x="{{.a}}"` }},
+	{"line_format", func(i string) string { return `{app="api"} |= "` + i + `" | json | line_format "{{.a}} {{.b}}"` }},
+	{"line_format, a new template each time", func(i string) string {
+		return `{app="api"} |= "x" | json | line_format "{{.a}} ` + i + `"`
+	}},
+	{"drop keep", func(i string) string { return `{app="api"} |= "` + i + `" | json | drop a, b | keep c, d` }},
 	{"parser logfmt", func(i string) string { return `{app="api"} | logfmt | status >= 500 | path = "/api/` + i + `"` }},
 	{"parser json", func(i string) string { return `{app="api"} |= "error ` + i + `" | json | status="500"` }},
+	{"parser json params", func(i string) string { return `{app="api"} |= "` + i + `" | json m="a.b", n="c" | m="x"` }},
+	{"parser json numeric equality (turned away)", func(i string) string {
+		return `{app="api"} |= "` + i + `" | json | status == 500`
+	}},
+	{"unpack (turned away)", func(i string) string { return `{app="api"} |= "` + i + `" | unpack | x="y"` }},
+	{"decolorize (turned away)", func(i string) string { return `{app="api"} |= "` + i + `" | decolorize` }},
 	{"metric rate", func(i string) string { return `sum by (level) (rate({app="api"} |= "error ` + i + `" [5m]))` }},
 	{"metric unwrap", func(i string) string { return `sum(rate({app="api"} | json | unwrap bytes [5m])) + ` + i }},
 	{"metric unwrap keep", func(i string) string {
@@ -50,10 +82,51 @@ var translateMissShapes = []struct {
 	{"metric unwrap parser sum", func(i string) string {
 		return `sum by (app) (sum_over_time({app="api"} |= "x ` + i + `" | logfmt | unwrap d [5m]))`
 	}},
+	// One shape per metric construct the lowering serves, and the metric shapes it plans and leaves to the string
+	// translator (delegated by the lowering, or turned away by writesTranslatorText): what a flip costs the queries it
+	// does not serve.
+	{"vector sum by count", func(i string) string {
+		return `sum by (app) (count_over_time({app="api"} | json | status="` + i + `" [5m]))`
+	}},
+	{"vector unwrap quantile", func(i string) string {
+		return `sum by (app) (quantile_over_time(0.9, {app="api"} |= "` + i + `" | logfmt | unwrap d [5m]))`
+	}},
+	{"vector without empty", func(i string) string { return `sum without () (count_over_time({app="api"} |= "` + i + `" [5m]))` }},
+	{"vector stddev", func(i string) string { return `stddev by (app) (count_over_time({app="api"} |= "` + i + `" [5m]))` }},
+	{"vector numeric equality", func(i string) string {
+		return `sum(count_over_time({app="api"} |= "` + i + `" | json | status == 500 [5m]))`
+	}},
+	{"range count", func(i string) string { return `count_over_time({app="api"} |= "error ` + i + `" [5m])` }},
+	{"range unwrap", func(i string) string {
+		return `max_over_time({app="api"} |= "` + i + `" | json | unwrap d [5m]) by (app)`
+	}},
+	{"range unpack", func(i string) string { return `count_over_time({app="api"} |= "` + i + `" | unpack | x="y" [5m])` }},
+	{"binary operands", func(i string) string {
+		return `sum(rate({app="api"} |= "` + i + `" [5m])) / sum(rate({app="api"}[5m]))`
+	}},
+	{"binary vector operand", func(i string) string { return `vector(1) + sum(rate({app="api"} |= "` + i + `" [5m]))` }},
+	{"label_replace", func(i string) string {
+		return `label_replace(sum by (app) (rate({app="api"} |= "` + i + `" [5m])), "x", "$1", "app", "(.*)")`
+	}},
+	{"topk", func(i string) string { return `topk(3, sum by (app) (rate({app="api"} |= "` + i + `" [5m])))` }},
+	{"vector literal", func(i string) string { return `vector(` + i + `)` }},
 }
 
 // benchTranslateMissShapes runs every shape of translateMissShapes on a proxy built from cfg.
-func benchTranslateMissShapes(b *testing.B, cfg Config) {
+func benchTranslateMissShapes(b *testing.B, cfg Config) { benchTranslateMissShapesWith(b, cfg, false) }
+
+// benchTranslateMissShapesWith is benchTranslateMissShapes; validated runs the request's validation of each query
+// (cachedQueryValidation) before its translation, as the handlers do, with the validation cache full, as on a proxy
+// that has run a while: each query is parsed by the validation.
+func benchTranslateMissShapesWith(b *testing.B, cfg Config, validated bool) {
+	if validated {
+		size := validationCacheSize.Load()
+		validationCacheSize.Store(validationCacheMaxSize)
+		b.Cleanup(func() { validationCacheSize.Store(size) })
+	}
+	// The plan memo full, as on a proxy that has run a while (the handlers fill it): a query's parse kept there
+	// replaces an older one, and the memo's memory does not grow during the run.
+	fillPlanMemo(b)
 	cfg.BackendURL, cfg.Cache, cfg.LogLevel, cfg.LabelStyle = "http://unused", cache.New(time.Minute, 1000), "error", LabelStyleUnderscores
 	for _, shape := range translateMissShapes {
 		b.Run(shape.name, func(b *testing.B) {
@@ -63,10 +136,17 @@ func benchTranslateMissShapes(b *testing.B, cfg Config) {
 			}
 			b.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 			ctx := context.Background()
+			if validated && cachedQueryValidation(shape.query("0")).msg != "" {
+				b.Skip("the validation rejects the shape, so no request translates it")
+			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if _, err := p.translateQueryOpts(ctx, shape.query(strconv.Itoa(i)), false); err != nil {
+				q := shape.query(strconv.Itoa(i))
+				if validated && cachedQueryValidation(q).msg != "" {
+					b.Fatalf("%q: rejected by the validation", q)
+				}
+				if _, err := p.translateQueryOpts(ctx, q, false); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -78,3 +158,22 @@ func benchTranslateMissShapes(b *testing.B, cfg Config) {
 // translation costs the request that finds the translation cache empty. Run on a base commit and a branch with
 // benchstat; BenchmarkTranslateQueryMissShapesTranslator is the same code with the typed lowering off.
 func BenchmarkTranslateQueryMissShapes(b *testing.B) { benchTranslateMissShapes(b, Config{}) }
+
+// BenchmarkTranslateQueryMissShapesValidated is BenchmarkTranslateQueryMissShapes with the request's validation in
+// front of each translation: what a request whose query no cache holds costs, its parses included.
+func BenchmarkTranslateQueryMissShapesValidated(b *testing.B) {
+	benchTranslateMissShapesWith(b, Config{}, true)
+}
+
+// fillPlanMemo fills both generations of the plan memo with parses of queries the benchmarks never send.
+func fillPlanMemo(b *testing.B) {
+	b.Helper()
+	for i := 0; i < 2*planMemoLimit; i++ {
+		q := `{app="memo-fill-` + strconv.Itoa(i) + `"} |= "x" | json | status="500"`
+		expr, err := parseLogQLExpr(context.Background(), q)
+		if err != nil {
+			b.Fatal(err)
+		}
+		planMemoStore(q, &planMemoEntry{expr: expr})
+	}
+}

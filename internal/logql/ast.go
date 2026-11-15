@@ -270,12 +270,24 @@ type DropStage struct {
 }
 
 func (s *DropStage) String() string {
-	parts := make([]string, 0, len(s.Labels)+len(s.Matchers))
-	parts = append(parts, s.Labels...)
-	for _, m := range s.Matchers {
+	return "| drop " + dropKeepList(s.Labels, s.Matchers)
+}
+
+// dropKeepList prints the list of a drop or keep stage. A list written with only characters Loki's lexer does not
+// skip and reads as a name of their own (`| keep\v`, `| drop\u00a0`) is a list of labels no stream has, which Loki
+// accepts (Loki's recorded answers, testdata/keep-drop-blank-loki.jsonl.gz). The parser leaves such a name out of
+// the list (see blankName), so the list is empty, which no other spelling gives (a list holds at least one item):
+// it prints as one such name, a vertical tab, for `| keep ` alone is no query. Any such name means the same.
+func dropKeepList(labels []string, matchers []DropMatcher) string {
+	if len(labels)+len(matchers) == 0 {
+		return "\v"
+	}
+	parts := make([]string, 0, len(labels)+len(matchers))
+	parts = append(parts, labels...)
+	for _, m := range matchers {
 		parts = append(parts, m.String())
 	}
-	return "| drop " + strings.Join(parts, ", ")
+	return strings.Join(parts, ", ")
 }
 
 func (s *DropStage) stage() {}
@@ -287,12 +299,7 @@ type KeepStage struct {
 }
 
 func (s *KeepStage) String() string {
-	parts := make([]string, 0, len(s.Labels)+len(s.Matchers))
-	parts = append(parts, s.Labels...)
-	for _, m := range s.Matchers {
-		parts = append(parts, m.String())
-	}
-	return "| keep " + strings.Join(parts, ", ")
+	return "| keep " + dropKeepList(s.Labels, s.Matchers)
 }
 
 func (s *KeepStage) stage() {}

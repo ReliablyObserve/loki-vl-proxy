@@ -300,7 +300,7 @@ func (q *unwrapQuery) stats(by []string, empty bool, fn logsql.StatsFunc, alias 
 		q.chain = true
 	}
 	q.shape.note(len(keys))
-	text := logsql.PipeStats{By: keys, Funcs: []logsql.StatsFuncAlias{{Func: fn, Alias: alias}}}.String()
+	text := statsText(logsql.PipeStats{By: keys, Funcs: []logsql.StatsFuncAlias{{Func: fn, Alias: alias}}})
 	if empty {
 		text = "| stats by () " + strings.TrimPrefix(text, "| stats ")
 	}
@@ -501,17 +501,17 @@ func (q *unwrapQuery) rate(fn logsql.StatsFunc, seconds float64, ident []string)
 		first := pipes[0].(logsql.PipeStats)
 		q.chain = q.chain || groupsBy(first, translate.DetectedLevelLabel)
 		q.service = q.service || groupsBy(first, "service_name")
-		q.pipes = append(q.pipes, pipes[0].String(), pipes[1].String())
+		q.pipes = append(q.pipes, pipeText(pipes[0]), pipeText(pipes[1]))
 		if q.unpacked {
 			q.pipes = appendRateFilter(q.pipes)
 		}
-		q.pipes = append(q.pipes, pipes[2].String())
+		q.pipes = append(q.pipes, pipeText(pipes[2]))
 		return
 	}
 	pipes := translate.RateStatsPipesOf(fn, seconds)
 	q.chain = true
 	for _, p := range pipes {
-		q.pipes = append(q.pipes, p.String())
+		q.pipes = append(q.pipes, pipeText(p))
 	}
 }
 
@@ -784,7 +784,7 @@ func (q *unwrapQuery) vectorRate(op logql.VectorOp, fn logsql.StatsFunc, seconds
 				q.noteFirst(by, false)
 			}
 		}
-		q.pipes = append(q.pipes, p.String())
+		q.pipes = append(q.pipes, pipeText(p))
 	}
 }
 

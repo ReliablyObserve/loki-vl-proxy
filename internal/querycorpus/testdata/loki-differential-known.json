@@ -174,6 +174,13 @@
     },
     "q": "{app=\"api-gateway\",env=\"production\"} | json | label_format method_up=\"{{.method}}\""
   },
+  "q-40d6e6aad743": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/label-filter-after-regexp-parser-misses-metadata",
+      "drops a line Loki keeps": "semantics/label-filter-after-regexp-parser-misses-metadata"
+    },
+    "q": "{app=\"nginx\"} |regexp\"(?P<m>[A-Z]+) \" | m=\"GET\""
+  },
   "q-4112056e0713": {
     "classes": {
       "categorized: parsed: misses __error__": "semantics/parse-error-labels-on-log-lines",
@@ -189,6 +196,13 @@
       "keeps a line Loki drops": "semantics/stream-label-shadowed-after-json-parser"
     },
     "q": "{app=\"col\"} | json | level=\"debug\""
+  },
+  "q-4a370ed77b18": {
+    "classes": {
+      "categorized: drops a line Loki keeps": "semantics/label-filter-after-regexp-parser-misses-metadata",
+      "drops a line Loki keeps": "semantics/label-filter-after-regexp-parser-misses-metadata"
+    },
+    "q": "{app=\"nginx\"} |pattern\"<_> <m> <_>\" | m=\"GET\""
   },
   "q-4c35d7560dd5": {
     "classes": {
