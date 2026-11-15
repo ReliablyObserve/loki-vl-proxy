@@ -22,6 +22,13 @@ import (
 // client's answer.
 func blankAfterKeywordRequests(t *testing.T, endpoint, query string) ([]string, string) {
 	t.Helper()
+	return blankAfterKeywordRequestsLowering(t, true, endpoint, query)
+}
+
+// blankAfterKeywordRequestsLowering is blankAfterKeywordRequests with the query plan serving (the default) or not
+// (-query-plan-lowering=false, the string translator).
+func blankAfterKeywordRequestsLowering(t *testing.T, lowering bool, endpoint, query string) ([]string, string) {
+	t.Helper()
 	var mu sync.Mutex
 	var seen []string
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +60,7 @@ func blankAfterKeywordRequests(t *testing.T, endpoint, query string) ([]string, 
 	}))
 	defer vl.Close()
 	p := newCompatTestProxy(t, vl.URL)
+	p.queryPlanLowering = lowering
 	params := url.Values{"query": {query}, "start": {"1700000000"}, "end": {"1700000600"}, "step": {"60"}, "time": {"1700000600"}}
 	rec := doCompatProxyRequest(p, "/loki/api/v1/"+endpoint+"?"+params.Encode(), map[string]string{"X-Scope-OrgID": "team-a"})
 	var answer any
@@ -63,6 +71,15 @@ func blankAfterKeywordRequests(t *testing.T, endpoint, query string) ([]string, 
 	canon, _ := json.Marshal(answer)
 	slices.Sort(seen)
 	return seen, string(canon)
+}
+
+// blankAfterKeywordOpen are the templates whose blank spellings the proxy still answers differently from the spaced
+// spelling: an unwrap with no parser before it is not served from the query plan, and the string translator that reads it
+// looks for `| unwrap ` with a space (semantics/translator-reads-only-space-between-tokens: the same failure as for a
+// quantile_over_time with a tab before unwrap).
+var blankAfterKeywordOpen = map[string]bool{
+	`max_over_time({A="0"} | unwrap` + blankspace.Mark + `A [1m])`: true,
+	`max_over_time({A="0"}| unwrap` + blankspace.Mark + `A [1m])`:  true,
 }
 
 // A tab, a line feed, a carriage return or a run of them where a space stands after a parser keyword, a stage name, an
@@ -83,11 +100,10 @@ func TestBlankAfterKeywordRequestsEqualSpaced(t *testing.T) {
 			if strings.HasPrefix(tpl, "{") && endpoint == "query" {
 				continue // a log query is no instant query
 			}
-			if !strings.HasPrefix(tpl, "{") && strings.Contains(tpl, "| keep") {
-				// A keep under a range function reads VictoriaLogs through a route whose set of requests varies from run
-				// to run for one spelling (60 runs of `keep a` sent five different sets under -race): nothing to compare.
-				continue
-			}
+			// A keep under a range function reads VictoriaLogs through a route whose set of requests varies from run to
+			// run for one spelling (60 runs of `keep a` sent five different sets under -race): its answer is compared, its
+			// requests are not.
+			racy := !strings.HasPrefix(tpl, "{") && strings.Contains(tpl, "| keep")
 			ref := strings.ReplaceAll(tpl, blankspace.Mark, " ")
 			wantVL, wantBody := blankAfterKeywordRequests(t, endpoint, ref)
 			if len(wantVL) == 0 {
@@ -97,7 +113,16 @@ func TestBlankAfterKeywordRequestsEqualSpaced(t *testing.T) {
 				q := strings.ReplaceAll(tpl, blankspace.Mark, blank)
 				gotVL, gotBody := blankAfterKeywordRequests(t, endpoint, q)
 				rows++
-				if !slices.Equal(gotVL, wantVL) {
+				if blankAfterKeywordOpen[tpl] {
+					// The string translator reads `| unwrap` with a space only and fails the translation where the plan
+					// serves no unwrap without a parser: Loki's 500 for a query it answers, no VictoriaLogs request. The
+					// plan does not serve this construct yet (the case stays open until it does).
+					if blank != " \t " && (len(gotVL) != 0 || !strings.Contains(gotBody, "Internal Server Error")) {
+						t.Errorf("%s %q: %d requests, answer %q: the open difference changed; update semantics/translator-reads-only-space-between-tokens", endpoint, q, len(gotVL), gotBody)
+					}
+					continue
+				}
+				if !racy && !slices.Equal(gotVL, wantVL) {
 					t.Errorf("%s %q differs from %q at %s", endpoint, q, ref, firstDifference(strings.Join(gotVL, "\n"), strings.Join(wantVL, "\n")))
 				}
 				if gotBody != wantBody {
@@ -109,10 +134,47 @@ func TestBlankAfterKeywordRequestsEqualSpaced(t *testing.T) {
 	if rows < 500 {
 		t.Fatalf("%d rows: the grid is too small", rows)
 	}
+	t.Logf("%d blank spellings compared with the spaced spelling", rows)
+}
+
+// With the query plan off (-query-plan-lowering=false) the string translator answers a log query with a tab, a line
+// feed or a carriage return after json, logfmt, regexp, pattern, label_format, line_format, drop, keep, unpack or
+// decolorize, or in a label filter, in a text VictoriaLogs rejects: the rows of the table that
+// TestBlankAfterKeywordRequestsEqualSpaced holds equal to the spaced spelling differ here. The test pins that the
+// difference is the translator's and that the plan removes it (semantics/translator-reads-only-space-between-tokens, open
+// until the translator is deleted): when it stops failing here, update the case.
+//
+// conformance: semantics/translator-reads-only-space-between-tokens
+func TestBlankAfterKeywordRollbackFlagIsTheTranslatorsMisreading(t *testing.T) {
+	prev := log.Writer()
+	log.SetOutput(io.Discard)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	for _, tpl := range []string{`{A="0"} | json` + blankspace.Mark + `A0`, `{A="0"} | logfmt` + blankspace.Mark + `a`, "{A=\"0\"} | regexp" + blankspace.Mark + "`(?P<a>x)`",
+		`{A="0"} | pattern` + blankspace.Mark + `"<a> x"`, `{A="0"} | json | line_format` + blankspace.Mark + `"x"`} {
+		ref := strings.ReplaceAll(tpl, blankspace.Mark, " ")
+		want, _ := blankAfterKeywordRequestsLowering(t, false, "query_range", ref)
+		for _, blank := range []string{"\t", "\n", "\r", "\r\n"} {
+			q := strings.ReplaceAll(tpl, blankspace.Mark, blank)
+			if got, _ := blankAfterKeywordRequestsLowering(t, false, "query_range", q); slices.Equal(got, want) {
+				t.Errorf("%q: the string translator sends VictoriaLogs what it does for %q; update semantics/translator-reads-only-space-between-tokens", q, ref)
+			}
+			if got, _ := blankAfterKeywordRequestsLowering(t, true, "query_range", q); !slices.Equal(got, mustRequests(t, ref)) {
+				t.Errorf("%q: the query plan sends VictoriaLogs something other than it does for %q", q, ref)
+			}
+		}
+	}
+}
+
+// mustRequests is what reaches VictoriaLogs for a query on the proxy as shipped.
+func mustRequests(t *testing.T, query string) []string {
+	t.Helper()
+	got, _ := blankAfterKeywordRequests(t, "query_range", query)
+	return got
 }
 
 // A character Loki's lexer does not skip (a vertical tab, a form feed, U+0085, U+00A0, a control byte) where a blank
-// stands is Loki's parse error: a 400 on every route, answered before VictoriaLogs is asked.
+// stands is Loki's parse error: a 400 on every route that takes the query (query_range and query for a metric query,
+// query_range and tail for a log query), answered before VictoriaLogs is asked.
 //
 // conformance: semantics/parser-reads-unicode-blank-as-white-space
 func TestBlankAfterKeywordRejectedNeverReachesVictoriaLogs(t *testing.T) {
@@ -129,22 +191,27 @@ func TestBlankAfterKeywordRejectedNeverReachesVictoriaLogs(t *testing.T) {
 	p := newCompatTestProxy(t, vl.URL)
 	rows := 0
 	for _, tpl := range blankspace.Templates() {
+		routes := []string{"query_range", "query"}
+		if strings.HasPrefix(tpl, "{") {
+			routes = []string{"query_range", "tail"}
+		}
 		for _, blank := range blankspace.Rejected {
 			q := strings.ReplaceAll(tpl, blankspace.Mark, blank)
-			endpoint := "query_range"
-			params := url.Values{"query": {q}, "start": {"1700000000"}, "end": {"1700000600"}, "step": {"60"}, "time": {"1700000600"}}
-			before := upstream.Load()
-			rec := doCompatProxyRequest(p, "/loki/api/v1/"+endpoint+"?"+params.Encode(), map[string]string{"X-Scope-OrgID": "team-a"})
-			rows++
-			if rec.Code != http.StatusBadRequest {
-				t.Errorf("%q: %d %s, want Loki's 400", q, rec.Code, rec.Body.String())
-			}
-			if calls := upstream.Load() - before; calls != 0 {
-				t.Errorf("%q: %d requests reached VictoriaLogs", q, calls)
+			for _, route := range routes {
+				params := url.Values{"query": {q}, "start": {"1700000000"}, "end": {"1700000600"}, "step": {"60"}, "time": {"1700000600"}}
+				before := upstream.Load()
+				rec := doCompatProxyRequest(p, "/loki/api/v1/"+route+"?"+params.Encode(), map[string]string{"X-Scope-OrgID": "team-a"})
+				rows++
+				if rec.Code != http.StatusBadRequest {
+					t.Errorf("%s %q: %d %s, want Loki's 400", route, q, rec.Code, rec.Body.String())
+				}
+				if calls := upstream.Load() - before; calls != 0 {
+					t.Errorf("%s %q: %d requests reached VictoriaLogs", route, q, calls)
+				}
 			}
 		}
 	}
-	if rows < 250 {
+	if rows < 500 {
 		t.Fatalf("%d rows: the grid is too small", rows)
 	}
 }

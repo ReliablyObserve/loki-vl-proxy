@@ -74,7 +74,8 @@ func Templates() []string {
 		`sum_over_time({A="0"} | json | unwrap` + m + `duration(a) [1m])`, `sum_over_time({A="0"} | json | unwrap bytes` + m + `(a) [1m])`,
 		`sum_over_time({A="0"} | json | unwrap duration_seconds(` + m + `a) [1m])`, `sum_over_time({A="0"} | json | unwrap a` + m + `[1m])`,
 		`sum_over_time({A="0"} | json | unwrap a |` + m + `a="b" [1m])`, `quantile_over_time(0.9,` + m + `{A="0"} | json | unwrap a [1m])`,
-		`avg_over_time({A="0"} | json | unwrap a [1m]` + m + `) by (a)`,
+		`avg_over_time({A="0"} | json | unwrap a [1m]` + m + `) by (a)`, `max_over_time({A="0"} | unwrap` + m + `A [1m])`,
+		`max_over_time({A="0"}| unwrap` + m + `A [1m])`,
 		// Aggregations, grouping clauses, offsets and binary operations.
 		`sum` + m + `by (a) (rate({A="0"}[1m]))`, `sum by` + m + `(a) (rate({A="0"}[1m]))`, `sum(rate({A="0"}[1m])) by` + m + `(a)`,
 		`sum without` + m + `(a) (rate({A="0"}[1m]))`, `sum` + m + `(rate({A="0"}[1m]))`, `rate({A="0"}[1m]` + m + `offset 5m)`,
