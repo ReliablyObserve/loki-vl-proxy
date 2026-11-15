@@ -483,6 +483,15 @@ func writeMetricAnswers(t *testing.T, path string, recs []*metricRecord) {
 	}
 }
 
+// metricTenant is the tenant a query's data set is stored under. VictoriaLogs writes the tenant into every row's
+// _stream_id, so the recorded answers that return rows hold it: it is taken from the query, never from the query's
+// place in the differential, which moves whenever a metric row is added to the corpus ahead of it and would make the
+// live oracles answer otherwise than the recording (diffTenant does the same for the log differential). It is never
+// 0, the default tenant.
+func metricTenant(query string) uint32 {
+	return diffTenant(query, "metric")
+}
+
 // recordMetricAnswers runs the oracles into path: Loki's engine over every query's requests, and every request the handler
 // sends, under every profile, through VictoriaLogs' query server of each version.
 func recordMetricAnswers(t *testing.T, path string, queries []metricQuery) {
@@ -515,18 +524,27 @@ func recordMetricAnswers(t *testing.T, path string, queries []metricQuery) {
 		}
 		byVersion[prof.version] = append(byVersion[prof.version], prof)
 	}
+	tenants := make([]uint32, len(queries))
+	owner := map[uint32]string{}
+	for i, mq := range queries {
+		tenants[i] = metricTenant(mq.q)
+		if other, dup := owner[tenants[i]]; dup {
+			t.Fatalf("the queries %q and %q take the same tenant %d: change metricTenant", mq.q, other, tenants[i])
+		}
+		owner[tenants[i]] = mq.q
+	}
 	for _, version := range versions {
 		profs := byVersion[version]
 		data := make([]oraclerun.ServeDataSet, len(queries))
 		for i, mq := range queries {
-			data[i] = oraclerun.ServeDataSet{Tenant: uint32(i + 1), Rows: mq.fix.vlRows(profs[0].toVL())}
+			data[i] = oraclerun.ServeDataSet{Tenant: tenants[i], Rows: mq.fix.vlRows(profs[0].toVL())}
 		}
 		srv, err := oraclerun.StartVLServe(filepath.Join(root, "test", "oracle", "vl"), profs[0].modfile, data)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for i, mq := range queries {
-			front := &metricFront{version: version, upstream: srv.URL, tenant: uint32(i + 1), recorded: map[string]metricVLAnswer{}}
+			front := &metricFront{version: version, upstream: srv.URL, tenant: tenants[i], recorded: map[string]metricVLAnswer{}}
 			for _, prof := range profs {
 				for _, r := range mq.reqs {
 					// Twice: a probe a sibling's answer cancels in one run may be sent in another.
