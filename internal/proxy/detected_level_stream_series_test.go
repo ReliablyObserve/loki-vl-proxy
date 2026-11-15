@@ -382,6 +382,11 @@ func TestStreamLevelSeriesFence(t *testing.T) {
 		{"sort\v(rate({app=\"a\"} | json [1m]))", true},
 		{"Sort_Desc\u00a0(rate({app=\"a\"} | json [1m]))", true},
 		{"LABEL_REPLACE\u0085(rate({app=\"a\"} | json [1m]), \"x\", \"$1\", \"pod\", \"(.*)\")", true},
+		// sort and sort_desc with a grouping before their parenthesis.
+		{`sort by (app) (rate({app="a"}[5m]))`, true},
+		{`sort_desc BY(app) (rate({app="a"}[5m]))`, true},
+		{"sort\tby (app) (rate({app=\"a\"}[5m]))", true},
+		{`nearby(rate({app="a"}[5m]))`, false},
 		{`SUM BY (app) (count_over_time({app="a"}[5m]))`, false},
 		{`sum by (app) (count_over_time({app="a"}[5m]))`, false},
 		{`sum by (detected_level) (rate({app="a"} | json [1m]))`, false},

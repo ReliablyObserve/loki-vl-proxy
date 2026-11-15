@@ -33,12 +33,19 @@ why: |
   rule, and telling them apart needs the parser's phase signal. `topk(0, …)` on /series answers the parser's
   error where Loki answers `only label matchers are supported` (the parser makes that check while it parses).
 request:
-  scope: query-grammar
-  entry: "lokiQueryParamValidation (internal/proxy/label_handlers.go) on the metadata routes"
-  setup: "Send as the query of /loki/api/v1/labels (start now-1h, end now): sort by (app) (rate({app=\"x\"}[5m])) . A query Loki rejects is kept out of the plan corpus (the plan ratchets count the corpus rows)."
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    query: 'sort by (app) (rate({app="x"}[5m]))'
+    start: now-1h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
 compare:
   mode: observed
   fields: [status, error_text]
+  values:
+    status: 400
   expect: "Loki's 400: parse error : sort and sort_desc doesn't allow grouping by "
 gap:
   status: fixed
