@@ -87,6 +87,18 @@ Every Loki error message is a registry item, every route x error kind is a cell 
   `queryRefusal` reads the failure's type, and offsets use `offsetError`. `TestErrorLayerSites` holds each file's count
   of free-text sites (no file may gain one) and `TestClientErrorTextsCarryNoInternalWording` the words of the sites left.
 
+### Error answers are proved like data, performance and visuals (hard rule)
+
+Every pull request proves the error answers of the query shapes it touches the way it proves their data, performance
+and Grafana view: status, errorType and text equal Loki's, including runtime errors (a parser's pipeline error, an
+unwrap conversion error, a limit) and every wrapper Loki keeps an error through (`sort`, `sort_desc`, `topk`,
+`bottomk`, `label_replace`, binary operations including a scalar operand, `and`/`or`/`unless`, nested aggregations,
+`offset`). Whether a query must answer an error is decided from the parsed query, never from a list of text shapes: a
+shape list misses wrappers, as `sort(rate({…} | json [1m]))` did, which answered 200 where Loki answers 400
+`pipeline error: 'JSONParserErr'`. The pull request body has an "Error answers" section next to "Performance" and
+"Visual evidence" (rows added or changed, base vs head vs Loki, wrapper variants checked), the stack checks compare
+error answers live like data, and an error difference blocks a merge like a data difference.
+
 ## Fail fast like Loki (hard rule)
 
 A query Loki rejects quickly (a parse error, a validation error, a limit) the proxy rejects just as early: at the first

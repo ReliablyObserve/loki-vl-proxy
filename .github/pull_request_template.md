@@ -23,6 +23,12 @@
 - the committed benchmarks that measure it
 - no regression against base, including the work asked of VictoriaLogs; a touched component as slow as Loki or slower is brought to Loki's speed or better in this PR, or the numbers show why not
 
+## Error answers (Required for product changes)
+
+- the error rows this PR adds or changes (status, errorType, text), base vs PR vs Loki (recorded answer or live), and the wrapper variants checked (`sort`, `topk`, `label_replace`, binary operations, nested aggregations, `offset`)
+- runtime errors included (parser pipeline errors, unwrap conversion, limits), decided from the parsed query, not a text shape
+- "no error answer changes" with the test or replay that shows it, when that is the case
+
 ## Security review (Required)
 
 - surface touched: query text, parameters, headers, tenant scope, cache keys, peer or admin routes, dependencies
