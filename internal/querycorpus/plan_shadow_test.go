@@ -38,6 +38,10 @@ type shadowSection struct {
 	NativeProxyEvaluated int `json:"native_proxy_evaluated"`
 	// Mismatches are the rows where the lowering answers differently, or answers a query the translator rejects.
 	Mismatches int `json:"mismatches"`
+	// Rejected are the rows the proxy refuses before anything is translated (the request's validation:
+	// logql.ValidateLogQLExpr, then queryplan.Validate), with Loki's parse error: neither the plan nor the string
+	// translator ever sees them, so they are not rows of the shadow (TestShadowRejectedRowsAreLokiRejections).
+	Rejected int `json:"rejected"`
 	// DelegatedByConstruct counts, by the construct at the top of the plan, the rows answered by the string
 	// translator because the lowering does not cover them yet (reported, not gated: it grows with the corpus).
 	DelegatedByConstruct map[string]int `json:"delegated_by_construct"`
@@ -75,6 +79,17 @@ func runShadow(t *testing.T, lowerFn lowering, limit int) (shadowSection, []stri
 	return sec, problems
 }
 
+// rejectedByValidation reports a query the request's validation refuses before anything is translated: the parser
+// and its semantic pass (logql.ValidateLogQLExpr), then Loki's checks on the typed tree (queryplan.Validate), as the
+// proxy's validateQueryTree reads it.
+func rejectedByValidation(q string) bool {
+	expr, msg := logql.ValidateLogQLExpr(q)
+	if msg != "" {
+		return true
+	}
+	return expr != nil && queryplan.Validate(expr) != nil
+}
+
 // runShadowSlices is runShadow with the counts of each profile × construct (the construct at the top of the plan).
 func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, []string, map[[2]string]*shadowSlice) {
 	t.Helper()
@@ -97,6 +112,8 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 		}
 		queryplan.Resolve(plan)
 		construct := lower.Construct(plan.Root)
+		// A query the request's validation refuses is answered with Loki's parse error before any translation.
+		rejected := rejectedByValidation(q)
 		for _, prof := range profiles {
 			sl := slices[[2]string{prof.name, construct}]
 			if sl == nil {
@@ -112,6 +129,10 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			got, lerr := lowerFn(q, plan, prof)
 			legacy, ok := prof.translate(q)
 			legacy = lower.QuoteKeywordFieldText(legacy) // the translator writes a keyword field name bare, the plan quotes it
+			if ok && rejected {
+				sec.Rejected++
+				continue
+			}
 			if !ok {
 				if lerr == nil {
 					// Counted in the slice's rows (not the section's) so the slice's sum still holds.
