@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankgrouping"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -285,6 +286,42 @@ func TestTranslatorCopiesUnspacedParser(t *testing.T) {
 		`sum(count_over_time({app="a"} | regexp "(?P<a>x)" [5m]))`: false,
 	} {
 		if got := translatorCopiesUnspacedParser(q); got != want {
+			t.Errorf("%q: got %v, want %v", q, got, want)
+		}
+	}
+}
+
+// translatorReadsBlankGrouping reports a query with a `by` clause of only blanks (`by( )`) whose translation differs
+// from the translation of its spelling without the blanks (`by ()`): the string translator reads the text and takes the
+// clause for no clause at all, where Loki's tree and the plan hold an empty grouping, so a rate under it loses its
+// series identity (semantics/translator-reads-blank-grouping-as-none).
+func translatorReadsBlankGrouping(q string, prof planProfile) bool {
+	cut := blankgrouping.Cut(q)
+	if cut == q {
+		return false
+	}
+	got, ok := prof.translate(q)
+	want, wantOK := prof.translate(cut)
+	return ok && wantOK && got != want
+}
+
+// The recogniser names a blank grouping only where the translator's text for it is not the one it writes for `by ()`.
+//
+// conformance: semantics/translator-reads-blank-grouping-as-none
+func TestTranslatorReadsBlankGrouping(t *testing.T) {
+	prof := planProfiles()[0]
+	for q, want := range map[string]bool{
+		`sum by( ) (rate({app="a"}[5m]))`:             true,
+		"sum by (\t) (rate({app=\"a\"}[5m]))":         true,
+		`sum(rate({app="a"}[5m])) by( )`:              true,
+		`sum by( ) (sum by( ) (rate({app="a"}[5m])))`: true,
+		`sum by( ) (count_over_time({app="a"}[5m]))`:  false, // written alike
+		`sum by () (rate({app="a"}[5m]))`:             false, // no blank
+		`sum by (app) (rate({app="a"}[5m]))`:          false,
+		`{app="a"} |= "by( )"`:                        false, // quoted
+		`sum without( ) (rate({app="a"}[5m]))`:        false, // a `without` clause
+	} {
+		if got := translatorReadsBlankGrouping(q, prof); got != want {
 			t.Errorf("%q: got %v, want %v", q, got, want)
 		}
 	}

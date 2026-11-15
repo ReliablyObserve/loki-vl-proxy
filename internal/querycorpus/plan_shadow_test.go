@@ -152,6 +152,11 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			if !ok && translatorCopiesUnspacedParser(q) {
 				caseID, ok = "semantics/translator-copies-unspaced-parser", true
 			}
+			if !ok && translatorReadsBlankGrouping(q, prof) {
+				// A `by` clause of only blanks: the translator reads no clause, Loki and the plan `by ()`
+				// (TestBlankGroupingRequestsEqualEmptyGrouping holds the proxy's requests to the `by ()` text).
+				caseID, ok = "semantics/translator-reads-blank-grouping-as-none", true
+			}
 			if !ok && emptyWithoutDiffers(q, plan, prof) {
 				// A `without ()` operand: Loki keeps every series of it, the translator writes it ungrouped, and the
 				// route's reference is that text (TestEmptyWithoutOperandsKeepEverySeries holds the lowering).
