@@ -62,7 +62,8 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 					continue
 				}
 				got, gotErr := on.translateQueryOpts(ctx, q, false)
-				want, wantErr := off.translateQueryOpts(ctx, q, false)
+				// A query with an unspaced parser is held to the translator's text of its spaced spelling (respaced).
+				want, wantErr := off.translateQueryOpts(ctx, respaced(q), false)
 				if _, kept := on.keepUnwrapIdentity(q); kept {
 					keep++
 					continue
@@ -153,7 +154,7 @@ func FuzzMetricFlipGate(f *testing.F) {
 			return
 		}
 		got, gotErr := on.translateQueryOpts(context.Background(), q, false)
-		want, wantErr := off.translateQueryOpts(context.Background(), q, false)
+		want, wantErr := off.translateQueryOpts(context.Background(), respaced(q), false)
 		if _, kept := on.keepUnwrapIdentity(q); kept {
 			return
 		}

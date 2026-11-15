@@ -17,6 +17,13 @@ const (
 	// LogLevelFilter is a label filter on detected_level, the label the proxy derives from the stored fields and the
 	// line.
 	LogLevelFilter LogStages = 1 << iota
+	// LogRegexpPattern is a regexp or pattern parser, and the label filters after it.
+	LogRegexpPattern
+	// LogUnspacedParser is a regexp or pattern parser written with no blank before its expression (`| pattern"<_> <m>"`):
+	// the string translator copies it as written, which VictoriaLogs rejects (it has no regexp or pattern pipe), and the
+	// plan writes the extract pipe it writes for the spaced spelling (semantics/translator-copies-unspaced-parser). A
+	// caller that serves it serves the query's regexp and pattern parsers with it.
+	LogUnspacedParser
 )
 
 // logStageNames are the names of the stage families, as LogStagesOf reads them.
@@ -25,6 +32,8 @@ var logStageNames = [...]struct {
 	stage LogStages
 }{
 	{"LevelFilter", LogLevelFilter},
+	{"RegexpPattern", LogRegexpPattern},
+	{"UnspacedParser", LogUnspacedParser},
 }
 
 // LogStagesOf is the set of the stage families among the names; a name that is not one adds nothing.
@@ -60,12 +69,17 @@ func LogStagesOf(names []string) LogStages {
 //
 // Like ScreenMetric it only turns queries away: the typed gate on the plan and the lowering decide every query it
 // passes. The proxy's corpus test holds it to the plan.
-func ScreenLogStages(query string) LogStages {
+func ScreenLogStages(query string) LogStages { return ScreenLogStagesIn(query, ^LogStages(0)) }
+
+// ScreenLogStagesIn is ScreenLogStages for a caller that serves only the families of allowed: it answers 0 at the first
+// family outside it, so the rest of such a query is not read. A regexp or pattern parser is allowed with the blank too
+// once an unspaced one came before it and allowed holds LogUnspacedParser (the caller serves them together).
+func ScreenLogStagesIn(query string, allowed LogStages) LogStages {
 	query = strings.TrimSpace(query)
 	if query == "" || query[0] != '{' {
 		return 0
 	}
-	s := metricScan{log: true}
+	s := metricScan{log: true, allowed: allowed}
 	if !s.scan(query) {
 		return 0
 	}
@@ -84,6 +98,11 @@ func PlanLogStages(p *queryplan.Plan) (LogStages, bool) {
 	for _, st := range sel.Stages {
 		switch v := st.(type) {
 		case *queryplan.LineFilter:
+		case *queryplan.Parse:
+			if v.Type != logql.ParserRegexp && v.Type != logql.ParserPattern {
+				return 0, false
+			}
+			set |= LogRegexpPattern
 		case *queryplan.LabelFilter:
 			if v.Expr == nil {
 				return 0, false
@@ -119,12 +138,32 @@ func (s *metricScan) logKeyword(q, w string, j int) (done, ok bool) {
 	case translate.DetectedLevelLabel:
 		// A level filter after a stage (the lowering writes one only on the stored fields and the line), and the name
 		// with no comparison after it, which the parser keeps untyped.
-		if s.staged || !comparisonFollows(q, j) {
+		if s.staged || !comparisonFollows(q, j) || s.allowed&LogLevelFilter == 0 {
 			return true, false
 		}
 		s.stages |= LogLevelFilter
 		return true, true
-	case "service_name", "unwrap", "by", "without", "json", "logfmt", "regexp", "pattern", "unpack", "drop", "keep",
+	case "regexp", "pattern":
+		// A regexp or pattern parser: a family of its own, and one written with no blank before its expression. The
+		// word followed by anything but its quoted expression is a label (`| pattern="x"`), left to the translator.
+		k := j
+		for k < len(q) && isBlank(q[k]) {
+			k++
+		}
+		if !unspacedParser(q, k) {
+			return true, false
+		}
+		unspaced := s.allowed&LogUnspacedParser != 0 && (k == j || s.stages&LogUnspacedParser != 0)
+		if s.allowed&LogRegexpPattern == 0 && !unspaced {
+			return true, false
+		}
+		s.staged, s.parsedOther = true, true
+		s.stages |= LogRegexpPattern
+		if k == j {
+			s.stages |= LogUnspacedParser
+		}
+		return true, true
+	case "service_name", "unwrap", "by", "without", "json", "logfmt", "unpack", "drop", "keep",
 		"line_format", "label_format", "decolorize":
 		// A filter on service_name, a stage the lowering leaves to the translator, and a family not served yet.
 		return true, false
@@ -156,4 +195,10 @@ func dottedEnd(q string, j int) int {
 		}
 	}
 	return j
+}
+
+// unspacedParser reports a regexp or pattern parser whose name ends at q[j] and whose expression, a quoted string,
+// follows it with no blank (`|pattern"<_> <m>"`, "|regexp`(?P<a>x)`").
+func unspacedParser(q string, j int) bool {
+	return j < len(q) && (q[j] == '"' || q[j] == '`')
 }

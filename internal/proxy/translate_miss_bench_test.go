@@ -42,6 +42,17 @@ var translateMissShapes = []struct {
 		return `{app="api"} |= "error ` + i + `" | logfmt | detected_level="error"`
 	}},
 	{"service_name filter (turned away)", func(i string) string { return `{app="api"} |= "error ` + i + `" | service_name="api"` }},
+	{"pattern parser (turned away)", func(i string) string {
+		return `{app="api"} |= "` + i + `" | pattern "<_> <m> <_>" | m="GET"`
+	}},
+	{"regexp parser (turned away)", func(i string) string {
+		return "{app=\"api\"} |= \"" + i + "\" | regexp `(?P<m>[A-Z]+) ` | m=\"GET\""
+	}},
+	{"unspaced pattern parser (served)", func(i string) string {
+		return `{app="api"} |= "` + i + `" |pattern"<_> <m> <_>" | m="GET"`
+	}},
+	{"label_format (turned away)", func(i string) string { return `{app="api"} |= "` + i + `" | json | label_format x="{{.a}}"` }},
+	{"drop keep (turned away)", func(i string) string { return `{app="api"} |= "` + i + `" | json | drop a, b | keep c, d` }},
 	{"parser logfmt", func(i string) string { return `{app="api"} | logfmt | status >= 500 | path = "/api/` + i + `"` }},
 	{"parser json", func(i string) string { return `{app="api"} |= "error ` + i + `" | json | status="500"` }},
 	{"metric rate", func(i string) string { return `sum by (level) (rate({app="api"} |= "error ` + i + `" [5m]))` }},

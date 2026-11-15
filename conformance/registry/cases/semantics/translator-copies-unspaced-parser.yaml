@@ -1,0 +1,59 @@
+id: semantics/translator-copies-unspaced-parser
+title: A regexp or pattern parser written with no blank before its expression (`|pattern"<_> <m>"`) is copied by the string translator into a pipe VictoriaLogs rejects (fixed by the query plan for log queries and the metric constructs it serves)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki reads `|pattern"<_> <m> <_>"` as it reads `| pattern "<_> <m> <_>"`: its
+  pipeline (the Loki oracle, process command) keeps the same lines with the same
+  extracted labels for both spellings, for pattern and regexp parsers, double
+  quoted and backticked, alone, after a line filter and before a label filter
+  (internal/queryplan/lower/testdata/unspaced-parser-loki-vl.jsonl). VictoriaLogs
+  has no pattern or regexp pipe. The string translator writes the spaced parser
+  as an extract pipe and copies the unspaced one as written:
+    string translator  =>  app:="r" | pattern"<_> <m> <_>"   (VictoriaLogs v1.53.0: unexpected pipe name "pattern")
+    query plan         =>  app:="r" | extract "<_> <m> <_>"   (the text both write for the spaced spelling)
+  VictoriaLogs (the VictoriaLogs oracle, store command, v1.49.0 and v1.53.0)
+  returns Loki's lines and labels for the plan's text. The proxy serves a log
+  query with such a parser from the plan (the UnspacedParser stage family of
+  -query-plan-lowering, on by default), with its other regexp and pattern
+  parsers, and a range or vector aggregation, binary operation or label_replace
+  over one when that construct is served from the plan (also as the operand of a
+  ranking or stddev the proxy evaluates itself); the corpus rows are
+  listed in internal/querycorpus/testdata/known-typed-divergences.json.
+corpus:
+  size: 3
+  dimensions:
+    shapes:
+      - query: '{app="nginx"} |regexp"(?P<m>[A-Z]+) " | m="GET"'
+      - query: 'count_over_time({app="nginx"} |pattern"<_> <m> <_>" [5m])'
+      - query: 'sum by (m) (count_over_time({app="nginx"} |pattern"<_> <m> <_>" [5m]))'
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="nginx"} |pattern"<_> <m> <_>" | m="GET"'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, streams]
+  expect: |
+    200 with the lines whose second word is GET and the label m, as for the
+    spelling with a blank; never VictoriaLogs' parse error.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator (copies the unspaced parser as written); served from the query plan'
+  loki: 'the two spellings are one parser; the oracle keeps the same lines with the same labels'
+  proxy: 'log queries, the metric constructs served from the plan and the operands of rankings and stddev write the extract pipe; a stddev or stdvar nested under another aggregation, still written whole by the translator, fails in VictoriaLogs'
+  planned_test: 'TestUnspacedParserMatchesLoki (internal/queryplan/lower: recorded Loki and VictoriaLogs answers), TestQueryPlanLowering_ServesUnspacedParsers (internal/proxy)'
+  visual: none
+  visual_reason: 'a spelling no Grafana panel writes; a hand-written query'
+  clusters: []

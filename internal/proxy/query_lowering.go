@@ -37,8 +37,11 @@ var QueryPlanFlippedConstructs = []string{"LogSelect", "VectorAgg", "RangeAgg", 
 // lowering, on top of line and label filters: a log query whose stages are all in flipped families, which the text
 // screen (lower.ScreenLogStages) and the typed gate (servesLogStages) admit, is translated by the lowering. The plan
 // writes the string translator's text for them, byte for byte, on every corpus row under every proxy profile
-// (TestQueryPlanLowering_LogCorpusTextParity); conformance/registry/query-plan.json records the list.
-var QueryPlanFlippedLogStages = []string{"LevelFilter"}
+// (TestQueryPlanLowering_LogCorpusTextParity), or the text Loki reads where the translator's is a recorded known
+// divergence (UnspacedParser: a regexp or pattern parser written with no blank before its expression, which the
+// translator copies into a pipe VictoriaLogs rejects, semantics/translator-copies-unspaced-parser); conformance/
+// registry/query-plan.json records the list.
+var QueryPlanFlippedLogStages = []string{"LevelFilter", "UnspacedParser"}
 
 // loweringProfile is the lowering's view of the options the string translator is given: the one place the
 // translator's options become a lower.Profile, shared by the flip and the live shadow.
@@ -90,8 +93,15 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 		return "", false
 	}
 	var stages lower.LogStages
+	allowed := p.flippedLogStages
 	if logqlpkg.MayHaveNonFilterStage(canon) {
-		if stages = lower.ScreenLogStages(canon); stages == 0 || stages&^p.flippedLogStages != 0 {
+		stages = lower.ScreenLogStagesIn(canon, allowed)
+		if stages&allowed&lower.LogUnspacedParser != 0 {
+			// The translator's text for the query is rejected by VictoriaLogs: its regexp and pattern parsers are served
+			// with the unspaced one.
+			allowed |= lower.LogRegexpPattern
+		}
+		if stages == 0 || stages&^allowed != 0 {
 			return "", false
 		}
 	}
@@ -110,7 +120,7 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 	if !slices.Contains(p.flippedConstructs, construct) {
 		return "", false
 	}
-	if stages == 0 && !filterOnly(plan.Root) || stages != 0 && !p.servesLogStages(plan, prof) {
+	if stages == 0 && !filterOnly(plan.Root) || stages != 0 && !servesLogStages(plan, prof, allowed) {
 		return "", false
 	}
 	op, err := lower.Plan(plan, prof)
@@ -260,14 +270,15 @@ func holdsEvaluatedLayer(n queryplan.Node) bool {
 	return false
 }
 
-// servesLogStages is the typed gate of a log query with stage families (lower.PlanLogStages): every family flipped,
-// at least one, and none of the recorded known divergences, where the plan writes the query as Loki reads it and the
+// servesLogStages is the typed gate of a log query with stage families (lower.PlanLogStages): every family in allowed
+// (the flipped ones, and the regexp and pattern parsers of a query with an unspaced one), at least one, and none of
+// the recorded known divergences, where the plan writes the query as Loki reads it and the
 // string translator writes another text (writesTranslatorText names them): a numeric equality after a parser, a label
 // named like a field VictoriaLogs reserves, a label filter value the translator reads as syntax. Those stay with the
 // string translator until a flip carries their own proof.
-func (p *Proxy) servesLogStages(plan *queryplan.Plan, prof lower.Profile) bool {
+func servesLogStages(plan *queryplan.Plan, prof lower.Profile, allowed lower.LogStages) bool {
 	stages, ok := lower.PlanLogStages(plan)
-	return ok && stages != 0 && stages&^p.flippedLogStages == 0 && !lower.WritesNumericEquality(plan) &&
+	return ok && stages != 0 && stages&^allowed == 0 && !lower.WritesNumericEquality(plan) &&
 		!lower.ReadsReservedField(plan, prof) && !misreadFilterValue(plan.Root)
 }
 

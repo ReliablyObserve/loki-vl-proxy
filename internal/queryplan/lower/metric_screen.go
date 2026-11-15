@@ -172,9 +172,10 @@ type metricScan struct {
 	parsedOther, groupsServiceName bool
 	// log is set for a log query (ScreenLogStages): its whole text after the selector is a pipeline. stages are the
 	// stage families read, and staged is a stage other than a line or label filter read.
-	log    bool
-	stages LogStages
-	staged bool
+	log     bool
+	stages  LogStages
+	allowed LogStages
+	staged  bool
 	// names is set in a stage that lists names (a parser's extraction list, a drop or keep), until the next pipe.
 	names bool
 }
@@ -466,8 +467,9 @@ func (s *metricScan) keyword(q, w string, j int) (done, ok bool) {
 	case "topk", "bottomk", "sort", "sort_desc", "stddev", "stdvar", "vector", "bool", "line_format", "decolorize", "unpack":
 		return true, false
 	case "regexp", "pattern":
-		// The string translator reads the parser only with a blank before its expression (`| pattern "<_>"`).
-		if j >= len(q) || !isBlank(q[j]) {
+		// A parser written with no blank before its quoted expression (`|pattern"<_> <m>"`) is the one with the blank to
+		// Loki and the plan (semantics/translator-copies-unspaced-parser): the plan writes the spaced spelling's text.
+		if j >= len(q) || !isBlank(q[j]) && !unspacedParser(q, j) {
 			return true, false
 		}
 		s.parsedOther = true

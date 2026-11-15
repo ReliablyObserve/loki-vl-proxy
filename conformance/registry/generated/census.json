@@ -838,6 +838,9 @@
     "semantics/transient-backend-failure-is-retried | compare:observed",
     "semantics/transient-backend-failure-is-retried | gap:fixed",
     "semantics/transient-backend-failure-is-retried | query",
+    "semantics/translator-copies-unspaced-parser | compare:observed",
+    "semantics/translator-copies-unspaced-parser | gap:open",
+    "semantics/translator-copies-unspaced-parser | query",
     "semantics/translator-folds-binary-by-operand-without | compare:observed",
     "semantics/translator-folds-binary-by-operand-without | gap:open",
     "semantics/translator-folds-binary-by-operand-without | query",
@@ -1639,6 +1642,7 @@
     "internal/proxy/query_flow_test.go | observability-slow-query-log",
     "internal/proxy/query_lowering_corpus_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_log_stages_test.go | architecture-syntax-package-layering",
+    "internal/proxy/query_lowering_log_stages_test.go | semantics/translator-copies-unspaced-parser",
     "internal/proxy/query_lowering_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_test.go | loki_api_v1_query_range",
     "internal/proxy/query_lowering_test.go | observability-query-flow",
@@ -2102,6 +2106,7 @@
     "internal/queryplan/lower/series_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unpack_test.go | semantics/translator-writes-unpack-as-unpack-json",
+    "internal/queryplan/lower/unspaced_parser_test.go | semantics/translator-copies-unspaced-parser",
     "internal/queryplan/lower/unwrap_keep_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/queryplan/lower/unwrap_stats_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
@@ -2682,14 +2687,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 95,
+      "api": 96,
       "drilldown": 50,
       "explore": 184,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 603,
+      "go": 604,
       "playwright": 1
     },
     "page_kinds": {
@@ -2709,7 +2714,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 104,
-    "wired_items": 359
+    "wired_items": 360
   },
   "gates": [
     "A/B shape selection",

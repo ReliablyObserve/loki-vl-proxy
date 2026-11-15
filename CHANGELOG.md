@@ -51,6 +51,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
   allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
 
+### Fixed
+
+- A `regexp` or `pattern` parser written with no blank before its expression (`{app="a"} |pattern"<_> <m> <_>"`) now
+  gets Loki's answer. Loki reads it as the parser with the blank; the proxy sent it to VictoriaLogs as written, which
+  VictoriaLogs rejects (it has no `pattern` or `regexp` pipe), so the request failed. Log queries with such a parser,
+  and range and vector aggregations, binary operations, `label_replace` calls, rankings and `stddev`/`stdvar` over
+  one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
+  `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
+
 ## [2.260.1] - 2026-11-14
 
 ### Fixed

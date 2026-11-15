@@ -50,9 +50,15 @@ func TestScreenLogStages(t *testing.T) {
 		{`{app="api"} | json | detected_level="error"`, 0},
 		{`{app="api"} | logfmt`, 0},
 		{`{app="api"} | json | status="500"`, 0},
-		{`{app="api"} | regexp "(?P<a>x)"`, 0},
-		{`{app="api"} | pattern "<_> <m>"`, 0},
-		{`{app="api"} |pattern"<_> <m>"`, 0},
+		// Regexp and pattern parsers are a family; one written with no blank before its quoted expression is named too.
+		{`{app="api"} | regexp "(?P<a>x)"`, LogRegexpPattern},
+		{`{app="api"} | pattern "<_> <m>"`, LogRegexpPattern},
+		{`{app="api"} |pattern"<_> <m>"`, LogRegexpPattern | LogUnspacedParser},
+		{"{app=\"api\"} |regexp`(?P<a>x)` | a=\"x\"", LogRegexpPattern | LogUnspacedParser},
+		{`{app="api"} |= "x" |pattern"<_> <m>" | pattern "<n> <_>" | m!="y"`, LogRegexpPattern | LogUnspacedParser},
+		{`{app="api"} |pattern"<_> <m>" | json`, 0},
+		{`{app="api"} |pattern"<_> <m>" | detected_level="error"`, 0},
+		{`{app="api"} | pattern="x"`, 0},
 		{`{app="api"} | unpack`, 0},
 		{`{app="api"} | drop a`, 0},
 		{`{app="api"} | keep a`, 0},
@@ -95,7 +101,8 @@ func TestScreenLogStages(t *testing.T) {
 			t.Errorf("%q: admitted, but does not plan", tc.query)
 			continue
 		}
-		if planned, ok := PlanLogStages(p); !ok || planned != got {
+		// The plan holds the parsers (LogRegexpPattern), not their spelling (LogUnspacedParser).
+		if planned, ok := PlanLogStages(p); !ok || planned != got&^LogUnspacedParser {
 			t.Errorf("%q: the screen names %b, the plan holds %b (%v)", tc.query, got, planned, ok)
 		}
 	}
@@ -118,6 +125,10 @@ func TestPlanLogStages(t *testing.T) {
 		{`{app="api"} | service_name="api"`, 0, false},
 		{`{app="api"} | a="1" or service_name="api"`, 0, false},
 		{`{app="api"} | json`, 0, false},
+		{`{app="api"} | pattern "<_> <m>" | m="x"`, LogRegexpPattern, true},
+		{"{app=\"api\"} | regexp `(?P<a>x)`", LogRegexpPattern, true},
+		{`{app="api"} | unpack`, 0, false},
+		{`{app="api"} | detected_level`, 0, false},
 		{`{app="api"} | drop a`, 0, false},
 		{`{app="api"} | line_format "x"`, 0, false},
 		{`count_over_time({app="api"}[5m])`, 0, false},
@@ -133,7 +144,7 @@ func TestPlanLogStages(t *testing.T) {
 	if namesDerivedLabel(nil, "detected_level") {
 		t.Error("a nil filter names a label")
 	}
-	if got := LogStagesOf([]string{"LevelFilter", "VectorAgg", ""}); got != LogLevelFilter {
+	if got := LogStagesOf([]string{"LevelFilter", "VectorAgg", "", "UnspacedParser"}); got != LogLevelFilter|LogUnspacedParser {
 		t.Errorf("LogStagesOf = %b", got)
 	}
 }
@@ -164,7 +175,7 @@ func FuzzScreenLogStages(f *testing.F) {
 	} {
 		f.Add(q)
 	}
-	const known = LogLevelFilter
+	const known = LogLevelFilter | LogRegexpPattern | LogUnspacedParser
 	f.Fuzz(func(t *testing.T, q string) {
 		if len(q) > 1024 {
 			return
@@ -209,4 +220,33 @@ func untypedLabelFilter(p *queryplan.Plan) bool {
 		}
 	}
 	return false
+}
+
+// ScreenLogStagesIn answers 0 at a family outside the set it is given: a regexp or pattern parser with the blank only
+// after an unspaced one when the set holds LogUnspacedParser.
+//
+// conformance: architecture-syntax-package-layering
+func TestScreenLogStagesIn(t *testing.T) {
+	const (
+		level    = `{app="a"} | detected_level="error"`
+		spaced   = `{app="a"} | pattern "<_> <m>"`
+		unspaced = `{app="a"} |pattern"<_> <m>"`
+		both     = `{app="a"} |pattern"<_> <m>" | pattern "<n> <_>"`
+		reversed = `{app="a"} | pattern "<n> <_>" |pattern"<_> <m>"`
+	)
+	for _, tc := range []struct {
+		query   string
+		allowed LogStages
+		want    LogStages
+	}{
+		{level, LogLevelFilter, LogLevelFilter}, {level, LogUnspacedParser, 0},
+		{spaced, LogLevelFilter | LogUnspacedParser, 0}, {spaced, LogRegexpPattern, LogRegexpPattern},
+		{unspaced, LogUnspacedParser, LogRegexpPattern | LogUnspacedParser}, {unspaced, LogLevelFilter, 0},
+		{both, LogUnspacedParser, LogRegexpPattern | LogUnspacedParser}, {reversed, LogUnspacedParser, 0},
+		{reversed, LogRegexpPattern | LogUnspacedParser, LogRegexpPattern | LogUnspacedParser}, {level, 0, 0},
+	} {
+		if got := ScreenLogStagesIn(tc.query, tc.allowed); got != tc.want {
+			t.Errorf("ScreenLogStagesIn(%q, %b) = %b, want %b", tc.query, tc.allowed, got, tc.want)
+		}
+	}
 }
