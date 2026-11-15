@@ -49,8 +49,23 @@ func Build(expr logql.Expr, in Inputs) (*Plan, error) {
 		return nil, unsupported("queryplan: unknown kind %d", in.Kind)
 	}
 	sc := scratchPool.Get().(*scratch)
-	p := new(Plan)
-	b := builder{e: encoder{b: sc.key[:0]}, plan: p, seals: sc.seals[:0]}
+	b := builder{e: encoder{b: sc.key[:0]}, seals: sc.seals[:0]}
+	var p *Plan
+	switch x := expr.(type) {
+	case *logql.LogQuery, *logql.StreamSelector:
+		m := new(logPlan)
+		p, b.sel = &m.Plan, &m.sel
+	case *logql.LiteralExpr:
+		p = new(Plan) // a scalar holds no log query
+	default:
+		if o, ok := x.(*logql.OpaqueMetricExpr); ok && o.Func == "vector" {
+			p = new(Plan) // nor does vector(n)
+			break
+		}
+		m := new(metricPlan)
+		p, b.sel, b.rng, b.vec = &m.Plan, &m.sel, &m.rng, &m.vec
+	}
+	b.plan = p
 	root, err := b.node(expr)
 	if err == nil {
 		n := len(b.e.b)
@@ -81,30 +96,32 @@ type builder struct {
 	plan  *Plan
 	seals []seal
 	depth int
-	// used says which of the plan's inline nodes are taken.
-	usedSel, usedRng, usedVec bool
+	// sel, rng and vec are the plan's inline nodes not taken yet (logPlan, metricPlan).
+	sel *LogSelect
+	rng *RangeAgg
+	vec *VectorAgg
 }
 
 func (b *builder) newSelect() *LogSelect {
-	if !b.usedSel {
-		b.usedSel = true
-		return &b.plan.mem.sel
+	if n := b.sel; n != nil {
+		b.sel = nil
+		return n
 	}
 	return new(LogSelect)
 }
 
 func (b *builder) newRange() *RangeAgg {
-	if !b.usedRng {
-		b.usedRng = true
-		return &b.plan.mem.rng
+	if n := b.rng; n != nil {
+		b.rng = nil
+		return n
 	}
 	return new(RangeAgg)
 }
 
 func (b *builder) newVector() *VectorAgg {
-	if !b.usedVec {
-		b.usedVec = true
-		return &b.plan.mem.vec
+	if n := b.vec; n != nil {
+		b.vec = nil
+		return n
 	}
 	return new(VectorAgg)
 }

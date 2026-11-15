@@ -1,0 +1,2 @@
+go test fuzz v1
+string("first_over_time({A00=\"0\"} | json\rA0| unwrap A0[0y])")

@@ -21,7 +21,12 @@ name: Daily report
 #              summary.json and cases.json and the pull request body; the grammar sweep
 #              and the Loki differentials come from today's query-corpus run, which
 #              re-verifies them live (query-corpus.yaml); everything goes to the bot
-#              branch bench/daily-report as one pull request (never pushed to main)
+#              branch bench/daily-report as one pull request (never pushed to main).
+#              The body opens with an executive summary computed from the same files:
+#              what is ok and not ok per area in numbers, the Loki side and the
+#              VictoriaLogs side, what moved since the previous report (the summary.json
+#              and cases.json committed on main, read before today's replace them) and
+#              what is wrong now.
 #
 # The day is red when a fixed case differs from Loki, a recording drifted, a
 # ratchet moved the wrong way, a perf row is above 2x Loki, a scheduled workflow

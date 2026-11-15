@@ -13,6 +13,7 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
 // A fence screen decides from the query text, before any parse, whether a response key carries a version constant.
@@ -34,6 +35,9 @@ type fenceFacts struct {
 	presence          bool // a label filter or line filter `!= ""`
 	logfmt            bool
 	json              bool
+	// perStreamSeries is a construct whose series the proxy reads per stream: a without fold, an unwrap, or topk,
+	// bottomk, sort, sort_desc or label_replace.
+	perStreamSeries bool
 }
 
 func (f *fenceFacts) name(name string, comparison bool) {
@@ -113,6 +117,7 @@ func (f *fenceFacts) logQuery(lq *logqlpkg.LogQuery) {
 				f.labelName(l)
 			}
 		case *logqlpkg.UnwrapStage:
+			f.perStreamSeries = true
 			if keepAt >= 0 {
 				f.keepBeforeUnwrap = true
 			}
@@ -152,11 +157,21 @@ func (f *fenceFacts) expr(e logqlpkg.Expr) {
 	case *logqlpkg.RangeAggregation:
 		f.expr(e.Inner)
 	case *logqlpkg.VectorAggregation:
+		switch e.Op {
+		case logqlpkg.VectorTopK, logqlpkg.VectorBottomK, logqlpkg.VectorSort, logqlpkg.VectorSortDesc:
+			f.perStreamSeries = true
+		}
+		if e.Grouping != nil && e.Grouping.Without {
+			f.perStreamSeries = true
+		}
 		f.expr(e.Inner)
 	case *logqlpkg.BinOpExpr:
 		f.expr(e.Left)
 		f.expr(e.Right)
 	case *logqlpkg.OpaqueMetricExpr:
+		if e.Func == "label_replace" {
+			f.perStreamSeries = true
+		}
 		if e.Inner != nil {
 			f.expr(e.Inner)
 		}
@@ -281,8 +296,14 @@ func fenceWants(query string) map[string]bool {
 		"reserved-field-case":      f.reservedCase,
 		"reserved-field-labels":    f.reservedLabel,
 		"keyword-label-names":      f.keywordSpelling,
+		"stream-level-series":      f.perStreamSeries,
 		// Read by fenceGains: the text screen of repeated filters also counts a quoted text that looks like a stage.
 		"a-label-filter-stage": f.labelFilterStages >= 1,
+	}
+	// The dynamic unwrap identity is a plan attribute: the screen in front of the plan must let every query through
+	// whose plan holds it.
+	if plan := resolvedPlan(dynamicQuery(query)); plan != nil {
+		want["unwrap-dynamic-identity"] = lower.WritesDynamicUnwrapIdentity(plan)
 	}
 	resolved := resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	if rexpr, err := logqlpkg.Parse(resolved); err == nil {
@@ -354,6 +375,13 @@ var fenceSpellingBases = []string{
 	`sum(count_over_time({app="a"} | logfmt | msg != "" [$__auto]))`,
 	`sum(count_over_time({app="a"} | logfmt | msg != ` + "``" + ` [5m]))`,
 	`sum(rate({app="a"} | json | keep level | status = ip("1.2.3.4") | b = "x" [5m]))`,
+	`sum without (pod) (rate({app="a"} | json [1m]))`,
+	`sort(rate({app="a"} | json [1m]))`,
+	`sort_desc (sum by (x) (rate({app="a"}[1m])))`,
+	`label_replace(rate({app="a"}[1m]), "x", "$1", "pod", "(.*)")`,
+	`sum by (x) (avg_over_time({app="a"} | json | unwrap n [5m]))`,
+	`max(stddev_over_time({app="a"} | logfmt | unwrap n [5m]))`,
+	`min by (x) (min_over_time({app="a"} | json | unwrap n [5m])) / sum(max_over_time({app="a"} | json | unwrap n [5m]))`,
 }
 
 // TestResponseKeyFencesFireOnEverySpelling re-spells each base query many ways and requires every fence whose
@@ -423,6 +451,7 @@ var fenceScreens = []struct {
 	{"reserved-field-case", refReservedCase, reservedFieldCaseResponseKeyVersion},
 	{"reserved-field-labels", refReservedLabel, reservedFieldLabelResponseKeyVersion},
 	{"keyword-label-names", refKeywordLabel, keywordLabelResponseKeyVersion},
+	{"stream-level-series", refStreamLevelSeries, streamLevelSeriesResponseKeyVersion},
 }
 
 // fenceLosses lists the fences an older binary's screen fired for that the screen now lacks: a response key it wrote
@@ -447,6 +476,8 @@ func fenceLosses(query string) []string {
 	check("ordered-json-vector prefilter", refOrderedJSONCandidate(query), orderedJSONVectorFenceCandidate(query, spelledOtherwise(query)))
 	check("bare-json-metric prefilter", refBareJSONText(query), containsFold(query, "json"))
 	check("logfmt-presence prefilter", refLogfmtPresenceText(query), containsFold(query, "logfmt") && emptyStringComparisonIn(query))
+	q := dynamicQuery(query)
+	check("unwrap-dynamic-identity prefilter", refDynamicIdentityScreen(q), dynamicIdentityFenceScreen(q, spelledOtherwise(q)))
 	return lost
 }
 
@@ -572,6 +603,8 @@ func fenceFires(name, query string) bool {
 		"ordered-json-vector":      func() string { return orderedJSONVectorResponseKeyVersion(r, query) },
 		"bare-json-metric":         func() string { return bareJSONMetricResponseKeyVersion(r, query) },
 		"logfmt-presence":          func() string { return logfmtPresenceResponseKeyVersion(r, query) },
+		"stream-level-series":      func() string { return streamLevelSeriesResponseKeyVersion(query) },
+		"unwrap-dynamic-identity":  func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
 	}[name]() != ""
 }
 
@@ -652,6 +685,18 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"logfmt-presence", `SUM(COUNT_OVER_TIME({a="b"} | LOGFMT | msg != "" [5m]))`, true},
 		{"logfmt-presence", "sum(count_over_time({a=\"b\"} | logfmt | msg !=#c\n \"\" [5m]))", true},
 		{"logfmt-presence", `sum(count_over_time({a="b"} | logfmt | msg != "x" [5m]))`, false},
+		{"stream-level-series", `TOPK(2, count_over_time({a="b"} | json [5m]))`, true},
+		{"stream-level-series", "top\u212a(2, count_over_time({a=\"b\"} | json [5m]))", true},
+		{"stream-level-series", "bottom\u212a(2, count_over_time({a=\"b\"} | json [5m]))", true},
+		{"stream-level-series", "Sort_Desc\t(rate({a=\"b\"} | json [1m]))", true},
+		{"stream-level-series", `sum by (pod) (rate({a="b"}[1m]))`, false},
+		{"stream-level-series", "sum by (pod) (rate({a=\"b\"} #sort\n[1m]))", false},
+		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | json | unwrap n [5m]))`, true},
+		{"unwrap-dynamic-identity", `SUM BY (x) (AVG_OVER_TIME({a="b"} | JSON | UNWRAP n [5m]))`, true},
+		{"unwrap-dynamic-identity", "sum by (x) (avg_over_t\u0130me({a=\"b\"} | json | unwrap n [5m]))", true},
+		{"unwrap-dynamic-identity", "MAX(MAX_OVER_T\u0130ME({a=\"b\"} | LOGFMT | UNWRAP n [5m]))", true},
+		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | json | keep x | unwrap n [5m]))`, false},
+		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | unwrap n [5m]))`, false},
 	} {
 		if got := fenceFires(tc.fence, tc.query); got != tc.want {
 			t.Errorf("%s: %+q fires %v, want %v", tc.fence, tc.query, got, tc.want)

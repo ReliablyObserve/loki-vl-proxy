@@ -51,7 +51,7 @@ func TestColdTierLogQuery_RowThatIsNotJSONFailsTheRequest(t *testing.T) {
 				start, end = now.Add(-10*24*time.Hour), now.Add(-time.Hour)
 			}
 			w := httptest.NewRecorder()
-			r := httptest.NewRequest("GET", fmt.Sprintf("/?query=*&direction=%s&start=%d&end=%d", tc.direction, start.UnixNano(), end.UnixNano()), nil)
+			r := httptest.NewRequest("GET", fmt.Sprintf("/?query=*&direction=%s&start=%d&end=%d&limit=100", tc.direction, start.UnixNano(), end.UnixNano()), nil)
 			if tc.both {
 				p.proxyLogQueryBoth(w, r, "*")
 			} else {

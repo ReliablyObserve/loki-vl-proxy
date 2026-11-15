@@ -1,7 +1,8 @@
 id: loki_api_v1_tail
 state: partial
 reason: |
-  Routed (handleTail) and compared against Loki in 4 test files, but not yet Loki-identical. Missing: start and limit history replay (Loki sends the last limit entries since start before live lines, pkg/loghttp/tail.go:70-94; open case semantics/tail-history-start-limit); limit and delay_for validation (limit must be positive, delay_for above 5 is refused, tail.go:101-103 and params.go:27-36); a multi-tenant tail request, which the proxy refuses (docs/KNOWN_ISSUES.md) with no registry row yet pinning Loki's answer.
+  Routed (handleTail) and compared against Loki in 4 test files, but not yet Loki-identical. Missing: start and limit history replay (Loki sends the last limit entries since start before live lines, pkg/loghttp/tail.go:70-94; open case semantics/tail-history-start-limit); a multi-tenant tail request, which the proxy refuses (docs/KNOWN_ISSUES.md) with no registry row yet pinning Loki's answer.
+  Not missing: limit and delay_for validation. The proxy answers Loki's recorded status, content type and text for limit (abc, -1 and 0 are refused; 100000 is accepted on the upgrade path), delay_for (abc, -1, 10; 0 and 5 are accepted), start and end, with and without the websocket upgrade headers (rows r1138-r1143 and r1436-r1448 of internal/proxy/testdata/loki_request_param_answers.jsonl, replayed byte for byte by TestRequestParamAnswers; none is a known difference), and the live e2e tail/bad_limit and tail/delay_for_over_max rows (test/e2e-compat/error_body_like_loki_test.go) compare it with Loki. Registry: semantics/error-request-validation-parity, msg-delay-for.
 owner_decision: |
   Tail must mimic Loki (owner 2026-10-26).
 priority: first

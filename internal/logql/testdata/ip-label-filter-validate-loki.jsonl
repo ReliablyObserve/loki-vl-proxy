@@ -278,3 +278,29 @@
 {"accept":false,"error":"parse error : stage '| x=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
 {"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
 {"accept":false,"error":"parse error : stage '| x=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"::\\x00!\")' : ip: invalid pattern: \"::\\x00!\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"\\x00\")' : ip: invalid pattern: \"\\x00\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4\\x00\")' : ip: invalid pattern: \"1.2.3.4\\x00\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"::\\x00\")' : ip: invalid pattern: \"::\\x00\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4\\x00/24\")' : ip: invalid pattern: \"1.2.3.4\\x00/24\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4-\\x001.2.3.5\")' : ip: invalid pattern: \"1.2.3.4-\\x001.2.3.5\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"\\x00-1.2.3.4\")' : ip: invalid pattern: \"\\x00-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"2001:db8::\\x00/32\")' : ip: invalid pattern: \"2001:db8::\\x00/32\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4\\x1f\")' : ip: invalid pattern: \"1.2.3.4\\x1f\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4\\x1f\")' : ip: invalid pattern: \"1.2.3.4\\x1f\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4\\x7f\")' : ip: invalid pattern: \"1.2.3.4\\x7f\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4\\x7f\")' : ip: invalid pattern: \"1.2.3.4\\x7f\""}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"::\\x00!\")' : ip: invalid pattern: \"::\\x00!\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"\\x00\")' : ip: invalid pattern: \"\\x00\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4\\x00\")' : ip: invalid pattern: \"1.2.3.4\\x00\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"::\\x00\")' : ip: invalid pattern: \"::\\x00\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4\\x00/24\")' : ip: invalid pattern: \"1.2.3.4\\x00/24\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4-\\x001.2.3.5\")' : ip: invalid pattern: \"1.2.3.4-\\x001.2.3.5\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"\\x00-1.2.3.4\")' : ip: invalid pattern: \"\\x00-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"2001:db8::\\x00/32\")' : ip: invalid pattern: \"2001:db8::\\x00/32\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4\\x1f\")' : ip: invalid pattern: \"1.2.3.4\\x1f\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4\\x1f\")' : ip: invalid pattern: \"1.2.3.4\\x1f\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4\\x7f\")' : ip: invalid pattern: \"1.2.3.4\\x7f\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4\\x7f\")' : ip: invalid pattern: \"1.2.3.4\\x7f\""}
+{"accept":true}

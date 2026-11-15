@@ -62,8 +62,12 @@ decisions:
       character in it, which made the quote-skipping screens read the rest of
       the query as quoted text; U+212A and U+0130 in keywords; Unicode letters
       in names. The screens now read those, and one fuzz target compares every
-      fence with the parsed tree of a re-spelled query.
-    evidence: 'internal/proxy/response_key_fence_parser_test.go (2026-11-15): FuzzResponseKeyFencesMatchParsedTree, 120 s clean on the fixed screens; the same test on main finds a miss in each of the ten fences it covers (detected_level is covered by its own change); every fence still fires for every query its older screen fired for over the key corpus (shapes, matrix, registry rows); BenchmarkResponseKeyFences, 8 interleaved runs on Apple M5 Pro, GOMAXPROCS=4: geomean -51% (every shape faster, allocations equal or fewer)'
+      fence with the parsed tree of a re-spelled query. The two fences added
+      since (stream-level-series, unwrap-dynamic-identity) are held to the same
+      test: the first missed topK and bottomK written with U+212A, the second's
+      text screen in front of the plan missed a function name written with
+      U+0130 (`avg_over_tİme`), which the keyword lower casing leaves as it is.
+    evidence: 'internal/proxy/response_key_fence_parser_test.go (2026-11-15): FuzzResponseKeyFencesMatchParsedTree, 120 s clean on the fixed screens; the same test on main finds a miss in each of the ten fences it covers (detected_level is covered by its own change), and after the merge of main in the stream-level-series fence (U+212A in topk, bottomk) and the unwrap-dynamic-identity screen (U+0130 in its function names); every fence still fires for every query its older screen fired for over the key corpus (shapes, matrix, registry rows); BenchmarkResponseKeyFences, 8 interleaved runs on Apple M5 Pro, GOMAXPROCS=4: geomean -51% (every shape faster, allocations equal or fewer)'
     code: [internal/proxy/response_key_fence_text.go, internal/proxy/proxy.go, internal/proxy/keyword_label_fence.go, internal/proxy/reserved_field_fence.go, internal/proxy/reserved_field_case_fence.go, internal/proxy/ordered_json_vector.go, internal/proxy/ordered_json_metric.go, internal/proxy/range_metric_compat.go]
     tests: [TestResponseKeyFencesFireOnEverySpelling, TestResponseKeyFencesFireOnTheSpellingsTheParserReads, TestResponseKeyFencesKeepTheirOldKeys, FuzzResponseKeyFencesMatchParsedTree, TestResponseKeyFenceScreensDoNotAllocate]
     quality: 'A query whose parsed tree holds the construct a fence guards carries the fence in every spelling the parser reads; no key written by an older binary for a spelling it fenced becomes unreachable.'

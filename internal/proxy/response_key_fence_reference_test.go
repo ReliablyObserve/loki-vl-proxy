@@ -124,3 +124,50 @@ func refKeywordLabel(query string) bool {
 	}
 	return candidate && logqlpkg.ValidateLogQL(query) != ""
 }
+
+// refStreamLevelSeries is the stream level series screen as it was before it read the Kelvin sign (U+212A) as the k
+// of topk and bottomk.
+func refStreamLevelSeries(query string) bool {
+	if strings.IndexByte(query, '(') < 0 {
+		return false
+	}
+	for _, c := range [...]byte{'k', 'K'} {
+		for s, i := query, strings.IndexByte(query, c); i >= 0; i = strings.IndexByte(s, c) {
+			if i >= 3 && strings.EqualFold(s[i-3:i+1], "topk") || i >= 6 && strings.EqualFold(s[i-6:i+1], "bottomk") {
+				return true
+			}
+			s = s[i+1:]
+		}
+	}
+	for _, c := range [...]byte{'w', 'W'} {
+		for s, i := query, strings.IndexByte(query, c); i >= 0; i = strings.IndexByte(s, c) {
+			if i+7 <= len(s) && strings.EqualFold(s[i:i+7], "without") || i >= 2 && i+4 <= len(s) && strings.EqualFold(s[i-2:i+4], "unwrap") {
+				return true
+			}
+			s = s[i+1:]
+		}
+	}
+	for s, i := query, strings.IndexByte(query, '('); i >= 0; i = strings.IndexByte(s, '(') {
+		name := trimRightBlanks(s[:i])
+		if hasSuffixFold(name, "sort") || hasSuffixFold(name, "sort_desc") || hasSuffixFold(name, "label_replace") {
+			return true
+		}
+		s = s[i+1:]
+	}
+	return false
+}
+
+// refDynamicIdentityScreen is the text screen in front of the dynamic unwrap identity plan as it was before it read
+// the words in any spelling (the query is the one dynamicQuery wrote: keywords with an ASCII upper case letter are
+// lower cased, a letter that lower cases to an ASCII one is kept).
+func refDynamicIdentityScreen(query string) bool {
+	if !strings.Contains(query, "unwrap") || !strings.Contains(query, "json") && !strings.Contains(query, "logfmt") {
+		return false
+	}
+	for _, fn := range dynamicIdentityFuncs {
+		if strings.Contains(query, fn) {
+			return true
+		}
+	}
+	return false
+}

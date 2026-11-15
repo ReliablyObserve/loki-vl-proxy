@@ -582,6 +582,11 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if manualFunc == "" {
 		return false
 	}
+	// The series are the dynamic identity of a parser: VictoriaLogs takes the function per series and the
+	// aggregation over them (lower.DynamicUnwrapIdentity).
+	if p.dynamicIdentityFor(r.Context(), originalLogql) {
+		return false
+	}
 	// An ungrouped sum of an additive unwrap function (rate, sum_over_time): the
 	// translated query ends in the outer sum, so VictoriaLogs answers one series
 	// from stats; the manual evaluator below would keep a series per stream.
@@ -2131,6 +2136,21 @@ func (p *Proxy) manualSeriesEntry(seriesCache map[string]*metricSeriesCacheEntry
 	return seriesEntry
 }
 
+// streamDetectedLevel is the detected_level a stream's own fields decide for
+// every row of it (deriveRowLevel's stream rule): the first non-empty field
+// named in levelFieldNames, normalised, else unknown.
+func streamDetectedLevel(stream map[string]string) string {
+	for _, name := range levelFieldNames {
+		if v := stream[name]; v != "" {
+			if c := canonicalLevel([]byte(v)); c != "" {
+				return c
+			}
+			return v
+		}
+	}
+	return levelUnknown
+}
+
 // buildMetricSeriesEntry constructs the label maps and series key for a given
 // (_stream, level) pair. Called once per distinct stream identity per request.
 // derived, when not nil, is the detected_level VictoriaLogs computed for the
@@ -2152,7 +2172,10 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, derived *stri
 	case derived != nil:
 		delete(streamLabels, "detected_level")
 	case strings.TrimSpace(streamLabels["detected_level"]) == "":
-		streamLabels["detected_level"] = "unknown"
+		// A row of a group read by stream alone (stats by (_stream)) carries
+		// no level column: the stream's level field decides it for every row
+		// of the stream, as Loki's ingest does (rule 2), else unknown.
+		streamLabels["detected_level"] = streamDetectedLevel(rawStreamLabels)
 	}
 	ensureSyntheticServiceName(streamLabels)
 

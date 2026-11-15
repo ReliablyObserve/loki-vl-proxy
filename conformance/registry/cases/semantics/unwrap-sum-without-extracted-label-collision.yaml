@@ -25,11 +25,17 @@ why: |
   `{app=uw,pod=p2}` = 186 for streams pod=a,b,c whose lines parse pod=p1 or p2;
   Loki's labels from the sources above, not run against a real Loki). Both
   differ from Loki's labels; the values are right per label set the answer has.
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: 'sum without (namespace) (max_over_time({app="uw-collision"} | logfmt amount, pod | unwrap amount [5m]))'
+      - query: 'sum without (namespace) (max_over_time({service_name="payment-service"} | logfmt amount, pod | unwrap amount [5m]))'
 request:
   method: GET
   path: /loki/api/v1/query
   params:
-    query: 'sum without (namespace) (max_over_time({service_name="payment-service"} | logfmt amount, pod | unwrap amount [5m]))'
+    query: 'sum without (namespace) (max_over_time({app="uw-collision"} | logfmt amount, pod | unwrap amount [5m]))'
     time: 'now'
   headers:
     X-Scope-OrgID: "0"

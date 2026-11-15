@@ -54,14 +54,14 @@ var markerReaders = map[string]bool{
 var proxyTextReaders = map[string]bool{"isStatsQuery": true, "parseStatsCompatSpec": true, "parseSingleFieldCountSpec": true}
 
 var parserFuncs = map[string]map[string]bool{
-	module + "internal/logql":  {"Parse": true, "ParseLogQuery": true, "ParseAndValidate": true},
+	module + "internal/logql":  {"Parse": true, "ParseUntypedTemplates": true, "ParseLogQuery": true, "ParseAndValidate": true},
 	module + "internal/logsql": {"Parse": true, "ParseFilter": true},
 }
 
 // proxyParseHelpers are the proxy's own calls of the LogQL parser (internal/proxy/query_flow.go): each times the
 // parse for the request's flow. A call of one is a parse_calls site exactly like a direct call, so moving a parse
 // behind them cannot lower the count; the helpers' own bodies are not counted.
-var proxyParseHelpers = map[string]bool{"parseLogQLExpr": true, "parseLogQLQuery": true, "validateLogQL": true}
+var proxyParseHelpers = map[string]bool{"parseLogQLExpr": true, "parseLogQLExprTemplates": true, "parseLogQLQuery": true, "validateLogQL": true}
 
 const proxyParseHelperFile = "internal/proxy/query_flow.go"
 

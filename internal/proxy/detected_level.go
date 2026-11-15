@@ -64,10 +64,30 @@ var detectedLevelPresenceStageRE = regexp.MustCompile(`\|\s*detected_level\s*(?:
 // exact and compatibility caches, including copies fetched from cache peers.
 func detectedLevelMutationResponseKeyVersion(query string) string {
 	if (strings.Contains(query, detectedLevelLabel) && (detectedLevelMutationStageRE.MatchString(query) || detectedLevelPresenceStageRE.MatchString(query))) ||
-		detectedLevelSourceDropStageRE.MatchString(query) {
+		mayHoldDropStage(query) && detectedLevelSourceDropStageRE.MatchString(query) {
 		return detectedLevelMutationResponseVersion
 	}
 	return ""
+}
+
+// mayHoldDropStage reports a `|` followed by blanks (regexp \s) and drop in any
+// case: what detectedLevelSourceDropStageRE needs before it can match, found
+// without running the case-folding regexp on every query.
+func mayHoldDropStage(query string) bool {
+	for s := query; ; {
+		i := strings.IndexByte(s, '|')
+		if i < 0 {
+			return false
+		}
+		s = s[i+1:]
+		j := 0
+		for j < len(s) && (s[j] == ' ' || s[j] == '\t' || s[j] == '\n' || s[j] == '\f' || s[j] == '\r') {
+			j++
+		}
+		if len(s)-j >= 4 && s[j]|0x20 == 'd' && s[j+1]|0x20 == 'r' && s[j+2]|0x20 == 'o' && s[j+3]|0x20 == 'p' {
+			return true
+		}
+	}
 }
 
 // levelFieldNames is Loki's default log_level_fields list, in priority order.

@@ -55,6 +55,13 @@ why: |
   name alone (it passes through to the backend), an unclosed selector after
   a binary operator, and dotted names (the proxy's own, `DottedNameError` for
   the Loki profile); see docs/logql-parser.md.
+
+  A minus apart from a number that starts with a 0 and a letter or `_`
+  (`A < - 0x1F`, `- 0X0`, `- 0o7`, `- 0e1`, `- 0_1`) is the negated number to
+  Loki, and written together (`-0X0`) it is no query Loki accepts (recorded
+  in the same grid, 440 rows of a minus written together and apart). The
+  query's printed form keeps the minus apart there, so it reads back to the
+  same tree (TestLabelFilterNumberLiteralsPrintReparse, FuzzPrintReparse).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -78,7 +85,7 @@ gap:
   area: 'internal/logql label_filter_literal.go (scanNumberLiteral), label_filter_expr.go (lfParser.next, lexWord, parseFilter), scanner.go (scanLiteral, lexErrs), parser.go (parseLabelFilterStage), semantic.go'
   loki: 'the lexer of the label filter grammar (Go text/scanner numbers, then duration and bytes), recorded with the Loki oracle'
   proxy: 'one literal scanner and a lexer for the filter and the query that follow the same rules, with Loki''s error messages and columns'
-  planned_test: 'TestCompat_LabelFilterNumberLiteralsLikeLoki (test/e2e-compat, group core); TestLabelFilterNumberLiteralsMatchLoki (internal/logql)'
+  planned_test: 'TestCompat_LabelFilterNumberLiteralsLikeLoki (test/e2e-compat, group core); TestLabelFilterNumberLiteralsMatchLoki, TestLabelFilterNumberLiteralsPrintReparse, FuzzPrintReparse (internal/logql)'
   fixed_by: '#1248'
   visual: none
   visual_reason: 'a rejected query renders no panel; proven by TestCompat_LabelFilterNumberLiteralsLikeLoki against Loki and the 53,000-query oracle grid'
