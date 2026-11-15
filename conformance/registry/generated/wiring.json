@@ -5522,7 +5522,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 650,
+  "tests_with_markers": 651,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
