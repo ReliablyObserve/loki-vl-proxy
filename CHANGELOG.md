@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A label filter compared with a negative number that starts with a 0 and a letter or `_` (`| A < - 0x1F`,
   `- 0X0`, `- 0o7`) now prints with the minus apart from the number, so the printed query reads back as the same
   query. Written together (`-0X0`), Loki rejects it. What the proxy answers and sends to VictoriaLogs does not change.
+- A range aggregation over a `| keep` that lists only a blank Loki reads as a label name, such as a vertical tab, a
+  form feed or U+00A0 (`count_over_time({app="api"} | keep\v [1m])`), now answers one `{}` series holding every
+  stream's samples, as Loki does. It answered `400` on `/loki/api/v1/query` and no series on
+  `/loki/api/v1/query_range`. A `| keep` or `| drop` written so now prints as `| keep \v` instead of `| keep `, which
+  no parser reads. Loki accepts such a blank alone and rejects it beside another name (`| keep\v\v`, `| keep\va`);
+  the proxy already answered those as Loki does.
 
 ## [2.260.1] - 2026-11-14
 

@@ -24,6 +24,7 @@
   "q-3d89185bb518": "semantics/translator-writes-signed-number-with-blank",
   "q-411967b07b89": "semantics/translator-writes-signed-number-with-blank",
   "q-416ed374da85": "semantics/pattern-capture-before-bracket-text",
+  "q-419857b34480": "semantics/keep-drop-blank-name-prints-back",
   "q-425e2ec0ee3c": "semantics/translator-writes-signed-number-with-blank",
   "q-43552737412c": "semantics/translator-writes-signed-number-with-blank",
   "q-448755931798": "semantics/translator-writes-signed-number-with-blank",
