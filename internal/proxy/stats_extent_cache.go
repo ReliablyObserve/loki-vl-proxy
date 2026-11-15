@@ -135,6 +135,9 @@ func (p *Proxy) statsExtentPost(ctx context.Context, path string, params url.Val
 // VictoriaLogs calls for the missing ones, and stores what it read.
 func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, lastStored int64) (*http.Response, string, error) {
 	fetchCtx := context.WithValue(ctx, statsExtentFetchKey{}, true)
+	// A read of these buckets that just finished may still be being stored:
+	// its buckets are the ones this lookup would read again.
+	p.statsExtentPending.wait(ctx, req.key)
 	chunks := p.loadStatsExtentChunks(ctx, req, lastStored)
 	var covered [][2]int64
 	for _, c := range chunks {
@@ -217,7 +220,11 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 	}
 	// Kept off the request path: re-encoding a split is the costliest part
 	// of a partial answer.
-	p.storeOffRequestPath(func() { p.storeStatsExtentChunks(req, lastStored, chunks, fragments) })
+	stored := p.statsExtentPending.begin(req.key)
+	p.storeOffRequestPath(func() {
+		defer stored()
+		p.storeStatsExtentChunks(req, lastStored, chunks, fragments)
+	})
 	outcome := "partial"
 	if len(fragments) == 0 {
 		outcome = "hit"
@@ -255,8 +262,14 @@ func (p *Proxy) statsExtentMiss(ctx context.Context, req *statsExtentRequest, la
 	if resp.StatusCode != http.StatusOK {
 		return resp, "error", nil
 	}
-	resp.Body = &statsExtentTee{ReadCloser: resp.Body, limit: limit, done: func(body []byte) {
-		p.storeStatsExtentAsync(func() {
+	// Registered as soon as the answer is here, before the caller reads it:
+	// a request that looks these buckets up while the caller parses the
+	// answer, or once it has freed its slot, waits for the store instead of
+	// reading them again. An answer the caller does not read whole is not
+	// stored, and its close ends the registration.
+	stored := p.statsExtentPending.begin(req.key)
+	resp.Body = &statsExtentTee{ReadCloser: resp.Body, limit: limit, abandoned: stored, done: func(body []byte) {
+		p.storeStatsExtentAsync(stored, func() {
 			outcome := "unreadable"
 			if f, ok := parseStatsExtentFragment(body, req, req.first, req.last); ok {
 				p.storeStatsExtentChunks(req, lastStored, chunks, []*statsExtentFragment{f})
@@ -295,6 +308,9 @@ type statsExtentTee struct {
 	over, eof bool
 	closed    bool
 	done      func([]byte)
+	// abandoned, when set, runs on the first close that does not hand the
+	// copy to done.
+	abandoned func()
 }
 
 func (t *statsExtentTee) Read(b []byte) (int, error) {
@@ -319,6 +335,8 @@ func (t *statsExtentTee) Close() error {
 		t.closed = true
 		if t.eof && !t.over {
 			t.done(t.buf.Bytes())
+		} else if t.abandoned != nil {
+			t.abandoned()
 		}
 	}
 	return err
@@ -328,17 +346,86 @@ func (t *statsExtentTee) Close() error {
 // answer that finds every slot busy is not kept.
 const statsExtentStoreSlots = 4
 
-// storeStatsExtentAsync runs store in the background when a slot is free.
-// Shutdown waits for the running stores.
-func (p *Proxy) storeStatsExtentAsync(store func()) {
+// storeStatsExtentAsync runs store in the background when a slot is free,
+// and calls stored once it is done or skipped. Shutdown waits for the running
+// stores.
+func (p *Proxy) storeStatsExtentAsync(stored func(), store func()) {
 	if !p.statsExtentStores.start() {
+		stored()
 		p.observeInternalOperation(context.Background(), "stats_extent_cache", "store_skipped", 0)
 		return
 	}
 	go func() {
 		defer p.statsExtentStores.done()
+		defer stored()
 		store()
 	}()
+}
+
+// statsExtentPendingWait bounds how long a lookup waits for a store of its
+// extent key in progress before it reads VictoriaLogs instead.
+const statsExtentPendingWait = 2 * time.Second
+
+// statsExtentPendingStores tracks the extent stores in progress per extent
+// key. A stats read is answered to its callers before its buckets are stored
+// (off the request path), and the stats_query_range slot of a caller is free
+// once it has read the answer: a request that takes the slot next, for the
+// same buckets, would find nothing stored yet and read them from
+// VictoriaLogs again. Instead its lookup waits until the stores of its key
+// finish (bounded by statsExtentPendingWait and its context).
+type statsExtentPendingStores struct {
+	mu sync.Mutex
+	m  map[string]*statsExtentPendingStore
+}
+
+type statsExtentPendingStore struct {
+	n    int
+	done chan struct{}
+}
+
+// begin records a store of key in progress; the returned func ends it and
+// may be called more than once.
+func (s *statsExtentPendingStores) begin(key string) func() {
+	s.mu.Lock()
+	if s.m == nil {
+		s.m = map[string]*statsExtentPendingStore{}
+	}
+	ps := s.m[key]
+	if ps == nil {
+		ps = &statsExtentPendingStore{done: make(chan struct{})}
+		s.m[key] = ps
+	}
+	ps.n++
+	s.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if ps.n--; ps.n == 0 {
+				delete(s.m, key)
+				close(ps.done)
+			}
+		})
+	}
+}
+
+// wait returns once no store of key is in progress, the wait bound passed or
+// ctx ended.
+func (s *statsExtentPendingStores) wait(ctx context.Context, key string) {
+	s.mu.Lock()
+	ps := s.m[key]
+	s.mu.Unlock()
+	if ps == nil {
+		return
+	}
+	timer := time.NewTimer(statsExtentPendingWait)
+	defer timer.Stop()
+	select {
+	case <-ps.done:
+	case <-timer.C:
+	case <-ctx.Done():
+	}
 }
 
 // statsExtentStoreGroup bounds and tracks the stores running off the request

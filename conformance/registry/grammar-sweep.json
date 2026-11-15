@@ -11,14 +11,14 @@
     "accepted, translation fails": 32,
     "error text differs": 124,
     "error text differs, rejected at translation": 12,
-    "proxy accepts, Loki rejects": 48,
-    "proxy rejects, Loki accepts": 18,
+    "proxy accepts, Loki rejects": 32,
+    "proxy rejects, Loki accepts": 10,
     "tree fact differs: binary operation": 17,
     "tree fact differs: has a log pipeline": 3,
     "tree fact differs: offsets": 4,
     "tree fact differs: outermost operation": 4
   },
-  "logsql_texts_checked": 56422,
+  "logsql_texts_checked": 56368,
   "logsql_texts_unrecorded": 0,
   "victorialogs_rejections_for_queries_loki_rejects": 0,
   "case_rules": [
@@ -315,7 +315,7 @@
         {
           "query": "{a=\"\\x41\"} | a!=ip(\"10.0.0.0/8\") | json a != \"x\" != \"y\"",
           "loki": "accepted",
-          "proxy": "LogsQL a:=\"A\" (a:* -((a:value_type(ipv4) a:ipv4_range(10.0.0.0, 10.255.255.255)) OR (-a:value_type(ipv4) a:~\"10\\\\.\" a:~\"(?:(?:(?:[^0-9.:A-Za-z]|^|[A-Za-z])|(?:[^0-9:A-Za-z]|^|[G-Zg-z]):|(?:[^0-9.A-Za-..."
+          "proxy": "LogsQL a:=\"A\" (a:* -((a:value_type(ipv4) a:ipv4_range(10.0.0.0, 10.255.255.255)) OR (-a:value_type(ipv4) a:~\"10\\\\.\" (a:~\"(?:[^0-9.:A-Fa-z]|^|[g-z])10\\\\.(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\..."
         }
       ]
     },
@@ -353,7 +353,7 @@
         {
           "query": "{a=\"\\x41\"} | a!=ip(\"10.0.0.0/8\") | json a != \"x\" != \"y\"",
           "loki": "accepted",
-          "proxy": "LogsQL a:=\"A\" (a:* -((a:value_type(ipv4) a:ipv4_range(10.0.0.0, 10.255.255.255)) OR (-a:value_type(ipv4) a:~\"10\\\\.\" a:~\"(?:(?:(?:[^0-9.:A-Za-z]|^|[A-Za-z])|(?:[^0-9:A-Za-z]|^|[G-Zg-z]):|(?:[^0-9.A-Za-..."
+          "proxy": "LogsQL a:=\"A\" (a:* -((a:value_type(ipv4) a:ipv4_range(10.0.0.0, 10.255.255.255)) OR (-a:value_type(ipv4) a:~\"10\\\\.\" (a:~\"(?:[^0-9.:A-Fa-z]|^|[g-z])10\\\\.(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\..."
         }
       ]
     },
@@ -1759,44 +1759,6 @@
         }
       ]
     },
-    "proxy accepts, Loki rejects | syntax error at IDENTIFIER | spacing separator \" # c\\n\"": {
-      "count": 8,
-      "case": "semantics/comment-between-function-and-parenthesis-accepted",
-      "kind": "proxy accepts, Loki rejects",
-      "key": "syntax error at IDENTIFIER",
-      "element": "spacing separator \" # c\\n\"",
-      "examples": [
-        {
-          "query": "sum # c\n(rate({a=\"b\"}[5m])) by (a)",
-          "loki": "parse error at line 1, col 1: syntax error: unexpected IDENTIFIER",
-          "proxy": "accepted"
-        },
-        {
-          "query": "sum # c\nby (a) (rate({a=\"b\"}[5m]))",
-          "loki": "parse error at line 1, col 1: syntax error: unexpected IDENTIFIER",
-          "proxy": "accepted"
-        }
-      ]
-    },
-    "proxy accepts, Loki rejects | syntax error at IDENTIFIER | spacing separator \"#c\\n\"": {
-      "count": 8,
-      "case": "semantics/comment-between-function-and-parenthesis-accepted",
-      "kind": "proxy accepts, Loki rejects",
-      "key": "syntax error at IDENTIFIER",
-      "element": "spacing separator \"#c\\n\"",
-      "examples": [
-        {
-          "query": "sum by#c\n(a) (rate({a=\"b\"}[5m]))",
-          "loki": "parse error at line 1, col 1: syntax error: unexpected IDENTIFIER",
-          "proxy": "accepted"
-        },
-        {
-          "query": "sum#c\n(rate({a=\"b\"}[5m])) by (a)",
-          "loki": "parse error at line 1, col 1: syntax error: unexpected IDENTIFIER",
-          "proxy": "accepted"
-        }
-      ]
-    },
     "proxy accepts, Loki rejects | syntax error at ip | log stage != ip(\"10.0.0.0/8\")": {
       "count": 23,
       "case": "semantics/drop-keep-matcher-ip-value-accepted",
@@ -1813,44 +1775,6 @@
           "query": "{a=~\".+\"} | a\u003e.5 | keep a != ip(\"10.0.0.0/8\")",
           "loki": "parse error at line 1, col 30: syntax error: unexpected ip, expecting STRING",
           "proxy": "accepted"
-        }
-      ]
-    },
-    "proxy rejects, Loki accepts | not a valid duration string: \"S\" | rangeagg range 0": {
-      "count": 3,
-      "case": "semantics/range-duration-grammar-wider-than-loki",
-      "kind": "proxy rejects, Loki accepts",
-      "key": "not a valid duration string: \"S\"",
-      "element": "rangeagg range 0",
-      "examples": [
-        {
-          "query": "rate({a=\"b\"}[0])",
-          "loki": "accepted",
-          "proxy": "parse error at line 0, col 13: not a valid duration string: \"0\""
-        },
-        {
-          "query": "rate({a=\"b\"}[0] offset 5m)",
-          "loki": "accepted",
-          "proxy": "parse error at line 0, col 13: not a valid duration string: \"0\""
-        }
-      ]
-    },
-    "proxy rejects, Loki accepts | not a valid duration string: \"S\" | rangeagg unwrap range 0": {
-      "count": 5,
-      "case": "semantics/range-duration-grammar-wider-than-loki",
-      "kind": "proxy rejects, Loki accepts",
-      "key": "not a valid duration string: \"S\"",
-      "element": "rangeagg unwrap range 0",
-      "examples": [
-        {
-          "query": "rate_counter({a=\"b\"} | unwrap c[0])",
-          "loki": "accepted",
-          "proxy": "parse error at line 0, col 32: not a valid duration string: \"0\""
-        },
-        {
-          "query": "rate_counter({a=\"b\"} | json | unwrap c[0])",
-          "loki": "accepted",
-          "proxy": "parse error at line 0, col 39: not a valid duration string: \"0\""
         }
       ]
     },

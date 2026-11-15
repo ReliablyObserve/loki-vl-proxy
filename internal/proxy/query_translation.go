@@ -48,6 +48,9 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		ctx = withExecutionLimits(ctx, p.execLimits)
 		reqWithTelemetry := r.WithContext(ctx)
 		sc := &statusCapture{ResponseWriter: w, code: 200}
+		if p.debugVLCallsHeader {
+			sc.beforeHeader = rt.setVLCallsHeaders
+		}
 		next.ServeHTTP(sc, reqWithTelemetry)
 
 		elapsed := time.Since(start)
@@ -387,10 +390,19 @@ func (p *Proxy) translateQuery(logql string) (string, error) {
 // translateBinOpSide translates one side of a binary expression into its physical operator. A scalar literal
 // (e.g. "100") is read as it is written, without translation: the translator cannot handle bare numeric literals.
 func (p *Proxy) translateBinOpSide(ctx context.Context, expr logqlpkg.Expr) (physical.Op, error) {
+	return p.translateBinOpSideText(ctx, expr, "")
+}
+
+// translateBinOpSideText is translateBinOpSide of an operand whose printed text is already in hand (text, or empty
+// to print it here).
+func (p *Proxy) translateBinOpSideText(ctx context.Context, expr logqlpkg.Expr, text string) (physical.Op, error) {
 	if lit, ok := expr.(*logqlpkg.LiteralExpr); ok {
 		return binaryOperand(lit.String())
 	}
-	logsql, err := p.translateQueryWithContext(ctx, expr.String())
+	if text == "" {
+		text = expr.String()
+	}
+	logsql, err := p.translateQueryWithContext(ctx, text)
 	if err != nil {
 		return nil, err
 	}
@@ -421,6 +433,12 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 	cacheKey := normalized
 	if keepLine {
 		cacheKey = "\x00keep-line\x00" + normalized
+	}
+	baseIdentity := streamIdentityOnly(ctx)
+	if baseIdentity {
+		// A window the dynamic identity's evaluators do not read (dynamicIdentityWindows): the string translator's
+		// text, kept apart from the lowering's.
+		cacheKey = "\x00stream-identity\x00" + cacheKey
 	}
 	streamLabels := p.plainStreamLabelNames(ctx, normalized)
 	if len(streamLabels) > 0 {
@@ -459,7 +477,13 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 			if lowered, ok := p.lowerLogSelect(ctx, canon, prof); ok {
 				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
 			}
-			if lowered, ok := p.lowerKeepIdentity(ctx, canon, prof); ok {
+			// A parser's series identity first: lowerMetric writes the translator's series for what this does not serve.
+			if !baseIdentity {
+				if lowered, ok := p.lowerDynamicIdentity(ctx, canon, prof); ok {
+					return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
+				}
+			}
+			if lowered, ok := p.lowerMetric(ctx, canon, prof); ok {
 				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
 			}
 		}

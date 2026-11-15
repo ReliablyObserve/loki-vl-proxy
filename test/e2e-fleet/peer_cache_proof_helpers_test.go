@@ -94,6 +94,24 @@ func containerState(t *testing.T, name string) (string, int) {
 	return fields[0], code
 }
 
+// waitContainerStatus polls a fleet service's container until docker reports status (exited, running).
+// service is the compose service name; docker inspect needs the container name.
+func waitContainerStatus(t *testing.T, service, status string) {
+	t.Helper()
+	name := envOr("FLEET_NAME_PREFIX", "fleet") + "-" + service
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		got, code := containerState(t, name)
+		if got == status {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s is %s (exit %d), not %s, after 30s", name, got, code, status)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
 // waitProxyReady polls /ready until the proxy answers 200.
 func waitProxyReady(t *testing.T, addr string) {
 	t.Helper()

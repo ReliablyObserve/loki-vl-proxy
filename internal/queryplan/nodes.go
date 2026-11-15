@@ -57,13 +57,26 @@ type Plan struct {
 	Sem PlanSem
 	// Key is Root's key followed by the encoded Inputs.
 	Key []byte
-	// mem holds the first node of each common kind, so a plan of the usual
-	// shape (aggregation over a range over a selector) is one allocation.
-	mem struct {
-		sel LogSelect
-		rng RangeAgg
-		vec VectorAgg
-	}
+	// ps holds the semantics of the first pipeline Resolve meets and rule the
+	// first rule it records, so that resolving the usual plan allocates
+	// nothing.
+	ps   PipelineSem
+	rule [1]RuleID
+}
+
+// logPlan and metricPlan are a plan with room for the first node of each
+// common kind, so a plan of the usual shape (a log query, or an aggregation
+// over a range over a selector) is one allocation, sized for its kind.
+type logPlan struct {
+	Plan
+	sel LogSelect
+}
+
+type metricPlan struct {
+	Plan
+	sel LogSelect
+	rng RangeAgg
+	vec VectorAgg
 }
 
 // AppendKey appends Key to dst and returns it. It allocates only when dst

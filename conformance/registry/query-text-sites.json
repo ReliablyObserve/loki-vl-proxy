@@ -4,9 +4,9 @@
     "deferred_raw": 9,
     "lowering_marker_reads": 11,
     "parse_calls": 57,
-    "string_reads": 51,
+    "string_reads": 49,
     "text_built": 214,
-    "translator_string_ops": 680
+    "translator_string_ops": 678
   },
   "files": {
     "deferred_raw": {
@@ -62,9 +62,8 @@
       "internal/proxy/metadata_inventory.go": 2,
       "internal/proxy/metric_agg.go": 8,
       "internal/proxy/metric_binary.go": 2,
-      "internal/proxy/ordered_json_metric.go": 3,
+      "internal/proxy/ordered_json_metric.go": 2,
       "internal/proxy/plain_stream_labels.go": 2,
-      "internal/proxy/proxy.go": 1,
       "internal/proxy/query_translation.go": 5,
       "internal/proxy/range_metric_compat.go": 8,
       "internal/proxy/stats_extent_cache.go": 1,
@@ -101,7 +100,7 @@
       "internal/translate/detected_level.go": 38,
       "internal/translate/extract_stages.go": 2,
       "internal/translate/ip_label_filter.go": 9,
-      "internal/translate/ip_line_v4.go": 9,
+      "internal/translate/ip_line_v4.go": 7,
       "internal/translate/label_filter.go": 5,
       "internal/translate/label_filter_parsed.go": 6,
       "internal/translate/label_filter_regexp.go": 4,

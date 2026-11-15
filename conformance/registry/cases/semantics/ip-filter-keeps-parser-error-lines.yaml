@@ -24,11 +24,17 @@ why: |
   proxy treats ip() like the string filter: its LogsQL (and the metric plan's
   row match) drops a line without the field. Only streams with lines their
   parser rejects show it.
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: '{app="ip-json-parser-error"} | json | ip=ip("10.2.0.0/16")'
+      - query: '{service_name="api-gateway"} | json | ip=ip("10.2.0.0/16")'
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: '{service_name="api-gateway"} | json | ip=ip("10.2.0.0/16")'
+    query: '{app="ip-json-parser-error"} | json | ip=ip("10.2.0.0/16")'
     start: 'now-1h'
     end: 'now'
     limit: '100'

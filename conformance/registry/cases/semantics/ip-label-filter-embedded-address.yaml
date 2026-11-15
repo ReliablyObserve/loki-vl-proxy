@@ -33,7 +33,9 @@ why: |
   rows, the stats pushdown and the log query agree. Loki's answers are recorded
   with the Loki oracle (process) over 67,584 pattern x value cases (both
   families, every boundary around the address, leading zeros, the other
-  family) and every IPv4 case matches, for = and !=.
+  family) and every IPv4 case matches, for = and !=. IPv4 matches Loki on the
+  recorded grids, including the walk's prefixes
+  (semantics/ip-filter-ipv4-after-hex-colon).
 
   Still open for IPv6: no regexp reads an IPv6 value as Loki's scan does (the
   same limit as the line filter, semantics/ip-filter-precision), so an IPv6
@@ -46,11 +48,17 @@ why: |
   (`fe80::1%eth0`), which Loki's scan reads without the zone. An exact IPv6
   regexp costs 7 to 20 times what the whole-address forms cost on VictoriaLogs
   (semantics/ip-filter-precision), so it stays open.
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: '{app="ip-label-v6"} | logfmt | addr=ip("2001:db8::/32")'
+      - query: '{service_name="nginx"} | logfmt | addr=ip("10.0.0.0/8")'
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: '{service_name="nginx"} | logfmt | addr=ip("10.0.0.0/8")'
+    query: '{app="ip-label-v6"} | logfmt | addr=ip("2001:db8::/32")'
     start: 'now-1h'
     end: 'now'
     limit: '100'
@@ -61,8 +69,9 @@ compare:
   mode: observed
   fields: [status, streams.values]
   expect: |
-    Loki's lines, including the ones whose addr holds a matching address
-    inside other text.
+    Loki's lines, including the ones whose addr holds an IPv6 address inside
+    other text ("[2001:db8::1]:443", "client 2001:db8::1"). The IPv4 half is
+    fixed and has its own e2e test (TestCompat_IPLabelFilterEmbeddedAddressLikeLoki).
 gap:
   status: open
   impact: edge

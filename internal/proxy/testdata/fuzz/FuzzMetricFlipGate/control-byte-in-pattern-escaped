@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Count_over_time({A=\"0\"}|pAttern \"\x1d<A>\"[0y])")

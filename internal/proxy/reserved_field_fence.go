@@ -1,7 +1,5 @@
 package proxy
 
-import "strings"
-
 const reservedFieldLabelResponseVersion = "@reserved-field-labels-v1:"
 
 // reservedFieldLabelResponseKeyVersion fences the replies cached before the query plan filtered a label called
@@ -12,28 +10,13 @@ const reservedFieldLabelResponseVersion = "@reserved-field-labels-v1:"
 // it names, outside quoted text, _time, _stream or _stream_id in any case, or _msg, followed by a matcher or a
 // comparison (=, !, >, <): a stream selector matcher or a label filter. It is scanned once without allocating.
 func reservedFieldLabelResponseKeyVersion(query string) string {
-	for i := 0; i < len(query); {
-		c := query[i]
-		switch {
-		case c == '"' || c == '`':
-			i = skipQuoted(query, i) + 1
-		case c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z':
-			j := i + 1
-			for j < len(query) && (query[j] == '_' || query[j] >= 'a' && query[j] <= 'z' || query[j] >= 'A' && query[j] <= 'Z' || query[j] >= '0' && query[j] <= '9') {
-				j++
-			}
-			if reservedLabelWord(query[i:j]) && comparisonFollows(query, j) {
-				return reservedFieldLabelResponseVersion
-			}
-			i = j
-		default:
-			i++
-		}
+	if scanFenceWords(query).reservedLabel {
+		return reservedFieldLabelResponseVersion
 	}
 	return ""
 }
 
 // reservedLabelWord reports _time, _stream or _stream_id in any case, or _msg.
 func reservedLabelWord(w string) bool {
-	return strings.EqualFold(w, "_time") || strings.EqualFold(w, "_stream") || strings.EqualFold(w, "_stream_id") || w == "_msg"
+	return eqFoldWord(w, "_time") || eqFoldWord(w, "_stream") || eqFoldWord(w, "_stream_id") || w == "_msg"
 }

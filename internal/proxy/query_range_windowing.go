@@ -186,10 +186,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 		queryLimit = strconv.Itoa(p.maxLines)
 	}
 	queryLimit = sanitizeLimit(queryLimit, p.requestQueryLimits(r.Context()).MaxEntriesLimitPerQuery)
-	limitValue, err := strconv.Atoi(queryLimit)
-	if err != nil || limitValue <= 0 {
-		limitValue = 1000
-	}
+	limitValue, _ := strconv.Atoi(queryLimit)
 
 	categorizedLabels := requestWantsCategorizedLabels(r)
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
@@ -369,7 +366,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	if strings.Contains(originalQuery, "decolorize") {
 		decolorizeStreams(streams)
 	}
-	streams, err = applyQueryLineFormat(r.Context(), streams, originalQuery)
+	streams, err := applyQueryLineFormat(r.Context(), streams, originalQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		return true
@@ -1206,6 +1203,13 @@ func parseLokiTimeRangeToUnixNano(startRaw, endRaw string) (int64, int64, bool) 
 }
 
 func parseLokiTimeToUnixNano(raw string) (int64, bool) {
+	// Digits only, up to the 19 of a nanosecond epoch: the parse below reads such a string as an integer, so
+	// reading it here in one pass answers the same.
+	if len(raw) <= 19 {
+		if n, ok := parseDigitsInt64(raw); ok {
+			return integerNanosIfHeld(n)
+		}
+	}
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return 0, false
@@ -1245,6 +1249,48 @@ func parseLokiTimeToUnixNano(raw string) (int64, bool) {
 		return 0, false
 	}
 	return floatNanosIfHeld(n)
+}
+
+// parseDigitsInt64 reads s when it is 1 to 19 ASCII digits and cannot overflow int64 (a 19-digit string starts with
+// 0 to 8), eight digits at a time. Every other string, a sign, a space, a letter, a 20-digit or 9-led 19-digit
+// number, is left to the general parse.
+func parseDigitsInt64(s string) (int64, bool) {
+	n := len(s)
+	if n == 0 || n > 19 || (n == 19 && s[0] > '8') {
+		return 0, false
+	}
+	var v uint64
+	i := 0
+	for ; n-i >= 8; i += 8 {
+		w, ok := eightDigits(s[i : i+8])
+		if !ok {
+			return 0, false
+		}
+		v = v*1e8 + w
+	}
+	for ; i < n; i++ {
+		d := s[i] - '0'
+		if d > 9 {
+			return 0, false
+		}
+		v = v*10 + uint64(d)
+	}
+	return int64(v), true
+}
+
+// eightDigits is the value of eight ASCII digits, or false when one is not a digit (SWAR: all eight bytes are
+// checked and converted with three multiplies).
+func eightDigits(s string) (uint64, bool) {
+	_ = s[7]
+	w := uint64(s[0]) | uint64(s[1])<<8 | uint64(s[2])<<16 | uint64(s[3])<<24 |
+		uint64(s[4])<<32 | uint64(s[5])<<40 | uint64(s[6])<<48 | uint64(s[7])<<56
+	if (w&0xF0F0F0F0F0F0F0F0)|(((w+0x0606060606060606)&0xF0F0F0F0F0F0F0F0)>>4) != 0x3333333333333333 {
+		return 0, false
+	}
+	w = (w & 0x0F0F0F0F0F0F0F0F) * 2561 >> 8
+	w = (w & 0x00FF00FF00FF00FF) * 6553601 >> 16
+	w = (w & 0x0000FFFF0000FFFF) * 42949672960001 >> 32
+	return w, true
 }
 
 // unixNanoIfHeld is t as Unix nanoseconds, or false for a time before 1677-09-21

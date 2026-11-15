@@ -1,0 +1,253 @@
+{
+ "answers": [
+  {
+   "case": "quality/query-range-settled-steps",
+   "loki_series": [
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "error",
+     "env": "production",
+     "level": "error",
+     "namespace": "prod",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "info",
+     "env": "production",
+     "level": "info",
+     "namespace": "prod",
+     "service_name": "payment-service"
+    }
+   ],
+   "query": "sum without (pod) (max_over_time({app=\"payment-service\"} | logfmt amount | unwrap amount [5m]))",
+   "step": "10"
+  },
+  {
+   "case": "semantics/topk-bottomk-without-strips-label",
+   "loki_series": [
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "error",
+     "env": "production",
+     "level": "error",
+     "namespace": "prod",
+     "pod": "payment-service-391a2-9208",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "error",
+     "env": "production",
+     "level": "error",
+     "namespace": "prod",
+     "pod": "payment-service-74d6f-5f61",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "error",
+     "env": "production",
+     "level": "error",
+     "namespace": "prod",
+     "pod": "payment-service-7a6b2-32de",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "error",
+     "env": "production",
+     "level": "error",
+     "namespace": "prod",
+     "pod": "payment-service-8ad55-20b1",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "error",
+     "env": "production",
+     "level": "error",
+     "namespace": "prod",
+     "pod": "payment-service-91190-8f15",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "error",
+     "env": "production",
+     "level": "error",
+     "namespace": "prod",
+     "pod": "payment-service-c321d-af1e",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "error",
+     "env": "production",
+     "level": "error",
+     "namespace": "prod",
+     "pod": "payment-service-e37e9-9ee3",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "error",
+     "env": "production",
+     "level": "error",
+     "namespace": "prod",
+     "pod": "payment-service-e5a33-f09c",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "info",
+     "env": "production",
+     "level": "info",
+     "namespace": "prod",
+     "pod": "payment-service-006f1-484e",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "info",
+     "env": "production",
+     "level": "info",
+     "namespace": "prod",
+     "pod": "payment-service-9ba60-e8d8",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "info",
+     "env": "production",
+     "level": "info",
+     "namespace": "prod",
+     "pod": "payment-service-9c0b7-f856",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "info",
+     "env": "production",
+     "level": "info",
+     "namespace": "prod",
+     "pod": "payment-service-a855d-0125",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "info",
+     "env": "production",
+     "level": "info",
+     "namespace": "prod",
+     "pod": "payment-service-ac43d-5f80",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "info",
+     "env": "production",
+     "level": "info",
+     "namespace": "prod",
+     "pod": "payment-service-af165-4721",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "info",
+     "env": "production",
+     "level": "info",
+     "namespace": "prod",
+     "pod": "payment-service-d3afd-b65a",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "info",
+     "env": "production",
+     "level": "info",
+     "namespace": "prod",
+     "pod": "payment-service-d4f9b-06cd",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "info",
+     "env": "production",
+     "level": "info",
+     "namespace": "prod",
+     "pod": "payment-service-eedbc-57ac",
+     "service_name": "payment-service"
+    }
+   ],
+   "query": "topk without (pod) (1, rate({service_name=\"payment-service\"} | logfmt amount | unwrap amount [5m]))",
+   "step": "60"
+  },
+  {
+   "case": "semantics/unwrap-sum-without-collapses",
+   "loki_series": [
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "error",
+     "env": "production",
+     "level": "error",
+     "namespace": "prod",
+     "service_name": "payment-service"
+    },
+    {
+     "app": "payment-service",
+     "cluster": "us-east-1",
+     "container": "payment",
+     "detected_level": "info",
+     "env": "production",
+     "level": "info",
+     "namespace": "prod",
+     "service_name": "payment-service"
+    }
+   ],
+   "query": "sum without (pod) (rate({service_name=\"payment-service\"} | logfmt amount | unwrap amount [5m]))",
+   "step": "60"
+  }
+ ],
+ "source": "Loki 3.7.7 answers recorded by the per-case verifier on the e2e stack (window end 1794681210000000000); metric label sets only"
+}

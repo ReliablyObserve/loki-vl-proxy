@@ -106,7 +106,7 @@ func TestOrderedJSONVectorResponseCacheFencesOldCopies(t *testing.T) {
 				if setup.addition {
 					query += " + 1"
 				}
-				params := url.Values{"query": {query}, "start": {strconv.FormatInt(from.UnixNano(), 10)}, "end": {strconv.FormatInt(to.UnixNano(), 10)}, "step": {"60"}}
+				params := url.Values{"query": {query}, "start": {strconv.FormatInt(from.UnixNano(), 10)}, "end": {strconv.FormatInt(to.UnixNano(), 10)}, "step": {"60"}, "limit": {"100"}}
 				if setup.mode == "query" {
 					from = to
 					params.Set("time", strconv.FormatInt(to.UnixNano(), 10))
@@ -314,6 +314,14 @@ func withHeader(headers map[string]string, name, value string) map[string]string
 	}
 	out[name] = value
 	return out
+}
+
+// traceVLCallOrigins counts p's VictoriaLogs calls per client request
+// (vlCallOrigins) from here on.
+func traceVLCallOrigins(p *Proxy) *vlCallOrigins {
+	origins := &vlCallOrigins{inner: p.client.Transport}
+	p.client.Transport = origins
+	return origins
 }
 
 // made is the calls made for the client request tagged origin.

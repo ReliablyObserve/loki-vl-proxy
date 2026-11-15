@@ -117,6 +117,9 @@ func curated(fsys fs.FS) ([]string, error) {
 		if err := yaml.Unmarshal(b, &doc); err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
+		if m, ok := doc.(map[string]any); ok && rejectionOnly(m) {
+			delete(m, "request")
+		}
 		var walk func(any)
 		walk = func(n any) {
 			switch v := n.(type) {
@@ -146,6 +149,33 @@ func curated(fsys fs.FS) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// rejectionFields are the compare fields that read a rejection: the status, and Loki's error text or errorType.
+var rejectionFields = map[string]bool{"status": true, "error_text": true, "error": true, "message": true, "errorType": true}
+
+// rejectionOnly reports whether a case compares nothing but a client error: its compare block says the answer is a
+// 4xx (`values.status`) and names an error facet (error_text, error, message or errorType) and no other field, so
+// no data facet. The request of such a case is a query Loki refuses, not a query that runs, and is not a corpus row
+// (a query the plan routes must run). A case is excluded only when it states the 4xx itself: cases that carry the
+// query of a rejection without saying so keep their row.
+func rejectionOnly(doc map[string]any) bool {
+	compare, _ := doc["compare"].(map[string]any)
+	values, _ := compare["values"].(map[string]any)
+	status, _ := values["status"].(int)
+	if status < 400 || status > 499 {
+		return false
+	}
+	fields, _ := compare["fields"].([]any)
+	hasError := false
+	for _, f := range fields {
+		name, _ := f.(string)
+		if !rejectionFields[name] {
+			return false
+		}
+		hasError = hasError || name != "status"
+	}
+	return hasError
 }
 
 // Queries is the curated rows and the capture sample, without duplicates: the curated rows first, in sorted order,

@@ -64,6 +64,54 @@ func TestCurated(t *testing.T) {
 	}
 }
 
+// A case that compares only a client error (values.status 4xx and an error facet, no data facet) carries a query
+// Loki refuses: its request is not a corpus row. Every other case keeps its row, and so does a query the case lists
+// outside its request.
+// conformance: architecture-syntax-package-layering
+func TestRejectionOnlyCasesLeaveOutTheirRequestQuery(t *testing.T) {
+	const query = `rate({app="x"}[5m]) + on 1`
+	for _, c := range []struct {
+		name    string
+		compare string
+		want    bool // the request's query is left out
+	}{
+		{"status 400, error text", "mode: observed\n  fields: [status, error_text]\n  values: {status: 400}", true},
+		{"status 400, errorType and error", "mode: structural\n  fields: [status, errorType, error]\n  values: {status: 400}", true},
+		{"status 499, message", "mode: observed\n  fields: [message]\n  values: {status: 499}", true},
+		{"no status stated", "mode: observed\n  fields: [status, error_text]", false},
+		{"status 200", "mode: observed\n  fields: [status, error_text]\n  values: {status: 200}", false},
+		{"status 500", "mode: observed\n  fields: [status, error_text]\n  values: {status: 500}", false},
+		{"status as text", "mode: observed\n  fields: [status, error_text]\n  values: {status: \"400\"}", false},
+		{"a data facet beside the error", "mode: observed\n  fields: [status, error_text, values]\n  values: {status: 400}", false},
+		{"status only", "mode: observed\n  fields: [status]\n  values: {status: 400}", false},
+		{"no fields", "mode: observed\n  values: {status: 400}", false},
+		{"no values block", "mode: status", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := tree(t)
+			write(t, root, RegistryCasesDir+"/semantics/reject.yaml", "id: reject\nrequest:\n  params:\n    query: '"+query+"'\ncompare:\n  "+c.compare+"\n")
+			got, err := Curated(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if has := slices.Contains(got, query); has == c.want {
+				t.Errorf("query in the corpus = %v, want %v", has, !c.want)
+			}
+		})
+	}
+	t.Run("a query outside the request stays", func(t *testing.T) {
+		root := tree(t)
+		write(t, root, RegistryCasesDir+"/semantics/reject.yaml", "id: reject\nrequest:\n  params:\n    query: '"+query+"'\ncorpus:\n  dimensions:\n    shapes:\n      - query: '{app=\"kept\"}'\ncompare:\n  mode: observed\n  fields: [status, error_text]\n  values: {status: 400}\n")
+		got, err := Curated(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if slices.Contains(got, query) || !slices.Contains(got, `{app="kept"}`) {
+			t.Errorf("Curated = %q, want the shape kept and the request query left out", got)
+		}
+	})
+}
+
 // The queries are the curated rows, then the sample's rows in file order, each once.
 // conformance: architecture-syntax-package-layering
 func TestQueries(t *testing.T) {

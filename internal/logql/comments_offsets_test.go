@@ -107,12 +107,21 @@ func TestStripComments(t *testing.T) {
 }
 
 // StripComments is idempotent, only removes text that starts at a `#`, and never changes what a query means: the
-// query is accepted exactly when the stripped one is, and both print the same tree.
+// query is accepted exactly when the stripped one is, and both print the same tree; a query it keeps for a comment
+// after a function's name is rejected.
 func FuzzStripComments(f *testing.F) {
 	for _, s := range []string{
 		`{a="x"} # c`, "{a=\"x\"} |= \"e\" # t\n| json", "# lead\n{a=\"x\"}", `{a="x"} |= "a#b"`,
 		"{a=\"x\"} |~ `a#b` # c", `{a="x"} | line_format "{{.a}}#{{.b}}"`, "{a=\"x\" # c\n}", `{a="x"} # "unterminated`,
 		"sum(rate({a=\"x\"}[5m])) # by (a)\n by (b)", `count_over_time({a="x"}[3s] offset -1s) # x`, "#\n#\n{a=\"x\"}#",
+		// a comment between a vector aggregation and its call or grouping is kept (Loki reads the name as a name)
+		"sum # c\n(rate({a=\"b\"}[5m])) by (a)", "sum by#c\n(a) (rate({a=\"b\"}[5m]))", "topk(2, SUM # c\nby (a) (rate({a=\"b\"}[5m])))",
+		"sum (rate({a=\"b\"}[5m])) by # c\n(a)", "rate # c\n({a=\"b\"}[5m])",
+		// and between any other function's name and its parenthesis
+		"vector#c\n(1)", "{a=\"b\"} |= ip # c\n(\"1.2.3.4\")", "{a=\"b\"} | x = ip#c\n(\"::1\")",
+		"label_replace # c\n(vector(1), \"d\", \"$1\", \"a\", \"(.*)\")",
+		"sum_over_time({a=\"b\"} | unwrap bytes # c\n(c) [5m])", "sum_over_time({a=\"b\"} | unwrap duration#c\n [5m])",
+		"sum_over_time({a=\"b\"} | unwrap c # c\n(d) [5m])", "rate # c\nby (a) ({a=\"b\"}[5m])",
 	} {
 		f.Add(s)
 	}
@@ -145,6 +154,11 @@ func FuzzStripComments(f *testing.F) {
 			// The bare wildcard is a text tolerance for some clients (validateLogQL), read on the text the
 			// handlers get, which the middleware strips first.
 			return
+		}
+		// A query whose comments are kept because one makes a function's name a name is one Loki rejects: the
+		// handlers then read it with its comments, which only the validation may see.
+		if s == q && commentKeptForName(q) && ValidateLogQL(q) == "" {
+			t.Fatalf("%q: comments kept for a function name, and the query is accepted", q)
 		}
 		e1, m1 := ValidateLogQLExpr(q)
 		e2, m2 := ValidateLogQLExpr(s)
@@ -212,4 +226,22 @@ func TestLabelFilterEndsAtAComment(t *testing.T) {
 			}
 		})
 	}
+}
+
+// commentKeptForName reports a query with a comment that StripComments keeps because it stands between a function's
+// name and its parenthesis or grouping.
+func commentKeptForName(q string) bool {
+	var spans [][2]int
+	s := &scanner{src: q, extra: &scanExtra{comments: &spans}}
+	for t := s.next(); t.Typ != TokEOF; t = s.next() {
+		if t.Typ == TokError {
+			return false
+		}
+	}
+	for _, sp := range spans {
+		if commentMakesName(q, sp[0]) {
+			return true
+		}
+	}
+	return false
 }
