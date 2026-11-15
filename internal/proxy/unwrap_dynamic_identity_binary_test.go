@@ -184,10 +184,10 @@ func binaryOperandStatsStub() http.Handler {
 	})
 }
 
-// A range request translates each operand of its binary operation with the mark the operand's own request gets, so the
-// operand's request reads that translation from the cache: an identity operand over a range longer than the step is
-// marked, one whose range is the step is not, a number and a request without the identity's words keep the request's
-// context.
+// A range request translates each operand of its binary operation with the mark the operand's own request gets, and
+// the text it printed to decide it, so the operand's request reads that translation from the cache: an identity
+// operand over a range longer than the step is marked, one whose range is the step is not, a number and a request
+// without the identity's words keep the request's context.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows
 func TestDynamicIdentityBinaryOperandContext(t *testing.T) {
@@ -212,12 +212,23 @@ func TestDynamicIdentityBinaryOperandContext(t *testing.T) {
 			t.Fatalf("%s: not a binary operation", tc.q)
 		}
 		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+url.Values{"query": {tc.q}, "step": {tc.step}}.Encode(), nil)
-		left, right := p.binaryOperandContexts(r, bin)
+		sides := [2]binaryOperandSide{}
+		sides[0], sides[1] = p.binaryOperandSides(r, bin)
+		left, right := sides[0].ctx, sides[1].ctx
 		if streamIdentityOnly(left) != tc.left || streamIdentityOnly(right) != tc.right {
 			t.Errorf("%s step %s: operands marked %v, %v; want %v, %v", tc.q, tc.step, streamIdentityOnly(left), streamIdentityOnly(right), tc.left, tc.right)
 		}
 		if !tc.left && left != r.Context() || !tc.right && right != r.Context() {
 			t.Errorf("%s step %s: an unmarked operand got a context of its own", tc.q, tc.step)
+		}
+		// A printed operand is the text the translation reads: the operand as it prints.
+		for i, operand := range []logqlpkg.Expr{bin.Left, bin.Right} {
+			if text := sides[i].text; text != "" && text != operand.String() {
+				t.Errorf("%s: operand %d printed as %q, want %q", tc.q, i, text, operand.String())
+			}
+			if _, lit := operand.(*logqlpkg.LiteralExpr); lit && sides[i].text != "" {
+				t.Errorf("%s: the number operand %d was printed", tc.q, i)
+			}
 		}
 	}
 }

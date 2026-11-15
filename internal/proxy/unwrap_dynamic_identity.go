@@ -139,22 +139,30 @@ func (p *Proxy) dynamicIdentityWindows(r *http.Request, query string) (out *http
 	return r.WithContext(context.WithValue(r.Context(), streamIdentityKey{}, true))
 }
 
-// binaryOperandContexts are the contexts a range request translates the operands of its binary operation with: the
-// mark each operand's own request gets (dynamicIdentityWindows), so the translation the operand's request reads is the
-// one this request has cached. A number is not marked, and a request whose query holds no dynamic identity's words
-// keeps its context for both after one text screen.
-func (p *Proxy) binaryOperandContexts(r *http.Request, binOp *logqlpkg.BinOpExpr) (left, right context.Context) {
+// binaryOperandSide is how a range request translates one operand of its binary operation: the context, with the
+// mark the operand's own request gets (dynamicIdentityWindows), and the operand's printed text when it was printed to
+// decide that mark (empty otherwise).
+type binaryOperandSide struct {
+	ctx  context.Context
+	text string
+}
+
+// binaryOperandSides are the sides of a range request's binary operation, so the translation each operand's own
+// request reads is the one this request has cached. A number is not marked, and a request whose query holds no
+// dynamic identity's words keeps its context for both after one text screen.
+func (p *Proxy) binaryOperandSides(r *http.Request, binOp *logqlpkg.BinOpExpr) (left, right binaryOperandSide) {
 	ctx := r.Context()
 	if !dynamicIdentityFenceScreen(dynamicQuery(r.FormValue("query"))) {
-		return ctx, ctx
+		return binaryOperandSide{ctx: ctx}, binaryOperandSide{ctx: ctx}
 	}
-	mark := func(operand logqlpkg.Expr) context.Context {
+	side := func(operand logqlpkg.Expr) binaryOperandSide {
 		if _, ok := operand.(*logqlpkg.LiteralExpr); ok {
-			return ctx
+			return binaryOperandSide{ctx: ctx}
 		}
-		return p.dynamicIdentityWindows(r, operand.String()).Context()
+		text := operand.String()
+		return binaryOperandSide{ctx: p.dynamicIdentityWindows(r, text).Context(), text: text}
 	}
-	return mark(binOp.Left), mark(binOp.Right)
+	return side(binOp.Left), side(binOp.Right)
 }
 
 // dynamicWindowRange is the range of a query whose function the window evaluator merges from step buckets (avg, max,

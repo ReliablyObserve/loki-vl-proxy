@@ -390,10 +390,19 @@ func (p *Proxy) translateQuery(logql string) (string, error) {
 // translateBinOpSide translates one side of a binary expression into its physical operator. A scalar literal
 // (e.g. "100") is read as it is written, without translation: the translator cannot handle bare numeric literals.
 func (p *Proxy) translateBinOpSide(ctx context.Context, expr logqlpkg.Expr) (physical.Op, error) {
+	return p.translateBinOpSideText(ctx, expr, "")
+}
+
+// translateBinOpSideText is translateBinOpSide of an operand whose printed text is already in hand (text, or empty
+// to print it here).
+func (p *Proxy) translateBinOpSideText(ctx context.Context, expr logqlpkg.Expr, text string) (physical.Op, error) {
 	if lit, ok := expr.(*logqlpkg.LiteralExpr); ok {
 		return binaryOperand(lit.String())
 	}
-	logsql, err := p.translateQueryWithContext(ctx, expr.String())
+	if text == "" {
+		text = expr.String()
+	}
+	logsql, err := p.translateQueryWithContext(ctx, text)
 	if err != nil {
 		return nil, err
 	}

@@ -2938,9 +2938,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if isBinary {
 		// Binary metric expression: sum(rate(...)) / sum(rate(...))
 		// translateBinOpSide handles scalar literals (e.g. * 100) without translation.
-		leftCtx, rightCtx := p.binaryOperandContexts(r, binOp)
-		leftLogsql, leftErr := p.translateBinOpSide(leftCtx, binOp.Left)
-		rightLogsql, rightErr := p.translateBinOpSide(rightCtx, binOp.Right)
+		left, right := p.binaryOperandSides(r, binOp)
+		leftLogsql, leftErr := p.translateBinOpSideText(left.ctx, binOp.Left, left.text)
+		rightLogsql, rightErr := p.translateBinOpSideText(right.ctx, binOp.Right, right.text)
 		if leftErr != nil {
 			p.writeErr(sc, r.Context(), queryRefusal(leftErr))
 		} else if rightErr != nil {
