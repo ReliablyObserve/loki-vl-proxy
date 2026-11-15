@@ -47,8 +47,11 @@ type flowCounters struct {
 	cacheDur                   time.Duration
 	cacheBytes                 int64
 	vlCalls                    int
-	vlDur                      time.Duration
-	vlBytes                    int64
+	// vlStarted counts the VictoriaLogs calls the request handed to the
+	// transport, counted as each starts (only with -debug-vl-calls-header).
+	vlStarted int
+	vlDur     time.Duration
+	vlBytes   int64
 	// vlRows counts the log rows read from VictoriaLogs raw query bodies, queueDur the time spent waiting for
 	// heavy-query admission, lokiCache the lookups and stores by Loki cache section (query_stats.go).
 	vlRows    int64

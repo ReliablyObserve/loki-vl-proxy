@@ -564,13 +564,14 @@ func TestKeepSeriesGrouping_JSONFoldKeepsSettledSteps(t *testing.T) {
 	}
 }
 
-// BenchmarkKeepSeriesGrouping runs the keep series grouping rewrite on a query it rewrites, one it leaves alone and
-// the fuzz input it rewrote into a query that did not parse.
+// BenchmarkKeepSeriesGrouping runs the keep series grouping rewrite on a query it rewrites, one it leaves alone, the
+// fuzz input it rewrote into a query that did not parse, and a keep that lists only a blank.
 func BenchmarkKeepSeriesGrouping(b *testing.B) {
 	for _, bc := range []struct{ name, query string }{
 		{"rewritten", `rate({app="x"} | keep a , b | a > - .5 or b < .5KB [1m])`},
 		{"no_keep", `sum by (app) (rate({app="x"} | json | a > .5 [1m]))`},
 		{"fuzz_input", `rate({A="x"}|keep  A, A |A, A | A .0000![0y])`},
+		{"blank_keep", "count_over_time({app=\"x\"} | json | keep\v [1m])"},
 	} {
 		b.Run(bc.name, func(b *testing.B) {
 			b.ReportAllocs()

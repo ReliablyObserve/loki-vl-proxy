@@ -1826,7 +1826,7 @@ func (p *parser) appendStageToken(b *strings.Builder) {
 	}
 	if b.Len() > 0 && raw != "" && isAlphanumeric(raw[0]) {
 		prev := b.String()[b.Len()-1]
-		if ((isAlphanumeric(prev) || prev == '.' || prev >= 0x80 || signedZero(prev, raw)) && !touches) || prev == '"' || prev == '`' {
+		if ((isAlphanumeric(prev) || prev == '.' || prev >= 0x80 || signedZero(prev, tok, raw)) && !touches) || prev == '"' || prev == '`' {
 			b.WriteByte(' ')
 		}
 	} else if p.opaqueText && raw != "" && raw[0] == '.' && !touches && b.Len() > 0 {
@@ -1837,10 +1837,17 @@ func (p *parser) appendStageToken(b *strings.Builder) {
 	b.WriteString(raw)
 }
 
-// signedZero reports a minus followed by the number 0: written together (`-0`), Loki's lexer reads them as a
-// duration (Go's time.ParseDuration takes a 0 without a unit), so a minus and a 0 that stand apart (`- 0`, the
-// number) are written apart.
-func signedZero(prev byte, raw string) bool { return prev == '-' && raw == "0" }
+// signedZero reports a minus followed by the number 0, or by a number that starts with a 0 and a letter or `_`
+// (`0x1F`, `0X0`, `0o7`, `0e1`, `0_1`): written together (`-0`), Loki's lexer reads them as a duration (Go's
+// time.ParseDuration takes a 0 without a unit), and with a letter after it `-0X0` is no query Loki accepts (Loki's
+// recorded answers, testdata/label_filter_number_literals_loki.jsonl.gz), so a minus and such a number that stand
+// apart (`- 0X0`, the number) are written apart.
+func signedZero(prev byte, tok Token, raw string) bool {
+	if prev != '-' || tok.Typ != TokNumber || raw == "" || raw[0] != '0' {
+		return false
+	}
+	return len(raw) == 1 || raw[1] == '_' || raw[1]|0x20 >= 'a' && raw[1]|0x20 <= 'z'
+}
 
 // isAlphanumeric reports whether c is a letter, digit, or underscore —
 // characters that must be separated by whitespace from adjacent word tokens.

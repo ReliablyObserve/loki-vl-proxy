@@ -268,6 +268,7 @@ type proxyRuntimeConfig struct {
 	drilldownFieldBatchMaxFields        int
 	statsQueryRangeInterQueryDelayMs    int
 	debugLogRawQueries                  bool
+	debugVLCallsHeader                  bool
 	slowQueryThreshold                  time.Duration
 	slowUpstreamThreshold               time.Duration
 	slowQueryLogRawQueries              bool
@@ -474,6 +475,7 @@ func run(
 	logStatsInterval := fs.Duration("log-stats-interval", 10*time.Second, "How often to print a request statistics summary (total, errors, latency, cache rate)")
 	logRateThreshold := fs.Int("log-rate-threshold", 10, "When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged.")
 	debugLogRawQueries := fs.Bool("debug-log-raw-queries", false, "When true, debug logs include raw LogQL/LogsQL and backend params verbatim. Default false (redacted to sha256+len).")
+	debugVLCallsHeader := fs.Bool("debug-vl-calls-header", false, "When true, every Loki read response carries X-Loki-VL-Backend-Calls, the VictoriaLogs calls the request started before its response headers were written (a lower bound for a streamed answer; background work is not counted), and X-Loki-VL-Cache-Result, the response cache result (hit, miss, or bypass when none was consulted), so a cache reuse check can attribute VictoriaLogs calls to one request. Default false: Loki sends neither header, and the count describes backend work.")
 	slowQueryThreshold := fs.Duration("slow-query-threshold", proxy.DefaultSlowQueryThreshold, "A client request taking at least this long is slow: counted in loki_vl_proxy_slow_requests_total{system=\"loki\"} and logged at WARN (slow_request, whatever the request-log sampling) with its LogQL and its steps: every VictoriaLogs call with its LogsQL, window, status, bytes and time, every proxy-side operation and route decision, every rewrite of the LogQL, each with its offset from the request's start. Live tail is exempt. 0 turns it off")
 	slowUpstreamThreshold := fs.Duration("slow-upstream-threshold", proxy.DefaultSlowUpstreamThreshold, "One VictoriaLogs call taking at least this long to the end of its body is slow: counted in loki_vl_proxy_slow_requests_total{system=\"vl\"} and logged at WARN (slow_upstream_request) with its LogsQL, window, bytes and the client route it served. 0 turns it off")
 	slowQueryLogLevel := fs.String("slow-query-log-level", "warn", "Level the slow_request and slow_upstream_request lines are logged at: warn, info or debug (logged only when the logger level lets them through), or off: no slow lines and no per-request trace; loki_vl_proxy_slow_requests_total still counts slow requests")
@@ -506,7 +508,7 @@ func run(
 	cacheDisabled := fs.Bool("cache-disabled", false, "Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement)")
 	coalescerDisabled := fs.Bool("coalescer-disabled", false, "Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead")
 	compatCacheEnabled := fs.Bool("compat-cache-enabled", true, "Enable the safe Tier0 compatibility-edge response cache for cacheable GET read endpoints")
-	compatCacheMaxPercent := fs.Int("compat-cache-max-percent", defaultCompatCachePercent, "Additional Tier0 compatibility-edge cache budget as a percent of -cache-max-bytes (0 disables, max 50); does not reduce primary L1")
+	compatCacheMaxPercent := fs.Int("compat-cache-max-percent", defaultCompatCachePercent, "Additional Tier0 compatibility-edge cache budget as a percent of -cache-max-bytes (0 disables, max 50); does not reduce primary L1. One entry holds at most a tenth of this budget: a larger query, query_range or series answer is kept in primary L1 memory instead (up to a tenth of -cache-max-bytes), where it shares L1 with the other cached answers; such an answer stays on the replica that computed it (not on disk, not pushed to peers)")
 
 	// Disk cache flags
 	diskCachePath := fs.String("disk-cache-path", "", "Path to L2 disk cache (bbolt). Empty disables.")
@@ -1110,6 +1112,7 @@ func run(
 			drilldownFieldBatchMaxFields:        *drilldownFieldBatchMaxFields,
 			statsQueryRangeInterQueryDelayMs:    *statsQueryRangeInterQueryDelayMs,
 			debugLogRawQueries:                  *debugLogRawQueries,
+			debugVLCallsHeader:                  *debugVLCallsHeader,
 			slowQueryThreshold:                  *slowQueryThreshold,
 			slowUpstreamThreshold:               *slowUpstreamThreshold,
 			slowQueryLogRawQueries:              *slowQueryLogRawQueries,
@@ -2437,6 +2440,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DrilldownFieldBatchMaxFields:        cfg.drilldownFieldBatchMaxFields,
 		StatsQueryRangeInterQueryDelayMs:    cfg.statsQueryRangeInterQueryDelayMs,
 		DebugLogRawQueries:                  cfg.debugLogRawQueries,
+		DebugVLCallsHeader:                  cfg.debugVLCallsHeader,
 		SlowQueryThreshold:                  cfg.slowQueryThreshold,
 		SlowUpstreamThreshold:               cfg.slowUpstreamThreshold,
 		SlowQueryLogRawQueries:              cfg.slowQueryLogRawQueries,

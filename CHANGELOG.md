@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
+  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
+  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
+  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
+  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
+  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
+  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
+- Translating a query costs fewer allocations. The LogQL parser allocates about half as much for a log query (a json
+  query with a label filter: 14 to 7 allocations), a `line_format` template is typed once per template text, a
+  query plan is one allocation sized for the query's kind, and the plan's log query lowering writes its text with
+  fewer intermediate values. The request's validation keeps its parse for a query the query plan serves, so the
+  translation does not parse the query again. Answers, translation cache entries and the queries VictoriaLogs
+  receives do not change.
+- Log queries with `json` or `logfmt` parsers (with or without an extraction list, `logfmt` with its flags), `regexp`
+  and `pattern` parsers written with a blank before a plainly spelled expression, the label filters after them, `drop`
+  and `keep` stages (a `keep` of names or of matchers), `label_format` stages whose values are text and `{{.name}}`
+  fields or renames, and `line_format` stages with such a template are served from the query plan instead of the
+  string translator, where the plan writes the translator's text byte for byte. A numeric equality after a parser, a
+  `detected_level` or `service_name` filter after a stage, and stages of a family not served stay with the string
+  translator. Answers, translation cache entries and the queries VictoriaLogs receives do not change; a translation
+  that misses the cache costs no more allocations than the string translator's. `-query-plan-lowering=false` turns it
+  off.
+
+### Fixed
+
+- A `regexp` or `pattern` parser written with no blank before its expression (`{app="a"} |pattern"<_> <m> <_>"`) now
+  gets Loki's answer. Loki reads it as the parser with the blank; the proxy sent it to VictoriaLogs as written, which
+  VictoriaLogs rejects (it has no `pattern` or `regexp` pipe), so the request failed. Log queries with such a parser,
+  and range and vector aggregations, binary operations, `label_replace` calls, rankings and `stddev`/`stdvar` over
+  one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
+  `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
+
+## [2.262.0] - 2026-11-15
+### Changed
+
 - Metric queries are planned once for the query plan's decisions: the range functions whose series a `keep` before
   the unwrap decides are served from the plan as before, and the proxy now checks, on the typed plan, which range
   and vector aggregations, binary operations and `label_replace` calls the plan would write with the string
@@ -43,37 +78,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `label_replace` calls, nested ones too, around an aggregation or a binary operation are served from the query plan
   the same way (6.6 to 4.1 us, 68 to 51 allocations); a `label_replace` around a ranking, `stddev` or a `service_name`
   grouping stays with the string translator.
-- Log queries with a `detected_level` filter (and line and label filters around it, no parser or formatting stage
-  before it) are served from the query plan instead of the string translator, where the plan writes the translator's
-  text byte for byte. A one-pass text screen with no allocation names the stage families of a log query before it is
-  parsed, so one the plan leaves to the string translator (a `detected_level` filter after a parser, a `service_name`
-  filter, a parser or formatting stage) is not parsed on top of its translation. Answers, translation cache entries and
-  the queries VictoriaLogs receives do not change; a translation that misses the cache takes 35 to 15 us, 675 to 143
-  allocations and 94 to 30 KiB. `-query-plan-lowering=false` turns it off.
-- Translating a query costs fewer allocations. The LogQL parser allocates about half as much for a log query (a json
-  query with a label filter: 14 to 7 allocations), a `line_format` template is typed once per template text, a
-  query plan is one allocation sized for the query's kind, and the plan's log query lowering writes its text with
-  fewer intermediate values. The request's validation keeps its parse for a query the query plan serves, so the
-  translation does not parse the query again. Answers, translation cache entries and the queries VictoriaLogs
-  receives do not change.
-- Log queries with `json` or `logfmt` parsers (with or without an extraction list, `logfmt` with its flags), `regexp`
-  and `pattern` parsers written with a blank before a plainly spelled expression, the label filters after them, `drop`
-  and `keep` stages (a `keep` of names or of matchers), `label_format` stages whose values are text and `{{.name}}`
-  fields or renames, and `line_format` stages with such a template are served from the query plan instead of the
-  string translator, where the plan writes the translator's text byte for byte. A numeric equality after a parser, a
-  `detected_level` or `service_name` filter after a stage, and stages of a family not served stay with the string
-  translator. Answers, translation cache entries and the queries VictoriaLogs receives do not change; a translation
-  that misses the cache costs no more allocations than the string translator's. `-query-plan-lowering=false` turns it
-  off.
 
 ### Fixed
 
-- A `regexp` or `pattern` parser written with no blank before its expression (`{app="a"} |pattern"<_> <m> <_>"`) now
-  gets Loki's answer. Loki reads it as the parser with the blank; the proxy sent it to VictoriaLogs as written, which
-  VictoriaLogs rejects (it has no `pattern` or `regexp` pipe), so the request failed. Log queries with such a parser,
-  and range and vector aggregations, binary operations, `label_replace` calls, rankings and `stddev`/`stdvar` over
-  one, are now written from the query plan with the text the spelling with the blank gets (an `extract` or
-  `extract_regexp` pipe); a `stddev` or `stdvar` nested under another aggregation over one still fails.
+- A range aggregation over a `| keep` that lists only a blank Loki reads as a label name, such as a vertical tab, a
+  form feed or U+00A0 (`count_over_time({app="api"} | keep\v [1m])`), now answers one `{}` series holding every
+  stream's samples, as Loki does. It answered `400` on `/loki/api/v1/query` and no series on
+  `/loki/api/v1/query_range`. A `| keep` or `| drop` written so now prints as `| keep \v` instead of `| keep `, which
+  no parser reads. Loki accepts such a blank alone and rejects it beside another name (`| keep\v\v`, `| keep\va`);
+  the proxy already answered those as Loki does.
+
+## [2.261.0] - 2026-11-15
+
+### Fixed
+
+- A repeated `query`, `query_range` or `series` request whose answer is larger than one entry of the
+  compatibility-edge cache (a tenth of its budget, 2.56 MiB by default) is answered from the cache again instead of
+  asking VictoriaLogs. Such answers (Drilldown breakdowns by a high-cardinality label, parser metrics and instant
+  queries over thousands of series) were kept nowhere when their range ended within `-query-range-freshness` of now
+  or they answered an instant query. They are now kept in the primary memory cache with the edge cache's TTL and
+  freshness rule, up to the primary cache's own entry bound. Known limit: such an answer stays on the replica that
+  computed it (not on disk, not pushed to peers), so another replica computes it again.
+- Identical cold `query_range` metric requests no longer read buckets from VictoriaLogs that another request's
+  read had just fetched. Those buckets are stored after the read is answered, and a request that looked them up in
+  between (one that took a freed stats_query_range slot, or found one free while the first callers still parsed
+  the answer) read part of the window again. Such a lookup now waits (up to 2 s, or until the request ends) for the
+  store in progress for the same buckets, so any number of identical cold requests make one read.
+
+### Added
+
+- `-debug-vl-calls-header` (default off) adds `X-Loki-VL-Backend-Calls` (the VictoriaLogs calls the request started
+  before its response headers were written) and `X-Loki-VL-Cache-Result` (`hit`, `miss` or `bypass`) to every read
+  response, so a cache reuse check can count one request's VictoriaLogs calls. Loki sends neither header.
+
+## [2.260.2] - 2026-11-15
+
+### Fixed
+
+- A label filter compared with a negative number that starts with a 0 and a letter or `_` (`| A < - 0x1F`,
+  `- 0X0`, `- 0o7`) now prints with the minus apart from the number, so the printed query reads back as the same
+  query. Written together (`-0X0`), Loki rejects it. What the proxy answers and sends to VictoriaLogs does not change.
 
 ## [2.260.1] - 2026-11-14
 

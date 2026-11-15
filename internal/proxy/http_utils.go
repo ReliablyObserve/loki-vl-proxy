@@ -1633,11 +1633,22 @@ type statusCapture struct {
 	code         int
 	bytesWritten int
 	wroteHeader  bool
+	// beforeHeader, when set, adds headers once, just before they are sent.
+	beforeHeader func(http.Header)
+}
+
+// sendingHeader runs beforeHeader the first time the headers go out.
+func (sc *statusCapture) sendingHeader() {
+	if sc.beforeHeader != nil {
+		sc.beforeHeader(sc.Header())
+		sc.beforeHeader = nil
+	}
 }
 
 func (sc *statusCapture) WriteHeader(code int) {
 	sc.code = code
 	sc.wroteHeader = true
+	sc.sendingHeader()
 	sc.ResponseWriter.WriteHeader(code)
 }
 
@@ -1652,6 +1663,7 @@ func (sc *statusCapture) Write(b []byte) (int, error) {
 		}
 		sc.ResponseWriter.Header().Set("X-Content-Type-Options", "nosniff")
 		sc.wroteHeader = true
+		sc.sendingHeader()
 	}
 	n, err := sc.ResponseWriter.Write(b)
 	sc.bytesWritten += n
@@ -1660,6 +1672,7 @@ func (sc *statusCapture) Write(b []byte) (int, error) {
 
 // Flush implements http.Flusher for chunked streaming support.
 func (sc *statusCapture) Flush() {
+	sc.sendingHeader()
 	if f, ok := sc.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
