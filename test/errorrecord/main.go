@@ -14,6 +14,15 @@
 // changed and exits 1 when there are any. A scheduled run uses it to notice a
 // Loki bump, and uploads the rewritten files for review.
 //
+// Some of Loki's answers move with its state: a Loki that holds data answers a
+// few wrong-method and non-selector requests differently from one that has just
+// started with none. The answers are recorded from a Loki that serves data:
+// -ingest writes a small fixture to the Loki and waits until its range metric
+// path answers with it, then exits (run it once, before recording). Before it
+// records, the command asks the Loki whether it serves that data, and writes
+// the state it found ("serving" or "fresh") into every row it re-records; a
+// row whose state changed is reported like a changed answer.
+//
 // The command is test support. It reads and writes files under the repository
 // and talks to the Loki it is given; it starts and stops nothing.
 package main
@@ -46,6 +55,8 @@ type config struct {
 	check   bool
 	all     bool
 	version string
+	// state is written into every re-recorded row; empty leaves each row's state as it is.
+	state string
 }
 
 func main() {
@@ -57,7 +68,20 @@ func main() {
 	flag.BoolVar(&cfg.check, "check", false, "write nothing; list the rows whose answer changed and exit 1 when any did")
 	flag.BoolVar(&cfg.all, "all", false, "also re-record rows marked not comparable")
 	flag.StringVar(&cfg.version, "version", "", "Loki version for the header; read from the Loki's buildinfo when empty")
+	ingest := flag.Bool("ingest", false, "write the fixture to the Loki, wait until its range metric path serves it, and exit")
+	ingestWait := flag.Duration("ingest-wait", 8*time.Minute, "with -ingest: how long to wait for the Loki to serve the fixture")
 	flag.Parse()
+	if *ingest {
+		if err := ingestFixture(cfg.loki, *ingestWait, now(), os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "errorrecord:", err)
+			os.Exit(2)
+		}
+		return
+	}
+	cfg.state = lokirecorded.StateFresh
+	if serving(cfg.loki, now()) {
+		cfg.state = lokirecorded.StateServing
+	}
 	cfg.files = []string{answers}
 	if order != "" {
 		cfg.files = append(cfg.files, order)
@@ -104,7 +128,8 @@ func recordFile(path, host, version string, cfg config, out io.Writer) (int, err
 	changed, kept := 0, 0
 	for i, row := range file.Rows {
 		lines[i] = file.Lines[i]
-		if !row.Comparable() && !cfg.all {
+		// A row added by hand with no answer yet (status 0) is recorded whatever it is marked.
+		if !row.Comparable() && !cfg.all && row.Loki.Status != 0 {
 			kept++
 			continue
 		}
@@ -113,16 +138,25 @@ func recordFile(path, host, version string, cfg config, out io.Writer) (int, err
 			return changed, err
 		}
 		reply = reply.ForRecording()
-		if reply == row.Loki {
+		stateMoved := cfg.state != "" && cfg.state != row.State
+		if reply == row.Loki && !stateMoved {
 			continue
 		}
 		changed++
-		fmt.Fprintf(out, "%s %s %s\n  recorded %s\n  now      %s\n", row.ID, row.Route, row.Trigger, row.Loki.Summary(), reply.Summary())
-		if lines[i], err = lokirecorded.WithLoki(file.Lines[i], reply); err != nil {
-			return changed, fmt.Errorf("%s: %w", row.ID, err)
+		if reply != row.Loki {
+			fmt.Fprintf(out, "%s %s %s\n  recorded %s\n  now      %s\n", row.ID, row.Route, row.Trigger, row.Loki.Summary(), reply.Summary())
+			if lines[i], err = lokirecorded.WithLoki(lines[i], reply); err != nil {
+				return changed, fmt.Errorf("%s: %w", row.ID, err)
+			}
+		}
+		if stateMoved {
+			fmt.Fprintf(out, "%s %s recorded from a %s Loki (was %q)\n", row.ID, row.Route, cfg.state, row.State)
+			if lines[i], err = lokirecorded.WithState(lines[i], cfg.state); err != nil {
+				return changed, fmt.Errorf("%s: %w", row.ID, err)
+			}
 		}
 	}
-	fmt.Fprintf(out, "%s: %d rows, %d answers changed, %d not re-recorded (not comparable)\n", path, len(file.Rows), changed, kept)
+	fmt.Fprintf(out, "%s: %d rows, %d answers or states changed, %d not re-recorded (not comparable), recorded from a %q Loki\n", path, len(file.Rows), changed, kept, cfg.state)
 	header := file.Header
 	if changed > 0 || !strings.Contains(header, "Loki "+version+" answers recorded") {
 		header = lokirecorded.WithHeader(header, version, now())

@@ -73,7 +73,20 @@ type Row struct {
 	// two errors the request carries, and the one Loki answers.
 	Issues []string `json:"issues,omitempty"`
 	Wins   string   `json:"wins,omitempty"`
+	// State is the state of the Loki the answer was recorded from: StateServing
+	// for a Loki that held data and answered range metric queries with it,
+	// StateFresh for one that held none. Empty on a row recorded before the
+	// state was written, which was a Loki without data.
+	State string `json:"state,omitempty"`
 }
+
+// The states of a recorded Loki. Some answers move with it: a Loki that holds
+// data answers a few wrong-method and non-selector requests differently from
+// a Loki that has just started with none.
+const (
+	StateServing = "serving"
+	StateFresh   = "fresh"
+)
 
 // File is a recorded-answers file: its header line and its rows, each kept
 // with the exact text of its line.
@@ -304,6 +317,78 @@ func WithLoki(line string, reply Reply) (string, error) {
 	}
 	out.WriteByte('}')
 	return out.String(), nil
+}
+
+// WithState returns the text of a row's line with its "state" key set to
+// state: replaced in place when the line has one, added after the "loki"
+// object otherwise. Every other key and byte of the line stays.
+func WithState(line, state string) (string, error) {
+	keys, values, err := objectEntries(line)
+	if err != nil {
+		return "", err
+	}
+	value, err := marshal(state)
+	if err != nil {
+		return "", err
+	}
+	if i := keyIndex(keys, "state"); i >= 0 {
+		values[i] = value
+	} else {
+		at := len(keys)
+		if j := keyIndex(keys, "loki"); j >= 0 {
+			at = j + 1
+		}
+		keys = append(keys[:at], append([]string{"state"}, keys[at:]...)...)
+		values = append(values[:at], append([]json.RawMessage{value}, values[at:]...)...)
+	}
+	var out bytes.Buffer
+	out.WriteByte('{')
+	for i, k := range keys {
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		kb, _ := marshal(k)
+		out.Write(kb)
+		out.WriteByte(':')
+		out.Write(values[i])
+	}
+	out.WriteByte('}')
+	return out.String(), nil
+}
+
+// keyIndex is the position of key in keys, -1 when it is not there.
+func keyIndex(keys []string, key string) int {
+	for i, k := range keys {
+		if k == key {
+			return i
+		}
+	}
+	return -1
+}
+
+// objectEntries are the keys of a JSON object line in order, each with the
+// raw text of its value.
+func objectEntries(line string) ([]string, []json.RawMessage, error) {
+	dec := json.NewDecoder(strings.NewReader(line))
+	tok, err := dec.Token()
+	if err != nil || tok != json.Delim('{') {
+		return nil, nil, fmt.Errorf("row is not a JSON object")
+	}
+	var keys []string
+	var values []json.RawMessage
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return nil, nil, err
+		}
+		key, _ := keyTok.(string)
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return nil, nil, err
+		}
+		keys, values = append(keys, key), append(values, value)
+	}
+	return keys, values, nil
 }
 
 // WithHeader returns the header line with its recorded Loki version and date

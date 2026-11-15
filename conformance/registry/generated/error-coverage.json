@@ -354,8 +354,8 @@
       "reason": "",
       "recorded": false,
       "route": "detected_field_values",
-      "rows": 0,
-      "state": "gap",
+      "rows": 1,
+      "state": "not-comparable",
       "unit_gate": false
     },
     {
@@ -577,7 +577,7 @@
       "reason": "",
       "recorded": true,
       "route": "detected_fields",
-      "rows": 2,
+      "rows": 3,
       "state": "match",
       "unit_gate": true
     },
@@ -1636,8 +1636,8 @@
       "reason": "",
       "recorded": false,
       "route": "index_volume_range",
-      "rows": 0,
-      "state": "gap",
+      "rows": 1,
+      "state": "not-comparable",
       "unit_gate": false
     },
     {
@@ -2395,7 +2395,7 @@
       "reason": "",
       "recorded": true,
       "route": "patterns",
-      "rows": 2,
+      "rows": 5,
       "state": "match",
       "unit_gate": true
     },
@@ -5164,10 +5164,10 @@
     "messages": 36,
     "messages_documented": 9,
     "messages_recorded": 27,
-    "not_comparable_rows": 71,
+    "not_comparable_rows": 77,
     "recorded_loki": "3.7.9",
     "recorded_on": "2026-11-13",
-    "recorded_rows": 302,
+    "recorded_rows": 308,
     "unmapped_items": 8
   }
 }

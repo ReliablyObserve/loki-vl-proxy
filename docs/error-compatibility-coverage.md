@@ -18,7 +18,7 @@ The answers are those of Grafana Loki 3.7.9, recorded over HTTP on 2026-11-13. E
 | Cells that match | 98/124 | cells where every comparable row matches and no known leak remains |
 | Messages recorded | 27/36 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
 
-71 recorded rows are not comparable (the recorded Loki ran with authentication disabled, or its answer depends on its own configuration) and are replayed but not counted.
+77 recorded rows are not comparable (the recorded Loki ran with authentication disabled, or its answer depends on its own configuration) and are replayed but not counted.
 
 ## Matrix
 
@@ -27,13 +27,13 @@ Each cell shows whether the proxy matches (`match` or `differs`), the matching a
 | Route | Parameters | LogQL syntax | LogQL validation | Limits | Backend failure | Methods and routing | Tenant | Cancel and deadline |
 |---|---|---|---|---|---|---|---|---|
 | `alerts` |  |  |  | match gate U | match gate U | gap | gap | match gate U |
-| `detected_field_values` | match 4/4 UE | match 2/2 UE | match 2/2 UE | match 1/1 UE | match gate U | gap | gap | match gate U |
+| `detected_field_values` | match 4/4 UE | match 2/2 UE | match 2/2 UE | match 1/1 UE | match gate U | not comparable (1) | gap | match gate U |
 | `detected_fields` | match 7/7 UE | match 2/2 UE | match 2/2 UE | match 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
 | `detected_labels` | match 1/1 UE | match 1/1 UE | match 3/3 UE | match 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
 | `format_query` | gap | match 2/2 UE |  |  |  | match 5/5 UE |  |  |
 | `index_stats` | match 3/3 UE | match 2/2 UE | match 2/2 UE | match 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
 | `index_volume` | match 6/6 UE | match 2/2 UE | match 2/2 UE | match 1/1 UE | match gate U | match 5/5 UE | gap | match gate U |
-| `index_volume_range` | match 9/9 UE | match 2/2 UE | match 2/2 UE | match gate UE | match gate U | gap | gap | match gate U |
+| `index_volume_range` | match 9/9 UE | match 2/2 UE | match 2/2 UE | match gate UE | match gate U | not comparable (1) | gap | match gate U |
 | `label_values` | match 4/4 UE | match 1/1 UE | match 3/3 UE | match 1/1 UE | match gate U | match 2/2 UE | not comparable (6) | match gate U |
 | `labels` | match 4/4 UE | match 1/1 UE | match 3/3 UE | match 1/1 UE | match gate UE | match 5/5 UE | not comparable (20) | match gate UE |
 | `patterns` | match 5/5 UE | match 2/2 UE | match 2/2 UE | match gate U | match gate U | match 5/5 UE | gap | match gate U |

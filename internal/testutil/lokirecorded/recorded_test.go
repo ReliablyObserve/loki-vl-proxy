@@ -1,6 +1,7 @@
 package lokirecorded
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
 	"os"
@@ -177,5 +178,36 @@ func TestParseRejectsMalformedFiles(t *testing.T) {
 	}
 	if _, err := Read("does-not-exist.jsonl"); !os.IsNotExist(err) {
 		t.Fatalf("missing file: %v", err)
+	}
+}
+
+// WithState adds the state after the loki object, replaces one already
+// there, and keeps every other byte of the line.
+func TestWithStateAddsOrReplacesTheState(t *testing.T) {
+	line := `{"id":"r1","loki":{"status":405,"content_type":"","nosniff":"","body":"\"state\":"},"msg":"m"}`
+	got, err := WithState(line, StateServing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"id":"r1","loki":{"status":405,"content_type":"","nosniff":"","body":"\"state\":"},"state":"serving","msg":"m"}`
+	if got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+	again, err := WithState(got, StateFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.Replace(want, `"state":"serving"`, `"state":"fresh"`, 1); again != want {
+		t.Fatalf("got  %s\nwant %s", again, want)
+	}
+	if got, _ := WithState(`{"id":"r2"}`, StateServing); got != `{"id":"r2","state":"serving"}` {
+		t.Fatalf("no loki object: %s", got)
+	}
+	if _, err := WithState(`[1]`, StateServing); err == nil {
+		t.Fatal("a line that is not an object was accepted")
+	}
+	var row Row
+	if err := json.Unmarshal([]byte(again), &row); err != nil || row.State != StateFresh {
+		t.Fatalf("state read back %q (%v)", row.State, err)
 	}
 }

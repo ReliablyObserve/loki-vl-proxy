@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Loki's error answers are recorded from a Loki that holds data. The recorder (`test/errorrecord`) writes a small
+  fixture to the Loki and waits until its range metric path serves it (`-ingest`, a step of the weekly
+  `error-answers-record` workflow) before it asks the recorded requests, and every row it records carries the state
+  of the Loki it was recorded from (`"state": "serving"`). A few answers move with that state: a Loki that serves
+  data answers DELETE on its read routes and an empty POST to `/loki/api/v1/rules` with `404 page not found`, where
+  a Loki that has just started with no data answered `405`. A row added by hand with no answer yet is recorded
+  whatever it is marked.
+
 ## [2.301.0] - 2026-11-15
 
 ### Fixed
