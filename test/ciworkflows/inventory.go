@@ -72,6 +72,8 @@ type Workflow struct {
 	Events    []string // sorted event names
 	Triggers  []string // rendered, one per event
 	Schedules []Schedule
+	// AddedAt is when the file first entered the repository's history (AddedDates); zero when unknown.
+	AddedAt time.Time
 }
 
 // HasEvent reports whether the workflow runs on the event.

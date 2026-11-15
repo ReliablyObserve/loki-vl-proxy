@@ -8,9 +8,9 @@
 |---|---|---|---|---|---|---|
 | Registry cases | 6 | 3 | 54.5% | 0 open | 3 open cases to close | good +1, total 10 to 11, +4.5 pt |
 | Live verdicts, VictoriaLogs v1.49.0 | 4 | 0 | 100.0% | 100% of proven match | none | good +2, not good -1, total 3 to 4, +33.3 pt |
-| Live coverage, VictoriaLogs v1.49.0 | 4 | 2 | 66.7% | 100% proven | 2 more cases to prove live | good +1, total 5 to 6, +6.7 pt |
+| Coverage, VictoriaLogs v1.49.0 | 5 | 1 | 83.3% | 100% proven live or by a test | 1 more case to prove | good +1, total 5 to 6, +3.3 pt |
 | Live verdicts, VictoriaLogs v1.53.0 | 3 | 1 | 75.0% | 100% of proven match | 1 differing case to fix (1 of them regressions) | good +1, total 3 to 4, +8.3 pt |
-| Live coverage, VictoriaLogs v1.53.0 | 4 | 2 | 66.7% | 100% proven | 2 more cases to prove live | good +1, total 5 to 6, +6.7 pt |
+| Coverage, VictoriaLogs v1.53.0 | 5 | 1 | 83.3% | 100% proven live or by a test | 1 more case to prove | good +1, total 5 to 6, +3.3 pt |
 | Error answers | 19 | 1 | 95.0% | 100% match | 1 answer to align, 0 live change(s) to review | good +1, not good -1, +5.0 pt |
 | Grammar sweep | 958 | 42 | 95.8% | 0 differences | 42 queries to bring in line | good +5, not good -5, +0.5 pt |
 | Parity slice | 24 | 6 | 60.0% | 100% same, 0 unclaimed clusters | 6 differing requests to fix, 1 cluster to claim | good +4, not good -4, +10.0 pt |
@@ -21,21 +21,22 @@
 | Cache reuse, VictoriaLogs v1.53.0 | 5 | 0 | 100.0% | 100% reused, 0 VictoriaLogs calls on repeats | none | good +1, not good -1, +20.0 pt |
 | Scheduled workflows | 8 | 2 | 80.0% | all ok | 2 workflows to fix: parity-refresh.yaml, perf-daily.yaml | good -1, not good +1, -10.0 pt |
 
-A check is one area of this table at its target. Counted items are the units of a row: a registry case, a proven live verdict, a recorded error answer, a sweep query, a parity request, a perf row, a scheduled workflow. Live coverage rows show how much of the case set is proven live and are not counted again. Not good counts differences only; accepted and upstream-blocked cases are shown apart.
+A check is one area of this table at its target. Counted items are the units of a row: a registry case, a proven live verdict, a recorded error answer, a sweep query, a parity request, a perf row, a scheduled workflow. Coverage rows show how much of the case set is proven live, or by a named passing test, and are not counted again; a case not proven is a number to work down, red only when a proven case regressed. Not good counts differences only; accepted and upstream-blocked cases are shown apart.
 
 - Registry cases: fixed 4 + no gap 2 are good; accepted 1 (documented 1, owner-kept 0) and upstream-blocked 1 are shown apart; good + accepted 7 of 11 (63.6%); open by impact: explore-visible 1, edge 2.
 - Live verdicts, VictoriaLogs v1.49.0: proven = matches 4 + differs 0 = 4 of 6 cases; regressions 0; proposed closes 1; behaviour changed 0.
-- Live coverage, VictoriaLogs v1.49.0: 4 of 6 cases proven; not proven: empty on both sides 1, blocked 1, not executable 0, other 0 (data differs, Loki not ready, Loki cached stale, not comparable, unchecked, unstable, both fail).
+- Coverage, VictoriaLogs v1.49.0: 5 of 6 cases proven (live 4, by a named passing test 1); not proven 1 (empty 1); tests passing: ci.yaml run of 2026-11-15 on main, https://x/ci.
 - Live verdicts, VictoriaLogs v1.53.0: proven = matches 3 + differs 1 = 4 of 6 cases; regressions 1; proposed closes 2; behaviour changed 0.
-- Live coverage, VictoriaLogs v1.53.0: 4 of 6 cases proven; not proven: empty on both sides 1, blocked 1, not executable 0, other 0 (data differs, Loki not ready, Loki cached stale, not comparable, unchecked, unstable, both fail).
+- Coverage, VictoriaLogs v1.53.0: 5 of 6 cases proven (live 4, by a named passing test 1); not proven 1 (empty 1); tests passing: ci.yaml run of 2026-11-15 on main, https://x/ci.
 - Error answers: 1 known differences, 0 known leaks; live re-record: 0 of 20 rows changed; unit replay passes.
 - Grammar sweep: 958 queries agree out of 1000 (every difference row counted); Loki accepts 700 and rejects 300.
 - Parity slice: 40 requests (same 24, differ 6, both empty 8, blocked 2); 5 clusters, 1 claimed by no registry case.
 - Daily perf smoke, cold: 20 rows, below Loki 9, close 9, 1-2x 0, above 2x 2 (green = below + close).
 - Daily perf smoke, warm: 35 rows, below Loki 5, close 30, 1-2x 0, above 2x 0 (green = below + close).
 - Weekly perf (measured 2026-11-09): 100 shape x range pairs, faster 60, on par 30, slower 10; 3 on the above-2x list.
-- Cache reuse, VictoriaLogs v1.49.0: 5 repeats reused of 5 measured, 1 not measured; VictoriaLogs calls 9 cold, 0 on the repeats.
-- Cache reuse, VictoriaLogs v1.53.0: 5 repeats reused of 5 measured, 1 not measured; VictoriaLogs calls 9 cold, 0 on the repeats. Perf smoke: 30 rows, VictoriaLogs calls 50 cold and 40 on the repeats, 0 rows lost reuse.
+- Cache reuse, VictoriaLogs v1.49.0: 5 repeats reused of 5 measured, 1 not measured; VictoriaLogs calls 9 cold, 0 on the repeats. Counted per request for 5 repeats and by process-wide metrics for 0; the proxy's background calls around the repeats (3) are not in the count.
+- Cache reuse, VictoriaLogs v1.53.0: 5 repeats reused of 5 measured, 1 not measured; VictoriaLogs calls 9 cold, 0 on the repeats. Counted per request for 5 repeats and by process-wide metrics for 0; the proxy's background calls around the repeats (3) are not in the count. Perf smoke: 30 rows, VictoriaLogs calls 50 cold and 40 on the repeats, 0 rows lost reuse.
+- Scheduled workflows: 1 pending their first scheduled run, not counted and not red: new-weekly.yaml.
 
 #### Loki side vs VictoriaLogs side
 
@@ -79,6 +80,7 @@ Main `bbbbbbbbbbbb` (was `aaaaaaaaaaaa`).
 | Cache reuse v1.49.0: not reused | 1 | 0 |
 | Cache reuse v1.49.0: not measured | 0 | 1 |
 | Cache reuse v1.49.0: VictoriaLogs calls on repeats | 2 | 0 |
+| Coverage v1.49.0: proven live | 3 | 4 |
 | Verdicts v1.53.0: matches | 2 | 3 |
 | Verdicts v1.53.0: regressions | 0 | 1 |
 | Verdicts v1.53.0: proposed close | 1 | 2 |
@@ -86,6 +88,7 @@ Main `bbbbbbbbbbbb` (was `aaaaaaaaaaaa`).
 | Cache reuse v1.53.0: not reused | 1 | 0 |
 | Cache reuse v1.53.0: not measured | 0 | 1 |
 | Cache reuse v1.53.0: VictoriaLogs calls on repeats | 2 | 0 |
+| Coverage v1.53.0: proven live | 3 | 4 |
 | Error answers: matching | 18 | 19 |
 | Error answers: known differences | 2 | 1 |
 | Error answers: live rows changed | 1 | 0 |
@@ -142,6 +145,11 @@ Main `bbbbbbbbbbbb` (was `aaaaaaaaaaaa`).
 **Accepted behaviour newly changed** (1)
 
 - a/9 (v1.53.0)
+
+**Measured another way from today** (2)
+
+- Cache reuse v1.49.0: VictoriaLogs calls on repeats are counted per request from today (before: process-wide metrics, background calls included); a drop is not a cache improvement
+- Cache reuse v1.53.0: VictoriaLogs calls on repeats are counted per request from today (before: process-wide metrics, background calls included); a drop is not a cache improvement
 
 **Registry status moves** (2)
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -87,12 +88,15 @@ type Health struct {
 	CheckedAt string          `json:"checked_at"`
 	Scheduled int             `json:"scheduled"`
 	Problems  []HealthProblem `json:"problems"`
+	// Pending are the scheduled workflows added too recently to have had a scheduled run (their first is due within
+	// their period and a day of being added): not a problem, and not counted in Scheduled.
+	Pending []HealthProblem `json:"pending"`
 }
 
 // CheckHealth lists every scheduled workflow (but the ones in skip) whose last scheduled run is missing,
 // older than its shortest period plus a day, or did not succeed.
 func CheckHealth(workflows []Workflow, runs RunsFile, skip map[string]bool) (Health, error) {
-	h := Health{CheckedAt: runs.Fetched, Problems: []HealthProblem{}}
+	h := Health{CheckedAt: runs.Fetched, Problems: []HealthProblem{}, Pending: []HealthProblem{}}
 	now, err := time.Parse(time.RFC3339, runs.Fetched)
 	if err != nil {
 		return h, fmt.Errorf("the runs record has no fetch time: %w", err)
@@ -101,12 +105,19 @@ func CheckHealth(workflows []Workflow, runs RunsFile, skip map[string]bool) (Hea
 		if len(w.Schedules) == 0 || skip[w.File] {
 			continue
 		}
-		h.Scheduled++
 		period := w.Schedules[0].Period
 		for _, s := range w.Schedules[1:] {
 			period = min(period, s.Period)
 		}
 		last := runs.Workflows[w.File].Scheduled
+		// A workflow added within its first period has had no chance to run on its schedule (GitHub does not even
+		// list a workflow file until it is on the default branch): it is pending its first run, not missing.
+		if last == nil && !w.AddedAt.IsZero() && now.Sub(w.AddedAt) <= period+slack {
+			h.Pending = append(h.Pending, HealthProblem{Workflow: w.File,
+				Problem: fmt.Sprintf("added %s, pending its first scheduled run", w.AddedAt.UTC().Format("2006-01-02"))})
+			continue
+		}
+		h.Scheduled++
 		if last == nil {
 			h.Problems = append(h.Problems, HealthProblem{Workflow: w.File, Problem: "no scheduled run recorded"})
 			continue
@@ -125,5 +136,25 @@ func CheckHealth(workflows []Workflow, runs RunsFile, skip map[string]bool) (Hea
 		}
 	}
 	sort.SliceStable(h.Problems, func(i, j int) bool { return h.Problems[i].Workflow < h.Problems[j].Workflow })
+	sort.SliceStable(h.Pending, func(i, j int) bool { return h.Pending[i].Workflow < h.Pending[j].Workflow })
 	return h, nil
+}
+
+// AddedDates sets AddedAt of every workflow to the commit time that first added its file under dir, read with git
+// (a function that returns the output of `git <args>`). A history cut short (a shallow checkout) dates every file at
+// its oldest commit, so the daily report checks out the whole history; a file git does not know keeps a zero time.
+func AddedDates(dir string, workflows []Workflow, git func(args ...string) ([]byte, error)) {
+	for i, w := range workflows {
+		out, err := git("log", "--diff-filter=A", "--follow", "--format=%cI", "--", filepath.ToSlash(filepath.Join(dir, w.File)))
+		if err != nil {
+			continue
+		}
+		lines := strings.Fields(string(out))
+		if len(lines) == 0 {
+			continue
+		}
+		if t, err := time.Parse(time.RFC3339, lines[len(lines)-1]); err == nil {
+			workflows[i].AddedAt = t.UTC()
+		}
+	}
 }

@@ -259,6 +259,16 @@ func verdictRows(s Summary, v string) []row {
 	other := n("data_differs") + n("loki_not_ready") + n("loki_cached_stale") + n("not_comparable") + n("data_unchecked") + n("unstable") + n("both_fail")
 	cov.detail = []string{fmt.Sprintf("Live coverage, VictoriaLogs %s: %d of %d cases proven; not proven: empty on both sides %d, blocked %d, not executable %d, other %d "+
 		"(data differs, Loki not ready, Loki cached stale, not comparable, unchecked, unstable, both fail).", v, proven, total, n("empty"), n("blocked"), n("not_executable"), other)}
+	// With the registry's wiring a case that is not proven live may be proven by a named passing test: three states.
+	if c := s.Coverage[v]; c != nil && c.Cases > 0 {
+		good := c.ProvenLive + c.ProvenByTest
+		cov = row{key: "coverage:" + v, area: "Coverage, VictoriaLogs " + v, known: known, split: true, skip: true, good: good, bad: c.NotProven, total: c.Cases,
+			target: "100% proven live or by a test", met: c.NotProven == 0, needed: "none"}
+		if c.NotProven > 0 {
+			cov.needed = plural(c.NotProven, "more case to prove", "more cases to prove")
+		}
+		cov.detail = []string{coverageDetail(v, c)}
+	}
 	return []row{match, cov}
 }
 
@@ -442,6 +452,14 @@ func cacheRow(s Summary, v string) row {
 	}
 	detail := fmt.Sprintf("Cache reuse, VictoriaLogs %s: %d repeats reused of %d measured, %d not measured; VictoriaLogs calls %g cold, %g on the repeats.",
 		v, r.good, r.total, u.Counts["not_measured"], u.ColdVLCalls, u.RepeatCalls)
+	// What the repeat count measures: per request (the proxy's own count) or by the process-wide metrics.
+	switch {
+	case u.CallsFromHeader > 0 || u.CallsFromMetrics > 0:
+		detail += fmt.Sprintf(" Counted per request for %d repeats and by process-wide metrics for %d; the proxy's background calls around the repeats (%g) are not in the count.",
+			u.CallsFromHeader, u.CallsFromMetrics, u.Background)
+	default:
+		detail += " Counted by process-wide metrics (no per-request count in this run)."
+	}
 	if p := s.PerfDaily; p != nil && v == s.VictoriaLogs[len(s.VictoriaLogs)-1] {
 		if pr, ok := p["reuse"].(map[string]any); ok {
 			detail += fmt.Sprintf(" Perf smoke: %v rows, VictoriaLogs calls %v cold and %v on the repeats, %d rows lost reuse.",
@@ -467,6 +485,10 @@ func workflowRow(s Summary) row {
 	r.needed = "none"
 	if r.bad > 0 {
 		r.needed = plural(r.bad, "workflow to fix", "workflows to fix") + ": " + strings.Join(problemNames(w.Problems), ", ")
+	}
+	// A workflow added too recently to have run on its schedule is not a problem, and not one of the counted items.
+	if len(w.Pending) > 0 {
+		r.detail = []string{fmt.Sprintf("Scheduled workflows: %d pending their first scheduled run, not counted and not red: %s.", len(w.Pending), strings.Join(problemNames(w.Pending), ", "))}
 	}
 	return r
 }
@@ -504,7 +526,7 @@ func Executive(s Summary, prev *Previous) string {
 		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s |\n", r.area, good, bad, r.pct(), r.target, r.needed, changeCell(r, prevRows, prev))
 	}
 	b.WriteString("\nA check is one area of this table at its target. Counted items are the units of a row: a registry case, a proven live verdict, a recorded error answer, a sweep query, a parity request, a perf row, a scheduled workflow. " +
-		"Live coverage rows show how much of the case set is proven live and are not counted again. Not good counts differences only; accepted and upstream-blocked cases are shown apart.\n\n")
+		"Coverage rows show how much of the case set is proven live, or by a named passing test, and are not counted again; a case not proven is a number to work down, red only when a proven case regressed. Not good counts differences only; accepted and upstream-blocked cases are shown apart.\n\n")
 	for _, r := range cur {
 		if r.known {
 			for _, d := range r.detail {
@@ -860,6 +882,11 @@ func (m *metricList) cases(s Summary) {
 			m.add("Cache reuse "+v+": VictoriaLogs calls cold", u.ColdVLCalls)
 			m.add("Cache reuse "+v+": VictoriaLogs calls on repeats", u.RepeatCalls)
 		}
+		if c := s.Coverage[v]; c != nil {
+			m.addInt("Coverage "+v+": proven live", c.ProvenLive)
+			m.addInt("Coverage "+v+": proven by a test", c.ProvenByTest)
+			m.addInt("Coverage "+v+": not proven", c.NotProven)
+		}
 	}
 }
 
@@ -972,6 +999,7 @@ func changes(s Summary, prev *Previous) string {
 	c.add("Red items resolved", gone)
 	c.add("Red items that changed", changed)
 	caseChanges(&c, s, prev)
+	measurementChanges(&c, s, p)
 	registryChanges(&c, s, prev)
 	perfChanges(&c, s, p)
 	parityChanges(&c, s, p)
@@ -995,6 +1023,24 @@ func changes(s Summary, prev *Previous) string {
 		fmt.Fprintf(&b, "Not compared: %s.\n\n", strings.Join(c.notes, "; "))
 	}
 	return b.String()
+}
+
+// measurementChanges says when a number moved because it is measured another way: the repeats' VictoriaLogs calls were
+// counted by process-wide metrics (background work included) and are counted per request from the day the runs carry
+// the proxy's own count, so a drop in that row on that day is not a cache improvement; likewise coverage by a named
+// test, new with the wiring.
+func measurementChanges(c *changeSet, s Summary, p *Summary) {
+	var items []string
+	for _, v := range s.VictoriaLogs {
+		now, before := reuseOf(s, v), reuseOf(*p, v)
+		if now != nil && before != nil && now.CallsFromHeader > 0 && before.CallsFromHeader == 0 {
+			items = append(items, fmt.Sprintf("Cache reuse %s: VictoriaLogs calls on repeats are counted per request from today (before: process-wide metrics, background calls included); a drop is not a cache improvement", v))
+		}
+		if s.Coverage[v] != nil && p.Coverage[v] == nil {
+			items = append(items, fmt.Sprintf("Coverage %s: counts cases proven by a named passing test from today (before: live only)", v))
+		}
+	}
+	c.add("Measured another way from today", items)
 }
 
 // movedNumbers is the table of every number that moved, old to new.

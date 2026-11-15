@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -80,6 +81,10 @@ func run(cfg config, stdout, stderr io.Writer) int {
 		for _, f := range strings.Split(cfg.skip, ",") {
 			skip[strings.TrimSpace(f)] = true
 		}
+		// A workflow added since the last runs record has no scheduled run yet: its date says whether that is late.
+		AddedDates(cfg.workflows, workflows, func(args ...string) ([]byte, error) {
+			return exec.Command("git", args...).Output() //nolint:gosec // fixed arguments, a path under the workflow directory
+		})
 		h, err := CheckHealth(workflows, runs, skip)
 		if err == nil {
 			err = writeJSON(cfg.health, h)
@@ -88,7 +93,7 @@ func run(cfg config, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "ciworkflows:", err)
 			return 2
 		}
-		fmt.Fprintf(stdout, "ci workflows: %d scheduled, %d health problems\n", h.Scheduled, len(h.Problems))
+		fmt.Fprintf(stdout, "ci workflows: %d scheduled, %d health problems, %d pending a first run\n", h.Scheduled, len(h.Problems), len(h.Pending))
 	}
 	problems := Problems(workflows, meta)
 	for _, p := range problems {
