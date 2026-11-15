@@ -2086,15 +2086,21 @@ func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 	// not part of one, white space among them, is an error of that token. A Grafana variable ([$__auto]) keeps its
 	// older error: label_replace passes its argument through with it.
 	var length time.Duration
-	if raw, closed := rangeToken(p.sc.src, textStart); closed && !strings.HasPrefix(raw, "$") {
+	raw, closed := rangeToken(p.sc.src, textStart)
+	if closed && !strings.HasPrefix(raw, "$") {
 		var msg string
 		if length, msg = readRange(raw); msg != "" {
 			return newParseError(0, bracketCol, msg)
 		}
 	}
-	dur, err := p.expect(TokDuration)
-	if err != nil {
-		return fmt.Errorf("logql: expected duration: %w", err)
+	dur := p.cur
+	if closed && raw == "0" && dur.Typ == TokNumber {
+		p.advance() // a bare 0 is a duration of nothing to Loki, though the scanner reads it as a number
+	} else {
+		var err error
+		if dur, err = p.expect(TokDuration); err != nil {
+			return fmt.Errorf("logql: expected duration: %w", err)
+		}
 	}
 	// The duration token is the whole range text here: the range read above, exactly as Loki reads it.
 	ra.Range = dur.Val
@@ -2274,10 +2280,14 @@ func rangeLexError(d string) string {
 	return msg
 }
 
-// readRange is rangeLexError with the length of the range, exact in nanoseconds, when it reads (msg is "").
+// readRange is rangeLexError with the length of the range, exact in nanoseconds, when it reads (msg is ""). A bare 0
+// is a duration of nothing, as in Prometheus' parser (Loki accepts `[0]`); any other number needs a unit (`[00]`).
 func readRange(d string) (length time.Duration, msg string) {
-	if d == "" {
+	switch d {
+	case "":
 		return 0, "empty duration string"
+	case "0":
+		return 0, ""
 	}
 	var total uint64
 	last := len(rangeUnits)

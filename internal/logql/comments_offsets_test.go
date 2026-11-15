@@ -113,6 +113,9 @@ func FuzzStripComments(f *testing.F) {
 		`{a="x"} # c`, "{a=\"x\"} |= \"e\" # t\n| json", "# lead\n{a=\"x\"}", `{a="x"} |= "a#b"`,
 		"{a=\"x\"} |~ `a#b` # c", `{a="x"} | line_format "{{.a}}#{{.b}}"`, "{a=\"x\" # c\n}", `{a="x"} # "unterminated`,
 		"sum(rate({a=\"x\"}[5m])) # by (a)\n by (b)", `count_over_time({a="x"}[3s] offset -1s) # x`, "#\n#\n{a=\"x\"}#",
+		// a comment between a vector aggregation and its call or grouping is kept (Loki reads the name as a name)
+		"sum # c\n(rate({a=\"b\"}[5m])) by (a)", "sum by#c\n(a) (rate({a=\"b\"}[5m]))", "topk(2, SUM # c\nby (a) (rate({a=\"b\"}[5m])))",
+		"sum (rate({a=\"b\"}[5m])) by # c\n(a)", "rate # c\n({a=\"b\"}[5m])",
 	} {
 		f.Add(s)
 	}
@@ -141,9 +144,10 @@ func FuzzStripComments(f *testing.F) {
 				i++
 			}
 		}
-		if strings.TrimSpace(s) == "*" {
+		if strings.TrimSpace(s) == "*" || commentBeforeCall(q) {
 			// The bare wildcard is a text tolerance for some clients (validateLogQL), read on the text the
-			// handlers get, which the middleware strips first.
+			// handlers get, which the middleware strips first. A comment before the parenthesis of a function
+			// other than a vector aggregation is still removed: Loki's answer for it is not recorded.
 			return
 		}
 		e1, m1 := ValidateLogQLExpr(q)
