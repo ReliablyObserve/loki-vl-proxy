@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.262.0] - 2026-11-15
+
 ### Fixed
 
 - A range aggregation over a `| keep` that lists only a blank Loki reads as a label name, such as a vertical tab, a
@@ -15,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/loki/api/v1/query_range`. A `| keep` or `| drop` written so now prints as `| keep \v` instead of `| keep `, which
   no parser reads. Loki accepts such a blank alone and rejects it beside another name (`| keep\v\v`, `| keep\va`);
   the proxy already answered those as Loki does.
+
+## [2.261.0] - 2026-11-15
+
+### Fixed
+
 - A repeated `query`, `query_range` or `series` request whose answer is larger than one entry of the
   compatibility-edge cache (a tenth of its budget, 2.56 MiB by default) is answered from the cache again instead of
   asking VictoriaLogs. Such answers (Drilldown breakdowns by a high-cardinality label, parser metrics and instant
