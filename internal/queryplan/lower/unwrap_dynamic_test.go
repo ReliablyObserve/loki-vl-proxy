@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -171,6 +172,11 @@ func FuzzDynamicUnwrapIdentity(f *testing.F) {
 		}
 		if !WritesDynamicUnwrapIdentity(p) {
 			t.Fatalf("%q: the identity is not written", q)
+		}
+		// The proxy's text screen turns a query away whose root the metric screen names as another construct: it
+		// never turns away a root identity.
+		if root := ScreenMetric(logql.CanonicalizeLogRanges(q)); root != "" && root != Construct(p.Root) {
+			t.Fatalf("%q: the metric screen names %s, the plan's root is %s", q, root, Construct(p.Root))
 		}
 		ra := p.Root.(*queryplan.VectorAgg).In.(*queryplan.RangeAgg)
 		if out := queryplan.SeriesLabels(ra.In.Stages); !out.Dynamic || out.Kept || out.Opaque || len(out.Dropped) > 0 {

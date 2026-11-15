@@ -356,10 +356,16 @@ func (p *Proxy) lowerDynamicIdentity(ctx context.Context, canon string, prof low
 
 // dynamicIdentityScreen is the text screen of lowerDynamicIdentity: a query that starts with sum, max, min or avg
 // (the vector aggregation the plan's root must be) and names an unwrap, a json or logfmt parser and one of the
-// functions taken per series. The plan decides; the screen spares the other queries a plan.
+// functions taken per series, and whose root the metric screen does not name as another construct. The plan decides;
+// the screen spares the other queries a plan.
 func dynamicIdentityScreen(query string) bool {
 	if len(query) < 4 || !dynamicIdentityOp(query[:3]) || query[3] != '(' && query[3] != ' ' ||
 		!strings.Contains(query, "unwrap") || !strings.Contains(query, "json") && !strings.Contains(query, "logfmt") {
+		return false
+	}
+	// A query whose root is another construct (a binary operation, a label_replace) is not a root identity: the
+	// metric screen names it with no allocation, so no plan is built for it here.
+	if root := lower.ScreenMetric(query); root != "" && root != "VectorAgg" {
 		return false
 	}
 	for _, fn := range dynamicIdentityFuncs {
