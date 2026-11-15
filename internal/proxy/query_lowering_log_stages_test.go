@@ -14,6 +14,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
@@ -22,7 +23,7 @@ import (
 
 // logStageFlipCandidates are the stage families of log queries the tests serve from the lowering on a proxy of their
 // own (withFlippedLogStages), to prove a flip of them ready.
-var logStageFlipCandidates = []string{"LevelFilter", "UnspacedParser"}
+var logStageFlipCandidates = []string{"LevelFilter", "UnspacedParser", "JSON", "Logfmt", "DropKeep", "LabelFormat", "LineFormat", "RegexpPattern"}
 
 // unspacedParserRE finds a regexp or pattern parser written with no blank before its quoted expression.
 var unspacedParserRE = regexp.MustCompile("(\\|\\s*(?:regexp|pattern))([\"`])")
@@ -239,6 +240,11 @@ func FuzzLogFlipGate(f *testing.F) {
 		`{app="a"} | (detected_level="error" or detected_level="warn") and not="x"`, `{app="a"} | json | detected_level="x"`,
 		`{app="a"} | detected_level="x" | json | status == 500`, `{app="a"} | service_name="x" | detected_level="y"`,
 		`{app="a"} | detected_level`, `{app="a"} | json | status="500"`, `{app="a"} |pattern"<_> <m>"`,
+		`{app="a"} |= "x" | json m="a.b", n="c" | m="x"`, `{app="a"} | logfmt --strict | status >= 500 | path = "/a"`,
+		`{app="a"} | json | drop a, b | keep c, d`, `{app="a"} | keep a="x", b="y"`, `{app="a"} | drop detected_level`,
+		`{app="a"} | json | label_format x="{{.a}}", y=z`, `{app="a"} | json | line_format "{{.a}} {{.b}}"`,
+		`{app="a"} | pattern "<_> <m> <_>" | m="GET"`, "{app=\"a\"} | regexp `(?P<m>[A-Z]+) ` | m=\"GET\"",
+		`{app="a"} | logfmt | line_format "{{.msg}}" | json | level="error"`, `{app="a"} | json | _time="x"`,
 	} {
 		f.Add(q)
 	}
@@ -261,10 +267,29 @@ func FuzzLogFlipGate(f *testing.F) {
 		}
 		got, gotErr := on.translateLogResponseQuery(context.Background(), q)
 		want, wantErr := off.translateLogResponseQuery(context.Background(), respaced(q))
-		if (got != want && got != lower.QuoteKeywordFieldText(want)) || (gotErr == nil) != (wantErr == nil) {
+		// An unspaced parser's expression is quoted by the plan, where the translator copies the spaced spelling's as it
+		// is written: a control byte is escaped in one and raw in the other, the same string to LogsQL.
+		respelled := respaced(q) != q && sameLogsQL(got, want)
+		// A query with an unspaced parser the screen leaves to the translator gets the translator's own text, as with
+		// nothing flipped.
+		if !respelled && respaced(q) != q {
+			unflipped, _ := off.translateLogResponseQuery(context.Background(), q)
+			respelled = got == unflipped
+		}
+		if (got != want && got != lower.QuoteKeywordFieldText(want) && !respelled) || (gotErr == nil) != (wantErr == nil) {
 			t.Fatalf("%q:\n flip on  %q %v\n flip off %q %v", q, got, gotErr, want, wantErr)
 		}
 	})
+}
+
+// sameLogsQL reports two LogsQL texts the LogsQL parser reads as the same query.
+func sameLogsQL(a, b string) bool {
+	qa, err := logsql.Parse(a)
+	if err != nil {
+		return false
+	}
+	qb, err := logsql.Parse(b)
+	return err == nil && qa.String() == qb.String()
 }
 
 // A regexp or pattern parser written with no blank before its quoted expression is served from the plan with the
@@ -339,5 +364,86 @@ func TestQueryPlanLowering_ServesUnspacedParsers(t *testing.T) {
 	q := `{app="a"} |pattern"<_> <m> <_>" | m="GET"`
 	if got, _ := none.translateLogResponseQuery(ctx, q); !strings.Contains(got, `pattern"`) {
 		t.Errorf("not flipped: %q served %q", q, got)
+	}
+}
+
+// parserFormatFamilies are the parser and formatting stage families, each with log queries the plan serves once the
+// family is flipped and ones it leaves to the string translator whatever is flipped.
+var parserFormatFamilies = []struct {
+	family     string
+	served     []string
+	turnedAway []string
+}{
+	{"JSON", []string{
+		`{app="a"} | json`, `{app="a"} |= "x" | json | status="500"`, `{app="a"} | json | status >= 500 | path=~"/api.*"`,
+		`{app="a"} | json m="a.b", n="c" | m="x"`, `{app="a"} | json | (status="500" or level!="info")`,
+		`{app="a"} | json | k8s.pod.name="p"`,
+	}, []string{
+		`{app="a"} | json | status == 500`, `{app="a"} | json | detected_level="error"`, `{app="a"} | json | service_name="x"`,
+		`{app="a"} | json | unpack`,
+	}},
+	{"Logfmt", []string{
+		`{app="a"} | logfmt`, `{app="a"} | logfmt | status >= 500 | path = "/api"`, `{app="a"} | logfmt --strict | level="error"`,
+		`{app="a"} | logfmt a="b" | a!="x"`,
+	}, []string{`{app="a"} | logfmt | status = 500`, `{app="a"} | logfmt | detected_level="x"`}},
+	{"DropKeep", []string{
+		`{app="a"} | drop a, b`, `{app="a"} | keep c, d`, `{app="a"} | drop a="x", b`, `{app="a"} | keep a="x", b="y"`,
+		`{app="a"} |= "x" | drop detected_level`,
+	}, []string{`{app="a"} | keep a="x", b`, `{app="a"} | drop service_name`}},
+	{"LabelFormat", []string{
+		`{app="a"} | label_format x="{{.a}}"`, `{app="a"} | label_format x="{{ .a }} {{.b}}", y=z`,
+	}, []string{`{app="a"} | label_format x="{{.a | upper}}"`, `{app="a"} | label_format x="<a>"`}},
+	{"LineFormat", []string{
+		`{app="a"} | line_format "{{.a}} {{.b}}"`, `{app="a"} |= "x" | line_format "plain"`,
+	}, []string{`{app="a"} | line_format "{{.a.b}}"`, `{app="a"} | line_format "{{ printf \"%s\" .a }}"`, `{app="a"} | line_format"{{.a}}"`}},
+	{"RegexpPattern", []string{
+		`{app="a"} | pattern "<_> <m> <_>" | m="GET"`, "{app=\"a\"} | regexp `(?P<m>[A-Z]+) ` | m=\"GET\"",
+		`{app="a"} | regexp "(?P<n>\\d+)" | n > 5`,
+	}, []string{`{app="a"} | pattern "\x1a<m>"`, `{app="a"} | regexp "(?P<n>\x41)"`}},
+}
+
+// A log query of a flipped parser or formatting stage family is served from the plan with the string translator's
+// text, and one of a family not flipped, or one the family leaves to the translator (a numeric equality after a
+// parser, a level filter after a stage, a template that is more than fields, a keep of names and matchers), is
+// translated by the string translator. With -query-plan-lowering=false nothing is served.
+//
+// conformance: architecture-syntax-package-layering
+func TestQueryPlanLowering_ServesParserAndFormatStages(t *testing.T) {
+	ctx := context.Background()
+	p := newLoweringProfileProxy(t, "underscores", func(c *Config) { c.LabelStyle = LabelStyleUnderscores }, "")
+	off := newLoweringProfileProxy(t, "underscores", func(c *Config) { c.LabelStyle = LabelStyleUnderscores; c.DisableQueryPlanLowering = true }, "")
+	flipped := lower.LogStagesOf(QueryPlanFlippedLogStages)
+	for _, fam := range parserFormatFamilies {
+		on := flipped&lower.LogStagesOf([]string{fam.family}) != 0
+		for _, q := range fam.served {
+			want, err := off.translateLogResponseQuery(ctx, q)
+			if err != nil {
+				t.Fatalf("%s %q: %v", fam.family, q, err)
+			}
+			got, err := p.translateLogResponseQuery(ctx, q)
+			if err != nil || got != want {
+				t.Errorf("%s %q: %q %v, want the translator's text %q", fam.family, q, got, err, want)
+			}
+			if _, served := p.lowerLogSelect(ctx, q, logLoweringProfile(ctx, p, q, false)); served != on {
+				t.Errorf("%s %q: served from the plan %v, the family is flipped %v", fam.family, q, served, on)
+			}
+		}
+		for _, q := range fam.turnedAway {
+			if text, served := p.lowerLogSelect(ctx, q, logLoweringProfile(ctx, p, q, false)); served {
+				t.Errorf("%s %q: served %q, want the translator to answer", fam.family, q, text)
+			}
+		}
+	}
+	// With the flag off, no translation is served from the plan, every family flipped.
+	withFlippedLogStages(off, logStageFlipCandidates...)
+	for _, fam := range parserFormatFamilies {
+		for _, q := range fam.served {
+			if _, err := off.translateLogResponseQuery(ctx, q); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if n := shadowCounts(t, off)["flipped LogSelect"]; n != 0 {
+		t.Errorf("flag off: %d translations served from the plan", n)
 	}
 }

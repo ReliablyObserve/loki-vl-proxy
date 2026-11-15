@@ -48,23 +48,61 @@ func TestScreenLogStages(t *testing.T) {
 		{`{app="api"} | service_name="api"`, 0},
 		{`{app="api"} | detected_level="error" | service_name="api"`, 0},
 		{`{app="api"} | json | detected_level="error"`, 0},
-		{`{app="api"} | logfmt`, 0},
-		{`{app="api"} | json | status="500"`, 0},
+		// The parsers and formatting stages are families of their own.
+		{`{app="api"} | logfmt`, LogLogfmt},
+		{`{app="api"} | json | status="500"`, LogJSON},
+		{`{app="api"} |= "x" | json m="a.b", n="c" | m="x"`, LogJSON},
+		{`{app="api"} | json a, b`, LogJSON},
+		{`{app="api"} | logfmt --strict --keep-empty | status >= 500`, LogLogfmt},
+		{`{app="api"} | logfmt | path = "/api" | json`, LogLogfmt | LogJSON},
+		{`{app="api"} | json | status == 500`, 0},
+		{`{app="api"} | json | status = 500`, 0},
+		{`{app="api"} | json | status != 5m`, 0},
+		{`{app="api"} | json | status > 500`, LogJSON},
+		{`{app="api"} | json | _time="x"`, LogJSON},
+		{`{app="api"} | _time="x" | json`, 0},
+		{`{app="api"} | json | -x="y"`, 0},
+		{`{app="api"} | json | x`, 0},
+		{`{app="api"} | drop a, b | keep c, d`, LogDropKeep},
+		{`{app="api"} | drop a="x", b`, LogDropKeep},
+		{`{app="api"} | keep a="x", b="y"`, LogDropKeep},
+		{`{app="api"} | keep a="x", b`, 0},
+		{`{app="api"} | keep b, a=~"x"`, 0},
+		{`{service_name="api"} | drop detected_level`, LogDropKeep},
+		{`{service_name="api"} | keep detected_level`, LogDropKeep},
+		{`{service_name="api"} | drop detected_level="info"`, 0},
+		{`{app="api"} | drop service_name`, 0},
+		{`{app="api"} | json | label_format x="{{.a}} {{ .b }}", y=z`, LogJSON | LogLabelFormat},
+		{`{app="api"} | label_format x="{{.a | upper}}"`, 0},
+		{`{app="api"} | line_format "{{.a}} and {{.b}}"`, LogLineFormat},
+		{`{app="api"} | line_format "plain"`, LogLineFormat},
+		{"{app=\"api\"} | line_format `{{.a}}`", LogLineFormat},
+		{`{app="api"} | line_format "{{.a.b}}"`, 0},
+		{`{app="api"} | line_format"{{.a}}"`, 0},
+		{`{app="api"} | line_format "{{"`, 0},
+		{`{app="api"} | line_format "{{.a"`, 0},
+		{`{app="api"} | line_format "a }} b"`, 0},
+		{`{app="api"} | line_format "<a>"`, 0},
+		{`{app="api"} | line_format "a\nb"`, 0},
+		{`{app="api"} | line_format "{{- .a -}}"`, 0},
+		{`{app="api"} | line_format "{{.}}"`, 0},
+		{`{app="api"} | json | line_format "{{.a}}" | detected_level="x"`, 0},
 		// Regexp and pattern parsers are a family; one written with no blank before its quoted expression is named too.
 		{`{app="api"} | regexp "(?P<a>x)"`, LogRegexpPattern},
 		{`{app="api"} | pattern "<_> <m>"`, LogRegexpPattern},
 		{`{app="api"} |pattern"<_> <m>"`, LogRegexpPattern | LogUnspacedParser},
 		{"{app=\"api\"} |regexp`(?P<a>x)` | a=\"x\"", LogRegexpPattern | LogUnspacedParser},
 		{`{app="api"} |= "x" |pattern"<_> <m>" | pattern "<n> <_>" | m!="y"`, LogRegexpPattern | LogUnspacedParser},
-		{`{app="api"} |pattern"<_> <m>" | json`, 0},
+		{`{app="api"} |pattern"<_> <m>" | json`, LogRegexpPattern | LogUnspacedParser | LogJSON},
 		{`{app="api"} |pattern"<_> <m>" | detected_level="error"`, 0},
 		{`{app="api"} | pattern="x"`, 0},
 		{`{app="api"} | unpack`, 0},
-		{`{app="api"} | drop a`, 0},
-		{`{app="api"} | keep a`, 0},
-		{`{app="api"} | line_format "{{.a}}"`, 0},
-		{`{app="api"} | label_format a=b`, 0},
+		{`{app="api"} | drop a`, LogDropKeep},
+		{`{app="api"} | keep a`, LogDropKeep},
+		{`{app="api"} | line_format "{{.a}}"`, LogLineFormat},
+		{`{app="api"} | label_format a=b`, LogLabelFormat},
 		{`{app="api"} | decolorize`, 0},
+		{`{app="api"} | json | decolorize`, 0},
 		{`{app="api"} | unwrap d`, 0},
 		{`{app="api"} | detected_level="error" # a comment`, 0},
 		{`{app="api"} | detected_level="error" | s="a detected_level b"`, 0},
@@ -124,13 +162,17 @@ func TestPlanLogStages(t *testing.T) {
 		{`{app="api"} | a="1" or detected_level="error"`, LogLevelFilter, true},
 		{`{app="api"} | service_name="api"`, 0, false},
 		{`{app="api"} | a="1" or service_name="api"`, 0, false},
-		{`{app="api"} | json`, 0, false},
+		{`{app="api"} | json`, LogJSON, true},
+		{`{app="api"} | logfmt | a="x"`, LogLogfmt, true},
 		{`{app="api"} | pattern "<_> <m>" | m="x"`, LogRegexpPattern, true},
 		{"{app=\"api\"} | regexp `(?P<a>x)`", LogRegexpPattern, true},
 		{`{app="api"} | unpack`, 0, false},
+		{`{app="api"} | decolorize`, 0, false},
 		{`{app="api"} | detected_level`, 0, false},
-		{`{app="api"} | drop a`, 0, false},
-		{`{app="api"} | line_format "x"`, 0, false},
+		{`{app="api"} | drop a | keep b`, LogDropKeep, true},
+		{`{app="api"} | line_format "x"`, LogLineFormat, true},
+		{`{app="api"} | label_format a=b`, LogLabelFormat, true},
+		{`{app="api"} | json | service_name="x"`, 0, false},
 		{`count_over_time({app="api"}[5m])`, 0, false},
 	} {
 		p := logScreenPlan(t, tc.query)
@@ -147,6 +189,9 @@ func TestPlanLogStages(t *testing.T) {
 	if got := LogStagesOf([]string{"LevelFilter", "VectorAgg", "", "UnspacedParser"}); got != LogLevelFilter|LogUnspacedParser {
 		t.Errorf("LogStagesOf = %b", got)
 	}
+	if got := LogStagesOf([]string{"JSON", "Logfmt", "DropKeep", "LabelFormat", "LineFormat", "RegexpPattern"}); got != LogJSON|LogLogfmt|LogDropKeep|LogLabelFormat|LogLineFormat|LogRegexpPattern {
+		t.Errorf("LogStagesOf = %b", got)
+	}
 }
 
 // The screen makes no allocation, whatever it reads.
@@ -157,6 +202,7 @@ func TestScreenLogStagesAllocatesNothing(t *testing.T) {
 		`{service_name="api"} |= "error" | detected_level="error"`,
 		`{app="api"} | detected_level="error" | s="\x01"`,
 		`{app="api"} | json | status="500"`,
+		`{app="api"} | logfmt --strict | keep a, b | label_format x="{{.a}}" | line_format "{{.x}}"`,
 	} {
 		if n := testing.AllocsPerRun(100, func() { _ = ScreenLogStages(q) }); n != 0 {
 			t.Errorf("ScreenLogStages(%q): %v allocations", q, n)
@@ -172,10 +218,12 @@ func FuzzScreenLogStages(f *testing.F) {
 		`{app="api"} | json | status="500"`, `{app="api"} | logfmt | detected_level="x"`, `{app="api"} | service_name="x"`,
 		`{app="api"} | detected_level="error" | s="\x01"`, `{app="api"} |pattern"<_> <m>"`, "{a=`b`} | detected_level=`x`",
 		`{app="api"} | (detected_level="error" and path="/x")`, `{app="api"} | drop a, b | keep c`,
+		`{app="api"} | logfmt --strict | a="b"`, `{app="api"} | keep a="x", b`, `{app="api"} | line_format "{{.a}} {{ .b }}"`,
+		`{app="api"} | json | label_format x="{{.a}}", y=z`, `{a="b"} | drop detected_level`, `{a="b"} | json m="a.b" | m>1`,
 	} {
 		f.Add(q)
 	}
-	const known = LogLevelFilter | LogRegexpPattern | LogUnspacedParser
+	const known = LogLevelFilter | LogRegexpPattern | LogUnspacedParser | LogJSON | LogLogfmt | LogDropKeep | LogLabelFormat | LogLineFormat
 	f.Fuzz(func(t *testing.T, q string) {
 		if len(q) > 1024 {
 			return
@@ -244,6 +292,10 @@ func TestScreenLogStagesIn(t *testing.T) {
 		{unspaced, LogUnspacedParser, LogRegexpPattern | LogUnspacedParser}, {unspaced, LogLevelFilter, 0},
 		{both, LogUnspacedParser, LogRegexpPattern | LogUnspacedParser}, {reversed, LogUnspacedParser, 0},
 		{reversed, LogRegexpPattern | LogUnspacedParser, LogRegexpPattern | LogUnspacedParser}, {level, 0, 0},
+		{`{a="b"} | json | x="y"`, LogLevelFilter | LogUnspacedParser, 0}, {`{a="b"} | json | x="y"`, LogJSON, LogJSON},
+		{`{a="b"} | json | logfmt`, LogJSON, 0}, {`{a="b"} | keep detected_level`, LogLevelFilter, 0},
+		{`{a="b"} | keep detected_level`, LogDropKeep, LogDropKeep}, {`{a="b"} | line_format "{{.a}}"`, LogLabelFormat, 0},
+		{`{a="b"} | logfmt --strict`, LogJSON, 0}, {`{a="b"} | logfmt --strict`, LogLogfmt, LogLogfmt},
 	} {
 		if got := ScreenLogStagesIn(tc.query, tc.allowed); got != tc.want {
 			t.Errorf("ScreenLogStagesIn(%q, %b) = %b, want %b", tc.query, tc.allowed, got, tc.want)

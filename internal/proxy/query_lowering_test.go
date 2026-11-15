@@ -114,24 +114,26 @@ var loweringParityQueries = []struct {
 	{"detected_level filters among line filters", `{app="a"} |= "x" | detected_level=~"error|warn" != "y" | status >= 500`, false, "", "LevelFilter"},
 	{"detected_level filter after a parser", `{app="a"} | logfmt | detected_level="error"`, false, "", ""},
 	{"service_name label filter", `{app="a"} | service_name="x"`, false, "", ""},
-	{"json", `{app="a"} | json | status="200"`, false, "", ""},
-	{"logfmt", `{app="a"} | logfmt | level="error"`, false, "", ""},
-	{"line_format", `{app="a"} | line_format "{{.status}}"`, false, "", ""},
+	{"json", `{app="a"} | json | status="200"`, false, "", "JSON"},
+	{"logfmt", `{app="a"} | logfmt | level="error"`, false, "", "Logfmt"},
+	// The Loki-compatible profile drops a line_format nothing reads: the query is the selector, translated before.
+	{"line_format", `{app="a"} | line_format "{{.status}}"`, false, "loki compatible", "LineFormat"},
 	// The lowering writes these natively (the corpus shadow holds it to the translator), but the flip's screen turns
 	// every parser and formatting stage away: they stay on the string translator.
 	{"decolorize", `{app="a"} | decolorize`, false, "", ""},
 	{"decolorize then filter", `{app="a"} | decolorize | status="200" |= "x"`, false, "", ""},
-	{"regexp", "{app=\"a\"} | regexp `(?P<s>\\d+)` | s=\"200\"", false, "", ""},
-	{"pattern", "{app=\"a\"} | pattern `<_> <s> <_>` | s=\"200\"", false, "", ""},
-	{"label_format", `{app="a"} | label_format s=status | s="200"`, false, "", ""},
-	{"label_format template", `{app="a"} | label_format s="{{.status}}-x"`, false, "", ""},
-	{"drop", `{app="a"} | drop status`, false, "", ""},
-	{"keep", `{app="a"} | keep status`, false, "", ""},
+	{"regexp", "{app=\"a\"} | regexp `(?P<s>\\d+)` | s=\"200\"", false, "", "RegexpPattern"},
+	{"pattern", "{app=\"a\"} | pattern `<_> <s> <_>` | s=\"200\"", false, "", "RegexpPattern"},
+	{"label_format", `{app="a"} | label_format s=status | s="200"`, false, "", "LabelFormat"},
+	{"label_format template", `{app="a"} | label_format s="{{.status}}-x"`, false, "", "LabelFormat"},
+	{"drop", `{app="a"} | drop status`, false, "", "DropKeep"},
+	{"keep", `{app="a"} | keep status`, false, "", "DropKeep"},
 	// Two line_format stages keep the stored line aside in the Loki-compatible profile (translateQueryOpts keepLine).
-	{"keep line", `{app="a"} | line_format "{{.status}}" | line_format "{{.app}}: {{.__line__}}"`, false, "", ""},
-	{"keep line with filters", `{app="a"} |= "x" | line_format "{{.a}}" | status="200" | line_format "{{.b}}"`, false, "", ""},
+	{"keep line", `{app="a"} | line_format "{{.status}}" | line_format "{{.app}}: {{.__line__}}"`, false, "", "LineFormat"},
+	{"keep line with filters", `{app="a"} |= "x" | line_format "{{.a}}" | status="200" | line_format "{{.b}}"`, false, "", "LineFormat"},
 	{"detected_level and service_name filters", `{service_name="a"} |= "x" | detected_level="error" | service_name="a"`, false, "", ""},
 	{"decolorize", `{app="a"} | decolorize |= "x"`, false, "", ""},
+	// Asked again: answered from the translation cache, with no translation.
 	{"drop", `{app="a"} | drop status`, false, "", ""},
 	// Metric queries: served from the lowering once their construct is flipped, with the string translator's text.
 	{"unwrap metric", `sum(rate({app="a"} | json | unwrap bytes [5m]))`, false, "", "VectorAgg"},
