@@ -17,6 +17,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
 // extractionListFixture is the rows the shapes below read: four streams (two
@@ -303,82 +304,6 @@ var extractionListGoldens = map[string]extractionListGolden{
 	"sliding|sum by (ns) (sum without (pod) (max_over_time({app=\"uw\"} | logfmt amount, route | unwrap amount [5m])))":  {Sent: []string{"app:=\"uw\" | unpack_logfmt | format if (\"amount\":~\"^[+-]?(?:(?:[0-9]+(?:_[0-9]+)*(?:[.](?:[0-9]+(?:_[0-9]+)*)?)?|[.][0-9]+(?:_[0-9]+)*)(?:[eE][+-]?[0-9]+(?:_[0-9]+)*)?|0[xX](?:_?[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*(?:[.](?:[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*)?)?|[.][0-9a-fA-F]+(?:_[0-9a-fA-F]+)*)[pP][+-]?[0-9]+(?:_[0-9]+)*)$|^[+-]?(?i:inf)$\") \"0\" as __lvp_bad | format if (-__lvp_bad:=\"0\" \"amount\":~\"^[+-]?(?i:infinity)$\") \"3\" as __lvp_bad | format if (-__lvp_bad:=\"0\" -__lvp_bad:=\"3\" \"amount\":~\"^(?i:nan)$\") \"2\" as __lvp_bad | format if (-__lvp_bad:=\"0\" -__lvp_bad:=\"3\" -__lvp_bad:=\"2\" \"amount\":*) \"1\" as __lvp_bad | filter __lvp_bad:=\"0\" or __lvp_bad:=\"3\" or __lvp_bad:=\"2\" or __lvp_bad:=\"1\" | copy \"amount\" as __lvp_n | replace_regexp if (__lvp_bad:=\"3\") (\"(?i)inity$\",\"\") at __lvp_n | math __lvp_n as __lvp_v | format if (__lvp_bad:=\"3\") \"0\" as __lvp_bad | format if (__lvp_bad:=\"0\" -(__lvp_v:<=inf)) \"1\" as __lvp_bad | math __lvp_v default 0 as __lvp_v | stats by (_stream, route, __lvp_bad) max(__lvp_v) as __lvp_inner | stats by (_stream, route, __lvp_bad) sum(__lvp_inner)"}, Answer: "2 series: {ns=x} 1.79999922e+09=151 1.79999928e+09=214 1.79999934e+09=63 1.7999994e+09=138 1.79999946e+09=154 1.79999952e+09=83 1.79999958e+09=178 1.79999964e+09=194 1.7999997e+09=103 1.79999976e+09=218 1.79999982e+09=234 1.79999988e+09=123 1.79999994e+09=258 1.8e+09=174; {ns=y} 1.79999922e+09=20 1.79999928e+09=190 1.79999934e+09=226 1.7999994e+09=199 1.79999946e+09=170 1.79999952e+09=266 1.79999958e+09=179 1.79999964e+09=150 1.7999997e+09=206 1.79999976e+09=159 1.79999982e+09=130 1.79999988e+09=146 1.79999994e+09=139 1.8e+09=110"},
 }
 
-// lokiExtractionListInstant is the instant answer Loki v3.7.7 gives the shapes
-// below over the fixture, from a reference evaluator written apart from the
-// proxy: a series is the stream plus the labels the parser names, less the
-// unwrapped one, the range function is taken per series over (t-5m, t], and
-// the aggregation over those values. Nothing here ran against a real Loki.
-func lokiExtractionListInstant(t *testing.T, query string) map[string]float64 {
-	t.Helper()
-	rows, end := extractionListFixture()
-	named := func(row vlemu.Row, keys ...string) string {
-		key := row.Stream
-		for _, k := range keys {
-			key += "|" + k + "=" + row.Labels[k]
-		}
-		return key
-	}
-	ns := func(stream string) string { return vlemu.StreamLabelRE.FindAllStringSubmatch(stream, -1)[1][2] }
-	// perSeries: series key -> its values in the window.
-	perSeries := func(keys ...string) map[string][]float64 {
-		out := map[string][]float64{}
-		for _, row := range rows {
-			if row.TS > end-300e9 && row.TS <= end {
-				out[named(row, keys...)] = append(out[named(row, keys...)], row.Value)
-			}
-		}
-		return out
-	}
-	fold := func(series map[string][]float64, valueOf func([]float64) float64, byNS bool, agg func([]float64) float64) map[string]float64 {
-		groups := map[string][]float64{}
-		for key, values := range series {
-			group := ""
-			if byNS {
-				group = "ns=" + ns(key)
-			}
-			groups[group] = append(groups[group], valueOf(values))
-		}
-		out := map[string]float64{}
-		for group, values := range groups {
-			out[group] = agg(values)
-		}
-		return out
-	}
-	maxOf := func(v []float64) float64 { return slicesMax(v) }
-	sumOf := func(v []float64) float64 { return slicesSum(v) }
-	avgOf := func(v []float64) float64 { return slicesSum(v) / float64(len(v)) }
-	countOf := func(v []float64) float64 { return float64(len(v)) }
-	one := func(v []float64) float64 { return 1 }
-	switch query {
-	case `sum(max_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`:
-		return fold(perSeries(), maxOf, false, sumOf)
-	case `avg by (ns) (avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`:
-		return fold(perSeries("route"), avgOf, true, avgOf)
-	case `count by (ns) (max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`:
-		return fold(perSeries("route"), maxOf, true, countOf)
-	case `count by (ns) (count_over_time({app="uw"} | logfmt route [5m]))`:
-		return fold(perSeries("route"), one, true, countOf)
-	}
-	t.Fatalf("no reference for %s", query)
-	return nil
-}
-
-func slicesMax(v []float64) float64 {
-	m := v[0]
-	for _, x := range v {
-		m = max(m, x)
-	}
-	return m
-}
-
-func slicesSum(v []float64) float64 {
-	var s float64
-	for _, x := range v {
-		s += x
-	}
-	return s
-}
-
 var extractionListPointRE = regexp.MustCompile(`\{([^}]*)\} [^ =]+=([0-9.e+-]+)`)
 
 // extractionListInstantValues reads the instant answer text of a shape as
@@ -397,11 +322,11 @@ func extractionListInstantValues(answer string) map[string]float64 {
 // unwrapped one; outside a `without` the proxy still groups the inner stats by
 // the line (an unwrap function) or by the stream (a rate, a count) and the
 // aggregation over them reads other series than Loki's. The test pins both
-// answers over the fixture, the proxy's as origin/main gives it and Loki's from
-// the reference evaluator, so that a fix of
+// answers over the fixture, the proxy's as origin/main gives it and Loki's,
+// recorded with Loki's engine over the same lines (test/oracle/loki engine;
+// LVP_RUN_ORACLES=1 records again), so that a fix of
 // semantics/unwrap-extraction-list-series-identity fails it and asks for a
-// parity case. The figures come from an emulator run with a Loki-following
-// reference evaluator, not from a real Loki.
+// parity case.
 //
 // conformance: semantics/unwrap-extraction-list-series-identity, metric-series-identity
 func TestExtractionListSeriesIdentityStillDiffers(t *testing.T) {
@@ -417,13 +342,13 @@ func TestExtractionListSeriesIdentityStillDiffers(t *testing.T) {
 		t.Run(c.query, func(t *testing.T) {
 			_, answer := runExtractionListShape(t, c.query, extractionListModes[0])
 			got := extractionListInstantValues(answer)
-			ref := lokiExtractionListInstant(t, c.query)
-			t.Logf("proxy %v reference %v", got, ref)
+			ref := extractionListLoki(t, c.query)
+			t.Logf("proxy %v Loki %v", got, ref)
 			if !sameFigures(got, c.proxy) {
 				t.Fatalf("the proxy answers %v, want origin/main's %v", got, c.proxy)
 			}
 			if !sameFigures(ref, c.ref) {
-				t.Fatalf("the reference answers %v, want %v", ref, c.ref)
+				t.Fatalf("Loki answers %v, the case states %v", ref, c.ref)
 			}
 			if sameFigures(got, ref) {
 				t.Fatalf("the proxy answers Loki's %v: semantics/unwrap-extraction-list-series-identity is fixed, turn this into a parity case", ref)
@@ -463,4 +388,27 @@ func TestExtractionListTopKWithoutIsBoundedByTheSeriesLimit(t *testing.T) {
 			}
 		}
 	}
+}
+
+// extractionListLoki is Loki's instant answer to query over the fixture's lines at its end, as group (`ns=x`,
+// empty for a series with no ns label) -> value.
+func extractionListLoki(t *testing.T, query string) map[string]float64 {
+	t.Helper()
+	rows, end := extractionListFixture()
+	set := oraclerun.EngineDataSet{
+		Streams:  engineStreams(rows, func(r vlemu.Row) (string, map[string]string) { return r.Msg, nil }),
+		Requests: []oraclerun.EngineRequest{lokiMetricRequest("q", query, end, end, 0)},
+	}
+	points, labels := lokiMetricPoints(t, query, lokiEngineAnswerOf(t, "extraction_list_outside_without", set))
+	out := map[string]float64{}
+	for key, series := range points {
+		group := ""
+		if ns, ok := labels[key]["ns"]; ok {
+			group = "ns=" + ns
+		}
+		for _, v := range series {
+			out[group] = v
+		}
+	}
+	return out
 }

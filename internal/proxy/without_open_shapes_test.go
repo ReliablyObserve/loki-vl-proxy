@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,12 +15,13 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
-// This file reproduces the shapes around `without` that the proxy still answers
-// differently from Loki v3.7.7. Each case states the answer the proxy gives now
-// and the answer Loki gives, computed from the rows with a reference evaluator
-// of Loki's aggregations and label_replace (not run against a Loki here).
+// This file reproduces the shapes around `without` that the proxy answered
+// differently from Loki. Each case states the answer the proxy gives and the
+// answer Loki gives for the same rows, recorded with Loki's engine
+// (test/oracle/loki engine; LVP_RUN_ORACLES=1 records again).
 // The test fails when the proxy's answer changes, in either direction: a fix
 // moves the answer to Loki's and the case and its registry row are updated with it.
 //
@@ -115,144 +115,6 @@ func openShapeRunAgainst(t *testing.T, backendURL, query string, instant bool) o
 	return out
 }
 
-// openShapeStreams is the value of each stream of the fixture at the evaluation
-// times: fn over the window ending at each time, as Loki evaluates it per series.
-func openShapeStreams(fn string, window time.Duration, instant bool) map[string][]float64 {
-	base := int64(1_800_000_000) * 1e9
-	times := []int64{base - 120e9, base - 60e9, base}
-	if instant {
-		times = []int64{base}
-	}
-	type sample struct {
-		ts    int64
-		value float64
-	}
-	byStream := map[string][]sample{}
-	for _, row := range withoutScopeRows() {
-		var labels = map[string]string{}
-		for _, m := range vlemu.StreamLabelRE.FindAllStringSubmatch(row.Stream, -1) {
-			labels[m[1]] = m[2]
-		}
-		key := openShapeSeriesKey(labels)
-		byStream[key] = append(byStream[key], sample{row.TS, row.Value})
-	}
-	out := map[string][]float64{}
-	for key, samples := range byStream {
-		for _, ts := range times {
-			var sum, count, maxV float64
-			maxV = math.Inf(-1)
-			for _, s := range samples {
-				if s.ts > ts-int64(window) && s.ts <= ts {
-					sum += s.value
-					count++
-					maxV = math.Max(maxV, s.value)
-				}
-			}
-			if count == 0 {
-				continue
-			}
-			switch fn {
-			case "rate":
-				out[key] = append(out[key], sum/window.Seconds())
-			case "count_over_time":
-				out[key] = append(out[key], count)
-			case "max_over_time":
-				out[key] = append(out[key], maxV)
-			default:
-				panic(fn)
-			}
-		}
-	}
-	return out
-}
-
-// openShapeGroup folds the streams that share the ns label with op over the
-// evaluation times (dropping pod, as a `without (pod)` does), keeping only the
-// streams keep accepts.
-func openShapeGroup(streams map[string][]float64, op string, keep func(v float64) bool, byNS bool) map[string]string {
-	groups := map[string]map[int]float64{}
-	for key, values := range streams {
-		group := "-"
-		if byNS {
-			group = strings.SplitN(key, ",", 2)[0]
-		}
-		for i, v := range values {
-			if keep != nil && !keep(v) {
-				continue
-			}
-			if groups[group] == nil {
-				groups[group] = map[int]float64{}
-			}
-			cur, ok := groups[group][i]
-			switch {
-			case !ok:
-				groups[group][i] = v
-			case op == "sum":
-				groups[group][i] = cur + v
-			case op == "max":
-				groups[group][i] = math.Max(cur, v)
-			}
-		}
-	}
-	out := map[string]string{}
-	for group, byStep := range groups {
-		steps := make([]int, 0, len(byStep))
-		for i := range byStep {
-			steps = append(steps, i)
-		}
-		sort.Ints(steps)
-		values := make([]float64, len(steps))
-		for n, i := range steps {
-			values[n] = byStep[i]
-		}
-		out[group] = openShapeFormat(values)
-	}
-	return out
-}
-
-// openShapeTopK is topk or bottomk (1) per ns group: the series itself, with all
-// its labels, that holds the group's top or bottom value at each time.
-func openShapeTopK(streams map[string][]float64, top bool) map[string]string {
-	best := map[string]map[int]struct {
-		key string
-		v   float64
-	}{}
-	for key, values := range streams {
-		ns := strings.SplitN(key, ",", 2)[0]
-		for i, v := range values {
-			if best[ns] == nil {
-				best[ns] = map[int]struct {
-					key string
-					v   float64
-				}{}
-			}
-			cur, ok := best[ns][i]
-			if !ok || (top && v > cur.v) || (!top && v < cur.v) {
-				best[ns][i] = struct {
-					key string
-					v   float64
-				}{key, v}
-			}
-		}
-	}
-	perSeries := map[string][]float64{}
-	for _, byStep := range best {
-		steps := make([]int, 0, len(byStep))
-		for i := range byStep {
-			steps = append(steps, i)
-		}
-		sort.Ints(steps)
-		for _, i := range steps {
-			perSeries[byStep[i].key] = append(perSeries[byStep[i].key], byStep[i].v)
-		}
-	}
-	out := map[string]string{}
-	for key, values := range perSeries {
-		out[key] = openShapeFormat(values)
-	}
-	return out
-}
-
 func openShapeCanon(series map[string]string) string {
 	keys := make([]string, 0, len(series))
 	for k := range series {
@@ -291,15 +153,11 @@ func TestWithoutShapesStillDifferFromLoki(t *testing.T) {
 		// (semantics/unwrap-over-time-range-windows).
 		onlySeries bool
 		got        string // the proxy's answer now
-		loki       func(instant bool) map[string]string
 	}{
 		// sum without () (max_over_time ...) on query_range: `without ()` drops no
 		// label, so every series stays
 		// (the proxy folds them into one); at an instant the proxy keeps them.
-		{"without-empty-grouping-range-collapses", `sum without () (max_over_time({app="uw"} | unwrap amount [5m]))`, false, true,
-			`{-}=`, func(bool) map[string]string {
-				return openShapeKeys(toSeries(openShapeStreams("max_over_time", 5*time.Minute, false)))
-			}},
+		{"without-empty-grouping-range-collapses", `sum without () (max_over_time({app="uw"} | unwrap amount [5m]))`, false, true, `{-}=`},
 	} {
 		name := fmt.Sprintf("%s/%s/instant=%v", tc.row, tc.query, tc.instant)
 		t.Run(name, func(t *testing.T) {
@@ -307,10 +165,10 @@ func TestWithoutShapesStillDifferFromLoki(t *testing.T) {
 			if got.code != http.StatusOK {
 				t.Fatalf("%d %s", got.code, got.raw)
 			}
-			want := tc.loki(tc.instant)
+			want := openShapeLoki(t, tc.query, tc.instant)
 			gotCanon, wantCanon := openShapeCanon(got.series), openShapeCanon(want)
 			if tc.onlySeries {
-				gotCanon, wantCanon = openShapeCanon(openShapeKeys(got.series)), openShapeCanon(want)
+				gotCanon, wantCanon = openShapeCanon(openShapeKeys(got.series)), openShapeCanon(openShapeKeys(want))
 			}
 			t.Logf("proxy %s | Loki %s", gotCanon, wantCanon)
 			if gotCanon == wantCanon {
@@ -334,7 +192,6 @@ func TestWithoutShapesStillDifferFromLoki(t *testing.T) {
 // conformance: semantics/topk-bottomk-without-strips-label, semantics/topk-grouped-spellings, metric-series-identity
 func TestWithoutTopKBottomKKeepsEveryLabelLikeLoki(t *testing.T) {
 	const unwrapRate = `rate({app="uw"} | unwrap amount [5m])`
-	rate := func(instant bool) map[string][]float64 { return openShapeStreams("rate", 5*time.Minute, instant) }
 	for _, tc := range []struct {
 		op    string
 		top   bool
@@ -351,9 +208,9 @@ func TestWithoutTopKBottomKKeepsEveryLabelLikeLoki(t *testing.T) {
 				if got.code != http.StatusOK {
 					t.Fatalf("%d %s", got.code, got.raw)
 				}
-				want := openShapeTopK(rate(instant), tc.top)
+				want := openShapeLoki(t, tc.query, instant)
 				if len(want) == 0 {
-					t.Fatal("the reference holds no series")
+					t.Fatal("Loki's answer holds no series")
 				}
 				if gotCanon, wantCanon := openShapeCanon(got.series), openShapeCanon(want); gotCanon != wantCanon {
 					t.Fatalf("proxy %s, Loki %s", gotCanon, wantCanon)
@@ -374,23 +231,14 @@ func TestWithoutTopKBottomKKeepsEveryLabelLikeLoki(t *testing.T) {
 // conformance: semantics/without-over-inner-aggregation-collapses, semantics/without-nested-under-aggregation, semantics/nested-aggregation-outer-by-native-routes, metric-series-identity
 func TestWithoutNestedAggregationMatchesLoki(t *testing.T) {
 	const unwrapRate = `rate({app="uw"} | unwrap amount [5m])`
-	rate := func(instant bool) map[string][]float64 { return openShapeStreams("rate", 5*time.Minute, instant) }
-	count := func(instant bool) map[string][]float64 {
-		return openShapeStreams("count_over_time", time.Minute, instant)
-	}
 	for _, tc := range []struct {
 		query string
-		loki  func(instant bool) map[string]string
 	}{
-		{`sum without (pod) (sum by (pod, ns) (` + unwrapRate + `))`, func(i bool) map[string]string { return openShapeGroup(rate(i), "sum", nil, true) }},
-		{`sum without (pod) (sum by (pod, ns) (count_over_time({app="uw"}[1m])))`, func(i bool) map[string]string { return openShapeGroup(count(i), "sum", nil, true) }},
-		{`max(sum without (pod) (` + unwrapRate + `))`, func(i bool) map[string]string {
-			return openShapeGroup(toStreams(openShapeGroup(rate(i), "sum", nil, true)), "max", nil, false)
-		}},
-		{`sum by (ns) (sum without (pod) (` + unwrapRate + `))`, func(i bool) map[string]string { return openShapeGroup(rate(i), "sum", nil, true) }},
-		{`max(sum without (pod) (count_over_time({app="uw"}[5m])))`, func(i bool) map[string]string {
-			return openShapeGroup(toStreams(openShapeGroup(openShapeStreams("count_over_time", 5*time.Minute, i), "sum", nil, true)), "max", nil, false)
-		}},
+		{`sum without (pod) (sum by (pod, ns) (` + unwrapRate + `))`},
+		{`sum without (pod) (sum by (pod, ns) (count_over_time({app="uw"}[1m])))`},
+		{`max(sum without (pod) (` + unwrapRate + `))`},
+		{`sum by (ns) (sum without (pod) (` + unwrapRate + `))`},
+		{`max(sum without (pod) (count_over_time({app="uw"}[5m])))`},
 	} {
 		for _, instant := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/instant=%v", tc.query, instant), func(t *testing.T) {
@@ -398,7 +246,7 @@ func TestWithoutNestedAggregationMatchesLoki(t *testing.T) {
 				if got.code != http.StatusOK {
 					t.Fatalf("%d %s", got.code, got.raw)
 				}
-				if gotCanon, wantCanon := openShapeCanon(got.series), openShapeCanon(tc.loki(instant)); gotCanon != wantCanon {
+				if gotCanon, wantCanon := openShapeCanon(got.series), openShapeCanon(openShapeLoki(t, tc.query, instant)); gotCanon != wantCanon {
 					t.Fatalf("proxy %s, Loki %s", gotCanon, wantCanon)
 				}
 			})
@@ -419,24 +267,17 @@ func TestWithoutComparisonInsideMatchesLoki(t *testing.T) {
 	for _, tc := range []struct {
 		query   string
 		instant bool
-		loki    func(instant bool) map[string]string
 	}{
-		{`sum without (pod) (` + unwrapRate + ` > 0.33)`, false, func(i bool) map[string]string {
-			return openShapeGroup(openShapeStreams("rate", 5*time.Minute, i), "sum", func(v float64) bool { return v > 0.33 }, true)
-		}},
-		{`sum without (pod) (` + unwrapRate + ` > 0.33)`, true, func(i bool) map[string]string {
-			return openShapeGroup(openShapeStreams("rate", 5*time.Minute, i), "sum", func(v float64) bool { return v > 0.33 }, true)
-		}},
-		{`sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m]) > 35)`, true, func(i bool) map[string]string {
-			return openShapeGroup(openShapeStreams("max_over_time", 5*time.Minute, i), "sum", func(v float64) bool { return v > 35 }, true)
-		}},
+		{`sum without (pod) (` + unwrapRate + ` > 0.33)`, false},
+		{`sum without (pod) (` + unwrapRate + ` > 0.33)`, true},
+		{`sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m]) > 35)`, true},
 	} {
 		t.Run(fmt.Sprintf("%s/instant=%v", tc.query, tc.instant), func(t *testing.T) {
 			got := openShapeRun(t, tc.query, tc.instant)
 			if got.code != http.StatusOK {
 				t.Fatalf("%d %s", got.code, got.raw)
 			}
-			gotCanon, wantCanon := openShapeCanon(got.series), openShapeCanon(tc.loki(tc.instant))
+			gotCanon, wantCanon := openShapeCanon(got.series), openShapeCanon(openShapeLoki(t, tc.query, tc.instant))
 			if gotCanon != wantCanon {
 				t.Fatalf("proxy %s, Loki %s", gotCanon, wantCanon)
 			}
@@ -456,32 +297,10 @@ func TestWithoutOverInnerAggregationRateRangeMatchesLoki(t *testing.T) {
 	if got.code != http.StatusOK {
 		t.Fatalf("%d %s", got.code, got.raw)
 	}
-	want := openShapeGroup(openShapeStreams("rate", 5*time.Minute, false), "sum", nil, true)
+	want := openShapeLoki(t, `sum without (pod) (sum by (pod, ns) (rate({app="uw"} | unwrap amount [5m])))`, false)
 	if gotCanon, wantCanon := openShapeCanon(got.series), openShapeCanon(want); gotCanon != wantCanon {
 		t.Fatalf("proxy %s, Loki %s", gotCanon, wantCanon)
 	}
-}
-
-// toSeries lists the series of a stream map as a label-set -> values map.
-func toSeries(streams map[string][]float64) map[string]string {
-	out := map[string]string{}
-	for k, v := range streams {
-		out[k] = openShapeFormat(v)
-	}
-	return out
-}
-
-// toStreams is the reverse of openShapeFormat for a grouped answer: the folded
-// series of each ns as a stream, to aggregate again.
-func toStreams(series map[string]string) map[string][]float64 {
-	out := map[string][]float64{}
-	for k, text := range series {
-		for _, f := range strings.Split(text, ",") {
-			v, _ := strconv.ParseFloat(f, 64)
-			out[k] = append(out[k], v)
-		}
-	}
-	return out
 }
 
 // TestLabelReplaceOnAVectorAddsTheLabelAtAnInstant: label_replace around a
@@ -572,4 +391,56 @@ func TestWithoutComparisonAboveEveryValueDropsEverySeries(t *testing.T) {
 			}
 		}
 	}
+}
+
+// openShapeLoki is Loki's answer to query over withoutScopeRows, by the series' ns/pod labels, recorded with
+// Loki's engine at the bounds openShapeRun sends. A line holds its amount; for a query that unwraps it the amount
+// is the line's structured metadata too (a VictoriaLogs field that is no stream label).
+func openShapeLoki(t *testing.T, query string, instant bool) map[string]string {
+	t.Helper()
+	unwrap := strings.Contains(query, "unwrap")
+	base := int64(1_800_000_000) * 1e9
+	step := time.Minute
+	if instant {
+		step = 0
+	}
+	set := oraclerun.EngineDataSet{
+		Streams: engineStreams(withoutScopeRows(), func(r vlemu.Row) (string, map[string]string) {
+			if unwrap {
+				return r.Msg, map[string]string{"amount": r.Text()}
+			}
+			return r.Msg, nil
+		}),
+		Requests: []oraclerun.EngineRequest{lokiMetricRequest("q", query, base-120e9, base, step)},
+	}
+	a := lokiEngineAnswerOf(t, "without_open_shapes", set)
+	if a.Status != http.StatusOK {
+		t.Fatalf("%s: Loki answered %d %s", query, a.Status, a.Error)
+	}
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
+				Value  []any             `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(a.Body, &resp); err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]string{}
+	for _, s := range resp.Data.Result {
+		points := s.Values
+		if s.Value != nil {
+			points = [][]any{s.Value}
+		}
+		var values []float64
+		for _, pt := range points {
+			v, _ := strconv.ParseFloat(pt[1].(string), 64)
+			values = append(values, v)
+		}
+		out[openShapeSeriesKey(s.Metric)] = openShapeFormat(values)
+	}
+	return out
 }
