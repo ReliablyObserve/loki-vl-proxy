@@ -27,8 +27,7 @@ import (
 // which the proxy's buffer limits answer.
 var e2eMessageSizeText = regexp.MustCompile(`^rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max \(\d+ vs\. \d+\)$`)
 
-// Loki's fixed answers (v3.7.9 pkg/util/server/error.go:26-27,
-// pkg/querier/queryrange/limits.go:46).
+// Loki's fixed answers.
 const (
 	e2eLokiDeadlineExceeded = "request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed"
 	e2eLokiSeriesLimitTmpl  = "maximum number of series (%d) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()"
@@ -247,8 +246,7 @@ func errLayerE2EVerdict(t *testing.T, got, known []string, status int, body []by
 // an invalid LogsQL the proxy cannot pre-validate (asked of Loki directly), the
 // series limit and the buffered-response limit (Loki's limit message), and
 // VictoriaLogs stopping or answering after -backend-timeout (Loki's 500 and
-// 504 from pkg/util/server/error.go, since a stack Loki cannot be stopped per
-// request). The in-process proxies reach the stack's VictoriaLogs through a
+// 504, since a stack Loki cannot be stopped per request). The in-process proxies reach the stack's VictoriaLogs through a
 // fault-injecting forwarder; nothing on the stack is stopped.
 // conformance: semantics/error-layer-transport-text, semantics/error-layer-backend-text, semantics/error-layer-internal-go-text, semantics/error-layer-backend-failure-status, semantics/error-layer-cancel-deadline, semantics/error-layer-silent-success, semantics/error-layer-proxy-limit-status, backend-deadlines-and-cancellation, status-400, status-500, status-502
 func TestCompat_ErrorLayerLikeLoki(t *testing.T) {

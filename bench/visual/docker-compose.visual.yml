@@ -4,19 +4,18 @@
 #
 # The seed is flushed (bench/ab/stack.py seed) because Loki's index/stats
 # counts flushed chunks only. Loki answers detected_labels from the streams
-# its ingesters hold (pkg/ingester/instance.go LabelsWithValues; its store
-# path returns nothing), and an ingester drops a stream once its chunks are
+# its ingesters hold (its store path returns nothing), and an ingester drops a stream once its chunks are
 # flushed, so a flushed seed answered `{}` while the proxy answered the
 # window's labels. Retaining flushed chunks keeps the streams for the length
 # of a run, and queries reach the ingesters over the whole window (Loki's
 # default 3h; the e2e config's 30m).
 #
 # Loki's index/stats results cache is off. It caches an answer once its end is
-# 10m old (max_stats_cache_freshness, pkg/validation/limits.go:413), and serves a window inside a cached one
-# with the cached stream count and pro-rated entries
-# (pkg/querier/queryrange/index_stats_cache.go:34-48, cache on by default at
-# roundtrip.go:66) and a window stitched from cached parts with the parts'
-# streams summed (pkg/storage/stores/index/stats/stats.go:17-28). So the same
+# 10m old (max_stats_cache_freshness, default 10m), and serves a window inside a cached one
+# with the cached stream count and pro-rated entries and a window stitched from
+# cached parts with the parts' streams summed (the cache flag and the freshness
+# default are in https://grafana.com/docs/loki/latest/configure/; the pro-rating and
+# the sum are what the stack answers, registry quality/index-stats-loki-chunk-accounting). So the same
 # window answered differently depending on how long after the seed and after
 # which other page it was captured. Every other setting is the e2e config's
 # (flags override the file).

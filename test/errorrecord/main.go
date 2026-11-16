@@ -158,11 +158,12 @@ func recordFile(path, host, version string, cfg config, out io.Writer) (int, err
 		}
 		reply = reply.ForRecording()
 		stateMoved := cfg.state != "" && cfg.state != row.State
-		if reply == row.Loki && !stateMoved {
+		if row.Answers(reply) && !stateMoved {
+			// The recorded answer, or another answer Loki gives this request in some processes (Varies).
 			continue
 		}
 		changed++
-		if reply != row.Loki {
+		if !row.Answers(reply) {
 			fmt.Fprintf(out, "%s %s %s\n  recorded %s\n  now      %s\n", row.ID, row.Route, row.Trigger, row.Loki.Summary(), reply.Summary())
 			if lines[i], err = lokirecorded.WithLoki(lines[i], reply); err != nil {
 				return changed, fmt.Errorf("%s: %w", row.ID, err)

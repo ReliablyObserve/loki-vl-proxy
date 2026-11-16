@@ -22,12 +22,9 @@ why: |
   warm p50 80 ms at 24h aligned against Loki's 30 ms), where every refresh
   probes the newly uncovered part of its window.
 
-  Loki's answer is unchanged, from v3.7.9's source: `| logfmt` splits a line
-  into key/value pairs at any byte up to a space
-  (pkg/logql/log/logfmt/decode.go:43-140 ScanKeyval) and adds the pairs as
-  labels (pkg/logql/log/parser.go:379-440 LogfmtParser.Process), and
-  count_over_time counts the lines of each series in the window
-  (pkg/logql/range_vector.go:367 countOverTime).
+  Loki's answer is unchanged: `| logfmt` splits a line into key/value pairs
+  at any byte up to a space and adds the pairs as labels, and
+  count_over_time counts the lines of each series in the window.
 
   A candidate probe now finds the lines that lack a label as a stored field
   and hold its key (any line lacking it when a label may come from a key
@@ -82,7 +79,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy/ordered_json_metric.go (logfmtParseRisk, logfmtParseRiskQueries, rememberedRisk, logfmtCandidatesState)'
-  loki: 'pkg/logql/log/logfmt/decode.go:43-140 ScanKeyval; pkg/logql/log/parser.go:379-440 LogfmtParser.Process; pkg/logql/range_vector.go:367 countOverTime'
+  loki: '| logfmt splits at any byte up to a space and adds the pairs as labels; count_over_time counts the lines of each series (test/e2e-compat logfmt_risk_candidates_test.go)'
   proxy: 'every refresh sent the line-shape probe, a fixed 40-80 ms of VictoriaLogs expression simplification (0.08 s warm at 24h against Loki 0.03 s)'
   planned_test: 'proxy TestLogfmtParseRiskCandidatesEdgeTable, TestLogfmtParseRiskCandidatesSkipTheProbe, TestLogfmtParseRiskCandidatesDifferential, TestLogfmtVolumeRefreshSkipsTheLineShapeProbe, BenchmarkLogfmtLogsVolume, FuzzLogfmtParseRiskCandidatesCoverTheProbe; e2e TestRangeMetricCompatibilityLogfmtVolumeRefresh'
   clusters: []

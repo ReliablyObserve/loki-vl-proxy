@@ -5,11 +5,11 @@ proves:
   - metric-series-identity
   - loki_api_v1_query_range
 consumer: explore
+evidence: needs recording
 why: |
   The post-aggregation route (parseInstantMetricPostAggQuery) evaluates one
   proxy-side level, plus the sum, avg, min, max and count layers above a
-  ranking, and folds the series of its operand itself (pkg/logql/evaluator.go
-  VectorAggEvaluator.Next). A stddev, stdvar or ranking below that level, or
+  ranking, and folds the series of its operand itself. A stddev, stdvar or ranking below that level, or
   under an aggregation or label_replace the route does not take, is sent as the
   translator's text, which drops it: `sum(stddev by (app) (count_over_time(..[5m])))`
   answers the total line count, `topk(2, stddev by (app) (..))` and
@@ -70,7 +70,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/queryplan/lower (SeriesAgg and RankStep below the top) and the plan-served post-aggregation route; internal/proxy parseInstantMetricPostAggQuery'
-  loki: 'pkg/logql/evaluator.go:400-529 newVectorAggEvaluator / VectorAggEvaluator.Next'
+  loki: 'stddev and stdvar fold per group at each step, at any depth under another aggregation or binary'
   proxy: 'the translator text of the nested level: the group line counts, the total line count, or a dropped ranking'
   planned_test: 'TestCompat_StddevStdvarNestedAndBinary (test/e2e-compat, group core)'
   clusters: []

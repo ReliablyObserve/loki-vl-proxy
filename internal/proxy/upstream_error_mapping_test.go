@@ -32,8 +32,7 @@ func TestStatusFromUpstreamErr(t *testing.T) {
 		{name: "text canceled", err: errors.New("upstream: context canceled"), want: http.StatusInternalServerError},
 		{name: "text timeout", err: errors.New("upstream deadline exceeded"), want: http.StatusInternalServerError},
 		{name: "VictoriaLogs deadline", err: &upstreamStatusError{status: http.StatusServiceUnavailable, msg: "the request couldn't be executed in 30.000 seconds", class: vlErrorDeadline}, want: http.StatusGatewayTimeout},
-		// Loki answers any other failed backend call with 500
-		// (pkg/util/server/error.go:124-128), never 502.
+		// Loki answers any other failed backend call with 500, never 502.
 		{name: "generic", err: errors.New("connection refused"), want: http.StatusInternalServerError},
 	}
 	for _, tt := range tests {

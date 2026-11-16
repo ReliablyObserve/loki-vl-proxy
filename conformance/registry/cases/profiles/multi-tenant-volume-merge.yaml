@@ -3,6 +3,7 @@ title: Multi-tenant volume returns per-tenant series with __tenant_id__; Loki su
 proves:
   - loki_api_v1_index_volume
 consumer: api
+evidence: needs recording
 why: |
   For a multi-tenant X-Scope-OrgID, Loki sums volumes of the same series
   across tenants; the proxy returns each tenant's volumes with a __tenant_id__
@@ -26,7 +27,7 @@ gap:
   impact: api-only
   effort: S
   area: 'internal/proxy/volume.go multi-tenant merge'
-  loki: 'pkg/querier/queryrange volume merge'
+  loki: 'volumes of the same series are summed across tenants'
   proxy: 'per-tenant series'
   planned_test: 'TestCompat_MultiTenantVolume (test/e2e-compat, group tail-multitenancy)'
   clusters: []

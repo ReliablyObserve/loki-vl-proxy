@@ -163,7 +163,7 @@ func applyQueryLineFormat(ctx context.Context, streams []map[string]interface{},
 }
 
 // Loki's line_format on an entry its template fails on
-// (pkg/logql/log/fmt.go LineFormatter.Process): the line stays as it was
+// (registry semantics/line-format-template-error-keeps-entry): the line stays as it was
 // and the entry gets __error__="TemplateFormatErr" and __error_details__
 // with the template error, as parsed labels.
 const (
@@ -1114,7 +1114,7 @@ func (m *patternMiner) zeroFill(c *patternBucket) {
 }
 
 // patternEntriesByLevelAndPattern is the miner's clusters as response entries, one per level and pattern: Loki
-// answers one series per level and pattern (pkg/pattern/iter ReadBatch), so clusters the miner kept apart whose
+// answers one series per level and pattern (registry drilldown/patterns-one-series-per-level), so clusters the miner kept apart whose
 // patterns read the same, such as two that differ in the same tokens a longer pattern shows as <_>, are one entry
 // with their samples added up. A cluster that counted no line is not an entry. The miner's clusters are not
 // changed.

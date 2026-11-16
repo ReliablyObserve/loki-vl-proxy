@@ -22,8 +22,7 @@ import (
 // A `<op> without (...)` over a tumbling window is folded by VictoriaLogs
 // (translator.PushDownWithout) when every excluded label is plain; the proxy
 // folds the series rows itself otherwise. Both answer Loki's: the series fall
-// into the group the labels left name, and the group takes the operator's value
-// (pkg/logql/evaluator.go VectorAggEvaluator.Next). This file pins the two
+// into the group the labels left name, and the group takes the operator's value. This file pins the two
 // routes to a reference written apart from them, and to each other, over
 // streams whose label sets differ: a label the stream lacks, the excluded label
 // being the only one that tells two series apart, values with quotes, commas,
@@ -417,8 +416,7 @@ func TestWithoutPushdownLeavesMappedLabelsToTheProxyFold(t *testing.T) {
 // reads its buckets folded by VictoriaLogs (withSlidingWithoutCut): the
 // streams that share their labels but the excluded ones are summed per bucket
 // and the proxy merges each fold's windows. Loki's answer is the sum per step
-// of every stream's window count (pkg/logql/range_vector.go:102-189,
-// pkg/logql/evaluator.go VectorAggEvaluator.Next): over streams that tell
+// of every stream's window count: over streams that tell
 // apart only by the excluded label, lack it or hold a value that looks like a
 // pair, the folded route, the per-stream route and the reference agree, and
 // names the cut does not take keep the per-stream route.

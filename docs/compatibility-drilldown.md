@@ -89,8 +89,8 @@ samples the series it receives; it sorts them. Loki answers these queries like
 any other: every series with exact values, and above `max_query_series` a
 partial result with the warning `maximum number of series (N) reached for a
 single query; returning partial results` for Drilldown and a `400` for every
-other client (`JoinSampleVector` in `pkg/logql/engine.go` and the
-`seriesLimiter` in `pkg/querier/queryrange/limits.go`, v3.7.7).
+other client (Loki v3.7.7; `limits/series-limit-error` and
+`limits/drilldown-partial-with-warning` record the answers).
 
 The proxy answers them the same way, from VictoriaLogs `stats_query_range`
 buckets relabelled onto Loki's evaluation timestamps (the sample at `t` covers `(t-range, t]`):

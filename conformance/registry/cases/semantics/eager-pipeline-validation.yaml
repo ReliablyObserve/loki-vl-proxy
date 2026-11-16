@@ -3,6 +3,7 @@ title: Invalid pipeline stages fail with 400 regardless of data; Loki answers 20
 proves:
   - loki-compatible-profile
 consumer: api
+evidence: needs recording
 why: |
   Loki answers a pipeline stage it refuses to build (an invalid json or logfmt expression, a line_format or
   label_format template, a line filter regex or pattern, an ip() argument) with its 400 over a window ending 150

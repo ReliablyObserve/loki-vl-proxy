@@ -16,15 +16,13 @@ import (
 )
 
 // A stream-selector regexp matches the whole label value in Loki: Prometheus
-// compiles {app=~"api|web"} as ^(?s:api|web)$
-// (vendor/github.com/prometheus/prometheus/model/labels/regexp.go:76), so it
-// selects api and web, never api-gateway, my-api or webhook. VictoriaLogs'
-// field:~"re" is a substring match, and the proxy passed the pattern through,
-// which is the widening a Grafana multi-value variable hits
+// compiles {app=~"api|web"} as ^(?s:api|web)$, so it selects api and web,
+// never api-gateway, my-api or webhook. VictoriaLogs' field:~"re" is a
+// substring match, and the proxy passed the pattern through, which is the
+// widening a Grafana multi-value variable hits
 // (profiles/stream-selector-regexp-anchoring). A label filter after a parser
-// is matched after Loki's regexp simplifications instead
-// (pkg/logql/log/filter.go parseRegexpFilter, RegexSimplifier.Simplify), which
-// keeps some substring checks (profiles/label-filter-regexp-anchoring).
+// is matched after Loki's regexp simplifications instead, which keeps some
+// substring checks (profiles/label-filter-regexp-anchoring).
 //
 // The fixture's values are substrings of each other: app api / api-gateway /
 // my-api / web / webhook, env prod / prod-eu / nonprod.
@@ -359,9 +357,8 @@ func TestCompat_LabelMatcherRegexpAnchoring(t *testing.T) {
 	})
 
 	// Loki runs single-tenant in this stack, so the multi-tenant request is
-	// checked against Loki's semantics: the __tenant_id__ matcher selects
-	// tenant ids with the selector's anchored matcher (filterValuesByMatchers,
-	// pkg/querier/multi_tenant_querier.go:421). Unanchored, `=~"fak"` reached
+	// checked against Loki's semantics: the __tenant_id__ matcher selects tenant
+	// ids with the selector's anchored matcher. Unanchored, `=~"fak"` reached
 	// tenant fake.
 	t.Run("multi-tenant", func(t *testing.T) {
 		headers := map[string]string{"X-Scope-OrgID": "0|fake"}

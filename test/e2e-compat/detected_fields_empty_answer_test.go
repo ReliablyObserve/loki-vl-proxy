@@ -17,11 +17,10 @@ import (
 // TestCompat_DetectedFieldsEmptyAnswer: a detected_fields query that matches
 // no line answers like Loki, with no fields and no limit. Loki lists only the
 // fields of the lines the query returned and sets the limit only when it
-// lists one (pkg/querier/queryrange/detected_fields.go:42-89), so its body is
-// `{}`. The proxy used to list the native fields of the bare selector instead
-// (the Logs Drilldown page of a JSON service with the error and warn level
-// pills, whose escaped pipe matches no level) and to send the limit with no
-// fields. The proxy keeps its status and data mirror.
+// lists one, so its body is `{}`. The proxy used to list the native fields of
+// the bare selector instead (the Logs Drilldown page of a JSON service with
+// the error and warn level pills, whose escaped pipe matches no level) and to
+// send the limit with no fields. The proxy keeps its status and data mirror.
 //
 // conformance: semantics/detected-fields-empty-answer, loki_api_v1_detected_fields
 func TestCompat_DetectedFieldsEmptyAnswer(t *testing.T) {

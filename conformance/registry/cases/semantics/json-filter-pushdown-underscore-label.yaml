@@ -21,7 +21,7 @@ why: |
   fields (...) keep_original_fields | filter ...`), with the proxy merging
   the level/detected_level aliases over the aggregated series. Exactness is
   guarded by the parse-risk probe (`orderedJSONPartialParseRisk`), which now
-  also matches every other key spelling Loki v3.7.7's `sanitizeLabelKey` and
+  also matches every other key spelling Loki v3.7.7's key sanitizer and
   nested-key join map to the label (`orderedJSONLabelAliasPattern`); one such
   line in the range keeps the raw-row evaluator.
 request:

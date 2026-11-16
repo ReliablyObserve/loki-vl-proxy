@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `absent_over_time` over a zero range (`[0s]`, `[0]`, with or without `offset`) now answers as Loki does: one
+  series valued 1 at every step on query_range and at the evaluation time on query, labelled with the selector's
+  equality matchers, also under `sum`, `count`, `stddev`, `max without (...)` and the other vector aggregations,
+  `topk`, `bottomk`, `sort`, `sort_desc` and `label_replace`. A zero range holds no sample in any window, so the
+  answer reads no data: it is written from the parsed query before the response cache, the query plan and any
+  VictoriaLogs call. The proxy answered `500 Internal Server Error` (and, on query with VictoriaLogs data behind it,
+  a series carrying a `detected_level` label Loki does not write) (semantics/zero-range-metric).
 - A query that holds two errors now answers the one Loki answers, in Loki's order of checks, and a selector regex
   error has Loki's text. Loki first runs the checks it makes while it reads the query: a pattern or regexp parser
   it cannot build, and a regex in a selector, label filter, drop or keep that does not parse. Those answer ahead of
@@ -26,10 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     parse error : invalid regex:` prefix, on every route.
   - A log query with a pipeline stage that does not build, sent to `/loki/api/v1/query`, answers Loki's `log queries
     are not supported as an instant query type` (recorded row r0043).
-
-  The status was already 400 on every one of these queries; the text, which Grafana shows, is now Loki's. Held by a
-  grid of 1628 queries recorded with the Loki oracle (semantics/loki-error-phase-order): 532 answered differently
-  before, 51 do now.
 - A `topk` or `bottomk` whose first argument is not a number followed by a comma now answers Loki's parse error.
   Loki reads that argument as the expression the operation aggregates, so `topk(-1, sum by (level) (...))` answers
   400 `parse error at line 1, col 8: syntax error: unexpected ,` (the comma), as do `topk(1 + 2, ...)`,
@@ -40,6 +43,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   label_replace, binary operations), held by 1462 queries recorded with the Loki oracle and 12 rows recorded over
   HTTP (semantics/topk-first-argument-error-text). A leading plus (`topk(+1, ...)`) is still rejected at the plus
   (semantics/unary-plus-literal-rejected).
+
+### Changed
+
+- Code comments, operator-facing limit descriptions and the generated configuration pages no longer cite Loki source
+  files or lines. They state what Loki does and name the evidence kept in this repository: a recorded Loki answer, a test
+  that compares with Loki, a registry case or Loki's public documentation. No behaviour changes.
+- Loki's error answers are recorded from a Loki that holds data. The recorder (`test/errorrecord`) writes a small
+  fixture to the Loki and waits until its range metric path serves it (`-ingest`, a step of the weekly
+  `error-answers-record` workflow) before it asks the recorded requests, and every row it records carries the state
+  of the Loki it was recorded from (`"state": "serving"`); the recorder also waits until every Loki module is running.
+  Each row asks the window it asked when it was written, moved to now, as the end-to-end comparison asks it: over a
+  window older than what it holds, Loki answers `/patterns` given a query that is not a stream selector with its
+  empty success instead of `400 only label matchers are supported`, so an unmoved window recorded that instead of
+  the answer a client gets. A row added by hand with no answer yet is recorded whatever it is marked.
+
+## [2.305.0] - 2026-11-16
+
+### Fixed
+
 - `/loki/api/v1/tail` now sends the entries since `start`, up to `limit`, before the live ones, as Loki does:
   Grafana's live view shows the latest lines at once instead of staying empty until new lines arrive. Like Loki,
   `start` defaults to one hour ago and `limit` to 100. The history is the newest `limit` entries, oldest first,
@@ -49,24 +71,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a tail still makes one VictoriaLogs query before it streams, and a failing backend still fails the request. The read is held to `max_entries_limit_per_query`,
   and it is best effort: a read that takes more than two seconds is skipped, and the tail starts with its live
   entries. `start` is now read in all of Loki's time forms; Unix seconds were read as nanoseconds before.
-- `absent_over_time` over a zero range (`[0s]`, `[0]`, with or without `offset`) now answers as Loki does: one
-  series valued 1 at every step on query_range and at the evaluation time on query, labelled with the selector's
-  equality matchers, also under `sum`, `count`, `stddev`, `max without (...)` and the other vector aggregations,
-  `topk`, `bottomk`, `sort`, `sort_desc` and `label_replace`. A zero range holds no sample in any window, so the
-  answer reads no data: it is written from the parsed query before the response cache, the query plan and any
-  VictoriaLogs call. The proxy answered `500 Internal Server Error` (and, on query with VictoriaLogs data behind it,
-  a series carrying a `detected_level` label Loki does not write) (semantics/zero-range-metric).
 
-### Changed
+## [2.304.0] - 2026-11-16
 
-- Loki's error answers are recorded from a Loki that holds data. The recorder (`test/errorrecord`) writes a small
-  fixture to the Loki and waits until its range metric path serves it (`-ingest`, a step of the weekly
-  `error-answers-record` workflow) before it asks the recorded requests, and every row it records carries the state
-  of the Loki it was recorded from (`"state": "serving"`); the recorder also waits until every Loki module is running.
-  Each row asks the window it asked when it was written, moved to now, as the end-to-end comparison asks it: over a
-  window older than what it holds, Loki answers `/patterns` given a query that is not a stream selector with its
-  empty success instead of `400 only label matchers are supported`, so an unmoved window recorded that instead of
-  the answer a client gets. A row added by hand with no answer yet is recorded whatever it is marked.
+### Fixed
+- `/loki/api/v1/patterns` now counts the last 10 s sample of a range whole when the range ends inside it, as Loki
+  does: Loki answers every sample that starts inside the range with all of its lines, including the lines after the
+  range's end. The proxy read lines only up to the end, so a range ending at, for example, `...019` showed 76 of the
+  sample's 98 lines in Logs Drilldown's patterns chart. The count also depended on timing: the request that started
+  the pattern state's background build got the partial sample (and kept it in the cache), later ones the whole
+  sample. The pattern state, the exact tier and the counts tier now read up to the end of that sample (up to now
+  while it is still being written, completed by the next refresh); the counts tier, with a step of whole 10 s
+  samples, also leaves out the lines of a sample that starts before the range, as Loki does. A range ending on a
+  sample's start reads exactly as before, and a repeat or a range ending earlier inside a sample already read makes
+  no VictoriaLogs call.
 
 ## [2.303.0] - 2026-11-16
 

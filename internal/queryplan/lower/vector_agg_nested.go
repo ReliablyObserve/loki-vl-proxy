@@ -16,8 +16,8 @@ import (
 //	stats by (pod, zone, _stream, level) count() as __lvp_inner | stats by (pod, zone) avg(__lvp_inner) as
 //	__lvp_inner | stats by (zone) min(__lvp_inner)
 //
-// Each level keeps exactly the grouping labels its input series have (translate.LevelKeeps, Loki's
-// VectorAggEvaluator): a `by` list is cut to the labels the level below kept, a `without` list is subtracted from
+// Each level keeps exactly the grouping labels its input series have (translate.LevelKeeps, as Loki's
+// vector aggregation does): a `by` list is cut to the labels the level below kept, a `without` list is subtracted from
 // them, and a level with no clause keeps none and gets a stats pipe with no grouping. When the innermost level is
 // a without, its labels are the series' own, which VictoriaLogs cannot list: the query is the innermost level's
 // series rows alone, and the lowering returns the Fold the string translator's marker decodes to, which carries

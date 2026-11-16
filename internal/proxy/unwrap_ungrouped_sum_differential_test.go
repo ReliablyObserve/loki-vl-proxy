@@ -22,12 +22,11 @@ import (
 
 // This file pins the answer of an ungrouped sum over a range function with
 // unwrap to Loki's, over generated rows and generated windows, with a
-// reference evaluator written apart from the proxy: Loki v3.7.7
-// pkg/logql/evaluator.go VectorAggEvaluator.Next (a grouping of no labels folds
-// every series of its input), pkg/logql/range_vector.go (rate over an unwrapped
-// label is the sum of the values per second, sum_over_time their sum) over the
-// window (t-range, t], and pkg/logql/log/metrics_extraction.go (a series is the
-// stream plus the labels a parser extracted, less the unwrapped one).
+// reference evaluator written apart from the proxy, modelling Loki v3.7.7: a
+// grouping of no labels folds every series of its input; rate over an
+// unwrapped label is the sum of the values per second, sum_over_time their sum,
+// over the window (t-range, t]; a series is the stream plus the labels a parser
+// extracted, less the unwrapped one.
 //
 // The proxy under test is the real handler. Only VictoriaLogs is simulated, by
 // vlemu.Emulator: the stats_query_range and stats_query endpoints over the three

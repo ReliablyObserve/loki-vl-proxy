@@ -11,7 +11,7 @@ why: |
   it); its entries carry detected_level="unknown" in the stream labels without
   categorize-labels, where live entries do not; start=1 upgrades the tail and
   sends no history.
-  Loki's tail request takes `start` and `limit` (pkg/loghttp/tail.go:70-94)
+  Loki's tail request takes `start` and `limit`
   and sends the entries since start, up to limit, before live lines, so
   Grafana Live shows the last 100 entries at once. The proxy's native tail
   path streams VictoriaLogs' live tail from now and ignores both, so a quiet
@@ -36,7 +36,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy/tail.go openNativeTailStream (history replay before the live stream)'
-  loki: 'pkg/loghttp/tail.go:70-94 ParseTailQuery (limit, start); querier tailer sends history first'
+  loki: 'a tail request takes start and limit and sends the entries since start, up to limit, before live lines'
   proxy: 'live entries only'
   planned_test: 'TestTailHistory_StartLimitLikeLoki (test/e2e-compat: Loki against the proxy, synthetic tail and native tail variants; group tail-multitenancy) + TestTailHistory_* (internal/proxy, every tail mode) + @explore-tail Playwright'
   note: 'Measured on main at fcaccfcc, before #652 rewrote the tail conversion; verified still present on c4ebcd98 (after #652).'

@@ -24,13 +24,10 @@ import (
 // lists: VictoriaLogs' logfmt parser turns every word of a JSON or plain-text
 // line into an empty field, and field_names lists all of them.
 //
-// Loki v3.7.9 builds the list from the sampled lines only
-// (pkg/querier/queryrange/detected_fields.go:282-363 parseDetectedFields):
-// structured metadata, the labels the query's own parsers extracted
-// (entry.Parsed), and a json re-parse of the line, logfmt when json fails
-// (parseEntry, :387-460). Its logfmt parser skips a key without a value
-// (pkg/logql/log/parser.go:423) and rejects a key holding a quote
-// (pkg/logql/log/logfmt/decode.go:78-81), so a JSON or plain-text line gives
+// Loki v3.7.9 builds the list from the sampled lines only: structured
+// metadata, the labels the query's own parsers extracted, and a json re-parse
+// of the line, logfmt when json fails. Its logfmt parser skips a key without a
+// value and rejects a key holding a quote, so a JSON or plain-text line gives
 // it no logfmt keys.
 
 // fakeLogfmtVL is a recording fake VictoriaLogs for detected_fields. A line's
@@ -505,8 +502,7 @@ func TestDetectedFields_NoLogfmtTokenFields_EdgeTable(t *testing.T) {
 
 // A field's values under a level pill still come back once the field_names
 // lookup no longer lists the keys of logfmt lines: the values path falls back
-// to the sampled lines, as Loki reads them (parseDetectedFieldValues,
-// pkg/querier/queryrange/detected_fields.go:134-176).
+// to the sampled lines, as Loki reads them.
 // conformance: semantics/detected-fields-no-logfmt-token-fields
 func TestDetectedFieldValues_LevelPillKeepsLineKeys(t *testing.T) {
 	txIDs := make([]string, 0, 30)
@@ -708,12 +704,9 @@ func firstPipeOutsideQuotes(q string) int {
 }
 
 // lokiDetectedFieldLabels is a Loki-semantics reference of detected_fields
-// over the lines a query matched, for lines without structured metadata:
-// parseDetectedFields + parseEntry (pkg/querier/queryrange/detected_fields.go
-// :282-460) with the query's own `| json | logfmt` stages (entry.Parsed) and
-// Loki's logfmt decoder rules (pkg/logql/log/logfmt/decode.go:43-140,
-// parser.go:379-447). Keys clashing with a stream label are named
-// <key>_extracted by Loki (parser.go:409-410); the proxy omits them by an
+// over the lines a query matched, for lines without structured metadata: the
+// query's own `| json | logfmt` stages and Loki's logfmt decoder rules. Keys
+// clashing with a stream label are named <key>_extracted by Loki; the proxy omits them by an
 // owner decision, so the reference leaves them out. detected_level is
 // structured metadata Loki adds at ingest.
 func lokiDetectedFieldLabels(lines []fakeVLLine, queryHasParsers bool) map[string]struct{} {

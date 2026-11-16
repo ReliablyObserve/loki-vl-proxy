@@ -6,7 +6,7 @@ proves:
 consumer: api
 why: |
   Loki compares integer nanoseconds: a sample at t belongs to the window
-  (t-range, t] (pkg/logql/range_vector.go:102-189).
+  (t-range, t].
 
   When a range is shorter than its step the proxy keeps the lines inside the
   windows with a filter on the line's phase past the window start, evaluated by
@@ -47,7 +47,7 @@ gap:
   impact: edge
   effort: L
   area: 'internal/proxy/range_metric_compat.go windowPhaseFilter'
-  loki: 'pkg/logql/range_vector.go:102-189'
+  loki: 'a sample at t belongs to the window (t-range, t], compared in integer nanoseconds (semantics/sub-second-step-grid)'
   proxy: 'float64 phase filter with a 256 ns anchor and 128 ns tolerance'
   planned_test: 'TestSubSecondStepLineOnTheWindowEdge (internal/proxy)'
   clusters: []

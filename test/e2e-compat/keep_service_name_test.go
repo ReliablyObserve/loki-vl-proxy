@@ -86,14 +86,14 @@ func TestCompat_KeepRemovesDerivedServiceName(t *testing.T) {
 }
 
 // TestCompat_KeepDropsUnlistedLabels: Loki's keep stage keeps only the labels
-// it names (pkg/logql/log/keep_labels.go:15-45). A JSON or logfmt key named
-// like a stream label is name_extracted and is gone after `| keep name`; under
-// a vector aggregation every stream keeps the same labels, so `count(rate(...
-// | keep foo [5m]))` is the number of kept label sets (1 when no line has
-// foo). The fixture is three streams with a level label, JSON and logfmt
-// lines each holding level, ingested alike into Loki and VictoriaLogs; the
-// metrics read the JSON streams only (a logfmt line is a JSON parser error,
-// which keep never removes and which fails a Loki metric).
+// it names. A JSON or logfmt key named like a stream label is name_extracted
+// and is gone after `| keep name`; under a vector aggregation every stream
+// keeps the same labels, so `count(rate(... | keep foo [5m]))` is the number
+// of kept label sets (1 when no line has foo). The fixture is three streams
+// with a level label, JSON and logfmt lines each holding level, ingested
+// alike into Loki and VictoriaLogs; the metrics read the JSON streams only (a
+// logfmt line is a JSON parser error, which keep never removes and which
+// fails a Loki metric).
 // conformance: semantics/keep-leaves-labels-loki-drops, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_KeepDropsUnlistedLabels(t *testing.T) {
 	probe := fmt.Sprintf("keep-drops-%d", time.Now().UnixNano())

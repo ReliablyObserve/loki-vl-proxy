@@ -19,13 +19,11 @@ why: |
   little structured metadata (api-gateway 0.977), 0.42-0.53 for the OTel
   services whose short lines carry many structured-metadata pairs
   (checkout-svc, pricing-svc, inventory-svc, notification-svc 0.43,
-  otel-collector 0.52): Loki counts 8 bytes per pair per line
-  (pkg/chunkenc/unordered.go:169-170) and the chunk's symbol strings
-  (pkg/chunkenc/memchunk.go:824-838). Per run, every ratio is divided by 1, 2
-  or 3 (api-gateway 0.977, 0.488, 0.326; checkout-svc 0.43, 0.22, 0.14): Loki
-  sums a flushed chunk's whole KiB (pkg/storage/stores/shipper/indexshipper/tsdb/store.go:159-167,
-  rounded) once per TSDB index file that lists it until compaction, scaled by
-  the chunk's time overlap (tsdb/index/chunk.go:262-267). None of these is a
+  otel-collector 0.52): Loki's size counts structured metadata and the
+  chunk's symbol strings on top of the line bytes. Per run, every ratio is
+  divided by 1, 2 or 3 (api-gateway 0.977, 0.488, 0.326; checkout-svc 0.43,
+  0.22, 0.14): Loki's volume sums a flushed chunk's whole KiB once per index
+  file that lists it until compaction, scaled by the chunk's time overlap. None of these is a
   property of the stored lines: VictoriaLogs keeps no chunk sizes, symbol
   tables or index files, and cannot tell structured metadata from other
   fields, so the proxy keeps exact line bytes (sum_len(_msg)) rather than an
@@ -50,7 +48,7 @@ gap:
   impact: drilldown-visible
   effort: L
   area: 'internal/proxy/volume.go; docs/KNOWN_ISSUES.md'
-  loki: 'pkg/chunkenc/unordered.go:169-170 and memchunk.go:824-838 (uncompressed size with structured metadata); pkg/storage/stores/shipper/indexshipper/tsdb/store.go:159-167 (whole KiB per chunk) and tsdb/index/chunk.go:262-267 (time share); pkg/ingester/instance.go:849-929 (unflushed chunks)'
+  loki: 'chunk-size estimate that counts structured metadata, summed per flushed chunk in whole KiB, once per index file listing it, scaled by time overlap (ratios measured on the e2e stack, in this case)'
   proxy: 'line bytes'
   planned_test: 'bench/parity diff rule (documented facet)'
   clusters: []

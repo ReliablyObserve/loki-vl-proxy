@@ -70,9 +70,8 @@ func TestConvertUnwrapMatchesLoki(t *testing.T) {
 	}
 }
 
-// Loki converts duration_seconds() with convertDuration, as duration()
-// (pkg/logql/syntax/extractor.go:63-71): one unwrap expression, parsed by every
-// route of the proxy, selects the "duration" conversion, and the conversion
+// Loki converts duration_seconds() as duration(): one unwrap expression,
+// parsed by every route of the proxy, selects the "duration" conversion, and the conversion
 // accepts and rejects the values time.ParseDuration does.
 // conformance: semantics/unwrap-duration-seconds, loki_api_v1_query_range, loki_api_v1_query
 func TestUnwrapDurationSecondsIsConvertedAsDuration(t *testing.T) {

@@ -17,7 +17,7 @@ import (
 // join, a join under an aggregation, a comparison with a scalar, a set
 // operation; range and instant) and asserts the limit answer the limits
 // registry documents: 400 bad_data, as Loki answers a query over one of its
-// limits (logqlmodel.ErrLimit, pkg/util/server/error.go:110-118, v3.7.9), with
+// limits (v3.7.9), with
 // that class's text and no flag in it. The answer is the error layer's, so the
 // client reads Loki's body shape.
 // conformance: semantics/error-layer-proxy-limit-status, operator-configurable-limits, status-400

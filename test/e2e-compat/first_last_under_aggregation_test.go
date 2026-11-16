@@ -10,13 +10,12 @@ import (
 	"time"
 )
 
-// Loki's first_over_time and last_over_time are the first and the last sample,
-// in timestamp order, of each series in the window (t-range, t]
-// (pkg/logql/range_vector.go FirstOverTime, LastOverTime), and an outer
-// aggregation folds those values per step (pkg/logql/evaluator.go
-// VectorAggEvaluator.Next). VictoriaLogs has no first or last stats function: the
-// proxy asked it for one and answered 422 (semantics/unwrap-first-last-under-aggregation).
-// It now reads each series' value with row_min(_time, v) or row_max(_time, v).
+// Loki's first_over_time and last_over_time are the first and the last
+// sample, in timestamp order, of each series in the window (t-range, t], and
+// an outer aggregation folds those values per step. VictoriaLogs has no first
+// or last stats function: the proxy asked it for one and answered 422
+// (semantics/unwrap-first-last-under-aggregation). It now reads each series'
+// value with row_min(_time, v) or row_max(_time, v).
 //
 // Every line of this fixture carries its own `id` label, so a series is a line
 // and the stats grouping of the proxy (the stream and the line) is exactly

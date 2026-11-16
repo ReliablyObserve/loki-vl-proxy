@@ -17,8 +17,7 @@ type binaryExecutionBudget struct {
 // binaryBudgetError is a binary expression over one of the evaluation
 // budgets an operator sets (-binary-metric-max-arrays,
 // -binary-metric-max-operand-bytes): 400 bad_data, as Loki
-// answers a query over one of its limits (logqlmodel.ErrLimit,
-// pkg/util/server/error.go:110-118, v3.7.9).
+// answers a query over one of its limits.
 type binaryBudgetError struct {
 	flag string
 }
