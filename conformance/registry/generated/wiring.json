@@ -2122,7 +2122,8 @@
       "internal/proxy/error_refusals_test.go",
       "internal/proxy/query_lowering_corpus_test.go",
       "internal/proxy/query_lowering_log_stages_test.go",
-      "internal/querycorpus/grammar_sweep_test.go"
+      "internal/querycorpus/grammar_sweep_test.go",
+      "internal/querycorpus/typed_pair_blank_test.go"
     ],
     "semantics/translator-reads-parenthesized-metric-as-text": [
       "internal/querycorpus/grammar_sweep_test.go",
@@ -4739,6 +4740,9 @@
       "semantics/stdvar-grouped-pooled-variance",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
+    "internal/querycorpus/typed_pair_blank_test.go": [
+      "semantics/translator-reads-only-space-between-tokens"
+    ],
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go": [
       "semantics/stdvar-grouped-pooled-variance",
       "semantics/unwrap-per-series-identity-raw-rows",
@@ -5912,7 +5916,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 708,
+  "tests_with_markers": 709,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
