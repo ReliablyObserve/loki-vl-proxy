@@ -1,0 +1,32 @@
+id: semantics/unwrap-conversion-error-binary-operand
+title: 'A rejected unwrap value fails a binary operation whichever operand reads it'
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki evaluates both operands of a binary operation, and a value the unwrap
+  conversion rejects in either one fails the query with its pipeline error
+  (recorded with Loki's engine: TestUnwrapBinaryOperandMatchesRecordedLoki, at
+  the instant and over a range, with the rejected value in the right operand,
+  the left one and a nested operand). The proxy evaluates the operands one
+  after the other; the conversion-error check decides again on the hits each
+  later operand records, as long as nothing of the answer went out. Before,
+  the first operand's recorded status decided, so a rejected value only in a
+  later operand answered 200.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name) (count_over_time({service_name="api-gateway"} | logfmt [5m])) + sum by (service_name) (sum_over_time({service_name="api-gateway"} | logfmt | unwrap duration(status) [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, body]
+  expect: |
+    400 text/plain with Loki's pipeline error, the same text as the right operand alone.

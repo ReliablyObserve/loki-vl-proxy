@@ -964,6 +964,11 @@ type unwrapCheck struct {
 	cancel       context.CancelFunc
 	firstMinSpan time.Duration
 	firstOnce    sync.Once
+	// confirmed counts the hits already looked up and lookups the lookups made: a request whose inner evaluations
+	// record their status before its last read decides again on the hits that came later, within one budget.
+	confirmed, lookups int
+	// query is the request's query as it arrived, the key of the recent errors.
+	query string
 }
 
 // unwrapFirstWindow is the lookup of the first evaluation window: done closes when it answered, err is Loki's
@@ -1163,11 +1168,7 @@ func (c *unwrapCheck) startFirstWindow(h unwrapHit, early bool) *unwrapFirstWind
 // recentKey names the request's query, tenant and probed field: a recent conversion error of the same key starts
 // the next heavy read's first-window lookup early.
 func (c *unwrapCheck) recentKey(ctx context.Context, p *Proxy, h unwrapHit) string {
-	query := ""
-	if c.writer != nil {
-		query = c.writer.query
-	}
-	return p.contextScopeFingerprint(ctx) + "\x00" + query + "\x00" + h.field + "\x00" + h.conv
+	return p.contextScopeFingerprint(ctx) + "\x00" + c.query + "\x00" + h.field + "\x00" + h.conv
 }
 
 // unwrapRecentErrors remembers the queries that met a conversion error lately, per tenant.
@@ -1228,7 +1229,8 @@ func (c *unwrapCheck) confirm(ctx context.Context, p *Proxy) *orderedJSONPipelin
 	c.mu.Lock()
 	fw := c.first
 	heavy := c.heavy
-	hits := append([]unwrapHit(nil), c.hits...)
+	hits := append([]unwrapHit(nil), c.hits[c.confirmed:]...)
+	c.confirmed = len(c.hits)
 	c.mu.Unlock()
 	if fw == nil && heavy != nil {
 		fw = c.startFirstWindow(*heavy, false)
@@ -1250,7 +1252,6 @@ func (c *unwrapCheck) confirm(ctx context.Context, p *Proxy) *orderedJSONPipelin
 // Loki's conversion decides.
 func (c *unwrapCheck) confirmHits(ctx context.Context, p *Proxy, hits []unwrapHit) *orderedJSONPipelineError {
 	sort.SliceStable(hits, func(i, j int) bool { return hits[i].from.Before(hits[j].from) })
-	lookups := 0
 	for i, h := range hits {
 		if i > 0 && h == hits[i-1] {
 			continue
@@ -1261,7 +1262,7 @@ func (c *unwrapCheck) confirmHits(ctx context.Context, p *Proxy, hits []unwrapHi
 				continue // an identical aggregation (both operands of a binary operation) reads the same rows
 			}
 			looked[[2]time.Duration{probe.window, probe.offset}] = true
-			if lookups == unwrapMaxLookups {
+			if c.lookups >= unwrapMaxLookups {
 				return nil
 			}
 			from, to, _ := c.windows(probe)
@@ -1276,7 +1277,7 @@ func (c *unwrapCheck) confirmHits(ctx context.Context, p *Proxy, hits []unwrapHi
 			if hi.Before(lo) {
 				continue
 			}
-			lookups++
+			c.lookups++
 			if err := c.lookupHit(ctx, p, probe, h, lo, hi); err != nil {
 				return err
 			}
@@ -1767,7 +1768,6 @@ type unwrapLookupWriter struct {
 	header   http.Header
 	status   int
 	query    string
-	decided  bool
 	passed   bool
 	err      *orderedJSONPipelineError
 	recorded bool
@@ -1786,7 +1786,7 @@ func (p *Proxy) startUnwrapConversionCheck(w http.ResponseWriter, r *http.Reques
 	if err != nil || !unwrapExprHasUnwrap(expr) {
 		return r, nil
 	}
-	check := &unwrapCheck{probes: unwrapErrorProbes(expr), instant: !isRange}
+	check := &unwrapCheck{probes: unwrapErrorProbes(expr), instant: !isRange, query: logql}
 	if p.labelTranslator != nil {
 		check.vlName = p.labelTranslator.ToVL
 	}
@@ -1878,13 +1878,13 @@ func (l *unwrapLookupWriter) setQuery(logql string) {
 	l.mu.Unlock()
 }
 
-// decide runs the check once, before the first byte of the answer goes out (or the route records its status).
-// Loki's error is written at once; the handler's own answer goes out as it writes it (pass).
+// decide runs the check on the hits not looked up yet, as long as nothing of the answer went out: before the first
+// byte, when the route records its status, and when the route asks whether the answer failed. Loki's error is written
+// at once and ends the decision.
 func (l *unwrapLookupWriter) decide() {
-	if l.decided {
+	if l.err != nil || l.passed {
 		return
 	}
-	l.decided = true
 	l.err = l.check.confirm(l.ctx, l.p)
 	if l.err != nil {
 		if key := l.recentHitKey(); key != "" {
@@ -1926,7 +1926,7 @@ func (l *unwrapLookupWriter) Header() http.Header { return l.header }
 func (l *unwrapLookupWriter) WriteHeader(code int) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.passed {
+	if l.passed || l.err != nil {
 		return
 	}
 	l.status = code
@@ -1975,13 +1975,26 @@ func (l *unwrapLookupWriter) Flush() {
 	}
 }
 
-// failed reports an answer replaced by Loki's error.
+// unwrapAnswerFailed reports whether the answer a route is about to keep is replaced by Loki's error: the route's own
+// check, or, for an inner request (an operand), the check of the request it serves.
+func unwrapAnswerFailed(ctx context.Context, l *unwrapLookupWriter) bool {
+	if l == nil {
+		if c := unwrapCheckFrom(ctx); c != nil {
+			l = c.writer
+		}
+	}
+	return l.failed()
+}
+
+// failed reports an answer replaced by Loki's error; it decides on the hits so far first, so a route that keeps
+// its answer (the response cache) asks after its reads.
 func (l *unwrapLookupWriter) failed() bool {
 	if l == nil {
 		return false
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.decide()
 	return l.err != nil
 }
 
@@ -2007,9 +2020,7 @@ func unwrapRecordedStatus(ctx context.Context, code int) int {
 // handler did not record it.
 func (l *unwrapLookupWriter) finish(endpoint, logql string, requestStart time.Time) {
 	l.mu.Lock()
-	if !l.decided {
-		l.decide()
-	}
+	l.decide()
 	failed, recorded := l.err != nil, l.recorded
 	l.mu.Unlock()
 	if l.check.cancel != nil {
@@ -2027,10 +2038,14 @@ func (p *Proxy) unwrapStripResponse(resp *http.Response, strip func([]byte) ([]b
 	if resp == nil || resp.StatusCode < 200 || resp.StatusCode >= 300 || resp.Body == nil {
 		return nil
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, p.decodedBodyLimit()+1))
+	limit := p.decodedBodyLimit()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	_ = resp.Body.Close()
 	if err != nil {
 		return err
+	}
+	if int64(len(body)) > limit {
+		return newBackendBodyTooLarge(limit)
 	}
 	out, err := strip(body)
 	if err != nil {

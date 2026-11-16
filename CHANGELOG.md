@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`| logfmt | label_format w="{{.n}}" | unwrap v`) names the series with the label as the stage writes it, as
   Loki does (recorded with Loki's engine) for a rename and a copy of one label (`{{.label}}`); a label another
   template writes is left out of the series, which kept the line's own value of the label before.
+- A value the unwrap conversion rejects fails a binary operation whichever operand reads it, as Loki does (recorded
+  with Loki's engine at the instant and over a range: right operand, left operand, nested operand). A rejected
+  value only in an operand after the first answered 200 before; the check now decides again on the hits each later
+  operand records, as long as nothing of the answer went out (semantics/unwrap-conversion-error-binary-operand).
+  The response cache asks the check before it keeps an answer, an operand's included, so a repeat of the query
+  answers the same 400 (a repeated range query whose rejected value sat in the first operand answered 200 before);
+  a checked VictoriaLogs answer over the body-size limit answers the limit error.
 
 ## [2.311.0] - 2026-11-16
 
