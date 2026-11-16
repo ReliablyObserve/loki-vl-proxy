@@ -179,6 +179,11 @@
       "internal/proxy/query_stats_totals_test.go",
       "test/e2e-compat/query_stats_test.go"
     ],
+    "drilldown/long-range-pieces-answer-like-loki": [
+      "internal/proxy/chunked_range_windows_loki_test.go",
+      "test/e2e-compat/drilldown_chunked_merge_lock_test.go",
+      "test/e2e-ui/tests/explore-long-range-pieces.spec.ts"
+    ],
     "drilldown/patterns-full-range-counts": [
       "internal/proxy/patterns_counts_test.go",
       "internal/proxy/patterns_exact_test.go",
@@ -552,6 +557,7 @@
       "internal/proxy/binary_ignoring_matching_test.go",
       "internal/proxy/binary_matching_differential_test.go",
       "internal/proxy/binary_outer_sum_ignoring_test.go",
+      "internal/proxy/chunked_range_windows_loki_test.go",
       "internal/proxy/detected_level_filter_test.go",
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/drilldown_breakdown_matrix_test.go",
@@ -620,6 +626,7 @@
       "test/e2e-compat/detected_level_filter_test.go",
       "test/e2e-compat/detected_level_test.go",
       "test/e2e-compat/detected_level_unknown_stats_test.go",
+      "test/e2e-compat/drilldown_chunked_merge_lock_test.go",
       "test/e2e-compat/drilldown_field_bounds_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go",
       "test/e2e-compat/drilldown_fields_json_path_test.go",
@@ -2601,7 +2608,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 601,
+  "registry_items": 602,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3011,6 +3018,10 @@
       "semantics/error-layer-body-shape",
       "semantics/error-layer-cancel-deadline",
       "semantics/error-layer-transport-text"
+    ],
+    "internal/proxy/chunked_range_windows_loki_test.go": [
+      "drilldown/long-range-pieces-answer-like-loki",
+      "loki_api_v1_query_range"
     ],
     "internal/proxy/cold_bad_row_test.go": [
       "semantics/error-layer-silent-success"
@@ -5121,6 +5132,10 @@
     "test/e2e-compat/detected_level_variants_test.go": [
       "semantics/json-metric-detected-level-derivation"
     ],
+    "test/e2e-compat/drilldown_chunked_merge_lock_test.go": [
+      "drilldown/long-range-pieces-answer-like-loki",
+      "loki_api_v1_query_range"
+    ],
     "test/e2e-compat/drilldown_field_bounds_test.go": [
       "limits/drilldown-breakdown-exact",
       "limits/top-n-ranking-not-silent",
@@ -5802,9 +5817,12 @@
       "profiles/dotted-name-parse-error",
       "profiles/grafana-shows-loki-error-text",
       "profiles/structured-metadata-keys-per-profile"
+    ],
+    "test/e2e-ui/tests/explore-long-range-pieces.spec.ts": [
+      "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 694,
+  "tests_with_markers": 697,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5903,5 +5921,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 394
+  "wired_items": 395
 }
