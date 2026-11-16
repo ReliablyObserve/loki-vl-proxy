@@ -588,12 +588,29 @@ VictoriaLogs calls, in all and per VictoriaLogs endpoint, and bytes, cache
 lookups and hits per semantic layer (`loki`, `vl`) and tier, CPU and
 translations. Summary rows carry them per target as `reuse`: the first run
 (cold), the median of the later runs (repeat: the window moved by a minute) and
-the refresh pass. The smoke keeps the candidate's reuse per row in
-`history/daily-smoke/reuse.jsonl` and is red when a row's repeat calls
-VictoriaLogs more often than the day before or a layer and tier's hit ratio fell
-by more than 0.1. Not measured yet, for want of a metric: allocations per
-request, plan and translation cache hits, the reuse of proxy-evaluated
-operators, and per-request attribution (background work counts too).
+the refresh pass.
+
+The VictoriaLogs calls of a request are the proxy's own count of that request
+when the build has it: `daily.py` starts a build that knows
+`-debug-vl-calls-header` with it (`stack.probe_calls_header_support`), and the
+answer's `X-Loki-VL-Backend-Calls` is the calls that request started, so the
+proxy's background calls (health probes, the stream field inventory's refreshes)
+are not in `vl_calls`; the counters' surplus is kept as `background_vl_calls`. A
+build without the flag (the baseline release, until it ships it) is counted by
+the counters, background work included.
+
+The smoke measures two repeats apart (`perf_matrix.py --exact-repeat`, smoke
+only). The exact repeat asks each proxy the same request twice in a row at a
+settled window (`EXACT_REPEAT_AGE`, older than the proxy's
+`-query-range-freshness`, inside the seeded data) and keeps what the second
+cost: 0 VictoriaLogs calls expected, and red when a row's calls rise above the
+day before. The repeat that moves the window by a minute legitimately reads the
+buckets it lacks, so it is judged by the bytes it reads (red when they grow past
+1.5x and 4 KiB over the day before) and by a layer and tier's hit ratio (red
+when it fell by more than 0.1); its calls are reported, not judged. The smoke
+keeps the candidate's reuse per row in `history/daily-smoke/reuse.jsonl`. Not
+measured yet, for want of a metric: allocations per request, plan and
+translation cache hits, and the reuse of proxy-evaluated operators.
 
 ```bash
 python3 bench/ab/daily.py --out /tmp/ab-smoke --smoke

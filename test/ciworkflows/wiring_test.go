@@ -167,6 +167,70 @@ func TestDailyReportWiring(t *testing.T) {
 	}
 }
 
+// A manual run of a branch is tried on a real stack with that branch's code, and never reaches the job that holds the bot
+// token; the verify job fills the stack before the verifier asks and runs the proxies with the per-request call header.
+func TestDailyReportBranchRunAndStack(t *testing.T) {
+	jobs, raw := loadJobs(t, "daily-report.yaml")
+	dispatched := "${{ github.event_name == 'workflow_dispatch' && github.ref || 'main' }}"
+	for _, name := range []string{"plan", "inventory", "verify", "parity", "perf", "preview"} {
+		found := false
+		for _, st := range jobs[name].Steps {
+			if strings.HasPrefix(st.Uses, "actions/checkout") {
+				found = true
+				if st.With["ref"] != dispatched {
+					t.Errorf("job %s checks out %v, not the ref a manual run was started on", name, st.With["ref"])
+				}
+			}
+		}
+		if !found {
+			t.Errorf("job %s has no checkout", name)
+		}
+	}
+	report, preview := jobs["report"], jobs["preview"]
+	if !strings.Contains(report.If, "github.ref == 'refs/heads/main'") || !strings.Contains(report.If, "github.event_name != 'workflow_dispatch'") {
+		t.Errorf("the report job (bot token) runs for a manual run of another ref: %q", report.If)
+	}
+	if len(preview.Permissions) != 1 || preview.Permissions["contents"] != "read" || !strings.Contains(preview.If, "github.ref != 'refs/heads/main'") {
+		t.Errorf("preview: %+v", preview)
+	}
+	for _, st := range preview.Steps {
+		if strings.Contains(st.Run, "RELEASE_PR_TOKEN") || strings.Contains(st.Run, "git push") || strings.Contains(st.Run, "gh pr") ||
+			strings.Contains(st.Run, "gh api -X") {
+			t.Errorf("preview step %q writes to the repository", st.Name)
+		}
+		for k, v := range st.Env {
+			if strings.Contains(v, "secrets.") {
+				t.Errorf("preview step %q reads a secret through %s", st.Name, k)
+			}
+		}
+	}
+	verify := jobs["verify"]
+	upAt, up := verify.step(t, "Start the stack")
+	backfillAt, backfill := verify.step(t, "Backfill the log generator's history")
+	caseAt, cases := verify.step(t, "Every executable registry case against Loki and the proxy")
+	if !(upAt < backfillAt && backfillAt < caseAt) {
+		t.Errorf("the stack starts (%d), is backfilled (%d), and only then is verified (%d)", upAt, backfillAt, caseAt)
+	}
+	// The flag goes to every proxy of the stack through a copy of its file, which the later compose steps use too.
+	if !strings.Contains(up, "docker-compose.daily.yml") || !strings.Contains(up, "-debug-vl-calls-header=true") ||
+		!strings.Contains(up, `-ne "$flagged"`) || !strings.Contains(up, "COMPOSE_FILE=docker-compose.daily.yml") {
+		t.Errorf("the stack's proxies do not all get the call header:\n%s", up)
+	}
+	if !strings.Contains(backfill, "LOG_BACKFILL_SECONDS=21600") || !strings.Contains(backfill, "LOG_BACKFILL_ONLY=1") ||
+		!strings.Contains(backfill, "LOG_BACKFILL_END=$((STACK_UP_AT - 60))") {
+		t.Errorf("backfill:\n%s", backfill)
+	}
+	// The fixture seed runs in the step of the verifier (its background process stops with the step) and the
+	// verifier waits for every stream to be ready first.
+	seedAt, readyAt, verifierAt := strings.Index(cases, "casefixtures-seed\" -loki"), strings.Index(cases, "grep -c '^ready '"), strings.Index(cases, "go run ./test/caseverify")
+	if seedAt < 0 || !strings.Contains(cases, "-follow") || !(seedAt < readyAt && readyAt < verifierAt) || !strings.Contains(cases, "trap 'kill") {
+		t.Errorf("the verifier does not wait for the fixture seed:\n%s", cases)
+	}
+	if strings.Contains(string(raw), "pkill") || strings.Contains(string(raw), "killall") {
+		t.Error("only processes the job started are stopped")
+	}
+}
+
 func loadWorkflowFile(t *testing.T, file string) (Workflow, []byte) {
 	t.Helper()
 	raw, err := os.ReadFile("../../.github/workflows/" + file)

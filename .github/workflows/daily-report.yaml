@@ -457,7 +457,9 @@ jobs:
   report:
     name: daily-report
     needs: [plan, inventory, verify, parity, perf]
-    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    # A manual run of another ref (a branch being tried) never reaches the job that holds the bot token: `preview` below
+    # builds the same report from that ref's code and opens nothing.
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -469,7 +471,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || 'main' }}
+          ref: main
           fetch-depth: 0
           # The checkout only reads. The step that pushes gets the bot token through
           # a credential helper and nothing keeps a token in the git config.
@@ -537,8 +539,6 @@ jobs:
 
       - name: Open or update the daily report PR
         id: pr
-        # Only a run on main moves the bot branch; a manual run of another ref ends with the summary above.
-        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
           PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
@@ -648,3 +648,89 @@ jobs:
               print(f"::error title=verified numbers::{line}")
           sys.exit(1 if s["red"] or aged else 0)
           PY
+
+  # A manual run of a branch (gh workflow run daily-report.yaml --ref <branch>) builds the report from that branch's code
+  # and the day's results, shows it in the job summary and uploads it. Nothing is written to the repository: no token,
+  # no write permission, no pull request.
+  preview:
+    name: daily-report preview
+    needs: [plan, inventory, verify, parity, perf]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      IN: /tmp/daily-in
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || 'main' }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.4"
+          cache: false
+
+      - name: Download the jobs' results
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: daily-*
+          path: ${{ env.IN }}
+
+      - name: Write the summary
+        id: summary
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PINNED_VL: ${{ needs.plan.outputs.pinned_vl }}
+        run: |
+          set -euo pipefail
+          # Main's committed numbers before today's replace them: on the schedule, a daily number older than 48 hours
+          # or a weekly one older than 8 days (a report pull request left unmerged) turns the day red below.
+          set +e
+          go run ./test/dailyreport -docs -check > /tmp/age-before.txt 2>&1
+          echo $? > /tmp/age-before.exit
+          set -e
+          cat /tmp/age-before.txt
+          # The bot-owned files the jobs wrote, put in place: the inventory's runs record and page, the smoke history.
+          mkdir -p conformance/registry/generated/verification bench/ab/history/daily-smoke /tmp/cases
+          if [ -f "$IN/daily-inventory/workflow-runs.json" ]; then
+            cp "$IN/daily-inventory/workflow-runs.json" conformance/registry/generated/verification/
+            cp "$IN/daily-inventory/ci-workflows.md" docs/ci-workflows.md
+          fi
+          cp "$IN"/daily-perf/daily-smoke/*.jsonl bench/ab/history/daily-smoke/ 2>/dev/null || true
+          cp "$IN"/daily-verify-*/cases/*.json /tmp/cases/ 2>/dev/null || true
+          pinned="$IN/daily-verify-${PINNED_VL}"
+          # A missing exit file is a step that did not run: 99, so the summary reports it red.
+          exit_of() { if [ -f "$1" ]; then cat "$1"; else echo 99; fi; }
+          args=(-cases /tmp/cases -health "$IN/daily-inventory/health.json"
+                -parity "$IN/daily-parity/result.json" -smoke "$IN/daily-perf/smoke.json"
+                -error-rerecord "$pinned/error-rerecord.txt" -error-rerecord-exit "$(exit_of "$pinned/error-rerecord.exit")"
+                -error-replay-exit "$(exit_of "$pinned/error-replay.exit")"
+                -commit "$(git rev-parse HEAD)" -date "$(date -u +%Y-%m-%d)" -run "$RUN_URL" -md /tmp/summary.md)
+          go run ./test/dailyreport "${args[@]}" | tee /tmp/dailyreport.txt
+          # The dated block of every page that states the numbers, from the summary just written; then their ages
+          # again (a weekly number is not renewed by today's run).
+          go run ./test/dailyreport -docs
+          set +e
+          go run ./test/dailyreport -docs -check > /tmp/age-after.txt 2>&1
+          echo $? > /tmp/age-after.exit
+          set -e
+          cat /tmp/age-after.txt
+          {
+            cat /tmp/summary.md
+            for f in "$IN"/daily-verify-*/cases-*.md "$IN/daily-perf/smoke.md" "$IN/daily-parity/summary.md"; do
+              [ -f "$f" ] && { echo; cat "$f"; }
+            done
+          } > /tmp/body.md
+          cat /tmp/body.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: daily-preview
+          path: |
+            conformance/registry/generated/verification/summary.json
+            conformance/registry/generated/verification/cases.json
+            /tmp/body.md
