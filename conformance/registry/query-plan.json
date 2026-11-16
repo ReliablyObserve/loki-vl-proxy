@@ -255,8 +255,8 @@
     }
   },
   "loki_metric_differential": {
-    "queries": 803,
-    "entries": 31492,
+    "queries": 804,
+    "entries": 31526,
     "excluded": {
       "the plan does not route it: BinOp bool": 9,
       "the plan does not route it: BinOp constant operands": 2,
@@ -327,22 +327,22 @@
     "profiles": {
       "v1.49 loki profile": {
         "instant": {
-          "runs": 803,
-          "plan_runs": 803,
-          "plan_matches_loki": 803,
+          "runs": 804,
+          "plan_runs": 804,
+          "plan_matches_loki": 804,
           "plan_matches_loki_empty": 398,
-          "translator_matches_loki": 803,
+          "translator_matches_loki": 804,
           "float_tolerance": 1
         },
         "step\u003crange": {
-          "runs": 803,
-          "plan_runs": 764,
+          "runs": 804,
+          "plan_runs": 765,
           "not_plan": {
             "the route rule delegates the request": 39
           },
-          "plan_matches_loki": 756,
+          "plan_matches_loki": 757,
           "plan_matches_loki_empty": 247,
-          "translator_matches_loki": 795,
+          "translator_matches_loki": 796,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -356,25 +356,25 @@
           }
         },
         "step=range": {
-          "runs": 803,
-          "plan_runs": 801,
+          "runs": 804,
+          "plan_runs": 802,
           "not_plan": {
             "the route rule delegates the request": 2
           },
-          "plan_matches_loki": 801,
+          "plan_matches_loki": 802,
           "plan_matches_loki_empty": 268,
-          "translator_matches_loki": 803,
+          "translator_matches_loki": 804,
           "float_tolerance": 3
         },
         "step\u003erange": {
-          "runs": 803,
-          "plan_runs": 786,
+          "runs": 804,
+          "plan_runs": 787,
           "not_plan": {
             "the route rule delegates the request": 17
           },
-          "plan_matches_loki": 778,
+          "plan_matches_loki": 779,
           "plan_matches_loki_empty": 259,
-          "translator_matches_loki": 795,
+          "translator_matches_loki": 796,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -390,22 +390,22 @@
       },
       "v1.53 loki profile": {
         "instant": {
-          "runs": 803,
-          "plan_runs": 803,
-          "plan_matches_loki": 803,
+          "runs": 804,
+          "plan_runs": 804,
+          "plan_matches_loki": 804,
           "plan_matches_loki_empty": 398,
-          "translator_matches_loki": 803,
+          "translator_matches_loki": 804,
           "float_tolerance": 1
         },
         "step\u003crange": {
-          "runs": 803,
-          "plan_runs": 764,
+          "runs": 804,
+          "plan_runs": 765,
           "not_plan": {
             "the route rule delegates the request": 39
           },
-          "plan_matches_loki": 756,
+          "plan_matches_loki": 757,
           "plan_matches_loki_empty": 247,
-          "translator_matches_loki": 795,
+          "translator_matches_loki": 796,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
@@ -419,25 +419,25 @@
           }
         },
         "step=range": {
-          "runs": 803,
-          "plan_runs": 801,
+          "runs": 804,
+          "plan_runs": 802,
           "not_plan": {
             "the route rule delegates the request": 2
           },
-          "plan_matches_loki": 801,
+          "plan_matches_loki": 802,
           "plan_matches_loki_empty": 268,
-          "translator_matches_loki": 803,
+          "translator_matches_loki": 804,
           "float_tolerance": 3
         },
         "step\u003erange": {
-          "runs": 803,
-          "plan_runs": 786,
+          "runs": 804,
+          "plan_runs": 787,
           "not_plan": {
             "the route rule delegates the request": 17
           },
-          "plan_matches_loki": 778,
+          "plan_matches_loki": 779,
           "plan_matches_loki_empty": 259,
-          "translator_matches_loki": 795,
+          "translator_matches_loki": 796,
           "float_tolerance": 0,
           "plan_differs_by_class": {
             "adds a series Loki does not have": 8,
