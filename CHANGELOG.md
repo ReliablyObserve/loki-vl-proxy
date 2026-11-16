@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `/loki/api/v1/patterns` on a proxy that forwards a selector to the peer holding its pattern state no longer
+  keeps the owner's empty answer. The owner answers empty while the lines have not reached VictoriaLogs yet; the
+  forwarding peer cached that answer for the patterns cache's retention, so the patterns of a new stream never
+  appeared on it. An empty forwarded answer is now asked again on the next request.
 - A binary operation whose operand is a `sum`, `avg`, `min` or `max` with an empty `without ()` clause
   (`sum without () (count_over_time({app="x"}[5m])) / 2`, `max(rate({app="x"}[5m])) without () > on(app) group_left …`)
   now answers every series of that operand, as Loki does: a clause of no label drops none, so each series is its own
