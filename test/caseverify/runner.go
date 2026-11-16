@@ -459,7 +459,7 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 		var before Snapshot
 		var measured bool
 		if attempt == 1 && meter != nil {
-			before, measured = meter.Measure(p.ID, p.Variant, "cold_before")
+			before, measured = measure(meter, p.ID, p.Variant, "cold_before")
 		}
 		proxy := src.Ask("proxy", p.ID, attempt, req)
 		if attempt == 1 {
@@ -489,7 +489,11 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 		if !checked && needsData(r.Facets, loki) {
 			checked = true
 			if dataVerdict(&r, p, q, cnt, now, headers["X-Scope-OrgID"], tenant, loki) {
-				return r
+				// Loki's index trails its data by the time a chunk takes to flush: ask again before calling it not ready.
+				var caught bool
+				if loki, caught = waitForLokiIndex(&r, p, src, req, loki); !caught {
+					return r
+				}
 			}
 		}
 		r.Differences = CompareWith(r.Facets, loki, proxy, opts)
@@ -516,6 +520,41 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 	return r
 }
 
+// Loki's index/stats counts the chunks it has flushed, so a seed written a moment ago is counted late. The answer is
+// asked again, at attempts of its own so a replay finds them, up to indexTries times, indexWait apart, before the case
+// is called not comparable; both are variables so a test does not wait.
+const (
+	indexTries        = 12
+	indexRetryAttempt = 20
+)
+
+var indexWait = 10 * time.Second
+
+// waitForLokiIndex re-asks Loki while the verdict of r is that its index has not caught up with its data; it returns
+// Loki's newest answer and true when the index caught up (r's verdict is cleared), false when r stands.
+func waitForLokiIndex(r *Result, p Probe, src Source, req Request, loki Answer) (Answer, bool) {
+	if r.Verdict != verdictNotComparable || !strings.Contains(r.Reason, "its index has not caught up with its data") {
+		return loki, false
+	}
+	wait := indexWait
+	if _, replay := src.(*Replay); replay {
+		wait = 0 // a recording holds the answers it asked, there is nothing to wait for
+	}
+	for try := 1; try <= indexTries; try++ {
+		time.Sleep(wait)
+		again := src.Ask("loki", p.ID, indexRetryAttempt+try, req)
+		if again.OK() && lokiIndexBehind(p, *r, again) == "" {
+			r.Verdict, r.Reason = "", ""
+			return again, true
+		}
+		if !again.OK() {
+			break
+		}
+		r.Reason = lokiIndexBehind(p, *r, again)
+	}
+	return loki, false
+}
+
 // dataVerdict runs the data precheck and the health check of Loki's index; true when the data does not allow a
 // comparison (the verdict is set).
 func dataVerdict(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, caseTenant, tenant string, loki Answer) bool {
@@ -539,6 +578,10 @@ func dataVerdict(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, c
 func settleVacuous(r *Result, p Probe, loki, proxy Answer, control func() string) (vacuous, blocked bool) {
 	if !Vacuous(r.Facets, loki, proxy) {
 		return false, false
+	}
+	if p.EmptyRange != "" {
+		r.Verdict, r.Reason = verdictMatches, "both answers are empty by design: "+p.EmptyRange
+		return true, false
 	}
 	if p.Control != nil {
 		if why := control(); why != "" {
@@ -591,7 +634,7 @@ func meterAfter(meter Meter, p Probe, measured bool) (Snapshot, bool) {
 	if !measured {
 		return nil, false
 	}
-	return meter.Measure(p.ID, p.Variant, "cold_after")
+	return measure(meter, p.ID, p.Variant, "cold_after")
 }
 
 // lokiIndexBehind is why Loki's /index/stats answer cannot be compared: it counts the chunks of its store, and
@@ -714,7 +757,7 @@ func precheck(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, case
 			empty = false
 		}
 	}
-	if empty {
+	if empty && p.EmptyRange == "" {
 		return verdictEmpty, "both sides hold no line for the case's selectors and window"
 	}
 	return "", ""

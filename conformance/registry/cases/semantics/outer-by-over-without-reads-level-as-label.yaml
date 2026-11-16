@@ -39,6 +39,9 @@ request:
     step: '6'
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    blocked_by: fixture
+    reason: "the window is the absolute hour 2025-12-31T23:00:00Z, outside both stores' retention: neither store holds data there, and the case is that hour's step grid"
 compare:
   mode: observed
   fields: [series labels, values]
