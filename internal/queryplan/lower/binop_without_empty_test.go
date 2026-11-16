@@ -109,6 +109,10 @@ func emptyWithoutLikeLabelled(t testing.TB, q string, p *queryplan.Plan, op phys
 		return false, false
 	}
 	want, err := PlanQuery(ref, rp, prof.lowerProfile())
+	if errors.Is(err, ErrNotLowered) {
+		// The reference itself goes to the translator (a quoted ( beside a range operand of the operation).
+		return false, false
+	}
 	if err != nil {
 		t.Fatalf("%s: %s lowers with an empty clause, not with a labelled one: %v", prof.name, q, err)
 	}
