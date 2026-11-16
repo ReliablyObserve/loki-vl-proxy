@@ -26,10 +26,10 @@ prune.md, conformance.txt, result.json and summary.md (the job summary and the p
 
 Exit: 0 the run is recorded; 2 the run could not prove both sides healthy (run.py); 3 health changed during the run;
 4 the run cannot speak for the corpus (a source sent nothing, no cluster): nothing was pruned or published;
-5 the run is recorded, and the stack's Loki serves routes or methods other than the registry's Loki surface listed
-(conformance/scripts/sync_loki.py --record-live re-records live-routes.json and regenerates endpoints.json, which
-the pull request then carries: the surface comes from Loki's public documentation, recorded answers and this live
-probe, and this is the check that it has not drifted from a live Loki); 1 any other failure.
+1 any other failure. A change of the registry's Loki surface is not an exit code: the run also asks the stack's
+Loki every route and method (conformance/scripts/sync_loki.py --record-live re-records live-routes.json and
+regenerates endpoints.json, which the pull request carries) and sets loki_surface_drift in result.json when the
+methods of a route changed; the workflow fails after the pull request is open, as for an unclaimed cluster.
 """
 import argparse
 import json
@@ -79,17 +79,28 @@ def surface_version():
 def record_loki_surface(state, out, log):
     """Ask the stack's Loki every route and method of the registry's Loki surface (sync_loki.py --record-live, which
     writes live-routes.json and regenerates endpoints.json from it, the HTTP API reference and the recorded
-    answers). Returns whether endpoints.json changed: the live Loki serves something the surface did not list, or no
-    longer serves something it did. A copy of the probe goes to the run's output."""
+    answers). Returns "" when no route's methods changed, else the changes (a status that still means "served" is
+    no change), or why the probe failed; a failed probe does not stop the run. A copy of the probe goes to the
+    run's output."""
     directory = os.path.join(ROOT, "conformance", "registry", "generated", "loki", surface_version())
     target = os.path.join(directory, "endpoints.json")
-    before = read_text(target) if os.path.exists(target) else ""
-    run([PY, os.path.join(ROOT, "conformance", "scripts", "sync_loki.py"), "--version", surface_version(),
-         "--record-live", f"http://127.0.0.1:{state['ports']['loki']}"], cwd=ROOT, log=log)
+
+    def methods():
+        if not os.path.exists(target):
+            return {}
+        return {e["path"]: sorted(e["methods"]) for e in load_json(target)["endpoints"]}
+
+    before = methods()
+    probed = run([PY, os.path.join(ROOT, "conformance", "scripts", "sync_loki.py"), "--version", surface_version(),
+                  "--record-live", f"http://127.0.0.1:{state['ports']['loki']}"], cwd=ROOT, log=log, check=False)
+    if probed.returncode:
+        return "the probe failed (see steps.log)"
     probe = os.path.join(directory, "live-routes.json")
     if os.path.exists(probe):
         write_text(os.path.join(out, "live-routes.json"), read_text(probe))
-    return read_text(target) != before
+    after = methods()
+    changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
+    return ", ".join(f"{p}: {before.get(p, [])} -> {after.get(p, [])}" for p in changed)
 
 
 def loki_docs_version(tag):
@@ -227,9 +238,9 @@ def summary_md(a, result, discovery, prune_text, problems):
              f"- elapsed {result['elapsed_s']} s ({', '.join(f'{k} {v} s' for k, v in result['phases_s'].items())})", ""]
     lines += run_table(discovery) + [""]
     if result.get("loki_surface_drift"):
-        lines += ["The stack's Loki serves routes or methods other than the registry's Loki surface listed: "
-                  "`sync_loki.py --record-live` re-recorded `live-routes.json` and regenerated `endpoints.json` "
-                  "(in this pull request); review the change.", ""]
+        lines += ["The registry's Loki surface changed against the stack's Loki (`sync_loki.py --record-live` "
+                  f"re-recorded `live-routes.json` and regenerated `endpoints.json`, in this pull request): "
+                  f"{result['loki_surface_drift']}.", ""]
     if result.get("slice"):
         lines += [f"This is a slice ({result['slice']['per_source']} per source of "
                   f"{result['slice']['of']} corpus entries): the run is recorded as partial, `parity_gaps.py --prune` "
@@ -365,7 +376,7 @@ def main():
         result["problems"] = len(problems)
         result["elapsed_s"] = round(time.time() - t_all)
         write_text(os.path.join(out, "summary.md"), summary_md(a, result, discovery, prune_text, problems))
-        code = 5 if result.get("loki_surface_drift") else 0
+        code = 0
     except Exception as e:  # noqa: BLE001 - any failure must still leave a result and tear down
         traceback.print_exc()
         result["error"] = f"{type(e).__name__}: {e}"[:400]

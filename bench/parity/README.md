@@ -48,7 +48,9 @@ dispatch), at an hour clear of `perf-daily.yaml`, on a fresh stack with the whol
 from the published query documentation of the release the stack runs; no Loki source is checked out or read. The
 run also asks the stack's Loki every route and method of the registry's Loki surface
 (`conformance/scripts/sync_loki.py --record-live`, which re-records `live-routes.json` and regenerates
-`endpoints.json`) and ends red (exit 5) when that changes the surface. The result goes to the bot branch
+`endpoints.json`); when that changes a route's methods, the pull request carries the change and the job ends red
+after opening it. The run fetches the documentation from grafana.com; a page that does not load leaves its
+examples out (and a corpus source with none refuses pruning). The result goes to the bot branch
 `bench/parity-refresh` as a pull request (never to `main`): the recorded run, the registry cases that lost cluster
 ids, the regenerated reports, and a summary with every cluster no registry case claims yet. A run that cannot
 prove both sides healthy, or whose corpus sources did not all send requests, fails the job and opens nothing. New

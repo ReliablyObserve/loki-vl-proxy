@@ -234,8 +234,12 @@ def loki_docs(version):
     for page in DOCS_PAGES:
         url = DOCS_URL.format(version=version, page=page)
         request = urllib.request.Request(url, headers={"User-Agent": "loki-vl-proxy-parity"})
-        with urllib.request.urlopen(request, timeout=60) as response:
-            text = response.read().decode()
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                text = response.read().decode()
+        except OSError as err:  # a page that does not load leaves its examples out; a source with none refuses prune
+            print(f"loki-docs: {url}: {err}", file=sys.stderr)
+            continue
         for raw in docs_examples(text):
             query = rewrite(raw, force=True)
             query = clamp_ranges(query) if query else query
