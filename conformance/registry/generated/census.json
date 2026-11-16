@@ -2950,7 +2950,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 687,
+      "go": 688,
       "playwright": 1
     },
     "page_kinds": {
