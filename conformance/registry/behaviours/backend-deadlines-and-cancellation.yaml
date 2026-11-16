@@ -20,11 +20,7 @@ proxy: |
   budget (the earlier of the request deadline and -backend-timeout), and the
   client's cancellation is propagated to the backend call, including the cold
   POST path. Neither a client disconnect nor an expired admission wait may be
-  recorded as a backend failure or open the circuit breaker, and neither may a
-  proxy-side bound on one request's read (an answer above the bytes the proxy
-  buffers, a series or row budget, a group guard): VictoriaLogs answered, so the
-  request answers its own limit error and every other query keeps reaching the
-  backend (shouldRecordBreakerFailure, isProxySideLimit). A response
+  recorded as a backend failure or open the circuit breaker. A response
   VictoriaLogs aborts after its headers (a query past its deadline) is answered
   with Loki's 504 timeout text when the budget ran out, a sanitized 502
   otherwise, and its partial body is never decoded or cached. A call whose own

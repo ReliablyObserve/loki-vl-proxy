@@ -1041,12 +1041,6 @@ func shouldRecordBreakerFailure(ctx context.Context, err error) bool {
 	if isHeavyQueryQueueFull(err) {
 		return false
 	}
-	// A proxy-side bound on what one request reads (an answer above the bytes the proxy buffers, a series or row
-	// budget, a group guard) is that request's outcome: VictoriaLogs answered. Counting it would open the breaker for
-	// every other query on the proxy.
-	if isProxySideLimit(err) {
-		return false
-	}
 	// HTTP responses from VL (even 4xx/5xx) prove the backend is up.
 	var hsc httpStatusCoder
 	if errors.As(err, &hsc) {
@@ -1060,19 +1054,6 @@ func shouldRecordBreakerFailure(ctx context.Context, err error) bool {
 		return false
 	}
 	return true
-}
-
-// isProxySideLimit reports an error the proxy raised on its own bound for one request, bare or wrapped: a body above
-// what it buffers, a series or row budget, a group guard, or any Loki-shaped error other than a failed backend or an
-// internal error.
-func isProxySideLimit(err error) bool {
-	if errors.Is(err, errBodyTooLarge) || errors.Is(err, errSeriesCountExceeded) || errors.Is(err, errStatsGroupGuard) || isSeriesLimitError(err) {
-		return true
-	}
-	if le, ok := lokierr.As(err); ok {
-		return le.Kind() != lokierr.KindBackendFailed && le.Kind() != lokierr.KindInternal
-	}
-	return false
 }
 
 // extractVLErrorMsg parses a VictoriaLogs JSON error body and returns the "error"
