@@ -80,3 +80,40 @@ func TestPeerPushBufferFlags(t *testing.T) {
 		t.Fatalf("defaults refused: %v", err)
 	}
 }
+
+// -peer-read-hedge-max-delay defaults to the peer cache's default, 0 turns hedged reads off, a negative value is
+// refused.
+//
+// conformance: peer-cache-read-hedge
+func TestPeerReadHedgeFlag(t *testing.T) {
+	sentinel := errors.New("stop")
+	capture := func(t *testing.T, args ...string) (runtimeOptions, error) {
+		t.Helper()
+		var got runtimeOptions
+		err := run(append([]string{"-server.admin-auth-token=test-token"}, args...), func(string) string { return "" }, io.Discard, func(chan<- os.Signal, ...os.Signal) {}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher { return &fakeOTLPPusher{} }, func(opts runtimeOptions, _ *slog.Logger, _ signalNotifier, _ otlpPusherFactory) (*runtimeState, error) {
+			got = opts
+			return nil, sentinel
+		}, nil, nil)
+		if errors.Is(err, sentinel) {
+			err = nil
+		}
+		return got, err
+	}
+	got, err := capture(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.proxyCfg.peerReadHedgeMaxDelay != cache.DefaultPeerReadHedgeMaxDelay || peerReadHedgeBound(got.proxyCfg.peerReadHedgeMaxDelay) != cache.DefaultPeerReadHedgeMaxDelay {
+		t.Fatalf("default %s, want the cache's %s", got.proxyCfg.peerReadHedgeMaxDelay, cache.DefaultPeerReadHedgeMaxDelay)
+	}
+	if peerReadHedgeBound(0) != -1 {
+		t.Fatal("0 must turn hedged reads off in the peer cache config")
+	}
+	got, err = capture(t, "-peer-read-hedge-max-delay=-1s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateExecutionLimits(got.proxyCfg); err == nil || !strings.Contains(err.Error(), "peer-read-hedge-max-delay") {
+		t.Fatalf("a negative delay: %v", err)
+	}
+}

@@ -213,6 +213,7 @@ type proxyRuntimeConfig struct {
 	peerHTTPURL                         string
 	peerStatic                          string
 	peerTimeout                         time.Duration
+	peerReadHedgeMaxDelay               time.Duration
 	peerAuthToken                       string
 	peerWriteThrough                    bool
 	peerWriteThroughMinTTL              time.Duration
@@ -484,7 +485,7 @@ func run(
 	logUserHeader := fs.String("log-user-header", "", "Header naming the end user who ran a query (X-Grafana-User with Grafana's [dataproxy] send_user_header=true), logged as enduser.id on the request, upstream_request, slow_request and slow_upstream_request lines and shown in /debug/queries. Logs and the admin view only: never a metric label, never sent to VictoriaLogs, never part of a cache key. The header is client-sent and spoofable: restrict it with -log-user-header-trusted-cidrs. A header that carries credentials (Authorization, Cookie, or a name with token, secret, password, key, session or credential) is refused at startup. Empty: the user is the tenant (or the -metrics.trust-proxy-headers identity)")
 	logUserHeaderTrustedCIDRs := fs.String("log-user-header-trusted-cidrs", "", "Comma-separated CIDRs or addresses of the TCP peers (Grafana, or the load balancer in front of the proxy) allowed to name the user through -log-user-header; a request from any other peer is logged under its tenant. Matches the connection's address, never X-Forwarded-For. Empty trusts every peer")
 	slowQueryLogRawQueries := fs.Bool("slow-query-log-raw-queries", true, "Slow lines carry the LogQL and LogsQL text (capped at 8 KB each); false carries their sha256 and length instead, as debug logs do without -debug-log-raw-queries")
-	metadataCacheFreshness := fs.Duration("max-metadata-cache-freshness", 24*time.Hour, "Loki max_metadata_cache_freshness, applied to all tenants: a /labels, /label/{name}/values or /series request that ends within this window of now does not reuse a cached answer older than -recent-tail-refresh-max-staleness, so streams written in the window appear like in Loki. Sealed non-empty inventory buckets still come from the cache; the newest minute, buckets due for revalidation and a row count over each run of empty buckets (stream and field filters only; cheap for * and stream filters, but with a field filter it reads the filtered column of every row in the run's range) are read live. A bucket stored empty with rows that lack the listed field follows the normal schedule. 0 keeps the previous caching for every range.")
+	metadataCacheFreshness := fs.Duration("max-metadata-cache-freshness", 24*time.Hour, "Loki max_metadata_cache_freshness, applied to all tenants: a /labels, /label/{name}/values or /series request that ends within this window of now does not reuse a cached answer older than -recent-tail-refresh-max-staleness, so streams written in the window appear like in Loki. Sealed inventory buckets come from the cache; the newest minute, buckets due for revalidation and a row count over each run of counted buckets (every empty bucket, and hour and day buckets that ended an hour ago; stream and field filters only; cheap for * and stream filters, but with a field filter it reads the filtered column of every row in the run's range; reused for -recent-tail-refresh-max-staleness) are read live, and a bucket whose rows changed is rescanned, so rows backfilled into a cached bucket appear on the next request. A non-empty 5m or 1m bucket (no row count) and a bucket with rows from the last hour follow the normal schedule. 0 keeps the previous caching for every range.")
 	maxStatsCacheFreshness := fs.Duration("max-stats-cache-freshness", proxy.DefaultMaxStatsCacheFreshness, "Loki max_stats_cache_freshness, applied to all tenants. An instant /index/volume over at least 10 minutes is summed from UTC-aligned day, hour, 5-minute and minute segments kept in the read cache (memory, disk and peers), so a window moved by seconds reads only its edges from VictoriaLogs; segments that end within this window of now are read from VictoriaLogs on every request, like Loki, which does not cache a volume ending within it. 0 caches every segment but the newest minute. -metadata-inventory-parallelism=0 turns the segments off.")
 	metadataMaxStaleness := fs.Duration("metadata-max-staleness", 10*time.Second, "Longest a near-now /labels or /label/{name}/values answer may lag VictoriaLogs while its edge refresh runs in the background, measured from the start of the VictoriaLogs read behind it. A request ending within -max-metadata-cache-freshness of now whose cached answer is older than -recent-tail-refresh-max-staleness waits -metadata-edge-refresh-budget for the refresh, then gets the last answer if this replica read it within this bound (marked X-Proxy-Stale-Response); past it, the request waits for VictoriaLogs. Loki reads its index and never lags; 0 keeps that exactness at the cost of waiting for VictoriaLogs under load.")
 	metadataEdgeRefreshBudget := fs.Duration("metadata-edge-refresh-budget", 100*time.Millisecond, "How long a near-now /labels or /label/{name}/values request waits for its edge refresh from VictoriaLogs before it is answered from the last answer within -metadata-max-staleness. An idle VictoriaLogs answers the edge in 5-40 ms (exact answers); under heavy load it took 0.35-2.6 s (bounded-stale answers). 0 answers from the last answer at once whenever one is within the bound.")
@@ -757,6 +758,7 @@ func run(
 	peerHTTPURL := fs.String("peer-http-url", "", `URL returning a JSON peer list for "http" discovery. Supported formats: simple array, {"peers":[...]}, Prometheus HTTP SD, Consul catalog API`)
 	peerStatic := fs.String("peer-static", "", `Static peer list for "static" discovery (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
 	peerTimeout := fs.Duration("peer-timeout", 2*time.Second, "Timeout for peer-cache fetch requests to owner peers")
+	peerReadHedgeMaxDelay := fs.Duration("peer-read-hedge-max-delay", 200*time.Millisecond, "Longest a peer-cache read waits on one replica's response headers before it also asks the key's next replica or, with none left, goes on as a miss (VictoriaLogs or a local compute) while that call finishes in the background, where its -peer-timeout still suspends a paused peer. The delay used is twice the p99 of the measured peer header latencies, at least 5ms and at most this value and half of -peer-timeout. 0 turns hedging off: a read waits up to -peer-timeout on each replica.")
 	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set")
 	peerInsecureIPAllowlist := fs.Bool("peer-insecure-ip-allowlist", false, "When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured.")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
@@ -1060,6 +1062,7 @@ func run(
 			peerHTTPURL:                         *peerHTTPURL,
 			peerStatic:                          *peerStatic,
 			peerTimeout:                         *peerTimeout,
+			peerReadHedgeMaxDelay:               *peerReadHedgeMaxDelay,
 			peerAuthToken:                       *peerAuthToken,
 			peerInsecureIPAllowlist:             *peerInsecureIPAllowlist,
 			peerWriteThrough:                    *peerWriteThrough,
@@ -2246,6 +2249,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			StaticPeers:              cfg.peerStatic,
 			Port:                     3100,
 			Timeout:                  cfg.peerTimeout,
+			ReadHedgeMaxDelay:        peerReadHedgeBound(cfg.peerReadHedgeMaxDelay),
 			AuthToken:                cfg.peerAuthToken,
 			WriteThrough:             cfg.peerWriteThrough,
 			WriteThroughMinTTL:       cfg.peerWriteThroughMinTTL,
@@ -2476,6 +2480,15 @@ func peerPushBufferBound[T int | int64](flag T) T {
 	return flag
 }
 
+// peerReadHedgeBound maps -peer-read-hedge-max-delay to the peer cache's
+// setting: 0 (hedging off) is a negative value there, where 0 is the default.
+func peerReadHedgeBound(flag time.Duration) time.Duration {
+	if flag == 0 {
+		return -1
+	}
+	return flag
+}
+
 func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 	for _, limit := range []struct {
 		flag  string
@@ -2500,6 +2513,9 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 		if limit.value < 0 {
 			return fmt.Errorf("invalid %s: %d (must be >= 0; 0 uses the built-in default)", limit.flag, limit.value)
 		}
+	}
+	if cfg.peerReadHedgeMaxDelay < 0 {
+		return fmt.Errorf("invalid -peer-read-hedge-max-delay=%s (must be >= 0; 0 turns hedged peer reads off)", cfg.peerReadHedgeMaxDelay)
 	}
 	if cfg.peerPushBufferMaxEntries < 0 || cfg.peerPushBufferMaxBytes < 0 {
 		return fmt.Errorf("invalid -peer-push-buffer-max-entries=%d / -peer-push-buffer-max-bytes=%d (must be >= 0; 0 turns the peer push buffer off)", cfg.peerPushBufferMaxEntries, cfg.peerPushBufferMaxBytes)
