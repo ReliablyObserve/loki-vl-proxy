@@ -13,12 +13,9 @@ import (
 	"testing"
 )
 
-// lokiMergeBinOp is a direct port of Loki v3.7.7 syntax.MergeBinOp
-// (pkg/logql/syntax/ast.go:1944-2125) reduced to the sample value: it returns
-// the resulting value and whether the sample is kept. left is the vector side
-// when swap is set the way the Loki evaluator passes it; here left/right are the
-// operands in query order, so a filtered comparison keeps the left value
-// (ast.go:2100-2118, retSample = left unless swap).
+// lokiMergeBinOp models Loki v3.7.7's binary operator on a sample value: it
+// returns the resulting value and whether the sample is kept. left/right are the
+// operands in query order, so a filtered comparison keeps the left value.
 func lokiMergeBinOp(op string, left, right float64, filter bool) (float64, bool) {
 	switch op {
 	case "+":
@@ -132,8 +129,8 @@ func TestApplyOpDivisionAndModuloByZeroAreNaN(t *testing.T) {
 	}
 }
 
-// vector / 0 on query_range and query: every sample is NaN, as Loki's
-// LiteralStepEvaluator and vectorBinop evaluate it (evaluator.go:1020,1179).
+// vector / 0 on query_range and query: every sample is NaN, as Loki
+// evaluates it.
 // conformance: semantics/binary-division-by-zero-nan
 func TestBinaryVectorDivisionByZeroHandlers(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -296,7 +293,7 @@ func TestBinaryMatchersMatchLokiMergeBinOp(t *testing.T) {
 }
 
 // A constant vector divided by zero is NaN on the instant endpoint, like Loki's
-// vectorBinop over two vector() selectors.
+// answer for two vector() selectors.
 // conformance: semantics/binary-division-by-zero-nan
 func TestBinaryConstantVectorDivisionByZeroInstant(t *testing.T) {
 	p := newGapTestProxy(t, "http://127.0.0.1:1")

@@ -92,7 +92,7 @@ func TestDrilldown_Patterns_CountEveryLineAtLokisStep(t *testing.T) {
 		i := int(bucket.Sub(start) / cfg.step)
 		ts := bucket.Unix()
 		if !bucket.Before(end) {
-			// Loki answers samples before the end only (pkg/pattern/drain Chunk.ForRange); a line at the end is
+			// Loki answers samples before the end only; a line at the end is
 			// seeded but in no step of the answer.
 			ts = -1
 		}

@@ -308,9 +308,8 @@ func TestOuterFoldKeepsInnerWithoutMerge(t *testing.T) {
 	}
 }
 
-// Loki counts max_query_series on the answer of the whole query
-// (pkg/logql/engine.go JoinSampleVector): the series the ranking keeps over all
-// steps are not an answer, so a fold of them is not limited by their number.
+// Loki counts max_query_series on the answer of the whole query: the series
+// the ranking keeps over all steps are not an answer, so a fold of them is not limited by their number.
 // conformance: semantics/topk-over-vector-aggregation, loki_api_v1_query_range, loki_api_v1_query
 func TestOuterFoldSeriesLimitCountsTheFinalAnswer(t *testing.T) {
 	base := time.Unix(1699999200, 0).UTC()

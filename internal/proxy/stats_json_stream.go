@@ -371,6 +371,7 @@ func (p *Proxy) translateStatsQRMetricFJ(metricVal *fj.Value, levelGrouping leve
 	}
 	changed := false
 	hadStream := false
+	var stream map[string]string
 
 	metricVal.GetObject().Visit(func(k []byte, vv *fj.Value) {
 		key := string(k)
@@ -380,7 +381,8 @@ func (p *Proxy) translateStatsQRMetricFJ(metricVal *fj.Value, levelGrouping leve
 			changed = true
 		case "_stream":
 			hadStream = true
-			for streamKey, streamValue := range parseStreamLabels(val) {
+			stream = parseStreamLabels(val)
+			for streamKey, streamValue := range stream {
 				lokiKey := streamKey
 				if !p.labelTranslator.IsPassthrough() {
 					lokiKey = p.labelTranslator.ToLoki(streamKey)
@@ -413,7 +415,7 @@ func (p *Proxy) translateStatsQRMetricFJ(metricVal *fj.Value, levelGrouping leve
 
 	serviceSignal := hasServiceSignal(syntheticLabels)
 	beforeSyntheticCount := len(syntheticLabels)
-	levelGrouping.apply(syntheticLabels, translated, hadStream)
+	levelGrouping.apply(syntheticLabels, translated, stream, hadStream)
 	if hadStream {
 		ensureSyntheticServiceName(syntheticLabels)
 		if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {

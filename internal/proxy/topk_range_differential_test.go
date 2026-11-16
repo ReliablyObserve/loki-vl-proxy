@@ -20,9 +20,8 @@ import (
 // ranked on its own, within each group of the by()/without() labels, and the
 // result holds the union of the series that ranked at some step with their
 // samples at those steps only. The reference is written apart from the proxy:
-// it evaluates every window from the lines (Loki v3.7.7 pkg/logql/range_vector.go,
-// the window (t-range, t]) and ranks with the heap of pkg/logql/evaluator.go
-// VectorAggEvaluator.Next and pkg/logql/vector.go (vectorByValueHeap).
+// it evaluates every window from the lines (the window (t-range, t]) and ranks
+// with a heap, as Loki v3.7.7 does.
 //
 // The proxy under test is the real handler over a simulated VictoriaLogs that
 // answers the stats pipes of the window evaluator.
@@ -39,7 +38,7 @@ type topKSeries struct {
 	value    float64
 }
 
-// lokiTopK ranks one step's vector like VectorAggEvaluator.Next. group maps a
+// lokiTopK ranks one step's vector like Loki's vector aggregation. group maps a
 // series to its grouping key.
 func lokiTopK(vec []topKSeries, k int, descending bool, group func(topKSeries) string) []topKSeries {
 	heaps := map[string]*refHeap{}

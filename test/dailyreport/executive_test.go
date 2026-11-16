@@ -79,7 +79,8 @@ func day(t testing.TB, today bool) (Summary, *CasesFile) {
 	s.Parity = map[string]any{"clusters": 5, "requests": 40, "unclaimed": 2, "exit": 0, "unclaimed_ids": []string{"c1", "c2"},
 		"verdicts": map[string]any{"same": 20, "differ": 10, "both_empty": 8, "blocked": 2}}
 	s.PerfDaily = map[string]any{"date": "2026-11-14", "rows": 30, "comparable": 55, "ratchet_lost": []any{}, "reuse_lost": []any{},
-		"reuse": map[string]any{"rows": 30, "cold_vl_calls": 50, "repeat_vl_calls": 40, "repeat_without_vl_calls": 3},
+		"reuse": map[string]any{"rows": 30, "cold_vl_calls": 50, "repeat_vl_calls": 40, "repeat_without_vl_calls": 3,
+			"exact_rows": 30, "exact_repeat_vl_calls": 4, "exact_without_vl_calls": 27},
 		"distribution": map[string]any{
 			"cold": map[string]any{"rows": 20, "green": 17, "below": 8, "close": 9, "between": 2, "above": 1},
 			"warm": map[string]any{"rows": 35, "green": 35, "below": 5, "close": 30, "between": 0, "above": 0}},
@@ -87,6 +88,12 @@ func day(t testing.TB, today bool) (Summary, *CasesFile) {
 	s.PerfWeekly = &WeeklyPerf{Date: "2026-11-09", Loki: "3.7.9", Pairs: 100, Faster: 60, Par: 30, Slower: 10, Over2xRows: 3}
 	s.Workflows = &WorkflowPart{CheckedAt: "2026-11-14T08:00:00Z", Scheduled: 10, Problems: []map[string]any{
 		{"workflow": "parity-refresh.yaml", "problem": "last scheduled run 2026-11-13 ended failure"}}}
+	// Coverage by state: the day before held fewer cases proven live and no case proven by a test.
+	s.Coverage = map[string]*CoveragePart{}
+	for v := range verdicts {
+		s.Coverage[v] = &CoveragePart{Cases: 5, ProvenLive: 3, ProvenByTest: 1, NotProven: 1, NotProvenBy: map[string]int{"empty": 1},
+			CI: &CIRun{Workflow: "ci.yaml", Conclusion: "success", Date: "2026-11-14", URL: "https://x/ci"}}
+	}
 	if today {
 		s.Date, s.Commit = "2026-11-15", "bbbbbbbbbbbbbbbb"
 		s.Reasons = []string{
@@ -116,8 +123,14 @@ func day(t testing.TB, today bool) (Summary, *CasesFile) {
 				counts[verdict]++
 			}
 			s.Cases[v] = map[string]any{"counts": counts, "regressions": len(flags[v]["regression"]), "proposed_close": len(flags[v]["proposed_close"]),
-				"reuse": &CaseReuse{Counts: map[string]int{"reused": 5, "cache_not_reused": 0, "not_measured": 1}, ColdVLCalls: 9, RepeatCalls: 0}}
+				"reuse": &CaseReuse{Counts: map[string]int{"reused": 5, "cache_not_reused": 0, "not_measured": 1}, ColdVLCalls: 9, RepeatCalls: 0,
+					Background: 3, CallsFromHeader: 5}}
 		}
+		for v := range verdicts {
+			s.Coverage[v] = &CoveragePart{Cases: 6, ProvenLive: 4, ProvenByTest: 1, NotProven: 1, NotProvenBy: map[string]int{"empty": 1},
+				CI: &CIRun{Workflow: "ci.yaml", Conclusion: "success", Date: "2026-11-15", URL: "https://x/ci"}}
+		}
+		s.Workflows.Pending = []map[string]any{{"workflow": "new-weekly.yaml", "problem": "added 2026-11-14, pending its first scheduled run"}}
 		s.Errors.Recorded.MatchingRows, s.Errors.Recorded.KnownDifferences = 19, 1
 		s.Errors.Live = &LiveErrors{Rows: 20, Changed: 0, OK: true}
 		s.Sweep.Differences = map[string]int{kindVLRejects: 18, "proxy accepts, Loki rejects": 7, "error text differs": 10, "proxy rejects, Loki accepts": 4,
@@ -209,7 +222,7 @@ func TestTheTableRowsAreComputedFromTheNumbers(t *testing.T) {
 	// v1.49.0 proves a/2, a/3, a/4, a/7: 4 matches, no differs; v1.53.0 holds a/4 as differs.
 	check("verdicts:v1.49.0", 4, 0, 4, "100.0%")
 	check("verdicts:v1.53.0", 3, 1, 4, "75.0%")
-	check("coverage:v1.49.0", 4, 2, 6, "66.7%")
+	check("coverage:v1.49.0", 5, 1, 6, "83.3%")
 	check("errors", 19, 1, 20, "95.0%")
 	check("sweep", 958, 42, 1000, "95.8%")
 	check("parity", 24, 6, 40, "60.0%")

@@ -144,7 +144,7 @@ func TestTailHardening_BackendFailureReturnsHTTPStatusBeforeUpgrade(t *testing.T
 		t.Fatal("expected websocket dial to fail on upstream auth failure")
 	}
 	// VictoriaLogs refusing the proxy is a failed backend call: Loki's 500,
-	// before the upgrade (pkg/util/server/error.go:124-128).
+	// before the upgrade.
 	if resp == nil || resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("expected Loki's 500 before upgrade for an upstream 401, got resp=%v err=%v", resp, err)
 	}
@@ -434,7 +434,7 @@ func TestTailHardening_NativeModeReturnsBackendFailureReason(t *testing.T) {
 			if closeErr.Code != websocket.CloseInternalServerErr {
 				t.Fatalf("expected internal server close code, got %d", closeErr.Code)
 			}
-			// Loki closes with its error text (pkg/querier/tail/http.go:69); the
+			// Loki closes with its error text; the
 			// backend's own text never reaches the client.
 			if closeErr.Text != lokiErrInternal {
 				t.Fatalf("expected Loki's %q in the close message, got %q", lokiErrInternal, closeErr.Text)

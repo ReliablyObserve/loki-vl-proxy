@@ -5,8 +5,7 @@ proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  A without aggregation removes only the labels it names
-  (pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next); detected_level,
+  A without aggregation removes only the labels it names; detected_level,
   set on every line at ingestion, stays on the series.
 
   The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
@@ -47,7 +46,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy without fold of extraction-list unwrap metrics (parsedSeriesLabels, applyWithoutGrouping)'
-  loki: 'pkg/logql/evaluator.go:435-529 (without keeps every unnamed label, detected_level included)'
+  loki: 'without keeps every unnamed label, detected_level included (differential run of 2026-11-04, in this case)'
   proxy: 'detected_level="unknown" on the folded series'
   planned_test: 'TestCompat_WithoutFoldKeepsDetectedLevel (test/e2e-compat, group core)'
   clusters:

@@ -11,7 +11,7 @@ import (
 // conformance: semantics/pattern-line-filter
 // conformance: loki_api_v1_query_range, loki_api_v1_query
 // TestCompat_PatternLineFilter: an empty pattern is a matcher that accepts only
-// an empty line (pkg/logql/log/pattern ParseLineFilter, Matcher.Test), so
+// an empty line, so
 // `|> ""` keeps no line of the fixture and `!> ""` keeps every one. The proxy
 // translated the empty pattern to match-all and returned the opposite lines.
 // An empty alternative in an `or` chain is an ordinary pattern, not dropped.
@@ -80,8 +80,7 @@ func TestCompat_PatternLineFilter(t *testing.T) {
 // conformance: loki_api_v1_query_range, loki_api_v1_query
 // TestCompat_PatternLineFilterAnchoring: Loki's pattern matcher searches each
 // literal once, at its first occurrence, needs non-empty captures and a pattern
-// ending on a literal to end the line there (pkg/logql/log/pattern/pattern.go
-// Matcher.Test). Fixture lines are "tick=NNN word=W n=N src=IP". The proxy sent
+// ending on a literal to end the line there. Fixture lines are "tick=NNN word=W n=N src=IP". The proxy sent
 // an unanchored regexp and kept lines Loki rejects; the counts are Loki's.
 func TestCompat_PatternLineFilterAnchoring(t *testing.T) {
 	fx := ensureOrFilterFixture(t)

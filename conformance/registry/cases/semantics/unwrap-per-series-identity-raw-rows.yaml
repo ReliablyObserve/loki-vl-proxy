@@ -8,11 +8,10 @@ proves:
 consumer: explore
 why: |
   Only sum over rate, sum_over_time, count and the bytes functions is evaluated
-  on the folded samples (pkg/logql/syntax/ast.go:1612-1642 canInjectVectorGrouping).
+  on the folded samples.
   Every other function under a vector aggregation is evaluated per series, the
-  stream plus the labels a parser extracts less the unwrapped one
-  (pkg/logql/log/metrics_extraction.go:150-178), and the aggregation then folds
-  those values (pkg/logql/evaluator.go:435-529). VictoriaLogs stats cannot name
+  stream plus the labels a parser extracts less the unwrapped one, and the aggregation then folds
+  those values. VictoriaLogs stats cannot name
   the parsed labels, so the proxy approximates the series by `_stream` (the raw
   `| json` and rate_counter evaluators) or `_stream, _msg` (the stats pipeline of
   an instant logfmt query), and a `sum by (a)` over such a function groups the
@@ -120,7 +119,7 @@ gap:
   impact: explore-visible
   effort: L
   area: 'internal/queryplan/lower unwrap_dynamic.go (DynamicUnwrapIdentity, the identity pipes), unwrap.go; internal/proxy query_lowering.go (lowerDynamicIdentity), query_translation.go, unwrap_dynamic_identity.go (dynamicUnwrapIdentity, dynamicIdentityWindows), range_metric_compat.go (the instant stats route); the window evaluator (unwrap_samples.go) for a range longer than the step'
-  loki: 'pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next; pkg/logql/log/metrics_extraction.go:150-178 labelSampleExtractor (series = stream + parsed labels)'
+  loki: 'the vector aggregation folds per series values, a series being the stream plus the parsed labels (measured on Loki 3.7.7, in this case)'
   proxy: 'the value per stream and hash of the parsed labels, then the aggregation over the series'
   planned_test: 'TestUnwrapDynamicIdentityMatchLoki, TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicUnwrapIdentity, TestDynamicUnwrapIdentityLowering, FuzzDynamicUnwrapIdentity (internal/queryplan/lower); TestDynamicIdentityServedFromPlan, TestDynamicIdentityHandlersReadThePlan, TestDynamicIdentityBinaryOperandsReadTheHash, TestDynamicIdentityBinaryOperandContext, TestDynamicIdentityCacheKeysFenced, FuzzDynamicIdentityFenceMatchesPlan (internal/proxy); e2e: TestCompat_UnwrapPerSeriesIdentity (test/e2e-compat, group core, binary rows included; written, not yet run on a stack)'
   note: 'Found while fixing semantics/unwrap-rate-ungrouped-sum-per-stream, on origin/main e173e40b. VictoriaLogs stats group by named fields only: the lowering names the parsed labels by a hash of the line unpacked under a prefix.'

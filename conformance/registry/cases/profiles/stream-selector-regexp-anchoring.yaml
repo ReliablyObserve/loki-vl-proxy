@@ -10,17 +10,15 @@ proves:
   - loki_api_v1_detected_labels
 consumer: explore
 why: |
-  Loki builds selector matchers with Prometheus' labels.NewMatcher, which
-  compiles `=~`/`!~` as ^(?s:re)$ (vendor/github.com/prometheus/prometheus/
-  model/labels/regexp.go:76): `{app=~"api|web"}`, what a Grafana multi-value
+  Loki compiles selector matchers `=~`/`!~` as ^(?s:re)$:
+  `{app=~"api|web"}`, what a Grafana multi-value
   variable sends, selects app api and web only. The proxy passed the pattern
   to VictoriaLogs' `field:~"re"`, a substring match (lib/logstorage
   filter_regexp.go), so it also selected api-gateway, my-api and webhook, and
   `{namespace=~"nch"}` selected anch. Only the derived service_name matcher
   was anchored. The multi-tenant fan-out matched `__tenant_id__=~"prod"` with
   a bare Go regexp, so it also queried prod-eu and nonprod; Loki matches the
-  tenant ids with the anchored matcher (pkg/querier/multi_tenant_querier.go:421
-  filterValuesByMatchers).
+  tenant ids with the anchored matcher.
 
   Every route translates its selector the same way (query, query_range,
   labels, label values, series, index/volume, volume_range, index/stats,
@@ -57,7 +55,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/translator/label_matcher_regexp.go selectorRegexpFieldFilter (streamMatcherToFieldFilter) + internal/proxy/multitenant.go applyTenantMatch'
-  loki: 'vendor/github.com/prometheus/prometheus/model/labels/regexp.go:76 (^(?s:re)$); pkg/querier/multi_tenant_querier.go:421 filterValuesByMatchers'
+  loki: 'selector regexps are anchored, ^(?s:re)$, tenant ids included (TestCompat_LabelMatcherRegexpAnchoring)'
   proxy: 'the whole-value match, as an exact, substring or anchored VictoriaLogs filter'
   planned_test: 'TestCompat_LabelMatcherRegexpAnchoring (test/e2e-compat, group core); TestLabelRegexpMatchesWhatLokiMatches (internal/translator); TestLabelMatcherRegexpAnchoredOnEveryRoute and TestTenantMatcherRegexpIsAnchored (internal/proxy)'
   clusters: []

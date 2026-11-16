@@ -177,6 +177,8 @@ def summarize(args):
     # Targets that did not run the setting of the Loki profile the pass was made against (perf_matrix.py
     # --not-like-for-like): their timings are shown, marked, and never compared.
     unlike = set(raw.get("not_like_for_like") or [])
+    # perf_matrix.py --exact-repeat: what the second of two identical asks at a settled window cost, per target.
+    exact = {(e["shape"], e["range"], e["target"]): e for e in raw.get("exact_repeats") or []}
     out = []
     for shape, rng in keys:
         entry = {"shape": shape, "range": rng, "p50": {}, "p95": {}, "cold": {}, "status": {}, "vl_cpu_max": {}}
@@ -252,6 +254,15 @@ def summarize(args):
             verdict = timing_verdict(entry["p50"].get(args.baseline), entry["p50"].get(args.candidate),
                                      args.noise, args.min_delta)
         entry["verdict"] = verdict
+        for (e_shape, e_rng, t), e in exact.items():
+            if (e_shape, e_rng) != (shape, rng):
+                continue
+            slot = entry.setdefault("reuse", {}).setdefault(t, {})
+            if e.get("problem"):
+                slot["exact_repeat_problem"] = e["problem"]
+            else:
+                # The fill is the settled window's cold cost; the repeat is what the cache is expected to answer alone.
+                slot["exact_fill"], slot["exact_repeat"] = e["fill"]["reuse"], e["repeat"]["reuse"]
         if (shape, rng) in refresh:
             entry["refresh"], entry["refresh_status"] = refresh[(shape, rng)]["p50"], refresh[(shape, rng)]["status"]
             for t, d in refresh[(shape, rng)]["reuse"].items():

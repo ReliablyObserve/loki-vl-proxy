@@ -8,8 +8,7 @@ import (
 )
 
 // TestSumWithoutExtractedLabelCollision: a parsed key that is also a label of
-// the stream becomes `<key>_extracted` on Loki (pkg/logql/log/labels.go,
-// parser.go), so a series is the stream, its `pod` and the parsed `pod_extracted`.
+// the stream becomes `<key>_extracted` on Loki, so a series is the stream, its `pod` and the parsed `pod_extracted`.
 // When the selector names the label (`pod=~".+"`) the translation sees the
 // collision and groups the fold as it did before the extraction list was read
 // (by the stream); when it does not, the translation cannot see it and the
@@ -28,10 +27,16 @@ func TestSumWithoutExtractedLabelCollision(t *testing.T) {
 	}
 	t.Run("the selector names the label", func(t *testing.T) {
 		sent, answer := runExtractionListShapeRows(t, `sum without (ns) (max_over_time({app="uw", pod=~".+"} | logfmt amount, pod | unwrap amount [5m]))`, extractionListModes[0], parsedPod)
-		if last := sent[len(sent)-1]; !strings.HasSuffix(last, "| stats by (_stream, __lvp_bad) sum(__lvp_inner)") || strings.Contains(last, "pod, __lvp_bad") {
+		// The read itself: a second one reads the streams without a level label (withLevelLessStreams).
+		read := sent[len(sent)-1]
+		for i := len(sent) - 1; i >= 0 && strings.Contains(read, "__dl_t"); i-- {
+			read = sent[i]
+		}
+		if last := read; !strings.HasSuffix(last, "| stats by (_stream, __lvp_bad) sum(__lvp_inner)") || strings.Contains(last, "pod, __lvp_bad") {
 			t.Fatalf("the fold groups by the parsed pod: %s", last)
 		}
-		const want = "3 series: {app=uw,pod=a,service_name=uw} 1.8e+09=881; {app=uw,pod=b,service_name=uw} 1.8e+09=470; {app=uw,pod=c,service_name=uw} 1.8e+09=340"
+		// detected_level=unknown: the lines carry no level, as in Loki (semantics/detected-level-stream-stats-without-level).
+		const want = "3 series: {app=uw,detected_level=unknown,pod=a,service_name=uw} 1.8e+09=881; {app=uw,detected_level=unknown,pod=b,service_name=uw} 1.8e+09=470; {app=uw,detected_level=unknown,pod=c,service_name=uw} 1.8e+09=340"
 		if answer != want {
 			t.Fatalf("answer %s, want the fold by the stream: %s", answer, want)
 		}
@@ -41,9 +46,9 @@ func TestSumWithoutExtractedLabelCollision(t *testing.T) {
 	})
 	t.Run("the selector does not name the label", func(t *testing.T) {
 		_, answer := runExtractionListShapeRows(t, `sum without (ns) (max_over_time({app="uw"} | logfmt amount, pod | unwrap amount [5m]))`, extractionListModes[0], parsedPod)
-		const want = "2 series: {app=uw,pod=p1,service_name=uw} 1.8e+09=172; {app=uw,pod=p2,service_name=uw} 1.8e+09=186"
+		const want = "2 series: {app=uw,detected_level=unknown,pod=p1,service_name=uw} 1.8e+09=172; {app=uw,detected_level=unknown,pod=p2,service_name=uw} 1.8e+09=186"
 		if answer != want {
-			t.Fatalf("answer %s, want the proxy's known answer %s (Loki: {app,pod=<stream pod>,pod_extracted=<parsed pod>})", answer, want)
+			t.Fatalf("answer %s, want the proxy's known answer %s (Loki: {app,detected_level,pod=<stream pod>,pod_extracted=<parsed pod>})", answer, want)
 		}
 	})
 }

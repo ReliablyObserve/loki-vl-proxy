@@ -4,8 +4,7 @@ proves:
   - loki_api_v1_query_range
 consumer: api
 why: |
-  Loki sets detected_level once per line at ingest (pkg/distributor/
-  field_detection.go extractLogLevelFromLogLine, discover_log_levels on). A
+  Loki sets detected_level once per line at ingest (discover_log_levels on). A
   level stream label or structured metadata decides first. Otherwise a line
   whose first non-space character is `{` and last is `}` is read as JSON: the
   first string value of an allowed key (level, LEVEL, Level, log.level,
@@ -61,7 +60,7 @@ why: |
   ingest gives it: the first non-empty of the two, a known spelling in any case
   as its level and any other word as stored (translator.NormalizeStoredLevel, tested against
   the chain's own spelling regexps and against a table of Loki v3.7.7's
-  normalizeLogLevel answers). That is main's query with
+  level normalisation answers). That is main's query with
   no chain and no level guard probe, and it answers every window whose rows
   all carry a stored level (a stream label or structured metadata, as Loki
   pipelines send it); the proxy reads a stored detected_level, then level, and
@@ -242,7 +241,7 @@ gap:
   visual_reason: 'the generator data carries one lowercase spelling, the same in the stream label and the body, so main and the branch render the same panel; the e2e probes against Loki are the proof (v1.47 and v1.52)'
   effort: M
   area: 'internal/proxy ordered_json_metric.go (withDerivedLevel, setStatsPushdown, detectedLevel*Risk), stream_processing.go stringRow'
-  loki: 'pkg/distributor/field_detection.go extractLogLevelFromLogLine, detectLevelFromLogLine, normalizeLogLevel; pkg/distributor/labels.go (detected_level_extracted)'
+  loki: 'detected_level is set once per line at ingest from the stream label, structured metadata, then the body; a body key of that name is renamed detected_level_extracted'
   proxy: 'the row evaluator and the stats pushdown read the stream level or a body level key and normalized it'
   planned_test: 'TestOrderedJSONDetectedLevelLikeLoki, TestOrderedJSONDetectedLevelMixedRows, TestOrderedJSONDetectedLevelKnownDifferences (proxy); TestRangeMetricCompatibilityJSONDetectedLevelProbes, TestRangeMetricCompatibilityJSONDetectedLevelSharedUnpack, TestRangeMetricCompatibilityDetectedLevelPipeVariants, TestRangeMetricCompatibilityEscapeSubstringFilter and TestRangeMetricCompatibilityJSONDetectedLevel (test/e2e-compat, group semantics); TestKeywordScanLikeLoki, TestKeywordGateIsASupersetOfTheRegexp, TestBuildDetectedLevelChainShared (translator); TestSharedUnpackKeepsThePlansLabelsLikeLoki, TestSharedLevelUnpackEligibility (proxy)'
   note: |

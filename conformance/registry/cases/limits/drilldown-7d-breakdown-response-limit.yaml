@@ -39,7 +39,7 @@ gap:
   impact: drilldown-visible
   effort: M
   area: 'internal/proxy/range_metric_compat.go:767, execution_limits.go:11 (raw-row metric paths buffer rows; push down or stream)'
-  loki: 'pkg/logql engine series limit (max_query_series) with partial result for Drilldown'
+  loki: 'series limit (max_query_series) with a partial result for Drilldown (limits/drilldown-partial-with-warning)'
   proxy: '502 over the 64 MiB budget'
   planned_test: 'TestCompat_MetricBufferedBudget1h + TestE2E_Drilldown7dHighCardinalityBreakdown (test/e2e-compat, groups semantics and drilldown)'
   clusters:
