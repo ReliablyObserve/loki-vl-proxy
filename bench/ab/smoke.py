@@ -18,6 +18,8 @@ judge() is the smoke's verdict, red when
   * a row the weekly ratchet holds (bench/ab/history/ratchet.json, read only) lost it: a result that differs
     from Loki or a new error at once, a cold run slower than Loki's computed cold on this and the previous
     smoke line (history.ratchet_loss).
+  * a first ask (over2x.first_ask_bound: the cold run of a shape whose state the proxy has not built, which Loki
+    answers from a structure built at ingest) took longer than its absolute bound; it is not compared with Loki;
   * the cache reuse dropped against the previous smoke day: a row whose repeat (the later runs, perf_matrix.py
     --proxy-metrics) calls VictoriaLogs more often, or whose hit ratio of a cache layer and tier fell by more
     than REUSE_RATIO_NOISE.
@@ -133,7 +135,8 @@ def judge(summaries, ratchet, directory=DIRECTORY):
     summaries are report.py summaries of this run (history.entry turns each into a line); ratchet the weekly
     ratchet's entries; directory the smoke history holding the previous lines."""
     held = {(r["set"], r["shape"], r["range"]) for r in ratchet}
-    out = {"rows": 0, "comparable": 0, "over_2x": [], "ratchet_lost": [], "loki_failed": 0, "pairs": []}
+    out = {"rows": 0, "comparable": 0, "over_2x": [], "ratchet_lost": [], "loki_failed": 0, "pairs": [],
+           "first_ask": [], "first_ask_over": []}
     for summary in summaries:
         line = history.entry(summary)
         profile = line["profile"]
@@ -155,6 +158,19 @@ def judge(summaries, ratchet, directory=DIRECTORY):
                 if verdict == "above":
                     out["over_2x"].append({"set": summary["set"], "shape": row["shape"], "range": row["range"],
                                            "profile": profile, "mode": mode, "proxy_s": proxy, "loki_s": loki})
+            bound = over2x.first_ask_bound(*key)
+            if bound is not None:
+                src = by_row[key]
+                cand, ref = summary["candidate"], summary["reference"]
+                proxy = src["cold"].get(cand) if over2x.like_for_like(summary, cand) else None
+                status = src["status"].get(cand) if over2x.like_for_like(summary, cand) else None
+                state = over2x.first_ask_judge(proxy, status, bound)
+                if state != "not_comparable":
+                    item = {"set": summary["set"], "shape": row["shape"], "range": row["range"], "profile": profile,
+                            "proxy_s": proxy, "loki_s": src["cold"].get(ref), "max_s": bound, "state": state}
+                    out["first_ask"].append(item)
+                    if state == "above_bound":
+                        out["first_ask_over"].append(item)
             if (summary["set"], *key) in held:
                 why = history.ratchet_loss(row, old.get(key))
                 if why:
@@ -168,7 +184,7 @@ def judge(summaries, ratchet, directory=DIRECTORY):
     date = summaries[0]["date"] if summaries else ""
     out["reuse_lost"] = reuse_lost(rows, previous_reuse(directory, date)) if date else []
     out["reuse_rows"] = rows
-    out["red"] = bool(out["over_2x"] or out["ratchet_lost"] or out["reuse_lost"])
+    out["red"] = bool(out["over_2x"] or out["ratchet_lost"] or out["reuse_lost"] or out["first_ask_over"])
     return out
 
 
@@ -183,6 +199,12 @@ def render(verdict, date, commit):
              "| Mode | Rows | Below Loki | Close | 1-2x | Above 2x |", "|---|---|---|---|---|---|"]
     for mode, d in verdict["distribution"].items():
         lines.append(f"| {mode} | {d['rows']} | {d['below']} | {d['close']} | {d['between']} | {d['above']} |")
+    lines += ["", f"First asks (the pattern state not built yet; held to an absolute bound, not to Loki's time): "
+              f"{len(verdict.get('first_ask', []))} rows, {len(verdict.get('first_ask_over', []))} above their bound."]
+    lines += [f"- {r['set']} / {r['shape']} / {r['range']} / {r['profile']}: {r['proxy_s']:.3f}s, bound {r['max_s']:g}s"
+              + (f" (Loki {r['loki_s']:.3f}s from its ingester's state)" if r.get("loki_s") is not None else "")
+              + (" **above the bound**" if r["state"] == "above_bound" else "")
+              for r in verdict.get("first_ask", [])[:20]]
     for title, key, fmt in (
             ("Rows above 2x Loki", "over_2x",
              lambda r: f"{r['set']} / {r['shape']} / {r['range']} / {r['profile']} / {r['mode']}: "

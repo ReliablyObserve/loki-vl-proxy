@@ -241,13 +241,13 @@
   },
   "distribution": [
     {
-      "above": 5,
+      "above": 3,
       "below": 329,
       "between": 8,
       "close": 226,
       "profile": "loki-defaults",
       "request": "first",
-      "rows": 568
+      "rows": 566
     },
     {
       "above": 0,

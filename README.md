@@ -82,7 +82,7 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 - Drilldown and Explore pages: **85 of 118** faster (72%); median first request **0.08 s** against Loki's **0.29 s**.
 - Metric queries: **225 of 363** faster (62%); median first request **0.07 s** against **0.19 s**.
 - Label and label-value calls: median repeat **0.00 s** against Loki's **0.02 s**, over 36 pairs (36 of them answered by Loki's results cache).
-- Share of rows below Loki, first request: **57.9%** (329 of 568 rows); repeat: **10.0%** (76 of 762). The target is most queries below Loki (above 50%).
+- Share of rows below Loki, first request: **58.1%** (329 of 566 rows); repeat: **10.0%** (76 of 762). The target is most queries below Loki (above 50%).
 
 **🟡 Where it is on par**
 
@@ -100,9 +100,10 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 **🔴 Where it is worse**
 
 - First request: **13 of 568** pairs are slower (2%): log queries **0 of 79**, Drilldown and Explore pages **4 of 118**, metric queries **7 of 363**.
-- Between 1× and 2× Loki: **8** rows on the first request, **2** on a repeat; above 2× Loki: **5** on the first request and **0** on a repeat (the 2026-11-09 distribution).
-- **3 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **3** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 109 covered registry items are locked at the 2× bound.
-- Largest gaps on that list in the run shown, first request: `DP2 patterns of an environment` over 1h, **1.18 s** against **0.21 s**; `LS8 json count by level_extracted, collision` over 6h, **0.41 s** against **0.13 s**; `DP1 patterns of a plain-text service` over 1h, **0.26 s** against **0.02 s**.
+- Between 1× and 2× Loki: **8** rows on the first request, **2** on a repeat; above 2× Loki: **3** on the first request and **0** on a repeat (the 2026-11-09 distribution).
+- **1 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **1** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 109 covered registry items are locked at the 2× bound.
+- **2** listed first requests are first asks (`DP1 patterns of a plain-text service` over 1h, `DP2 patterns of an environment` over 1h): the first request for a selector whose pattern state the proxy has not built yet, which Loki answers from the state its pattern ingester built at push time. They are held to an absolute bound instead of Loki's time (0.6 s, 1.6 s), and leave the list on the next weekly run; their repeats keep the 2× bound.
+- Largest gaps on that list in the run shown, first request: `LS8 json count by level_extracted, collision` over 6h, **0.41 s** against **0.13 s**.
 - Answers: **51 of 782** pairs return a different result from Loki, and **15** could not be compared.
 
 **Distribution versus Loki in the run shown, both Loki profiles**
@@ -111,7 +112,7 @@ Rows compared: both sides answered 200 and, on a first request, Loki's results c
 
 | Loki profile | Request | Rows compared | 🟢 Below Loki | 🟡 Close to Loki | 🟠 1–2× Loki | 🔴 Above 2× Loki | Not judged: Loki not 200 / proxy not 200 / first request from Loki's cache |
 |---|---|---:|---:|---:|---:|---:|---|
-| `loki-defaults` | first | 568 | 329 (57.9%) | 226 (39.8%) | 8 (1.4%) | **5 (0.9%)** | 20 / 0 / 194 |
+| `loki-defaults` | first | 566 | 329 (58.1%) | 226 (39.9%) | 8 (1.4%) | **3 (0.5%)** | 20 / 0 / 194 |
 | `loki-defaults` | repeat | 762 | 76 (10.0%) | 684 (89.8%) | 2 (0.3%) | **0 (0.0%)** | 20 / 0 / — |
 | `aligned` | first | 444 | 308 (69.4%) | 123 (27.7%) | 10 (2.3%) | **3 (0.7%)** | 19 / 0 / 82 |
 | `aligned` | repeat | 526 | 15 (2.9%) | 508 (96.6%) | 3 (0.6%) | **0 (0.0%)** | 19 / 0 / — |

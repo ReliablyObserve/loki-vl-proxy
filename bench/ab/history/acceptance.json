@@ -704,13 +704,13 @@
     },
     "loki-defaults": {
      "cold": {
-      "above": 3,
+      "above": 1,
       "below": 352,
       "between": 3,
       "close": 202,
-      "rows": 560,
-      "share_below": 62.9,
-      "share_green": 98.9
+      "rows": 558,
+      "share_below": 63.1,
+      "share_green": 99.3
      },
      "sets": 39,
      "warm": {
@@ -755,13 +755,13 @@
     },
     "loki-defaults": {
      "cold": {
-      "above": 5,
+      "above": 3,
       "below": 329,
       "between": 8,
       "close": 226,
-      "rows": 568,
-      "share_below": 57.9,
-      "share_green": 97.7
+      "rows": 566,
+      "share_below": 58.1,
+      "share_green": 98.1
      },
      "sets": 39,
      "warm": {

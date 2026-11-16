@@ -650,7 +650,13 @@ def over_2x(out, listed, profile, name, key, row, old, new, prev):
     """One history row against the above-2× Loki list, cold and warm, symmetric: a listed row within 2× on this
     line and on the previous full line is removed, an unlisted row above 2× on this line and on the previous
     full line is added (since the previous line's date), a lower ratio tightens a listed row. A row above 2× on
-    this line only is reported as pending add, a listed row within 2× on this line only as pending removal."""
+    this line only is reported as pending add, a listed row within 2× on this line only as pending removal.
+    A listed cold row that is a first ask (over2x.first_ask_bound) is removed: it is held to its absolute bound
+    instead (smoke.py), never to Loki's time."""
+    k = (profile, name, key[0], key[1], "cold")
+    if k in listed and over2x.first_ask_bound(key[0], key[1]) is not None:
+        out["over_2x_removed"].append({**listed[k], "detail": "a first ask on a proxy without the selector's state: "
+                                       "held to its absolute bound (shapes.json first_ask_max_s), not to Loki's time"})
     for mode, pair in over2x.history_pairs(row).items():
         k, state = (profile, name, key[0], key[1], mode), over2x.judge(*pair)
         measured = over2x.ratio(*pair[:2])
