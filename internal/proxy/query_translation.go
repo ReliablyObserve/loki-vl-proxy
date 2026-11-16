@@ -1552,7 +1552,7 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 	}
 	// A stream without a level label is one series per level its lines carry.
 	if body, err = p.withLevelLessStreams(ctx, "/select/logsql/stats_query_range", params, body, 0); err != nil {
-		return nil, true, err
+		return nil, true, p.levelLessErr("stats_query_range", err)
 	}
 
 	v, err := fj.ParseBytes(body)

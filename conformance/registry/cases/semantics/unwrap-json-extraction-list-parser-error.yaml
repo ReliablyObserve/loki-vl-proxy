@@ -1,0 +1,39 @@
+id: semantics/unwrap-json-extraction-list-parser-error
+title: "An unwrap after `| json amount` over a line that is not JSON answers 200, where Loki fails with JSONParserErr (open)"
+pending: true
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `max_over_time({...} | json amount | unwrap amount [5m])` over a stream whose
+  lines are not JSON but carry structured metadata amount: Loki's json stage
+  fails on the line and sets __error__=JSONParserErr, the unwrap still reads
+  the metadata amount, so the sample keeps the error and the query fails with
+  400 `pipeline error: 'JSONParserErr' for series: '{__error__="JSONParserErr",
+  amount="5", ...}'` (no __error_details__ under an extraction list), at an
+  instant and on query_range alike (the Loki engine oracle, recorded with
+  TestUnwrapExtractionListAnswersTheStreamsLokiAnswers's data, 2026-11-16).
+  A line without amount drops the sample and fails nothing. The proxy answers
+  200 with the series. Same for sum_over_time and the other range functions
+  over an unwrap.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'max_over_time({app="ux"} | json amount | unwrap amount [5m])'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error]
+  expect: "Loki's 400 JSONParserErr and its text, as for `| json` without an extraction list."
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'the error answers of unwrap metrics over a json stage with an extraction list'
+  loki: '400 pipeline error JSONParserErr when an unwrapped sample keeps the parser error'
+  proxy: '200 with the series'
+  planned_test: 'a recorded Loki engine answer per range function, instant and query_range'
+  clusters: []

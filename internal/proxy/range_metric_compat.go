@@ -1657,7 +1657,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	}
 	// A stream without a level label is one series per level its lines carry.
 	if body, err = p.withLevelLessStreams(ctx, "/select/logsql/stats_query_range", params, body, 0); err != nil {
-		return nil, nil, err
+		return nil, nil, p.levelLessErr("stats_query_range backend", err)
 	}
 
 	// Build VL→Loki label name mapping from groupBy↔origGroupBy.
@@ -1717,12 +1717,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		metricObj := mv.GetObject()
 		var metric map[string]string
 		if streamGrouped {
-			var derived *string
-			if dl := metricObj.Get("detected_level"); streamGroupedByDetectedLevel || dl != nil {
-				// Grouped by it, or VictoriaLogs derived it for a stream without a level label (withLevelLessStreams).
-				value := strings.TrimSpace(string(dl.GetStringBytes()))
-				derived = &value
-			}
+			derived := statsGroupDerivedLevel(metricObj, streamGroupedByDetectedLevel)
 			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), derived, groupBy, byExplicit, origGroupBy).translated
 			if keepsParsedGroupLabels(ctx) {
 				metric = p.withParsedGroupLabels(metric, metricObj, groupBy, vlToLoki)
@@ -2211,6 +2206,19 @@ func ensureStreamDetectedLevel(labels, stream map[string]string) {
 	if v := strings.TrimSpace(labels["level"]); v != "" {
 		labels["detected_level"] = normalizedLevel(v)
 	}
+}
+
+// statsGroupDerivedLevel is the detected_level VictoriaLogs computed for a
+// stream-grouped stats series: when the read grouped by it, or when it read a
+// stream without a level label again with the chain (withLevelLessStreams).
+// nil when it computed none.
+func statsGroupDerivedLevel(metric *fj.Object, grouped bool) *string {
+	dl := metric.Get(detectedLevelLabel)
+	if !grouped && dl == nil {
+		return nil
+	}
+	value := strings.TrimSpace(string(dl.GetStringBytes()))
+	return &value
 }
 
 // buildMetricSeriesEntry constructs the label maps and series key for a given

@@ -3,11 +3,13 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
 
+	"github.com/grafana/jsonparser"
 	fj "github.com/valyala/fastjson"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -95,29 +97,29 @@ func (p *Proxy) withLevelLessStreams(ctx context.Context, path string, params ur
 	if !bytes.Contains(body, statsStreamKey) {
 		return body, nil
 	}
-	v, err := fj.ParseBytes(body)
-	if err != nil {
-		return body, nil // the caller reports what it cannot read
-	}
-	results := v.GetArray("data", "result")
+	// The labels of each series are read in place: only an answer that names a
+	// stream without a level label is parsed and rebuilt.
 	var levelLess map[string]bool
-	for _, res := range results {
-		metric := res.GetObject("metric")
-		if metric == nil || metric.Get(detectedLevelLabel) != nil || len(metric.Get("level").GetStringBytes()) > 0 {
-			continue
+	_, _ = jsonparser.ArrayEach(body, func(res []byte, _ jsonparser.ValueType, _ int, _ error) {
+		metric, kind, _, err := jsonparser.Get(res, "metric")
+		if err != nil || kind != jsonparser.Object {
+			return
 		}
-		stream := metric.Get("_stream")
-		if stream == nil {
-			continue
+		if _, _, _, err := jsonparser.Get(metric, detectedLevelLabel); err == nil {
+			return
 		}
-		streamStr := string(stream.GetStringBytes())
-		if !levelLess[streamStr] && !streamDecidesLevel(parseStreamLabels(streamStr)) {
-			if levelLess == nil {
-				levelLess = map[string]bool{}
-			}
-			levelLess[streamStr] = true
+		if lv, err := jsonparser.GetString(metric, "level"); err == nil && lv != "" {
+			return
 		}
-	}
+		streamStr, err := jsonparser.GetString(metric, "_stream")
+		if err != nil || levelLess[streamStr] || streamDecidesLevel(parseStreamLabels(streamStr)) {
+			return
+		}
+		if levelLess == nil {
+			levelLess = map[string]bool{}
+		}
+		levelLess[streamStr] = true
+	}, "data", "result")
 	if levelLess == nil {
 		return body, nil
 	}
@@ -144,6 +146,11 @@ func (p *Proxy) withLevelLessStreams(ctx context.Context, path string, params ur
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
+	v, err := fj.ParseBytes(body)
+	if err != nil {
+		return body, nil // the caller reports what it cannot read
+	}
+	results := v.GetArray("data", "result")
 	var arena fj.Arena
 	merged := arena.NewArray()
 	n := 0
@@ -162,4 +169,18 @@ func (p *Proxy) withLevelLessStreams(ctx context.Context, path string, params ur
 	}
 	v.Get("data").Set("result", merged)
 	return v.MarshalTo(nil), nil
+}
+
+// levelLessErr is the error of withLevelLessStreams as a route that is not the
+// stats_query_range route reports it: a status VictoriaLogs answered, with its
+// body for the logs only, or the transport error.
+func (p *Proxy) levelLessErr(path string, err error) error {
+	var upstream *statsUpstreamError
+	if !errors.As(err, &upstream) {
+		return err
+	}
+	if upstream.status > 0 {
+		return p.redactedBackendStatusError(path, upstream.status, upstream.body)
+	}
+	return upstream.err
 }

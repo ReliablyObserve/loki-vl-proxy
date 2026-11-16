@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -229,6 +230,52 @@ func TestLevelLessStreamsReadAgainOnlyWhenNeeded(t *testing.T) {
 			// A repeat: no VictoriaLogs call.
 			if res = get(); res.Code != http.StatusOK || len(fake.takeCalls()) != 0 {
 				t.Fatalf("repeat: %d, calls made", res.Code)
+			}
+		})
+	}
+}
+
+// levelLessBenchBody is a stats_query_range answer of n series of 60 points, by stream when byStream.
+func levelLessBenchBody(n int, byStream bool) []byte {
+	var b strings.Builder
+	b.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
+	for i := range n {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		if byStream {
+			fmt.Fprintf(&b, `{"metric":{"_stream":"{app=\"a\",level=\"error\",pod=\"p%d\"}"},"values":[`, i)
+		} else {
+			fmt.Fprintf(&b, `{"metric":{"pod":"p%d"},"values":[`, i)
+		}
+		for j := range 60 {
+			if j > 0 {
+				b.WriteByte(',')
+			}
+			fmt.Fprintf(&b, `[%d,"%d"]`, 1760000000+j*60, j)
+		}
+		b.WriteString(`]}`)
+	}
+	b.WriteString(`]}}`)
+	return []byte(b.String())
+}
+
+// BenchmarkWithLevelLessStreams: what the check costs a read whose streams all carry a level label (the labels are
+// read in place, nothing is sent), and a read not grouped by stream (one byte search).
+func BenchmarkWithLevelLessStreams(b *testing.B) {
+	p := &Proxy{}
+	params := url.Values{"query": {`app:="a" | unpack_logfmt | stats by (_stream) count() as c`}}
+	for _, bc := range []struct {
+		name     string
+		byStream bool
+	}{{"labelled_streams_50", true}, {"not_by_stream_50", false}} {
+		body := levelLessBenchBody(50, bc.byStream)
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := p.withLevelLessStreams(context.Background(), "/select/logsql/stats_query_range", params, body, 0); err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 	}

@@ -1790,7 +1790,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, stats ph
 	}
 	// A stream without a level label is one series per level its lines carry.
 	if body, err = p.withLevelLessStreams(r.Context(), "/select/logsql/stats_query", params, body, 0); err != nil {
-		p.writeErr(w, r.Context(), err)
+		p.writeErr(w, r.Context(), p.levelLessErr("stats_query", err))
 		return
 	}
 	body, err = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))

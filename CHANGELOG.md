@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A metric series of a stream with no level label now carries the level of its lines, as Loki gives. Loki gives
+  every line the level its structured metadata or its body carries (a logfmt or JSON level key, a level word of a
+  plain line), else `unknown`, so one such stream is one series per level. Queries the proxy reads per stream (for
+  example `count_over_time({...} | logfmt [5m])` and `max_over_time({...} | logfmt amount | unwrap amount [5m])` on
+  query_range, `sum without (pod) (max_over_time(... | unwrap ...))` at an instant, and `rate({...} | json [1m])`)
+  answered one series per stream with no `detected_level`, so the same query said `error` at one step and nothing at
+  another. Such a read is sent as before; only when its answer names a stream without a level label does the proxy
+  read those streams once more, restricted to them, with VictoriaLogs computing each line's level, and their series
+  are split by it. A window whose streams all carry a level label sends the same VictoriaLogs query as before and
+  nothing more. Answers cached before the fix are not served again (the response key fence moves to
+  `@stream-level-series-v4`), so each cached metric answer is read from VictoriaLogs once after the upgrade.
 - One stream now gets one `detected_level` on every metric query type, as Loki gives. For a stream labelled
   `level="ERROR"`, `count_over_time({...} | logfmt [5m])`, `rate({...} | json [1m])`, `sort(rate({...} | json [1m]))`
   and an unwrap at step 300 said `ERROR` while plain `rate` and `count_over_time` said `error`. A stream labelled
