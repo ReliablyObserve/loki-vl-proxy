@@ -1,0 +1,31 @@
+id: loki-error-phases
+kind: semantics
+title: Loki's error phases and which metric queries fail on a pipeline error
+pending: true
+
+loki: |
+  Loki decides an error answer in phases, and the first phase that fails answers: the request parameters and
+  limits, then the query's parser actions (a pattern or regexp parser, a selector, label filter, drop or keep regex),
+  its lexer errors and its syntax error, then the checks over the parsed tree, then the pipeline build, then the
+  execution (a sample that still carries __error__ after the pipeline fails the metric with a 400 pipeline error,
+  ahead of a matching failure and the series limit). Which samples carry __error__ is a fact of the query (the
+  producers, the labels the aggregation above the range needs, the filters after the producer) and of the data in
+  the evaluated windows.
+
+victorialogs: |
+  Not client-visible: VictoriaLogs answers LogsQL errors in its own words, which the proxy never forwards.
+
+proxy: |
+  The proxy answers request, parse, tree and limit errors with Loki's texts through internal/lokierr. Its parser
+  reports a later syntax or lexer error ahead of an earlier action, builds pipelines before the query plan's tree
+  checks, and raises pipeline errors for JSONParserErr and SampleExtractionErr only.
+
+implementation:
+  - internal/logql/validate.go
+  - internal/logql/semantic.go
+  - internal/proxy/query_tree_validation.go
+
+cases:
+  - semantics/loki-error-phases
+  - semantics/loki-pipeline-error-rules
+  - semantics/loki-build-phase-window
