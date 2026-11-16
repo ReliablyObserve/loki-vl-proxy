@@ -1008,8 +1008,8 @@ func TestTailRetry_OpenNativeTailStreamFromStartOffset(t *testing.T) {
 		}()
 		select {
 		case q := <-calls:
-			if q.Get("start_offset") != tc.want || q.Get("offset") != "0s" {
-				t.Fatalf("start_offset %q offset %q, want %q and 0s", q.Get("start_offset"), q.Get("offset"), tc.want)
+			if q.Get("start_offset") != tc.want || q.Get("offset") != "5000ms" {
+				t.Fatalf("start_offset %q offset %q, want %q and the settle delay 5000ms", q.Get("start_offset"), q.Get("offset"), tc.want)
 			}
 		case <-time.After(3 * time.Second):
 			t.Fatal("the proxy never called the tail endpoint")

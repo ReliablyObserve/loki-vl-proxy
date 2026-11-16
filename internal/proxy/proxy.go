@@ -816,6 +816,7 @@ type Proxy struct {
 	tailBackendRetryWindow                time.Duration // -tail.backend-retry-window; 0 = no retry
 	tailRetryInitialBackoff               time.Duration // first wait between retries (tests shorten it)
 	tailRetryMaxBackoff                   time.Duration // longest wait between retries
+	tailSettle                            time.Duration // how far behind now the tail reads (tailSettleDelay; tests shorten it)
 	metricsTrustProxyHeaders              bool
 	tenantLimitsAllowPublish              []string
 	tenantDefaultLimits                   map[string]any
@@ -1510,6 +1511,7 @@ func New(cfg Config) (*Proxy, error) {
 		tailBackendRetryWindow:                max(cfg.TailBackendRetryWindow, 0),
 		tailRetryInitialBackoff:               tailRetryInitialBackoff,
 		tailRetryMaxBackoff:                   tailRetryMaxBackoff,
+		tailSettle:                            tailSettleDelay,
 		metricsTrustProxyHeaders:              cfg.MetricsTrustProxyHeaders,
 		tenantLimitsAllowPublish:              tenantLimitsAllowPublish,
 		tenantDefaultLimits:                   tenantDefaultLimits,

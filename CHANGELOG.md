@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A live tail no longer loses lines of a stream that VictoriaLogs makes searchable out of order. VictoriaLogs makes an
+  ingested row searchable when its in-memory buffer shard flushes (shards are filled in turn and each flushes a second
+  after its first row), and its live tail skips every row of a stream older than the newest one of that stream it already
+  sent. The native tail asked for `offset=0s` (read up to now), so a line written a few hundred milliseconds after
+  another could become searchable first and the earlier lines never arrived (rows 2 to 4 of 7 lines written 150 ms apart
+  in the e2e tail parity test, while Loki delivered all 7). The native tail now reads with VictoriaLogs' own default
+  offset of 5 s, so lines reach a native or `auto` tail about 5 s after they are written (Loki shows them within a
+  second). The polled tail lost such lines the same way; it now reads the last 5 s again on every poll and drops the
+  lines it already sent, so its latency does not change.
 - A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
   accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
   per-stream series took the stream's `detected_level`.
