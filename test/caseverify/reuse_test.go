@@ -369,7 +369,7 @@ func TestMeasureReuseSurvivesScrapeFailures(t *testing.T) {
 	// Scrapes that stay down: the header's count and the answer still give the verdict.
 	gone := &flakyMeter{meter: hit, fail: 99, tries: map[string]int{}}
 	r = measureReuse(p, req, first, nil, src(&zero), gone, []string{facetStatus}, Options{})
-	if r.Verdict != reuseReused || r.Source != sourceHeader || r.Repeat != nil && len(r.Repeat) != 0 || r.Cold["vl_calls"] != 1 {
+	if r.Verdict != reuseReused || r.Source != sourceHeader || len(r.Repeat) != 0 || r.Cold["vl_calls"] != 1 {
 		t.Errorf("metrics gone, header present: %+v", r)
 	}
 	r = measureReuse(p, req, first, nil, src(&one), gone, []string{facetStatus}, Options{})
