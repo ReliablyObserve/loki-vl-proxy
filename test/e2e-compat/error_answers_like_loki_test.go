@@ -83,16 +83,18 @@ func TestCompat_ErrorAnswersLikeLoki(t *testing.T) {
 			if err != nil {
 				t.Fatalf("proxy: %v", err)
 			}
-			if fromLoki != row.Loki {
+			// A request whose answer depends on the Loki process (Varies) has more than one recorded answer: any of
+			// them is the live Loki's, and the proxy's answer must be one of them.
+			if !row.Answers(fromLoki) {
 				stale++
 				t.Skipf("the stack's Loki answers differently from the recording (stale recording; run test/errorrecord): recorded %s, live %s", row.Loki.Summary(), fromLoki.Summary())
 			}
 			compared++
 			_, isKnown := known.Rows[id]
 			switch {
-			case fromProxy == fromLoki && isKnown:
+			case row.Answers(fromProxy) && isKnown:
 				t.Logf("row %s now matches Loki; the unit replay asks for it to leave the known differences", id)
-			case fromProxy == fromLoki:
+			case row.Answers(fromProxy):
 			case isKnown:
 				differ++
 				t.Skipf("known difference: Loki %s, proxy %s", fromLoki.Summary(), fromProxy.Summary())
