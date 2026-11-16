@@ -45,7 +45,7 @@ gap:
   impact: api-only
   effort: M
   area: 'internal/logql parser (lexer: comments, signed durations, flags) + translator'
-  loki: 'pkg/logql/syntax/lex.go:149 comments, :90-91 OpStrict/OpKeepEmpty; syntax.y offsetExpr; pkg/logql/log/ip.go'
+  loki: 'comments, offset forms and ip() forms Loki parses are accepted (test/e2e-compat comments_offsets_test.go)'
   proxy: '400'
   planned_test: 'TestRangeMetricCompatibilityLogfmtFlags and TestRangeMetricCompatibilityCommentsAndOffsets (test/e2e-compat, group semantics, against Loki); TestLogfmtFlagsLikeLoki, TestCommentsAndOffsetsLikeLoki (internal/logql, Loki''s recorded answers)'
   clusters:

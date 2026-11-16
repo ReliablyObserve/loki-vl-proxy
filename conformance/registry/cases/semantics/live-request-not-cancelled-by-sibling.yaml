@@ -3,6 +3,7 @@ title: A request that was not cancelled is never answered with a cancellation, w
 proves:
   - backend-deadlines-and-cancellation
 consumer: any
+evidence: needs recording
 why: |
   A metric query asks VictoriaLogs for several things at once (the counts, a
   presence probe, guard probes) and cancels the calls still running as soon as
@@ -12,8 +13,7 @@ why: |
   and a call of the same request that took the connection fails with
   `Post ".../select/logsql/query": context canceled`, which the client gets as
   status 499 although it never cancelled anything. Loki answers 499 only for a
-  query whose own context was cancelled (pkg/util/server/error.go:22-23, :69,
-  :105 in v3.7.7). Seen as one failure of the detected_level volume test in
+  query whose own context was cancelled. Seen as one failure of the detected_level volume test in
   CI's race shard and one in a local full run, and measured as 10 of 16,000
   requests with random delays before every upstream call of the test's fake
   backend (0 of 16,000 after the change). The same race hits any request

@@ -17,7 +17,7 @@ import (
 )
 
 // Loki evaluates a range query at start, start+step, ... up to and including
-// end (pkg/logql/range_vector.go step iteration), so a source that stops at
+// end, so a source that stops at
 // `end` still has a sample there. VictoriaLogs' bucket labelled T holds the
 // lines from T on: the sample at `end` was the bucket after the last line, and
 // sum, avg, max and min over time with unwrap answered one point short.

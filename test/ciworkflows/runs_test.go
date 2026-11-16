@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,5 +172,106 @@ func TestRunIngestsAndWritesHealth(t *testing.T) {
 	bad.health = filepath.Join(cfg.health, "h.json")
 	if code := run(bad, &out, &errs); code != 2 {
 		t.Errorf("unwritable health: %d", code)
+	}
+}
+
+// A scheduled workflow added within its first period has had no chance to run: it is pending its first run, which is
+// neither a problem nor counted among the scheduled workflows; one added long ago with no run is still missing.
+func TestCheckHealthPendingFirstRun(t *testing.T) {
+	mk := func(file, cron string, added string) Workflow {
+		w := workflow(t, "on:\n  schedule:\n    - cron: \""+cron+"\"\n")
+		w.File = file
+		if added != "" {
+			w.AddedAt, _ = time.Parse(time.RFC3339, added)
+		}
+		return w
+	}
+	workflows := []Workflow{
+		mk("new-daily.yaml", "0 4 * * *", "2026-11-14T03:00:00Z"),  // added yesterday morning: first run due
+		mk("new-weekly.yaml", "0 4 * * 1", "2026-11-10T03:00:00Z"), // added this week: not yet a week and a day
+		mk("old-weekly.yaml", "0 4 * * 1", "2026-10-01T03:00:00Z"), // added long ago, never ran
+		mk("unknown-age.yaml", "0 4 * * *", ""),                    // git does not know it
+		mk("old-and-running.yaml", "0 4 * * *", "2026-10-01T03:00:00Z"),
+	}
+	runs := RunsFile{Fetched: "2026-11-14T07:00:00Z", Workflows: map[string]WorkflowRuns{
+		"old-and-running.yaml": {Scheduled: &Run{Conclusion: "success", Date: "2026-11-14", At: "2026-11-14T04:01:00Z"}},
+	}}
+	h, err := CheckHealth(workflows, runs, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pending, problems []string
+	for _, p := range h.Pending {
+		pending = append(pending, p.Workflow+": "+p.Problem)
+	}
+	for _, p := range h.Problems {
+		problems = append(problems, p.Workflow+": "+p.Problem)
+	}
+	wantPending := "new-daily.yaml: added 2026-11-14, pending its first scheduled run\nnew-weekly.yaml: added 2026-11-10, pending its first scheduled run"
+	wantProblems := "old-weekly.yaml: no scheduled run recorded\nunknown-age.yaml: no scheduled run recorded"
+	if strings.Join(pending, "\n") != wantPending || strings.Join(problems, "\n") != wantProblems || h.Scheduled != 3 {
+		t.Errorf("pending:\n%s\nproblems:\n%s\nscheduled %d", strings.Join(pending, "\n"), strings.Join(problems, "\n"), h.Scheduled)
+	}
+	// A pending workflow whose period has passed with no run is missing again.
+	late := []Workflow{mk("late.yaml", "0 4 * * *", "2026-11-11T03:00:00Z")}
+	if h, _ := CheckHealth(late, runs, nil); len(h.Pending) != 0 || len(h.Problems) != 1 {
+		t.Errorf("a workflow past its first period: %+v", h)
+	}
+}
+
+func TestAddedDates(t *testing.T) {
+	var asked []string
+	git := func(args ...string) ([]byte, error) {
+		path := args[len(args)-1]
+		asked = append(asked, path)
+		switch path {
+		case ".github/workflows/a.yaml":
+			// newest first: the first add is the last line (a rename is followed)
+			return []byte("2026-11-12T10:00:00+01:00\n2026-10-01T08:30:00Z\n"), nil
+		case ".github/workflows/b.yaml":
+			return []byte(""), nil
+		}
+		return nil, errors.New("not a repository")
+	}
+	ws := []Workflow{{File: "a.yaml"}, {File: "b.yaml"}, {File: "c.yaml"}}
+	AddedDates(".github/workflows", ws, git)
+	if want := time.Date(2026, 10, 1, 8, 30, 0, 0, time.UTC); !ws[0].AddedAt.Equal(want) {
+		t.Errorf("a.yaml added %s, want %s", ws[0].AddedAt, want)
+	}
+	if !ws[1].AddedAt.IsZero() || !ws[2].AddedAt.IsZero() {
+		t.Errorf("unknown files keep a zero time: %v %v", ws[1].AddedAt, ws[2].AddedAt)
+	}
+	if len(asked) != 3 {
+		t.Errorf("asked %v", asked)
+	}
+}
+
+// The jobs of a workflow's last run on main (<file>.main.jobs.json) are kept with it: a run ends failure when any one job
+// does, and the daily report reads whether the test job passed.
+func TestIngestKeepsTheJobsOfTheLastMainRun(t *testing.T) {
+	dir := t.TempDir()
+	ci := workflow(t, "on: push\n")
+	ci.File = "ci.yaml"
+	other := workflow(t, "on: push\n")
+	other.File = "other.yaml"
+	for _, f := range []string{"ci.yaml", "other.yaml"} {
+		writeFile(t, filepath.Join(dir, f+".main.json"), apiAnswer(apiRun("completed", "failure", "2026-11-14T04:00:00Z")))
+	}
+	writeFile(t, filepath.Join(dir, "ci.yaml.main.jobs.json"),
+		`{"total_count":3,"jobs":[{"name":"test","conclusion":"success"},{"name":"test-shard (1)","conclusion":"success"},{"name":"e2e-compat","conclusion":"failure"}]}`)
+	got, err := Ingest(dir, []Workflow{ci, other}, fetched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"test": "success", "test-shard (1)": "success", "e2e-compat": "failure"}
+	if g := got.Workflows["ci.yaml"].Main.Jobs; len(g) != 3 || g["test"] != "success" || g["e2e-compat"] != "failure" {
+		t.Errorf("jobs %v, want %v", g, want)
+	}
+	if got.Workflows["other.yaml"].Main.Jobs != nil {
+		t.Errorf("a workflow whose jobs were not read has none: %v", got.Workflows["other.yaml"].Main.Jobs)
+	}
+	writeFile(t, filepath.Join(dir, "ci.yaml.main.jobs.json"), "{")
+	if _, err := Ingest(dir, []Workflow{ci}, fetched); err == nil {
+		t.Error("an unreadable jobs answer is an error")
 	}
 }

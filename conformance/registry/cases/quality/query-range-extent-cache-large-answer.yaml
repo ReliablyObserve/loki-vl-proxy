@@ -9,8 +9,7 @@ why: |
   Loki keeps a metric range as extents per split
   (-querier.split-queries-by-interval, 1h) and answers a moved window from
   them, computing only what they do not cover
-  (pkg/storage/chunk/cache/resultscache/cache.go:104 Do, :181 handleHit,
-  :333 partition, :404 filterRecentExtents, v3.7.9). How large the whole
+  (TestCompat_MetricRangeExtentCacheLargeAnswerMatchesLoki). How large the whole
   answer is does not matter: each split is its own extent.
 
   The proxy's extent cache stores a stats_query_range answer one split per

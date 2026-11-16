@@ -21,14 +21,12 @@ import (
 
 // This file pins absent_over_time to Loki's answer over generated rows and
 // generated windows, with a reference evaluator written apart from the proxy:
-// Loki v3.7.7 pkg/logql/evaluator.go:647-664 (newRangeAggEvaluator) and
-// :747-778 (AbsentRangeVectorEvaluator.Next: a step whose window (t-range, t]
-// holds no sample is the one series valued 1, a step with a sample is nothing),
-// :1319-1345 (absentLabels, pinned apart in TestAbsentOverTimeLabelsEdgeTable), and
-// pkg/logql/range_vector.go:251 / :628 (the aggregation is a constant one).
-// The steps are start, start+step, ... up to end: Loki aligns queries to their
-// step only with -querier.align-querier-with-step, off by default
-// (pkg/querier/queryrange/queryrangebase/roundtrip.go:49).
+// Loki's rules for it: a step whose window (t-range, t] holds no sample is the
+// one series valued 1, a step with a sample is nothing, the labels are the
+// selector's (pinned apart in TestAbsentOverTimeLabelsEdgeTable), and the
+// aggregation is a constant one. The steps are start, start+step, ... up to
+// end: Loki aligns queries to their step only with -querier.align-querier-with-step,
+// off by default.
 //
 // The proxy under test is the real handler. Only VictoriaLogs is simulated, by
 // vlemu.Emulator, which keeps the rows a scenario gives it: a row is a line the
@@ -322,8 +320,7 @@ func TestAbsentOverTimeDifferential(t *testing.T) {
 }
 
 // Under a vector aggregation the one absent series folds as Loki's vector
-// aggregation folds a single series (pkg/logql/evaluator.go:400-529
-// VectorAggEvaluator): `by` keeps the listed labels the series has, `without`
+// aggregation folds a single series: `by` keeps the listed labels the series has, `without`
 // drops them, `count` is 1, `stddev` and `stdvar` are 0, and topk keeps the
 // series whole.
 //

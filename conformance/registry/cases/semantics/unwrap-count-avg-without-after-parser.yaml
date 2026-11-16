@@ -54,7 +54,7 @@ gap:
   impact: explore-visible
   effort: L
   area: 'internal/translator tryTranslateMetricQueryWithout (keepWithoutSeries covers sum, max, min); the raw evaluators series key'
-  loki: 'pkg/logql/evaluator.go:451-466 VectorAggEvaluator.Next (count and avg over the series of the inner range aggregation, HashWithoutLabels); pkg/logql/log/metrics_extraction.go:150-178 (series = stream + parsed labels)'
+  loki: 'count and avg without fold the per-series maxima of the inner range aggregation, a series being the stream plus the parsed labels (measured on the e2e fixtures, in this case)'
   proxy: 'one series: the last stats pipe groups by the stream only, so count is 1 per group and avg the stream value'
   planned_test: 'TestCompat_UnwrapCountAvgWithoutAfterParser (test/e2e-compat, group core) over count and avg without, logfmt and json, range and instant'
   note: 'Found while fixing semantics/unwrap-sum-without-collapses. Depends on semantics/unwrap-per-series-identity-raw-rows (the parsed labels of a series); no stream-level translation gives Loki''s count or mean.'

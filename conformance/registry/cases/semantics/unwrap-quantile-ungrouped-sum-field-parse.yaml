@@ -48,7 +48,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy parseStatsCompatSpec (Field from the first "(" to the last ")") and the quantile route of shouldUseManualRangeMetricCompat'
-  loki: 'pkg/logql/range_vector.go:449-487 quantileOverTime; pkg/logql/evaluator.go:451-466 VectorAggEvaluator.Next (sum folds the per-series quantiles)'
+  loki: 'sum over quantile_over_time folds the per-series quantiles (60.75 on the e2e fixtures, in this case)'
   proxy: 'an empty 200: the second stats pipe is read as the field of the quantile'
   planned_test: 'TestCompat_UnwrapQuantileOuterSum (test/e2e-compat, group core) over sum and sum without, logfmt and json, range and instant'
   note: 'Found while fixing semantics/unwrap-sum-without-collapses; present on 428ae7c5 and 784b4e9c. Expected to be fixed by the quantile value-count pushdown branch (semantics/unwrap-quantile-response-limit); verify there, keep the row open until the e2e passes.'

@@ -19,9 +19,8 @@ why: |
   written for a name (lib/logstorage/block.go mustInitFromRows): the stored
   field `version` holds the line's value, while `_stream` keeps the label.
   Loki v3.7.9 groups a metric by the stream label: structured metadata or a
-  parsed key named like a stream label is renamed name_extracted
-  (pkg/logql/log/labels.go:390-397 Add, parser.go:152-154), so the plain name
-  reads the stream label (labels.go:293-314 getWithCategory). The proxy
+  parsed key named like a stream label is renamed name_extracted, so the plain name
+  reads the stream label. The proxy
   grouped by the stored field, so every line whose key differs from its
   stream label was counted under the line's value. The same holds without the
   pill and for any grouping by such a label.
@@ -78,7 +77,7 @@ gap:
   impact: drilldown-visible
   effort: M
   area: 'internal/translator/plain_stream_labels.go streamTagRestorePipes, withStreamTagRestore; internal/translator/translator.go metric pipeline; internal/proxy/plain_stream_labels.go plainStreamLabelNames, groupingNames; internal/proxy/range_metric_compat.go queryUsesParserStages'
-  loki: 'pkg/logql/log/labels.go:293-314 getWithCategory, 390-397 Add (a colliding name becomes name_extracted); pkg/logql/log/parser.go:152-154'
+  loki: 'a colliding name becomes name_extracted and the stream label keeps its value (test/e2e-compat stream_label_shadowed_test.go; https://grafana.com/docs/loki/latest/query/log_queries/)'
   proxy: 'the stream label value restored from _stream before the first pipe of a metric query'
   planned_test: 'TestCompat_StreamLabelShadowedByIngestJSONKey (test/e2e-compat, group core; written, not yet run); TestStreamLabelShadowedByIngestJSONKeyLikeLoki, TestStreamLabelShadowedByIngestJSONKeyDifferential, TestStreamTagRestoreFirstRequestWithoutListing, TestStreamTagRestoreSameOnEveryReplica, TestStreamTagRestoreNames (internal/proxy); TestStreamTagRestoreEdgeCases, TestStreamTagRestorePlacementAndStrip, FuzzStreamTagRestoreLikeLoki (internal/translator)'
   clusters: []

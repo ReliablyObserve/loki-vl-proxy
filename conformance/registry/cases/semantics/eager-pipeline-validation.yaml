@@ -3,6 +3,7 @@ title: Invalid pipeline stages fail with 400 regardless of data; Loki answers 20
 proves:
   - loki-compatible-profile
 consumer: api
+evidence: needs recording
 why: |
   Loki builds a pipeline (and reports invalid json/logfmt expressions,
   line_format/label_format templates and ip() arguments) only for a range it
@@ -28,7 +29,7 @@ gap:
   impact: edge
   effort: S
   area: 'internal/translator validation'
-  loki: 'pkg/logql/log/fmt.go template build at pipeline construction'
+  loki: 'a pipeline is built only for a range it reads, so a range with no data answers 200 empty'
   proxy: '400 at parse'
   planned_test: 'TestCompat_EagerValidationEmptyRange (test/e2e-compat, group semantics)'
   clusters: []

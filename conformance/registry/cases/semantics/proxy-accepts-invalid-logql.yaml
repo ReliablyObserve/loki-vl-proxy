@@ -47,7 +47,7 @@ gap:
   impact: api-only
   effort: S
   area: 'internal/logql parser validation'
-  loki: 'pkg/logql/syntax/ast.go:1446,1579 grouping not allowed; duration parsing'
+  loki: 'a grouping on absent_over_time is a 400, and the duration grammar is Loki''s (test/e2e-compat bad_request_status_parity_test.go; unwrap case measured on an isolated stack, in this case)'
   proxy: 'Loki''s 400 parse error'
   planned_test: 'TestCompat_RejectedQueryStatusParity parse_* cases (test/e2e-compat, bad_request_status_parity_test.go: status and text equal to Loki); TestRangeAggregationRulesLikeLoki (internal/logql, 76 recorded answers)'
   clusters:

@@ -6,7 +6,7 @@ proves:
 consumer: explore
 why: |
   Loki renames a parsed key named like structured metadata or a stream label to
-  `name_extracted` (pkg/logql/log/parser.go:151 and :809), so `unwrap x` reads
+  `name_extracted`, so `unwrap x` reads
   the stored value and `unwrap x_extracted` the parsed one. VictoriaLogs'
   unpack_logfmt / unpack_json overwrite the stored field with the parsed value.
   The conversion-error detection (semantics/unwrap-conversion-error) counts the
@@ -48,7 +48,7 @@ gap:
   impact: edge
   effort: M
   area: 'internal/translator parsed-key collision with stored fields (unpack keep_original_fields); internal/proxy/unwrap_conversion_error.go'
-  loki: 'pkg/logql/log/parser.go:151,809 duplicateSuffix'
+  loki: 'a parsed key equal to a stored label is renamed name_extracted (test/e2e-compat unwrap_conversion_error_test.go)'
   proxy: 'the stored value is overwritten before the counter reads it'
   planned_test: 'TestUnwrapConversionErrorDifferential counts the first case; TestCompat_UnwrapConversionErrorParity asserts the 200 side'
   clusters: []

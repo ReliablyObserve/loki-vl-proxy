@@ -50,7 +50,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy binary_aggregation.go (an aggregation over a comparison routes to the binary evaluator)'
-  loki: 'pkg/logql/evaluator.go:451-466 VectorAggEvaluator.Next over the filtered vector of the comparison (vectorBinop)'
+  loki: 'without folds the filtered vector of a comparison (test/e2e-compat aggregation_over_binary_test.go)'
   proxy: 'the comparison filters the series on the binary evaluator, then the aggregation folds them'
   planned_test: 'TestCompat_AggregationOverBinary (test/e2e-compat; its sum without over a comparison shape); TestWithoutComparisonInsideMatchesLoki (internal/proxy, rate with the threshold, range and instant; max_over_time at an instant)'
   note: 'Related: semantics/unwrap-sum-without-collapses (fixed).'
