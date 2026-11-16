@@ -30,7 +30,7 @@ Proven in part; the rest is named in the item's cases.
 | `explore-logs-volume-json` — Grafana Explore renders the logs volume for a `| json` query | explore | 9 / 17 | 7 | 3/6 deltas proven. |
 | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | — | 6 / 6 | 10 | Proven for grouped counts and byte sums: the two-grid recurrence, the tumbling single grid, the per-grid row limit and t |
 | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | — | 8 / 8 | 14 | Dotted names return Loki v3.7.7's parse error (message, line and column recorded from Loki for 192 query shapes, unit-te |
-| `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | — | 0 / 4 | 41 | count, min, max and avg of count_over_time, bytes_over_time, rate, bytes_rate and the unwrap functions read one value pe |
+| `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | — | 0 / 4 | 46 | count, min, max and avg of count_over_time, bytes_over_time, rate, bytes_rate and the unwrap functions read one value pe |
 | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | — | 0 / 4 | 5 | `| regexp` and `| pattern` captures are part of the series identity on the instant, range and byte routes, proven agains |
 | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | — | 18 / 23 | 42 | The filtered-volume pushdown cases (underscore labels, filters without `drop __error__`, ungrouped sums, translated labe |
 | `patterns-loki-mining` — /loki/api/v1/patterns answers the patterns Loki's pattern ingester mines, from the lines VictoriaLogs holds | — | 0 / 0 | 8 | 27 of 27 recorded Loki answers matched live (TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines) and the recorded orac |
@@ -47,7 +47,7 @@ Proven in part; the rest is named in the item's cases.
 | `service-name-derivation` — service_name follows Loki's discovery order | — | 0 / 0 | 0 | The derivation matches Loki's 13-entry discover_service_name order and is used by selectors, label filters, grouping, la |
 | `severity-detected-level-derivation` — detected_level is derived on the read path | — | 3 / 10 | 21 | detected_level is derived per returned row from what VictoriaLogs stored: a stored detected_level field, then the first  |
 | `severity-exposure-surfaces` — Where detected_level and level must appear | — | 0 / 6 | 5 | Log responses, /tail, /patterns and /detected_fields carry the derived detected_level; categorize-labels puts it and a s |
-| `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | — | 6 / 11 | 34 | semantics/offset-sample-timestamps is written and wired: an offset modifier moves the window and leaves the sample times |
+| `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | — | 6 / 11 | 38 | semantics/offset-sample-timestamps is written and wired: an offset modifier moves the window and leaves the sample times |
 
 ## Proven
 
@@ -75,7 +75,7 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 99 | — |
 | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | — | 0 / 0 | 1 | — |
 | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 7 | — |
-| `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | — | 3 / 3 | 3 | — |
+| `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | — | 4 / 4 | 7 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 5 | — |
 | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | — | 0 / 0 | 4 | — |
 | `peer-cache-push-replay` — Pushes a replica cannot take while its breaker is open are buffered and replayed, so the fleet heals to full replication | — | 0 / 0 | 6 | — |

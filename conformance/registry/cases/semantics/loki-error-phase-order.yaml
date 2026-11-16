@@ -1,0 +1,55 @@
+id: semantics/loki-error-phase-order
+title: "A query with two errors answers the one Loki answers, in Loki's order of checks (fixed; residuals open)"
+pending: true
+proves:
+  - loki-error-phases
+consumer: api
+why: |
+  Loki answers the first failing phase (semantics/loki-error-phases): the actions it runs while it parses (a pattern
+  or regexp parser, a selector, label filter, drop or keep regex), its lexer errors and the syntax error, the checks
+  over the parsed tree in the order of its walk, then the pipeline build. The proxy reported a later syntax or
+  lexer error ahead of an earlier action, rejected a vector operation's number parameter at the comma, checked
+  topk(0) while it parsed, built pipelines before the query plan's tree checks, and wrote its own prefix on a
+  selector regex error.
+
+  Fixed in internal/logql:
+  - the parser keeps the matchers and stages it has read, those of label_replace's sample expression included, and
+    answers their first action error ahead of a later syntax or lexer error (actionErrorSoFar);
+  - a vector operation reads its parameter as a number token and keeps its tree check on its node (deferTreeError),
+    approx_topk reads a grouping and refuses it there;
+  - quantile_over_time reads a sign as no parameter;
+  - the semantic pass checks the whole tree before it builds any pipeline (semanticPass);
+  - the proxy runs the query plan's tree checks before it reports a build error (validateQueryPhases).
+
+  On the instant route a log query whose pipeline does not build answers Loki's instant query type error (r0043).
+  Over the recorded grid (internal/logql/testdata/error-order-loki.jsonl.gz, 1628 queries) 532 queries answered
+  otherwise than Loki before, 51 do now.
+
+  Left open:
+  - a leading plus before a parameter (semantics/unary-plus-literal-rejected, 33 rows);
+  - a lexer error the proxy's label filter literal stops at, where Loki reads the bytes literal and goes on to the
+    action (`| c > 1PB | pattern "<_>"`, 5 rows);
+  - a label filter regex followed by a token that does not continue the expression (1 row);
+  - the line number of a selector `==` (4 rows);
+  - an unterminated label_replace or approx_topk call (6 rows);
+  - two tree checks of different walks, the parser's and the query plan's (2 rows).
+request:
+  scope: query-grammar
+  entry: "TestErrorPhaseGridMatchesLoki (internal/proxy): the proxy's query validation over the recorded grid"
+  setup: "Send any grid query as the query of /loki/api/v1/query_range, for example {a=\"b\"} | pattern \"<_>\" | unpack a ."
+compare:
+  mode: exact
+  fields: [status, error_text]
+  expect: "Loki's 400 text for every grid query; the known count may only fall."
+gap:
+  status: fixed
+  fixed_by: '#1580'
+  impact: api-only
+  effort: M
+  area: "internal/logql parser.go actionErrorSoFar, parseVectorAggregation, semantic.go semanticPass; internal/proxy query_tree_validation.go validateQueryPhases"
+  loki: "the first failing phase answers"
+  proxy: "the first failing phase answers; 51 grid queries still differ (listed above)"
+  planned_test: 'TestErrorPhaseGridMatchesLoki (internal/proxy), TestLokiErrorPhasesRecorded (internal/logql), FuzzActionErrorAheadOfLaterErrors (internal/logql, fuzz-smoke), TestLokiErrorAnswersReplay r0043 (internal/proxy), TestGrammarSweep (internal/querycorpus)'
+  visual: none
+  visual_reason: 'error texts of queries with two errors; no panel differs'
+  clusters: []

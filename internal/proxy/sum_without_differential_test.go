@@ -21,8 +21,9 @@ import (
 )
 
 // This file pins `<op> without (pod) (<range function>)` to Loki's answer over
-// generated rows and windows: Loki v3.7.7 groups the series of its input by
-// every label but the excluded ones and folds each group with the operator, so the answer keeps a series per remaining label set. The
+// generated rows and windows, with withoutReference (held to Loki's recorded
+// answers by TestWithoutReferenceMatchesRecordedLoki): Loki groups the series
+// of its input by every label but the excluded ones and folds each group with the operator, so the answer keeps a series per remaining label set. The
 // range function is taken per series (the stream plus the labels a parser
 // extracted, less the unwrapped one) over (t-range, t].
 //
@@ -33,97 +34,6 @@ import (
 // label in the parser cases: each line is a series of its own, which the stats
 // route reads from `_msg`. count and avg take one value per series, which the
 // proxy keeps per stream: they are pinned without a parser.
-
-// lokiWithout is the reference: timestamp -> stream labels without pod ->
-// Loki's value projected onto them.
-func lokiWithout(rows []vlemu.Row, fn, op string, window int64, times []int64) map[int64]map[string]float64 {
-	return lokiWithoutIdentity(rows, fn, op, window, times, func(row vlemu.Row) string {
-		parsed := make([]string, 0, len(row.Labels))
-		for k, v := range row.Labels {
-			parsed = append(parsed, k+"="+v)
-		}
-		sort.Strings(parsed)
-		return row.Stream + "|" + strings.Join(parsed, ",")
-	}, func(row vlemu.Row) string { return withoutPodKey(row.Stream) })
-}
-
-// lokiWithoutIdentity is lokiWithout for a series identity and a result group
-// the caller names for a row.
-func lokiWithoutIdentity(rows []vlemu.Row, fn, op string, window int64, times []int64, identity, group func(vlemu.Row) string) map[int64]map[string]float64 {
-	out := map[int64]map[string]float64{}
-	for _, t := range times {
-		type series struct {
-			group  string
-			values []float64
-		}
-		perSeries := map[string]*series{}
-		for _, row := range rows {
-			if row.TS <= t-window || row.TS > t {
-				continue
-			}
-			key := identity(row)
-			if perSeries[key] == nil {
-				perSeries[key] = &series{group: group(row)}
-			}
-			perSeries[key].values = append(perSeries[key].values, row.Value)
-		}
-		if len(perSeries) == 0 {
-			continue
-		}
-		members := map[string][]float64{}
-		for _, s := range perSeries {
-			var v float64
-			switch fn {
-			case "rate":
-				for _, x := range s.values {
-					v += x
-				}
-				v /= float64(window) / 1e9
-			case "count_rate": // rate without unwrap: lines per second
-				v = float64(len(s.values)) / (float64(window) / 1e9)
-			case "sum_over_time":
-				for _, x := range s.values {
-					v += x
-				}
-			case "avg_over_time":
-				for _, x := range s.values {
-					v += x
-				}
-				v /= float64(len(s.values))
-			case "max_over_time":
-				v = slices.Max(s.values)
-			case "min_over_time":
-				v = slices.Min(s.values)
-			default:
-				panic("reference: " + fn)
-			}
-			members[s.group] = append(members[s.group], v)
-		}
-		groups := map[string]float64{}
-		for group, values := range members {
-			var sum float64
-			for _, v := range values {
-				sum += v
-			}
-			switch op {
-			case "sum":
-				groups[group] = sum
-			case "max":
-				groups[group] = slices.Max(values)
-			case "min":
-				groups[group] = slices.Min(values)
-			case "count":
-				groups[group] = float64(len(values))
-			case "avg":
-				groups[group] = sum / float64(len(values))
-			default:
-				panic("reference: " + op)
-			}
-		}
-		out[t] = groups
-	}
-	return out
-}
 
 // withoutPodKey is the label set of a stream selector without pod, as a key.
 func withoutPodKey(stream string) string {
@@ -344,7 +254,7 @@ func TestSumWithoutDifferential(t *testing.T) {
 						s := generateWithoutScenario(rnd, c.fn, c.op, c.parser, instant)
 						emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 						got := runWithoutScenario(t, emu, s)
-						want := lokiWithout(s.rows, c.fn, c.op, int64(s.window), s.times())
+						want := withoutReference(s.rows, c.fn, c.op, int64(s.window), s.times())
 						mode := compareValues
 						switch {
 						case instant:
@@ -642,7 +552,7 @@ func TestWithoutWrappedByAnOperator(t *testing.T) {
 							for j := range s.rows {
 								s.rows[j].Value = float64(1+j%7) * 1.5
 							}
-							ref := lokiWithout(s.rows, in.fn, in.op, int64(s.window), s.times())
+							ref := withoutReference(s.rows, in.fn, in.op, int64(s.window), s.times())
 							// A threshold between the groups' values: the lowest drops.
 							lo, hi := math.Inf(1), math.Inf(-1)
 							for _, groups := range ref {
@@ -739,7 +649,7 @@ func TestWithoutOffset(t *testing.T) {
 						emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 						got := runWithoutScenarioQ(t, emu, s, query)
 						// Loki's window at t-o holds the rows the rows' shift put there.
-						want := lokiWithout(unshifted, c.fn, c.op, int64(s.window), s.times())
+						want := withoutReference(unshifted, c.fn, c.op, int64(s.window), s.times())
 						mode := compareValues
 						switch {
 						case instant:
@@ -782,8 +692,8 @@ func TestWithoutBinaryOperands(t *testing.T) {
 					query := fmt.Sprintf(`sum without (pod) (rate({app="uw"} | unwrap amount [%s])) / sum without (pod) (rate({app="uw"} [%s]))`, window, window)
 					emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 					got := runWithoutScenarioQ(t, emu, s, query)
-					num := lokiWithout(s.rows, "rate", "sum", int64(s.window), s.times())
-					den := lokiWithout(s.rows, "count_rate", "sum", int64(s.window), s.times())
+					num := withoutReference(s.rows, "rate", "sum", int64(s.window), s.times())
+					den := withoutReference(s.rows, "count_rate", "sum", int64(s.window), s.times())
 					want := map[int64]map[string]float64{}
 					for ts, groups := range num {
 						for key, v := range groups {

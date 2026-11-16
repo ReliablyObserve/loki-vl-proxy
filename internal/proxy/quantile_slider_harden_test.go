@@ -11,31 +11,6 @@ import (
 	"time"
 )
 
-// lokiQuantileOfWindow models Loki's quantile_over_time
-// written apart from the slider and the count arithmetic: the values of the
-// buckets whose label is in [start, end), each held count times, sorted (NaN
-// first), interpolated at rank phi*(n-1). false: no value in the window (Loki
-// leaves the step out). computed is false when the window holds more values
-// than the reference expands.
-func lokiQuantileOfWindow(phi float64, samples []quantileSample, start, end int64) (value float64, nonEmpty, computed bool) {
-	var values []float64
-	for _, s := range samples {
-		if s.ts < start || s.ts >= end {
-			continue
-		}
-		if len(values)+int(s.count) > 8192 {
-			return 0, true, false
-		}
-		for range int(s.count) {
-			values = append(values, s.value)
-		}
-	}
-	if len(values) == 0 {
-		return 0, false, true
-	}
-	return lokiQuantile(phi, values), true, true
-}
-
 // sameQuantileBits: the same bits, any two NaN as one (their payload means nothing).
 func sameQuantileBits(a, b float64) bool {
 	return math.Float64bits(a) == math.Float64bits(b) || math.IsNaN(a) && math.IsNaN(b)
@@ -94,7 +69,7 @@ func checkQuantileSlider(t testing.TB, data []byte, phi float64, window uint8, w
 		if gotOK != wantOK || wantOK && !sameQuantileBits(got, want) {
 			t.Fatalf("phi %v window [%d, %d): slider %v %v, window sort %v %v (%d buckets)", phi, end-length, end, got, gotOK, want, wantOK, len(samples))
 		}
-		if ref, nonEmpty, computed := lokiQuantileOfWindow(phi, samples, end-length, end); nonEmpty != gotOK || computed && !sameQuantileBits(got, ref) {
+		if ref, nonEmpty, computed := quantileWindowReference(phi, samples, end-length, end); nonEmpty != gotOK || computed && !sameQuantileBits(got, ref) {
 			t.Fatalf("phi %v window [%d, %d): slider %v %v, Loki %v %v (%d buckets)", phi, end-length, end, got, gotOK, ref, nonEmpty, len(samples))
 		}
 	}

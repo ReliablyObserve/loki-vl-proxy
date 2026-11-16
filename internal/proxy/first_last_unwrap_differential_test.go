@@ -22,72 +22,15 @@ import (
 )
 
 // This file pins an aggregation over first_over_time and last_over_time with
-// unwrap to Loki's, over generated rows and windows, with a reference written
-// apart from the proxy: first_over_time and last_over_time take the first and
-// the last sample, in timestamp order, of each series' window (t-range, t], and
-// the aggregation folds the per-series values of a step. VictoriaLogs has no first or last stats function,
+// unwrap to Loki's, over generated rows and windows, with the unwrap window
+// reference (unwrapFoldAt, held to Loki's recorded answers by
+// TestFirstLastReferenceMatchesRecordedLoki): first_over_time and
+// last_over_time take the first and the last sample, in timestamp order, of
+// each series' window (t-range, t], and the aggregation folds the per-series
+// values of a step. VictoriaLogs has no first or last stats function,
 // so the emulator (vlemu.Emulator) answers only row_min(_time, f) and row_max(_time,
 // f), as a JSON row that is a label to VictoriaLogs, and refuses a query whose
 // last stats pipe holds only those.
-
-// firstLastRef is the reference for the aggregation agg (sum, avg, min, max,
-// count; by is the stream label to group by, "" for none) over fn at time t:
-// group key -> value.
-func firstLastRef(rows []vlemu.Row, fn, agg, by string, window, t int64) map[string]float64 {
-	type sample struct {
-		ts    int64
-		value float64
-	}
-	series := map[string][]sample{}
-	groupOf := map[string]string{}
-	for _, row := range rows {
-		if row.TS <= t-window || row.TS > t {
-			continue
-		}
-		labels := make([]string, 0, len(row.Labels))
-		for k, v := range row.Labels {
-			labels = append(labels, k+"="+v)
-		}
-		sort.Strings(labels)
-		key := row.Stream + "|" + strings.Join(labels, ",")
-		series[key] = append(series[key], sample{row.TS, row.Value})
-		if by != "" {
-			m := regexp.MustCompile(by + `="([^"]*)"`).FindStringSubmatch(row.Stream)
-			groupOf[key] = m[1]
-		}
-	}
-	groups := map[string][]float64{}
-	for key, samples := range series {
-		sort.SliceStable(samples, func(i, j int) bool { return samples[i].ts < samples[j].ts })
-		v := samples[0].value
-		if fn == "last_over_time" {
-			v = samples[len(samples)-1].value
-		}
-		groups[groupOf[key]] = append(groups[groupOf[key]], v)
-	}
-	out := map[string]float64{}
-	for g, values := range groups {
-		var sum float64
-		for _, v := range values {
-			sum += v
-		}
-		switch agg {
-		case "sum":
-			out[g] = sum
-		case "avg":
-			out[g] = sum / float64(len(values))
-		case "min":
-			out[g] = slices.Min(values)
-		case "max":
-			out[g] = slices.Max(values)
-		case "count":
-			out[g] = float64(len(values))
-		default:
-			panic("reference: " + agg)
-		}
-	}
-	return out
-}
 
 // firstLastRows gives every line of a parsed stream a series of its own (a
 // unique parsed label and a unique line), which is how the stats route reads a
@@ -231,7 +174,7 @@ func TestFirstLastOverTimeUnderAggregationInstantDifferential(t *testing.T) {
 								}
 								emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 								run := runFirstLast(t, emu, query, true, s.end, s.end, 0)
-								want := firstLastRef(s.rows, fn, agg, by, int64(s.window), s.end)
+								want := unwrapFoldAt(s.rows, fn, agg, by, int64(s.window), s.end)
 								label := fmt.Sprintf("%s #%d %s", name, i, query)
 								noFirstLastStatsFunction(t, label, emu)
 								compareFirstLast(t, label, run, want, by, s.end)
@@ -377,7 +320,7 @@ func TestFirstLastOverTimeTopkBottomkInstantDifferential(t *testing.T) {
 						noFirstLastStatsFunction(t, query, emu)
 						// Every series is a value of the per-series reference: one series
 						// per (stream, labels), its sum over a single series is its value.
-						all := firstLastRefSeries(s.rows, fn, int64(s.window), s.end)
+						all := unwrapSeriesValuesAt(s.rows, fn, int64(s.window), s.end)
 						sort.Float64s(all)
 						if op == "topk" {
 							slices.Reverse(all)
@@ -402,41 +345,6 @@ func TestFirstLastOverTimeTopkBottomkInstantDifferential(t *testing.T) {
 	}
 }
 
-// firstLastRefSeries is the value of each series at t (the reference of
-// firstLastRef before the aggregation).
-func firstLastRefSeries(rows []vlemu.Row, fn string, window, t int64) []float64 {
-	var out []float64
-	seen := map[string]bool{}
-	for _, row := range rows {
-		labels := make([]string, 0, len(row.Labels))
-		for k, v := range row.Labels {
-			labels = append(labels, k+"="+v)
-		}
-		sort.Strings(labels)
-		key := row.Stream + "|" + strings.Join(labels, ",")
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		// A single-series reference: the sum over one series is its value.
-		var one []vlemu.Row
-		for _, r := range rows {
-			ls := make([]string, 0, len(r.Labels))
-			for k, v := range r.Labels {
-				ls = append(ls, k+"="+v)
-			}
-			sort.Strings(ls)
-			if r.Stream+"|"+strings.Join(ls, ",") == key {
-				one = append(one, r)
-			}
-		}
-		if v, ok := firstLastRef(one, fn, "sum", "", window, t)[""]; ok {
-			out = append(out, v)
-		}
-	}
-	return out
-}
-
 // An offset moves the window (t-offset-range, t-offset]: the proxy shifts the
 // request's time, so the aggregation reads the shifted window, as Loki does.
 //
@@ -454,55 +362,13 @@ func TestFirstLastOverTimeUnderAggregationOffsetDifferential(t *testing.T) {
 					query := fmt.Sprintf(`sum(%s({app="uw"}%s | unwrap amount [%s] offset 1m))`, fn, parserPipe(parser), uwWindowText(s.window))
 					emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount"}
 					run := runFirstLast(t, emu, query, true, s.end, s.end, 0)
-					want := firstLastRef(s.rows, fn, "sum", "", int64(s.window), s.end-int64(offset))
+					want := unwrapFoldAt(s.rows, fn, "sum", "", int64(s.window), s.end-int64(offset))
 					noFirstLastStatsFunction(t, query, emu)
 					compareFirstLast(t, fmt.Sprintf("%s #%d %s", name, i, query), run, want, "", s.end)
 				}
 			})
 		}
 	}
-}
-
-// firstLastGroupedRef is the reference for `agg(fn(... [w]) by (pod))`: Loki
-// groups the samples by the label before the range function, so the first or the
-// last sample is taken over the whole group (every series of the pod), then the
-// aggregation folds the groups.
-func firstLastGroupedRef(rows []vlemu.Row, fn, agg string, window, t int64) (float64, bool) {
-	type sample struct {
-		ts    int64
-		value float64
-	}
-	groups := map[string][]sample{}
-	for _, row := range rows {
-		if row.TS <= t-window || row.TS > t {
-			continue
-		}
-		pod := regexp.MustCompile(`pod="([^"]*)"`).FindStringSubmatch(row.Stream)[1]
-		groups[pod] = append(groups[pod], sample{row.TS, row.Value})
-	}
-	if len(groups) == 0 {
-		return 0, false
-	}
-	var values []float64
-	for _, samples := range groups {
-		sort.SliceStable(samples, func(i, j int) bool { return samples[i].ts < samples[j].ts })
-		if fn == "last_over_time" {
-			values = append(values, samples[len(samples)-1].value)
-		} else {
-			values = append(values, samples[0].value)
-		}
-	}
-	var sum float64
-	for _, v := range values {
-		sum += v
-	}
-	switch agg {
-	case "sum":
-		return sum, true
-	case "max":
-		return slices.Max(values), true
-	}
-	panic("reference: " + agg)
 }
 
 // distinctPerPod drops a row whose timestamp another row of the same pod has: a
@@ -571,7 +437,7 @@ func TestFirstLastOverTimeRangeLevelByDifferential(t *testing.T) {
 									}
 									continue
 								}
-								w, ok := firstLastGroupedRef(first.rows, fn, agg, int64(first.window), first.end)
+								w, ok := unwrapGroupedRangeFold(first.rows, fn, agg, "pod", int64(first.window), first.end)
 								if !ok {
 									if len(run.series) != 0 {
 										t.Fatalf("%s: Loki has no sample, proxy %v", label, run.points)
