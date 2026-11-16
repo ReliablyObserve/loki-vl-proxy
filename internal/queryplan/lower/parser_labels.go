@@ -407,7 +407,9 @@ func selectorHas(sel *queryplan.LogSelect, name string) bool {
 	return false
 }
 
-// fieldListKnown reports a json or logfmt stage whose list names the labels it extracts (parserLabels).
+// fieldListKnown reports a json or logfmt stage whose list names the labels it extracts: false for a bare parser,
+// which extracts every key, for a flag, and for an alias the translator does not follow (a logfmt alias, a json path
+// with an index or bracket).
 func fieldListKnown(st *queryplan.Parse) bool {
 	if len(st.Fields) == 0 || st.Strict || st.KeepEmpty {
 		return false
@@ -427,19 +429,10 @@ func fieldListKnown(st *queryplan.Parse) bool {
 	return true
 }
 
-// parserLabels are the labels a parser stage names; known is false for a bare json or logfmt, which extracts every
-// key, for a flag, an alias the translator does not follow (a logfmt alias, a json path with an index or bracket)
-// and for an unpack.
+// parserLabels are the labels a regexp or pattern parser stage names (its captures); known is false for any other
+// stage. A json or logfmt list is read from the stage itself (fieldListKnown, appendParsedSeriesLabels).
 func parserLabels(st *queryplan.Parse) (names []string, known bool) {
 	switch st.Type {
-	case logql.ParserJSON, logql.ParserLogfmt:
-		if !fieldListKnown(st) {
-			return nil, false
-		}
-		for _, f := range st.Fields {
-			names = append(names, f.Name)
-		}
-		return names, true
 	case logql.ParserRegexp:
 		re, err := regexp.Compile(st.Param)
 		if err != nil {
