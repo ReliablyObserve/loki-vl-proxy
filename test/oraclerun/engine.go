@@ -32,6 +32,8 @@ type EngineRequest struct {
 type EngineDataSet struct {
 	Streams  []EngineStream  `json:"streams"`
 	Requests []EngineRequest `json:"requests"`
+	// MaxSeries is the tenant's max_query_series for the requests; 0 sets none a data set reaches.
+	MaxSeries int `json:"max_series,omitempty"`
 }
 
 // EngineAnswer is Loki's answer to one request (test/oracle/loki engine): the HTTP status, and the body Loki's HTTP
