@@ -9,8 +9,9 @@ The CI workflow (.github/workflows/parity-refresh.yaml) runs exactly this; run i
 Steps (bench/visual/stack.py does the stack, bench/parity/README.md describes the pieces):
   1. a fresh Loki + VictoriaLogs stack under its own compose project and ports (own proxies, Grafana);
   2. Grafana's own requests: the bench/visual pages, captured once (a warm-up first);
-  3. the corpus (corpus.py) from Loki's test suites (a shallow, sparse checkout of the Loki tag the stack runs),
-     the repository's cases, what Loki reports for the seeded window, and the captures;
+  3. the corpus (corpus.py) from the LogQL examples of Loki's published documentation for the release the stack
+     runs, the repository's cases, what Loki reports for the seeded window, and the captures (no Loki source is
+     read);
   4. run.py, after Loki's range-metric path left its fresh-stack blank window;
   5. publish.py records the run in the registry, parity_gaps.py --prune drops the cluster ids the run no longer
      shows, every generator of the conformance gate rewrites its report, the gate runs once for its verdict;
@@ -25,7 +26,9 @@ prune.md, conformance.txt, result.json and summary.md (the job summary and the p
 
 Exit: 0 the run is recorded; 2 the run could not prove both sides healthy (run.py); 3 health changed during the run;
 4 the run cannot speak for the corpus (a source sent nothing, no cluster): nothing was pruned or published;
-1 any other failure.
+5 the run is recorded, and the stack's Loki serves a route or method other than the registry's Loki surface lists
+(conformance/scripts/sync_loki.py --check-live: the surface comes from Loki's public documentation and recorded
+answers, and this is the check that it has not drifted from a live Loki); 1 any other failure.
 """
 import argparse
 import json
@@ -48,7 +51,6 @@ import perf_evidence  # noqa: E402  (pinned_loki: the Loki release the stack run
 from registry_io import dump_json, load_json, read_text, write_text  # noqa: E402
 
 PY = sys.executable
-LOKI_REPO = "https://github.com/grafana/loki"
 DISCOVERY = parity_gaps.DISCOVERY
 # Pages of the validation slice: one explore page and one drilldown page, so both capture paths run.
 VALIDATE_PAGES = ("explore-logs-plain", "lvl-dd-logs-pill-json")
@@ -68,14 +70,14 @@ def loki_tag():
     return "v" + perf_evidence.pinned_loki(read_text(os.path.join(ROOT, perf_evidence.COMPOSE)))
 
 
-def fetch_loki_source(dest, tag, log):
-    """pkg/logql of the Loki tag the stack runs: shallow and sparse, so a few MB instead of the repository."""
-    if os.path.isdir(os.path.join(dest, "pkg", "logql")):
-        return dest
-    run(["git", "clone", "--quiet", "--depth", "1", "--branch", tag, "--filter=blob:none", "--sparse",
-         LOKI_REPO, dest], log=log)
-    run(["git", "-C", dest, "sparse-checkout", "set", "pkg/logql"], log=log)
-    return dest
+def surface_version():
+    """The release of the registry's recorded Loki surface (conformance/registry/generated/loki/<version>)."""
+    return sorted(os.listdir(os.path.join(ROOT, "conformance", "registry", "generated", "loki")))[-1]
+
+
+def loki_docs_version(tag):
+    """The documentation version of a Loki release tag: v3.7.9 is documented under v3.7.x."""
+    return re.sub(r"^(v\d+\.\d+)\..*$", r"\1.x", tag)
 
 
 def stack_cmd(a, out):
@@ -207,6 +209,9 @@ def summary_md(a, result, discovery, prune_text, problems):
              "did not reproduce (blocked)",
              f"- elapsed {result['elapsed_s']} s ({', '.join(f'{k} {v} s' for k, v in result['phases_s'].items())})", ""]
     lines += run_table(discovery) + [""]
+    if result.get("loki_surface_drift"):
+        lines += ["The stack's Loki serves routes or methods other than the registry's Loki surface lists "
+                  "(`sync_loki.py --check-live` in `steps.log`): record them with `sync_loki.py --record-live`.", ""]
     if result.get("slice"):
         lines += [f"This is a slice ({result['slice']['per_source']} per source of "
                   f"{result['slice']['of']} corpus entries): the run is recorded as partial, `parity_gaps.py --prune` "
@@ -247,7 +252,6 @@ def main():
     ap.add_argument("--loki-hours", type=float, default=1.5)
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--end", type=int, default=0, help="seed end (unix seconds, a whole minute)")
-    ap.add_argument("--loki-src", default="", help="a checkout of grafana/loki (pkg/logql) instead of fetching the tag")
     ap.add_argument("--keep-stack", action="store_true")
     ap.add_argument("--no-prune", action="store_true", help="full mode: record the run but leave the cases alone")
     a = ap.parse_args()
@@ -270,8 +274,10 @@ def main():
         phase("stack_up", t0)
 
         t0 = time.time()
-        src = a.loki_src or fetch_loki_source(os.path.join(out, "loki-src"), result["loki"], step_log)
-        phase("loki_source", t0)
+        surface = run([PY, os.path.join(ROOT, "conformance", "scripts", "sync_loki.py"), "--version", surface_version(),
+                       "--check-live", f"http://127.0.0.1:{state['ports']['loki']}"], log=step_log, check=False)
+        result["loki_surface_drift"] = surface.returncode != 0
+        phase("loki_surface", t0)
 
         t0 = time.time()
         result["capture"] = capture(a, out, state, step_log)
@@ -279,7 +285,7 @@ def main():
 
         t0 = time.time()
         corpus = os.path.join(out, "corpus.json")
-        run([PY, os.path.join(HERE, "corpus.py"), "--out", corpus, "--loki-src", src,
+        run([PY, os.path.join(HERE, "corpus.py"), "--out", corpus, "--loki-docs", loki_docs_version(result["loki"]),
              "--seeded", f"http://127.0.0.1:{state['ports']['loki']}", "--end", str(state["end"]),
              "--captures", os.path.join(out, "cap", "data")], log=step_log)
         if a.mode == "validate":
@@ -343,7 +349,7 @@ def main():
         result["problems"] = len(problems)
         result["elapsed_s"] = round(time.time() - t_all)
         write_text(os.path.join(out, "summary.md"), summary_md(a, result, discovery, prune_text, problems))
-        code = 0
+        code = 5 if result.get("loki_surface_drift") else 0
     except Exception as e:  # noqa: BLE001 - any failure must still leave a result and tear down
         traceback.print_exc()
         result["error"] = f"{type(e).__name__}: {e}"[:400]

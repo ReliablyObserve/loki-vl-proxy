@@ -1,341 +1,622 @@
 {
+  "docs_version": "v3.7.x",
   "endpoints": [
     {
-      "constant": "PathPromLabel",
+      "documented": true,
       "id": "api_prom_label",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/api/prom/label"
+      "path": "/api/prom/label",
+      "sources": {
+        "GET": [
+          "docs"
+        ],
+        "POST": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "PathPromLabelNameValues",
+      "documented": true,
       "id": "api_prom_label_name_values",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/api/prom/label/{name}/values"
+      "path": "/api/prom/label/{name}/values",
+      "sources": {
+        "GET": [
+          "docs"
+        ],
+        "POST": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "PathPromPush",
+      "documented": true,
       "id": "api_prom_push",
       "methods": [
         "POST"
       ],
-      "path": "/api/prom/push"
+      "path": "/api/prom/push",
+      "sources": {
+        "POST": [
+          "docs"
+        ]
+      }
     },
     {
-      "constant": "PathPromQuery",
+      "documented": true,
       "id": "api_prom_query",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/api/prom/query"
+      "path": "/api/prom/query",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r1187,r1189"
+        ],
+        "POST": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "PathPromRules",
+      "documented": true,
       "id": "api_prom_rules",
       "methods": [
         "GET"
       ],
-      "path": "/api/prom/rules"
+      "path": "/api/prom/rules",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r1183"
+        ]
+      }
     },
     {
-      "constant": "PathPromRulesNamespace",
+      "documented": true,
       "id": "api_prom_rules_namespace",
       "methods": [
         "DELETE",
         "GET",
         "POST"
       ],
-      "path": "/api/prom/rules/{namespace}"
+      "path": "/api/prom/rules/{namespace}",
+      "sources": {
+        "DELETE": [
+          "docs"
+        ],
+        "GET": [
+          "docs"
+        ],
+        "POST": [
+          "docs"
+        ]
+      }
     },
     {
-      "constant": "PathPromRulesNamespaceGroup",
+      "documented": true,
       "id": "api_prom_rules_namespace_groupname",
       "methods": [
         "DELETE",
         "GET"
       ],
-      "path": "/api/prom/rules/{namespace}/{groupName}"
+      "path": "/api/prom/rules/{namespace}/{groupName}",
+      "sources": {
+        "DELETE": [
+          "docs"
+        ],
+        "GET": [
+          "docs"
+        ]
+      }
     },
     {
-      "constant": "PathPromSeries",
+      "documented": true,
       "id": "api_prom_series",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/api/prom/series"
+      "path": "/api/prom/series",
+      "sources": {
+        "GET": [
+          "docs"
+        ],
+        "POST": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "PathPromTail",
+      "documented": true,
       "id": "api_prom_tail",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/api/prom/tail"
+      "path": "/api/prom/tail",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r1188"
+        ],
+        "POST": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "PathLokiCacheGenNumbers",
-      "id": "loki_api_v1_cache_generation_numbers",
+      "documented": false,
+      "id": "cache_generation_numbers",
       "methods": [
         "GET"
       ],
-      "path": "/loki/api/v1/cache/generation_numbers"
+      "path": "/loki/api/v1/cache/generation_numbers",
+      "sources": {
+        "GET": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "PathLokiDelete",
-      "id": "loki_api_v1_delete",
+      "documented": true,
+      "id": "delete",
       "methods": [
         "DELETE",
         "GET",
         "POST",
         "PUT"
       ],
-      "path": "/loki/api/v1/delete"
+      "path": "/loki/api/v1/delete",
+      "sources": {
+        "DELETE": [
+          "docs"
+        ],
+        "GET": [
+          "docs"
+        ],
+        "POST": [
+          "docs",
+          "recorded:r1201"
+        ],
+        "PUT": [
+          "docs"
+        ]
+      }
     },
     {
-      "constant": "PathLokiDetectedFieldNameValues",
-      "id": "loki_api_v1_detected_field_name_values",
+      "documented": true,
+      "id": "detected_field_name_values",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/detected_field/{name}/values"
+      "path": "/loki/api/v1/detected_field/{name}/values",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r0181,r0195,r0433"
+        ],
+        "POST": [
+          "docs"
+        ]
+      }
     },
     {
-      "constant": "PathLokiDetectedFields",
-      "id": "loki_api_v1_detected_fields",
+      "documented": true,
+      "id": "detected_fields",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/detected_fields"
+      "path": "/loki/api/v1/detected_fields",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r0180,r0194,r0432"
+        ],
+        "POST": [
+          "docs"
+        ]
+      }
     },
     {
-      "constant": "PathLokiDetectedLabels",
-      "id": "loki_api_v1_detected_labels",
+      "documented": false,
+      "id": "detected_labels",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/detected_labels"
+      "path": "/loki/api/v1/detected_labels",
+      "sources": {
+        "GET": [
+          "recorded:r0196,r0238,r0294"
+        ],
+        "POST": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "literal",
-      "id": "loki_api_v1_drilldown_limits",
+      "documented": false,
+      "id": "drilldown_limits",
       "methods": [
         "GET"
       ],
-      "path": "/loki/api/v1/drilldown-limits"
+      "path": "/loki/api/v1/drilldown-limits",
+      "sources": {
+        "GET": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "literal",
-      "id": "loki_api_v1_format_query",
+      "documented": true,
+      "id": "format_query",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/format_query"
+      "path": "/loki/api/v1/format_query",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r0185,r0199"
+        ],
+        "POST": [
+          "docs"
+        ]
+      }
     },
     {
-      "constant": "PathLokiIndexShards",
-      "id": "loki_api_v1_index_shards",
+      "documented": false,
+      "id": "index_shards",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/index/shards"
+      "path": "/loki/api/v1/index/shards",
+      "sources": {
+        "GET": [
+          "recorded:r1180"
+        ],
+        "POST": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "PathLokiIndexStats",
-      "id": "loki_api_v1_index_stats",
+      "documented": true,
+      "id": "index_stats",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/index/stats"
+      "path": "/loki/api/v1/index/stats",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r0176,r0190,r0288"
+        ],
+        "POST": [
+          "recorded:r0869,r0871,r0873"
+        ]
+      }
     },
     {
-      "constant": "PathLokiIndexVolume",
-      "id": "loki_api_v1_index_volume",
+      "documented": true,
+      "id": "index_volume",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/index/volume"
+      "path": "/loki/api/v1/index/volume",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r0177,r0191,r0233"
+        ],
+        "POST": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "PathLokiIndexVolumeRange",
-      "id": "loki_api_v1_index_volume_range",
+      "documented": true,
+      "id": "index_volume_range",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/index/volume_range"
+      "path": "/loki/api/v1/index/volume_range",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r0178,r0192,r0290"
+        ],
+        "POST": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "PathLokiLabel",
-      "id": "loki_api_v1_label",
+      "documented": false,
+      "id": "label",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/label"
+      "path": "/loki/api/v1/label",
+      "sources": {
+        "GET": [
+          "unconfirmed"
+        ],
+        "POST": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "PathLokiLabelNameValues",
-      "id": "loki_api_v1_label_name_values",
+      "documented": true,
+      "id": "label_name_values",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/label/{name}/values"
+      "path": "/loki/api/v1/label/{name}/values",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r0198,r0240,r0296"
+        ],
+        "POST": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "PathLokiLabels",
-      "id": "loki_api_v1_labels",
+      "documented": true,
+      "id": "labels",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/labels"
+      "path": "/loki/api/v1/labels",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r0197,r0239,r0295"
+        ],
+        "POST": [
+          "recorded:r0708,r0710,r0712"
+        ]
+      }
     },
     {
-      "constant": "PathLokiPatterns",
-      "id": "loki_api_v1_patterns",
+      "documented": true,
+      "id": "patterns",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/patterns"
+      "path": "/loki/api/v1/patterns",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r0179,r0193,r0291"
+        ],
+        "POST": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "PathLokiPush",
-      "id": "loki_api_v1_push",
+      "documented": true,
+      "id": "push",
       "methods": [
         "POST"
       ],
-      "path": "/loki/api/v1/push"
+      "path": "/loki/api/v1/push",
+      "sources": {
+        "POST": [
+          "docs",
+          "recorded:r1200"
+        ]
+      }
     },
     {
-      "constant": "PathLokiQuery",
-      "id": "loki_api_v1_query",
+      "documented": true,
+      "id": "query",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/query"
+      "path": "/loki/api/v1/query",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r0001,r0003,r0043"
+        ],
+        "POST": [
+          "recorded:r0655,r0666,r0668"
+        ]
+      }
     },
     {
-      "constant": "PathLokiQueryRange",
-      "id": "loki_api_v1_query_range",
+      "documented": true,
+      "id": "query_range",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/query_range"
+      "path": "/loki/api/v1/query_range",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r0002,r0004,r0112"
+        ],
+        "POST": [
+          "recorded:r0635,r0636,r0637"
+        ]
+      }
     },
     {
-      "constant": "PathLokiRules",
-      "id": "loki_api_v1_rules",
+      "documented": true,
+      "id": "rules",
       "methods": [
         "GET"
       ],
-      "path": "/loki/api/v1/rules"
+      "path": "/loki/api/v1/rules",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r1174"
+        ]
+      }
     },
     {
-      "constant": "PathLokiRulesNamespace",
-      "id": "loki_api_v1_rules_namespace",
+      "documented": true,
+      "id": "rules_namespace",
       "methods": [
         "DELETE",
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/rules/{namespace}"
+      "path": "/loki/api/v1/rules/{namespace}",
+      "sources": {
+        "DELETE": [
+          "docs"
+        ],
+        "GET": [
+          "docs",
+          "recorded:r1175"
+        ],
+        "POST": [
+          "docs"
+        ]
+      }
     },
     {
-      "constant": "PathLokiRulesNamespaceGroup",
-      "id": "loki_api_v1_rules_namespace_groupname",
+      "documented": true,
+      "id": "rules_namespace_groupname",
       "methods": [
         "DELETE",
         "GET"
       ],
-      "path": "/loki/api/v1/rules/{namespace}/{groupName}"
+      "path": "/loki/api/v1/rules/{namespace}/{groupName}",
+      "sources": {
+        "DELETE": [
+          "docs"
+        ],
+        "GET": [
+          "docs",
+          "recorded:r1176"
+        ]
+      }
     },
     {
-      "constant": "PathLokiSeries",
-      "id": "loki_api_v1_series",
+      "documented": true,
+      "id": "series",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/series"
+      "path": "/loki/api/v1/series",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r0175,r0189,r0287"
+        ],
+        "POST": [
+          "docs",
+          "recorded:r0795,r0797,r0799"
+        ]
+      }
     },
     {
-      "constant": "literal",
-      "id": "loki_api_v1_status_buildinfo",
+      "documented": true,
+      "id": "status_buildinfo",
       "methods": [
         "GET"
       ],
-      "path": "/loki/api/v1/status/buildinfo"
+      "path": "/loki/api/v1/status/buildinfo",
+      "sources": {
+        "GET": [
+          "docs"
+        ]
+      }
     },
     {
-      "constant": "PathLokiTail",
-      "id": "loki_api_v1_tail",
+      "documented": true,
+      "id": "tail",
       "methods": [
         "GET",
         "POST"
       ],
-      "path": "/loki/api/v1/tail"
+      "path": "/loki/api/v1/tail",
+      "sources": {
+        "GET": [
+          "docs",
+          "recorded:r0186,r0200,r0298"
+        ],
+        "POST": [
+          "unconfirmed"
+        ]
+      }
     },
     {
-      "constant": "PathPrometheusAlerts",
+      "documented": true,
       "id": "prometheus_api_v1_alerts",
       "methods": [
         "GET"
       ],
-      "path": "/prometheus/api/v1/alerts"
+      "path": "/prometheus/api/v1/alerts",
+      "sources": {
+        "GET": [
+          "docs"
+        ]
+      }
     },
     {
-      "constant": "PathPrometheusRules",
+      "documented": true,
       "id": "prometheus_api_v1_rules",
       "methods": [
         "GET"
       ],
-      "path": "/prometheus/api/v1/rules"
+      "path": "/prometheus/api/v1/rules",
+      "sources": {
+        "GET": [
+          "docs"
+        ]
+      }
     }
   ],
-  "other_routes": [
-    "/analytics",
-    "/config",
-    "/config/tenant/v1/limits",
-    "/dataobj-consumer/partition-ring",
-    "/dataobj-consumer/ring",
-    "/debug/fgprof",
-    "/distributor/ring",
-    "/indexgateway/ring",
-    "/ingest-limits-frontend/ring",
-    "/ingest-limits/exceeds-limits",
-    "/ingest-limits/ring",
-    "/ingest-limits/usage/{tenant}",
-    "/log_level",
-    "/memberlist",
-    "/otlp/v1/logs",
-    "/partition-ring",
-    "/pattern/ring",
-    "/ready",
-    "/ring",
-    "/ruler/ring",
-    "/scheduler/ring",
-    "/services",
-    "/ui/ring"
+  "source": "https://grafana.com/docs/loki/v3.7.x/reference/loki-http-api/, Loki's recorded answers and a live probe",
+  "unconfirmed": [
+    "GET /loki/api/v1/cache/generation_numbers",
+    "GET /loki/api/v1/drilldown-limits",
+    "GET /loki/api/v1/label",
+    "POST /api/prom/label",
+    "POST /api/prom/label/{name}/values",
+    "POST /api/prom/query",
+    "POST /api/prom/series",
+    "POST /api/prom/tail",
+    "POST /loki/api/v1/detected_labels",
+    "POST /loki/api/v1/index/shards",
+    "POST /loki/api/v1/index/volume",
+    "POST /loki/api/v1/index/volume_range",
+    "POST /loki/api/v1/label",
+    "POST /loki/api/v1/label/{name}/values",
+    "POST /loki/api/v1/patterns",
+    "POST /loki/api/v1/tail"
   ],
-  "source": "github.com/grafana/loki",
   "version": "v3.7.7"
 }

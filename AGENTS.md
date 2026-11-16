@@ -35,6 +35,19 @@ generators either. Loki is used only as a test comparison.
     reviewed exceptions for API names only (such as the template function
     names a query may call), never code. Its limits are never raised to make a
     pull request pass.
+- No generator, script or workflow reads Loki's source. The registry's Loki
+  surface comes from Loki's public documentation (the HTTP API reference and
+  the LogQL pages: `conformance/scripts/sync_loki.py`, `sync_ast.py`), Loki's
+  recorded answers and live probes, and is held to Loki by checks that ask Loki
+  itself: `TestLogQLSurfaceMatchesLokiParser` (every documented construct
+  parses with Loki's parser, daily in `query-corpus.yaml`) and
+  `sync_loki.py --check-live` (every route and method against the stack's Loki,
+  weekly in `parity-refresh.yaml`). The parity corpus takes its Loki queries
+  from the published query documentation, never from Loki's test files. The two
+  exceptions are inside the test-only oracle module and await the owner's
+  decision: the similarity scan above fingerprints Loki's `pkg/` to detect
+  copies, and `test/oracle/loki cases` reads the queries of Loki's syntax tests
+  for the PR quality report's parse-oracle rows. Add no other.
 
 ## Loki difference registry and query matrix
 
