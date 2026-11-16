@@ -23,8 +23,7 @@ why: |
   written again the same way, so the answer is the two passes' answer byte
   for byte, but for the order of a series' labels, which the translation
   writes in map order on every path. The series limit is applied where it
-  was: on the translated answer (Loki's max_query_series,
-  pkg/querier/queryrange/limits.go:447-448 and 511-512, v3.7.9). An answer
+  was: on the translated answer (Loki's max_query_series). An answer
   the one parse does not rewrite exactly as the two passes (a point the
   first pass trims, a malformed point, a value with escapes, another result
   slot or an error key, nothing to translate) and an answer over the bound
@@ -59,7 +58,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy/stats_json_stream.go trimTranslateRelabelStatsQRFJ; internal/proxy/metric_binary.go proxyStatsQueryRangeDirect'
-  loki: 'pkg/logql/range_vector.go:102-189 (the sample at t covers (t-range, t]); pkg/querier/queryrange/limits.go:447-448, 511-512'
+  loki: 'the sample at t covers (t-range, t]; max_query_series applies to the translated answer (TestCompat_SlidingSumWithoutStreamFold)'
   proxy: 'two whole parses and rewrites of every range == step answer within 1 MiB (SW1 24h warm 68 ms against Loki 12 ms)'
   planned_test: 'proxy TestStatsFoldRelabelOneParseMatchesTwoPasses, TestStatsFoldRelabelOneParseDifferential, FuzzStatsFoldRelabelOneParseDifferential, TestStatsFoldRelabelKeepsTheSeriesLimit, BenchmarkTumblingRelabelWarm; e2e TestCompat_SlidingSumWithoutStreamFold (range equals step)'
   clusters: []

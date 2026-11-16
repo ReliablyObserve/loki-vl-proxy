@@ -66,11 +66,10 @@ func TestRangeMetricCompatibilityJSONDetectedLevelSeriesLimit(t *testing.T) {
 			})
 		}
 		// one series past the limit: Loki's error, at the step the series above
-		// were read with. Loki counts the series of its answer
-		// (pkg/logql/engine.go JoinSampleVector), the ones with a point at some
-		// step. At a 300 s step the stack's Loki aligns the bounds to the step
-		// (align_queries_with_step) and evaluates at s0-5m and s0: the [1m]
-		// window ending at s0 holds only the line exactly at s0, so its answer
+		// were read with. Loki counts the series of its answer, the ones with a
+		// point at some step. At a 300 s step the stack's Loki aligns the bounds to
+		// the step (align_queries_with_step) and evaluates at s0-5m and s0: the
+		// [1m] window ending at s0 holds only the line exactly at s0, so its answer
 		// has one series and no limit error, while the fixture's other lines lie
 		// between windows; a proxy aligned like it must answer the same.
 		t.Run(tc.name+"/over the limit", func(t *testing.T) {

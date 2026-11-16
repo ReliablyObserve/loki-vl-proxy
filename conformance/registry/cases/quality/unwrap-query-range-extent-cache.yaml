@@ -6,9 +6,8 @@ proves:
 consumer: explore
 why: |
   Loki answers a moved metric window from its results cache extents
-  (pkg/storage/chunk/cache/resultscache/cache.go Do, handleHit), unwrap
-  metrics included, and evaluates the rest; a value its conversion rejects
-  still fails the query with its 400 (pkg/logql/evaluator.go:726-733).
+  unwrap metrics included, and evaluates the rest; a value its conversion
+  rejects still fails the query with its 400.
 
   The stats extent cache (quality/query-range-extent-cache) refused every
   stats_query_range call of a request whose unwrap the conversion check reads
@@ -62,7 +61,7 @@ gap:
   visual_reason: 'a latency change: every answer and error is byte for byte the uncached one, proven by the cache-on/off differential; the refresh time is measured by the A/B refresh pass'
   effort: S
   area: 'internal/proxy backend.go vlPostHTTP (the counting rewrite ahead of statsExtentPost); stats_extent_cache.go statsExtentPost'
-  loki: 'pkg/storage/chunk/cache/resultscache/cache.go Do, handleHit; pkg/logql/evaluator.go:726-733'
+  loki: 'a moved unwrap window is answered from cached extents; a rejected conversion still fails the query with 400 (test/e2e-compat unwrap_extent_cache_test.go)'
   proxy: 'unwrap stats_query_range calls answered from stored buckets of the counting query, the counter read off the assembled answer'
   planned_test: 'TestUnwrapExtentCacheMatchesUncached (internal/proxy); the unwrap conversion-error e2e run twice with moved windows'
   clusters: []

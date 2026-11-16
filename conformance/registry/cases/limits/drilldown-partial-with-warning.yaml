@@ -11,8 +11,8 @@ why: |
   reached for a single query; returning partial results" in the response body,
   where the plugin surfaces it. A partial result with no warning is the failure
   this case guards against — the panel then looks complete.
-  Loki applies the limit once, to the result of the whole expression
-  (pkg/logql/engine.go JoinSampleVector, v3.7.7), whatever evaluates it. The
+  Loki applies the limit once, to the result of the whole expression,
+  whatever evaluates it. The
   proxy has several metric routes, and each must answer the same way: native
   stats and stats buckets, the sliding-window evaluator, the raw-row evaluator,
   the ordered `| json` evaluator and its stats pushdown, the bare parser paths

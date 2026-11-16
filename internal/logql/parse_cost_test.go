@@ -4,7 +4,17 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 )
+
+// parseAllocs is testing.AllocsPerRun with the query corpus recording paused: a corpuscapture build records every
+// parse (query-corpus.yaml runs the tests that way), and that recording is not the cost of the parse.
+func parseAllocs(runs int, f func()) float64 {
+	resume := querycorpus.PauseRecording()
+	defer resume()
+	return testing.AllocsPerRun(runs, f)
+}
 
 // stagesAhead counts the pipes and the ! line filters of the text after a selector, outside quoted strings, up to a
 // range; a count that misses or adds a stage changes only the room the pipeline starts with.
@@ -54,7 +64,7 @@ func TestParseLogQueryAllocations(t *testing.T) {
 			t.Fatalf("%q: %v", tc.query, err)
 		}
 		// Coverage instrumentation changes allocation counts.
-		if got := testing.AllocsPerRun(50, func() { _, _ = Parse(tc.query) }); got > tc.max && testing.CoverMode() == "" {
+		if got := parseAllocs(50, func() { _, _ = Parse(tc.query) }); got > tc.max && testing.CoverMode() == "" {
 			t.Errorf("%q: %v allocations, want at most %v", tc.query, got, tc.max)
 		}
 	}

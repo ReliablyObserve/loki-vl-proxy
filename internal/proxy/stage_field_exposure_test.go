@@ -242,7 +242,7 @@ func stageRows(t *testing.T, p *Proxy, query string, categorize bool) []stageRow
 }
 
 // TestLogQuery_StageFieldExposureLikeLoki: each LogQL stage exposes only the
-// labels Loki's stage adds (pkg/logql/log, Loki v3.7.7), as parsed labels;
+// labels Loki's stage adds (Loki v3.7.7), as parsed labels;
 // fields of the JSON line no stage exposes are left out and structured
 // metadata stays structured metadata. Checked on the buffered, streamed and
 // windowed paths, with and without categorize-labels. The expected values are

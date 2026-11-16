@@ -165,7 +165,7 @@ func rejectedQueryGet(t *testing.T, base, path string, params url.Values, orgID 
 }
 
 // TestCompat_VectorAggregationOverLogSelector: Loki's grammar takes only a
-// metric expression inside a vector aggregation (pkg/logql/syntax/syntax.y:176-185),
+// metric expression inside a vector aggregation,
 // so topk, bottomk, sort, sort_desc, stddev and sum over a log selector (with
 // or without a pipeline) fail with "parse error at line 1, col N: syntax
 // error: unexpected )". The proxy answers the same status and bytes on

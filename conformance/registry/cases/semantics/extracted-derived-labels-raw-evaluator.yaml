@@ -38,7 +38,7 @@ gap:
   impact: edge
   effort: S
   area: 'internal/proxy orderedJSONPushdownLabelOK (service_name, detected_level)'
-  loki: 'pkg/logql/log/parser.go duplicateSuffix; service_name set by discover_service_name at ingest'
+  loki: 'a parsed key named like a stream label gets the _extracted suffix; service_name is set at ingest by discover_service_name (https://grafana.com/docs/loki/latest/configure/, https://grafana.com/docs/loki/latest/query/log_queries/)'
   proxy: 'derived labels are not read from parsed keys'
   planned_test: 'TestCompat_ExtractedLabelMetricPushdown rows for service_name_extracted (test/e2e-compat, group core)'
   note: 'Related: profiles/parsed-key-colliding-with-structured-metadata.'

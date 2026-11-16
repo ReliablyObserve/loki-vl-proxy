@@ -230,8 +230,7 @@ func fakeVLRequestRange(r *http.Request) (int64, int64, bool) {
 }
 
 // lokiKeepReference evaluates fn(X | parser | keep labels [window]) with
-// Loki's semantics (pkg/logql/log/parser.go, keep_labels.go, range_vector.go):
-// the stream labels and service_name discovered at ingest, a parsed key named
+// Loki's semantics: the stream labels and service_name discovered at ingest, a parsed key named
 // like a stream label renamed name_extracted, every label the keep does not
 // name deleted, and the samples of equal label sets summed. outer is "" or a
 // vector aggregation without grouping (sum, count).

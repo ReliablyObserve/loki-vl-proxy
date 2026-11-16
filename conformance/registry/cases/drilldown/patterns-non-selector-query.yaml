@@ -4,9 +4,8 @@ proves:
   - loki_api_v1_patterns
 consumer: api
 why: |
-  Loki reads the /patterns query with syntax.ParseMatchers (pkg/pattern
-  ingester_querier.go): anything but a stream selector is a 400 with the
-  parse error. The proxy scopes the query to its stream selector
+  Loki reads the /patterns query as label matchers: anything but a stream
+  selector is a 400 with the parse error. The proxy scopes the query to its stream selector
   (patternScopeQuery) and answers patterns for it. Logs Drilldown sends a
   bare selector, so its pages are not affected; an API client sending a
   pipeline gets an answer where Loki rejects the request.
@@ -32,7 +31,7 @@ gap:
   impact: api-only
   effort: S
   area: 'internal/proxy/patterns.go handlePatterns / patternScopeQuery'
-  loki: 'pkg/pattern/ingester_querier.go (syntax.ParseMatchers)'
+  loki: 'anything but a stream selector is a 400 with the parse error (live case runs of 2026-11-14 in this case)'
   proxy: '400 only label matchers are supported, as Loki'
   planned_test: 'TestPatternsRouteRejectsAQueryThatIsNotASelector and TestMetadataQueryValidation_RejectsLikeLoki (internal/proxy)'
   note: 'Verified 2026-11-14 on build 726dfb48f against Loki 3.7.9 and VictoriaLogs v1.53.0 (two live case runs, same data on both sides): HTTP 400 and the same text on both sides.'

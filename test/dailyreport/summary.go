@@ -32,10 +32,14 @@ type Summary struct {
 	Parity       map[string]any `json:"parity,omitempty"`
 	PerfDaily    map[string]any `json:"perf_daily,omitempty"`
 	PerfWeekly   *WeeklyPerf    `json:"perf_weekly,omitempty"`
-	Missing      []string       `json:"missing,omitempty"`
+	// Coverage is how each case is proven per VictoriaLogs version (coverage.go).
+	Coverage map[string]*CoveragePart `json:"coverage,omitempty"`
+	Missing  []string                 `json:"missing,omitempty"`
 
 	// detail is the run's per-case verdicts and flags (cases.json), read by the executive summary; not serialised.
 	detail *CasesFile
+	// outcomes is each version's verdict, class and reason per case, read for the coverage; not serialised.
+	outcomes map[string]map[string]caseOutcome
 }
 
 // RegistryPart is the registry's case counts on the measured commit.
@@ -53,6 +57,9 @@ type WorkflowPart struct {
 	CheckedAt string           `json:"checked_at"`
 	Scheduled int              `json:"scheduled"`
 	Problems  []map[string]any `json:"problems"`
+	// Pending are the scheduled workflows added too recently to have run on their schedule: not problems, and not
+	// counted in Scheduled.
+	Pending []map[string]any `json:"pending,omitempty"`
 }
 
 // ErrorsPart is the error answers: the recorded figures, the live re-record against the stack's Loki and the
@@ -107,6 +114,8 @@ type Inputs struct {
 	Date, Commit, Run, LokiVersion           string
 	SweepWorkflow                            string
 	SkipRerecord, SkipReplay                 bool
+	// Wiring is the registry's wiring map (case id to the tests wired to it); empty leaves "proven by a test" out.
+	Wiring string
 }
 
 func readJSON(path string, v any) error {
@@ -162,6 +171,13 @@ type CaseReuse struct {
 	ColdVLCalls float64            `json:"cold_vl_calls"`
 	RepeatCalls float64            `json:"repeat_vl_calls"`
 	RepeatHits  map[string]float64 `json:"repeat_hit_ratio"`
+	// Background is the proxy's own VictoriaLogs calls around the repeats (health probes, inventory refreshes,
+	// other clients), counted by the process-wide metrics and left out of RepeatCalls; CallsFromHeader and
+	// CallsFromMetrics are how many repeats had their calls counted per request (X-Loki-VL-Backend-Calls) and how
+	// many by metrics.
+	Background       float64 `json:"background_vl_calls,omitempty"`
+	CallsFromHeader  int     `json:"calls_from_header,omitempty"`
+	CallsFromMetrics int     `json:"calls_from_metrics,omitempty"`
 }
 
 // Build reads every input and judges the day.
@@ -173,6 +189,9 @@ func Build(in Inputs) (Summary, map[string]any, error) {
 	}
 	merged, err := s.cases(in.CasesDir)
 	if err != nil {
+		return s, nil, err
+	}
+	if err := s.coverage(in, merged); err != nil {
 		return s, nil, err
 	}
 	steps := []func(Inputs) error{s.workflows, s.errors, s.sweep, s.parity, s.perfDaily, s.perfWeekly}
@@ -276,6 +295,16 @@ func (s *Summary) cases(dir string) (map[string]any, error) {
 				entry = map[string]any{"expected": r["expected"], "gap_status": r["gap_status"]}
 				byCase[id] = entry
 			}
+			if s.outcomes == nil {
+				s.outcomes = map[string]map[string]caseOutcome{}
+			}
+			if s.outcomes[version] == nil {
+				s.outcomes[version] = map[string]caseOutcome{}
+			}
+			verdict, _ := r["verdict"].(string)
+			class, _ := r["class"].(string)
+			reason, _ := r["reason"].(string)
+			s.outcomes[version][id] = caseOutcome{verdict: verdict, class: class, reason: reason}
 			delete(r, "expected")
 			delete(r, "gap_status")
 			entry[version] = r
@@ -550,8 +579,8 @@ func markdown(s Summary, executive string) string {
 	}
 	if p := s.PerfDaily; p != nil {
 		if r, ok := p["reuse"].(map[string]any); ok {
-			fmt.Fprintf(&b, "- Perf smoke: %v rows measured, VictoriaLogs calls %v cold and %v on the repeats, %v rows repeat without calling VictoriaLogs, %d rows lost reuse.\n",
-				r["rows"], r["cold_vl_calls"], r["repeat_vl_calls"], r["repeat_without_vl_calls"], lenOf(p["reuse_lost"]))
+			fmt.Fprintf(&b, "- Perf smoke: %v rows measured, VictoriaLogs calls %v cold and %v on the repeats, %v rows repeat without calling VictoriaLogs, %d rows lost reuse.%s\n",
+				r["rows"], r["cold_vl_calls"], r["repeat_vl_calls"], r["repeat_without_vl_calls"], lenOf(p["reuse_lost"]), exactRepeatText(r))
 		}
 	}
 	if e := s.Errors; e != nil {

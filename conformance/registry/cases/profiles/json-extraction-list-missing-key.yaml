@@ -4,6 +4,7 @@ proves:
   - parsed-label-series-identity
   - loki_api_v1_query_range
 consumer: api
+evidence: needs recording
 why: |
   `count_over_time({...} | json
   layer7_something_specific="layer7_something_specific" [12m])` labels Loki's
@@ -26,7 +27,7 @@ gap:
   impact: api-only
   effort: S
   area: 'internal/proxy stage-field exposure (extraction lists, metric path)'
-  loki: 'pkg/logql/log/parser.go:671-720 JSONExpressionParser.Process'
+  loki: 'the series carry the listed key'
   proxy: 'key missing'
   planned_test: 'TestCompat_JSONExtractionListMissingKey (test/e2e-compat, group semantics)'
   clusters:

@@ -12,9 +12,8 @@ import (
 
 // TestSumWithoutExtractionList: a parser that names the keys it extracts
 // (`| logfmt amount`, a regexp with named groups, a pattern's captures) makes a
-// Loki series the stream plus the labels it names, less the unwrapped one
-// (pkg/logql/log/metrics_extraction.go): the unique `id` in every line is no
-// label, so `sum without (pod)` folds the streams and not the lines. The
+// Loki series the stream plus the labels it names, less the unwrapped one: the
+// unique `id` in every line is no label, so `sum without (pod)` folds the streams and not the lines. The
 // answer is compared with Loki's over rows that carry an `id` and a `route`,
 // which VictoriaLogs extracts whatever the list says.
 //

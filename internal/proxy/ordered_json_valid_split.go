@@ -12,9 +12,8 @@ import (
 )
 
 // A `| json | __error__=""` metric counts the lines Loki's JSON parser accepts
-// (pkg/logql/log/parser.go JSONParser.Process: jsonparser.ObjectEach over the
-// line, nested objects walked only where a required label starts with their
-// prefix, parser_hints.go ShouldExtractPrefix). VictoriaLogs attaches no parser
+// (it walks the line's objects, and nested objects only where a required label
+// starts with their prefix). VictoriaLogs attaches no parser
 // error, so the stats pushdown splits the selected lines in three:
 //
 //   - lines that do not open with a brace after JSON whitespace: ObjectEach
@@ -42,8 +41,8 @@ const (
 	jsonSplitValid
 	// jsonSplitStrict: `| json` grouped by detected_level only, with the errors
 	// kept. Loki fails the query on a line its parser rejects
-	// (RangeVectorEvaluator.Next, logqlmodel.NewPipelineErr: the label builder
-	// returns the full label set with __error__ before grouping), so a line that
+	// (the label builder returns the full label set with __error__ before
+	// grouping), so a line that
 	// does not open with a brace leaves the query to the row evaluator, which
 	// answers Loki's error (unparsedLinePipelineError), and the lines read as raw
 	// rows fail it the same way; the other lines count as with
@@ -109,7 +108,7 @@ var jsonLokiRejectHazard = func() string {
 			words = append(words, "_msg:"+string(b))
 		}
 	}
-	escapedKey := `(_msg:"\\" _msg:~` + strconv.Quote(`\\(?s:.)[^"]*"\s*:`) + `)`
+	escapedKey := `(_msg:"\\" _msg:~` + strconv.Quote(`\\(?s:.)`+vlNotInRun(`"`)+`"\s*:`) + `)`
 	nanInf := `((` + strings.Join(words, " or ") + `) _msg:~` + strconv.Quote(`:\s*(?i:nan|inf)`) + `)`
 	plus := `(_msg:"+" _msg:~` + strconv.Quote(`:\s*\+`) + `)`
 	dotE := `_msg:~` + strconv.Quote(`:\s*[.eE]`)

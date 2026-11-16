@@ -5,6 +5,7 @@ proves:
   - loki_api_v1_detected_labels
   - loki_api_v1_detected_fields
 consumer: drilldown
+evidence: needs recording
 why: |
   Loki computes detected_labels from its ingesters and detected_fields from
   the queried lines on every request (no results cache for them). The proxy
@@ -30,7 +31,7 @@ gap:
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy/cache_keys.go:48,130 (detected_* cache TTL) + recent-tail freshness bypass'
-  loki: 'pkg/querier detected labels/fields: no results cache in v3.7.7'
+  loki: 'detected labels and fields are computed on every request, with no results cache'
   proxy: 'cached answers up to the cache TTL'
   planned_test: 'TestE2E_DetectedMetadataFreshness (test/e2e-compat, group drilldown)'
   clusters: []

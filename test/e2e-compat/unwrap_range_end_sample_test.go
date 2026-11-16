@@ -10,7 +10,7 @@ import (
 )
 
 // Loki evaluates a range query at start, start+step, ... up to and including
-// end (pkg/logql/range_vector.go step iteration), so `end` carries a sample
+// end, so `end` carries a sample
 // whenever the window (end-range, end] holds a line. The fixture lines stop
 // just before the 30 minute mark and every shape ends there, so the sample at
 // `end` is the one a bucket labelled by its start leaves out: sum, avg, max and

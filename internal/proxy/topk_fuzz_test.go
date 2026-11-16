@@ -251,7 +251,7 @@ func decodeTopKMatrix(t *testing.T, body []byte, start time.Time, step time.Dura
 
 // FuzzTopKPerStep: topk and bottomk rank every step on its own, inside each
 // group of the by()/without() labels, with NaN last and ties kept to k
-// (pkg/logql/evaluator.go VectorAggEvaluator.Next, pkg/logql/vector.go). The
+// (as Loki's vector aggregation does). The
 // four places the proxy ranks (the bounded heap over the VictoriaLogs window
 // stats, the filter over a finished matrix, the filter over an instant vector
 // and the instant sort) must keep what Loki's heap keeps over the same vector, for any grid

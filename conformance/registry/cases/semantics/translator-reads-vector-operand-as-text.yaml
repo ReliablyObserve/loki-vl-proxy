@@ -10,7 +10,7 @@ why: |
   every step, and a binary operation takes part in vector matching with it:
   `sum by (app) (rate(..[5m])) + on() vector(0)` adds 0 to the single series the
   empty `on()` leaves, `rate(..[5m]) > vector(1)` keeps the series above 1
-  (pkg/logql/evaluator.go evalVector, newBinOpStepEvaluator; the Loki oracle
+  (the Loki oracle
   `facts` reads the operand as a vector expression, not a number).
 
   The string translator does not read vector(n) in a binary operation. It splits
@@ -75,7 +75,7 @@ gap:
   impact: edge
   effort: S
   area: 'internal/translator (the whole-query text of a binary operation with a vector(n) operand, which the proxy does not send); fixed when the string translator is removed'
-  loki: 'pkg/logql/evaluator.go evalVector and newBinOpStepEvaluator: vector(n) is a one-series vector that takes part in matching'
+  loki: 'vector(n) is a one-series vector without labels that takes part in matching (Loki oracle facts reads the operand as a vector expression)'
   proxy: 'the translator''s text searches for the call as a phrase or drops the operand; the binary route answers the operand from a constant, as Loki does'
   planned_test: 'TestPlanShadow and TestPlanRouteParity (internal/querycorpus, internal/proxy) hold the plan to proxy.BinaryOperandsPhysical, which TestBinaryOperandsPhysicalReadsVectorLiteralLikeTheHandler pins to evaluateBinaryLogQLOperand; an e2e row against Loki when the plan serves binary operations'
   visual: none

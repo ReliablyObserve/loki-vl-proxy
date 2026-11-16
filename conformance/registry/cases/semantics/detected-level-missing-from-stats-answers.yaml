@@ -8,12 +8,10 @@ proves:
 consumer: explore
 why: |
   Loki attaches detected_level to every entry at ingest and falls back to
-  "unknown" (pkg/distributor/field_detection.go: LogLevelUnknown; the rule order
-  is the stored level fields, the level of a JSON or logfmt body, a level word of
-  the line, else unknown). It is structured metadata, which the sample extractor
-  adds to the labels builder (pkg/logql/log/metrics_extraction.go:
-  streamLineSampleExtractor.Process) and which GroupedLabels returns for an
-  ungrouped or without() grouping (pkg/logql/log/labels.go:664-688). So
+  "unknown" (the rule order is the stored level fields, the level of a JSON or logfmt
+  body, a level word of the line, else unknown). It is structured metadata,
+  which the sample extractor adds to the sample's labels and which an
+  ungrouped or without() grouping keeps. So
   `count_over_time({app="x"}[5m])`, `rate(...)` and `sum without (pod) (...)`
   answer series that carry detected_level, "unknown" for the lines no rule gives
   a level; a grouping by it always has that group; and `count by (pod) (...)`
@@ -91,7 +89,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/translator ApplyStreamIdentityDetectedLevel (applyDerivedGroupings); internal/proxy addStatsByStreamClause, stripInternalDeletePipes, collectRangeMetricHits, collectRangeMetricSamples'
-  loki: 'pkg/distributor/field_detection.go:188,202 (LogLevelUnknown); pkg/logql/log/metrics_extraction.go:102-121 streamLineSampleExtractor.Process; pkg/logql/log/labels.go:664-688 GroupedLabels'
+  loki: 'detected_level is on every entry, "unknown" when no rule gives a level, and an ungrouped or without() metric keeps it (TestCompat_DetectedLevelUnknownInStatsAnswers)'
   proxy: 'series grouped by _stream, level and detected_level; the detected_level chain computed by VictoriaLogs'
   planned_test: 'TestCompat_DetectedLevelUnknownInStatsAnswers (test/e2e-compat, group core); TestDetectedLevelUnknownAcrossRoutes, TestDetectedLevelUnknownEdgeTable (internal/proxy); TestStreamIdentityGroupsByDetectedLevel (internal/translator); TestStripInternalDeletePipes, TestParserCaptures_BareMetricGroupsByDetectedLevel (internal/proxy)'
   note: 'Found while fixing non-sum vector aggregations. Reproduced with the unit differential on origin/main b20a550f; the e2e against Loki is written, not yet run.'

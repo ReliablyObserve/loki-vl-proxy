@@ -6,10 +6,8 @@ proves:
   - loki_api_v1_query
 consumer: api
 why: |
-  Loki parses the pattern of a `|>` or `!>` filter with pattern.ParseLineFilter
-  (pkg/logql/log/pattern/pattern.go:36-52), which rejects two captures in a row
-  (validateNoConsecutiveCaptures) and any capture that has a name
-  (validateNoNamedCaptures; only `<_>` is allowed), so the query is a 400 before
+  Loki parses the pattern of a `|>` or `!>` filter and rejects two captures in a row
+  and any capture that has a name (only `<_>` is allowed), so the query is a 400 before
   any data is read:
   `|> "<_><_>"` answers `parse error : stage '|> "<_><_>"' : found consecutive
   capture '<_><_>': invalid expression`, and `|> "<foo>"` and `|> "<_> <foo>"`

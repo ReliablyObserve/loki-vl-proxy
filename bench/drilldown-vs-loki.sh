@@ -149,15 +149,13 @@ measure() {
     -H "X-Scope-OrgID: default"
     -H "User-Agent: Grafana/11.5.0"  # treat like a Grafana dashboard panel.
     # X-Query-Tags: Source=grafana-lokiexplore-app is the documented Drilldown
-    # marker. Loki's pkg/querier/queryrange/limits.go::seriesLimiter.Do detects
-    # this via IsLogsDrilldownRequest() and converts max_series-exceeded errors
-    # from HTTP 500 ("too_many_series") into HTTP 200 with partial results +
+    # marker. Loki detects it as a Logs Drilldown request and converts
+    # max_series-exceeded errors from HTTP 500 ("too_many_series") into HTTP 200
+    # with partial results +
     # warning header. Without this header the bench misrepresents what Loki
     # would actually do for a real Drilldown user: the user sees a partial
     # chart, not a hard failure. This is the same flag Grafana sets on every
-    # Drilldown panel call. Source:
-    #   https://github.com/grafana/loki/blob/release-3.6.x/pkg/util/httpreq/tags.go
-    #   https://github.com/grafana/loki/blob/release-3.6.x/pkg/util/constants/internal_streams.go (LogsDrilldownAppName)
+    # Drilldown panel call (docs/compatibility-drilldown.md).
     -H "X-Query-Tags: Source=grafana-lokiexplore-app"
   )
 

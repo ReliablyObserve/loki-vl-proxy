@@ -8,8 +8,7 @@ import (
 	"unicode/utf8"
 )
 
-// Loki v3.7.7's non-strict `| logfmt` (pkg/logql/log/parser.go:379-438 over the
-// decoder of pkg/logql/log/logfmt, itself go-logfmt's), as the unwrap
+// Loki v3.7.7's non-strict `| logfmt` (over go-logfmt's decoder), as the unwrap
 // conversion check needs it to re-derive the value Loki unwraps:
 //
 //   - pairs are separated by bytes <= ' ';
@@ -202,7 +201,7 @@ func lokiLogfmtU4(s string) rune {
 }
 
 // lokiLabelValue is a parsed value as Loki stores it: U+FFFD and invalid
-// UTF-8 become a space (parser.go removeInvalidUtf).
+// UTF-8 become a space.
 func lokiLabelValue(v string) string {
 	if !strings.ContainsRune(v, utf8.RuneError) {
 		return v

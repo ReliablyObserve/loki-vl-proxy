@@ -85,7 +85,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, sta
 		if rng > 0 && rng < origSpec.Window {
 			// sum, avg, max, min, stddev and stdvar over time with unwrap and a
 			// range shorter than the step: the bucket (t-step, t] keeps only the
-			// lines of Loki's window (t-range, t] (pkg/logql/range_vector.go:102-189),
+			// lines of Loki's window (t-range, t] (registry semantics/stddev-stdvar-over-time-range-window),
 			// and a step whose window holds none has no sample.
 			query = withWindowPhaseFilter(r.Context(), query, time.Unix(0, origStartNs), origSpec.Window, rng)
 		}
@@ -236,7 +236,7 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	case err == nil:
 	case errors.As(err, &upstream):
 		// Grafana-sourced traffic gets the same partial-results carve-out
-		// Loki applies (IsLogsDrilldownRequest in pkg/querier/queryrange/limits.go).
+		// Loki applies to a Logs Drilldown request (registry limits/drilldown-partial-with-warning).
 		// Non-Grafana clients (curl, scripts, /ready probes) still see the
 		// upstream status so they can react meaningfully.
 		if isGrafanaSourcedRequest(r) {
@@ -380,7 +380,11 @@ func (p *Proxy) fetchStatsQueryRangeBody(r *http.Request, logsqlQuery string, tu
 		return nil, &statsUpstreamError{status: resp.StatusCode, body: errBody}
 	}
 	counter := &seriesCountingReader{r: resp.Body, limit: maxSeries}
-	return readBodyLimited(counter, int64(p.limits().BufferedBackendBodyBytes))
+	body, err := readBodyLimited(counter, int64(p.limits().BufferedBackendBodyBytes))
+	if err != nil {
+		return nil, err
+	}
+	return p.withLevelLessStreams(r.Context(), "/select/logsql/stats_query_range", params, body, maxSeries)
 }
 
 // fieldBreakdownParserRE matches the end of a parsed field breakdown's base
@@ -1784,6 +1788,11 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, stats ph
 	if guarded {
 		body = dropEmptyInputGuard(body)
 	}
+	// A stream without a level label is one series per level its lines carry.
+	if body, err = p.withLevelLessStreams(r.Context(), "/select/logsql/stats_query", params, body, 0); err != nil {
+		p.writeErr(w, r.Context(), p.levelLessErr("stats_query", err))
+		return
+	}
 	body, err = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
 	if err != nil {
 		p.writeErr(w, r.Context(), err)
@@ -2497,8 +2506,7 @@ func metricKey(metric map[string]interface{}) string {
 
 // applyTopKToMatrix ranks independently at each evaluation timestamp, as
 // Loki/PromQL range queries require, keeping the k best samples of every group
-// (pkg/logql/evaluator.go VectorAggEvaluator.Next keeps one heap per grouping
-// key and step). Winners can change, so the result may contain more than k
+// (Loki keeps one heap per grouping key and step). Winners can change, so the result may contain more than k
 // series, with only their winning samples retained. NaN ranks last for topk and
 // bottomk alike. Loki breaks ties by the order of an unordered map, so any
 // order is conformant; label order keeps the answer stable.

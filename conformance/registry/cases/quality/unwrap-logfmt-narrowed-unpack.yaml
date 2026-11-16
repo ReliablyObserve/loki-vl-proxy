@@ -18,12 +18,11 @@ why: |
   of columns and VictoriaLogs rebuilds the block for each change, before the
   unwrap gate and the stats read two fields of them.
 
-  Loki's answer is unchanged, from v3.7.9's source: `| logfmt` adds each pair
+  Loki's answer is unchanged: `| logfmt` adds each pair
   as a label, a key the stream or structured metadata already has as
   name_extracted, the first of a repeated key, and no label for an empty
-  value (pkg/logql/log/parser.go:379-440 LogfmtParser.Process, the empty
-  value at :425); `unwrap` reads the label (pkg/logql/log/metrics_extraction.go:202-231)
-  and sum_over_time sums the samples of each series (pkg/logql/range_vector.go:371).
+  value; `unwrap` reads the label and sum_over_time sums the samples of each
+  series.
 
   The translator now names the fields of that unpack when it is the last
   stage before the unwrap and the grouping names plain labels:
@@ -69,7 +68,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/translator/parsed_key_variants.go (narrowUnwrapLogfmtUnpack); internal/translator/translator.go buildStatsQueryGated'
-  loki: 'pkg/logql/log/parser.go:379-440 LogfmtParser.Process (empty value :425); pkg/logql/log/metrics_extraction.go:202-231; pkg/logql/range_vector.go:371 sumOverTime'
+  loki: '| logfmt adds each pair as a label (name_extracted on a collision, first of a repeated key, none for an empty value); unwrap reads the label; sum_over_time sums each series (TestRangeMetricCompatibilityUnwrapLogfmtNarrowedUnpack)'
   proxy: 'the bare unpack_logfmt made a field of every key of every line (0.41 s cold at 24h against Loki 0.20 s for G8, 0.22 s for G7)'
   planned_test: 'translator TestNarrowUnwrapLogfmtUnpackEdgeTable, TestNarrowUnwrapLogfmtUnpackKeepsOtherQueries, TestNarrowUnwrapLogfmtUnpackDifferential, FuzzNarrowUnwrapLogfmtUnpack; e2e TestRangeMetricCompatibilityUnwrapLogfmtNarrowedUnpack'
   clusters: []

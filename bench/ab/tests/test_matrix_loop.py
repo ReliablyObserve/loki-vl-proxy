@@ -67,6 +67,7 @@ class Replay:
         self.secs = {name: v[0] for name, v in spec["ranges"].items()}
         self.sent = []
         self.clock = 1000.0
+        self.calls = None  # the proxy's X-Loki-VL-Backend-Calls of every answer; None: it sends none
 
     def request(self, url, headers, tenant, timeout):
         target = next(t for t, base in URLS.items() if url.startswith(base + "/"))
@@ -98,7 +99,7 @@ def run_main(raw, extra=(), shapes=(W8, W9)):
         for name, url in URLS.items():
             argv += ["--target", f"{name}={url}"]
         with mock.patch.object(sys, "argv", argv), \
-                mock.patch.object(perf_matrix, "request", replay.request), \
+                mock.patch.object(perf_matrix, "request_full", lambda *a: (*replay.request(*a), replay.calls)), \
                 mock.patch.object(perf_matrix, "CPUSampler", FakeSampler), \
                 mock.patch.object(perf_matrix, "signature", lambda status, body, logs, ranked=False: json.loads(body)["signature"]), \
                 mock.patch.object(perf_matrix, "loki_cache_stats", lambda body: json.loads(body)["cache"]), \
@@ -170,7 +171,7 @@ class MetadataShapeTest(unittest.TestCase):
                     "--runs", "1", "--end", "1700003600", "--target", "pr=http://pr", "--out", out]
             FakeSampler.instances = []
             with mock.patch.object(sys, "argv", argv), \
-                    mock.patch.object(perf_matrix, "request", return_value=(200, b'{"data":["app"]}', 0.01, 1000.0)), \
+                    mock.patch.object(perf_matrix, "request_full", return_value=(200, b'{"data":["app"]}', 0.01, 1000.0, None)), \
                     mock.patch.object(perf_matrix, "CPUSampler", FakeSampler), \
                     mock.patch.object(perf_matrix.subprocess, "check_output", return_value="0\n"), \
                     contextlib.redirect_stdout(io.StringIO()):
@@ -180,6 +181,131 @@ class MetadataShapeTest(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["status"], 200)
             self.assertIn("names=1", rows[0]["signature"])
+
+
+class ExactRepeatTest(unittest.TestCase):
+    """--exact-repeat: the same request twice in a row at a settled window, the second one's cost kept apart."""
+
+    def run_matrix(self, calls_of, extra=(), background=1):
+        seen, state = {}, {"vl_calls": 0.0, "vl_bytes": 0.0}
+        asked = []
+
+        def request_full(url, headers, tenant, timeout):
+            n = seen[url] = seen.get(url, 0) + 1
+            calls = calls_of(url, n)
+            asked.append((url, calls))
+            if not url.startswith("http://loki"):
+                # the counters also move by the proxy's own background calls
+                state["vl_calls"] += (calls or 0) + background
+                state["vl_bytes"] += 100.0 * (calls or 0)
+            return 200, b'{"data":["app"]}', 0.01, 1000.0, calls
+
+        with tempfile.TemporaryDirectory() as directory:
+            shapes, out = os.path.join(directory, "shapes.json"), os.path.join(directory, "raw.json")
+            with open(shapes, "w") as handle:
+                json.dump({"ranges": {"1h": [3600, 60]}, "sets": {"meta": {"ranges": ["1h"], "shapes": [
+                    {"name": "labels", "path": "/loki/api/v1/labels"}]}}}, handle)
+            argv = ["perf_matrix.py", "--set", "meta", "--shapes-file", shapes, "--runs", "2", "--end", "1700003640",
+                    "--target", "pr=http://pr", "--target", "loki=http://loki", "--proxy-metrics", "--out", out, *extra]
+            FakeSampler.instances = []
+            with mock.patch.object(sys, "argv", argv), \
+                    mock.patch.object(perf_matrix, "request_full", request_full), \
+                    mock.patch.object(perf_matrix.reuse, "scrape", lambda base, timeout=10: dict(state) if base == "http://pr" else None), \
+                    mock.patch.object(perf_matrix, "CPUSampler", FakeSampler), \
+                    mock.patch.object(perf_matrix.subprocess, "check_output", return_value="0\n"), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                perf_matrix.main()
+            with open(out) as handle:
+                return json.load(handle), asked
+
+    def test_the_end_is_settled_and_on_the_step(self):
+        self.assertEqual(perf_matrix.exact_repeat_end(1700003640, {}, 60), 1700003640 - 660)
+        self.assertEqual(perf_matrix.exact_repeat_end(1700003630, {}, 300) % 300, 0)
+        self.assertLess(1700003630 - perf_matrix.exact_repeat_end(1700003630, {}, 300), 660 + 300)
+        self.assertEqual(perf_matrix.exact_repeat_end(1700003640, {"end_offset": 600}, 60), 1700003640 - 600 - 660)
+        self.assertEqual(perf_matrix.exact_repeat_end(1700003640, {}, 0), 1700003640 - 660)
+        # Older than the proxy's -query-range-freshness (10 minutes).
+        self.assertGreater(perf_matrix.EXACT_REPEAT_AGE, 600)
+
+    def test_each_proxy_is_asked_twice_in_a_row_and_the_second_ask_is_kept(self):
+        # A request answered again at the same URL starts no VictoriaLogs call; the first ask of a URL starts two.
+        raw, asked = self.run_matrix(lambda url, n: 2 if n == 1 else 0, ["--exact-repeat"])
+        self.assertEqual(raw["exact_repeat_age_s"], perf_matrix.EXACT_REPEAT_AGE)
+        (e,) = raw["exact_repeats"]
+        self.assertEqual((e["target"], e["shape"], e["range"], e["end"]), ("pr", "labels", "1h", 1700003640 - 660))
+        self.assertNotIn("problem", e)
+        self.assertEqual(e["fill"]["vl_calls_header"], 2)
+        self.assertEqual(e["repeat"]["vl_calls_header"], 0)
+        # The request's own calls, not the counters': the proxy's background call moved them by 1 around the repeat.
+        self.assertEqual(e["repeat"]["reuse"], {"background_vl_calls": 1.0})
+        self.assertEqual(e["fill"]["reuse"], {"vl_calls": 2.0, "vl_bytes": 200.0, "background_vl_calls": 1.0})
+        # Loki is not asked; the two asks are adjacent and at the same URL.
+        urls = [u for u, _ in asked if "660" not in u]
+        exact = [u for u, _ in asked if f"end={1700003640 - 660}000000000" in u]
+        self.assertEqual(len(exact), 2)
+        self.assertEqual(exact[0], exact[1])
+        self.assertFalse(any(u.startswith("http://loki") for u in exact))
+        self.assertTrue(urls)
+        i = [u for u, _ in asked].index(exact[0])
+        self.assertEqual(asked[i + 1][0], exact[0])
+        # The runs' rows carry the header's count too, and their reuse is the request's own.
+        pr = [r for r in raw["rows"] if r["target"] == "pr"]
+        self.assertEqual([r["vl_calls_header"] for r in pr], [2, 2])
+        self.assertEqual(pr[0]["reuse"]["vl_calls"], 2.0)
+
+    def test_without_the_flag_nothing_is_measured_apart(self):
+        raw, asked = self.run_matrix(lambda url, n: 0, [])
+        self.assertEqual(raw["exact_repeats"], [])
+        self.assertIsNone(raw["exact_repeat_age_s"])
+        self.assertEqual(len(asked), 4)  # two runs, two targets
+
+    def test_a_proxy_without_the_header_is_counted_by_the_counters(self):
+        raw, _ = self.run_matrix(lambda url, n: None, ["--exact-repeat"], background=2)
+        (e,) = raw["exact_repeats"]
+        self.assertIsNone(e["repeat"]["vl_calls_header"])
+        self.assertEqual(e["repeat"]["reuse"], {"vl_calls": 2.0})  # the counters' delta: its background call is counted
+        self.assertTrue(all("vl_calls_header" not in r for r in raw["rows"]))
+
+    def test_a_pair_that_answered_differently_carries_a_problem_and_no_cost(self):
+        raw, _ = self.run_matrix(lambda url, n: 0, ["--exact-repeat"])
+        self.assertNotIn("problem", raw["exact_repeats"][0])
+        answers = iter(f"answer {i}" for i in range(100))
+        with mock.patch.object(perf_matrix, "signature", side_effect=lambda *a: next(answers)):
+            raw, _ = self.run_matrix(lambda url, n: 0, ["--exact-repeat"])
+        (e,) = raw["exact_repeats"]
+        self.assertEqual(e["problem"], "the repeat answered differently")
+
+    def test_the_summary_keeps_both_repeats_apart(self):
+        raw, _ = self.run_matrix(lambda url, n: 2 if n == 1 else 0, ["--exact-repeat"])
+        raw["targets"] = ["pr", "loki"]
+        with tempfile.TemporaryDirectory() as d:
+            path, saved = os.path.join(d, "raw.json"), os.path.join(d, "summary.json")
+            with open(path, "w") as f:
+                json.dump(raw, f)
+            args = argparse.Namespace(raw=path, baseline="pr", candidate="pr", reference="loki", label="t", save=saved,
+                                      tolerance=0.01, cold=False, noise=0.25, min_delta=0.05, refresh="")
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                report.summarize(args)
+            with open(saved) as f:
+                summary = json.load(f)
+        slot = summary["rows"][0]["reuse"]["pr"]
+        self.assertEqual(slot["cold"]["vl_calls"], 2.0)
+        self.assertEqual(slot["exact_repeat"], {"background_vl_calls": 1.0})
+        self.assertEqual(slot["exact_fill"]["vl_calls"], 2.0)
+        # A problem is carried, never a clean repeat.
+        raw["exact_repeats"][0]["problem"] = "the repeat answered differently"
+        with tempfile.TemporaryDirectory() as d:
+            path, saved = os.path.join(d, "raw.json"), os.path.join(d, "summary.json")
+            with open(path, "w") as f:
+                json.dump(raw, f)
+            args = argparse.Namespace(raw=path, baseline="pr", candidate="pr", reference="loki", label="t", save=saved,
+                                      tolerance=0.01, cold=False, noise=0.25, min_delta=0.05, refresh="")
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                report.summarize(args)
+            with open(saved) as f:
+                slot = json.load(f)["rows"][0]["reuse"]["pr"]
+        self.assertNotIn("exact_repeat", slot)
+        self.assertEqual(slot["exact_repeat_problem"], "the repeat answered differently")
 
 
 class ProfileRecordTest(unittest.TestCase):
