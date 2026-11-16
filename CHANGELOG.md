@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Comments in the string translator that named lines of Loki's sources now cite recorded Loki answers or Loki's public
+  documentation instead; no behaviour changes. The pattern line filter tests no longer carry a port of Loki's matcher:
+  they compare the filter with Loki's own verdicts, recorded with the Loki pipeline oracle.
 - The tests that compare the proxy's metric answers with Loki's now take Loki's answer from Loki itself: answers
   recorded with Loki's query engine and request parser over the same lines and requests (test/oracle/loki, used
   only in tests), for binary operators and vector matching, topk and bottomk, vector aggregations (nested,

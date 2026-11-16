@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
@@ -27,6 +28,9 @@ type patternCase struct {
 	op       string
 	patterns []string
 	line     string
+	// alphabet and maxLen, when set, say the case's line is one of every line of at most maxLen pieces of the alphabet.
+	alphabet []string
+	maxLen   int
 }
 
 func (c patternCase) query() string {
@@ -37,30 +41,84 @@ func (c patternCase) query() string {
 	return `{app="x"} ` + c.op + " " + strings.Join(quoted, " or ")
 }
 
+// A grid of enumerated lines also holds each filter to seeing both outcomes: under `|>` at least one line kept and one
+// dropped (a filter no line of the grid can satisfy would only ever be seen dropping lines).
 type patternGrid struct {
-	name  string
-	cases []patternCase
+	name      string
+	cases     []patternCase
+	perFilter bool
 }
 
 const patternLokiAnswers = "testdata/pattern-line-filter-loki.txt.gz"
 
 // bothOps is every filter of filters under `|>` and `!>`, each against every line.
-func bothOps(filters [][]string, lines []string) []patternCase {
+func bothOps(filters [][]string, lines []string, enumerated ...any) []patternCase {
+	var alphabet []string
+	maxLen := 0
+	if len(enumerated) == 2 {
+		alphabet, maxLen = enumerated[0].([]string), enumerated[1].(int)
+	}
 	var out []patternCase
 	for _, f := range filters {
 		for _, op := range []string{"|>", "!>"} {
 			for _, l := range lines {
-				out = append(out, patternCase{op, f, l})
+				out = append(out, patternCase{op, f, l, alphabet, maxLen})
 			}
 		}
 	}
 	return out
 }
 
+// fewestPieces is the fewest pieces of the alphabet that write text.
+func fewestPieces(text string, alphabet []string) (int, bool) {
+	least := map[int]int{0: 0}
+	for i := 0; i < len(text); i++ {
+		n, ok := least[i]
+		if !ok {
+			continue
+		}
+		for _, piece := range alphabet {
+			if strings.HasPrefix(text[i:], piece) {
+				if m, seen := least[i+len(piece)]; !seen || n+1 < m {
+					least[i+len(piece)] = n + 1
+				}
+			}
+		}
+	}
+	n, ok := least[len(text)]
+	return n, ok
+}
+
+// satisfiable reports whether some line of an enumerated grid (every line of at most maxLen pieces of the alphabet)
+// can pass an alternative of the filter at all: its literals are written with the alphabet, and the shortest line it
+// accepts (its literals and one piece for each capture) is within maxLen pieces. A filter no line of the grid can
+// pass is not asked to keep one.
+func satisfiable(patterns []string, alphabet []string, maxLen int) bool {
+	for _, p := range patterns {
+		pieces, ok := 0, true
+		for _, n := range logql.LinePatternNodes(p) {
+			if n.Capture {
+				pieces++
+				continue
+			}
+			fewest, written := fewestPieces(n.Text, alphabet)
+			if !written {
+				ok = false
+				break
+			}
+			pieces += fewest
+		}
+		if ok && pieces <= maxLen {
+			return true
+		}
+	}
+	return false
+}
+
 // patternGrids are the recorded grids: the shapes of one literal and captures over every short line of a small
 // alphabet; edge pairs (a literal found twice, a leading or trailing capture, newlines, quotes, html-like text,
-// backslashes, the empty pattern); a seeded random corpus of patterns of up to five nodes (with `or` alternatives)
-// over lines built from the same pieces; and the one-literal shapes that need no extract pipe against every short
+// backslashes, the empty pattern); a seeded random grid of patterns of up to five nodes (with `or` alternatives)
+// over lines built from the same pieces; a corpus of 638 filters on 2,530 lines; and the one-literal shapes that need no extract pipe against every short
 // line over their own alphabet, alone and or-ed with a pattern that extracts.
 func patternGrids() []patternGrid {
 	var grids []patternGrid
@@ -76,10 +134,10 @@ func patternGrids() []patternGrid {
 		{[]string{"<_>foo"}, []string{"f", "o", "x"}, 6},
 		{[]string{"foo"}, []string{"f", "o", "x"}, 6},
 		{[]string{"<_>foo<_>"}, []string{"f", "o", "x"}, 6},
-		{[]string{"ab<_>cd"}, []string{"a", "b", "c", "d", "x"}, 5},
-		{[]string{"<_>ab<_>cd"}, []string{"a", "b", "c", "d", "x"}, 5},
-		{[]string{"ab<_>cd<_>"}, []string{"a", "b", "c", "d", "x"}, 5},
-		{[]string{"<_>ab<_>cd<_>"}, []string{"a", "b", "c", "d", "x"}, 5},
+		{[]string{"ab<_>cd"}, []string{"a", "b", "c", "d", "x"}, 6},
+		{[]string{"<_>ab<_>cd"}, []string{"a", "b", "c", "d", "x"}, 6},
+		{[]string{"ab<_>cd<_>"}, []string{"a", "b", "c", "d", "x"}, 6},
+		{[]string{"<_>ab<_>cd<_>"}, []string{"a", "b", "c", "d", "x"}, 6},
 		{[]string{"a<_>b<_>c"}, []string{"a", "b", "c", "x"}, 6},
 		{[]string{"<_>:<_>"}, []string{":", "x", " "}, 5},
 		{[]string{"a<_>a"}, []string{"a", "x"}, 6},
@@ -89,9 +147,9 @@ func patternGrids() []patternGrid {
 		{[]string{"ab<_>cd", "<_>ef", "gh"}, []string{"a", "b", "c", "d", "e", "f", "g", "h"}, 4},
 		{[]string{"", "<_>x"}, []string{"x", "y"}, 4},
 	} {
-		exhaustive = append(exhaustive, bothOps([][]string{c.patterns}, lines(c.alphabet, c.length))...)
+		exhaustive = append(exhaustive, bothOps([][]string{c.patterns}, lines(c.alphabet, c.length), c.alphabet, c.length)...)
 	}
-	grids = append(grids, patternGrid{"exhaustive", exhaustive})
+	grids = append(grids, patternGrid{"exhaustive", exhaustive, true})
 
 	var edges []patternCase
 	for _, c := range [][2]string{
@@ -108,7 +166,7 @@ func patternGrids() []patternGrid {
 	} {
 		edges = append(edges, bothOps([][]string{{c[0]}}, []string{c[1]})...)
 	}
-	grids = append(grids, patternGrid{"edges", edges})
+	grids = append(grids, patternGrid{"edges", edges, false})
 
 	literals := []string{"a", "b", " ", "ab", "ba", "aa", " a", "a ", "\n", `"`, "<", "&", "&lt;", "<b", "x<y", "\\", "'", "`", "&amp;", " GET ", "=", `"x"`}
 	alphabet := []string{"a", "b", " ", "\n", `"`, "'", "<", "&", "x", "lt;", ">", "`", "amp;", "=", "GET"}
@@ -146,7 +204,51 @@ func patternGrids() []patternGrid {
 		}
 		random = append(random, bothOps([][]string{patterns}, lines)...)
 	}
-	grids = append(grids, patternGrid{"random", random})
+	grids = append(grids, patternGrid{"random", random, false})
+
+	// The corpus: the 19 patterns Drilldown and the measured differences use (each under both operators) and 600
+	// generated ones (under `|>` and `!>` in turn), against 2,500 generated lines and 30 edge lines: 638 filters on
+	// 2,530 lines.
+	fixed := []string{"<_> bar", "foo", "<_>a<_>", "foo <_>", "<_>x", "aa", "<_> <_>", "<_>bar", "<_> end", "start <_>",
+		"key=<_> next", "a < b<_>", "<_>&amp;<_>", "<_>&lt;", "<a b> <_>", "<_>\"<_>", "<_>`<_>", "", "<_>"}
+	rng = rand.New(rand.NewSource(7))
+	type filter struct {
+		op       string
+		patterns []string
+	}
+	var filters []filter
+	for _, p := range fixed {
+		filters = append(filters, filter{"|>", []string{p}}, filter{"!>", []string{p}})
+	}
+	for i := 0; i < 600; i++ {
+		ps := []string{genPattern()}
+		if rng.Intn(4) == 0 {
+			ps = append(ps, genPattern())
+		}
+		filters = append(filters, filter{[]string{"|>", "!>"}[i%2], ps})
+	}
+	var corpusLines []string
+	for i := 0; i < 2500; i++ {
+		var b strings.Builder
+		for n := rng.Intn(10); n > 0; n-- {
+			if rng.Intn(3) == 0 {
+				b.WriteString(literals[rng.Intn(len(literals))])
+			} else {
+				b.WriteString(alphabet[rng.Intn(len(alphabet))])
+			}
+		}
+		corpusLines = append(corpusLines, b.String())
+	}
+	corpusLines = append(corpusLines, "x bar y", "foo bar", "a", "aab", "x bar bar", " bar x bar y", "axbx", "aaa", "xfoo", "foofoo",
+		"xfoo bar", "foo ", "x", " a", "a  b", "a ", "bar", "first\nsecond end", "start\nx", `"q" x bar`, `key="a b" next`,
+		`key='a' next`, "a < b c", "x&amp;y", "x&y", "x&lt;", "x<", "<a b> c", "a\"b", "a`b")
+	var corpus []patternCase
+	for _, f := range filters {
+		for _, l := range corpusLines {
+			corpus = append(corpus, patternCase{op: f.op, patterns: f.patterns, line: l})
+		}
+	}
+	grids = append(grids, patternGrid{"corpus", corpus, false})
 
 	type set struct {
 		alphabet []string
@@ -157,9 +259,9 @@ func patternGrids() []patternGrid {
 	withExtract := []string{"<_>a<_>b", "a<_>a", "<_>a<_>a<_>"}
 	var single []patternCase
 	for _, s := range []set{
-		{[]string{"a", "b", " "}, 5, []string{"a", "b", "aa", "ab", "ba", "aba", "aab", "bab", "aaa", "a ", " a", "a a", " "}},
-		{[]string{".", "a", "*", "$", "^", "\\"}, 3, []string{".", "a.", ".*", "$", "a$", "^a", "\\", ".a"}},
-		{[]string{"<", "&", "lt;", "a", "\n"}, 3, []string{"<", "&", "&lt;", "<a", "\n", "a\n"}},
+		{[]string{"a", "b", " "}, 7, []string{"a", "b", "aa", "ab", "ba", "aba", "aab", "bab", "aaa", "a ", " a", "a a", " "}},
+		{[]string{".", "a", "*", "$", "^", "\\", " "}, 4, []string{".", "a.", ".*", "$", "a$", "^a", "\\", ".a"}},
+		{[]string{"<", "&", "lt;", "a", "\n", " "}, 4, []string{"<", "&", "&lt;", "<a", "\n", "a\n"}},
 	} {
 		var filters [][]string
 		for _, lit := range s.literals {
@@ -168,9 +270,9 @@ func patternGrids() []patternGrid {
 				filters = append(filters, []string{p}, []string{p, "<_>" + lit}, []string{p, withExtract[len(filters)%len(withExtract)]})
 			}
 		}
-		single = append(single, bothOps(filters, lines(s.alphabet, s.maxLen))...)
+		single = append(single, bothOps(filters, lines(s.alphabet, s.maxLen), s.alphabet, s.maxLen)...)
 	}
-	grids = append(grids, patternGrid{"single-literal", single})
+	grids = append(grids, patternGrid{"single-literal", single, true})
 	return grids
 }
 
@@ -212,6 +314,7 @@ func patternVerdicts(t *testing.T, grids []patternGrid) map[string]string {
 func recordPatternVerdicts(t *testing.T, grids []patternGrid) {
 	t.Helper()
 	type ask struct{ query, line string }
+	stream := map[string]string{"app": "x"}
 	index := map[ask]int{}
 	var asks []oraclerun.ProcessCase
 	for _, g := range grids {
@@ -219,7 +322,7 @@ func recordPatternVerdicts(t *testing.T, grids []patternGrid) {
 			a := ask{c.query(), c.line}
 			if _, ok := index[a]; !ok {
 				index[a] = len(asks)
-				asks = append(asks, oraclerun.ProcessCase{Query: a.query, Labels: map[string]string{"app": "x"}, Line: a.line})
+				asks = append(asks, oraclerun.ProcessCase{Query: a.query, Labels: stream, Line: a.line})
 			}
 		}
 	}
@@ -275,11 +378,30 @@ func TestPatternLineFilterKeepsLokiLines(t *testing.T) {
 			filters []logsql.FilterExpr
 			pipes   []logsql.Pipe
 		)
+		type seen struct {
+			kept, dropped int
+			possible      bool
+		}
+		perFilter := map[string]*seen{}
 		for i, c := range g.cases {
 			v := verdicts[g.name][i]
 			if v == 'E' {
 				rejected++
 				continue
+			}
+			if g.perFilter && c.op == "|>" {
+				key := strings.Join(c.patterns, "\x00")
+				if perFilter[key] == nil {
+					perFilter[key] = &seen{possible: satisfiable(c.patterns, c.alphabet, c.maxLen)}
+				}
+				if v == '1' {
+					perFilter[key].kept++
+				} else {
+					perFilter[key].dropped++
+				}
+			}
+			if v == '1' {
+				kept++
 			}
 			if key := c.op + "\x00" + strings.Join(c.patterns, "\x00"); key != last {
 				last = key
@@ -288,9 +410,6 @@ func TestPatternLineFilterKeepsLokiLines(t *testing.T) {
 				checkPatternText(t, c, filters, pipes)
 			}
 			checked++
-			if v == '1' {
-				kept++
-			}
 			if got := patternRowKept(t, filters, pipes, c.line); got != (v == '1') {
 				mismatches++
 				if mismatches <= 10 {
@@ -301,10 +420,17 @@ func TestPatternLineFilterKeepsLokiLines(t *testing.T) {
 		if mismatches > 0 {
 			t.Errorf("grid %s: %d mismatches in %d verdicts", g.name, mismatches, checked)
 		}
-		if kept == 0 || kept == checked {
-			t.Errorf("grid %s is vacuous: Loki keeps %d of %d verdicts", g.name, kept, checked)
+		if kept == 0 {
+			t.Errorf("grid %s is vacuous: Loki keeps no line", g.name)
 		}
-		t.Logf("grid %s: %d cases, %d compared, Loki keeps %d, %d rejected by Loki, %d mismatches", g.name, len(g.cases), checked, kept, rejected, mismatches)
+		for key, n := range perFilter {
+			if (n.kept == 0 && n.possible) || n.dropped == 0 {
+				t.Errorf("grid %s: filter %q under |> keeps %d and drops %d lines: the grid cannot tell it from keeping or dropping every line",
+					g.name, strings.Split(key, "\x00"), n.kept, n.dropped)
+			}
+		}
+		t.Logf("grid %s: %d cases (%d filters), %d evaluated, Loki keeps %d, %d rejected by Loki, %d mismatches",
+			g.name, len(g.cases), len(perFilter), checked, kept, rejected, mismatches)
 	}
 }
 
