@@ -154,13 +154,16 @@ func mergeDeviationBuckets(means, counts, devs []rangeMetricSample) float64 {
 	if len(means) == 0 || len(means) != len(counts) || len(means) != len(devs) {
 		return math.NaN()
 	}
-	var n, sum float64
+	// x*0 is 0 for a finite x and NaN for an infinity or NaN: one sum tells a non-finite mean or deviation.
+	var n, sum, nonFinite float64
 	for i := range means {
-		if !finite(means[i].value) || !finite(devs[i].value) {
-			return math.NaN()
-		}
-		n += counts[i].value
-		sum += counts[i].value * means[i].value
+		c, m := counts[i].value, means[i].value
+		nonFinite += m*0 + devs[i].value*0
+		n += c
+		sum += c * m
+	}
+	if nonFinite != 0 {
+		return math.NaN()
 	}
 	mean := sum / n
 	var m2 float64
