@@ -60,7 +60,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/translator tryTranslateMetricQueryWithout (nested aggregations with a without clause); internal/proxy applyWithoutGrouping'
-  loki: 'pkg/logql/evaluator.go:451-466 VectorAggEvaluator.Next (the outer aggregation takes the vector the inner without produced)'
+  loki: 'the outer aggregation takes the vector the inner without produced (test/e2e-compat nested_vector_aggregation_test.go)'
   proxy: 'every level is folded over the series rows of the without, innermost first'
   planned_test: 'TestWithoutNestedAggregationMatchesLoki (internal/proxy, max and sum by over a without, range and instant), TestWithoutFoldIsLimitedToTheOperatorsItProves; TestCompat_UnwrapSumWithoutUnderAnotherAggregation (test/e2e-compat, max, min, avg and count over a without)'
   note: 'Related: semantics/unwrap-sum-without-collapses (fixed), semantics/without-over-inner-aggregation-collapses.'

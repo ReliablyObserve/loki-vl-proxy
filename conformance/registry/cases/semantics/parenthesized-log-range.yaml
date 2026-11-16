@@ -7,7 +7,7 @@ consumer: explore
 why: |
   LogQL allows `rate(({namespace="prod"} |= "error")[5m])` and
   `count_over_time(({...} |~ "x")[1m])`; Loki answers them like the
-  unparenthesized form (syntax.y logRangeExpr: parentheses around the selector
+  unparenthesized form (parentheses around the selector
   and pipeline, or around the whole range expression, an offset, an unwrap
   before or after the range, a pipeline after the range). The proxy parses every
   form Loki accepts, rewrites it to the plain form before translation, and
@@ -34,7 +34,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/logql/parser.go (parseLogRange), internal/logql/canonical.go, internal/proxy/query_translation.go'
-  loki: 'pkg/logql/syntax/syntax.y logRangeExpr: OPEN_PARENTHESIS selector [pipelineExpr] [unwrapExpr] CLOSE_PARENTHESIS RANGE [offsetExpr]'
+  loki: 'parentheses around the selector and pipeline, or the whole range expression, an offset, an unwrap before or after the range, a pipeline after the range are accepted (test/e2e-compat parenthesized_range_or_filters_test.go)'
   proxy: 'parsed and rewritten to the plain range form (logql.CanonicalizeLogRanges)'
   planned_test: 'TestCompat_ParenthesizedLogRange (test/e2e-compat, group core)'
   clusters:

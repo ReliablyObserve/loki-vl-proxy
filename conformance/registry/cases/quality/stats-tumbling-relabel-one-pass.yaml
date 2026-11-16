@@ -18,7 +18,7 @@ why: |
   on the translated answer, before the relabel. Loki counts series against
   max_query_series and, for Logs Drilldown, keeps the series under it with
   "maximum number of series (N) reached for a single query; returning partial
-  results" (pkg/querier/queryrange/limits.go:447-448 and 511-512, v3.7.9).
+  results".
   Whenever that limit could apply (the translated answer holds more series
   than the limit), or the answer would not have taken the per-series paths,
   the proxy uses the two passes as before. Answers are the two passes'

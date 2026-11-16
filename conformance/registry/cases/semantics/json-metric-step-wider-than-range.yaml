@@ -21,13 +21,10 @@ why: |
   lookup of a line Loki's parser rejects (jsonUnparsedLineRisk) read the whole
   range, lines between two windows included.
 
-  Loki's answer, from v3.7.9's source: with a range shorter than the step
-  newRangeVectorIterator takes the batch iterator
-  (pkg/logql/range_vector.go:55), and batchRangeVectorIterator.load
-  (range_vector.go:150-188) consumes every sample at or before the window
+  Loki's answer: with a range shorter than the step
+  it consumes every sample at or before the window
   start without adding it: each step reads (t-range, t] and the lines between
-  two windows are never evaluated. RangeVectorEvaluator.Next
-  (pkg/logql/evaluator.go:721-735) checks only the step's vector for
+  two windows are never evaluated. Loki checks only the step's vector for
   __error__, so a line the JSON parser rejects fails the query only inside a
   window.
 
@@ -47,7 +44,7 @@ why: |
   range needed 2.4 s buckets).
 
   Loki's series limit counts the series of the answer, the ones with a point
-  at some step (pkg/logql/engine.go:530-590 JoinSampleVector). The gcd grid
+  at some step. The gcd grid
   counted every group of the fetched buckets, gap buckets included, so a
   query whose lines fell between windows answered the series limit error
   where Loki answers its few window series, or an empty matrix (the 300 s
@@ -95,7 +92,7 @@ gap:
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy/ordered_json_metric.go orderedJSONStatsBuckets (window phase filter, step buckets, relabelling); internal/proxy/ordered_json_valid_split.go addOrderedJSONRowLines, jsonUnparsedLineRisk'
-  loki: 'pkg/logql/range_vector.go:55 newRangeVectorIterator, :102-114 batchRangeVectorIterator.Next, :150-188 load; pkg/logql/evaluator.go:721-735 RangeVectorEvaluator.Next'
+  loki: 'with a range shorter than the step each step reads (t-range, t] and the lines between two windows are never evaluated (test/e2e-compat json_metric_step_wider_test.go)'
   proxy: 'every selected line read as a raw row when the step exceeds the range (raw_rows, reason grid)'
   planned_test: 'proxy TestOrderedJSONStepWiderThanRangeDifferential, TestOrderedJSONStepWiderThanRangeEdgeTable, TestOrderedJSONStepWiderThanRangeRefresh, TestOrderedJSONStepWiderThanRangeRoute, TestOrderedJSONStepWiderThanRangeSeriesLimitCountsWindowSeries, FuzzOrderedJSONStepWiderThanRange (internal/proxy, CI fuzz-smoke), BenchmarkOrderedJSONStepWiderThanRange; TestRangeMetricCompatibilityJSONStepWiderThanRange (test/e2e-compat, group semantics)'
   clusters: []

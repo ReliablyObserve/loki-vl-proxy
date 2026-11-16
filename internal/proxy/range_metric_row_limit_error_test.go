@@ -67,8 +67,7 @@ func rowLimitRequest(p *Proxy, endpoint, query string) *httptest.ResponseRecorde
 // A metric read by the raw-row evaluator past -manual-range-metric-row-limit
 // answers the limit error on every route, range and instant, for each of the
 // two evaluators (ordered JSON and the bare parser): status 400 and errorType
-// bad_data as Loki answers a query over one of its limits (logqlmodel.ErrLimit,
-// pkg/util/server/error.go:110-118), and the text names the flag. The
+// bad_data as Loki answers a query over one of its limits, and the text names the flag. The
 // client reads nothing of VictoriaLogs or Go.
 // conformance: heavy-metric-fetch-bounds, limits/row-limit-answers-loki-limit-text
 func TestRangeMetricRowLimitErrorIsLokiShaped(t *testing.T) {

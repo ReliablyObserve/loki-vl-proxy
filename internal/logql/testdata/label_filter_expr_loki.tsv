@@ -1,4 +1,4 @@
-# Loki v3.7.9 (pkg/logql/syntax ParseExpr) answers for label filter expressions: query<TAB>OK<TAB>String() or query<TAB>ERR<TAB>message.
+# Loki v3.7.9 (its LogQL parser) answers for label filter expressions: query<TAB>OK<TAB>String() or query<TAB>ERR<TAB>message.
 # Regenerate: feed the first column to ParseExpr in a v3.7.9 checkout and print err or expr.String().
 # The last 113 lines are single filters with a value of the wrong kind (and the valid forms), recorded the same way.
 {app="a"} | json | (status>=500 or duration_ms>1000), method="GET"	OK	{app="a"} | json | ( ( status>=500 or duration_ms>1000 ) , method="GET" )

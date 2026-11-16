@@ -66,7 +66,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/queryplan/lower unwrap.go (varianceVector over the series identity), unwrap_dynamic.go (the series hash)'
-  loki: 'stdvar_over_time is evaluated per series (range_vector.go); the vector aggregation then folds the series'
+  loki: 'stdvar_over_time is evaluated per series; the vector aggregation then folds the series'
   proxy: 'after a parser, the variance of each series then the aggregation by the clause (query and a range up to the step); otherwise the stddev of the group''s pooled samples, squared'
   planned_test: 'TestStddevStdvarMatchLoki, TestUnwrapDynamicIdentityMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicUnwrapIdentityLowering (internal/queryplan/lower); e2e: TestCompat_StdvarOverTimeGroupedAnswers200 values rows (test/e2e-compat; written, not yet run on a stack)'
   clusters: []

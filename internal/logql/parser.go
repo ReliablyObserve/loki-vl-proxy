@@ -22,7 +22,7 @@ type ParseError struct {
 
 func (e *ParseError) Error() string { return e.Msg }
 
-// newParseError mirrors logqlmodel.NewParseError: line/col 0 renders as
+// newParseError builds Loki's parse error: line/col 0 renders as
 // "parse error : msg".
 func newParseError(line, col int, msg string) *ParseError {
 	if line == 0 && col == 0 {
@@ -180,8 +180,7 @@ var opaqueMetricFunctions = map[string]bool{"label_replace": true, "vector": tru
 
 // typeOpaqueCall reads the parts of a label_replace or vector call from its text
 // with the same parser: label_replace(<expr>, "dst", "replacement", "src",
-// "regex") and vector(<number>), as Loki's grammar writes them (syntax.y
-// labelReplaceExpr, vectorExpr). Any other call, or one that does not read so,
+// "regex") and vector(<number>), as Loki's grammar writes them. Any other call, or one that does not read so,
 // keeps only its text; validation reports why.
 func typeOpaqueCall(o *OpaqueMetricExpr) {
 	p := &parser{sc: scanner{src: o.Raw, quiet: true}}
@@ -423,8 +422,8 @@ func (p *parser) parsePrimary() (Expr, error) {
 			}
 			return ra, nil
 		}
-		// Loki's grammar has three more metric-level calls (syntax.y
-		// labelReplaceExpr, vectorExpr, vectorOp APPROX_TOPK); any other name
+		// Loki's grammar has three more metric-level calls (label_replace,
+		// vector, approx_topk); any other name
 		// is an IDENTIFIER it cannot place (group, label_join, abs, ...).
 		name := p.cur.Val
 		if !opaqueMetricFunctions[name] {
@@ -512,7 +511,7 @@ func (p *parser) maybeInfix(lhs Expr) (Expr, error) {
 	return p.parseBinaryRHS(lhs, 1)
 }
 
-// Loki syntax.y declares these levels from lowest to highest. Only exponentiation
+// Loki's grammar declares these levels from lowest to highest. Only exponentiation
 // is right associative; parentheses are handled by parsePrimary.
 func binaryPrecedence(token TokType) int {
 	switch token {
@@ -1980,7 +1979,7 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 	return ra, nil
 }
 
-// parseLogRange parses Loki's logRangeExpr (syntax.y): a log selector with its
+// parseLogRange parses Loki's log range expression: a log selector with its
 // pipeline, the [range], an optional offset, and any parentheses around it.
 // Parentheses come in two kinds. `(selector pipeline unwrap)[range]` closes
 // before the range and then accepts only an unwrap, and only after a bare
@@ -2216,8 +2215,7 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 	va.Inner = inner
 
 	// Loki's grammar takes only a metric expression inside a vector
-	// aggregation (pkg/logql/syntax/syntax.y:176-185 vectorAggregationExpr).
-	// A log expression there is read as the left operand of a binary
+	// aggregation. A log expression there is read as the left operand of a binary
 	// operation, so the closing parenthesis is the unexpected token:
 	// `topk(5, {app="api"})` fails with "parse error at line 1, col 20:
 	// syntax error: unexpected )".

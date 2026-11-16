@@ -11,8 +11,8 @@ import (
 // fold (foldVectorAggregations).
 //
 // Loki evaluates `count by (g) (count_over_time(...))` per step: every stream's
-// window value joins its group's count (pkg/logql/evaluator.go
-// VectorAggEvaluator.Next) and the per-stream samples are gone after the step.
+// window value joins its group's count and the per-stream samples are gone
+// after the step.
 // Encoding every stream at every step first made the answer's size the
 // streams x steps of the range and not the groups x steps of the answer: a
 // `count`, `min`, `max` or `avg` reads one value per stream, so nothing could be

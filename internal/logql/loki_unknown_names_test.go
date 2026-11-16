@@ -7,11 +7,10 @@ import (
 )
 
 // Loki v3.7.7 has no group() or label_join() and no PromQL math or time
-// functions: its lexer turns only the names in pkg/logql/syntax/lex.go
-// functionTokens into function tokens, so any other name is an IDENTIFIER that
-// the grammar (syntax.y vectorOp, rangeOp, LABEL_REPLACE, vectorExpr) cannot
-// place. The messages below are what syntax.ParseExpr returned for each query,
-// including the column the unexpected token starts at.
+// functions: its lexer turns only its own function names into function tokens,
+// so any other name is an IDENTIFIER that its grammar cannot place. The
+// messages below are what Loki's parser returned for each query, including the
+// column the unexpected token starts at.
 //
 // conformance: semantics/proxy-accepts-operators-not-in-loki
 func TestValidateLogQL_NamesLokiDoesNotKnowAreRejected(t *testing.T) {

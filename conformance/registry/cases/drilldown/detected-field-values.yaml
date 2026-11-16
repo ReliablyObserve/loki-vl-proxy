@@ -28,7 +28,7 @@ gap:
   impact: drilldown-visible
   effort: M
   area: 'internal/proxy detected_field values (sampling window and stream-label fields)'
-  loki: 'pkg/querier detected field values (v3.7.7): values of the sampled lines'
+  loki: 'values of the sampled lines (differential run clusters 0e9d9652, 4a75b280 and 92699938, in this case)'
   proxy: 'empty for stream-label fields; different sample'
   planned_test: 'TestCompat_DetectedFieldValues (test/e2e-compat, group drilldown)'
   clusters:

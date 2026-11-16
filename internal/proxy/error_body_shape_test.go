@@ -28,7 +28,7 @@ type errBodyCase struct {
 
 const (
 	lokiPlain = "text/plain; charset=utf-8"
-	// pkg/util/validation/validate.go:5 with a 3h range over a 1h limit.
+	// Loki's answer to a 3h range over a 1h limit.
 	lokiQueryTooLong = "the query time range exceeds the limit (query length: 3h0m0s, limit: 1h)"
 )
 
@@ -68,9 +68,8 @@ func runErrBodyCases(t *testing.T, p *Proxy, cases []errBodyCase) {
 }
 
 // Every route that Loki serves through its query frontend answers an error with
-// the message alone: status, text/plain, nosniff, no envelope, no newline
-// (pkg/util/server/error.go WriteError). The classes are the ones a client can
-// cause or a backend can raise: a query Loki rejects, a range over
+// the message alone: status, text/plain, nosniff, no envelope, no newline.
+// The classes are the ones a client can cause or a backend can raise: a query Loki rejects, a range over
 // max_query_length, a failed backend call (500), a cancelled request (499) and
 // a deadline (504).
 // conformance: semantics/error-layer-body-shape, status-400, status-500
@@ -127,7 +126,7 @@ func TestErrorBody_QueryFrontendRoutes(t *testing.T) {
 	} {
 		cases = append(cases, frontend(route.name+"/max_query_length", route.path, route.q, http.StatusBadRequest, lokiQueryTooLong))
 	}
-	// A log query is not an instant query (pkg/logql/engine.go).
+	// A log query is not an instant query.
 	cases = append(cases, frontend("query/log_query_as_instant", "/loki/api/v1/query", with("query", `{app="a"}`, "time", "1"), http.StatusBadRequest,
 		"log queries are not supported as an instant query type, please change your query to a range query type"))
 	// Routes Loki does not serve: gorilla/mux's 404.
@@ -171,7 +170,6 @@ func TestErrorBody_CancelAndDeadline(t *testing.T) {
 // method is gorilla/mux's bodyless 405 with no headers of its own. The cases
 // run through the middleware cmd/proxy ships, which presets nosniff and a
 // default Content-Type that the writers must remove or override.
-// (pkg/ruler/base/api.go:106-123, :166-179, :286, :523-572; pkg/loki/modules.go:1936-1938.)
 // conformance: semantics/error-layer-body-shape, status-400, status-500
 func TestErrorBody_RulerAndDeleteShapes(t *testing.T) {
 	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

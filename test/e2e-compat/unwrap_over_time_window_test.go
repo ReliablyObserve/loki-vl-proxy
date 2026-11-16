@@ -12,9 +12,8 @@ import (
 )
 
 // Loki evaluates sum, avg, max and min over time on the window (t-range, t] of
-// every step (pkg/logql/range_vector.go:102-189 batchRangeVectorIterator Next
-// and load: a line on the lower edge belongs to the window before, the line at
-// t to this one; range_vector.go:371-420 the functions), whatever the range
+// every step (a line on the lower edge belongs to the window before, the line at t
+// to this one), whatever the range
 // and the step are, and an instant query on the one window (time-range, time].
 // The proxy answered a range longer than the step from one VictoriaLogs step
 // bucket (semantics/unwrap-over-time-range-windows). The shared fixture

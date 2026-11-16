@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -22,31 +21,6 @@ const (
 	errorCoveragePath   = "../../conformance/registry/generated/error-coverage.json"
 	errorKnownDiffsPath = "../../conformance/registry/error-layer-known-differences.json"
 )
-
-// errorAnswersDelta is how far the recorded absolute start, end and time
-// parameters move so the rows are asked of the stack as of now: the recorded
-// Loki limited how far back a query may reach, and a stack's Loki may too. It
-// is measured from the latest end or time the rows carry.
-func errorAnswersDelta(rows []lokirecorded.Row, now time.Time) time.Duration {
-	var latest int64
-	for _, row := range rows {
-		_, query, _ := strings.Cut(row.Target, "?")
-		for _, p := range strings.Split(query, "&") {
-			name, value, _ := strings.Cut(p, "=")
-			if name != "end" && name != "time" {
-				continue
-			}
-			if n, err := strconv.ParseInt(value, 10, 64); err == nil && n >= 1_000_000_000 && n < 100_000_000_000 && n > latest {
-				latest = n
-			}
-		}
-	}
-	delta := time.Duration(now.Unix()-latest) * time.Second
-	if latest == 0 || delta < 0 {
-		return 0
-	}
-	return delta
-}
 
 // TestCompat_ErrorAnswersLikeLoki asks the stack's Loki and the proxy the
 // requests of one representative recorded row for every route x error kind x
@@ -92,7 +66,7 @@ func TestCompat_ErrorAnswersLikeLoki(t *testing.T) {
 		t.Fatalf("%s lists no e2e rows: regenerate it with conformance/scripts/error_registry.py", errorCoveragePath)
 	}
 	lokiHost, proxyHost := hostOf(t, lokiURL), hostOf(t, proxyURL)
-	delta := errorAnswersDelta(file.Rows, time.Now())
+	delta := lokirecorded.Delta(file.Rows, time.Now())
 	stale, differ, compared := 0, 0, 0
 	for _, id := range coverage.E2ERows {
 		row, ok := byID[id]
@@ -109,16 +83,18 @@ func TestCompat_ErrorAnswersLikeLoki(t *testing.T) {
 			if err != nil {
 				t.Fatalf("proxy: %v", err)
 			}
-			if fromLoki != row.Loki {
+			// A request whose answer depends on the Loki process (Varies) has more than one recorded answer: any of
+			// them is the live Loki's, and the proxy's answer must be one of them.
+			if !row.Answers(fromLoki) {
 				stale++
 				t.Skipf("the stack's Loki answers differently from the recording (stale recording; run test/errorrecord): recorded %s, live %s", row.Loki.Summary(), fromLoki.Summary())
 			}
 			compared++
 			_, isKnown := known.Rows[id]
 			switch {
-			case fromProxy == fromLoki && isKnown:
+			case row.Answers(fromProxy) && isKnown:
 				t.Logf("row %s now matches Loki; the unit replay asks for it to leave the known differences", id)
-			case fromProxy == fromLoki:
+			case row.Answers(fromProxy):
 			case isKnown:
 				differ++
 				t.Skipf("known difference: Loki %s, proxy %s", fromLoki.Summary(), fromProxy.Summary())

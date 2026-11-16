@@ -5,8 +5,7 @@ import "testing"
 // `__tenant_id__` is a Loki LABEL matcher, so its regexp is anchored like every
 // other one: Prometheus compiles a matcher as `^(?s:v)$`. Unanchored, it decides
 // which tenants a fan-out queries, so `=~"prod"` reached `prod-eu` and
-// `nonprod` as well. Loki matches the tenant ids with the selector's matcher
-// (filterValuesByMatchers, pkg/querier/multi_tenant_querier.go:421).
+// `nonprod` as well. Loki matches the tenant ids with the selector's matcher.
 //
 // conformance: profiles/stream-selector-regexp-anchoring
 func TestTenantMatcherRegexpIsAnchored(t *testing.T) {

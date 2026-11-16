@@ -5,7 +5,7 @@ proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  Loki's LabelsBuilder renames a structured-metadata key that equals a
+  Loki renames a structured-metadata key that equals a
   stream label name with the `_extracted` suffix. The UI generator pushes
   OTel metadata `service.name` for streams whose derived stream label is also
   service_name, so Loki answers structuredMetadata `service_name_extracted`.
@@ -40,7 +40,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy structured-metadata naming in log responses (collision with derived service_name)'
-  loki: 'pkg/logql/log/labels.go LabelsBuilder (structured metadata renamed with _extracted on a stream-label collision)'
+  loki: 'structured metadata renamed with _extracted on a stream-label collision (labelTypes measured 2026-09-24, in this case)'
   proxy: 'structuredMetadata service_name beside the stream label'
   planned_test: 'TestCompat_ExtractedSuffixOnParsedCollision (test/e2e-compat, group core), subtest structured metadata against the derived service_name'
   note: 'Fixed by the same row rename as semantics/extracted-suffix-collision. Not changed: a label filter or keep on service_name_extracted over structured metadata, and metadata whose value equals the stream label.'

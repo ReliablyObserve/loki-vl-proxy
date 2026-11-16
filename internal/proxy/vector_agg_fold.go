@@ -75,10 +75,9 @@ func keepsParsedGroupLabels(ctx context.Context) bool {
 
 // foldVectorAggregations runs a manual range metric evaluator and applies the
 // vector aggregations of the query to the series it returns, per step, the way
-// Loki's VectorAggEvaluator does (pkg/logql/evaluator.go VectorAggEvaluator.Next:
-// each series of the input falls into the group its labels name, `by` keeping
-// the listed labels, none keeping none, and the group takes the count, minimum,
-// maximum or mean of the series' values). Loki counts max_query_series on that
+// Loki does (each series of the input falls into the group its labels name,
+// `by` keeping the listed labels, none keeping none, and the group takes the
+// count, minimum, maximum or mean of the series' values). Loki counts max_query_series on that
 // answer, not on the series the range aggregation yields. Any other query is
 // left to foldUngroupedSum.
 func foldVectorAggregations(p *Proxy, w http.ResponseWriter, r *http.Request, query string, serve func(http.ResponseWriter, *http.Request) bool) bool {

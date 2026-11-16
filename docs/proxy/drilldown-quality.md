@@ -22,9 +22,9 @@ Loki (v3.7.7) answers these like any other metric query: every series, exact
 values on its evaluation timestamps, no sample for a step whose window holds no
 line. Above `max_query_series` (default 500) it returns a partial result with
 the warning `maximum number of series (N) reached for a single query; returning
-partial results` for Drilldown (`JoinSampleVector` in `pkg/logql/engine.go`, the
-`seriesLimiter` in `pkg/querier/queryrange/limits.go`) and a `400` for every
-other client.
+partial results` for Drilldown and a `400` for every other client (Loki v3.7.7;
+`limits/series-limit-error` and `limits/drilldown-partial-with-warning` in the
+conformance registry record the answers).
 
 ## How The Proxy Answers
 

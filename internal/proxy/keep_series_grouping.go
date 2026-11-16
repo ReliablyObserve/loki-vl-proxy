@@ -14,10 +14,9 @@ import (
 // and whether it changed anything.
 //
 // Loki's keep stage deletes every label it does not name, stream labels and
-// structured metadata included (pkg/logql/log/keep_labels.go:15-45), so the
-// samples of every stream that keeps the same labels fall into one series
-// (pkg/logql/range_vector.go groups samples by their labels after the
-// pipeline). `rate({app="api"} | json | keep foo [5m])` is one series for the
+// structured metadata included (registry semantics/keep-leaves-labels-loki-drops),
+// so the samples of every stream that keeps the same labels fall into one series
+// (Loki groups samples by their labels after the pipeline). `rate({app="api"} | json | keep foo [5m])` is one series for the
 // whole selector, and `count(...)` over it is 1. The series identity the
 // proxy and VictoriaLogs build is the stream, so the query is rewritten to the
 // same answer in a form they group by: count_over_time, rate,
