@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
   `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
   parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
+- The `detected_level` the proxy derives for returned rows is rewritten from Loki's documented settings and from
+  answers recorded from a real Loki 3.7.9 for 1551 generated inputs, one stream each: structured metadata and stream
+  labels of every level field, field pairs, `severity_number` values, JSON lines to depth 5 with value types and
+  broken shapes, logfmt variants, plain lines by letter case, position, boundary byte and near-miss words, long
+  lines and OTLP records. The table and the evidence of the run are committed
+  (`internal/proxy/testdata/detected_level_golden.json`, `detected_level_golden_loki.json`), a live check compares
+  about 200 of its rows with the stack's Loki in the e2e core group, and a fuzz target holds the derivation to a
+  plain reference evaluator that is itself held to the recorded answers. Answers are unchanged except for the fix
+  below.
 
 ### Fixed
 
@@ -40,6 +49,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timeout (one query per run at 2.0 s and a `/labels` p99 at the timeout in a fleet run with one replica paused). New
   metrics: `loki_vl_proxy_peer_cache_read_hedges_total{action="next_replica"|"gave_up"}` and
   `loki_vl_proxy_peer_cache_read_hedge_delay_seconds`; peer error reason `peer_slow`.
+- `/loki/api/v1/patterns` on a proxy that forwards a selector to the peer holding its pattern state no longer
+  keeps the owner's empty answer. The owner answers empty while the lines have not reached VictoriaLogs yet; the
+  forwarding peer cached that answer for the patterns cache's retention, so the patterns of a new stream never
+  appeared on it. An empty forwarded answer is now asked again on the next request.
+- A stored field named `log.level` (structured metadata or an OTLP log attribute pushed under that name) no longer
+  sets `detected_level` on log responses: Loki stores such metadata as `log_level` and does not read it, so the row's
+  level comes from its other fields or its line, as in Loki (recorded answers, `severity/recorded-level-table`). A
+  JSON line whose key `log.level` VictoriaLogs unpacked into a field still gives the level, as the line does in Loki.
+  Metric grouping by `detected_level` still reads the field (`severity/stored-log-dot-level-in-metric-chain`, open).
 
 ### Added
 
