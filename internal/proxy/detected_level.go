@@ -880,7 +880,7 @@ scan:
 		}
 		found[g], quoted[g], best = value, isQuoted, g
 	}
-	if best == levelFieldGroups {
+	if best < 0 || best >= len(found) { // no level field (best was never lowered)
 		return ""
 	}
 	v := found[best]
