@@ -73,6 +73,12 @@ type Row struct {
 	// two errors the request carries, and the one Loki answers.
 	Issues []string `json:"issues,omitempty"`
 	Wins   string   `json:"wins,omitempty"`
+	// LokiAlso are other answers Loki was recorded giving to the same request, and Varies says when: a request
+	// whose answer depends on the Loki process (the same image and configuration answer 405 in one process and
+	// 404 in another, and keep their answer for the life of the process). Loki stays the answer the proxy gives;
+	// any of the answers is Loki's.
+	LokiAlso []Reply `json:"loki_also,omitempty"`
+	Varies   string  `json:"varies,omitempty"`
 }
 
 // File is a recorded-answers file: its header line and its rows, each kept
@@ -139,6 +145,20 @@ func Parse(raw []byte) (*File, error) {
 // Comparable reports whether the row's answer can be compared with the
 // proxy's.
 func (r Row) Comparable() bool { return r.NotComparable == "" }
+
+// Answers reports whether reply is one of the answers Loki was recorded giving to the row's request: its answer, or
+// one of the other answers of a request whose answer depends on the Loki process.
+func (r Row) Answers(reply Reply) bool {
+	if reply == r.Loki {
+		return true
+	}
+	for _, also := range r.LokiAlso {
+		if reply == also {
+			return true
+		}
+	}
+	return false
+}
 
 // Request is the row's request as bytes on the wire: the target as recorded,
 // its headers and form body, with the connection closed after the answer.

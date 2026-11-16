@@ -113,7 +113,8 @@ func recordFile(path, host, version string, cfg config, out io.Writer) (int, err
 			return changed, err
 		}
 		reply = reply.ForRecording()
-		if reply == row.Loki {
+		if row.Answers(reply) {
+			// The recorded answer, or another answer Loki gives this request in some processes (Varies).
 			continue
 		}
 		changed++

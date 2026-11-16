@@ -179,3 +179,55 @@ func TestParseRejectsMalformedFiles(t *testing.T) {
 		t.Fatalf("missing file: %v", err)
 	}
 }
+
+// Answers holds the recorded answer and the recorded alternatives, nothing else; a row without alternatives
+// answers only its recorded answer.
+func TestAnswersHoldsTheRecordedAlternatives(t *testing.T) {
+	r405 := Reply{Status: 405}
+	r404 := Reply{Status: 404, ContentType: "text/plain; charset=utf-8", Nosniff: "nosniff", Body: "404 page not found\n"}
+	plain := Row{Loki: r405}
+	varied := Row{Loki: r405, LokiAlso: []Reply{r404}, Varies: "the Loki process"}
+	other := r404
+	other.Nosniff = ""
+	for _, c := range []struct {
+		row   Row
+		reply Reply
+		want  bool
+	}{
+		{plain, r405, true}, {plain, r404, false},
+		{varied, r405, true}, {varied, r404, true}, {varied, other, false}, {varied, Reply{Status: 500}, false},
+	} {
+		if got := c.row.Answers(c.reply); got != c.want {
+			t.Errorf("row %+v answers %+v = %v, want %v", c.row.LokiAlso, c.reply, got, c.want)
+		}
+	}
+}
+
+// Every recorded alternative is an error answer, different from the row's answer, and says why the answer varies.
+func TestRecordedAlternativesAreWellFormed(t *testing.T) {
+	f, err := Read(answersPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, r := range f.Rows {
+		if len(r.LokiAlso) == 0 {
+			if r.Varies != "" {
+				t.Errorf("%s: varies without an alternative answer", r.ID)
+			}
+			continue
+		}
+		n++
+		if r.Varies == "" {
+			t.Errorf("%s: alternative answers without the reason they vary", r.ID)
+		}
+		for _, also := range r.LokiAlso {
+			if also.Status < 400 || also == r.Loki {
+				t.Errorf("%s: alternative %+v is not another error answer", r.ID, also)
+			}
+		}
+	}
+	if n == 0 {
+		t.Fatal("no row records an alternative answer")
+	}
+}
