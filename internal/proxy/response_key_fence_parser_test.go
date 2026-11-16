@@ -576,6 +576,9 @@ func TestResponseKeyFencesKeepTheirOldKeys(t *testing.T) {
 		if miss := fenceMisses(q); len(miss) > 0 {
 			t.Errorf("%q: fences %v do not fire for the construct in the tree", q, miss)
 		}
+		if emptyWithoutOverFires(q) {
+			t.Errorf("%q: the binary empty without fence fires and the parsed tree holds no such operand", q)
+		}
 	}
 	t.Logf("%d of %d corpus queries carry a fence their older screens did not fire, each justified by its parsed tree", changed, len(corpus))
 }
@@ -610,7 +613,17 @@ func FuzzResponseKeyFencesMatchParsedTree(f *testing.F) {
 		if lost := fenceLosses(query); len(lost) > 0 {
 			t.Fatalf("%+q: fences %v fired before and do not now", query, lost)
 		}
+		if emptyWithoutOverFires(query) {
+			t.Fatalf("%+q: the binary empty without fence fires and the parsed tree holds no such operand", query)
+		}
 	})
+}
+
+// emptyWithoutOverFires reports a query whose key carries the binary empty without fence while its parsed tree holds
+// no binary operation with a sum, avg, min or max `without ()` operand: the fence is new, so no older screen states
+// where it fired, and it must fire nowhere else (no other query's key changes).
+func emptyWithoutOverFires(query string) bool {
+	return emptyWithoutOperandResponseKeyVersion(query) != "" && !fenceWants(query)["binary-empty-without"]
 }
 
 // fenceFires reports whether the named fence is in the response key chain of query (a query_range request).
@@ -769,6 +782,12 @@ func TestResponseKeyFenceScreensDoNotAllocate(t *testing.T) {
 			"case":     reservedFieldCaseResponseKeyVersion,
 			"label":    reservedFieldLabelResponseKeyVersion,
 			"keyword":  keywordLabelResponseKeyVersion,
+			"empty-without": func(q string) string {
+				if emptyWithoutClauseIn(q) {
+					return emptyWithoutOperandResponseVersion
+				}
+				return ""
+			},
 		} {
 			if allocs := testing.AllocsPerRun(50, func() { _ = screen(query) }); allocs != 0 {
 				t.Errorf("%s screen of %q allocates %v times", name, query, allocs)

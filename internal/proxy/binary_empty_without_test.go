@@ -160,3 +160,21 @@ func binarySeriesOf(t *testing.T, body []byte) map[string]string {
 	}
 	return out
 }
+
+// BenchmarkEmptyWithoutFence times the binary empty without fence on the queries it turns away with its text screen
+// alone (a labelled without clause, a log query, a by clause) and on one it fires for (the plan read from the memo).
+func BenchmarkEmptyWithoutFence(b *testing.B) {
+	for _, tc := range []struct{ name, query string }{
+		{"labelled", `sum without (pod) (rate({service_name="payment-service"} | logfmt amount | unwrap amount [5m]))`},
+		{"log", `{app="a",env=~"p.*"} | json | status="500" |= "error"`},
+		{"by", `sum by (service_name) (count_over_time({service_name="payment-service"} |= "error" [5m])) / 2`},
+		{"fires", `sum without () (count_over_time({service_name="payment-service"}[5m])) / 2`},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = emptyWithoutOperandResponseKeyVersion(tc.query)
+			}
+		})
+	}
+}

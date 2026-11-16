@@ -16,9 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instant `avg` and `min` collapsed the same way, and on the other steps the series said `detected_level="unknown"`.
   The binary route now sends the operand without that level, and an operation Loki refuses (`… + on() vector(0)`
   over several series) answers Loki's 500 `multiple matches for labels: many-to-one matching must be explicit
-  (group_left/group_right)` where it answered 200. Held to real Loki and VictoriaLogs v1.49.0 and v1.53.0 on 15
-  operations x 4 request kinds (120 of 120 runs match, from 72), and under `sum(…)`, `label_replace(…)` and with an
-  `offset`. A `count`, `stddev` or `stdvar` under the clause, and a ranking over the operation, are unchanged. Answers cached before the fix are not served again
+  (group_left/group_right)` where it answered 200. Held to real Loki and VictoriaLogs v1.49.0 and v1.53.0 on 20
+  shapes x 4 request kinds x 2 versions: 144 of 160 runs match Loki, from 86 (every run of the 15 operations, and
+  under `sum(…)`, `label_replace(…)` and with an `offset`). A `count`, `stddev` or `stdvar` under the clause, and a ranking over the operation, are unchanged. Answers cached before the fix are not served again
   (semantics/binary-operand-without-empty-collapses). `-query-plan-lowering=false` keeps the previous reading.
 
 - A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki

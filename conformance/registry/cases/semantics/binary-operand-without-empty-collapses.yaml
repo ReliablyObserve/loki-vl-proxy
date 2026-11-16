@@ -53,9 +53,9 @@ why: |
   (lower.EmptyWithoutLevelsOff), held to the route by the corpus shadow (the
   324 rows of this divergence are native). Run against real Loki (the engine
   oracle) and real VictoriaLogs v1.49.0 and v1.53.0 through the handlers
-  (internal/querycorpus TestEmptyWithoutOperandsMatchLoki, 15 operations x
-  instant, step = range, step < range and step > range): 120 of 120 runs
-  match, from 72 before (one ungrouped series on step = range, avg and min
+  (internal/querycorpus TestEmptyWithoutOperandsMatchLoki, 20 shapes x
+  instant, step = range, step < range and step > range x the two versions):
+  144 of 160 runs match, from 86 before, every run of the 15 operations (one ungrouped series on step = range, avg and min
   collapsed at an instant, `detected_level="unknown"` on the other steps,
   and 200 where Loki answers its many-to-one 500 for `+ on() vector(0)` over
   several series). Answers cached before are fenced (`@binary-empty-without-v1:`).
