@@ -96,7 +96,10 @@ why: |
   error, never a read of the window's rows
   (TestDynamicIdentityWindowsBucketOverflowReadsNoRows). max by (L) of max_over_time and
   min by (L) of min_over_time are the extreme of the group's samples whatever
-  the series and keep the stream's grouping (unwrapGroupPushdown). Answers
+  the series and keep the stream's grouping (unwrapGroupPushdown). An unwrapped
+  label named like a reserved VictoriaLogs field in another case (`_TIME`),
+  whose gate is written in the outbound guard's form, keeps the stream's series
+  on such a window (lower.DynamicIdentityAhead). Answers
   cached before are fenced (@unwrap-dynamic-identity-v2). Proven by
   TestUnwrapDynamicIdentityMatchLoki at step < range (Loki engine oracle,
   VictoriaLogs v1.53.0 and v1.49.0: every avg to stdvar row and every binary

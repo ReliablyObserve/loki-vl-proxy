@@ -567,6 +567,7 @@ func FuzzDynamicIdentityWindowsMark(f *testing.F) {
 		{`sum(avg_over_time({app="a"} | json | unwrap n [5m])) * 2`, 60},
 		{`sum(avg_over_time({app="a"} | json | unwrap n [1m]))`, 300},
 		{`sum(quantile_over_time(0.9, {app="a"} | json | unwrap n [5m]))`, 60},
+		{`sum(max_over_time({app="a"} | logfmt | unwrap _TIME [5m]))`, 60},
 	} {
 		f.Add(s.q, s.step)
 	}
@@ -592,8 +593,8 @@ func FuzzDynamicIdentityWindowsMark(f *testing.F) {
 			if !p.dynamicUnwrapIdentity(q) || !ok || window <= time.Duration(step)*time.Second {
 				t.Fatalf("%q step %d: the hash ahead without a root identity over a range longer than the step (%v %s)", q, step, ok, window)
 			}
-			if extremeOfExtremes(q) {
-				t.Fatalf("%q step %d: an extreme of extremes reads the hash", q, step)
+			if extremeOfExtremes(q) || !identityAheadWritten(q) {
+				t.Fatalf("%q step %d: an extreme of extremes, or an unwrap whose gate the evaluator cannot read, reads the hash", q, step)
 			}
 		}
 		if (stream || ahead) && p.dynamicIdentityWindows(out, q) != out {

@@ -156,6 +156,7 @@ func FuzzDynamicUnwrapIdentity(f *testing.F) {
 		`sum(avg_over_time({app="a"} | json | unwrap "a\"b" [5m]))`,
 		`sum(avg_over_time({app="a"} | json | keep n | unwrap n [5m]))`,
 		`topk(1, sum(rate_counter({app="a"} | json | unwrap n [5m])))`,
+		`sum(max_over_time({app="a"} | logfmt | unwrap _TIME [5m]))`,
 	} {
 		f.Add(q)
 	}
@@ -209,7 +210,7 @@ func FuzzDynamicUnwrapIdentity(f *testing.F) {
 		if first < 0 || dFirst < 0 || at[first:] != text[dFirst:] {
 			t.Fatalf("%q: the stats pipes differ:\n%s\n%s", q, text, at)
 		}
-		if base, _, ok := translate.SplitUnwrapGate(at[:first]); !ok || !strings.HasSuffix(base, "| hash(__lvp_sid) as __lvp_sid") {
+		if base, _, ok := translate.SplitUnwrapGate(at[:first]); DynamicIdentityAhead(p) && (!ok || !strings.HasSuffix(base, "| hash(__lvp_sid) as __lvp_sid")) {
 			t.Fatalf("%q: the gate does not follow the hash: %s", q, at)
 		}
 		if _, err := logsql.Parse(at); err != nil {

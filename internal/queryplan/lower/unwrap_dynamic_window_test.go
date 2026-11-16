@@ -66,6 +66,20 @@ func TestDynamicUnwrapIdentityAhead(t *testing.T) {
 			t.Errorf("%s: the profile changed the text:\n%s\n%v", q, physical.Encode(def), err)
 		}
 	}
+	// An unwrapped label named like a reserved field in another case: the gate is written in the outbound guard's
+	// form, which no gate split reads, so the hash ahead is not offered for it.
+	for q, want := range map[string]bool{
+		`sum(max_over_time({app="a"} | logfmt | unwrap _TIME [5m]))`:   false,
+		`sum(max_over_time({app="a"} | logfmt | unwrap _Stream [5m]))`: false,
+		`sum(max_over_time({app="a"} | logfmt | unwrap time [5m]))`:    true,
+		`sum(max_over_time({app="a"} | logfmt | unwrap n [5m]))`:       true,
+		`sum(sum_over_time({app="a"} | logfmt | unwrap n [5m]))`:       false,
+		`sum(max_over_time({app="a"} | logfmt | unwrap n [5m])) * 2`:   false,
+	} {
+		if got := DynamicIdentityAhead(rangeAggPlan(q)); got != want {
+			t.Errorf("%s: DynamicIdentityAhead %v, want %v", q, got, want)
+		}
+	}
 	// The stream identity profile wins: no hash at all.
 	const q = `sum(avg_over_time({app="a"} | logfmt | unwrap n [5m]))`
 	if got := loweredText(t, q, Profile{IdentityAhead: true, StreamIdentity: true}); strings.Contains(got, "__lvp_sid") {

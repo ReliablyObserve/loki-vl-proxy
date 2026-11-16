@@ -54,6 +54,23 @@ func DynamicUnwrapIdentity(p *queryplan.Plan) bool {
 	return ok
 }
 
+// DynamicIdentityAhead reports a plan DynamicUnwrapIdentity names whose series hash the lowering writes before the
+// unwrap gate (Profile IdentityAhead) with the gate still ending the pipes before the first stats pipe, the text the
+// window evaluator reads: not an unwrapped label named like a reserved VictoriaLogs field in another case, whose gate
+// the lowering writes in the outbound guard's form (logsql.GuardReservedFieldCase), which no gate split reads.
+func DynamicIdentityAhead(p *queryplan.Plan) bool {
+	if !DynamicUnwrapIdentity(p) {
+		return false
+	}
+	ra := p.Root.(*queryplan.VectorAgg).In.(*queryplan.RangeAgg)
+	for _, st := range ra.In.Stages {
+		if u, ok := st.(*queryplan.Unwrap); ok {
+			return !logsql.ReservedFieldNameOtherCase(u.Label)
+		}
+	}
+	return false
+}
+
 // dynamicIdentity is the parser of a query DynamicUnwrapIdentity names, ok false for any other.
 func dynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) (parser *queryplan.Parse, ok bool) {
 	switch va.Op {

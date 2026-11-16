@@ -151,10 +151,11 @@ func (p *Proxy) dynamicIdentityWindows(r *http.Request, query string) (out *http
 		if !windowed {
 			return r
 		}
-		if extremeOfExtremes(query) {
+		if extremeOfExtremes(query) || !identityAheadWritten(query) {
 			// max by (L) of max_over_time and min by (L) of min_over_time are the extreme of the group's samples in the
 			// window, whatever the series: VictoriaLogs takes it per bucket and group (unwrapGroupPushdown), with no
-			// hash to write.
+			// hash to write. An unwrapped label whose gate the window evaluator cannot read with the hash ahead
+			// (lower.DynamicIdentityAhead) keeps the stream's series too.
 			return r.WithContext(context.WithValue(r.Context(), streamIdentityKey{}, true))
 		}
 		return r.WithContext(context.WithValue(r.Context(), identityAheadKey{}, true))
@@ -217,6 +218,13 @@ func dynamicWindowRange(query string) (time.Duration, bool) {
 		return ra.RangeDuration, ra.RangeDuration > 0
 	}
 	return 0, false
+}
+
+// identityAheadWritten reports a root identity whose hash the lowering writes ahead of a gate the window evaluator
+// reads (lower.DynamicIdentityAhead), read from the plan the handlers memoised.
+func identityAheadWritten(query string) bool {
+	plan := resolvedPlan(dynamicQuery(query))
+	return plan != nil && lower.DynamicIdentityAhead(plan)
 }
 
 // extremeOfExtremes reports a root dynamic identity whose outer aggregation is max over max_over_time or min over

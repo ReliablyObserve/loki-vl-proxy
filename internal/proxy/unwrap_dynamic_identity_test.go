@@ -100,6 +100,9 @@ func TestDynamicIdentityHandlersReadThePlan(t *testing.T) {
 		{`max by (app) (max_over_time({app="a"} | json | unwrap n [5m]))`, "60", true, false},
 		{`min(min_over_time({app="a"} | json | unwrap n [5m]))`, "60", true, false},
 		{`max by (app) (min_over_time({app="a"} | json | unwrap n [5m]))`, "60", false, true},
+		// An unwrapped label named like a reserved field in another case: its gate is written in the outbound guard's
+		// form, which the window evaluator cannot read with the hash ahead.
+		{`sum(max_over_time({app="a"} | logfmt | unwrap _TIME [5m]))`, "60", true, false},
 		{q, "300", false, false},
 		{q, "900", false, false},
 		{q, "", false, false},
