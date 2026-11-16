@@ -265,6 +265,9 @@
     "quality/label-values-chunk-window | gap:open",
     "quality/labels-backfill-into-cached-bucket | compare:observed",
     "quality/labels-backfill-into-cached-bucket | gap:open",
+    "quality/labels-same-day-stream-before-window | compare:observed",
+    "quality/labels-same-day-stream-before-window | gap:open",
+    "quality/labels-same-day-stream-before-window | query",
     "quality/logfmt-parse-risk-candidates | compare:exact",
     "quality/logfmt-parse-risk-candidates | gap:fixed",
     "quality/logfmt-parse-risk-candidates | perf",
@@ -2851,7 +2854,7 @@
       "any": 35,
       "api": 103,
       "drilldown": 51,
-      "explore": 186,
+      "explore": 187,
       "grafana-datasource": 2,
       "operator": 4
     },
@@ -2875,7 +2878,7 @@
     },
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
-    "unwired_items": 93,
+    "unwired_items": 94,
     "wired_items": 382
   },
   "gates": [

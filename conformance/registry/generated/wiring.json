@@ -2499,7 +2499,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 591,
+  "registry_items": 592,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -5584,6 +5584,7 @@
     "quality/detected-metadata-proxy-cache",
     "quality/index-stats-bytes-and-chunks",
     "quality/label-values-chunk-window",
+    "quality/labels-same-day-stream-before-window",
     "quality/parity-corpus-asymmetric-visual-fixtures",
     "quality/stats-volume-freshness",
     "semantics/binary-step-grid",

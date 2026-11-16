@@ -1,0 +1,43 @@
+id: quality/labels-same-day-stream-before-window
+title: /labels omits a label whose stream has data earlier on the window's UTC day, which Loki lists (open)
+proves:
+  - data-probing-and-freshness
+  - loki_api_v1_labels
+consumer: explore
+why: |
+  Loki answers /labels from its index: for data it reads from the store it
+  lists the label names of the series matching the selector in each index
+  table (24h TSDB tables on the stack) the window touches, not only of the
+  series with data inside the window. On the e2e stack (Loki 3.7.7, TSDB,
+  query_ingesters_within 30m) a stream {app, lgone_<id>} pushed 3h back at T
+  was listed by Loki for /labels over [T+1m, T+11m] scoped to the app, while
+  VictoriaLogs' stream_field_names, and so the proxy, lists only the streams
+  with data in the window. Found by TestE2E_LabelsAgeOutOfWindow, which now
+  puts its narrow window on the next UTC day, where both sides agree.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: 'T+1m'
+    end: 'T+11m'
+    query: '{app="<fixture>"}'
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    One stream with a unique label pushed at T (more than 30m ago, same UTC
+    day as the window), another stream of the app pushed at T+10m.
+compare:
+  mode: observed
+  fields: [data]
+  expect: |
+    Loki lists the unique label of the stream at T; the proxy does not.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy/metadata_inventory.go (listing granularity)'
+  loki: 'label names per index table for store data'
+  proxy: 'labels of streams with data in the window (VictoriaLogs stream_field_names)'
+  planned_test: 'TestCompat_LabelsSameDayStreamBeforeWindow (test/e2e-compat, group core)'
+  note: 'Related: quality/label-cache-aged-labels-kept (its expectation, only labels of streams in the window, holds for streams on an earlier index day).'
+  clusters: []
