@@ -749,6 +749,18 @@ func patternSampleStart(timeNs int64) int64 {
 	return timeNs / int64(time.Second) / interval * interval
 }
 
+// patternSamplesEndNs is where the lines of a range ending at endNs end: the end of the 10 s sample endNs falls in,
+// endNs itself when it starts a sample. Loki answers each sample that starts inside the range with all of its lines,
+// so a range ending inside a sample counts that sample's lines after the end too.
+func patternSamplesEndNs(endNs int64) int64 {
+	interval := int64(lokiPatternSampleInterval)
+	r := endNs % interval
+	if r <= 0 || endNs > math.MaxInt64-interval {
+		return endNs
+	}
+	return endNs - r + interval
+}
+
 // patternBucketStart is the start, in unix seconds, of the step a line at timeNs is counted in, as Loki counts it
 // in two stages: into its sample (patternSampleStart), and the sample into the step it falls in, both truncated
 // from the epoch. A step that is not a multiple of the interval therefore differs from truncating the line's time
