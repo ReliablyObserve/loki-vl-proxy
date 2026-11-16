@@ -39,9 +39,17 @@ import (
 // route answers it from (binop_vector.go), and such a binary operation is held to that route too (RoutedBinary): the
 // translator reads the operand as a phrase to search for or drops it.
 //
+// A bool modifier, the set operators and, or and unless, and an operand that is itself a binary operation (a chain) are
+// lowered too, held to the binary route like a without operand (RoutedBinary): the translator's text for the whole
+// query drops the modifier, writes the left operand of a set operation alone and splits a chain at its first
+// operator, while the route reads the query's tree again and evaluates each operand as a query of its own (a binary
+// operand by the same route). Such an operand lowers to its own physical.Binary.
+//
 // Left to the string translator under a construct name:
-//   - and, or and unless (the translator writes the left operand alone), and a bool modifier (it drops it);
-//   - two numbers, or numbers and vector(n) only (BinOp constant operands: the proxy folds an instant query of
+//   - and, or and unless with a number or vector(n) operand (BinOp set operator: Loki rejects a number at parse, and the
+//     validation answers its error before any route), and a bool modifier next to a vector(n) or between constants
+//     (BinOp bool);
+//   - two numbers, or numbers and vector(n) only, also through a chain (BinOp constant operands: the proxy folds an instant query of
 //     constants itself, before any binary route, and the route's answer for a range query is a constant, which costs
 //     less than the plan), an operand that is a binary
 //     operation, label_replace, a ranking or a log query, an operand the range or vector aggregation lowering leaves
@@ -61,7 +69,7 @@ func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
 	if err != nil {
 		return nil, err
 	}
-	b := physical.Binary{Op: n.Op, L: l, R: r}
+	b := physical.Binary{Op: n.Op, Bool: n.Bool, L: l, R: r}
 	b.Match, b.Tail = binMatching(n.Match)
 	return b, nil
 }
@@ -82,23 +90,28 @@ var (
 	errBinNumberSpelling  = &NotLoweredError{Construct: "BinOp number spelling"}
 	errBinOperandSpelling = &NotLoweredError{Construct: "BinOp operand spelling"}
 	errBinConstants       = &NotLoweredError{Construct: "BinOp constant operands"}
+	errBinOperandBinOp    = &NotLoweredError{Construct: "BinOp operand BinOp"}
 )
 
 // binOpShape answers the NotLoweredError of a binary operation the lowering does not write, judged on the plan
 // alone: the operator, the bool modifier and the kinds of the operands.
 func binOpShape(n *queryplan.BinOp) error {
-	if translate.BinaryOperatorToken(n.Op) == "" {
-		return errBinSetOperator
-	}
-	if n.Bool {
-		return errBinBool
-	}
 	_, ls := n.L.(*queryplan.Scalar)
 	_, rs := n.R.(*queryplan.Scalar)
+	lc, rc := constantOperand(n.L), constantOperand(n.R)
+	_, lv := n.L.(*queryplan.VectorLit)
+	_, rv := n.R.(*queryplan.VectorLit)
+	switch {
+	case setOperator(n.Op) && (lc || rc):
+		// Loki rejects a number operand at parse; vector(n) next to a set operator is left as it was.
+		return errBinSetOperator
+	case n.Bool && (lv || rv || lc && rc):
+		return errBinBool
+	}
 	if ls && rs {
 		return errBinScalarOperands
 	}
-	if constantOperand(n.L) && constantOperand(n.R) {
+	if lc && rc {
 		return errBinConstants
 	}
 	for _, x := range [2]queryplan.Node{EmptyWithoutLevelsOff(n.L), EmptyWithoutLevelsOff(n.R)} {
@@ -108,8 +121,32 @@ func binOpShape(n *queryplan.BinOp) error {
 			if err := emptyWithoutShape(v); err != nil {
 				return err
 			}
+		case *queryplan.BinOp:
+			if binOpShape(v) != nil {
+				return errBinOperandBinOp
+			}
 		default:
 			return &NotLoweredError{Construct: "BinOp operand " + Construct(x)}
+		}
+	}
+	return nil
+}
+
+// setOperator reports and, or and unless.
+func setOperator(op string) bool { return translate.BinaryOperatorToken(op) == "" }
+
+// translatorShape is the binary operation the string translator's text for the whole query describes: no bool modifier,
+// no set operator, no operand that is a binary operation. The route rule keeps the others' delegations (RouteQuery).
+func translatorShape(n *queryplan.BinOp) error {
+	switch {
+	case setOperator(n.Op):
+		return errBinSetOperator
+	case n.Bool:
+		return errBinBool
+	}
+	for _, x := range [2]queryplan.Node{n.L, n.R} {
+		if _, ok := x.(*queryplan.BinOp); ok {
+			return errBinOperandBinOp
 		}
 	}
 	return nil
@@ -174,7 +211,7 @@ func emptyWithoutShape(n *queryplan.VectorAgg) error {
 // vector(n), which the route answers from a constant. The label_replace lowering leaves such a binary operation
 // under its calls to the translator for the same reason.
 func withoutOperand(n *queryplan.BinOp) bool {
-	if vectorOperand(n) {
+	if vectorOperand(n) || translatorShape(n) != nil {
 		return true
 	}
 	for _, x := range [2]queryplan.Node{n.L, n.R} {
@@ -232,6 +269,11 @@ func binOperand(x queryplan.Node, prof Profile) (physical.Op, error) {
 	case *queryplan.VectorAgg:
 		if op, err = vectorAggKeepAll(v, prof); err != nil {
 			return nil, operandError(err, errBinOperandVector)
+		}
+	case *queryplan.BinOp:
+		// A chain: the route evaluates the operand as a binary operation of its own.
+		if op, err = binOp(v, prof); err != nil {
+			return nil, operandError(err, errBinOperandBinOp)
 		}
 	}
 	return op, nil
