@@ -2125,6 +2125,9 @@
     "semantics/unpack-non-string-values": [
       "internal/proxy/compat_oversized_reply_test.go"
     ],
+    "semantics/unwrap-bare-range-exposes-parsed-labels": [
+      "internal/querycorpus/extraction_list_identity_loki_diff_test.go"
+    ],
     "semantics/unwrap-conversion-error": [
       "internal/proxy/label_filter_readers_differential_test.go",
       "internal/proxy/query_range_steps_harden_test.go",
@@ -2155,7 +2158,9 @@
       "test/e2e-compat/unwrap_duration_seconds_test.go"
     ],
     "semantics/unwrap-extraction-list-series-identity": [
-      "internal/proxy/extraction_list_outside_without_test.go"
+      "internal/proxy/extraction_list_outside_without_test.go",
+      "internal/querycorpus/extraction_list_identity_loki_diff_test.go",
+      "internal/queryplan/lower/unwrap_dynamic_test.go"
     ],
     "semantics/unwrap-first-last-per-line-range-longer-than-step": [
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
@@ -2559,7 +2564,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 604,
+  "registry_items": 606,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4360,6 +4365,10 @@
     "internal/querycorpus/extract_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/extraction_list_identity_loki_diff_test.go": [
+      "semantics/unwrap-bare-range-exposes-parsed-labels",
+      "semantics/unwrap-extraction-list-series-identity"
+    ],
     "internal/querycorpus/first_last_loki_diff_test.go": [
       "semantics/keep-before-unwrap-series-identity",
       "semantics/last-over-time-vl149-row-max-wrong-row",
@@ -4666,6 +4675,7 @@
     ],
     "internal/queryplan/lower/unwrap_dynamic_test.go": [
       "semantics/stdvar-grouped-pooled-variance",
+      "semantics/unwrap-extraction-list-series-identity",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
     "internal/queryplan/lower/unwrap_keep_test.go": [
@@ -5682,7 +5692,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 674,
+  "tests_with_markers": 675,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5736,6 +5746,7 @@
     "semantics/eager-pipeline-validation",
     "semantics/extracted-derived-labels-raw-evaluator",
     "semantics/extracted-ungrouped-metric-raw-rows",
+    "semantics/extraction-list-empty-label",
     "semantics/format-query-canonical-form-like-loki",
     "semantics/ip-filter-keeps-parser-error-lines",
     "semantics/json-empty-value-label-series",
@@ -5763,10 +5774,10 @@
     "semantics/translator-folds-binary-by-operand-without",
     "semantics/translator-reads-vector-operand-as-text",
     "semantics/two-parsers-keep-one",
-    "semantics/unwrap-bare-range-exposes-parsed-labels",
     "semantics/unwrap-conversion-error-parser-divergence",
     "semantics/unwrap-conversion-error-undetected-shapes",
     "semantics/unwrap-count-avg-without-after-parser",
+    "semantics/unwrap-extraction-list-conversion-error",
     "semantics/unwrap-json-extraction-list-parser-error",
     "semantics/unwrap-over-time-short-range-windows",
     "semantics/unwrap-parserless-reads-stored-field",
@@ -5781,5 +5792,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 393
+  "wired_items": 394
 }

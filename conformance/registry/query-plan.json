@@ -465,8 +465,8 @@
     }
   },
   "route_parity": {
-    "rows": 2565,
-    "runs": 25650,
+    "rows": 2567,
+    "runs": 25670,
     "profiles": [
       "instant",
       "step=range",
@@ -512,12 +512,12 @@
       "RangeAgg route level filter": 20,
       "RangeAgg route no bucket grid": 118,
       "RangeAgg route offset bounds": 10,
-      "RangeAgg route pipeline": 1170,
+      "RangeAgg route pipeline": 1180,
       "RangeAgg route reserved field": 10,
       "RangeAgg route spelling": 20,
       "RangeAgg route unwrap absent": 90,
       "RangeAgg route unwrap grouping": 20,
-      "RangeAgg route unwrap pipeline": 1640,
+      "RangeAgg route unwrap pipeline": 1650,
       "RangeAgg route unwrap quantile": 660,
       "RangeAgg route unwrap rate": 20,
       "RangeAgg route unwrap rate_counter": 70,
@@ -550,7 +550,7 @@
       "VectorLit": 10
     },
     "statuses": {
-      "200": 25023,
+      "200": 25043,
       "400": 594,
       "500": 33
     },
@@ -558,7 +558,7 @@
       "24h chunk/BinOp": "06d09a35f766db77",
       "24h chunk/LabelReplace": "34b8c8aa4bd45211",
       "24h chunk/LogSelect": "aefbd87a1712a487",
-      "24h chunk/RangeAgg": "fd8397b6cd8d8686",
+      "24h chunk/RangeAgg": "14da3e3576fc9b80",
       "24h chunk/Rank": "5d5c6fdee6b08cd7",
       "24h chunk/Scalar": "b01ddfee0a162681",
       "24h chunk/VectorAgg": "d7e428d6afc47f7b",
@@ -566,7 +566,7 @@
       "instant/BinOp": "2cfc393f6de5d409",
       "instant/LabelReplace": "1eda7f007cfc3480",
       "instant/LogSelect": "d768315233c83eac",
-      "instant/RangeAgg": "e3777d13f4a6a66b",
+      "instant/RangeAgg": "56ec857baa012197",
       "instant/Rank": "0c8885e689a4acce",
       "instant/Scalar": "058ee94c303a0c46",
       "instant/VectorAgg": "b9969e1c4d17ae9e",
@@ -574,7 +574,7 @@
       "step\u003crange/BinOp": "8f8290b21d6929c1",
       "step\u003crange/LabelReplace": "7e2339de2a64039d",
       "step\u003crange/LogSelect": "aefbd87a1712a487",
-      "step\u003crange/RangeAgg": "27f8921e5e37ed02",
+      "step\u003crange/RangeAgg": "ad9ba459152be8f1",
       "step\u003crange/Rank": "d008b658c941bc31",
       "step\u003crange/Scalar": "b01ddfee0a162681",
       "step\u003crange/VectorAgg": "db7763b50ebe29c4",
@@ -582,7 +582,7 @@
       "step=range/BinOp": "19d3995395703ae9",
       "step=range/LabelReplace": "f814664e0f744be4",
       "step=range/LogSelect": "aefbd87a1712a487",
-      "step=range/RangeAgg": "2e0b0487c61b5bd7",
+      "step=range/RangeAgg": "c6f05d3d7c4ef923",
       "step=range/Rank": "67c430aa6cf09e59",
       "step=range/Scalar": "b01ddfee0a162681",
       "step=range/VectorAgg": "3bdd1e3f5e566644",
@@ -590,7 +590,7 @@
       "step\u003erange/BinOp": "1d0c5e742409da42",
       "step\u003erange/LabelReplace": "266dba9d6112ebe9",
       "step\u003erange/LogSelect": "aefbd87a1712a487",
-      "step\u003erange/RangeAgg": "00ec2f369d5385fc",
+      "step\u003erange/RangeAgg": "efd25be6a6f9e902",
       "step\u003erange/Rank": "08fa4e81d264875d",
       "step\u003erange/Scalar": "b01ddfee0a162681",
       "step\u003erange/VectorAgg": "6283ee3c4f1b7d46",
@@ -598,7 +598,7 @@
     }
   },
   "shadow": {
-    "rows": 24159,
+    "rows": 24177,
     "profiles": 12,
     "native": 20905,
     "native_proxy_evaluated": 3870,
@@ -661,7 +661,7 @@
       "known divergence semantics/translator-reads-quoted-text-as-syntax": 12,
       "known divergence semantics/translator-writes-reserved-field-names": 93,
       "known divergence semantics/translator-writes-signed-number-with-blank": 12,
-      "known divergence semantics/unwrap-per-series-identity-raw-rows": 648
+      "known divergence semantics/unwrap-per-series-identity-raw-rows": 666
     },
     "flipped": [
       "LogSelect",

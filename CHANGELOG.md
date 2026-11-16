@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `sum`, `max`, `min` and `avg` (with or without `by`) over `avg_over_time`, `max_over_time`, `min_over_time`,
+  `stddev_over_time` or `stdvar_over_time` of a label unwrapped after an extraction list (`| logfmt amount, route`,
+  `| json amount`) now read Loki's series: the stream plus the labels the list names, less the unwrapped one, where
+  the proxy read each line as a series of its own. On an instant query and on a range up to the step, for example
+  `sum(max_over_time({...} | logfmt amount | unwrap amount [5m]))` adds one maximum per stream as Loki does. Count,
+  first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
+  read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
+
 ### Performance
 
 - Metric queries over streams without a level label take VictoriaLogs less time, with the same answers: about a

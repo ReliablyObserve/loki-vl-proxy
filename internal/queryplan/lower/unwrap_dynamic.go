@@ -75,9 +75,9 @@ func dynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) (parser *q
 		switch st := st.(type) {
 		case *queryplan.LineFilter, *queryplan.LabelFilter:
 		case *queryplan.Parse:
-			// One parser of every key: the second unpack reads what it read.
-			if parser != nil || st.Fields != nil || st.Param != "" || st.Strict || st.KeepEmpty ||
-				st.Type != logql.ParserJSON && st.Type != logql.ParserLogfmt {
+			// One parser, of every key or of an extraction list of plain keys: the second unpack reads what it read.
+			if parser != nil || st.Param != "" && st.Fields == nil || st.Strict || st.KeepEmpty ||
+				st.Type != logql.ParserJSON && st.Type != logql.ParserLogfmt || !plainExtraction(st) {
 				return nil, false
 			}
 			parser = st
@@ -94,6 +94,13 @@ func dynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) (parser *q
 	if unwrap == nil || unwrap.Label == "" {
 		return nil, false
 	}
+	if parser.Fields != nil {
+		// An extraction list: Loki's series are the stream and the labels it names (an empty value too), less the
+		// unwrapped one (parsedSeriesLabels; a name that is a stream label or a level is read otherwise).
+		if _, ok := parsedSeriesLabels(ra.In, unwrap.Label); !ok {
+			return nil, false
+		}
+	}
 	out := queryplan.SeriesLabels(ra.In.Stages)
 	if !out.Dynamic || out.Kept || out.Opaque || len(out.Dropped) > 0 {
 		return nil, false
@@ -108,6 +115,18 @@ func dynamicIdentityPipes(parser *queryplan.Parse, label string) string {
 	unpack := dynamicUnpackJSON
 	if parser.Type == logql.ParserLogfmt {
 		unpack = dynamicUnpackLogfmt
+	}
+	if parser.Fields != nil {
+		// An extraction list: the second unpack reads the keys it names, so the hash holds those labels alone.
+		names := make([]string, len(parser.Fields))
+		for i, f := range parser.Fields {
+			names[i] = f.Name
+		}
+		if parser.Type == logql.ParserLogfmt {
+			unpack = logsql.PipeUnpackLogfmt{From: "_msg", Fields: names, ResultPrefix: dynamicPrefix}.String()
+		} else {
+			unpack = logsql.PipeUnpackJSON{From: "_msg", Fields: names, ResultPrefix: dynamicPrefix}.String()
+		}
 	}
 	spellings := translate.ParsedKeyVariants(label)
 	deleted := make([]string, len(spellings))
@@ -184,4 +203,17 @@ func withoutDynamicSeries(by []string) []string {
 		}
 	}
 	return out
+}
+
+// plainExtraction reports a parser of every key, or a json or logfmt extraction list whose entries each read the key
+// of their own name (`| logfmt amount, route`, `| json amount`): the second unpack of the identity reads those keys
+// under the names the labels have. An alias (`| json a="amount"`, `| logfmt a=amount`) or a json path is read
+// otherwise and leaves the series to the stream.
+func plainExtraction(st *queryplan.Parse) bool {
+	for _, f := range st.Fields {
+		if f.Expression != f.Name || !plainIdent(f.Name) {
+			return false
+		}
+	}
+	return true
 }

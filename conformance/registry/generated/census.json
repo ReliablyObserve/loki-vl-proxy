@@ -430,6 +430,9 @@
     "semantics/extracted-ungrouped-metric-raw-rows | compare:exact",
     "semantics/extracted-ungrouped-metric-raw-rows | gap:open",
     "semantics/extracted-ungrouped-metric-raw-rows | query",
+    "semantics/extraction-list-empty-label | compare:observed",
+    "semantics/extraction-list-empty-label | gap:open",
+    "semantics/extraction-list-empty-label | query",
     "semantics/first-last-over-time-translation | compare:observed",
     "semantics/first-last-over-time-translation | gap:fixed",
     "semantics/first-last-over-time-translation | query",
@@ -953,7 +956,7 @@
     "semantics/unpack-non-string-values | gap:open",
     "semantics/unpack-non-string-values | query",
     "semantics/unwrap-bare-range-exposes-parsed-labels | compare:observed",
-    "semantics/unwrap-bare-range-exposes-parsed-labels | gap:open",
+    "semantics/unwrap-bare-range-exposes-parsed-labels | gap:fixed",
     "semantics/unwrap-bare-range-exposes-parsed-labels | query",
     "semantics/unwrap-conversion-error | compare:exact",
     "semantics/unwrap-conversion-error | gap:fixed",
@@ -978,6 +981,9 @@
     "semantics/unwrap-duration-seconds | gap:fixed",
     "semantics/unwrap-duration-seconds | perf",
     "semantics/unwrap-duration-seconds | query",
+    "semantics/unwrap-extraction-list-conversion-error | compare:observed",
+    "semantics/unwrap-extraction-list-conversion-error | gap:open",
+    "semantics/unwrap-extraction-list-conversion-error | query",
     "semantics/unwrap-extraction-list-series-identity | compare:observed",
     "semantics/unwrap-extraction-list-series-identity | gap:open",
     "semantics/unwrap-extraction-list-series-identity | query",
@@ -2165,6 +2171,8 @@
     "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/exotic_names_oracle_test.go | semantics/translator-writes-exotic-field-names-bare",
     "internal/querycorpus/extract_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-bare-range-exposes-parsed-labels",
+    "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-extraction-list-series-identity",
     "internal/querycorpus/first_last_loki_diff_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/querycorpus/first_last_loki_diff_test.go | semantics/last-over-time-vl149-row-max-wrong-row",
     "internal/querycorpus/first_last_loki_diff_test.go | semantics/unwrap-first-last-range-longer-than-step",
@@ -2312,6 +2320,7 @@
     "internal/queryplan/lower/unpack_test.go | semantics/translator-writes-unpack-as-unpack-json",
     "internal/queryplan/lower/unspaced_parser_test.go | semantics/translator-copies-unspaced-parser",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/stdvar-grouped-pooled-variance",
+    "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-extraction-list-series-identity",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/unwrap_keep_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/queryplan/lower/unwrap_stats_test.go | architecture-syntax-package-layering",
@@ -2918,12 +2927,12 @@
       "any": 35,
       "api": 109,
       "drilldown": 53,
-      "explore": 190,
+      "explore": 192,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 673,
+      "go": 674,
       "playwright": 1
     },
     "page_kinds": {
@@ -2942,8 +2951,8 @@
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 95,
-    "wired_items": 393
+    "unwired_items": 96,
+    "wired_items": 394
   },
   "gates": [
     "A/B shape selection",

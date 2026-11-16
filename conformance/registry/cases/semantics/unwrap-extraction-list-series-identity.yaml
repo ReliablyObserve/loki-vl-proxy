@@ -1,11 +1,10 @@
 id: semantics/unwrap-extraction-list-series-identity
-title: outside a without, an aggregation over a range function after an extraction list reads other series than Loki's (open)
+title: outside a without, an aggregation over a range function after an extraction list reads other series than Loki's (open, partly fixed - sum, max, min, avg over avg to stdvar over time on query and on a range up to the step)
 proves:
   - metric-series-identity
   - loki_api_v1_query_range
   - loki_api_v1_query
 consumer: explore
-evidence: needs recording
 why: |
   After a parser that names the keys it extracts (`| logfmt amount`,
   `| logfmt amount, route`), a Loki series is the stream plus those labels, less
@@ -43,7 +42,26 @@ why: |
   `sum(rate(... | logfmt amount))` and `sum(count_over_time(... | logfmt route))`
   are right: a sum of sums is the sum.
 
-  The figures come from an emulator run (the real handler over an emulated
+  Recorded since against Loki's engine (TestExtractionListIdentityMatchLoki,
+  internal/querycorpus, VictoriaLogs v1.49.0 and v1.53.0): at an instant
+  `sum(max_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))` is
+  23308 on origin/main and 1953 on Loki; `count by (ns) (max_over_time(... |
+  logfmt amount, route | unwrap amount [5m]))` 2 against 8.
+
+  Fixed: sum, max, min and avg (by labels, or none) over avg, max, min, stddev
+  and stdvar over time after an extraction list of plain keys (`| logfmt
+  amount, route`, `| json amount`), on an instant query and on a range up to
+  the step. The lowering writes the dynamic identity of a parser for them
+  (lower.DynamicUnwrapIdentity): the second unpack reads only the listed keys,
+  so the series hash holds the stream and those labels, and VictoriaLogs groups
+  the function by it. Still open (listed in extractionListKnownRuns): count over
+  the series, first, last, quantile, rate and rate_counter under an
+  aggregation, a json alias or path in the list, a ranking, sort or grouping by
+  a listed label, and a count of lines (`count by (ns) (count_over_time(... |
+  logfmt route [5m]))`); a range longer than the step keeps the stream's series
+  (semantics/unwrap-per-series-identity-raw-rows).
+
+  The figures below come from an emulator run (the real handler over an emulated
   VictoriaLogs v1.52.0) with a reference evaluator for Loki's fold on that fixture;
   none of them was run against a real Loki. Related:
   semantics/unwrap-per-series-identity-raw-rows (the same defect for a bare
@@ -69,7 +87,7 @@ gap:
   area: 'internal/translator unwrapInnerGrouping and defaultRateInnerGrouping (parsedSeriesLabels is read for the without fold only); internal/proxy withParsedGroupLabels'
   loki: 'a vector aggregation over a range aggregation folds per series, and a series is the stream plus the labels the parsers extract (emulator reference only; not yet run against Loki)'
   proxy: 'the inner stats group by the line (unwrap functions) or by the stream (rate, count_over_time), so the outer aggregation reads other series'
-  planned_test: 'TestExtractionListSeriesIdentityStillDiffers and TestExtractionListOutsideWithoutKeepsItsGrouping (internal/proxy, emulator); an e2e test vs Loki in group semantics when fixed (TestCompat_UnwrapExtractionListSeriesIdentity)'
+  planned_test: 'TestExtractionListIdentityMatchLoki (internal/querycorpus, Loki engine oracle, VictoriaLogs v1.49.0 and v1.53.0); TestExtractionListSeriesIdentityStillDiffers and TestExtractionListOutsideWithoutKeepsItsGrouping (internal/proxy, emulator); an e2e test vs Loki in group semantics when fixed (TestCompat_UnwrapExtractionListSeriesIdentity)'
   note: 'Found while confining the extraction-list grouping of semantics/unwrap-sum-without-collapses to the without fold. Applying the grouping to these queries is the fix shape, but it multiplies the series the stats return (a series per stream and parsed label set, which the series limit counts), so it needs the limit and the sliding route measured on their own before it lands.'
   clusters:
     - aa2da3e7
