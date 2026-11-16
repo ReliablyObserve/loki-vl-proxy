@@ -2056,6 +2056,9 @@
       "internal/proxy/without_fold_scope_test.go",
       "internal/proxy/without_open_shapes_test.go"
     ],
+    "semantics/topk-first-argument-error-text": [
+      "internal/logql/topk_param_loki_test.go"
+    ],
     "semantics/topk-grouped-spellings": [
       "internal/proxy/topk_fuzz_test.go",
       "internal/proxy/topk_range_differential_test.go",
@@ -2097,6 +2100,7 @@
       "internal/proxy/blank_after_keyword_test.go",
       "internal/proxy/error_refusals_test.go",
       "internal/proxy/query_lowering_corpus_test.go",
+      "internal/proxy/query_lowering_log_stages_test.go",
       "internal/querycorpus/grammar_sweep_test.go"
     ],
     "semantics/translator-reads-parenthesized-metric-as-text": [
@@ -2590,7 +2594,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 602,
+  "registry_items": 603,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2753,6 +2757,9 @@
     ],
     "internal/logql/terminates_test.go": [
       "semantics/logql-unicode-runes"
+    ],
+    "internal/logql/topk_param_loki_test.go": [
+      "semantics/topk-first-argument-error-text"
     ],
     "internal/logql/unicode_runes_loki_test.go": [
       "semantics/logql-unicode-runes"
@@ -3773,7 +3780,8 @@
     ],
     "internal/proxy/query_lowering_log_stages_test.go": [
       "architecture-syntax-package-layering",
-      "semantics/translator-copies-unspaced-parser"
+      "semantics/translator-copies-unspaced-parser",
+      "semantics/translator-reads-only-space-between-tokens"
     ],
     "internal/proxy/query_lowering_shared_parse_test.go": [
       "architecture-syntax-package-layering",
@@ -5718,7 +5726,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 671,
+  "tests_with_markers": 672,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5817,5 +5825,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 403
+  "wired_items": 404
 }
