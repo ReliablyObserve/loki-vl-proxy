@@ -482,7 +482,12 @@ func TestUnwrapConversionErrorAnswersLokiText(t *testing.T) {
 			}
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
-			if len(fake.lookups) != 1 || fake.reads != 1 || len(fake.stats) == 0 || !strings.Contains(fake.stats[0], unwrapBadField) {
+			counted := false
+			for _, q := range fake.stats {
+				// A parser's series identity over a range longer than the step reads a row count first (no counter).
+				counted = counted || strings.Contains(q, unwrapBadField)
+			}
+			if len(fake.lookups) != 1 || fake.reads != 1 || !counted {
 				t.Fatalf("want the counter in the stats query, one lookup and one stored-row read: stats=%q lookups=%d reads=%d", fake.stats, len(fake.lookups), fake.reads)
 			}
 			// The lookup reads only the flagged bucket's span (a step on either

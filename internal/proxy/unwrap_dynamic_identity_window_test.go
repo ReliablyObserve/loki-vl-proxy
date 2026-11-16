@@ -810,3 +810,17 @@ func TestPlanIdentityChunks(t *testing.T) {
 		t.Fatal("no counts hold rows")
 	}
 }
+
+// shimBucketReads is extentShim.bucketsRead without the row counts of the chunk plan of a parser's series identity.
+func shimBucketReads(s *extentShim) (calls int, buckets int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.calls {
+		if strings.HasSuffix(c.query, "| stats count() as __lvp_rows") {
+			continue
+		}
+		calls++
+		buckets += (c.end - c.start) / c.step
+	}
+	return calls, buckets
+}
