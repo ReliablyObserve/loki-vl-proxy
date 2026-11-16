@@ -477,6 +477,15 @@ func semanticsStreamsRest() []Stream {
 			Route: RouteLokiPushRaw, // the line stays verbatim in _msg on both sides
 		},
 		{
+			// A JSON object with an empty value, one with a value and one without the key (semantics/json-empty-value-label-series):
+			// Loki answers the empty `a` as a series of its own, the proxy merges it into the series without the label.
+			Name:    "json-empty",
+			Cases:   []string{"semantics/json-empty-value-label-series"},
+			Labels:  m{"app": "json-empty"},
+			Entries: lines(`{"a":""}`, `{"a":"x"}`, `{"b":1}`),
+			Route:   RouteLokiPushRaw,
+		},
+		{
 			// 12 lines: Loki groups sum by (a) as `1`: 7 and none: 5; the proxy reads 5 groups (a=2, a="unterminated, a==1).
 			Name:   "logfmt-malformed",
 			Cases:  []string{"semantics/logfmt-malformed-lines"},
