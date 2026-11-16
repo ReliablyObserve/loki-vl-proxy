@@ -697,12 +697,6 @@
     "semantics/pattern-line-filter-invalid-captures | compare:observed",
     "semantics/pattern-line-filter-invalid-captures | gap:fixed",
     "semantics/pattern-line-filter-invalid-captures | query",
-    "semantics/patterns-query-beyond-selector | compare:observed",
-    "semantics/patterns-query-beyond-selector | gap:open",
-    "semantics/patterns-query-beyond-selector | query",
-    "semantics/patterns-query-without-selector | compare:observed",
-    "semantics/patterns-query-without-selector | gap:fixed",
-    "semantics/patterns-query-without-selector | query",
     "semantics/pipeline-error-text-parity | compare:exact",
     "semantics/pipeline-error-text-parity | perf",
     "semantics/pipeline-error-text-parity | query",
@@ -1709,8 +1703,6 @@
     "internal/proxy/patterns_exact_test.go | drilldown/patterns-full-range-counts",
     "internal/proxy/patterns_exact_test.go | drilldown/patterns-mined-differently",
     "internal/proxy/patterns_exact_test.go | loki_api_v1_patterns",
-    "internal/proxy/patterns_no_selector_test.go | semantics/error-request-validation-parity",
-    "internal/proxy/patterns_no_selector_test.go | semantics/patterns-query-without-selector",
     "internal/proxy/patterns_non_selector_test.go | drilldown/patterns-non-selector-query",
     "internal/proxy/patterns_non_selector_test.go | loki_api_v1_patterns",
     "internal/proxy/patterns_owner_test.go | loki_api_v1_patterns",
@@ -2852,14 +2844,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 105,
+      "api": 103,
       "drilldown": 51,
       "explore": 186,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 652,
+      "go": 651,
       "playwright": 1
     },
     "page_kinds": {
@@ -2878,8 +2870,8 @@
     },
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
-    "unwired_items": 96,
-    "wired_items": 381
+    "unwired_items": 95,
+    "wired_items": 380
   },
   "gates": [
     "A/B shape selection",

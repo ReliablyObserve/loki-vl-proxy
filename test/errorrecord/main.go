@@ -4,7 +4,12 @@
 //
 // It sends every comparable row's request, byte for byte, to the Loki at -loki
 // and rewrites only the row's "loki" object and the date and version of the
-// file's header line; every other byte of the files stays. A row that is not
+// file's header line; every other byte of the files stays. The absolute start,
+// end and time parameters of a request are moved to now first, by the time
+// since the latest one the file holds (lokirecorded.Delta), as the end-to-end
+// comparison moves them: a row asks the window it asked when it was recorded,
+// relative to now, whatever day it is recorded again. The stored target keeps
+// the times it was written with. A row that is not
 // comparable (it depends on the recorded Loki's configuration, or on an
 // authentication the stack does not run) keeps its recorded answer unless -all
 // is given. It adds no row and removes none: a new probe is a row written by
@@ -14,9 +19,7 @@
 // changed and exits 1 when there are any. A scheduled run uses it to notice a
 // Loki bump, and uploads the rewritten files for review.
 //
-// Some of Loki's answers move with its state: a Loki that holds data answers
-// /patterns given a query that is not a stream selector with its empty success,
-// where one that has just started with none answered 400. The answers are recorded from a Loki that serves data:
+// The answers are recorded from a Loki that serves data, as a Loki in use does:
 // -ingest writes a small fixture to the Loki and waits until its range metric
 // path answers with it, then exits (run it once, before recording). Before it
 // records, the command asks the Loki whether it serves that data, and writes
@@ -57,6 +60,9 @@ type config struct {
 	version string
 	// state is written into every re-recorded row; empty leaves each row's state as it is.
 	state string
+	// shift asks each row with its absolute times moved to now (lokirecorded.Delta), as the end-to-end
+	// comparison asks it; off, the request is sent as recorded.
+	shift bool
 }
 
 func main() {
@@ -78,6 +84,7 @@ func main() {
 		}
 		return
 	}
+	cfg.shift = true
 	cfg.state = lokirecorded.StateFresh
 	if serving(cfg.loki, now()) {
 		cfg.state = lokirecorded.StateServing
@@ -126,6 +133,10 @@ func recordFile(path, host, version string, cfg config, out io.Writer) (int, err
 	}
 	lines := make([]string, len(file.Lines))
 	changed, kept := 0, 0
+	var delta time.Duration
+	if cfg.shift {
+		delta = lokirecorded.Delta(file.Rows, now())
+	}
 	for i, row := range file.Rows {
 		lines[i] = file.Lines[i]
 		// A row added by hand with no answer yet (status 0) is recorded whatever it is marked.
@@ -133,7 +144,7 @@ func recordFile(path, host, version string, cfg config, out io.Writer) (int, err
 			kept++
 			continue
 		}
-		reply, err := lokirecorded.Replay(host, row, rowTimeout)
+		reply, err := lokirecorded.Replay(host, row.Shifted(delta), rowTimeout)
 		if err != nil {
 			return changed, err
 		}

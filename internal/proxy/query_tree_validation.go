@@ -87,9 +87,14 @@ func emptyWhateverTheData(expr logqlpkg.Expr) bool {
 }
 
 // answerEmptyResult answers a query cachedQueryValidation found empty whatever the data with Loki's empty result
-// (a matrix on query_range, a vector on query), before any other work; it reports whether it answered.
-func (p *Proxy) answerEmptyResult(w http.ResponseWriter, endpoint, query string, start time.Time) bool {
-	if !cachedQueryValidation(query).empty {
+// (a matrix on query_range, a vector on query), and an absent_over_time over a zero range with Loki's 1 at every
+// step (answerAbsentEveryStep), before any other work; it reports whether it answered.
+func (p *Proxy) answerEmptyResult(w http.ResponseWriter, r *http.Request, endpoint, query string, start time.Time) bool {
+	v := cachedQueryValidation(query)
+	if v.absentEveryStep {
+		return p.answerAbsentEveryStep(w, r, endpoint, query, start)
+	}
+	if !v.empty {
 		return false
 	}
 	p.writeJSON(w, emptyLimitedResponse(endpoint, query))

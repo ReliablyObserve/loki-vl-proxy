@@ -17,10 +17,25 @@ import (
 // through the wrappers that keep one series a series (vector aggregations, rankings, sorts and label_replace). A
 // binary operation keeps its route.
 
-// absentEveryStep reports whether expr is an absent_over_time over a zero range under such wrappers only.
+// absentEveryStep reports whether expr is an absent_over_time over a zero range under such wrappers only. It reads
+// the tree without allocating: it runs on every query the validation cache has not seen.
 func absentEveryStep(expr logqlpkg.Expr) bool {
-	_, ok := absentZeroRangeSeries(expr)
-	return ok
+	for {
+		switch e := expr.(type) {
+		case *logqlpkg.RangeAggregation:
+			lq, isLog := e.Inner.(*logqlpkg.LogQuery)
+			return e.Op == logqlpkg.RangeAbsentOverTime && e.Grouping == nil && isLog && lq != nil && isZeroDuration(e.Range)
+		case *logqlpkg.VectorAggregation:
+			expr = e.Inner
+		case *logqlpkg.OpaqueMetricExpr:
+			if !e.Typed || e.Func != "label_replace" || len(e.Args) != 4 || e.Inner == nil {
+				return false
+			}
+			expr = e.Inner
+		default:
+			return false
+		}
+	}
 }
 
 // absentZeroSeries is the one series of an absent_over_time over a zero range after its wrappers; none is false
@@ -66,11 +81,8 @@ func absentZeroRangeSeries(expr logqlpkg.Expr) (absentZeroSeries, bool) {
 }
 
 // answerAbsentEveryStep answers a query cachedQueryValidation found to be an absent_over_time over a zero range
-// with Loki's answer, before any other work; it reports whether it answered.
+// with Loki's answer; it reports whether it answered.
 func (p *Proxy) answerAbsentEveryStep(w http.ResponseWriter, r *http.Request, endpoint, query string, start time.Time) bool {
-	if !cachedQueryValidation(query).absentEveryStep {
-		return false
-	}
 	expr, ok := sharedLogQLExpr(query)
 	if !ok {
 		return false

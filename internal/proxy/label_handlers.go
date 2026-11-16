@@ -1151,9 +1151,6 @@ func (p *Proxy) lokiQueryParamValidation(endpoint string, next http.HandlerFunc)
 				p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 				return
 			}
-			if endpoint == "patterns" && p.answerPatternsWithoutSelector(w, r.FormValue("query")) {
-				return
-			}
 			if msg := lokiQueryParamError(rule, r, p.limits().QueryLengthBytes, p.lokiNameCheck()); msg != "" {
 				p.writeError(w, http.StatusBadRequest, truncateQueryError(msg))
 				p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)

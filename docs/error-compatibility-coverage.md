@@ -13,12 +13,12 @@ The answers are those of Grafana Loki 3.7.9, recorded over HTTP on 2026-11-15. E
 
 | Score | Value | Meaning |
 |---|---|---|
-| Errors that match Loki | 96.5% (224/232) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
+| Errors that match Loki | 96.6% (225/233) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
 | Matrix coverage | 58.9% (73/124) | route x error kind cells with a recorded or documented Loki answer, a unit gate and an end-to-end comparison |
 | Cells that match | 100/124 | cells where every comparable row matches and no known leak remains |
 | Messages recorded | 27/36 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
 
-79 recorded rows are not comparable (the recorded Loki ran with authentication disabled, or its answer depends on its own configuration) and are replayed but not counted.
+75 recorded rows are not comparable (the recorded Loki ran with authentication disabled, or its answer depends on its own configuration) and are replayed but not counted.
 
 ## Matrix
 
@@ -36,7 +36,7 @@ Each cell shows whether the proxy matches (`match` or `differs`), the matching a
 | `index_volume_range` | match 9/9 UE | match 2/2 UE | match 2/2 UE | match gate UE | match gate U | match 1/1 UE | gap | match gate U |
 | `label_values` | match 4/4 UE | match 1/1 UE | match 3/3 UE | match 1/1 UE | match gate U | match 2/2 UE | not comparable (6) | match gate U |
 | `labels` | match 4/4 UE | match 1/1 UE | match 3/3 UE | match 1/1 UE | match gate UE | match 5/5 UE | not comparable (20) | match gate UE |
-| `patterns` | match 5/5 UE | match 2/2 UE | match 1/1 UE | match gate U | match gate U | match 5/5 UE | gap | match gate U |
+| `patterns` | match 5/5 UE | match 2/2 UE | match 2/2 UE | match gate U | match gate U | match 5/5 UE | gap | match gate U |
 | `query` | match 4/4 UE | match 2/2 UE | differs 1/2 UE | match gate U | match gate U | match 5/5 UE | not comparable (6) | match gate U |
 | `query_range` | match 16/16 UE | match 2/2 UE | differs 4/5 UE | match gate UE | match gate UE | match 5/5 UE | not comparable (20) | match gate UE |
 | `rules` |  |  |  | match gate U | match gate U | gap | gap | match gate U |
@@ -91,7 +91,7 @@ The order was observed by sending 33 requests that carry two errors each to a re
 | `msg-method-not-allowed` | 405 | route | 61 | 61/61 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-not-found` | 404 | route | 21 | 21/21 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-number` | 400 | param | 8 | 8/8 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
-| `msg-only-label-matchers` | 400 | param | 7 | 7/7 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-only-label-matchers` | 400 | param | 8 | 8/8 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-only-log-selector` | 400 | param | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-param-duration` | 400 | param | 9 | 9/9 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
 | `msg-param-number` | 400 | param | 14 | 14/14 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |

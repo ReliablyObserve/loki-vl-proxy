@@ -80,9 +80,8 @@ type Row struct {
 	State string `json:"state,omitempty"`
 }
 
-// The states of a recorded Loki. Some answers move with it: a Loki that holds
-// data answers /patterns given a query that is not a stream selector with its
-// empty success, where a Loki that has just started with none answered 400.
+// The states of a recorded Loki: one that held data and served it on its range
+// metric path, or one that had just started with none.
 const (
 	StateServing = "serving"
 	StateFresh   = "fresh"
@@ -223,6 +222,33 @@ func (r Row) Shifted(delta time.Duration) Row {
 	}
 	r.Target = path + "?" + strings.Join(parts, "&")
 	return r
+}
+
+// Delta is how far the absolute start, end and time parameters of rows move
+// (Row.Shifted) so the rows are asked as of now, as they were when they were
+// recorded: a Loki limits how far back a query may reach, and some routes
+// answer a window older than what they hold differently. It is measured from
+// the latest end or time in seconds the rows carry; 0 when they carry none or
+// the latest is ahead of now.
+func Delta(rows []Row, now time.Time) time.Duration {
+	var latest int64
+	for _, row := range rows {
+		_, query, _ := strings.Cut(row.Target, "?")
+		for _, p := range strings.Split(query, "&") {
+			name, value, _ := strings.Cut(p, "=")
+			if name != "end" && name != "time" {
+				continue
+			}
+			if n, err := strconv.ParseInt(value, 10, 64); err == nil && n >= 1_000_000_000 && n < 100_000_000_000 && n > latest {
+				latest = n
+			}
+		}
+	}
+	delta := time.Duration(now.Unix()-latest) * time.Second
+	if latest == 0 || delta < 0 {
+		return 0
+	}
+	return delta
 }
 
 // Replay sends the row's request to the server at addr (host:port) over a

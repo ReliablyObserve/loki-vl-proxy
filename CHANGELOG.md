@@ -27,22 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answer reads no data: it is written from the parsed query before the response cache, the query plan and any
   VictoriaLogs call. The proxy answered `500 Internal Server Error` (and, on query with VictoriaLogs data behind it,
   a series carrying a `detected_level` label Loki does not write) (semantics/zero-range-metric).
-- `/loki/api/v1/patterns` given a valid query that names no stream (`1 + 1`, `vector(1)`) now answers Loki's empty
-  success, `{"status":"success","data":[]}`, as a Loki that serves data does, without a VictoriaLogs call. It
-  answered `400 only label matchers are supported`, the answer of a Loki that has just started with no data; the
-  other selector routes keep that 400, as Loki does (semantics/patterns-query-without-selector).
-
-### Changed
-
 - Test support: the plan corpus leaves out the request of a registry case that compares only a client error, and six
   conformance cases for queries Loki rejects now carry an HTTP request the live verifier sends. No proxy behaviour changes.
 - Loki's error answers are recorded from a Loki that holds data. The recorder (`test/errorrecord`) writes a small
   fixture to the Loki and waits until its range metric path serves it (`-ingest`, a step of the weekly
   `error-answers-record` workflow) before it asks the recorded requests, and every row it records carries the state
   of the Loki it was recorded from (`"state": "serving"`); the recorder also waits until every Loki module is running.
-  A row added by hand with no answer yet is recorded whatever it is marked. Re-recorded from such a Loki, every row
-  kept its answer except `/patterns` given a query that is not a stream selector, which Loki answers with its empty
-  success instead of `400 only label matchers are supported`.
+  Each row asks the window it asked when it was written, moved to now, as the end-to-end comparison asks it: over a
+  window older than what it holds, Loki answers `/patterns` given a query that is not a stream selector with its
+  empty success instead of `400 only label matchers are supported`, so an unmoved window recorded that instead of
+  the answer a client gets. A row added by hand with no answer yet is recorded whatever it is marked.
 
 ## [2.301.0] - 2026-11-15
 

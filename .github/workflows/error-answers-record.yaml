@@ -6,12 +6,12 @@ name: Error answers re-record
 # replay and the generated error compatibility matrix compare against, so a Loki bump
 # that changes one of its messages shows here before it shows as a surprise elsewhere.
 #
-# Some answers move with Loki's state (a Loki that serves data answers /patterns given a
-# query that is not a stream selector with its empty success, where one that has just
-# started empty answered 400), so the
-# recorded Loki holds data: the recorder writes a fixture to it first and waits until its
-# range metric path serves it, and every re-recorded row carries the state it was recorded
-# in ("state": "serving").
+# The recorded Loki holds data, as a Loki in use does: the recorder writes a fixture to it
+# first and waits until its range metric path serves it and every module runs, and every
+# re-recorded row carries the state it was recorded in ("state": "serving"). Each row asks
+# the window it asked when it was written, moved to now (as the end-to-end comparison moves
+# it): over a window older than what it holds, /patterns answers a query that is not a
+# stream selector with its empty success instead of Loki's 400.
 #
 # The recorder (test/errorrecord) sends every comparable row over HTTP and rewrites only
 # the answers and states; it adds and removes no row. A scheduled or manual run that finds a changed

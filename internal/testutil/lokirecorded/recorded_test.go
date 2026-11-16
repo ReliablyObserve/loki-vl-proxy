@@ -211,3 +211,24 @@ func TestWithStateAddsOrReplacesTheState(t *testing.T) {
 		t.Fatalf("state read back %q (%v)", row.State, err)
 	}
 }
+
+// Delta moves the latest end or time in seconds to now; rows without one, or a
+// latest one ahead of now, do not move.
+func TestDeltaMovesTheLatestTimeToNow(t *testing.T) {
+	rows := []Row{
+		{Target: "/loki/api/v1/query_range?query=x&start=1794567075&end=1794570675"},
+		{Target: "/loki/api/v1/query?query=x&time=1794570000"},
+		{Target: "/loki/api/v1/tail?query=x&start=1794567075000000000"},
+		{Target: "/loki/api/v1/labels"},
+	}
+	now := time.Unix(1794570675, 0).Add(2 * time.Hour)
+	if got := Delta(rows, now); got != 2*time.Hour {
+		t.Fatalf("delta %s, want 2h", got)
+	}
+	if got := Delta(rows, time.Unix(1794570000, 0)); got != 0 {
+		t.Fatalf("a latest time ahead of now moved by %s", got)
+	}
+	if got := Delta(rows[3:], now); got != 0 {
+		t.Fatalf("rows without a time moved by %s", got)
+	}
+}

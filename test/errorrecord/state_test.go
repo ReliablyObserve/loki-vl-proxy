@@ -218,3 +218,38 @@ func TestModuleStatesNeedEveryModuleRunning(t *testing.T) {
 		t.Error("an unreachable Loki reported running modules")
 	}
 }
+
+// With the shift on, a row is asked with its times moved to now, and its
+// stored target keeps the times it was written with.
+func TestShiftAsksTheRowsWindowAsOfNow(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "answers.jsonl")
+	target := "/loki/api/v1/patterns?query=%7Ba%3D%22b%22%7D&start=1794567075&end=1794570675&step=60"
+	row := `{"id":"r9","route":"patterns","method":"GET","target":"` + target + `","headers":["X-Scope-OrgID: 0"],"trigger":"t","loki":{"status":400,"content_type":"text/plain; charset=utf-8","nosniff":"nosniff","body":"old"}}`
+	if err := os.WriteFile(path, []byte(`{"_source":"Real Grafana Loki 3.7.9 answers recorded over HTTP on 2026-11-13 (x)."}`+"\n"+row+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := now
+	now = func() time.Time { return time.Unix(1794570675, 0).Add(48 * time.Hour) }
+	t.Cleanup(func() { now = old })
+	f, err := lokirecorded.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shifted := f.Rows[0].Shifted(48 * time.Hour)
+	if !strings.Contains(shifted.Target, "start=1794739875&end=1794743475") {
+		t.Fatalf("shifted target %s", shifted.Target)
+	}
+	reply := lokirecorded.Reply{Status: 400, ContentType: "text/plain; charset=utf-8", Nosniff: "nosniff", Body: "only label matchers are supported"}
+	base := fakeLoki(t, map[string]lokirecorded.Reply{shifted.Request(): reply}, "3.7.9")
+	changed, err := run(config{loki: base, files: []string{path}, shift: true}, io.Discard)
+	if err != nil || changed != 1 {
+		t.Fatalf("changed %d (%v)", changed, err)
+	}
+	if f, err = lokirecorded.Read(path); err != nil {
+		t.Fatal(err)
+	}
+	if f.Rows[0].Loki != reply || f.Rows[0].Target != target {
+		t.Fatalf("row %+v", f.Rows[0])
+	}
+}
