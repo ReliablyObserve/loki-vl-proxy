@@ -185,8 +185,8 @@ it in this order:
    documentation, recorded answers and live probes, held to Loki by checks that
    ask Loki itself. The similarity scan in the PR quality gate and
    `TestProductModuleHasNoOracleDependency` enforce this; see "No AGPL code in
-   the repository" in `AGENTS.md`, which also lists the two oracle-module
-   exceptions that await a decision.
+   the repository" in `AGENTS.md`, which also lists the one oracle-module
+   exception that awaits a decision.
 
 ## Performance Rules
 
