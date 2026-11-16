@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,14 +20,13 @@ import (
 )
 
 // This file pins nested vector aggregations (`min by (zone) (avg by (pod, zone)
-// (count_over_time(...)))`) to Loki's, over generated rows and windows, with a
-// reference evaluator written apart from the proxy, modelling Loki's: the
-// series of a level's input fall into the group the level's labels name, `by`
-// keeping only the listed labels a series has, `without` dropping the listed
-// ones; sum is the total, count the number of series, avg a running mean, max
-// and min the extremes, over count_over_time and rate (lines per second) of the
-// lines of a series in the window (t-range, t]. Each level folds the
-// output of the level below it.
+// (count_over_time(...)))`) to Loki's, over generated rows and windows, with
+// nestedReference (held to Loki's recorded answers by
+// TestNestedReferenceMatchesRecordedLoki): the series of a level's input fall
+// into the group the level's labels name, `by` keeping only the listed labels a
+// series has, `without` dropping the listed ones, over count_over_time and rate
+// (lines per second) of the lines of a series in the window (t-range, t]. Each
+// level folds the output of the level below it.
 //
 // The proxy under test is the real handler; only VictoriaLogs is simulated, by
 // the shared vlemu.Emulator.
@@ -189,100 +187,6 @@ func nvLabelsKey(labels map[string]string) string {
 	return b.String()
 }
 
-// nvFold is Loki's vector aggregation: the series of the vector fall into the
-// group whose kept labels they share, and each group takes the operator's value.
-func nvFold(in []nvSeries, level nvLevel) []nvSeries {
-	type group struct {
-		labels map[string]string
-		values []float64
-	}
-	groups := map[string]*group{}
-	var order []string
-	for _, series := range in {
-		labels := map[string]string{}
-		for name, value := range series.labels {
-			if slices.Contains(level.by, name) != level.without {
-				labels[name] = value
-			}
-		}
-		key := nvLabelsKey(labels)
-		g := groups[key]
-		if g == nil {
-			g = &group{labels: labels}
-			groups[key] = g
-			order = append(order, key)
-		}
-		g.values = append(g.values, series.value)
-	}
-	var out []nvSeries
-	for _, key := range order {
-		g := groups[key]
-		var v float64
-		switch level.op {
-		case "sum", "avg":
-			for _, x := range g.values {
-				v += x
-			}
-			if level.op == "avg" {
-				v /= float64(len(g.values))
-			}
-		case "count":
-			v = float64(len(g.values))
-		case "max":
-			v = slices.Max(g.values)
-		case "min":
-			v = slices.Min(g.values)
-		default:
-			panic("reference: " + level.op)
-		}
-		out = append(out, nvSeries{g.labels, v})
-	}
-	return out
-}
-
-// lokiNestedAggregation is the reference: per evaluation time, the value of the
-// range function of every stream that has a line in (t-window, t], folded by
-// the levels, innermost first. It returns labels key -> time -> value.
-func lokiNestedAggregation(s nvScenario) (map[string]map[int64]float64, map[string]map[string]string) {
-	out := map[string]map[int64]float64{}
-	labelsOf := map[string]map[string]string{}
-	for _, t := range s.times() {
-		perStream := map[string]float64{}
-		for _, row := range s.rows {
-			if row.TS > t-int64(s.window) && row.TS <= t {
-				perStream[row.Stream]++
-			}
-		}
-		var vec []nvSeries
-		for stream, count := range perStream {
-			value := count
-			if s.fn == "rate" {
-				value = count / s.window.Seconds()
-			}
-			labels := map[string]string{"service_name": "uw"}
-			for _, name := range []string{"app", "pod", "zone", "svc"} {
-				labels[name] = nvStreamLabel(stream, name)
-			}
-			vec = append(vec, nvSeries{labels, value})
-		}
-		for _, level := range s.levels {
-			vec = nvFold(vec, level)
-		}
-		for _, series := range vec {
-			if s.divisor != 0 {
-				series.value /= s.divisor
-			}
-			key := nvLabelsKey(series.labels)
-			if out[key] == nil {
-				out[key] = map[int64]float64{}
-				labelsOf[key] = series.labels
-			}
-			out[key][t] = series.value
-		}
-	}
-	return out, labelsOf
-}
-
 func nvStreamLabel(stream, label string) string {
 	for _, part := range strings.Split(strings.Trim(stream, "{}"), ",") {
 		if k, v, ok := strings.Cut(part, "="); ok && k == label {
@@ -344,7 +248,7 @@ func runNestedScenario(t *testing.T, label string, s nvScenario, fold bool) {
 		t.Fatal(err)
 	}
 
-	want, wantLabels := lokiNestedAggregation(s)
+	want, wantLabels := nestedReference(s)
 	got := map[string]map[int64]float64{}
 	for _, series := range resp.Data.Result {
 		// The stats routes of VictoriaLogs answer no detected_level for streams
