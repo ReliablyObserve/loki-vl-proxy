@@ -527,7 +527,9 @@ func TestPeerReplication_PausedOwnerCostsOneTimeout(t *testing.T) {
 	// so the owner is neither lagging nor slow and only the probe's own call
 	// can suspend it again.
 	ownerAddr := f.addr(owner)
-	idle := func() bool { return !f.nodes[other].pc.peerLagging(ownerAddr) && !f.nodes[other].pc.peerSlow(ownerAddr) }
+	idle := func() bool {
+		return !f.nodes[other].pc.peerLagging(ownerAddr) && !f.nodes[other].pc.peerSlow(ownerAddr)
+	}
 	waitFor(t, "the owner calls to end", idle)
 	pb.suspendedUntil.Store(time.Now().Add(-time.Millisecond).UnixNano())
 	probeDone := make(chan time.Duration)
