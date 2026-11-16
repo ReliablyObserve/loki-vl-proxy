@@ -158,10 +158,9 @@ type queryValidation struct {
 	// parser and its semantic pass accepted the query.
 	tree   bool
 	sample bool
-	// empty is set for a metric query Loki answers with no series whatever the data (emptyWhateverTheData).
-	empty bool
-	// absentEveryStep is set for an absent_over_time over a zero range Loki answers 1 at every step (absentEveryStep).
-	absentEveryStep bool
+	// answer says whether Loki answers the metric query without reading data: with no series whatever the data
+	// (emptyWhateverTheData), or with 1 at every step (an absent_over_time over a zero range, absentEveryStep).
+	answer dataFreeAnswer
 	// logQuery is set for a valid log query, selector is set when it has no pipeline stage.
 	logQuery, selector bool
 	shift              queryShift
@@ -183,8 +182,9 @@ func cachedQueryValidation(query string) queryValidation {
 	result := queryValidation{msg: msg, tree: tree, sample: msg == "" && isSampleExpr(expr)}
 	if msg == "" && expr != nil {
 		result.shift = queryShiftOf(expr)
-		result.empty = result.sample && emptyWhateverTheData(expr)
-		result.absentEveryStep = result.sample && absentEveryStep(expr)
+		if result.sample {
+			result.answer = dataFreeAnswerOf(expr)
+		}
 		if lq, ok := expr.(*logql.LogQuery); ok {
 			result.logQuery, result.selector = true, len(lq.Pipeline) == 0
 		}

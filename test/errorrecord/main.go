@@ -8,8 +8,11 @@
 // end and time parameters of a request are moved to now first, by the time
 // since the latest one the file holds (lokirecorded.Delta), as the end-to-end
 // comparison moves them: a row asks the window it asked when it was recorded,
-// relative to now, whatever day it is recorded again. The stored target keeps
-// the times it was written with. A row that is not
+// relative to now, whatever day it is recorded again (over a window older than
+// what it holds, Loki answers /patterns given a query that is not a stream
+// selector with its empty success). A row with a bound that does not move (a
+// negative start) is sent as recorded. The stored target keeps the times it
+// was written with. A row that is not
 // comparable (it depends on the recorded Loki's configuration, or on an
 // authentication the stack does not run) keeps its recorded answer unless -all
 // is given. It adds no row and removes none: a new probe is a row written by
@@ -38,6 +41,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -144,7 +148,11 @@ func recordFile(path, host, version string, cfg config, out io.Writer) (int, err
 			kept++
 			continue
 		}
-		reply, err := lokirecorded.Replay(host, row.Shifted(delta), rowTimeout)
+		ask := row
+		if wholeWindowMoves(row) {
+			ask = row.Shifted(delta)
+		}
+		reply, err := lokirecorded.Replay(host, ask, rowTimeout)
 		if err != nil {
 			return changed, err
 		}
@@ -184,6 +192,30 @@ func recordFile(path, host, version string, cfg config, out io.Writer) (int, err
 	}
 	text := first + "\n" + strings.Join(lines, "\n") + "\n"
 	return changed, os.WriteFile(path, []byte(text), 0o644)
+}
+
+// wholeWindowMoves reports whether every start, end and time parameter of the
+// row's target is one Row.Shifted moves (plain digits, in seconds or
+// nanoseconds), so the shifted request asks the same window as of now. A row
+// with one Shifted keeps (a negative start, a number it records as invalid)
+// is sent as recorded: moving only its other bounds would stretch the window,
+// and its answer can name the window's length.
+func wholeWindowMoves(row lokirecorded.Row) bool {
+	_, query, _ := strings.Cut(row.Target, "?")
+	for _, p := range strings.Split(query, "&") {
+		name, value, _ := strings.Cut(p, "=")
+		if name != "start" && name != "end" && name != "time" {
+			continue
+		}
+		n, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || strconv.FormatInt(n, 10) != value {
+			return false
+		}
+		if !(n >= 1_000_000_000 && n < 100_000_000_000) && n < 1_000_000_000_000_000_000 {
+			return false
+		}
+	}
+	return true
 }
 
 // buildVersion is the version a Loki reports on /loki/api/v1/status/buildinfo.

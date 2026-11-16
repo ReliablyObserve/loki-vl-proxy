@@ -253,3 +253,45 @@ func TestShiftAsksTheRowsWindowAsOfNow(t *testing.T) {
 		t.Fatalf("row %+v", f.Rows[0])
 	}
 }
+
+// A row with a bound Shifted keeps (a negative start) is sent as recorded, so
+// its answer, which can name the window's length, stays the stored target's.
+func TestRowWithABoundThatDoesNotMoveIsSentAsRecorded(t *testing.T) {
+	for target, want := range map[string]bool{
+		"/x?query=a&start=1794567075&end=1794570675":                   true,
+		"/x?query=a&time=1794570675":                                   true,
+		"/x?query=a&start=1794567075000000000&end=1794570675000000000": true,
+		"/x?query=a":                                   true,
+		"/x?query=a&start=-1&end=1794570675":           false,
+		"/x?query=a&start=abc&end=1794570675":          false,
+		"/x?query=a&start=01794567075&end=1794570675":  false,
+		"/x?query=a&start=1794567075&end=1794570675.5": false,
+		"/x?query=a&start=5&end=1794570675":            false,
+	} {
+		if got := wholeWindowMoves(lokirecorded.Row{Target: target}); got != want {
+			t.Errorf("%s: %v, want %v", target, got, want)
+		}
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "answers.jsonl")
+	target := "/loki/api/v1/labels?start=-1&end=1794570675"
+	row := `{"id":"r9","route":"labels","method":"GET","target":"` + target + `","headers":["X-Scope-OrgID: 0"],"trigger":"t","loki":{"status":400,"content_type":"text/plain; charset=utf-8","nosniff":"nosniff","body":"old"}}`
+	if err := os.WriteFile(path, []byte(`{"_source":"Real Grafana Loki 3.7.9 answers recorded over HTTP on 2026-11-13 (x)."}`+"\n"+row+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := now
+	now = func() time.Time { return time.Unix(1794570675, 0).Add(48 * time.Hour) }
+	t.Cleanup(func() { now = old })
+	f, err := lokirecorded.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply := lokirecorded.Reply{Status: 400, ContentType: "text/plain; charset=utf-8", Nosniff: "nosniff", Body: "length of the recorded window"}
+	base := fakeLoki(t, map[string]lokirecorded.Reply{f.Rows[0].Request(): reply}, "3.7.9")
+	if changed, err := run(config{loki: base, files: []string{path}, shift: true}, io.Discard); err != nil || changed != 1 {
+		t.Fatalf("changed %d (%v)", changed, err)
+	}
+	if f, err = lokirecorded.Read(path); err != nil || f.Rows[0].Loki != reply {
+		t.Fatalf("row %+v (%v)", f.Rows, err)
+	}
+}

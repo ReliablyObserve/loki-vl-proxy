@@ -86,16 +86,37 @@ func emptyWhateverTheData(expr logqlpkg.Expr) bool {
 	return false
 }
 
+// dataFreeAnswer is the answer Loki gives a metric query whatever the data, if it gives one.
+type dataFreeAnswer uint8
+
+const (
+	noDataFreeAnswer dataFreeAnswer = iota
+	// emptyResult: no series (emptyWhateverTheData).
+	emptyResult
+	// absentAtEveryStep: one series valued 1 at every step (absentEveryStep).
+	absentAtEveryStep
+)
+
+// dataFreeAnswerOf is the data-free answer of a metric expression.
+func dataFreeAnswerOf(expr logqlpkg.Expr) dataFreeAnswer {
+	switch {
+	case emptyWhateverTheData(expr):
+		return emptyResult
+	case absentEveryStep(expr):
+		return absentAtEveryStep
+	}
+	return noDataFreeAnswer
+}
+
 // answerEmptyResult answers a query cachedQueryValidation found empty whatever the data with Loki's empty result
 // (a matrix on query_range, a vector on query), and an absent_over_time over a zero range with Loki's 1 at every
 // step (answerAbsentEveryStep), before any other work; it reports whether it answered.
 func (p *Proxy) answerEmptyResult(w http.ResponseWriter, r *http.Request, endpoint, query string, start time.Time) bool {
-	v := cachedQueryValidation(query)
-	if v.absentEveryStep {
-		return p.answerAbsentEveryStep(w, r, endpoint, query, start)
-	}
-	if !v.empty {
+	switch cachedQueryValidation(query).answer {
+	case noDataFreeAnswer:
 		return false
+	case absentAtEveryStep:
+		return p.answerAbsentEveryStep(w, r, endpoint, query, start)
 	}
 	p.writeJSON(w, emptyLimitedResponse(endpoint, query))
 	p.metrics.RecordRequest(endpoint, http.StatusOK, time.Since(start))
