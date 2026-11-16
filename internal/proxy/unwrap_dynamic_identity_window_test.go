@@ -475,6 +475,24 @@ func TestDynamicIdentityWindowCacheReuse(t *testing.T) {
 		}
 		t.Logf("%s: cold %d calls %d B (%d buckets), repeat %d calls %d B, refresh %d calls %d B (%d buckets)", q, coldCalls, coldBytes, coldBuckets, repCalls, repBytes, refCalls, refBytes, refBuckets)
 	}
+	// Another outer aggregation over the same function and clause reads the same buckets (the window evaluator's stats
+	// query is the first stats pipe, grouped by the clause and the hash): the first request of each asks VictoriaLogs
+	// nothing, and answers what an uncached proxy answers.
+	for _, q := range []string{
+		`avg by (pod) (avg_over_time({app="dw"} | json | unwrap amount [1m]))`,
+		`max by (pod) (avg_over_time({app="dw"} | json | unwrap amount [1m]))`,
+	} {
+		counter.take()
+		code, body := extentQueryRange(t, p, q, end.Add(-time.Hour), end, step, nil)
+		p.statsExtentStores.wait()
+		calls, _ := counter.take()
+		if code != http.StatusOK || calls != 0 {
+			t.Errorf("%s: %d after sum by (pod) over the same function, %d VictoriaLogs calls; want 200 and none", q, code, calls)
+		}
+		if _, want := extentQueryRange(t, uncached, q, end.Add(-time.Hour), end, step, nil); string(dynamicIdentityResult(t, body)) != string(dynamicIdentityResult(t, want)) {
+			t.Errorf("%s: the answer from the shared buckets differs from the uncached one", q)
+		}
+	}
 }
 
 // shimReadHashAhead reports stats_query_range calls the extent shim saw, every one writing the series hash before the
@@ -490,4 +508,60 @@ func shimReadHashAhead(s *extentShim) bool {
 		}
 	}
 	return len(s.calls) > 0
+}
+
+// FuzzDynamicIdentityWindowsMark holds the window decision of a parser's series identity on any query and step: a
+// request gets at most one mark; the hash-ahead mark only for a root identity (the one the lowering serves) whose
+// range is longer than the step, never for a max of max_over_time or a min of min_over_time; and a marked request is
+// not decided again.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func FuzzDynamicIdentityWindowsMark(f *testing.F) {
+	for _, s := range []struct {
+		q    string
+		step uint16
+	}{
+		{`sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m]))`, 60},
+		{`sum(stdvar_over_time({app="a"} | logfmt | unwrap n [90s]))`, 60},
+		{`max by (app) (max_over_time({app="a"} | json | unwrap n [5m]))`, 60},
+		{`min(min_over_time({app="a"} | json | unwrap n [5m]))`, 30},
+		{`MAX BY (app) (AVG_OVER_TIME({app="a"} | JSON | UNWRAP n [5m]))`, 60},
+		{`topk(1, sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])))`, 60},
+		{`label_replace(sum(avg_over_time({app="a"} | json | unwrap n [5m])), "x", "$1", "app", "(.*)")`, 60},
+		{`sum(avg_over_time({app="a"} | json | unwrap n [5m])) * 2`, 60},
+		{`sum(avg_over_time({app="a"} | json | unwrap n [1m]))`, 300},
+		{`sum(quantile_over_time(0.9, {app="a"} | json | unwrap n [5m]))`, 60},
+	} {
+		f.Add(s.q, s.step)
+	}
+	c := cache.New(time.Minute, 100)
+	f.Cleanup(c.Close)
+	p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: c, LogLevel: "error"})
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Cleanup(func() { closeTestProxy(p) })
+	f.Fuzz(func(t *testing.T, q string, step uint16) {
+		if len(q) > 512 || step == 0 {
+			return
+		}
+		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+url.Values{"step": {strconv.Itoa(int(step))}}.Encode(), nil)
+		out := p.dynamicIdentityWindows(r, q)
+		stream, ahead := streamIdentityOnly(out.Context()), identityAhead(out.Context())
+		if stream && ahead {
+			t.Fatalf("%q step %d: both marks", q, step)
+		}
+		if ahead {
+			window, ok := dynamicWindowRange(q)
+			if !p.dynamicUnwrapIdentity(q) || !ok || window <= time.Duration(step)*time.Second {
+				t.Fatalf("%q step %d: the hash ahead without a root identity over a range longer than the step (%v %s)", q, step, ok, window)
+			}
+			if extremeOfExtremes(q) {
+				t.Fatalf("%q step %d: an extreme of extremes reads the hash", q, step)
+			}
+		}
+		if (stream || ahead) && p.dynamicIdentityWindows(out, q) != out {
+			t.Fatalf("%q step %d: a marked request decided again", q, step)
+		}
+	})
 }

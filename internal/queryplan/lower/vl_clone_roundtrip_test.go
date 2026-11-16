@@ -174,6 +174,12 @@ func vlClonePlanTexts() []string {
 			if op, err := PlanQuery(q, p, Profile{Caps: prof.caps, Label: prof.label, StreamFields: prof.stream}); err == nil {
 				collectVLTexts(reflect.ValueOf(&op), &texts)
 			}
+			// The window evaluator's text of a parser's series identity: the hash before the unwrap gate.
+			if WritesDynamicUnwrapIdentity(p) {
+				if op, err := PlanQuery(q, p, Profile{Caps: prof.caps, Label: prof.label, StreamFields: prof.stream, IdentityAhead: true}); err == nil {
+					collectVLTexts(reflect.ValueOf(&op), &texts)
+				}
+			}
 			if legacy, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps); err == nil {
 				if op, err := translator.DecodePhysical(legacy); err == nil {
 					collectVLTexts(reflect.ValueOf(&op), &texts)
