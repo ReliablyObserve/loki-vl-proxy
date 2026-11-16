@@ -282,13 +282,6 @@ var levelSweepKnown = []struct {
 	why     string
 }{
 	{"status", []int{5}, nil, "", "sort keeps Loki's strict JSONParserErr 400 of rate(... | json) (fixed in its own change)"},
-	{"absent", nil, []string{"body-logfmt-error", "body-json-warn", "body-json-WARNING", "sm-level-debug", "nothing", "body-text-error-word"}, "",
-		"a stats read by stream alone (stats by (_stream)) has no level column and a stream without a level field " +
-			"no value of its own: Loki reads the line or its metadata, the series carries no detected_level " +
-			"(semantics/detected-level-stream-stats-without-level, pending)"},
-	{"text", []int{4, 7}, []string{"body-logfmt-error", "body-text-error-word", "nothing"}, "",
-		"the series the JSONParserErr text names come from the same per-stream read without a level column, so the text " +
-			"lacks the detected_level Loki's names (semantics/detected-level-stream-stats-without-level)"},
 	{"text", nil, nil, "emulator", "the emulator's raw rows hold the unwrapped field of every row, which the series of the error text name"},
 	{"series", []int{14, 15, 16}, nil, "emulator", "the emulator does not run the detected_level filter: every line passes it"},
 	{"series", []int{10, 11}, nil, "emulator", "the emulator runs no parser and unwraps the amount of every row; Loki answers only the lines whose parser extracts it"},

@@ -1655,6 +1655,10 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	if err != nil {
 		return nil, nil, err
 	}
+	// A stream without a level label is one series per level its lines carry.
+	if body, err = p.withLevelLessStreams(ctx, "/select/logsql/stats_query_range", params, body, 0); err != nil {
+		return nil, nil, err
+	}
 
 	// Build VL→Loki label name mapping from groupBy↔origGroupBy.
 	vlToLoki := make(map[string]string, len(groupBy))
@@ -1714,8 +1718,9 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		var metric map[string]string
 		if streamGrouped {
 			var derived *string
-			if streamGroupedByDetectedLevel {
-				value := strings.TrimSpace(string(metricObj.Get("detected_level").GetStringBytes()))
+			if dl := metricObj.Get("detected_level"); streamGroupedByDetectedLevel || dl != nil {
+				// Grouped by it, or VictoriaLogs derived it for a stream without a level label (withLevelLessStreams).
+				value := strings.TrimSpace(string(dl.GetStringBytes()))
 				derived = &value
 			}
 			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), derived, groupBy, byExplicit, origGroupBy).translated
