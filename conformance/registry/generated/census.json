@@ -1619,6 +1619,7 @@
     "internal/proxy/ordered_json_conditional_unpack_test.go | semantics/json-filter-pushdown-without-error-drop",
     "internal/proxy/ordered_json_conditional_unpack_test.go | semantics/json-label-spelling-probe",
     "internal/proxy/ordered_json_conditional_unpack_test.go | semantics/label-filter-before-parser-pushdown",
+    "internal/proxy/ordered_json_detected_level_split_test.go | json-metric-unparsed-line-lookup-once",
     "internal/proxy/ordered_json_detected_level_split_test.go | semantics/json-detected-level-error-split",
     "internal/proxy/ordered_json_detected_level_split_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/ordered_json_detected_level_split_test.go | severity-detected-level-derivation",
@@ -1669,6 +1670,7 @@
     "internal/proxy/ordered_json_steps_cache_test.go | loki_api_v1_query_range",
     "internal/proxy/ordered_json_steps_cache_test.go | quality/query-range-settled-steps",
     "internal/proxy/ordered_json_steps_cache_test.go | window-bounds-and-step-alignment",
+    "internal/proxy/ordered_json_unparsed_row_test.go | json-metric-unparsed-line-lookup-once",
     "internal/proxy/ordered_json_valid_split_test.go | semantics/json-error-filter-metric-split-pushdown",
     "internal/proxy/ordered_json_valid_split_test.go | semantics/pipeline-error-text-parity",
     "internal/proxy/ordered_json_vector_cache_test.go | semantics/logfmt-existence-filter-ungrouped-sum",
@@ -2850,7 +2852,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 650,
+      "go": 651,
       "playwright": 1
     },
     "page_kinds": {
@@ -2870,7 +2872,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 95,
-    "wired_items": 380
+    "wired_items": 381
   },
   "gates": [
     "A/B shape selection",

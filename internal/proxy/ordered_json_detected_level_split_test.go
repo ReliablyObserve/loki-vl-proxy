@@ -410,8 +410,9 @@ func TestJSONDetectedLevelSplitEligibility(t *testing.T) {
 
 // The verdict of the unbraced-line lookup is remembered per tenant: a window
 // found clean for one tenant is no verdict for another, whose own line is
-// found, and each tenant's verdict is reused on its next request.
-// conformance: semantics/json-detected-level-error-split, semantics/json-metric-detected-level-derivation
+// found, and each tenant's verdict, clean or the row found, is reused on its
+// next request.
+// conformance: semantics/json-detected-level-error-split, semantics/json-metric-detected-level-derivation, json-metric-unparsed-line-lookup-once
 func TestJSONUnparsedLineRiskPerTenant(t *testing.T) {
 	var unbraced atomic.Bool
 	var calls atomic.Int32
@@ -438,7 +439,10 @@ func TestJSONUnparsedLineRiskPerTenant(t *testing.T) {
 	unbraced.Store(true)
 	check("b", true, 1)
 	check("a", false, 0)
-	check("b", true, 1) // a risky window is never remembered
+	// The row found for b is remembered for the windows that hold it
+	// (ordered_json_unparsed_row.go): b's repeat sends nothing, a is unaffected.
+	check("b", true, 0)
+	check("a", false, 0)
 }
 
 // The rows a split of the family reads stay within

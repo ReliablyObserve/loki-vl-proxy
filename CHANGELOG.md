@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `| json` metric with a stage after the parser (`count_over_time({…} | json | keep a [1m])`) whose window holds a
+  line Loki's parser rejects no longer asks VictoriaLogs for that line twice, and a refresh of the window no longer
+  restarts the stats query and the parse checks only to cancel them. The row the strict split's lookup found is
+  remembered per tenant for `-parse-risk-probe-cache-ttl`; the row evaluator builds the answer from it, and a later
+  request whose window holds it is decided before anything starts. A cold request sends one VictoriaLogs call fewer,
+  a refresh one call instead of six, and each sends the same requests every time; answers are unchanged.
 - A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
   accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
   per-stream series took the stream's `detected_level`.

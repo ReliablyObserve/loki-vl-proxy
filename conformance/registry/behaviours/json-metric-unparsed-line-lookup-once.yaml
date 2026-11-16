@@ -1,0 +1,67 @@
+id: json-metric-unparsed-line-lookup-once
+kind: resource_control
+title: A `| json` metric looks up a line Loki's parser rejects once, and one spelling sends one set of VictoriaLogs requests
+pending: true
+
+loki: |
+  Loki evaluates a `| json` metric over the lines of its window; a line its
+  parser rejects decides the answer (the pipeline error, or the error label
+  the query filters). One query is one evaluation.
+
+victorialogs: |
+  VictoriaLogs answers `limit 1` row lookups and stats queries; it has no
+  notion of Loki's parser, so the proxy looks the rejected lines up.
+
+proxy: |
+  The strict JSON split (a keep or another stage after `| json` under a range
+  function) starts its stats query and its parse checks (the parse-risk
+  probe, the reject-hazard probe) beside the unparsed-line lookup, which
+  reads the first line of the evaluated window, (start-range, last step],
+  that does not open with a brace; when the lookup finds one, the stats
+  buckets cannot answer, the split cancels what it started and the row
+  evaluator answers. The row the lookup returned stays in the window it was
+  found in (rows are append-only), so it is remembered per tenant, auth scope
+  and lookup text, local to the replica, for -parse-risk-probe-cache-ttl
+  (rows above 64 KiB are not kept). The row evaluator builds Loki's error
+  from that row instead of asking VictoriaLogs the same question again (one
+  VictoriaLogs call fewer on every such request), and a later request whose
+  window holds the row's timestamp (a refresh, the next step, a wider range)
+  is decided before anything starts: no stats query, no parse checks, no
+  lookup, only the row evaluator's read. A window that does not hold it looks
+  the line up again.
+  Request set per spelling: a request answered from a remembered row sends a
+  fixed set. A cold request sends the lookup, the checks and the stats query
+  at once; with VictoriaLogs answering after a round trip every one of them
+  reaches it before the early-out cancels the rest, so the set is fixed too.
+  Only against a backend that answers before the other calls were written (an
+  in-process fake under -race) can a cancelled speculative call be missing
+  from the set; the answer and the response cache key never vary (the key is
+  built from the request). A check cancelled by the early-out remembers no
+  verdict (coveredWindowProbe stores only completed checks), and the split's
+  stats call is not cached, so a cancelled one leaves nothing behind.
+
+implementation:
+  - internal/proxy/ordered_json_unparsed_row.go
+  - internal/proxy/ordered_json_valid_split.go
+  - internal/proxy/ordered_json_metric.go
+
+decisions:
+  - id: remember-the-unparsed-line-row
+    chosen: 'Remember the row the unparsed-line lookup found (per tenant, scope and lookup text, for the parse-risk probe TTL, local to the replica) and decide later windows that hold its timestamp from it, before the speculative stats and checks start; the row evaluator reuses it'
+    over: [running the unparsed-line lookup before the stats and the checks (a fixed cold set, but on clean data one more anchored-regex scan of the whole window before the stats start, on the first request of a window), waiting for every started call to be written before cancelling (a hook in every VictoriaLogs call path, and still not fixed for calls that follow one another inside a check or wait in admission), remembering only clean windows as before (every request of a window with such a line ran the stats, the checks and the lookup twice)]
+    why: |
+      One spelling sent several sets of VictoriaLogs requests across runs
+      (60 runs of `count_over_time({…} | json | keep a [1m])` sent five sets
+      under -race): the strict split's early-out cancels the stats query and
+      the checks it started beside the lookup, and against a fake that answers
+      at once whether a cancelled call was received first is a scheduling
+      race. The answer and the cache key never varied. Remembering the found
+      row removes the duplicate lookup and the speculative work on every
+      later request of the window, which also fixes their request set; the
+      cold speculation stays, because sequencing the lookup first costs a
+      whole-window scan on clean data.
+    evidence: 'internal/proxy/ordered_json_unparsed_row_test.go (2026-11-16, Go 1.27.4, darwin/arm64, -race): cold requests send the lookup once (twice before); 60 cold requests with a 20 ms fake send one set; refreshes of the window send one request (the row evaluator read) instead of six; with an instant fake under -race 3 sets in 60 runs (4 to 5 before), all with one answer'
+    code: [internal/proxy/ordered_json_unparsed_row.go, internal/proxy/ordered_json_valid_split.go, internal/proxy/ordered_json_metric.go]
+    tests: [TestOrderedJSONUnparsedLine_RowEvaluatorReusesTheRiskChecksRow, TestOrderedJSONUnparsedLine_OneSpellingSendsOneRequestSet, TestOrderedJSONUnparsedLine_RememberedRowOnlyDecidesItsWindow, TestCoveredWindowProbe_CancelledCheckRemembersNothing, TestJSONUnparsedLineRiskPerTenant, TestBlankAfterKeywordRequestsEqualSpaced]
+    quality: 'Answers unchanged; a remembered row decides only a window holding its timestamp, for its own tenant, scope and lookup text; cancelled checks remember nothing.'
+    performance: 'One VictoriaLogs call fewer per request whose window holds a rejected line; a refresh of such a window sends one call instead of six; clean windows unchanged.'

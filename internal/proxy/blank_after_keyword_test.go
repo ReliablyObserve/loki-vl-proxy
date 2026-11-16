@@ -100,9 +100,11 @@ func TestBlankAfterKeywordRequestsEqualSpaced(t *testing.T) {
 			if strings.HasPrefix(tpl, "{") && endpoint == "query" {
 				continue // a log query is no instant query
 			}
-			// A keep under a range function reads VictoriaLogs through a route whose set of requests varies from run to
-			// run for one spelling (60 runs of `keep a` sent five different sets under -race): its answer is compared, its
-			// requests are not.
+			// A keep under a range function is answered by the strict JSON split, which starts its stats query and parse
+			// checks beside the unparsed-line lookup and cancels them once the lookup finds a line Loki's parser rejects
+			// (this fake's lines); with a fake that answers at once, whether a cancelled call reached it first is a race
+			// (3 sets in 60 runs under -race). Its answer is compared, its requests are not; with a round trip of latency
+			// the set is fixed (TestOrderedJSONUnparsedLine_OneSpellingSendsOneRequestSet).
 			racy := !strings.HasPrefix(tpl, "{") && strings.Contains(tpl, "| keep")
 			ref := strings.ReplaceAll(tpl, blankspace.Mark, " ")
 			wantVL, wantBody := blankAfterKeywordRequests(t, endpoint, ref)
