@@ -241,7 +241,7 @@ type identityChunkSeries struct {
 func mergeIdentityChunk(results map[string]*identityChunkSeries, warnings *[]string, body []byte) error {
 	var answer struct {
 		Data struct {
-			ResultType string                 `json:"resultType"`
+			ResultType string                `json:"resultType"`
 			Result     []identityChunkSeries `json:"result"`
 		} `json:"data"`
 		Warnings []string `json:"warnings"`
