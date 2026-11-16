@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -599,4 +600,24 @@ func FuzzDynamicIdentityWindowsMark(f *testing.F) {
 			t.Fatalf("%q step %d: a marked request decided again", q, step)
 		}
 	})
+}
+
+// A failed bucket read of a request without the hash-ahead mark falls back as before (no error); with it, an
+// oversized answer is Loki's response-too-large error and any other failure is answered as it is.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func TestIdentityAheadReadError(t *testing.T) {
+	plain := context.Background()
+	ahead := context.WithValue(plain, identityAheadKey{}, true)
+	other := errors.New("backend returned 503")
+	if err := identityAheadReadError(plain, errBodyTooLarge); err != nil {
+		t.Errorf("an unmarked request: %v, want the fallback", err)
+	}
+	if err := identityAheadReadError(ahead, other); err != other {
+		t.Errorf("a marked request's backend failure: %v, want it as it is", err)
+	}
+	err := identityAheadReadError(ahead, errBodyTooLarge)
+	if err == nil || !strings.Contains(err.Error(), "ResourceExhausted") && !strings.Contains(err.Error(), "larger than max") {
+		t.Errorf("a marked request's oversized answer: %v, want Loki's response-too-large error", err)
+	}
 }
