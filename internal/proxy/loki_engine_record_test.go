@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -393,4 +394,181 @@ func lokiProcessAnswers(t testing.TB, name string, cases []oraclerun.ProcessCase
 		out[i] = a
 	}
 	return out
+}
+
+// Inline recordings: a test that builds its requests one at a time asks for each answer where it needs it
+// (lokiEngineAnswerOf). In a recording run (LVP_RUN_ORACLES=1) the engine oracle answers at once and the file is
+// written when the top-level test ends; otherwise the file is read once.
+var (
+	lokiInlineMu      sync.Mutex
+	lokiInlineEngine  string
+	lokiInlineRecords = map[string][]lokiEngineAnswer{}
+	lokiInlineFiles   = map[string]map[string]lokiEngineAnswer{}
+)
+
+// lokiEngineAnswerOf is Loki's answer to the one request of set, from testdata/loki_engine/<name>.jsonl.gz.
+func lokiEngineAnswerOf(t testing.TB, name string, set oraclerun.EngineDataSet) lokiEngineAnswer {
+	t.Helper()
+	if len(set.Requests) != 1 {
+		t.Fatalf("lokiEngineAnswerOf takes one request, got %d", len(set.Requests))
+	}
+	req := set.Requests[0]
+	key := lokiEngineKey(set, req)
+	path := filepath.Join(lokiEngineDir(), name+".jsonl.gz")
+	lokiInlineMu.Lock()
+	defer lokiInlineMu.Unlock()
+	if os.Getenv("LVP_RUN_ORACLES") == "1" {
+		if lokiInlineEngine == "" {
+			dir, err := os.MkdirTemp("", "loki-engine-inline")
+			if err != nil {
+				t.Fatal(err)
+			}
+			bin, err := oraclerun.Build(filepath.Join("..", "..", "test", "oracle", "loki", "engine"), "", dir, "engine")
+			if err != nil {
+				t.Fatal(err)
+			}
+			lokiInlineEngine = bin
+		}
+		a := runInlineEngine(t, set)
+		a.ID, a.Key = req.ID, key
+		if _, started := lokiInlineRecords[name]; !started {
+			root := t
+			if tt, ok := t.(*testing.T); ok {
+				root = tt
+			}
+			root.Cleanup(func() { writeInlineRecords(t, name, path) })
+		}
+		lokiInlineRecords[name] = append(lokiInlineRecords[name], a)
+		return a
+	}
+	file, ok := lokiInlineFiles[name]
+	if !ok {
+		file = map[string]lokiEngineAnswer{}
+		f, err := os.Open(path)
+		if err != nil {
+			t.Fatalf("%v: record Loki's answers with LVP_RUN_ORACLES=1", err)
+		}
+		zr, err := gzip.NewReader(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sc := bufio.NewScanner(zr)
+		sc.Buffer(make([]byte, 1<<20), 1<<28)
+		for sc.Scan() {
+			var a lokiEngineAnswer
+			if err := json.Unmarshal(sc.Bytes(), &a); err != nil {
+				t.Fatal(err)
+			}
+			file[a.Key] = a
+		}
+		_ = f.Close()
+		lokiInlineFiles[name] = file
+	}
+	a, ok := file[key]
+	if !ok {
+		t.Fatalf("%s: no recorded Loki answer for %s: record again with LVP_RUN_ORACLES=1", path, req.Form)
+	}
+	return a
+}
+
+func runInlineEngine(t testing.TB, set oraclerun.EngineDataSet) lokiEngineAnswer {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "loki-engine-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	in, out := filepath.Join(dir, "in.jsonl"), filepath.Join(dir, "out.jsonl")
+	data, err := json.Marshal(set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(in, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := oraclerun.Run(lokiInlineEngine, "-in", in, "-out", out); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a lokiEngineAnswer
+	if err := json.Unmarshal(body, &a); err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+func writeInlineRecords(t testing.TB, name, path string) {
+	lokiInlineMu.Lock()
+	defer lokiInlineMu.Unlock()
+	records := lokiInlineRecords[name]
+	sort.SliceStable(records, func(i, j int) bool { return records[i].Key < records[j].Key })
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Error(err)
+		return
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	zw, _ := gzip.NewWriterLevel(f, gzip.BestCompression)
+	enc := json.NewEncoder(zw)
+	enc.SetEscapeHTML(false)
+	seen := map[string]bool{}
+	for _, a := range records {
+		if seen[a.Key] {
+			continue
+		}
+		seen[a.Key] = true
+		if err := enc.Encode(a); err != nil {
+			t.Error(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Error(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Error(err)
+	}
+}
+
+// pushdownEngineStreams are pushdown rows as Loki streams: each row's stream labels, line and the structured
+// metadata Loki holds for it (pushdownRow.loki). A stream with no service_name gets the one Loki's ingest
+// discovers from its app label, as a Loki with its default discover_service_name stores it.
+func pushdownEngineStreams(rows []pushdownRow) []oraclerun.EngineStream {
+	var out []oraclerun.EngineStream
+	index := map[string]int{}
+	for _, r := range rows {
+		key := canonicalLabelText(r.stream)
+		i, ok := index[key]
+		if !ok {
+			i = len(out)
+			index[key] = i
+			labels := map[string]string{}
+			for k, v := range r.stream {
+				labels[k] = v
+			}
+			if _, has := labels["service_name"]; !has && labels["app"] != "" {
+				labels["service_name"] = labels["app"]
+			}
+			out = append(out, oraclerun.EngineStream{Labels: labels})
+		}
+		out[i].Entries = append(out[i].Entries, oraclerun.EngineEntry{TS: r.ts.UnixNano(), Line: r.msg, Metadata: r.loki})
+	}
+	return out
+}
+
+// lokiPushdownMatrix is Loki's query_range answer for query over rows (unaligned), as decodeExtractedMatrix reads
+// a matrix.
+func lokiPushdownMatrix(t *testing.T, name string, rows []pushdownRow, query string, start, end time.Time, step time.Duration) map[string]map[int64]string {
+	t.Helper()
+	set := oraclerun.EngineDataSet{Streams: pushdownEngineStreams(rows), Requests: []oraclerun.EngineRequest{lokiMetricRequest("q", query, start.UnixNano(), end.UnixNano(), step)}}
+	a := lokiEngineAnswerOf(t, name, set)
+	if a.Status != 200 {
+		t.Fatalf("%s: Loki answered %d %s", query, a.Status, a.Error)
+	}
+	return decodeExtractedMatrix(t, a.Body)
 }
