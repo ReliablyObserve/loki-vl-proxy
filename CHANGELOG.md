@@ -7,20 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Performance
-
-- The parse-risk probes of a `| json` metric, the `detected_level` keys probe and the JSON hazard filter cost
-  VictoriaLogs 7-24 ms of query parsing each, on every request whose window is not covered yet (a refresh that
-  moves the window). Each held a `[^"]`-style class, and Go's regexp package prints such a class in about a
-  millisecond; VictoriaLogs prints every regexp several times per query parse. The classes are now written as a run
-  of non-letters and a run of letters (`vlNotInRun`), which matches the same text. Measured with VictoriaLogs' own
-  query parser on v1.49.0 and v1.53.0:
-  - the partial-parse probe: 17-24 ms to 0.24-0.39 ms;
-  - the `detected_level` keys probe: 7.4-8.2 ms to 0.37-0.44 ms;
-  - the hazard filter: 7.4-7.9 ms to 0.07 ms.
-  The `detected_level` escaped-value regexp now runs only on lines holding a backslash. The lines every probe
-  selects and every answer are unchanged (quality/probe-regexp-parse-cost).
-
 ### Fixed
 
 - A binary operation whose operand is a `sum`, `avg`, `min` or `max` with an empty `without ()` clause
@@ -42,6 +28,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
   `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
   parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
+
+## [2.307.0] - 2026-11-16
+
+### Performance
+
+- The parse-risk probes of a `| json` metric, the `detected_level` keys probe and the JSON hazard filter cost
+  VictoriaLogs 7-24 ms of query parsing each, on every request whose window is not covered yet (a refresh that
+  moves the window). Each held a `[^"]`-style class, and Go's regexp package prints such a class in about a
+  millisecond; VictoriaLogs prints every regexp several times per query parse. The classes are now written as a run
+  of non-letters and a run of letters (`vlNotInRun`), which matches the same text. Measured with VictoriaLogs' own
+  query parser on v1.49.0 and v1.53.0:
+  - the partial-parse probe: 17-24 ms to 0.24-0.39 ms;
+  - the `detected_level` keys probe: 7.4-8.2 ms to 0.37-0.44 ms;
+  - the hazard filter: 7.4-7.9 ms to 0.07 ms.
+  The `detected_level` escaped-value regexp now runs only on lines holding a backslash. The lines every probe
+  selects and every answer are unchanged (quality/probe-regexp-parse-cost).
+
+### Fixed
+
+- A metric series of a stream with no level label now carries the level of its lines, as Loki gives. Loki gives
+  every line the level its structured metadata or its body carries (a logfmt or JSON level key, a level word of a
+  plain line), else `unknown`, so one such stream is one series per level. Queries the proxy reads per stream (for
+  example `count_over_time({...} | logfmt [5m])` and `max_over_time({...} | logfmt amount | unwrap amount [5m])` on
+  query_range, `sum without (pod) (max_over_time(... | unwrap ...))` at an instant, and `rate({...} | json [1m])`)
+  answered one series per stream with no `detected_level`, so the same query said `error` at one step and nothing at
+  another. Such a read is sent as before; only when its answer names a stream without a level label does the proxy
+  read those streams once more, restricted to them, with VictoriaLogs computing each line's level, and their series
+  are split by it. A window whose streams all carry a level label sends the same VictoriaLogs query as before and
+  nothing more. Answers cached before the fix are not served again (the response key fence moves to
+  `@stream-level-series-v4`), so each cached metric answer is read from VictoriaLogs once after the upgrade.
 
 ## [2.306.0] - 2026-11-16
 

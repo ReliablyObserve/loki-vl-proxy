@@ -1541,6 +1541,10 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 	if err != nil {
 		return nil, true, err
 	}
+	// A stream without a level label is one series per level its lines carry.
+	if body, err = p.withLevelLessStreams(ctx, "/select/logsql/stats_query_range", params, body, 0); err != nil {
+		return nil, true, p.levelLessErr("stats_query_range", err)
+	}
 
 	v, err := fj.ParseBytes(body)
 	if err != nil {
@@ -1587,6 +1591,10 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 			if value := string(metricObj.Get(label).GetStringBytes()); value != "" {
 				metric[label] = value
 			}
+		}
+		// VictoriaLogs' derivation, for a stream without a level label (withLevelLessStreams).
+		if value := string(metricObj.Get(detectedLevelLabel).GetStringBytes()); value != "" {
+			metric[detectedLevelLabel] = value
 		}
 		ensureStreamDetectedLevel(metric, baseLabels)
 		ensureSyntheticServiceName(metric)
