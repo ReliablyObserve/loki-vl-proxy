@@ -265,14 +265,14 @@ func unwrapRowEntry(parser, field string, r vlemu.Row) (string, map[string]strin
 	return line, map[string]string{field: r.Text()}
 }
 
-// lokiMetricRequest is a request for query over [start, end] (ns, sent in whole seconds as the tests send the
-// proxy) every step, at Loki's own bounds; step 0 is an instant query at end.
+// lokiMetricRequest is a request for query over [start, end] (unix ns) every step, at Loki's own bounds; step 0 is
+// an instant query at end.
 func lokiMetricRequest(id, query string, start, end int64, step time.Duration) oraclerun.EngineRequest {
 	if step == 0 {
-		return oraclerun.EngineRequest{ID: id, Instant: true, Form: url.Values{"query": {query}, "time": {strconv.FormatInt(end/1e9, 10)}}.Encode()}
+		return oraclerun.EngineRequest{ID: id, Instant: true, Form: url.Values{"query": {query}, "time": {strconv.FormatInt(end, 10)}}.Encode()}
 	}
 	return oraclerun.EngineRequest{ID: id, Unaligned: true, Form: url.Values{
-		"query": {query}, "start": {strconv.FormatInt(start/1e9, 10)}, "end": {strconv.FormatInt(end/1e9, 10)},
+		"query": {query}, "start": {strconv.FormatInt(start, 10)}, "end": {strconv.FormatInt(end, 10)},
 		"step": {strconv.FormatFloat(step.Seconds(), 'f', -1, 64)},
 	}.Encode()}
 }

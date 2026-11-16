@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -157,5 +158,149 @@ func TestUnwrapWindowReferenceMatchesRecordedLoki(t *testing.T) {
 	}
 	if points < 500 {
 		t.Fatalf("only %d points compared", points)
+	}
+}
+
+// unwrapRowLabels are the labels of a row's series: its stream labels and the labels its parser extracts.
+func unwrapRowLabels(r vlemu.Row) map[string]string {
+	labels := vlemu.StreamLabels(r.Stream)
+	for k, v := range r.Labels {
+		labels[k] = v
+	}
+	return labels
+}
+
+// unwrapFoldAt folds fn's per-series values at t with agg (sum, avg, min, max, count) by the label by ("" for
+// one group): group (the by label's value, "" for none) -> value.
+func unwrapFoldAt(rows []vlemu.Row, fn, agg, by string, window, t int64) map[string]float64 {
+	labels := map[string]map[string]string{}
+	for _, r := range rows {
+		labels[unwrapRowSeries(r)] = unwrapRowLabels(r)
+	}
+	layer := aggLayer{op: agg}
+	if by != "" {
+		layer.hasBy, layer.by = true, []string{by}
+	}
+	var vec []topKFoldRefSample
+	for key, points := range unwrapWindowSeries(rows, fn, window, []int64{t}) {
+		if v, ok := points[t]; ok {
+			vec = append(vec, topKFoldRefSample{labels[key], v})
+		}
+	}
+	folded, _ := layer.eval(vec)
+	out := map[string]float64{}
+	for _, s := range folded {
+		out[s.labels[by]] = s.value
+	}
+	return out
+}
+
+// unwrapSeriesValuesAt is fn's value of every series at t.
+func unwrapSeriesValuesAt(rows []vlemu.Row, fn string, window, t int64) []float64 {
+	var out []float64
+	for _, points := range unwrapWindowSeries(rows, fn, window, []int64{t}) {
+		if v, ok := points[t]; ok {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// unwrapGroupedRangeFold is agg over fn(... [window]) by (by): fn takes the samples of every series of a group
+// together, then agg folds the groups' values into one; ok is false when no group has a sample.
+func unwrapGroupedRangeFold(rows []vlemu.Row, fn, agg, by string, window, t int64) (float64, bool) {
+	grouped := make([]vlemu.Row, len(rows))
+	for i, r := range rows {
+		grouped[i] = vlemu.Row{TS: r.TS, Stream: "{" + by + "=" + strconv.Quote(unwrapRowLabels(r)[by]) + "}", Value: r.Value}
+	}
+	folded := unwrapFoldAt(grouped, fn, agg, "", window, t)
+	v, ok := folded[""]
+	return v, ok
+}
+
+// The first and last over time references (unwrapFoldAt, unwrapGroupedRangeFold, unwrapSeriesValuesAt) give
+// Loki's answers on recorded scenarios of the first/last differentials: every fold ungrouped and by pod, an
+// offset, a range function grouped by pod under a fold, and the series values topk ranks.
+//
+// conformance: semantics/unwrap-first-last-under-aggregation, metric-series-identity
+func TestFirstLastReferenceMatchesRecordedLoki(t *testing.T) {
+	type check struct {
+		id   string
+		want func(loki map[string]float64) string // "" when equal
+	}
+	rnd := rand.New(rand.NewSource(77))
+	var sets []oraclerun.EngineDataSet
+	var checks []check
+	for _, parser := range []string{"", "logfmt", "json"} {
+		for _, fn := range []string{"first_over_time", "last_over_time"} {
+			for i := 0; i < 10; i++ {
+				s := generateUnwrapScenario(rnd, fn, parser, true)
+				s.rows = distinctPerPod(firstLastRows(s))
+				rows, w, end := s.rows, int64(s.window), s.end
+				body := fmt.Sprintf(`%s({app="uw"}%s | unwrap amount [%s]`, fn, parserPipe(parser), uwWindowText(s.window))
+				set := oraclerun.EngineDataSet{Streams: engineStreams(rows, func(r vlemu.Row) (string, map[string]string) { return unwrapRowEntry(parser, "amount", r) })}
+				add := func(query string, want func(map[string]float64) string) {
+					id := fmt.Sprintf("%s/%s/%d/%d", parser, fn, i, len(set.Requests))
+					set.Requests = append(set.Requests, lokiMetricRequest(id, query, end, end, 0))
+					checks = append(checks, check{id + " " + query, want})
+				}
+				sameGroups := func(want map[string]float64) func(map[string]float64) string {
+					return func(loki map[string]float64) string {
+						if len(loki) != len(want) {
+							return fmt.Sprintf("reference %v, Loki %v", want, loki)
+						}
+						for k, v := range want {
+							if lv, ok := loki[k]; !ok || math.Abs(lv-v) > 1e-9*math.Max(1, math.Abs(v)) {
+								return fmt.Sprintf("reference %v, Loki %v", want, loki)
+							}
+						}
+						return ""
+					}
+				}
+				for _, agg := range []string{"sum", "avg", "min", "max", "count"} {
+					add(agg+"("+body+"))", sameGroups(unwrapFoldAt(rows, fn, agg, "", w, end)))
+					add(agg+" by (pod) ("+body+"))", sameGroups(unwrapFoldAt(rows, fn, agg, "pod", w, end)))
+					want := map[string]float64{}
+					if v, ok := unwrapGroupedRangeFold(rows, fn, agg, "pod", w, end); ok {
+						want[""] = v
+					}
+					add(agg+"("+body+") by (pod))", sameGroups(want))
+				}
+				add("sum("+body+" offset 1m))", sameGroups(unwrapFoldAt(rows, fn, "sum", "", w, end-int64(time.Minute))))
+				values := unwrapSeriesValuesAt(rows, fn, w, end)
+				sort.Float64s(values)
+				add("bottomk(2, "+body+"))", func(loki map[string]float64) string {
+					var got []float64
+					for _, v := range loki {
+						got = append(got, v)
+					}
+					sort.Float64s(got)
+					want := values[:min(2, len(values))]
+					if fmt.Sprint(got) != fmt.Sprint(want) {
+						return fmt.Sprintf("reference %v, Loki %v", want, got)
+					}
+					return ""
+				})
+				sets = append(sets, set)
+			}
+		}
+	}
+	answers := lokiEngineAnswers(t, "first_last_reference", sets)
+	for _, c := range checks {
+		id := strings.SplitN(c.id, " ", 2)[0]
+		points, labels := lokiMetricPoints(t, c.id, answers[id])
+		loki := map[string]float64{}
+		for key, series := range points {
+			name := labels[key]["pod"]
+			if _, dup := loki[name]; dup {
+				name = canonicalLabelText(labels[key])
+			}
+			for _, v := range series {
+				loki[name] = v
+			}
+		}
+		if msg := c.want(loki); msg != "" {
+			t.Errorf("%s: %s", c.id, msg)
+		}
 	}
 }
