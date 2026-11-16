@@ -2065,6 +2065,7 @@
       "internal/proxy/blank_after_keyword_test.go",
       "internal/proxy/error_refusals_test.go",
       "internal/proxy/query_lowering_corpus_test.go",
+      "internal/proxy/query_lowering_log_stages_test.go",
       "internal/querycorpus/grammar_sweep_test.go"
     ],
     "semantics/translator-reads-parenthesized-metric-as-text": [
@@ -3756,7 +3757,8 @@
     ],
     "internal/proxy/query_lowering_log_stages_test.go": [
       "architecture-syntax-package-layering",
-      "semantics/translator-copies-unspaced-parser"
+      "semantics/translator-copies-unspaced-parser",
+      "semantics/translator-reads-only-space-between-tokens"
     ],
     "internal/proxy/query_lowering_shared_parse_test.go": [
       "architecture-syntax-package-layering",

@@ -1808,6 +1808,7 @@
     "internal/proxy/query_lowering_corpus_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/proxy/query_lowering_log_stages_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_log_stages_test.go | semantics/translator-copies-unspaced-parser",
+    "internal/proxy/query_lowering_log_stages_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/proxy/query_lowering_shared_parse_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_shared_parse_test.go | observability-query-flow",
     "internal/proxy/query_lowering_test.go | architecture-syntax-package-layering",
