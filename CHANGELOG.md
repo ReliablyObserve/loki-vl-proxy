@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Comments in the string translator that named lines of Loki's sources now cite recorded Loki answers or Loki's public
+  documentation instead; no behaviour changes. The pattern line filter tests no longer carry a port of Loki's matcher:
+  they compare the filter with Loki's own verdicts, recorded with the Loki pipeline oracle.
+
+## [2.310.1] - 2026-11-16
+
 ### Fixed
 
 - A query whose VictoriaLogs answer is larger than the proxy buffers (`-backend-max-buffered-response-bytes`), or that
@@ -17,9 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Comments in the string translator that named lines of Loki's sources now cite recorded Loki answers or Loki's public
-  documentation instead; no behaviour changes. The pattern line filter tests no longer carry a port of Loki's matcher:
-  they compare the filter with Loki's own verdicts, recorded with the Loki pipeline oracle.
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
 
 ## [2.310.0] - 2026-11-16
 
