@@ -150,6 +150,45 @@ func TestIndexStatsOfALokiBehindItsDataIsNotComparable(t *testing.T) {
 	}
 }
 
+// Loki's index catches up with its data a little after the seed: the answer is asked again, and a case whose index
+// caught up on a later ask is compared like any other; one that never does stays not comparable.
+func TestIndexStatsIsAskedAgainWhileLokiCatchesUp(t *testing.T) {
+	p := Probe{ID: "i", Status: "documented", Mode: "observed", Fields: []string{"streams", "entries"}, Method: "GET", Path: indexStatsPath,
+		Params: map[string]string{"query": `{env="production"}`, "start": "now-1h", "end": "now"}}
+	behind := ok(`{"streams":2,"chunks":2,"bytes":1,"entries":4}`)
+	proxyAnswer := ok(`{"streams":70,"chunks":70,"bytes":9,"entries":10}`)
+	caught := ok(`{"streams":70,"chunks":70,"bytes":1,"entries":10}`)
+	src := fake{"i": {1: {"loki": behind, "proxy": proxyAnswer}, indexRetryAttempt + 3: {"loki": caught}}}
+	if r := Verify(p, src, equalCounts, nil, testNow, "0"); r.Verdict != verdictMatches || r.Reason != "" {
+		t.Errorf("caught up on the third ask: %+v", r)
+	}
+	never := fake{"i": {1: {"loki": behind, "proxy": proxyAnswer}}}
+	if r := Verify(p, never, equalCounts, nil, testNow, "0"); r.Verdict != verdictNotComparable || !strings.Contains(r.Reason, "has not caught up") {
+		t.Errorf("never caught up: %+v", r)
+	}
+}
+
+// A case whose point is the answer to a range without data (request.verify.empty_range) is not `empty`: the empty counts
+// are the data it needs, and the answers' status is compared. Without the declaration the same case is empty.
+func TestEmptyRangeIsTheDataOfACaseThatSaysSo(t *testing.T) {
+	q := map[string]string{"query": `{app="x"} | line_format "{{.a"`, "start": "now-30d", "end": "now-29d"}
+	probe := func(by string) Probe {
+		return Probe{ID: "e", Status: "documented", Mode: "observed", Fields: []string{"status"}, Method: "GET", Path: "/loki/api/v1/query_range", Params: q, EmptyRange: by}
+	}
+	none := counts{`{app="x"}`: {{Count: 0}, {Count: 0}}}
+	src := fake{"e": both(ok(`{"data":{"result":[]}}`), Answer{Status: 400, Body: "bad"})}
+	if r := Verify(probe("the range holds no data on purpose"), src, none, nil, testNow, "0"); r.Verdict != verdictDiffers || r.Expected != "accepted" || r.Flag != "" {
+		t.Errorf("a documented difference over an empty range: %+v", r)
+	}
+	if r := Verify(probe(""), src, none, nil, testNow, "0"); r.Verdict != verdictEmpty {
+		t.Errorf("not declared: %+v", r)
+	}
+	same := fake{"e": both(ok(`{"data":{"result":[]}}`), ok(`{"data":{"result":[]}}`))}
+	if r := Verify(probe("the range holds no data on purpose"), same, none, nil, testNow, "0"); r.Verdict != verdictMatches || r.Flag != flagBehaviourChanged {
+		t.Errorf("the proxy now answers like Loki: %+v", r)
+	}
+}
+
 // A redirect is an answer: the client does not follow it, and a path with a double slash is sent as it is.
 func TestRedirectsAreCompared(t *testing.T) {
 	mux := http.NewServeMux() // cleans //, answers 301 with a Location

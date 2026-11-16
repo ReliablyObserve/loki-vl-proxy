@@ -872,6 +872,41 @@ class ProfileGateTest(unittest.TestCase):
         self.assertEqual(over2x.judge(*over2x.history_pairs({**line, "loki_cold_computed": False})["cold"]), "not_comparable")
         self.assertEqual(over2x.judge(*over2x.history_pairs({**line, "loki_cold_computed": None})["cold"]), "above")
 
+    def test_a_first_ask_is_left_out_of_every_ratio_and_held_to_its_bound(self):
+        dp1 = "DP1 patterns of a plain-text service"
+        bound = over2x.first_ask_bound(dp1, "1h")
+        self.assertIsNotNone(bound)
+        self.assertIsNone(over2x.first_ask_bound(dp1, "6h"))  # a later range reads the state the first one built
+        self.assertIsNone(over2x.first_ask_bound("logs plain", "1h"))
+        line = {"shape": dp1, "range": "1h", "cold": 0.3, "loki_cold": 0.02, "status": "200", "loki_status": "200",
+                "p50": 0.05, "loki_p50": 0.02, "loki_cold_computed": True}
+        self.assertEqual(set(over2x.history_pairs(line)), {"warm"})
+        self.assertEqual(set(over2x.history_pairs({**line, "range": "6h"})), {"cold", "warm"})
+        summary = {"reference": "loki", "candidate": "main", "set": "drilldown-patterns", "rows": []}
+        row = {"shape": dp1, "range": "1h", "cold": {"main": 0.3, "loki": 0.02}, "p50": {"main": 0.05, "loki": 0.02},
+               "status": {"main": "200", "loki": "200"}}
+        self.assertEqual(set(over2x.summary_pairs(summary, row, "main")), {"warm"})
+        self.assertEqual(over2x.judge(*over2x.summary_pairs(summary, row, "main")["warm"]), "within")
+        self.assertEqual(over2x.first_ask_judge(bound + 0.01, "200", bound), "above_bound")
+        self.assertEqual(over2x.first_ask_judge(bound, "200", bound), "within")
+        self.assertEqual(over2x.first_ask_judge(None, "200", bound), "not_comparable")
+        self.assertEqual(over2x.first_ask_judge(9.0, "500", bound), "not_comparable")
+        spec = {"sets": {"s": {"shapes": [{"name": "a", "first_ask_max_s": {"1h": 0.5}}, {"name": "b"}]}}}
+        self.assertEqual(over2x.first_ask_bounds(spec), {"a": {"1h": 0.5}})
+
+    def test_the_weekly_run_takes_a_listed_first_ask_off_the_list(self):
+        dp2 = "DP2 patterns of an environment"
+        k = ("loki-defaults", "drilldown-patterns", dp2, "1h", "cold")
+        listed = {k: {"profile": k[0], "set": k[1], "shape": dp2, "range": "1h", "mode": "cold", "ratio": 7.2,
+                      "proxy_s": 1.9, "loki_s": 0.26}}
+        out = {key: [] for key in ("over_2x_new", "over_2x_added", "over_2x_removed", "over_2x_pending")}
+        row = {"shape": dp2, "range": "1h", "cold": 1.9, "loki_cold": 0.26, "status": "200", "loki_status": "200",
+               "p50": 0.09, "loki_p50": 0.2, "loki_cold_computed": True}
+        history.over_2x(out, listed, k[0], k[1], (dp2, "1h"), row, None, {"date": "2026-11-16"}, {"date": "2026-11-09"})
+        self.assertEqual([r["shape"] for r in out["over_2x_removed"]], [dp2])
+        self.assertIn("absolute bound", out["over_2x_removed"][0]["detail"])
+        self.assertEqual(out["over_2x_new"] + out["over_2x_added"] + out["over_2x_pending"], [])
+
     def test_a_baseline_row_without_a_profile_reads_as_aligned_and_a_bad_profile_is_refused(self):
         legacy = {"rows": [{"set": "control", "shape": "s", "range": "1h", "mode": "warm", "ratio": 3.0}]}
         self.assertEqual(list(over2x.parse_baseline(json.dumps(legacy))), [("aligned", "control", "s", "1h", "warm")])
