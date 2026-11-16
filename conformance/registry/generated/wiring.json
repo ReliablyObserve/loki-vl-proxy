@@ -710,8 +710,10 @@
       "internal/proxy/plan_defect_test.go",
       "internal/proxy/tail_backend_errors_test.go",
       "internal/proxy/tail_backend_retry_test.go",
+      "internal/proxy/tail_history_test.go",
       "internal/proxy/tail_pipeline_test.go",
       "test/e2e-compat/tail_backend_outage_test.go",
+      "test/e2e-compat/tail_history_test.go",
       "test/e2e-compat/tail_pipeline_test.go"
     ],
     "metric-series-identity": [
@@ -1957,6 +1959,10 @@
       "internal/proxy/sub_second_step_test.go",
       "test/e2e-compat/sub_second_step_test.go"
     ],
+    "semantics/tail-history-start-limit": [
+      "internal/proxy/tail_history_test.go",
+      "test/e2e-compat/tail_history_test.go"
+    ],
     "semantics/tail-survives-backend-outage": [
       "internal/proxy/tail_backend_retry_test.go",
       "test/e2e-compat/tail_backend_outage_test.go"
@@ -2509,7 +2515,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 595,
+  "registry_items": 596,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3983,6 +3989,10 @@
       "semantics/error-layer-internal-go-text",
       "semantics/tail-survives-backend-outage"
     ],
+    "internal/proxy/tail_history_test.go": [
+      "loki_api_v1_tail",
+      "semantics/tail-history-start-limit"
+    ],
     "internal/proxy/tail_pipeline_test.go": [
       "loki_api_v1_tail"
     ],
@@ -5397,6 +5407,10 @@
       "loki_api_v1_tail",
       "semantics/tail-survives-backend-outage"
     ],
+    "test/e2e-compat/tail_history_test.go": [
+      "loki_api_v1_tail",
+      "semantics/tail-history-start-limit"
+    ],
     "test/e2e-compat/tail_pipeline_test.go": [
       "loki_api_v1_tail"
     ],
@@ -5568,7 +5582,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 656,
+  "tests_with_markers": 658,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5644,7 +5658,7 @@
     "semantics/stream-label-selector-shadowed-by-ingest-json-key",
     "semantics/stream-label-shadowed-after-json-parser",
     "semantics/stream-level-shadowed-by-ingest-json-key",
-    "semantics/tail-history-start-limit",
+    "semantics/tail-history-limit-above-max-entries",
     "semantics/tenant-header-loki-answers",
     "semantics/topk-per-step-membership-differs",
     "semantics/translator-folds-binary-by-operand-without",
@@ -5669,5 +5683,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 382
+  "wired_items": 383
 }
