@@ -1,15 +1,15 @@
-id: operator-optypeadd
+id: operator-lt
 kind: operator
-logql: "+"
-loki_constant: OpTypeAdd
+logql: "<"
+source: https://grafana.com/docs/loki/v3.7.x/query/query_reference/
 generated:
   supported_by_proxy: true
   seen_in:
     - internal/logql/scanner.go
+    - internal/logql/stage_validate.go
     - internal/proxy/binary_matching.go
-    - internal/proxy/metric_agg.go
+    - internal/proxy/log_line.go
     - internal/proxy/metric_binary.go
-    - internal/proxy/stream_processing.go
     - internal/proxy/vector_matching.go
 
 semantics: |
