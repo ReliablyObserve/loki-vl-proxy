@@ -83,6 +83,12 @@ Every Loki error message is a registry item, every route x error kind is a cell 
   `conformance/registry/error-coverage-spec.json` (its stage in Loki's order of checks, the route or kind it belongs
   to, or the reason and test when Loki cannot be asked), or the conformance gate fails.
 - Record new answers with `go run ./test/errorrecord` against a running Loki; add rows by hand, never edit a recorded answer.
+- A request whose answer depends on the Loki process (the same image and configuration answer differently from one
+  process to the next and keep their answer for the life of the process: DELETE and other wrong-method requests,
+  405 or 404) keeps every answer Loki was recorded giving it: `loki` is the answer the proxy gives, `loki_also` the
+  others, copied from a recording run, and `varies` names the probe run and how often each answer came. The
+  re-record and the e2e comparison accept any recorded answer, and a third answer is still a change. A row whose
+  answer moves with time or data is not one of these: move its window or record it from a Loki that serves data.
 - The translator's, the plan's and the proxy's own wording never reaches a client. A query that passed validation and
   that the translation, plan or evaluation then fails is answered through `p.fail` with a typed error built from typed
   facts (`internal/proxy/error_refusals.go`): Loki's message where Loki rejects the query and the AST or request gives
