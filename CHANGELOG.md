@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `sum`, `max`, `min` and `avg` (with or without `by`) over `avg_over_time`, `max_over_time`, `min_over_time`,
+  `stddev_over_time` or `stdvar_over_time` of a label unwrapped after an extraction list (`| logfmt amount, route`,
+  `| json amount`) now read Loki's series: the stream plus the labels the list names, less the unwrapped one, where
+  the proxy read each line as a series of its own. On an instant query and on a range up to the step, for example
+  `sum(max_over_time({...} | logfmt amount | unwrap amount [5m]))` adds one maximum per stream as Loki does.
+  VictoriaLogs groups the rows by the stream, its level fields and the listed labels, reading each line once.
+  Measured with VictoriaLogs' own handlers on synthetic logfmt rows (v1.49.0 and v1.53.0), most of these shapes run
+  16% to 72% faster in VictoriaLogs than before; `sum by (...)` over `max_over_time` costs up to 48% more and over
+  `avg_over_time` up to 12% more, for the per-series step Loki's answer needs. Count,
+  first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
+  read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
+
 ## [2.317.0] - 2026-11-16
 
 ### Performance
@@ -24,19 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   environment of the Drilldown patterns benchmark): 302 ms to 95 ms with 4 cores and 312 ms to 172 ms with 2, with
   43% fewer bytes, 67% fewer allocations and 9-16% less CPU time.
 
-### Fixed
+### Changed
 
-- `sum`, `max`, `min` and `avg` (with or without `by`) over `avg_over_time`, `max_over_time`, `min_over_time`,
-  `stddev_over_time` or `stdvar_over_time` of a label unwrapped after an extraction list (`| logfmt amount, route`,
-  `| json amount`) now read Loki's series: the stream plus the labels the list names, less the unwrapped one, where
-  the proxy read each line as a series of its own. On an instant query and on a range up to the step, for example
-  `sum(max_over_time({...} | logfmt amount | unwrap amount [5m]))` adds one maximum per stream as Loki does.
-  VictoriaLogs groups the rows by the stream, its level fields and the listed labels, reading each line once.
-  Measured with VictoriaLogs' own handlers on synthetic logfmt rows (v1.49.0 and v1.53.0), most of these shapes run
-  16% to 72% faster in VictoriaLogs than before; `sum by (...)` over `max_over_time` costs up to 48% more and over
-  `avg_over_time` up to 12% more, for the per-series step Loki's answer needs. Count,
-  first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
-  read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
+- The query plan now describes binary operations with a `bool` modifier, the set operators `and`, `or` and `unless`,
+  and chains of operations (`a + b * 2`, `a / b * 100`, `a > 2 and b > 1`) as the operations the proxy evaluates: each
+  operand a query of its own, a chained operand its own binary operation, in Loki's precedence and associativity. The
+  plan's reading of these queries is held to the proxy's binary route and to Loki's own syntax tree. A new
+  differential holds the proxy's answers for 32 such shapes at the top of a query (comparisons with and without `bool`,
+  set operators with and without `on`/`ignoring`, `group_left`/`group_right`, precedence and associativity, NaN and
+  infinities, empty operands, and the many-to-many and many-to-one errors) to Loki's on query and query_range, on
+  VictoriaLogs v1.49.0 and v1.53.0: all match. No answer, request or cache key changes.
 
 ## [2.316.0] - 2026-11-16
 
