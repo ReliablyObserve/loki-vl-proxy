@@ -71,6 +71,7 @@ corpus:
       - query: 'stddev(sum by (service_name) (count_over_time({env="production"}[1m])) / sum by (service_name) (count_over_time({env="production"} |= "error" [1m])) * 100)'
 gap:
   status: fixed
+  fixed_by: "a13f36ec3"
   impact: explore-visible
   effort: S
   area: 'internal/proxy/metric_agg.go (handleRangeMetricPostAggregation, handleInstantMetricPostAggregation), internal/proxy/rank_binary_operand.go, internal/proxy/rank_binary_fence.go, internal/proxy/response_key_fences.go'

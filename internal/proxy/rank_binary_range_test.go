@@ -70,11 +70,11 @@ func TestRangeRankOverBinaryEvaluatesOperands(t *testing.T) {
 					t.Errorf("%d stats requests, want one per operand (%d)", stats, tc.operands)
 				}
 				if kind.name != "query_range" {
-				// The repeat of an instant query is not asserted here: an instant answer of the fake VictoriaLogs is
-				// not cached on any route (a plain sum asks again too).
-				return
-			}
-			again := doCompatProxyRequest(p, target, headers)
+					// The repeat of an instant query is not asserted here: an instant answer of the fake VictoriaLogs is
+					// not cached on any route (a plain sum asks again too).
+					return
+				}
+				again := doCompatProxyRequest(p, target, headers)
 				if again.Code != http.StatusOK || again.Body.String() != first.Body.String() {
 					t.Fatalf("the repeat answers another body\nfirst  %d %s\nrepeat %d %s", first.Code, first.Body, again.Code, again.Body)
 				}
@@ -185,4 +185,63 @@ func BenchmarkRangeRankOverBinary(b *testing.B) {
 			}
 		}
 	})
+}
+
+// holdsBinaryOperand reads the operand of a ranking from its tree: a binary operation under any number of vector
+// aggregations and label_replace calls, and nothing else.
+//
+// conformance: semantics/rank-over-binary-operation
+func TestHoldsBinaryOperand(t *testing.T) {
+	for _, tc := range []struct {
+		operand string
+		want    bool
+	}{
+		{`sum by (app) (rate({app="a"}[1m])) / sum by (app) (rate({app="b"}[1m]))`, true},
+		{`sum by (app) (rate({app="a"}[1m]) / rate({app="b"}[1m]))`, true},
+		{`max(sum by (app) (rate({app="a"}[1m]) > bool 1))`, true},
+		{`label_replace(rate({app="a"}[1m]) * 2, "x", "$1", "app", "(.*)")`, true},
+		{`sum(label_replace(rate({app="a"}[1m]) and rate({app="b"}[1m]), "x", "$1", "app", "(.*)"))`, true},
+		{`sum by (app) (rate({app="a"}[1m]))`, false},
+		{`label_replace(rate({app="a"}[1m]), "x", "$1", "app", "(.*)")`, false},
+		{`vector(1)`, false},
+		{`rate({app="a"}[1m])`, false},
+	} {
+		expr, err := parseLogQLExpr(context.Background(), tc.operand)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.operand, err)
+		}
+		if got := holdsBinaryOperand(expr); got != tc.want {
+			t.Errorf("%s: %v, want %v", tc.operand, got, tc.want)
+		}
+	}
+}
+
+// An operand answered as a query of its own keeps its error: a VictoriaLogs failure of one side of a wrapped binary
+// operation answers Loki's 500 on query_range and query, as the operand alone does.
+//
+// conformance: semantics/rank-over-binary-operation
+func TestRankOverWrappedBinaryKeepsOperandError(t *testing.T) {
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/select/logsql/stats_query") {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"values":[]}`))
+	}))
+	t.Cleanup(vl.Close)
+	p, err := New(Config{BackendURL: vl.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	query := url.QueryEscape(`topk(2, sum by (app) (count_over_time({app="a"}[1m]) * count_over_time({app="b"}[1m])))`)
+	operand := url.QueryEscape(`sum by (app) (count_over_time({app="a"}[1m]) * count_over_time({app="b"}[1m]))`)
+	for _, prefix := range []string{"/loki/api/v1/query_range?start=1609459200&end=1609462800&step=60&query=", "/loki/api/v1/query?time=1609462800&query="} {
+		got := doCompatProxyRequest(p, prefix+query, map[string]string{"X-Scope-OrgID": "0"})
+		want := doCompatProxyRequest(p, prefix+operand, map[string]string{"X-Scope-OrgID": "0"})
+		if got.Code < http.StatusInternalServerError || got.Code != want.Code || got.Body.String() != want.Body.String() {
+			t.Errorf("%s: the ranking answers %d %q, the operand alone %d %q", prefix, got.Code, got.Body, want.Code, want.Body)
+		}
+	}
 }
