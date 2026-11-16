@@ -21,17 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The `detected_level` escaped-value regexp now runs only on lines holding a backslash. The lines every probe
   selects and every answer are unchanged (quality/probe-regexp-parse-cost).
 
-## [2.306.0] - 2026-11-16
-
 ### Fixed
 
-- `absent_over_time` over a zero range (`[0s]`, `[0]`, with or without `offset`) now answers as Loki does: one
-  series valued 1 at every step on query_range and at the evaluation time on query, labelled with the selector's
-  equality matchers, also under `sum`, `count`, `stddev`, `max without (...)` and the other vector aggregations,
-  `topk`, `bottomk`, `sort`, `sort_desc` and `label_replace`. A zero range holds no sample in any window, so the
-  answer reads no data: it is written from the parsed query before the response cache, the query plan and any
-  VictoriaLogs call. The proxy answered `500 Internal Server Error` (and, on query with VictoriaLogs data behind it,
-  a series carrying a `detected_level` label Loki does not write) (semantics/zero-range-metric).
 - A metric series of a stream with no level label now carries the level of its lines, as Loki gives. Loki gives
   every line the level its structured metadata or its body carries (a logfmt or JSON level key, a level word of a
   plain line), else `unknown`, so one such stream is one series per level. Queries the proxy reads per stream (for
@@ -43,6 +34,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are split by it. A window whose streams all carry a level label sends the same VictoriaLogs query as before and
   nothing more. Answers cached before the fix are not served again (the response key fence moves to
   `@stream-level-series-v4`), so each cached metric answer is read from VictoriaLogs once after the upgrade.
+
+## [2.306.0] - 2026-11-16
+
+### Fixed
+
+- `absent_over_time` over a zero range (`[0s]`, `[0]`, with or without `offset`) now answers as Loki does: one
+  series valued 1 at every step on query_range and at the evaluation time on query, labelled with the selector's
+  equality matchers, also under `sum`, `count`, `stddev`, `max without (...)` and the other vector aggregations,
+  `topk`, `bottomk`, `sort`, `sort_desc` and `label_replace`. A zero range holds no sample in any window, so the
+  answer reads no data: it is written from the parsed query before the response cache, the query plan and any
+  VictoriaLogs call. The proxy answered `500 Internal Server Error` (and, on query with VictoriaLogs data behind it,
+  a series carrying a `detected_level` label Loki does not write) (semantics/zero-range-metric).
 
 ### Changed
 
