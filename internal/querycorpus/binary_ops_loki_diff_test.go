@@ -54,6 +54,9 @@ var binaryOpsShapes = []string{
 	`sum by (pod) (count_over_time({job="rb"}[1m])) + sum by (pod) (count_over_time({job="rb", level="info"}[1m])) > bool 40`,
 	`sum by (pod) (count_over_time({job="rb"}[1m])) > 20 and sum by (pod) (count_over_time({job="rb", level="info"}[1m])) > 10`,
 	`sum by (pod) (count_over_time({job="rb"}[1m])) % 7 + 1`,
+	// vector(n) inside a chain: the operand is a binary operation, not a constant.
+	`(vector(1) + sum by (pod) (count_over_time({job="rb"}[1m]))) * 2`,
+	`sum(count_over_time({job="rb"}[1m])) * (vector(2) + sum(count_over_time({job="rb", level="info"}[1m])))`,
 	// NaN and infinities: Loki writes NaN, +Inf and -Inf.
 	`sum by (pod) (count_over_time({job="rb"}[1m])) / 0`,
 	`(sum by (pod) (count_over_time({job="rb"}[1m])) - sum by (pod) (count_over_time({job="rb"}[1m]))) / 0`,
