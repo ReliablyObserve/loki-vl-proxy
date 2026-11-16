@@ -71,6 +71,14 @@ by default.
   `TestVectorFoldReferenceMatchesRecordedLoki`, `TestUnwrapWindowReferenceMatchesRecordedLoki`, ...).
 - Ingest-time values Loki adds (`service_name` from `app`, `detected_level` as structured metadata) are written
   into the recorded data explicitly, as Loki's documented ingest gives them.
+- Loki's ingest-time `detected_level` has no oracle (the engine has no ingest): its answers are recorded from a real
+  Loki by pushing each row of `internal/proxy/testdata/detected_level_golden.json` as its own stream
+  (`TestCompat_DetectedLevelGoldenMatchesLoki`, test/e2e-compat). The rows are our own generated inputs. Record
+  them again on every Loki pin bump and whenever rows are added, on a fresh stack:
+  `LVP_RECORD_DETECTED_LEVEL_GOLDEN=1 go test -tags e2e -count=1 -run '^TestCompat_DetectedLevelGoldenMatchesLoki$' ./test/e2e-compat/`
+  (it rewrites the table and its evidence file, `detected_level_golden_loki.json`). Without the variable it checks
+  about 200 rows (every category) against the stack's Loki, about 200 streams per run;
+  `LVP_DETECTED_LEVEL_GOLDEN_FULL=1` checks every row.
 
 ## Loki difference registry and query matrix
 
