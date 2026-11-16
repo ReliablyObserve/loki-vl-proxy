@@ -242,6 +242,12 @@ type Config struct {
 	// the built-in "missing _msg field; ..." text. Rows whose _msg is empty or
 	// this placeholder have their log line rebuilt from the row's fields.
 	BackendDefaultMsgValue string
+	// JSONLineFieldsAsLineKeys reads every stored field of a row whose _msg is
+	// VictoriaLogs' missing-message placeholder as a key of the row's JSON line
+	// (-json-line-fields-as-line-keys): a JSON line pushed to VictoriaLogs' Loki
+	// push route without disable_message_parsing=1. Off by default: it hides
+	// structured metadata pushed beside such a line.
+	JSONLineFieldsAsLineKeys bool
 	// EmitStructuredMetadata enables Loki 3-tuple stream values [ts, line, metadata].
 	// Disabled by default for conservative datasource compatibility.
 	EmitStructuredMetadata bool
@@ -753,6 +759,7 @@ type Proxy struct {
 	streamResponse                        bool
 	emitStructuredMetadata                bool
 	backendDefaultMsgValue                string
+	jsonLineFieldsAsLineKeys              bool
 	detectedLevelBodyScan                 bool
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
@@ -1471,6 +1478,7 @@ func New(cfg Config) (*Proxy, error) {
 		streamResponse:                        cfg.StreamResponse,
 		emitStructuredMetadata:                cfg.EmitStructuredMetadata,
 		backendDefaultMsgValue:                cfg.BackendDefaultMsgValue,
+		jsonLineFieldsAsLineKeys:              cfg.JSONLineFieldsAsLineKeys,
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
 		loweringShadow:                        newLoweringShadow(cfg.TranslateShadowSample),
 		queryPlanLowering:                     !cfg.DisableQueryPlanLowering,
@@ -2651,6 +2659,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, true)
+	r = p.withPlaceholderExclusion(r, logqlQuery)
 
 	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual)
 	// for METRIC (matrix) range queries. This MUST run here, at the entry, while
@@ -3082,6 +3091,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, false)
+	r = p.withPlaceholderExclusion(r, logqlQuery)
 	p.log.Debug("query request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
 
 	if body, ok := evaluateConstantInstantQuery(logqlQuery, r.FormValue("time")); ok {

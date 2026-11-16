@@ -1547,6 +1547,7 @@
     "internal/proxy/json_label_probe_gates_test.go | parser-error-and-label-collision",
     "internal/proxy/json_label_probe_gates_test.go | quality/json-label-probe-gates",
     "internal/proxy/json_label_probe_gates_test.go | semantics/json-extracted-metric-pushdown",
+    "internal/proxy/json_line_keys_test.go | profiles/json-line-stored-without-line",
     "internal/proxy/keep_blank_list_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/keep_blank_list_loki_test.go | semantics/keep-drop-blank-name-prints-back",
     "internal/proxy/keep_blank_list_loki_test.go | semantics/keep-leaves-labels-loki-drops",
@@ -2255,6 +2256,7 @@
     "internal/querycorpus/grammar_sweep_test.go | semantics/unwrap-unknown-conversion-function-accepted",
     "internal/querycorpus/grammar_sweep_test.go | semantics/vector-aggregation-over-scalar-rejected",
     "internal/querycorpus/ip_line_filter_precedence_test.go | semantics/ip-line-filter-ipv4-like-loki",
+    "internal/querycorpus/json_line_fields_loki_diff_test.go | profiles/json-line-stored-without-line",
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/drop-before-unwrap-stream-label",
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/keep-before-parser-unwrap-identity",
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go | semantics/keep-before-unwrap-identity-in-operands",
@@ -2989,7 +2991,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 700,
+      "go": 702,
       "playwright": 2
     },
     "page_kinds": {
@@ -3008,8 +3010,8 @@
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 95,
-    "wired_items": 398
+    "unwired_items": 94,
+    "wired_items": 399
   },
   "gates": [
     "A/B shape selection",

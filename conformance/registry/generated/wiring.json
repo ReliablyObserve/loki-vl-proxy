@@ -948,6 +948,10 @@
       "internal/proxy/stage_field_exposure_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go"
     ],
+    "profiles/json-line-stored-without-line": [
+      "internal/proxy/json_line_keys_test.go",
+      "internal/querycorpus/json_line_fields_loki_diff_test.go"
+    ],
     "profiles/keep-removes-derived-service-name": [
       "internal/proxy/stream_metadata_test.go",
       "test/e2e-compat/keep_service_name_test.go"
@@ -3362,6 +3366,9 @@
       "quality/json-label-probe-gates",
       "semantics/json-extracted-metric-pushdown"
     ],
+    "internal/proxy/json_line_keys_test.go": [
+      "profiles/json-line-stored-without-line"
+    ],
     "internal/proxy/keep_blank_list_loki_test.go": [
       "loki_api_v1_query_range",
       "semantics/keep-drop-blank-name-prints-back",
@@ -4559,6 +4566,9 @@
     ],
     "internal/querycorpus/ip_line_filter_precedence_test.go": [
       "semantics/ip-line-filter-ipv4-like-loki"
+    ],
+    "internal/querycorpus/json_line_fields_loki_diff_test.go": [
+      "profiles/json-line-stored-without-line"
     ],
     "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go": [
       "semantics/drop-before-unwrap-stream-label",
@@ -5860,7 +5870,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 702,
+  "tests_with_markers": 704,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5894,7 +5904,6 @@
     "profiles/existence-filter-on-sanitized-key",
     "profiles/grafana-stats-error-as-warning",
     "profiles/json-extraction-list-missing-key",
-    "profiles/json-line-stored-without-line",
     "profiles/json-number-label-text",
     "profiles/label-endpoints-window-and-data",
     "profiles/metadata-default-lookback",
@@ -5959,5 +5968,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 398
+  "wired_items": 399
 }

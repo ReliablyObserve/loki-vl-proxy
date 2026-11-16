@@ -885,6 +885,11 @@ func (p *Proxy) writeCoalescedManualMetric(w http.ResponseWriter, r *http.Reques
 	if strings.Contains(spec.BaseQuery, "| unpack_logfmt") {
 		return false
 	}
+	// A placeholder exclusion is the request's own (its guard is the field it
+	// counts): the fused query of several fields cannot carry each one.
+	if placeholderExclusionFrom(r.Context()) != "" {
+		return false
+	}
 	base, field, ok := extractCommonBase(spec.BaseQuery)
 	if !ok {
 		return false
@@ -2042,7 +2047,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		}
 
 		hideLevel := false
-		if exposure != nil && levelStr != "" && exposure.hidesStoredLevel(v.GetStringBytes("_msg")) {
+		if exposure != nil && levelStr != "" && exposure.hidesStoredLevelOf(v.GetStringBytes("_msg")) {
 			_, streamLevel := parseStreamLabels(streamStr)["level"]
 			hideLevel = !streamLevel
 		}

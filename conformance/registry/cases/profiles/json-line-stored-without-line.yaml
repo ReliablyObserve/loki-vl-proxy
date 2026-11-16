@@ -19,15 +19,38 @@ why: |
   `| json` or `| logfmt`. Loki returns the original line and no labels from
   it without a parser.
 
-  The proxy cannot recover the line on the read path. Loki-exact results
-  need VictoriaLogs to keep the line: push with
-  `/insert/loki/api/v1/push?disable_message_parsing=1` (stores the line in
-  _msg verbatim and only the structured metadata as fields; verified on
-  v1.30.0 and v1.52.0), after which every case in
-  profiles/stage-field-exposure applies. Open: whether to document that
-  client setting as the supported configuration, or to treat every field of
-  such a row as a line key (exact for pushes without structured metadata,
-  hides structured metadata otherwise).
+  The proxy cannot recover the line on the read path. Two setups:
+
+  * Option A, the supported setup: push with
+    `/insert/loki/api/v1/push?disable_message_parsing=1` (or start VictoriaLogs
+    with `-loki.disableMessageParsing`). VictoriaLogs stores the line in _msg
+    verbatim and only the structured metadata as fields (verified on v1.30.0
+    and v1.52.0), after which every case in profiles/stage-field-exposure
+    applies.
+  * Option B, `-json-line-fields-as-line-keys` (off by default): every stored
+    field of a row whose _msg is the placeholder (VictoriaLogs' built-in one or
+    `-backend-default-msg-value`) is read as a key of the row's JSON line. A
+    log response classifies the row against the line rebuilt from its fields:
+    no label without a parser, parsed labels after `| json` or a json
+    extraction list, none from `| logfmt` (an extraction list's names empty),
+    label filters on a key no stage exposes drop the row. A query whose every
+    log selector reads a label no stage can give such a line (an unwrap, or a
+    label filter an empty value fails, after `| logfmt` or without a parser)
+    leaves those rows out in VictoriaLogs with one `extra_filters` filter
+    (`NOT _msg:="<placeholder>" OR {<label>!=""}`), so
+    `max_over_time(... | logfmt amount | unwrap amount [5m])` answers only the
+    logfmt streams, as Loki does. `| json` metric queries read such a row as a
+    valid JSON object (the parse-risk probes leave it out, the stats split
+    keeps it). Structured metadata pushed beside such a line is stored among
+    its keys and hidden with the flag on, which is why it is opt-in.
+    Measured with the flag on (TestJSONLineFieldsMatchLoki, VictoriaLogs
+    v1.49.0 and v1.53.0 against Loki's engine and pipeline oracles): 176 of 208
+    runs match Loki, against 66 with the flag off. Still different with the
+    flag on: line filters (`|=`, `|~`) read the stored placeholder; a label
+    filter an empty value passes, before any parser, reads the stored field;
+    `| logfmt` groups such a line by its stored fields where Loki groups it
+    under empty values; structured metadata pushed beside the line is hidden;
+    number types, nesting and key order of the pushed line are lost.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -48,8 +71,9 @@ gap:
   status: documented
   impact: explore-visible
   effort: L
-  area: 'client push configuration (disable_message_parsing=1); docs/KNOWN_ISSUES.md'
+  area: 'client push configuration (disable_message_parsing=1); -json-line-fields-as-line-keys (internal/proxy/json_line_keys.go); docs/KNOWN_ISSUES.md'
   loki: 'the pushed line is returned verbatim'
   proxy: 'line rebuilt from stored fields'
   planned_test: 'cases/profiles/stage-field-exposure with disable_message_parsing pushes'
+  note: 'Option B tests: TestJSONLineFieldsMatchLoki (internal/querycorpus; flag off: answers pinned byte for byte; flag on: Loki engine and pipeline oracles, VictoriaLogs v1.49.0 and v1.53.0), TestJSONLineFieldsRepeatServedFromCache, and TestPlaceholderExclusionDecision, TestJSONLineKeysOffChangesNothing, FuzzPlaceholderExclusion (internal/proxy).'
   clusters: []
