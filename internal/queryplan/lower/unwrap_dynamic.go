@@ -70,6 +70,9 @@ func dynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) (parser *q
 	default:
 		return nil, false
 	}
+	if seriesSplitFree(va.Op, ra.Op) {
+		return nil, false
+	}
 	var unwrap *queryplan.Unwrap
 	for _, st := range ra.In.Stages {
 		switch st := st.(type) {
@@ -99,6 +102,15 @@ func dynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) (parser *q
 		return nil, false
 	}
 	return parser, true
+}
+
+// seriesSplitFree reports an aggregation whose answer does not depend on how its samples are split into series: the
+// maximum of each series' maximum is the maximum of the group's samples, and the minimum of minimums the minimum,
+// whatever the series. The stream's series (the string translator's grouping) answer it as Loki's series do, with
+// less work in VictoriaLogs than the series hash, so the dynamic identity is not written for it.
+// TestSeriesSplitFreeAggregations holds the pairs to an evaluation over random series splits.
+func seriesSplitFree(vec logql.VectorOp, rng logql.RangeOp) bool {
+	return vec == logql.VectorMax && rng == logql.RangeMaxOverTime || vec == logql.VectorMin && rng == logql.RangeMinOverTime
 }
 
 // dynamicIdentityPipes are the pipes that write the series hash of each row (the top of this file): the line

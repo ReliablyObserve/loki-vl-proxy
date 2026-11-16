@@ -26,7 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the stream plus every parsed label except the unwrapped one, as the same queries without the filter already do. They
   read the stream and each line as a series, so a range query answered 0 where Loki sums the deviation of each series
   (`semantics/unwrap-per-series-identity-label-filter`). A range longer than the step keeps the stream's series, as
-  without the filter. Answers cached before are not served again.
+  without the filter. Answers cached before are not served again. A `max` over `max_over_time` and a `min` over
+  `min_over_time`, with or without the filter, answer the same whatever the series and are read with the stream's
+  series, which costs VictoriaLogs less.
 
 ### Changed
 

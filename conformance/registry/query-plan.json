@@ -567,7 +567,7 @@
       "instant/RangeAgg": "03c7fa525a2bf67a",
       "instant/Rank": "9c43a65e52056654",
       "instant/Scalar": "058ee94c303a0c46",
-      "instant/VectorAgg": "5f1c2fc1647eed2f",
+      "instant/VectorAgg": "db77448c7044ccd3",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "8f8290b21d6929c1",
       "step\u003crange/LabelReplace": "7e2339de2a64039d",
@@ -598,8 +598,8 @@
   "shadow": {
     "rows": 24141,
     "profiles": 12,
-    "native": 20997,
-    "native_proxy_evaluated": 3861,
+    "native": 21186,
+    "native_proxy_evaluated": 3870,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp bool": 81,
@@ -658,7 +658,7 @@
       "known divergence semantics/translator-reads-quoted-text-as-syntax": 12,
       "known divergence semantics/translator-writes-reserved-field-names": 93,
       "known divergence semantics/translator-writes-signed-number-with-blank": 12,
-      "known divergence semantics/unwrap-per-series-identity-raw-rows": 684
+      "known divergence semantics/unwrap-per-series-identity-raw-rows": 495
     },
     "flipped": [
       "LogSelect",

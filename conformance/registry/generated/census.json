@@ -2245,6 +2245,7 @@
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unpack_test.go | semantics/translator-writes-unpack-as-unpack-json",
     "internal/queryplan/lower/unspaced_parser_test.go | semantics/translator-copies-unspaced-parser",
+    "internal/queryplan/lower/unwrap_dynamic_split_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/stdvar-grouped-pooled-variance",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/unwrap_keep_test.go | semantics/keep-before-unwrap-series-identity",
@@ -2853,7 +2854,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 651,
+      "go": 652,
       "playwright": 1
     },
     "page_kinds": {

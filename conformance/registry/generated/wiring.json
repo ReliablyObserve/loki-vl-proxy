@@ -2165,6 +2165,7 @@
       "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go",
       "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go",
       "internal/queryplan/lower/parser_label_filters_test.go",
+      "internal/queryplan/lower/unwrap_dynamic_split_test.go",
       "internal/queryplan/lower/unwrap_dynamic_test.go",
       "test/e2e-compat/unwrap_per_series_identity_test.go"
     ],
@@ -4522,6 +4523,9 @@
     "internal/queryplan/lower/unspaced_parser_test.go": [
       "semantics/translator-copies-unspaced-parser"
     ],
+    "internal/queryplan/lower/unwrap_dynamic_split_test.go": [
+      "semantics/unwrap-per-series-identity-raw-rows"
+    ],
     "internal/queryplan/lower/unwrap_dynamic_test.go": [
       "semantics/stdvar-grouped-pooled-variance",
       "semantics/unwrap-per-series-identity-raw-rows"
@@ -5532,7 +5536,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 652,
+  "tests_with_markers": 653,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
