@@ -78,6 +78,6 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | — | 0 / 0 | 4 | — |
 | `peer-cache-push-replay` — Pushes a replica cannot take while its breaker is open are buffered and replayed, so the fleet heals to full replication | — | 0 / 0 | 6 | — |
 | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | — | 0 / 0 | 8 | — |
-| `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | — | 0 / 0 | 4 | — |
+| `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | — | 0 / 0 | 5 | — |
 
 Tests counts the test files that declare the item or one of its cases (`// conformance:` in Go, `@cov:` in Playwright); a case is written when its file exists under `conformance/registry/cases/`.
