@@ -825,8 +825,10 @@ func levelFromLogfmtBody(line []byte) string {
 	if bytes.IndexByte(line, '=') < 0 {
 		return ""
 	}
-	var found [levelFieldGroups][]byte
-	var quoted [levelFieldGroups]bool
+	// best is the highest-ranked level group seen so far; a group is taken only when it outranks best, so the value
+	// and quoting of best are all the scan keeps.
+	var bestValue []byte
+	var bestQuoted bool
 	best := levelFieldGroups
 scan:
 	for i := 0; i < len(line) && best > 0; {
@@ -872,19 +874,19 @@ scan:
 			}
 		}
 		g := levelFieldGroup(key)
-		if g < 0 || g >= best || found[g] != nil {
+		if g < 0 || g >= best {
 			continue
 		}
 		if value == nil {
 			value = line[i:i] // a bare key: present, empty
 		}
-		found[g], quoted[g], best = value, isQuoted, g
+		bestValue, bestQuoted, best = value, isQuoted, g
 	}
-	if best < 0 || best >= len(found) { // no level field (best was never lowered)
+	if best == levelFieldGroups {
 		return ""
 	}
-	v := found[best]
-	if quoted[best] {
+	v := bestValue
+	if bestQuoted {
 		var buf [16]byte
 		if len(v) > 6*len("information") {
 			return "" // longer than any known spelling written as \u escapes
