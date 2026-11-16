@@ -28,6 +28,8 @@
     "drilldown/logs-footer-query-stats | compare:observed",
     "drilldown/logs-footer-query-stats | gap:documented",
     "drilldown/logs-footer-query-stats | query",
+    "drilldown/long-range-pieces-answer-like-loki | compare:exact",
+    "drilldown/long-range-pieces-answer-like-loki | query",
     "drilldown/patterns-counts-tier-step-buckets | compare:observed",
     "drilldown/patterns-counts-tier-step-buckets | gap:open",
     "drilldown/patterns-counts-tier-step-buckets | query",
@@ -1339,6 +1341,8 @@
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-body-shape",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-cancel-deadline",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-transport-text",
+    "internal/proxy/chunked_range_windows_loki_test.go | drilldown/long-range-pieces-answer-like-loki",
+    "internal/proxy/chunked_range_windows_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/cold_bad_row_test.go | semantics/error-layer-silent-success",
     "internal/proxy/comment_before_call_test.go | semantics/comment-between-function-and-parenthesis-accepted",
     "internal/proxy/comment_forms_test.go | semantics/comment-between-function-and-parenthesis-accepted",
@@ -2531,6 +2535,8 @@
     "test/e2e-compat/detected_level_unknown_stats_test.go | semantics/without-instant-detected-level-unknown",
     "test/e2e-compat/detected_level_unknown_stats_test.go | severity-exposure-surfaces",
     "test/e2e-compat/detected_level_variants_test.go | semantics/json-metric-detected-level-derivation",
+    "test/e2e-compat/drilldown_chunked_merge_lock_test.go | drilldown/long-range-pieces-answer-like-loki",
+    "test/e2e-compat/drilldown_chunked_merge_lock_test.go | loki_api_v1_query_range",
     "test/e2e-compat/drilldown_field_bounds_test.go | limits/drilldown-breakdown-exact",
     "test/e2e-compat/drilldown_field_bounds_test.go | limits/top-n-ranking-not-silent",
     "test/e2e-compat/drilldown_field_bounds_test.go | loki_api_v1_query_range",
@@ -2958,7 +2964,8 @@
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/dotted-name-parse-error",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/grafana-shows-loki-error-text",
-    "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile"
+    "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
+    "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki"
   ],
   "counts": {
     "case_consumers": {
@@ -2966,12 +2973,12 @@
       "api": 109,
       "drilldown": 53,
       "explore": 191,
-      "grafana-datasource": 2,
+      "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 694,
-      "playwright": 1
+      "go": 696,
+      "playwright": 2
     },
     "page_kinds": {
       "drilldown": 18,
@@ -2990,7 +2997,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 95,
-    "wired_items": 394
+    "wired_items": 395
   },
   "gates": [
     "A/B shape selection",
@@ -3223,6 +3230,8 @@
     "explore-comprehensive-ui.spec.ts | should support unwrap operations",
     "explore-json-filter-panels.spec.ts | ${name} @explore-core @cov:${cov}",
     "explore-json-filter-panels.spec.ts | shard:explore-core",
+    "explore-long-range-pieces.spec.ts | ${hours}h range @explore-core @cov:drilldown/long-range-pieces-answer-like-loki",
+    "explore-long-range-pieces.spec.ts | shard:explore-core",
     "explore-multitenant.spec.ts | filter-for-value in multi-tenant explore adds label to query without error @explore-mt",
     "explore-multitenant.spec.ts | multi-tenant explore for missing tenant shows empty result not error banner @explore-mt",
     "explore-multitenant.spec.ts | multi-tenant explore shows logs for valid tenant and no error banner @explore-mt",
