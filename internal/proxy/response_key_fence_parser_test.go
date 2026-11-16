@@ -697,7 +697,11 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | json | unwrap n [5m]))`, true},
 		{"unwrap-dynamic-identity", `SUM BY (x) (AVG_OVER_TIME({a="b"} | JSON | UNWRAP n [5m]))`, true},
 		{"unwrap-dynamic-identity", "sum by (x) (avg_over_t\u0130me({a=\"b\"} | json | unwrap n [5m]))", true},
-		{"unwrap-dynamic-identity", "MAX(MAX_OVER_T\u0130ME({a=\"b\"} | LOGFMT | UNWRAP n [5m]))", true},
+		{"unwrap-dynamic-identity", "MAX(MIN_OVER_T\u0130ME({a=\"b\"} | LOGFMT | UNWRAP n [5m]))", true},
+		// A maximum of maximums and a minimum of minimums answer the same whatever the series: no identity, no fence,
+		// in every spelling.
+		{"unwrap-dynamic-identity", "MAX(MAX_OVER_T\u0130ME({a=\"b\"} | LOGFMT | UNWRAP n [5m]))", false},
+		{"unwrap-dynamic-identity", `min by (x) (min_over_time({a="b"} | json | unwrap n | __error__="" [5m]))`, false},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | json | keep x | unwrap n [5m]))`, false},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | unwrap n [5m]))`, false},
 		// Longer than the plan memo holds: the plan is built for the fence, uncached.
