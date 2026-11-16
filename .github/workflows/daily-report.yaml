@@ -11,12 +11,23 @@ name: Daily report
 #              e2e-compat stack with the pinned Loki, every executable registry
 #              case against Loki and the proxy (test/caseverify); on the pinned
 #              version also the recorded Loki error answers asked again
-#              (test/errorrecord -check) and replayed (TestLokiErrorAnswersReplay)
+#              (test/errorrecord -check) and replayed (TestLokiErrorAnswersReplay).
+#              The stack holds data before the verifier asks: the log generator's
+#              six hours of history are written first, and the case fixtures
+#              (test/casefixtures) are written and kept current while the
+#              verifier runs, so a case reads data and not an empty window. Every
+#              proxy runs with -debug-vl-calls-header, so the cache reuse rows
+#              count each request's own VictoriaLogs calls (X-Loki-VL-Backend-Calls)
+#              and leave the proxy's background calls out.
 #   parity     a slice of the differential parity corpus (bench/parity/refresh.py
 #              --mode validate): recorded as partial, never pruned, no case edited
 #   perf       the daily perf smoke (bench/ab/daily.py --smoke): the main shapes of
 #              every set at 1h and 6h, cold and warm, both Loki profiles; its history
-#              is kept in bench/ab/history/daily-smoke, apart from the weekly history
+#              is kept in bench/ab/history/daily-smoke, apart from the weekly history.
+#              Two repeats are measured apart: an exact repeat (the same request
+#              asked again at a settled window, 0 VictoriaLogs calls expected) and
+#              the repeat that moves the window by a minute (judged by the bytes it
+#              reads).
 #   report     test/dailyreport writes conformance/registry/generated/verification/
 #              summary.json and cases.json and the pull request body; the grammar sweep
 #              and the Loki differentials come from today's query-corpus run, which
@@ -39,6 +50,12 @@ name: Daily report
 #
 # A pull request that edits this pipeline runs the unit tests of its tools and
 # builds a summary from the committed files instead; it opens no pull request.
+#
+# A manual run (workflow_dispatch) runs the code of the ref it is started on, so a
+# branch that edits the pipeline can be tried on a real stack before it merges:
+#   gh workflow run daily-report.yaml --ref <branch>
+# The report job then writes the summary and the job summary but opens no pull
+# request: only a run on main may move bench/daily-report.
 
 on:
   schedule:
@@ -52,6 +69,13 @@ on:
       - "test/dailyreport/**"
       - "test/ciworkflows/**"
       - "bench/ab/smoke.py"
+      - "bench/ab/reuse.py"
+      - "bench/ab/report.py"
+      - "bench/ab/perf_matrix.py"
+      - "bench/ab/stack.py"
+      - "bench/ab/daily.py"
+      - "bench/ab/tests/**"
+      - "test/casefixtures/**"
 
 permissions:
   contents: read
@@ -81,8 +105,10 @@ jobs:
 
       - name: Unit tests of the report's tools
         run: |
-          go test ./test/caseverify ./test/dailyreport ./test/ciworkflows -count=1
-          python3 -m unittest discover -s bench/ab/tests -p 'test_smoke.py'
+          go test ./test/caseverify ./test/dailyreport ./test/ciworkflows ./test/casefixtures -count=1
+          for t in smoke reuse matrix_loop stack pr_smoke report; do
+            python3 -m unittest discover -s bench/ab/tests -p "test_${t}.py"
+          done
 
       - name: Summary of the committed files (no stack)
         run: |
@@ -107,7 +133,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
-          ref: main
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || 'main' }}
           persist-credentials: false
       - id: matrix
         run: |
@@ -133,7 +159,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
-          ref: main
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || 'main' }}
+          # The whole history: a workflow with no scheduled run yet is "pending its first run" when it was added
+          # within its first period, and the date it was added comes from git.
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
@@ -190,7 +219,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
-          ref: main
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || 'main' }}
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
@@ -205,9 +234,37 @@ jobs:
         working-directory: test/e2e-compat
         run: |
           set -euo pipefail
+          # Every proxy answers each read with the VictoriaLogs calls that request started (X-Loki-VL-Backend-Calls),
+          # which the cache reuse rows count in place of the process-wide metrics (they also hold the proxy's
+          # background calls). A copy of the stack's file with the flag after each proxy's -listen: the e2e suites'
+          # own file is not touched, and each proxy keeps its other flags.
+          awk '{ print } /^ +- "-listen=/ { match($0, /^ +/); print substr($0, 1, RLENGTH) "- \"-debug-vl-calls-header=true\"" }' \
+            docker-compose.yml > docker-compose.daily.yml
+          proxies="$(grep -c '^  loki-vl-proxy' docker-compose.yml)"
+          flagged="$(grep -c -- '-debug-vl-calls-header=true' docker-compose.daily.yml)"
+          if [ "$proxies" -eq 0 ] || [ "$proxies" -ne "$flagged" ]; then
+            echo "::error::the flag went to ${flagged} of ${proxies} proxies of the stack"
+            exit 1
+          fi
+          echo "COMPOSE_FILE=docker-compose.daily.yml" >> "$GITHUB_ENV"
+          export COMPOSE_FILE=docker-compose.daily.yml
+          # The generator's history ends a minute before the live generator starts: no line is written twice.
+          echo "STACK_UP_AT=$(date +%s)" >> "$GITHUB_ENV"
           # The ui profile adds the log generator the registry cases' services come from.
           docker compose --profile ui up -d --no-build
           ../../scripts/ci/wait_e2e_stack.sh 240
+
+      - name: Backfill the log generator's history
+        run: |
+          set -euo pipefail
+          # Six hours at one batch per 10 s, written to Loki and VictoriaLogs with the same bytes (the generator's
+          # own backfill, as bench/ab seeds a stack). Without it the stack holds minutes of data and most cases
+          # read an empty window on both sides, which proves nothing.
+          LOKI_URL=http://127.0.0.1:13101 VL_URL=http://127.0.0.1:19428 LOG_BATCH=8 \
+            LOG_BACKFILL_SECONDS=21600 LOG_BACKFILL_INTERVAL=10 LOG_BACKFILL_ONLY=1 \
+            LOG_BACKFILL_END=$((STACK_UP_AT - 60)) LOG_BACKFILL_SEED="${STACK_UP_AT}" \
+            python3 test/e2e-compat/log-generator.py
+          curl -fsS -X POST http://127.0.0.1:13101/flush || echo "::warning::Loki /flush failed; the counts decide"
 
       - name: Ingest the e2e data and wait for Loki's metric path
         run: |
@@ -228,6 +285,28 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$OUT"
+          # The streams the cases read that no generator writes (test/casefixtures), the same bytes on both sides, kept
+          # current while the verifier runs: its window ends five minutes before it starts. The seed is this step's own
+          # background process and is stopped with it.
+          go build -o "$RUNNER_TEMP/casefixtures-seed" ./test/casefixtures/cmd/seed
+          "$RUNNER_TEMP/casefixtures-seed" -loki http://127.0.0.1:13101 -vl http://127.0.0.1:19428 -follow > "$OUT/seed.log" 2>&1 &
+          seed_pid=$!
+          trap 'kill "$seed_pid" 2>/dev/null || true' EXIT
+          streams="$("$RUNNER_TEMP/casefixtures-seed" -list | wc -l | tr -d ' ')"
+          for _ in $(seq 1 120); do
+            if ! kill -0 "$seed_pid" 2>/dev/null; then
+              cat "$OUT/seed.log"
+              echo "::error::the fixture seed ended before every stream was ready"
+              exit 1
+            fi
+            [ "$(grep -c '^ready ' "$OUT/seed.log" || true)" -ge "$streams" ] && break
+            sleep 5
+          done
+          if [ "$(grep -c '^ready ' "$OUT/seed.log" || true)" -lt "$streams" ]; then
+            cat "$OUT/seed.log"
+            echo "::error::not every fixture stream was ready after ten minutes"
+            exit 1
+          fi
           # The stack runs the version this job is named after, or nothing it records is labelled with it.
           running="$(curl -fsS http://127.0.0.1:19428/metrics | sed -n 's/^vm_app_version{.*short_version="\([^"]*\)".*/\1/p' | head -n 1)"
           if [ "$running" != "$VL" ]; then
@@ -287,7 +366,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
-          ref: main
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || 'main' }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -338,7 +417,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
-          ref: main
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || 'main' }}
           # The baseline is the newest release tag; it builds from a worktree.
           fetch-depth: 0
           persist-credentials: false
@@ -390,7 +469,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
-          ref: main
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || 'main' }}
           fetch-depth: 0
           # The checkout only reads. The step that pushes gets the bot token through
           # a credential helper and nothing keeps a token in the git config.
@@ -458,6 +537,8 @@ jobs:
 
       - name: Open or update the daily report PR
         id: pr
+        # Only a run on main moves the bot branch; a manual run of another ref ends with the summary above.
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
           PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
