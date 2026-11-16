@@ -19,7 +19,7 @@
 [![Helm Chart Pulls](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/ghcr-chart-pulls.json)](https://github.com/ReliablyObserve/Loki-VL-proxy/pkgs/container/charts%2Floki-vl-proxy)
 [![Source Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-code.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Test Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-tests.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-54683%20passed-brightgreen)](#tests)
+[![Tests](https://img.shields.io/badge/tests-54696%20passed-brightgreen)](#tests)
 [![Coverage](https://img.shields.io/badge/coverage-92.2%25-brightgreen)](#tests)
 [![LogQL Compatibility](https://img.shields.io/badge/LogQL%20compatibility-tested-blue)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
@@ -101,7 +101,7 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 
 - First request: **22 of 570** pairs are slower (4%): log queries **1 of 79**, Drilldown and Explore pages **8 of 118**, metric queries **10 of 366**.
 - Between 1× and 2× Loki: **14** rows on the first request, **4** on a repeat; above 2× Loki: **8** on the first request and **6** on a repeat (the 2026-11-16 distribution).
-- **4 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **4** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 109 covered registry items are locked at the 2× bound.
+- **4 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **4** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 110 covered registry items are locked at the 2× bound.
 - Largest gaps on that list in the run shown, first request: `DP2 patterns of an environment` over 1h, **1.62 s** against **0.27 s**; `LS8 json count by level_extracted, collision` over 6h, **0.56 s** against **0.17 s**; `DP1 patterns of a plain-text service` over 1h, **0.33 s** against **0.02 s**.
 - Answers: **51 of 785** pairs return a different result from Loki, and **15** could not be compared.
 
