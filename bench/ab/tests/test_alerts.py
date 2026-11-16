@@ -277,6 +277,58 @@ class AlertsTest(unittest.TestCase):
         self.day(row(p50=0.61))
         self.assertEqual(alerts(self.dir)["regressions"], [])
 
+    # A run of SPEED_MIN_ROWS shapes besides the one judged: Loki's cold times on them give the runner's speed.
+    def runner_day(self, p50, speed, commit, loki_cold=0.9):
+        rows = [row(p50=p50, loki_cold=loki_cold * speed)]
+        rows += [row(shape=f"s{i}", loki_cold=(0.2 + i / 100) * speed) for i in range(history.SPEED_MIN_ROWS)]
+        self.day(*rows, commit=commit)
+
+    def test_a_runner_slower_as_a_whole_is_no_slowdown_of_the_proxy(self):
+        # The 2026-11-16 run: every Loki cold 1.38x slower than a week before, the proxy's warm p50 with it.
+        self.runner_day(0.264, 1.0, "aaaaaaaaaaaa")
+        self.runner_day(0.356, 1.35, "bbbbbbbbbbbb")
+        self.runner_day(0.484, 1.35 * 1.38, "cccccccccccc")
+        self.assertEqual(alerts(self.dir)["regressions"], [])
+
+    def test_a_slowdown_beyond_the_runners_held_for_two_runs_is_one(self):
+        self.runner_day(0.2, 1.0, "aaaaaaaaaaaa")
+        self.runner_day(0.6, 1.1, "bbbbbbbbbbbb")
+        self.runner_day(0.62, 1.1, "cccccccccccc")
+        a = alerts(self.dir)["regressions"]
+        self.assertEqual([(r["kind"], r["commits"]) for r in a], [("slower", "aaaaaaaaaa..cccccccccc")])
+        self.assertIn("held for two runs; the runner 1.10× by Loki's cold times", a[0]["detail"])
+
+    def test_a_runner_faster_as_a_whole_is_no_improvement_of_the_proxy(self):
+        self.runner_day(0.4, 1.0, "aaaaaaaaaaaa")
+        self.runner_day(0.25, 0.6, "bbbbbbbbbbbb")
+        self.assertEqual(alerts(self.dir)["improvements"], [])
+        self.runner_day(0.1, 0.6, "cccccccccccc")   # faster than the runner made it: one
+        self.assertEqual([r["kind"] for r in alerts(self.dir)["improvements"]], ["faster"])
+
+    def test_runner_speed_is_the_median_of_lokis_computed_colds(self):
+        def line(n, colds, **kw):
+            rows = [row(shape=f"s{i}", loki_cold=c, **kw) for i, c in enumerate(colds)]
+            return history.entry({**summary(f"2026-10-0{n}", *rows), "candidate": "main"}, f"c{n}" * 12)
+        few = history.SPEED_MIN_ROWS
+        old = line(1, [0.5] * few)
+        cases = [
+            ("every cold 1.5x", line(2, [0.75] * few), 1.5),
+            ("the median, not the mean", line(2, [0.75] * (few - 1) + [50.0]), 1.5),
+            ("one row short: no factor", line(2, [0.75] * (few - 1)), 1.0),
+            ("colds Loki's cache answered do not count", line(2, [0.75] * few, served=True), 1.0),
+            ("colds under SPEED_MIN_S do not count", line(2, [history.SPEED_MIN_S / 2] * few), 1.0),
+            ("Loki's errors do not count", line(2, [0.75] * few, loki_status="500"), 1.0),
+        ]
+        for name, new, want in cases:
+            d = tempfile.mkdtemp()
+            for e in (old, new):
+                with open(os.path.join(d, "control.jsonl"), "a") as f:
+                    f.write(json.dumps(e) + "\n")
+            colds = history.loki_colds(d, SPEC)
+            self.assertAlmostEqual(history.runner_speed(colds, "aligned", old, new), want, places=6, msg=name)
+        self.assertEqual(history.speed_note(1.04), "")
+        self.assertEqual(history.speed_note(1.38), "; the runner 1.38× by Loki's cold times")
+
     def test_slowdown_within_noise_is_not_one(self):
         self.day(row(p50=0.2))
         self.day(row(p50=0.22, verdict="slower"))
