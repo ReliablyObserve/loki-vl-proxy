@@ -1,33 +1,33 @@
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 7; {app=ux,detected_level=error,fmt=smamount,level=error} 7","id":"0|instant"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 104; {app=ux,detected_level=error,fmt=smamount,level=error} 104","id":"0|60"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 21; {app=ux,detected_level=error,fmt=smamount,level=error} 21","id":"0|300"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 1; {app=ux,detected_level=error,fmt=smamount,level=error} 1","id":"1|instant"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 15; {app=ux,detected_level=error,fmt=smamount,level=error} 15","id":"1|60"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 3; {app=ux,detected_level=error,fmt=smamount,level=error} 3","id":"1|300"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 3.833333; {app=ux,detected_level=error,fmt=smamount,level=error} 3.833333","id":"2|instant"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 59.836111; {app=ux,detected_level=error,fmt=smamount,level=error} 59.836111","id":"2|60"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 11.9; {app=ux,detected_level=error,fmt=smamount,level=error} 11.9","id":"2|300"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 115; {app=ux,detected_level=error,fmt=smamount,level=error} 115","id":"3|instant"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 1565; {app=ux,detected_level=error,fmt=smamount,level=error} 1565","id":"3|60"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 357; {app=ux,detected_level=error,fmt=smamount,level=error} 357","id":"3|300"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 2; {app=ux,detected_level=error,fmt=smamount,level=error} 2","id":"4|instant"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 68; {app=ux,detected_level=error,fmt=smamount,level=error} 68","id":"4|60"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 12; {app=ux,detected_level=error,fmt=smamount,level=error} 12","id":"4|300"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 1; {app=ux,detected_level=error,fmt=smamount,level=error} 1","id":"5|instant"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 57; {app=ux,detected_level=error,fmt=smamount,level=error} 57","id":"5|60"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 9; {app=ux,detected_level=error,fmt=smamount,level=error} 9","id":"5|300"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 2.034426; {app=ux,detected_level=error,fmt=smamount,level=error} 2.034426","id":"6|instant"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 29.360541; {app=ux,detected_level=error,fmt=smamount,level=error} 29.360541","id":"6|60"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 5.947238; {app=ux,detected_level=error,fmt=smamount,level=error} 5.947238","id":"6|300"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 4.138889; {app=ux,detected_level=error,fmt=smamount,level=error} 4.138889","id":"7|instant"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 57.631474; {app=ux,detected_level=error,fmt=smamount,level=error} 57.631474","id":"7|60"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 11.794444; {app=ux,detected_level=error,fmt=smamount,level=error} 11.794444","id":"7|300"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 0.363334; {app=ux,detected_level=error,fmt=smamount,level=error} 0.363334","id":"8|instant"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 4.816672; {app=ux,detected_level=error,fmt=smamount,level=error} 4.816672","id":"8|60"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 1.110001; {app=ux,detected_level=error,fmt=smamount,level=error} 1.110001","id":"8|300"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 0.383333; {app=ux,detected_level=error,fmt=smamount,level=error} 0.383333","id":"9|instant"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 5.216667; {app=ux,detected_level=error,fmt=smamount,level=error} 5.216667","id":"9|60"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 1.19; {app=ux,detected_level=error,fmt=smamount,level=error} 1.19","id":"9|300"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 4; {app=ux,detected_level=error,fmt=smamount,level=error} 4","id":"10|instant"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 59.5; {app=ux,detected_level=error,fmt=smamount,level=error} 59.5","id":"10|60"}
-{"answer":"200 2 series: {app=ux,detected_level=error,fmt=logfmt,level=error} 12; {app=ux,detected_level=error,fmt=smamount,level=error} 12","id":"10|300"}
+{"answer":"200 logfmt smamount","id":"0|instant"}
+{"answer":"200 logfmt smamount","id":"0|60"}
+{"answer":"200 logfmt smamount","id":"0|300"}
+{"answer":"200 logfmt smamount","id":"1|instant"}
+{"answer":"200 logfmt smamount","id":"1|60"}
+{"answer":"200 logfmt smamount","id":"1|300"}
+{"answer":"200 logfmt smamount","id":"2|instant"}
+{"answer":"200 logfmt smamount","id":"2|60"}
+{"answer":"200 logfmt smamount","id":"2|300"}
+{"answer":"200 logfmt smamount","id":"3|instant"}
+{"answer":"200 logfmt smamount","id":"3|60"}
+{"answer":"200 logfmt smamount","id":"3|300"}
+{"answer":"200 logfmt smamount","id":"4|instant"}
+{"answer":"200 logfmt smamount","id":"4|60"}
+{"answer":"200 logfmt smamount","id":"4|300"}
+{"answer":"200 logfmt smamount","id":"5|instant"}
+{"answer":"200 logfmt smamount","id":"5|60"}
+{"answer":"200 logfmt smamount","id":"5|300"}
+{"answer":"200 logfmt smamount","id":"6|instant"}
+{"answer":"200 logfmt smamount","id":"6|60"}
+{"answer":"200 logfmt smamount","id":"6|300"}
+{"answer":"200 logfmt smamount","id":"7|instant"}
+{"answer":"200 logfmt smamount","id":"7|60"}
+{"answer":"200 logfmt smamount","id":"7|300"}
+{"answer":"200 logfmt smamount","id":"8|instant"}
+{"answer":"200 logfmt smamount","id":"8|60"}
+{"answer":"200 logfmt smamount","id":"8|300"}
+{"answer":"200 logfmt smamount","id":"9|instant"}
+{"answer":"200 logfmt smamount","id":"9|60"}
+{"answer":"200 logfmt smamount","id":"9|300"}
+{"answer":"200 logfmt smamount","id":"10|instant"}
+{"answer":"200 logfmt smamount","id":"10|60"}
+{"answer":"200 logfmt smamount","id":"10|300"}

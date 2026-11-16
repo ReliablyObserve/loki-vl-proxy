@@ -25,6 +25,8 @@ func TestWithGroupKeyAfterStream(t *testing.T) {
 		// The text around the edit is kept byte for byte, keywords in any case included.
 		{`a:="b" or c:="d" | filter e:="1" or e:="2" | stats by (_stream) count()`, `a:="b" or c:="d" | filter e:="1" or e:="2" | stats by (_stream, detected_level) count()`, true},
 		{`a:="b`, `a:="b`, false},
+		// A math expression the scanner reads character by character (%) keeps the edit going.
+		{`a:="b" | math ((_time - 140) % 300) as p | filter p:>1 | stats by (_stream) count() as c`, `a:="b" | math ((_time - 140) % 300) as p | filter p:>1 | stats by (_stream, detected_level) count() as c`, true},
 	} {
 		got, ok := WithGroupKeyAfterStream(tc.in, "detected_level")
 		if got != tc.want || ok != tc.ok {

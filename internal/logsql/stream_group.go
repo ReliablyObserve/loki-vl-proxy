@@ -1,5 +1,7 @@
 package logsql
 
+import "strings"
+
 // WithGroupKeyAfterStream returns query with key added, right after _stream, to
 // the group of every top-level stats pipe that groups by _stream (unbucketed) and
 // not yet by key: `| stats by (_stream, a) f` becomes
@@ -17,7 +19,7 @@ func WithGroupKeyAfterStream(query, key string) (string, bool) {
 		switch {
 		case tok.Typ == TokEOF:
 			return insertAfter(query, inserts, ", "+key)
-		case tok.Typ == TokError:
+		case tok.Typ == TokError && !strayCharacter(tok):
 			return query, false
 		case tok.Typ == TokLParen && state == 3:
 			at, ok := streamGroupInsert(s, key)
@@ -55,7 +57,7 @@ func streamGroupInsert(s *Scanner, key string) (at int, ok bool) {
 	for {
 		tok := s.Next()
 		switch {
-		case tok.Typ == TokEOF || tok.Typ == TokError:
+		case tok.Typ == TokEOF || tok.Typ == TokError && !strayCharacter(tok):
 			return -1, false
 		case tok.Typ == TokRParen && depth == 0:
 			if streamEnd >= 0 && !hasKey {
@@ -76,6 +78,14 @@ func streamGroupInsert(s *Scanner, key string) (at int, ok bool) {
 		}
 		prevStream = false
 	}
+}
+
+// strayCharacter reports a scanner error for one character the scanner does not
+// read outside quoted text (the % of a math expression): the scanner has stepped
+// over it, and it is no token the edit looks for. Any other error (an unclosed
+// quote) leaves the query unread.
+func strayCharacter(tok Token) bool {
+	return strings.HasPrefix(tok.Val, "unexpected character: ")
 }
 
 // insertAfter returns query with text inserted at each offset of at (ascending),

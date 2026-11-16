@@ -63,54 +63,98 @@ func oracleForm(q, mode string) url.Values {
 	return form
 }
 
-// oracleReduce is an answer reduced to what these checks compare: the status, an error's text, and per series (its
-// labels other than service_name, sorted) the sum of its values over every step, rounded to six digits.
-func oracleReduce(status int, body []byte, errText string) string {
-	if status != http.StatusOK {
-		return fmt.Sprintf("%d %s", status, strings.TrimSpace(errText))
-	}
+// oracleReducer reduces the answer to query q (its status, body and error text) to the dimension a check holds
+// the proxy to.
+type oracleReducer func(q string, status int, body []byte, errText string) string
+
+type oracleSeries struct {
+	Metric map[string]string `json:"metric"`
+	Value  []any             `json:"value"`
+	Values [][]any           `json:"values"`
+}
+
+func oracleSeriesOf(body []byte) []oracleSeries {
 	var resp struct {
 		Data struct {
-			Result []struct {
-				Metric map[string]string `json:"metric"`
-				Value  []any             `json:"value"`
-				Values [][]any           `json:"values"`
-			} `json:"result"`
+			Result []oracleSeries `json:"result"`
 		} `json:"data"`
 	}
 	_ = json.Unmarshal(body, &resp)
-	var series []string
-	for _, s := range resp.Data.Result {
-		var names []string
-		for k := range s.Metric {
-			if k != "service_name" {
-				names = append(names, k)
-			}
-		}
-		sort.Strings(names)
-		parts := make([]string, len(names))
-		for i, k := range names {
-			parts[i] = k + "=" + s.Metric[k]
-		}
-		points := s.Values
-		if s.Value != nil {
-			points = [][]any{s.Value}
-		}
-		sum := 0.0
-		for _, pt := range points {
-			if len(pt) == 2 {
-				v, _ := strconv.ParseFloat(fmt.Sprint(pt[1]), 64)
-				sum += v
-			}
-		}
-		series = append(series, "{"+strings.Join(parts, ",")+"} "+strconv.FormatFloat(math.Round(sum*1e6)/1e6, 'f', -1, 64))
+	return resp.Data.Result
+}
+
+func oracleError(status int, errText string) string {
+	return fmt.Sprintf("%d %s", status, strings.TrimSpace(errText))
+}
+
+// reduceByLevel is the answer per (pod, detected_level) and step, the series of one pair combined (summed, or the
+// maximum for max_over_time, whose value is a maximum whatever the other labels split), then summed over the
+// steps and rounded to six digits. The other labels of a series (the keys a parser extracts, structured metadata)
+// are left out: they are not what these checks hold, and the open parser identity cases own them.
+func reduceByLevel(q string, status int, body []byte, errText string) string {
+	if status != http.StatusOK {
+		return oracleError(status, errText)
 	}
-	sort.Strings(series)
-	return fmt.Sprintf("200 %d series: %s", len(series), strings.Join(series, "; "))
+	maxOf := strings.HasPrefix(q, "max_over_time(")
+	type key struct{ group, ts string }
+	points := map[key]float64{}
+	groups := map[string]bool{}
+	for _, s := range oracleSeriesOf(body) {
+		lv, ok := s.Metric[detectedLevelLabel]
+		if !ok {
+			lv = "-"
+		}
+		g := s.Metric["pod"] + "|" + lv
+		groups[g] = true
+		pts := s.Values
+		if s.Value != nil {
+			pts = [][]any{s.Value}
+		}
+		for _, pt := range pts {
+			if len(pt) != 2 {
+				continue
+			}
+			v, _ := strconv.ParseFloat(fmt.Sprint(pt[1]), 64)
+			k := key{g, fmt.Sprint(pt[0])}
+			if prev, seen := points[k]; seen && maxOf {
+				v = math.Max(prev, v)
+			} else if seen {
+				v += prev
+			}
+			points[k] = v
+		}
+	}
+	totals := map[string]float64{}
+	for k, v := range points {
+		totals[k.group] += v
+	}
+	var out []string
+	for g := range groups {
+		out = append(out, g+"="+strconv.FormatFloat(math.Round(totals[g]*1e6)/1e6, 'f', -1, 64))
+	}
+	sort.Strings(out)
+	return "200 " + strings.Join(out, " ")
+}
+
+// reduceByStreams is which streams (their fmt label) answer series.
+func reduceByStreams(_ string, status int, body []byte, errText string) string {
+	if status != http.StatusOK {
+		return oracleError(status, errText)
+	}
+	seen := map[string]bool{}
+	for _, s := range oracleSeriesOf(body) {
+		seen[s.Metric["fmt"]] = true
+	}
+	var out []string
+	for f := range seen {
+		out = append(out, f)
+	}
+	sort.Strings(out)
+	return "200 " + strings.Join(out, " ")
 }
 
 // oracleProxyAnswer sends one request to a proxy over backend and reduces its answer.
-func oracleProxyAnswer(t *testing.T, backend, q, mode string) string {
+func oracleProxyAnswer(t *testing.T, backend, q, mode string, reduce func(status int, body []byte, errText string) string) string {
 	t.Helper()
 	p, err := New(Config{BackendURL: backend, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {
@@ -134,13 +178,13 @@ func oracleProxyAnswer(t *testing.T, backend, q, mode string) string {
 			errText = e.Error + e.Message
 		}
 	}
-	return oracleReduce(res.Code, res.Body.Bytes(), errText)
+	return reduce(res.Code, res.Body.Bytes(), errText)
 }
 
 // runLevelOracle records Loki's answers to queries (S replaced with selector) over streams at every mode into
-// answersPath, then runs the proxy over VictoriaLogs v1.49.0 and v1.53.0 and reports every request whose answer
-// differs from Loki's and is not in known (query and mode, "query|mode" or "query|*").
-func runLevelOracle(t *testing.T, streams []oracleStream, selector string, queries []string, answersPath string, known map[string]string) {
+// answersPath, reduced by reduce to the dimension the check holds the proxy to, then runs the proxy over
+// VictoriaLogs v1.49.0 and v1.53.0 and reports every request whose reduced answer differs from Loki's.
+func runLevelOracle(t *testing.T, streams []oracleStream, selector string, queries []string, answersPath string, reduce oracleReducer) {
 	t.Helper()
 	if os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("LVP_RUN_ORACLES=1 runs Loki's engine and VictoriaLogs")
@@ -188,7 +232,8 @@ func runLevelOracle(t *testing.T, streams []oracleStream, selector string, queri
 	w := bufio.NewWriter(f)
 	for _, r := range set.Requests {
 		a := answers[r.ID]
-		loki[r.ID] = oracleReduce(a.Status, a.Body, a.Error)
+		qi, _ := strconv.Atoi(strings.Split(r.ID, "|")[0])
+		loki[r.ID] = reduce(queries[qi], a.Status, a.Body, a.Error)
 		line, _ := json.Marshal(map[string]string{"id": r.ID, "answer": loki[r.ID]})
 		_, _ = w.Write(append(line, '\n'))
 	}
@@ -198,7 +243,6 @@ func runLevelOracle(t *testing.T, streams []oracleStream, selector string, queri
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	used := map[string]bool{}
 	for _, v := range []struct{ version, modfile string }{{"v1.49.0", "go.v1.49.0.mod"}, {"v1.53.0", ""}} {
 		srv, err := oraclerun.StartVLServe(filepath.Join("..", "..", "test", "oracle", "vl"), v.modfile, []oraclerun.ServeDataSet{rows})
 		if err != nil {
@@ -208,33 +252,19 @@ func runLevelOracle(t *testing.T, streams []oracleStream, selector string, queri
 		same := 0
 		for qi, q := range queries {
 			for _, mode := range levelSweepModes {
-				got := oracleProxyAnswer(t, front.URL, strings.ReplaceAll(q, "S", selector), mode)
-				want := loki[id(qi, mode)]
-				if got == want {
-					same++
+				got := oracleProxyAnswer(t, front.URL, strings.ReplaceAll(q, "S", selector), mode, func(status int, body []byte, errText string) string {
+					return reduce(q, status, body, errText)
+				})
+				if want := loki[id(qi, mode)]; got != want {
+					t.Errorf("%s %s %s:\n got %s\nLoki %s", v.version, mode, q, got, want)
 					continue
 				}
-				if why, ok := known[q+"|"+mode]; ok {
-					used[q+"|"+mode] = true
-					t.Logf("%s %s %s: known (%s)", v.version, mode, q, why)
-					continue
-				}
-				if why, ok := known[q+"|*"]; ok {
-					used[q+"|*"] = true
-					t.Logf("%s %s %s: known (%s)", v.version, mode, q, why)
-					continue
-				}
-				t.Errorf("%s %s %s:\n got %s\nLoki %s", v.version, mode, q, got, want)
+				same++
 			}
 		}
 		t.Logf("VictoriaLogs %s: %d of %d answers equal to Loki's", v.version, same, len(queries)*len(levelSweepModes))
 		front.Close()
 		srv.Stop()
-	}
-	for k := range known {
-		if !used[k] {
-			t.Errorf("known difference no answer has any more (remove it): %s", k)
-		}
 	}
 }
 
@@ -274,20 +304,38 @@ func TestLevelLessStreamSplitsByLineLevel(t *testing.T) {
 		`max_over_time(S | logfmt amount | unwrap amount [5m])`,
 		`sum without (pod) (max_over_time(S | logfmt amount | unwrap amount [5m]))`,
 		`sort(rate(S | logfmt [1m]))`,
-	}, "testdata/detected_level_levelless_loki_answers.jsonl", map[string]string{
-		// Loki's series over a parser also carry the labels it extracts (level, msg, ...); the proxy's
-		// per-stream reads name the stream (semantics/unwrap-bare-range-exposes-parsed-labels and the parser
-		// identity cases), so the series differ in those labels, not in detected_level.
-		`count_over_time(S | logfmt [5m])|*`:     "parsed labels in the series (open parser identity cases)",
-		`bytes_over_time(S | logfmt [5m])|*`:     "parsed labels in the series (open parser identity cases)",
-		`count_over_time(S | logfmt [5m]) > 0|*`: "parsed labels in the series (open parser identity cases)",
-		`sort(rate(S | logfmt [1m]))|*`:          "parsed labels in the series (open parser identity cases)",
-		// The structured metadata level="debug" is a label of Loki's series, not of the proxy's
-		// (metric-identity/structured-metadata-splits-series, owner-kept); the detected_level and the values are
-		// Loki's. At an instant the series also carry every parsed key (semantics/unwrap-bare-range-exposes-parsed-labels).
-		`max_over_time(S | logfmt amount | unwrap amount [5m])|*`:                     "structured metadata in the series (owner-kept)",
-		`sum without (pod) (max_over_time(S | logfmt amount | unwrap amount [5m]))|*`: "structured metadata in the series (owner-kept)",
-	})
+	}, "testdata/detected_level_levelless_loki_answers.jsonl", reduceByLevel)
+}
+
+// TestLevelLessJSONStreamSplitsByLineLevel: a stream without a level label whose JSON lines carry warn, error or no
+// level splits into Loki's series per level on the reads of `| json` metrics, the raw-row evaluator's (rate and
+// label_replace at an instant and step 60) and the stats ones, beside a stream labelled level="info".
+//
+// conformance: semantics/detected-level-stream-stats-without-level, severity-detected-level-derivation
+func TestLevelLessJSONStreamSplitsByLineLevel(t *testing.T) {
+	mixed := func(i int) oracleLine {
+		amount := i%7 + 1
+		switch i % 3 {
+		case 0:
+			return oracleLine{line: fmt.Sprintf(`{"level":"warn","msg":"r%d","amount":%d}`, i, amount), level: "warn"}
+		case 1:
+			return oracleLine{line: fmt.Sprintf(`{"level":"ERROR","msg":"r%d","amount":%d}`, i, amount), level: "error"}
+		}
+		return oracleLine{line: fmt.Sprintf(`{"msg":"r%d","amount":%d}`, i, amount), level: "unknown"}
+	}
+	labelled := func(i int) oracleLine {
+		return oracleLine{line: fmt.Sprintf(`{"level":"error","msg":"r%d","amount":%d}`, i, i%7+1), level: "info"}
+	}
+	runLevelOracle(t, []oracleStream{
+		{labels: map[string]string{"app": "mj", "pod": "j1"}, lines: mixed},
+		{labels: map[string]string{"app": "mj", "pod": "j2", "level": "info"}, lines: labelled},
+	}, `{app="mj"}`, []string{
+		`rate(S | json [1m])`,
+		`label_replace(rate(S | json [1m]), "x", "$1", "pod", "(.*)")`,
+		`count_over_time(S | json [5m])`,
+		`sort(rate(S | json [1m]))`,
+		`sum without (pod) (rate(S | json amount | unwrap amount [5m]))`,
+	}, "testdata/detected_level_levelless_json_loki_answers.jsonl", reduceByLevel)
 }
 
 // TestUnwrapExtractionListAnswersTheStreamsLokiAnswers: `| logfmt amount | unwrap amount` under every range function
@@ -314,35 +362,27 @@ func TestUnwrapExtractionListAnswersTheStreamsLokiAnswers(t *testing.T) {
 		queries = append(queries, fn+`(S | logfmt amount | unwrap amount [5m])`)
 	}
 	queries = append(queries, `quantile_over_time(0.5, S | logfmt amount | unwrap amount [5m])`)
-	known := map[string]string{}
-	for _, q := range queries {
-		// The proxy labels each series with every key the line holds (msg, status), Loki with the stream
-		// (semantics/unwrap-bare-range-exposes-parsed-labels, semantics/unwrap-extraction-list-series-identity).
-		known[q+"|*"] = "series labels under an extraction list"
-	}
 	streams := []oracleStream{
 		{labels: map[string]string{"app": "ux", "fmt": "logfmt", "level": "error"}, lines: body(`msg="r%d" amount=%d status=200`, false)},
 		{labels: map[string]string{"app": "ux", "fmt": "json", "level": "error"}, lines: body(`{"msg": "r%d", "amount": %d, "status": 200}`, false)},
 		{labels: map[string]string{"app": "ux", "fmt": "noamount", "level": "error"}, lines: body(`msg="r%d" other=%d`, false)},
 		{labels: map[string]string{"app": "ux", "fmt": "smamount", "level": "error"}, lines: body(`plain text r%d %d`, true)},
 	}
-	runLevelOracle(t, streams, `{app="ux"}`, queries, "testdata/unwrap_extraction_list_loki_answers.jsonl", known)
-	// Which streams answer: the dimension both sides already agree on, checked from the recorded answers so a
-	// re-recording that changes it fails here.
+	runLevelOracle(t, streams, `{app="ux"}`, queries, "testdata/unwrap_extraction_list_loki_answers.jsonl", reduceByStreams)
+	// Loki's answer, from the recording: the logfmt and the metadata streams answer, the json and no-amount lines are
+	// dropped with 200.
 	f, err := os.Open("testdata/unwrap_extraction_list_loki_answers.jsonl")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<16), 1<<22)
 	for sc.Scan() {
 		var a map[string]string
 		if err := json.Unmarshal(sc.Bytes(), &a); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.HasPrefix(a["answer"], "200 ") || strings.Contains(a["answer"], "fmt=json") || strings.Contains(a["answer"], "fmt=noamount") ||
-			!strings.Contains(a["answer"], "fmt=logfmt") || !strings.Contains(a["answer"], "fmt=smamount") {
+		if a["answer"] != "200 logfmt smamount" {
 			t.Errorf("Loki %s: %s", a["id"], a["answer"])
 		}
 	}
