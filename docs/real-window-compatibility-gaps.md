@@ -153,8 +153,8 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 10 proven, 21 partial, 3 gaps |
-| Known differences from Loki (ranked) | **155**: 130 open, 15 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **73 of 130**: 59 Explore, 13 Logs Drilldown, 1 Grafana datasource; 19 API only, 38 edge cases |
+| Known differences from Loki (ranked) | **157**: 132 open, 15 documented, 7 owner-kept, 3 upstream |
+| Open differences visible in Grafana (registry impact) | **73 of 132**: 59 Explore, 13 Logs Drilldown, 1 Grafana datasource; 19 API only, 40 edge cases |
 
 **Readiness by client**
 
