@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under `sum(…)`, `label_replace(…)` and with an `offset`). A `count`, `stddev` or `stdvar` under the clause, and a ranking over the operation, are unchanged. Answers cached before the fix are not served again
   (semantics/binary-operand-without-empty-collapses). `-query-plan-lowering=false` keeps the previous reading.
 
+## [2.310.2] - 2026-11-16
+
+### Changed
+
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
+
 ## [2.310.1] - 2026-11-16
 
 ### Fixed
