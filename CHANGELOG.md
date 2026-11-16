@@ -16,8 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kept one series per stream or per group, so `sum by (app) (avg_over_time({app="api"} | json | unwrap duration_ms
   [5m]))` at a 1m step answered the group's pooled mean instead of the sum of the per-series means. VictoriaLogs now
   takes the function's partial aggregates per series hash and per anchored bucket in one stats query, the proxy merges
-  each series' buckets into Loki's windows and folds the series by the outer aggregation; no raw rows are read, the
-  reads are bounded by `-manual-range-metric-row-limit` and the answer by the tenant's series limit. Binary operations
+  each series' buckets into Loki's windows and folds the series by the outer aggregation. No raw rows are read: the
+  series read are bounded by `-manual-range-metric-row-limit` and the answer by the tenant's series limit, and a bucket
+  answer above the 64 MiB the proxy reads from one stats response answers Loki's response-too-large error instead of
+  falling back to the window's rows (a series per line over a long window can reach it). Binary operations
   of such operands read the same series. `max by` over `max_over_time` and `min by` over `min_over_time` keep their
   per-group read, which already matched Loki. Answers cached before the fix are not served again
   (semantics/unwrap-per-series-identity-raw-rows).

@@ -412,6 +412,41 @@ func TestDynamicIdentityWindowsFoldBeyondSeriesLimit(t *testing.T) {
 	t.Logf("budget of 600: %d %.200s", code, body)
 }
 
+// A bucket answer above the bytes the proxy buffers for a stats response (a series per line over a long window) is
+// Loki's response-too-large error, never a read of the window's raw rows: the series of a parser's identity can be as
+// many as the window's lines. The same read under the limit answers Loki's values.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func TestDynamicIdentityWindowsBucketOverflowReadsNoRows(t *testing.T) {
+	s := dynWindowScenario{outer: "sum", by: "pod", fn: "avg_over_time", parser: "logfmt", window: 2 * time.Minute, step: 30 * time.Second}
+	base := int64(1_800_000_000) * 1e9
+	s.start, s.end = base, base+10*int64(30*time.Second)
+	for i := 0; i < 1200; i++ {
+		ts := s.start - int64(s.window) + int64(i)*int64(time.Second)/3 + 7e6
+		s.rows = append(s.rows, dynWindowRow(ts, []string{"a", "b"}[i%2], "logfmt", map[string]string{"req": "r" + strconv.Itoa(i)}, float64(i%17)))
+	}
+	old := maxStatsBucketResponseBytes
+	t.Cleanup(func() { maxStatsBucketResponseBytes = old })
+	for _, limit := range []int64{8 << 10, old} {
+		maxStatsBucketResponseBytes = limit
+		emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+		got, code, body := runDynWindowScenario(t, emu, s, Config{})
+		if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
+			t.Fatalf("limit %d: read raw rows: %s", limit, raw[0])
+		}
+		if limit == old {
+			if code != http.StatusOK {
+				t.Fatalf("limit %d: %d %s", limit, code, body)
+			}
+			compareDynWindows(t, "under the limit", s, got, lokiDynamicWindows(s))
+			continue
+		}
+		if code != http.StatusInternalServerError || !strings.Contains(body, "ResourceExhausted") {
+			t.Fatalf("limit %d: %d %.300s, want Loki's response-too-large error", limit, code, body)
+		}
+	}
+}
+
 // A repeat of a parser's series identity over a range longer than the step asks VictoriaLogs nothing and answers the
 // same series; a refresh one minute later reads only the buckets it does not hold, and answers what an uncached proxy
 // answers. Every stats call groups by the series hash. The test logs VictoriaLogs' calls and bytes per request.

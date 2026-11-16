@@ -91,7 +91,10 @@ why: |
   buckets only (series x occupied buckets, never more rows than the window
   holds), bounded by the raw-row budget of a request that folds its series
   (-manual-range-metric-row-limit, Loki's limit error beyond it); the folded
-  answer is held to the tenant's series limit. max by (L) of max_over_time and
+  answer is held to the tenant's series limit, and a bucket answer above the
+  bytes the proxy reads from one stats response is Loki's response-too-large
+  error, never a read of the window's rows
+  (TestDynamicIdentityWindowsBucketOverflowReadsNoRows). max by (L) of max_over_time and
   min by (L) of min_over_time are the extreme of the group's samples whatever
   the series and keep the stream's grouping (unwrapGroupPushdown). Answers
   cached before are fenced (@unwrap-dynamic-identity-v2). Proven by

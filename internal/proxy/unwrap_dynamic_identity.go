@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -247,6 +248,21 @@ func (p *Proxy) foldDynamicIdentity(w http.ResponseWriter, r *http.Request, serv
 	}
 	p.recordFoldBudget(r.Context())
 	return foldVectorChain(p, w, r, []*logqlpkg.VectorAggregation{va}, serve)
+}
+
+// identityAheadReadError is the answer to a failed bucket read of a request marked identityAheadKey: its buckets
+// hold a series per hash of each line's parsed labels, so the rows behind them can be as many as the window holds,
+// and the raw-row evaluator the other window reads fall back to would read them all. An answer above the bytes the
+// proxy buffers for a stats response is Loki's response-too-large error (-backend-max-buffered-response-bytes);
+// any other failure is answered as it is. Every other request falls back as before (nil).
+func identityAheadReadError(ctx context.Context, err error) error {
+	if !identityAhead(ctx) {
+		return nil
+	}
+	if errors.Is(err, errBodyTooLarge) {
+		return newManualMetricResponseTooLarge(maxStatsBucketResponseBytes)
+	}
+	return err
 }
 
 // dynamicIdentityAtDepth reports a query that holds, below its root and outside a binary operation, a range function

@@ -1218,7 +1218,7 @@ func (p *Proxy) collectStatsFastPathHits(ctx context.Context, spec statsCompatSp
 		return nil, false, err
 	}
 	if err != nil {
-		return nil, false, nil
+		return nil, false, identityAheadReadError(ctx, err)
 	}
 	return series, true, nil
 }
