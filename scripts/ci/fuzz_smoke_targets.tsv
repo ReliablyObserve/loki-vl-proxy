@@ -190,3 +190,4 @@ smoke	internal/cache	FuzzPeerPushBufferInvariants	12s	-	peer push buffer invaria
 smoke	internal/translate	FuzzPatternCaptureNames	12s	-	the pattern placeholder scanner finds the names the regexp <([A-Za-z][A-Za-z0-9_]*)> finds, in order
 smoke	internal/logsql	FuzzWithGroupKeyAfterStream	12s	-	the detected_level group edit of a per-stream stats read inserts only the key
 smoke	internal/proxy	FuzzVLNotInMatchesTheNegatedClass	12s	-	probe regexps written with vlNotIn match what [^set] matches
+smoke	internal/logsql	FuzzWithGroupKeyInEveryStats	12s	-	the presence witness edit adds the key to every stats pipe and changes nothing else

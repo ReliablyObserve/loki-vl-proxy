@@ -856,6 +856,7 @@ type Proxy struct {
 	// which a lookup of the same key waits for (stats_extent_cache.go).
 	statsExtentPending                   statsExtentPendingStores
 	parseRiskProbeCacheTTL               time.Duration
+	levelLessBases                       levelLessMemory // per-stream reads lately seen holding a stream without a level label
 	parseRiskProbeSettle                 time.Duration
 	queryRangeWindowTimeout              time.Duration
 	queryRangePartialResponses           bool
