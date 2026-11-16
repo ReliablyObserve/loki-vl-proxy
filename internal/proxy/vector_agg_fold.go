@@ -91,6 +91,12 @@ func foldVectorAggregations(p *Proxy, w http.ResponseWriter, r *http.Request, qu
 
 // foldVectorChain is foldVectorAggregations over the levels chain, innermost first.
 func foldVectorChain(p *Proxy, w http.ResponseWriter, r *http.Request, chain []*logqlpkg.VectorAggregation, serve func(http.ResponseWriter, *http.Request) bool) bool {
+	return foldVectorChainCapped(p, w, r, chain, serve, true)
+}
+
+// foldVectorChainCapped is foldVectorChain; capped false leaves the series limit to the caller, which applies it to
+// an answer it merges from several folds (the time chunks of a parser's series identity).
+func foldVectorChainCapped(p *Proxy, w http.ResponseWriter, r *http.Request, chain []*logqlpkg.VectorAggregation, serve func(http.ResponseWriter, *http.Request) bool, capped bool) bool {
 	buf := &bufferedResponseWriter{}
 	ctx := context.WithValue(context.WithValue(r.Context(), foldedSumKey{}, true), vectorAggFoldKey{}, true)
 	levels := make([]foldLevel, len(chain))
@@ -112,12 +118,14 @@ func foldVectorChain(p *Proxy, w http.ResponseWriter, r *http.Request, chain []*
 				body = foldByGrouping(body, agg)
 			}
 		}
-		capped, err := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
-		if err != nil {
-			p.writeErr(w, r.Context(), err)
-			return true
+		if capped {
+			limited, err := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
+			if err != nil {
+				p.writeErr(w, r.Context(), err)
+				return true
+			}
+			body = limited
 		}
-		body = capped
 	}
 	copyHeaders(w.Header(), buf.Header())
 	if code != 0 {

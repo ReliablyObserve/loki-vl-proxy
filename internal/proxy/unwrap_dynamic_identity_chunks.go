@@ -187,7 +187,9 @@ func (p *Proxy) foldDynamicIdentityChunks(w http.ResponseWriter, r *http.Request
 		ctx := context.WithValue(context.WithValue(r.Context(), identityReadBytesKey{}, read), statsExtentRequestKey{}, false)
 		sub := binaryAggregationRangeAt(r, chunk.first, chunk.last).WithContext(ctx)
 		buf := &bufferedResponseWriter{header: make(http.Header)}
-		if !foldVectorChain(p, buf, sub, chain, serve) {
+		// The series limit is applied once, to the merged answer: Loki counts it on the whole answer, and a cap per
+		// chunk would keep other series in each.
+		if !foldVectorChainCapped(p, buf, sub, chain, serve, false) {
 			p.writeErr(w, r.Context(), fmt.Errorf("parser identity chunk not served"))
 			return true
 		}

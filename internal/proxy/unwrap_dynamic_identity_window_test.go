@@ -824,3 +824,50 @@ func shimBucketReads(s *extentShim) (calls int, buckets int64) {
 	}
 	return calls, buckets
 }
+
+// The series limit of a chunked read is Loki's on the whole answer: over the limit, a Logs Drilldown request keeps the
+// same busiest series with Loki's warning as one read would, and any other client gets Loki's error, as one read.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
+func TestDynamicIdentityWindowsChunkedSeriesLimit(t *testing.T) {
+	old := maxStatsBucketResponseBytes
+	t.Cleanup(func() { maxStatsBucketResponseBytes = old })
+	s := dynChunkScenario(6000, true)
+	s.by = "route, pod"
+	answer := func(limit int64, headers map[string]string) (int, string) {
+		maxStatsBucketResponseBytes = limit
+		emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+		backend := httptest.NewServer(emu.Handler())
+		defer backend.Close()
+		c := cache.New(time.Minute, 100)
+		defer c.Close()
+		p, err := New(Config{BackendURL: backend.URL, Cache: c, LogLevel: "error", MaxStatsQuerySeries: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer closeTestProxy(p)
+		params := url.Values{"query": {s.query()}, "start": {strconv.FormatInt(s.start/1e9, 10)}, "end": {strconv.FormatInt(s.end/1e9, 10)}, "step": {"30"}}
+		res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), headers)
+		var body struct {
+			Data struct {
+				Result json.RawMessage `json:"result"`
+			} `json:"data"`
+			Warnings []string `json:"warnings"`
+		}
+		if res.Code == http.StatusOK {
+			_ = json.Unmarshal(res.Body.Bytes(), &body)
+			return res.Code, string(body.Data.Result) + fmt.Sprint(body.Warnings)
+		}
+		return res.Code, res.Body.String()
+	}
+	for _, h := range []map[string]string{
+		{"X-Scope-OrgID": "0", "X-Query-Tags": "Source=grafana-lokiexplore-app"},
+		{"X-Scope-OrgID": "0"},
+	} {
+		oneCode, one := answer(old, h)
+		chunkCode, chunked := answer(1<<20, h)
+		if oneCode != chunkCode || one != chunked {
+			t.Errorf("%v: one read %d %.200s, chunked %d %.200s", h, oneCode, one, chunkCode, chunked)
+		}
+	}
+}

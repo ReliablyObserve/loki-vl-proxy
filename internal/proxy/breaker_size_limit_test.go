@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -92,6 +93,9 @@ func TestBreakerIgnoresProxySideLimits(t *testing.T) {
 		{"series limit", newSeriesLimitError(ctx, 500), false},
 		{"row limit", newRowLimitError(10, "", 20), false},
 		{"other", errors.New("EOF"), true},
+		// Real backend failures keep counting: the limit rule must not swallow an outage.
+		{"wrapped transport EOF", fmt.Errorf("post: %w", io.ErrUnexpectedEOF), true},
+		{"mid-body abort", &vlResponseAbortedError{cause: io.ErrUnexpectedEOF}, true},
 	} {
 		if got := shouldRecordBreakerFailure(ctx, tc.err); got != tc.counts {
 			t.Errorf("%s: counts %v, want %v", tc.name, got, tc.counts)

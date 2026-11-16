@@ -72,6 +72,7 @@ decisions:
     quality: 'Loki''s series and values at every step for every range and step; one VictoriaLogs call per request; no raw rows; proxy memory bounded by one chunk''s bucket answer; the hash never reaches a client.'
     performance:
       - 'internal/proxy/unwrap_dynamic_identity_window_bench_test.go BenchmarkDynamicIdentityWindows (2026-11-16, Apple M5 Pro, GOMAXPROCS=2, n=6 interleaved, VictoriaLogs answers from the emulator served again): 2,000 lines over 1h at a 1m step under [5m]; a series per line: sum by (pod) of avg 0.46 -> 13.8 ms/op, 822 -> 58,959 allocs/op; 40 series: 0.43 -> 2.0 ms/op, 766 -> 2,219 allocs/op; max by of max unchanged. The cost is the per-series bucket read the Loki answer needs (base read one group, with the wrong values); the hits collector''s per-series label map and key are the bulk of the allocations (follow-up).'
+      - 'At volume (2026-11-16, VictoriaLogs v1.53.0 own handlers in process, cold, one request at a time; api-gateway json lines with a request id each): 6h of 450K lines, [5m] at 60s: main 0.18 s, 1 call, 16 KB (wrong values); head 4.0 s, 19 calls, 154 MB, peak RSS 243 MB (main 40 MB). 6h of 900K lines: head 11.0 s, 61 calls, 456 MB, peak RSS 218 MB (memory bounded by the chunk). 24h of 436K lines at 120s: head 3.6 s, 16 calls. 20 series of many lines: 2 calls, as main. Loki on the stack: pending.'
 perf:
   max_ratio: 2.0
   target_ratio: 1.0
