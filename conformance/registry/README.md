@@ -48,7 +48,7 @@ are regenerated with `python3 conformance/scripts/census.py`, and
 A case states what Loki does and proves it with a recorded Loki answer, an oracle fact, a test
 wired to the case that compares with Loki, or Loki's public documentation; it never cites a Loki
 source file or line. A case whose claim has none of these yet carries the top-level key
-`evidence: needs recording` (the only value the schema accepts); the error-machinery recording step
+`evidence: needs recording` (the only value the schema accepts); the recording step
 lists those cases and removes the key once the answer is recorded.
 
 ## Write methods are out of scope
@@ -179,7 +179,7 @@ backend host:port or Go transport and decoder error. Every route answers a failu
 the proxy's single error layer (`writeError` and the status mapping beside it in
 `internal/proxy/http_utils.go`) with Loki's status, `errorType` and text: a failed backend
 call is 500, a client cancellation 499 and a deadline 504 with Loki's fixed texts
-(recorded in `internal/lokierr/testdata/loki_error_answers.jsonl`), a full queue 429 "too many outstanding requests", a bad query
+a full queue 429 "too many outstanding requests", a bad query
 400 with Loki's wording. A proxy-only status (502, 503, 422, 408) is a leak unless it is a
 documented proxy limit listed here whose message names its flag. `loki/errors/status-<code>.yaml`
 records when Loki answers each status and the cases that assert it.

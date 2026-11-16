@@ -31,7 +31,8 @@ loki_behaviour: |
   LogQL parse error, a limit the query exceeds, a pipeline error (a metric
   sample carrying `__error__`, see
   semantics/pipeline-error-text-parity for the exact text), a blocked query
-  and an unsupported one (recorded in internal/lokierr/testdata/loki_error_answers.jsonl). The body is
+  and an unsupported one (parse errors and limits are recorded in
+  internal/lokierr/testdata/loki_error_answers.jsonl). The body is
   the message alone, `Content-Type: text/plain; charset=utf-8`, `X-Content-Type-Options:
   nosniff`, no JSON envelope and no trailing newline (also through the query
   frontend). The proxy writes the

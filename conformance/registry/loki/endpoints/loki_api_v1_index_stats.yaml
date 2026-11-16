@@ -26,7 +26,7 @@ generated:
 description: |
   The streams, chunks, entries and bytes Loki's index holds for a label
   selector over a window (a range window: a missing start is the hour before
-  end; internal/proxy/testdata/loki_time_bounds.jsonl records the bounds). Only label matchers are accepted
+  end). Only label matchers are accepted
   (syntax.ParseMatchers: 400 "only label matchers are supported"). The numbers
   are estimates from chunk metadata: overlapping chunks pro rata by time,
   copies summed (quality/index-stats-loki-chunk-accounting); Grafana shows
