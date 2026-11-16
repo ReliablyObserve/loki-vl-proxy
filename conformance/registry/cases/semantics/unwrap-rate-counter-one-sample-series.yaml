@@ -14,12 +14,9 @@ why: |
 
   Loki rates rate_counter per series of its sample extractor: the stream, its
   structured metadata and every label the parser extracts, less the unwrapped
-  one (pkg/logql/log/metrics_extraction.go:160-166 LabelExtractorWithStages,
-  :202-231 Process; pkg/logql/log/labels.go:664-688 GroupedLabels). A `sum`
-  does not hand rate_counter its grouping (pkg/logql/syntax/ast.go:1630-1640
-  canInjectVectorGrouping lists bytes, bytes_rate, sum, rate and count only).
-  A series with fewer than two samples in a window rates 0
-  (pkg/logql/range_vector.go:286-291 extrapolatedRate) and keeps its point. On
+  one. A `sum`
+  does not hand rate_counter its grouping (only bytes, bytes_rate, sum, rate and count take it).
+  A series with fewer than two samples in a window rates 0 and keeps its point. On
   the generator's data every payment-service line carries its own
   transaction id, so every window is 0.
 
@@ -32,7 +29,7 @@ why: |
   result_prefix "__lvpk."`), discovered by `field_names` over a 1,000-line
   sample. The tuple is never finer than Loki's series: the unwrapped label,
   structured metadata, keys missing from the sample and keys whose Loki label
-  name (pkg/logql/log/util.go:22-39 sanitizeLabelKey) another key shares are
+  name another key shares are
   left out, which only merges series; stored fields Loki does not extract are
   not read. When n == u every window is 0 and the answer is the unwrap rate
   route's bucket presence (stats on anchored buckets, its conversion error
@@ -72,7 +69,7 @@ gap:
   visual_reason: 'the panel showed a rate of 16,471/s (1h) or an error (6h, 24h) where Loki draws 0'
   effort: M
   area: 'internal/proxy/rate_counter_singletons.go (rateCounterUnderSum, proveRateCounterOneSample) from proxyManualRangeMetricRange in internal/proxy/range_metric_compat.go'
-  loki: 'pkg/logql/log/metrics_extraction.go:160-166, :202-231; pkg/logql/syntax/ast.go:1630-1640; pkg/logql/range_vector.go:286-291'
+  loki: 'rate_counter is rated per series of the sample extractor; a series with fewer than two samples in a window rates 0 (test/e2e-compat unwrap_rate_counter_one_sample_test.go)'
   proxy: 'VictoriaLogs proves one sample per parsed series (count vs count_uniq_hash); the windows'' presence from the unwrap rate buckets, each 0'
   planned_test: 'TestRateCounterOneSampleMatchesLoki, TestRateCounterOneSampleProofRefusesSharedSeries, TestRateCounterOneSampleProofEdges, TestRateCounterUnderSumScope, FuzzRateCounterOneSample (internal/proxy); TestCompat_UnwrapRateCounterOneSampleSeries (test/e2e-compat, group core)'
   clusters: []

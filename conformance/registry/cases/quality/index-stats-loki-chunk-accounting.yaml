@@ -5,16 +5,10 @@ proves:
 consumer: drilldown
 why: |
   Loki's /index/stats entries are chunk metadata, not a line count. A chunk
-  that straddles the window adds its entries (and bytes) pro rata by time
-  (pkg/storage/stores/shipper/indexshipper/tsdb/index/chunk.go:262-267,
-  pkg/util/time.go:136-154; unflushed chunks pkg/ingester/instance.go:809-814),
-  and every copy of a chunk Loki reads is added: the TSDB files before
-  compaction (tsdb/index_client.go:195-207), the ingesters and the store
-  (pkg/ingester/ingester.go:1439-1463, pkg/storage/async_store.go:167-171,
-  whose TODO names the inflation), the 24h splits
-  (pkg/storage/stores/index/stats/stats.go:17-28) and the index-stats results
-  cache, which pro-rates a cached answer to a shorter window
-  (pkg/querier/queryrange/index_stats_cache.go:34-48). On a stack whose
+  that straddles the window adds its entries (and bytes) pro rata by time,
+  and every copy of a chunk Loki reads is added: the index files before
+  compaction, the ingesters and the store, the 24h splits and the index-stats
+  results cache, which pro-rates a cached answer to a shorter window. On a stack whose
   ingesters retained flushed chunks, entries were 3x Loki's own
   `sum(count_over_time(...))` over the window, which equals the proxy's
   entries. The proxy counts the window's lines exactly in VictoriaLogs
@@ -45,7 +39,7 @@ gap:
   impact: drilldown-visible
   effort: S
   area: 'none (Loki chunk index accounting)'
-  loki: 'pkg/storage/stores/shipper/indexshipper/tsdb/index/chunk.go:262-267 pro rata; pkg/storage/async_store.go:167-171 and pkg/storage/stores/index/stats/stats.go:17-28 copies summed'
+  loki: 'entries and bytes are chunk metadata, pro rata by time, every copy read is summed (TestDrilldown_IndexStatsLikeLoki)'
   proxy: 'exact counts'
   planned_test: 'bench/parity cross-check (run.py loki_counts_itself); TestDrilldown_IndexStatsLikeLoki (test/e2e-compat, group drilldown)'
   clusters:

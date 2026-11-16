@@ -6,10 +6,9 @@ proves:
   - loki_api_v1_label_name_values
 consumer: explore
 why: |
-  Loki lists labels and label values from its index and ingesters
-  (pkg/querier/querier.go:307-342) and never caches a metadata answer whose
-  end is within max_metadata_cache_freshness of now
-  (pkg/querier/queryrange/series_cache.go:111-125), so a stream written a
+  Loki lists labels and label values from its index and ingesters and never
+  caches a metadata answer whose end is within max_metadata_cache_freshness of
+  now (https://grafana.com/docs/loki/latest/configure/), so a stream written a
   moment ago is listed at once, whatever load its queriers carry. The proxy
   lists the settled part of a window from the metadata inventory and reads
   the near-now edge from VictoriaLogs. Under 32 heavy clients that edge call
@@ -56,7 +55,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy/metadata_edge_refresh.go serveMetadataEdge; -metadata-max-staleness, -metadata-edge-refresh-budget'
-  loki: 'pkg/querier/querier.go:307-342 Label reads ingesters; pkg/querier/queryrange/series_cache.go:111-125 shouldCacheMetadataReq'
+  loki: 'labels read from the index and ingesters, no caching within max_metadata_cache_freshness (TestCompat_LabelsIncludeStreamWrittenAfterCaching)'
   proxy: 'last answer within the bound when the edge refresh misses the budget'
   planned_test: 'TestMetadataEdge_* (internal/proxy) + TestCompat_LabelsIncludeStreamWrittenAfterCaching (test/e2e-compat, group core)'
   clusters: []

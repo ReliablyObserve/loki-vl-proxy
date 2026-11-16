@@ -667,7 +667,7 @@ func extractLogQLOffset(logql string) (time.Duration, string, error) {
 // aggregation over one, under any label transforms: its operands are
 // evaluated through their own handlers, each probing its own query, and the
 // binary reads them from the request, so each keeps its own parser as Loki
-// evaluates it (pkg/logql/evaluator.go:385, a step evaluator per side).
+// evaluates it (a step evaluator per side).
 // Dropping one parser from the whole query would take it from the operand
 // that needs it, and the text rewrite of a metric query (removeParserStage)
 // cuts everything after a stage that is the last before its range.

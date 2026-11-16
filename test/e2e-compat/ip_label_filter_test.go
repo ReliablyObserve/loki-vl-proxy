@@ -15,12 +15,11 @@ import (
 )
 
 // TestCompat_IPLabelFilterAbsentLabel: Loki's ip() label filter drops a line
-// whose label is absent under both = and != (pkg/logql/log/ip.go:123-145),
-// keeps a whole address in the pattern under = and the others under !=. The
-// fixture is one logfmt stream ingested alike into Loki and VictoriaLogs:
-// lines without addr, with addr in and out of 1.2.3.0/24, an IPv6 address and
-// a leading-zero address. Log queries and count_over_time on query and
-// query_range answer like Loki.
+// whose label is absent under both = and !=, keeps a whole address in the
+// pattern under = and the others under !=. The fixture is one logfmt stream
+// ingested alike into Loki and VictoriaLogs: lines without addr, with addr in
+// and out of 1.2.3.0/24, an IPv6 address and a leading-zero address. Log
+// queries and count_over_time on query and query_range answer like Loki.
 // conformance: semantics/ip-label-filter-missing-label, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_IPLabelFilterAbsentLabel(t *testing.T) {
 	probe := fmt.Sprintf("ip-filter-%d", time.Now().UnixNano())

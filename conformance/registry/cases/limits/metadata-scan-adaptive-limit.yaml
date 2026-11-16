@@ -4,6 +4,7 @@ proves:
   - backend-admission-and-heavy-query-queueing
   - operator-configurable-limits
 consumer: any
+evidence: needs recording
 why: |
   What a long-range metadata scan costs VictoriaLogs depends on its data: on
   the e2e stack a 7-day stream_field_names scan held 0.8 GiB and took 9 s one
@@ -92,8 +93,7 @@ compare:
     the inventory unit tests and the live runs.
 loki_parity: |
   Loki has no equivalent: its index answers /labels without a scan. The 429
-  and its message are Loki's scheduler's (pkg/queue/queue.go
-  ErrTooManyRequests).
+  and its message are Loki's scheduler's.
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

@@ -9,16 +9,16 @@
 # caches results up to the present, so it can answer a refresh of less than a step
 # as an exact results-cache hit. This profile is a Loki with its defaults: no step
 # alignment middleware (its 1h metric splitter still floors the start to the step and
-# rounds the end up, pkg/querier/queryrange/splitters.go:308-319), and the newest
-# 10 minutes of a window always recomputed.
+# rounds the end up), and the newest 10 minutes of a window always recomputed.
 # Both are measured so a proxy build is compared with each (bench/ab/README.md,
 # "Like for like").
 #
 # The shared e2e config is not touched: Loki applies command-line flags after the
-# config file (pkg/util/cfg/cfg.go DefaultUnmarshal), so these two flags win over the
-# file, the way docker-compose.ab-loki-uncached.yml's do. Flag names and defaults, Loki v3.7.9:
-#   -querier.align-querier-with-step  pkg/querier/queryrange/queryrangebase/roundtrip.go:49 (default false)
-#   -frontend.max-cache-freshness     pkg/validation/limits.go:407-408 (default 10m)
+# config file, so these two flags win over the file, the way
+# docker-compose.ab-loki-uncached.yml's do. Flag names and defaults, from Loki's
+# configuration reference (https://grafana.com/docs/loki/latest/configure/):
+#   -querier.align-querier-with-step  (default false)
+#   -frontend.max-cache-freshness     (default 10m)
 # The rest of the command is the base stack's (tests/test_stack.py fails when it drifts).
 # Selected by stack.py --profile loki-defaults; applied after docker-compose.ab.yml.
 services:

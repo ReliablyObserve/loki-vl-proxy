@@ -56,7 +56,7 @@ gap:
   impact: edge
   effort: M
   area: 'stats-bucket relabel (internal/proxy range_metric_compat.go setSlidingStatsRangeParams / slidingStatsBucket; sliding_window_stats.go)'
-  loki: 'pkg/logql range vector (T-range, T]'
+  loki: 'a range vector covers (T-range, T] (test/e2e-compat TestRangeMetricCompatibilityJSONFilterPushdown)'
   proxy: 'stats_query_range without offset aligns buckets to the epoch; the 1 ns edge shift is not applied (VictoriaLogs before v1.45, below the supported floor v1.49.0)'
   planned_test: 'TestRangeMetricCompatibilityJSONFilterPushdown on every supported VictoriaLogs version (compat-vl vl-matrix job); TestSlidingRangeMetric_AnchoredBucketsOnFloorAndUnknownVersion'
   note: 'Evidence: bisect v1.42.0 FAIL, v1.44.0 FAIL, v1.45.0 PASS, v1.46.0 PASS, v1.52.0 PASS. The v1.45.0 changelog entry for the offset arg is the introducing release; the supported floor is v1.49.0, so no fallback is kept for the earlier releases.'

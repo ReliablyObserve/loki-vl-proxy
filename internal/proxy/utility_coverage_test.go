@@ -904,8 +904,8 @@ func TestProxyStatsQueryAndRangeBranches(t *testing.T) {
 	wQueryErr := httptest.NewRecorder()
 	rQueryErr := httptest.NewRequest(http.MethodGet, `/loki/api/v1/query?query=sum(rate({app="api"}[1m]))`, nil)
 	p.proxyStatsQuery(wQueryErr, rQueryErr, statsQueryOf(`sum(rate({app="api"}[1m]))`))
-	// An open breaker is a failed backend call: Loki's 500
-	// (pkg/util/server/error.go:124-128), not a proxy-only 503.
+	// An open breaker is a failed backend call: Loki's 500,
+	// not a proxy-only 503.
 	if wQueryErr.Code != http.StatusInternalServerError {
 		t.Fatalf("expected circuit breaker open to map to 500, got %d body=%s", wQueryErr.Code, wQueryErr.Body.String())
 	}

@@ -13,19 +13,16 @@ why: |
   commit (checked against a simulated VictoriaLogs); the instant form did not,
   so the request below is the instant one.
 
-  Loki v3.7.7: pkg/logql/syntax/ast.go mustNewLabelReplaceExpr compiles the
-  regexp as `^(?:regex)$` (an invalid one is the parse error "invalid regex in
-  label_replace: ..."); pkg/logql/evaluator.go LabelReplaceEvaluator.Next reads
+  Loki v3.7.7 compiles the regexp as `^(?:regex)$` (an invalid one is the
+  parse error "invalid regex in label_replace: ..."); label_replace reads
   the source label (empty when absent), leaves a series the regexp does not
   match as it is, and otherwise expands the replacement with
   Regexp.ExpandString ($1, ${1}, $name, ${name}, $$), deleting the destination
   and setting it only when the expansion is not empty. It validates no label
-  name and raises no error for two series that end with one label set; pkg/
-  logql/engine.go JoinSampleVector then keeps both samples of an instant vector
+  name and raises no error for two series that end with one label set; at the end of the
+  query Loki keeps both samples of an instant vector
   and files the points of a range query's duplicates under one series, those of
-  each step in turn; both then sort by label set (sort.Sort(result) for a
-  range, sort.Slice with labels.Compare for an instant vector unless the query
-  sorts by value).
+  each step in turn; both then sort by label set (for an instant vector unless the query sorts by value).
 
   Causes, reproduced against a simulated VictoriaLogs
   (internal/proxy/label_replace_semantics_test.go):
@@ -104,7 +101,7 @@ gap:
   visual_reason: 'the visible difference is on instant queries; the visual harness captures Explore range panels (queryType range), where label_replace already matched, so the fix is proven by the instant tests and the e2e against Loki'
   effort: S
   area: 'internal/proxy vector_matching.go (transformSeriesLabels, applyLabelReplace, applyLabelJoin), metric_agg.go (post-aggregation markers), internal/translator parseUnquotedStringArgs'
-  loki: 'pkg/logql/syntax/ast.go mustNewLabelReplaceExpr; pkg/logql/evaluator.go:1249-1315 LabelReplaceEvaluator; pkg/logql/engine.go:530-600 JoinSampleVector, vectorsToSeries'
+  loki: 'label_replace compiles the regexp anchored, reads the source label (empty when absent), expands $1 and ${name}, and keeps duplicates until the end of the query (TestCompat_LabelReplaceNewLabel)'
   proxy: 'the transform runs on the series VictoriaLogs aggregated, matrix and vector alike'
   planned_test: 'TestCompat_LabelReplaceNewLabel (test/e2e-compat, group semantics); TestLabelReplaceEdgeTable, TestLabelReplaceOnInstantAndRange, TestLabelReplaceDifferential, TestLabelReplaceUnderPostAggregation, TestLabelReplaceInvalidRegexp, TestLabelReplaceOverBareRangeFunctionKeepsOneSeriesPerStream, TestLabelReplaceOverJSONMetricUsesTheOrderedJSONEvaluator, TestRankedTopKRangeIsServedFromTheBucketCache, TestRankedTopKRangeDifferential, TestRankedTopKRangeFallsBackToTheWindowRecurrence, TestLabelReplaceTopKRepeatsAreStable, TestRankedTopKOverLabelSetsLabelReplaceMadeEqual, TestRankedTopKRangeFallsBackWhenBucketsAreUnreadable (internal/proxy); TestLabelReplaceStringArgumentsAreUnquoted (internal/translator)'
   clusters: []

@@ -20,11 +20,10 @@ import (
 
 // This file pins the answer of stddev and stdvar over a range aggregation to
 // Loki's, over generated rows and generated windows, with a reference evaluator
-// written apart from the proxy: Loki v3.7.7 pkg/logql/evaluator.go
-// VectorAggEvaluator.Next (each series of the input falls into the group the
-// grouping names, and the group takes the population standard deviation or
-// variance of the series' VALUES by Welford's update, 0 for a group of one
-// series), over count_over_time's per-series counts in the window (t-range, t].
+// written apart from the proxy, modelling Loki's vector aggregation: each
+// series of the input falls into the group the grouping names, and the group
+// takes the population standard deviation or variance of the series' VALUES by
+// Welford's update, 0 for a group of one series, over count_over_time's per-series counts in the window (t-range, t].
 // stddev_over_time and stdvar_over_time, which work over the samples inside one
 // window, are a different function and not tested here.
 //
@@ -105,7 +104,7 @@ func stdStreamText(labels map[string]string) string {
 
 // lokiGroupedStd is the reference: for every evaluation time, the value of the
 // range function fn (count_over_time, rate, bytes_over_time or bytes_rate) of
-// each series' lines in (t-window, t], folded per group by VectorAggEvaluator.
+// each series' lines in (t-window, t], folded per group as Loki's vector aggregation does.
 // Result: group -> time -> value.
 func lokiGroupedStd(rows []vlemu.Row, window int64, times []int64, fn, op string, g stdGrouping) map[string]map[int64]float64 {
 	// A row's series: its stream and, when a parser extracted it, its route.

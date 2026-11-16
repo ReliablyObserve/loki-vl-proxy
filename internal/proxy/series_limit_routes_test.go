@@ -321,9 +321,8 @@ type seriesLimitAnswer struct {
 }
 
 // Every metric route answers a result over -max-stats-query-series the way
-// Loki answers one over max_query_series (pkg/logql/engine.go JoinSampleVector,
-// v3.7.7): a plain client gets logqlmodel.NewSeriesLimitError as HTTP 400, word
-// for word; a Logs Drilldown request (X-Query-Tags Source=grafana-lokiexplore-app)
+// Loki answers one over max_query_series (v3.7.7): a plain client gets Loki's
+// series limit error as HTTP 400, word for word; a Logs Drilldown request (X-Query-Tags Source=grafana-lokiexplore-app)
 // gets HTTP 200 with the series it has and the warning "maximum number of
 // series (N) reached for a single query; returning partial results". The proxy
 // keeps the busiest series. A result with exactly the limit's series passes on

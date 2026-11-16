@@ -25,21 +25,19 @@ import (
 
 // Unwrap conversion errors (Loki v3.7.7).
 //
-// pkg/logql/log/metrics_extraction.go:202-231 (streamLabelSampleExtractor.Process)
-// skips a line whose unwrapped label is absent or empty, and marks a value its
-// conversion rejects (convertFloat, convertDuration, convertBytes; lines
-// 316-338) with __error__="SampleExtractionErr" and the conversion's own
-// message as __error_details__. The label filters after the unwrap run next,
+// Loki skips a line whose unwrapped label is absent or empty, and marks a value
+// its conversion rejects (float, duration or bytes) with
+// __error__="SampleExtractionErr" and the conversion's own
+// message as __error_details__ (registry semantics/unwrap-conversion-error). The
+// label filters after the unwrap run next,
 // with the error set: a string filter on __error__ compares
-// "SampleExtractionErr" (label_filter.go:418-424 labelValue), one on
+// "SampleExtractionErr", one on
 // __error_details__ compares "" (the details are not a label the builder
 // returns). A sample that keeps __error__ fails the whole query when a range
-// vector holds it (pkg/logql/evaluator.go:726-733, RangeVectorEvaluator.Next):
-// HTTP 400, text/plain (pkg/util/server/error.go:46-51), with
-// logqlmodel.PipelineError.Error() over the sample's series, which is every
-// label of the line (labels.go:664-668 GroupedLabels returns the whole set when
-// an error is set). __preserve_error__ only exempts parser errors
-// (parser.go:778-787), so neither `drop __error__` nor a filter before the
+// vector holds it: HTTP 400, text/plain, with
+// the pipeline error over the sample's series, which is every
+// label of the line (the whole set when an error is set). __preserve_error__
+// only exempts parser errors, so neither `drop __error__` nor a filter before the
 // unwrap, nor `by (__error__)`, intercepts the conversion error.
 //
 // VictoriaLogs' stats only see the rows the translator's unwrap gate keeps
@@ -120,7 +118,7 @@ func unwrapErrorProbeFor(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorA
 	switch unwrap.Converter {
 	case "":
 	case "duration", "duration_seconds":
-		// Loki converts both with convertDuration (syntax/extractor.go:63-71).
+		// Loki converts both as a duration (registry semantics/unwrap-duration-seconds).
 		conv = "duration"
 	case "bytes":
 		conv = "bytes"
@@ -193,9 +191,8 @@ func unwrapComparison(stage *logqlpkg.LabelFilterStage) (label, cmp, literal str
 
 // unwrapParserHints returns the labels Loki's parser extracts for the
 // aggregation's sample extractor, or nil when it extracts every label
-// (pkg/logql/log/parser_hints.go:145-189 NewParserHint; a `sum` pushes its
-// grouping down for sum_over_time and rate, syntax/ast.go:1612-1642;
-// absent_over_time never keeps labels, syntax/extractor.go:44-48).
+// (a `sum` pushes its grouping down for sum_over_time and rate;
+// absent_over_time never keeps labels).
 func unwrapParserHints(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAggregation, pipeline []logqlpkg.Stage, label string) map[string]bool {
 	grouping := ra.Grouping
 	if grouping == nil && parent != nil && parent.Op == logqlpkg.VectorSum &&
@@ -211,7 +208,7 @@ func unwrapParserHints(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAgg
 	if grouping == nil || grouping.Without {
 		return nil
 	}
-	// appendLabelHints (parser_hints.go:207-214): a name, and for a name ending
+	// A name, and for a name ending
 	// in _extracted also the name without the suffix; never the other way.
 	hints := map[string]bool{}
 	add := func(name string) {
@@ -439,8 +436,7 @@ func stripUnwrapCounter(body []byte) ([]byte, []float64, error) {
 
 // unwrapNaN says how the nan groups (flag 2) of a stats answer reach the result.
 // Loki's sample is NaN (strconv.ParseFloat reads nan): sum, avg, stddev and
-// stdvar over a window that holds one are NaN (pkg/logql/range_vector.go
-// sumOverTime, avgOverTime, stddevOverTime), and so are the vector aggregations
+// stdvar over a window that holds one are NaN, and so are the vector aggregations
 // of those series; VictoriaLogs' sum restarts at a NaN, so its stats can only
 // carry the rows apart (translator gate drops them, the counting gate groups
 // them under flag 2). poison is set when every function of the query poisons its
@@ -1348,7 +1344,7 @@ func unwrapLokiLabels(probe unwrapErrorProbe, base map[string]string, line, form
 }
 
 // unwrapLabelFilterKeeps evaluates a label filter on Loki's labels of a line
-// (pkg/logql/log/label_filter.go): a string filter compares the value (absent
+// a string filter compares the value (absent
 // is empty); a comparison drops a line without the label, keeps one whose value
 // it cannot parse (Loki marks it with an error that the unwrap's own error
 // replaces) and compares otherwise. known is false for an expression this does
@@ -1406,7 +1402,7 @@ func unwrapComparisonConv(literal string) (string, bool) {
 }
 
 // unwrapParseLine extracts a parser stage's labels from line into labels, as
-// Loki v3.7.7 does (pkg/logql/log/parser.go): a key named like a label it
+// Loki v3.7.7 does: a key named like a label it
 // already has gets the _extracted suffix; `| json` keeps strings, numbers and
 // booleans and flattens objects, skipping arrays and null; `| unpack` keeps
 // the strings of a packed entry only; `| regexp` keeps its named captures. ok is false for a parser
@@ -1447,7 +1443,7 @@ func unwrapParseLine(stage *logqlpkg.ParserStage, line string, labels map[string
 		})
 	case logqlpkg.ParserUnpack:
 		// Loki adds the string keys only to a packed entry, one holding _entry,
-		// and the last value of a key wins (parser.go:788-840: the keys are
+		// and the last value of a key wins (the keys are
 		// buffered and set when _entry is found). A key named like a label the
 		// line had before the parser gets the _extracted suffix; one an earlier
 		// parser extracted is skipped.
@@ -1647,7 +1643,7 @@ func (l *unwrapLookupWriter) finish(endpoint, logql string, requestStart time.Ti
 }
 
 // writeLokiTextError answers an error the way Loki writes it
-// (pkg/util/server/error.go WriteError): the message as text/plain.
+// (internal/lokierr/testdata/loki_error_answers.jsonl): the message as text/plain.
 func (p *Proxy) writeLokiTextError(w http.ResponseWriter, code int, msg string) {
 	if p.log != nil {
 		p.log.Warn("request error", "code", code, "error", msg)

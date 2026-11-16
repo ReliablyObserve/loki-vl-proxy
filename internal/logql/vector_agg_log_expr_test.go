@@ -8,13 +8,11 @@ import (
 	"unicode/utf8"
 )
 
-// Loki's grammar takes only a metric expression inside a vector aggregation
-// (pkg/logql/syntax/syntax.y:176-185). A log expression there is read as the
-// left operand of a binary operation, so the parser fails at the closing
-// parenthesis: Loki's own test pkg/logql/syntax/parser_test.go:689-690 has
-// `stddev({ foo = "bar" })` -> "syntax error: unexpected )" at line 1, col 23.
-// The columns of the first rows are the ones Loki v3.7.9 answered in the
-// differential run of 2026-11-04.
+// Loki's grammar takes only a metric expression inside a vector aggregation.
+// A log expression there is read as the left operand of a binary operation, so
+// the parser fails at the closing parenthesis: `stddev({ foo = "bar" })` gives
+// "syntax error: unexpected )" at line 1, col 23. The columns of the first rows
+// are the ones Loki v3.7.9 answered in the differential run of 2026-11-04.
 // conformance: semantics/vector-aggregation-over-log-selector-status
 func TestParse_VectorAggregationOverLogExpression(t *testing.T) {
 	for _, tc := range []struct{ query, want string }{

@@ -13,8 +13,8 @@ import (
 )
 
 // FuzzFoldBinaryAggregation: the fold of an aggregation over a binary's
-// answer (foldBinaryAggregation) against a reference of Loki's
-// VectorAggEvaluator.Next (pkg/logql/evaluator.go:435-630): series are grouped
+// answer (foldBinaryAggregation) against a reference of Loki's vector
+// aggregation: series are grouped
 // by the labels `by` keeps or `without` leaves (none without a grouping), and
 // each group is valued by sum, avg, min, max or count of its samples. Label
 // values hold `,`, `=` and quotes, so a group key that joins them as text
@@ -164,7 +164,7 @@ var parserParamsRE = regexp.MustCompile(`^(\s+[A-Za-z_]\w*(\s*=\s*"[^"\\]*")?(\s
 // FuzzParserProbeLeavesBinaries: the parser probe (preferWorkingParser) drops
 // one of the json and logfmt stages from a query naming both, which is right
 // for one operand and wrong for a binary, whose operands each keep their own
-// parser (pkg/logql/evaluator.go:385). With fuzzed stage parameters, every
+// parser. With fuzzed stage parameters, every
 // binary and aggregation over one that parses (bare, aggregated, nested, under
 // label_replace) is left to its operands, and one operand naming both parsers
 // is still probed. Any text at all is read without a panic.

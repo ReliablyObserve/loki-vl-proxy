@@ -5,8 +5,7 @@ proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  Loki's ip() label filter drops a line whose label is absent
-  (pkg/logql/log/ip.go:123-133 filterTy: `if !ok { return false }`).
+  Loki's ip() label filter drops a line whose label is absent.
 
   The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
   VictoriaLogs v1.53.0): `{service_name="payment-service"} | logfmt |
@@ -29,7 +28,7 @@ why: |
   address inside other text is another case
   (semantics/ip-label-filter-embedded-address): since it, an IPv4 pattern is
   the regexp of the ip() line filter instead of ipv4_range. Loki also keeps a line its
-  parser failed on under both operators (ip.go:124-127); the proxy drops it,
+  parser failed on under both operators; the proxy drops it,
   as it has no label value (semantics/parse-error-labels-on-log-lines).
 request:
   method: GET
@@ -55,7 +54,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/translator/ip_label_filter.go ipLabelFilter (ip() label filter), internal/translator/translator.go translateSingleLabelFilter'
-  loki: 'pkg/logql/log/ip.go:123-145 (absent label: line dropped under = and !=), :183-261 (address scan, pattern forms)'
+  loki: 'ip() on an absent label drops the line under = and !=; the address scan accepts the pattern forms (TestCompat_IPLabelFilterAbsentLabel)'
   proxy: 'Loki''s lines for an absent label and for a whole-address value'
   planned_test: 'TestCompat_IPLabelFilterAbsentLabel (test/e2e-compat, group core)'
   clusters: []

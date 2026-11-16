@@ -31,7 +31,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'to be isolated (log query paging / numeric label filters)'
-  loki: 'pkg/logql/log/label_filter.go numeric filters; pkg/iter entry ordering'
+  loki: 'numeric label filters and entry ordering across streams (differential run in this case)'
   proxy: 'different lines, same count'
   planned_test: 'TestCompat_NumericLabelFilterLines (test/e2e-compat, group semantics)'
   clusters:

@@ -6,8 +6,7 @@ proves:
 consumer: explore
 why: |
   Loki evaluates a vector aggregation on the vector its operand produced at one
-  step (pkg/logql/evaluator.go VectorAggEvaluator.Next:435-529, topk and
-  bottomk at :443-494 and :596-621). `sum(topk(3, x))` is, at every step, the
+  step. `sum(topk(3, x))` is, at every step, the
   sum of the three best samples of that step; `sum by (app) (topk(3, x))`
   groups those three by app; `topk(2, topk(3, x))` is the best two of the best
   three. sort and sort_desc are vector aggregations too and keep every sample,
@@ -35,8 +34,7 @@ why: |
   step: sum, avg, min, max and count fold by applyWithoutGrouping (the
   without() path, with the labels to drop taken from by(), without() or the
   whole label set), topk, bottomk, sort and sort_desc rank again. The series
-  limit counts the answer of the whole query (pkg/logql/engine.go
-  JoinSampleVector), so with an outer layer neither the ranked union of the
+  limit counts the answer of the whole query, so with an outer layer neither the ranked union of the
   per-step window route (VictoriaLogs v1.45 and later), nor the manual routes
   (a backend before v1.45, a bare range function), nor an instant answer of the
   layer below is capped; the limit applies to the folded
@@ -82,7 +80,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy metric_agg.go (parseAggregationOverRanking, aggregationArgs, applyOuterPostAggregation, foldExcludeLabels), sliding_window_stats.go (ranked output); range_metric_compat.go (manualSeriesLimit), manual_metric_budget.go (withFoldedSeries), metric_binary.go (proxyStatsQuery series limit)'
-  loki: 'pkg/logql/evaluator.go VectorAggEvaluator.Next:435-529 (sum, avg, min, max, count per step; topk/bottomk heaps :443-494, :596-621; sort/sort_desc :506-512); pkg/logql/engine.go JoinSampleVector (max_query_series on the final answer)'
+  loki: 'a vector aggregation folds the vector its operand produced at one step, topk and bottomk included, sort and sort_desc keep every sample; max_query_series applies to the final answer (test/e2e-compat topk_over_aggregation_test.go)'
   proxy: 'the innermost ranking is the post-aggregation (VictoriaLogs computes the base series); the aggregations above it fold the per-step vector in the proxy, bounded by the response-size check of the window evaluator and the series limit on the final answer'
   planned_test: 'TestCompat_AggregationOverTopK (test/e2e-compat); TestTopKOverVectorAggregationRangeDifferential, TestTopKOverVectorAggregationRangeDifferentialRawEvaluator, TestTopKOverVectorAggregationInstantDifferential, TestParseAggregationOverRanking, TestFoldExcludeLabels, TestOuterFoldMatrixEdges, TestOuterFoldEmptyAndInstantHandlers, TestOuterFoldKeepsInnerWithoutMerge, TestOuterFoldSeriesLimitCountsTheFinalAnswer, TestSortOverTumblingRange, TestOuterFoldRetainsReadAndCancellationGuards and TestAggregationOverRankingLeavesOtherQueriesAlone (internal/proxy)'
   note: 'Rebased onto main b9c6e172 after #736 and #738 merged. Fresh Loki 3.7.9 / VictoriaLogs v1.52.0 parity: all 12 range variants and four instant queries pass with nonempty per-step label/value comparisons; the same tests fail against main. The compose fixture uses aligned step boundaries because its Loki enables align_queries_with_step; no timestamp assertion is suppressed. Read, byte and cancellation guards remain errors under an outer fold. The scoped visual query has no cutoff ties and matches every label, timestamp and nonzero value at 15m and 1h.'

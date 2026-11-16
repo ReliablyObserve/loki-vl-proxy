@@ -7,8 +7,7 @@ consumer: drilldown
 why: |
   For a stream whose labels include `level` and `version`, Loki's
   /detected_fields lists `level_extracted` and `version_extracted` beside the
-  parsed keys, because a parsed key named like a stream label is renamed
-  (pkg/logql/log/parser.go duplicateSuffix). The proxy lists neither. The
+  parsed keys, because a parsed key named like a stream label is renamed. The proxy lists neither. The
   owner's stamped decision (profiles/detected-fields-no-extracted-suffix)
   keeps `service` / `service.name` without the suffix and covers nothing else,
   so these two fields are an ordinary difference. Evidence: differential run
@@ -33,7 +32,7 @@ gap:
   impact: drilldown-visible
   effort: M
   area: 'internal/proxy/label_handlers.go handleDetectedFields (parsed fields named like a stream label)'
-  loki: 'pkg/logql/log/parser.go:25 duplicateSuffix; detected fields come from the parsed labels of sampled entries'
+  loki: 'a parsed key named like a stream label is listed as name_extracted (differential run clusters 37eca1b4 and f8fa9aa2, in this case; https://grafana.com/docs/loki/latest/query/log_queries/)'
   proxy: 'detected_fields lists the unrenamed parsed keys it can see in VictoriaLogs rows'
   planned_test: 'TestCompat_DetectedFieldsExtractedSuffix (test/e2e-compat, group drilldown)'
   note: 'The query-result side is fixed (semantics/extracted-suffix-collision); the detected_fields list reads its fields through a different path.'

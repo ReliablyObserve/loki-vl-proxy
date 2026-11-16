@@ -25,12 +25,10 @@ import (
 // tumbling window (range == step) and a sliding window (range > step).
 //
 // Loki attaches detected_level to every entry at ingest and falls back to
-// "unknown" (pkg/distributor/field_detection.go: LogLevelUnknown), so the
-// series of a stream whose lines carry no level are still labelled
-// detected_level="unknown", and a grouping by it always has that group
-// (pkg/logql/log/metrics_extraction.go streamLineSampleExtractor.Process adds
-// the structured metadata to the builder; labels.go GroupedLabels returns it
-// for an ungrouped or without() grouping). The reference below is written apart
+// "unknown", so the series of a stream whose lines carry no level are still
+// labelled detected_level="unknown", and a grouping by it always has that group
+// (the structured metadata is part of the series labels of an ungrouped or
+// without() grouping). The reference below is written apart
 // from the proxy: it takes the generated rows and computes the answer from
 // Loki's series identity, the stream plus the level plus detected_level.
 //
@@ -52,8 +50,7 @@ var dlKeywordRE = regexp.MustCompile(`(?i)(?:^|[ \t\n\[({"=])(trace|debug|fatal|
 
 // dlDerive is Loki's detected_level of an entry: a stored level field, else the
 // level of a JSON or logfmt line, else a level word of the line, else unknown
-// (pkg/distributor/field_detection.go; the proxy's translator chain computes
-// the same on VictoriaLogs).
+// (the proxy's translator chain computes the same on VictoriaLogs).
 func dlDerive(level, msg string) string {
 	if level != "" {
 		return strings.ToLower(level)

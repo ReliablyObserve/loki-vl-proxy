@@ -47,7 +47,7 @@ gap:
   impact: drilldown-visible
   effort: L
   area: 'internal/proxy/patterns.go'
-  loki: 'pkg/pattern (ingester-side mining)'
+  loki: 'patterns are mined ingester-side from the lines it saw (27 recorded Loki answers, internal/proxy/testdata/loki_pattern_answers.json.gz)'
   proxy: 'query-side mining'
   planned_test: 'TestPatternMinerMatchesLokisRecordedPatterns, TestPatternsLokiAnswerDependsOnTheOrderOfTiedLines (internal/proxy, recorded Loki answers); TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines (test/e2e-compat, live)'
   clusters:
