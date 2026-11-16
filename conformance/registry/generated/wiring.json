@@ -1661,7 +1661,8 @@
       "internal/proxy/build_phase_window_loki_test.go"
     ],
     "semantics/loki-error-phases": [
-      "internal/logql/error_order_loki_test.go"
+      "internal/logql/error_order_loki_test.go",
+      "internal/proxy/error_phase_grid_test.go"
     ],
     "semantics/loki-keyword-label-names": [
       "internal/logql/keyword_case_test.go",
@@ -2309,6 +2310,7 @@
     ],
     "semantics/zero-range-metric": [
       "internal/logql/zero_range_comments_loki_test.go",
+      "internal/proxy/absent_zero_range_test.go",
       "internal/proxy/error_refusals_test.go",
       "internal/proxy/zero_range_test.go"
     ],
@@ -2774,6 +2776,9 @@
       "semantics/absent-over-time-semantics",
       "status-400"
     ],
+    "internal/proxy/absent_zero_range_test.go": [
+      "semantics/zero-range-metric"
+    ],
     "internal/proxy/alerting_backend_failure_test.go": [
       "semantics/error-layer-backend-failure-status",
       "semantics/error-layer-backend-text",
@@ -3100,6 +3105,9 @@
       "semantics/error-layer-internal-go-text",
       "semantics/error-layer-proxy-limit-status",
       "semantics/error-layer-silent-success"
+    ],
+    "internal/proxy/error_phase_grid_test.go": [
+      "semantics/loki-error-phases"
     ],
     "internal/proxy/error_refusals_test.go": [
       "semantics/error-layer-internal-go-text",
@@ -5606,7 +5614,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 662,
+  "tests_with_markers": 664,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

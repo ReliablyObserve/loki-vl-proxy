@@ -1240,6 +1240,7 @@
     "internal/proxy/absent_over_time_differential_test.go | window-bounds-and-step-alignment",
     "internal/proxy/absent_over_time_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/absent_over_time_test.go | status-400",
+    "internal/proxy/absent_zero_range_test.go | semantics/zero-range-metric",
     "internal/proxy/alerting_backend_failure_test.go | semantics/error-layer-backend-failure-status",
     "internal/proxy/alerting_backend_failure_test.go | semantics/error-layer-backend-text",
     "internal/proxy/alerting_backend_failure_test.go | semantics/error-layer-silent-success",
@@ -1435,6 +1436,7 @@
     "internal/proxy/error_layer_sites_test.go | semantics/error-layer-internal-go-text",
     "internal/proxy/error_layer_sites_test.go | semantics/error-layer-proxy-limit-status",
     "internal/proxy/error_layer_sites_test.go | semantics/error-layer-silent-success",
+    "internal/proxy/error_phase_grid_test.go | semantics/loki-error-phases",
     "internal/proxy/error_refusals_test.go | semantics/error-layer-internal-go-text",
     "internal/proxy/error_refusals_test.go | semantics/error-request-validation-parity",
     "internal/proxy/error_refusals_test.go | semantics/offset-different-per-range-vector",
@@ -2894,7 +2896,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 661,
+      "go": 663,
       "playwright": 1
     },
     "page_kinds": {

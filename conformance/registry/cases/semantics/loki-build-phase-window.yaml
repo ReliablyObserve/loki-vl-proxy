@@ -6,13 +6,15 @@ proves:
 consumer: api
 why: |
   Recorded over HTTP from the stack's pinned Loki (3.7.9) serving a fixture of the 10 minutes before the recording
-  (internal/lokierr/testdata/loki_build_phase.jsonl, 64 rows, error-answers-record with test/errorrecord -ingest):
+  (internal/lokierr/testdata/loki_build_phase.jsonl, 73 rows, error-answers-record with test/errorrecord -ingest):
 
   - A line_format or label_format template, a line filter regex or pattern, a json expression and an ip() label
-    filter that do not build answer 400 over any window that reaches the last three hours, as log and metric
-    queries, on query_range and query, also with a selector no stream matches and a line filter no line passes.
-  - The same queries answer 200 with an empty result over a window that ends five hours or more before the
-    recording (the fresh Loki's store holds nothing there), up to and past the 72h retention.
+    filter that do not build answer 400 over a window ending 150 minutes or less before the recording (100 minutes
+    for an instant metric query), as log and metric queries, on query_range and query, also with a selector no
+    stream matches and a line filter no line passes.
+  - The same queries answer 200 with an empty result over a window ending 165 minutes or more before the recording
+    (the fresh Loki held nothing there), up to and past the 72h retention. The edge does not follow the stack's
+    `query_ingesters_within: 30m`; what sets it is not recorded.
   - Over that old window, a request error (an instant log query, a limit that is not a number, the 11,000 points
     resolution, the query length), a parser action (a pattern parser) and the tree checks (a range grouping, sort
     with a grouping, the empty-compatible selector) still answer 400.
@@ -29,4 +31,4 @@ request:
 compare:
   mode: exact
   fields: [status, error_text]
-  expect: "Loki's status for every row: 400 over a window reaching the last three hours, 200 empty over an older empty window, 400 for the request, action and tree errors over any window."
+  expect: "Loki's status for every row: 400 over a window ending 150 minutes or less back, 200 empty over a window ending 165 minutes or more back with no data, 400 for the request, action and tree errors over any window."

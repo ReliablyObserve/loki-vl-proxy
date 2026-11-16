@@ -23,19 +23,21 @@ type buildPhaseRow struct {
 	} `json:"loki"`
 }
 
-// buildPhaseOldWindows are the windows of the recorded rows that end before Loki's last three hours, where it reads
-// the store only and the fresh Loki's store holds no line: the window past the retention, the windows at the
-// retention's edge, and the windows ending five hours to 26 hours before the recording.
+// buildPhaseOldWindows are the windows of the recorded rows that end 165 minutes or more before the recording, where
+// the fresh Loki held no line and answered without building the pipeline: the window past the retention, the windows
+// at the retention's edge, and the windows ending 165 minutes to 26 hours before the recording. A window ending 150
+// minutes or less before it (100 minutes for an instant query) built the pipeline.
 var buildPhaseOldWindows = []string{
 	":past-retention", ":inside-retention-edge", ":past-retention-edge", ":starts-past-retention-ends-inside",
-	":ends-300m-before", ":ends-600m-before", ":ends-780m-before", ":ends-870m-before", ":ends-900m-before",
-	":ends-1560m-before",
+	":ends-165m-before", ":ends-175m-before", ":ends-185m-before", ":ends-195m-before", ":ends-210m-before",
+	":ends-240m-before", ":ends-300m-before", ":ends-600m-before", ":ends-780m-before", ":ends-870m-before",
+	":ends-900m-before", ":ends-1560m-before", ":instant-170m-before", ":instant-190m-before",
 }
 
-// A pipeline stage Loki refuses to build answers 400 only when Loki builds it: over a window that reaches its last
-// three hours (where it asks its ingesters, which build the pipeline whatever they hold: a selector no stream
-// matches and a line filter no line passes fail too), and 200 with an empty result over an older window whose store
-// holds nothing. A request error (an instant log query, a limit parameter that is not a number, the resolution, the
+// A pipeline stage Loki refuses to build answers 400 only when Loki builds it: over a window that ends within about
+// two and a half hours of now (150 minutes and less recorded; a selector no stream matches and a line filter no line
+// passes fail too), and 200 with an empty result over a window ending 165 minutes or more back, where the fresh Loki
+// held nothing. A request error (an instant log query, a limit parameter that is not a number, the resolution, the
 // query length), a parser action and a tree check answer 400 over any window, the oldest included. A selector or
 // label filter regex error is Loki's parse error on /labels and /series too, and a pipeline build error there is
 // `only label matchers are supported`. Recorded over HTTP from a Loki that serves data (error-answers-record).
@@ -98,7 +100,7 @@ func TestLokiBuildPhaseWindowRecorded(t *testing.T) {
 	if err := sc.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if rows < 60 {
+	if rows < 70 {
 		t.Fatalf("%d rows", rows)
 	}
 }
