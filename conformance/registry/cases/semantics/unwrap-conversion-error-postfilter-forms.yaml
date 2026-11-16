@@ -6,10 +6,10 @@ proves:
 consumer: explore
 why: |
   Loki evaluates the label filters after an unwrap on a sample marked
-  SampleExtractionErr (pkg/logql/log/label_filter.go): a string filter on
-  __error__ compares "SampleExtractionErr" (lines 418-424), a comparison filter
+  SampleExtractionErr: a string filter on
+  __error__ compares "SampleExtractionErr", a comparison filter
   drops the sample when its label is missing, passes it when the label does not
-  parse and compares otherwise (lines 306-340), `and`/`or` combine those per
+  parse and compares otherwise, `and`/`or` combine those per
   line. The conversion-error detection (semantics/unwrap-conversion-error) rides
   on the metric's own VictoriaLogs query, which applies the post filters itself
   (the translator moves them before the gate), so it runs only where
@@ -48,7 +48,7 @@ gap:
   impact: edge
   effort: M
   area: 'internal/proxy/unwrap_conversion_error.go unwrapErrorPostFilters; the translator''s post-filter placement'
-  loki: 'pkg/logql/log/label_filter.go:90-100 BinaryLabelFilter.Process, 306-340 NumericLabelFilter.Process, 418-424 labelValue'
+  loki: 'a filter after an unwrap runs on a sample marked SampleExtractionErr: a string filter on __error__ compares the error text, a comparison drops a sample whose label is missing (captured on Loki 3.7.7, in this case)'
   proxy: 'no detection; 200 without the rows that do not convert'
   planned_test: 'TestUnwrapErrorProbePlans and TestUnwrapConversionErrorDifferential (internal/proxy) assert the detection stays off for these forms; flip them to compare'
   clusters:

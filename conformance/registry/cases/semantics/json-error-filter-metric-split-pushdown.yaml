@@ -11,10 +11,9 @@ why: |
   such query read all selected lines as raw rows into the row evaluator:
   1.6 s at 1 h (Loki 0.04 s) and a 502 on the row or byte limit at 6-24 h.
 
-  Loki (pkg/logql/log/parser.go:74-135 JSONParser.Process) runs
-  grafana/jsonparser ObjectEach over the line and walks a nested object only
-  when a required label starts with its key path (parser_hints.go
-  ShouldExtractPrefix); with `__error__` required parsing never stops early.
+  Loki parses
+  the line and walks a nested object only
+  when a required label starts with its key path; with `__error__` required parsing never stops early.
   So whether Loki accepts a line depends on the query, and no single LogsQL
   filter can match its JSONParserErr. The pushdown splits the selected lines
   instead:
@@ -122,7 +121,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy ordered_json_valid_split.go, ordered_json_metric.go stats pushdown'
-  loki: 'pkg/logql/log/parser.go:74-135 JSONParser.Process; pkg/logql/log/parser_hints.go:73-188; grafana/jsonparser parser.go ObjectEach/getType'
+  loki: 'the json parser adds __error__ to a line it rejects, and a metric over such lines splits by it (test/e2e-compat json_error_filter_split_test.go)'
   proxy: 'every selected line read as a raw row (502 at the row and byte limits at 6-24 h)'
   planned_test: 'TestRangeMetricCompatibilityJSONErrorFilterSplit, ...SplitSeriesLimit and ...SplitDetectedLevel (test/e2e-compat, group semantics: the stored-level, body-level, gap-line and deep-nested variants against Loki); proxy TestJSONValidSplitPredicateDifferential, FuzzJSONValidSplitPredicate, TestJSONLokiRejectHazardTable, TestJSONValidSplitEligibility, TestJSONValidSplitMatchesRawEvaluator, TestJSONValidSplitReadsOnlyRawRowBuckets, TestJSONValidSplitCountsDeepLinesLikeLoki, TestJSONValidSplitFilteredOutGroupsStayUnderSeriesLimit, TestJSONValidSplitRawOnlyGroupIsNotASeries, TestJSONValidSplitServiceNameFromStreamLabelWithNewline, TestJSONValidSplitHazardProbeUsesTheSplitBraceFilter, TestJSONValidSplitHazardProbeCancelsTheFirstScan, TestJSONValidSplitMergedAnswerOverTheLimitReturnsLokiError, TestJSONValidSplitOverTwiceTheLimitGroupsFallBackToRowEvaluator, TestJSONValidSplitLevelSpellingsMergeUnderTheLimit, TestJSONValidSplitLimitPlusOneSeriesWithoutRawRows, TestJSONValidSplitOversizedResponseOnlyFallsBackForSplitPlans, TestJSONValidSplitDrilldownRequestsKeepTheRowEvaluator, TestJSONValidSplitInstantQueriesKeepTheRowEvaluator, TestJSONValidSplitMarksRawCandidatesOnce, TestJSONValidSplitGapGroupsAreNoSeries, TestJSONValidSplitHugeResponseFallsBackWithBoundedMemory, TestJSONValidSplitFilteredOutGroupsUnderSizeCap, TestJSONValidSplitSeriesLimitFailsBeforeRawRows, TestJSONValidSplitReadStopsAtTwiceTheSeriesLimit, TestJSONValidSplitRawCandidatesFormOneGroup, TestJSONValidSplitRawCandidatesOverManyStreamsFormOneGroup, TestJSONValidSplitResponseTooLargeFallsBackToRawEvaluator, TestJSONValidSplitWithoutLabelsSendsNoEmptyUnpack, TestJSONValidSplitDetectedLevelWindowsMatchTheRowEvaluator, TestOrderedJSONRowProjectionKeepsTheStoredLevelFields'
   note: |

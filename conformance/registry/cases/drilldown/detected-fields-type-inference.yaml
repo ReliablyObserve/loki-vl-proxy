@@ -30,7 +30,7 @@ gap:
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy detected_fields type inference'
-  loki: 'pkg/querier detected fields type detection (v3.7.7): int before duration before string'
+  loki: 'int before duration before string (differential run in this case)'
   proxy: 'different type'
   planned_test: 'TestCompat_DetectedFieldsTypes (test/e2e-compat, group drilldown)'
   clusters: []

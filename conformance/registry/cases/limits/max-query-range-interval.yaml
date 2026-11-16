@@ -4,9 +4,10 @@ proves:
   - tenant-query-limits
   - loki_api_v1_query_range
 consumer: api
+evidence: needs recording
 why: |
-  Loki's engine rejects a metric query whose [range] exceeds max_query_range
-  (checkIntervalLimit) with logqlmodel.ErrIntervalLimit, a 400.
+  Loki rejects a metric query whose [range] exceeds max_query_range
+  (https://grafana.com/docs/loki/latest/configure/) with a 400.
 request:
   method: GET
   path: /loki/api/v1/drilldown-limits

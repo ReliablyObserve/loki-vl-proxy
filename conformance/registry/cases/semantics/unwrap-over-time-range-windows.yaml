@@ -7,9 +7,7 @@ consumer: explore
 why: |
   Loki evaluates `sum_over_time`, `avg_over_time`, `max_over_time` and
   `min_over_time` over unwrap on the window (t-range, t] for every step
-  (pkg/logql/range_vector.go:102-189 batchRangeVectorIterator.Next, load: the
-  lower bound is exclusive, the evaluation time inclusive;
-  range_vector.go:371-420 the functions).
+  (the lower bound is exclusive, the evaluation time inclusive).
 
   Range == step is fixed with semantics/unwrap-range-last-point (anchored step
   buckets relabelled onto the evaluation time each closes), range < step with
@@ -40,10 +38,10 @@ why: |
   the extreme for max and min, and a sample only where the window holds a line.
   `max by (L) (max_over_time(...))` and `min by (L) (min_over_time(...))`, L
   possibly empty, are the extreme of the group's lines in the window whatever
-  the series are (pkg/logql/range_vector.go:405-420, VectorAggEvaluator.Next):
+  the series are:
   VictoriaLogs groups those buckets by L (unwrapGroupPushdown), with no series
   per stream or line read, also over a JSON parser, and Loki's series limit
-  counts the groups (pkg/logql/engine.go:530-590 JoinSampleVector).
+  counts the groups.
   Windows overlap when the range is longer than the step, so one VictoriaLogs
   bucket per point cannot hold a window, and VictoriaLogs has no sliding-window
   stats: the merge in the proxy reads aggregated buckets only (series times
@@ -88,7 +86,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy unwrap_samples.go unwrapWindowBuckets, unwrapBucketAgg, mergeUnwrapBuckets; range_metric_compat.go handleStatsCompatRange, buildHitsRangeMetricMatrix'
-  loki: 'pkg/logql/range_vector.go:102-189 batchRangeVectorIterator (window (t-range, t]); range_vector.go:371-420 sumOverTime, avgOverTime, maxOverTime, minOverTime'
+  loki: 'sum, avg, max and min over unwrap read the window (t-range, t] at every step, lower bound exclusive (test/e2e-compat unwrap_over_time_window_test.go)'
   proxy: 'anchored gcd(range, step) buckets of the partial aggregate and the sample count, merged per window'
   planned_test: 'TestUnwrapOverTimeWindowsDifferential, TestUnwrapOverTimeRangeWindowEdgeCases, TestUnwrapOverTimeRawWindowBounds (internal/proxy); TestCompat_UnwrapOverTimeRangeWindows (test/e2e-compat, group core)'
   note: 'Range == step fixed with semantics/unwrap-range-last-point, range < step with semantics/unwrap-over-time-short-range-windows. Supersedes #740; includes #570.'

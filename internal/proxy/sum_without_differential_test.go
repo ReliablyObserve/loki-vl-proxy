@@ -21,10 +21,8 @@ import (
 )
 
 // This file pins `<op> without (pod) (<range function>)` to Loki's answer over
-// generated rows and windows: Loki v3.7.7 pkg/logql/evaluator.go
-// VectorAggEvaluator.Next (:451-466) groups the series of its input by every
-// label but the excluded ones (HashWithoutLabels, lb.Del) and folds each group
-// with the operator, so the answer keeps a series per remaining label set. The
+// generated rows and windows: Loki v3.7.7 groups the series of its input by
+// every label but the excluded ones and folds each group with the operator, so the answer keeps a series per remaining label set. The
 // range function is taken per series (the stream plus the labels a parser
 // extracted, less the unwrapped one) over (t-range, t].
 //
@@ -367,8 +365,7 @@ func TestSumWithoutDifferential(t *testing.T) {
 }
 
 // TestSumWithoutSeriesLimitOnFoldedAnswer: Loki counts max_query_series on the
-// answer of the vector aggregation (pkg/logql/engine.go:536-548 and :575-590
-// JoinSampleVector), so four streams folded into two series by `without (pod)`
+// answer of the vector aggregation, so four streams folded into two series by `without (pod)`
 // fit a limit of two, and a limit of one fails with Loki's 400 for a plain
 // client and keeps one series with Loki's warning for Logs Drilldown. The
 // proxy reads a row per stream from VictoriaLogs and applies the limit after
@@ -494,9 +491,8 @@ func TestSumWithoutSeriesLimitOnFoldedAnswer(t *testing.T) {
 				t.Fatalf("%s instant=%v limit 1: %d %s", query, instant, code, body)
 			}
 		}
-		// Two tenants: Loki keeps __tenant_id__ on every series
-		// (pkg/querier/multi_tenant_querier.go), so the answer is two series per
-		// tenant and the limit counts the merged answer.
+		// Two tenants: Loki keeps __tenant_id__ on every series, so the answer
+		// is two series per tenant and the limit counts the merged answer.
 		query := `sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m]))`
 		code, body, n := run(t, logfmtRows, query, instant, 4, false, "t1|t2")
 		if code != http.StatusOK || n != 4 || strings.Count(body, `"__tenant_id__"`) != 4 {

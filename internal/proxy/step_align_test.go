@@ -17,10 +17,10 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
-// lokiStepAlignNanos is Loki's StepAlignMiddleware
-// (pkg/querier/queryrange/queryrangebase/step_align.go:20-24) applied to one
-// bound, with the step in milliseconds as the codec keeps it
-// (pkg/querier/queryrange/codec.go:436), returned in nanoseconds.
+// lokiStepAlignNanos is Loki's step alignment applied to one bound, with the
+// step in milliseconds as Loki keeps it, returned in nanoseconds (checked
+// against recorded Loki answers by TestAlignQueryRangeToStep_DifferentialAgainstLokiDecode,
+// testdata/step_align_loki_answers.jsonl.gz).
 func lokiStepAlignNanos(t time.Time, stepMs int64) int64 {
 	return (t.UnixMilli() / stepMs) * stepMs * int64(time.Millisecond)
 }
@@ -126,9 +126,8 @@ func TestAlignQueryRangeToStep_LokiStepAlignMiddleware(t *testing.T) {
 			aligned: true, start: 1700000000250 * 1e6, end: 1700000001750 * 1e6, stepMs: 250,
 		},
 		{
-			// Loki rounds the fraction of a decimal bound to milliseconds
-			// (pkg/loghttp/params.go:166-171): .3 is .300, not the float's
-			// .29999..., which a 100ms grid would move down to .200; .9996 is
+			// Loki rounds the fraction of a decimal bound to milliseconds:
+			// .3 is .300, not the float's .29999..., which a 100ms grid would move down to .200; .9996 is
 			// the next whole second.
 			name:    "decimal-second bounds are rounded to milliseconds first, as Loki does",
 			params:  url.Values{"query": {metric}, "start": {"1700000000.3"}, "end": {"1700000010.9996"}, "step": {"0.1"}},

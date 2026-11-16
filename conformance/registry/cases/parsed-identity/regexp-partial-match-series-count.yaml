@@ -72,7 +72,7 @@ gap:
   impact: api-only
   effort: M
   area: 'internal/proxy regexp capture series identity (non-matching lines)'
-  loki: 'pkg/logql/log/parser.go RegexpParser (no capture label for a non-matching line)'
+  loki: 'no capture label for a non-matching line (measured against live Loki, in this case)'
   proxy: 'about 3x Loki''s series'
   planned_test: 'TestCompat_RegexpPartialMatchSeries (test/e2e-compat, group semantics)'
   clusters:

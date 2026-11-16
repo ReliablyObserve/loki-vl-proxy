@@ -4,8 +4,7 @@ proves:
   - metric-series-identity
 consumer: explore
 why: |
-  Loki's sample labels include the entry's structured metadata
-  (pkg/logql/log/metrics_extraction.go:102-120), so a stream whose lines carry
+  Loki's sample labels include the entry's structured metadata, so a stream whose lines carry
   a per-line trace_id is many series: `rate({namespace="prod"}[1h])` is 49657
   series on Loki and 10155 on the proxy, and every
   count/min/max/avg/stddev/topk over such series folds different inputs (count
@@ -36,7 +35,7 @@ gap:
   impact: explore-visible
   effort: L
   area: 'internal/translator series identity (stats by stream); VictoriaLogs cannot group by a row''s remaining fields'
-  loki: 'pkg/logql/log/metrics_extraction.go:102-120 builder.Add(StructuredMetadataLabel) -> GroupedLabels'
+  loki: 'sample labels include structured metadata (series counts measured against live Loki, in this case)'
   proxy: 'stream identity'
   planned_test: 'differential run cluster count (bench/parity)'
   clusters:

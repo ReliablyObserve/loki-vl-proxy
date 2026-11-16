@@ -14,11 +14,9 @@ import (
 
 // detectedLevelProbe is one stored line and the detected_level Loki gives it.
 //
-// The body-only answers are Loki v3.7.7's own: the logic of
-// pkg/distributor/field_detection.go (extractLogLevelFromLogLine: the first
-// string value of an allowed level key, at depth 0 or 1 in document order,
-// counts only as a known spelling, otherwise the whole line is keyword
-// scanned) was run on each line. The answers for a level held by the stream
+// The body-only answers are Loki v3.7.7's own: the first string value of an
+// allowed level key, at depth 0 or 1 in document order, counts only as a known
+// spelling, otherwise the whole line is keyword scanned. The answers for a level held by the stream
 // or by a stored field follow the log-line derivation (deriveRowLevel) and
 // are pinned against real Loki by the e2e test
 // TestRangeMetricCompatibilityJSONDetectedLevelProbes.

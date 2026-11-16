@@ -562,7 +562,7 @@ func (h *topKHeap) better(a, b topKCandidate) bool {
 
 // encodeTopK keeps, per step, the k series Loki's topk or bottomk selects
 // among every series of each group, with one bounded heap per step and group.
-// Like Loki's JoinSampleVector it counts the series of the result, the union of
+// Like Loki it counts the series of the result, the union of
 // the ones that ranked at some step, against maxSeries: Loki's error for a
 // plain client, the series with the most selected samples and Loki's warning
 // for Logs Drilldown.

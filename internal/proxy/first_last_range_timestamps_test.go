@@ -18,15 +18,12 @@ import (
 
 // This file pins the evaluation timestamps of first_over_time and
 // last_over_time with unwrap on query_range to Loki v3.7.9's. Loki evaluates a
-// range aggregation at start, start+step, ..., end (pkg/logql/range_vector.go:
-// 102-113 batchRangeVectorIterator.Next); the sample at t reads the window
-// (t-range, t], the lower bound exclusive (range_vector.go:150-160 load), and is
-// stamped t (range_vector.go:189 At, r.current), first or last of the window
-// in timestamp order (range_vector.go:489-500). A range shorter than the step
-// reads the same window (range_vector.go:54-73, streamRangeVectorIterator).
-// The sharded first/last merge that keeps sample timestamps
-// (first_last_over_time.go) runs only under shard_aggregations, which is off by
-// default (shardmapper.go:30-48, 616). With align_queries_with_step the query
+// range aggregation at start, start+step, ..., end; the sample at t reads the
+// window (t-range, t], the lower bound exclusive, and is stamped t, first or
+// last of the window in timestamp order. A range shorter than the step reads
+// the same window. The sharded first/last merge that keeps sample timestamps
+// runs only under shard_aggregations, which is off by default. With
+// align_queries_with_step the query
 // frontend moves start and end down to multiples of the step first.
 //
 // VictoriaLogs labels a stats_query_range bucket by its start and the bucket

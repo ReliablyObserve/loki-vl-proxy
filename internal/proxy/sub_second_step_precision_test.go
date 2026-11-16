@@ -25,8 +25,8 @@ func vlStepReadWithinFloat64(read, want int64) bool {
 
 // A step Loki accepts but VictoriaLogs cannot hold exactly. Loki v3.7.9 reads
 // `7000000001` as float seconds scaled by float64(time.Second)
-// (pkg/loghttp/params.go:191-203, 7.000000001e18 ns, under int64) and answers
-// it: the range is not more than 11,000 steps (pkg/loghttp/query.go:510), the
+// (7.000000001e18 ns, under int64) and answers
+// it: the range is not more than 11,000 steps, the
 // frontend keeps Milliseconds() of the float (7000000000999) and the range gets
 // its one sample at the start. The proxy keeps the same milliseconds and sends
 // them as an exact count; VictoriaLogs turns the count into 7000000000999000064
