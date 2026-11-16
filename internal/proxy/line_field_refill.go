@@ -148,6 +148,11 @@ func (p *Proxy) filterLineFieldPage(page io.Reader, seen map[string]struct{}, bo
 			stored = value.GetStringBytes("_msg")
 		}
 		drop := false
+		if readsPlaceholderAsLine(exposure, stored) {
+			if obj, oerr := value.Object(); oerr == nil {
+				stored = []byte(rebuildLogLineFJ(obj, parseStreamLabels(string(value.GetStringBytes("_stream"))), exposure.placeholderLineFields))
+			}
+		}
 		if !isVLMissingMsgBytes(stored, p.defaultMsgValue()) {
 			stream := parseStreamLabels(string(value.GetStringBytes("_stream")))
 			if level := value.GetStringBytes("level"); levelAsLabel && len(bytes.TrimSpace(level)) > 0 {

@@ -98,7 +98,7 @@ Over the limit, Loki keeps the first series it meets while evaluating; the
 proxy keeps the busiest. For series of equal volume the kept set can differ;
 the values of every kept series match Loki's. The residual-chunk suppression
 exists for Grafana's merge of split chunks (see
-[Drilldown compatibility](../compatibility-drilldown.md#long-range-histograms-and-grafana-querysplitting)).
+[Drilldown compatibility](../compatibility-drilldown.md#long-range-histograms-loaded-in-pieces)).
 
 A breakdown counts a line whose stored `f` differs from its body key under the
 stored value, as Loki does. Other queries that filter on a parsed field, such

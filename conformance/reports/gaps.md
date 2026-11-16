@@ -46,14 +46,14 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 
 | Status | call sites | literal message | through the error layer | formatted at run time | of those, an error's own text | no body |
 |---|---:|---:|---:|---:|---:|---:|
-| 400 | 25 | 7 | 0 | 18 | 10 | 0 |
+| 400 | 24 | 7 | 0 | 17 | 9 | 0 |
 | 401 | 5 | 5 | 0 | 0 | 0 | 0 |
 | 403 | 2 | 2 | 0 | 0 | 0 | 0 |
 | 404 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 405 | 4 | 3 | 0 | 0 | 0 | 1 |
 | 429 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 500 | 6 | 6 | 0 | 0 | 0 | 0 |
-| set at run time | 179 | 1 | 175 | 2 | 1 | 1 |
+| set at run time | 180 | 1 | 176 | 2 | 1 | 1 |
 
 The registry holds one item per status (12) and one per Loki error message (44) under `conformance/registry/loki/errors/`; the messages are checked against recorded Loki answers, route by route and error kind by error kind, in the generated [error compatibility coverage](../../docs/error-compatibility-coverage.md).
 
@@ -66,11 +66,11 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 
 | Track | Item | Cases named | Wired | State |
 |---|---|---:|---:|---|
-| architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 99 | unknown |
+| architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 102 | unknown |
 | limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 15 | 8 | proven |
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 11 | 11 | proven |
 | semantics | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | 6 | 1 | unknown |
-| data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 5 | 7 | unknown |
+| data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 5 | 8 | unknown |
 | semantics | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | 2 | 1 | proven |
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 12 | 3 | gap |
@@ -85,23 +85,24 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | observability | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | 8 | 4 | unknown |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 11 | proven |
 | identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 6 | 5 | partial |
-| semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 23 | 13 | partial |
+| semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 23 | 15 | partial |
 | semantics | `patterns-loki-mining` — /loki/api/v1/patterns answers the patterns Loki's pattern ingester mines, from the lines VictoriaLogs holds | 9 | 9 | partial |
 | resource_control | `peer-cache-fleet-recovery` — With a ring owner down or every cache lost, the fleet answers like Loki from VictoriaLogs | 2 | 4 | partial |
 | resource_control | `peer-cache-label-values-index` — A replica that lost its disk restores the label-values index from its peers | 1 | 1 | partial |
 | resource_control | `peer-cache-metadata` — Label and detected-field answers are read from the ring owner and the disk tier | 4 | 1 | partial |
-| resource_control | `peer-cache-patterns` — Patterns mined on one replica are served by every replica and restored on a replica that lost its disk | 5 | 5 | partial |
+| resource_control | `peer-cache-patterns` — Patterns mined on one replica are served by every replica and restored on a replica that lost its disk | 5 | 6 | partial |
 | resource_control | `peer-cache-push-replay` — Pushes a replica cannot take while its breaker is open are buffered and replayed, so the fleet heals to full replication | 4 | 6 | unknown |
 | resource_control | `peer-cache-query-range-windows` — Log query windows computed by their ring owner are read by the other replicas | 2 | 1 | partial |
 | resource_control | `peer-cache-query-replies` — Completed query replies computed on one replica answer the same request on every replica | 2 | 1 | partial |
+| resource_control | `peer-cache-read-hedge` — A peer-cache read never waits on a paused or hung replica longer than the read hedge delay | 3 | 3 | partial |
 | resource_control | `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | 3 | 6 | partial |
 | resource_control | `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | 3 | 1 | partial |
 | observability | `query-stats-envelope` — Every query, query_range, volume and volume_range answer carries Loki's whole data.stats object, filled with measurements of that request in Loki's accounting | 14 | 8 | unknown |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 9 | 12 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
-| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 20 | partial |
+| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 12 | 22 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 5 | partial |
-| resource_control | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | 2 | 4 | unknown |
+| resource_control | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | 2 | 5 | unknown |
 | semantics | `tenant-auth-follows-loki` — X-Scope-OrgID is admitted and refused as Loki does, before any cache or VictoriaLogs call | 4 | 5 | proven |
 | semantics | `tenant-label-isolation` — Tenant-label mode confines every request to its org | 4 | 4 | proven |
 | semantics | `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | 4 | 13 | proven |
@@ -110,16 +111,8 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 
 ## LogQL surface (v3.7.7)
 
-64/72 constructs are referenced in proxy code. Not referenced anywhere:
+68/68 constructs are referenced in proxy code. Not referenced anywhere:
 
-- `--keep-empty` (operator, OpKeepEmpty)
-- `__first_over_time_ts__` (range_function, OpRangeTypeFirstWithTimestamp)
-- `__last_over_time_ts__` (range_function, OpRangeTypeLastWithTimestamp)
-- `__quantile_sketch_over_time__` (range_function, OpRangeTypeQuantileSketch)
-- `--strict` (operator, OpStrict)
-- `approx_topk` (operator, OpTypeApproxTopK)
-- `__count_min_sketch__` (operator, OpTypeCountMinSketch)
-- `variants` (operator, OpVariants)
 
 ## VictoriaLogs reuse opportunities
 
@@ -135,7 +128,7 @@ those apart needs translating each construct.
 | `and` | pipe-join | v1.40.0 | part: join inner keeps the rows with a match on the join fields; Loki's and matches whole label sets (or on/ignoring) per step |
 | `or` | pipe-union | v1.40.0 | part: union appends the rows of a second query; Loki's or keeps a right-side series only when no left-side series has its labels |
 
-LogQL constructs the proxy supports with no VictoriaLogs construct to serve them (7): `group_left`, `group_right`, `ignoring`, `on`, `rate_counter`, `unless`, `vector`
+LogQL constructs the proxy supports with no VictoriaLogs construct to serve them (11): `--keep-empty`, `--strict`, `approx_topk`, `group_left`, `group_right`, `ignoring`, `on`, `rate_counter`, `unless`, `variants`, `vector`
 
 Not a backend construct: `offset` (the proxy shifts the window it sends to VictoriaLogs, internal/proxy/query_translation.go extractLogQLOffset); `|` (pipeline syntax).
 

@@ -1,0 +1,43 @@
+id: severity/stored-log-dot-level-in-metric-chain
+title: A stored log.level field decides the detected_level of metric grouping, where Loki ignores it
+pending: true
+proves:
+  - severity-detected-level-derivation
+consumer: explore
+why: |
+  Loki stores structured metadata (and OTLP log attributes) named log.level
+  as log_level, which its level detection does not read (recorded:
+  edge/sm-log-dot-level and sm/key-log.level/* in
+  internal/proxy/testdata/detected_level_golden.json give unknown or the line's
+  level). VictoriaLogs keeps the name log.level. The per-row derivation of log
+  responses follows Loki; the detected_level chain sent to VictoriaLogs for
+  `sum by (detected_level)` reads a stored log.level field for every row, so a
+  metric grouped by detected_level can put such a row under the log.level
+  value where Loki and the proxy's log response say unknown or the line's level.
+  An unpacked JSON line's log.level (the line held it) is a level for Loki and
+  must stay one.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (detected_level) (count_over_time({app="<app>"}[5m]))'
+    start: 'now-15m'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [data.result]
+  expect: |
+    A row stored with log.level=WRN and line "hello" counts under
+    detected_level="unknown", as in Loki.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/translate/detected_level.go BuildDetectedLevelChain (the stored log.level step), internal/queryplan/lower/detected_level_ast.go levelChainPipes'
+  loki: 'structured metadata log.level is stored as log_level and is no level field (recorded answers, Loki 3.7.9)'
+  proxy: 'the chain reads a stored log.level field for rows with a message as well as for unpacked JSON lines'
+  planned_test: 'TestVLChainDetectedLevelMatchesVictoriaLogs (internal/proxy) with a log.level row, against the recorded table'
+  clusters: []

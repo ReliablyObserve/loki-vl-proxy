@@ -39,7 +39,12 @@ why: |
   query_range and query, the requests VictoriaLogs gets and the answer equal
   those of `by ()`. The flip gate (FuzzMetricFlipGate) holds the translator,
   which the rollback flag serves, to the spelling it reads as Loki does; it found
-  `sum by( ) (rate({A="0"}[1y]))`.
+  `sum by( ) (rate({A="0"}[1y]))`. The corpus shadow (TestPlanShadow) holds
+  each such row to the translator's text for the `by ()` spelling
+  (internal/testutil/blankgrouping Cut), the text the proxy serves, so the
+  rows are native there and no longer a known divergence: the plan's text for
+  `by( )` is the translator's for `by ()` byte for byte, and a ranking or
+  stddev under it is held to the proxy's own route.
 
   Not covered here: `without( )`. The translator reads a clause with a blank as
   one label and so keeps a row per stream, where `without ()` collapses the

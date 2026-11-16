@@ -63,13 +63,13 @@
     {
       "kind": "operator",
       "logql": "--keep-empty",
-      "supported_by_proxy": false,
+      "supported_by_proxy": true,
       "victorialogs": []
     },
     {
       "kind": "operator",
       "logql": "--strict",
-      "supported_by_proxy": false,
+      "supported_by_proxy": true,
       "victorialogs": []
     },
     {
@@ -157,30 +157,6 @@
       ]
     },
     {
-      "kind": "operator",
-      "logql": "__count_min_sketch__",
-      "supported_by_proxy": false,
-      "victorialogs": []
-    },
-    {
-      "kind": "range_function",
-      "logql": "__first_over_time_ts__",
-      "supported_by_proxy": false,
-      "victorialogs": []
-    },
-    {
-      "kind": "range_function",
-      "logql": "__last_over_time_ts__",
-      "supported_by_proxy": false,
-      "victorialogs": []
-    },
-    {
-      "kind": "range_function",
-      "logql": "__quantile_sketch_over_time__",
-      "supported_by_proxy": false,
-      "victorialogs": []
-    },
-    {
       "kind": "range_function",
       "logql": "absent_over_time",
       "supported_by_proxy": true,
@@ -207,7 +183,7 @@
     {
       "kind": "operator",
       "logql": "approx_topk",
-      "supported_by_proxy": false,
+      "supported_by_proxy": true,
       "victorialogs": []
     },
     {
@@ -767,7 +743,7 @@
     {
       "kind": "operator",
       "logql": "variants",
-      "supported_by_proxy": false,
+      "supported_by_proxy": true,
       "victorialogs": []
     },
     {
@@ -785,12 +761,16 @@
   ],
   "loki_version": "v3.7.7",
   "no_victorialogs_equivalent": [
+    "--keep-empty",
+    "--strict",
+    "approx_topk",
     "group_left",
     "group_right",
     "ignoring",
     "on",
     "rate_counter",
     "unless",
+    "variants",
     "vector"
   ],
   "not_applicable": [

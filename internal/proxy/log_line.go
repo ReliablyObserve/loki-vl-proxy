@@ -107,6 +107,12 @@ func storedLogLineFromFJ(row *fj.Value, streamLabels map[string]string, pipeline
 	if err != nil {
 		return ""
 	}
+	return rebuildLogLineFJ(obj, streamLabels, pipelineFields)
+}
+
+// rebuildLogLineFJ is the line rebuilt from a fastjson row's fields (see
+// storedLogLineFromFJ).
+func rebuildLogLineFJ(obj *fj.Object, streamLabels map[string]string, pipelineFields map[string]bool) string {
 	fieldsPtr := logLineBytesFieldsPool.Get().(*[]logLineField[[]byte])
 	fields := (*fieldsPtr)[:0]
 	obj.Visit(func(key []byte, v *fj.Value) {

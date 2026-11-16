@@ -1,7 +1,7 @@
 id: range_function-bytes-rate
 kind: range_function
 logql: "bytes_rate"
-loki_constant: OpRangeTypeBytesRate
+source: https://grafana.com/docs/loki/v3.7.x/query/metric_queries/
 generated:
   supported_by_proxy: true
   seen_in:

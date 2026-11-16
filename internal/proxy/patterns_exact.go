@@ -68,7 +68,9 @@ func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, 
 	if p.patternState != nil {
 		// One peer holds a selector's state, so every peer answers it with the same patterns.
 		if entries, ok := p.patternsFromOwner(r, scope); ok {
-			return entries, true, true
+			// An empty answer from the owner is not kept as read: the owner may answer empty only because the
+			// lines have not reached VictoriaLogs yet, and it says nothing about whether it read any.
+			return entries, true, len(entries) > 0
 		}
 	}
 	entries, fromNs, lines, ok := p.patternsFromState(r, scope, maxLines, patternLimit)

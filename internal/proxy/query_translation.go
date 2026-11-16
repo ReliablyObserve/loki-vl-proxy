@@ -474,16 +474,7 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		// A query the typed lowering covers is served from it: the same text, so the shadow has nothing to compare.
 		if p.queryPlanLowering {
 			prof := loweringProfile(labelFn, streamFieldsMap, caps, keepLine)
-			if lowered, ok := p.lowerLogSelect(ctx, canon, prof); ok {
-				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
-			}
-			// A parser's series identity first: lowerMetric writes the translator's series for what this does not serve.
-			if !baseIdentity {
-				if lowered, ok := p.lowerDynamicIdentity(ctx, canon, prof); ok {
-					return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
-				}
-			}
-			if lowered, ok := p.lowerMetric(ctx, canon, prof); ok {
+			if lowered, ok := p.lowerTranslation(ctx, canon, prof, baseIdentity); ok {
 				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
 			}
 		}
@@ -1341,7 +1332,7 @@ func hideUnlistedBareParserMetricLevel(metric map[string]string, entry map[strin
 		return
 	}
 	msg, ok := entry["_msg"].(string)
-	if ok && exposure.hidesStoredLevel([]byte(msg)) {
+	if ok && exposure.hidesStoredLevelOf([]byte(msg)) {
 		delete(metric, "level")
 	}
 }
@@ -1365,6 +1356,7 @@ func (p *Proxy) bareParserMetricExposure(originalQuery, baseQuery string) *lineF
 		return nil
 	}
 	exposure := pipelineAddsLabels(logs.Pipeline)
+	p.withPlaceholderLine(&exposure, logs.Pipeline)
 	return &exposure
 }
 

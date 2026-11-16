@@ -691,9 +691,9 @@ func TestPeerCache_Get_RecordsTimeoutReason(t *testing.T) {
 		if value, _, ok := pc.Get(key); ok || value != nil {
 			t.Fatalf("expected timeout miss for key %q", key)
 		}
-		if got := pc.PeerErrorReasons()["timeout"]; got != 1 {
-			t.Fatalf("expected timeout reason count 1, got %d", got)
-		}
+		// The read stopped waiting after the give-up delay (half the
+		// timeout); the call it left records the timeout when it ends.
+		waitFor(t, "the timeout reason", func() bool { return pc.PeerErrorReasons()["timeout"] == 1 })
 		if got := pc.PeerErrors.Load(); got != 1 {
 			t.Fatalf("expected peer error count 1, got %d", got)
 		}
