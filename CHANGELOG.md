@@ -18,6 +18,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a tail still makes one VictoriaLogs query before it streams, and a failing backend still fails the request. The read is held to `max_entries_limit_per_query`,
   and it is best effort: a read that takes more than two seconds is skipped, and the tail starts with its live
   entries. `start` is now read in all of Loki's time forms; Unix seconds were read as nanoseconds before.
+- `absent_over_time` over a zero range (`[0s]`, `[0]`, with or without `offset`) now answers as Loki does: one
+  series valued 1 at every step on query_range and at the evaluation time on query, labelled with the selector's
+  equality matchers, also under `sum`, `count`, `stddev`, `max without (...)` and the other vector aggregations,
+  `topk`, `bottomk`, `sort`, `sort_desc` and `label_replace`. A zero range holds no sample in any window, so the
+  answer reads no data: it is written from the parsed query before the response cache, the query plan and any
+  VictoriaLogs call. The proxy answered `500 Internal Server Error` (and, on query with VictoriaLogs data behind it,
+  a series carrying a `detected_level` label Loki does not write) (semantics/zero-range-metric).
+
+### Changed
+
+- Loki's error answers are recorded from a Loki that holds data. The recorder (`test/errorrecord`) writes a small
+  fixture to the Loki and waits until its range metric path serves it (`-ingest`, a step of the weekly
+  `error-answers-record` workflow) before it asks the recorded requests, and every row it records carries the state
+  of the Loki it was recorded from (`"state": "serving"`); the recorder also waits until every Loki module is running.
+  Each row asks the window it asked when it was written, moved to now, as the end-to-end comparison asks it: over a
+  window older than what it holds, Loki answers `/patterns` given a query that is not a stream selector with its
+  empty success instead of `400 only label matchers are supported`, so an unmoved window recorded that instead of
+  the answer a client gets. A row added by hand with no answer yet is recorded whatever it is marked.
 
 ### Changed
 
