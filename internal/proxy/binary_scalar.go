@@ -22,7 +22,7 @@ func binaryScalarValue(expr logqlpkg.Expr, depth int) (float64, bool) {
 // binaryConstantValue folds an expression of literals and vector(n) into its
 // value, and says whether any operand was a vector(n), making the result a
 // one-sample vector with no labels instead of a scalar. A division by zero is
-// NaN, as in Loki's MergeBinOp (pkg/logql/syntax/ast.go). A comparison with a
+// NaN, as in Loki (registry semantics/binary-division-by-zero-nan). A comparison with a
 // vector operand needs the bool modifier and the generic binary path.
 func binaryConstantValue(expr logqlpkg.Expr, depth int) (value float64, isVector, ok bool) {
 	if depth >= 64 {

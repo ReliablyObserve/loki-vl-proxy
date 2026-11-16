@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Code comments, operator-facing limit descriptions and the generated configuration pages no longer cite Loki source
+  files or lines. They state what Loki does and name the evidence kept in this repository: a recorded Loki answer, a test
+  that compares with Loki, a registry case or Loki's public documentation. No behaviour changes.
 - Loki's error answers are recorded from a Loki that holds data. The recorder (`test/errorrecord`) writes a small
   fixture to the Loki and waits until its range metric path serves it (`-ingest`, a step of the weekly
   `error-answers-record` workflow) before it asks the recorded requests, and every row it records carries the state

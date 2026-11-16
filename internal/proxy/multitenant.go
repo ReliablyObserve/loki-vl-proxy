@@ -103,7 +103,7 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	wg.Wait()
 
 	// Loki fails a multi-tenant request as a whole when any tenant fails
-	// (pkg/querier/multi_tenant_querier.go returns the first tenant error), so
+	// (it returns the first tenant error), so
 	// nothing is merged or cached from a fanout with a failed tenant.
 	var failed *tenantResult
 	for i := range results {
@@ -674,8 +674,7 @@ func applyTenantMatch(tenantIDs []string, op, raw string) ([]string, bool, error
 		}
 	case "=~":
 		// __tenant_id__ is a Loki LABEL matcher, so its regexp is anchored the
-		// same way every other one is (Loki filterValuesByMatchers,
-		// pkg/querier/multi_tenant_querier.go:421): without this `=~"prod"`
+		// same way every other one is (registry semantics/tenant-label-default-aliases): without this `=~"prod"`
 		// also selects `prod-eu` and `nonprod`, and it decides which tenants
 		// get queried.
 		re, err := regexp.Compile(logsql.AnchorLabelMatcherRegex(raw))
