@@ -40,6 +40,9 @@ func (p *Proxy) identityChunkBytes() int64 {
 // own per line, with two or three stats results each.
 const identityBytesPerRow = 256
 
+// identityRowsField is the field the row count of the chunk plan is read into.
+const identityRowsField = "__lvp_rows"
+
 // identityCountBuckets is how many buckets the row count of a request is read in, at most.
 const identityCountBuckets = 256
 
@@ -83,18 +86,10 @@ func (c rowCounts) within(from, to int64) int64 {
 	return n
 }
 
-// identityCountQuery is the count of the selection of base (its filters, before any pipe), the cheapest read of the
-// rows a window holds; a base the LogsQL parser does not read is counted whole (exact, with its parser and gate).
-func identityCountQuery(base string) string {
-	if q, err := logsql.Parse(base); err == nil && q.Filter != nil {
-		return logsql.Query{Filter: q.Filter, Pipes: []logsql.Pipe{logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.Count{}, Alias: "__lvp_rows"}}}}}.String()
-	}
-	return base + " | stats count() as __lvp_rows"
-}
-
-// readRowCounts reads the rows of base per coarse bucket over [from, to].
+// readRowCounts reads the rows of base per coarse bucket over [from, to]: the rows its filter selects
+// (logsql.SelectionRowCount), no pipe of it run.
 func (p *Proxy) readRowCounts(ctx context.Context, base string, from, to time.Time, step time.Duration) (rowCounts, error) {
-	params := url.Values{"query": {identityCountQuery(base)}}
+	params := url.Values{"query": {logsql.SelectionRowCount(base, identityRowsField)}}
 	setSlidingStatsRangeParams(params, from, to, step)
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
 	if err != nil {
