@@ -129,6 +129,18 @@ def run_end_for(end, shape, rname, run, runs, refresh_s=0):
     return base - shape_shift(shape, rname) * run
 
 
+# An exact repeat is asked at a window that ended this long before the matrix's end: older than the proxy's
+# -query-range-freshness (10m, after which a window is historical and kept for hours), with a minute to spare, so
+# nothing about it is "recent" and its answer is the cache's to keep. The seed reaches back past it (daily.py).
+EXACT_REPEAT_AGE = 660
+
+
+def exact_repeat_end(end, shape, step):
+    """The settled end of a shape's exact repeat: EXACT_REPEAT_AGE before the shape's own end, on the range's step."""
+    settled = end - int(shape.get("end_offset", 0)) - EXACT_REPEAT_AGE
+    return settled - settled % step if step else settled
+
+
 def shape_query(shape, step):
     """The shape's query with $__auto set to the range's step."""
     return shape.get("query", "").replace("$__auto", f"{step}s")
@@ -265,17 +277,24 @@ def plan_windows(spec, sets, ranges, runs, confirm_runs, end, refresh_s=0, refre
     return plans
 
 
-def request(url, headers, tenant, timeout):
+def request_full(url, headers, tenant, timeout):
+    """(status, body, seconds, started, calls): calls is the proxy's X-Loki-VL-Backend-Calls for this request (a proxy run
+    with -debug-vl-calls-header), None when the answer carries none."""
     req = urllib.request.Request(url, headers={"X-Scope-OrgID": tenant, **headers})
     t0 = time.time()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            body, status = r.read(), r.status
+            body, status, calls = r.read(), r.status, r.headers.get(reuse.CALLS_HEADER)
     except urllib.error.HTTPError as e:
-        body, status = e.read(), e.code
+        body, status, calls = e.read(), e.code, e.headers.get(reuse.CALLS_HEADER)
     except (urllib.error.URLError, OSError) as e:
-        return 0, str(e).encode()[:200], time.time() - t0, t0
-    return status, body, time.time() - t0, t0
+        return 0, str(e).encode()[:200], time.time() - t0, t0, None
+    return status, body, time.time() - t0, t0, reuse.calls_of(calls)
+
+
+def request(url, headers, tenant, timeout):
+    status, body, seconds, started, _ = request_full(url, headers, tenant, timeout)
+    return status, body, seconds, started
 
 
 def is_timeout(status, body):
@@ -396,6 +415,47 @@ def signature(status, body, logs, ranked=False):
     return f"{sig} not_numbers={not_numbers}" if not_numbers else sig
 
 
+def exact_repeat_pass(targets, shape, rname, query, secs, step, end, args):
+    """The exact repeat of one shape and range on every proxy target: the same request twice in a row at a settled window,
+    each proxy's two asks back to back (before another target's ask and before its cache entry could age out).
+
+    The first ask fills (what it cost is kept as the settled window's cold cost); the second is the repeat, whose
+    VictoriaLogs calls are the request's own count when the proxy gives one, and whose answer must be the first's. A
+    pair whose answers differ, or that did not answer 200 twice, carries a problem and no cost."""
+    run_end = exact_repeat_end(end, shape, step)
+    url_for = lambda base: request_url(base, shape, query, secs, step, run_end)  # noqa: E731
+    headers = request_headers(shape)
+    out = []
+    for tname, base in targets:
+        if tname == REFERENCE_TARGET:
+            continue
+        asks = []
+        for _ in range(2):
+            before = reuse.scrape(base)
+            status, body, dt, _, calls = request_full(url_for(base), headers, args.tenant, args.timeout)
+            after = reuse.scrape(base) if before is not None else None
+            cost = reuse.delta(before, after) if after is not None else None
+            if cost is not None and calls is not None:
+                cost = reuse.with_request_calls(cost, calls)
+            asks.append({"status": status, "seconds": round(dt, 3), "reuse": cost, "vl_calls_header": calls,
+                         "signature": signature(status, body, shape.get("logs", False),
+                                                query.lstrip().startswith(("topk", "bottomk")))})
+        fill, repeat = asks
+        row = {"target": tname, "shape": shape["name"], "range": rname, "end": run_end,
+               "fill": {k: v for k, v in fill.items() if k != "signature"},
+               "repeat": {k: v for k, v in repeat.items() if k != "signature"}}
+        if fill["status"] != 200 or repeat["status"] != 200:
+            row["problem"] = f"status {fill['status']} then {repeat['status']}"
+        elif fill["signature"] != repeat["signature"]:
+            row["problem"] = "the repeat answered differently"
+        elif repeat["reuse"] is None:
+            row["problem"] = "the proxy's metrics could not be read"
+        out.append(row)
+        print(f"{shape['name'][:44]:44} {rname:>7} exact {tname:8} {repeat['status']} {repeat['seconds']:7.2f}s "
+              f"calls {repeat['vl_calls_header']} {row.get('problem', '')}", flush=True)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--set", required=True, help="shape set name in shapes.json")
@@ -443,6 +503,11 @@ def main():
     ap.add_argument("--quiet-cap-s", type=float, default=4.0, help="0 = no wait")
     ap.add_argument("--proxy-metrics", action="store_true",
                     help="read every proxy target's /metrics around each request: the cache reuse of the row (reuse.py)")
+    ap.add_argument("--exact-repeat", action="store_true",
+                    help="with --proxy-metrics: for every shape and range ask each proxy target the same request twice in a "
+                         "row at a settled window (EXACT_REPEAT_AGE before the end) and keep what the second one cost, "
+                         "apart from the runs that move the window: an exact repeat is the cache's to answer, 0 VictoriaLogs "
+                         "calls expected. Recorded as exact_repeats in the raw file")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     logs = dict(x.split("=", 1) for x in args.quiet_log)
@@ -482,6 +547,7 @@ def main():
     sampler.start()
     timed_out = read_known_timeouts(args.known_timeouts)
     restart0, rows, timings, timeouts, aborted = restarts(), [], [], [], False
+    exact_repeats = []
     pair, quiet_waited = 0, 0.0
     for shape in shape_set["shapes"]:
         if wanted and not any(shape["name"].startswith(w) for w in wanted):
@@ -524,7 +590,7 @@ def main():
                     headers = request_headers(shape)
                     metered = args.proxy_metrics and tname != REFERENCE_TARGET
                     before = reuse.scrape(base) if metered else None
-                    status, body, dt, t0 = request(url, headers, args.tenant, args.timeout)
+                    status, body, dt, t0, calls = request_full(url, headers, args.tenant, args.timeout)
                     after = reuse.scrape(base) if before is not None else None
                     if args.pause:
                         time.sleep(args.pause)
@@ -538,6 +604,11 @@ def main():
                         row["ranked_max_points"] = limit
                     if after is not None:
                         row["reuse"] = reuse.delta(before, after)
+                        if calls is not None:
+                            # The request's own count: the proxy's background calls in the metrics are not its.
+                            row["reuse"] = reuse.with_request_calls(row["reuse"], calls)
+                    if calls is not None:
+                        row["vl_calls_header"] = calls
                     timings.append((row, t0, dt))
                     cache = loki_cache_stats(body) if status == 200 else None
                     if cache:
@@ -553,6 +624,8 @@ def main():
                         break
                 if aborted:
                     break
+            if args.exact_repeat and args.proxy_metrics and not aborted:
+                exact_repeats.extend(exact_repeat_pass(targets, shape, rname, query, secs, step, end, args))
             if aborted:
                 break
         if aborted:
@@ -569,6 +642,7 @@ def main():
               "mode": "refresh" if args.refresh_s else "shifted", "refresh_s": args.refresh_s,
               "profile": args.profile, "not_like_for_like": args.not_like_for_like,
               "quiet_wait_s": round(quiet_waited, 1),
+              "exact_repeat_age_s": EXACT_REPEAT_AGE if args.exact_repeat else None, "exact_repeats": exact_repeats,
               "timeouts": timeouts, "rows": rows}
     with open(args.out, "w") as f:
         json.dump(result, f, indent=1)

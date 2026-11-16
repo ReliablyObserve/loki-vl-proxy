@@ -162,6 +162,8 @@ def main():
         specs = [("release", bins["release"], trees["release"], args.proxy_port),
                  ("main", bins["main"], trees["main"], args.proxy_port + 2)]
         supported = {name: stack.probe_align_support(binary) for name, binary, _, _ in specs}
+        # The builds that know it report each request's own VictoriaLogs calls (reuse.py); the baseline release may not.
+        calls_header = {name: stack.probe_calls_header_support(binary) for name, binary, _, _ in specs}
         for profile in profiles:
             if profile == "aligned" and args.profiles == "auto" and not any(supported.values()):
                 skipped[profile] = "the built binaries do not know -align-queries-with-step"
@@ -169,7 +171,8 @@ def main():
             restarted = profile != profiles[0]  # the first profile runs on the Loki the seed wrote to
             settings = st.set_profile(profile, (end - seed_s, end), args.seed_timeout)
             first = len(proxies)
-            stack.start_proxies(specs, out, st, args.service, proxies, profile=profile, supported=supported)
+            stack.start_proxies(specs, out, st, args.service, proxies, profile=profile, supported=supported,
+                                calls_header=calls_header)
             here = proxies[first:]
             unlike = [p.name for p in here if not stack.like_for_like(profile, p.align)]
             profile_meta[profile] = {"loki": settings, "proxy_align": {p.name: p.align for p in here},
@@ -183,7 +186,10 @@ def main():
                     continue
                 summary = pr_smoke.run_matrix(set_name, names, targets, args, end, st, out, args.runs, ranges=ranges,
                                               label="daily-smoke" if args.smoke else "daily",
-                                              extra=["--long-runs", f"release={args.long_runs}", "--proxy-metrics"],
+                                              extra=["--long-runs", f"release={args.long_runs}", "--proxy-metrics",
+                                                     # The smoke measures an exact repeat apart from the repeat that moves
+                                                     # the window (perf_matrix.py --exact-repeat, judged in smoke.py).
+                                                     *(["--exact-repeat"] if args.smoke else [])],
                                               profile=profile, unlike=unlike)
                 summary["baseline_ref"], summary["commit"] = baseline, head
                 summary["measured_at"], summary["date"] = measured_at, measured_at[:10]
