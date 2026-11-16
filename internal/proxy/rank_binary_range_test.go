@@ -13,10 +13,10 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
-// A ranking, stddev or stdvar over a binary operation on query_range is evaluated by the binary route, operand by
-// operand, as the instant handler evaluates it: every VictoriaLogs request is one operand's query (never the
-// translator's marker of the whole operation), a repeat of the request is served from the response cache with no
-// VictoriaLogs call, and the cached answer is the first one. The Loki answers are held by the differential
+// A ranking, stddev or stdvar over a binary operation (or one under an aggregation or a label_replace) is evaluated
+// operand by operand on query_range and query alike: every VictoriaLogs request is one operand's query (never the
+// translator's marker of the whole operation), and a repeat of a query_range request is served from the response
+// cache with no VictoriaLogs call and the first answer. The Loki answers are held by the differential
 // (internal/querycorpus TestRankOverBinaryMatchesLoki).
 //
 // conformance: semantics/rank-over-binary-operation
@@ -33,43 +33,56 @@ func TestRangeRankOverBinaryEvaluatesOperands(t *testing.T) {
 		{`topk by (app) (1, sum by (app, pod) (count_over_time({app="a"}[1m])) * 2)`, 1},
 		{`stddev(sum by (app) (count_over_time({app="a"}[1m])) / sum by (app) (count_over_time({app="b"}[1m])) * 100)`, 2},
 		{`sum(topk(2, sum by (app) (count_over_time({app="a"}[1m])) - sum by (app) (count_over_time({app="b"}[1m]))))`, 2},
+		// A binary operation under an aggregation or a label_replace is a query of its own.
+		{`topk(2, sum by (app) (count_over_time({app="a"}[1m]) * count_over_time({app="b"}[1m])))`, 2},
+		{`sort(label_replace(sum by (app) (count_over_time({app="a"}[1m])) / sum by (app) (count_over_time({app="b"}[1m])), "x", "$1", "app", "(.*)"))`, 2},
 	} {
-		t.Run(tc.query, func(t *testing.T) {
-			up := &upstreamRecorder{}
-			vl := httptest.NewServer(http.HandlerFunc(up.handler))
-			t.Cleanup(vl.Close)
-			p, err := New(Config{BackendURL: vl.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
-			up.take()
-			target := "/loki/api/v1/query_range?start=1609459200&end=1609462800&step=60&query=" + url.QueryEscape(tc.query)
-			headers := map[string]string{"X-Scope-OrgID": "0"}
-			first := doCompatProxyRequest(p, target, headers)
-			if first.Code != http.StatusOK {
-				t.Fatalf("status %d: %s", first.Code, first.Body)
-			}
-			stats := 0
-			for _, sent := range up.take() {
-				if strings.Contains(sent, "__binary__") || strings.Contains(sent, "%7C%7C%7C") {
-					t.Errorf("the binary marker reached VictoriaLogs: %s", sent)
+		for _, kind := range []struct{ name, target, stats string }{
+			{"query_range", "/loki/api/v1/query_range?start=1609459200&end=1609462800&step=60&query=", "/select/logsql/stats_query_range"},
+			{"query", "/loki/api/v1/query?time=1609462800&query=", "/select/logsql/stats_query?"},
+		} {
+			t.Run(kind.name+" "+tc.query, func(t *testing.T) {
+				up := &upstreamRecorder{}
+				vl := httptest.NewServer(http.HandlerFunc(up.handler))
+				t.Cleanup(vl.Close)
+				p, err := New(Config{BackendURL: vl.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error"})
+				if err != nil {
+					t.Fatal(err)
 				}
-				if strings.Contains(sent, "/select/logsql/stats_query_range") {
-					stats++
+				t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+				up.take()
+				target := kind.target + url.QueryEscape(tc.query)
+				headers := map[string]string{"X-Scope-OrgID": "0"}
+				first := doCompatProxyRequest(p, target, headers)
+				if first.Code != http.StatusOK {
+					t.Fatalf("status %d: %s", first.Code, first.Body)
 				}
-			}
-			if stats != tc.operands {
-				t.Errorf("%d stats requests, want one per operand (%d)", stats, tc.operands)
+				stats := 0
+				for _, sent := range up.take() {
+					if strings.Contains(sent, "__binary__") || strings.Contains(sent, "%7C%7C%7C") {
+						t.Errorf("the binary marker reached VictoriaLogs: %s", sent)
+					}
+					if strings.Contains(sent, kind.stats) {
+						stats++
+					}
+				}
+				if stats != tc.operands {
+					t.Errorf("%d stats requests, want one per operand (%d)", stats, tc.operands)
+				}
+				if kind.name != "query_range" {
+				// The repeat of an instant query is not asserted here: an instant answer of the fake VictoriaLogs is
+				// not cached on any route (a plain sum asks again too).
+				return
 			}
 			again := doCompatProxyRequest(p, target, headers)
-			if again.Code != http.StatusOK || again.Body.String() != first.Body.String() {
-				t.Fatalf("the repeat answers another body\nfirst  %d %s\nrepeat %d %s", first.Code, first.Body, again.Code, again.Body)
-			}
-			if reqs := up.take(); len(reqs) != 0 {
-				t.Errorf("the repeat asked VictoriaLogs again: %q", reqs)
-			}
-		})
+				if again.Code != http.StatusOK || again.Body.String() != first.Body.String() {
+					t.Fatalf("the repeat answers another body\nfirst  %d %s\nrepeat %d %s", first.Code, first.Body, again.Code, again.Body)
+				}
+				if reqs := up.take(); len(reqs) != 0 {
+					t.Errorf("the repeat asked VictoriaLogs again: %q", reqs)
+				}
+			})
+		}
 	}
 }
 
@@ -121,6 +134,11 @@ func TestRankOverBinaryFencesRangeKeysOnly(t *testing.T) {
 		if !strings.Contains(responseKeyFences(r, rank, site), rankOverBinaryResponseVersion) {
 			t.Errorf("site %d: the range key of %q carries no fence", site, rank)
 		}
+	}
+	// The settled steps of a topk or bottomk are stored under the inner range key, so they are fenced with it.
+	p := newCompatTestProxy(t, "http://unused")
+	if key := p.queryStepsBaseKey(r, rank); !strings.Contains(key, rankOverBinaryResponseVersion) {
+		t.Errorf("the settled steps key of %q carries no fence: %q", rank, key)
 	}
 	if strings.Contains(responseKeyFences(r, rank, responseKeyCompatQuery), rankOverBinaryResponseVersion) {
 		t.Errorf("the instant key of %q is fenced: its answers did not change", rank)

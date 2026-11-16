@@ -50,6 +50,11 @@ var rankBinaryShapes = []string{
 	// stddev and stdvar over a binary operation take the same route.
 	`stddev(sum by (pod) (count_over_time({job="rb"}[1m])) / sum by (pod) (count_over_time({job="rb", level="info"}[1m])))`,
 	`stdvar by (level) (sum by (pod, level) (count_over_time({job="rb"}[1m])) * 2)`,
+	// A binary operation under an aggregation or a label_replace inside the ranking.
+	`topk(2, sum by (pod) (count_over_time({job="rb"}[1m]) * count_over_time({job="rb", level="info"}[1m])))`,
+	`sort(label_replace(sum by (pod) (count_over_time({job="rb"}[1m])) / sum by (pod) (count_over_time({job="rb", level="info"}[1m])), "p", "$1", "pod", "(.*)"))`,
+	// A parser error inside an operand: the lines are logfmt, so | json marks every sample with __error__.
+	`topk(2, count_over_time({job="rb"} | json [1m]) > 0)`,
 	// Loki's errors: a many-to-one match without group_left, and a set operator with a number operand.
 	`topk(1, sum by (pod, level) (count_over_time({job="rb"}[1m])) / on (pod) sum by (pod) (count_over_time({job="rb"}[1m])))`,
 	`topk(1, sum by (pod) (count_over_time({job="rb"}[1m])) and 1)`,
@@ -57,7 +62,14 @@ var rankBinaryShapes = []string{
 
 // rankBinaryKnown are the runs that differ from Loki, by query and request kind, with the registry case holding the
 // difference open.
-var rankBinaryKnown = map[string]map[string]string{}
+var rankBinaryKnown = map[string]map[string]string{
+	// Status 400 and Loki's pipeline error text; the series the text names is not the one Loki names first, which is
+	// not deterministic in Loki either (as for the same query with no binary operation).
+	`topk(2, count_over_time({job="rb"} | json [1m]) > 0)`: {
+		"instant": "semantics/pipeline-error-text-parity", "step=range": "semantics/pipeline-error-text-parity",
+		"step<range": "semantics/pipeline-error-text-parity", "step>range": "semantics/pipeline-error-text-parity",
+	},
+}
 
 // rankBinaryFixture is the data of every query.
 func rankBinaryFixture() metricFixture {
@@ -187,7 +199,7 @@ func TestRankOverBinaryMatchesLoki(t *testing.T) {
 	if errorsSeen == 0 {
 		t.Error("no Loki error answer: the error shapes no longer reach Loki's error")
 	}
-	if nonEmpty < (len(queries)-2)*len(metricRequests("", time.Minute))*len(diffProfiles())*3/4 {
+	if nonEmpty < (len(queries)-3)*len(metricRequests("", time.Minute))*len(diffProfiles())*3/4 {
 		t.Errorf("only %d of the runs have a non-empty Loki answer", nonEmpty)
 	}
 }

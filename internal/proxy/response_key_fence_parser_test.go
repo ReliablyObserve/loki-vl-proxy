@@ -167,7 +167,7 @@ func (f *fenceFacts) expr(e logqlpkg.Expr) {
 		if e.Grouping != nil && e.Grouping.Without {
 			f.perStreamSeries = true
 		}
-		if _, binary := e.Inner.(*logqlpkg.BinOpExpr); binary {
+		if holdsBinaryOperand(e.Inner) {
 			switch e.Op {
 			case logqlpkg.VectorTopK, logqlpkg.VectorBottomK, logqlpkg.VectorSort, logqlpkg.VectorSortDesc, logqlpkg.VectorStddev, logqlpkg.VectorStdvar:
 				f.rankOverBinary = true
@@ -622,7 +622,7 @@ func fenceFires(name, query string) bool {
 		"stream-level-series":      func() string { return streamLevelSeriesResponseKeyVersion(query) },
 		"unwrap-dynamic-identity":  func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
 		"rank-over-binary": func() string {
-			return rankOverBinaryResponseKeyVersion(query, streamLevelSeriesResponseKeyVersion(query) != "" || scanFenceWords(query).stddev)
+			return rankOverBinaryFence(query)
 		},
 	}[name]() != ""
 }
@@ -728,6 +728,8 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"rank-over-binary", "StdVar\t(sum by (x) (rate({a=\"b\"}[1m])) * 2)", true},
 		{"rank-over-binary", `stddev(stddev_over_time({a="b"} | unwrap n [1m]))`, false},
 		{"rank-over-binary", `label_replace(sort(sum by (x) (rate({a="b"}[1m])) unless sum by (x) (rate({a="c"}[1m]))), "y", "$1", "x", "(.*)")`, true},
+		{"rank-over-binary", `topk(2, sum by (x) (rate({a="b"}[1m]) / rate({a="c"}[1m])))`, true},
+		{"rank-over-binary", `sort(label_replace(sum by (x) (rate({a="b"}[1m])) > 1, "y", "$1", "x", "(.*)"))`, true},
 		{"rank-over-binary", `topk(2, sum by (x) (rate({a="b"}[1m]))) / sum by (x) (rate({a="c"}[1m]))`, false},
 		{"rank-over-binary", `sort(rate({a="b"}[1m]))`, false},
 		{"rank-over-binary", `sum by (x) (rate({a="b"}[1m])) / sum by (x) (rate({a="c"}[1m]))`, false},

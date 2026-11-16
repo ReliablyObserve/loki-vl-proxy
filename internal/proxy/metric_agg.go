@@ -551,7 +551,8 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 
 	r = p.withRequestScope(r)
 	_, innerIsBinary := parsedInner.(*logqlpkg.BinOpExpr)
-	if innerIsBinary {
+	wrappedBinary := !innerIsBinary && holdsBinaryOperand(parsedInner)
+	if innerIsBinary || wrappedBinary {
 		// The operands of a binary expression fold and are limited on their own.
 		withoutLabels = nil
 	}
@@ -596,6 +597,10 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 			return
 		}
 		p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, left, right, binOpExprToVMInfo(binOp))
+		dispatched = true
+	} else if wrappedBinary {
+		// A binary operation under aggregations or a label_replace: the operand is a query of its own.
+		p.serveOperandAsQuery(sc, r, parsedInner, "vector")
 		dispatched = true
 	}
 
@@ -705,7 +710,8 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	r = p.withRequestScope(r)
 	parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner)
 	innerBinary, _ := parsedInner.(*logqlpkg.BinOpExpr)
-	if innerBinary != nil {
+	wrappedBinary := innerBinary == nil && holdsBinaryOperand(parsedInner)
+	if innerBinary != nil || wrappedBinary {
 		// The operands of a binary expression fold on their own.
 		withoutLabels = nil
 	}
@@ -742,6 +748,9 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		// queries (dropping a bool modifier and the right side of and, or and
 		// unless), never a query VictoriaLogs can read.
 		p.proxyBinaryLogQL(sc, innerR, innerBinary, "matrix")
+	} else if wrappedBinary {
+		// A binary operation under aggregations or a label_replace: the operand is a query of its own.
+		p.serveOperandAsQuery(sc, innerR, parsedInner, "matrix")
 	} else if bin, isBin := binaryOfStats(innerStats, innerIsStats); isBin {
 		// The operand is a stats query and a number (stdvar_over_time, the
 		// deviation squared), answered as the range route answers it.

@@ -40,7 +40,8 @@ func oldCompatQueryRangeFences(r *http.Request, query string) string {
 
 // rankOverBinaryFence is the range sites' last fence (semantics/rank-over-binary-operation), read on its own.
 func rankOverBinaryFence(query string) string {
-	return rankOverBinaryResponseKeyVersion(query, streamLevelSeriesResponseKeyVersion(query) != "" || scanFenceWords(query).stddev)
+	_, ranked := streamLevelSeriesScan(query)
+	return rankOverBinaryResponseKeyVersion(query, ranked || scanFenceWords(query).stddev)
 }
 
 func oldInnerQueryRangeFences(r *http.Request, query string) string {

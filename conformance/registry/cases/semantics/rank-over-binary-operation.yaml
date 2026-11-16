@@ -17,26 +17,35 @@ why: |
   operation and sent the translation, the marker of its two operands' queries
   (`__binary__:<op>:<left>|||<right>`), to VictoriaLogs as one query. A
   translation that lost the bool modifier or the right side of and, or and
-  unless was read as a plain stats query. Measured with the Loki engine
-  oracle and the VictoriaLogs serve oracle (v1.53.0 and v1.49.0) on five
-  streams: on every range request kind (step at, under and over the range)
-  one of sixteen shapes answered Loki's answer: rankings over a division,
+  unless was read as a plain stats query. Neither handler had a branch for a
+  binary operation under an aggregation or a label_replace inside the wrapper
+  (`topk(2, sum by (pod) (a * b))`, `sort(label_replace(a / b, ...))`): both
+  sent the marker and answered a 500 or missing series. Measured with the
+  Loki engine oracle and the VictoriaLogs serve oracle (v1.53.0 and v1.49.0)
+  on five streams, 19 shapes: on every range request kind (step at, under and
+  over the range) one shape answered Loki's answer; rankings over a division,
   vector matching, group_left, a bool comparison, and, or, unless and a chain
-  answered other values, extra or missing series or a 500, and the many-to-one
-  error answered `Internal Server Error` instead of Loki's text. Instant
-  answers matched.
+  answered other values, extra or missing series or a 500, and the
+  many-to-one error answered `Internal Server Error` instead of Loki's text.
+  Instant answers matched except the two wrapped shapes.
 
   Fixed: the range handler evaluates a binary operand by the binary route
   (proxyBinaryLogQL), as the instant handler does: every operand is a query
   of its own through the query handlers (and their caches), the operation is
   joined by the proxy's binary evaluator, and the ranking, stddev or stdvar
-  is applied to the joined matrix per step. The answers cached before the
-  fix are fenced on query_range (rankOverBinaryResponseVersion, read from the
-  query's plan); instant keys keep theirs.
+  is applied to the joined matrix per step. A binary operation under
+  aggregations or label_replace calls is answered, on both handlers, as a
+  query of its own through the query handlers (serveOperandAsQuery), which
+  route it as at the root. The answers cached before the fix are fenced on
+  query_range (rankOverBinaryResponseVersion, read from the query's plan);
+  instant keys keep theirs (the instant answers that changed were 500s, never
+  cached).
 
   A tie at the k-th place follows Loki's Go map order; the differential's
   shapes rank without ties (a bool comparison is ranked with k as large as
-  its series).
+  its series). A pipeline error inside an operand answers Loki's status and
+  text; the series the text names is the one difference, held by
+  semantics/pipeline-error-text-parity (Loki's choice is not deterministic).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -64,7 +73,7 @@ gap:
   status: fixed
   impact: explore-visible
   effort: S
-  area: 'internal/proxy/metric_agg.go (handleRangeMetricPostAggregation), internal/proxy/rank_binary_fence.go, internal/proxy/response_key_fences.go'
+  area: 'internal/proxy/metric_agg.go (handleRangeMetricPostAggregation, handleInstantMetricPostAggregation), internal/proxy/rank_binary_operand.go, internal/proxy/rank_binary_fence.go, internal/proxy/response_key_fences.go'
   loki: 'a ranking, stddev or stdvar over a binary operation is evaluated on the binary operation answer of each step (recorded with the Loki engine oracle: internal/querycorpus/testdata/rank-binary-loki-diff.jsonl.gz)'
   proxy: 'the binary route evaluates each operand as its own query and joins them; the wrapper is applied to the joined matrix'
   planned_test: 'TestRankOverBinaryMatchesLoki (internal/querycorpus, recorded Loki and VictoriaLogs v1.49.0/v1.53.0 answers), TestRangeRankOverBinaryEvaluatesOperands and TestRankOverBinaryFencesRangeKeysOnly (internal/proxy), TestResponseKeyFencesFireOnTheSpellingsTheParserReads and FuzzResponseKeyFencesMatchParsedTree (rank-over-binary rows)'
