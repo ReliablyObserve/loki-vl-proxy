@@ -63,6 +63,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   metrics: `loki_vl_proxy_peer_cache_read_hedges_total{action="next_replica"|"gave_up"}` and
   `loki_vl_proxy_peer_cache_read_hedge_delay_seconds`; peer error reason `peer_slow`.
 
+### Added
+
+- `-json-line-fields-as-line-keys` (Helm `extraArgs.json-line-fields-as-line-keys`, off by default): for JSON lines
+  pushed to VictoriaLogs' Loki push route without `disable_message_parsing=1`, which VictoriaLogs stores as one field
+  per key with its missing-message placeholder in `_msg`, the proxy reads every stored field of such a row as a key of
+  the row's JSON line, as Loki holds the pushed line. The fields are no labels until `| json` (or a json extraction
+  list) reads them, `| logfmt` reads none of them, a label filter on such a key with no parser drops the line, and a
+  query that unwraps or filters a label no stage can give such a line (after `| logfmt` or without a parser) leaves
+  those rows out in VictoriaLogs, so `max_over_time({...} | logfmt amount | unwrap amount [5m])` answers only the
+  logfmt streams. `| json` metric queries read such a row as a valid JSON object instead of answering
+  `JSONParserErr`. VictoriaLogs stores structured metadata pushed beside such a line among the line's keys, so the
+  flag hides it: leave it off when such pushes carry structured metadata. Pushing with `disable_message_parsing=1`
+  stays the supported setup and needs no flag. With the flag off nothing changes.
+
 ## [2.311.0] - 2026-11-16
 
 ### Changed
