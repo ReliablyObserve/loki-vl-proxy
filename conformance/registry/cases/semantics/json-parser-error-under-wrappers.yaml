@@ -63,6 +63,9 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     The stream holds at least one line that is not a JSON object in the window.
+  verify:
+    met_by: stack
+    evidence: "payment-service writes only logfmt lines (gen_payment_service, test/e2e-compat/log-generator.py:264-300, pushed at test/e2e-compat/log-generator.py:762-763): lines that are no JSON object, in every window of the stack's standing data."
 compare:
   mode: exact
   fields: [status, error_text]
