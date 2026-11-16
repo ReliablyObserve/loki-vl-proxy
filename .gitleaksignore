@@ -1,3 +1,6 @@
 # Historical browser-proof prose, not a credential. Current metadata is structured.
 # Exact commit/file/rule/line only; future changes remain scanned.
 0f60186536e2e11147670f9ed9e7999a48e573c3:bench/cache-placement/results/2026-10-31-s2-stats-retention/playground/provenance.json:generic-api-key:10
+
+# A test marker string named "secret" (the text a test asserts never reaches a client), not a credential.
+f274ee0f80db00f4112b3342bd623c5a71992cc5:internal/proxy/detected_level_levelless_test.go:generic-api-key:290
