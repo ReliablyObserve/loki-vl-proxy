@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answer reads no data: it is written from the parsed query before the response cache, the query plan and any
   VictoriaLogs call. The proxy answered `500 Internal Server Error` (and, on query with VictoriaLogs data behind it,
   a series carrying a `detected_level` label Loki does not write) (semantics/zero-range-metric).
+
+### Changed
+
 - Test support: the plan corpus leaves out the request of a registry case that compares only a client error, and six
   conformance cases for queries Loki rejects now carry an HTTP request the live verifier sends. No proxy behaviour changes.
 - Loki's error answers are recorded from a Loki that holds data. The recorder (`test/errorrecord`) writes a small
