@@ -78,6 +78,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 6 | partial |
 | semantics | `instrumentation-reveals-no-secrets` — /metrics and /config reveal no secret and no more than Loki's | 2 | 1 | proven |
 | semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 14 | 7 | partial |
+| semantics | `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | 6 | 0 | unknown |
 | identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 41 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 1 | gap |
 | observability | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | 6 | 5 | unknown |
