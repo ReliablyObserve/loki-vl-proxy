@@ -17,6 +17,7 @@ smoke	internal/proxy	FuzzNormalizeMetadataPairsFromJSON	12s	-	structured metadat
 smoke	internal/proxy	FuzzMergeLokiQueryResponsesStructuredMetadataContract	12s	-	merged categorized stream contract
 smoke	internal/proxy	FuzzParseLokiDuration	12s	-	parse Loki duration
 smoke	internal/proxy	FuzzParseTimestamp	12s	-	parse timestamp
+smoke	internal/proxy	FuzzPlaceholderExclusion	12s	-	the placeholder exclusion of -json-line-fields-as-line-keys terminates and writes a filter VictoriaLogs parses
 smoke	internal/proxy	FuzzMayHoldDropStage	12s	-	the precheck in front of the detected_level source-drop fence regexp never hides a match
 smoke	internal/proxy	FuzzStreamLevelSeriesFenceSpelling	12s	-	the stream level fence covers every case and blank spelling the parser reads
 smoke	internal/proxy	FuzzEnsureStreamDetectedLevel	12s	-	a series built from one stream takes the stream's level field, else the row's level field, normalised; the level label and a present detected_level never change

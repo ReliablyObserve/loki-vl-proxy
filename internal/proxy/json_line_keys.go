@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -169,12 +168,23 @@ func placeholderExclusionFrom(ctx context.Context) string {
 // never reach a stats pipe, a probe or a row page.
 func withExclusionParams(ctx context.Context, path string, params url.Values) url.Values {
 	f := placeholderExclusionFrom(ctx)
-	if f == "" || !strings.HasPrefix(path, "/select/logsql/") {
+	if f == "" || !readsQueryRows(path) {
 		return params
 	}
 	out := cloneURLValues(params)
 	out.Add("extra_filters", f)
 	return out
+}
+
+// readsQueryRows reports whether a VictoriaLogs path reads the rows of the
+// request's query: the metadata scans (field and stream names and values) are
+// shared inventories the exclusion does not change.
+func readsQueryRows(path string) bool {
+	switch path {
+	case "/select/logsql/query", "/select/logsql/stats_query", "/select/logsql/stats_query_range", "/select/logsql/hits":
+		return true
+	}
+	return false
 }
 
 // placeholderExclusion is the exclusion filter of a plan: rows whose _msg is

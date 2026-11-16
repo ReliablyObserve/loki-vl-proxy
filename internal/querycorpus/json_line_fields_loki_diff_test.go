@@ -506,8 +506,16 @@ func compareJLLog(loki metricLokiAnswer, run metricHandlerRun) metricDiff {
 // front of front.
 func runJLHandler(t *testing.T, prof diffProfile, v jlVariant, mode jlMode, mr metricRequest, front *metricFront) metricHandlerRun {
 	t.Helper()
+	serve := newJLProxy(t, prof, v, mode, front)
+	defer serve(metricRequest{})
+	return serve(mr)
+}
+
+// newJLProxy starts a proxy of the profile, the variant and the mode in front of front, and returns what serves one
+// request through it; serving the zero request stops it.
+func newJLProxy(t *testing.T, prof diffProfile, v jlVariant, mode jlMode, front *metricFront) func(metricRequest) metricHandlerRun {
+	t.Helper()
 	srv := httptest.NewServer(front)
-	defer srv.Close()
 	cfg := proxy.Config{
 		BackendURL:             srv.URL,
 		Cache:                  cache.New(time.Minute, 1000),
@@ -522,27 +530,96 @@ func runJLHandler(t *testing.T, prof diffProfile, v jlVariant, mode jlMode, mr m
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = p.Shutdown(context.Background()) }()
 	_ = p.ValidateBackendVersionCompatibility(context.Background())
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
-	path := "/loki/api/v1/query_range"
-	if mr.instant {
-		path = "/loki/api/v1/query"
+	return func(mr metricRequest) metricHandlerRun {
+		if mr.form == nil {
+			_ = p.Shutdown(context.Background())
+			srv.Close()
+			return metricHandlerRun{}
+		}
+		path := "/loki/api/v1/query_range"
+		if mr.instant {
+			path = "/loki/api/v1/query"
+		}
+		req := httptest.NewRequest(http.MethodGet, path+"?"+mr.form.Encode(), nil)
+		req.Header.Set("X-Scope-OrgID", "0")
+		if mr.kind == "log" {
+			req.Header.Set("X-Loki-Response-Encoding-Flags", "categorize-labels")
+		}
+		rec := httptest.NewRecorder()
+		front.mu.Lock()
+		front.sent, front.missing = nil, nil
+		front.mu.Unlock()
+		mux.ServeHTTP(rec, req)
+		front.mu.Lock()
+		defer front.mu.Unlock()
+		return metricHandlerRun{status: rec.Code, body: rec.Body.String(), sent: uniqueSorted(front.sent), missing: uniqueSorted(front.missing)}
 	}
-	req := httptest.NewRequest(http.MethodGet, path+"?"+mr.form.Encode(), nil)
-	req.Header.Set("X-Scope-OrgID", "0")
-	if mr.kind == "log" {
-		req.Header.Set("X-Loki-Response-Encoding-Flags", "categorize-labels")
+}
+
+// TestJSONLineFieldsRepeatServedFromCache holds the flag's reads to the caches: the same query_range request again on
+// the same proxy sends VictoriaLogs nothing and answers the same, for a log query, queries the placeholder exclusion
+// restricts and a | json split that keeps the placeholder rows. (An instant request reads VictoriaLogs again with the
+// flag off as well: this handler set has no response cache for it.)
+//
+// conformance: profiles/json-line-stored-without-line
+func TestJSONLineFieldsRepeatServedFromCache(t *testing.T) {
+	answers := readJLAnswers(t)
+	on := jlModes()[1]
+	for _, q := range []string{
+		`{app="jl"} | status="200"`,
+		`max by (pod) (max_over_time({app="jl"} | logfmt amount | unwrap amount [5m]))`,
+		`sum by (pod) (count_over_time({app="jl"} | status="200" [5m]))`,
+		`sum by (status) (count_over_time({app="jl", fmt="json"} | json [5m]))`,
+	} {
+		var jq jlQuery
+		for _, c := range jlQueries() {
+			if c.q == q && c.variant.name == "default" {
+				jq = c
+			}
+		}
+		rec := answers[jq.id()]
+		if rec == nil {
+			t.Fatalf("no answers for %s", q)
+		}
+		for _, prof := range diffProfiles() {
+			for _, mr := range jq.reqs {
+				if mr.instant {
+					continue
+				}
+				front := &metricFront{version: prof.version, answers: rec.VL[prof.version]}
+				serve := newJLProxy(t, prof, jq.variant, on, front)
+				first := serve(mr)
+				second := serve(mr)
+				serve(metricRequest{})
+				if len(jlRowReads(first.sent)) == 0 || first.status != http.StatusOK {
+					t.Errorf("%s %s %s: the first request sent %d reads (status %d)", prof.name, mr.kind, q, len(first.sent), first.status)
+				}
+				if reads := jlRowReads(second.sent); len(reads) != 0 {
+					t.Errorf("%s %s %s: the repeat sent %d VictoriaLogs reads: %.300v", prof.name, mr.kind, q, len(reads), reads)
+				}
+				if canonicalJLBody(first.body) != canonicalJLBody(second.body) {
+					t.Errorf("%s %s %s: the repeat answers otherwise", prof.name, mr.kind, q)
+				}
+			}
+		}
 	}
-	rec := httptest.NewRecorder()
-	front.mu.Lock()
-	front.sent, front.missing = nil, nil
-	front.mu.Unlock()
-	mux.ServeHTTP(rec, req)
-	front.mu.Lock()
-	defer front.mu.Unlock()
-	return metricHandlerRun{status: rec.Code, body: rec.Body.String(), sent: uniqueSorted(front.sent), missing: uniqueSorted(front.missing)}
+}
+
+// jlRowReads are the reads of the request's rows among sent request keys: the metadata inventory reads a proxy
+// refreshes in the background on the wall clock are not the request's.
+func jlRowReads(sent []string) []string {
+	var out []string
+	for _, k := range sent {
+		path, _, _ := strings.Cut(k, "?")
+		switch path {
+		case "/select/logsql/query", "/select/logsql/stats_query", "/select/logsql/stats_query_range", "/select/logsql/hits":
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // canonicalJLBody is an answer with its JSON objects' keys sorted, its result's series or streams sorted and its
