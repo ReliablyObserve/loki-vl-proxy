@@ -1,7 +1,7 @@
 id: operator-variants
 kind: operator
 logql: "variants"
-loki_constant: OpVariants
+source: loki parser (test/oracle/loki check)
 generated:
   supported_by_proxy: false
   seen_in:

@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Build the differential query corpus: every request the runner sends to Loki and the proxy.
 
-  corpus.py --out corpus.json [--loki-src DIR] [--captures DIR ...] [--seeded URL --end UNIX]
+  corpus.py --out corpus.json [--loki-docs VERSION] [--captures DIR ...] [--seeded URL --end UNIX]
 
 Sources (each entry records its `source`):
-  loki-tests   LogQL strings from Loki's own test suites (--loki-src: a checkout of
-               grafana/loki at the reference version, pkg/logql at least). Stream
-               selectors are rewritten onto the seeded data (a JSON, logfmt, plain
-               or mixed stream, picked by the parser the query uses); sharding and
-               template fixtures are dropped, and ranges longer than the seeded
-               hour are clamped to [1h].
+  loki-docs    the LogQL examples of Loki's published query documentation (--loki-docs: the documentation
+               version, such as v3.7.x; the pages are fetched from grafana.com, no Loki source is read).
+               Stream selectors are rewritten onto the seeded data (a JSON, logfmt, plain or mixed stream,
+               picked by the parser the query uses), and ranges longer than the seeded hour are clamped to
+               [1h].
   repo         the repository's own parity cases: LogQL in test/e2e-compat/*_test.go,
                test/e2e-compat/query-semantics-matrix.json, bench/ab/shapes.json and
                every conformance/registry case's request. Selectors naming data the
@@ -202,16 +201,52 @@ def clamp_ranges(query, limit_s=3600):
     return RANGE.sub(lambda m: m.group(0) if int(m.group(1)) * UNIT_S[m.group(2)] <= limit_s else "[1h]", query)
 
 
-def loki_tests(src):
-    paths = glob.glob(os.path.join(src, "pkg", "logql", "**", "*_test.go"), recursive=True)
+# The query documentation pages whose examples join the corpus.
+DOCS_URL = "https://grafana.com/docs/loki/{version}/query/{page}/"
+DOCS_PAGES = ("log_queries", "metric_queries", "query_examples", "query_reference", "template_functions")
+QUERY_START = re.compile(r"^(?:\{|[a-z_]+\s*(?:(?:by|without)\s*\([^)]*\)\s*)?\()")
+
+
+def docs_examples(text):
+    """The LogQL queries of a documentation page: the lines of its code blocks that start a query, a query that
+    spans several lines joined until its brackets close."""
+    import html
+    out = []
+    for block in re.findall(r"<pre[^>]*>(.*?)</pre>", text, re.S):
+        lines = html.unescape(re.sub(r"<[^>]+>", "", block)).splitlines()
+        current, depth = "", 0
+        for line in lines:
+            line = re.sub(r"\s+#.*$|\s+//.*$", "", line).strip()
+            if not line:
+                continue
+            if not current and not QUERY_START.match(line):
+                continue
+            current = (current + " " + line).strip()
+            depth += line.count("(") + line.count("{") - line.count(")") - line.count("}")
+            if depth <= 0:
+                out.append(current)
+                current, depth = "", 0
+    return out
+
+
+def loki_docs(version):
     out, seen = [], set()
-    for raw in sorted(extract_strings(paths)):
-        query = rewrite(raw, force=True)
-        query = clamp_ranges(query) if query else query
-        if not query or query in seen:
+    for page in DOCS_PAGES:
+        url = DOCS_URL.format(version=version, page=page)
+        request = urllib.request.Request(url, headers={"User-Agent": "loki-vl-proxy-parity"})
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                text = response.read().decode()
+        except OSError as err:  # a page that does not load leaves its examples out; a source with none refuses prune
+            print(f"loki-docs: {url}: {err}", file=sys.stderr)
             continue
-        seen.add(query)
-        out += query_entries("loki-tests", query, origin=raw)
+        for raw in docs_examples(text):
+            query = rewrite(raw, force=True)
+            query = clamp_ranges(query) if query else query
+            if not query or query in seen:
+                continue
+            seen.add(query)
+            out += query_entries("loki-docs", query, origin=f"{page}: {raw}")
     return out
 
 
@@ -385,15 +420,15 @@ def grafana_requests(capture_dirs, loki_uid="vp-loki"):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--loki-src", default="", help="checkout of grafana/loki at the reference version")
+    ap.add_argument("--loki-docs", default="", help="Loki documentation version whose query examples to add, such as v3.7.x")
     ap.add_argument("--captures", action="append", default=[], help="bench/visual capture output directory")
     ap.add_argument("--seeded", default="", help="Loki URL of the seeded stack, to generate the seeded corpus")
     ap.add_argument("--end", type=int, default=0, help="end of the seeded window (unix seconds)")
     ap.add_argument("--no-repo", action="store_true")
     a = ap.parse_args()
     entries = []
-    if a.loki_src:
-        entries += loki_tests(a.loki_src)
+    if a.loki_docs:
+        entries += loki_docs(a.loki_docs)
     if not a.no_repo:
         entries += repo_queries()
     if a.seeded:
