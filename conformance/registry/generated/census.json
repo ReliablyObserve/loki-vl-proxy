@@ -639,6 +639,8 @@
     "semantics/logql-unicode-runes | gap:fixed",
     "semantics/logql-unicode-runes | query",
     "semantics/loki-build-phase-window | compare:exact",
+    "semantics/loki-error-phase-order | compare:exact",
+    "semantics/loki-error-phase-order | gap:fixed",
     "semantics/loki-error-phases | compare:exact",
     "semantics/loki-keyword-label-names | compare:observed",
     "semantics/loki-keyword-label-names | gap:fixed",
@@ -1169,6 +1171,8 @@
     "internal/logql/count_values_test.go | semantics/count-values-unsupported",
     "internal/logql/dotted_names_test.go | profiles/dotted-name-parse-error",
     "internal/logql/error_order_loki_test.go | semantics/loki-error-phases",
+    "internal/logql/error_phase_calls_test.go | semantics/loki-error-phase-order",
+    "internal/logql/error_phase_fuzz_test.go | semantics/loki-error-phase-order",
     "internal/logql/input_size_test.go | architecture-syntax-package-layering",
     "internal/logql/ip_label_filter_validate_loki_test.go | semantics/ip-label-filter-invalid-pattern",
     "internal/logql/ip_line_filter_validate_loki_test.go | semantics/ip-label-filter-invalid-pattern",
@@ -1322,6 +1326,8 @@
     "internal/proxy/blank_after_keyword_test.go | semantics/parser-reads-unicode-blank-as-white-space",
     "internal/proxy/blank_after_keyword_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/proxy/blank_grouping_test.go | semantics/translator-reads-blank-grouping-as-none",
+    "internal/proxy/build_phase_replay_test.go | semantics/loki-build-phase-window",
+    "internal/proxy/build_phase_replay_test.go | semantics/loki-error-phase-order",
     "internal/proxy/build_phase_window_loki_test.go | semantics/loki-build-phase-window",
     "internal/proxy/capture_error_replay_test.go | limits/series-limit-error",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-backend-text",
@@ -1450,6 +1456,8 @@
     "internal/proxy/error_layer_sites_test.go | semantics/error-layer-internal-go-text",
     "internal/proxy/error_layer_sites_test.go | semantics/error-layer-proxy-limit-status",
     "internal/proxy/error_layer_sites_test.go | semantics/error-layer-silent-success",
+    "internal/proxy/error_phase_grid_test.go | semantics/loki-error-phase-order",
+    "internal/proxy/error_phase_grid_test.go | semantics/loki-error-phases",
     "internal/proxy/error_refusals_test.go | semantics/error-layer-internal-go-text",
     "internal/proxy/error_refusals_test.go | semantics/error-request-validation-parity",
     "internal/proxy/error_refusals_test.go | semantics/offset-different-per-range-vector",
@@ -2933,14 +2941,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 108,
+      "api": 109,
       "drilldown": 53,
       "explore": 190,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 682,
+      "go": 686,
       "playwright": 1
     },
     "page_kinds": {
@@ -2960,7 +2968,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 95,
-    "wired_items": 392
+    "wired_items": 393
   },
   "gates": [
     "A/B shape selection",

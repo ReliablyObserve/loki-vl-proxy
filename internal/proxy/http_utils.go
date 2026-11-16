@@ -109,8 +109,14 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
-	if err := validateLogQLSyntax(query); err != "" {
-		p.writeError(w, http.StatusBadRequest, truncateQueryError(err))
+	if v := cachedQueryValidation(query); v.msg != "" {
+		if endpoint == "query" && v.buildLogQuery {
+			// Loki refuses a log query on the instant route before it builds the query's pipeline.
+			p.writeErr(w, context.Background(), lokierr.InstantLogQuery())
+			p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
+			return "", false
+		}
+		p.writeError(w, http.StatusBadRequest, truncateQueryError(v.msg))
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
@@ -156,8 +162,11 @@ type queryValidation struct {
 	msg string
 	// tree is set when msg is a rejection of the typed tree's checks (queryplan.Validate), made after the
 	// parser and its semantic pass accepted the query.
-	tree   bool
-	sample bool
+	tree bool
+	// buildLogQuery is set when msg is the error of a pipeline stage Loki refuses to build in a log query: Loki
+	// answers an instant log query with its query type error ahead of it.
+	buildLogQuery bool
+	sample        bool
 	// answer says whether Loki answers the metric query without reading data: with no series whatever the data
 	// (emptyWhateverTheData), or with 1 at every step (an absent_over_time over a zero range, absentEveryStep).
 	answer dataFreeAnswer
@@ -178,8 +187,12 @@ func cachedQueryValidation(query string) queryValidation {
 			}
 		}
 	}
-	expr, msg, tree := validateQueryTree(query)
-	result := queryValidation{msg: msg, tree: tree, sample: msg == "" && isSampleExpr(expr)}
+	expr, msg, phase := validateQueryPhases(query)
+	result := queryValidation{msg: msg, tree: phase == phaseTree, sample: msg == "" && isSampleExpr(expr)}
+	if phase == phaseBuild {
+		_, result.buildLogQuery = expr.(*logql.LogQuery)
+		expr = nil
+	}
 	if msg == "" && expr != nil {
 		result.shift = queryShiftOf(expr)
 		if result.sample {
