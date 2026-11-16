@@ -27,7 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A log query with a pipeline stage that does not build, sent to `/loki/api/v1/query`, answers Loki's `log queries
     are not supported as an instant query type` (recorded row r0043).
 
-### Changed
+  The status was already 400 on every one of these queries; the text, which Grafana shows, is now Loki's. Held by a
+  grid of 1628 queries recorded with the Loki oracle (semantics/loki-error-phase-order): 532 answered differently
+  before, 51 do now.
 - A `topk` or `bottomk` whose first argument is not a number followed by a comma now answers Loki's parse error.
   Loki reads that argument as the expression the operation aggregates, so `topk(-1, sum by (level) (...))` answers
   400 `parse error at line 1, col 8: syntax error: unexpected ,` (the comma), as do `topk(1 + 2, ...)`,
