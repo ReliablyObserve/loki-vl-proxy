@@ -1974,6 +1974,9 @@
       "internal/proxy/without_fold_scope_test.go",
       "internal/proxy/without_open_shapes_test.go"
     ],
+    "semantics/topk-first-argument-error-text": [
+      "internal/logql/topk_param_loki_test.go"
+    ],
     "semantics/topk-grouped-spellings": [
       "internal/proxy/topk_fuzz_test.go",
       "internal/proxy/topk_range_differential_test.go",
@@ -2500,7 +2503,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 593,
+  "registry_items": 594,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2660,6 +2663,9 @@
     ],
     "internal/logql/terminates_test.go": [
       "semantics/logql-unicode-runes"
+    ],
+    "internal/logql/topk_param_loki_test.go": [
+      "semantics/topk-first-argument-error-text"
     ],
     "internal/logql/unicode_runes_loki_test.go": [
       "semantics/logql-unicode-runes"
@@ -5548,7 +5554,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 654,
+  "tests_with_markers": 655,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5648,5 +5654,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 381
+  "wired_items": 382
 }

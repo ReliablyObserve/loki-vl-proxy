@@ -2186,17 +2186,15 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 	// topk/bottomk carry a numeric parameter before the inner expression.
 	if op == VectorTopK || op == VectorBottomK {
 		if p.cur.Typ != TokNumber {
-			if p.cur.Typ == TokLBrace || p.cur.Typ == TokIdent && isLexerFunctionName(p.cur.Val) {
-				return nil, newParseError(0, 0, "parameter required for operation "+string(op))
-			}
-			return nil, p.syntaxErrorAt("")
+			first, err := p.parseExpr()
+			return nil, p.vectorParamError(op, first, err)
 		}
 		kTok := p.advance()
-		if p.cur.Typ == TokRParen {
-			return nil, newParseError(0, 0, "parameter required for operation "+string(op))
-		}
 		if p.cur.Typ != TokComma {
-			return nil, p.syntaxErrorAt("")
+			// Loki reads a number not followed by a comma as the start of the expression it aggregates
+			// (`topk(1 + 2, …)` fails at the comma, `topk(1)` for its missing parameter).
+			first, err := p.parseBinaryRHS(&LiteralExpr{}, 1)
+			return nil, p.vectorParamError(op, first, err)
 		}
 		// Loki (syntax.mustNewVectorAggregationExpr) requires an integer k > 0.
 		k, err := strconv.Atoi(kTok.Val)
@@ -2245,6 +2243,25 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 	}
 
 	return va, nil
+}
+
+// vectorParamError is Loki's answer to a topk or bottomk whose first argument is not a number followed by a comma.
+// Loki's grammar reads that argument as the expression the operation aggregates (first, or the error parsing it
+// gave): a comma after it is the unexpected token (`topk(-1, …)` fails at the comma, as `topk(1 + 2, …)` and
+// `topk(rate(…), 2)` do); a closing parenthesis after a metric expression leaves the operation without its parameter
+// (`topk(-1)`, `topk(rate(…))`), and one after a log query is the unexpected token, as inside any vector aggregation.
+func (p *parser) vectorParamError(op VectorOp, first Expr, err error) error {
+	if err != nil {
+		return err
+	}
+	if p.cur.Typ == TokRParen {
+		switch first.(type) {
+		case *LogQuery, *StreamSelector:
+			return p.syntaxErrorAt("")
+		}
+		return newParseError(0, 0, "parameter required for operation "+string(op))
+	}
+	return p.syntaxErrorAt("")
 }
 
 // parseGrouping parses `by (label1, label2)` or `without (label1)`.

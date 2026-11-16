@@ -312,6 +312,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/stage-name-followed-by-more-of-stage` — A stage that opens with a name followed by more of the stage (`\| a, b`, `\| a .5`, `\| a:b`) is Loki's 400 with Loki's text (fixed) | this change | 0 | 0 |
 | `semantics/step-duration-grammar-wider-than-loki` — the proxy accepted step durations Loki rejects (`1.5s`, `500us`, `1h30m5.5s`) where Loki answers 400 (fixed) | #1419 | 0 | 0 |
 | `semantics/step-nonpositive-or-unparsable-is-400` — query_range with a step of 0, a negative step or an unparsable step answers 400 as Loki does, not an empty 200 (fixed) | #1419 | 0 | 0 |
+| `semantics/topk-first-argument-error-text` — A topk or bottomk whose first argument is not a number followed by a comma is answered with Loki's parse error (fixed) | #PRNUM | 0 | 0 |
 | `semantics/unwrap-in-log-query` — A log query with an unwrap stage is accepted where Loki answers a syntax error (fixed) | TBD-PR | 0 | 0 |
 | `semantics/ip-filter-ipv4-after-dot-run` — An IPv4 ip() filter does not match an address after a run of dots that a digit or a dot precedes (fixed) | #1273 | 0 | 0 |
 | `semantics/ip-filter-ipv4-after-hex-colon` — An IPv4 ip() filter finds an address after hex digits and colons where Loki's scan finds it (fixed) | #1491 | 0 | 0 |
