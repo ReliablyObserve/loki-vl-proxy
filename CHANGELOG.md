@@ -21,6 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The `detected_level` escaped-value regexp now runs only on lines holding a backslash. The lines every probe
   selects and every answer are unchanged (quality/probe-regexp-parse-cost).
 
+### Fixed
+
+- A paused or hung peer-cache replica no longer stalls a request for `-peer-timeout` (2 s by default). A lookup that
+  misses memory and disk asks the key's replicas in ring order; when the replica asked has not sent its response headers
+  within the read hedge delay, the lookup also asks the next replica and takes the first answer, and with no replica left
+  it reads VictoriaLogs after `-peer-read-hedge-max-delay` (new flag and Helm value, default `200ms`, `0` turns it off).
+  The delay is twice the p99 of the peer header latencies the proxy measured, at least 5 ms, so a healthy fleet asks a
+  second replica for about one read in a hundred. The call left waiting runs on in the background, where its timeout
+  still suspends the peer for the breaker cooldown, and meanwhile reads ask that peer last or skip it, so one read per
+  proxy pays the delay; the half-open probe after the cooldown and the `/patterns` owner presence check are bounded the
+  same way. Before, the first lookup on a paused replica and the probe after every cooldown each waited the full peer
+  timeout (one query per run at 2.0 s and a `/labels` p99 at the timeout in a fleet run with one replica paused). New
+  metrics: `loki_vl_proxy_peer_cache_read_hedges_total{action="next_replica"|"gave_up"}` and
+  `loki_vl_proxy_peer_cache_read_hedge_delay_seconds`; peer error reason `peer_slow`.
+
 ## [2.306.0] - 2026-11-16
 
 ### Fixed
@@ -140,18 +155,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-stream detected_level marker also reads `topK` and `bottomK` written with the Kelvin sign (U+212A), and the
   marker of a parser's unwrap series identity reads a function name written with U+0130 (`avg_over_tİme`). A query spelled one of these ways may miss the cache once after the upgrade; queries spelled as
   before keep their keys.
-- A paused or hung peer-cache replica no longer stalls a request for `-peer-timeout` (2 s by default). A lookup that
-  misses memory and disk asks the key's replicas in ring order; when the replica asked has not sent its response headers
-  within the read hedge delay, the lookup also asks the next replica and takes the first answer, and with no replica left
-  it reads VictoriaLogs after `-peer-read-hedge-max-delay` (new flag and Helm value, default `200ms`, `0` turns it off).
-  The delay is twice the p99 of the peer header latencies the proxy measured, at least 5 ms, so a healthy fleet asks a
-  second replica for about one read in a hundred. The call left waiting runs on in the background, where its timeout
-  still suspends the peer for the breaker cooldown, and meanwhile reads ask that peer last or skip it, so one read per
-  proxy pays the delay; the half-open probe after the cooldown and the `/patterns` owner presence check are bounded the
-  same way. Before, the first lookup on a paused replica and the probe after every cooldown each waited the full peer
-  timeout (one query per run at 2.0 s and a `/labels` p99 at the timeout in a fleet run with one replica paused). New
-  metrics: `loki_vl_proxy_peer_cache_read_hedges_total{action="next_replica"|"gave_up"}` and
-  `loki_vl_proxy_peer_cache_read_hedge_delay_seconds`; peer error reason `peer_slow`.
 
 ## [2.301.0] - 2026-11-15
 
