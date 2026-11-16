@@ -15,9 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `severity`, `LEVEL` or `lvl` had no `detected_level` label at all on those queries. Those series are built by the
   proxy from a per-stream or raw-row read, which copied the stored `level` value and read no other level key. They
   now take the stream's level fields, else the row's `level` field, normalised as Loki does (`Debug` is `debug`); the
-  `level` label keeps its stored value. Plain range functions were already right: VictoriaLogs v1.49.0 and v1.53.0
-  compute the same values with the chain the proxy sends. Answers cached before the fix are not served again; the
-  fence now covers every metric query with a parser stage (semantics/detected-level-one-value-per-stream).
+  `level` label keeps its stored value. Plain range functions were already right for these streams: VictoriaLogs
+  v1.49.0 and v1.53.0 compute the same values with the chain the proxy sends (a stream label beside a stored level is
+  the next entry). Answers cached before the fix are not served again (the `@stream-level-series-v3` fence of the next
+  entry; semantics/detected-level-one-value-per-stream).
 - A stream's own level label now decides `detected_level` before a level stored on its lines, on every metric query
   type and at every step, as Loki does (stream label, then structured metadata, then the line). A stream labelled
   `severity="error"` whose lines carry structured metadata `level="debug"` said `debug` on `rate`, `count_over_time`,

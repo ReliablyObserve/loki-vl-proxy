@@ -582,3 +582,50 @@ func TestStreamLevelChainFence(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildMetricSeriesEntryLevelRule: the series of a raw row or of a stats group read by stream takes Loki's
+// detected_level when VictoriaLogs did not derive it. VictoriaLogs answers a raw row with its stream fields as fields,
+// so the row's level of a stream labelled level="ERROR" is ERROR: the stream's level fields decide first, normalised,
+// then the row's level field, normalised, then unknown. A value VictoriaLogs derived is kept (an empty one removes
+// the label), a detected_level stream label stays, and the level label keeps the row's stored value.
+//
+// conformance: semantics/detected-level-one-value-per-stream, metric-series-identity
+func TestBuildMetricSeriesEntryLevelRule(t *testing.T) {
+	p, err := New(Config{BackendURL: "http://unused", Cache: cache.New(60*time.Second, 10), LogLevel: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	str := func(s string) *string { return &s }
+	for _, c := range []struct {
+		name, stream, level string
+		derived             *string
+		want, wantLevel     string // "-" absent
+	}{
+		{"stream level ERROR, the row holds it", `{app="a",level="ERROR"}`, "ERROR", nil, "error", "ERROR"},
+		{"stream level Debug", `{app="a",level="Debug"}`, "Debug", nil, "debug", "Debug"},
+		{"stream severity beats the row's level", `{app="a",severity="error"}`, "debug", nil, "error", "debug"},
+		{"stream LEVEL", `{LEVEL="warning",app="a"}`, "", nil, "warn", "-"},
+		{"stream lvl unknown word", `{app="a",lvl="x"}`, "", nil, "x", "-"},
+		{"row level only", `{app="a"}`, "Warning", nil, "warn", "Warning"},
+		{"row level unknown word", `{app="a"}`, "notice", nil, "notice", "notice"},
+		{"nothing", `{app="a"}`, "", nil, "unknown", "-"},
+		{"a detected_level stream label stays", `{app="a",detected_level="fatal"}`, "", nil, "fatal", "-"},
+		{"VictoriaLogs derived", `{app="a",level="ERROR"}`, "ERROR", str("error"), "error", "ERROR"},
+		{"VictoriaLogs removed it", `{app="a",level="ERROR"}`, "ERROR", str(""), "-", "ERROR"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e := p.buildMetricSeriesEntry(c.stream, c.level, c.derived, nil, false, nil)
+			got, ok := e.metricLabels["detected_level"]
+			if !ok {
+				got = "-"
+			}
+			lvl, ok := e.metricLabels["level"]
+			if !ok {
+				lvl = "-"
+			}
+			if got != c.want || lvl != c.wantLevel {
+				t.Fatalf("labels %v: detected_level %q level %q, want %q and %q", e.metricLabels, got, lvl, c.want, c.wantLevel)
+			}
+		})
+	}
+}

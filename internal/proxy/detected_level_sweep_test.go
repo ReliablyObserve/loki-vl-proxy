@@ -70,6 +70,11 @@ var levelSweepQueries = []string{
 	`max_over_time(S | logfmt amount | unwrap amount [5m])`,
 	`count_over_time(S | logfmt [5m]) > 0`,
 	`sum by (detected_level) (count_over_time(S[5m]))`,
+	// The detected_level filters, which VictoriaLogs' chain evaluates: a stream keeps its lines under the filter of
+	// its own level and none under another.
+	`count_over_time(S | detected_level="error" [5m])`,
+	`count_over_time(S | detected_level="debug" [5m])`,
+	`sum(count_over_time(S | detected_level=~"err.*" [5m]))`,
 }
 
 var levelSweepModes = []string{"instant", "60", "300"}
@@ -285,6 +290,7 @@ var levelSweepKnown = []struct {
 		"the series the JSONParserErr text names come from the same per-stream read without a level column, so the text " +
 			"lacks the detected_level Loki's names (semantics/detected-level-stream-stats-without-level)"},
 	{"text", nil, nil, "emulator", "the emulator's raw rows hold the unwrapped field of every row, which the series of the error text name"},
+	{"series", []int{14, 15, 16}, nil, "emulator", "the emulator does not run the detected_level filter: every line passes it"},
 	{"series", []int{10, 11}, nil, "emulator", "the emulator runs no parser and unwraps the amount of every row; Loki answers only the lines whose parser extracts it"},
 	{"value", []int{5, 10}, []string{"body-json-warn", "body-json-WARNING"}, "emulator", "the emulator does not unpack a JSON line on the raw-row read, so the row holds no level field; VictoriaLogs answers warn"},
 }
@@ -364,8 +370,8 @@ func levelSweepRun(t *testing.T, loki map[string]levelSweepAnswer, backend, vers
 	return same, known, unexplained
 }
 
-// TestDetectedLevelSweepMatchesLoki: the 14 query types of TestOneDetectedLevelPerStreamAcrossQueryTypes, each at an
-// instant and on query_range at steps 60 and 300, over the 12 streams of levelSweepCases, against Loki's answers
+// TestDetectedLevelSweepMatchesLoki: the 14 query types of TestOneDetectedLevelPerStreamAcrossQueryTypes and three
+// detected_level filters, each at an instant and on query_range at steps 60 and 300, over the 12 streams of levelSweepCases, against Loki's answers
 // (the engine oracle over the lines with the detected_level live Loki gave them, LVP_RUN_ORACLES=1 records them
 // again): the status and an error's text, which queries answer series, and the detected_level of every series. The proxy runs over
 // the emulator, whose rows hold the stream fields as VictoriaLogs answers them and whose detected_level chain is
