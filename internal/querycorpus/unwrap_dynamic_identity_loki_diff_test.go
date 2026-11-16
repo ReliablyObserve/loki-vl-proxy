@@ -122,25 +122,6 @@ var dynamicIdentityKnown = func() map[string]map[string]string {
 			add(perSeries, all, q)
 		}
 	}
-	// A range longer than the step whose series are not all of one sample: the window evaluator merges the step
-	// buckets of streams.
-	sliding := []string{"step<range"}
-	for _, fn := range []string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time"} {
-		for _, shape := range dynamicIdentityShapes {
-			q := fmt.Sprintf(shape, keepIdentityHead(fn))
-			if strings.Contains(q, `__error__`) || fn == "max_over_time" && strings.HasPrefix(q, "max by (app) (") {
-				continue
-			}
-			add(perSeries, sliding, q)
-		}
-	}
-	// A binary operation reads each operand's series as the operand alone does: over a range longer than the step,
-	// the stream's (a maximum is above the mean whatever the series, so the comparison with bool answers Loki's).
-	for _, q := range dynamicIdentityBinaryQueries {
-		if !strings.Contains(q, "> bool") {
-			add(perSeries, sliding, q)
-		}
-	}
 	// A label filter between the parser and an unwrapped label whose name holds an underscore (duration_ms, which the
 	// line can spell duration.ms or duration-ms): the lowering does not serve the query, and the string translator's
 	// series are the stream and each line.

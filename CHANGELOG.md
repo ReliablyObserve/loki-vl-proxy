@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`,
+  `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep` now read Loki's series on
+  `query_range` with a range longer than the step too (sliding windows, the `$__auto` steps Grafana sends under a
+  `[5m]` range): the stream plus every parsed label except the unwrapped one. Those requests kept one series per
+  stream or per group, so `sum by (app) (avg_over_time({app="api"} | json | unwrap duration_ms [5m]))` at a 1m step
+  answered the group's pooled mean instead of the sum of the per-series means. VictoriaLogs now takes the function's
+  partial aggregates per series hash and per anchored bucket in one stats query, the proxy merges each series'
+  buckets into Loki's windows and folds the series by the outer aggregation; no raw rows are read, the reads are
+  bounded by `-manual-range-metric-row-limit` and the answer by the tenant's series limit. Binary operations of such
+  operands read the same series. `max by` over `max_over_time` and `min by` over `min_over_time` keep their
+  per-group read, which already matched Loki. Answers cached before the fix are not served again
+  (semantics/unwrap-per-series-identity-raw-rows).
 - An answer cached before a behaviour change is no longer served for a query written in another spelling of the same
   query. The version marker that keeps such answers out of the cache is now added for every spelling the LogQL parser
   reads: keywords and function names in any case (`| KEEP a`, `| UNWRAP n`, `TOPK(`, `SUM BY`, `| JSON`, `| LOGFMT`,

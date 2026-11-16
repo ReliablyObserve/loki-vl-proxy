@@ -1,5 +1,5 @@
 id: semantics/stdvar-grouped-pooled-variance
-title: an aggregation by labels over stdvar_over_time takes the variance of the group's pooled samples, not of each series (open, partly fixed - after a parser on query and on a range up to the step)
+title: an aggregation by labels over stdvar_over_time takes the variance of the group's pooled samples, not of each series (open, partly fixed - after a parser on query and on every range and step)
 pending: true
 proves:
   - metric-series-identity
@@ -39,9 +39,13 @@ why: |
   step. Proven against the Loki engine oracle and VictoriaLogs v1.53.0 and
   v1.49.0 on instant, step = range and step > range (TestStddevStdvarMatchLoki:
   the sum by, max by and avg by forms; TestKeepUnwrapIdentityMatchLoki and
-  TestUnwrapDynamicIdentityMatchLoki, json and logfmt). Still open: a range
-  longer than the step, which the window evaluator answers over the stream's
-  series.
+  TestUnwrapDynamicIdentityMatchLoki, json and logfmt). A range longer than the
+  step reads the same series: VictoriaLogs takes the deviation's partial
+  aggregates per series hash and per anchored bucket, the window evaluator merges
+  each series' buckets into its windows and squares each series' deviation, and
+  the clause's aggregation folds the series (step < range in the same three
+  differentials, every sum by, max by and avg by row matches Loki;
+  TestDynamicIdentityWindowsMatchLokiReference over generated windows).
 
 corpus:
   size: 2
@@ -67,6 +71,6 @@ gap:
   effort: M
   area: 'internal/queryplan/lower unwrap.go (varianceVector over the series identity), unwrap_dynamic.go (the series hash)'
   loki: 'stdvar_over_time is evaluated per series (range_vector.go); the vector aggregation then folds the series'
-  proxy: 'after a parser, the variance of each series then the aggregation by the clause (query and a range up to the step); otherwise the stddev of the group''s pooled samples, squared'
+  proxy: 'after a parser, the variance of each series then the aggregation by the clause (query and every range and step); otherwise the stddev of the group''s pooled samples, squared'
   planned_test: 'TestStddevStdvarMatchLoki, TestUnwrapDynamicIdentityMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicUnwrapIdentityLowering (internal/queryplan/lower); e2e: TestCompat_StdvarOverTimeGroupedAnswers200 values rows (test/e2e-compat; written, not yet run on a stack)'
   clusters: []

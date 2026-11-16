@@ -8,6 +8,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // dynamicHash is the identity pipes of a json parser over the unwrapped label n, as the lowering writes them.
@@ -196,6 +197,23 @@ func FuzzDynamicUnwrapIdentity(f *testing.F) {
 		}
 		if _, err := logsql.Parse(text); err != nil {
 			t.Fatalf("%q: %s does not parse: %v", q, text, err)
+		}
+		// With the hash before the unwrap gate (Profile IdentityAhead), the text parses, the gate ends the pipes before
+		// the first stats pipe and the stats pipes are the default's.
+		ahead, err := PlanQuery(q, p, Profile{IdentityAhead: true})
+		if err != nil {
+			t.Fatalf("%q: the default lowers, the hash ahead does not: %v", q, err)
+		}
+		at := physical.Encode(ahead)
+		first, dFirst := strings.Index(at, " | stats "), strings.Index(text, " | stats ")
+		if first < 0 || dFirst < 0 || at[first:] != text[dFirst:] {
+			t.Fatalf("%q: the stats pipes differ:\n%s\n%s", q, text, at)
+		}
+		if base, _, ok := translate.SplitUnwrapGate(at[:first]); !ok || !strings.HasSuffix(base, "| hash(__lvp_sid) as __lvp_sid") {
+			t.Fatalf("%q: the gate does not follow the hash: %s", q, at)
+		}
+		if _, err := logsql.Parse(at); err != nil {
+			t.Fatalf("%q: %s does not parse: %v", q, at, err)
 		}
 	})
 }

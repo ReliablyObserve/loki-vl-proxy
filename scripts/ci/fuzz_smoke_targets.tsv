@@ -136,7 +136,7 @@ smoke	internal/queryplan/lower	FuzzLabelFilterLowering	12s	-	label filters lower
 smoke	internal/queryplan/lower	FuzzDetectedLevelLowering	12s	-	label filters on detected_level lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzDetectedLevelNodes	12s	-	the typed detected_level builders print the text builders' text
 smoke	internal/queryplan/lower	FuzzRangeAggLowering	12s	-	range aggregations lower to the query the string translator writes
-smoke	internal/queryplan/lower	FuzzDynamicUnwrapIdentity	12s	-	a parser's series identity is decided alike, claimed only where every parsed label stays, and written as a text that parses
+smoke	internal/queryplan/lower	FuzzDynamicUnwrapIdentity	12s	-	a parser's series identity is decided alike, claimed only where every parsed label stays, and written as a text that parses, with the hash after the unwrap gate and before it (the window evaluator's text)
 smoke	internal/proxy	FuzzDynamicIdentityFenceMatchesPlan	12s	-	the response key fence of a parser's series identity fires exactly for the plans that hold it at any depth, in every spelling
 smoke	internal/queryplan/lower	FuzzVectorAggLowering	12s	-	vector aggregations lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzBinOpLowering	12s	-	binary operations and label_replace calls lower to the operators and text the string translator writes (an operand with a without clause: each operand to its own translation, a vector(n) operand: a constant, the proxy's binary route; a `without ()` operand: the lowering of the same query with a label in the clause)

@@ -480,6 +480,19 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 					f[fx.alias] = string(enc)
 					continue
 				}
+				if fx.kind == "stddev" {
+					// VictoriaLogs' stddev is the population deviation of the group's values.
+					var n, mean, m2 float64
+					for _, rec := range g.recs {
+						v, _ := strconv.ParseFloat(rec.f[fx.arg], 64)
+						n++
+						d := v - mean
+						mean += d / n
+						m2 += d * (v - mean)
+					}
+					f[fx.alias] = strconv.FormatFloat(math.Sqrt(m2/n), 'f', -1, 64)
+					continue
+				}
 				var acc float64
 				for i, rec := range g.recs {
 					v, _ := strconv.ParseFloat(rec.f[fx.arg], 64)

@@ -1,5 +1,5 @@
 id: semantics/unwrap-per-series-identity-raw-rows
-title: A function taken per series (avg, max, min, stddev, stdvar over time, rate_counter) under sum or sum by uses the stream as the series (open, partly fixed - avg to stdvar on query and on a range up to the step)
+title: A function taken per series (avg, max, min, stddev, stdvar over time, rate_counter) under sum or sum by uses the stream as the series (open, partly fixed - avg to stdvar on query and on every range and step)
 pending: true
 proves:
   - metric-series-identity
@@ -72,7 +72,7 @@ why: |
   FuzzDynamicIdentityFenceMatchesPlan.
 
   Proven against the Loki engine oracle and VictoriaLogs v1.53.0 and v1.49.0,
-  through the handlers, on instant, step = range and step > range:
+  through the handlers, on instant, step = range, step > range and step < range:
   TestKeepUnwrapIdentityMatchLoki (every line a series of its own),
   TestStddevStdvarMatchLoki (every line of a stream one series: the sum, sum by,
   max by and avg by forms) and TestUnwrapDynamicIdentityMatchLoki (both cases in
@@ -80,17 +80,38 @@ why: |
   object, keys in either order, a detected_level that differs between lines,
   lines that do not parse, logfmt and json).
 
-  Still open: a range longer than the step (step < range) keeps the stream's
-  series: the window evaluator merges the step buckets of streams, not of a
-  series hash, so those queries are translated by the string translator as
-  before; rate_counter and quantile_over_time
+  A range longer than the step (step < range, sliding windows) reads the same
+  series: the request is marked before it is translated (dynamicIdentityWindows,
+  identityAheadKey), the lowering writes the series hash before the unwrap gate
+  (lower.Profile IdentityAhead), VictoriaLogs takes the function's partial
+  aggregates per series hash and per anchored bucket in one stats_query_range
+  call, the window evaluator merges each series' buckets into Loki's windows
+  (t-range, t], and the outer sum, max, min or avg folds the series
+  (foldDynamicIdentity), which drops the hash. The proxy reads aggregated
+  buckets only (series x occupied buckets, never more rows than the window
+  holds), bounded by the raw-row budget of a request that folds its series
+  (-manual-range-metric-row-limit, Loki's limit error beyond it); the folded
+  answer is held to the tenant's series limit. max by (L) of max_over_time and
+  min by (L) of min_over_time are the extreme of the group's samples whatever
+  the series and keep the stream's grouping (unwrapGroupPushdown). Answers
+  cached before are fenced (@unwrap-dynamic-identity-v2). Proven by
+  TestUnwrapDynamicIdentityMatchLoki at step < range (Loki engine oracle,
+  VictoriaLogs v1.53.0 and v1.49.0: every avg to stdvar row and every binary
+  row matches Loki), TestDynamicIdentityWindowsMatchLokiReference (generated
+  rows and windows, a range the step does not divide, json and logfmt, by the
+  stream, by a parsed label and none, v1.49.0 and v1.53.0, no raw rows read),
+  TestDynamicIdentityWindowsFoldBeyondSeriesLimit and
+  TestDynamicIdentityWindowCacheReuse (repeat = 0 VictoriaLogs calls, a
+  refresh reads only the new buckets).
+
+  Still open: rate_counter and quantile_over_time
   (semantics/unwrap-quantile-sum-by-group-quantile) keep their previous series;
   a label filter between the parser and the unwrap under the Loki profile
   (semantics/unwrap-per-series-identity-label-filter); first and last over a
   range longer than the step (semantics/unwrap-first-last-range-longer-than-step);
   rate_counter's extrapolated value (semantics/unwrap-rate-counter-window-extrapolation);
-  a binary operation's operands over a range longer than the step keep the
-  stream's series, as each operand does alone.
+  an identity under a ranking or a label_replace over a range longer than the
+  step keeps the stream's series.
   Not modelled: structured metadata other than the level fields and a line that
   holds one key twice.
 corpus:
@@ -119,10 +140,10 @@ gap:
   status: open
   impact: explore-visible
   effort: L
-  area: 'internal/queryplan/lower unwrap_dynamic.go (DynamicUnwrapIdentity, the identity pipes), unwrap.go; internal/proxy query_lowering.go (lowerDynamicIdentity), query_translation.go, unwrap_dynamic_identity.go (dynamicUnwrapIdentity, dynamicIdentityWindows), range_metric_compat.go (the instant stats route); the window evaluator (unwrap_samples.go) for a range longer than the step'
+  area: 'internal/queryplan/lower unwrap_dynamic.go (DynamicUnwrapIdentity, the identity pipes, IdentityAhead), unwrap.go; internal/proxy query_lowering.go (lowerDynamicIdentity), query_translation.go, unwrap_dynamic_identity.go (dynamicUnwrapIdentity, dynamicIdentityWindows, foldDynamicIdentity), range_metric_compat.go (the instant stats route, the window route of the hash); the window evaluator (unwrap_samples.go) for a range longer than the step'
   loki: 'pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next; pkg/logql/log/metrics_extraction.go:150-178 labelSampleExtractor (series = stream + parsed labels)'
   proxy: 'the value per stream and hash of the parsed labels, then the aggregation over the series'
-  planned_test: 'TestUnwrapDynamicIdentityMatchLoki, TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicUnwrapIdentity, TestDynamicUnwrapIdentityLowering, FuzzDynamicUnwrapIdentity (internal/queryplan/lower); TestDynamicIdentityServedFromPlan, TestDynamicIdentityHandlersReadThePlan, TestDynamicIdentityBinaryOperandsReadTheHash, TestDynamicIdentityBinaryOperandContext, TestDynamicIdentityCacheKeysFenced, FuzzDynamicIdentityFenceMatchesPlan (internal/proxy); e2e: TestCompat_UnwrapPerSeriesIdentity (test/e2e-compat, group core, binary rows included; written, not yet run on a stack)'
+  planned_test: 'TestUnwrapDynamicIdentityMatchLoki, TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestDynamicUnwrapIdentity, TestDynamicUnwrapIdentityLowering, FuzzDynamicUnwrapIdentity (internal/queryplan/lower); TestDynamicIdentityServedFromPlan, TestDynamicIdentityHandlersReadThePlan, TestDynamicIdentityBinaryOperandsReadTheHash, TestDynamicIdentityBinaryOperandContext, TestDynamicIdentityCacheKeysFenced, FuzzDynamicIdentityFenceMatchesPlan (internal/proxy); e2e: TestCompat_UnwrapPerSeriesIdentity (test/e2e-compat, group core, binary rows and the sliding, longer and non-multiple ranges included; the sliding rows written, not yet run on a stack); TestDynamicIdentityWindowsMatchLokiReference, TestDynamicIdentityWindowsKeepExtremes, TestDynamicIdentityWindowsFoldBeyondSeriesLimit, TestDynamicIdentityWindowCacheReuse (internal/proxy), TestDynamicUnwrapIdentityAhead (internal/queryplan/lower)'
   note: 'Found while fixing semantics/unwrap-rate-ungrouped-sum-per-stream, on origin/main e173e40b. VictoriaLogs stats group by named fields only: the lowering names the parsed labels by a hash of the line unpacked under a prefix.'
   clusters:
     - 0e2f0a0c

@@ -1,0 +1,493 @@
+package proxy
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"math"
+	"math/rand"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
+)
+
+// This file pins a parser's series identity over a range longer than the step (sliding windows) to Loki's answer,
+// with a reference evaluator written apart from the proxy, from Loki's documented semantics: a series is the stream
+// and every label the parser extracts less the unwrapped one (pkg/logql/log/metrics_extraction.go), the range
+// function is taken per series over the window (t-range, t] at every step (pkg/logql/range_vector.go), and the outer
+// sum, avg, max or min folds the series into the group its labels name (pkg/logql/evaluator.go
+// VectorAggEvaluator.Next). The proxy under test is the real handler; VictoriaLogs is the vlemu emulator, which
+// computes the series hash from each line.
+
+// dynWindowScenario is one sliding-window request of a parser's series identity.
+type dynWindowScenario struct {
+	outer, by, fn, parser string
+	window, step          time.Duration
+	start, end            int64 // ns, step-aligned evaluation times
+	rows                  []vlemu.Row
+}
+
+func (s dynWindowScenario) query() string {
+	clause := ""
+	if s.by != "" {
+		clause = " by (" + s.by + ")"
+	}
+	return fmt.Sprintf(`%s%s (%s({app="dw"} | %s | unwrap amount [%s]))`, s.outer, clause, s.fn, s.parser, uwWindowText(s.window))
+}
+
+func (s dynWindowScenario) times() []int64 {
+	var out []int64
+	for t := s.start; t <= s.end; t += int64(s.step) {
+		out = append(out, t)
+	}
+	return out
+}
+
+// dynWindowRow is a row of stream pod p with the parsed labels labels and value v, its line written by parser.
+func dynWindowRow(ts int64, pod, parser string, labels map[string]string, v float64) vlemu.Row {
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	amount := strconv.FormatFloat(v, 'f', -1, 64)
+	var line string
+	if parser == "json" {
+		fields := []string{`"amount":` + amount}
+		for _, k := range keys {
+			fields = append(fields, strconv.Quote(k)+":"+strconv.Quote(labels[k]))
+		}
+		line = "{" + strings.Join(fields, ",") + "}"
+	} else {
+		fields := []string{"amount=" + amount}
+		for _, k := range keys {
+			fields = append(fields, k+"="+labels[k])
+		}
+		line = strings.Join(fields, " ")
+	}
+	return vlemu.Row{TS: ts, Stream: `{app="dw",pod="` + pod + `"}`, Labels: labels, Value: v, Msg: line}
+}
+
+// generateDynWindowScenario draws a sliding window (a range longer than the step, a multiple of it or not), and rows
+// of three streams: lines that differ only in the value (one series), a parsed label more (a series of its own), a
+// key of its own on a line now and then (a series per line), and lines on window edges.
+func generateDynWindowScenario(rnd *rand.Rand, outer, by, fn, parser string) dynWindowScenario {
+	steps := []time.Duration{20 * time.Second, 30 * time.Second, time.Minute}
+	s := dynWindowScenario{outer: outer, by: by, fn: fn, parser: parser, step: steps[rnd.Intn(len(steps))]}
+	// A range longer than the step: twice, five times, or a range the step does not divide.
+	switch rnd.Intn(3) {
+	case 0:
+		s.window = 2 * s.step
+	case 1:
+		s.window = 5 * s.step
+	default:
+		s.window = s.step + s.step/2 + 10*time.Second
+	}
+	base := int64(1_800_000_000) * 1e9
+	s.start = base + int64(rnd.Intn(600))*1e9
+	s.start -= s.start % int64(s.step)
+	s.end = s.start + int64(3+rnd.Intn(8))*int64(s.step)
+	pods := []string{"a", "b", "c"}
+	labelSets := []map[string]string{{"route": "/x"}, {"route": "/x", "region": "eu"}, {"route": "/y"}}
+	values := []float64{0, 0.5, 1, 2.25, 3, 100.125, 7, 42}
+	lo, hi := s.start-int64(s.window)-5e9, s.end+5e9
+	n := 10 + rnd.Intn(70)
+	for i := 0; i < n; i++ {
+		ts := lo + rnd.Int63n(hi-lo)
+		if rnd.Intn(5) == 0 { // on a window edge
+			edge := s.start + int64(rnd.Intn(8))*int64(s.step)
+			if rnd.Intn(2) == 0 {
+				edge -= int64(s.window)
+			}
+			ts = edge + int64(rnd.Intn(3)-1)
+		}
+		labels := map[string]string{}
+		for k, v := range labelSets[rnd.Intn(len(labelSets))] {
+			labels[k] = v
+		}
+		if rnd.Intn(6) == 0 {
+			labels["req"] = "r" + strconv.Itoa(i) // a series of its own
+		}
+		s.rows = append(s.rows, dynWindowRow(ts, pods[rnd.Intn(len(pods))], parser, labels, values[rnd.Intn(len(values))]))
+	}
+	return s
+}
+
+// lokiDynamicWindows is the reference: at each evaluation time, the samples of each series (the stream and every
+// parsed label) in (t-window, t], the range function per series, then the outer aggregation per group of the by
+// labels (the stream's pod or a parsed label). A group with no series in the window has no point.
+func lokiDynamicWindows(s dynWindowScenario) map[string]map[int64]float64 {
+	out := map[string]map[int64]float64{}
+	for _, t := range s.times() {
+		perSeries := map[string][]float64{}
+		groupOf := map[string]string{}
+		for _, row := range s.rows {
+			if row.TS <= t-int64(s.window) || row.TS > t {
+				continue
+			}
+			labels := map[string]string{"app": "dw", "pod": streamLabel(row.Stream, "pod")}
+			for k, v := range row.Labels {
+				labels[k] = v
+			}
+			key := labelsSortedKey(labels)
+			perSeries[key] = append(perSeries[key], row.Value)
+			group := map[string]string{}
+			if s.by != "" {
+				for _, l := range strings.Split(s.by, ", ") {
+					if v := labels[l]; v != "" {
+						group[l] = v
+					}
+				}
+			}
+			groupOf[key] = labelsSortedKey(group)
+		}
+		groups := map[string][]float64{}
+		for key, vs := range perSeries {
+			groups[groupOf[key]] = append(groups[groupOf[key]], rangeFuncOf(s.fn, vs))
+		}
+		for g, vs := range groups {
+			if out[g] == nil {
+				out[g] = map[int64]float64{}
+			}
+			out[g][t] = outerFuncOf(s.outer, vs)
+		}
+	}
+	return out
+}
+
+func labelsSortedKey(m map[string]string) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k+"="+m[k])
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
+}
+
+// rangeFuncOf is a range function over one series' samples in a window; stddev and stdvar are the population ones.
+func rangeFuncOf(fn string, vs []float64) float64 {
+	var sum float64
+	for _, v := range vs {
+		sum += v
+	}
+	mean := sum / float64(len(vs))
+	switch fn {
+	case "avg_over_time":
+		return mean
+	case "max_over_time":
+		return slices.Max(vs)
+	case "min_over_time":
+		return slices.Min(vs)
+	case "stddev_over_time", "stdvar_over_time":
+		var m2 float64
+		for _, v := range vs {
+			m2 += (v - mean) * (v - mean)
+		}
+		if fn == "stdvar_over_time" {
+			return m2 / float64(len(vs))
+		}
+		return math.Sqrt(m2 / float64(len(vs)))
+	}
+	panic("reference: " + fn)
+}
+
+func outerFuncOf(op string, vs []float64) float64 {
+	switch op {
+	case "sum", "avg":
+		var sum float64
+		for _, v := range vs {
+			sum += v
+		}
+		if op == "avg" {
+			return sum / float64(len(vs))
+		}
+		return sum
+	case "max":
+		return slices.Max(vs)
+	case "min":
+		return slices.Min(vs)
+	}
+	panic("reference: " + op)
+}
+
+// runDynWindowScenario sends the scenario through the real handler and returns its series (labels key -> time ->
+// value) and the response status and body.
+func runDynWindowScenario(t *testing.T, emu *vlemu.Emulator, s dynWindowScenario, cfg Config) (map[string]map[int64]float64, int, string) {
+	t.Helper()
+	backend := httptest.NewServer(emu.Handler())
+	defer backend.Close()
+	cfg.BackendURL, cfg.LogLevel, cfg.BackendMinVersion, cfg.BackendVersionCheckTimeout = backend.URL, "error", "v1.49.0", time.Second
+	if cfg.Cache == nil {
+		c := cache.New(60*time.Second, 1000)
+		defer c.Close()
+		cfg.Cache = c
+	}
+	p, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { closeTestProxy(p) }()
+	if emu.Version != "" {
+		if err := p.ValidateBackendVersionCompatibility(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	params := url.Values{"query": {s.query()}, "start": {strconv.FormatInt(s.start/1e9, 10)}, "end": {strconv.FormatInt(s.end/1e9, 10)},
+		"step": {strconv.FormatInt(int64(s.step/time.Second), 10)}}
+	res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+	if res.Code != http.StatusOK {
+		return nil, res.Code, res.Body.String()
+	}
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]map[int64]float64{}
+	for _, series := range resp.Data.Result {
+		key := labelsSortedKey(series.Metric)
+		got[key] = map[int64]float64{}
+		for _, point := range series.Values {
+			v, _ := strconv.ParseFloat(point[1].(string), 64)
+			got[key][int64(point[0].(float64))*1e9] = v
+		}
+	}
+	return got, res.Code, res.Body.String()
+}
+
+// closeTestProxy shuts a scenario's proxy down with its caches.
+func closeTestProxy(p *Proxy) {
+	_ = p.Shutdown(context.Background())
+	p.translationCache.Close()
+	p.streamFieldNamesCache.Close()
+}
+
+func compareDynWindows(t *testing.T, label string, s dynWindowScenario, got, want map[string]map[int64]float64) {
+	t.Helper()
+	ctx := fmt.Sprintf("\nquery %s step=%v window=%v rows=%d", s.query(), s.step, s.window, len(s.rows))
+	for key, points := range want {
+		g, ok := got[key]
+		if !ok {
+			t.Fatalf("%s: no series {%s}, Loki has %d points%s", label, key, len(points), ctx)
+		}
+		for ts, w := range points {
+			v, ok := g[ts]
+			if !ok {
+				t.Fatalf("%s: {%s} has no point at %d, Loki has %g%s", label, key, ts/1e9, w, ctx)
+			}
+			if math.Abs(v-w) > 1e-9*math.Max(1, math.Abs(w)) {
+				t.Fatalf("%s: {%s} at %d is %g, Loki has %g%s", label, key, ts/1e9, v, w, ctx)
+			}
+		}
+		for ts, v := range g {
+			if _, ok := points[ts]; !ok {
+				t.Fatalf("%s: {%s} has a point at %d = %g, Loki has none%s", label, key, ts/1e9, v, ctx)
+			}
+		}
+	}
+	for key := range got {
+		if _, ok := want[key]; !ok {
+			t.Fatalf("%s: series {%s} Loki does not have%s", label, key, ctx)
+		}
+	}
+}
+
+// TestDynamicIdentityWindowsMatchLokiReference: over generated rows and sliding windows (a range twice or five times
+// the step, and one the step does not divide), sum, avg, max and min, with no clause, by the stream's pod or by a
+// parsed label, over avg, max, min, stddev and stdvar over time after a json or a logfmt parser, answer Loki's series
+// and values at every step, on VictoriaLogs v1.49.0 and v1.53.0. VictoriaLogs answers one stats query grouped by the
+// series hash on anchored buckets; no raw rows are read, and the hash never reaches a client.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity, window-bounds-and-step-alignment
+func TestDynamicIdentityWindowsMatchLokiReference(t *testing.T) {
+	type shape struct{ outer, by string }
+	shapes := []shape{{"sum", ""}, {"sum", "pod"}, {"avg", ""}, {"max", "pod"}, {"min", "route"}, {"sum", "pod, route"}}
+	fns := []string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time"}
+	for _, version := range []string{"v1.49.0", "v1.53.0"} {
+		for _, parser := range []string{"json", "logfmt"} {
+			for _, fn := range fns {
+				for _, sh := range shapes {
+					if sh.outer == "max" && fn == "max_over_time" || sh.outer == "min" && fn == "min_over_time" {
+						// The extreme of the group's samples: no series hash (TestDynamicIdentityWindowsKeepExtremes).
+						continue
+					}
+					name := fmt.Sprintf("%s/%s/%s/%s_by_%s", version, parser, fn, sh.outer, sh.by)
+					t.Run(name, func(t *testing.T) {
+						rnd := rand.New(rand.NewSource(int64(len(name))*7919 + 31))
+						for i := 0; i < 6; i++ {
+							s := generateDynWindowScenario(rnd, sh.outer, sh.by, fn, parser)
+							emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
+							got, code, body := runDynWindowScenario(t, emu, s, Config{})
+							if code != http.StatusOK {
+								t.Fatalf("#%d %s: %d %s", i, s.query(), code, body)
+							}
+							if strings.Contains(body, dynamicSeriesHashLabel) {
+								t.Fatalf("#%d %s: the answer names the series hash: %.300s", i, s.query(), body)
+							}
+							compareDynWindows(t, fmt.Sprintf("#%d", i), s, got, lokiDynamicWindows(s))
+							if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
+								t.Fatalf("#%d %s: read raw rows: %s", i, s.query(), raw[0])
+							}
+							calls := emu.EndpointCalls("/select/logsql/stats_query_range")
+							if len(calls) != 1 || !strings.Contains(calls[0], "hash(__lvp_sid) as __lvp_sid") || !strings.Contains(calls[0], "__lvp_sid, __lvp_bad)") {
+								t.Fatalf("#%d %s: VictoriaLogs read %d stats queries, want one grouped by the series hash: %v", i, s.query(), len(calls), calls)
+							}
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+// max by (L) of max_over_time and min by (L) of min_over_time over a range longer than the step are the extreme of
+// the group's samples in the window, whatever the series: they read no series hash and answer Loki's values.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func TestDynamicIdentityWindowsKeepExtremes(t *testing.T) {
+	for _, tc := range []struct{ outer, fn string }{{"max", "max_over_time"}, {"min", "min_over_time"}} {
+		rnd := rand.New(rand.NewSource(int64(len(tc.fn)) * 104729))
+		for i := 0; i < 6; i++ {
+			s := generateDynWindowScenario(rnd, tc.outer, "pod", tc.fn, "logfmt")
+			emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+			got, code, body := runDynWindowScenario(t, emu, s, Config{})
+			if code != http.StatusOK {
+				t.Fatalf("%s: %d %s", s.query(), code, body)
+			}
+			compareDynWindows(t, fmt.Sprintf("%s #%d", tc.fn, i), s, got, lokiDynamicWindows(s))
+			for _, q := range emu.EndpointCalls("/select/logsql/stats_query_range") {
+				if strings.Contains(q, "__lvp_sid") {
+					t.Fatalf("%s: VictoriaLogs read the series hash: %s", s.query(), q)
+				}
+			}
+		}
+	}
+}
+
+// Loki counts max_query_series on the folded answer: a sum by (pod) over more series than the tenant's limit (a key
+// of its own on every line) answers its two groups, the reads bounded by the raw-row budget of a request that folds
+// its series (-manual-range-metric-row-limit). Below that budget, the answer is Loki's limit error naming the flag's
+// budget, never a partial answer.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
+func TestDynamicIdentityWindowsFoldBeyondSeriesLimit(t *testing.T) {
+	s := dynWindowScenario{outer: "sum", by: "pod", fn: "avg_over_time", parser: "logfmt", window: 2 * time.Minute, step: 30 * time.Second}
+	base := int64(1_800_000_000) * 1e9
+	s.start, s.end = base, base+10*int64(30*time.Second)
+	for i := 0; i < 1200; i++ { // 1200 series, more than twice the default limit of 500
+		ts := s.start - int64(s.window) + int64(i)*int64(time.Second)/3 + 7e6
+		pod := []string{"a", "b"}[i%2]
+		s.rows = append(s.rows, dynWindowRow(ts, pod, "logfmt", map[string]string{"req": "r" + strconv.Itoa(i)}, float64(i%17)))
+	}
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+	got, code, body := runDynWindowScenario(t, emu, s, Config{})
+	if code != http.StatusOK {
+		t.Fatalf("%s: %d %s", s.query(), code, body)
+	}
+	if len(got) != 2 {
+		t.Fatalf("%d series, want the two pods", len(got))
+	}
+	compareDynWindows(t, "beyond the limit", s, got, lokiDynamicWindows(s))
+	// A budget under the series the window reads: Loki's limit error, which names the budget.
+	emu = &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+	_, code, body = runDynWindowScenario(t, emu, s, Config{RangeMetricRowLimit: 600})
+	if code == http.StatusOK || !strings.Contains(body, "maximum") && !strings.Contains(body, "limit") {
+		t.Fatalf("a budget of 600 over 1200 series answered %d %.300s, want a limit error", code, body)
+	}
+	t.Logf("budget of 600: %d %.200s", code, body)
+}
+
+// A repeat of a parser's series identity over a range longer than the step asks VictoriaLogs nothing and answers the
+// same series; a refresh one minute later reads only the buckets it does not hold, and answers what an uncached proxy
+// answers. Every stats call groups by the series hash. The test logs VictoriaLogs' calls and bytes per request.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows, quality/query-range-extent-cache
+func TestDynamicIdentityWindowCacheReuse(t *testing.T) {
+	const step = 10 * time.Second
+	end := time.Unix(1700011800, 0).UTC()
+	var rows []vlemu.Row
+	for i := 0; i < 900; i++ { // a line every 5 s over the last 75 minutes, a series of its own now and then
+		labels := map[string]string{"route": []string{"/x", "/y"}[i%2]}
+		if i%7 == 0 {
+			labels["req"] = "r" + strconv.Itoa(i)
+		}
+		ts := end.Add(time.Minute - time.Duration(i)*5*time.Second - 250*time.Millisecond).UnixNano()
+		rows = append(rows, dynWindowRow(ts, []string{"a", "b"}[i%3%2], "json", labels, float64(i%23)))
+	}
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount"}
+	counter := &stubCallCounter{inner: emu.Handler()}
+	shimSrv, shim := newExtentShim(t, counter)
+	p := newExtentTestProxy(t, shimSrv.URL, true, 256<<20)
+	uncachedSrv, _ := newExtentShim(t, emu.Handler())
+	uncached := newExtentTestProxy(t, uncachedSrv.URL, false, 256<<20)
+	for _, q := range []string{
+		`sum by (pod) (avg_over_time({app="dw"} | json | unwrap amount [1m]))`,
+		`sum(stddev_over_time({app="dw"} | json | unwrap amount [45s]))`,
+		`avg(stdvar_over_time({app="dw"} | json | unwrap amount [1m]))`,
+	} {
+		get := func(e time.Time) []byte {
+			t.Helper()
+			code, body := extentQueryRange(t, p, q, e.Add(-time.Hour), e, step, nil)
+			p.statsExtentStores.wait()
+			if code != http.StatusOK {
+				t.Fatalf("%s: %d %s", q, code, body)
+			}
+			return body
+		}
+		counter.take()
+		shim.reset()
+		cold := get(end)
+		coldCalls, coldBytes := counter.take()
+		_, coldBuckets := shim.bucketsRead()
+		if !shimReadHashAhead(shim) {
+			t.Errorf("%s: the stats calls do not group by the series hash written before the gate", q)
+		}
+		shim.reset()
+		again := get(end)
+		repCalls, repBytes := counter.take()
+		if coldCalls == 0 || repCalls != 0 || string(dynamicIdentityResult(t, cold)) != string(dynamicIdentityResult(t, again)) {
+			t.Errorf("%s: cold %d calls, repeat %d calls, want a repeat with no call and the same answer", q, coldCalls, repCalls)
+		}
+		shim.reset()
+		refreshed := get(end.Add(time.Minute))
+		refCalls, refBytes := counter.take()
+		_, refBuckets := shim.bucketsRead()
+		if refBuckets == 0 || refBuckets*10 > coldBuckets {
+			t.Errorf("%s refresh: read %d buckets, the cold request %d: it should read the new ones only", q, refBuckets, coldBuckets)
+		}
+		if _, want := extentQueryRange(t, uncached, q, end.Add(time.Minute-time.Hour), end.Add(time.Minute), step, nil); string(dynamicIdentityResult(t, refreshed)) != string(dynamicIdentityResult(t, want)) {
+			t.Errorf("%s refresh: the cached answer differs from the uncached one\n cached: %.300s\nuncached: %.300s", q, refreshed, want)
+		}
+		t.Logf("%s: cold %d calls %d B (%d buckets), repeat %d calls %d B, refresh %d calls %d B (%d buckets)", q, coldCalls, coldBytes, coldBuckets, repCalls, repBytes, refCalls, refBytes, refBuckets)
+	}
+}
+
+// shimReadHashAhead reports stats_query_range calls the extent shim saw, every one writing the series hash before the
+// unwrap gate (lower.Profile IdentityAhead) and grouping by it.
+func shimReadHashAhead(s *extentShim) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.calls {
+		hash := strings.Index(c.query, "| hash(__lvp_sid) as __lvp_sid |")
+		gate := strings.Index(c.query, "| copy ")
+		if hash < 0 || gate < hash || !strings.Contains(c.query, "__lvp_sid, __lvp_bad)") {
+			return false
+		}
+	}
+	return len(s.calls) > 0
+}

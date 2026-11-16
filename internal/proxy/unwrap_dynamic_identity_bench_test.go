@@ -68,6 +68,9 @@ func benchDynamicIdentityRoutes(b *testing.B, series int) {
 		{"sum_by_avg_tumbling", "query_range", `sum by (app) (avg_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
 		{"max_by_stdvar_tumbling", "query_range", `max by (app) (stdvar_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
 		{"sum_by_max_longer_range", "query_range", `sum by (app) (max_over_time({app="x"} | json | unwrap n [5m]))`, "60"},
+		{"sum_avg_longer_range", "query_range", `sum(avg_over_time({app="x"} | json | unwrap n [5m]))`, "60"},
+		{"max_by_stdvar_longer_range", "query_range", `max by (app) (stdvar_over_time({app="x"} | json | unwrap n [5m]))`, "60"},
+		{"max_by_max_longer_range", "query_range", `max by (app) (max_over_time({app="x"} | json | unwrap n [5m]))`, "60"},
 		// Binary operations of identity operands: each operand is a request of its own.
 		{"binary_difference_instant", "query", `sum by (app) (max_over_time({app="x"} | json | unwrap n [5m])) - sum by (app) (min_over_time({app="x"} | json | unwrap n [5m]))`, "300"},
 		{"binary_difference_tumbling", "query_range", `sum by (app) (max_over_time({app="x"} | json | unwrap n [5m])) - sum by (app) (min_over_time({app="x"} | json | unwrap n [5m]))`, "300"},

@@ -467,13 +467,6 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 		// VictoriaLogs groups the buckets by the outer labels (unwrapGroupPushdown).
 		return p.proxyManualRangeMetricRange(w, r, unwrapSpec, origSpec, manualFunc)
 	}
-	if identityAhead(r.Context()) {
-		// The buckets are grouped by the series hash of a parser's identity: the evaluator answers each series'
-		// windows, and the outer aggregation folds the series (foldDynamicIdentity).
-		return p.foldDynamicIdentity(w, r, func(w http.ResponseWriter, r *http.Request) bool {
-			return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
-		})
-	}
 	// A bare outer aggregation without by() collapses all streams into one empty-label
 	// series in Loki. Set ByExplicit=true so buildManualMetricLabels returns {} and
 	// collectRangeMetricSamples produces a single series — not one per stream.
@@ -485,11 +478,20 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 			return p.proxyManualRangeMetricRange(w, shaped, shapedSpec, origSpec, manualFunc)
 		}
 	}
-	// The evaluator decides on the request's query text (isSumAllLogRange): the
-	// fold must read the same text.
-	return foldVectorAggregations(p, w, r, r.FormValue("query"), func(w http.ResponseWriter, r *http.Request) bool {
+	return p.foldRangeSeries(w, r, func(w http.ResponseWriter, r *http.Request) bool {
 		return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
 	})
+}
+
+// foldRangeSeries serves a range request with the window evaluator and folds its series by the query's vector
+// aggregations. The evaluator decides on the request's query text (isSumAllLogRange): the fold reads the same text.
+// The buckets of a parser's identity whose hash stands before the gate (identityAhead) are grouped by the series
+// hash: the evaluator answers each series' windows, and the outer aggregation folds the series (foldDynamicIdentity).
+func (p *Proxy) foldRangeSeries(w http.ResponseWriter, r *http.Request, serve func(http.ResponseWriter, *http.Request) bool) bool {
+	if identityAhead(r.Context()) {
+		return p.foldDynamicIdentity(w, r, serve)
+	}
+	return foldVectorAggregations(p, w, r, r.FormValue("query"), serve)
 }
 
 // windowLongerThanStep reports an unwrap range function whose range is longer

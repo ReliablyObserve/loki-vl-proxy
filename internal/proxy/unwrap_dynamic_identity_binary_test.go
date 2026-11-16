@@ -186,22 +186,33 @@ func binaryOperandStatsStub() http.Handler {
 
 // A range request translates each operand of its binary operation with the mark the operand's own request gets, and
 // the text it printed to decide it, so the operand's request reads that translation from the cache: an identity
-// operand over a range longer than the step is marked, one whose range is the step is not, a number and a request
-// without the identity's words keep the request's context.
+// operand over a range longer than the step is marked to read the series hash before the unwrap gate (ahead), one
+// whose range is the step is not, a number and a request without the identity's words keep the request's context.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows
 func TestDynamicIdentityBinaryOperandContext(t *testing.T) {
 	p := newTestProxy(t, "http://127.0.0.1:1")
+	mark := func(ctx context.Context) string {
+		switch {
+		case streamIdentityOnly(ctx):
+			return "stream"
+		case identityAhead(ctx):
+			return "ahead"
+		}
+		return ""
+	}
 	for _, tc := range []struct {
 		q, step     string
-		left, right bool
+		left, right string
 	}{
-		{`sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])) * 2`, "60", true, false},
-		{`sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])) * 2`, "300", false, false},
-		{`sum by (app) (max_over_time({app="a"} | json | unwrap n [1m])) - sum by (app) (count_over_time({app="a"}[5m]))`, "60", false, false},
-		{`sum by (app) (count_over_time({app="a"}[5m])) / sum by (app) (stddev_over_time({app="a"} | logfmt | unwrap n [5m]))`, "60", false, true},
-		{`sum by (app) (rate({app="a"}[5m])) / sum by (app) (count_over_time({app="a"}[5m]))`, "60", false, false},
-		{`2 * sum by (app) (stddev_over_time({app="a"} | logfmt | unwrap n [5m]))`, "60", false, true},
+		{`sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])) * 2`, "60", "ahead", ""},
+		{`sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])) * 2`, "300", "", ""},
+		{`sum by (app) (max_over_time({app="a"} | json | unwrap n [1m])) - sum by (app) (count_over_time({app="a"}[5m]))`, "60", "", ""},
+		{`sum by (app) (count_over_time({app="a"}[5m])) / sum by (app) (stddev_over_time({app="a"} | logfmt | unwrap n [5m]))`, "60", "", "ahead"},
+		{`sum by (app) (rate({app="a"}[5m])) / sum by (app) (count_over_time({app="a"}[5m]))`, "60", "", ""},
+		{`2 * sum by (app) (stddev_over_time({app="a"} | logfmt | unwrap n [5m]))`, "60", "", "ahead"},
+		{`max by (app) (max_over_time({app="a"} | json | unwrap n [5m])) - min by (app) (min_over_time({app="a"} | json | unwrap n [5m]))`, "60", "stream", "stream"},
+		{`topk(1, sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m]))) / 2`, "60", "stream", ""},
 	} {
 		expr, err := logqlpkg.Parse(tc.q)
 		if err != nil {
@@ -215,10 +226,10 @@ func TestDynamicIdentityBinaryOperandContext(t *testing.T) {
 		sides := [2]binaryOperandSide{}
 		sides[0], sides[1] = p.binaryOperandSides(r, bin)
 		left, right := sides[0].ctx, sides[1].ctx
-		if streamIdentityOnly(left) != tc.left || streamIdentityOnly(right) != tc.right {
-			t.Errorf("%s step %s: operands marked %v, %v; want %v, %v", tc.q, tc.step, streamIdentityOnly(left), streamIdentityOnly(right), tc.left, tc.right)
+		if mark(left) != tc.left || mark(right) != tc.right {
+			t.Errorf("%s step %s: operands marked %q, %q; want %q, %q", tc.q, tc.step, mark(left), mark(right), tc.left, tc.right)
 		}
-		if !tc.left && left != r.Context() || !tc.right && right != r.Context() {
+		if tc.left == "" && left != r.Context() || tc.right == "" && right != r.Context() {
 			t.Errorf("%s step %s: an unmarked operand got a context of its own", tc.q, tc.step)
 		}
 		// A printed operand is the text the translation reads: the operand as it prints.

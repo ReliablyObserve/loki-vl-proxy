@@ -71,12 +71,12 @@ var dynamicValueFormsFuncs = []string{"max_over_time", "min_over_time", "avg_ove
 // holds the difference open (semantics/unwrap-gate-parsefloat-divergences, the values VictoriaLogs reads otherwise
 // than Loki):
 //
-//   - a range longer than the step (step<range) of an ungrouped sum, avg or min, and of max by over a json line's
-//     min, avg or stddev: the string translator's window evaluator, the route of base, leaves out or makes NaN the
-//     windows of these values;
 //   - avg over the series of an infinity: Loki's mean of +Inf and +Inf is NaN, VictoriaLogs' is +Inf;
 //   - sum or avg over stddev or stdvar of an infinity on an instant: Loki answers NaN, VictoriaLogs' outer sum leaves
-//     the NaN series out (0).
+//     the NaN series out (0); so does sum by over a logfmt line's.
+//
+// A range longer than the step matches Loki on every row: the window evaluator merges each series' buckets and the
+// proxy folds the series, reading every value as a number.
 var dynamicValueFormsKnown = func() map[string]map[string]string {
 	const id = "semantics/unwrap-gate-parsefloat-divergences"
 	known := map[string]map[string]string{}
@@ -88,18 +88,10 @@ var dynamicValueFormsKnown = func() map[string]map[string]string {
 				deviation := fn == "stddev_over_time" || fn == "stdvar_over_time"
 				var kinds []string
 				switch {
-				case strings.HasPrefix(shape, "sum(") || strings.HasPrefix(shape, "avg("):
-					kinds = append(kinds, "step<range")
-				case strings.HasPrefix(shape, "min(") && fn != "min_over_time":
-					kinds = append(kinds, "step<range")
-				case strings.HasPrefix(shape, "max by") && strings.Contains(pipe, "| json |") &&
-					(fn == "min_over_time" || fn == "avg_over_time" || fn == "stddev_over_time"):
-					kinds = append(kinds, "step<range")
-				}
-				switch {
 				case infinity && strings.HasPrefix(shape, "avg(") && !deviation:
 					kinds = append(kinds, "instant", "step=range", "step>range")
-				case infinity && deviation && (strings.HasPrefix(shape, "avg(") || strings.HasPrefix(shape, "sum(")):
+				case infinity && deviation && (strings.HasPrefix(shape, "avg(") || strings.HasPrefix(shape, "sum(") ||
+					strings.HasPrefix(shape, "sum by (app) (") && strings.Contains(pipe, "| logfmt |")):
 					kinds = append(kinds, "instant")
 				}
 				for _, k := range kinds {

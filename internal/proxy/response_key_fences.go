@@ -187,15 +187,17 @@ func streamLevelSeriesResponseKeyVersion(query string) string {
 
 // dynamicUnwrapIdentityResponseVersion fences the answers cached before the series of a range function over an
 // unwrapped label after a json or logfmt parser were the stream and every parsed label
-// (semantics/unwrap-per-series-identity-raw-rows): a series per stream, or per line, then.
-const dynamicUnwrapIdentityResponseVersion = "@unwrap-dynamic-identity-v1:"
+// (semantics/unwrap-per-series-identity-raw-rows): a series per stream, or per line, then. v2: a root identity over
+// a range longer than the step reads the series hash too (the window evaluator merges each series' buckets), so its
+// answers cached under v1 with the stream's series are not served.
+const dynamicUnwrapIdentityResponseVersion = "@unwrap-dynamic-identity-v2:"
 
 // dynamicUnwrapIdentityResponseKeyVersion is the fence of a query whose plan has that identity at any depth
 // (lower.WritesDynamicUnwrapIdentity): at its root, and in an operand of a binary operation, a ranking or a
 // label_replace, which the handlers evaluate as the operand alone, so their answers changed too. It is read from the
 // query's shared plan after a text screen (dynamicIdentityFenceScreen), so no other query's key changes. It does not
-// read the -query-plan-lowering flag or the step: with the flag off, or on a range longer than the step, the fence
-// costs one more cache miss.
+// read the -query-plan-lowering flag or the step: with the flag off, or for an operand the handlers keep on the
+// stream's series, the fence costs one more cache miss.
 func dynamicUnwrapIdentityResponseKeyVersion(query string) string {
 	query = dynamicQuery(query)
 	// dynamicQuery lower cased every keyword spelled with an ASCII upper case letter. It leaves a word with U+0130,

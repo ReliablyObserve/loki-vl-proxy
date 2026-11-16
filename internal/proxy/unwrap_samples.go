@@ -373,6 +373,11 @@ func (p *Proxy) unwrapWindowRoute(r *http.Request, spec statsCompatSpec, origSpe
 	if !hasOrigSpec {
 		return spec, false, false
 	}
+	if identityAhead(r.Context()) {
+		// A parser's identity whose hash stands before the gate: its stats group by the series hash, and the window
+		// evaluator answers it whatever the window (foldDynamicIdentity folds the series and records the budget).
+		return spec, false, true
+	}
 	if pushed, ok := p.unwrapGroupPushdown(spec, manualFunc, query); ok && !unwrapGroupPushdownOff && unwrapWindowBuckets(pushed, origSpec, manualFunc, originalLogql, query, step) {
 		return pushed, true, true
 	}
