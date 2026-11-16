@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
+  accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
+  per-stream series took the stream's `detected_level`.
+- An answer cached before a behaviour change is no longer served for a query written in another spelling of the same
+  query. The version marker that keeps such answers out of the cache is now added for every spelling the LogQL parser
+  reads: keywords and function names in any case (`| KEEP a`, `| UNWRAP n`, `TOPK(`, `SUM BY`, `| JSON`, `| LOGFMT`,
+  `IP("...")`), comments between tokens (a quote inside a comment no longer hides what follows), a grouped label filter
+  (`| (a="b") | (c="d")`), an empty back-quoted string after `!=`, and names written with other Unicode letters. The
+  per-stream detected_level marker also reads `topK` and `bottomK` written with the Kelvin sign (U+212A), and the
+  marker of a parser's unwrap series identity reads a function name written with U+0130 (`avg_over_tİme`). A query spelled one of these ways may miss the cache once after the upgrade; queries spelled as
+  before keep their keys.
 - `sum`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time` and
   `stdvar_over_time` after `| json` or `| logfmt` with a label filter after the parser, before or after the unwrap
   (`sum(stddev_over_time({app="api"} | json | __error__="" | unwrap duration_ms [5m]))`), now read Loki's series:
@@ -19,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Test support: the plan corpus leaves out the request of a registry case that compares only a client error, and six
+  conformance cases for queries Loki rejects now carry an HTTP request the live verifier sends. No proxy behaviour changes.
 - Metric queries with a label filter or a drop after a `| json` or `| logfmt` parser, under a grouping or unwrapped
   label whose name holds `_` (`sum by (service_name) (sum_over_time({app="api"} | json | unwrap duration_ms |
   __error__="" [5m]))`, `sum by (user_id) (count_over_time({app="api"} | json | drop __error__ [5m]))`), and the same

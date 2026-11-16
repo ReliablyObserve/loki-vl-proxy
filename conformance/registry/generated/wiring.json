@@ -142,6 +142,7 @@
       "internal/proxy/fail_fast_unicode_test.go",
       "internal/proxy/reserved_field_case_fence_test.go",
       "internal/proxy/reserved_field_test.go",
+      "internal/proxy/response_key_fence_parser_test.go",
       "internal/proxy/response_key_fences_test.go"
     ],
     "credential-passthrough-as-configured": [
@@ -3750,6 +3751,9 @@
       "cache-response-key-versions",
       "semantics/translator-writes-reserved-field-names"
     ],
+    "internal/proxy/response_key_fence_parser_test.go": [
+      "cache-response-key-versions"
+    ],
     "internal/proxy/response_key_fences_test.go": [
       "cache-response-key-versions",
       "semantics/ip-filter-ipv4-after-hex-colon"
@@ -5528,7 +5532,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 651,
+  "tests_with_markers": 652,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
