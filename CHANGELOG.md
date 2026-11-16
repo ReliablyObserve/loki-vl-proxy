@@ -7,8 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Metric queries over streams without a level label take VictoriaLogs less time, with the same answers: about a
+  quarter less for `rate` and `sort(rate(...))` over a parser on a first load, and 15-50% less on a refresh. Such a query, read per stream (for example `count_over_time({...} | logfmt [5m])` or
+  `max_over_time({...} | logfmt amount | unwrap amount [5m])`), reads those streams a second time to give each line
+  Loki's `detected_level`. That second read now narrows its level derivation to the level fields and keys the window
+  holds on every route, including instant queries and `rate` or `sort(rate(...))` over a parser, which sent the full
+  derivation before. Once the proxy has seen that a query holds such streams, its next reads (a refresh, a moved
+  window) read the labelled streams and the others separately, so no stream is read twice.
+
 ### Changed
 
+- The tests that compare the proxy's metric answers with Loki's now take Loki's answer from Loki itself: answers
+  recorded with Loki's query engine and request parser over the same lines and requests (test/oracle/loki, used
+  only in tests), for binary operators and vector matching, topk and bottomk, vector aggregations (nested,
+  `without`, stddev and stdvar), unwrap range functions over sliding and tumbling windows, absent_over_time,
+  first and last over time, rate_counter, quantile_over_time, keep, ip() label filters and sub-second steps. Where a
+  test needs to evaluate an expected answer itself (fuzz targets, tie detection), the evaluator is written from
+  LogQL's documented meaning and is held to the recorded answers. The engine oracle gains an unaligned mode (Loki's
+  engine at the request's own bounds). The query_range step alignment middleware is renamed for what it does
+  (alignToStepMiddleware); behaviour is unchanged.
 - The query plan now describes binary operations with a `bool` modifier, the set operators `and`, `or` and `unless`,
   and chains of operations (`a + b * 2`, `a / b * 100`, `a > 2 and b > 1`) as the operations the proxy evaluates: each
   operand a query of its own, a chained operand its own binary operation, in Loki's precedence and associativity. The
@@ -22,6 +41,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A query that holds two errors now answers the one Loki answers, in Loki's order of checks, and a selector regex
+  error has Loki's text. Loki first runs the checks it makes while it reads the query: a pattern or regexp parser
+  it cannot build, and a regex in a selector, label filter, drop or keep that does not parse. Those answer ahead of
+  a later syntax error and of a lexer error the parse goes on after. The proxy answered the later syntax or lexer
+  error instead, as in `{a="b"} | pattern "<_>" | unpack a`. The checks over the parsed tree come next: a vector
+  operation's parameter, approx_topk with a grouping, a range aggregation's grouping and unwrap, binary operands,
+  the empty-compatible selector. They now answer after every syntax error and in the order Loki's walk meets them.
+  The pipeline build comes last (templates, line filter regexes and patterns, json and logfmt expressions, ip()),
+  after the query plan's checks such as sort with a grouping. Also changed:
+  - `sum(1, …)`, `avg(1.5, …)` and every vector operation with a number before its expression answer `parse error :
+    unsupported parameter for operation sum(1,`; they failed at the comma.
+  - `topk(0, …)` and `topk(1.5, …)` answer their error after a later syntax error.
+  - `quantile_over_time(-1, …)` and `quantile_over_time("x", …)` answer Loki's syntax error at the parameter.
+  - A selector regex answers `parse error : error parsing regexp: …`, without the `parse error at line 1, col 1:
+    parse error : invalid regex:` prefix, on every route.
+  - A log query with a pipeline stage that does not build, sent to `/loki/api/v1/query`, answers Loki's `log queries
+    are not supported as an instant query type` (recorded row r0043).
+
+  The status was already 400 on every one of these queries; the text, which Grafana shows, is now Loki's. Held by a
+  grid of 1628 queries recorded with the Loki oracle (semantics/loki-error-phase-order): 532 answered differently
+  before, 51 do now.
 - A `topk` or `bottomk` whose first argument is not a number followed by a comma now answers Loki's parse error.
   Loki reads that argument as the expression the operation aggregates, so `topk(-1, sum by (level) (...))` answers
   400 `parse error at line 1, col 8: syntax error: unexpected ,` (the comma), as do `topk(1 + 2, ...)`,
