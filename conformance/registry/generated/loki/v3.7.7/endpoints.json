@@ -11,10 +11,11 @@
       "path": "/api/prom/label",
       "sources": {
         "GET": [
-          "docs"
+          "docs",
+          "live:200"
         ],
         "POST": [
-          "unconfirmed"
+          "live:200"
         ]
       }
     },
@@ -28,10 +29,11 @@
       "path": "/api/prom/label/{name}/values",
       "sources": {
         "GET": [
-          "docs"
+          "docs",
+          "live:200"
         ],
         "POST": [
-          "unconfirmed"
+          "live:200"
         ]
       }
     },
@@ -44,7 +46,8 @@
       "path": "/api/prom/push",
       "sources": {
         "POST": [
-          "docs"
+          "docs",
+          "live:400"
         ]
       }
     },
@@ -59,10 +62,11 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r1187,r1189"
+          "recorded:r1187,r1189",
+          "live:400"
         ],
         "POST": [
-          "unconfirmed"
+          "live:400"
         ]
       }
     },
@@ -76,7 +80,8 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r1183"
+          "recorded:r1183",
+          "live:400"
         ]
       }
     },
@@ -91,13 +96,16 @@
       "path": "/api/prom/rules/{namespace}",
       "sources": {
         "DELETE": [
-          "docs"
+          "docs",
+          "live:500"
         ],
         "GET": [
-          "docs"
+          "docs",
+          "live:400"
         ],
         "POST": [
-          "docs"
+          "docs",
+          "live:400"
         ]
       }
     },
@@ -111,10 +119,12 @@
       "path": "/api/prom/rules/{namespace}/{groupName}",
       "sources": {
         "DELETE": [
-          "docs"
+          "docs",
+          "live:500"
         ],
         "GET": [
-          "docs"
+          "docs",
+          "live:400"
         ]
       }
     },
@@ -128,10 +138,11 @@
       "path": "/api/prom/series",
       "sources": {
         "GET": [
-          "docs"
+          "docs",
+          "live:200"
         ],
         "POST": [
-          "unconfirmed"
+          "live:200"
         ]
       }
     },
@@ -149,19 +160,6 @@
           "recorded:r1188"
         ],
         "POST": [
-          "unconfirmed"
-        ]
-      }
-    },
-    {
-      "documented": false,
-      "id": "cache_generation_numbers",
-      "methods": [
-        "GET"
-      ],
-      "path": "/loki/api/v1/cache/generation_numbers",
-      "sources": {
-        "GET": [
           "unconfirmed"
         ]
       }
@@ -203,10 +201,12 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r0181,r0195,r0433"
+          "recorded:r0181,r0195,r0433",
+          "live:400"
         ],
         "POST": [
-          "docs"
+          "docs",
+          "live:400"
         ]
       }
     },
@@ -221,10 +221,12 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r0180,r0194,r0432"
+          "recorded:r0180,r0194,r0432",
+          "live:400"
         ],
         "POST": [
-          "docs"
+          "docs",
+          "live:400"
         ]
       }
     },
@@ -238,10 +240,11 @@
       "path": "/loki/api/v1/detected_labels",
       "sources": {
         "GET": [
-          "recorded:r0196,r0238,r0294"
+          "recorded:r0196,r0238,r0294",
+          "live:200"
         ],
         "POST": [
-          "unconfirmed"
+          "live:200"
         ]
       }
     },
@@ -254,7 +257,7 @@
       "path": "/loki/api/v1/drilldown-limits",
       "sources": {
         "GET": [
-          "unconfirmed"
+          "live:200"
         ]
       }
     },
@@ -269,10 +272,12 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r0185,r0199"
+          "recorded:r0185,r0199",
+          "live:400"
         ],
         "POST": [
-          "docs"
+          "docs",
+          "live:400"
         ]
       }
     },
@@ -286,10 +291,11 @@
       "path": "/loki/api/v1/index/shards",
       "sources": {
         "GET": [
-          "recorded:r1180"
+          "recorded:r1180",
+          "live:400"
         ],
         "POST": [
-          "unconfirmed"
+          "live:400"
         ]
       }
     },
@@ -304,10 +310,12 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r0176,r0190,r0288"
+          "recorded:r0176,r0190,r0288",
+          "live:400"
         ],
         "POST": [
-          "recorded:r0869,r0871,r0873"
+          "recorded:r0869,r0871,r0873",
+          "live:400"
         ]
       }
     },
@@ -322,10 +330,11 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r0177,r0191,r0233"
+          "recorded:r0177,r0191,r0233",
+          "live:400"
         ],
         "POST": [
-          "unconfirmed"
+          "live:400"
         ]
       }
     },
@@ -340,10 +349,11 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r0178,r0192,r0290"
+          "recorded:r0178,r0192,r0290",
+          "live:400"
         ],
         "POST": [
-          "unconfirmed"
+          "live:400"
         ]
       }
     },
@@ -357,10 +367,10 @@
       "path": "/loki/api/v1/label",
       "sources": {
         "GET": [
-          "unconfirmed"
+          "live:200"
         ],
         "POST": [
-          "unconfirmed"
+          "live:200"
         ]
       }
     },
@@ -375,10 +385,11 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r0198,r0240,r0296"
+          "recorded:r0198,r0240,r0296",
+          "live:200"
         ],
         "POST": [
-          "unconfirmed"
+          "live:200"
         ]
       }
     },
@@ -393,10 +404,12 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r0197,r0239,r0295"
+          "recorded:r0197,r0239,r0295",
+          "live:200"
         ],
         "POST": [
-          "recorded:r0708,r0710,r0712"
+          "recorded:r0708,r0710,r0712",
+          "live:200"
         ]
       }
     },
@@ -411,10 +424,11 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r0179,r0193,r0291"
+          "recorded:r0179,r0193,r0291",
+          "live:400"
         ],
         "POST": [
-          "unconfirmed"
+          "live:400"
         ]
       }
     },
@@ -428,7 +442,8 @@
       "sources": {
         "POST": [
           "docs",
-          "recorded:r1200"
+          "recorded:r1200",
+          "live:400"
         ]
       }
     },
@@ -443,10 +458,12 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r0001,r0003,r0043"
+          "recorded:r0001,r0003,r0043",
+          "live:400"
         ],
         "POST": [
-          "recorded:r0655,r0666,r0668"
+          "recorded:r0655,r0666,r0668",
+          "live:400"
         ]
       }
     },
@@ -461,10 +478,12 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r0002,r0004,r0112"
+          "recorded:r0002,r0004,r0112",
+          "live:400"
         ],
         "POST": [
-          "recorded:r0635,r0636,r0637"
+          "recorded:r0635,r0636,r0637",
+          "live:400"
         ]
       }
     },
@@ -478,7 +497,8 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r1174"
+          "recorded:r1174",
+          "live:400"
         ]
       }
     },
@@ -493,14 +513,17 @@
       "path": "/loki/api/v1/rules/{namespace}",
       "sources": {
         "DELETE": [
-          "docs"
+          "docs",
+          "live:500"
         ],
         "GET": [
           "docs",
-          "recorded:r1175"
+          "recorded:r1175",
+          "live:400"
         ],
         "POST": [
-          "docs"
+          "docs",
+          "live:400"
         ]
       }
     },
@@ -514,11 +537,13 @@
       "path": "/loki/api/v1/rules/{namespace}/{groupName}",
       "sources": {
         "DELETE": [
-          "docs"
+          "docs",
+          "live:500"
         ],
         "GET": [
           "docs",
-          "recorded:r1176"
+          "recorded:r1176",
+          "live:400"
         ]
       }
     },
@@ -533,11 +558,13 @@
       "sources": {
         "GET": [
           "docs",
-          "recorded:r0175,r0189,r0287"
+          "recorded:r0175,r0189,r0287",
+          "live:200"
         ],
         "POST": [
           "docs",
-          "recorded:r0795,r0797,r0799"
+          "recorded:r0795,r0797,r0799",
+          "live:200"
         ]
       }
     },
@@ -550,7 +577,8 @@
       "path": "/loki/api/v1/status/buildinfo",
       "sources": {
         "GET": [
-          "docs"
+          "docs",
+          "live:200"
         ]
       }
     },
@@ -581,7 +609,8 @@
       "path": "/prometheus/api/v1/alerts",
       "sources": {
         "GET": [
-          "docs"
+          "docs",
+          "live:200"
         ]
       }
     },
@@ -594,28 +623,15 @@
       "path": "/prometheus/api/v1/rules",
       "sources": {
         "GET": [
-          "docs"
+          "docs",
+          "live:200"
         ]
       }
     }
   ],
   "source": "https://grafana.com/docs/loki/v3.7.x/reference/loki-http-api/, Loki's recorded answers and a live probe",
   "unconfirmed": [
-    "GET /loki/api/v1/cache/generation_numbers",
-    "GET /loki/api/v1/drilldown-limits",
-    "GET /loki/api/v1/label",
-    "POST /api/prom/label",
-    "POST /api/prom/label/{name}/values",
-    "POST /api/prom/query",
-    "POST /api/prom/series",
     "POST /api/prom/tail",
-    "POST /loki/api/v1/detected_labels",
-    "POST /loki/api/v1/index/shards",
-    "POST /loki/api/v1/index/volume",
-    "POST /loki/api/v1/index/volume_range",
-    "POST /loki/api/v1/label",
-    "POST /loki/api/v1/label/{name}/values",
-    "POST /loki/api/v1/patterns",
     "POST /loki/api/v1/tail"
   ],
   "version": "v3.7.7"
