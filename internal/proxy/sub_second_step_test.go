@@ -87,7 +87,10 @@ func lokiStep(text string) (time.Duration, bool) {
 func lokiTimestamp(text string) (int64, bool) {
 	if strings.Contains(text, ".") {
 		if f, err := strconv.ParseFloat(text, 64); err == nil {
-			return int64(math.Round(f*1000)) * int64(time.Millisecond), true
+			// The fraction is rounded to the millisecond on its own: 1793653187.0005 is the double
+			// 1793653187.00049996..., so its fraction rounds down, where f*1000 would round up.
+			sec, frac := math.Modf(f)
+			return int64(sec)*int64(time.Second) + int64(math.Round(frac*1000))*int64(time.Millisecond), true
 		}
 	}
 	if n, err := strconv.ParseInt(text, 10, 64); err == nil {

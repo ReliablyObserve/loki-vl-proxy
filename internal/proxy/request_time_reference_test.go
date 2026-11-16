@@ -41,7 +41,7 @@ func TestRequestTimeReferenceMatchesRecordedLoki(t *testing.T) {
 	for i, step := range steps {
 		set.Requests = append(set.Requests, oraclerun.EngineRequest{ID: "step" + strconv.Itoa(i), Unaligned: true, Form: url.Values{"query": {"vector(1)"}, "start": {"1800000000"}, "end": {"1800000000"}, "step": {step}}.Encode()})
 	}
-	times := []string{"1800000000", "1800000000.5", "1800000000.1234", "1800000000.9999", "1800000000000000000", "1800000000123456789", "18000000000", "2027-01-15T08:00:00Z", "2027-01-15T08:00:00.123456789Z", "not-a-time"}
+	times := []string{"1800000000", "1800000000.5", "1800000000.1234", "1800000000.9999", "1793653187.0005", "1793653187.0015", "1793653187.0004999", "1793653187.9995", "1800000000000000000", "1800000000123456789", "18000000000", "2027-01-15T08:00:00Z", "2027-01-15T08:00:00.123456789Z", "not-a-time"}
 	for i, ts := range times {
 		set.Requests = append(set.Requests, oraclerun.EngineRequest{ID: "time" + strconv.Itoa(i), Instant: true, Form: url.Values{"query": {"vector(1)"}, "time": {ts}}.Encode()})
 	}
