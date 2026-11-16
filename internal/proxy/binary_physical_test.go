@@ -296,7 +296,7 @@ func BenchmarkBinaryVectorLowered(b *testing.B) {
 // the reference describes it as its own physical.Binary (with its bool modifier and matching), every query operand of
 // the chain is translated once, left first, and the leaves are those texts in that order ("" for a number).
 //
-// conformance: operator-and, operator-optypegt
+// conformance: operator-and, operator-gt
 func TestBinaryOperandLeavesFollowChains(t *testing.T) {
 	a, b, c := `sum by (app) (rate({app="a"}[5m]))`, `sum by (app) (rate({app="b"}[5m]))`, `sum by (app) (rate({app="c"}[5m]))`
 	query := a + ` + ` + b + ` * 2 > bool on (app) ` + c + ` unless ` + c

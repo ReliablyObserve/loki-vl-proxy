@@ -13,7 +13,7 @@ import (
 // operation alone and splits a chain at its first operator. The answers are held to Loki by internal/querycorpus
 // TestBinaryOperationsMatchLoki, the tree by TestBinOpLoweringMatchesLoki.
 //
-// conformance: operator-and, operator-or, operator-unless, operator-optypegt, operator-optypepow
+// conformance: operator-and, operator-or, operator-unless, operator-gt, operator-pow
 func TestPlanLowersRoutedBinaries(t *testing.T) {
 	a, b := `sum by (app) (rate({app="a"}[5m]))`, `sum by (app) (rate({app="b"}[5m]))`
 	query := func(x physical.Op) bool { _, ok := x.(physical.VLQuery); return ok }
@@ -72,7 +72,7 @@ func TestPlanLowersRoutedBinaries(t *testing.T) {
 // next to a vector(n) or between constants, a chain of constants (the proxy folds those itself), and a chain whose
 // operand the lowering does not write or that is a chain of numbers (the route folds `2 + 3` to a number).
 //
-// conformance: operator-and, operator-optypegt
+// conformance: operator-and, operator-gt
 func TestPlanDelegatesRoutedBinaryEdges(t *testing.T) {
 	rate := `rate({app="a"}[5m])`
 	for q, construct := range map[string]string{

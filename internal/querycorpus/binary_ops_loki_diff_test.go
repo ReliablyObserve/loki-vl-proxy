@@ -123,7 +123,7 @@ func binaryOpsQueries(t *testing.T) []metricQuery {
 // TestBinaryOperationsMatchLoki replays the recorded answers through the handlers and holds every run to Loki's
 // answer, or to its listed difference, and holds every VictoriaLogs request to a query VictoriaLogs reads.
 //
-// conformance: operator-and, operator-or, operator-unless, operator-on, operator-ignoring, operator-group-left, operator-group-right, operator-optypegt, operator-optypecmpeq, operator-optypeneq, operator-optypepow, operator-optypemod
+// conformance: operator-and, operator-or, operator-unless, operator-on, operator-ignoring, operator-group-left, operator-group-right, operator-gt, operator-eq, operator-neq, operator-pow, operator-mod
 func TestBinaryOperationsMatchLoki(t *testing.T) {
 	if testing.Short() && os.Getenv("CI") == "" && os.Getenv("LVP_RUN_ORACLES") != "1" {
 		t.Skip("runs every shape on a fresh proxy per request; run without -short")

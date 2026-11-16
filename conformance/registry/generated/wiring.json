@@ -812,19 +812,37 @@
       "internal/proxy/metadata_query_validation_test.go",
       "internal/proxy/sanitized_json_key_filter_test.go"
     ],
+    "operator-eq": [
+      "internal/querycorpus/binary_ops_loki_diff_test.go"
+    ],
     "operator-group-left": [
       "internal/querycorpus/binary_ops_loki_diff_test.go"
     ],
     "operator-group-right": [
       "internal/querycorpus/binary_ops_loki_diff_test.go"
     ],
+    "operator-gt": [
+      "internal/proxy/binary_physical_test.go",
+      "internal/querycorpus/binary_ops_loki_diff_test.go",
+      "internal/queryplan/lower/binop_routed_test.go"
+    ],
     "operator-ignoring": [
+      "internal/querycorpus/binary_ops_loki_diff_test.go"
+    ],
+    "operator-mod": [
+      "internal/querycorpus/binary_ops_loki_diff_test.go"
+    ],
+    "operator-neq": [
       "internal/querycorpus/binary_ops_loki_diff_test.go"
     ],
     "operator-on": [
       "internal/querycorpus/binary_ops_loki_diff_test.go"
     ],
     "operator-or": [
+      "internal/querycorpus/binary_ops_loki_diff_test.go",
+      "internal/queryplan/lower/binop_routed_test.go"
+    ],
+    "operator-pow": [
       "internal/querycorpus/binary_ops_loki_diff_test.go",
       "internal/queryplan/lower/binop_routed_test.go"
     ],
@@ -3063,7 +3081,7 @@
     "internal/proxy/binary_physical_test.go": [
       "architecture-syntax-package-layering",
       "operator-and",
-      "operator-optypegt"
+      "operator-gt"
     ],
     "internal/proxy/blank_after_keyword_test.go": [
       "semantics/parser-reads-unicode-blank-as-white-space",
@@ -4563,16 +4581,16 @@
     ],
     "internal/querycorpus/binary_ops_loki_diff_test.go": [
       "operator-and",
+      "operator-eq",
       "operator-group-left",
       "operator-group-right",
+      "operator-gt",
       "operator-ignoring",
+      "operator-mod",
+      "operator-neq",
       "operator-on",
-      "operator-optypecmpeq",
-      "operator-optypegt",
-      "operator-optypemod",
-      "operator-optypeneq",
-      "operator-optypepow",
       "operator-or",
+      "operator-pow",
       "operator-unless"
     ],
     "internal/querycorpus/binop_grid_test.go": [
@@ -4813,9 +4831,9 @@
     ],
     "internal/queryplan/lower/binop_routed_test.go": [
       "operator-and",
-      "operator-optypegt",
-      "operator-optypepow",
+      "operator-gt",
       "operator-or",
+      "operator-pow",
       "operator-unless"
     ],
     "internal/queryplan/lower/binop_test.go": [
@@ -5961,22 +5979,7 @@
     ]
   },
   "tests_with_markers": 710,
-  "unknown_ids": {
-    "internal/proxy/binary_physical_test.go": [
-      "operator-optypegt"
-    ],
-    "internal/querycorpus/binary_ops_loki_diff_test.go": [
-      "operator-optypecmpeq",
-      "operator-optypegt",
-      "operator-optypemod",
-      "operator-optypeneq",
-      "operator-optypepow"
-    ],
-    "internal/queryplan/lower/binop_routed_test.go": [
-      "operator-optypegt",
-      "operator-optypepow"
-    ]
-  },
+  "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
     "api_prom_label_name_values",
@@ -6073,5 +6076,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 408
+  "wired_items": 413
 }
