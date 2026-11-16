@@ -135,6 +135,29 @@ var metricContexts = []errorContext{
 	{"wrapped-unterminated", "sum(", ""},
 }
 
+// errorWrappers are the expressions Loki keeps a query's error through, each around a metric expression that holds
+// the carrier: a vector aggregation, sort, topk, label_replace, arithmetic on either side and the set operations.
+var errorWrappers = []struct{ name, text string }{
+	{"sum", "sum(%s)"}, {"sort", "sort(%s)"}, {"topk", "topk(2, %s)"},
+	{"label-replace", `label_replace(%s, "x", "$1", "a", "(.*)")`},
+	{"times-right", "%s * 2"}, {"times-left", "2 * %s"},
+	{"and", `%s and on () count_over_time({a="b"}[5m])`}, {"or-right", `count_over_time({a="b"}[5m]) or %s`},
+	{"unless", `%s unless count_over_time({a="b"}[5m])`},
+}
+
+// carrierMetric is a metric expression that holds the carrier: the metric carrier itself, a log carrier's stage in a
+// count_over_time, a selector carrier's matcher in a count_over_time's selector.
+func carrierMetric(c errorCarrier) string {
+	switch c.kind {
+	case "log":
+		// A line filter after the stage reads its line, so Loki builds a line_format there too.
+		return `count_over_time({a="b"} ` + c.text + ` |= "x" [5m])`
+	case "selector":
+		return "count_over_time({" + c.text + "}[5m])"
+	}
+	return c.text
+}
+
 // paramOps are the operations whose first argument the parameter grid writes; paramValues the first arguments.
 var (
 	paramOps = []string{"sum", "avg", "min", "max", "count", "stddev", "stdvar", "sort", "sort_desc", "topk", "bottomk",
@@ -200,6 +223,13 @@ func errorOrderQueries() []errorOrderRow {
 				}
 				add(c.name, x.name, x.pre+q+x.suf)
 			}
+		}
+	}
+	for _, c := range errorOrderCarriers {
+		for _, w := range errorWrappers {
+			q := strings.ReplaceAll(w.text, "%s", carrierMetric(c))
+			add(c.name, "wrap-"+w.name, q)
+			add(c.name, "wrap-"+w.name+"-syntax-after", q+" )")
 		}
 	}
 	for _, op := range paramOps {
@@ -366,6 +396,11 @@ var carrierPhases = map[string]errorPhase{
 // check-before and check-after contexts the other check is an action for a pipeline or selector carrier and a tree
 // check for a metric carrier.
 func carrierWins(phase errorPhase, kind, context string) bool {
+	if w, ok := strings.CutPrefix(context, "wrap-"); ok {
+		// Every wrapper keeps the carrier's error; a syntax error after the whole expression answers ahead of the
+		// tree checks and the build, never ahead of an action.
+		return !strings.HasSuffix(w, "-syntax-after") || phase == phaseAction
+	}
 	switch phase {
 	case phaseAction:
 		switch context {
@@ -419,7 +454,13 @@ func TestLokiErrorPhasesRecorded(t *testing.T) {
 			continue
 		}
 		checked++
-		if got, want := !r.Accept && r.Error == alone[r.Carrier], carrierWins(phase, kind, r.Context); got != want {
+		if r.Context == "wrap-times-left" && (r.Carrier == "binary-log-leg" || r.Carrier == "set-literal-leg") {
+			// `2 * a + b` and `2 * 1 and b` bind the multiplication first: the leg Loki names is another one.
+			continue
+		}
+		// A wrapped line filter carrier is reported with the line filter after it, as one run of filters.
+		text := strings.ReplaceAll(r.Error, ` |= "x"`, "")
+		if got, want := !r.Accept && text == alone[r.Carrier], carrierWins(phase, kind, r.Context); got != want {
 			t.Errorf("%s (%s) in %s: Loki answers %q; the %s rule says the carrier's error %s",
 				r.Carrier, phase, r.Context, r.Error, phase, map[bool]string{true: "answers", false: "does not answer"}[want])
 		}
