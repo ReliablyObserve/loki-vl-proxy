@@ -35,7 +35,12 @@ func oldCompatQueryFences(r *http.Request, query string) string {
 }
 
 func oldCompatQueryRangeFences(r *http.Request, query string) string {
-	return oldCompatQueryFences(r, query) + logfmtPresenceResponseKeyVersion(r, query)
+	return oldCompatQueryFences(r, query) + logfmtPresenceResponseKeyVersion(r, query) + rankOverBinaryFence(query)
+}
+
+// rankOverBinaryFence is the range sites' last fence (semantics/rank-over-binary-operation), read on its own.
+func rankOverBinaryFence(query string) string {
+	return rankOverBinaryResponseKeyVersion(query, streamLevelSeriesResponseKeyVersion(query) != "" || scanFenceWords(query).stddev)
 }
 
 func oldInnerQueryRangeFences(r *http.Request, query string) string {
@@ -53,6 +58,7 @@ func oldInnerQueryRangeFences(r *http.Request, query string) string {
 	key.WriteString(keepUnwrapIdentityResponseKeyVersion(query))
 	key.WriteString(dynamicUnwrapIdentityResponseKeyVersion(query))
 	key.WriteString(streamLevelSeriesResponseKeyVersion(query))
+	key.WriteString(rankOverBinaryFence(query))
 	return key.String()
 }
 
@@ -210,7 +216,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			for _, f := range []string{
 				orderedJSONVectorResponseVersion, bareJSONMetricResponseVersion, logfmtPresenceResponseVersion,
 				detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion, keywordLabelResponseVersion,
-				streamLevelSeriesResponseVersion,
+				streamLevelSeriesResponseVersion, rankOverBinaryResponseVersion,
 			} {
 				if strings.Contains(oldInner, f) {
 					fired[f] = true
@@ -242,7 +248,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 	for _, f := range []string{
 		orderedJSONVectorResponseVersion, bareJSONMetricResponseVersion, logfmtPresenceResponseVersion,
 		detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion, keywordLabelResponseVersion,
-		streamLevelSeriesResponseVersion,
+		streamLevelSeriesResponseVersion, rankOverBinaryResponseVersion,
 	} {
 		if !fired[f] {
 			t.Errorf("no corpus query fires %s: the differential does not cover it", f)

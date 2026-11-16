@@ -82,9 +82,14 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 		b.add(keepUnwrapIdentityResponseVersion)
 	}
 	b.add(dynamicUnwrapIdentityResponseKeyVersion(query))
-	b.add(streamLevelSeriesResponseKeyVersion(query))
+	streamLevel := streamLevelSeriesResponseKeyVersion(query)
+	b.add(streamLevel)
 	if site == responseKeyCompatQueryRange {
 		b.add(logfmtPresenceFence(r, query, other))
+	}
+	if site == responseKeyCompatQueryRange || site == responseKeyInnerQueryRange {
+		// Only the range handler's answers of a ranking over a binary operation changed.
+		b.add(rankOverBinaryResponseKeyVersion(query, streamLevel != "" || words.stddev))
 	}
 	if site == responseKeyCompatQuery || site == responseKeyCompatQueryRange {
 		// The compat edge looks its cache up before the handler validates the query.

@@ -703,11 +703,11 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	innerStats, innerIsStats := translator.DecodeStats(translatedInner)
 
 	r = p.withRequestScope(r)
-	if parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner); parsedInner != nil {
-		if _, binary := parsedInner.(*logqlpkg.BinOpExpr); binary {
-			// The operands of a binary expression fold on their own.
-			withoutLabels = nil
-		}
+	parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner)
+	innerBinary, _ := parsedInner.(*logqlpkg.BinOpExpr)
+	if innerBinary != nil {
+		// The operands of a binary expression fold on their own.
+		withoutLabels = nil
 	}
 	foldWithout = foldWithout && len(withoutLabels) > 0
 	if foldWithout {
@@ -735,7 +735,14 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	// Native VL buckets are timestamped at their left edge; ranking those
 	// directly can select the next window's winner and omit the first point.
 	// The manual range adapter still uses VL pre-aggregation when available.
-	if bin, isBin := binaryOfStats(innerStats, innerIsStats); isBin {
+	if innerBinary != nil {
+		// A binary operation is evaluated by the binary route, operand by
+		// operand, as the instant handler and a binary at the root are: the
+		// translation of the whole operation is the marker of its operands'
+		// queries (dropping a bool modifier and the right side of and, or and
+		// unless), never a query VictoriaLogs can read.
+		p.proxyBinaryLogQL(sc, innerR, innerBinary, "matrix")
+	} else if bin, isBin := binaryOfStats(innerStats, innerIsStats); isBin {
 		// The operand is a stats query and a number (stdvar_over_time, the
 		// deviation squared), answered as the range route answers it.
 		if scalarStats, ok := scalarStatsBinaryOf(bin); ok {

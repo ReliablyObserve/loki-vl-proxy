@@ -16,8 +16,8 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2604,
-      "keys": 2549,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -25,8 +25,8 @@
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2604,
-      "keys": 2549,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -34,8 +34,8 @@
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2604,
-      "keys": 2549,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -43,8 +43,8 @@
       "unsound": 0
     },
     "v1.53 identity": {
-      "rows": 2604,
-      "keys": 2549,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -52,8 +52,8 @@
       "unsound": 0
     },
     "v1.53 no body scan": {
-      "rows": 2604,
-      "keys": 2549,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -61,8 +61,8 @@
       "unsound": 0
     },
     "v1.53 no body scan, stream fields, keepLine": {
-      "rows": 2604,
-      "keys": 2549,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -70,8 +70,8 @@
       "unsound": 0
     },
     "v1.53 stream fields": {
-      "rows": 2604,
-      "keys": 2549,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -79,8 +79,8 @@
       "unsound": 0
     },
     "v1.53 stream fields and labels": {
-      "rows": 2604,
-      "keys": 2549,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -88,8 +88,8 @@
       "unsound": 0
     },
     "v1.53 stream labels": {
-      "rows": 2604,
-      "keys": 2549,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -97,8 +97,8 @@
       "unsound": 0
     },
     "v1.53 stream labels keepLine": {
-      "rows": 2604,
-      "keys": 2549,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -106,8 +106,8 @@
       "unsound": 0
     },
     "v1.53 underscores": {
-      "rows": 2604,
-      "keys": 2549,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -115,8 +115,8 @@
       "unsound": 0
     },
     "v1.53 underscores keepLine": {
-      "rows": 2604,
-      "keys": 2549,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -298,9 +298,10 @@
       "the plan does not route it: RangeAgg route unwrap rate_counter": 7,
       "the plan does not route it: RangeAgg route unwrap stdvar": 5,
       "the plan does not route it: RangeAgg unwrap quantile spelling": 1,
-      "the plan does not route it: Rank operand BinOp": 3,
+      "the plan does not route it: Rank operand BinOp": 6,
       "the plan does not route it: Rank route operand": 186,
       "the plan does not route it: Rank route rewrite": 1,
+      "the plan does not route it: SeriesAgg operand BinOp": 1,
       "the plan does not route it: VectorAgg LogSelect json extraction": 2,
       "the plan does not route it: VectorAgg LogSelect level filter after stage": 2,
       "the plan does not route it: VectorAgg LogSelect unpack parser": 1,
@@ -465,8 +466,8 @@
     }
   },
   "route_parity": {
-    "rows": 2562,
-    "runs": 25620,
+    "rows": 2566,
+    "runs": 25660,
     "profiles": [
       "instant",
       "step=range",
@@ -523,8 +524,9 @@
       "RangeAgg route unwrap rate_counter": 70,
       "RangeAgg route unwrap stdvar": 50,
       "Rank (route rule)": 1870,
-      "Rank operand BinOp": 30,
+      "Rank operand BinOp": 60,
       "Scalar": 20,
+      "SeriesAgg operand BinOp": 10,
       "VectorAgg LogSelect json extraction": 20,
       "VectorAgg LogSelect level filter after stage": 20,
       "VectorAgg LogSelect unpack parser": 10,
@@ -550,7 +552,7 @@
       "VectorLit": 10
     },
     "statuses": {
-      "200": 24993,
+      "200": 25033,
       "400": 594,
       "500": 33
     },
@@ -559,46 +561,46 @@
       "24h chunk/LabelReplace": "34b8c8aa4bd45211",
       "24h chunk/LogSelect": "aefbd87a1712a487",
       "24h chunk/RangeAgg": "d3ba899db1e9ff2d",
-      "24h chunk/Rank": "a166a205e092b5cd",
+      "24h chunk/Rank": "55fa2eae203a0b4d",
       "24h chunk/Scalar": "b01ddfee0a162681",
-      "24h chunk/VectorAgg": "d7e428d6afc47f7b",
+      "24h chunk/VectorAgg": "c66e0e00c4a13c42",
       "24h chunk/VectorLit": "fafe78111335aec9",
       "instant/BinOp": "2cfc393f6de5d409",
       "instant/LabelReplace": "1eda7f007cfc3480",
       "instant/LogSelect": "d768315233c83eac",
       "instant/RangeAgg": "03c7fa525a2bf67a",
-      "instant/Rank": "9c43a65e52056654",
+      "instant/Rank": "94992ac694869e8f",
       "instant/Scalar": "058ee94c303a0c46",
-      "instant/VectorAgg": "b9969e1c4d17ae9e",
+      "instant/VectorAgg": "4e6ff81c576ce9f8",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "8f8290b21d6929c1",
       "step\u003crange/LabelReplace": "7e2339de2a64039d",
       "step\u003crange/LogSelect": "aefbd87a1712a487",
       "step\u003crange/RangeAgg": "56180f27ad46eb09",
-      "step\u003crange/Rank": "5e1f6300543622cc",
+      "step\u003crange/Rank": "ef83d03c1ed08e77",
       "step\u003crange/Scalar": "b01ddfee0a162681",
-      "step\u003crange/VectorAgg": "db7763b50ebe29c4",
+      "step\u003crange/VectorAgg": "e74ac615a01bcb5b",
       "step\u003crange/VectorLit": "fafe78111335aec9",
       "step=range/BinOp": "19d3995395703ae9",
       "step=range/LabelReplace": "f814664e0f744be4",
       "step=range/LogSelect": "aefbd87a1712a487",
       "step=range/RangeAgg": "a233c2b01375b05c",
-      "step=range/Rank": "778a0c52b2439e6c",
+      "step=range/Rank": "65bf4fd7bccfc723",
       "step=range/Scalar": "b01ddfee0a162681",
-      "step=range/VectorAgg": "3bdd1e3f5e566644",
+      "step=range/VectorAgg": "0c46ab4b023d42db",
       "step=range/VectorLit": "fafe78111335aec9",
       "step\u003erange/BinOp": "1d0c5e742409da42",
       "step\u003erange/LabelReplace": "266dba9d6112ebe9",
       "step\u003erange/LogSelect": "aefbd87a1712a487",
       "step\u003erange/RangeAgg": "12917e20e54f19cb",
-      "step\u003erange/Rank": "5b02d50e90ea0a26",
+      "step\u003erange/Rank": "8e0382636df5c4b6",
       "step\u003erange/Scalar": "b01ddfee0a162681",
-      "step\u003erange/VectorAgg": "6283ee3c4f1b7d46",
+      "step\u003erange/VectorAgg": "4449b98a6d428a3b",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     }
   },
   "shadow": {
-    "rows": 24141,
+    "rows": 24177,
     "profiles": 12,
     "native": 20887,
     "native_proxy_evaluated": 3861,
@@ -634,8 +636,9 @@
       "RangeAgg parser label cost": 18,
       "RangeAgg spelling": 9,
       "RangeAgg unwrap quantile spelling": 9,
-      "Rank operand BinOp": 27,
+      "Rank operand BinOp": 54,
       "Scalar": 18,
+      "SeriesAgg operand BinOp": 9,
       "VectorAgg LogSelect json extraction": 18,
       "VectorAgg LogSelect level filter after stage": 18,
       "VectorAgg LogSelect unpack parser": 9,
