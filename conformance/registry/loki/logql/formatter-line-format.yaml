@@ -1,7 +1,7 @@
 id: formatter-line-format
 kind: formatter
 logql: "line_format"
-loki_constant: OpFmtLine
+source: https://grafana.com/docs/loki/v3.7.x/query/log_queries/
 generated:
   supported_by_proxy: true
   seen_in:

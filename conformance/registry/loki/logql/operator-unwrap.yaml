@@ -1,7 +1,7 @@
 id: operator-unwrap
 kind: operator
 logql: "unwrap"
-loki_constant: OpUnwrap
+source: https://grafana.com/docs/loki/v3.7.x/query/metric_queries/
 generated:
   supported_by_proxy: true
   seen_in:

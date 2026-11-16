@@ -1,7 +1,7 @@
 id: operator-or
 kind: operator
 logql: "or"
-loki_constant: OpTypeOr
+source: https://grafana.com/docs/loki/v3.7.x/query/query_reference/
 generated:
   supported_by_proxy: true
   seen_in:
