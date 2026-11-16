@@ -190,6 +190,10 @@ func streamLevelSeriesScan(query string) (fires, ranked bool) {
 		if hasSuffixFold(name, "sort") || hasSuffixFold(name, "sort_desc") {
 			return true, true
 		}
+		// sort and sort_desc also take a grouping before their parenthesis (sort by (app) (…)).
+		if ranked := groupedRankingName(name); hasSuffixFold(ranked, "sort") || hasSuffixFold(ranked, "sort_desc") {
+			return true, true
+		}
 		labelReplace = labelReplace || hasSuffixFold(name, "label_replace")
 		s = s[i+1:]
 	}
@@ -205,6 +209,20 @@ func streamLevelSeriesScan(query string) (fires, ranked bool) {
 		}
 	}
 	return false, false
+}
+
+// groupedRankingName returns what comes before a trailing `by` keyword (a whole word, any case, blanks the parser
+// skips before it), or "" when name does not end with one.
+func groupedRankingName(name string) string {
+	if !hasSuffixFold(name, "by") {
+		return ""
+	}
+	rest := name[:len(name)-2]
+	trimmed := trimRightBlanks(rest)
+	if len(trimmed) == len(rest) {
+		return "" // no blank before by: part of a longer word
+	}
+	return trimmed
 }
 
 // dynamicUnwrapIdentityResponseVersion fences the answers cached before the series of a range function over an
