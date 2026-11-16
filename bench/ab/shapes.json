@@ -47,7 +47,8 @@
       "semantics/json-filter-pushdown-translated-label",
       "explore-logs-volume-json",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/probe-regexp-parse-cost"
      ]
     },
     {
@@ -363,7 +364,8 @@
       "semantics/label-filter-before-parser-pushdown",
       "severity-detected-level-derivation",
       "parsed-label-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/probe-regexp-parse-cost"
      ]
     },
     {
@@ -1035,7 +1037,8 @@
       "semantics/extracted-suffix-collision",
       "profiles/structured-metadata-label-collision",
       "loki-compatible-profile",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/probe-regexp-parse-cost"
      ]
     },
     {
@@ -1430,7 +1433,8 @@
       "semantics/json-extracted-metric-pushdown",
       "semantics/extracted-suffix-collision",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/probe-regexp-parse-cost"
      ]
     },
     {
@@ -2714,7 +2718,8 @@
       "semantics/extracted-suffix-collision",
       "semantics/json-extracted-metric-pushdown",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/probe-regexp-parse-cost"
      ]
     }
    ]
@@ -3560,7 +3565,8 @@
      "covers": [
       "semantics/keep-leaves-labels-loki-drops",
       "operator-keep",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/probe-regexp-parse-cost"
      ]
     }
    ]

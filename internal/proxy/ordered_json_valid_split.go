@@ -109,7 +109,7 @@ var jsonLokiRejectHazard = func() string {
 			words = append(words, "_msg:"+string(b))
 		}
 	}
-	escapedKey := `(_msg:"\\" _msg:~` + strconv.Quote(`\\(?s:.)[^"]*"\s*:`) + `)`
+	escapedKey := `(_msg:"\\" _msg:~` + strconv.Quote(`\\(?s:.)`+vlNotInRun(`"`)+`"\s*:`) + `)`
 	nanInf := `((` + strings.Join(words, " or ") + `) _msg:~` + strconv.Quote(`:\s*(?i:nan|inf)`) + `)`
 	plus := `(_msg:"+" _msg:~` + strconv.Quote(`:\s*\+`) + `)`
 	dotE := `_msg:~` + strconv.Quote(`:\s*[.eE]`)

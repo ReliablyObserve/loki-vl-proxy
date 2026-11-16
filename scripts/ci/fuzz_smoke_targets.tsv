@@ -186,3 +186,4 @@ smoke	internal/queryplan/lower	FuzzScreenLogStages	12s	-	the log stage screen an
 smoke	internal/logsql	FuzzAppendPipeMatchesString	12s	-	stats and math pipes appended in place print the text their String writes
 smoke	internal/cache	FuzzPeerPushBufferInvariants	12s	-	peer push buffer invariants
 smoke	internal/translate	FuzzPatternCaptureNames	12s	-	the pattern placeholder scanner finds the names the regexp <([A-Za-z][A-Za-z0-9_]*)> finds, in order
+smoke	internal/proxy	FuzzVLNotInMatchesTheNegatedClass	12s	-	probe regexps written with vlNotIn match what [^set] matches

@@ -28,6 +28,7 @@ cases:
   - quality/label-cache-aged-labels-kept
   - quality/query-range-extent-cache
   - quality/extracted-label-probe-cost
+  - quality/probe-regexp-parse-cost
 perf:
   max_ratio: 2.0
   target_ratio: 1.0
@@ -35,3 +36,35 @@ perf:
   locked: true
   locked_since: '2026-10-27'
   effort_exception: null
+decisions:
+  - id: probe-regexps-without-folding-closed-wide-classes
+    chosen: |
+      A "no quote" run inside a probe regexp is written as a run of non-letters
+      and a run of letters, repeated (vlNotInRun: (?:[^setA-Za-z]*[A-Za-z]*)*),
+      never as one negated class holding the ASCII letters. The detected_level
+      escaped-value regexp also runs behind _msg:"\\", a filter every line it
+      matches passes.
+    over: ['[^set]* (a class closed under case folding: Go prints it in about 1 ms and VictoriaLogs prints each regexp several times per query parse)', 'an alternation of the two classes (the parser merges them back into [^set])', 'the alternation with ^ between (not equal to [^set] where the class may match at the start of the text or under +)', 'the alternation with \b\B between (equal and cheap to parse, but 2-2.5x the per-character match cost of the run form on lines with escapes)']
+    why: |
+      The partial-parse probe, the detected_level keys probe and the JSON hazard
+      filter cost VictoriaLogs 7-24 ms of query parse each on v1.49.0 and
+      v1.53.0, paid on every request whose window part is not covered yet (a
+      moved-window refresh). The run form keeps the language and parses in
+      microseconds. The extra cost per character, paid only on the lines
+      holding an escape that the probes already gate on, is smaller than the
+      parse cost for any window holding fewer than about 10^5 such lines.
+    evidence: 'VictoriaLogs logstorage.ParseQuery v1.49.0 and v1.53.0, 2026-11-16, generated probe texts for {service_name="api-gateway"} and {env="production"}: partial-parse probe 17.3-23.7 ms -> 0.24-0.39 ms; detected_level keys probe 7.4-8.2 ms -> 0.37-0.44 ms; hazard filter 7.4-7.9 ms -> 0.07 ms. Go regexp per-line match (BenchmarkVLNotInMatch, 6 lines, with each probe''s literal gate): detected_level escaped value 6.8 us -> 2.6 us; JSON escaped key 6.9 us -> 14.7 us and hazard 6.3 us -> 14.3 us (one line of 40 escapes dominates)'
+    code: [internal/proxy/vl_regexp_class.go, internal/proxy/ordered_json_metric.go, internal/proxy/ordered_json_valid_split.go]
+    tests: [TestVLNotInMatchesTheNegatedClass, TestVLNotInPatternsHoldNoWideLetterClass, TestVLNotInPrintsCheaply, TestVLNotInVictoriaLogsSelectsTheSameLines, FuzzVLNotInMatchesTheNegatedClass, BenchmarkVLNotInMatch]
+    history:
+      - date: '2026-11-16'
+        what: 'weekly A/B row keep-series-grouping K6 at 6h, warm (moved-window repeats)'
+        measured: 'proxy 55-70 ms against Loki 13 ms (5.23x, above the locked 2x bound of operator-keep); four VictoriaLogs calls per repeat, the slowest a 33 ms probe'
+        cause: 'a [^"]* class in the partial-parse probe: 17-24 ms of VictoriaLogs query parse per probe round'
+        effect: 'every json metric refresh paid the parse; the warm rows of K6 and the json sets went above 2x Loki'
+        fixed_by: '#PR'
+        after: 'the probe parses in 0.24-0.39 ms; the warm rows are to be measured on the stack (see the PR)'
+    quality: 'The probes select the same lines as before on both VictoriaLogs versions and in Go''s regexp (edge table, fuzz, oracle store); every answer is unchanged.'
+    performance:
+      tracked: ['keep-series-grouping K6', 'extracted-pushdown X1', 'extracted-suffix E7', 'level-filter-stored LS8', 'json-filter-pushdown A', 'metric-latency-gap DL2']
+      bound: 'perf block max_ratio 2.0, target 1.0; green at Loki speed or below'
