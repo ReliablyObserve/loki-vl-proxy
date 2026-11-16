@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.310.1] - 2026-11-16
+
 ### Fixed
 
 - A query whose VictoriaLogs answer is larger than the proxy buffers (`-backend-max-buffered-response-bytes`), or that
@@ -33,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
   `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
   parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
+
+### Changed
+
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
 
 ## [2.310.0] - 2026-11-16
 
