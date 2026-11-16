@@ -9,17 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
-  accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
-  per-stream series took the stream's `detected_level`.
-- An answer cached before a behaviour change is no longer served for a query written in another spelling of the same
-  query. The version marker that keeps such answers out of the cache is now added for every spelling the LogQL parser
-  reads: keywords and function names in any case (`| KEEP a`, `| UNWRAP n`, `TOPK(`, `SUM BY`, `| JSON`, `| LOGFMT`,
-  `IP("...")`), comments between tokens (a quote inside a comment no longer hides what follows), a grouped label filter
-  (`| (a="b") | (c="d")`), an empty back-quoted string after `!=`, and names written with other Unicode letters. The
-  per-stream detected_level marker also reads `topK` and `bottomK` written with the Kelvin sign (U+212A), and the
-  marker of a parser's unwrap series identity reads a function name written with U+0130 (`avg_over_tİme`). A query spelled one of these ways may miss the cache once after the upgrade; queries spelled as
-  before keep their keys.
 - `absent_over_time` over a zero range (`[0s]`, `[0]`, with or without `offset`) now answers as Loki does: one
   series valued 1 at every step on query_range and at the evaluation time on query, labelled with the selector's
   equality matchers, also under `sum`, `count`, `stddev`, `max without (...)` and the other vector aggregations,
@@ -30,8 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Test support: the plan corpus leaves out the request of a registry case that compares only a client error, and six
-  conformance cases for queries Loki rejects now carry an HTTP request the live verifier sends. No proxy behaviour changes.
 - Loki's error answers are recorded from a Loki that holds data. The recorder (`test/errorrecord`) writes a small
   fixture to the Loki and waits until its range metric path serves it (`-ingest`, a step of the weekly
   `error-answers-record` workflow) before it asks the recorded requests, and every row it records carries the state
@@ -40,6 +27,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window older than what it holds, Loki answers `/patterns` given a query that is not a stream selector with its
   empty success instead of `400 only label matchers are supported`, so an unmoved window recorded that instead of
   the answer a client gets. A row added by hand with no answer yet is recorded whatever it is marked.
+
+## [2.303.0] - 2026-11-16
+
+### Fixed
+
+- One stream now gets one `detected_level` on every metric query type, as Loki gives. For a stream labelled
+  `level="ERROR"`, `count_over_time({...} | logfmt [5m])`, `rate({...} | json [1m])`, `sort(rate({...} | json [1m]))`
+  and an unwrap at step 300 said `ERROR` while plain `rate` and `count_over_time` said `error`. A stream labelled
+  `severity`, `LEVEL` or `lvl` had no `detected_level` label at all on those queries. Those series are built by the
+  proxy from a per-stream or raw-row read, which copied the stored `level` value and read no other level key. They
+  now take the stream's level fields, else the row's `level` field, normalised as Loki does (`Debug` is `debug`); the
+  `level` label keeps its stored value. Plain range functions were already right for these streams: VictoriaLogs
+  v1.49.0 and v1.53.0 compute the same values with the chain the proxy sends (a stream label beside a stored level is
+  the next entry). Answers cached before the fix are not served again (the `@stream-level-series-v3` fence of the next
+  entry; semantics/detected-level-one-value-per-stream).
+- A stream's own level label now decides `detected_level` before a level stored on its lines, on every metric query
+  type and at every step, as Loki does (stream label, then structured metadata, then the line). A stream labelled
+  `severity="error"` whose lines carry structured metadata `level="debug"` said `debug` on `rate`, `count_over_time`,
+  `sum by (detected_level)` and the other queries VictoriaLogs' `detected_level` chain serves (and a
+  `| detected_level="error"` filter missed those lines); Loki answers `error`. The chain now marks the rows whose
+  stream holds a level field (one pipe, a stream filter evaluated once per block) and reads the level fields of those
+  rows from the stream only, where two or more level names are known, so a window with one level name sends the same
+  LogsQL as before; VictoriaLogs v1.49.0 and v1.53.0 answer Loki's value for every recorded stream, every text
+  survives their clone, and their CPU time for the chain stays within measurement noise. The raw-row reads
+  (`sum without (pod) (rate({...} | json amount | unwrap amount [5m]))` at an instant and step 60, `sort(rate({...} | json [1m]))` at an instant and step
+  300) answered `ERROR` and `Debug` for streams labelled `level="ERROR"` and `level="Debug"` (VictoriaLogs answers a
+  raw row with its stream fields as fields, so the row's `level` was the stream's, copied as stored); they now take
+  the stream's level fields first, then the row's `level`, normalised. VictoriaLogs calls per request do not change.
+  Answers cached before are not served again: the response key fence (`@stream-level-series-v3`) now covers every
+  metric query and every query naming `detected_level` (one cache miss per such key after the upgrade).
+- `/loki/api/v1/patterns` now counts the last 10 s sample of a range whole when the range ends inside it, as Loki
+  does: Loki answers every sample that starts inside the range with all of its lines, including the lines after the
+  range's end. The proxy read lines only up to the end, so a range ending at, for example, `...019` showed 76 of the
+  sample's 98 lines in Logs Drilldown's patterns chart. The count also depended on timing: the request that started
+  the pattern state's background build got the partial sample (and kept it in the cache), later ones the whole
+  sample. The pattern state, the exact tier and the counts tier now read up to the end of that sample (up to now
+  while it is still being written, completed by the next refresh); the counts tier, with a step of whole 10 s
+  samples, also leaves out the lines of a sample that starts before the range, as Loki does. A range ending on a
+  sample's start reads exactly as before, and a repeat or a range ending earlier inside a sample already read makes
+  no VictoriaLogs call.
+
+## [2.302.1] - 2026-11-15
+
+### Fixed
+
+- A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
+  accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
+  per-stream series took the stream's `detected_level`.
+
+### Changed
+
+- Test support: the plan corpus leaves out the request of a registry case that compares only a client error, and six
+  conformance cases for queries Loki rejects now carry an HTTP request the live verifier sends. No proxy behaviour changes.
+
+## [2.302.0] - 2026-11-15
+
+### Fixed
+
+- An answer cached before a behaviour change is no longer served for a query written in another spelling of the same
+  query. The version marker that keeps such answers out of the cache is now added for every spelling the LogQL parser
+  reads: keywords and function names in any case (`| KEEP a`, `| UNWRAP n`, `TOPK(`, `SUM BY`, `| JSON`, `| LOGFMT`,
+  `IP("...")`), comments between tokens (a quote inside a comment no longer hides what follows), a grouped label filter
+  (`| (a="b") | (c="d")`), an empty back-quoted string after `!=`, and names written with other Unicode letters. The
+  per-stream detected_level marker also reads `topK` and `bottomK` written with the Kelvin sign (U+212A), and the
+  marker of a parser's unwrap series identity reads a function name written with U+0130 (`avg_over_tİme`). A query spelled one of these ways may miss the cache once after the upgrade; queries spelled as
+  before keep their keys.
 
 ## [2.301.0] - 2026-11-15
 

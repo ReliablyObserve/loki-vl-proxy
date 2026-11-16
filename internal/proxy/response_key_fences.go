@@ -137,21 +137,31 @@ func keepUnwrapIdentityResponseKeyVersion(query string) string {
 	return ""
 }
 
-// streamLevelSeriesResponseVersion fences the answers cached before the series of a per-stream stats read took
-// detected_level from the stream's level field (semantics/without-fold-stream-detected-level): they said unknown.
-const streamLevelSeriesResponseVersion = "@stream-level-series-v1:"
+// streamLevelSeriesResponseVersion fences the answers cached before every metric series built from one stream took
+// detected_level from the stream's level fields, normalised (semantics/without-fold-stream-detected-level: they said
+// unknown on the per-stream stats reads; semantics/detected-level-one-value-per-stream: the bare-parser stats read,
+// the raw-row reads and the stats answers relabelled by stream copied the stored level, ERROR or Debug, and ignored
+// severity, LEVEL and lvl; VictoriaLogs' detected_level chain read the level fields stored on a row before the
+// stream's, so a stream labelled severity="error" whose lines carry structured metadata level="debug" said debug on
+// every chain-served query, and a `| detected_level` filter kept those rows by that value). v1 named only the first
+// change, v2 (never released) the first two.
+const streamLevelSeriesResponseVersion = "@stream-level-series-v3:"
 
-// streamLevelSeriesResponseKeyVersion is the fence of a query that may read its series per stream without a level
-// column: a without fold, an unwrap function, and topk, bottomk, sort, sort_desc or label_replace over a range
-// function (each reads the per-stream series the proxy labels). The words are those of every query whose label sets
-// changed in a diff of range functions, parsers and outer forms against the previous build. A text screen, so a
-// query that reads no such series is fenced too (one more cache miss), and no other query's key changes. It jumps
-// between the rare bytes the words hold (a log query has no parenthesis and returns at once): k for topk and bottomk,
-// w for without and unwrap, and the name before each ( for sort, sort_desc and label_replace. The parser reads
-// keywords in any case and any Unicode blank before a parenthesis (TOPK, sum WITHOUT, sort\v(), so the screen does
-// too: it also jumps to K and W and compares the words case-folded, and reads a Kelvin sign as the k of topk and
-// bottomk (the one letter outside ASCII that lower cases into these words).
+// streamLevelSeriesResponseKeyVersion is the fence of a query whose VictoriaLogs read may carry the detected_level
+// chain (levelChainReadIn: any metric query, any query naming detected_level), and of a
+// query that may build its series per stream on a proxy-side path: a without fold, an unwrap function, topk,
+// bottomk, sort, sort_desc or label_replace over a range function (every metric query with a parser stage, whose
+// series the raw-row and bare-parser reads build, holds a range too). One fence for both changes, so a key carries one
+// constant and no chain is built. A text screen, so a query that builds no such series is fenced too (one more cache
+// miss). Past the range check it jumps between the rare bytes the words hold (a log query has no parenthesis and
+// returns at once): k for topk and bottomk, w for without and unwrap, and the name before each ( for sort, sort_desc
+// and label_replace. The parser reads keywords in any case and any Unicode blank before a parenthesis (TOPK, sum
+// WITHOUT, sort\v(), so the screen does too: it also jumps to K and W, compares the words case-folded, and reads a
+// Kelvin sign as the k of topk and bottomk (the one letter outside ASCII that lower cases into these words).
 func streamLevelSeriesResponseKeyVersion(query string) string {
+	if levelChainReadIn(query) {
+		return streamLevelSeriesResponseVersion
+	}
 	if strings.IndexByte(query, '(') < 0 {
 		return ""
 	}
@@ -187,6 +197,32 @@ func streamLevelSeriesResponseKeyVersion(query string) string {
 		s = s[i+1:]
 	}
 	return ""
+}
+
+// levelChainReadIn reports a query whose VictoriaLogs read may carry the detected_level chain: a [ outside quoted
+// text (the range of a range aggregation, which every metric query holds) or the name detected_level outside quoted
+// text (a label filter, keep or drop on it). A comment is read like any other text, as the other screens read it.
+func levelChainReadIn(query string) bool {
+	if strings.IndexByte(query, '[') < 0 && !strings.Contains(query, detectedLevelLabel) {
+		return false
+	}
+	commentEnd := 0
+	for i := 0; i < len(query); {
+		switch c := query[i]; {
+		case (c == '"' || c == '`') && i >= commentEnd:
+			i = skipQuoted(query, i) + 1
+		case c == '#' && i >= commentEnd:
+			commentEnd = skipComment(query, i)
+			i++
+		case c == '[':
+			return true
+		case c == 'd' && strings.HasPrefix(query[i:], detectedLevelLabel) && !fenceNameByteBefore(query, i) && identEnd(query, i) == i+len(detectedLevelLabel):
+			return true
+		default:
+			i++
+		}
+	}
+	return false
 }
 
 // groupedRankingName returns what comes before a trailing `by` keyword (a whole word, any case, blanks the parser

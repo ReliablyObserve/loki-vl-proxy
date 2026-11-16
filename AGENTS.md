@@ -249,6 +249,12 @@ and the weekly full run measure reuse per query structure and per layer (hit rat
 bytes, proxy CPU per repeat and refresh, peer fill) and turn red when it drops, like a latency regression; the per-case
 verifier repeats each case and reports a repeat that differs or calls VictoriaLogs again.
 
+Reuse is measured per request, and as two repeats. The daily runs start the proxies with `-debug-vl-calls-header`, so a
+request's VictoriaLogs calls are its own count (`X-Loki-VL-Backend-Calls`), never the process-wide metrics' delta, which
+holds the proxy's background calls (health probes, inventory refreshes) and other clients; a report that cannot say which
+source counted a number does not publish it as an improvement. The perf smoke asks an exact repeat (the same request
+twice at a settled window, 0 calls expected) apart from the repeat that moves the window (judged by the bytes it reads).
+
 ## Fleet scale
 
 Design every change for tens of proxy replicas, a much larger VictoriaLogs

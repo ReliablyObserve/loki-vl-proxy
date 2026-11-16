@@ -61,6 +61,19 @@ type Emulator struct {
 	// DeriveLevel is Loki's detected_level of a row (its stored level field and
 	// line), applied where the translator's detected_level pipe chain is.
 	DeriveLevel func(level, msg string) string
+	// DeriveFields, when set, replaces DeriveLevel with the chain's result over
+	// the row as VictoriaLogs holds it: stream is the row's stream fields, fields
+	// every field of the row (the stream fields among them, the row's other
+	// fields and _msg). VictoriaLogs runs the chain over stream fields too, so a
+	// stream labelled severity or LEVEL decides it there, and the chain reads a
+	// stream's level field before the same name stored on the row.
+	DeriveFields func(stream, fields map[string]string) string
+	// RowStreamFields writes the stream fields into every raw row
+	// (/select/logsql/query) as top-level fields, as VictoriaLogs answers them
+	// (a Loki-push row with stream {app="a",level="ERROR"} comes back with
+	// app=a and level=ERROR beside _stream); otherwise a raw row holds only
+	// _stream, _msg, the value field and Labels.
+	RowStreamFields bool
 
 	Mu    sync.Mutex
 	Calls []Call
@@ -78,6 +91,23 @@ func (e *Emulator) LevelOf(level, msg string) string {
 		return level
 	}
 	return "unknown"
+}
+
+// levelOfFields is the chain's detected_level of a row whose fields are f.
+func (e *Emulator) levelOfFields(f map[string]string) string {
+	if e.DeriveFields != nil {
+		return e.DeriveFields(StreamLabels(f["_stream"]), f)
+	}
+	return e.LevelOf(f["level"], f["_msg"])
+}
+
+// StreamLabels returns the name="value" pairs of a stream.
+func StreamLabels(stream string) map[string]string {
+	out := map[string]string{}
+	for _, m := range StreamLabelRE.FindAllStringSubmatch(stream, -1) {
+		out[m[1]] = m[2]
+	}
+	return out
 }
 
 func (e *Emulator) Record(path, query string) {
@@ -194,11 +224,28 @@ func (e *Emulator) serveRaw(w http.ResponseWriter, r *http.Request) {
 			"_msg":       e.Line(row),
 			e.Field:      row.Text(),
 		}
+		stream := StreamLabels(row.Stream)
+		if e.RowStreamFields {
+			for k, v := range stream {
+				fields[k] = v
+			}
+		}
 		for k, v := range row.Labels {
 			fields[k] = v
 		}
 		if strings.Contains(r.FormValue("query"), `format "<__dl>" as detected_level`) {
-			fields["detected_level"] = e.LevelOf(fields["level"], fields["_msg"])
+			if e.DeriveFields != nil {
+				all := map[string]string{}
+				for k, v := range stream {
+					all[k] = v
+				}
+				for k, v := range fields {
+					all[k] = v
+				}
+				fields["detected_level"] = e.DeriveFields(stream, all)
+			} else {
+				fields["detected_level"] = e.LevelOf(fields["level"], fields["_msg"])
+			}
 		}
 		line, _ := json.Marshal(fields)
 		_, _ = w.Write(append(line, '\n'))
@@ -279,7 +326,7 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 	var fieldOps []func(f map[string]string)
 	for _, pipe := range pipes[:first] {
 		if pipe == `format "<__dl>" as detected_level` {
-			fieldOps = append(fieldOps, func(f map[string]string) { f["detected_level"] = e.LevelOf(f["level"], f["_msg"]) })
+			fieldOps = append(fieldOps, func(f map[string]string) { f["detected_level"] = e.levelOfFields(f) })
 		}
 		if names, ok := strings.CutPrefix(pipe, "delete "); ok {
 			fieldOps = append(fieldOps, func(f map[string]string) {

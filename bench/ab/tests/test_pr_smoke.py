@@ -566,13 +566,17 @@ class DailyProfilesTest(unittest.TestCase):
         st = mock.Mock(loki="http://loki")
         st.set_profile.side_effect = lambda profile, *a, **kw: events.append(("loki", profile)) or {"p": profile}
 
-        def start(specs, out, st_, svc, proxies, profile="", supported=None):
+        self.extras, self.calls_header = [], []
+
+        def start(specs, out, st_, svc, proxies, profile="", supported=None, calls_header=None):
+            self.calls_header.append(calls_header)
             for name, _, _, _ in specs:
                 proxies.append(FakeProxy(name, "on" if profile == "aligned" and supported[name] else
                                          "unsupported" if profile == "aligned" else "off"))
             events.append(("proxies", profile))
 
         def matrix(name, shapes, targets, args_, end, st_, out, runs, **kw):
+            self.extras.append(kw.get("extra"))
             events.append(("matrix", kw["profile"], name, len(shapes), tuple(kw["unlike"])))
             return {"set": name, "profile": kw["profile"], "valid": True, "date": "2026-10-28", "label": "daily",
                     "candidate": "main", "baseline": "release", "reference": "loki", "runs": 3, "rows": []}
@@ -586,6 +590,7 @@ class DailyProfilesTest(unittest.TestCase):
                 mock.patch.object(daily.stack, "start_proxies", side_effect=start), \
                 mock.patch.object(daily.stack, "probe_align_support",
                                   side_effect=lambda b: supported[os.path.basename(b)[len("proxy-"):]]), \
+                mock.patch.object(daily.stack, "probe_calls_header_support", side_effect=lambda b: b.endswith("proxy-main")), \
                 mock.patch.object(daily.stack, "teardown"), mock.patch.object(daily.stack, "log"), \
                 mock.patch.object(daily.pr_smoke, "source_supports_align", return_value=any(supported.values())), \
                 mock.patch.object(daily.pr_smoke, "git", return_value="a" * 40), \
@@ -593,6 +598,18 @@ class DailyProfilesTest(unittest.TestCase):
             code = daily.main()
             meta = read_json(os.path.join(tmp, "meta.json")) if os.path.exists(os.path.join(tmp, "meta.json")) else {}
         return code, events, meta
+
+    def test_the_smoke_measures_an_exact_repeat_and_the_builds_that_know_the_header_get_it(self):
+        _, events, _ = self.run_daily({"release": False, "main": True}, "--no-write", "--smoke")
+        self.assertTrue(self.extras)
+        for extra in self.extras:
+            self.assertIn("--exact-repeat", extra)
+            self.assertIn("--proxy-metrics", extra)
+        self.assertEqual(self.calls_header[0], {"release": False, "main": True})
+        # The full run keeps its single repeat: the exact repeat is the smoke's.
+        self.run_daily({"release": False, "main": True}, "--no-write")
+        for extra in self.extras:
+            self.assertNotIn("--exact-repeat", extra)
 
     def test_both_profiles_run_in_order_when_a_build_supports_the_flag(self):
         code, events, meta = self.run_daily({"release": False, "main": True}, "--no-write")

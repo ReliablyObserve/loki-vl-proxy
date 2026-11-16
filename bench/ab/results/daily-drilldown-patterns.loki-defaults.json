@@ -1,6 +1,6 @@
 {
  "label": "daily-drilldown-patterns-loki-defaults",
- "date": "2026-11-09",
+ "date": "2026-11-16",
  "set": "drilldown-patterns",
  "description": "Logs Drilldown's Patterns tab: /loki/api/v1/patterns for a service Loki's pattern ingester mines (cache-redis, plain text) and for the environment selector of the Drilldown landing page, as the plugin sends them (no step: Loki derives it). Loki and the proxy mine different patterns, so the answers compare in lines counted, not in pattern text.",
  "baseline": "release",
@@ -17,8 +17,7 @@
  "refresh_runs": null,
  "timing": "warm",
  "verdicts": {
-  "same": 5,
-  "slower": 1
+  "same": 6
  },
  "result_differs_from_reference": 4,
  "result_differs_preexisting": 4,
@@ -32,19 +31,19 @@
    "shape": "DP1 patterns of a plain-text service",
    "range": "1h",
    "p50": {
-    "release": 0.01,
-    "main": 0.011,
-    "loki": 0.019
+    "release": 0.011,
+    "main": 0.013,
+    "loki": 0.023
    },
    "p95": {
-    "release": 0.011,
-    "main": 0.017,
-    "loki": 0.021
+    "release": 0.015,
+    "main": 0.019,
+    "loki": 0.03
    },
    "cold": {
-    "release": 0.116,
-    "main": 0.264,
-    "loki": 0.022
+    "release": 0.157,
+    "main": 0.333,
+    "loki": 0.023
    },
    "status": {
     "release": "200",
@@ -52,33 +51,67 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 173.95,
-    "main": 173.95,
-    "loki": 173.95
+    "release": 289.83,
+    "main": 289.83,
+    "loki": 289.83
+   },
+   "reuse": {
+    "release": {
+     "cold": {
+      "unknown:l1_memory:requests": 1.0,
+      "loki:l1_memory:requests": 9.0,
+      "translations": 1.0,
+      "vl_bytes": 5360243.0,
+      "vl_calls": 3.0,
+      "vl_calls:select_logsql_query": 3.0,
+      "cpu_seconds": 0.115238
+     },
+     "repeat": {
+      "cpu_seconds": 0.016328,
+      "loki:l1_memory:hits": 1.0,
+      "loki:l1_memory:requests": 5.0
+     }
+    },
+    "main": {
+     "cold": {
+      "unknown:l1_memory:requests": 1.0,
+      "loki:l1_memory:requests": 9.0,
+      "translations": 1.0,
+      "vl_bytes": 5360243.0,
+      "vl_calls": 3.0,
+      "vl_calls:select_logsql_query": 3.0,
+      "cpu_seconds": 0.193333
+     },
+     "repeat": {
+      "cpu_seconds": 0.016791,
+      "loki:l1_memory:hits": 1.0,
+      "loki:l1_memory:requests": 5.0
+     }
+    }
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.91
+   "speedup": 0.85
   },
   {
    "shape": "DP1 patterns of a plain-text service",
    "range": "6h",
    "p50": {
-    "main": 0.028,
-    "release": 0.024,
-    "loki": 0.029
+    "main": 0.018,
+    "release": 0.018,
+    "loki": 0.018
    },
    "p95": {
-    "main": 0.048,
-    "release": 0.032,
-    "loki": 0.055
+    "main": 0.043,
+    "release": 0.029,
+    "loki": 0.043
    },
    "cold": {
-    "main": 0.028,
-    "release": 0.034,
-    "loki": 0.075
+    "main": 0.018,
+    "release": 0.018,
+    "loki": 0.018
    },
    "status": {
     "main": "200",
@@ -86,43 +119,35 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 173.95,
-    "release": 173.95,
-    "loki": 173.95
+    "main": 289.83,
+    "release": 289.83,
+    "loki": 289.83
    },
-   "parity_vs_reference": "differs",
-   "baseline_parity_vs_reference": "differs",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 0.86
-  },
-  {
-   "shape": "DP1 patterns of a plain-text service",
-   "range": "24h",
-   "p50": {
-    "release": 0.019,
-    "main": 0.019,
-    "loki": 0.011
-   },
-   "p95": {
-    "release": 0.019,
-    "main": 0.019,
-    "loki": 0.011
-   },
-   "cold": {
-    "release": 0.019,
-    "main": 0.019,
-    "loki": 0.011
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 173.95,
-    "main": 173.95,
-    "loki": 173.95
+   "reuse": {
+    "main": {
+     "cold": {
+      "loki:l1_memory:requests": 8.0,
+      "loki:l1_memory:hits": 4.0,
+      "cpu_seconds": 0.022591
+     },
+     "repeat": {
+      "cpu_seconds": 0.022481,
+      "loki:l1_memory:hits": 4.0,
+      "loki:l1_memory:requests": 8.0
+     }
+    },
+    "release": {
+     "cold": {
+      "loki:l1_memory:requests": 8.0,
+      "loki:l1_memory:hits": 4.0,
+      "cpu_seconds": 0.021955
+     },
+     "repeat": {
+      "cpu_seconds": 0.02204,
+      "loki:l1_memory:hits": 4.0,
+      "loki:l1_memory:requests": 8.0
+     }
+    }
    },
    "parity_vs_reference": "differs",
    "baseline_parity_vs_reference": "differs",
@@ -131,22 +156,82 @@
    "speedup": 1.0
   },
   {
+   "shape": "DP1 patterns of a plain-text service",
+   "range": "24h",
+   "p50": {
+    "release": 0.028,
+    "main": 0.026,
+    "loki": 0.015
+   },
+   "p95": {
+    "release": 0.03,
+    "main": 0.028,
+    "loki": 0.016
+   },
+   "cold": {
+    "release": 0.026,
+    "main": 0.026,
+    "loki": 0.016
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 289.83,
+    "main": 289.83,
+    "loki": 289.83
+   },
+   "reuse": {
+    "release": {
+     "cold": {
+      "loki:l1_memory:requests": 16.0,
+      "loki:l1_memory:hits": 12.0,
+      "cpu_seconds": 0.030469
+     },
+     "repeat": {
+      "cpu_seconds": 0.03237,
+      "loki:l1_memory:hits": 12.0,
+      "loki:l1_memory:requests": 16.0
+     }
+    },
+    "main": {
+     "cold": {
+      "loki:l1_memory:requests": 16.0,
+      "loki:l1_memory:hits": 12.0,
+      "cpu_seconds": 0.030853
+     },
+     "repeat": {
+      "cpu_seconds": 0.030711,
+      "loki:l1_memory:hits": 12.0,
+      "loki:l1_memory:requests": 16.0
+     }
+    }
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.08
+  },
+  {
    "shape": "DP2 patterns of an environment",
    "range": "1h",
    "p50": {
-    "main": 0.121,
-    "release": 0.062,
-    "loki": 0.248
+    "main": 0.152,
+    "release": 0.119,
+    "loki": 0.281
    },
    "p95": {
-    "main": 0.15,
-    "release": 0.136,
-    "loki": 0.415
+    "main": 0.173,
+    "release": 0.129,
+    "loki": 0.429
    },
    "cold": {
-    "main": 1.182,
-    "release": 2.705,
-    "loki": 0.21
+    "main": 1.62,
+    "release": 3.57,
+    "loki": 0.271
    },
    "status": {
     "main": "200",
@@ -154,33 +239,67 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 358.78,
-    "release": 358.78,
-    "loki": 290.99
+    "main": 288.75,
+    "release": 288.75,
+    "loki": 288.75
+   },
+   "reuse": {
+    "main": {
+     "cold": {
+      "unknown:l1_memory:requests": 1.0,
+      "loki:l1_memory:requests": 8.0,
+      "loki:l1_memory:hits": 1.0,
+      "vl_bytes": 43275245.0,
+      "vl_calls": 3.0,
+      "vl_calls:select_logsql_query": 3.0,
+      "cpu_seconds": 1.485883
+     },
+     "repeat": {
+      "cpu_seconds": 0.119396,
+      "loki:l1_memory:hits": 1.0,
+      "loki:l1_memory:requests": 5.0
+     }
+    },
+    "release": {
+     "cold": {
+      "unknown:l1_memory:requests": 1.0,
+      "loki:l1_memory:requests": 8.0,
+      "loki:l1_memory:hits": 1.0,
+      "vl_bytes": 43275245.0,
+      "vl_calls": 3.0,
+      "vl_calls:select_logsql_query": 3.0,
+      "cpu_seconds": 2.105522
+     },
+     "repeat": {
+      "cpu_seconds": 0.123553,
+      "loki:l1_memory:hits": 1.0,
+      "loki:l1_memory:requests": 5.0
+     }
+    }
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
-   "verdict": "slower",
-   "speedup": 0.51
+   "verdict": "same",
+   "speedup": 0.78
   },
   {
    "shape": "DP2 patterns of an environment",
    "range": "6h",
    "p50": {
-    "release": 0.183,
-    "main": 0.133,
-    "loki": 0.196
+    "release": 0.182,
+    "main": 0.169,
+    "loki": 0.236
    },
    "p95": {
-    "release": 0.326,
-    "main": 0.2,
-    "loki": 0.273
+    "release": 0.26,
+    "main": 0.397,
+    "loki": 0.377
    },
    "cold": {
-    "release": 0.356,
-    "main": 0.224,
-    "loki": 0.272
+    "release": 0.29,
+    "main": 0.275,
+    "loki": 0.38
    },
    "status": {
     "release": "200",
@@ -188,33 +307,59 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 246.68,
-    "main": 246.68,
-    "loki": 246.68
+    "release": 284.21,
+    "main": 284.21,
+    "loki": 284.21
+   },
+   "reuse": {
+    "release": {
+     "cold": {
+      "loki:l1_memory:requests": 8.0,
+      "loki:l1_memory:hits": 4.0,
+      "cpu_seconds": 0.273916
+     },
+     "repeat": {
+      "cpu_seconds": 0.187091,
+      "loki:l1_memory:hits": 4.0,
+      "loki:l1_memory:requests": 8.0
+     }
+    },
+    "main": {
+     "cold": {
+      "loki:l1_memory:requests": 8.0,
+      "loki:l1_memory:hits": 4.0,
+      "cpu_seconds": 0.269961
+     },
+     "repeat": {
+      "cpu_seconds": 0.173448,
+      "loki:l1_memory:hits": 4.0,
+      "loki:l1_memory:requests": 8.0
+     }
+    }
    },
    "parity_vs_reference": "differs",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.38
+   "speedup": 1.08
   },
   {
    "shape": "DP2 patterns of an environment",
    "range": "24h",
    "p50": {
-    "main": 0.239,
-    "release": 0.211,
-    "loki": 0.157
+    "main": 0.291,
+    "release": 0.295,
+    "loki": 0.215
    },
    "p95": {
-    "main": 0.296,
-    "release": 0.215,
-    "loki": 0.192
+    "main": 0.308,
+    "release": 0.309,
+    "loki": 0.357
    },
    "cold": {
-    "main": 0.211,
-    "release": 0.209,
-    "loki": 0.203
+    "main": 0.336,
+    "release": 0.331,
+    "loki": 0.205
    },
    "status": {
     "main": "200",
@@ -222,21 +367,47 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 139.03,
-    "release": 139.03,
-    "loki": 3.25
+    "main": 3.6,
+    "release": 3.6,
+    "loki": 3.6
+   },
+   "reuse": {
+    "main": {
+     "cold": {
+      "loki:l1_memory:requests": 16.0,
+      "loki:l1_memory:hits": 12.0,
+      "cpu_seconds": 0.47032
+     },
+     "repeat": {
+      "cpu_seconds": 0.295525,
+      "loki:l1_memory:hits": 12.0,
+      "loki:l1_memory:requests": 16.0
+     }
+    },
+    "release": {
+     "cold": {
+      "loki:l1_memory:requests": 16.0,
+      "loki:l1_memory:hits": 12.0,
+      "cpu_seconds": 0.451868
+     },
+     "repeat": {
+      "cpu_seconds": 0.301774,
+      "loki:l1_memory:hits": 12.0,
+      "loki:l1_memory:requests": 16.0
+     }
+    }
    },
    "parity_vs_reference": "differs",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.88
+   "speedup": 1.01
   }
  ],
- "baseline_ref": "v2.105.0",
- "commit": "0843224237dabca214c3d136a9d1db1c100e5987",
- "measured_at": "2026-11-09T03:27:00Z",
- "run": "42556435495.1",
+ "baseline_ref": "v2.302.1",
+ "commit": "5b5c7965fcffc797fcbb46b673b4a7c83073a008",
+ "measured_at": "2026-11-16T03:31:15Z",
+ "run": "43798639187.1",
  "proxy_align": {
   "release": "on",
   "main": "on"
