@@ -287,7 +287,7 @@ func BenchmarkWithLevelLessStreams(b *testing.B) {
 //
 // conformance: semantics/detected-level-stream-stats-without-level
 func TestLevelLessSecondReadFailureAnswersLikeTheFirst(t *testing.T) {
-	const secret = "vl-internal-detail-7f3a"
+	const vlText = "backend detail the client must not see"
 	for _, route := range []struct {
 		name, path, query, step string
 	}{
@@ -312,7 +312,7 @@ func TestLevelLessSecondReadFailureAnswersLikeTheFirst(t *testing.T) {
 					if r.Form.Get("extra_filters") != "" {
 						second++
 						if failure == "status 500" {
-							http.Error(w, "victorialogs: "+secret, http.StatusInternalServerError)
+							http.Error(w, "victorialogs: "+vlText, http.StatusInternalServerError)
 							return
 						}
 						conn, _, err := w.(http.Hijacker).Hijack()
@@ -352,7 +352,7 @@ func TestLevelLessSecondReadFailureAnswersLikeTheFirst(t *testing.T) {
 				if res.Code != http.StatusInternalServerError {
 					t.Fatalf("status %d, want Loki's 500 for a failed backend: %s", res.Code, res.Body.String())
 				}
-				if body := res.Body.String(); strings.Contains(body, secret) || strings.Contains(strings.ToLower(body), "victorialogs") {
+				if body := res.Body.String(); strings.Contains(body, vlText) || strings.Contains(strings.ToLower(body), "victorialogs") {
 					t.Fatalf("VictoriaLogs text reached the client: %s", body)
 				}
 			})
