@@ -28,7 +28,14 @@ why: |
     over a sum, a `without` under another aggregation, a ranking `without`);
   - an empty `without ()` (semantics/without-empty-grouping-range-collapses).
   Exact windows need Loki's parsed series identity as a stats grouping first;
-  then the partial aggregates merge per window like the other forms. Found with
+  then the partial aggregates merge per window like the other forms. That is
+  done for avg, max and min over time (and stddev, stdvar) under sum, max, min
+  or avg after a json or logfmt parser with no keep, such as
+  `sum(avg_over_time({..} | json | unwrap x [5m]))`: the buckets group by the
+  series hash of semantics/unwrap-per-series-identity-raw-rows and the window
+  merge folds the series (TestDynamicIdentityWindowsMatchLokiReference). The
+  additive functions under another aggregation (`max by (pod) (sum_over_time(..
+  | json ..))`), the `without` folds and the nested forms stay as above. Found with
   an emulated VictoriaLogs while fixing semantics/unwrap-over-time-range-windows
   (not measured on a stack).
 request:
@@ -53,6 +60,6 @@ gap:
   area: 'internal/proxy unwrap_samples.go unwrapWindowBuckets and unwrapWindowForm (these forms keep native step buckets); the translator''s per-series grouping of parser queries'
   loki: 'pkg/logql/range_vector.go:102-189 batchRangeVectorIterator; range_vector.go:371-420 sumOverTime, avgOverTime, maxOverTime, minOverTime; pkg/logql/evaluator.go VectorAggEvaluator.Next'
   proxy: 'native step buckets: the step-sized bucket, not the window'
-  planned_test: 'TestUnwrapOverTimeResidualShapesKeepStatsBuckets pins the route today (internal/proxy); the forms join TestUnwrapOverTimeWindowsDifferential and TestCompat_UnwrapOverTimeRangeWindows once fixed'
+  planned_test: 'TestUnwrapOverTimeResidualShapesKeepStatsBuckets pins the route today (internal/proxy), and the window merge of the parser identity forms (TestDynamicIdentityWindowsMatchLokiReference); the remaining forms join TestUnwrapOverTimeWindowsDifferential and TestCompat_UnwrapOverTimeRangeWindows once fixed'
   note: 'Residual of semantics/unwrap-over-time-range-windows; depends on the parsed series identity rows.'
   clusters: []

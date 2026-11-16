@@ -868,9 +868,12 @@ func TestUnwrapOverTimeUngroupedSumIgnoresSeriesLimit(t *testing.T) {
 // window merge can read from buckets, and the nested aggregations the window
 // evaluator does not apply, so they keep VictoriaLogs' step buckets and never
 // read raw rows; their windows over a range longer than the step are the open
-// row semantics/unwrap-over-time-range-windows-residual-forms.
+// row semantics/unwrap-over-time-range-windows-residual-forms. A function taken
+// per series under sum, max, min or avg after a parser (a parser's series
+// identity) is merged per series hash instead
+// (TestDynamicIdentityWindowsMatchLokiReference).
 //
-// conformance: semantics/unwrap-over-time-range-windows-residual-forms, semantics/unwrap-over-time-range-windows
+// conformance: semantics/unwrap-over-time-range-windows-residual-forms, semantics/unwrap-over-time-range-windows, semantics/unwrap-per-series-identity-raw-rows
 func TestUnwrapOverTimeResidualShapesKeepStatsBuckets(t *testing.T) {
 	const base = int64(1_800_000_000) * 1e9
 	var rows []vlemu.Row
@@ -878,10 +881,8 @@ func TestUnwrapOverTimeResidualShapesKeepStatsBuckets(t *testing.T) {
 		rows = append(rows, vlemu.Row{TS: ts, Stream: `{app="uw",pod="a"}`, Value: float64(ts / 1e9 % 13)})
 	}
 	for _, query := range []string{
-		`sum(max_over_time({app="uw"} | json | unwrap amount [5m]))`,
 		`sum without (pod) (min_over_time({app="uw"} | logfmt | unwrap amount [5m]))`,
 		`max by (pod) (sum_over_time({app="uw"} | json | unwrap amount [5m]))`,
-		`sum(avg_over_time({app="uw"} | json | unwrap amount | __error__="" [5m]))`,
 		`sum by (pod) (sum by (pod, app) (max_over_time({app="uw"} | unwrap amount [5m])))`,
 		`max(sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
 		`sum without () (max_over_time({app="uw"} | unwrap amount [5m]))`,
@@ -899,6 +900,25 @@ func TestUnwrapOverTimeResidualShapesKeepStatsBuckets(t *testing.T) {
 				if owWindowMergeRE.MatchString(q) {
 					t.Fatalf("%s: answered from the window merge: %s", query, q)
 				}
+			}
+		})
+	}
+	for _, query := range []string{
+		`sum(max_over_time({app="uw"} | json | unwrap amount [5m]))`,
+		`sum(avg_over_time({app="uw"} | json | unwrap amount | __error__="" [5m]))`,
+	} {
+		t.Run("identity "+query, func(t *testing.T) {
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+			c := owCase{shape: owShape{query: func(string) string { return query }}, window: 5 * time.Minute, step: time.Minute, start: base, end: base + int64(10*time.Minute)}
+			if got := runOverTimeCase(t, emu, c, 0); len(got) == 0 {
+				t.Fatalf("%s: no series", query)
+			}
+			if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
+				t.Fatalf("%s: read raw rows: %s", query, raw[0])
+			}
+			calls := emu.EndpointCalls("/select/logsql/stats_query_range")
+			if len(calls) != 1 || !owWindowMergeRE.MatchString(calls[0]) || !strings.Contains(calls[0], "__lvp_sid, __lvp_bad)") {
+				t.Fatalf("%s: want one window merge grouped by the series hash, read %v", query, calls)
 			}
 		})
 	}
