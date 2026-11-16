@@ -4,6 +4,7 @@ proves:
   - parser-error-and-label-collision
   - loki_api_v1_query_range
 consumer: explore
+evidence: needs recording
 why: |
   Both are visible only on data Loki would rarely see, and both are shared by
   the raw evaluator, so the differential test
@@ -49,7 +50,7 @@ gap:
   impact: edge
   effort: M
   area: 'internal/proxy raw evaluator parsed-label naming (processWithStreamLabels) and translator.ExtractedLabelPipes'
-  loki: 'pkg/logql/log/parser.go duplicateSuffix and ParserHint.Extracted (a key an earlier extraction produced is skipped)'
+  loki: 'a key an earlier extraction produced is skipped, the first of two keys wins; a colliding structured-metadata key is renamed name_extracted'
   proxy: 'the parsed key name wins; same-spelling stored fields are not metadata'
   planned_test: 'TestCompat_ExtractedBothKeysInLineOrder (test/e2e-compat, group core)'
   note: 'Related: profiles/parsed-key-colliding-with-structured-metadata, semantics/extracted-suffix-collision.'

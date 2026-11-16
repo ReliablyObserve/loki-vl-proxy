@@ -26,21 +26,19 @@ import (
 // the step in whole milliseconds, and its JSON writes each time as seconds with
 // a millisecond fraction.
 //
-// The reference below is written from Loki v3.7.9, apart from the proxy:
-//   - pkg/loghttp/params.go:122-129, 163-186, 191-203 (step: float seconds
-//     scaled by float64(time.Second) and truncated to a Duration, else a
-//     Prometheus duration of whole units; a timestamp with a dot is float
-//     seconds whose fraction is rounded to a millisecond, an integer of at most
-//     ten digits is seconds, else nanoseconds);
-//   - pkg/loghttp/query.go:473-515 (step <= 0 is 400, and so is a range of more
-//     than 11,000 steps, the quotient of two durations in nanoseconds);
-//   - pkg/querier/queryrange/codec.go:2265-2284 (Step is Milliseconds(), a
-//     truncation);
-//   - pkg/logql/range_vector.go:42-89, 189-204 (the times are start,
-//     start+step, ... up to and including end; the sample time is current/1e6,
-//     a truncation to milliseconds; a sample at t covers (t-range, t]);
-//   - pkg/util/marshal/query.go (the time is model.Time(ms).String(), that is
-//     FormatFloat(ms/1000, 'f', -1, 64)).
+// The reference below models Loki v3.7.9, apart from the proxy:
+//   - step: float seconds scaled by float64(time.Second) and truncated to a
+//     Duration, else a Prometheus duration of whole units; a timestamp with a
+//     dot is float seconds whose fraction is rounded to a millisecond, an
+//     integer of at most ten digits is seconds, else nanoseconds;
+//   - step <= 0 is 400, and so is a range of more than 11,000 steps, the
+//     quotient of two durations in nanoseconds;
+//   - the step is kept as Milliseconds(), a truncation;
+//   - the times are start, start+step, ... up to and including end; the sample
+//     time is current/1e6, a truncation to milliseconds; a sample at t covers
+//     (t-range, t];
+//   - the time is written as model.Time(ms).String(), that is
+//     FormatFloat(ms/1000, 'f', -1, 64).
 
 // lokiMs is Loki's time of an evaluation at ns: whole milliseconds, truncated.
 func lokiMs(ns int64) int64 { return vlemu.FloorDiv(ns, int64(time.Millisecond)) }
@@ -64,7 +62,7 @@ func lokiEvalTimes(startNs, endNs, stepNs int64) []int64 {
 
 var promDurationRE = regexp.MustCompile(`^(?:(\d+)y)?(?:(\d+)w)?(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?(?:(\d+)ms)?$`)
 
-// lokiStep is Loki's parseSecondsOrDuration (pkg/loghttp/params.go:191-203).
+// lokiStep is Loki's parsing of a step: float seconds or a duration.
 // A Prometheus duration has no fractions and no unit below the millisecond.
 func lokiStep(text string) (time.Duration, bool) {
 	if f, err := strconv.ParseFloat(text, 64); err == nil {
@@ -89,7 +87,7 @@ func lokiStep(text string) (time.Duration, bool) {
 	return total, true
 }
 
-// lokiTimestamp is Loki's parseTimestamp (pkg/loghttp/params.go:163-186).
+// lokiTimestamp is Loki's parsing of a request timestamp.
 func lokiTimestamp(text string) (int64, bool) {
 	if strings.Contains(text, ".") {
 		if f, err := strconv.ParseFloat(text, 64); err == nil {
@@ -405,8 +403,7 @@ func (s ssScenario) beyondBucketBudget() bool {
 
 // evalBounds are the bounds a range query is evaluated between: as sent, or,
 // with alignment, each moved down to a multiple of the step in milliseconds
-// after truncating it to milliseconds (Loki's StepAlignMiddleware,
-// queryrangebase/step_align.go:20-24).
+// after truncating it to milliseconds (Loki's step alignment).
 func (s ssScenario) evalBounds() (int64, int64) {
 	start, end := s.startNs(), s.endNs()
 	if s.align && !s.instant {

@@ -3,12 +3,12 @@ title: /loki/api/v1/delete answers 404 like Loki with deletion disabled unless -
 proves:
   - loki_api_v1_delete
 consumer: api
+evidence: needs recording
 why: |
   Loki registers /loki/api/v1/delete (PUT/POST, GET, DELETE) only when
-  -compactor.retention-enabled is true (pkg/loki/modules.go:1935-1939 at
-  v3.7.7), and that flag defaults to false (pkg/compactor/config.go:55). With
-  the route unregistered, Loki's gorilla/mux router answers every method with
-  http.NotFoundHandler: 404, body "404 page not found\n", Content-Type
+  -compactor.retention-enabled is true, and that flag defaults to false (https://grafana.com/docs/loki/latest/configure/). With
+  the route unregistered, Loki answers every method with
+  a plain 404, body "404 page not found\n", Content-Type
   "text/plain; charset=utf-8", before any auth middleware runs. The proxy
   matches that by default by not registering the path, so Go's ServeMux gives
   the same 404 and no tenant, rate-limit or parameter check answers first.

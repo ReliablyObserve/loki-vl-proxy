@@ -6,8 +6,7 @@ proves:
 consumer: explore
 why: |
   Loki's grammar only allows a metric expression inside a vector aggregation
-  (pkg/logql/syntax/syntax.y:176-185 vectorAggregationExpr: `vectorOp (
-  metricExpr )`), so `topk(5, {app="api-gateway"})` fails to parse with
+  (`vectorOp ( metricExpr )`), so `topk(5, {app="api-gateway"})` fails to parse with
   `parse error at line 1, col 28: syntax error: unexpected )` and a 400.
 
   The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
@@ -27,8 +26,7 @@ why: |
   (a selector, with or without a pipeline or parentheses) inside any vector
   aggregation followed by its closing parenthesis fails with Loki's
   `syntax error: unexpected )` at that parenthesis (line and column counted
-  in characters, as Loki's lexer counts them; Loki's own test:
-  pkg/logql/syntax/parser_test.go:689-690). query and query_range answer it
+  in characters, as Loki's lexer counts them). query and query_range answer it
   as 400 text/plain before any VictoriaLogs call. A log range inside a
   vector aggregation (`sum({app="x"}[5m])`) keeps its previous text.
 request:
@@ -55,7 +53,7 @@ gap:
   visual_reason: 'a status and error text change: Grafana shows an error panel on the base and on the PR, and the visual comparison compares only the status Grafana returns for a failed panel, which is the same for both. The capture explore-topk-over-log-selector (visual-smoke run 41916596305) shows the base''s "Internal Server Error" and the PR''s and Loki''s "parse error at line 1, col 45: syntax error: unexpected )". The status and text are pinned by TestCompat_VectorAggregationOverLogSelector against Loki and the parser edge table'
   effort: S
   area: 'internal/logql/parser.go parseVectorAggregation (vector aggregation operand must be a metric expression)'
-  loki: 'pkg/logql/syntax/syntax.y:176-185 (vectorAggregationExpr takes a metricExpr); pkg/logql/syntax/parser_test.go:689-690'
+  loki: 'a vector aggregation takes a metric expression only, so a log selector inside it is a 400 parse error ''unexpected )'' (test/e2e-compat bad_request_status_parity_test.go)'
   proxy: 'Loki''s 400 and text on query and query_range'
   planned_test: 'TestCompat_VectorAggregationOverLogSelector (test/e2e-compat, group core), query and query_range'
   clusters: []

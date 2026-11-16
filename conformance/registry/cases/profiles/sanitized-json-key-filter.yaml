@@ -6,7 +6,7 @@ proves:
 consumer: drilldown
 why: |
   Loki's json and logfmt parsers sanitize every key they extract
-  (sanitizeLabelKey: each rune outside [A-Za-z0-9_] becomes an underscore), so
+  (each rune outside [A-Za-z0-9_] becomes an underscore), so
   a log line {"http.method":"GET"} carries the label `http_method`, and
   `| json | http_method="GET"` selects it. VictoriaLogs' unpack_json keeps the
   original key, so the translated `| filter http_method:="GET"` matched

@@ -7,9 +7,8 @@ consumer: explore
 why: |
   The translator gate (translator.UnwrapGateFor) keeps the rows whose value
   converts in Loki's syntax, with a regular expression, because VictoriaLogs'
-  stats parse values their own way (pkg/logql/log/metrics_extraction.go:316-338
-  convertFloat = strconv.ParseFloat, convertDuration = time.ParseDuration,
-  convertBytes = humanize.ParseBytes). It used to differ from them on these
+  stats parse values their own way (strconv.ParseFloat, time.ParseDuration,
+  humanize.ParseBytes). It used to differ from them on these
   values (checked against the Go functions on VictoriaLogs v1.43.1 and v1.50.0,
   every value below in both block layouts of the storage):
 
@@ -59,8 +58,7 @@ why: |
   - A duration's leading zeros are stripped (`replace_regexp`) before the math
     pipe reads it.
   - `nan` is a NaN sample for Loki: sum, avg, stddev, stdvar and rate over a window
-    that holds one are NaN (range_vector.go sumOverTime, avgOverTime,
-    stddevOverTime, rateLogs) and so are the vector aggregations of those
+    that holds one are NaN and so are the vector aggregations of those
     series; max and min over time skip it unless every sample is NaN
     (maxOverTime, minOverTime). VictoriaLogs' sum cannot carry a NaN
     (stats_sum.go: a NaN state is "no value yet", so the next row replaces the sum
@@ -143,7 +141,7 @@ gap:
   impact: edge
   effort: S
   area: 'internal/translator/unwrap_gate.go (UnwrapNumberPattern, UnwrapDurationPattern, UnwrapBytesPattern, UnwrapInRange); internal/proxy/unwrap_conversion_error.go (unwrapCountedGateMode, unwrapNaN)'
-  loki: 'pkg/logql/log/metrics_extraction.go:316-338 convertFloat, convertDuration, convertBytes; pkg/logql/range_vector.go sumOverTime, avgOverTime, maxOverTime, minOverTime, stddevOverTime'
+  loki: 'a value converts with strconv.ParseFloat, time.ParseDuration or humanize.ParseBytes, and the range functions then fold the samples (test/e2e-compat unwrap_value_forms_test.go)'
   proxy: 'a duration within a microsecond of int64 nanoseconds is dropped; a nan under max/min only windows, mixed max/min/count chains and an ungrouped instant sum over sum_over_time or avg_over_time is dropped'
   planned_test: 'TestUnwrapNumberPatternMatchesParseFloat, TestUnwrapGateRange, TestUnwrapDurationPatternMatchesParseDuration, TestUnwrapBytesPatternAndExtract and the generated-input tests (internal/translator, internal/proxy); TestUnwrapCountedGateFlagsOverflow, TestUnwrapNaNGroupsReachTheAnswer, TestUnwrapNaNReachesTheLokiAnswer, TestUnwrapConversionErrorAnswersLokiText, TestUnwrapConversionErrorDifferential (internal/proxy); TestCompat_UnwrapValueFormsParity (rate on query_range, the over-time functions on grouped instants) and TestCompat_UnwrapOverflowParity (test/e2e-compat)'
   note: 'Every form of the lists was checked against the Go functions through the gate and the counting gate executed by VictoriaLogs v1.43.1 and v1.50.0 query code (6,000 generated values per conversion, both block layouts); run live against Loki on VictoriaLogs v1.40.0, v1.47.0 and v1.52.0 (TestCompat_UnwrapOverflowParity passes on all three; TestCompat_UnwrapValueFormsParity passes except the ungrouped nan sum above, with the ungrouped over-time series skipped as registered apart).'

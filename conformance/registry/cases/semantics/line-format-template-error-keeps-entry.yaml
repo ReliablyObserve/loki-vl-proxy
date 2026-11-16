@@ -5,7 +5,7 @@ proves:
   - loki_api_v1_tail
 consumer: explore
 why: |
-  Loki's LineFormatter.Process (pkg/logql/log/fmt.go) keeps the original
+  Loki's LineFormatter.Process keeps the original
   line of an entry its template fails on and adds
   __error__="TemplateFormatErr" and __error_details__ with the template
   error, as parsed labels: stream labels in the default encoding, "parsed"

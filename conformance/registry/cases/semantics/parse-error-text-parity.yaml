@@ -32,7 +32,7 @@ gap:
   impact: grafana-datasource
   effort: L
   area: 'internal/logql parser error messages (Loki''s goyacc messages and positions) + VictoriaLogs error mapping'
-  loki: 'pkg/logql/syntax/parser.go ParseError (line, col) and syntax.y'
+  loki: 'a parse error is a 400 with its line and column (recorded answers, TestLokiErrorAnswersReplay)'
   proxy: 'own / VictoriaLogs text, 422 for some'
   planned_test: 'TestCompat_ParseErrorText corpus (test/e2e-compat, bad_request_status_parity_test.go)'
   clusters:

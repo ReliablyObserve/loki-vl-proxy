@@ -61,7 +61,7 @@ func TestDrilldownHelpers_AdditionalCoverage(t *testing.T) {
 		// without coordinating a Loki-side change, this test will fail.
 		const lokiDetectedFieldsDefaultLimit = 100
 		if detectedFieldsSampleLimit != lokiDetectedFieldsDefaultLimit {
-			t.Errorf("detectedFieldsSampleLimit must match Loki's default LIMIT (%d) for parity in Drilldown UI rendering; got %d. See https://github.com/grafana/loki/blob/main/pkg/querier/queryrange/detected_fields.go for upstream default.",
+			t.Errorf("detectedFieldsSampleLimit must match Loki's default LIMIT (%d) for parity in Drilldown UI rendering; got %d.",
 				lokiDetectedFieldsDefaultLimit, detectedFieldsSampleLimit)
 		}
 

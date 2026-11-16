@@ -6,8 +6,7 @@ proves:
 consumer: drilldown
 why: |
   Loki's ingest normalises the level it reads from structured metadata or
-  a level label (pkg/distributor/field_detection.go:96-178 extractLogLevel,
-  normalizeLogLevel: "Warning", "WARN" and "warning" all become "warn").
+  a level label ("Warning", "WARN" and "warning" all become "warn").
 
   The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
   VictoriaLogs v1.53.0): `/loki/api/v1/index/volume` for
@@ -40,7 +39,7 @@ gap:
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy volume by detected_level (stored level value not normalised)'
-  loki: 'pkg/distributor/field_detection.go:96-178 (extractLogLevel, normalizeLogLevel)'
+  loki: 'a stored level is normalised (Warning, WARN and warning become warn); differential run of 2026-11-04 in this case'
   proxy: 'the stored value ("Warning") as a separate level'
   planned_test: 'TestCompat_VolumeDetectedLevelNormalised (test/e2e-compat, group drilldown)'
   clusters:

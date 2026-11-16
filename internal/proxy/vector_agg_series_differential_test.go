@@ -22,12 +22,11 @@ import (
 
 // This file pins count, min, max and avg of a range function to Loki's, over
 // generated rows and windows, with a reference evaluator written apart from the
-// proxy: Loki v3.7.7 pkg/logql/evaluator.go VectorAggEvaluator.Next (every
-// series of the input vector is folded into the group its labels name, `by`
-// keeping the listed labels, `without` dropping them, no grouping keeping none;
-// count is the number of series, avg a running mean, max and min the extreme of
-// their values) over pkg/logql/range_vector.go (count_over_time and rate of the
-// lines of a series in the window (t-range, t]).
+// proxy, modelling Loki v3.7.7: every series of the input vector is folded into
+// the group its labels name, `by` keeping the listed labels, `without` dropping
+// them, no grouping keeping none; count is the number of series, avg a running
+// mean, max and min the extreme of their values, over count_over_time and rate
+// of the lines of a series in the window (t-range, t].
 //
 // The proxy under test is the real handler; only VictoriaLogs is simulated, by
 // the same vlemu.Emulator the unwrap sum differential uses.
@@ -162,7 +161,7 @@ func labelsKey(labels map[string]string) string {
 	return b.String()
 }
 
-// lokiFold is VectorAggEvaluator.Next: the series of the vector fall into the
+// lokiFold is Loki's vector aggregation: the series of the vector fall into the
 // group whose labels they share, and each group takes the operator's value.
 func lokiFold(in []vaSeries, stage vaStage) []vaSeries {
 	type group struct {

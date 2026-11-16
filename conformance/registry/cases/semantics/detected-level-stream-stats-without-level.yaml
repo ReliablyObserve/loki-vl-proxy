@@ -1,0 +1,65 @@
+id: semantics/detected-level-stream-stats-without-level
+title: "A metric series read per stream from a stream without a level field carries no detected_level, where Loki gives the line's level (open)"
+pending: true
+proves:
+  - metric-series-identity
+  - severity-detected-level-derivation
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki derives detected_level for every line it ingests: the stream label,
+  then structured metadata, then the line body (a logfmt or JSON level key, a
+  level word of a plain line), else unknown (live Loki 3.7.9, 2026-11-15). So
+  `count_over_time({...} | logfmt [5m])` over a stream with no level label
+  whose lines say level=error answers series with detected_level="error", and
+  over a stream whose lines carry structured metadata level="debug" answers
+  debug.
+
+  The proxy reads several query types per stream from VictoriaLogs' stats
+  (`stats by (_stream)`): `count_over_time`, `bytes_over_time` and a
+  comparison over `| logfmt` on query_range, `rate(... | json [1m])` and
+  `label_replace` over it, `max_over_time(... | logfmt amount | unwrap
+  amount [5m])` at steps 60 and 300, and `sum without (pod) (rate(... | json
+  amount | unwrap amount [5m]))` at step 300. That read has no level column,
+  and a stream without a level field has no value of its own, so those series
+  carry no detected_level label. The raw-row reads of the same queries (an
+  instant `| logfmt` count) answer the parsed or stored level, so one query
+  answers error at an instant and no detected_level at step 60.
+
+  Measured by TestDetectedLevelSweepMatchesLoki (Loki engine answers recorded,
+  the proxy over VictoriaLogs v1.49.0 and v1.53.0): 60 of 504 rows on each
+  version, all for the streams with no level label (a logfmt, JSON or text
+  body, structured metadata only, nothing), and 14 rows where both answer
+  the JSONParserErr 400 but the series the text names lacks detected_level.
+  The same rows differ on origin/main and before
+  semantics/detected-level-one-value-per-stream.
+
+  Fix to make (an owner decision on VictoriaLogs cost): group the per-stream
+  stats read by the level field as well (structured metadata and a level the
+  query's parser unpacks; a plain line's level word still needs the chain), or
+  run the presence-pruned detected_level chain and group by its value (one
+  presence probe and the chain's pipes on every such read).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'count_over_time({service_name="payment-service"} | logfmt [5m])'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series]
+  expect: "Every series carries the detected_level Loki derives for its lines (the body's or the structured metadata's level, else unknown), at every step as at an instant."
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy per-stream stats reads (fetchBareParserStatsBuckets, levelGroupingRequest.apply: ensureStreamDetectedLevel leaves the label out without a level field)'
+  loki: 'detected_level from the stream label, structured metadata or the line body, on every series'
+  proxy: 'no detected_level on the series of a stream without a level field when the read is stats by (_stream)'
+  planned_test: 'TestDetectedLevelSweepMatchesLoki (internal/proxy) lists the rows as a known difference (kind absent)'
+  clusters: []

@@ -14,16 +14,15 @@ import (
 )
 
 // `| detected_level <op> "<value>"` before any parser, against live Loki.
-// Loki assigns the label at ingest (v3.7.9 pkg/distributor/field_detection.go
-// extractLogLevel): the stream labels first, then structured metadata, then
-// the line's JSON or logfmt level key, then its first bounded keyword, else
-// unknown. The proxy derives it on the read path. The fixture holds the
-// stack's disagreements: a stream label that a logfmt or keyword line
-// contradicts (worker-service, cache-redis, db-postgres), lines with no level
-// anywhere (unknown), and lines whose level is only in the text. Each filter
-// must select the lines whose label in Loki's own unfiltered answer the
-// matcher accepts, and the metrics over the filter must count them as Loki
-// does, grouped by detected_level and by another label.
+// Loki assigns the label at ingest: the stream labels first, then structured
+// metadata, then the line's JSON or logfmt level key, then its first bounded
+// keyword, else unknown. The proxy derives it on the read path. The fixture
+// holds the stack's disagreements: a stream label that a logfmt or keyword
+// line contradicts (worker-service, cache-redis, db-postgres), lines with no
+// level anywhere (unknown), and lines whose level is only in the text. Each
+// filter must select the lines whose label in Loki's own unfiltered answer
+// the matcher accepts, and the metrics over the filter must count them as
+// Loki does, grouped by detected_level and by another label.
 
 type dlFilterLine struct {
 	name   string

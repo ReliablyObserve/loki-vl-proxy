@@ -7,8 +7,7 @@ proves:
 consumer: explore
 why: |
   Loki answers a rejected query with its message as a text/plain body.
-  Grafana's Loki datasource (pkg/tsdb/loki/api.go readLokiError /
-  makeLokiError) displays the "message" field of a JSON error body and falls
+  Grafana's Loki datasource displays the "message" field of a JSON error body and falls
   back to the raw body, and wraps a non-2xx resource answer (Logs Drilldown)
   as {"message": <that text>}. The proxy's error envelope used to be JSON, so
   Explore displayed the whole object until a "message" field was added. The

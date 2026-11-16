@@ -19,7 +19,7 @@ func shapeOf(e *LabelFilterExpr) string {
 
 // conformance: semantics/label-filter-expression-syntax
 func TestParseLabelFilterExpr_Precedence(t *testing.T) {
-	// Every expectation was read from Loki v3.7.9 (syntax.ParseExpr(...).String()):
+	// Every expectation is Loki v3.7.9's answer (the parsed expression, printed back):
 	// AND binds tighter than OR; COMMA and juxtaposition carry no precedence, so
 	// their right operand runs to the end of the group.
 	cases := []struct{ in, want string }{

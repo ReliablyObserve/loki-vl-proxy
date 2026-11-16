@@ -144,7 +144,7 @@ A range function over an unwrapped label, alone or under one `sum`, `count`, `mi
 
 #### Unwrap sample validity
 
-Loki makes a sample of a line only when its unwrapped label is present and converts (`pkg/logql/log/metrics_extraction.go`): a line without the label (or with it empty) makes no sample, and a value `strconv.ParseFloat` rejects is marked `__error__="SampleExtractionErr"`, which `| __error__=""` drops. VictoriaLogs' stats functions parse leniently (`sum` reads "86282s" as a number of nanoseconds and "1KiB" as 1024, `max` and `min` compare strings, a group without a value answers an empty string or `NaN`), so every stats pipe over a plain unwrapped label reads only the rows that make a sample. In the table above `<gate>` is, right before the stats pipe (after the pipes that resolve a parsed key),
+Loki makes a sample of a line only when its unwrapped label is present and converts: a line without the label (or with it empty) makes no sample, and a value `strconv.ParseFloat` rejects is marked `__error__="SampleExtractionErr"`, which `| __error__=""` drops. VictoriaLogs' stats functions parse leniently (`sum` reads "86282s" as a number of nanoseconds and "1KiB" as 1024, `max` and `min` compare strings, a group without a value answers an empty string or `NaN`), so every stats pipe over a plain unwrapped label reads only the rows that make a sample. In the table above `<gate>` is, right before the stats pipe (after the pipes that resolve a parsed key),
 
 ```
 | filter "f":~"<syntax of strconv.ParseFloat>" | copy "f" as __lvp_n | replace_regexp ... at __lvp_n | math __lvp_n as __lvp_v | filter __lvp_v:<=inf

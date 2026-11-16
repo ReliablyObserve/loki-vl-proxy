@@ -165,9 +165,9 @@ func TestCompatHelpers_AggregateManualWindow(t *testing.T) {
 	}
 
 	// A LogQL range vector is (start, end] for every function, not only the
-	// log-line ones: Loki's batchRangeVectorIterator.load skips
-	// `sample.Timestamp <= start` ("the lower bound of the range is not
-	// inclusive") and unwrapped ranges share that iterator. The sample at
+	// log-line ones: Loki skips a sample at or before the
+	// window start (the lower bound of the range is not inclusive) and
+	// unwrapped ranges share that rule. The sample at
 	// ts=0 therefore sits on the excluded lower edge for all of them.
 	if got, ok := aggregateManualWindow("count_over_time", 0, samples, 0, 20, 20); !ok || got != 2 {
 		t.Fatalf("count_over_time: expected 2,true got %v,%v", got, ok)

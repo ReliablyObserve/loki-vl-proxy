@@ -6,8 +6,7 @@ proves:
 consumer: explore
 why: |
   After `| json`, a key named like a stream label is renamed `name_extracted`
-  and `name` still reads the stream label (LabelsBuilder.getWithCategory,
-  pkg/logql/log/labels.go:293-307, falls through to the stream label because
+  and `name` still reads the stream label (it falls through to the stream label because
   the parsed one was renamed). VictoriaLogs' unpack_json overwrote the stored
   field `name` with the line's value, so `| json | level="debug"` filters on
   the parsed value: on a stream with level="info" and a JSON line holding
@@ -52,7 +51,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/translator label filter and stats grouping after json / logfmt (stored field overwritten by unpack_*)'
-  loki: 'pkg/logql/log/labels.go:293-307 LabelsBuilder.getWithCategory (stream label read once the parsed one was renamed)'
+  loki: 'a plain name after a parser reads the stream label once the parsed one was renamed to name_extracted (test/e2e-compat plain_name_after_parser_test.go)'
   proxy: 'the parsed value of a key named like a stream label'
   planned_test: 'TestCompat_PlainNameAfterParserReadsStreamLabel (test/e2e-compat, group core); translator TestPlainStreamLabel_*; proxy TestPlainStreamLabel_*'
   note: |

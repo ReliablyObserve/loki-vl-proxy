@@ -125,11 +125,14 @@ func cachingProxy(t *testing.T, inner http.Handler) *httptest.Server {
 		}
 		key := r.URL.String()
 		lookups++
+		// The proxy's own count of this request (-debug-vl-calls-header): a hit starts no call.
 		if seen[key] && !strings.Contains(r.URL.RawQuery, "nocache") {
 			hits++
+			w.Header().Set(backendCallsHeader, "0")
 		} else {
 			calls++
 			seen[key] = true
+			w.Header().Set(backendCallsHeader, "1")
 		}
 		inner.ServeHTTP(w, r)
 	}))
@@ -157,7 +160,7 @@ func TestReuseLiveAndReplay(t *testing.T) {
 		t.Fatalf("live: %d %s", code, errs.String())
 	}
 	lf := readFile(t, live.out)
-	if r := lf.Cases["x/same"].Reuse; r == nil || r.Verdict != reuseReused || r.Cold["vl_calls"] != 1 || r.Repeat["loki:l1_memory:hits"] != 1 {
+	if r := lf.Cases["x/same"].Reuse; r == nil || r.Verdict != reuseReused || r.Source != sourceHeader || r.Cold["vl_calls"] != 1 || r.Repeat["loki:l1_memory:hits"] != 1 {
 		t.Errorf("same: %+v", r)
 	}
 	if r := lf.Cases["x/nocache"].Reuse; r == nil || r.Verdict != reuseNotReused || !strings.Contains(r.Reason, "called VictoriaLogs 1 time(s)") {
@@ -236,5 +239,80 @@ func TestPartialProxyAnswerIsNotCompared(t *testing.T) {
 	defer srv.Close()
 	if a := (&Live{Bases: map[string]string{"proxy": srv.URL}, Client: http.DefaultClient}).Ask("proxy", "c", 1, Request{Method: "GET", Path: "/"}); !a.Partial {
 		t.Error("the partial header is read")
+	}
+}
+
+// The repeat's VictoriaLogs calls are the request's own count when the answer carries the proxy's header: the proxy's
+// background calls around it (a health probe, the stream field inventory's refresh) are left out even on an endpoint
+// the first ask used, which the process-wide metrics cannot tell apart.
+func TestMeasureReuseCountsTheRequestsOwnCalls(t *testing.T) {
+	p := Probe{ID: "c"}
+	req := Request{Method: "GET", Path: "/loki/api/v1/labels"}
+	n := func(v int) *int { return &v }
+	cold := Snapshot{"vl_calls": 2, "vl_calls:/names": 2}
+	// The metrics see 3 calls on an endpoint the first ask used (/names): two background refreshes and a health probe.
+	noisy := meter{"repeat_before": {"vl_calls": 2, "vl_calls:/names": 2}, "repeat_after": {"vl_calls": 5, "vl_calls:/names": 4, "vl_calls:/health": 1}}
+	withHeader := func(calls *int) fake {
+		a := ok(matrixB)
+		a.VLCalls = calls
+		return fake{"c": {repeatAttempt: {"proxy": a}}}
+	}
+	first := ok(matrixA)
+	first.VLCalls = n(2)
+	facets := []string{facetStatus, facetLabels}
+
+	r := measureReuse(p, req, first, cold, withHeader(n(0)), noisy, facets, Options{})
+	if r.Verdict != reuseReused || r.Source != sourceHeader || r.Repeat["vl_calls"] != 0 || r.Background != 3 || r.Cold["vl_calls"] != 2 {
+		t.Errorf("header 0: %+v", r)
+	}
+	r = measureReuse(p, req, first, cold, withHeader(n(1)), noisy, facets, Options{})
+	if r.Verdict != reuseNotReused || r.Repeat["vl_calls"] != 1 || r.Background != 2 || !strings.Contains(r.Reason, "called VictoriaLogs 1 time(s)") {
+		t.Errorf("header 1: %+v", r)
+	}
+	// No header: the metrics decide, and the calls on endpoints the first ask used are the request's.
+	r = measureReuse(p, req, ok(matrixA), cold, withHeader(nil), noisy, facets, Options{})
+	if r.Source != sourceMetrics || r.Verdict != reuseNotReused || r.Repeat["vl_calls"] != 2 || r.Background != 1 {
+		t.Errorf("no header: %+v", r)
+	}
+	// An absent header is not 0 calls: a repeat answered without one is not counted as clean.
+	if r.Repeat["vl_calls"] == 0 {
+		t.Error("an absent header was read as 0 calls")
+	}
+
+	s := SummarizeReuse(map[string]Result{
+		"a": {Reuse: &Reuse{Verdict: reuseReused, Source: sourceHeader, Cold: Snapshot{"vl_calls": 2}, Repeat: Snapshot{}, Background: 3}},
+		"b": {Reuse: &Reuse{Verdict: reuseNotReused, Source: sourceMetrics, Cold: Snapshot{"vl_calls": 1}, Repeat: Snapshot{"vl_calls": 2}, Background: 1}},
+	})
+	if s.CallsFromHeader != 1 || s.CallsFromMetrics != 1 || s.RepeatCalls != 2 || s.Background != 4 {
+		t.Errorf("summary %+v", s)
+	}
+}
+
+func TestVLCallsOfReadsTheProxyHeaders(t *testing.T) {
+	for _, c := range []struct {
+		calls, result string
+		want          int
+	}{{"0", "hit", 0}, {"3", "miss", 3}, {"", "", -1}, {"-1", "", -1}, {"x", "bypass", -1}} {
+		h := http.Header{}
+		if c.calls != "" {
+			h.Set(backendCallsHeader, c.calls)
+		}
+		if c.result != "" {
+			h.Set(cacheResultHeader, c.result)
+		}
+		got, result := vlCallsOf(h)
+		switch {
+		case c.want < 0 && got != nil, c.want >= 0 && (got == nil || *got != c.want), result != c.result:
+			t.Errorf("%q %q: calls %v, result %q", c.calls, c.result, got, result)
+		}
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set(backendCallsHeader, "4")
+		w.Header().Set(cacheResultHeader, "miss")
+	}))
+	defer srv.Close()
+	a := (&Live{Bases: map[string]string{"proxy": srv.URL}, Client: http.DefaultClient}).Ask("proxy", "c", 1, Request{Method: "GET", Path: "/"})
+	if a.VLCalls == nil || *a.VLCalls != 4 || a.CacheResult != "miss" {
+		t.Errorf("live answer %+v", a)
 	}
 }

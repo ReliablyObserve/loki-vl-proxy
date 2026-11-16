@@ -16,14 +16,13 @@ import (
 )
 
 // `sum without (pod) (count_over_time(...))` on a sliding window (range !=
-// step) is, at every step, the sum over each group of streams that share every
-// label but pod of the stream's count in (t-range, t] (pkg/logql/range_vector.go
-// :102-160, pkg/logql/evaluator.go:435-529). The proxy now has VictoriaLogs
-// fold the stream rows of each bucket by the stream text with the pod pair cut
-// out and computes the windows of the folded series only
-// (semantics/without-sliding-sum-folded-buckets). The fixture is short-lived pods
-// in two apps, some of them in a zone, so pod is the only label that tells
-// most streams apart and zone is on some streams only.
+// step) is, at every step, the sum over each group of streams that share
+// every label but pod of the stream's count in (t-range, t]. The proxy now
+// has VictoriaLogs fold the stream rows of each bucket by the stream text
+// with the pod pair cut out and computes the windows of the folded series
+// only (semantics/without-sliding-sum-folded-buckets). The fixture is
+// short-lived pods in two apps, some of them in a zone, so pod is the only
+// label that tells most streams apart and zone is on some streams only.
 
 type slidingWithoutFixtures struct {
 	probe string

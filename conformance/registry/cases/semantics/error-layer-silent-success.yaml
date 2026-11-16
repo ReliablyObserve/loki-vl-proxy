@@ -5,6 +5,7 @@ proves:
   - status-500
   - status-derived
 consumer: any
+evidence: needs recording
 why: |
   The alerts route decodes a malformed 200 body as empty. The tail no longer
   closes normally: a native stream that ends or fails and a failed poll close
@@ -33,8 +34,7 @@ why: |
   response abnormally, so the client never reads a complete-looking partial
   result.
   Loki answers the same failures with an error, and Drilldown's partial
-  carve-out covers max_query_series only (pkg/querier/queryrange/limits.go:507-512,
-  pkg/logql/engine.go:536-548). An empty chart instead of an error hides the
+  carve-out covers max_query_series only. An empty chart instead of an error hides the
   outage from the user.
 request:
   scope: internal
@@ -77,6 +77,6 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy alerting.go'
-  loki: 'pkg/querier/queryrange/limits.go:441-524; pkg/util/server/error.go:124-128'
+  loki: 'a failure answers an error status, and the Drilldown partial carve-out covers max_query_series only'
   proxy: '200 with an empty result or a warning'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

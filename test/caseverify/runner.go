@@ -87,7 +87,26 @@ func (l *Live) send(base string, req Request) Answer {
 	if len(raw) > maxBody {
 		a.Body, a.Truncated = string(raw[:maxBody]), true
 	}
+	a.VLCalls, a.CacheResult = vlCallsOf(resp.Header)
 	return a
+}
+
+// The proxy's per-request cost headers (-debug-vl-calls-header, internal/proxy vl_calls_header.go).
+const (
+	backendCallsHeader = "X-Loki-VL-Backend-Calls"
+	cacheResultHeader  = "X-Loki-VL-Cache-Result"
+)
+
+// vlCallsOf reads the cost headers of an answer: the calls count is nil when the header is absent or not a
+// non-negative integer (an absent header is not "0 calls").
+func vlCallsOf(h http.Header) (*int, string) {
+	var calls *int
+	if v := h.Get(backendCallsHeader); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			calls = &n
+		}
+	}
+	return calls, h.Get(cacheResultHeader)
 }
 
 // Recorded is one line of the recorded answers file: both sides' answers to one attempt of one case.
@@ -153,7 +172,7 @@ func (r *Recorder) addCount(side string, key CountKey, a CountAnswer) {
 	if r.index == nil {
 		r.index = map[string]*Recorded{}
 	}
-	k := fmt.Sprintf("count\x00%s\x00%d\x00%d", key.Selector, key.Start, key.End)
+	k := fmt.Sprintf("count\x00%s\x00%d\x00%d\x00%s", key.Selector, key.Start, key.End, key.Tenant)
 	line, ok := r.index[k]
 	if !ok {
 		kk := key
@@ -656,8 +675,14 @@ func window(q url.Values, now time.Time) (int64, int64) {
 
 // precheck counts the case's selectors on both sides; a verdict when the data does not allow a comparison.
 func precheck(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, caseTenant, tenant string) (string, string) {
+	// The case's own tenant is counted on both sides (Loki by header, VictoriaLogs by account); a tenant
+	// VictoriaLogs cannot count by number is named, never counted as the run's tenant.
+	keyTenant := ""
 	if caseTenant != "" && caseTenant != tenant {
-		return verdictDataUnchecked, fmt.Sprintf("the data precheck counts tenant %q only, the case asks %q", tenant, caseTenant)
+		if !countableTenant(caseTenant) {
+			return verdictDataUnchecked, fmt.Sprintf("the case asks tenant %q, which is no VictoriaLogs account number: the data precheck counts numeric tenants only", caseTenant)
+		}
+		keyTenant = caseTenant
 	}
 	start, end := window(q, now)
 	selectors := Selectors(q.Get("query"))
@@ -666,7 +691,7 @@ func precheck(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, case
 	}
 	empty := true
 	for _, sel := range selectors {
-		key := CountKey{Selector: sel, Start: start, End: end}
+		key := CountKey{Selector: sel, Start: start, End: end, Tenant: keyTenant}
 		l, lok := cnt.Count("loki", key)
 		v, vok := cnt.Count("vl", key)
 		if !lok || !vok {
@@ -772,9 +797,10 @@ func Report(f File) string {
 	ru := f.Reuse
 	fmt.Fprintf(&b, "\n#### Cache reuse of a repeat: %d reused, %d not reused, %d not measured\n\n", ru.Counts[reuseReused],
 		ru.Counts[reuseNotReused], ru.Counts[reuseNotMeasured])
-	fmt.Fprintf(&b, "VictoriaLogs calls: %.0f cold, %.0f on the repeats (%.0f of them on endpoints the first ask did not use: "+
-		"background work the process-wide counters count); bytes %.0f cold, %.0f on the repeats.", ru.ColdVLCalls,
-		ru.RepeatCalls, ru.Background, ru.ColdBytes, ru.RepeatBytes)
+	fmt.Fprintf(&b, "VictoriaLogs calls: %.0f cold, %.0f on the repeats; bytes %.0f cold, %.0f on the repeats. "+
+		"Calls are the request's own count (X-Loki-VL-Backend-Calls) for %d repeats and the process-wide metrics' for %d; "+
+		"the proxy's background calls around the repeats, left out of the first, are %.0f.", ru.ColdVLCalls,
+		ru.RepeatCalls, ru.ColdBytes, ru.RepeatBytes, ru.CallsFromHeader, ru.CallsFromMetrics, ru.Background)
 	if len(ru.RepeatHits) > 0 {
 		keys := make([]string, 0, len(ru.RepeatHits))
 		for k := range ru.RepeatHits {

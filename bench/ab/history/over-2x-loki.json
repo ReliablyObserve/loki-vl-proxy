@@ -6,6 +6,18 @@
  },
  "rows": [
   {
+   "commit": "0843224237dabca214c3d136a9d1db1c100e5987",
+   "loki_s": 0.067,
+   "mode": "cold",
+   "profile": "aligned",
+   "proxy_s": 0.141,
+   "range": "1h",
+   "ratio": 2.1,
+   "set": "extracted-suffix",
+   "shape": "E7 json count by level_extracted",
+   "since": "2026-11-09"
+  },
+  {
    "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
    "loki_s": 0.13,
    "mode": "cold",
@@ -40,6 +52,18 @@
    "set": "drilldown-patterns",
    "shape": "DP2 patterns of an environment",
    "since": "2026-11-08"
+  },
+  {
+   "commit": "0843224237dabca214c3d136a9d1db1c100e5987",
+   "loki_s": 0.064,
+   "mode": "cold",
+   "profile": "loki-defaults",
+   "proxy_s": 0.143,
+   "range": "1h",
+   "ratio": 2.23,
+   "set": "extracted-suffix",
+   "shape": "E7 json count by level_extracted",
+   "since": "2026-11-09"
   },
   {
    "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",

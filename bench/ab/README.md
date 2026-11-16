@@ -246,10 +246,10 @@ The stack's Loki is not Loki's default Loki: see the next section.
 
 `test/e2e-compat/loki-local-config.yaml` sets `query_range.align_queries_with_step: true` and
 `limits_config.max_cache_freshness_per_query: 0s`; Loki's own defaults are off and 10m
-(`-querier.align-querier-with-step`, `pkg/querier/queryrange/queryrangebase/roundtrip.go:49`;
-`-frontend.max-cache-freshness`, `pkg/validation/limits.go:407-408`, Loki v3.7.9). A Loki with
+(`-querier.align-querier-with-step` and `-frontend.max-cache-freshness`, Loki's configuration reference,
+https://grafana.com/docs/loki/latest/configure/, Loki v3.7.9). A Loki with
 the first setting moves both bounds of a metric `query_range` request down to a multiple of
-the step (`queryrangebase/step_align.go:20-24`) and, with the second, caches results up to the
+the step (`internal/proxy/testdata/step_align_loki_answers.jsonl.gz` records Loki's answers) and, with the second, caches results up to the
 present, so it answers a refresh that moves less than a step as an exact results-cache hit (3-5
 ms). A proxy build compared with that Loki must do the same work the same way, so every pass is
 made against one of two profiles (`stack.PROFILES`) and every row, comment line, gate finding and
@@ -258,7 +258,7 @@ evidence record names its profile:
 | profile | Loki | proxy builds |
 |---|---|---|
 | `aligned` | the stack as it is: align on, freshness 0s | `-align-queries-with-step=true` |
-| `loki-defaults` | `docker-compose.ab-loki-defaults.yml`: `-querier.align-querier-with-step=false -frontend.max-cache-freshness=10m` (flags win over the config file, as in `docker-compose.ab-loki-uncached.yml`) | their defaults: the flag is removed from the build's own stack flags, and a build whose `-align-queries-with-step` defaults to on (`stack.source_align_default`, read from the build's `cmd/proxy/main.go`) runs aligned, recorded as `proxy_align: on`. That is like for like: a Loki with its defaults floors the start to the step too, in its metric splitter (`split_queries_by_interval`, 1h by default; `pkg/querier/queryrange/splitters.go:236,308-319`), and rounds the end up where the aligned proxy moves it down |
+| `loki-defaults` | `docker-compose.ab-loki-defaults.yml`: `-querier.align-querier-with-step=false -frontend.max-cache-freshness=10m` (flags win over the config file, as in `docker-compose.ab-loki-uncached.yml`) | their defaults: the flag is removed from the build's own stack flags, and a build whose `-align-queries-with-step` defaults to on (`stack.source_align_default`, read from the build's `cmd/proxy/main.go`) runs aligned, recorded as `proxy_align: on`. That is like for like: a Loki with its defaults floors the start to the step too, in its metric splitter (`split_queries_by_interval`, 1h by default, per Loki's configuration reference), and rounds the end up where the aligned proxy moves it down |
 
 - One seeded stack serves both: after the first profile `stack.set_profile` recreates only
   Loki (its results cache is in memory, so the second Loki starts cold) on the same volume,
@@ -588,12 +588,29 @@ VictoriaLogs calls, in all and per VictoriaLogs endpoint, and bytes, cache
 lookups and hits per semantic layer (`loki`, `vl`) and tier, CPU and
 translations. Summary rows carry them per target as `reuse`: the first run
 (cold), the median of the later runs (repeat: the window moved by a minute) and
-the refresh pass. The smoke keeps the candidate's reuse per row in
-`history/daily-smoke/reuse.jsonl` and is red when a row's repeat calls
-VictoriaLogs more often than the day before or a layer and tier's hit ratio fell
-by more than 0.1. Not measured yet, for want of a metric: allocations per
-request, plan and translation cache hits, the reuse of proxy-evaluated
-operators, and per-request attribution (background work counts too).
+the refresh pass.
+
+The VictoriaLogs calls of a request are the proxy's own count of that request
+when the build has it: `daily.py` starts a build that knows
+`-debug-vl-calls-header` with it (`stack.probe_calls_header_support`), and the
+answer's `X-Loki-VL-Backend-Calls` is the calls that request started, so the
+proxy's background calls (health probes, the stream field inventory's refreshes)
+are not in `vl_calls`; the counters' surplus is kept as `background_vl_calls`. A
+build without the flag (the baseline release, until it ships it) is counted by
+the counters, background work included.
+
+The smoke measures two repeats apart (`perf_matrix.py --exact-repeat`, smoke
+only). The exact repeat asks each proxy the same request twice in a row at a
+settled window (`EXACT_REPEAT_AGE`, older than the proxy's
+`-query-range-freshness`, inside the seeded data) and keeps what the second
+cost: 0 VictoriaLogs calls expected, and red when a row's calls rise above the
+day before. The repeat that moves the window by a minute legitimately reads the
+buckets it lacks, so it is judged by the bytes it reads (red when they grow past
+1.5x and 4 KiB over the day before) and by a layer and tier's hit ratio (red
+when it fell by more than 0.1); its calls are reported, not judged. The smoke
+keeps the candidate's reuse per row in `history/daily-smoke/reuse.jsonl`. Not
+measured yet, for want of a metric: allocations per request, plan and
+translation cache hits, and the reuse of proxy-evaluated operators.
 
 ```bash
 python3 bench/ab/daily.py --out /tmp/ab-smoke --smoke

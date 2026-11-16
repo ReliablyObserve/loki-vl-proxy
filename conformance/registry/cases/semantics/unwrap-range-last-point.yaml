@@ -7,7 +7,7 @@ consumer: explore
 why: |
   `sum by (level) (max_over_time({service_name="api-gateway"} | json | unwrap
   status | __error__="" [5m]))` over an hour at 60s has 61 samples on Loki
-  (start..end inclusive, pkg/logql/range_vector.go step iteration) and had 60 on
+  (start..end inclusive) and had 60 on
   the proxy, which dropped the sample at end; the same for sum_over_time and
   avg_over_time by app over `| json | unwrap duration_ms`, and for min_over_time.
 
@@ -68,7 +68,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy metric_binary.go (statsRateRangeEqualsStepShift, logRangeFunctions: unwrap sum/avg/min/max over time)'
-  loki: 'pkg/logql/range_vector.go step iteration start..end inclusive; range_vector.go:102-189 batchRangeVectorIterator window (t-range, t]'
+  loki: 'the steps run from start to end inclusive, 61 samples over an hour at 60s (test/e2e-compat unwrap_range_end_sample_test.go)'
   proxy: 'native step buckets fetched from start-step and relabelled onto the evaluation times, start..end inclusive'
   planned_test: 'TestUnwrapOverTimeRangeEmitsEndSample and TestUnwrapOverTimeTumblingMatchesLoki (internal/proxy); TestCompat_UnwrapRangeEndSample (test/e2e-compat, group semantics)'
   clusters: []

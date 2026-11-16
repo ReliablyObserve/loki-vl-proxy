@@ -16,6 +16,14 @@ generators either. Loki is used only as a test comparison.
   reference model. Write the proxy's code from the behaviour (the HTTP API,
   recorded answers, observed responses) and compare it with Loki through an
   oracle.
+- Evidence for a Loki behaviour is never a source file or line (no
+  `pkg/...go:123` in code comments, tests, registry rows or docs). Cite a
+  recorded Loki answer (`test/oracle/loki` facts, `internal/lokierr/testdata`,
+  `internal/proxy/testdata/*loki*`, the plan corpus recordings), a test that
+  compares with Loki, a registry case id, or Loki's public documentation
+  (grafana.com/docs/loki URL, flag or config reference). A registry case whose
+  claim has none of these carries `evidence: needs recording` until the answer
+  is recorded.
 - The gates:
   - `TestProductModuleHasNoOracleDependency`: the proxy's `go.mod` and `go.sum`
     never name `github.com/grafana/loki`.
@@ -83,6 +91,12 @@ Every Loki error message is a registry item, every route x error kind is a cell 
   `conformance/registry/error-coverage-spec.json` (its stage in Loki's order of checks, the route or kind it belongs
   to, or the reason and test when Loki cannot be asked), or the conformance gate fails.
 - Record new answers with `go run ./test/errorrecord` against a running Loki; add rows by hand, never edit a recorded answer.
+- A request whose answer depends on the Loki process (the same image and configuration answer differently from one
+  process to the next and keep their answer for the life of the process: DELETE and other wrong-method requests,
+  405 or 404) keeps every answer Loki was recorded giving it: `loki` is the answer the proxy gives, `loki_also` the
+  others, copied from a recording run, and `varies` names the probe run and how often each answer came. The
+  re-record and the e2e comparison accept any recorded answer, and a third answer is still a change. A row whose
+  answer moves with time or data is not one of these: move its window or record it from a Loki that serves data.
 - The translator's, the plan's and the proxy's own wording never reaches a client. A query that passed validation and
   that the translation, plan or evaluation then fails is answered through `p.fail` with a typed error built from typed
   facts (`internal/proxy/error_refusals.go`): Loki's message where Loki rejects the query and the AST or request gives
@@ -248,6 +262,12 @@ A new read or computation that is not cached when it could be is a performance r
 and the weekly full run measure reuse per query structure and per layer (hit ratio per tier, VictoriaLogs calls and
 bytes, proxy CPU per repeat and refresh, peer fill) and turn red when it drops, like a latency regression; the per-case
 verifier repeats each case and reports a repeat that differs or calls VictoriaLogs again.
+
+Reuse is measured per request, and as two repeats. The daily runs start the proxies with `-debug-vl-calls-header`, so a
+request's VictoriaLogs calls are its own count (`X-Loki-VL-Backend-Calls`), never the process-wide metrics' delta, which
+holds the proxy's background calls (health probes, inventory refreshes) and other clients; a report that cannot say which
+source counted a number does not publish it as an improvement. The perf smoke asks an exact repeat (the same request
+twice at a settled window, 0 calls expected) apart from the repeat that moves the window (judged by the bytes it reads).
 
 ## Fleet scale
 
