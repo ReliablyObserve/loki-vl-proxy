@@ -372,66 +372,72 @@ func TestPatternLineFilterKeepsLokiLines(t *testing.T) {
 	grids := patternGrids()
 	verdicts := patternVerdicts(t, grids)
 	for _, g := range grids {
-		checked, kept, rejected, mismatches := 0, 0, 0, 0
-		var last string
-		var (
-			filters []logsql.FilterExpr
-			pipes   []logsql.Pipe
-		)
-		type seen struct {
-			kept, dropped int
-			possible      bool
+		t.Run(g.name, func(t *testing.T) { holdPatternGrid(t, g, verdicts[g.name]) })
+	}
+}
+
+// holdPatternGrid evaluates the plan's filters on every case of the grid and compares them with Loki's verdicts.
+func holdPatternGrid(t *testing.T, g patternGrid, verdicts string) {
+	t.Helper()
+	checked, kept, rejected, mismatches := 0, 0, 0, 0
+	var last string
+	var (
+		filters []logsql.FilterExpr
+		pipes   []logsql.Pipe
+	)
+	type seen struct {
+		kept, dropped int
+		possible      bool
+	}
+	perFilter := map[string]*seen{}
+	for i, c := range g.cases {
+		v := verdicts[i]
+		if v == 'E' {
+			rejected++
+			continue
 		}
-		perFilter := map[string]*seen{}
-		for i, c := range g.cases {
-			v := verdicts[g.name][i]
-			if v == 'E' {
-				rejected++
-				continue
-			}
-			if g.perFilter && c.op == "|>" {
-				key := strings.Join(c.patterns, "\x00")
-				if perFilter[key] == nil {
-					perFilter[key] = &seen{possible: satisfiable(c.patterns, c.alphabet, c.maxLen)}
-				}
-				if v == '1' {
-					perFilter[key].kept++
-				} else {
-					perFilter[key].dropped++
-				}
+		if g.perFilter && c.op == "|>" {
+			key := strings.Join(c.patterns, "\x00")
+			if perFilter[key] == nil {
+				perFilter[key] = &seen{possible: satisfiable(c.patterns, c.alphabet, c.maxLen)}
 			}
 			if v == '1' {
-				kept++
-			}
-			if key := c.op + "\x00" + strings.Join(c.patterns, "\x00"); key != last {
-				last = key
-				seq := 0
-				filters, pipes = PatternLineFilter(c.patterns, c.op == "!>", &seq)
-				checkPatternText(t, c, filters, pipes)
-			}
-			checked++
-			if got := patternRowKept(t, filters, pipes, c.line); got != (v == '1') {
-				mismatches++
-				if mismatches <= 10 {
-					t.Errorf("%s %q on %q: kept %v, Loki %v\n filters %v\n pipes %v", c.op, c.patterns, c.line, got, v == '1', filters, pipes)
-				}
+				perFilter[key].kept++
+			} else {
+				perFilter[key].dropped++
 			}
 		}
-		if mismatches > 0 {
-			t.Errorf("grid %s: %d mismatches in %d verdicts", g.name, mismatches, checked)
+		if v == '1' {
+			kept++
 		}
-		if kept == 0 {
-			t.Errorf("grid %s is vacuous: Loki keeps no line", g.name)
+		if key := c.op + "\x00" + strings.Join(c.patterns, "\x00"); key != last {
+			last = key
+			seq := 0
+			filters, pipes = PatternLineFilter(c.patterns, c.op == "!>", &seq)
+			checkPatternText(t, c, filters, pipes)
 		}
-		for key, n := range perFilter {
-			if (n.kept == 0 && n.possible) || n.dropped == 0 {
-				t.Errorf("grid %s: filter %q under |> keeps %d and drops %d lines: the grid cannot tell it from keeping or dropping every line",
-					g.name, strings.Split(key, "\x00"), n.kept, n.dropped)
+		checked++
+		if got := patternRowKept(t, filters, pipes, c.line); got != (v == '1') {
+			mismatches++
+			if mismatches <= 10 {
+				t.Errorf("%s %q on %q: kept %v, Loki %v\n filters %v\n pipes %v", c.op, c.patterns, c.line, got, v == '1', filters, pipes)
 			}
 		}
-		t.Logf("grid %s: %d cases (%d filters), %d evaluated, Loki keeps %d, %d rejected by Loki, %d mismatches",
-			g.name, len(g.cases), len(perFilter), checked, kept, rejected, mismatches)
 	}
+	if mismatches > 0 {
+		t.Errorf("grid %s: %d mismatches in %d verdicts", g.name, mismatches, checked)
+	}
+	if kept == 0 {
+		t.Errorf("grid %s is vacuous: Loki keeps no line", g.name)
+	}
+	for key, n := range perFilter {
+		if (n.kept == 0 && n.possible) || n.dropped == 0 {
+			t.Errorf("grid %s: filter %q under |> keeps %d and drops %d lines: the grid cannot tell it from keeping or dropping every line",
+				g.name, strings.Split(key, "\x00"), n.kept, n.dropped)
+		}
+	}
+	t.Logf("grid %s: %d cases (%d filters), %d evaluated, Loki keeps %d, %d rejected by Loki, %d mismatches",
+		g.name, len(g.cases), len(perFilter), checked, kept, rejected, mismatches)
 }
 
 // checkPatternText holds the nodes of a pattern line filter to the text the string translator writes for it.
