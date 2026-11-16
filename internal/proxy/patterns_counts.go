@@ -422,6 +422,11 @@ func (e errPatternCounts) Error() string { return "patterns counts: " + e.reason
 // readPatternCountRows runs a counts query over [startNs, endNs] and hands each row to read, which returns false
 // for a row it cannot use. More than maxRows rows, a row read rejects or a failed request is an error.
 func (p *Proxy) readPatternCountRows(ctx context.Context, q *logsql.Query, startNs, endNs int64, maxRows int, read func(*fj.Value) bool) error {
+	return p.readPatternAnswer(ctx, q, startNs, endNs, func(body io.Reader) error { return scanPatternRows(body, maxRows, read) })
+}
+
+// readPatternAnswer runs a query of the patterns flow over [startNs, endNs] and hands its answer to scan.
+func (p *Proxy) readPatternAnswer(ctx context.Context, q *logsql.Query, startNs, endNs int64, scan func(io.Reader) error) error {
 	params := url.Values{}
 	params.Set("query", q.String())
 	params.Set("start", strconv.FormatInt(startNs, 10))
@@ -434,7 +439,7 @@ func (p *Proxy) readPatternCountRows(ctx context.Context, q *logsql.Query, start
 	if resp.StatusCode != http.StatusOK {
 		return errPatternCounts{"status " + strconv.Itoa(resp.StatusCode)}
 	}
-	return scanPatternRows(resp.Body, maxRows, read)
+	return scan(resp.Body)
 }
 
 // scanPatternRows hands each JSON row of r to read, one at a time: the row is valid until read returns, and no

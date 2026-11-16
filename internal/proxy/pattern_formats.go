@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -37,36 +38,53 @@ func patternLogfmtVariableKey(key string) bool {
 
 // patternLineTokens tokenizes a line for the miner by its format. ok is false for a line the miner has no pattern
 // for: a JSON object without a message field (its fields are its values), or a line with fewer than
-// patternMinTokens or more than patternMaxTokens tokens.
+// patternMinTokens or more than patternMaxTokens tokens. The slices are the caller's to keep.
 func (m *patternMiner) patternLineTokens(line string) (tokens []string, spacesAfter []int, format patternFormat, ok bool) {
+	tokens, spacesAfter, format, ok = m.patternLineTokensScratch(line)
+	if !ok {
+		if tokens != nil {
+			tokens = slices.Clone(tokens)
+		}
+		return tokens, spacesAfter, format, ok
+	}
+	if spacesAfter != nil {
+		spacesAfter = slices.Clone(spacesAfter)
+	}
+	return slices.Clone(tokens), spacesAfter, format, ok
+}
+
+// patternLineTokensScratch is patternLineTokens into the miner's scratch slices, which its next line overwrites:
+// most lines join a cluster and leave no tokens behind, and the clusterer copies those of a line that starts one.
+func (m *patternMiner) patternLineTokensScratch(line string) (tokens []string, spacesAfter []int, format patternFormat, ok bool) {
 	switch {
 	case isPatternJSONLine(line):
 		text, found := patternJSONMessage(line)
 		if !found {
 			return nil, nil, patternFormatJSON, false
 		}
-		tokens, spacesAfter, ok = m.tokenizer.Tokenize(text)
+		tokens, spacesAfter, ok = m.scratch.tokenize(text)
 		if !ok && m.shortWholeLine {
 			// -patterns-scope=selector: a message too short for Loki to mine (under patternMinTokens) is mined as
 			// the whole line, so such a service still shows its patterns. Not Loki's answer.
-			tokens, spacesAfter, ok = m.tokenizer.Tokenize(line)
+			tokens, spacesAfter, ok = m.scratch.tokenize(line)
 			return tokens, spacesAfter, patternFormatPlain, ok
 		}
 		return tokens, spacesAfter, patternFormatJSON, ok
 	case isPatternLogfmtLine(line):
-		tokens = make([]string, 0, 16)
+		tokens = m.scratch.tokens[:0]
 		lokiLogfmtPairs(line, func(key, value string) {
 			if patternLogfmtVariableKey(key) {
 				value = patternVarPlaceholder
 			}
 			tokens = append(tokens, key, value)
 		})
+		m.scratch.tokens = tokens
 		if len(tokens) < patternMinTokens || len(tokens) > patternMaxTokens {
 			return nil, nil, patternFormatLogfmt, false
 		}
 		return tokens, nil, patternFormatLogfmt, true
 	}
-	tokens, spacesAfter, ok = m.tokenizer.Tokenize(line)
+	tokens, spacesAfter, ok = m.scratch.tokenize(line)
 	return tokens, spacesAfter, patternFormatPlain, ok
 }
 

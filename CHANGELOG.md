@@ -21,6 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marker of a parser's unwrap series identity reads a function name written with U+0130 (`avg_over_tİme`). A query spelled one of these ways may miss the cache once after the upgrade; queries spelled as
   before keep their keys.
 
+### Performance
+
+- A cold `/patterns` request for a busy selector (the first Logs Drilldown patterns view of a service or an
+  environment) mines its lines on several cores. When the read holds at least 40,000 lines, the lines VictoriaLogs
+  answers are decoded on worker goroutines and each stream is mined by one worker, in the order it was read. The
+  miners are then merged in the order one goroutine makes them, so the patterns, samples and the pattern state's
+  snapshot stay byte for byte what they were. The workers of all requests together never exceed GOMAXPROCS; a read
+  that finds fewer than two free, a refresh of the pattern state, a background build and `-patterns-scope=selector`
+  mine on the request's goroutine as before. No VictoriaLogs request is added. Mining also allocates less: a line's
+  tokens are copied only when it starts a cluster, a new cluster's tree nodes are made in one allocation, and a
+  row's time and a stream's name are read without a copy. Decoding and mining an hour of 148,000 lines (the
+  environment of the Drilldown patterns benchmark): 302 ms to 95 ms with 4 cores and 312 ms to 172 ms with 2, with
+  43% fewer bytes, 67% fewer allocations and 9-16% less CPU time.
+
 ### Changed
 
 - Test support: the plan corpus leaves out the request of a registry case that compares only a client error, and six

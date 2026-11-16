@@ -23,6 +23,11 @@ Proxy behavior:
 - Patterns are derived from live query results, not from a static dictionary.
 - Optional global autodetect mode (`-patterns-autodetect-from-queries=true`) additionally warms pattern cache from successful `query` and `query_range` responses.
 - Maximum patterns returned per request are clamped to `1000`.
+- A first request that reads many lines (40,000 or more) decodes and mines them on worker goroutines: each stream is
+  mined by one worker in the order VictoriaLogs returned its lines, and the workers' miners are merged in the order
+  one goroutine would have made them, so the answer is the same as mining on one goroutine. The workers of all
+  requests together never exceed `GOMAXPROCS`; refreshes, background state builds and `-patterns-scope=selector`
+  mine on the request's goroutine.
 - Pattern extraction reads VictoriaLogs raw logs in bounded, aligned windows
   and mines samples for the requested step across the selected range.
 
