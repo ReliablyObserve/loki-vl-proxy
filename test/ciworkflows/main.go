@@ -83,7 +83,7 @@ func run(cfg config, stdout, stderr io.Writer) int {
 		}
 		// A workflow added since the last runs record has no scheduled run yet: its date says whether that is late.
 		AddedDates(cfg.workflows, workflows, func(args ...string) ([]byte, error) {
-			return exec.Command("git", args...).Output() //nolint:gosec // fixed arguments, a path under the workflow directory
+			return exec.Command("git", args...).Output() // #nosec G204 -- test support: the git tool with the fixed arguments AddedDates builds, a path under the workflow directory
 		})
 		h, err := CheckHealth(workflows, runs, skip)
 		if err == nil {
