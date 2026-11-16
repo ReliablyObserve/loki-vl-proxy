@@ -4,7 +4,15 @@
 //
 // It sends every comparable row's request, byte for byte, to the Loki at -loki
 // and rewrites only the row's "loki" object and the date and version of the
-// file's header line; every other byte of the files stays. A row that is not
+// file's header line; every other byte of the files stays. The absolute start,
+// end and time parameters of a request are moved to now first, by the time
+// since the latest one the file holds (lokirecorded.Delta), as the end-to-end
+// comparison moves them: a row asks the window it asked when it was recorded,
+// relative to now, whatever day it is recorded again (over a window older than
+// what it holds, Loki answers /patterns given a query that is not a stream
+// selector with its empty success). A row with a bound that does not move (a
+// negative start) is sent as recorded. The stored target keeps the times it
+// was written with. A row that is not
 // comparable (it depends on the recorded Loki's configuration, or on an
 // authentication the stack does not run) keeps its recorded answer unless -all
 // is given. It adds no row and removes none: a new probe is a row written by
@@ -13,6 +21,13 @@
 // With -check nothing is written: the command lists the rows whose answer
 // changed and exits 1 when there are any. A scheduled run uses it to notice a
 // Loki bump, and uploads the rewritten files for review.
+//
+// The answers are recorded from a Loki that serves data, as a Loki in use does:
+// -ingest writes a small fixture to the Loki and waits until its range metric
+// path answers with it, then exits (run it once, before recording). Before it
+// records, the command asks the Loki whether it serves that data, and writes
+// the state it found ("serving" or "fresh") into every row it re-records; a
+// row whose state changed is reported like a changed answer.
 //
 // The command is test support. It reads and writes files under the repository
 // and talks to the Loki it is given; it starts and stops nothing.
@@ -26,6 +41,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,6 +62,11 @@ type config struct {
 	check   bool
 	all     bool
 	version string
+	// state is written into every re-recorded row; empty leaves each row's state as it is.
+	state string
+	// shift asks each row with its absolute times moved to now (lokirecorded.Delta), as the end-to-end
+	// comparison asks it; off, the request is sent as recorded.
+	shift bool
 }
 
 func main() {
@@ -57,7 +78,21 @@ func main() {
 	flag.BoolVar(&cfg.check, "check", false, "write nothing; list the rows whose answer changed and exit 1 when any did")
 	flag.BoolVar(&cfg.all, "all", false, "also re-record rows marked not comparable")
 	flag.StringVar(&cfg.version, "version", "", "Loki version for the header; read from the Loki's buildinfo when empty")
+	ingest := flag.Bool("ingest", false, "write the fixture to the Loki, wait until its range metric path serves it, and exit")
+	ingestWait := flag.Duration("ingest-wait", 8*time.Minute, "with -ingest: how long to wait for the Loki to serve the fixture")
 	flag.Parse()
+	if *ingest {
+		if err := ingestFixture(cfg.loki, *ingestWait, now(), os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "errorrecord:", err)
+			os.Exit(2)
+		}
+		return
+	}
+	cfg.shift = true
+	cfg.state = lokirecorded.StateFresh
+	if serving(cfg.loki, now()) {
+		cfg.state = lokirecorded.StateServing
+	}
 	cfg.files = []string{answers}
 	if order != "" {
 		cfg.files = append(cfg.files, order)
@@ -102,28 +137,46 @@ func recordFile(path, host, version string, cfg config, out io.Writer) (int, err
 	}
 	lines := make([]string, len(file.Lines))
 	changed, kept := 0, 0
+	var delta time.Duration
+	if cfg.shift {
+		delta = lokirecorded.Delta(file.Rows, now())
+	}
 	for i, row := range file.Rows {
 		lines[i] = file.Lines[i]
-		if !row.Comparable() && !cfg.all {
+		// A row added by hand with no answer yet (status 0) is recorded whatever it is marked.
+		if !row.Comparable() && !cfg.all && row.Loki.Status != 0 {
 			kept++
 			continue
 		}
-		reply, err := lokirecorded.Replay(host, row, rowTimeout)
+		ask := row
+		if wholeWindowMoves(row) {
+			ask = row.Shifted(delta)
+		}
+		reply, err := lokirecorded.Replay(host, ask, rowTimeout)
 		if err != nil {
 			return changed, err
 		}
 		reply = reply.ForRecording()
-		if row.Answers(reply) {
+		stateMoved := cfg.state != "" && cfg.state != row.State
+		if row.Answers(reply) && !stateMoved {
 			// The recorded answer, or another answer Loki gives this request in some processes (Varies).
 			continue
 		}
 		changed++
-		fmt.Fprintf(out, "%s %s %s\n  recorded %s\n  now      %s\n", row.ID, row.Route, row.Trigger, row.Loki.Summary(), reply.Summary())
-		if lines[i], err = lokirecorded.WithLoki(file.Lines[i], reply); err != nil {
-			return changed, fmt.Errorf("%s: %w", row.ID, err)
+		if !row.Answers(reply) {
+			fmt.Fprintf(out, "%s %s %s\n  recorded %s\n  now      %s\n", row.ID, row.Route, row.Trigger, row.Loki.Summary(), reply.Summary())
+			if lines[i], err = lokirecorded.WithLoki(lines[i], reply); err != nil {
+				return changed, fmt.Errorf("%s: %w", row.ID, err)
+			}
+		}
+		if stateMoved {
+			fmt.Fprintf(out, "%s %s recorded from a %s Loki (was %q)\n", row.ID, row.Route, cfg.state, row.State)
+			if lines[i], err = lokirecorded.WithState(lines[i], cfg.state); err != nil {
+				return changed, fmt.Errorf("%s: %w", row.ID, err)
+			}
 		}
 	}
-	fmt.Fprintf(out, "%s: %d rows, %d answers changed, %d not re-recorded (not comparable)\n", path, len(file.Rows), changed, kept)
+	fmt.Fprintf(out, "%s: %d rows, %d answers or states changed, %d not re-recorded (not comparable), recorded from a %q Loki\n", path, len(file.Rows), changed, kept, cfg.state)
 	header := file.Header
 	if changed > 0 || !strings.Contains(header, "Loki "+version+" answers recorded") {
 		header = lokirecorded.WithHeader(header, version, now())
@@ -140,6 +193,31 @@ func recordFile(path, host, version string, cfg config, out io.Writer) (int, err
 	}
 	text := first + "\n" + strings.Join(lines, "\n") + "\n"
 	return changed, os.WriteFile(path, []byte(text), 0o644)
+}
+
+// wholeWindowMoves reports whether every start, end and time parameter of the
+// row's target is one Row.Shifted moves (plain digits, in seconds or
+// nanoseconds), so the shifted request asks the same window as of now. A row
+// with one Shifted keeps (a negative start, a number it records as invalid)
+// is sent as recorded: moving only its other bounds would stretch the window,
+// and its answer can name the window's length.
+func wholeWindowMoves(row lokirecorded.Row) bool {
+	_, query, _ := strings.Cut(row.Target, "?")
+	for _, p := range strings.Split(query, "&") {
+		name, value, _ := strings.Cut(p, "=")
+		if name != "start" && name != "end" && name != "time" {
+			continue
+		}
+		n, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || strconv.FormatInt(n, 10) != value {
+			return false
+		}
+		seconds := n >= 1_000_000_000 && n < 100_000_000_000
+		if nanoseconds := n >= 1_000_000_000_000_000_000; !seconds && !nanoseconds {
+			return false
+		}
+	}
+	return true
 }
 
 // buildVersion is the version a Loki reports on /loki/api/v1/status/buildinfo.

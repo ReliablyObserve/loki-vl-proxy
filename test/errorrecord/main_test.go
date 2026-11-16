@@ -103,6 +103,11 @@ func recordedAnswers(t *testing.T, paths ...string) map[string]lokirecorded.Repl
 	return answers
 }
 
+// unrecordedRow marks a row added by hand that has no answer yet.
+const unrecordedRow = `"loki":{"status":0,`
+
+// copyFiles copies the committed files without the rows that have no answer
+// yet (TestRowsWithoutAnAnswerAreRecorded covers those).
 func copyFiles(t *testing.T) (answers, order string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -112,7 +117,13 @@ func copyFiles(t *testing.T) (answers, order string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(dst, raw, 0o644); err != nil {
+		var kept []string
+		for _, line := range strings.SplitAfter(string(raw), "\n") {
+			if !strings.Contains(line, unrecordedRow) {
+				kept = append(kept, line)
+			}
+		}
+		if err := os.WriteFile(dst, []byte(strings.Join(kept, "")), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
