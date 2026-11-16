@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** the delete API (`-delete-api-enabled`, behind `-delete-api-auth-token`) now deletes, and answers as
+  Loki's delete API does. A create request (`POST`/`PUT /loki/api/v1/delete`) gets Loki's checks in Loki's order with
+  its texts (`query not set`, `invalid query expression`, `start time not set`, `invalid start time: require unix
+  seconds or RFC3339 format`, the same for the end, `start time can't be greater than or equal to end time`, and
+  `max_interval` for a query with a filter), recorded from a Loki that serves the API, and then runs as a
+  VictoriaLogs delete task (`/delete/run_task`; VictoriaLogs needs `-delete.enable`) scoped by the tenant's
+  `AccountID`/`ProjectID` and a filter of the time range (both ends included) and the rows the same log query reads
+  on the read path. A cancel (`DELETE`) answers 204 without `request_id`, stops the tenant's running task of that id,
+  and answers Loki's `404 could not find delete request with given id` for any other id, another tenant's included.
+  Any other method is Loki's bodyless 405. The handler forwarded to `/select/logsql/delete`, which no VictoriaLogs
+  release serves, so nothing was deleted, and it answered the list and cancel with a 405. Breaking for clients of
+  the old handler: the proxy-only `X-Delete-Confirmation` header, the refusal of `{}` and the 30-day cap are gone
+  (Loki has none of them), a request without the delete token answers Loki's `401 no org id` instead of `401 delete
+  authentication required`, and start and end follow Loki's formats (ten-digit seconds or RFC3339, not milliseconds
+  or nanoseconds). Not served, each Loki's `500` with the reason in the log line: the list (VictoriaLogs keeps no
+  record of a request's query and range), a query whose rows a VictoriaLogs filter cannot select (a parser such as
+  `| json`, a filter on a parsed label, a line filter regexp that does not compile), tenant-label routing and the
+  unmapped global tenant `*`. VictoriaLogs runs a task at once, where Loki waits for its cancellation period, and
+  answers cached before a delete keep serving the deleted rows until they expire (semantics/delete-api-via-victorialogs).
+
+### Security
+
+- The delete API's guard is its token alone, as Loki's is its tenant: a holder of `-delete-api-auth-token` can delete
+  every stream of a tenant (`{}`) over any range, where the old handler, which deleted nothing, also asked for a
+  confirmation header and refused `{}` and ranges above 30 days. A cancel checks the task's tenant in VictoriaLogs'
+  task list before it stops it (VictoriaLogs' stop call checks none), and a tenant-label proxy refuses deletes, since
+  a VictoriaLogs delete task takes no tenant stream filter. VictoriaLogs' answers to the delete calls reach the log
+  only, never a client.
+
 ### Fixed
 
 - A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki

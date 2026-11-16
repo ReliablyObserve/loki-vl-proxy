@@ -2209,10 +2209,17 @@
       ],
       "matching_rows": 6,
       "messages": [
+        "delete-max-interval-invalid",
+        "delete-max-interval-too-long",
+        "delete-query-invalid",
+        "delete-query-not-set",
+        "delete-request-not-found",
+        "delete-start-not-before-end",
+        "delete-start-not-set",
+        "delete-time-invalid",
         "method-not-allowed",
         "not-found",
         "parse",
-        "unmapped-delete-query-not-set",
         "unmapped-index-shards-target-bytes",
         "unmapped-push-snappy-corrupt",
         "unmapped-ruler-local-store"
@@ -2222,7 +2229,7 @@
       "reason": "",
       "recorded": true,
       "route": "other_routes",
-      "rows": 16,
+      "rows": 79,
       "state": "differs",
       "unit_gate": true
     },
@@ -4034,6 +4041,177 @@
       "state": "matches",
       "status": 400
     },
+    "delete-max-interval-invalid": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-delete-max-interval-invalid",
+      "kind": "param",
+      "matching_rows": 0,
+      "routes": [
+        "other_routes"
+      ],
+      "rows": [
+        "r1728",
+        "r1729",
+        "r1753",
+        "r1754",
+        "r1757",
+        "r1758",
+        "r1760",
+        "r1762"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "recorded-not-comparable",
+      "status": 400
+    },
+    "delete-max-interval-too-long": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-delete-max-interval-too-long",
+      "kind": "param",
+      "matching_rows": 0,
+      "routes": [
+        "other_routes"
+      ],
+      "rows": [
+        "r1756"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "recorded-not-comparable",
+      "status": 400
+    },
+    "delete-query-invalid": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-delete-query-invalid",
+      "kind": "param",
+      "matching_rows": 0,
+      "routes": [
+        "other_routes"
+      ],
+      "rows": [
+        "r1703",
+        "r1704",
+        "r1722",
+        "r1724"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "recorded-not-comparable",
+      "status": 400
+    },
+    "delete-query-not-set": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-delete-query-not-set",
+      "kind": "param",
+      "matching_rows": 0,
+      "routes": [
+        "other_routes"
+      ],
+      "rows": [
+        "r1201",
+        "r1732"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "recorded-not-comparable",
+      "status": 400
+    },
+    "delete-request-not-found": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-delete-request-not-found",
+      "kind": "route",
+      "matching_rows": 0,
+      "routes": [
+        "other_routes"
+      ],
+      "rows": [
+        "r1718",
+        "r1719",
+        "r1730",
+        "r1731"
+      ],
+      "source": "lokierr",
+      "stage": "execution",
+      "state": "recorded-not-comparable",
+      "status": 404
+    },
+    "delete-start-not-before-end": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-delete-start-not-before-end",
+      "kind": "param",
+      "matching_rows": 0,
+      "routes": [
+        "other_routes"
+      ],
+      "rows": [
+        "r1702",
+        "r1733",
+        "r1740",
+        "r1741",
+        "r1742",
+        "r1743",
+        "r1749",
+        "r1750"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "recorded-not-comparable",
+      "status": 400
+    },
+    "delete-start-not-set": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-delete-start-not-set",
+      "kind": "param",
+      "matching_rows": 0,
+      "routes": [
+        "other_routes"
+      ],
+      "rows": [
+        "r1700"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "recorded-not-comparable",
+      "status": 400
+    },
+    "delete-time-invalid": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-delete-time-invalid",
+      "kind": "param",
+      "matching_rows": 0,
+      "routes": [
+        "other_routes"
+      ],
+      "rows": [
+        "r1701",
+        "r1714",
+        "r1723",
+        "r1725",
+        "r1726",
+        "r1727",
+        "r1738",
+        "r1739",
+        "r1744",
+        "r1745",
+        "r1746",
+        "r1747",
+        "r1748",
+        "r1751",
+        "r1759"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "recorded-not-comparable",
+      "status": 400
+    },
     "direction": {
       "comparable_rows": 2,
       "e2e_rows": [
@@ -4399,12 +4577,26 @@
         "r1279",
         "r1280",
         "r1281",
-        "r1282"
+        "r1282",
+        "r1720"
       ],
       "source": "lokierr",
       "stage": "routing",
       "state": "matches",
       "status": 405
+    },
+    "no-org-id": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-no-org-id",
+      "kind": "route",
+      "matching_rows": 0,
+      "routes": [],
+      "rows": [],
+      "source": "lokierr",
+      "stage": "routing",
+      "state": "documented",
+      "status": 401
     },
     "not-found": {
       "comparable_rows": 21,
@@ -4931,23 +5123,6 @@
       "state": "matches",
       "status": 400
     },
-    "unmapped-delete-query-not-set": {
-      "comparable_rows": 0,
-      "e2e_rows": [],
-      "item": "unmapped-delete-query-not-set",
-      "kind": "unmapped",
-      "matching_rows": 0,
-      "routes": [
-        "other_routes"
-      ],
-      "rows": [
-        "r1201"
-      ],
-      "source": "recorded",
-      "stage": null,
-      "state": "recorded-not-comparable",
-      "status": 400
-    },
     "unmapped-evaluator-unexpected-expr": {
       "comparable_rows": 1,
       "e2e_rows": [
@@ -5161,13 +5336,13 @@
     "e2e_rows": 140,
     "match_ratio": 0.9654,
     "matching_rows": 223,
-    "messages": 36,
-    "messages_documented": 9,
-    "messages_recorded": 27,
-    "not_comparable_rows": 71,
+    "messages": 45,
+    "messages_documented": 10,
+    "messages_recorded": 35,
+    "not_comparable_rows": 134,
     "recorded_loki": "3.7.9",
     "recorded_on": "2026-11-13",
-    "recorded_rows": 302,
-    "unmapped_items": 8
+    "recorded_rows": 365,
+    "unmapped_items": 7
   }
 }

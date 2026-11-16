@@ -90,6 +90,18 @@ const (
 	MsgInternal
 	// MsgWriteNotSupported: a push to the read-only proxy.
 	MsgWriteNotSupported
+	// MsgNoOrgID: "no org id", a request without the credential its route needs (401).
+	MsgNoOrgID
+	// The delete API's checks of a delete request, in Loki's order (delete_messages.go).
+	MsgDeleteQueryNotSet
+	MsgDeleteQueryInvalid
+	MsgDeleteStartNotSet
+	MsgDeleteTimeInvalid
+	MsgDeleteStartNotBeforeEnd
+	MsgDeleteMaxIntervalInvalid
+	MsgDeleteMaxIntervalTooLong
+	// MsgDeleteRequestNotFound: a cancel of a delete request the tenant does not have (404).
+	MsgDeleteRequestNotFound
 	msgCount
 )
 
@@ -143,6 +155,16 @@ var messages = [msgCount]message{
 	MsgBackendFailed:     {"backend-failed", KindBackendFailed, http.StatusInternalServerError, ShapeRoute},
 	MsgInternal:          {"internal", KindInternal, http.StatusInternalServerError, ShapeRoute},
 	MsgWriteNotSupported: {"write-not-supported", KindRoute, http.StatusMethodNotAllowed, ShapeHTTPError},
+	MsgNoOrgID:           {"no-org-id", KindRoute, http.StatusUnauthorized, ShapeHTTPError},
+
+	MsgDeleteQueryNotSet:        {"delete-query-not-set", KindParam, http.StatusBadRequest, ShapeHTTPError},
+	MsgDeleteQueryInvalid:       {"delete-query-invalid", KindParam, http.StatusBadRequest, ShapeHTTPError},
+	MsgDeleteStartNotSet:        {"delete-start-not-set", KindParam, http.StatusBadRequest, ShapeHTTPError},
+	MsgDeleteTimeInvalid:        {"delete-time-invalid", KindParam, http.StatusBadRequest, ShapeHTTPError},
+	MsgDeleteStartNotBeforeEnd:  {"delete-start-not-before-end", KindParam, http.StatusBadRequest, ShapeHTTPError},
+	MsgDeleteMaxIntervalInvalid: {"delete-max-interval-invalid", KindParam, http.StatusBadRequest, ShapeHTTPError},
+	MsgDeleteMaxIntervalTooLong: {"delete-max-interval-too-long", KindParam, http.StatusBadRequest, ShapeHTTPError},
+	MsgDeleteRequestNotFound:    {"delete-request-not-found", KindRoute, http.StatusNotFound, ShapeHTTPError},
 }
 
 // ID is the message's stable name.

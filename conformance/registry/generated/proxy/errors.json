@@ -484,6 +484,30 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
+      "expression": "r, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/delete_api.go handleDelete",
+      "writer": "fail"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r, err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/delete_api.go handleDelete",
+      "writer": "fail"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
       "expression": "child.ctx, proxyFailure(err)",
       "kind": "layer",
       "message": null,
@@ -1264,18 +1288,6 @@
       "dynamic": false,
       "error_text": false,
       "error_type": "bad_data",
-      "expression": "\"delete authentication required\"",
-      "kind": "literal",
-      "message": "delete authentication required",
-      "status": 401,
-      "status_token": "http.StatusUnauthorized",
-      "where": "internal/proxy/middleware.go deleteAuthMiddleware",
-      "writer": "writeError"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": "bad_data",
       "expression": "\"peer authentication required\"",
       "kind": "literal",
       "message": "peer authentication required",
@@ -1540,138 +1552,6 @@
       "dynamic": false,
       "error_text": false,
       "error_type": "bad_data",
-      "expression": "\"delete requires X-Delete-Confirmation: true header for safety\"",
-      "kind": "literal",
-      "message": "delete requires X-Delete-Confirmation: true header for safety",
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go handleDelete",
-      "writer": "writeDeleteError"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": "bad_data",
-      "expression": "\"query parameter required for delete\"",
-      "kind": "literal",
-      "message": "query parameter required for delete",
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go handleDelete",
-      "writer": "writeDeleteError"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": "bad_data",
-      "expression": "\"wildcard delete rejected \u2014 query must target specific streams (e.g., {app=\\\"nginx\\\"})\"",
-      "kind": "literal",
-      "message": "wildcard delete rejected \u2014 query must target specific streams (e.g., {app=\\",
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go handleDelete",
-      "writer": "writeDeleteError"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": "bad_data",
-      "expression": "\"both start and end parameters required for delete\"",
-      "kind": "literal",
-      "message": "both start and end parameters required for delete",
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go handleDelete",
-      "writer": "writeDeleteError"
-    },
-    {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "bad_data",
-      "expression": "\"invalid start timestamp: \"+err1.Error()",
-      "kind": "dynamic",
-      "message": "invalid start timestamp: ",
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go handleDelete",
-      "writer": "writeDeleteError"
-    },
-    {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "bad_data",
-      "expression": "\"invalid end timestamp: \"+err2.Error()",
-      "kind": "dynamic",
-      "message": "invalid end timestamp: ",
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go handleDelete",
-      "writer": "writeDeleteError"
-    },
-    {
-      "dynamic": true,
-      "error_text": false,
-      "error_type": "bad_data",
-      "expression": "fmt.Sprintf(\"delete time range too wide: %s exceeds maximum %s\", // nosemgrep: go.lang.security.injection.tainted-sql-string.tainted-sql-string rangeDur.Round(t",
-      "kind": "dynamic",
-      "message": "delete time range too wide: %s exceeds maximum %s",
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go handleDelete",
-      "writer": "writeDeleteError"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": "bad_data",
-      "expression": "\"end must be after start\"",
-      "kind": "literal",
-      "message": "end must be after start",
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go handleDelete",
-      "writer": "writeDeleteError"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": null,
-      "expression": "r.Context(), err, writeLokiHTTPError",
-      "kind": "layer",
-      "message": null,
-      "status": null,
-      "status_token": null,
-      "where": "internal/proxy/patterns.go handleDelete",
-      "writer": "writeErrShaped"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": null,
-      "expression": "r.Context(), err, writeLokiHTTPError",
-      "kind": "layer",
-      "message": null,
-      "status": null,
-      "status_token": null,
-      "where": "internal/proxy/patterns.go handleDelete",
-      "writer": "writeErrShaped"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": null,
-      "expression": "r.Context(), p.redactedBackendStatusError(\"\", resp.StatusCode, body), writeLokiHTTPError",
-      "kind": "layer",
-      "message": null,
-      "status": null,
-      "status_token": null,
-      "where": "internal/proxy/patterns.go handleDelete",
-      "writer": "writeErrShaped"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": "bad_data",
       "expression": "\"multiple org IDs present\"",
       "kind": "literal",
       "message": "multiple org IDs present",
@@ -1679,18 +1559,6 @@
       "status_token": "http.StatusUnauthorized",
       "where": "internal/proxy/patterns.go handleTenantLimitsConfig",
       "writer": "http.Error"
-    },
-    {
-      "dynamic": false,
-      "error_text": false,
-      "error_type": "bad_data",
-      "expression": "",
-      "kind": "no_body",
-      "message": null,
-      "status": 405,
-      "status_token": "http.StatusMethodNotAllowed",
-      "where": "internal/proxy/patterns.go handleDelete",
-      "writer": "writeBodylessError"
     },
     {
       "dynamic": false,
@@ -2656,36 +2524,27 @@
   "summary": {
     "by_status": {
       "400": {
-        "count": 25,
-        "dynamic_sites": 18,
-        "error_text_sites": 10,
+        "count": 17,
+        "dynamic_sites": 15,
+        "error_text_sites": 8,
         "error_type": "bad_data",
         "layer_sites": 0,
-        "literal_sites": 7,
+        "literal_sites": 2,
         "messages": [
-          "both start and end parameters required for delete",
-          "delete requires X-Delete-Confirmation: true header for safety",
-          "delete time range too wide: %s exceeds maximum %s",
-          "end must be after start",
-          "invalid end timestamp: ",
-          "invalid start timestamp: ",
           "multi-tenant sub-request failed",
-          "not supported value %q",
-          "query parameter required for delete",
-          "wildcard delete rejected \u2014 query must target specific streams (e.g., {app=\\"
+          "not supported value %q"
         ],
         "no_body_sites": 0
       },
       "401": {
-        "count": 5,
+        "count": 4,
         "dynamic_sites": 0,
         "error_text_sites": 0,
         "error_type": "bad_data",
         "layer_sites": 0,
-        "literal_sites": 5,
+        "literal_sites": 4,
         "messages": [
           "admin authentication required",
-          "delete authentication required",
           "multiple org IDs present",
           "peer authentication required"
         ],
@@ -2717,7 +2576,7 @@
         "no_body_sites": 0
       },
       "405": {
-        "count": 4,
+        "count": 3,
         "dynamic_sites": 0,
         "error_text_sites": 0,
         "error_type": "bad_data",
@@ -2726,7 +2585,7 @@
         "messages": [
           "method not allowed"
         ],
-        "no_body_sites": 1
+        "no_body_sites": 0
       },
       "429": {
         "count": 1,
@@ -2754,11 +2613,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 177,
+        "count": 176,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 173,
+        "layer_sites": 172,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2766,6 +2625,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 221
+    "call_sites": 210
   }
 }

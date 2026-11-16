@@ -271,7 +271,16 @@
     "deadline": "execution",
     "backend-failed": "execution",
     "internal": "execution",
-    "write-not-supported": "routing"
+    "write-not-supported": "routing",
+    "delete-query-not-set": "parameters",
+    "delete-query-invalid": "parameters",
+    "delete-start-not-set": "parameters",
+    "delete-time-invalid": "parameters",
+    "delete-start-not-before-end": "parameters",
+    "delete-max-interval-invalid": "parameters",
+    "delete-max-interval-too-long": "parameters",
+    "delete-request-not-found": "execution",
+    "no-org-id": "routing"
   },
   "stage_rank": {
     "routing": 0,
@@ -364,6 +373,13 @@
       "tests": [
         "TestLokiPushRoute"
       ]
+    },
+    "no-org-id": {
+      "reason": "Loki answers a request without an org ID with 401 no org id only with auth_enabled: true; the recorded stack runs without it. The answer is recorded from a Loki with auth enabled in internal/proxy/testdata/tenant_auth_loki_answers.jsonl (delete/absent and the other absent-header rows), which the proxy's delete API answers to a request without its token.",
+      "tests": [
+        "TestTenantAuth_AnswersLikeLoki",
+        "TestDeleteAuth_TokenGatesTheHandler"
+      ]
     }
   },
   "unmapped_messages": [
@@ -394,13 +410,6 @@
       "body": "^snappy:",
       "template": "snappy: corrupt input",
       "about": "A push request with an empty or corrupt body."
-    },
-    {
-      "id": "delete-query-not-set",
-      "status": 400,
-      "body": "^query not set",
-      "template": "query not set",
-      "about": "The delete API without a query."
     },
     {
       "id": "ruler-local-store",

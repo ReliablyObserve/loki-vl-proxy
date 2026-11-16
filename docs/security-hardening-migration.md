@@ -137,14 +137,25 @@ Count/rate ranking continues to use pre-aggregated buckets as well.
 
 ## Remaining delete API gap
 
-The Loki delete handler (`/loki/api/v1/delete`) is registered only with
-`-delete-api-enabled=true`; by default the path answers `404` like Loki with
-deletion disabled. When registered, it checks
-the confirmation header, selector, time bounds and tenant scope, then forwards to
-`/select/logsql/delete`, which VictoriaLogs v1.52.0 rejects as an unsupported
-path. Its documented API is the asynchronous `/delete/run_task?filter=...` API.
-This hardening series does not call that destructive API or claim delete
-compatibility: treat delete as unsupported. A working adapter would need time and
-tenant constraints, task status/cancellation, authorization, and cache
-invalidation with live tests.
+The Loki delete API (`/loki/api/v1/delete`) is registered only with
+`-delete-api-enabled=true`, behind its own token; by default the path answers
+`404` like Loki with deletion disabled. When registered, a create request
+(`POST`/`PUT`) gets Loki's checks and texts and then runs as a VictoriaLogs delete
+task (`/delete/run_task`, VictoriaLogs with `-delete.enable`) scoped by the
+tenant's `AccountID`/`ProjectID` and a filter of the request's time range and the
+rows the same log query reads; a cancel (`DELETE`) stops the tenant's running task.
+What remains:
+
+- the list (`GET`) answers Loki's `500`: VictoriaLogs keeps no record of a
+  request's LogQL query and range, and forgets a task once it ends;
+- a query Loki accepts whose rows a VictoriaLogs filter cannot select exactly
+  (a parser such as `| json`, a filter on a parsed or derived label, a formatting
+  stage) answers Loki's `500`;
+- tenant-label routing (`-tenant-label`) answers Loki's `500` for every delete
+  operation: a VictoriaLogs delete task takes no tenant stream filter;
+- Loki processes a request after its cancellation period (24h by default);
+  VictoriaLogs runs the task at once, so a cancel stops only what is still running;
+- answers cached before a delete (response cache, extent cache, peer tier) keep
+  serving the deleted rows until they expire.
+
 See [VictoriaLogs deletion](https://docs.victoriametrics.com/victorialogs/#how-to-delete-logs).

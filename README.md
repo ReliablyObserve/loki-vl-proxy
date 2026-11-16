@@ -189,10 +189,10 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Loki endpoints the proxy routes | **25 of 27** (93%) |
 | Endpoints with tests that compare the proxy against Loki | **19 of 27** (70%) |
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
-| Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
+| Routed endpoints answered natively by VictoriaLogs | 14 of 25 |
 | Behaviour and feature items | 10 proven, 21 partial, 3 gaps |
-| Known differences from Loki (ranked) | **154**: 129 open, 15 documented, 7 owner-kept, 3 upstream |
-| Open differences visible in Grafana (registry impact) | **73 of 129**: 59 Explore, 13 Logs Drilldown, 1 Grafana datasource; 19 API only, 37 edge cases |
+| Known differences from Loki (ranked) | **155**: 130 open, 15 documented, 7 owner-kept, 3 upstream |
+| Open differences visible in Grafana (registry impact) | **73 of 130**: 59 Explore, 13 Logs Drilldown, 1 Grafana datasource; 20 API only, 37 edge cases |
 
 **Readiness by client**
 
@@ -203,7 +203,7 @@ The Loki endpoints each client calls (registry `consumers`), with the same evide
 | Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 59 |
 | Logs Drilldown | 11 | 11 (100%) | 11 (100%) | 9 (82%) | 13 |
 | Grafana Loki datasource | 6 | 6 (100%) | 6 (100%) | 4 (67%) | 1 |
-| Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 19 |
+| Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 20 |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 
@@ -422,7 +422,7 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 - **Operator dashboard** — packaged Grafana dashboard covering Client → Proxy → VictoriaLogs, cache behavior, fanout, and resource utilization
 - **Runbook-backed alerts** — 15 alert rules, each with a linked runbook
 - **100+ Prometheus metrics** — all under `loki_vl_proxy_*` prefix
-- **Read-only by default** — `/push` returns `405`; `/loki/api/v1/delete` answers `404` like Loki unless `-delete-api-enabled` is set, and is not functional against current VictoriaLogs either way ([details](docs/security-hardening-migration.md#remaining-delete-api-gap)); debug/admin disabled unless explicitly enabled
+- **Read-only by default** — `/push` returns `405`; `/loki/api/v1/delete` answers `404` like Loki unless `-delete-api-enabled` is set; with it (and its own token) Loki's delete requests run as VictoriaLogs delete tasks ([details](docs/security-hardening-migration.md#remaining-delete-api-gap)); debug/admin disabled unless explicitly enabled
 - **Cold storage routing** — time-boundary split to Victoria Lakehouse for long-range queries
 - **Query-length enforcement** — `query_range` time-range limit: global default via `-default-max-query-length`, per-tenant override via `max_query_length` in `-tenant-limits` / `-tenant-default-limits`
 
@@ -505,7 +505,7 @@ See [Observability](docs/observability.md) and [Alert Runbooks Index](docs/runbo
 
 ## Security
 
-- Read-only API surface by default: `/push` blocked, debug/admin disabled; `/loki/api/v1/delete` answers `404` like Loki unless `-delete-api-enabled` is set, and is not functional against current VictoriaLogs ([details](docs/security-hardening-migration.md#remaining-delete-api-gap))
+- Read-only API surface by default: `/push` blocked, debug/admin disabled; `/loki/api/v1/delete` answers `404` like Loki unless `-delete-api-enabled` is set, and then runs Loki's delete requests as VictoriaLogs delete tasks behind its own token ([details](docs/security-hardening-migration.md#remaining-delete-api-gap))
 - Non-root runtime image, read-only root filesystem, restricted Helm security contexts
 - Hardening headers on all HTTP responses including 404s and disabled routes
 - CI security gates: `gitleaks`, `gosec`, Trivy, `actionlint`, `hadolint`, OpenSSF Scorecard, OWASP ZAP, curated Nuclei

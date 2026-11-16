@@ -2,12 +2,12 @@ id: status-405
 status: 405
 error_type: bad_data
 generated:   # rewritten by conformance/scripts/error_registry.py
-  proxy_call_sites: 4
+  proxy_call_sites: 3
   dynamic_sites: 0
   literal_messages:
     - "method not allowed"
   loki_messages: ["msg-method-not-allowed", "msg-write-not-supported"]
-  recorded_rows: 59
+  recorded_rows: 60
   comparable_rows: 59
   matching_rows: 59
 
