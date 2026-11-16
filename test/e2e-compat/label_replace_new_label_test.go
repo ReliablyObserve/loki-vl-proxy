@@ -106,11 +106,10 @@ func ensureLabelReplaceFixture(t *testing.T) *labelReplaceFixture {
 }
 
 // label_replace sets, rewrites or removes one label of every series its
-// expression yields (pkg/logql/evaluator.go LabelReplaceEvaluator.Next): the
-// regexp is anchored, a series it does not match is left alone, an empty
-// replacement removes the destination, and series that end with one label set
-// are not an error (pkg/logql/engine.go JoinSampleVector files their points
-// under one series on a range query, keeps each sample on an instant query).
+// expression yields: the regexp is anchored, a series it does not match is
+// left alone, an empty replacement removes the destination, and series that
+// end with one label set are not an error (their points are filed under one
+// series on a range query, each sample is kept on an instant query).
 //
 // The proxy's instant answers lacked the destination label (the transform only
 // ran on range matrices), an escaped regexp such as `\.` never matched, and a
@@ -301,8 +300,7 @@ func TestCompat_LabelReplaceNewLabel(t *testing.T) {
 
 // Two series that a label_replace gives one label set are ranked as two
 // samples by the vector aggregation above it, and filed under one series only
-// at the end (pkg/logql/evaluator.go VectorAggEvaluator.Next, pkg/logql/engine.go
-// vectorsToSeries). The proxy ranks the samples first, as Loki does
+// at the end. The proxy ranks the samples first, as Loki does
 // (semantics/label-replace-duplicates-before-ranking, fixed).
 // conformance: semantics/label-replace-duplicates-before-ranking, loki_api_v1_query_range
 func TestCompat_LabelReplaceDuplicatesBeforeRanking(t *testing.T) {

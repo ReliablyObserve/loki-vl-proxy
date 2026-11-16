@@ -22,13 +22,12 @@ import (
 
 // This file pins nested vector aggregations (`min by (zone) (avg by (pod, zone)
 // (count_over_time(...)))`) to Loki's, over generated rows and windows, with a
-// reference evaluator written apart from the proxy: Loki v3.7.7
-// pkg/logql/evaluator.go VectorAggEvaluator.Next (the series of a level's input
-// fall into the group the level's labels name, `by` keeping only the listed
-// labels a series has, `without` dropping the listed ones; sum is the total,
-// count the number of series, avg a running mean, max and min the extremes)
-// over pkg/logql/range_vector.go (count_over_time, and rate = lines per second,
-// of the lines of a series in the window (t-range, t]). Each level folds the
+// reference evaluator written apart from the proxy, modelling Loki's: the
+// series of a level's input fall into the group the level's labels name, `by`
+// keeping only the listed labels a series has, `without` dropping the listed
+// ones; sum is the total, count the number of series, avg a running mean, max
+// and min the extremes, over count_over_time and rate (lines per second) of the
+// lines of a series in the window (t-range, t]. Each level folds the
 // output of the level below it.
 //
 // The proxy under test is the real handler; only VictoriaLogs is simulated, by
@@ -190,7 +189,7 @@ func nvLabelsKey(labels map[string]string) string {
 	return b.String()
 }
 
-// nvFold is VectorAggEvaluator.Next: the series of the vector fall into the
+// nvFold is Loki's vector aggregation: the series of the vector fall into the
 // group whose kept labels they share, and each group takes the operator's value.
 func nvFold(in []nvSeries, level nvLevel) []nvSeries {
 	type group struct {

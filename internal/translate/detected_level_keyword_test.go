@@ -79,9 +79,8 @@ func chainKeywordLevel(re *regexp.Regexp, line string) string {
 	}
 }
 
-// The answers of Loki v3.7.7's detectLevelFromLogLine
-// (pkg/distributor/field_detection.go), written out by hand from its source:
-// the line is lowercased, each of trace, debug, fatal, critical, error, err,
+// The answers of Loki v3.7.7's level detection from a log line, written out by
+// hand: the line is lowercased, each of trace, debug, fatal, critical, error, err,
 // warning, warn, info is searched for its first occurrence with a left
 // boundary of ' ', '\t', '\n', '[', '(', '{', '"', '=' (or the line start) and a
 // right boundary of ' ', '\t', '\n', '[', ']', '(', ')', '{', '}', ':', ',', '!',

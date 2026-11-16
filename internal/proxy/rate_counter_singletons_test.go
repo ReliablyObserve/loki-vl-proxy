@@ -138,8 +138,7 @@ var (
 var rateCounterEmuTenants sync.Map
 
 // lokiRateCounter is Loki's rate_counter of one series' samples in a window,
-// written apart from the proxy from pkg/logql/range_vector.go:274-350
-// (rateCounter, extrapolatedRate with isCounter and isRate).
+// written apart from the proxy.
 func lokiRateCounter(ts []int64, vs []float64, window int64) float64 {
 	if len(ts) < 2 {
 		return 0
@@ -181,7 +180,7 @@ func lokiRateCounter(ts []int64, vs []float64, window int64) float64 {
 // lokiRateCounterSum is Loki's `sum [by (group)] (rate_counter(...))`: per
 // evaluation time, the series (stream plus parsed labels, the unwrapped one
 // left out) with a sample in (t-window, t], their rate_counter, summed per
-// group value (pkg/logql/evaluator.go VectorAggEvaluator.Next). A group with
+// group value. A group with
 // no sample at t has no point.
 func lokiRateCounterSum(rows []vlemu.Row, window int64, times []int64, group string) map[string]map[int64]float64 {
 	out := map[string]map[int64]float64{}
@@ -227,9 +226,8 @@ func lokiRateCounterSum(rows []vlemu.Row, window int64, times []int64, group str
 }
 
 // lokiRateCounterLabels are the labels Loki's `| logfmt` extracts from a
-// test line, the unwrapped one (amount) left out: the key sanitized
-// (pkg/logql/log/util.go:22-39), the first value of a label kept, empty values
-// dropped.
+// test line, the unwrapped one (amount) left out: the key sanitized like Loki,
+// the first value of a label kept, empty values dropped.
 func lokiRateCounterLabels(line string) map[string]string {
 	out := map[string]string{}
 	for _, kv := range emuLogfmt(line) {

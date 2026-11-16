@@ -332,9 +332,9 @@ services:
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
-      # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole retention for
-      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      # /series without start/end is the last hour; 0 made the proxy scan the
+      # whole retention for such requests, and every one of them is a 9 s,
+      # 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       # pprof for benchmark profiling (CPU/heap/alloc capture during bench runs).
       - "-server.enable-pprof"
@@ -415,9 +415,9 @@ services:
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
-      # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole retention for
-      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      # /series without start/end is the last hour; 0 made the proxy scan the
+      # whole retention for such requests, and every one of them is a 9 s,
+      # 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
@@ -494,9 +494,9 @@ services:
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
-      # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole retention for
-      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      # /series without start/end is the last hour; 0 made the proxy scan the
+      # whole retention for such requests, and every one of them is a 9 s,
+      # 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
@@ -571,9 +571,9 @@ services:
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
-      # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole retention for
-      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      # /series without start/end is the last hour; 0 made the proxy scan the
+      # whole retention for such requests, and every one of them is a 9 s,
+      # 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
@@ -628,9 +628,9 @@ services:
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
-      # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole retention for
-      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      # /series without start/end is the last hour; 0 made the proxy scan the
+      # whole retention for such requests, and every one of them is a 9 s,
+      # 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
@@ -698,9 +698,9 @@ services:
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
-      # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole retention for
-      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      # /series without start/end is the last hour; 0 made the proxy scan the
+      # whole retention for such requests, and every one of them is a 9 s,
+      # 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
@@ -755,9 +755,9 @@ services:
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
-      # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole retention for
-      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      # /series without start/end is the last hour; 0 made the proxy scan the
+      # whole retention for such requests, and every one of them is a 9 s,
+      # 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
@@ -812,9 +812,9 @@ services:
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
-      # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole retention for
-      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      # /series without start/end is the last hour; 0 made the proxy scan the
+      # whole retention for such requests, and every one of them is a 9 s,
+      # 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
@@ -873,9 +873,9 @@ services:
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
-      # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole retention for
-      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      # /series without start/end is the last hour; 0 made the proxy scan the
+      # whole retention for such requests, and every one of them is a 9 s,
+      # 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
@@ -930,9 +930,9 @@ services:
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
-      # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole retention for
-      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      # /series without start/end is the last hour; 0 made the proxy scan the
+      # whole retention for such requests, and every one of them is a 9 s,
+      # 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
@@ -987,9 +987,9 @@ services:
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
-      # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole retention for
-      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      # /series without start/end is the last hour; 0 made the proxy scan the
+      # whole retention for such requests, and every one of them is a 9 s,
+      # 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
@@ -1043,9 +1043,9 @@ services:
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
-      # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole retention for
-      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      # /series without start/end is the last hour; 0 made the proxy scan the
+      # whole retention for such requests, and every one of them is a 9 s,
+      # 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"

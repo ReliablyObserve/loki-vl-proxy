@@ -16,11 +16,11 @@ import (
 )
 
 // Loki makes a sample of a line only when its unwrapped label is present and
-// converts (pkg/logql/log/metrics_extraction.go): a missing or empty label
-// makes no sample, a value convertFloat/convertDuration/convertBytes rejects is
-// marked __error__ and `| __error__=""` drops it. VictoriaLogs' stats parse
-// leniently (units become numbers, max compares strings, an empty group answers
-// "" or NaN), so the proxy has to select the numeric rows itself.
+// converts: a missing or empty label makes no sample, a value
+// convertFloat/convertDuration/convertBytes rejects is marked __error__ and
+// `| __error__=""` drops it. VictoriaLogs' stats parse leniently (units
+// become numbers, max compares strings, an empty group answers "" or NaN), so
+// the proxy has to select the numeric rows itself.
 
 type unwrapValidityFixture struct {
 	app string

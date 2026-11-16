@@ -12,8 +12,7 @@ import (
 )
 
 // Loki keeps the series it meets first when several tie across the k-th place
-// (pkg/logql/evaluator.go VectorAggEvaluator.Next replaces the heap root only on
-// a strictly better value), and the inner `sum by` hands the series over in
+// (its heap replaces the root only on a strictly better value), and the inner `sum by` hands the series over in
 // Go map order. Which of the tied series ranks therefore changes from one
 // evaluation to the next, while the ranked values never do. The proxy breaks the
 // tie on the label key, so it answers the same series every time. These two

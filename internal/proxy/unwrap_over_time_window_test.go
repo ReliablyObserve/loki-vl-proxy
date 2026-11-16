@@ -23,11 +23,8 @@ import (
 
 // This file pins sum, avg, max and min over time with unwrap to Loki's window
 // (t-range, t] at every step, whatever the range and the step are, and on
-// instant queries (pkg/logql/range_vector.go:102-189 batchRangeVectorIterator
-// Next and load: the lower bound is exclusive, the evaluation time inclusive;
-// range_vector.go:371-420 sumOverTime, avgOverTime, maxOverTime, minOverTime),
-// with the outer aggregation applied per step (pkg/logql/evaluator.go
-// VectorAggEvaluator.Next). The reference below is written apart from the
+// instant queries (the lower bound is exclusive, the evaluation time
+// inclusive), with the outer aggregation applied per step. The reference below is written apart from the
 // proxy. The proxy under test is the real handler over the emulated
 // VictoriaLogs (vlemu.Emulator), and the answer must come from stats: raw rows
 // only where the bucket grid would pass Loki's 11,000 points
@@ -588,8 +585,7 @@ func owRawAnswer(t *testing.T, emu *vlemu.Emulator, c owCase, seriesCap int) (in
 // Loki's label order): the
 // same series, timestamps, values and sample presence over generated rows with
 // sparse and dense windows and lines on window edges, and the same 400 when the
-// groups pass max_query_series (Loki counts the limit on the groups:
-// pkg/logql/engine.go:530-590 JoinSampleVector), while VictoriaLogs reads one
+// groups pass max_query_series (Loki counts the limit on the groups), while VictoriaLogs reads one
 // row per group and bucket instead of one per stream.
 //
 // conformance: semantics/unwrap-over-time-range-windows, metric-series-identity
@@ -984,8 +980,8 @@ func TestUnwrapOverTimeShortRangeStaysOnStepBuckets(t *testing.T) {
 
 // TestUnwrapOverTimeRangeWindowsNaN: a nan value is a sample for Loki
 // (strconv.ParseFloat reads it): sum and avg over a window that holds one are
-// NaN (pkg/logql/range_vector.go:371-404), max and min ignore it unless every
-// sample is one (range_vector.go:405-420). With a range longer than the step the
+// NaN, max and min ignore it unless every
+// sample is one. With a range longer than the step the
 // nan group of the counting gate (flag 2) reaches the merged windows: the five
 // steps whose window holds the nan bucket are NaN for sum and avg, and max
 // keeps the clean value. The fake answers the bucket queries of the window merge.
