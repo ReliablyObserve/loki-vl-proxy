@@ -212,7 +212,7 @@ func TestKeepSeriesGrouping_BlankKeepListHandler(t *testing.T) {
 		{"bytes_over_time({app=\"api\"} | keep\f, \u2028 [1m])", "", "bytes_over_time"},
 		{"bytes_over_time({app=\"api\"} | json | keep\u0085 [1m])", "json", "bytes_over_time"},
 	} {
-		want := lokiKeepReference(rows, tc.parser, []string{"zzz"}, tc.fn, "", time.Minute, start, end, time.Minute)
+		want := lokiPushdownMatrix(t, "keep_blank_list_handler", rows, tc.query, start, end, time.Minute)
 		rec := run(tc.query)
 		if rec.Code != http.StatusOK {
 			t.Errorf("%q: status %d: %s", tc.query, rec.Code, rec.Body)

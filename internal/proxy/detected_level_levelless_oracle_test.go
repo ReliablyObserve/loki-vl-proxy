@@ -390,7 +390,8 @@ func TestUnwrapExtractionListAnswersTheStreamsLokiAnswers(t *testing.T) {
 
 // TestLevelLessStreamFilterOnVictoriaLogs: the restriction of the second read (levelLessStreamFilter, sent as
 // extra_filters) keeps, on VictoriaLogs v1.49.0 and v1.53.0, exactly the streams streamDecidesLevel says decide no
-// level: a missing and an empty label alike, every level name of the list, detected_level.
+// level: a missing and an empty label alike, every level name of the list, detected_level; and the restriction of a
+// first read known to hold such streams (labelledStreamFilter) keeps exactly the others.
 //
 // conformance: semantics/detected-level-stream-stats-without-level
 func TestLevelLessStreamFilterOnVictoriaLogs(t *testing.T) {
@@ -423,33 +424,45 @@ func TestLevelLessStreamFilterOnVictoriaLogs(t *testing.T) {
 		}
 	}
 	sort.Strings(want)
+	var labelled []string
+	for _, s := range streams {
+		if streamDecidesLevel(s) {
+			labelled = append(labelled, s["pod"])
+		}
+	}
+	sort.Strings(labelled)
 	for _, v := range []struct{ version, modfile string }{{"v1.49.0", "go.v1.49.0.mod"}, {"v1.53.0", ""}} {
 		srv, err := oraclerun.StartVLServe(filepath.Join("..", "..", "test", "oracle", "vl"), v.modfile, []oraclerun.ServeDataSet{rows})
 		if err != nil {
 			t.Fatal(err)
 		}
-		form := url.Values{"query": {`app:="f" | stats by (pod) count()`}, "extra_filters": {levelLessStreamFilter()}}
-		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/select/logsql/query", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("AccountID", "0")
-		req.Header.Set("ProjectID", "0")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		srv.Stop()
-		var got []string
-		for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
-			var row map[string]string
-			if json.Unmarshal([]byte(line), &row) == nil && row["pod"] != "" {
-				got = append(got, row["pod"])
+		for _, check := range []struct {
+			filter string
+			want   []string
+		}{{levelLessStreamFilter(), want}, {labelledStreamFilter(), labelled}} {
+			form := url.Values{"query": {`app:="f" | stats by (pod) count()`}, "extra_filters": {check.filter}}
+			req, _ := http.NewRequest(http.MethodPost, srv.URL+"/select/logsql/query", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("AccountID", "0")
+			req.Header.Set("ProjectID", "0")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			var got []string
+			for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
+				var row map[string]string
+				if json.Unmarshal([]byte(line), &row) == nil && row["pod"] != "" {
+					got = append(got, row["pod"])
+				}
+			}
+			sort.Strings(got)
+			if resp.StatusCode != http.StatusOK || strings.Join(got, ",") != strings.Join(check.want, ",") {
+				t.Errorf("%s %s: %d %v, want %v (%s)", v.version, check.filter, resp.StatusCode, got, check.want, body)
 			}
 		}
-		sort.Strings(got)
-		if resp.StatusCode != http.StatusOK || strings.Join(got, ",") != strings.Join(want, ",") {
-			t.Errorf("%s: %d %v, want %v (%s)", v.version, resp.StatusCode, got, want, body)
-		}
+		srv.Stop()
 	}
 }

@@ -36,6 +36,30 @@ generators either. Loki is used only as a test comparison.
     names a query may call), never code. Its limits are never raised to make a
     pull request pass.
 
+### Expected answers come from Loki, recorded (hard rule)
+
+A test that compares the proxy with Loki takes Loki's answer from Loki: the engine oracle (`test/oracle/loki
+engine`: Loki's query engine, request parser and encoder over an in-memory store; `unaligned` runs a range at its
+own bounds) or the pipeline oracle (`process`), recorded under `internal/proxy/testdata/loki_engine/` and replayed
+by default.
+
+- Use the helpers in `internal/proxy/loki_engine_record_test.go`: `lokiEngineAnswers` (a batch of data sets),
+  `lokiEngineAnswerOf` (one request where the test needs it), `lokiProcessAnswers` (pipeline verdicts per line),
+  `lokiPushdownMatrix`. Every answer is keyed by a digest of its data (streams in a canonical order) and request:
+  a changed generator or request finds no answer and asks to record again.
+- Record with `GOMODCACHE=<a clean module cache> LVP_RUN_ORACLES=1 go test -count=1 -run <tests> ./internal/proxy/`,
+  in full mode (not `-short`), so the inline recordings hold the keys of both modes; then replay both modes.
+- Generated test data must be deterministic: never take an order from a map (sort keys before a seeded shuffle;
+  `keepRows` once wrote JSON keys in map order and no recording could match it).
+- Recordings come from one machine. A fused multiply-add can change the last bit between architectures, so
+  compare finite values with a relative tolerance (`sameQuantile`, 1e-9 sums), NaN and the infinities exactly.
+- Where a test must evaluate an expected answer itself (a fuzz target, deciding where a ranking ties), the
+  evaluator is written from LogQL's documented meaning, never from Loki's code, and a test holds it to recorded
+  answers over the domain it is used on (`TestTopKReferenceMatchesRecordedLoki`,
+  `TestVectorFoldReferenceMatchesRecordedLoki`, `TestUnwrapWindowReferenceMatchesRecordedLoki`, ...).
+- Ingest-time values Loki adds (`service_name` from `app`, `detected_level` as structured metadata) are written
+  into the recorded data explicitly, as Loki's documented ingest gives them.
+
 ## Loki difference registry and query matrix
 
 Every difference discovered between the proxy and Loki must enter the existing

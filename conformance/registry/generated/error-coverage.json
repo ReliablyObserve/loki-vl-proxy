@@ -2635,21 +2635,19 @@
         "r0111"
       ],
       "kind": "logql_validation",
-      "known_difference_ids": [
-        "r0043"
-      ],
-      "matching_rows": 7,
+      "known_difference_ids": [],
+      "matching_rows": 8,
       "messages": [
         "instant-log-query",
         "parse"
       ],
       "modes": {},
-      "proxy_matches": false,
+      "proxy_matches": true,
       "reason": "",
       "recorded": true,
       "route": "query",
       "rows": 8,
-      "state": "differs",
+      "state": "match",
       "unit_gate": true
     },
     {
@@ -3957,8 +3955,8 @@
     }
   ],
   "known_differences": {
-    "ceiling": 8,
-    "rows": 8
+    "ceiling": 7,
+    "rows": 7
   },
   "messages": {
     "aggregate-by": {
@@ -4105,7 +4103,7 @@
       ],
       "item": "msg-instant-log-query",
       "kind": "param",
-      "matching_rows": 1,
+      "matching_rows": 2,
       "routes": [
         "query"
       ],
@@ -4121,7 +4119,7 @@
       ],
       "source": "lokierr",
       "stage": "logql_validation",
-      "state": "differs",
+      "state": "matches",
       "status": 400
     },
     "internal": {
@@ -5182,16 +5180,16 @@
   "summary": {
     "cells": 124,
     "cells_e2e": 73,
-    "cells_matching": 100,
+    "cells_matching": 101,
     "cells_recorded": 67,
     "check_order_rows": 33,
     "comparable_rows": 248,
     "coverage_ratio": 0.5887,
     "covered_cells": 73,
-    "differing_rows": 8,
+    "differing_rows": 7,
     "e2e_rows": 142,
-    "match_ratio": 0.9677,
-    "matching_rows": 240,
+    "match_ratio": 0.9718,
+    "matching_rows": 241,
     "messages": 36,
     "messages_documented": 9,
     "messages_recorded": 27,

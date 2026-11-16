@@ -5,7 +5,7 @@ proves:
   - loki_api_v1_query
 consumer: explore
 why: |
-  Loki keeps one heap per grouping key and step, so `topk by (container) (5, ...)` keeps the 5 best
+  Loki ranks within each grouping key at every step, so `topk by (container) (5, ...)` keeps the 5 best
   samples of every container at every step: the recorded parity run has Loki at
   791 series on a range and 45 at an instant where the proxy returned 5.
 
