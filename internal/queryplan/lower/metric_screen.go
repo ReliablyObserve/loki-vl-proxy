@@ -25,6 +25,8 @@ import (
 //   - a check that a label is not empty (`!= ""`) after a json or logfmt parser, with a grouping or unwrapped label
 //     that may be a sanitized parser key, under a rate or bytes_rate or followed by another stage (the lowering
 //     leaves the existence check the translator moves to it, parser label filter);
+//   - a label filter on an `_extracted` name after a json or logfmt parser with such a grouping or unwrapped label,
+//     and a json extraction expression the lowering does not write (parser extracted label, json extraction);
 //   - a label filter with an equality on a number, duration or byte size after a json or logfmt parser
 //     (WritesNumericEquality), or a comparison with a signed number;
 //   - a word VictoriaLogs reserves as a field name (_time, _msg, _stream, _stream_id in any letter case) before a parser
@@ -42,7 +44,7 @@ func ScreenMetric(query string) string {
 	var s metricScan
 	if !s.scan(query) || s.ranges == 0 || s.needsUnwrap && !s.unwrap || s.keep && s.unwrap ||
 		s.nestedVector && s.unwrap || s.lrBinary && s.quotedParen ||
-		s.exists && s.candidate && (s.rate || s.existsThen) {
+		s.exists && s.candidate && (s.rate || s.existsThen) || s.extractedFilter && s.candidate || s.jsonPath {
 		return ""
 	}
 	if s.binary {
@@ -173,6 +175,10 @@ type metricScan struct {
 	// exists is a label filter `!= ""` after a json or logfmt parser, existsThen a pipe after it, rate a rate or
 	// bytes_rate call.
 	exists, existsThen, rate bool
+	// extractedFilter is a label filter on a name ending in _extracted after a json or logfmt parser; jsonArgs is set
+	// in a json stage until the next pipe, and jsonPath by an extraction expression the lowering does not write (one
+	// that starts with a bracket or a blank, or holds a comma, a quote or an escape).
+	extractedFilter, jsonArgs, jsonPath bool
 	// parsedOther is a regexp or pattern parser; groupsServiceName a clause naming service_name.
 	parsedOther, groupsServiceName bool
 	// log is set for a log query (ScreenLogStages): its whole text after the selector is a pipeline. stages are the
@@ -239,6 +245,7 @@ func (s *metricScan) step(q string, i int) (int, bool) {
 		}
 		s.operand, s.names = false, false
 		s.existsThen = s.existsThen || s.exists
+		s.jsonArgs = false
 		s.flags, s.keepStage, s.keepName, s.keepMatcher, s.template = false, false, false, false, false
 		return i, true
 	case c >= '0' && c <= '9' || c == '.':
@@ -285,6 +292,9 @@ func (s *metricScan) quoted(q string, i int) (int, bool) {
 		if !plainParserArg(q[i+1:j], q[i]) {
 			return j, false
 		}
+	}
+	if s.jsonArgs && oddJSONPath(q[i+1:j]) {
+		s.jsonPath = true
 	}
 	if s.labelReplaceCommas == 0 && strings.ContainsAny(q[i+1:j], "()") {
 		s.quotedParen = true
@@ -446,6 +456,9 @@ func (s *metricScan) word(q string, i, j int) bool {
 	if done, ok := s.keyword(q, w, j); done {
 		return ok
 	}
+	if s.parsed && s.pipeline() && strings.HasSuffix(w, "_extracted") && comparisonFollows(q, j) {
+		s.extractedFilter = true
+	}
 	if s.keepStage {
 		// A keep of names and matchers together loses the order they were written in (the lowering leaves it to
 		// the translator).
@@ -525,6 +538,7 @@ func (s *metricScan) keyword(q, w string, j int) (done, ok bool) {
 		return true, s.pipeline()
 	case "json", "logfmt":
 		s.parsed = true
+		s.jsonArgs = w == "json"
 	case "keep":
 		s.keep = true
 	case "unwrap":
@@ -644,6 +658,13 @@ func (s *metricScan) comparison(q string, i int, op string) bool {
 	}
 	numeric := c >= '0' && c <= '9' || c == '.'
 	return !numeric || !s.parsed || op != "=" && op != "==" && op != "!="
+}
+
+// oddJSONPath reports a json extraction expression, as quoted, that the lowering leaves to the translator
+// (translate.JSONAliasCopies): one that starts or ends with a blank or starts with a bracket, or holds a comma, a
+// quote or an escape.
+func oddJSONPath(v string) bool {
+	return v != "" && (v[0] == '[' || isBlank(v[0]) || isBlank(v[len(v)-1]) || strings.ContainsAny(v, ",\\\"`"))
 }
 
 // callFollows reports an opening parenthesis after the blanks at q[j:].
