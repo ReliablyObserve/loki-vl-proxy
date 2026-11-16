@@ -34,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the stream's level fields first, then the row's `level`, normalised. VictoriaLogs calls per request do not change.
   Answers cached before are not served again: the response key fence (`@stream-level-series-v3`) now covers every
   metric query and every query naming `detected_level` (one cache miss per such key after the upgrade).
+- `/loki/api/v1/patterns` now counts the last 10 s sample of a range whole when the range ends inside it, as Loki
+  does: Loki answers every sample that starts inside the range with all of its lines, including the lines after the
+  range's end. The proxy read lines only up to the end, so a range ending at, for example, `...019` showed 76 of the
+  sample's 98 lines in Logs Drilldown's patterns chart. The count also depended on timing: the request that started
+  the pattern state's background build got the partial sample (and kept it in the cache), later ones the whole
+  sample. The pattern state, the exact tier and the counts tier now read up to the end of that sample (up to now
+  while it is still being written, completed by the next refresh); the counts tier, with a step of whole 10 s
+  samples, also leaves out the lines of a sample that starts before the range, as Loki does. A range ending on a
+  sample's start reads exactly as before, and a repeat or a range ending earlier inside a sample already read makes
+  no VictoriaLogs call.
 
 ## [2.302.1] - 2026-11-15
 
@@ -60,16 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-stream detected_level marker also reads `topK` and `bottomK` written with the Kelvin sign (U+212A), and the
   marker of a parser's unwrap series identity reads a function name written with U+0130 (`avg_over_tİme`). A query spelled one of these ways may miss the cache once after the upgrade; queries spelled as
   before keep their keys.
-- `/loki/api/v1/patterns` now counts the last 10 s sample of a range whole when the range ends inside it, as Loki
-  does: Loki answers every sample that starts inside the range with all of its lines, including the lines after the
-  range's end. The proxy read lines only up to the end, so a range ending at, for example, `...019` showed 76 of the
-  sample's 98 lines in Logs Drilldown's patterns chart. The count also depended on timing: the request that started
-  the pattern state's background build got the partial sample (and kept it in the cache), later ones the whole
-  sample. The pattern state, the exact tier and the counts tier now read up to the end of that sample (up to now
-  while it is still being written, completed by the next refresh); the counts tier, with a step of whole 10 s
-  samples, also leaves out the lines of a sample that starts before the range, as Loki does. A range ending on a
-  sample's start reads exactly as before, and a repeat or a range ending earlier inside a sample already read makes
-  no VictoriaLogs call.
 
 ## [2.301.0] - 2026-11-15
 
