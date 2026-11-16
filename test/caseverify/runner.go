@@ -87,7 +87,26 @@ func (l *Live) send(base string, req Request) Answer {
 	if len(raw) > maxBody {
 		a.Body, a.Truncated = string(raw[:maxBody]), true
 	}
+	a.VLCalls, a.CacheResult = vlCallsOf(resp.Header)
 	return a
+}
+
+// The proxy's per-request cost headers (-debug-vl-calls-header, internal/proxy vl_calls_header.go).
+const (
+	backendCallsHeader = "X-Loki-VL-Backend-Calls"
+	cacheResultHeader  = "X-Loki-VL-Cache-Result"
+)
+
+// vlCallsOf reads the cost headers of an answer: the calls count is nil when the header is absent or not a
+// non-negative integer (an absent header is not "0 calls").
+func vlCallsOf(h http.Header) (*int, string) {
+	var calls *int
+	if v := h.Get(backendCallsHeader); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			calls = &n
+		}
+	}
+	return calls, h.Get(cacheResultHeader)
 }
 
 // Recorded is one line of the recorded answers file: both sides' answers to one attempt of one case.
@@ -153,7 +172,7 @@ func (r *Recorder) addCount(side string, key CountKey, a CountAnswer) {
 	if r.index == nil {
 		r.index = map[string]*Recorded{}
 	}
-	k := fmt.Sprintf("count\x00%s\x00%d\x00%d", key.Selector, key.Start, key.End)
+	k := fmt.Sprintf("count\x00%s\x00%d\x00%d\x00%s", key.Selector, key.Start, key.End, key.Tenant)
 	line, ok := r.index[k]
 	if !ok {
 		kk := key
@@ -440,7 +459,7 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 		var before Snapshot
 		var measured bool
 		if attempt == 1 && meter != nil {
-			before, measured = meter.Measure(p.ID, p.Variant, "cold_before")
+			before, measured = measure(meter, p.ID, p.Variant, "cold_before")
 		}
 		proxy := src.Ask("proxy", p.ID, attempt, req)
 		if attempt == 1 {
@@ -470,7 +489,11 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 		if !checked && needsData(r.Facets, loki) {
 			checked = true
 			if dataVerdict(&r, p, q, cnt, now, headers["X-Scope-OrgID"], tenant, loki) {
-				return r
+				// Loki's index trails its data by the time a chunk takes to flush: ask again before calling it not ready.
+				var caught bool
+				if loki, caught = waitForLokiIndex(&r, p, src, req, loki); !caught {
+					return r
+				}
 			}
 		}
 		r.Differences = CompareWith(r.Facets, loki, proxy, opts)
@@ -497,6 +520,41 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 	return r
 }
 
+// Loki's index/stats counts the chunks it has flushed, so a seed written a moment ago is counted late. The answer is
+// asked again, at attempts of its own so a replay finds them, up to indexTries times, indexWait apart, before the case
+// is called not comparable; both are variables so a test does not wait.
+const (
+	indexTries        = 12
+	indexRetryAttempt = 20
+)
+
+var indexWait = 10 * time.Second
+
+// waitForLokiIndex re-asks Loki while the verdict of r is that its index has not caught up with its data; it returns
+// Loki's newest answer and true when the index caught up (r's verdict is cleared), false when r stands.
+func waitForLokiIndex(r *Result, p Probe, src Source, req Request, loki Answer) (Answer, bool) {
+	if r.Verdict != verdictNotComparable || !strings.Contains(r.Reason, "its index has not caught up with its data") {
+		return loki, false
+	}
+	wait := indexWait
+	if _, replay := src.(*Replay); replay {
+		wait = 0 // a recording holds the answers it asked, there is nothing to wait for
+	}
+	for try := 1; try <= indexTries; try++ {
+		time.Sleep(wait)
+		again := src.Ask("loki", p.ID, indexRetryAttempt+try, req)
+		if again.OK() && lokiIndexBehind(p, *r, again) == "" {
+			r.Verdict, r.Reason = "", ""
+			return again, true
+		}
+		if !again.OK() {
+			break
+		}
+		r.Reason = lokiIndexBehind(p, *r, again)
+	}
+	return loki, false
+}
+
 // dataVerdict runs the data precheck and the health check of Loki's index; true when the data does not allow a
 // comparison (the verdict is set).
 func dataVerdict(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, caseTenant, tenant string, loki Answer) bool {
@@ -520,6 +578,10 @@ func dataVerdict(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, c
 func settleVacuous(r *Result, p Probe, loki, proxy Answer, control func() string) (vacuous, blocked bool) {
 	if !Vacuous(r.Facets, loki, proxy) {
 		return false, false
+	}
+	if p.EmptyRange != "" {
+		r.Verdict, r.Reason = verdictMatches, "both answers are empty by design: "+p.EmptyRange
+		return true, false
 	}
 	if p.Control != nil {
 		if why := control(); why != "" {
@@ -572,7 +634,7 @@ func meterAfter(meter Meter, p Probe, measured bool) (Snapshot, bool) {
 	if !measured {
 		return nil, false
 	}
-	return meter.Measure(p.ID, p.Variant, "cold_after")
+	return measure(meter, p.ID, p.Variant, "cold_after")
 }
 
 // lokiIndexBehind is why Loki's /index/stats answer cannot be compared: it counts the chunks of its store, and
@@ -656,8 +718,14 @@ func window(q url.Values, now time.Time) (int64, int64) {
 
 // precheck counts the case's selectors on both sides; a verdict when the data does not allow a comparison.
 func precheck(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, caseTenant, tenant string) (string, string) {
+	// The case's own tenant is counted on both sides (Loki by header, VictoriaLogs by account); a tenant
+	// VictoriaLogs cannot count by number is named, never counted as the run's tenant.
+	keyTenant := ""
 	if caseTenant != "" && caseTenant != tenant {
-		return verdictDataUnchecked, fmt.Sprintf("the data precheck counts tenant %q only, the case asks %q", tenant, caseTenant)
+		if !countableTenant(caseTenant) {
+			return verdictDataUnchecked, fmt.Sprintf("the case asks tenant %q, which is no VictoriaLogs account number: the data precheck counts numeric tenants only", caseTenant)
+		}
+		keyTenant = caseTenant
 	}
 	start, end := window(q, now)
 	selectors := Selectors(q.Get("query"))
@@ -666,7 +734,7 @@ func precheck(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, case
 	}
 	empty := true
 	for _, sel := range selectors {
-		key := CountKey{Selector: sel, Start: start, End: end}
+		key := CountKey{Selector: sel, Start: start, End: end, Tenant: keyTenant}
 		l, lok := cnt.Count("loki", key)
 		v, vok := cnt.Count("vl", key)
 		if !lok || !vok {
@@ -689,7 +757,7 @@ func precheck(r *Result, p Probe, q url.Values, cnt Counter, now time.Time, case
 			empty = false
 		}
 	}
-	if empty {
+	if empty && p.EmptyRange == "" {
 		return verdictEmpty, "both sides hold no line for the case's selectors and window"
 	}
 	return "", ""
@@ -772,9 +840,10 @@ func Report(f File) string {
 	ru := f.Reuse
 	fmt.Fprintf(&b, "\n#### Cache reuse of a repeat: %d reused, %d not reused, %d not measured\n\n", ru.Counts[reuseReused],
 		ru.Counts[reuseNotReused], ru.Counts[reuseNotMeasured])
-	fmt.Fprintf(&b, "VictoriaLogs calls: %.0f cold, %.0f on the repeats (%.0f of them on endpoints the first ask did not use: "+
-		"background work the process-wide counters count); bytes %.0f cold, %.0f on the repeats.", ru.ColdVLCalls,
-		ru.RepeatCalls, ru.Background, ru.ColdBytes, ru.RepeatBytes)
+	fmt.Fprintf(&b, "VictoriaLogs calls: %.0f cold, %.0f on the repeats; bytes %.0f cold, %.0f on the repeats. "+
+		"Calls are the request's own count (X-Loki-VL-Backend-Calls) for %d repeats and the process-wide metrics' for %d; "+
+		"the proxy's background calls around the repeats, left out of the first, are %.0f.", ru.ColdVLCalls,
+		ru.RepeatCalls, ru.ColdBytes, ru.RepeatBytes, ru.CallsFromHeader, ru.CallsFromMetrics, ru.Background)
 	if len(ru.RepeatHits) > 0 {
 		keys := make([]string, 0, len(ru.RepeatHits))
 		for k := range ru.RepeatHits {

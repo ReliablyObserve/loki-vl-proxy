@@ -266,11 +266,11 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 func TestResponseKeyFencesSiteOrder(t *testing.T) {
 	query := `sum(count_over_time({app="a"} | logfmt | msg != "" | keep msg | status = ip("1.2.3.4") | drop detected_level [5m]))`
 	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query="+url.QueryEscape(query)+"&start=1&end=2&step=1", nil)
-	keep, ip, dl, lf, rl := keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, detectedLevelMutationResponseVersion, logfmtPresenceResponseVersion, repeatedLabelFilterResponseVersion
+	keep, ip, dl, lf, rl, sl := keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, detectedLevelMutationResponseVersion, logfmtPresenceResponseVersion, repeatedLabelFilterResponseVersion, streamLevelSeriesResponseVersion
 	for site, want := range map[responseKeySite]string{
-		responseKeyCompatQuery:      dl + keep + ip + rl,
-		responseKeyCompatQueryRange: dl + keep + ip + rl + lf,
-		responseKeyInnerQueryRange:  lf + dl + keep + ip + rl,
+		responseKeyCompatQuery:      dl + keep + ip + rl + sl,
+		responseKeyCompatQueryRange: dl + keep + ip + rl + sl + lf,
+		responseKeyInnerQueryRange:  lf + dl + keep + ip + rl + sl,
 		responseKeyLogWindowShape:   keep,
 	} {
 		if got := responseKeyFences(r, query, site); got != want {

@@ -14,7 +14,7 @@ import (
 // metric the conversion check reads: the counting query is what the cache keys
 // and stores, so a rejected value or a nan in a stored bucket reaches the
 // check as it does from VictoriaLogs. Loki answers a query whose window holds
-// a value its conversion rejects with its 400 (pkg/logql/evaluator.go:726-733),
+// a value its conversion rejects with its 400,
 // and a nan is a sample (sum and avg NaN, max and min ignore it).
 
 // unwrapCacheRows: two streams with a value every 7 seconds over 3 hours, a

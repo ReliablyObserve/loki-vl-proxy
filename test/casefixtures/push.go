@@ -203,12 +203,43 @@ func selector(s Stream) string {
 	return "{" + strings.Join(parts, ",") + "}"
 }
 
-// vlFilter is the stream's labels as VictoriaLogs field filters.
+// shadowedLabels are the stream labels VictoriaLogs does not store as written: on the Loki push route it parses a JSON
+// line into fields, and a key of the line replaces the stream label of the same name (a label level="info" over a line
+// {"level":"error"} is stored as level=error). The raw route keeps the line verbatim and the JSON-line route writes the
+// labels as plain fields, so nothing is shadowed there.
+func shadowedLabels(s Stream) map[string]bool {
+	out := map[string]bool{}
+	if s.Route != RouteLokiPush {
+		return out
+	}
+	for _, e := range s.Entries {
+		var keys map[string]json.RawMessage
+		if json.Unmarshal([]byte(e.Line), &keys) != nil {
+			continue
+		}
+		for k := range keys {
+			if _, ok := s.Labels[k]; ok {
+				out[k] = true
+			}
+		}
+	}
+	return out
+}
+
+// vlFilter is the stream's labels as VictoriaLogs field filters: the labels VictoriaLogs stores as written. A label a
+// JSON line shadows (shadowedLabels) holds the line's value there, so a filter on the label's value would match no
+// line (or only some); the stream is found by its other labels, which TestShadowedStreamsStayIdentifiable keeps
+// unique.
 func vlFilter(s Stream) string {
-	names := streamFields(s)
-	parts := make([]string, len(names))
-	for i, k := range names {
-		parts[i] = k + ":=" + strconv.Quote(s.Labels[k])
+	shadowed := shadowedLabels(s)
+	var parts []string
+	for _, k := range streamFields(s) {
+		if !shadowed[k] {
+			parts = append(parts, k+":="+strconv.Quote(s.Labels[k]))
+		}
+	}
+	if len(parts) == 0 {
+		return "*"
 	}
 	return strings.Join(parts, " ")
 }

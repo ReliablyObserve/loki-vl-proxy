@@ -62,11 +62,10 @@ func vlFastjsonUnpackFields(msg string) map[string]string {
 	return out
 }
 
-// lokiJSONAccepts mirrors Loki v3.7.7's JSONParser.Process acceptance
-// (pkg/logql/log/parser.go:74-135): jsonparser.ObjectEach over the line,
-// descending into a nested object only when one of the required labels
-// starts with its sanitized key path (parser_hints.go ShouldExtractPrefix,
-// parser.go buildSanitizedPrefixFromBuffer; nil required walks every object).
+// lokiJSONAccepts models which lines Loki v3.7.7's json parser accepts:
+// jsonparser.ObjectEach over the line, descending into a nested object only
+// when one of the required labels starts with its sanitized key path (nil
+// required walks every object).
 // The required labels hold __error__, so parsing never stops early.
 func lokiJSONAccepts(line string, required []string) bool {
 	var walk func(data []byte, path [][]byte) error

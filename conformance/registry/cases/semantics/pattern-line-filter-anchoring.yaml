@@ -14,16 +14,14 @@ why: |
   on `foo bar` and `<_>a<_>` on `a` are false in Loki and were kept by the
   proxy; `foo <_>` on `foo bar` is true on both.
 
-  Loki builds a patternFilter (pkg/logql/log/filter.go:618-621,858-873) whose
-  pattern.ParseLineFilter rejects consecutive and named captures
-  (pkg/logql/log/pattern/pattern.go:36-52) and whose Matcher.Test
-  (pattern.go:124-165) is a single left-to-right scan: each literal is searched
+  Loki builds a pattern filter that
+  rejects consecutive and named captures and matches with a single left-to-right scan: each literal is searched
   once, at its first occurrence after the previous one (a leading literal may
   start anywhere, so `foo` matches `xfoo`); a literal found right where the
   previous one ended means an empty capture and rejects the line; a pattern
   ending on a literal must end the line there, one ending on a capture must
   leave a non-empty rest. The lexer makes `<_>` and other `<name>` tokens
-  captures and every other rune a literal (lexer.rl, expr.y). Because the scan
+  captures and every other rune a literal. Because the scan
   never backtracks, `<_>a<_>` rejects `aab` (the first `a` is at offset 0) and
   `<_> bar` rejects `x bar bar`, where a regexp matches a later occurrence. A
   regexp is exact only for `<_>` and `literal<_>`.
@@ -77,7 +75,7 @@ gap:
   impact: drilldown-visible
   effort: M
   area: 'internal/translator/translator.go translatePatternLineFilter; internal/proxy/range_metric_compat.go queryUsesParserStages'
-  loki: 'pkg/logql/log/filter.go:618-621,858-873 (pattern filter); pkg/logql/log/pattern/pattern.go:36-52,124-165 (ParseLineFilter, Matcher.Test); pkg/logql/log/pattern/lexer.rl, expr.y (captures and literals)'
+  loki: 'a single left-to-right scan: each literal is found at its first occurrence after the previous one, no backtracking (TestCompat_PatternLineFilter in test/e2e-compat pattern_line_filter_test.go)'
   proxy: 'superset regexp prefilter plus extract into scratch fields and a filter on them, evaluated by VictoriaLogs for log and metric queries'
   planned_test: 'TestCompat_PatternLineFilterAnchoring (test/e2e-compat, group core); TestPatternLineFilterAnchoringEdges, TestPatternLineFilterAnchoringDifferential, TestPatternLineFilterAnchoringCorpus, TestPatternLineFilterSingleLiteralShapes (internal/translator); TestPatternLineFilterAnchoringReachesVictoriaLogs, TestPatternLineFilterAnchoringDetectedFields, TestPatternLineFilterIsNotAParserStage (internal/proxy)'
   note: 'The 638 generated and fixed filters (seed 7) on 2,530 lines matched Loki''s real pattern package against the real VictoriaLogs storage of v1.43.1 and v1.50.0 (log rows and stats count, 0 mismatches over 1.6M line checks; 101,528 on the base build), and TestPatternLineFilterAnchoringCorpus replays the same corpus without storage (0 mismatches of 1,614,140 verdicts; 101,414 on the base translation), and TestPatternLineFilterSingleLiteralShapes checks the pipe-free single-literal forms on every line over small alphabets (1,792,980 verdicts, overlapping literals included). The e2e passes against Loki 3.7.7 on VictoriaLogs v1.52.0 and v1.47.0. Consecutive and named captures, which Loki rejects with a 400, are the open row semantics/pattern-line-filter-invalid-captures.'

@@ -41,7 +41,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy/ordered_json_metric.go logsQLLabelCondition (stats pushdown label filters)'
-  loki: 'pkg/logql/log/ip.go:123-145 (absent label: line dropped under = and !=), :183-261 (address scan, pattern forms)'
+  loki: 'ip() on an absent label drops the line under = and !=; the address scan accepts the pattern forms (test/e2e-compat ip_label_filter_test.go)'
   proxy: 'no series: the filter compares the value with the text ip(...)'
   planned_test: 'TestCompat_IPLabelFilterJSONMetric (test/e2e-compat, group core)'
   clusters:

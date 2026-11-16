@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -79,10 +80,58 @@ func TestQueryResolvesTimesOnce(t *testing.T) {
 			t.Errorf("%q: %s", v, why)
 		}
 	}
-	for _, v := range []string{"<start>", "<start+30m>", "historical-aligned-hour-minus-2h", "now-", "now-1y", "now-xh", "now*1h", "nowx"} {
+	for _, v := range []string{"<a row time in ns>", "<the same time>", "<start+30x>", "<start-5m>", "historical-aligned-hour-minus-2d", "now-", "now-1y", "now-xh", "now*1h", "nowx"} {
 		if _, why := (Probe{Params: map[string]string{"end": v}}).Query(testNow); why == "" {
 			t.Errorf("%q: want a placeholder refusal", v)
 		}
+	}
+}
+
+// A placeholder time is resolved against the settled end, so the window the largest one names ends on it.
+func TestQueryResolvesPlaceholderTimes(t *testing.T) {
+	end := time.Date(2027, 1, 15, 9, 55, 0, 0, time.UTC)
+	ns := func(t time.Time) string { return strconv.FormatInt(t.UnixNano(), 10) }
+	cases := []struct {
+		name       string
+		params     map[string]string
+		start, end time.Time
+	}{
+		{"start and start plus 30m", map[string]string{"start": "<start>", "end": "<start+30m>", "step": "300"}, end.Add(-30 * time.Minute), end},
+		{"start and start plus 20m", map[string]string{"start": "<start>", "end": "<start+20m>", "step": "300"}, end.Add(-20 * time.Minute), end},
+		{"the start alone gets the default span", map[string]string{"start": "<start>", "step": "300"}, end.Add(-placeholderSpan), time.Time{}},
+		{"the start sits on the step", map[string]string{"start": "<start>", "end": "<start+7m>", "step": "300"},
+			time.Date(2027, 1, 15, 9, 45, 0, 0, time.UTC), time.Date(2027, 1, 15, 9, 52, 0, 0, time.UTC)},
+		{"a named hour window ends at or before the settled end", map[string]string{"start": "historical-aligned-hour-minus-2h", "end": "historical-aligned-hour-plus-1h"},
+			time.Date(2027, 1, 15, 6, 0, 0, 0, time.UTC), time.Date(2027, 1, 15, 9, 0, 0, 0, time.UTC)},
+		{"the hour itself", map[string]string{"start": "historical-aligned-hour"}, time.Date(2027, 1, 15, 9, 0, 0, 0, time.UTC), time.Time{}},
+	}
+	for _, c := range cases {
+		q, why := Probe{Params: c.params}.Query(end)
+		if why != "" {
+			t.Errorf("%s: %s", c.name, why)
+			continue
+		}
+		if q.Get("start") != ns(c.start) {
+			t.Errorf("%s: start %s, want %s", c.name, q.Get("start"), ns(c.start))
+		}
+		if !c.end.IsZero() && q.Get("end") != ns(c.end) {
+			t.Errorf("%s: end %s, want %s", c.name, q.Get("end"), ns(c.end))
+		}
+		if e := q.Get("end"); e != "" && e > ns(end) {
+			t.Errorf("%s: the window ends past the settled end", c.name)
+		}
+	}
+	// Both sides ask the same bytes: the resolution depends on the settled end alone.
+	p := Probe{Params: map[string]string{"start": "<start>", "end": "<start+30m>", "step": "300"}}
+	a, _ := p.Query(end)
+	b, _ := p.Query(end)
+	if a.Encode() != b.Encode() {
+		t.Error("a placeholder resolved twice differs")
+	}
+	// A probe whose time is any other placeholder is still blocked, with its class.
+	r := Verify(Probe{ID: "ph", Method: "GET", Path: "/x", Params: map[string]string{"start": "<a row time in ns>"}}, nil, nil, nil, end, "0")
+	if r.Verdict != verdictBlocked || r.Class != classPlaceholder {
+		t.Errorf("unresolvable placeholder: %+v", r)
 	}
 }
 
@@ -139,7 +188,7 @@ func TestVerify(t *testing.T) {
 		{get("recovered", "fixed", "structural"), verdictBlocked, "", "Loki did not answer: reset", 0, 0},
 		{Probe{ID: "scenario", NotExecutable: "a scenario"}, verdictNotExecutable, "", "a scenario", 0, 0},
 		{Probe{ID: "pre", Blocked: "needs a precondition"}, verdictBlocked, "", "precondition", 0, 0},
-		{Probe{ID: "ph", Method: "GET", Path: "/x", Params: map[string]string{"start": "<start>"}}, verdictBlocked, "", "placeholder", 0, 0},
+		{Probe{ID: "ph", Method: "GET", Path: "/x", Params: map[string]string{"start": "<a row time in ns>"}}, verdictBlocked, "", "placeholder", 0, 0},
 	}
 	for _, c := range cases {
 		r := Verify(c.p, src, equalCounts, nil, testNow, "0")

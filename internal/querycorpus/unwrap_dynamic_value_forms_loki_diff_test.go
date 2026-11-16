@@ -75,8 +75,10 @@ var dynamicValueFormsFuncs = []string{"max_over_time", "min_over_time", "avg_ove
 //     min, avg or stddev: the string translator's window evaluator, the route of base, leaves out or makes NaN the
 //     windows of these values;
 //   - avg over the series of an infinity: Loki's mean of +Inf and +Inf is NaN, VictoriaLogs' is +Inf;
-//   - sum or avg over stddev or stdvar of an infinity on an instant: Loki answers NaN, VictoriaLogs' outer sum leaves
-//     the NaN series out (0).
+//   - sum, sum by or avg over stddev or stdvar of an infinity on an instant: Loki answers NaN, VictoriaLogs' outer sum
+//     leaves the NaN series out (0). For sum by (app) over a logfmt line the recording before 2026-11-16 had
+//     VictoriaLogs v1.49.0 and v1.53.0 answer NaN; recorded again on that date (origin/main and this change alike) both
+//     answer 0 (over a json line, NaN).
 var dynamicValueFormsKnown = func() map[string]map[string]string {
 	const id = "semantics/unwrap-gate-parsefloat-divergences"
 	known := map[string]map[string]string{}
@@ -99,7 +101,8 @@ var dynamicValueFormsKnown = func() map[string]map[string]string {
 				switch {
 				case infinity && strings.HasPrefix(shape, "avg(") && !deviation:
 					kinds = append(kinds, "instant", "step=range", "step>range")
-				case infinity && deviation && (strings.HasPrefix(shape, "avg(") || strings.HasPrefix(shape, "sum(")):
+				case infinity && deviation && (strings.HasPrefix(shape, "avg(") || strings.HasPrefix(shape, "sum(") ||
+					strings.HasPrefix(shape, "sum by") && strings.Contains(pipe, "| logfmt |")):
 					kinds = append(kinds, "instant")
 				}
 				for _, k := range kinds {

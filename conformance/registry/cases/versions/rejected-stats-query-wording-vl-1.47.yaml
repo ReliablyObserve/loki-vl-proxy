@@ -50,7 +50,7 @@ gap:
   visual_reason: 'depends on the parse-error wording of VictoriaLogs v1.47, absent on the version the visual stack runs; proven by the compat-vl matrix'
   effort: S
   area: 'internal/proxy/http_utils.go vlParseEchoPrefixes, classifyVLError, stripVLParseEcho'
-  loki: 'pkg/logql/syntax regexp validation: 400 bad_data'
+  loki: 'an invalid regexp in a metric query is a 400 bad_data (measured on Loki, in this case)'
   proxy: 'v1.47 parse errors unclassified (backend-failure path) before the fix'
   planned_test: 'TestCompat_RejectedQueryStatusParity + TestClassifyVLError_RealVictoriaLogsTexts (v147 cases), compat-vl matrix'
   clusters: []

@@ -244,8 +244,7 @@ func TestUnwrapQuantileReadsValueCounts(t *testing.T) {
 	}
 }
 
-// rate over an unwrapped label is the sum of its values per second
-// (pkg/logql/range_vector.go rateLogs with computeValues), not a line rate: a
+// rate over an unwrapped label is the sum of its values per second, not a line rate: a
 // sliding window asks VictoriaLogs for buckets of the converted sum, with the
 // sample count as presence, and divides the window's sum by its seconds.
 func TestUnwrapRateSlidingWindowSumsBuckets(t *testing.T) {
@@ -343,8 +342,7 @@ func TestUnwrapGateIsNotAParserStage(t *testing.T) {
 	}
 }
 
-// Loki converts duration_seconds() with convertDuration, as duration()
-// (pkg/logql/syntax/extractor.go:63-71). Every route of the proxy (native range,
+// Loki converts duration_seconds() as duration(). Every route of the proxy (native range,
 // bare-parser buckets, sliding and tumbling windows, the raw evaluators, an
 // instant query) must therefore send VictoriaLogs the very queries it sends for
 // duration(), gate and conversion-error counter included, and answer the same.

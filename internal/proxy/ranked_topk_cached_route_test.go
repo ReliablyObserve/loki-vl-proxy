@@ -26,7 +26,7 @@ import (
 // Drilldown request that keeps partial series, no exact bucket grid).
 //
 // These tests count what VictoriaLogs is asked, and compare every answer with
-// Loki's evaluation of the query (pkg/logql/evaluator.go: the sample at t covers
+// Loki's evaluation of the query (the sample at t covers
 // (t-range, t], topk keeps the k largest of the series present at t) written
 // apart from the proxy.
 
@@ -414,9 +414,8 @@ func TestLabelReplaceTopKRepeatsAreStable(t *testing.T) {
 
 // label_replace may give two series one label set; Loki ranks the samples (both
 // are kept at each step) and files the survivors under one series, so
-// topk(1, ...) answers the larger of the two at each step, one point per step
-// (pkg/logql/evaluator.go VectorAggEvaluator.Next, pkg/logql/engine.go
-// JoinSampleVector). Reading the buckets must not change that.
+// topk(1, ...) answers the larger of the two at each step, one point per step.
+// Reading the buckets must not change that.
 // conformance: semantics/label-replace-new-label, semantics/label-replace-duplicates-before-ranking, loki_api_v1_query_range
 func TestRankedTopKOverLabelSetsLabelReplaceMadeEqual(t *testing.T) {
 	end := time.Unix(rankedTopKEnd, 0).UTC()

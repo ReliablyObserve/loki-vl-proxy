@@ -3,6 +3,7 @@ title: A failed stats query from Grafana answers 200 with warnings; Loki returns
 proves:
   - loki-compatible-profile
 consumer: explore
+evidence: needs recording
 why: |
   When VictoriaLogs fails a stats_query_range request from Grafana, the proxy
   returns HTTP 200 with Loki-style `warnings` and a Warning header instead of
@@ -32,7 +33,7 @@ gap:
   impact: grafana-datasource
   effort: S
   area: 'internal/proxy Grafana-sourced stats error handling'
-  loki: 'pkg/querier/queryrange error propagation (no warnings conversion)'
+  loki: 'a failed stats_query_range answers the error status, with no warnings conversion'
   proxy: '200 + warnings'
   planned_test: 'TestCompat_GrafanaStatsErrorStatus (test/e2e-compat, fault injection)'
   clusters: []

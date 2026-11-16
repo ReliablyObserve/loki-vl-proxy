@@ -14,15 +14,14 @@ import (
 	"time"
 )
 
-// TestCompat_DetectedFieldsNoLogfmtTokenFields: the Logs Drilldown Fields
-// tab with a level pill (and a field filter behind `| json | logfmt`) lists
-// the fields Loki lists. VictoriaLogs' unpack_logfmt makes a field of every
-// word of a JSON or plain-text line written with spaces; Loki's logfmt parser
-// gives such a line no keys (pkg/logql/log/parser.go:423,
-// pkg/logql/log/logfmt/decode.go:78-81), so none of those words is a field.
-// Loki names a key that clashes with a stream label <key>_extracted, which
-// the proxy omits (semantics/detected-fields-extracted-suffix); the
-// comparison leaves those names out.
+// TestCompat_DetectedFieldsNoLogfmtTokenFields: the Logs Drilldown Fields tab
+// with a level pill (and a field filter behind `| json | logfmt`) lists the
+// fields Loki lists. VictoriaLogs' unpack_logfmt makes a field of every word
+// of a JSON or plain-text line written with spaces; Loki's logfmt parser
+// gives such a line no keys, so none of those words is a field. Loki names a
+// key that clashes with a stream label <key>_extracted, which the proxy omits
+// (semantics/detected-fields-extracted-suffix); the comparison leaves those
+// names out.
 //
 // conformance: semantics/detected-fields-no-logfmt-token-fields, loki_api_v1_detected_fields
 func TestCompat_DetectedFieldsNoLogfmtTokenFields(t *testing.T) {

@@ -44,7 +44,7 @@ def extract(version):
     for path, text in sources.items():
         if path.endswith("constants/api_paths.go"):
             continue
-        for line_number, line in enumerate(text.splitlines(), 1):
+        for line in text.splitlines():
             match = re.search(r'HTTP\.Path(?:Prefix)?\(\s*(constants\.[A-Za-z0-9_]+|"[^"]+")\s*\)', line)
             if not match:
                 continue
@@ -60,12 +60,9 @@ def extract(version):
             verbs = sorted(set(re.findall(r'"([A-Z]+)"', methods.group(1)))) if methods else []
             entry = routes.setdefault(route, {
                 "id": endpoint_id(route), "path": route, "methods": [],
-                "constant": source, "source_refs": [],
+                "constant": source,
             })
             entry["methods"] = sorted(set(entry["methods"]) | set(verbs))
-            ref = f"{path}:{line_number}"
-            if ref not in entry["source_refs"]:
-                entry["source_refs"].append(ref)
     return routes
 
 

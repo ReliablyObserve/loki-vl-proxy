@@ -5,8 +5,7 @@ proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  Loki's ip() label filter scans the label's value for addresses
-  (pkg/logql/log/ip.go:183-226): it starts one at a digit with a dot within
+  Loki's ip() label filter scans the label's value for addresses: it starts one at a digit with a dot within
   three characters or at an IPv6 group, reads the longest run of address
   characters and parses it with netip.ParseAddr. So `addr=ip("1.2.3.4")`
   keeps `addr="1.2.3.4:443"` and `addr="client 1.2.3.4"`, and
@@ -77,7 +76,7 @@ gap:
   impact: edge
   effort: M
   area: 'internal/translate ip_label_filter.go IPLabelFilter (IPv6 values with an address inside other text)'
-  loki: 'pkg/logql/log/ip.go:183-226 (address scan inside the value)'
+  loki: 'the ip() label filter scans the label value for an address, an embedded one included (test/e2e-compat ip_label_filter_embedded_test.go)'
   proxy: 'IPv4: Loki''s lines exactly; IPv6: a subset of Loki''s lines, an embedded address is not read'
   planned_test: 'TestIPLabelFilterMatchesLoki (internal/translator); TestCompat_IPLabelFilterEmbeddedAddressLikeLoki (test/e2e-compat, group semantics)'
   clusters: []

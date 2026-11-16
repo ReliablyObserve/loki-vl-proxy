@@ -14,19 +14,14 @@ import (
 // An instant query answers with the result type of its expression, never
 // without one. Loki v3.7.7:
 //
-//   - every metric expression is a vector: pkg/logql/engine.go evalSample ends
-//     in JoinSampleVector (instant: `return vec, nil`), and vector(n) is a
-//     one-sample vector with no labels (evalVector); pkg/querier/queryrange
-//     /marshal.go ResultToResponse labels promql.Vector loghttp.ResultTypeVector;
+//   - every metric expression is a vector, and vector(n) is a one-sample vector
+//     with no labels;
 //   - a scalar literal, or a binary operation of two literals which the parser
-//     folds into one (syntax/ast.go mustNewBinOpExpr), is a scalar (evalLiteral);
-//   - a log selector is no instant query: pkg/querier/http.go
-//     InstantQueryHandler fails it with ErrUnsupportedSyntaxForInstantQuery
-//     (HTTP 400, pkg/util/server/error.go), so an instant answer is never
-//     `streams`;
+//     folds into one, is a scalar;
+//   - a log selector is no instant query: it fails with HTTP 400, so an instant
+//     answer is never `streams`;
 //   - a request wholly before max_query_lookback is answered with an empty
-//     vector, whatever the expression (queryrange/codec.go NewEmptyResponse,
-//     LokiInstantRequest).
+//     vector, whatever the expression.
 //
 // The sample time of a vector is seconds with millisecond precision, not
 // nanoseconds (queryrange/prometheus.go marshalVector, model.Time(ms)); the

@@ -49,7 +49,7 @@ gap:
   impact: explore-visible
   effort: L
   area: 'client push configuration (disable_message_parsing=1); docs/KNOWN_ISSUES.md'
-  loki: 'pkg/distributor push keeps the line verbatim'
+  loki: 'the pushed line is returned verbatim'
   proxy: 'line rebuilt from stored fields'
   planned_test: 'cases/profiles/stage-field-exposure with disable_message_parsing pushes'
   clusters: []

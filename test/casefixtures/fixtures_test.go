@@ -729,3 +729,74 @@ func TestSharedSelectorStreamsCarryNoStructuredMetadata(t *testing.T) {
 		}
 	}
 }
+
+// VictoriaLogs' Loki push stores a JSON line's key over the stream label of the same name, so the readiness count of such
+// a stream asks for the labels that are stored as written. The seed ended on level-shadow (Loki 120 lines,
+// VictoriaLogs 0) when the count asked for level:="info".
+func TestShadowedLabelsAreLeftOutOfTheVictoriaLogsCount(t *testing.T) {
+	var level Stream
+	for _, s := range Streams() {
+		if s.Name == "level-shadow" {
+			level = s
+		}
+	}
+	if level.Name == "" {
+		t.Fatal("no level-shadow stream")
+	}
+	if got := shadowedLabels(level); len(got) != 1 || !got["level"] {
+		t.Errorf("shadowed labels %v", got)
+	}
+	if got := vlFilter(level); strings.Contains(got, "level:=") || !strings.Contains(got, `app:="level-shadow"`) {
+		t.Errorf("vlFilter(level-shadow) = %s", got)
+	}
+	// Loki's selector keeps every label: Loki stores the stream as written.
+	if got := selector(level); !strings.Contains(got, `level="info"`) || !strings.Contains(got, `app="level-shadow"`) {
+		t.Errorf("selector = %s", got)
+	}
+	// Only the Loki push route shadows; the raw and JSON-line routes keep every label.
+	line := Stream{Labels: map[string]string{"level": "info", "app": "x"}, Entries: lines(`{"level":"error"}`)}
+	for route, want := range map[Route]string{RouteLokiPush: `app:="x"`, RouteLokiPushRaw: `app:="x" level:="info"`, RouteJSONLine: `app:="x" level:="info"`} {
+		line.Route = route
+		if got := vlFilter(line); got != want {
+			t.Errorf("%s: vlFilter = %s, want %s", route, got, want)
+		}
+	}
+	// A line that is not JSON, or JSON of other keys, shadows nothing; every label shadowed leaves no filter to ask for.
+	line.Route, line.Entries = RouteLokiPush, lines("plain text", `{"msg":"x"}`)
+	if got := vlFilter(line); got != `app:="x" level:="info"` {
+		t.Errorf("no shadow: %s", got)
+	}
+	line.Entries = lines(`{"app":"a","level":"b"}`)
+	if got := vlFilter(line); got != "*" {
+		t.Errorf("everything shadowed: %s", got)
+	}
+}
+
+// A stream found by its labels that are stored as written must still be only itself: no other stream of the fixtures
+// carries all of them with the same values, or its lines would be counted too.
+func TestShadowedStreamsStayIdentifiable(t *testing.T) {
+	all := Streams()
+	for _, s := range all {
+		shadowed := shadowedLabels(s)
+		if len(shadowed) == 0 {
+			continue
+		}
+		if len(shadowed) == len(s.Labels) {
+			t.Errorf("stream %s: every label is shadowed, nothing identifies it on VictoriaLogs", s.Name)
+		}
+		for _, o := range all {
+			if o.Name == s.Name {
+				continue
+			}
+			same := true
+			for k, v := range s.Labels {
+				if !shadowed[k] && o.Labels[k] != v {
+					same = false
+				}
+			}
+			if same {
+				t.Errorf("stream %s: stream %s carries the same unshadowed labels", s.Name, o.Name)
+			}
+		}
+	}
+}

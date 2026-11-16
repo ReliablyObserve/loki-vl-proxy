@@ -41,9 +41,15 @@ type fenceFacts struct {
 	perStreamSeries bool
 	// rankOverBinary is a ranking, stddev or stdvar whose operand is a binary operation.
 	rankOverBinary bool
+	// levelChain is a read that may carry the detected_level chain: a range aggregation, or a stage that names
+	// detected_level (a label filter on it, keep or drop of it).
+	levelChain bool
 }
 
 func (f *fenceFacts) name(name string, comparison bool) {
+	if name == detectedLevelLabel {
+		f.levelChain = true
+	}
 	if !comparison {
 		return
 	}
@@ -56,6 +62,9 @@ func (f *fenceFacts) name(name string, comparison bool) {
 }
 
 func (f *fenceFacts) labelName(name string) {
+	if name == detectedLevelLabel {
+		f.levelChain = true
+	}
 	// The scanner lower cases a word with strings.ToLower before it looks the word up.
 	if lower := strings.ToLower(name); (lower == "ip" && name != "ip") || (lower == "label_replace" && name != "label_replace") {
 		f.keywordSpelling = true
@@ -158,6 +167,7 @@ func (f *fenceFacts) expr(e logqlpkg.Expr) {
 	case *logqlpkg.LogQuery:
 		f.logQuery(e)
 	case *logqlpkg.RangeAggregation:
+		f.levelChain = true
 		f.expr(e.Inner)
 	case *logqlpkg.VectorAggregation:
 		switch e.Op {
@@ -305,7 +315,7 @@ func fenceWants(query string) map[string]bool {
 		"reserved-field-case":      f.reservedCase,
 		"reserved-field-labels":    f.reservedLabel,
 		"keyword-label-names":      f.keywordSpelling,
-		"stream-level-series":      f.perStreamSeries,
+		"stream-level-series":      f.perStreamSeries || f.levelChain,
 		"rank-over-binary":         f.rankOverBinary,
 		// Read by fenceGains: the text screen of repeated filters also counts a quoted text that looks like a stage.
 		"a-label-filter-stage": f.labelFilterStages >= 1,
@@ -708,8 +718,15 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"stream-level-series", "top\u212a(2, count_over_time({a=\"b\"} | json [5m]))", true},
 		{"stream-level-series", "bottom\u212a(2, count_over_time({a=\"b\"} | json [5m]))", true},
 		{"stream-level-series", "Sort_Desc\t(rate({a=\"b\"} | json [1m]))", true},
-		{"stream-level-series", `sum by (pod) (rate({a="b"}[1m]))`, false},
-		{"stream-level-series", "sum by (pod) (rate({a=\"b\"} #sort\n[1m]))", false},
+		// Every range aggregation may read the detected_level chain, and so may a stage naming detected_level.
+		{"stream-level-series", `sum by (pod) (rate({a="b"}[1m]))`, true},
+		{"stream-level-series", "sum by (pod) (rate({a=\"b\"} #sort\n[1m]))", true},
+		{"stream-level-series", `{a="b"} | detected_level="error"`, true},
+		{"stream-level-series", `{a="b"} | json | keep detected_level`, true},
+		{"stream-level-series", `{a="b"} | json | level="error"`, false},
+		{"stream-level-series", `{a="b"} | regexp "(?P<n>[0-9]+)"`, false},
+		{"stream-level-series", `{a="b"} | s=` + "`a detected_level b`", false},
+		{"stream-level-series", `{a="b"} | detected_level_extracted="error"`, false},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | json | unwrap n [5m]))`, true},
 		{"unwrap-dynamic-identity", `SUM BY (x) (AVG_OVER_TIME({a="b"} | JSON | UNWRAP n [5m]))`, true},
 		{"unwrap-dynamic-identity", "sum by (x) (avg_over_t\u0130me({a=\"b\"} | json | unwrap n [5m]))", true},

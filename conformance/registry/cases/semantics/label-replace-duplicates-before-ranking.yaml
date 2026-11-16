@@ -7,8 +7,7 @@ why: |
   When a label_replace makes two series share a label set, Loki keeps both
   samples at each step until the query ends: the vector aggregation above it
   (topk, bottomk, stddev, stdvar) ranks or folds every sample, and only
-  JoinSampleVector files the survivors under one series (pkg/logql/evaluator.go
-  VectorAggEvaluator.Next, pkg/logql/engine.go vectorsToSeries). The proxy
+  the end of the query files the survivors under one series. The proxy
   transforms the series VictoriaLogs answered and merges the duplicates into one
   series, with the points of each step in turn, before topk, bottomk or stddev
   see them, so a step holds two points under one series and the ranking works on
@@ -39,7 +38,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy metric_agg.go (handleRangeMetricPostAggregation) after transformSeriesLabels'
-  loki: 'pkg/logql/evaluator.go VectorAggEvaluator.Next; pkg/logql/engine.go:440-470 vectorsToSeries'
+  loki: 'duplicates created by label_replace stay apart until the end of the query (test/e2e-compat label_replace_new_label_test.go)'
   proxy: 'every sample ranked or folded at each step, then filed under one series, as Loki'
   planned_test: 'TestRankedTopKOverLabelSetsLabelReplaceMadeEqual and TestFoldOverLabelSetsLabelReplaceMadeEqual (internal/proxy); TestCompat_LabelReplaceDuplicatesBeforeRanking (test/e2e-compat, group semantics)'
   note: 'Verified 2026-11-14 on build 726dfb48f against Loki 3.7.9 and VictoriaLogs v1.53.0 (two live case runs, same data on both sides): 1 series, 61 points, labels and values equal.'

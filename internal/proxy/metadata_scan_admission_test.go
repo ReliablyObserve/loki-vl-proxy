@@ -148,7 +148,7 @@ func TestMetadataScanAdmission_SaturatedReturns429NamingFlag(t *testing.T) {
 		t.Fatalf("rejected after %s, before the queue wait elapsed", waited)
 	}
 	body := w.Body.String()
-	// Loki's queue-full text exactly (pkg/queue/queue.go:21); the flags go to the log.
+	// Loki's queue-full text exactly; the flags go to the log.
 	if got := lokiErrorText(t, w); got != "too many outstanding requests" {
 		t.Fatalf("429 text = %q, want Loki's", got)
 	}

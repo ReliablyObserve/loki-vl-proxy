@@ -14,9 +14,7 @@ why: |
   Loki's stddev and stdvar are vector aggregations: at each step every series of
   the operand falls into the group `by` keeps or `without` leaves, and the group
   takes the population standard deviation or variance of the series' VALUES by
-  Welford's update, 0 for a group of one series (pkg/logql/evaluator.go
-  newVectorAggEvaluator and VectorAggEvaluator.Next, :435-529 and the stddev and
-  stdvar cases at :541-546 and :591-595). stddev_over_time and stdvar_over_time,
+  Welford's update, 0 for a group of one series stddev_over_time and stdvar_over_time,
   which work over the samples inside one window, are a different function.
 
   Root cause: only the ungrouped `stddev(` / `stdvar(` prefix reached the
@@ -45,7 +43,7 @@ why: |
   and avg use (first stats pipe grouped by the listed labels and the stream, final
   pipe dropped), so the series carry the label on tumbling and instant queries.
 
-  The series limit is counted on the groups, as Loki does (pkg/logql/engine.go):
+  The series limit is counted on the groups, as Loki does:
   the operand's own answer is bounded by a ceiling (foldedGroupsSeriesCeiling)
   and max_query_series applies to the folded answer, so 600 streams in 3 apps are
   3 series. A `sort`, `topk` or `stddev` over a `without` operand merges the
@@ -80,10 +78,10 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy metric_agg.go (parseStddevStdvarQuery, applyMatrixStddevAgg, applyInstantStddevAgg)'
-  loki: 'pkg/logql/evaluator.go:400-529 newVectorAggEvaluator / VectorAggEvaluator.Next (stddev and stdvar at :541-546, :591-595)'
+  loki: 'stddev and stdvar are vector aggregations: per step each group takes the population deviation or variance of its series'' values, 0 for one series (TestCompat_StddevStdvarGrouped)'
   proxy: 'the per-series values of the operand from VictoriaLogs, folded per group and step'
   planned_test: 'TestCompat_StddevStdvarGrouped, TestCompat_StddevStdvarGroupedInstantResultType and TestCompat_StddevStdvarGroupedRegistryQueries (test/e2e-compat, group core; written, not yet run); TestStddevStdvarGroupedDifferential, TestStddevStdvarGroupedByParsedLabelDifferential, TestStddevStdvarFoldEdgeCases, TestParseStddevStdvarPostAgg, TestStdvarWithoutInstantAlwaysAnswersAVector, TestStddevStdvarCountsSeriesLimitOnTheGroups and TestPostAggregationMergesWithoutByTheOperandsOperator (internal/proxy)'
-  note: 'Measured on origin/main 1cf58b45. The differential test runs the real handler against an emulated VictoriaLogs (v1.52, v1.40 and no version) with a reference written from Loki v3.7.7 VectorAggEvaluator; the live e2e vs Loki is written and still to be run.'
+  note: 'Measured on origin/main 1cf58b45. The differential test runs the real handler against an emulated VictoriaLogs (v1.52, v1.40 and no version) with a reference evaluator for Loki''s grouped fold; the live e2e vs Loki is written and still to be run.'
   clusters:
     - 44bf1425
     - 4b67fb14

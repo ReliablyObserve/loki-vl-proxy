@@ -18,11 +18,8 @@ import (
 
 // A detected_fields query that matches no line answers like Loki: no fields
 // and no limit. Loki v3.7.9 lists only the fields of the lines the query
-// itself returned (pkg/querier/queryrange/detected_fields.go:42-73,
-// parseDetectedFields over re.Data.Result) and sets the limit only when it
-// lists a field or a value (:86-89); its JSON omits an empty list and a zero
-// limit (pkg/logproto/logproto.pb.go DetectedFieldsResponse, omitempty), so
-// the body is `{}`. The proxy keeps its status and data mirror (an
+// itself returned and sets the limit only when it lists a field or a value; its
+// JSON omits an empty list and a zero limit, so the body is `{}`. The proxy keeps its status and data mirror (an
 // envelope the visual comparison already explains).
 
 // emptyMatchVL is a recording fake VictoriaLogs whose rows exist only for

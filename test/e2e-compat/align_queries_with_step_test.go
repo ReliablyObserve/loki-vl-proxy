@@ -12,14 +12,14 @@ import (
 )
 
 // TestCompat_AlignQueriesWithStep: the stack's Loki runs with
-// query_range.align_queries_with_step (loki-local-config.yaml) and its proxies
-// with -align-queries-with-step at its default, on. A metric range query with a start and end off the
-// step grid (step 137s) is answered on Loki's grid: every sample at a multiple
-// of the step, the first at the start moved down, the last at the end moved
-// down (pkg/querier/queryrange/queryrangebase/step_align.go:20-24), with
-// Loki's values; the same after a refresh that moved the window by less than
-// a step, and for a Grafana-shaped request (start on the grid, raw end). A log
-// query keeps the bounds it was sent.
+// query_range.align_queries_with_step (loki-local-config.yaml) and its
+// proxies with -align-queries-with-step at its default, on. A metric range
+// query with a start and end off the step grid (step 137s) is answered on
+// Loki's grid: every sample at a multiple of the step, the first at the start
+// moved down, the last at the end moved down, with Loki's values; the same
+// after a refresh that moved the window by less than a step, and for a
+// Grafana-shaped request (start on the grid, raw end). A log query keeps the
+// bounds it was sent.
 // conformance: semantics/query-range-step-alignment, loki_api_v1_query_range
 func TestCompat_AlignQueriesWithStep(t *testing.T) {
 	fx := ensureNonSumFixtures(t)

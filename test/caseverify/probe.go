@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +37,9 @@ type Probe struct {
 	// EmptyIsAnswer is why two empty answers prove the case (request.verify.empty_is_answer): the case is
 	// that a query the proxy once mishandled is answered like Loki, with nothing and no error.
 	EmptyIsAnswer string
+	// EmptyRange is why the case's range holds no data on purpose (request.verify.empty_range): the case is the
+	// answer to a range without data, so two empty counts are the data the case needs, not a verdict of `empty`.
+	EmptyRange string
 	// Control is a second request of the case (request.verify.control: params laid over the request's own) that
 	// must return data on both sides. Where the case's own answers are both empty, a control that answers data on
 	// both sides proves the data is there, and the two empty answers match; the control's own answers are not
@@ -166,6 +170,7 @@ func probeOf(c registry.Case) Probe {
 	blockedBy, _ := verify["blocked_by"].(string)
 	reason, _ := verify["reason"].(string)
 	p.EmptyIsAnswer, _ = verify["empty_is_answer"].(string)
+	p.EmptyRange, _ = verify["empty_range"].(string)
 	badControl := false
 	if c, ok := verify["control"].(map[string]any); ok {
 		p.Control = stringMap(c["params"])
@@ -246,9 +251,11 @@ func relative(value string, now time.Time) (time.Time, bool) {
 var timeParams = map[string]bool{"start": true, "end": true, "time": true}
 
 // Query resolves the probe's parameters at now: a relative time becomes Unix nanoseconds, so both sides get
-// the same bytes. A parameter that is a placeholder (<start>, a named anchor) blocks the probe.
+// the same bytes. A placeholder time (<start>, <start+30m>, historical-aligned-hour-minus-2h) is resolved against
+// the settled end (see placeholders); a parameter that is any other placeholder (<a row time in ns>) blocks the probe.
 func (p Probe) Query(now time.Time) (url.Values, string) {
 	now = p.anchor(now)
+	ph := p.placeholders(now)
 	q := url.Values{}
 	keys := make([]string, 0, len(p.Params))
 	for k := range p.Params {
@@ -260,6 +267,8 @@ func (p Probe) Query(now time.Time) (url.Values, string) {
 		if timeParams[k] {
 			if t, ok := relative(v, now); ok {
 				v = strconv.FormatInt(t.UnixNano(), 10)
+			} else if t, ok := ph.resolve(v); ok {
+				v = strconv.FormatInt(t.UnixNano(), 10)
 			} else if !absoluteTime(v) {
 				return nil, fmt.Sprintf("the %s parameter %q is a placeholder the runner cannot resolve", k, v)
 			}
@@ -267,6 +276,86 @@ func (p Probe) Query(now time.Time) (url.Values, string) {
 		q.Set(k, v)
 	}
 	return q, ""
+}
+
+// placeholderSpan is the window a case that names only its start gets: a case's own fixture decides what is in it,
+// the runner only has to give both sides the same one.
+const placeholderSpan = 30 * time.Minute
+
+// Placeholder times of the registry's cases, resolved so the window the largest of them names ends on the settled
+// end (now, already aligned to the step): the run never reads data younger than the settle lag, and both sides
+// get the same bytes.
+//
+//	<start>, <start+N>                  a start S and S plus N (units s, m, h, d, w); S is the settled end less the
+//	                                    largest N named by the request (at least placeholderSpan), on the step
+//	historical-aligned-hour[-minus-Nh|-plus-Nh]
+//	                                    an hour boundary H and H less or plus N hours; H is the newest boundary for
+//	                                    which H plus the largest plus named by the request is not past the settled end
+type placeholderTimes struct {
+	start, hour time.Time
+}
+
+var (
+	startPlaceholder = regexp.MustCompile(`^<start(?:\+(\d+)([smhdw]))?>$`)
+	hourPlaceholder  = regexp.MustCompile(`^historical-aligned-hour(?:-(minus|plus)-(\d+)h)?$`)
+)
+
+var placeholderUnits = map[string]time.Duration{"s": time.Second, "m": time.Minute, "h": time.Hour, "d": 24 * time.Hour, "w": 7 * 24 * time.Hour}
+
+func (p Probe) placeholders(now time.Time) placeholderTimes {
+	offset, named, plus := time.Duration(0), false, time.Duration(0)
+	for k := range timeParams {
+		v := p.Params[k]
+		if m := startPlaceholder.FindStringSubmatch(v); m != nil && m[1] != "" {
+			n, err := strconv.Atoi(m[1])
+			if err == nil {
+				offset, named = max(offset, time.Duration(n)*placeholderUnits[m[2]]), true
+			}
+		}
+		if m := hourPlaceholder.FindStringSubmatch(v); m != nil && m[1] == "plus" {
+			if n, err := strconv.Atoi(m[2]); err == nil {
+				plus = max(plus, time.Duration(n)*time.Hour)
+			}
+		}
+	}
+	if !named {
+		offset = placeholderSpan
+	}
+	start := now.Add(-offset)
+	if step, ok := stepOf(p.Params["step"]); ok {
+		ns := start.UnixNano()
+		start = time.Unix(0, ns-ns%int64(step)).UTC()
+	}
+	return placeholderTimes{start: start, hour: now.Add(-plus).Truncate(time.Hour)}
+}
+
+// resolve reads a placeholder time; false when v is not one the runner knows.
+func (t placeholderTimes) resolve(v string) (time.Time, bool) {
+	if m := startPlaceholder.FindStringSubmatch(v); m != nil {
+		if m[1] == "" {
+			return t.start, true
+		}
+		n, err := strconv.Atoi(m[1])
+		if err != nil {
+			return time.Time{}, false
+		}
+		return t.start.Add(time.Duration(n) * placeholderUnits[m[2]]), true
+	}
+	if m := hourPlaceholder.FindStringSubmatch(v); m != nil {
+		if m[1] == "" {
+			return t.hour, true
+		}
+		n, err := strconv.Atoi(m[2])
+		if err != nil {
+			return time.Time{}, false
+		}
+		d := time.Duration(n) * time.Hour
+		if m[1] == "minus" {
+			d = -d
+		}
+		return t.hour.Add(d), true
+	}
+	return time.Time{}, false
 }
 
 // anchor aligns the run's settled "now" down to the case's step, so the window ends on a step boundary and no

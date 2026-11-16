@@ -48,7 +48,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy metric_binary.go (statsRateRangeEqualsStepShift, logRangeFunctions)'
-  loki: 'pkg/logql/range_vector.go:102-189 batchRangeVectorIterator window (t-range, t]'
+  loki: 'the sample at t covers (t-range, t] (internal/querycorpus stddev_stdvar_loki_diff_test.go)'
   proxy: 'anchored step buckets fetched from start-step and relabelled onto the evaluation times, for range == step'
   planned_test: 'TestStddevStdvarOverTimeTumblingReadsTheWindowEndingAtT and TestLogRangeFunctionsStddevStdvar (internal/proxy); TestCompat_StddevOverTimeTumblingMatchesLoki (test/e2e-compat, group core)'
   clusters: []
