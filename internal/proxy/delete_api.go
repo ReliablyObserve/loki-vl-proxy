@@ -98,9 +98,11 @@ func deleteRequestOf(form url.Values, now time.Time) (deleteRequest, error) {
 	if raw == "" {
 		return deleteRequest{}, lokierr.DeleteQueryNotSet()
 	}
-	expr, err := logqlpkg.Parse(raw)
-	if err != nil {
-		return deleteRequest{}, lokierr.DeleteQueryInvalid(err)
+	// The query is parsed once and shared with the plan (sharedLogQLExpr); Loki reads it without building its
+	// pipeline, so a parse is the whole check.
+	expr, parsed := sharedLogQLExpr(raw)
+	if !parsed {
+		return deleteRequest{}, lokierr.DeleteQueryInvalid(errors.New("the query does not parse"))
 	}
 	lq, ok := expr.(*logqlpkg.LogQuery)
 	if !ok {
