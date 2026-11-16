@@ -849,6 +849,7 @@
       "test/e2e-fleet/peer_cache_proof_test.go"
     ],
     "peer-cache-patterns": [
+      "internal/cache/peer_hedge_test.go",
       "internal/cache/peer_test.go",
       "internal/proxy/patterns_owner_test.go",
       "internal/proxy/patterns_state_test.go",
@@ -867,6 +868,10 @@
     ],
     "peer-cache-query-replies": [
       "test/e2e-fleet/peer_cache_proof_test.go"
+    ],
+    "peer-cache-read-hedge": [
+      "internal/cache/peer_hedge_test.go",
+      "internal/cache/peer_replication_test.go"
     ],
     "peer-cache-replication": [
       "internal/cache/peer_protocol_edges_test.go",
@@ -2489,7 +2494,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 591,
+  "registry_items": 592,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2515,6 +2520,10 @@
     "internal/cache/cache_test.go": [
       "shutdown-releases-background-work"
     ],
+    "internal/cache/peer_hedge_test.go": [
+      "peer-cache-patterns",
+      "peer-cache-read-hedge"
+    ],
     "internal/cache/peer_protocol_edges_test.go": [
       "peer-cache-fleet-recovery",
       "peer-cache-replication"
@@ -2529,6 +2538,7 @@
     ],
     "internal/cache/peer_replication_test.go": [
       "peer-cache-push-replay",
+      "peer-cache-read-hedge",
       "peer-cache-replication"
     ],
     "internal/cache/peer_test.go": [
@@ -5522,7 +5532,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 651,
+  "tests_with_markers": 652,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5621,5 +5631,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 380
+  "wired_items": 381
 }

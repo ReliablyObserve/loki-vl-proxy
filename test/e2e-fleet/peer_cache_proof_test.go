@@ -72,6 +72,16 @@ var peerTimeout = func() time.Duration {
 	return 2 * time.Second
 }()
 
+// peerReadHedgeMax is the proxies' -peer-read-hedge-max-delay (default
+// 200ms): a paused owner may add at most this, plus scheduling slack, to a
+// request, never the peer timeout.
+var peerReadHedgeMax = func() time.Duration {
+	if d, err := time.ParseDuration(envOr("FLEET_PEER_READ_HEDGE_MAX", "200ms")); err == nil {
+		return d
+	}
+	return 200 * time.Millisecond
+}()
+
 const ownerDownSlack = time.Second
 
 type proofRequest struct {
@@ -685,7 +695,7 @@ func requireWindowReadThrough(t *testing.T, reqs []proofRequest, want answers, r
 // units are scoped to the tenant, not to the request, and that replica
 // refills a unit only when it looks it up, so a unit whose other replica is
 // the stopped owner may have no live copy left and is rightly read again.
-func requireOwnerDownBound(t *testing.T, reqs []proofRequest, onA answers, coldOnA map[string]time.Duration, checkInventory bool) fleetCounters {
+func requireOwnerDownBound(t *testing.T, reqs []proofRequest, onA answers, coldOnA map[string]time.Duration, checkInventory bool, wait time.Duration, waitName string) fleetCounters {
 	t.Helper()
 	var total fleetCounters
 	for _, req := range reqs {
@@ -696,8 +706,8 @@ func requireOwnerDownBound(t *testing.T, reqs []proofRequest, onA answers, coldO
 			if replicationFactor >= 2 {
 				requireBackupServes(t, rep, req, d, checkInventory)
 			}
-			if bound := coldOnA[req.path] + peerTimeout + ownerDownSlack; latency > bound {
-				t.Errorf("contract: %s on %s took %s with its owner down, more than the cold read on A (%s) plus the peer timeout (%s) and %s slack", req, rep.name, latency, coldOnA[req.path], peerTimeout, ownerDownSlack)
+			if bound := coldOnA[req.path] + wait + ownerDownSlack; latency > bound {
+				t.Errorf("contract: %s on %s took %s with its owner down, more than the cold read on A (%s) plus the %s (%s) and %s slack", req, rep.name, latency, coldOnA[req.path], waitName, wait, ownerDownSlack)
 			}
 		}
 	}
@@ -758,7 +768,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		Images: map[string]string{
 			"proxy": envOr("PROXY_IMAGE", "loki-vl-proxy:fleet-local"), "victorialogs": envOr("VICTORIALOGS_IMAGE", "victoriametrics/victoria-logs:v1.53.0"), "loki": envOr("LOKI_IMAGE", "grafana/loki:3.7.9"),
 		},
-		Bounds: map[string]float64{"peer_timeout_ms": ms(peerTimeout), "owner_down_slack_ms": ms(ownerDownSlack), "rss_refill_slack_bytes": rssRefillSlack},
+		Bounds: map[string]float64{"peer_timeout_ms": ms(peerTimeout), "peer_read_hedge_max_ms": ms(peerReadHedgeMax), "owner_down_slack_ms": ms(ownerDownSlack), "rss_refill_slack_bytes": rssRefillSlack},
 	}
 	t.Cleanup(func() { writeProofReport(t) })
 
@@ -1084,7 +1094,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			waitProxyReady(t, a.addr)
 			markDown(a.name, false)
 		}()
-		total := requireOwnerDownBound(t, fresh.all(), onA, cold, false)
+		total := requireOwnerDownBound(t, fresh.all(), onA, cold, false, peerTimeout, "peer timeout")
 		proofRec.addEdge("owner_down_inventory_units", map[string]any{"memory": total.invMemory, "disk": total.invDisk, "peer": total.invPeer, "vl": total.invVL, "backup_hits": total.backupHits})
 		if total.peerErrors < 1 {
 			t.Errorf("no lookup on B or C reached for the stopped A; the requests did not exercise its keys (%s)", total)

@@ -189,7 +189,9 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 
 	// A slow peer: A is paused, so connections to it hang until the peer
 	// timeout. B and C must answer A's entries unchanged, each request
-	// slower by at most the peer timeout.
+	// slower by at most the read hedge maximum, never the peer timeout: a
+	// lookup asks the next replica or reads VictoriaLogs once A has not
+	// answered within it, and the call left on A suspends it in the background.
 	edgeRun(t, "edge_owner_paused_timeout_bound", func(t *testing.T) {
 		phase := startPhase("edge_owner_paused_timeout_bound", fleetReplicas())
 		defer phase.stop()
@@ -204,7 +206,7 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 			markDown(a.name, false)
 		}()
 		// After the rebuild every inventory unit has its replicas again.
-		total := requireOwnerDownBound(t, set.all(), onA, cold, true)
+		total := requireOwnerDownBound(t, set.all(), onA, cold, true, peerReadHedgeMax, "read hedge maximum")
 		if total.peerErrors < 1 {
 			t.Errorf("no lookup on B or C waited for the paused A (%s)", total)
 		}

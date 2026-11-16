@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A paused or hung peer-cache replica no longer stalls a request for `-peer-timeout` (2 s by default). A lookup that
+  misses memory and disk asks the key's replicas in ring order; when the replica asked has not sent its response headers
+  within the read hedge delay, the lookup also asks the next replica and takes the first answer, and with no replica left
+  it reads VictoriaLogs after `-peer-read-hedge-max-delay` (new flag and Helm value, default `200ms`, `0` turns it off).
+  The delay is twice the p99 of the peer header latencies the proxy measured, at least 5 ms, so a healthy fleet asks a
+  second replica for about one read in a hundred. The call left waiting runs on in the background, where its timeout
+  still suspends the peer for the breaker cooldown, and meanwhile reads ask that peer last or skip it, so one read per
+  proxy pays the delay; the half-open probe after the cooldown and the `/patterns` owner presence check are bounded the
+  same way. Before, the first lookup on a paused replica and the probe after every cooldown each waited the full peer
+  timeout (one query per run at 2.0 s and a `/labels` p99 at the timeout in a fleet run with one replica paused). New
+  metrics: `loki_vl_proxy_peer_cache_read_hedges_total{action="next_replica"|"gave_up"}` and
+  `loki_vl_proxy_peer_cache_read_hedge_delay_seconds`; peer error reason `peer_slow`.
 - An answer cached before a behaviour change is no longer served for a query written in another spelling of the same
   query. The version marker that keeps such answers out of the cache is now added for every spelling the LogQL parser
   reads: keywords and function names in any case (`| KEEP a`, `| UNWRAP n`, `TOPK(`, `SUM BY`, `| JSON`, `| LOGFMT`,

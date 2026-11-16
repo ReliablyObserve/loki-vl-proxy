@@ -1117,6 +1117,8 @@
     "cmd/proxy/tenant_routing_test.go | tenant-query-limits",
     "internal/cache/cache_coverage_test.go | observability-query-flow",
     "internal/cache/cache_test.go | shutdown-releases-background-work",
+    "internal/cache/peer_hedge_test.go | peer-cache-patterns",
+    "internal/cache/peer_hedge_test.go | peer-cache-read-hedge",
     "internal/cache/peer_protocol_edges_test.go | peer-cache-fleet-recovery",
     "internal/cache/peer_protocol_edges_test.go | peer-cache-replication",
     "internal/cache/peer_push_buffer_fuzz_test.go | peer-cache-push-replay",
@@ -1124,6 +1126,7 @@
     "internal/cache/peer_push_buffer_test.go | peer-cache-replication",
     "internal/cache/peer_push_buffer_test.go | shutdown-releases-background-work",
     "internal/cache/peer_replication_test.go | peer-cache-push-replay",
+    "internal/cache/peer_replication_test.go | peer-cache-read-hedge",
     "internal/cache/peer_replication_test.go | peer-cache-replication",
     "internal/cache/peer_test.go | peer-cache-patterns",
     "internal/config/generate_edge_test.go | operator-configurable-limits",
@@ -2844,7 +2847,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 650,
+      "go": 651,
       "playwright": 1
     },
     "page_kinds": {
@@ -2864,7 +2867,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 95,
-    "wired_items": 380
+    "wired_items": 381
   },
   "gates": [
     "A/B shape selection",

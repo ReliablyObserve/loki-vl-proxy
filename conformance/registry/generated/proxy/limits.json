@@ -115,6 +115,20 @@
       "sizing": "2: one replica can lose its disk, restart or stop without its keys being computed again (an owner that lost its disk reads them from its backup, one peer round trip per key; other replicas reach the backup within -peer-timeout while the owner is down). Each replica holds a full copy, so the fleet keeps memory and disk times the factor per key (measured with 4 KiB values: 8.2 KiB of memory and 14.6 KiB of disk per key at 2, 4.1 and 8.5 at 1) and, with a fixed -cache-max-bytes, the fleet's distinct keys divide by the factor (a two-replica fleet at 2 holds every key on both). Every write-through write pushes factor minus one copies (4,096 bytes on the wire per 4 KiB write at 2). A lookup on a key no replica holds asks up to factor minus one peers before computing it, each bounded by -peer-timeout. 1 keeps one copy on the owner (the behaviour before this flag); 3 survives two losses at a third more memory and disk."
     },
     {
+      "flag": "peer-read-hedge-max-delay",
+      "helm_value": "extraArgs.peer-read-hedge-max-delay",
+      "type": "Duration",
+      "default": "200ms",
+      "unit": "duration",
+      "bounds": "how long a peer-cache read waits on one replica's response headers: a lookup that misses memory and disk asks the key's replicas in ring order, and when the replica asked last has not answered within the hedge delay it also asks the next replica and takes the first answer, or, with no replica left, goes on as a miss (the request reads VictoriaLogs or computes the entry). The call it stopped waiting for finishes in the background, where -peer-timeout still suspends a paused or hung peer for the breaker cooldown, and until it ends reads skip that peer, so one read per proxy pays the delay. The delay is twice the p99 of the peer header latencies this proxy measured (a decaying histogram), at least 5 ms and at most this value and half of -peer-timeout; until 64 latencies are measured it is the maximum. The /patterns owner presence check is bounded the same way",
+      "error": "none; a hedged read is a peer read like any other, and one that goes on as a miss is answered from VictoriaLogs as before peers existed",
+      "metric": "loki_vl_proxy_peer_cache_read_hedges_total{action=\"next_replica\"|\"gave_up\"}; loki_vl_proxy_peer_cache_read_hedge_delay_seconds; loki_vl_proxy_peer_cache_fetch_duration_seconds; peer error reason peer_slow",
+      "alert": "none",
+      "loki_parity": "",
+      "per_tenant": false,
+      "sizing": "200ms: on a healthy fleet the measured delay sits far below it (twice a header p99 of a few milliseconds), so about one read in a hundred asks a second replica and the fleet's peer reads grow by about 1%; the maximum only applies before the latencies are measured and when the fleet is slow, where it bounds what a paused replica costs one request (200 ms instead of the 2 s peer timeout, then nothing while the peer is suspended). Lower it (50ms) to bound that cost tighter at the price of more VictoriaLogs reads when every replica is slow; raise it towards half of -peer-timeout when peers sit far away (cross-region) and VictoriaLogs is expensive. 0 turns hedging off: a read waits up to -peer-timeout on each replica, as before this flag."
+    },
+    {
       "flag": "peer-push-buffer-max-entries",
       "helm_value": "extraArgs.peer-push-buffer-max-entries",
       "type": "Int",
