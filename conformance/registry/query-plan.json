@@ -292,7 +292,7 @@
       "the plan does not route it: RangeAgg route spelling": 2,
       "the plan does not route it: RangeAgg route unwrap absent": 9,
       "the plan does not route it: RangeAgg route unwrap grouping": 2,
-      "the plan does not route it: RangeAgg route unwrap pipeline": 163,
+      "the plan does not route it: RangeAgg route unwrap pipeline": 164,
       "the plan does not route it: RangeAgg route unwrap quantile": 65,
       "the plan does not route it: RangeAgg route unwrap rate": 2,
       "the plan does not route it: RangeAgg route unwrap rate_counter": 7,
