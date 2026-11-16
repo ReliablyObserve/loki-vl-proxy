@@ -119,7 +119,7 @@ func parsedKeyMatchesEmpty(value string, op logqlSingleFilterOp) bool {
 	}
 	if strings.HasPrefix(value, `ip("`) && strings.HasSuffix(value, `")`) {
 		// Loki's ip() filter drops a line without the label under both
-		// operators (pkg/logql/log/ip.go:128-131).
+		// operators (recorded Loki answers).
 		return false
 	}
 	return translate.ParsedKeyMatchesEmpty(streamMatcherValue(value, op.IsRe), op, false)
@@ -336,7 +336,7 @@ func resolvableLabel(query, label string) bool {
 }
 
 // extractedSuffix is what Loki appends to a parsed label that shares its name
-// with a stream label (pkg/logql/log/parser.go duplicateSuffix). A parser
+// with a stream label (the `_extracted` suffix of LogQL's parser stages). A parser
 // stage then leaves the stream label alone and exposes the parsed value as
 // name_extracted, where VictoriaLogs' unpack_json and unpack_logfmt overwrite
 // the stored field of that name. A later parser skips a key an earlier one

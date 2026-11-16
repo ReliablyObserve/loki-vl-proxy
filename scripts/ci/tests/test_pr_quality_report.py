@@ -98,8 +98,8 @@ class ReportTests(unittest.TestCase):
         head = snapshot()
         head["query_corpus"] = {
             "summary": {"client_rows": 5, "golden_versions": ["v1.53.0"]}, "targets": [],
-            "loki": {"version": "3.7.9", "client": {"queries": 10, "both_accept": 8, "ours_only": 1}, "case": {"queries": 3, "both_accept": 3}},
-            "loki_base": {"version": "3.7.9", "client": {"queries": 10, "both_accept": 9, "ours_only": 0}, "case": {"queries": 3, "both_accept": 3}},
+            "loki": {"version": "3.7.9", "client": {"queries": 10, "both_accept": 8, "ours_only": 1}},
+            "loki_base": {"version": "3.7.9", "client": {"queries": 10, "both_accept": 9, "ours_only": 0}},
             "loki_regressions": {"disagree": ["client/q-a"], "error_lost": [], "meaning_lost": []},
             "similar": [{"file": "internal/logql/stage_validate.go", "shared": 9, "allowed": 9, "best": "reference/fmt.go"}]}
         report = self.render(base=snapshot(), head=head)

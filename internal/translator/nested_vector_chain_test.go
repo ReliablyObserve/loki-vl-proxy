@@ -7,7 +7,7 @@ import (
 
 // conformance: semantics/nested-aggregation-outer-by-native-routes, metric-series-identity
 // Every level of a nested vector aggregation keeps exactly its own grouping
-// (pkg/logql/evaluator.go VectorAggEvaluator.Next), so each level is a stats
+// (recorded Loki engine answers), so each level is a stats
 // pipe of its own over the rows of the previous one, one row per Loki series.
 func TestNestedVectorAggregationEmitsOneStatsPipePerLevel(t *testing.T) {
 	for _, tc := range []struct{ name, logql, want string }{
@@ -42,7 +42,7 @@ func TestNestedVectorAggregationEmitsOneStatsPipePerLevel(t *testing.T) {
 			`app:="x" | stats by (pod, zone, _stream, level) count() as __lvp_inner | stats by (pod, zone) avg(__lvp_inner) as __lvp_inner | stats by (zone) min(__lvp_inner)`,
 		},
 		{
-			// Loki keeps only the labels a series has (evaluator.go:467-477): a
+			// Loki keeps only the labels a series has (recorded Loki engine answers): a
 			// by label the inner level dropped is absent, so one series.
 			"outer by label the inner group lacks",
 			`min by (zone) (avg by (pod) (count_over_time({app="x"}[5m])))`,
