@@ -106,9 +106,7 @@ func TestKeywordFoldRunesRequestsEqualLowerCase(t *testing.T) {
 			// proxy's error answer): the folded spelling must give the same answer.
 			wantVL, wantBody := blankAfterKeywordRequests(t, endpoint, a.Ref)
 			gotVL, gotBody := blankAfterKeywordRequests(t, endpoint, a.Q)
-			// A keep under a range function sends a set of requests that varies from run to run for one spelling
-			// (TestBlankAfterKeywordRequestsEqualSpaced): its answer is compared, its requests are not.
-			racy := !strings.HasPrefix(a.Q, "{") && strings.Contains(a.Ref, "| keep")
+			racy := requestSetVaries(a.Ref)
 			if !racy && !slices.Equal(gotVL, wantVL) {
 				t.Errorf("%s %q differs from %q at %s", endpoint, a.Q, a.Ref, firstDifference(strings.Join(gotVL, "\n"), strings.Join(wantVL, "\n")))
 			}
@@ -226,7 +224,7 @@ func TestKeywordBlankRequestsEqualSpaced(t *testing.T) {
 			}
 			wantVL, wantBody := blankAfterKeywordRequests(t, endpoint, a.Ref)
 			gotVL, gotBody := blankAfterKeywordRequests(t, endpoint, a.Q)
-			racy := !strings.HasPrefix(a.Q, "{") && strings.Contains(a.Ref, "| keep")
+			racy := requestSetVaries(a.Ref)
 			same := (racy || slices.Equal(gotVL, wantVL)) && gotBody == wantBody
 			if caseID := blankKnownDifference(a.Q); caseID != "" && !same {
 				known++
@@ -264,3 +262,13 @@ func blankKnownDifference(q string) string {
 // blankBeforeCall finds a name followed by blanks with a tab, a line feed or a carriage return in them, and a
 // parenthesis.
 var blankBeforeCall = regexp.MustCompile(`([A-Za-z_]+)[ ]*[\t\r\n][ \t\r\n]*\(`)
+
+// requestSetVaries reports a metric query whose set of VictoriaLogs requests varies from run to run for one spelling,
+// so a test compares its answer and not its requests: a keep under a range function
+// (TestBlankAfterKeywordRequestsEqualSpaced), and a json or logfmt parser in a metric query, whose evaluator races a
+// raw-row probe against the stats read (the same lower case query sends one set or another, -race shows it within a
+// few dozen runs).
+func requestSetVaries(query string) bool {
+	return !strings.HasPrefix(query, "{") &&
+		(strings.Contains(query, "| keep") || strings.Contains(query, "| json") || strings.Contains(query, "| logfmt"))
+}

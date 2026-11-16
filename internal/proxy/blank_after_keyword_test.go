@@ -223,7 +223,7 @@ func TestUnwrapBlankUnderWrappersEqualsSpaced(t *testing.T) {
 			for _, blank := range []string{"\t", "\r\n", "  "} {
 				q := strings.ReplaceAll(tpl, "¤", blank)
 				gotVL, gotBody := blankAfterKeywordRequests(t, endpoint, q)
-				if !slices.Equal(gotVL, wantVL) || gotBody != wantBody {
+				if !requestSetVaries(tpl) && !slices.Equal(gotVL, wantVL) || gotBody != wantBody {
 					t.Errorf("%s %q: %d requests, answer %s;\n want the spaced spelling's %d requests, answer %s", endpoint, q, len(gotVL), gotBody, len(wantVL), wantBody)
 				}
 			}
