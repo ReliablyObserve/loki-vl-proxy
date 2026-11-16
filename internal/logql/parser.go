@@ -312,8 +312,8 @@ type parser struct {
 // deferTreeError notes msg as the error of the check Loki makes over the parsed tree at node va: it answers after
 // every syntax and lexer error and after the actions, at the node's place in the walk (validateSemantics).
 func (p *parser) deferTreeError(va *VectorAggregation, msg string) {
-	if va.treeErr == "" {
-		va.treeErr = msg
+	if va.treeErr == nil {
+		va.treeErr = &msg
 	}
 	if p.treeErr == "" {
 		p.treeErr = msg
@@ -469,45 +469,7 @@ func (p *parser) parsePrimary() (Expr, error) {
 		if name != "approx_topk" && !p.keywordAhead(false) {
 			return nil, p.syntaxErrorAt("")
 		}
-		// Capture the full raw text and return it as-is so VictoriaLogs
-		// receives the original expression unchanged.
-		startPos := p.sc.pos - len(p.cur.Val)
-		p.advance()
-		var treeErr string
-		if name == "approx_topk" && (p.cur.Typ == TokBy || p.cur.Typ == TokWithout) {
-			// Loki's grammar reads a grouping before approx_topk's arguments and refuses it over the parsed tree.
-			if _, err := p.parseGrouping(); err != nil {
-				return nil, err
-			}
-			treeErr = "parse error : grouping not allowed for approx_topk aggregation"
-			if p.treeErr == "" {
-				p.treeErr = treeErr
-			}
-		}
-		if p.cur.Typ == TokLParen {
-			p.advance() // consume '('
-			argStart := p.pos()
-			endPos, ok := p.consumeBalancedParens()
-			if !ok || endPos < startPos {
-				return nil, fmt.Errorf("logql: unterminated '(' after %q", name)
-			}
-			if p.canon != nil {
-				// label_replace(rate(({a} |= "x")[1m]), ...): the first argument is a
-				// metric expression, written in the plain form like any other.
-				argEnd := argStart + FirstArgumentLen(p.sc.src[argStart:endPos])
-				if arg := p.sc.src[argStart:argEnd]; CanonicalizeLogRanges(arg) != arg {
-					p.addRewrite(argStart, argEnd, CanonicalizeLogRanges(arg))
-				}
-			}
-			raw := strings.TrimSpace(p.sc.src[startPos:endPos])
-			o := &OpaqueMetricExpr{Raw: raw, Func: name, treeErr: treeErr}
-			if p.canon == nil {
-				typeOpaqueCall(o)
-				p.noteOpaqueCall(o.Inner)
-			}
-			return o, nil
-		}
-		return nil, p.syntaxErrorAt("(")
+		return p.parseOpaqueCall(name)
 	}
 
 	// Parenthesised expression
@@ -533,6 +495,51 @@ func (p *parser) parsePrimary() (Expr, error) {
 	}
 
 	return nil, p.syntaxErrorAt("")
+}
+
+// parseOpaqueCall reads a metric call kept as text (label_replace, vector, approx_topk) from its name: its raw text,
+// and its typed parts where typeOpaqueCall can read them.
+func (p *parser) parseOpaqueCall(name string) (Expr, error) {
+	// Capture the full raw text and return it as-is so VictoriaLogs
+	// receives the original expression unchanged.
+	startPos := p.sc.pos - len(p.cur.Val)
+	p.advance()
+	var treeErr *string
+	if name == "approx_topk" && (p.cur.Typ == TokBy || p.cur.Typ == TokWithout) {
+		// Loki's grammar reads a grouping before approx_topk's arguments and refuses it over the parsed tree.
+		if _, err := p.parseGrouping(); err != nil {
+			return nil, err
+		}
+		msg := "parse error : grouping not allowed for approx_topk aggregation"
+		treeErr = &msg
+		if p.treeErr == "" {
+			p.treeErr = msg
+		}
+	}
+	if p.cur.Typ == TokLParen {
+		p.advance() // consume '('
+		argStart := p.pos()
+		endPos, ok := p.consumeBalancedParens()
+		if !ok || endPos < startPos {
+			return nil, fmt.Errorf("logql: unterminated '(' after %q", name)
+		}
+		if p.canon != nil {
+			// label_replace(rate(({a} |= "x")[1m]), ...): the first argument is a
+			// metric expression, written in the plain form like any other.
+			argEnd := argStart + FirstArgumentLen(p.sc.src[argStart:endPos])
+			if arg := p.sc.src[argStart:argEnd]; CanonicalizeLogRanges(arg) != arg {
+				p.addRewrite(argStart, argEnd, CanonicalizeLogRanges(arg))
+			}
+		}
+		raw := strings.TrimSpace(p.sc.src[startPos:endPos])
+		o := &OpaqueMetricExpr{Raw: raw, Func: name, treeErr: treeErr}
+		if p.canon == nil {
+			typeOpaqueCall(o)
+			p.noteOpaqueCall(o.Inner)
+		}
+		return o, nil
+	}
+	return nil, p.syntaxErrorAt("(")
 }
 
 // parseNumberLiteral parses a number, or a minus and a number.

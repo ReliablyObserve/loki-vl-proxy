@@ -41,43 +41,17 @@ func semanticPass(expr Expr, raw string, build bool) string {
 		return validateRangeAggSemantics(x, raw, build)
 	case *VectorAggregation:
 		// Loki checks a node before its operand: the operation's parameter first.
-		if x.treeErr != "" && !build {
-			return x.treeErr
+		if x.treeErr != nil && !build {
+			return *x.treeErr
 		}
 		return semanticPass(x.Inner, raw, build)
 	case *BinOpExpr:
-		if build {
-			if s := semanticPass(x.Left, raw, true); s != "" {
-				return s
-			}
-			return semanticPass(x.Right, raw, true)
-		}
-		// Log stream queries cannot participate in binary metric operations: Loki names the type of the
-		// operand, the left one first, before it looks at a literal.
-		if msg := binaryLogOperandError(x.Op, "left", x.Left); msg != "" {
-			return msg
-		}
-		if msg := binaryLogOperandError(x.Op, "right", x.Right); msg != "" {
-			return msg
-		}
-		// A set operator joins two vectors: Loki refuses a literal on either side, the left one first.
-		if x.Op == "and" || x.Op == "or" || x.Op == "unless" {
-			if l, ok := x.Left.(*LiteralExpr); ok {
-				return fmt.Sprintf("parse error : unexpected literal for left leg of logical/set binary operation (%s): %f", x.Op, l.Value)
-			}
-			if r, ok := x.Right.(*LiteralExpr); ok {
-				return fmt.Sprintf("parse error : unexpected literal for right leg of logical/set binary operation (%s): %f", x.Op, r.Value)
-			}
-		}
-		if s := semanticPass(x.Left, raw, false); s != "" {
-			return s
-		}
-		return semanticPass(x.Right, raw, false)
+		return binOpSemantics(x, raw, build)
 	case *OpaqueMetricExpr:
 		// label_replace(inner, ...) and similar wrappers: Loki validates the
 		// wrapped sample expression like any other.
-		if x.treeErr != "" && !build {
-			return x.treeErr
+		if x.treeErr != nil && !build {
+			return *x.treeErr
 		}
 		if build {
 			inner := x.Inner
@@ -116,6 +90,38 @@ func semanticPass(expr Expr, raw string, build bool) string {
 		}
 	}
 	return ""
+}
+
+// binOpSemantics is semanticPass for a binary operation: the type of its operands, then the operands, the left one
+// first.
+func binOpSemantics(x *BinOpExpr, raw string, build bool) string {
+	if build {
+		if s := semanticPass(x.Left, raw, true); s != "" {
+			return s
+		}
+		return semanticPass(x.Right, raw, true)
+	}
+	// Log stream queries cannot participate in binary metric operations: Loki names the type of the
+	// operand, the left one first, before it looks at a literal.
+	if msg := binaryLogOperandError(x.Op, "left", x.Left); msg != "" {
+		return msg
+	}
+	if msg := binaryLogOperandError(x.Op, "right", x.Right); msg != "" {
+		return msg
+	}
+	// A set operator joins two vectors: Loki refuses a literal on either side, the left one first.
+	if x.Op == "and" || x.Op == "or" || x.Op == "unless" {
+		if l, ok := x.Left.(*LiteralExpr); ok {
+			return fmt.Sprintf("parse error : unexpected literal for left leg of logical/set binary operation (%s): %f", x.Op, l.Value)
+		}
+		if r, ok := x.Right.(*LiteralExpr); ok {
+			return fmt.Sprintf("parse error : unexpected literal for right leg of logical/set binary operation (%s): %f", x.Op, r.Value)
+		}
+	}
+	if s := semanticPass(x.Left, raw, false); s != "" {
+		return s
+	}
+	return semanticPass(x.Right, raw, false)
 }
 
 // binaryLogOperandError is the parse error Loki raises for a log query used as an operand of a binary

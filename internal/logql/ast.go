@@ -482,8 +482,9 @@ type VectorAggregation struct {
 	Param    float64 // for topk/bottomk
 	HasParam bool
 	Inner    Expr
-	// treeErr is Loki's error for the operation's parameter (topk(0, …), sum(1, …)), raised over the parsed tree.
-	treeErr string
+	// treeErr is Loki's error for the operation's parameter (topk(0, …), sum(1, …)), raised over the parsed tree; a
+	// pointer keeps the node in its allocation size class.
+	treeErr *string
 }
 
 func (v *VectorAggregation) String() string {
@@ -611,8 +612,9 @@ type OpaqueMetricExpr struct {
 	Inner Expr
 	Args  []string
 	Value float64
-	// treeErr is Loki's error for a grouping on approx_topk, raised over the parsed tree.
-	treeErr string
+	// treeErr is Loki's error for a grouping on approx_topk, raised over the parsed tree (a pointer, as in
+	// VectorAggregation).
+	treeErr *string
 }
 
 func (o *OpaqueMetricExpr) String() string { return o.Raw }
