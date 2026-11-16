@@ -2,9 +2,11 @@ package querycorpus_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -284,4 +286,53 @@ func minCount(m map[string]int) int {
 		}
 	}
 	return lowest
+}
+
+// metricStreamIDTenant reads the tenant (the account id, the first 8 hex digits) of every _stream_id a recorded
+// VictoriaLogs body holds.
+var metricStreamIDTenant = regexp.MustCompile(`"_stream_id":"([0-9a-f]{8})`)
+
+// The recorded answers are stored under the tenant metricTenant gives their query, so a metric row added to the
+// corpus (which moves every later query's place in the differential) leaves the recording as it is: VictoriaLogs
+// writes the tenant into every row's _stream_id, and the live oracles (LVP_LOKI_DIFF_CHECK=1) must answer what is
+// committed. Both recordings that recordMetricAnswers writes are held to it, without the oracle modules.
+//
+// conformance: architecture-syntax-package-layering
+func TestLokiMetricDifferentialTenantsDoNotMove(t *testing.T) {
+	for _, tc := range []struct {
+		path string
+		// rows: the recording holds answers that return rows (and so _stream_id), so the check is not empty.
+		rows bool
+	}{{metricAnswersPath, true}, {firstLastAnswersPath, false}} {
+		seen := map[uint32]string{}
+		withRows := 0
+		for q, rec := range readMetricAnswersFrom(t, tc.path) {
+			tenant := metricTenant(q)
+			if tenant == 0 {
+				t.Errorf("%s: %s takes tenant 0, the default tenant", tc.path, q)
+			}
+			if other, dup := seen[tenant]; dup {
+				t.Errorf("%s: %s takes the tenant of %s", tc.path, q, other)
+			}
+			seen[tenant] = q
+			want := fmt.Sprintf("%08x", tenant)
+			found := false
+			for version, answers := range rec.VL {
+				for key, a := range answers {
+					for _, m := range metricStreamIDTenant.FindAllStringSubmatch(a.Body, -1) {
+						found = true
+						if m[1] != want {
+							t.Errorf("%s: %s on %s (%s): a row is stored under tenant %s, metricTenant gives %s", tc.path, q, version, key, m[1], want)
+						}
+					}
+				}
+			}
+			if found {
+				withRows++
+			}
+		}
+		if tc.rows && withRows == 0 {
+			t.Errorf("%s: no recorded answer holds a _stream_id, so the check holds nothing", tc.path)
+		}
+	}
 }

@@ -1,0 +1,75 @@
+id: semantics/without-fold-stream-detected-level
+title: "The series of a per-stream read (a without fold, an unwrap function, topk/bottomk/sort/label_replace over a range function) carry the stream's detected_level, as Loki does (fixed)"
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki derives detected_level when a line is ingested, and a level stream label
+  decides it for every line of the stream. On the e2e stack Loki 3.7.7 answers
+  `sum without (pod) (rate({service_name="payment-service"} | logfmt amount | unwrap amount [5m]))`
+  with two series, detected_level="error" for the level="error" stream and
+  "info" for level="info"; `topk without (pod) (1, ...)` of the same function
+  with 17 series and `sum without (pod) (max_over_time({app="payment-service"} | logfmt amount | unwrap amount [5m]))`
+  with two, all labelled the same way. The proxy answered the same label sets
+  with detected_level="unknown" on every series of those three query_range
+  requests (semantics/unwrap-sum-without-collapses,
+  semantics/topk-bottomk-without-strips-label, quality/query-range-settled-steps).
+
+  Root cause: to fold the series, the proxy reads the range function from
+  VictoriaLogs per stream (`stats by (_stream, ...)`), so the rows carry the
+  stream but no level column, and the series builder labelled a stream without
+  a level column unknown. The stream's own level field was never read. The
+  same builder labels the series of topk, bottomk, sort, sort_desc and
+  label_replace over a range function after a parser, and of an unwrap
+  function on its own (quantile_over_time, a tumbling window), at an instant
+  and on query_range: those said unknown too for a stream with level="error",
+  and for any stream whose level key is not `level` (severity, LEVEL, lvl).
+
+  Fixed: a series read per stream takes detected_level from the stream's level
+  field with the read path's own rule (the first level key Loki reads: level,
+  LEVEL, Level, log.level, severity, ..., lvl; known spellings normalised, an
+  unknown word kept, as live Loki answers level="Debug" with debug and lvl="x"
+  with x: testdata/detected_level_golden.json), unknown when the stream has
+  none; a stream detected_level label is left as it was. `sum without (detected_level)` still drops the label
+  and `sum without (level)` keeps the derived one. The answers cached before the
+  fix are fenced (@stream-level-series-v1 on every query holding without,
+  unwrap, topk, bottomk, sort or label_replace: the compat edge, the inner
+  query_range key and the settled steps built from it). The words are those of
+  every query whose label sets changed in a diff of 36 range functions and
+  parsers under 23 outer forms, at an instant and at two steps, against the
+  previous build. No LogsQL changes, no extra VictoriaLogs call; v1.49 and v1.53 answer
+  alike.
+
+  Not covered: a stream with no level field whose lines carry different levels
+  in a body or a non-stream field (or a detected_level field, which Loki puts
+  before the stream's level): the per-stream read cannot tell them apart, and
+  the series is labelled from the stream (unknown when it has no level field)
+  where Loki splits it by detected_level.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum without (pod) (rate({service_name="payment-service"} | logfmt amount | unwrap amount [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series]
+  expect: "Two series, each with the detected_level of its stream's level label (error, info), as Loki answers."
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: explore-visible
+  effort: S
+  area: "internal/proxy buildMetricSeriesEntry and streamDetectedLevel (the series of a per-stream read)"
+  loki: "detected_level from the stream's level label (error, info)"
+  proxy: "detected_level from the stream's level field, unknown when it has none"
+  planned_test: 'TestStreamGroupedSeriesDetectedLevelMatchesLoki (internal/proxy, recorded Loki answers of the three registry requests, VictoriaLogs v1.49.0 and v1.53.0), TestStreamGroupedSeriesDetectedLevelEdges, TestStreamDetectedLevelMatchesLokiGolden (recorded Loki answers), TestStreamLevelSeriesFence (internal/proxy)'
+  visual: none
+  visual_reason: 'a label value of a series in Explore; the label sets are compared with Loki in the tests and by the per-case verifier'
+  clusters: []

@@ -600,6 +600,21 @@ func matrixByLabels(t *testing.T, label string, body []byte) map[string]map[stri
 // replicationFactor is read from the proxies when the proof starts.
 var replicationFactor = 1
 
+// metadataReads is what reading metadata requests on some replicas showed.
+type metadataReads struct {
+	total fleetCounters
+	// fromPeer and fromDisk count requests answered at the top level from a
+	// peer and from the replica's disk (inventory unit lookups, which use the
+	// same tiers, are subtracted).
+	fromPeer, fromDisk int
+	// held counts requests answered from a copy the replica already held in
+	// memory: no tier was missed, no peer was asked, and the top level hit L1.
+	held int
+	// served counts requests that missed no tier (memory, disk or a peer
+	// answered them).
+	served int
+}
+
 // requireMetadataReadThrough reads each metadata request on the replicas in
 // order. A request none of whose shared-read lookups missed every tier was
 // answered from memory, disk or a peer and must cost no VictoriaLogs call
@@ -608,27 +623,36 @@ var replicationFactor = 1
 // which use the same tiers, are subtracted).
 func requireMetadataReadThrough(t *testing.T, reqs []proofRequest, want answers, replicas ...int) (fleetCounters, int, int) {
 	t.Helper()
-	var total fleetCounters
-	fromPeer, fromDisk := 0, 0
+	r := readMetadata(t, reqs, want, replicas...)
+	return r.total, r.fromPeer, r.fromDisk
+}
+
+// readMetadata is requireMetadataReadThrough with the held-copy count.
+func readMetadata(t *testing.T, reqs []proofRequest, want answers, replicas ...int) metadataReads {
+	t.Helper()
+	var r metadataReads
 	for _, req := range reqs {
 		for _, idx := range replicas {
 			rep := fleetReplica(idx)
 			d, _ := askSame(t, rep, req, want[req.path])
 			if d.missedAll == 0 {
+				r.served++
 				if d.fleetVLSelect != 0 {
 					t.Errorf("%s on %s missed no cache tier yet caused %.0f VictoriaLogs calls in the fleet (%s)", req, rep.name, d.fleetVLSelect, d)
 				}
 				if d.topLevelL3Hits() > 0 {
-					fromPeer++
+					r.fromPeer++
+				} else if d.tierL1Hits-d.invMemory > 0 {
+					r.held++
 				}
 				if d.topLevelL2Hits() > 0 {
-					fromDisk++
+					r.fromDisk++
 				}
 			}
-			total = total.plus(d)
+			r.total = r.total.plus(d)
 		}
 	}
-	return total, fromPeer, fromDisk
+	return r
 }
 
 // requireWindowReadThrough reads each log request on replicas that never
@@ -745,6 +769,9 @@ func TestFleetPeerCacheProof(t *testing.T) {
 	proofRec.report.Fixture = map[string]any{"probe": fx.probe, "lines": fx.lines, "start": fx.start, "end": fx.end}
 	base := baseProofSet(fx)
 	first := answers{}
+	// heldByB is how many base metadata keys B held a copy of before any
+	// restart (see metadataDiskLeg); it is read in phase 1 and used in phase 2.
+	heldByB := 0
 	a, b, c := fleetReplica(replicaA), fleetReplica(replicaB), fleetReplica(replicaC)
 	t.Logf("fixture %s: %d lines over [%s, %s)", fx.probe, fx.lines, fx.start.Format(time.RFC3339), fx.end.Format(time.RFC3339))
 
@@ -853,10 +880,18 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		})
 		proofRun(t, "metadata", func(t *testing.T) {
 			warm(t, a, base.metadata, first)
-			total, fromPeer, _ := requireMetadataReadThrough(t, base.metadata, first, replicaB, replicaC)
-			if fromPeer < 1 {
+			// B and C are read apart: before any restart, a request B
+			// answers from memory without asking a peer can only be a copy
+			// pushed to B as a replica of the key, which is on B's disk.
+			// Which keys those are depends on the ring and on the probe
+			// (new every run), so B may hold none.
+			rb := readMetadata(t, base.metadata, first, replicaB)
+			rc := readMetadata(t, base.metadata, first, replicaC)
+			heldByB = rb.held
+			if total := rb.total.plus(rc.total); rb.fromPeer+rc.fromPeer < 1 {
 				t.Errorf("no metadata answer computed elsewhere was read by B or C from its owner (%s)", total)
 			}
+			t.Logf("metadata keys B held a replica copy of before any restart: heldByB=%d of %d", heldByB, len(base.metadata))
 			readAgain(t, fleetReplicas(), base.metadata, first)
 		})
 		proofRun(t, "snapshots_published", func(t *testing.T) {
@@ -902,9 +937,13 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			}
 		})
 		proofRun(t, "metadata", func(t *testing.T) {
-			total, _, fromDisk := requireMetadataReadThrough(t, base.metadata, first, replicaB)
-			if fromDisk < 1 {
-				t.Errorf("B served no metadata answer from its own disk after a restart (%s)", total)
+			r := readMetadata(t, base.metadata, first, replicaB)
+			exercised, problem := metadataDiskLeg(heldByB, len(base.metadata), r.served, r.fromDisk)
+			if problem != "" {
+				t.Errorf("%s (%s)", problem, r.total)
+			}
+			if !exercised {
+				t.Logf("ring placement gave B none of the %d metadata keys this run (probe %s), so its disk had nothing to serve before the restart: the disk leg was not exercised; %d of %d answers came from peers, %d from its disk", len(base.metadata), fx.probe, r.fromPeer, len(base.metadata), r.fromDisk)
 			}
 		})
 		proofRun(t, "volume_segments", func(t *testing.T) {

@@ -18,12 +18,20 @@ why: |
 
   Found by the grammar sweep (internal/querycorpus TestGrammarSweep, answers recorded with the Loki oracle, Loki 3.7.9, and the VictoriaLogs oracle, v1.49.0 and v1.53.0; conformance/registry/grammar-sweep.json holds the queries of each class). The sweep compares the proxy's validation and plan with Loki's parser and tree, and the texts the plan and the translator write with VictoriaLogs' parser; it sends no HTTP request, so what a client receives is for the e2e proof to confirm when the case is promoted.
 request:
-  scope: query-grammar
-  entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/set-operation-folded-literal-operand"
-  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now, step 60s): rate({app=\"x\"}[5m]) and 1 + 2 . The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'rate({app="x"}[5m]) and 1 + 2'
+    start: now-15m
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
 compare:
   mode: observed
   fields: [status, error_text]
+  values:
+    status: 400
   expect: "Loki's 400 naming the folded literal."
 gap:
   status: fixed

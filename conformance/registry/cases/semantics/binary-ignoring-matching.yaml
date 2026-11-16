@@ -1,5 +1,5 @@
 id: semantics/binary-ignoring-matching
-title: '`+ ignoring(label)` between two sums joins the wrong series (open)'
+title: '`+ ignoring(label)` between two sums joins the wrong series (fixed)'
 proves:
   - loki_api_v1_query_range
 consumer: explore
@@ -28,6 +28,8 @@ why: |
   step's right-hand duplicates before any left-hand ones and before the
   group-label collisions, where Loki stops at the first step whose join fails
   (engine.go reads the evaluator's error after every step).
+
+  Fixed (#741): an aggregation over a binary expression aggregates the whole binary, so `sum by (cluster) (A + ignoring(machine) B)` joins the operands first. The live answer is 2 series of 61 points, every value equal to Loki's.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -45,13 +47,17 @@ compare:
   expect: |
     Loki's series and values.
 gap:
-  status: open
+  status: fixed
+  fixed_by: '#741'
   impact: explore-visible
   effort: S
   area: 'translator and handleQueryRange/handleQuery: an outer aggregation over a binary expression (the binary evaluator itself matches Loki)'
   loki: 'pkg/logql/evaluator.go:791-1128 newBinOpStepEvaluator, matchingSignature, vectorBinop, resultMetric; pkg/logql/engine.go step loop'
-  proxy: 'sum by (..) (A + ignoring(..) B) is translated from its first operand alone: a raw count, no join'
-  planned_test: 'TestCompat_BinaryIgnoringOuterSum (the row''s shape, test/e2e-compat, group semantics) and TestCompat_BinaryIgnoringAbsentLabel (the join itself); TestBinaryMatchingDifferential, TestBinaryMatchingErrorTextAndStepOrder, TestBinaryIgnoringMatchingEdgeTable, TestBinaryIgnoringThroughHandler (internal/proxy)'
+  proxy: 'the join first, then the outer aggregation: one series per cluster holding the sum of both operands, as Loki'
+  planned_test: 'TestBinaryIgnoringUnderOuterSum, TestBinaryIgnoringThroughHandler, TestBinaryIgnoringMatchingEdgeTable, TestBinaryMatchingErrorTextAndStepOrder, TestBinaryMatchingDifferential (internal/proxy); TestCompat_BinaryIgnoringOuterSum and TestCompat_BinaryIgnoringAbsentLabel (test/e2e-compat, group semantics)'
+  note: 'Verified 2026-11-14 on build 726dfb48f against Loki 3.7.9 and VictoriaLogs v1.53.0 (two live case runs, same data on both sides): 2 series, 122 points, labels and values equal.'
+  visual: none
+  visual_reason: 'fixed by #741 before this record; the proof is the live API comparison of the case (series and values equal to Loki on 2026-11-14), and no Grafana capture was taken for this record'
   clusters:
     - 354c7d83
     - 8fef8a78

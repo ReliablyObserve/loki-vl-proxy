@@ -1,0 +1,4 @@
+go test fuzz v1
+string("1.2.3.0/27")
+string("X0:1.2.3.0")
+bool(true)

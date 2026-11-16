@@ -255,7 +255,7 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	// The handlers clamp a quantile_over_time phi above 1 before they translate (VictoriaLogs rejects it).
 	q = proxy.RewriteQuantilePhiGT1(q)
 	// The translator is the wrong one for these (known_divergence_test.go): nothing to hold the plan to.
-	if translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q) || translatorReadsStageMarker(q) {
+	if translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q) || translatorReadsStageMarker(q) || translatorCopiesUnspacedParser(q) {
 		return "", "", false
 	}
 	lq, err := logql.ParseLogQuery(q)
@@ -311,9 +311,11 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		// VictoriaLogs answers to both are recorded in internal/queryplan/lower).
 		return "", "", false
 	}
-	if lower.WritesKeepUnwrapIdentity(plan) {
-		// A keep before the unwrap decides the series: the plan groups by the labels it leaves, the translator by the
-		// stream (semantics/keep-before-unwrap-series-identity, held to Loki by TestKeepUnwrapIdentityMatchLoki).
+	if lower.WritesKeepUnwrapIdentity(plan) || lower.WritesDynamicUnwrapIdentity(plan) {
+		// A keep before the unwrap, or a parser's labels, decide the series: the plan groups by the labels the keep
+		// leaves, or by the stream and a hash of the parsed labels, the translator by the stream
+		// (semantics/keep-before-unwrap-series-identity, semantics/unwrap-per-series-identity-raw-rows; held to Loki
+		// by TestKeepUnwrapIdentityMatchLoki).
 		return "", "", false
 	}
 	caps := logsql.CapabilitiesFor(strings.TrimPrefix(v, "v"))

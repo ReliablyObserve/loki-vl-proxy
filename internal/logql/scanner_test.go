@@ -91,7 +91,7 @@ func TestScanner_BasicTokens(t *testing.T) {
 
 func TestScanner_StringValues(t *testing.T) {
 	sc := newScanner(`{app="nginx"} |= "error"`)
-	toks := scanAll(sc)
+	toks := scanAll(&sc)
 	// Verify specific string token values
 	found := false
 	for _, tok := range toks {

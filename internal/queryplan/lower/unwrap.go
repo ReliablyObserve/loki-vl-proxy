@@ -239,6 +239,8 @@ type unwrapQuery struct {
 	// leaves as VictoriaLogs names them, none for one series.
 	kept    []string
 	keptSet bool
+	// dynamic says kept is the dynamic identity (withDynamicIdentity): the stream and the hash of the parsed labels.
+	dynamic bool
 	// firstBy and firstEmpty are the grouping of the first stats pipe, which reads the unwrapped value (set marks
 	// them known); the bare logfmt unpack ahead of it is narrowed to the labels it reads.
 	firstBy    []string
@@ -298,7 +300,7 @@ func (q *unwrapQuery) stats(by []string, empty bool, fn logsql.StatsFunc, alias 
 		q.chain = true
 	}
 	q.shape.note(len(keys))
-	text := logsql.PipeStats{By: keys, Funcs: []logsql.StatsFuncAlias{{Func: fn, Alias: alias}}}.String()
+	text := statsText(logsql.PipeStats{By: keys, Funcs: []logsql.StatsFuncAlias{{Func: fn, Alias: alias}}})
 	if empty {
 		text = "| stats by () " + strings.TrimPrefix(text, "| stats ")
 	}
@@ -430,7 +432,12 @@ func (q *unwrapQuery) op(op unwrapOp, log metricLog, field, conv string, prof Pr
 	var names []string
 	narrowed := false
 	if q.parser && log.bareLogfmt >= 0 && q.firstSet {
-		names, narrowed = narrowedFields(field, q.firstBy, q.firstEmpty, log.resolvable)
+		by, empty := q.firstBy, q.firstEmpty
+		if q.dynamic {
+			// The series hash unpacks the line on its own: the unpack reads the labels of the clause.
+			by, empty = withoutDynamicSeries(by), true
+		}
+		names, narrowed = narrowedFields(field, by, empty, log.resolvable)
 	}
 	pre := log
 	if narrowed {
@@ -494,17 +501,17 @@ func (q *unwrapQuery) rate(fn logsql.StatsFunc, seconds float64, ident []string)
 		first := pipes[0].(logsql.PipeStats)
 		q.chain = q.chain || groupsBy(first, translate.DetectedLevelLabel)
 		q.service = q.service || groupsBy(first, "service_name")
-		q.pipes = append(q.pipes, pipes[0].String(), pipes[1].String())
+		q.pipes = append(q.pipes, pipeText(pipes[0]), pipeText(pipes[1]))
 		if q.unpacked {
 			q.pipes = appendRateFilter(q.pipes)
 		}
-		q.pipes = append(q.pipes, pipes[2].String())
+		q.pipes = append(q.pipes, pipeText(pipes[2]))
 		return
 	}
 	pipes := translate.RateStatsPipesOf(fn, seconds)
 	q.chain = true
 	for _, p := range pipes {
-		q.pipes = append(q.pipes, p.String())
+		q.pipes = append(q.pipes, pipeText(p))
 	}
 }
 
@@ -699,6 +706,9 @@ func unwrapVectorStats(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Pro
 	var pipeBuf [4]string
 	q := unwrapQuery{parser: log.parser, unpacked: log.unpacked(), pipes: pipeBuf[:0]}
 	q.kept, q.keptSet = keptIdentity(ra.In, prof)
+	if !prof.StreamIdentity {
+		q.withDynamicIdentity(va, ra, u.Label)
+	}
 	if rate {
 		// The unwrap stage stands where it was written: the translator takes a keep after it to decide the series.
 		ident, err := seriesIdent(ra.In, log.parser, without, true, "VectorAgg", prof)
@@ -776,7 +786,7 @@ func (q *unwrapQuery) vectorRate(op logql.VectorOp, fn logsql.StatsFunc, seconds
 				q.noteFirst(by, false)
 			}
 		}
-		q.pipes = append(q.pipes, p.String())
+		q.pipes = append(q.pipes, pipeText(p))
 	}
 }
 
@@ -878,6 +888,9 @@ func (q *unwrapQuery) seriesStats(op unwrapOp, by []string) {
 	q.stats(by, false, op.fn, "__lvp_inner")
 	if op.row {
 		q.pipes = append(q.pipes, firstLastUnpack)
+	}
+	if q.dynamic {
+		q.pipes = append(q.pipes, dynamicInnerNumber)
 	}
 }
 

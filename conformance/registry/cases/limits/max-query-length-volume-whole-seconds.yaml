@@ -1,0 +1,47 @@
+id: limits/max-query-length-volume-whole-seconds
+title: 'index/volume checks max_query_length on a start and end rounded down to whole seconds, as Loki (fixed)'
+pending: true
+proves:
+  - tenant-query-limits
+  - loki_api_v1_index_volume
+consumer: api
+why: |
+  Loki floors both the start and the end of an index/volume request to whole
+  seconds before its max_query_length check, so the length it reports is whole
+  seconds and a range that is over the limit only in its fraction runs.
+  Recorded live from Loki 3.7.9 on 2026-11-15 (tenant 0, end a whole second T):
+  a start 1 ns or 1 ms before T-721h is 400 `the query time range exceeds the
+  limit (query length: 721h0m1s, limit: 30d1h)`, 1.5 s before it is
+  `721h0m2s`; with the end at T+0.5s a start 0.4 s before the end-721h bound
+  is 200 (the floored length is exactly 721h). index/stats does not round: it
+  keeps the milliseconds (`721h0m0.001s`). The proxy reported the length in
+  milliseconds on both routes and rejected the 200 cases.
+request:
+  method: GET
+  path: /loki/api/v1/index/volume
+  params:
+    query: '{app="api-gateway"}'
+    start: '1791975075999000000'
+    end: '1794570675000000000'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, body]
+  expect: |
+    400 "the query time range exceeds the limit (query length: 721h0m1s,
+    limit: 30d1h)" for a start 1 ms before end-721h, and 200 when the floored
+    length is not over 721h.
+gap:
+  status: fixed
+  fixed_by: 'pending'
+  impact: api-only
+  effort: S
+  area: 'internal/proxy request_params.go (ckLengthSeconds on the volume route)'
+  loki: 'floors start and end to whole seconds before the length check'
+  proxy: 'compared milliseconds and reported 721h0m0.001s before the fix'
+  planned_test: 'TestDefaultMaxQueryLength_VolumeWholeSeconds, TestDefaultMaxQueryLength_Boundary (internal/proxy); TestDefaultMaxQueryLengthLikeLoki index_volume and volume whole second subtests (test/e2e-compat, pending a stack run)'
+  clusters: []
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

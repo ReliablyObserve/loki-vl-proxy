@@ -1,5 +1,5 @@
 id: semantics/step-nonpositive-or-unparsable-is-400
-title: query_range with a step of 0, a negative step or an unparsable step answers 400 as Loki does, not an empty 200 (open)
+title: query_range with a step of 0, a negative step or an unparsable step answers 400 as Loki does, not an empty 200 (fixed)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -12,6 +12,8 @@ why: |
   (pkg/loghttp/query.go:503-505). The proxy's query_range handler answers
   `step=0`, `step=-1` and `step=abc` with an empty matrix and HTTP 200
   (found while testing sub-second steps, semantics/sub-second-step-grid).
+
+  Fixed (#1419): query_range checks step with the other request parameters, before the cache and VictoriaLogs, and a step of 0 or less or one that does not parse is Loki's 400 with Loki's text (recorded rows r0564-r0566 and the same probes on the other routes).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -28,11 +30,13 @@ compare:
   expect: |
     HTTP 400 with Loki's text for step 0 and negative steps, and for an unparsable step.
 gap:
-  status: open
+  status: fixed
+  fixed_by: '#1419'
   impact: api-only
   effort: S
   area: 'internal/proxy/proxy.go handleQueryRange (step validation beside exceedsLokiRangeResolution)'
   loki: 'pkg/loghttp/params.go:191-203; pkg/loghttp/query.go:503-505'
-  proxy: 'empty matrix with HTTP 200'
-  planned_test: 'table over 0, -1, abc, 0s in the edge table of internal/proxy; TestCompat_ step status parity (test/e2e-compat)'
+  proxy: '400 with Loki''s text, before any VictoriaLogs call'
+  planned_test: 'TestRequestParamAnswers (replay of the recorded parameter rows) and TestStepGrammarIsLokis (internal/proxy)'
+  note: 'Verified 2026-11-14 on build 726dfb48f against Loki 3.7.9 and VictoriaLogs v1.53.0 (two live case runs, same data on both sides): step=0 answers 400 `zero or negative query resolution step widths are not accepted. Try a positive integer` on both sides.'
   clusters: []

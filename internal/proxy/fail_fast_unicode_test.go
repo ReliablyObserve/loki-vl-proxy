@@ -41,7 +41,7 @@ var lateValidation = map[string]bool{}
 // cache lookup, plan, translation or VictoriaLogs call: the queries that once stopped the parser from returning,
 // on every route that takes a query. The fake VictoriaLogs counts its requests.
 //
-// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma, semantics/stage-name-followed-by-more-of-stage, semantics/parser-reads-unicode-blank-as-white-space, semantics/stage-after-unwrap-accepted, semantics/unwrap-in-log-query, semantics/range-duration-grammar-wider-than-loki
+// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma, semantics/stage-name-followed-by-more-of-stage, semantics/parser-reads-unicode-blank-as-white-space, semantics/stage-after-unwrap-accepted, semantics/unwrap-in-log-query, semantics/range-duration-grammar-wider-than-loki, semantics/comment-between-function-and-parenthesis-accepted
 func TestRejectedQueryNeverReachesVictoriaLogs(t *testing.T) {
 	var upstream atomic.Int64
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +67,11 @@ func TestRejectedQueryNeverReachesVictoriaLogs(t *testing.T) {
 		{"{app=\"a\"} | line_format\u00a0\"x\"", "topk(2, sum by (a)\u2003(rate({app=\"a\"}[5m])))", "syntax error: unexpected IDENTIFIER"},
 		{"{app=\"a\"} | json | unwrap x", "sum_over_time({app=\"a\"} | unwrap x | drop y [5m])", "syntax error: unexpected"},
 		{"{app=\"a\"} | unwrap x | x > 1", "quantile_over_time(.5, {app=\"a\"} | json | unwrap c[1µs])", ""},
+		// A comment between a function's name and its parenthesis (semantics/comment-between-function-and-parenthesis-accepted):
+		// the query keeps its comments and is rejected on every route.
+		{"{app=\"a\"} |= ip # c\n(\"1.2.3.4\")", "rate # c\n({app=\"a\"}[5m])", "syntax error: unexpected IDENTIFIER"},
+		{"{app=\"a\"} | x = ip#c\n(\"1.2.3.4\")", "label_replace # c\n(vector # c\n(1), \"d\", \"$1\", \"a\", \"(.*)\")", "syntax error: unexpected IDENTIFIER"},
+		{"{app=\"a\"} | unwrap bytes # c\n(c)", "sum_over_time({app=\"a\"} | logfmt | unwrap bytes # c\n(c) [5m])", "syntax error: unexpected"},
 	} {
 		for _, rt := range failFastRoutes {
 			query := tc.log
@@ -106,11 +111,52 @@ func TestRejectedQueryNeverReachesVictoriaLogs(t *testing.T) {
 	}
 }
 
+// An ip() line filter or label filter whose pattern holds a NUL byte (written as the escape \x00) or another byte no
+// address holds is Loki's 400 on the routes that take a log query, with no VictoriaLogs call: the translator, which
+// would read the address before the byte, never gets it (FuzzIPLabelFilterNeverKeepsWhatLokiDrops).
+//
+// conformance: semantics/ip-label-filter-invalid-pattern
+func TestRejectedIPPatternNeverReachesVictoriaLogs(t *testing.T) {
+	var upstream atomic.Int64
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstream.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer vl.Close()
+	for _, pattern := range []string{`::\x00!`, `\x00`, `1.2.3.4\x00/24`, `1.2.3.4-\x001.2.3.5`, `1.2.3.4\x7f`} {
+		for _, tc := range []struct{ route, path, query string }{
+			{"query_range", "/loki/api/v1/query_range", `{app="a"} | addr = ip("` + pattern + `")`},
+			{"query", "/loki/api/v1/query", `sum(rate({app="a"} | addr != ip("` + pattern + `") [5m]))`},
+			{"tail", "/loki/api/v1/tail", `{app="a"} | addr = ip("` + pattern + `")`},
+			{"query_range", "/loki/api/v1/query_range", `{app="a"} |= ip("` + pattern + `")`},
+			{"query_range", "/loki/api/v1/query_range", `{app="a"} != ip("` + pattern + `")`},
+			{"query_range", "/loki/api/v1/query_range", `sum(rate({app="a"} |= ip("` + pattern + `")[5m]))`},
+			{"query", "/loki/api/v1/query", `count_over_time({app="a"} != ip("` + pattern + `")[5m])`},
+			{"tail", "/loki/api/v1/tail", `{app="a"} |= ip("` + pattern + `")`},
+		} {
+			t.Run(tc.route+" "+tc.query, func(t *testing.T) {
+				p := newCompatTestProxy(t, vl.URL)
+				params := url.Values{"query": {tc.query}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"60"}, "time": {"1700003600"}, "limit": {"10"}}
+				before := upstream.Load()
+				rec := doCompatProxyRequest(p, tc.path+"?"+params.Encode(), map[string]string{"X-Scope-OrgID": "team-a"})
+				body := rec.Body.String()
+				if rec.Code != http.StatusBadRequest || !strings.Contains(body, "ip: invalid pattern") {
+					t.Errorf("%s: %d %s, want Loki's 400 with the invalid pattern", tc.path, rec.Code, body)
+				}
+				if calls := upstream.Load() - before; calls != 0 {
+					t.Errorf("%s: %d requests reached VictoriaLogs", tc.path, calls)
+				}
+			})
+		}
+	}
+}
+
 // A query that was answered before the scanner read its characters as Loki's lexer does, and is a 400 now (a stage name
 // followed by a character that starts no token), is not served the answer an older binary cached: the compat edge key
 // of a rejected query carries a version, and the key of a valid query does not change.
 //
-// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma, semantics/stage-name-followed-by-more-of-stage, cache-response-key-versions
+// conformance: semantics/logql-unicode-runes, semantics/label-list-trailing-comma, semantics/stage-name-followed-by-more-of-stage, cache-response-key-versions, semantics/comment-between-function-and-parenthesis-accepted
 func TestCompatEdgeDoesNotServeAnAnswerCachedBeforeTheRuneFix(t *testing.T) {
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -130,13 +176,19 @@ func TestCompatEdgeDoesNotServeAnAnswerCachedBeforeTheRuneFix(t *testing.T) {
 			{"sum by (a,) (count_over_time({app=\"a\"}[1m]))", true},
 			{"{app=\"a\"} | drop a,", true},
 			{"{app=\"a\"} | keep a | a .5", true},
+			{"sum # c\n(count_over_time({app=\"a\"}[1m]))", true}, // a comment before a vector aggregation's call
 			{"sum by (a) (count_over_time({app=\"a\"}[1m]))", false},
+			{"sum by (a) (count_over_time({app=\"a\"}[0]))", false}, // a bare 0 range
 			{"{app=\"a\"} |= \"x\u00b2\"", false},
 		} {
 			p := newCompatTestProxy(t, vl.URL)
 			params := url.Values{"query": {tc.query}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"60"}, "time": {"1700003600"}}
 			target := "/loki/api/v1/" + endpoint + "?" + params.Encode()
-			key, ok := p.compatCacheKey(endpoint, httptest.NewRequest(http.MethodGet, target, nil))
+			keyTarget := target
+			if endpoint == "query_range" {
+				keyTarget += "&limit=100" // the default limit the route adds to a range query without one
+			}
+			key, ok := p.compatCacheKey(endpoint, httptest.NewRequest(http.MethodGet, keyTarget, nil))
 			if !ok {
 				t.Fatalf("%s %q: no compat key", endpoint, tc.query)
 			}
