@@ -1,0 +1,18 @@
+{"answer":"200 m1|debug=5 m1|error=10 m1|info=5 m1|unknown=5 m1|warn=5 m2|info=30","id":"0|instant"}
+{"answer":"200 m1|debug=65 m1|error=130 m1|info=65 m1|unknown=65 m1|warn=65 m2|info=390","id":"0|60"}
+{"answer":"200 m1|debug=15 m1|error=30 m1|info=15 m1|unknown=15 m1|warn=15 m2|info=90","id":"0|300"}
+{"answer":"200 m1|debug=128 m1|error=321 m1|info=143 m1|unknown=129 m1|warn=194 m2|info=890","id":"1|instant"}
+{"answer":"200 m1|debug=1687 m1|error=4219 m1|info=1882 m1|unknown=1689 m1|warn=2534 m2|info=11686","id":"1|60"}
+{"answer":"200 m1|debug=388 m1|error=971 m1|info=433 m1|unknown=389 m1|warn=584 m2|info=2690","id":"1|300"}
+{"answer":"200 m1|debug=5 m1|error=10 m1|info=5 m1|unknown=5 m1|warn=5 m2|info=30","id":"2|instant"}
+{"answer":"200 m1|debug=65 m1|error=130 m1|info=65 m1|unknown=65 m1|warn=65 m2|info=390","id":"2|60"}
+{"answer":"200 m1|debug=15 m1|error=30 m1|info=15 m1|unknown=15 m1|warn=15 m2|info=90","id":"2|300"}
+{"answer":"200 m1|debug=7 m1|error=7 m1|info=7 m1|unknown=5 m2|info=7","id":"3|instant"}
+{"answer":"200 m1|debug=96 m1|error=95 m1|info=87 m1|unknown=97 m2|info=104","id":"3|60"}
+{"answer":"200 m1|debug=20 m1|error=21 m1|info=20 m1|unknown=19 m2|info=21","id":"3|300"}
+{"answer":"200 |debug=7 |error=7 |info=14 |unknown=5","id":"4|instant"}
+{"answer":"200 |debug=96 |error=95 |info=191 |unknown=97","id":"4|60"}
+{"answer":"200 |debug=20 |error=21 |info=41 |unknown=19","id":"4|300"}
+{"answer":"200 m1|debug=0.016667 m1|error=0.033333 m1|info=0.016667 m1|unknown=0.016667 m1|warn=0.016667 m2|info=0.1","id":"5|instant"}
+{"answer":"200 m1|debug=0.25 m1|error=0.5 m1|info=0.25 m1|unknown=0.25 m1|warn=0.25 m2|info=1.5","id":"5|60"}
+{"answer":"200 m1|debug=0.05 m1|error=0.1 m1|info=0.05 m1|unknown=0.05 m1|warn=0.05 m2|info=0.3","id":"5|300"}
