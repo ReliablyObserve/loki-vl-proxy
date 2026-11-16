@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
+  accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
+  per-stream series took the stream's `detected_level`.
+- An answer cached before a behaviour change is no longer served for a query written in another spelling of the same
+  query. The version marker that keeps such answers out of the cache is now added for every spelling the LogQL parser
+  reads: keywords and function names in any case (`| KEEP a`, `| UNWRAP n`, `TOPK(`, `SUM BY`, `| JSON`, `| LOGFMT`,
+  `IP("...")`), comments between tokens (a quote inside a comment no longer hides what follows), a grouped label filter
+  (`| (a="b") | (c="d")`), an empty back-quoted string after `!=`, and names written with other Unicode letters. The
+  per-stream detected_level marker also reads `topK` and `bottomK` written with the Kelvin sign (U+212A), and the
+  marker of a parser's unwrap series identity reads a function name written with U+0130 (`avg_over_tİme`). A query spelled one of these ways may miss the cache once after the upgrade; queries spelled as
+  before keep their keys.
 - `absent_over_time` over a zero range (`[0s]`, `[0]`, with or without `offset`) now answers as Loki does: one
   series valued 1 at every step on query_range and at the evaluation time on query, labelled with the selector's
   equality matchers, also under `sum`, `count`, `stddev`, `max without (...)` and the other vector aggregations,
@@ -20,17 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   success, `{"status":"success","data":[]}`, as a Loki that serves data does, without a VictoriaLogs call. It
   answered `400 only label matchers are supported`, the answer of a Loki that has just started with no data; the
   other selector routes keep that 400, as Loki does (semantics/patterns-query-without-selector).
-- An answer cached before a behaviour change is no longer served for a query written in another spelling of the same
-  query. The version marker that keeps such answers out of the cache is now added for every spelling the LogQL parser
-  reads: keywords and function names in any case (`| KEEP a`, `| UNWRAP n`, `TOPK(`, `SUM BY`, `| JSON`, `| LOGFMT`,
-  `IP("...")`), comments between tokens (a quote inside a comment no longer hides what follows), a grouped label filter
-  (`| (a="b") | (c="d")`), an empty back-quoted string after `!=`, and names written with other Unicode letters. The
-  per-stream detected_level marker also reads `topK` and `bottomK` written with the Kelvin sign (U+212A), and the
-  marker of a parser's unwrap series identity reads a function name written with U+0130 (`avg_over_tİme`). A query spelled one of these ways may miss the cache once after the upgrade; queries spelled as
-  before keep their keys.
 
 ### Changed
 
+- Test support: the plan corpus leaves out the request of a registry case that compares only a client error, and six
+  conformance cases for queries Loki rejects now carry an HTTP request the live verifier sends. No proxy behaviour changes.
 - Loki's error answers are recorded from a Loki that holds data. The recorder (`test/errorrecord`) writes a small
   fixture to the Loki and waits until its range metric path serves it (`-ingest`, a step of the weekly
   `error-answers-record` workflow) before it asks the recorded requests, and every row it records carries the state
