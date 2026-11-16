@@ -383,7 +383,7 @@
     "semantics/detected-level-pipes-known-differences | gap:open",
     "semantics/detected-level-pipes-known-differences | query",
     "semantics/detected-level-stream-stats-without-level | compare:observed",
-    "semantics/detected-level-stream-stats-without-level | gap:open",
+    "semantics/detected-level-stream-stats-without-level | gap:fixed",
     "semantics/detected-level-stream-stats-without-level | query",
     "semantics/drop-before-unwrap-stream-label | compare:observed",
     "semantics/drop-before-unwrap-stream-label | gap:open",
@@ -999,6 +999,9 @@
     "semantics/unwrap-in-log-query | compare:observed",
     "semantics/unwrap-in-log-query | gap:fixed",
     "semantics/unwrap-in-log-query | query",
+    "semantics/unwrap-json-extraction-list-parser-error | compare:observed",
+    "semantics/unwrap-json-extraction-list-parser-error | gap:open",
+    "semantics/unwrap-json-extraction-list-parser-error | query",
     "semantics/unwrap-over-time-range-windows | compare:observed",
     "semantics/unwrap-over-time-range-windows | gap:fixed",
     "semantics/unwrap-over-time-range-windows | query",
@@ -1218,6 +1221,7 @@
     "internal/logsql/parser_typed_test.go | architecture-syntax-package-layering",
     "internal/logsql/pipe_math_as_test.go | architecture-syntax-package-layering",
     "internal/logsql/reserved_fields_test.go | semantics/translator-writes-reserved-field-names",
+    "internal/logsql/stream_group_test.go | semantics/detected-level-stream-stats-without-level",
     "internal/lokierr/lokierr_test.go | architecture-syntax-package-layering",
     "internal/lokierr/lokierr_test.go | semantics/error-layer-backend-failure-status",
     "internal/lokierr/lokierr_test.go | semantics/error-layer-backend-text",
@@ -1355,6 +1359,9 @@
     "internal/proxy/detected_level_filter_test.go | severity/detected-level-filter-json-level",
     "internal/proxy/detected_level_keys_gate_test.go | severity-detected-level-derivation",
     "internal/proxy/detected_level_label_probes_test.go | semantics/json-metric-detected-level-derivation",
+    "internal/proxy/detected_level_levelless_oracle_test.go | semantics/detected-level-stream-stats-without-level",
+    "internal/proxy/detected_level_levelless_oracle_test.go | severity-detected-level-derivation",
+    "internal/proxy/detected_level_levelless_test.go | semantics/detected-level-stream-stats-without-level",
     "internal/proxy/detected_level_long_selector_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/detected_level_one_value_test.go | cache-response-key-versions",
     "internal/proxy/detected_level_one_value_test.go | metric-series-identity",
@@ -2893,12 +2900,12 @@
       "any": 35,
       "api": 107,
       "drilldown": 53,
-      "explore": 189,
+      "explore": 190,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 664,
+      "go": 667,
       "playwright": 1
     },
     "page_kinds": {
@@ -2918,7 +2925,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 98,
-    "wired_items": 387
+    "wired_items": 388
   },
   "gates": [
     "A/B shape selection",
