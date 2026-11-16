@@ -1,7 +1,7 @@
 id: range_function-bytes-over-time
 kind: range_function
 logql: "bytes_over_time"
-loki_constant: OpRangeTypeBytes
+source: https://grafana.com/docs/loki/v3.7.x/query/metric_queries/
 generated:
   supported_by_proxy: true
   seen_in:

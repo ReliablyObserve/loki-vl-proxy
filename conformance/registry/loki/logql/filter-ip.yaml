@@ -1,7 +1,7 @@
 id: filter-ip
 kind: filter
 logql: "ip"
-loki_constant: OpFilterIP
+source: https://grafana.com/docs/loki/v3.7.x/query/log_queries/
 generated:
   supported_by_proxy: true
   seen_in:

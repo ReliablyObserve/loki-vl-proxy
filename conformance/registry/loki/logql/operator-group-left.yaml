@@ -1,7 +1,7 @@
 id: operator-group-left
 kind: operator
 logql: "group_left"
-loki_constant: OpGroupLeft
+source: https://grafana.com/docs/loki/v3.7.x/query/query_reference/
 generated:
   supported_by_proxy: true
   seen_in:

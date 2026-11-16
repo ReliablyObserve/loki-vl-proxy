@@ -1,16 +1,16 @@
-id: operator-optypediv
+id: operator-add
 kind: operator
-logql: "/"
-loki_constant: OpTypeDiv
+logql: "+"
+source: https://grafana.com/docs/loki/v3.7.x/query/query_reference/
 generated:
   supported_by_proxy: true
   seen_in:
     - internal/logql/scanner.go
-    - internal/proxy/alerting.go
-    - internal/proxy/backend.go
     - internal/proxy/binary_matching.go
-    - internal/proxy/label_handlers.go
     - internal/proxy/metric_agg.go
+    - internal/proxy/metric_binary.go
+    - internal/proxy/stream_processing.go
+    - internal/proxy/vector_matching.go
 
 semantics: |
   TODO: Loki's exact semantics, including how it treats missing labels,
