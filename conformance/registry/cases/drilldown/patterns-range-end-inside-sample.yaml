@@ -52,3 +52,5 @@ gap:
   proxy: 'lines read up to the end of the last sample'
   planned_test: 'TestPatternSamplesEndNs, TestPatternsRangeEndingInsideASampleCountsItWhole, TestPatternsRangeEndingInsideASampleReusesItsRead, TestPatternsCountsTierRangeEndingInsideASampleReusesItsReads (internal/proxy)'
   clusters: []
+  visual: none
+  visual_reason: 'the visual captures end on whole minutes, which are also sample (10 s) ends, so no capture holds a range ending inside a sample; the fix is proven by the tests above at a sample end minus 1 s and mid-sample, through the state, exact and counts tiers'

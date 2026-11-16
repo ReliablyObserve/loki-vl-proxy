@@ -1811,8 +1811,7 @@
    ],
    "fixes": [
     "drilldown/patterns-full-range-counts",
-    "drilldown/patterns-one-series-per-level",
-    "drilldown/patterns-range-end-inside-sample"
+    "drilldown/patterns-one-series-per-level"
    ]
   },
   {
