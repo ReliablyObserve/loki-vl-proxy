@@ -156,6 +156,56 @@ def fake_binary(directory, body):
     return path
 
 
+class CallsHeaderFlagTest(unittest.TestCase):
+    """-debug-vl-calls-header goes only to a build that knows it: an unknown flag makes the process exit."""
+
+    def test_probe_tells_a_build_that_knows_the_flag_from_one_that_does_not(self):
+        with tempfile.TemporaryDirectory() as d:
+            record = os.path.join(d, "argv")
+            knows = fake_binary(d, f'echo "$@" > {record}; echo "flag: help requested" >&2; exit 1\n')
+            self.assertTrue(stack.probe_calls_header_support(knows))
+            with open(record) as f:
+                self.assertEqual(f.read().split(), ["-debug-vl-calls-header=true", "-help"])
+            old = fake_binary(d, 'echo "flag provided but not defined: -debug-vl-calls-header" >&2; exit 1\n')
+            self.assertFalse(stack.probe_calls_header_support(old))
+            self.assertFalse(stack.probe_calls_header_support(os.path.join(d, "missing")))
+
+    def test_start_proxies_gives_the_flag_to_the_builds_that_know_it_once(self):
+        class P(stack.Proxy):
+            def start(self):
+                pass
+
+        specs = [("release", "/bin/release", "/t1", 1000), ("main", "/bin/main", "/t2", 1002)]
+        proxies = []
+        with tempfile.TemporaryDirectory() as out, \
+                mock.patch.object(stack, "proxy_command", return_value=(["-backend=x", "-debug-vl-calls-header=false"], {})), \
+                mock.patch.object(stack, "source_align_default", return_value=False), \
+                mock.patch.object(stack, "Proxy", P):
+            stack.start_proxies(specs, out, mock.Mock(vl="http://vl"), "svc", proxies, profile="aligned",
+                                supported={"release": False, "main": False}, calls_header={"release": False, "main": True})
+        by = {p.name: p for p in proxies}
+        self.assertEqual(by["main"].args.count("-debug-vl-calls-header=true"), 1)
+        self.assertNotIn("-debug-vl-calls-header=false", by["main"].args)  # the stack file's own value is replaced
+        self.assertTrue(by["main"].calls_header)
+        self.assertFalse(by["release"].calls_header)
+        self.assertEqual(by["release"].args, ["-backend=x", "-debug-vl-calls-header=false"])  # not touched
+
+    def test_a_build_not_asked_about_is_probed(self):
+        class P(stack.Proxy):
+            def start(self):
+                pass
+
+        proxies = []
+        with tempfile.TemporaryDirectory() as out, \
+                mock.patch.object(stack, "proxy_command", return_value=(["-backend=x"], {})), \
+                mock.patch.object(stack, "source_align_default", return_value=False), \
+                mock.patch.object(stack, "probe_calls_header_support", side_effect=lambda binary: binary == "/bin/main"), \
+                mock.patch.object(stack, "Proxy", P):
+            stack.start_proxies([("release", "/bin/release", "/t1", 1000), ("main", "/bin/main", "/t2", 1002)], out,
+                                mock.Mock(vl="http://vl"), "svc", proxies, supported={"release": False, "main": False})
+        self.assertEqual([(p.name, p.calls_header) for p in proxies], [("release", False), ("main", True)])
+
+
 class AlignFlagTest(unittest.TestCase):
     def test_probe_tells_a_build_that_knows_the_flag_from_one_that_does_not(self):
         with tempfile.TemporaryDirectory() as d:

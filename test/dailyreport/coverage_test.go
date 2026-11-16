@@ -109,3 +109,25 @@ func TestBuildCoverage(t *testing.T) {
 		t.Errorf("absent wiring: %v %v", err, s.Missing)
 	}
 }
+
+// The perf smoke's two repeats are both reported: the repeat that moves the window and the exact repeat.
+func TestExactRepeatText(t *testing.T) {
+	if got := exactRepeatText(map[string]any{"rows": 3}); got != "" {
+		t.Errorf("no exact repeat measured: %q", got)
+	}
+	got := exactRepeatText(map[string]any{"exact_rows": float64(30), "exact_without_vl_calls": float64(27), "exact_repeat_vl_calls": float64(4)})
+	if want := " Exact repeats: 30 rows, 27 without a VictoriaLogs call, 4 calls in all."; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	in := fixture(t)
+	in.Smoke = write(t, filepath.Join(t.TempDir(), "smoke.json"), `{"date":"2026-11-14","commit":"c0ffee","rows":120,"comparable":400,"loki_failed":2,
+		"distribution":{"cold":{"rows":200}},"over_2x":[],"ratchet_lost":[],"ratchet_problem":"",
+		"reuse":{"rows":110,"cold_vl_calls":300,"repeat_vl_calls":12,"repeat_without_vl_calls":100,"exact_rows":110,"exact_without_vl_calls":109,"exact_repeat_vl_calls":1},"reuse_lost":[]}`)
+	s, _, err := Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if md := Markdown(s); !strings.Contains(md, "0 rows lost reuse. Exact repeats: 110 rows, 109 without a VictoriaLogs call, 1 calls in all.") {
+		t.Errorf("the markdown does not report the exact repeat:\n%s", md)
+	}
+}

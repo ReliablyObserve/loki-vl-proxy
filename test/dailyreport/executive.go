@@ -462,12 +462,23 @@ func cacheRow(s Summary, v string) row {
 	}
 	if p := s.PerfDaily; p != nil && v == s.VictoriaLogs[len(s.VictoriaLogs)-1] {
 		if pr, ok := p["reuse"].(map[string]any); ok {
-			detail += fmt.Sprintf(" Perf smoke: %v rows, VictoriaLogs calls %v cold and %v on the repeats, %d rows lost reuse.",
+			detail += fmt.Sprintf(" Perf smoke: %v rows, VictoriaLogs calls %v cold and %v on the repeats that move the window, %d rows lost reuse.",
 				pr["rows"], pr["cold_vl_calls"], pr["repeat_vl_calls"], lenOf(p["reuse_lost"]))
+			detail += exactRepeatText(pr)
 		}
 	}
 	r.detail = []string{detail}
 	return r
+}
+
+// exactRepeatText is the perf smoke's exact repeat (the same request asked again at a settled window, expected to
+// call VictoriaLogs 0 times) beside the repeat that moves the window; empty when the run measured none.
+func exactRepeatText(reuse map[string]any) string {
+	rows := toInt(reuse["exact_rows"])
+	if rows == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" Exact repeats: %d rows, %v without a VictoriaLogs call, %v calls in all.", rows, reuse["exact_without_vl_calls"], reuse["exact_repeat_vl_calls"])
 }
 
 func workflowRow(s Summary) row {

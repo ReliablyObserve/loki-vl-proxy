@@ -574,8 +574,8 @@ func markdown(s Summary, executive string) string {
 	}
 	if p := s.PerfDaily; p != nil {
 		if r, ok := p["reuse"].(map[string]any); ok {
-			fmt.Fprintf(&b, "- Perf smoke: %v rows measured, VictoriaLogs calls %v cold and %v on the repeats, %v rows repeat without calling VictoriaLogs, %d rows lost reuse.\n",
-				r["rows"], r["cold_vl_calls"], r["repeat_vl_calls"], r["repeat_without_vl_calls"], lenOf(p["reuse_lost"]))
+			fmt.Fprintf(&b, "- Perf smoke: %v rows measured, VictoriaLogs calls %v cold and %v on the repeats, %v rows repeat without calling VictoriaLogs, %d rows lost reuse.%s\n",
+				r["rows"], r["cold_vl_calls"], r["repeat_vl_calls"], r["repeat_without_vl_calls"], lenOf(p["reuse_lost"]), exactRepeatText(r))
 		}
 	}
 	if e := s.Errors; e != nil {

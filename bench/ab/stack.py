@@ -60,6 +60,10 @@ PROFILE_OVERLAYS = {"aligned": [], "loki-defaults": [LOKI_DEFAULTS_OVERLAY]}
 # The proxy flag that moves a metric query_range request onto the step grid, as Loki's frontend does.
 ALIGN_FLAG = "-align-queries-with-step"
 ALIGN_FLAG_ENABLED = f"{ALIGN_FLAG}=true"
+# Adds X-Loki-VL-Backend-Calls to every read answer: the VictoriaLogs calls the request itself started, so the cache
+# reuse rows count a request's calls without the proxy's background work (reuse.py). Only builds that know it get it.
+CALLS_HEADER_FLAG = "-debug-vl-calls-header"
+CALLS_HEADER_ENABLED = f"{CALLS_HEADER_FLAG}=true"
 GENERATOR = "test/e2e-compat/log-generator.py"
 # Data profile of the backfill. Fixed so every run measures the same density:
 # about 75 lines/s across the generator's services (the live generator's rate
@@ -360,8 +364,8 @@ def build_and_seed(st, builds, seed_args):
     return trees
 
 
-def probe_align_support(binary, timeout=20):
-    """Whether a proxy build knows -align-queries-with-step.
+def probe_flag_support(binary, flag, timeout=20):
+    """Whether a proxy build knows a flag (given as "-name=value").
 
     An unknown flag makes the process exit, so a build is asked before it is given the flag: with the flag and
     -help, a build that knows it stops at -help ("flag: help requested") and one that does not stops at the flag
@@ -370,12 +374,22 @@ def probe_align_support(binary, timeout=20):
     guessing. The exit status is not read: -help exits 1.
     """
     try:
-        out = subprocess.run([binary, ALIGN_FLAG_ENABLED, "-help"], capture_output=True, text=True, timeout=timeout,
+        out = subprocess.run([binary, flag, "-help"], capture_output=True, text=True, timeout=timeout,
                              stdin=subprocess.DEVNULL)
     except (subprocess.SubprocessError, OSError):
         return False
     text = out.stdout + out.stderr
     return "help requested" in text and "provided but not defined" not in text
+
+
+def probe_align_support(binary, timeout=20):
+    """Whether a proxy build knows -align-queries-with-step (probe_flag_support)."""
+    return probe_flag_support(binary, ALIGN_FLAG_ENABLED, timeout)
+
+
+def probe_calls_header_support(binary, timeout=20):
+    """Whether a proxy build knows -debug-vl-calls-header (probe_flag_support)."""
+    return probe_flag_support(binary, CALLS_HEADER_ENABLED, timeout)
 
 
 def source_align_default(tree):
@@ -416,19 +430,27 @@ def like_for_like(profile, align_state):
     return profile_check(profile) != "aligned" or align_state == "on"
 
 
-def start_proxies(specs, out, st, service, proxies, profile="aligned", supported=None):
+def start_proxies(specs, out, st, service, proxies, profile="aligned", supported=None, calls_header=None):
     """Start (name, binary, tree, port) builds with their tree's stack flags for `profile`; appends to `proxies` first.
 
     supported maps a build's name to whether its binary knows -align-queries-with-step (probe_align_support);
     each started Proxy records its `align` state (align_args). Each profile has its own work directory and log.
+    calls_header maps a build's name to whether its binary knows -debug-vl-calls-header (probe_calls_header_support,
+    asked when not given): a build that does is started with it, so each of its answers carries the request's own
+    VictoriaLogs call count; one that does not is counted by the process-wide metrics. Each Proxy records it.
     """
     supported = supported if supported is not None else {name: probe_align_support(binary) for name, binary, _, _ in specs}
+    calls_header = calls_header if calls_header is not None else {
+        name: probe_calls_header_support(binary) for name, binary, _, _ in specs}
     for name, binary, tree, port in specs:
         work = os.path.join(out, f"work-{name}-{profile}")
         os.makedirs(work, exist_ok=True)
         cmd, env = proxy_command(tree, service, port, st.vl, work)
         cmd, state = align_args(cmd, profile, supported[name], source_align_default(tree))
+        if calls_header.get(name):
+            cmd = [a for a in cmd if a.partition("=")[0] != CALLS_HEADER_FLAG] + [CALLS_HEADER_ENABLED]
         proxy = Proxy(name, binary, cmd, env, port, out, profile, state)
+        proxy.calls_header = bool(calls_header.get(name))
         proxies.append(proxy)  # before start(): a start that fails is still stopped
         proxy.start()
 
@@ -471,6 +493,7 @@ class Proxy:
     def __init__(self, name, binary, args, env, port, log_dir, profile="aligned", align="off"):
         self.name, self.binary, self.args, self.env, self.port = name, binary, args, env, port
         self.profile, self.align = profile, align  # the Loki profile it runs for, and align_args' state
+        self.calls_header = False  # started with -debug-vl-calls-header (start_proxies)
         self.log_path = os.path.join(log_dir, f"proxy-{name}-{profile}.log")
         self.proc = None
         self.url = f"http://127.0.0.1:{port}"

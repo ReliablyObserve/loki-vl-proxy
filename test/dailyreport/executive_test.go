@@ -79,7 +79,8 @@ func day(t testing.TB, today bool) (Summary, *CasesFile) {
 	s.Parity = map[string]any{"clusters": 5, "requests": 40, "unclaimed": 2, "exit": 0, "unclaimed_ids": []string{"c1", "c2"},
 		"verdicts": map[string]any{"same": 20, "differ": 10, "both_empty": 8, "blocked": 2}}
 	s.PerfDaily = map[string]any{"date": "2026-11-14", "rows": 30, "comparable": 55, "ratchet_lost": []any{}, "reuse_lost": []any{},
-		"reuse": map[string]any{"rows": 30, "cold_vl_calls": 50, "repeat_vl_calls": 40, "repeat_without_vl_calls": 3},
+		"reuse": map[string]any{"rows": 30, "cold_vl_calls": 50, "repeat_vl_calls": 40, "repeat_without_vl_calls": 3,
+			"exact_rows": 30, "exact_repeat_vl_calls": 4, "exact_without_vl_calls": 27},
 		"distribution": map[string]any{
 			"cold": map[string]any{"rows": 20, "green": 17, "below": 8, "close": 9, "between": 2, "above": 1},
 			"warm": map[string]any{"rows": 35, "green": 35, "below": 5, "close": 30, "between": 0, "above": 0}},

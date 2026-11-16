@@ -35,7 +35,7 @@ A check is one area of this table at its target. Counted items are the units of 
 - Daily perf smoke, warm: 35 rows, below Loki 5, close 30, 1-2x 0, above 2x 0 (green = below + close).
 - Weekly perf (measured 2026-11-09): 100 shape x range pairs, faster 60, on par 30, slower 10; 3 on the above-2x list.
 - Cache reuse, VictoriaLogs v1.49.0: 5 repeats reused of 5 measured, 1 not measured; VictoriaLogs calls 9 cold, 0 on the repeats. Counted per request for 5 repeats and by process-wide metrics for 0; the proxy's background calls around the repeats (3) are not in the count.
-- Cache reuse, VictoriaLogs v1.53.0: 5 repeats reused of 5 measured, 1 not measured; VictoriaLogs calls 9 cold, 0 on the repeats. Counted per request for 5 repeats and by process-wide metrics for 0; the proxy's background calls around the repeats (3) are not in the count. Perf smoke: 30 rows, VictoriaLogs calls 50 cold and 40 on the repeats, 0 rows lost reuse.
+- Cache reuse, VictoriaLogs v1.53.0: 5 repeats reused of 5 measured, 1 not measured; VictoriaLogs calls 9 cold, 0 on the repeats. Counted per request for 5 repeats and by process-wide metrics for 0; the proxy's background calls around the repeats (3) are not in the count. Perf smoke: 30 rows, VictoriaLogs calls 50 cold and 40 on the repeats that move the window, 0 rows lost reuse. Exact repeats: 30 rows, 27 without a VictoriaLogs call, 4 calls in all.
 - Scheduled workflows: 1 pending their first scheduled run, not counted and not red: new-weekly.yaml.
 
 #### Loki side vs VictoriaLogs side
