@@ -399,7 +399,7 @@ The Docker-backed `test/e2e-compat` suite now runs as five functional PR shards 
 | Shard | Primary scope |
 |---|---|
 | `e2e-compat (core)` | `TestCompat_*`, `TestExtended_*`, `TestChaining_*`, `TestAlertingCompat_*`, Explore HTTP contracts, `TestLokiFunctions_*`, datasource catalog/health, proxy compatibility surface, pinned matrix vs compose check |
-| `e2e-compat (drilldown)` | `TestDrilldown_*` contracts including runtime-family checks, index statistics/volume, Drilldown limits, bounded 24h–7d chunked-merge replay, cluster/level filter features, Loki/Drilldown/VL track scores |
+| `e2e-compat (drilldown)` | `TestDrilldown_*` contracts including runtime-family checks, index statistics/volume, Drilldown limits, long-range pieces compared with Loki (24h–7d), cluster/level filter features, Loki/Drilldown/VL track scores |
 | `e2e-compat (otel-edge)` | OTel label translation, structured metadata, underscore-proxy surfaces, label dedup/translation, `TestEdge_*`, `TestComplex_*` |
 | `e2e-compat (tail-multitenancy)` | multi-tenant behavior, tail transport semantics, admin/analytics endpoints, security headers, metrics, gzip and unsupported-codec fallback parity, response-shape and edge checks |
 | `e2e-compat (semantics)` | query semantics matrix and operations inventory, `TestOperationsMatrix_*`, `TestLogQL_Exhaustive_*`, `TestPipeline_*`, range metric compatibility, Grafana clickout parity, `TestMissingOps_*` |
@@ -416,11 +416,15 @@ The exemptions distinguish local fixture/transport helpers from manual latency,
 dense-pattern and high-cardinality memory harnesses; selector reachability does
 not prove that a test passed or that a runtime fixture was nonempty.
 
-The chunked-merge replay seeds 721 records over 60h in a private stream, within
-the stack's 72h retention. Its 24h, 25h, 48h and 7d requested windows exercise
-Grafana's newest-first splitting and frame merging without a UI generator. A
-missing fixture fails the check rather than skipping the test. The 7d request
-exercises empty older chunks; it does not claim seven days of retained data.
+The long-range pieces check seeds the same lines into Loki and VictoriaLogs (two
+pods over 60h in a private app, within the stack's 72h retention), waits until
+Loki's range path counts every line, and compares the proxy's answer for each
+piece a client can ask for (the whole 24h, 25h, 48h and 7d ranges, day-long
+pieces with starts off the step grid, short first and last pieces) with Loki's
+answer to the same request. A missing fixture fails the check rather than
+skipping the test. The 7d request covers empty older pieces; it does not claim
+seven days of retained data. How Grafana itself splits and joins the pieces is
+observed in the e2e-ui explore-core shard (`explore-long-range-pieces.spec.ts`).
 
 Stack startup now uses [`wait_e2e_stack.sh`](../scripts/ci/wait_e2e_stack.sh) instead of `docker compose --wait` or fixed sleeps. That avoids false failures from services without Docker healthchecks and lets UI and compat jobs share the same readiness logic.
 

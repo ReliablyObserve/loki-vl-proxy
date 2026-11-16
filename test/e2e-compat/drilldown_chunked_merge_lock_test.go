@@ -1,166 +1,209 @@
 //go:build e2e
 
-// E2E lock-in for the Drilldown / Explore chunked-merge fix.
-//
-// Replays exactly what Grafana's Loki datasource does at 24h+ time ranges
-// for a metric range query:
-//
-//   1. Slice the requested range with `splitTimeRange(start, end, step,
-//      oneDayMs)` — see Grafana core
-//      `public/app/plugins/datasource/loki/metricTimeSplitting.ts`.
-//      Aligned-duration chunks of 24h-step, plus a residual chunk whose
-//      range can be < step.
-//
-//   2. Fire each sub-request at the proxy in NEWEST-FIRST order (matches
-//      Grafana's `runSplitGroupedQueries` recursion).
-//
-//   3. Merge the responses with the same `mergeFrames + closestIdx + splice`
-//      algorithm from Grafana core
-//      `public/app/plugins/datasource/loki/mergeResponses.ts`.
-//
-//   4. Assert the merged frame does NOT have a right-edge spike. Threshold:
-//      the rightmost N×1h bin holds < 40% of all nonzero timestamps.
-//
-// The replay validates the END-TO-END contract on real ingested data, so a
-// future change that breaks any single layer (routing, leftover suppression,
-// per-chunk axis trimming, exact series) shows up as a real-stack spike. Unit-only
-// locks live in `internal/proxy/drilldown_regression_lock_test.go`.
-
 package e2e_compat
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
+	"reflect"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
 
-const (
-	chunkLockStep   = 120 * time.Second
-	chunkLockOneDay = 24 * time.Hour
+// A Grafana client loads a metric range longer than a day in pieces, one request per piece, and joins the pieces'
+// frames in the browser (test/e2e-ui explore-long-range-pieces.spec.ts observes it through the stack's Grafana).
+// The joined chart is Loki's when every piece's answer is Loki's answer to the same request, whatever the pieces
+// are and however the client joins them. These checks seed one bounded fixture into Loki and VictoriaLogs and
+// compare the proxy's answer for each piece with Loki's: the whole ranges, day-long pieces with starts off the step
+// grid, and the short first or last piece (shorter than a step, one step, just over). Logs Drilldown's piece
+// shorter than one step is the documented exception (TestE2ELock_DrilldownChunkedMerge_LeftoverChunkSuppressed).
 
-	// Right-edge tolerance — what fraction of nonzero timestamps may sit in
-	// the rightmost bin without it being called a "spike". The 2026-06 regression
-	// produced > 90% (every value at the single rightmost timestamp), so the
-	// threshold here just needs to be tight enough to catch that and any future
-	// recurrence — not so tight that the irreducible "1h leftover" bump from
-	// Grafana querySplitting for ranges like 25h (24h + 1h chunks) triggers it.
-	//
-	// We accept the irreducible bump because the proxy can't safely suppress an
-	// hour-scale leftover chunk — a user legitimately querying a 1h Drilldown
-	// view would lose all data. The 320-vs-50 spike the user saw was the
-	// 1-bucket residual; that case is suppressed by hits-leftover-suppressed.
-	chunkLockRightBinPx = 0.65
-)
+const chunkLockStep = 120 * time.Second
 
-// TestE2ELock_DrilldownChunkedMerge_NoRightEdgeSpike replays Grafana's
-// querySplitting + mergeFrames for the four time ranges that broke during
-// the 2026-06 incident (24h, 25h, 2d, 7d) against the live VL stack via
-// the vmauth proxy and asserts no right-edge spike for either Drilldown
-// or Explore source tags.
+// chunkLockPiece is one request: its bounds and the client it comes from.
+type chunkLockPiece struct {
+	name       string
+	start, end time.Time
+}
+
+func chunkLockPieces(evaluation time.Time) []chunkLockPiece {
+	const day = 24 * time.Hour
+	var pieces []chunkLockPiece
+	for _, h := range []int{24, 25, 48, 168} {
+		pieces = append(pieces, chunkLockPiece{fmt.Sprintf("whole-%dh", h), evaluation.Add(-time.Duration(h) * time.Hour), evaluation})
+	}
+	for _, off := range []time.Duration{0, 37 * time.Second, 3*time.Hour + 11*time.Second} {
+		start := evaluation.Add(-2*day + off)
+		for i := 0; i < 2; i++ {
+			s := start.Add(time.Duration(i) * day)
+			e := s.Add(day - chunkLockStep)
+			if e.After(evaluation) {
+				e = evaluation
+			}
+			pieces = append(pieces, chunkLockPiece{fmt.Sprintf("day-piece-%d-off%s", i, off), s, e})
+		}
+	}
+	for _, n := range []time.Duration{30 * time.Second, 119 * time.Second, 120 * time.Second, 121 * time.Second, 239 * time.Second} {
+		pieces = append(pieces, chunkLockPiece{fmt.Sprintf("short-end-%s", n), evaluation.Add(-n), evaluation})
+		pieces = append(pieces, chunkLockPiece{fmt.Sprintf("short-start-%s", n), evaluation.Add(-day), evaluation.Add(-day + n)})
+	}
+	return pieces
+}
+
+// TestE2ELock_DrilldownChunkedMerge_PiecesMatchLoki: every piece's answer, for a Logs Drilldown, a Grafana and an API
+// client, equals Loki's answer to the same request (series, sample times and values), except Logs Drilldown's piece
+// shorter than one step, which must be the empty matrix.
 //
-// If a future PR regresses leftover-chunk suppression or routes a
-// chunk through a different code path than the rest, this test fails.
-func TestE2ELock_DrilldownChunkedMerge_NoRightEdgeSpike(t *testing.T) {
+// conformance: drilldown/long-range-pieces-answer-like-loki, loki_api_v1_query_range
+func TestE2ELock_DrilldownChunkedMerge_PiecesMatchLoki(t *testing.T) {
 	waitForReady(t, proxyVmauthURL+"/ready", 30*time.Second)
-	// A fresh CI stack has no continuous generator or long history. Seed a
-	// bounded, private stream rather than passing through an empty-data skip.
 	query, evaluation := seedChunkMergeHistory(t)
-
-	for _, source := range []string{"drilldown", "grafana-ua"} {
-		for _, rc := range []struct {
-			name  string
-			hours int
-			bins  int
-		}{
-			{"24h", 24, 12},
-			{"25h", 25, 12},
-			{"2d", 48, 12},
-			{"7d", 168, 14},
-		} {
-			t.Run(fmt.Sprintf("%s_%s", source, rc.name), func(t *testing.T) {
-				now := evaluation
-				chunks := splitMetricTimeRange(now.Add(-time.Duration(rc.hours)*time.Hour), now,
-					chunkLockStep, chunkLockOneDay)
-				if len(chunks) == 0 {
-					t.Fatalf("splitMetricTimeRange returned no chunks for %dh", rc.hours)
-				}
-
-				// Fire newest-first to match Grafana's runSplitGroupedQueries.
-				var merged *mergedFrame
-				for i := len(chunks) - 1; i >= 0; i-- {
-					f := fetchChunkAsMergedFrame(t, proxyVmauthURL, query,
-						chunks[i].start, chunks[i].end, chunkLockStep, source)
-					if f == nil {
-						continue
+	for _, source := range []string{"drilldown", "grafana-ua", "api"} {
+		for _, p := range chunkLockPieces(evaluation) {
+			t.Run(source+"/"+p.name, func(t *testing.T) {
+				loki := chunkLockQuery(t, lokiURL, query, p, "api")
+				proxy := chunkLockQuery(t, proxyVmauthURL, query, p, source)
+				if source == "drilldown" && p.end.Sub(p.start) < chunkLockStep {
+					if len(proxy) != 0 {
+						t.Fatalf("Logs Drilldown piece shorter than a step: proxy answered %d samples, want the empty matrix", len(proxy))
 					}
-					if merged == nil {
-						merged = f
-					} else {
-						mergeFrames(merged, f)
-					}
+					return
 				}
-				if merged == nil || len(merged.series) == 0 {
-					t.Fatalf("missing seeded chunk-merge history for %dh", rc.hours)
+				if len(loki) == 0 && p.end.Sub(p.start) >= time.Hour {
+					t.Fatalf("Loki answered no samples for %s: the fixture is not visible to Loki's range path yet", p.name)
 				}
-
-				rep := rightEdgeFraction(merged, rc.bins)
-				if rep > chunkLockRightBinPx {
-					t.Errorf("right-edge spike: rightmost 1/%d bin holds %.0f%% of nonzero timestamps (>%.0f%% threshold) — chunked-merge regression for source=%s range=%s",
-						rc.bins, rep*100, chunkLockRightBinPx*100, source, rc.name)
+				if !reflect.DeepEqual(proxy, loki) {
+					t.Errorf("%s [%s, %s]: proxy %d samples, Loki %d\nproxy %v\nLoki  %v", p.name, p.start.Format(time.RFC3339), p.end.Format(time.RFC3339), len(proxy), len(loki), proxy, loki)
 				}
 			})
 		}
 	}
 }
 
-// Sixty hours fit the stack's 72h retention and give the 7d merge replay real
-// points in multiple chunks without inflating the fixture to a full week.
-func seedChunkMergeHistory(t *testing.T) (string, time.Time) {
+// chunkLockQuery asks base for one piece with the headers of a client and returns the matrix as
+// `{labels}@unix-seconds` -> value text.
+func chunkLockQuery(t *testing.T, base, query string, p chunkLockPiece, source string) map[string]string {
 	t.Helper()
-	evaluation := time.Now().UTC().Truncate(time.Minute).Add(-5 * time.Minute)
-	app := fmt.Sprintf("chunk-merge-%d", time.Now().UnixNano())
-	var body strings.Builder
-	for at := evaluation.Add(-60 * time.Hour); !at.After(evaluation); at = at.Add(5 * time.Minute) {
-		line, err := json.Marshal(map[string]string{
-			"_time": at.Format(time.RFC3339Nano), "_msg": "bounded chunk merge fixture",
-			"app": app, "namespace": "prod", "pod": "chunk-merge-pod", "level": "info",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		body.Write(line)
-		body.WriteByte('\n')
-	}
-	resp, err := http.Post(vlURL+"/insert/jsonline?_stream_fields=app,namespace,pod,level", "application/stream+json", strings.NewReader(body.String()))
+	params := url.Values{}
+	params.Set("query", query)
+	params.Set("start", strconv.FormatInt(p.start.UnixNano(), 10))
+	params.Set("end", strconv.FormatInt(p.end.UnixNano(), 10))
+	params.Set("step", strconv.FormatInt(int64(chunkLockStep.Seconds()), 10))
+	req, err := http.NewRequest(http.MethodGet, base+"/loki/api/v1/query_range?"+params.Encode(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		data, _ := io.ReadAll(resp.Body)
-		t.Fatalf("seed chunk history: %d %s", resp.StatusCode, data)
+	req.Header.Set("X-Scope-OrgID", "0")
+	switch source {
+	case "drilldown":
+		req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+	case "grafana-ua":
+		req.Header.Set("User-Agent", "Grafana/13.3.0")
 	}
-	forceVLFlush(t)
-	return fmt.Sprintf(`sum by (pod) (count_over_time({app="%s",namespace="prod",pod!=""}[2m]))`, app), evaluation
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("query_range %s: %v", base, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("query_range %s %s: status %d: %s", base, p.name, resp.StatusCode, body)
+	}
+	var answer struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][2]any          `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+		Warnings []string `json:"warnings"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if err := dec.Decode(&answer); err != nil {
+		t.Fatalf("decode %s: %v: %s", base, err, body)
+	}
+	if answer.Status != "success" || answer.Data.ResultType != "matrix" || len(answer.Warnings) > 0 {
+		t.Fatalf("query_range %s %s: status=%s type=%s warnings=%v", base, p.name, answer.Status, answer.Data.ResultType, answer.Warnings)
+	}
+	out := map[string]string{}
+	for _, s := range answer.Data.Result {
+		key := canonicalMetricKey(chunkLockAnyMap(s.Metric))
+		for _, v := range s.Values {
+			out[fmt.Sprintf("%s@%v", key, v[0])] = fmt.Sprint(v[1])
+		}
+	}
+	return out
 }
 
-// TestE2ELock_DrilldownChunkedMerge_LeftoverChunkSuppressed verifies that
-// the proxy explicitly emits `X-Proxy-Drilldown-Path: hits-leftover-suppressed`
-// for the tiny residual chunk Logs Drilldown sends at the trailing edge of a
-// 24h-aligned split. This is the safety net that prevents the right-edge
-// spike from re-appearing if any other layer regresses — as long as the
-// residual is suppressed, mergeFrames has no 1-bucket block to glue.
+func chunkLockAnyMap(m map[string]string) map[string]interface{} {
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+// seedChunkMergeHistory writes the same 60 hours of lines (two pods, one line every 5 and 7 minutes, inside the
+// stack's 72h retention and Loki's 168h reject_old_samples_max_age) to Loki and to VictoriaLogs through the Loki
+// push API, in a private app, and waits until Loki's range path counts every line. It returns the query and the
+// evaluation time, the end of every whole range (on the step grid).
+func seedChunkMergeHistory(t *testing.T) (string, time.Time) {
+	t.Helper()
+	evaluation := time.Now().UTC().Truncate(chunkLockStep).Add(-5 * chunkLockStep)
+	app := fmt.Sprintf("chunk-merge-%d", time.Now().UnixNano())
+	var streams []any
+	lines := 0
+	for _, pod := range []struct {
+		name  string
+		every time.Duration
+	}{{"chunk-merge-a", 5 * time.Minute}, {"chunk-merge-b", 7 * time.Minute}} {
+		var values [][2]string
+		for at := evaluation.Add(-60 * time.Hour).Add(300 * time.Millisecond); at.Before(evaluation); at = at.Add(pod.every) {
+			values = append(values, [2]string{strconv.FormatInt(at.UnixNano(), 10), "bounded chunk merge fixture"})
+		}
+		lines += len(values)
+		streams = append(streams, map[string]any{"stream": map[string]string{"app": app, "namespace": "prod", "pod": pod.name}, "values": values})
+	}
+	body := dlJSON(map[string]any{"streams": streams})
+	dlPost(t, lokiURL+"/loki/api/v1/push", "application/json", body)
+	dlPost(t, vlURL+"/insert/loki/api/v1/push?disable_message_parsing=1", "application/json", body)
+	forceVLFlush(t)
+	query := fmt.Sprintf(`sum by (pod) (count_over_time({app=%q,namespace="prod",pod!=""}[2m]))`, app)
+
+	// Loki's range path can answer empty for a stream it has just received (its sharding reads the ingester's
+	// index statistics): wait until it counts every line.
+	count := fmt.Sprintf(`sum(count_over_time({app=%q}[61h]))`, app)
+	deadline := time.Now().Add(4 * time.Minute)
+	var last string
+	for time.Now().Before(deadline) {
+		got := chunkLockQuery(t, lokiURL, count, chunkLockPiece{"fixture-count", evaluation, evaluation}, "api")
+		for _, v := range got {
+			last = v
+		}
+		if last == strconv.Itoa(lines) {
+			return query, evaluation
+		}
+		time.Sleep(2 * time.Second)
+	}
+	t.Fatalf("Loki's range path counts %q of %d fixture lines", last, lines)
+	return "", time.Time{}
+}
+
+// TestE2ELock_DrilldownChunkedMerge_LeftoverChunkSuppressed: the proxy answers Logs Drilldown's piece shorter than
+// one step with the empty matrix and `X-Proxy-Drilldown-Path: hits-leftover-suppressed` (documented, see
+// docs/KNOWN_ISSUES.md). Joined with the other pieces, that piece's one-bucket answer showed as a spike on one edge
+// of Logs Drilldown's charts at 24h and longer.
 //
-// Only Logs Drilldown's residual is suppressed (isQuerySplitResidualParams
-// reads its X-Query-Tags source). Any other Grafana client's residual is
-// answered as Loki answers it: with align_queries_with_step, on the step grid.
+// Only Logs Drilldown's piece is suppressed (isQuerySplitResidualParams reads its X-Query-Tags source). Any other
+// Grafana client's piece is answered as Loki answers it: with align_queries_with_step, on the step grid.
 func TestE2ELock_DrilldownChunkedMerge_LeftoverChunkSuppressed(t *testing.T) {
 	waitForReady(t, proxyVmauthURL+"/ready", 30*time.Second)
 
@@ -238,231 +281,4 @@ func TestE2ELock_DrilldownChunkedMerge_LeftoverChunkSuppressed(t *testing.T) {
 			}
 		})
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Embedded port of Grafana's mergeFrames + closestIdx + splice algorithm.
-// Keep self-contained — DO NOT delete or "simplify" without re-reading
-// public/app/plugins/datasource/loki/mergeResponses.ts.
-// ---------------------------------------------------------------------------
-
-type mergedFrame struct {
-	times  []int64            // milliseconds
-	series map[string][]int64 // label value -> per-timestamp value
-}
-
-type chunkWindow struct {
-	start time.Time
-	end   time.Time
-}
-
-// splitMetricTimeRange replicates metricTimeSplitting.ts splitTimeRange.
-func splitMetricTimeRange(start, end time.Time, step, idealRange time.Duration) []chunkWindow {
-	stepMs := step.Milliseconds()
-	idealMs := idealRange.Milliseconds()
-	startMs := start.UnixMilli()
-	endMs := end.UnixMilli()
-	if idealMs < stepMs {
-		return []chunkWindow{{start: start, end: end}}
-	}
-	aligned := (idealMs / stepMs) * stepMs
-	alignedStart := startMs - (startMs % stepMs)
-	var out []chunkWindow
-	for cs := alignedStart; cs < endMs; cs += aligned {
-		ce := cs + aligned - stepMs
-		if ce > endMs {
-			ce = endMs
-		}
-		out = append(out, chunkWindow{
-			start: time.UnixMilli(cs).UTC(),
-			end:   time.UnixMilli(ce).UTC(),
-		})
-	}
-	return out
-}
-
-func fetchChunkAsMergedFrame(t *testing.T, base, query string, start, end time.Time, step time.Duration, source string) *mergedFrame {
-	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, base+"/loki/api/v1/query_range", nil)
-	if err != nil {
-		t.Fatalf("build request: %v", err)
-	}
-	q := url.Values{}
-	q.Set("query", query)
-	q.Set("start", strconv.FormatInt(start.Unix(), 10))
-	q.Set("end", strconv.FormatInt(end.Unix(), 10))
-	q.Set("step", strconv.FormatInt(int64(step.Seconds()), 10))
-	req.URL.RawQuery = q.Encode()
-	req.Header.Set("X-Scope-OrgID", "default")
-	switch source {
-	case "drilldown":
-		req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
-	case "grafana-ua":
-		req.Header.Set("User-Agent", "Grafana/11.5.0")
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("proxy returned %d for chunk %s..%s: %s", resp.StatusCode,
-			start.Format(time.RFC3339), end.Format(time.RFC3339), body)
-	}
-	// Skip suppressed leftovers — they intentionally return an empty matrix.
-	if resp.Header.Get("X-Proxy-Drilldown-Path") == "hits-leftover-suppressed" {
-		return nil
-	}
-	body, _ := io.ReadAll(resp.Body)
-	var parsed struct {
-		Data struct {
-			Result []struct {
-				Metric map[string]string `json:"metric"`
-				Values [][2]any          `json:"values"`
-			} `json:"result"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		t.Fatalf("parse chunk response: %v\nbody: %s", err, body)
-	}
-	if len(parsed.Data.Result) == 0 {
-		return nil
-	}
-	// Like Loki, the proxy leaves out the steps where a series has no sample,
-	// so series carry different timestamps. The chunk's frame spans every
-	// timestamp of the chunk, a series holding 0 where it has no sample.
-	f := &mergedFrame{series: map[string][]int64{}}
-	seen := map[int64]bool{}
-	for _, s := range parsed.Data.Result {
-		for _, v := range s.Values {
-			ts, _ := v[0].(float64)
-			if ms := int64(ts) * 1000; !seen[ms] {
-				seen[ms] = true
-				f.times = append(f.times, ms)
-			}
-		}
-	}
-	sort.Slice(f.times, func(i, j int) bool { return f.times[i] < f.times[j] })
-	index := make(map[int64]int, len(f.times))
-	for i, ms := range f.times {
-		index[ms] = i
-	}
-	for _, s := range parsed.Data.Result {
-		var label string
-		for _, v := range s.Metric {
-			label = v
-			break
-		}
-		vals := make([]int64, len(f.times))
-		for _, v := range s.Values {
-			ts, _ := v[0].(float64)
-			vs, _ := v[1].(string)
-			n, _ := strconv.ParseInt(vs, 10, 64)
-			vals[index[int64(ts)*1000]] = n
-		}
-		f.series[label] = vals
-	}
-	return f
-}
-
-func closestIdx(target int64, arr []int64) int {
-	if len(arr) == 0 {
-		return -1
-	}
-	if target <= arr[0] {
-		return 0
-	}
-	if target >= arr[len(arr)-1] {
-		return len(arr) - 1
-	}
-	lo, hi := 0, len(arr)-1
-	for hi-lo > 1 {
-		mid := (lo + hi) / 2
-		if arr[mid] < target {
-			lo = mid
-		} else {
-			hi = mid
-		}
-	}
-	if target-arr[lo] <= arr[hi]-target {
-		return lo
-	}
-	return hi
-}
-
-func resolveIdx(destTimes []int64, srcTime int64) int {
-	idx := closestIdx(srcTime, destTimes)
-	if idx < 0 {
-		return 0
-	}
-	if srcTime > destTimes[idx] {
-		return idx + 1
-	}
-	return idx
-}
-
-func mergeFrames(dest, src *mergedFrame) {
-	for i, st := range src.times {
-		dIdx := resolveIdx(dest.times, st)
-		exists := dIdx < len(dest.times) && dest.times[dIdx] == st
-		for label := range src.series {
-			if _, ok := dest.series[label]; !ok {
-				dest.series[label] = make([]int64, len(dest.times))
-			}
-		}
-		for label, sv := range src.series {
-			if exists {
-				dest.series[label][dIdx] += sv[i]
-			} else {
-				dest.series[label] = append(dest.series[label][:dIdx],
-					append([]int64{sv[i]}, dest.series[label][dIdx:]...)...)
-			}
-		}
-		if !exists {
-			dest.times = append(dest.times[:dIdx],
-				append([]int64{st}, dest.times[dIdx:]...)...)
-			for label := range dest.series {
-				if _, inSrc := src.series[label]; !inSrc {
-					dest.series[label] = append(dest.series[label][:dIdx],
-						append([]int64{0}, dest.series[label][dIdx:]...)...)
-				}
-			}
-		}
-	}
-}
-
-func rightEdgeFraction(f *mergedFrame, binCount int) float64 {
-	if len(f.times) == 0 {
-		return 0
-	}
-	nz := map[int64]struct{}{}
-	for _, vals := range f.series {
-		for i, v := range vals {
-			if v != 0 && i < len(f.times) {
-				nz[f.times[i]] = struct{}{}
-			}
-		}
-	}
-	if len(nz) == 0 {
-		return 0
-	}
-	timesSorted := make([]int64, 0, len(nz))
-	for ts := range nz {
-		timesSorted = append(timesSorted, ts)
-	}
-	sort.Slice(timesSorted, func(i, j int) bool { return timesSorted[i] < timesSorted[j] })
-	span := f.times[len(f.times)-1] - f.times[0]
-	if span <= 0 {
-		return 0
-	}
-	bins := make([]int, binCount)
-	for ts := range nz {
-		b := int(float64(ts-f.times[0]) / float64(span) * float64(binCount))
-		if b >= binCount {
-			b = binCount - 1
-		}
-		bins[b]++
-	}
-	return float64(bins[binCount-1]) / float64(len(nz))
 }
