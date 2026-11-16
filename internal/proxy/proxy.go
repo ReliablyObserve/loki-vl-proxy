@@ -2826,7 +2826,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	orderedHandled := p.handleOrderedJSONMetric(orderedWriter, r, start, logqlQuery, true)
 	if orderedCapture != nil {
-		if orderedHandled && r.Context().Err() == nil && !unwrapLookup.failed() && compatCacheCaptureAllowed(orderedCapture.code, orderedCapture.flushed, orderedCapture.Header()) {
+		if orderedHandled && r.Context().Err() == nil && !unwrapAnswerFailed(r.Context(), unwrapLookup) && compatCacheCaptureAllowed(orderedCapture.code, orderedCapture.flushed, orderedCapture.Header()) {
 			if body := orderedCapture.CapturedBody(); len(body) > 0 {
 				p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), body...), seriesScope), queryRangeResponseCacheTTL)
 			}
@@ -2976,7 +2976,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if unwrapLookup.failed() {
+	if unwrapAnswerFailed(r.Context(), unwrapLookup) {
 		cacheable = false // the answer sent is Loki's error, not this body
 	}
 	if capture != nil {

@@ -7,19 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Performance
 
-- `-json-line-fields-as-line-keys` (Helm `extraArgs.json-line-fields-as-line-keys`, off by default): for JSON lines
-  pushed to VictoriaLogs' Loki push route without `disable_message_parsing=1`, which VictoriaLogs stores as one field
-  per key with its missing-message placeholder in `_msg`, the proxy reads every stored field of such a row as a key of
-  the row's JSON line, as Loki holds the pushed line. The fields are no labels until `| json` (or a json extraction
-  list) reads them, `| logfmt` reads none of them, a label filter on such a key with no parser drops the line, and a
-  query that unwraps or filters a label no stage can give such a line (after `| logfmt` or without a parser) leaves
-  those rows out in VictoriaLogs, so `max_over_time({...} | logfmt amount | unwrap amount [5m])` answers only the
-  logfmt streams. `| json` metric queries read such a row as a valid JSON object instead of answering
-  `JSONParserErr`. VictoriaLogs stores structured metadata pushed beside such a line among the line's keys, so the
-  flag hides it: leave it off when such pushes carry structured metadata. Pushing with `disable_message_parsing=1`
-  stays the supported setup and needs no flag. With the flag off nothing changes.
+- A cold `/patterns` request for a busy selector (the first Logs Drilldown patterns view of a service or an
+  environment) mines its lines on several cores. When the read holds at least 40,000 lines, the lines VictoriaLogs
+  answers are decoded on worker goroutines and each stream is mined by one worker, in the order it was read. The
+  miners are then merged in the order one goroutine makes them, so the patterns, samples and the pattern state's
+  snapshot stay byte for byte what they were. A worker is a decoding and a mining goroutine; the workers of all
+  requests together never exceed GOMAXPROCS (each read adds one goroutine that splits its lines). A read that finds
+  fewer than two workers free, a refresh of the pattern state, a background build and `-patterns-scope=selector`
+  mine on the request's goroutine as before. No VictoriaLogs request is added. Mining also allocates less: a line's
+  tokens are copied only when it starts a cluster, a new cluster's tree nodes are made in one allocation, and a
+  row's time and a stream's name are read without a copy. Decoding and mining an hour of 148,000 lines (the
+  environment of the Drilldown patterns benchmark): 302 ms to 95 ms with 4 cores and 312 ms to 172 ms with 2, with
+  43% fewer bytes, 67% fewer allocations and 9-16% less CPU time.
+
+### Fixed
+
+- `sum`, `max`, `min` and `avg` (with or without `by`) over `avg_over_time`, `max_over_time`, `min_over_time`,
+  `stddev_over_time` or `stdvar_over_time` of a label unwrapped after an extraction list (`| logfmt amount, route`,
+  `| json amount`) now read Loki's series: the stream plus the labels the list names, less the unwrapped one, where
+  the proxy read each line as a series of its own. On an instant query and on a range up to the step, for example
+  `sum(max_over_time({...} | logfmt amount | unwrap amount [5m]))` adds one maximum per stream as Loki does.
+  VictoriaLogs groups the rows by the stream, its level fields and the listed labels, reading each line once.
+  Measured with VictoriaLogs' own handlers on synthetic logfmt rows (v1.49.0 and v1.53.0), most of these shapes run
+  16% to 72% faster in VictoriaLogs than before; `sum by (...)` over `max_over_time` costs up to 48% more and over
+  `avg_over_time` up to 12% more, for the per-series step Loki's answer needs. Count,
+  first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
+  read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
+
+## [2.316.0] - 2026-11-16
+
+### Changed
+
+- The unwrap code is rewritten from Loki's recorded answers and LogQL's documentation: the conversions of
+  `unwrap`, `duration()`, `duration_seconds()` and `bytes()`, the logfmt reading the conversion-error check and the
+  patterns miner use, the window merge of unwrap range functions from VictoriaLogs buckets, and the conversion-error
+  check (the counting gate, the lookups of a flagged bucket and the Loki error it answers). New tests hold it to
+  answers recorded with Loki's engine and pipeline for the same lines and queries: every conversion over number,
+  duration and size spellings (signs, units, overflow, NaN and infinities, blanks, logfmt and JSON lines), the
+  labels the logfmt, JSON, unpack and regexp parsers give generated lines, and the status and text of the error
+  over 39 query shapes. The VictoriaLogs requests and the answers are unchanged, except that stddev_over_time and
+  stdvar_over_time over a range longer than the step merge their buckets in two passes (a window's value can differ
+  from the previous build in its last bit, as close to the exact value as before). Two fuzz targets join
+  fuzz-smoke.
+
+### Fixed
+
+- The `SampleExtractionErr` answer of a metric whose pipeline holds a `label_format` before the unwrap
+  (`| logfmt | label_format w="{{.n}}" | unwrap v`) names the series with the label as the stage writes it, as
+  Loki does (recorded with Loki's engine) for a rename and a copy of one label (`{{.label}}`); a label another
+  template writes is left out of the series, which kept the line's own value of the label before.
+- A value the unwrap conversion rejects fails a binary operation whichever operand reads it, as Loki does (recorded
+  with Loki's engine at the instant and over a range: right operand, left operand, nested operand). A rejected
+  value only in an operand after the first answered 200 before; the check now decides again on the hits each later
+  operand records, as long as nothing of the answer went out (semantics/unwrap-conversion-error-binary-operand).
+  Rows an earlier operand already looked up are not looked up again, and once the answer is Loki's error the
+  request sends no further VictoriaLogs reads.
+  The response cache asks the check before it keeps an answer, an operand's included, so a repeat of the query
+  answers the same 400 (a repeated range query whose rejected value sat in the first operand answered 200 before);
+  a checked VictoriaLogs answer over the body-size limit answers the limit error.
+
+## [2.315.0] - 2026-11-16
 
 ### Changed
 
@@ -44,17 +93,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   level comes from its other fields or its line, as in Loki (recorded answers, `severity/recorded-level-table`). A
   JSON line whose key `log.level` VictoriaLogs unpacked into a field still gives the level, as the line does in Loki.
   Metric grouping by `detected_level` still reads the field (`severity/stored-log-dot-level-in-metric-chain`, open).
-- `sum`, `max`, `min` and `avg` (with or without `by`) over `avg_over_time`, `max_over_time`, `min_over_time`,
-  `stddev_over_time` or `stdvar_over_time` of a label unwrapped after an extraction list (`| logfmt amount, route`,
-  `| json amount`) now read Loki's series: the stream plus the labels the list names, less the unwrapped one, where
-  the proxy read each line as a series of its own. On an instant query and on a range up to the step, for example
-  `sum(max_over_time({...} | logfmt amount | unwrap amount [5m]))` adds one maximum per stream as Loki does.
-  VictoriaLogs groups the rows by the stream, its level fields and the listed labels, reading each line once.
-  Measured with VictoriaLogs' own handlers on synthetic logfmt rows (v1.49.0 and v1.53.0), most of these shapes run
-  16% to 72% faster in VictoriaLogs than before; `sum by (...)` over `max_over_time` costs up to 48% more and over
-  `avg_over_time` up to 12% more, for the per-series step Loki's answer needs. Count,
-  first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
-  read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
+
+## [2.314.0] - 2026-11-16
+
+### Added
+
+- `-json-line-fields-as-line-keys` (Helm `extraArgs.json-line-fields-as-line-keys`, off by default): for JSON lines
+  pushed to VictoriaLogs' Loki push route without `disable_message_parsing=1`, which VictoriaLogs stores as one field
+  per key with its missing-message placeholder in `_msg`, the proxy reads every stored field of such a row as a key of
+  the row's JSON line, as Loki holds the pushed line. The fields are no labels until `| json` (or a json extraction
+  list) reads them, `| logfmt` reads none of them, a label filter on such a key with no parser drops the line, and a
+  query that unwraps or filters a label no stage can give such a line (after `| logfmt` or without a parser) leaves
+  those rows out in VictoriaLogs, so `max_over_time({...} | logfmt amount | unwrap amount [5m])` answers only the
+  logfmt streams. `| json` metric queries read such a row as a valid JSON object instead of answering
+  `JSONParserErr`. VictoriaLogs stores structured metadata pushed beside such a line among the line's keys, so the
+  flag hides it: leave it off when such pushes carry structured metadata. Pushing with `disable_message_parsing=1`
+  stays the supported setup and needs no flag. With the flag off nothing changes.
 
 ## [2.313.0] - 2026-11-16
 

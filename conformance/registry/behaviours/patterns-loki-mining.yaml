@@ -199,6 +199,43 @@ decisions:
     performance:
       tracked: ['patterns DP2 (stream scope)']
       bound: 'selector scope reads the same lines as stream scope; no extra VictoriaLogs call'
+  - id: patterns-cold-mining-on-workers
+    pending: true
+    chosen: Decode and mine a cold read of many lines on worker goroutines (each stream mined by one worker, in read order), merged in the order one goroutine makes the miners
+    over: [serving the first ask from VictoriaLogs aggregates (stats by stream and collapse_nums), mining every read on the request goroutine]
+    why: |
+      The first /patterns request for a busy selector reads every line of the
+      range and mines it in the proxy; Loki answers it from a state its pattern
+      ingester built at push time. VictoriaLogs cannot mine Loki's patterns:
+      counts grouped across streams give other patterns (env=production 1h: 310
+      against Loki's 53, decision patterns-state-per-tenant), and a stream-keyed
+      grouping still loses the order lines train clusters in. Loki mines each
+      stream at each level apart, so a stream's lines mined in read order by the
+      one worker holding the stream train exactly the clusters one goroutine
+      trains; merging the workers' miners in the order of the line that made
+      each gives the serial miner, its answer and its snapshot. Workers decode
+      too (JSON parse, level, time), so one goroutine does only the line split
+      and the ordered hand-off.
+    evidence: 'BenchmarkPatternColdMine148k (base vs this change, benchstat); base vs head answers and snapshots compared byte for byte over random reads'
+    code: [internal/proxy/patterns_mine_parallel.go, internal/proxy/patterns_rows_parallel.go, internal/proxy/patterns_exact.go, internal/proxy/patterns_state.go, internal/proxy/pattern_cluster.go, internal/proxy/pattern_formats.go, internal/proxy/postprocess.go]
+    tests: [TestPatternParallelMiningMinesAsSerial, FuzzPatternParallelMiningMinesAsSerial, TestPatternParallelMiningAnswersAsSerial, TestPatternParallelMiningIsSizedByTheRead, TestPatternParallelMiningLeavesNoWorkers, TestPatternRowTimeReadsAsLokiTimes, FuzzPatternRowTimeReadsAsLokiTimes, TestPatternLineHashIsFNV1a, TestPatternMinerMatchesLokisRecordedPatterns]
+    quality: |
+      Answers, the pattern state and its snapshot are byte for byte the serial
+      ones (differential over random streams, skew, levels, unsorted rows,
+      eviction-heavy streams, sample bounds and rows rejected part way, plus a
+      fuzz target); the 27 recorded Loki answers still match.
+    performance:
+      tracked: ['BenchmarkPatternColdMine148k (shape=many and shape=skewed, workers=1, 2, 4)', 'perf-smoke DP1 and DP2 cold']
+      bound: 'no VictoriaLogs request added; a read holds at most a few batches of lines per worker; the workers (a decoding and a mining goroutine each) of all requests together at most GOMAXPROCS, plus one line-splitting goroutine per read; CPU per read not above the serial base'
+      measured: |
+        Apple M5 Pro, benchstat of interleaved runs, base 5b5c7965f vs this
+        change (the base mines on one goroutine whatever the row's workers),
+        148,000 lines of about 340 bytes, machine shared with other work.
+        GOMAXPROCS=4 (n=8): many streams, 4 workers 302 ms to 95 ms (-68%), 2
+        workers -67%, 1 worker -10%; 4 large streams, 4 workers 265 ms to 133
+        ms (-50%). CPU time per read -9% to -16%. B/op -43% (many) and -73% (4
+        streams), allocs/op -67% and -80%. GOMAXPROCS=2 (n=6): 2 workers 312 ms
+        to 172 ms (-45%), CPU time unchanged within noise (-7% geomean).
 
 implementation:
   - internal/proxy/pattern_cluster.go
@@ -207,4 +244,6 @@ implementation:
   - internal/proxy/patterns_history.go
   - internal/proxy/patterns_exact.go
   - internal/proxy/patterns_counts.go
+  - internal/proxy/patterns_mine_parallel.go
+  - internal/proxy/patterns_rows_parallel.go
   - internal/proxy/patterns.go

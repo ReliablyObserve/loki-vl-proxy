@@ -56,5 +56,5 @@ gap:
   area: 'internal/translator logfmt unpacking (unpack_logfmt keeps the last value); internal/proxy/unwrap_conversion_error.go'
   loki: '| logfmt keeps the first non-empty value of a key, skips empty values and turns invalid UTF-8 into a space (TestCompat_UnwrapConversionErrorParity)'
   proxy: '200 for `v=abc v=5`; samples of rows only Loki converts are missing'
-  planned_test: 'TestUnwrapConversionErrorDifferential counts the first case; TestUnwrapLokiLabels pins the decoder; TestCompat_UnwrapConversionErrorParity asserts the 200 side'
+  planned_test: 'TestUnwrapConversionErrorDifferential counts the first case; TestUnwrapLokiLabels pins the decoder, TestUnwrapParsersMatchRecordedLoki holds it to the recorded Loki labels; TestCompat_UnwrapConversionErrorParity asserts the 200 side'
   clusters: []

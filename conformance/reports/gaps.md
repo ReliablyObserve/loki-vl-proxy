@@ -46,14 +46,14 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 
 | Status | call sites | literal message | through the error layer | formatted at run time | of those, an error's own text | no body |
 |---|---:|---:|---:|---:|---:|---:|
-| 400 | 25 | 7 | 0 | 18 | 10 | 0 |
+| 400 | 24 | 7 | 0 | 17 | 9 | 0 |
 | 401 | 5 | 5 | 0 | 0 | 0 | 0 |
 | 403 | 2 | 2 | 0 | 0 | 0 | 0 |
 | 404 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 405 | 4 | 3 | 0 | 0 | 0 | 1 |
 | 429 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 500 | 6 | 6 | 0 | 0 | 0 | 0 |
-| set at run time | 179 | 1 | 175 | 2 | 1 | 1 |
+| set at run time | 180 | 1 | 176 | 2 | 1 | 1 |
 
 The registry holds one item per status (12) and one per Loki error message (44) under `conformance/registry/loki/errors/`; the messages are checked against recorded Loki answers, route by route and error kind by error kind, in the generated [error compatibility coverage](../../docs/error-compatibility-coverage.md).
 
@@ -85,12 +85,12 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | observability | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | 8 | 4 | unknown |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 11 | proven |
 | identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 6 | 5 | partial |
-| semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 23 | 13 | partial |
-| semantics | `patterns-loki-mining` — /loki/api/v1/patterns answers the patterns Loki's pattern ingester mines, from the lines VictoriaLogs holds | 7 | 8 | partial |
+| semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 23 | 15 | partial |
+| semantics | `patterns-loki-mining` — /loki/api/v1/patterns answers the patterns Loki's pattern ingester mines, from the lines VictoriaLogs holds | 9 | 9 | partial |
 | resource_control | `peer-cache-fleet-recovery` — With a ring owner down or every cache lost, the fleet answers like Loki from VictoriaLogs | 2 | 4 | partial |
 | resource_control | `peer-cache-label-values-index` — A replica that lost its disk restores the label-values index from its peers | 1 | 1 | partial |
 | resource_control | `peer-cache-metadata` — Label and detected-field answers are read from the ring owner and the disk tier | 4 | 1 | partial |
-| resource_control | `peer-cache-patterns` — Patterns mined on one replica are served by every replica and restored on a replica that lost its disk | 5 | 5 | partial |
+| resource_control | `peer-cache-patterns` — Patterns mined on one replica are served by every replica and restored on a replica that lost its disk | 5 | 6 | partial |
 | resource_control | `peer-cache-push-replay` — Pushes a replica cannot take while its breaker is open are buffered and replayed, so the fleet heals to full replication | 4 | 6 | unknown |
 | resource_control | `peer-cache-query-range-windows` — Log query windows computed by their ring owner are read by the other replicas | 2 | 1 | partial |
 | resource_control | `peer-cache-query-replies` — Completed query replies computed on one replica answer the same request on every replica | 2 | 1 | partial |

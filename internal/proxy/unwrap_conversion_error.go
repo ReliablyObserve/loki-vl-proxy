@@ -5,573 +5,717 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
-	"maps"
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/grafana/jsonparser"
-
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/grafana/jsonparser"
 )
 
-// Unwrap conversion errors (Loki v3.7.7).
+// Unwrap conversion errors (LogQL docs, "Unwrapped range aggregations"): a line whose unwrapped label holds a value
+// the conversion rejects makes a sample marked __error__="SampleExtractionErr", and a metric query fails with that
+// pipeline error (HTTP 400, text) unless a label filter after the unwrap drops it. The answers come from Loki,
+// recorded: TestUnwrapConversionErrorMatchesRecordedLoki (status, text, the series the error names, which lines
+// make no sample).
 //
-// Loki skips a line whose unwrapped label is absent or empty, and marks a value
-// its conversion rejects (float, duration or bytes) with
-// __error__="SampleExtractionErr" and the conversion's own
-// message as __error_details__ (registry semantics/unwrap-conversion-error). The
-// label filters after the unwrap run next,
-// with the error set: a string filter on __error__ compares
-// "SampleExtractionErr", one on
-// __error_details__ compares "" (the details are not a label the builder
-// returns). A sample that keeps __error__ fails the whole query when a range
-// vector holds it: HTTP 400, text/plain, with
-// the pipeline error over the sample's series, which is every
-// label of the line (the whole set when an error is set). __preserve_error__
-// only exempts parser errors, so neither `drop __error__` nor a filter before the
-// unwrap, nor `by (__error__)`, intercepts the conversion error.
-//
-// VictoriaLogs' stats only see the rows the translator's unwrap gate keeps
-// (translator.UnwrapGateFor). The detection rides on the metric's own
-// VictoriaLogs queries instead of scanning the rows again: a stats query that
-// carries the gate is sent with the rows whose unwrapped value is present and
-// outside every form the conversion may accept moved into a group of their own
-// (unwrapCountingQuery); that group is taken out of the answer before any
-// caller reads it, and the buckets it held are remembered. The metrics that
-// read raw rows (quantile, first, last, rate_counter, bare parsers) report the
-// rows they cannot convert. Only after such a hit, one `| limit` lookup
-// restricted to the hit's bucket reads the row, re-derives the unwrapped value
-// with Loki's own parser from the stored row (unwrapLokiValue: VictoriaLogs
-// unpacks arrays, booleans and keys named like stored fields differently), and
-// answers Loki's error only when Loki's value fails Loki's conversion.
+// The proxy detects the error on the metric's own VictoriaLogs read: the unwrap gate of every stats query counts
+// the values it would drop instead of dropping them (flag 1, value 0, a group of their own in every stats pipe),
+// the flagged groups are taken out of the answer, and the buckets they held are remembered (hits). A clean read
+// costs nothing more. After a hit, bounded lookups read the flagged rows of the hit's buckets, each line is read
+// again as stored, and Loki's value of the label is derived from the line with Loki's parsers; only a value Loki
+// rejects answers Loki's error. A nan value is a sample (strconv.ParseFloat reads it): the gate counts nan rows
+// apart (flag 2) so the answer carries the NaN where every function of the query poisons its result.
 
-// unwrapErrorProbe describes one unwrap range aggregation whose conversion
-// errors reach the result.
+// unwrapErrorProbe is one range aggregation over an unwrapped label whose conversion errors fail the query: the
+// label, its conversion, the range, the stages before and after the unwrap, and the parser hints (the labels the
+// parsers extract; nil extracts every label).
 type unwrapErrorProbe struct {
-	label  string // the unwrapped LogQL label
-	conv   string // "", "duration" or "bytes"
-	window time.Duration
-	// pipeline is the log pipeline before the unwrap and post the label filters
-	// after it, to re-derive Loki's value and answer.
+	label          string
+	conv           string
+	window         time.Duration
+	offset         time.Duration
 	pipeline, post []logqlpkg.Stage
-	// hints are the labels Loki's parser extracts when the sample extractor
-	// has parser hints (a `by` or singleton grouping); nil when it extracts all.
-	hints map[string]bool
+	hints          map[string]bool
 }
 
-// unwrapErrorProbes returns the unwrap range aggregations in expr whose
-// conversion errors reach the result, in evaluation order.
+// unwrapErrorProbes returns the range aggregations of expr whose conversion errors fail the query and the detection
+// evaluates: a range aggregation, under vector aggregations and binary operations (not under label_replace, nor at
+// an offset: registered as outside the detection).
 func unwrapErrorProbes(expr logqlpkg.Expr) []unwrapErrorProbe {
 	var out []unwrapErrorProbe
 	var walk func(e logqlpkg.Expr, parent *logqlpkg.VectorAggregation)
 	walk = func(e logqlpkg.Expr, parent *logqlpkg.VectorAggregation) {
 		switch n := e.(type) {
+		case *logqlpkg.RangeAggregation:
+			if probe, ok := unwrapErrorProbeFor(n, parent); ok {
+				out = append(out, probe)
+			}
 		case *logqlpkg.VectorAggregation:
 			walk(n.Inner, n)
 		case *logqlpkg.BinOpExpr:
 			walk(n.Left, nil)
 			walk(n.Right, nil)
-		case *logqlpkg.RangeAggregation:
-			if probe, ok := unwrapErrorProbeFor(n, parent); ok {
-				out = append(out, probe)
-			}
 		}
 	}
-	walk(expr, nil)
+	if expr != nil {
+		walk(expr, nil)
+	}
 	return out
 }
 
-// unwrapErrorProbeFor describes one range aggregation. ok is false when it has
-// no unwrap, when its post filters intercept the error, and when a post filter
-// is one the detection cannot evaluate (the query then answers as before; see
-// semantics/unwrap-conversion-error-postfilter-forms).
+// unwrapErrorProbeFor is the probe of ra under the vector aggregation parent (nil: none), and whether Loki fails
+// the query on its conversion errors in a way the detection evaluates.
 func unwrapErrorProbeFor(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAggregation) (unwrapErrorProbe, bool) {
 	lq, ok := ra.Inner.(*logqlpkg.LogQuery)
-	if !ok || ra.HasOffset() {
-		return unwrapErrorProbe{}, false
-	}
-	window := ra.RangeDuration
-	if window <= 0 {
+	if !ok || ra.Offset != "" {
+		// A range read at an offset is outside what the detection evaluates (registered).
 		return unwrapErrorProbe{}, false
 	}
 	at := -1
-	var unwrap *logqlpkg.UnwrapStage
-	for i, stage := range lq.Pipeline {
-		if u, isUnwrap := stage.(*logqlpkg.UnwrapStage); isUnwrap {
-			at, unwrap = i, u
-			break
+	for i, st := range lq.Pipeline {
+		if _, ok := st.(*logqlpkg.UnwrapStage); ok {
+			at = i
 		}
 	}
-	if unwrap == nil || unwrap.Label == "" {
+	if at < 0 {
 		return unwrapErrorProbe{}, false
 	}
-	conv := ""
-	switch unwrap.Converter {
-	case "":
-	case "duration", "duration_seconds":
-		// Loki converts both as a duration (registry semantics/unwrap-duration-seconds).
-		conv = "duration"
-	case "bytes":
-		conv = "bytes"
-	default:
+	uw := lq.Pipeline[at].(*logqlpkg.UnwrapStage)
+	if strings.TrimSpace(uw.Label) == "" {
 		return unwrapErrorProbe{}, false
 	}
-	fails, known := unwrapErrorPostFilters(lq.Pipeline[at+1:])
-	if !known || !fails {
+	post := lq.Pipeline[at+1:]
+	if fails, known := unwrapErrorPostFilters(post); !fails || !known {
 		return unwrapErrorProbe{}, false
 	}
-	return unwrapErrorProbe{
-		label:    unwrap.Label,
-		conv:     conv,
-		window:   window,
-		pipeline: lq.Pipeline[:at],
-		post:     lq.Pipeline[at+1:],
-		hints:    unwrapParserHints(ra, parent, lq.Pipeline, unwrap.Label),
-	}, true
+	pipeline := lq.Pipeline[:at]
+	probe := unwrapErrorProbe{
+		label:    uw.Label,
+		conv:     translator.UnwrapConv(uw.Converter),
+		window:   ra.RangeDuration,
+		offset:   ra.OffsetDuration,
+		pipeline: pipeline,
+		post:     post,
+	}
+	probe.hints = unwrapParserHints(ra, parent, pipeline, post, uw.Label)
+	return probe, true
 }
 
-// unwrapErrorPostFilters evaluates the label filters after an unwrap for a
-// sample marked SampleExtractionErr. fails is false when a filter drops every
-// such sample; known is false for a filter the detection cannot evaluate. The
-// metric's VictoriaLogs query applies the post filters itself (the translator
-// moves them before the gate), so a filter is known only when VictoriaLogs
-// gives a failing row the answer Loki gives it: a string filter on another
-// label, a filter on __error__ that also keeps the empty value (VictoriaLogs
-// rows have no __error__), any filter on __error_details__ (Loki compares the
-// empty value there too).
+// unwrapErrorPostFilters reads the label filters after the unwrap: fails is whether a line whose conversion
+// failed can pass them (Loki then fails the query), known whether the detection evaluates them the way Loki does.
+// A filter on __error__ or __error_details__ is decided here: at that point Loki holds __error__ as
+// SampleExtractionErr and __error_details__ empty (recorded). VictoriaLogs' rows hold neither, so a filter that
+// keeps Loki's failing line but drops a VictoriaLogs row hides the line from the counter: not evaluated. A string
+// filter on another label is evaluated per line (unwrapLabelFilterKeeps). Anything else (a numeric comparison, a
+// group, and, or) is not evaluated.
 func unwrapErrorPostFilters(post []logqlpkg.Stage) (fails, known bool) {
-	for _, stage := range post {
-		lf, ok := stage.(*logqlpkg.LabelFilterStage)
+	fails = true
+	for _, st := range post {
+		lf, ok := st.(*logqlpkg.LabelFilterStage)
 		if !ok {
 			return false, false
 		}
-		compiled, valid := compileOrderedJSONStage(lf)
-		if !valid || compiled.filter == nil {
-			return false, false // a comparison, an and/or expression, ip()
+		expr := lf.Expr
+		if expr == nil || !expr.IsLeaf() || strings.HasPrefix(strings.TrimSpace(lf.Raw), "(") || expr.Kind != logqlpkg.LabelFilterValueString {
+			return false, false
 		}
-		switch compiled.filter.Field {
-		case "__error__":
-			if !compiled.filter.Matches("SampleExtractionErr") {
-				return false, true
-			}
-			if !compiled.filter.Matches("") {
-				return false, false // VictoriaLogs drops every row; Loki keeps the failing ones
-			}
-		case "__error_details__":
-			if !compiled.filter.Matches("") {
-				return false, true
-			}
+		condition, err := translator.NewLabelFilterCondition(expr.Name, expr.Cmp, expr.Value)
+		if err != nil {
+			return false, false
 		}
-	}
-	return true, true
-}
-
-// unwrapComparison reads a comparison label filter (`latency > 250ms`): its
-// label, its operator and the number, duration or bytes literal it compares to.
-func unwrapComparison(stage *logqlpkg.LabelFilterStage) (label, cmp, literal string, ok bool) {
-	e := stage.Expr
-	if e == nil || !e.IsLeaf() || !isLokiLabelName(e.Name) {
-		return "", "", "", false
-	}
-	switch e.Kind {
-	case logqlpkg.LabelFilterValueNumber, logqlpkg.LabelFilterValueDuration, logqlpkg.LabelFilterValueBytes:
-		return e.Name, e.Cmp, e.Value, true
-	}
-	return "", "", "", false
-}
-
-// unwrapParserHints returns the labels Loki's parser extracts for the
-// aggregation's sample extractor, or nil when it extracts every label
-// (a `sum` pushes its grouping down for sum_over_time and rate;
-// absent_over_time never keeps labels).
-func unwrapParserHints(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAggregation, pipeline []logqlpkg.Stage, label string) map[string]bool {
-	grouping := ra.Grouping
-	if grouping == nil && parent != nil && parent.Op == logqlpkg.VectorSum &&
-		(ra.Op == logqlpkg.RangeSumOverTime || ra.Op == logqlpkg.RangeRate) {
-		grouping = parent.Grouping
-		if grouping == nil {
-			grouping = &logqlpkg.Grouping{}
-		}
-	}
-	if ra.Op == logqlpkg.RangeAbsentOverTime {
-		grouping = &logqlpkg.Grouping{}
-	}
-	if grouping == nil || grouping.Without {
-		return nil
-	}
-	// A name, and for a name ending
-	// in _extracted also the name without the suffix; never the other way.
-	hints := map[string]bool{}
-	add := func(name string) {
-		hints[name] = true
-		if base, ok := strings.CutSuffix(name, "_extracted"); ok {
-			hints[base] = true
-		}
-	}
-	add(label)
-	for _, name := range grouping.Labels {
-		add(name)
-	}
-	for _, stage := range pipeline {
-		lf, ok := stage.(*logqlpkg.LabelFilterStage)
-		if !ok {
+		var lokiValue string
+		switch expr.Name {
+		case errorLabel:
+			lokiValue = "SampleExtractionErr"
+		case errorDetailsLabel:
+			lokiValue = ""
+		default:
 			continue
 		}
-		if compiled, valid := compileOrderedJSONStage(lf); valid && compiled.filter != nil {
-			add(compiled.filter.Field)
-		} else if label, _, _, ok := unwrapComparison(lf); ok {
-			add(label)
+		lokiKeeps, vlKeeps := condition.Matches(lokiValue), condition.Matches("")
+		switch {
+		case !lokiKeeps:
+			fails = false
+		case !vlKeeps:
+			return false, false
+		}
+	}
+	return fails, true
+}
+
+// unwrapComparison reads a label filter stage (a group of one filter included) that compares one label, named
+// with letters, digits and underscores, with a number, a duration or a byte size: the label, the comparison and the
+// literal as written.
+func unwrapComparison(stage *logqlpkg.LabelFilterStage) (label, cmp, literal string, ok bool) {
+	if stage == nil || stage.Expr == nil || !stage.Expr.IsLeaf() || !unwrapPlainLabelName(stage.Expr.Name) {
+		return "", "", "", false
+	}
+	e := stage.Expr
+	switch e.Kind {
+	case logqlpkg.LabelFilterValueNumber, logqlpkg.LabelFilterValueDuration, logqlpkg.LabelFilterValueBytes:
+	default:
+		return "", "", "", false
+	}
+	switch e.Cmp {
+	case "==", "!=", ">=", "<=", ">", "<", "=":
+	default:
+		return "", "", "", false
+	}
+	return e.Name, e.Cmp, e.Value, true
+}
+
+// unwrapPlainLabelName reports a label name of letters, digits and underscores that does not start with a digit:
+// the names a numeric comparison is read for.
+func unwrapPlainLabelName(name string) bool {
+	for i, c := range name {
+		if !unwrapNameRune(c) || i == 0 && c >= '0' && c <= '9' {
+			return false
+		}
+	}
+	return name != ""
+}
+
+// unwrapNameRune reports an ASCII letter, digit or underscore.
+func unwrapNameRune(c rune) bool {
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+}
+
+// unwrapParserHints is the set of labels Loki's parsers extract for ra under parent: the labels the series of the
+// aggregation keep and the unwrapped label, when the query names them (a range aggregation's own by, a sum by labels
+// or none of sum_over_time or rate, absent_over_time, which keeps none), with the labels the query's label filters
+// read; nil when Loki extracts every label.
+// Recorded: TestUnwrapConversionErrorMatchesRecordedLoki (the series named in the error).
+func unwrapParserHints(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAggregation, pipeline, post []logqlpkg.Stage, label string) map[string]bool {
+	var labels []string
+	switch {
+	case ra.Op == logqlpkg.RangeAbsentOverTime:
+	case ra.Grouping != nil:
+		if ra.Grouping.Without {
+			return nil
+		}
+		labels = ra.Grouping.Labels
+	case parent != nil && parent.Op == logqlpkg.VectorSum && (ra.Op == logqlpkg.RangeSumOverTime || ra.Op == logqlpkg.RangeRate):
+		if parent.Grouping != nil {
+			if parent.Grouping.Without {
+				return nil
+			}
+			labels = parent.Grouping.Labels
+		}
+	default:
+		return nil
+	}
+	hints := make(map[string]bool, len(labels)+1)
+	hints[label] = true
+	if base, ok := strings.CutSuffix(label, extractedSuffix); ok && base != "" {
+		// The parser extracts the key under its own name; the suffix comes from the collision.
+		hints[base] = true
+	}
+	for _, name := range labels {
+		hints[name] = true
+	}
+	// A label a filter reads is extracted for it.
+	for _, st := range append(append([]logqlpkg.Stage{}, pipeline...), post...) {
+		if lf, ok := st.(*logqlpkg.LabelFilterStage); ok && lf.Expr != nil {
+			unwrapFilterLabels(lf.Expr, hints)
 		}
 	}
 	return hints
 }
 
-// unwrapConvertibleForms holds, per conversion, the values the gate drops that
-// the conversion may still accept (registered in
-// semantics/unwrap-gate-parsefloat-divergences): nan. The detection skips them
-// too, so a row it counts always fails the conversion. A value that is
-// syntactically a number but overflows (1e309, 0x1p2000, 2562048h, 19EB) is not
-// one of them: the gate lets it through to the range filter after the math pipe
-// (translator.UnwrapInRange), which the counting gate turns into a flag.
-var unwrapConvertibleForms = map[string]string{
-	"": unwrapNaNPattern,
-}
-
-// unwrapAcceptablePattern is the expression of the values the conversion conv
-// may accept by syntax: the gate's own pattern and the forms it drops.
-func unwrapAcceptablePattern(conv string) string {
-	pattern := "(?:" + translator.UnwrapPattern(conv) + ")"
-	if extra := unwrapConvertibleForms[conv]; extra != "" {
-		pattern += "|(?:" + extra + ")"
+// unwrapFilterLabels adds the labels a label filter expression reads to names.
+func unwrapFilterLabels(e *logqlpkg.LabelFilterExpr, names map[string]bool) {
+	if e == nil {
+		return
 	}
-	return pattern
+	if e.IsLeaf() {
+		if e.Name != "" {
+			names[e.Name] = true
+		}
+		return
+	}
+	unwrapFilterLabels(e.Left, names)
+	unwrapFilterLabels(e.Right, names)
 }
 
-// unwrapLookupQuery is the query that reads the rows of the metric's base query
-// whose unwrapped value the conversion conv rejects: the counting gate flags a
-// value outside the accepted syntax and one that overflows, so both are found.
+// unwrapNaNPattern is a nan value, which strconv.ParseFloat reads and the gate counts apart.
+const unwrapNaNPattern = `^(?i:nan)$`
+
+// unwrapAcceptablePattern is the syntax of the values the conversion conv accepts or overflows on (a number by
+// syntax): a value outside it is a conversion error.
+func unwrapAcceptablePattern(conv string) string {
+	out := "(?:" + translator.UnwrapPattern(conv) + ")"
+	if conv == "" {
+		out += "|(?:" + unwrapNaNPattern + ")"
+	}
+	return out
+}
+
+// unwrapLookupQuery reads the rows of base whose unwrapped field the counting gate flags.
 func unwrapLookupQuery(base, field, conv string) string {
-	return base + unwrapCountedGate(field, conv) + " | filter " + unwrapBadField + `:="1"`
+	return base + unwrapCountedGate(field, conv) + ` | filter ` + unwrapBadField + `:="1"`
 }
 
+// unwrapBadField is the counting gate's flag: 0 a value that makes a sample, 1 a value the conversion rejects,
+// 2 nan, 3 infinity (read as inf, then 0).
 const unwrapBadField = "__lvp_bad"
 
-var unwrapGateFieldRE = regexp.MustCompile(`^ \| filter ("(?:[^"\\]|\\.)*"):~`)
+// unwrapGateFieldRE finds the quoted field of a filter that may start an unwrap gate.
+var unwrapGateFieldRE = regexp.MustCompile(` \| filter ("(?:[^"\\]|\\.)*"):~`)
 
-// unwrapCountingQuery rewrites a stats query that carries an unwrap gate so the
-// rows the conversion rejects are counted in the same pass: they are flagged
-// (format if ... as __lvp_bad), let through the gate, given the value 0 and
-// grouped apart in every stats pipe, so the other groups aggregate exactly the
-// rows they did. ok is false for a query without the gate, with a pipe after
-// the stats that could mix or drop the flagged groups, or whose (field, conv)
-// accept rejects. base is the query before the gate (the metric's rows).
+// unwrapCountingQuery is unwrapCountingRewrite that counts the conversion errors of every gate accept takes.
 func unwrapCountingQuery(query string, accept func(field, conv string) bool) (rewritten, base, field, conv string, ok bool) {
-	rewritten, base, field, conv, _, ok = unwrapCountingRewrite(query, func(f, c string) (bool, bool) { a := accept(f, c); return a, a })
-	return
+	rewritten, base, field, conv, _, ok = unwrapCountingRewrite(query, func(f, c string) (bool, bool) { return true, accept(f, c) })
+	return rewritten, base, field, conv, ok
 }
 
-// unwrapCountingRewrite is unwrapCountingQuery where accept says, per gate, whether
-// the rows the conversion rejects are counted (errors) and whether the gate is
-// rewritten at all (ok): a plain gate is also rewritten to count the nan values
-// the gate drops (unwrapNaNCounted), whatever the query does with errors.
+// unwrapCountingRewrite rewrites a stats query that holds an unwrap gate (translator.UnwrapGateFor) into the
+// counting gate (unwrapCountedGateMode) and groups every stats pipe after it by the flag. accept decides, for the
+// gate's field and conversion, whether the rewrite applies (ok) and whether it counts the conversion errors too
+// (errors), not only the nan values. A query whose pipes after the gate could drop a flagged group, or that holds
+// no stats pipe after it, is returned unchanged with ok false.
 func unwrapCountingRewrite(query string, accept func(field, conv string) (errors, ok bool)) (rewritten, base, field, conv string, errors, ok bool) {
-	idx := -1
-	for from := 0; ; {
-		at := strings.Index(query[from:], ` | filter "`)
-		if at < 0 {
-			break
-		}
-		at += from
-		from = at + 1
-		m := unwrapGateFieldRE.FindStringSubmatch(query[at:])
-		if m == nil {
-			continue
-		}
-		f, err := strconv.Unquote(m[1])
+	at := -1
+	for _, m := range unwrapGateFieldRE.FindAllStringSubmatchIndex(query, -1) {
+		name, err := strconv.Unquote(query[m[2]:m[3]])
 		if err != nil {
 			continue
 		}
 		for _, c := range []string{"", "duration", "bytes"} {
-			if strings.HasPrefix(query[at:], translator.UnwrapGateFor(f, c)) {
-				if idx >= 0 {
-					return query, "", "", "", false, false // two gates: not a shape this rewrite knows
-				}
-				idx, field, conv = at, f, c
+			if strings.HasPrefix(query[m[0]:], translator.UnwrapGateFor(name, c)) {
+				at, field, conv = m[0], name, c
 				break
 			}
 		}
-	}
-	if idx < 0 {
-		return query, "", "", "", false, false
-	}
-	if errors, ok = accept(field, conv); !ok {
-		return query, "", "", "", false, false
-	}
-	gate := translator.UnwrapGateFor(field, conv)
-	after := query[idx+len(gate):]
-	statsAt := strings.Index(after, " | stats ")
-	if statsAt < 0 {
-		return query, "", "", "", false, false
-	}
-	pipes := strings.Split(after[statsAt+len(" | "):], " | ")
-	for i, pipe := range pipes {
-		switch {
-		case strings.HasPrefix(pipe, "stats by ("):
-			end := strings.Index(pipe, ")")
-			if end < 0 {
-				return query, "", "", "", false, false
-			}
-			if inner := strings.TrimSpace(pipe[len("stats by ("):end]); inner == "" {
-				pipes[i] = "stats by (" + unwrapBadField + pipe[end:]
-			} else {
-				pipes[i] = pipe[:end] + ", " + unwrapBadField + pipe[end:]
-			}
-		case strings.HasPrefix(pipe, "stats "):
-			pipes[i] = "stats by (" + unwrapBadField + ") " + pipe[len("stats "):]
-		case strings.HasPrefix(pipe, "math "), strings.HasPrefix(pipe, "filter "):
-		case strings.HasPrefix(pipe, "unpack_json from __lvp_inner fields ("):
-			// The value of a first_over_time or last_over_time row (translator
-			// firstLastRowStats): the flag is a group key, which the unpack leaves.
-		default:
-			return query, "", "", "", false, false // sort, limit, fields, ...: could mix or drop the flagged groups
+		if at >= 0 {
+			break
 		}
 	}
-	rewritten = query[:idx] + unwrapCountedGateMode(field, conv, errors) + after[:statsAt] + " | " + strings.Join(pipes, " | ")
-	return rewritten, query[:idx], field, conv, errors, true
+	if at < 0 {
+		return query, "", "", "", false, false
+	}
+	errors, ok = accept(field, conv)
+	if !ok {
+		return query, "", "", "", false, false
+	}
+	rest, grouped := unwrapGroupStatsByFlag(query[at+len(translator.UnwrapGateFor(field, conv)):])
+	if !grouped {
+		return query, "", "", "", false, false
+	}
+	base = query[:at]
+	return base + unwrapCountedGateMode(field, conv, errors) + rest, base, field, conv, errors, true
 }
 
-// unwrapCountedGate is the unwrap gate (translator.UnwrapGateFor) that also lets
-// the rows the conversion rejects through: __lvp_bad is "0" for a row the gate
-// keeps (one test of the gate's expression, as before) and "1" for a present
-// value outside the forms the conversion may accept (tested only on the rows
-// the gate refused) or whose converted value is out of range (an overflow:
-// translator.UnwrapInRange), whose value is then 0. A plain gate also lets the
-// nan values through, flagged "2" (unwrapNaNCounted).
+// unwrapGroupStatsByFlag adds the flag to the grouping of every stats pipe of rest (the pipes after the gate).
+// ok is false for a pipe that could drop or reorder a flagged group (anything but stats and the row-wise pipes,
+// unwrapRowPipe), or when no stats pipe follows.
+func unwrapGroupStatsByFlag(rest string) (string, bool) {
+	pipes, ok := unwrapSplitPipes(rest)
+	if !ok {
+		return rest, false
+	}
+	var b strings.Builder
+	b.Grow(len(rest) + 32)
+	stats := false
+	for _, pipe := range pipes {
+		b.WriteString(" | ")
+		switch {
+		case strings.HasPrefix(pipe, "stats "):
+			by, funcs, ok := splitStatsPipe(pipe)
+			if !ok {
+				return rest, false
+			}
+			stats = true
+			b.WriteString("stats by (")
+			for _, name := range by {
+				b.WriteString(name)
+				b.WriteString(", ")
+			}
+			b.WriteString(unwrapBadField + ") ")
+			b.WriteString(funcs)
+		case unwrapRowPipe(pipe):
+			b.WriteString(pipe)
+		default:
+			return rest, false
+		}
+	}
+	return b.String(), stats
+}
+
+// unwrapRowPipes are the pipes that compute fields of each row and keep every row and its fields: the flag reaches
+// the stats after them.
+var unwrapRowPipes = []string{"math ", "unpack_json ", "unpack_logfmt ", "delete ", "pack_json ", "hash(", "format ", "copy ", "replace_regexp ", "extract_regexp "}
+
+// unwrapRowPipe reports a pipe the flag passes: a row-wise pipe, or a filter on the proxy's own fields (the window
+// phase, the rate's presence), which flagged rows pass like any other.
+func unwrapRowPipe(pipe string) bool {
+	if strings.HasPrefix(pipe, "filter __lvp_") {
+		return !strings.Contains(pipe, " or ") && !strings.Contains(pipe, unwrapBadField)
+	}
+	for _, head := range unwrapRowPipes {
+		if strings.HasPrefix(pipe, head) {
+			return !strings.Contains(pipe, unwrapBadField)
+		}
+	}
+	return false
+}
+
+// unwrapSplitPipes splits text (which starts with " | ") into its pipes at the separators outside quotes and
+// parentheses.
+func unwrapSplitPipes(text string) ([]string, bool) {
+	if !strings.HasPrefix(text, " | ") {
+		return nil, false
+	}
+	var pipes []string
+	depth, start := 0, 3
+	for i := 3; i < len(text); i++ {
+		switch c := text[i]; c {
+		case '"', '`', '\'':
+			end := unwrapClosingQuote(text, i)
+			if end < 0 {
+				return nil, false
+			}
+			i = end
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ' ':
+			if depth == 0 && strings.HasPrefix(text[i:], " | ") {
+				pipes = append(pipes, text[start:i])
+				start = i + 3
+				i += 2
+			}
+		case '|':
+			if depth == 0 {
+				return nil, false
+			}
+		}
+	}
+	return append(pipes, text[start:]), depth == 0
+}
+
+// unwrapClosingQuote is the index of the quote that closes the one at text[open], or -1.
+func unwrapClosingQuote(text string, open int) int {
+	q := text[open]
+	for i := open + 1; i < len(text); i++ {
+		switch text[i] {
+		case '\\':
+			if q != '`' {
+				i++
+			}
+		case q:
+			return i
+		}
+	}
+	return -1
+}
+
+// splitStatsPipe reads a stats pipe: the names it groups by and its function list.
+func splitStatsPipe(pipe string) (by []string, funcs string, ok bool) {
+	rest := strings.TrimPrefix(pipe, "stats ")
+	if strings.HasPrefix(rest, "by (") {
+		end := strings.IndexByte(rest, ')')
+		if end < 0 {
+			return nil, "", false
+		}
+		for _, name := range strings.Split(rest[len("by ("):end], ",") {
+			if name = strings.TrimSpace(name); name != "" && name != unwrapBadField {
+				by = append(by, name)
+			}
+		}
+		rest = strings.TrimPrefix(rest[end+1:], " ")
+	}
+	if _, ok := statsFunctions(rest); !ok {
+		return nil, "", false
+	}
+	return by, rest, true
+}
+
+// statsFunction is one function of a stats pipe: its name and the name of its result.
+type statsFunction struct{ fn, result string }
+
+// statsFunctions reads a stats pipe's function list (`sum(x) as c, count()`): each function and the name of its
+// result (the alias, else the call as written).
+func statsFunctions(list string) ([]statsFunction, bool) {
+	var out []statsFunction
+	for len(list) > 0 {
+		open := strings.IndexByte(list, '(')
+		if open <= 0 {
+			return nil, false
+		}
+		fn := list[:open]
+		for _, c := range fn {
+			if !unwrapNameRune(c) {
+				return nil, false
+			}
+		}
+		depth, end := 0, -1
+		for i := open; i < len(list) && end < 0; i++ {
+			switch list[i] {
+			case '(':
+				depth++
+			case ')':
+				if depth--; depth == 0 {
+					end = i
+				}
+			}
+		}
+		if end < 0 {
+			return nil, false
+		}
+		f := statsFunction{fn: fn, result: list[:end+1]}
+		list = list[end+1:]
+		if alias, ok := strings.CutPrefix(list, " as "); ok {
+			stop := strings.Index(alias, ", ")
+			if stop < 0 {
+				stop = len(alias)
+			}
+			f.result = alias[:stop]
+			if f.result == "" || strings.ContainsAny(f.result, " |()\"") {
+				return nil, false
+			}
+			list = alias[stop:]
+		}
+		out = append(out, f)
+		if list == "" {
+			break
+		}
+		next, ok := strings.CutPrefix(list, ", ")
+		if !ok {
+			return nil, false
+		}
+		list = next
+	}
+	return out, len(out) > 0
+}
+
+// unwrapCountedGate is the counting gate that also counts the conversion errors.
 func unwrapCountedGate(field, conv string) string { return unwrapCountedGateMode(field, conv, true) }
 
-// unwrapNaNFlag marks a nan value in unwrapBadField; its value is 0.
-const unwrapNaNFlag = "2"
+// The flags of the counting gate that are not the clean value: nan and infinity.
+const (
+	unwrapNaNFlag      = "2"
+	unwrapInfinityFlag = "3"
+)
 
-// unwrapInfinityFlag marks the word infinity, which the math pipe does not read,
-// until it is shortened to inf; the flag is then reset to "0".
-const unwrapInfinityFlag = "3"
-
-// unwrapNaNPattern is the nan strconv.ParseFloat reads (case-insensitive, unsigned).
-const unwrapNaNPattern = `^(?i:nan)$`
-
-// unwrapCountedGateMode is unwrapCountedGate with the rejected values counted
-// (errors) or, without, dropped as the plain gate does (a query whose
-// `__error__=""` filter drops the error): a plain gate keeps counting the nan
-// values, which the gate drops and VictoriaLogs' stats cannot carry
-// (unwrapNaN). The word infinity and the nan are classified only on the rows the
-// rest of the grammar refused, so a row of numbers costs one regular expression,
-// as in the plain gate.
+// unwrapCountedGateMode is the gate of field for conv that flags each row instead of dropping it: a value whose
+// syntax converts is 0, infinity 3 (plain), nan 2 (plain), and with errors any other present value 1. The flagged
+// rows pass with the value 0 (the math pipe's default), a value whose conversion overflows is flagged 1 (with
+// errors) or dropped, and the value is converted as the plain gate converts it. Without errors a duration or a
+// byte size keeps only the values that convert.
 func unwrapCountedGateMode(field, conv string, errors bool) string {
-	q := strconv.Quote(field)
-	bad := unwrapBadField
-	plain := conv == ""
-	flag := func(f string) string { return bad + `:="` + f + `"` }
-	gate := " | format if (" + q + ":~" + strconv.Quote(translator.UnwrapPatternWithoutInfinity(conv)) + `) "0" as ` + bad
-	keep := flag("0")
-	refused := "-" + flag("0") // the rows the grammar refused
-	if plain {
-		gate += " | format if (" + refused + " " + q + ":~" + strconv.Quote(translator.UnwrapInfinityPattern) + `) "` + unwrapInfinityFlag + `" as ` + bad
-		refused += " -" + flag(unwrapInfinityFlag)
-		gate += " | format if (" + refused + " " + q + ":~" + strconv.Quote(unwrapNaNPattern) + `) "` + unwrapNaNFlag + `" as ` + bad
-		refused += " -" + flag(unwrapNaNFlag)
-		keep += " or " + flag(unwrapInfinityFlag) + " or " + flag(unwrapNaNFlag)
+	i := 0
+	switch conv {
+	case "duration":
+		i = 2
+	case "bytes":
+		i = 4
 	}
 	if errors {
-		gate += " | format if (" + refused + " " + q + `:*) "1" as ` + bad
-		keep += " or " + flag("1")
+		i++
 	}
-	gate += " | filter " + keep
-	if plain {
-		gate += translator.UnwrapPlainConvert(field, flag(unwrapInfinityFlag)) + " | format if (" + flag(unwrapInfinityFlag) + `) "0" as ` + bad
+	unwrapCountedGateOnce.Do(func() {
+		for k, c := range []string{"", "", "duration", "duration", "bytes", "bytes"} {
+			unwrapCountedGateTemplates[k] = buildUnwrapCountedGate(unwrapGateFieldMark, c, k%2 == 1)
+		}
+	})
+	return strings.ReplaceAll(unwrapCountedGateTemplates[i], strconv.Quote(unwrapGateFieldMark), strconv.Quote(field))
+}
+
+// The counting gates are written once per conversion and mode around a marker field, which a request's quoted field
+// replaces.
+const unwrapGateFieldMark = "§field§"
+
+var (
+	unwrapCountedGateOnce      sync.Once
+	unwrapCountedGateTemplates [6]string
+)
+
+// buildUnwrapCountedGate writes the counting gate of unwrapCountedGateMode.
+func buildUnwrapCountedGate(field, conv string, errors bool) string {
+	q := strconv.Quote(field)
+	type class struct{ flag, cond string }
+	var classes []class
+	if conv == "" {
+		classes = []class{
+			{"0", q + ":~" + strconv.Quote(translator.UnwrapPatternWithoutInfinity(""))},
+			{unwrapInfinityFlag, q + ":~" + strconv.Quote(translator.UnwrapInfinityPattern)},
+			{unwrapNaNFlag, q + ":~" + strconv.Quote(unwrapNaNPattern)},
+		}
+	} else {
+		classes = []class{{"0", q + ":~" + strconv.Quote(translator.UnwrapPattern(conv))}}
+	}
+	if errors {
+		classes = append(classes, class{"1", q + ":*"})
+	}
+	var b strings.Builder
+	var kept []string
+	for i, c := range classes {
+		b.WriteString(" | format if (")
+		for _, prev := range classes[:i] {
+			b.WriteString("-" + unwrapBadField + `:="` + prev.flag + `" `)
+		}
+		b.WriteString(c.cond + `) "` + c.flag + `" as ` + unwrapBadField)
+		kept = append(kept, unwrapBadField+`:="`+c.flag+`"`)
+	}
+	b.WriteString(" | filter " + strings.Join(kept, " or "))
+	inRange := translator.UnwrapInRange(conv)
+	if conv == "" {
+		b.WriteString(translator.UnwrapPlainConvert(field, unwrapBadField+`:="`+unwrapInfinityFlag+`"`))
+		b.WriteString(` | format if (` + unwrapBadField + `:="` + unwrapInfinityFlag + `") "0" as ` + unwrapBadField)
 	} else {
 		_, convert := translator.UnwrapGateParts(field, conv)
-		gate += convert
+		b.WriteString(convert)
 	}
-	inRange := translator.UnwrapInRange(conv)
 	switch {
 	case errors:
-		gate += " | format if (" + flag("0") + " -(" + inRange + `)) "1" as ` + bad
-	case plain:
-		gate += " | filter " + flag(unwrapNaNFlag) + " or (" + inRange + ")"
+		b.WriteString(` | format if (` + unwrapBadField + `:="0" -(` + inRange + `)) "1" as ` + unwrapBadField)
+	case conv == "":
+		b.WriteString(` | filter ` + unwrapBadField + `:="` + unwrapNaNFlag + `" or (` + inRange + `)`)
 	default:
-		gate += " | filter " + inRange
+		b.WriteString(` | filter ` + inRange)
 	}
-	// A flagged row's value is NaN (the math pipe reads no number in it): 0 instead,
-	// so the stats keep a point for its group. The math pipe keeps the converted
-	// column a float; a format pipe would rewrite it as text that the stats parse
-	// again (VictoriaLogs' fast reader takes 27 characters and falls back to
-	// strconv.ParseFloat beyond them, but the text is a second rounding to avoid).
-	return gate + " | math " + translator.UnwrapValueAlias + " default 0 as " + translator.UnwrapValueAlias
+	b.WriteString(` | math ` + translator.UnwrapValueAlias + ` default 0 as ` + translator.UnwrapValueAlias)
+	return b.String()
 }
 
-// unwrapHit is a span where a metric's VictoriaLogs query met a row whose
-// unwrapped value the conversion rejects.
+// unwrapHit is a bucket of a stats answer that held a flagged row (or a raw row the conversion rejects): the query
+// before the gate, the gate's field and conversion, and the bucket's time span [from, to).
 type unwrapHit struct {
-	base, field, conv string    // the metric's rows before the gate, the VictoriaLogs field
-	from, to          time.Time // zero: every evaluated window
+	base, field, conv string
+	from, to          time.Time
 }
 
-// stripUnwrapCounter removes the flagged groups from a stats answer (matrix or
-// vector) and returns the times of the buckets the rejected values (flag 1) held
-// (seconds). An answer without a flagged group only loses the empty label,
-// without decoding it. The nan groups (flag 2) are dropped, as the gate drops
-// nan values.
+// stripUnwrapCounter takes the groups of flagged rows out of a stats answer, and the flag off every other series;
+// it returns the bucket times (seconds) of the groups it took out.
 func stripUnwrapCounter(body []byte) ([]byte, []float64, error) {
 	return stripUnwrapFlags(body, nil)
 }
 
-// unwrapNaN says how the nan groups (flag 2) of a stats answer reach the result.
-// Loki's sample is NaN (strconv.ParseFloat reads nan): sum, avg, stddev and
-// stdvar over a window that holds one are NaN, and so are the vector aggregations
-// of those series; VictoriaLogs' sum restarts at a NaN, so its stats can only
-// carry the rows apart (translator gate drops them, the counting gate groups
-// them under flag 2). poison is set when every function of the query poisons its
-// result; the value of each series that has a nan group at a time is then NaN
-// (a series that only has nan samples included), and the nan group's row count
-// is added to a count series (the presence of the sample). Otherwise the nan
-// rows are dropped, which max and min over time do too (maxOverTime ignores a
-// NaN unless every sample is).
+// unwrapNaN is how the nan groups (flag 2) of a query's answer apply: poison when every function of the query is
+// NaN over a nan value (the value is NaN where a nan group sits), counts the results that count rows (a nan row is
+// a sample: its count adds up). A query that does not poison drops the nan groups.
 type unwrapNaN struct {
 	poison bool
-	counts map[string]bool // aliases of the count functions, which add up
+	counts map[string]bool
 }
 
-// unwrapNaNFor reads the stats pipes of a rewritten query. A stdvar is a stddev
-// and a square in the translation, so it is covered by the stddev case.
+// unwrapPoisonFuncs are the stats functions whose result is NaN when a value is.
+var unwrapPoisonFuncs = map[string]bool{"sum": true, "avg": true, "stddev": true, "stdvar": true}
+
+// unwrapNaNFor reads how the nan groups of the stats query apply.
 func unwrapNaNFor(query string) *unwrapNaN {
-	n := &unwrapNaN{poison: true, counts: map[string]bool{"__sample_count": true}}
-	seen := false
-	for _, pipe := range strings.Split(query, " | ") {
+	n := &unwrapNaN{counts: map[string]bool{"__sample_count": true}}
+	pipes, ok := unwrapSplitPipes(query[max(strings.Index(query, " | stats "), 0):])
+	if !ok {
+		return n
+	}
+	poison, last := true, false
+	for _, pipe := range pipes {
 		if !strings.HasPrefix(pipe, "stats ") {
 			continue
 		}
-		if end := strings.Index(pipe, ")"); strings.HasPrefix(pipe, "stats by (") && end > 0 {
-			pipe = pipe[end+1:]
-		} else {
-			pipe = strings.TrimPrefix(pipe, "stats ")
+		_, list, ok := splitStatsPipe(pipe)
+		if !ok {
+			return n
 		}
-		for _, m := range unwrapStatsFuncRE.FindAllStringSubmatch(pipe, -1) {
-			fn, expr, alias := m[1], m[0], m[2]
-			if alias == "" {
-				alias = strings.TrimSpace(expr)
-			}
-			if fn == "count" {
-				// Only the sample count of a sum adds up: a count of series would count a
-				// stream with clean and nan rows twice.
-				n.counts[alias] = true
-				n.poison = n.poison && alias == "__sample_count"
+		funcs, _ := statsFunctions(list)
+		last = false
+		for _, f := range funcs {
+			if f.fn == "count" {
+				n.counts[f.result] = true
 				continue
 			}
-			seen = true
-			switch fn {
-			case "sum", "avg", "stddev":
-			default:
-				n.poison = false
-			}
+			last = true
+			poison = poison && unwrapPoisonFuncs[f.fn]
 		}
 	}
-	n.poison = n.poison && seen
+	n.poison = poison && last
 	return n
 }
 
-var unwrapStatsFuncRE = regexp.MustCompile(`(\w+)\([^()]*\)(?: as (\w+))?`)
+// unwrapPoint is one point of a series: its time and its value, as written.
+type unwrapPoint struct{ ts, value json.RawMessage }
 
-type unwrapPoint struct {
-	ts, value json.RawMessage
-}
-
-// stripUnwrapFlags is stripUnwrapCounter with the nan groups applied to the
-// answer (nan nil: dropped).
+// stripUnwrapFlags takes the counting gate's flag out of a stats answer: the groups of flag 1 are dropped and their
+// bucket times returned (seconds, as the answer lists them), the nan groups (flag 2) apply to the answer as nan says
+// (nil: dropped), and the clean series lose the flag. An answer without a flagged group keeps its bytes, the flag
+// cut out.
 func stripUnwrapFlags(body []byte, nan *unwrapNaN) ([]byte, []float64, error) {
-	flagged := func(flag string) []byte { return []byte(`"` + unwrapBadField + `":"` + flag + `"`) }
-	if !bytes.Contains(body, flagged("1")) && !bytes.Contains(body, flagged(unwrapNaNFlag)) {
-		return dropKeptFlag(body, flagged("0")), nil, nil
+	if !unwrapFlagged(body) {
+		return dropKeptFlag(body, unwrapKeptFlag), nil, nil
 	}
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(body, &top); err != nil {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(body, &doc); err != nil {
 		return nil, nil, err
 	}
 	var data map[string]json.RawMessage
-	if err := json.Unmarshal(top["data"], &data); err != nil {
+	if err := json.Unmarshal(doc["data"], &data); err != nil {
 		return nil, nil, err
 	}
-	var result []map[string]json.RawMessage
-	if raw, ok := data["result"]; ok && string(raw) != "null" {
-		if err := json.Unmarshal(raw, &result); err != nil {
-			return nil, nil, err
-		}
+	var kind string
+	_ = json.Unmarshal(data["resultType"], &kind)
+	vector := kind == "vector"
+	var results []map[string]json.RawMessage
+	if err := json.Unmarshal(data["result"], &results); err != nil {
+		return nil, nil, err
 	}
-	type nanGroup struct {
-		metric map[string]string
-		points []unwrapPoint
+	pointsKey := "values"
+	if vector {
+		pointsKey = "value"
 	}
+	kept := make([]map[string]json.RawMessage, 0, len(results))
+	var nanGroups []map[string]json.RawMessage
 	var times []float64
-	var nans []nanGroup
-	kept := result[:0]
-	for _, series := range result {
+	for _, res := range results {
 		var metric map[string]string
-		if err := json.Unmarshal(series["metric"], &metric); err != nil {
+		if err := json.Unmarshal(res["metric"], &metric); err != nil {
 			return nil, nil, err
 		}
-		flag, isFlagged := metric[unwrapBadField]
-		if isFlagged && (flag == "1" || flag == unwrapNaNFlag) {
-			var points []unwrapPoint
-			if raw, ok := series["values"]; ok {
-				var rows [][]json.RawMessage
-				_ = json.Unmarshal(raw, &rows)
-				for _, row := range rows {
-					if len(row) == 2 {
-						points = append(points, unwrapPoint{row[0], row[1]})
-					}
-				}
-			}
-			if raw, ok := series["value"]; ok {
-				var row []json.RawMessage
-				if json.Unmarshal(raw, &row) == nil && len(row) == 2 {
-					points = append(points, unwrapPoint{row[0], row[1]})
-				}
-			}
-			if flag == unwrapNaNFlag {
-				delete(metric, unwrapBadField)
-				nans = append(nans, nanGroup{metric, points})
-				continue
-			}
-			for _, point := range points {
-				var ts float64
-				if json.Unmarshal(point.ts, &ts) == nil {
-					times = append(times, ts)
-				}
-			}
-			continue
+		flag := metric[unwrapBadField]
+		delete(metric, unwrapBadField)
+		raw, err := json.Marshal(metric)
+		if err != nil {
+			return nil, nil, err
 		}
-		if isFlagged {
-			delete(metric, unwrapBadField)
-			encoded, err := json.Marshal(metric)
+		res["metric"] = raw
+		switch flag {
+		case "1":
+			points, err := unwrapPointsOf(res[pointsKey], vector)
 			if err != nil {
 				return nil, nil, err
 			}
-			series["metric"] = encoded
+			for _, p := range points {
+				ts, err := strconv.ParseFloat(string(unwrapUnquote(p.ts)), 64)
+				if err != nil {
+					return nil, nil, err
+				}
+				times = append(times, ts)
+			}
+		case unwrapNaNFlag:
+			nanGroups = append(nanGroups, res)
+		default:
+			kept = append(kept, res)
 		}
-		kept = append(kept, series)
 	}
 	if nan != nil && nan.poison {
-		vector := string(data["resultType"]) == `"vector"`
-		for _, group := range nans {
-			if err := nan.apply(&kept, group.metric, group.points, vector); err != nil {
+		for _, res := range nanGroups {
+			var metric map[string]string
+			_ = json.Unmarshal(res["metric"], &metric)
+			points, err := unwrapPointsOf(res[pointsKey], vector)
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := nan.apply(&kept, metric, points, vector); err != nil {
 				return nil, nil, err
 			}
 		}
@@ -581,733 +725,816 @@ func stripUnwrapFlags(body []byte, nan *unwrapNaN) ([]byte, []float64, error) {
 		return nil, nil, err
 	}
 	data["result"] = encoded
-	if top["data"], err = json.Marshal(data); err != nil {
+	if doc["data"], err = json.Marshal(data); err != nil {
 		return nil, nil, err
 	}
-	out, err := json.Marshal(top)
+	out, err := json.Marshal(doc)
 	return out, times, err
 }
 
-// dropKeptFlag removes every kept label from body in one pass, in place (the
-// answer only shrinks), with the comma that joins it to a neighbour: the one
-// before it, else the one after it, as the three replacements `,kept`,
-// `kept,` and `kept` in turn would.
-func dropKeptFlag(body, kept []byte) []byte {
-	out := body[:0]
-	for {
-		i := bytes.Index(body, kept)
-		if i < 0 {
-			return append(out, body...)
+// unwrapKeptFlag is the flag of the clean rows, as an answer writes it.
+var unwrapKeptFlag = []byte(`"` + unwrapBadField + `":"0"`)
+
+// unwrapFlagged reports an answer holding a group of flagged rows (1) or of nan rows (2), in one scan.
+func unwrapFlagged(body []byte) bool {
+	prefix := []byte(`"` + unwrapBadField + `":"`)
+	for i := 0; ; {
+		at := bytes.Index(body[i:], prefix)
+		if at < 0 {
+			return false
 		}
-		end := i + len(kept)
-		switch {
-		case i > 0 && body[i-1] == ',':
-			i--
-		case end < len(body) && body[end] == ',':
-			end++
+		i += at + len(prefix)
+		if i < len(body) && (body[i] == '1' || body[i] == unwrapNaNFlag[0]) {
+			return true
 		}
-		out = append(out, body[:i]...)
-		body = body[end:]
 	}
 }
 
-// unwrapSeriesKey identifies a series of a stats answer by its labels.
-func unwrapSeriesKey(metric map[string]string) string {
-	keys := make([]string, 0, len(metric))
-	for k := range metric {
-		keys = append(keys, k)
+// unwrapPointsOf reads the points of a series (values) or of a vector sample (value).
+func unwrapPointsOf(raw json.RawMessage, vector bool) ([]unwrapPoint, error) {
+	if len(raw) == 0 {
+		return nil, nil
 	}
-	sort.Strings(keys)
+	if vector {
+		var pair []json.RawMessage
+		if err := json.Unmarshal(raw, &pair); err != nil || len(pair) < 2 {
+			return nil, err
+		}
+		return []unwrapPoint{{pair[0], pair[1]}}, nil
+	}
+	var pairs [][]json.RawMessage
+	if err := json.Unmarshal(raw, &pairs); err != nil {
+		return nil, err
+	}
+	out := make([]unwrapPoint, 0, len(pairs))
+	for _, pair := range pairs {
+		if len(pair) >= 2 {
+			out = append(out, unwrapPoint{pair[0], pair[1]})
+		}
+	}
+	return out, nil
+}
+
+// dropKeptFlag cuts the clean rows' flag (kept) out of an answer, with the comma that joins it to a neighbour: every
+// ",kept", then every "kept,", then every "kept". The answer is rewritten in place (it is the reader's own copy); a
+// pass that finds nothing costs one scan.
+func dropKeptFlag(body, kept []byte) []byte {
+	var with [64]byte
+	body = cutAll(body, append(append(with[:0], ','), kept...))
+	if !bytes.Contains(body, kept) {
+		return body
+	}
+	body = cutAll(body, append(append(with[:0], kept...), ','))
+	return cutAll(body, kept)
+}
+
+// cutAll removes every occurrence of pat from b, in place.
+func cutAll(b, pat []byte) []byte {
+	at := bytes.Index(b, pat)
+	if at < 0 {
+		return b
+	}
+	w := at
+	for r := at + len(pat); ; {
+		next := bytes.Index(b[r:], pat)
+		if next < 0 {
+			w += copy(b[w:], b[r:])
+			return b[:w]
+		}
+		w += copy(b[w:], b[r:r+next])
+		r += next + len(pat)
+	}
+}
+
+// unwrapSeriesKey is a series' identity: its labels, sorted, quoted.
+func unwrapSeriesKey(metric map[string]string) string {
+	names := make([]string, 0, len(metric))
+	for name := range metric {
+		names = append(names, name)
+	}
+	sort.Strings(names)
 	var b strings.Builder
-	for _, k := range keys {
-		b.WriteString(strconv.Quote(k) + "=" + strconv.Quote(metric[k]) + ",")
+	for _, name := range names {
+		b.WriteString(strconv.Quote(name) + "=" + strconv.Quote(metric[name]) + ",")
 	}
 	return b.String()
 }
 
-// apply sets the points of a nan group onto the series of the answer with the
-// same labels (a count series adds the group's count): the value is NaN where
-// Loki's is, the series is added when only nan samples made it.
+// apply adds one nan group (metric without the flag, its points) to the kept series: a count adds the group's
+// count at each time, any other result is NaN there; a series the group alone holds is added.
 func (n *unwrapNaN) apply(kept *[]map[string]json.RawMessage, metric map[string]string, points []unwrapPoint, vector bool) error {
 	key := unwrapSeriesKey(metric)
-	index := -1
-	for i, series := range *kept {
+	count := n.counts[metric["__name__"]]
+	pointsKey := "values"
+	if vector {
+		pointsKey = "value"
+	}
+	value := func(old json.RawMessage, add json.RawMessage) json.RawMessage {
+		if !count {
+			return json.RawMessage(`"NaN"`)
+		}
+		return json.RawMessage(strconv.Quote(strconv.FormatFloat(unwrapCount(old)+unwrapCount(add), 'f', -1, 64)))
+	}
+	for _, series := range *kept {
 		var m map[string]string
 		if err := json.Unmarshal(series["metric"], &m); err != nil {
 			return err
 		}
-		if unwrapSeriesKey(m) == key {
-			index = i
-			break
+		if unwrapSeriesKey(m) != key {
+			continue
 		}
-	}
-	isCount := n.counts[metric["__name__"]]
-	var target map[string]json.RawMessage
-	var current []unwrapPoint
-	instant := vector
-	if index >= 0 {
-		target = (*kept)[index]
-		if raw, ok := target["values"]; ok {
-			var rows [][]json.RawMessage
-			if err := json.Unmarshal(raw, &rows); err != nil {
-				return err
-			}
-			for _, row := range rows {
-				if len(row) == 2 {
-					current = append(current, unwrapPoint{row[0], row[1]})
-				}
-			}
-		} else if raw, ok := target["value"]; ok {
-			var row []json.RawMessage
-			if err := json.Unmarshal(raw, &row); err != nil {
-				return err
-			}
-			if len(row) == 2 {
-				current = []unwrapPoint{{row[0], row[1]}}
-			}
-			instant = true
-		} else {
-			instant = false
-		}
-	} else {
-		encoded, err := json.Marshal(metric)
+		existing, err := unwrapPointsOf(series[pointsKey], vector)
 		if err != nil {
 			return err
 		}
-		target = map[string]json.RawMessage{"metric": encoded}
-	}
-	for _, point := range points {
-		at := -1
-		for i, c := range current {
-			if string(c.ts) == string(point.ts) {
-				at = i
-				break
+		for _, p := range points {
+			at := -1
+			for i, e := range existing {
+				if bytes.Equal(unwrapUnquote(e.ts), unwrapUnquote(p.ts)) {
+					at = i
+					break
+				}
 			}
-		}
-		value := json.RawMessage(`"NaN"`)
-		if isCount {
-			var add, have float64
-			_ = json.Unmarshal(unwrapUnquote(point.value), &add)
 			if at >= 0 {
-				_ = json.Unmarshal(unwrapUnquote(current[at].value), &have)
+				existing[at].value = value(existing[at].value, p.value)
+				continue
 			}
-			value = json.RawMessage(`"` + strconv.FormatFloat(have+add, 'f', -1, 64) + `"`)
+			np := unwrapPoint{ts: p.ts, value: value(json.RawMessage(`"0"`), p.value)}
+			existing = append(existing, np)
 		}
-		if at >= 0 {
-			current[at].value = value
-		} else {
-			current = append(current, unwrapPoint{point.ts, value})
+		sort.SliceStable(existing, func(i, j int) bool {
+			a, _ := strconv.ParseFloat(string(unwrapUnquote(existing[i].ts)), 64)
+			b, _ := strconv.ParseFloat(string(unwrapUnquote(existing[j].ts)), 64)
+			return a < b
+		})
+		encoded, err := encodeUnwrapPoints(existing, vector)
+		if err != nil {
+			return err
 		}
+		series[pointsKey] = encoded
+		return nil
 	}
-	sort.SliceStable(current, func(i, j int) bool {
-		var a, b float64
-		_ = json.Unmarshal(current[i].ts, &a)
-		_ = json.Unmarshal(current[j].ts, &b)
-		return a < b
-	})
-	rows := make([][]json.RawMessage, len(current))
-	for i, c := range current {
-		rows[i] = []json.RawMessage{c.ts, c.value}
+	fresh := make([]unwrapPoint, len(points))
+	for i, p := range points {
+		fresh[i] = unwrapPoint{ts: p.ts, value: value(json.RawMessage(`"0"`), p.value)}
 	}
-	var err error
-	if instant && len(rows) > 0 {
-		target["value"], err = json.Marshal(rows[0])
-	} else {
-		target["values"], err = json.Marshal(rows)
-	}
+	encoded, err := encodeUnwrapPoints(fresh, vector)
 	if err != nil {
 		return err
 	}
-	if index < 0 {
-		*kept = append(*kept, target)
+	rawMetric, err := json.Marshal(metric)
+	if err != nil {
+		return err
 	}
+	*kept = append(*kept, map[string]json.RawMessage{"metric": rawMetric, pointsKey: encoded})
 	return nil
 }
 
-// unwrapUnquote turns a JSON string number into the number.
-func unwrapUnquote(raw json.RawMessage) json.RawMessage {
-	var s string
-	if json.Unmarshal(raw, &s) == nil {
-		return json.RawMessage(s)
+// unwrapCount reads a count written as a JSON value: a finite number, else 0.
+func unwrapCount(raw json.RawMessage) float64 {
+	v, err := strconv.ParseFloat(string(unwrapUnquote(raw)), 64)
+	if err != nil || !finite(v) {
+		return 0
 	}
-	return raw
+	return v
 }
 
-// parseVLStepParam reads a VictoriaLogs step argument ("60s", "1m", "60").
-func parseVLStepParam(raw string) time.Duration {
-	if d, err := time.ParseDuration(raw); err == nil {
-		return d
+// encodeUnwrapPoints writes points as a series' values, or a vector sample's value.
+func encodeUnwrapPoints(points []unwrapPoint, vector bool) (json.RawMessage, error) {
+	pairs := make([][]json.RawMessage, len(points))
+	for i, p := range points {
+		pairs[i] = []json.RawMessage{p.ts, p.value}
 	}
-	if seconds, err := strconv.ParseFloat(raw, 64); err == nil && seconds > 0 {
-		return time.Duration(seconds * float64(time.Second))
+	if vector {
+		if len(pairs) == 0 {
+			return json.RawMessage("[]"), nil
+		}
+		return json.Marshal(pairs[0])
+	}
+	return json.Marshal(pairs)
+}
+
+// unwrapUnquote is a JSON value as text: a string unquoted, null empty, anything else as written.
+func unwrapUnquote(raw json.RawMessage) json.RawMessage {
+	s := bytes.TrimSpace(raw)
+	if bytes.Equal(s, []byte("null")) {
+		return nil
+	}
+	if len(s) >= 2 && s[0] == '"' {
+		var out string
+		if err := json.Unmarshal(s, &out); err == nil {
+			return json.RawMessage(out)
+		}
+	}
+	return s
+}
+
+// parseVLStepParam reads a stats_query_range step: seconds as a number, or a Go duration; 0 when it is neither or
+// not positive.
+func parseVLStepParam(raw string) time.Duration {
+	if v, err := strconv.ParseFloat(raw, 64); err == nil {
+		if v > 0 {
+			return time.Duration(v * float64(time.Second))
+		}
+		return 0
+	}
+	if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+		return d
 	}
 	return 0
 }
 
+// unwrapCheckKey carries a request's unwrap conversion check in its context.
 type unwrapCheckKey struct{}
 
-// unwrapCheck is the conversion-error detection of one Loki request: which
-// unwrap aggregations fail on a rejected value, Loki's evaluation, and the
-// spans the metric's own VictoriaLogs queries met such a value in.
+// unwrapCheck is a request's unwrap conversion check: its probes, the bounds Loki evaluates, the hits its
+// VictoriaLogs reads met, and the writer that holds the answer until the check decides.
 type unwrapCheck struct {
-	probes     []unwrapErrorProbe
-	vlName     func(string) string
-	instant    bool
-	start, end time.Time
-	step       time.Duration
-
-	mu      sync.Mutex
-	hits    []unwrapHit
-	rawHits int
-
-	writer *unwrapLookupWriter
-
-	// heavy is the base of the metric's first counting stats query that reads
-	// firstMinSpan or more (-backend-heavy-query-min-range). Once such a read
-	// has hits, the first evaluation window (start-range, start] is looked up
-	// before them: Loki stops at the first rejected value. first is that
-	// lookup; it starts beside the heavy read when the same query met a
-	// rejected value lately (unwrapRecentErrors), and cancel stops the
-	// metric's queries once it has Loki's error.
+	probes       []unwrapErrorProbe
+	vlName       func(string) string
+	instant      bool
+	start, end   time.Time
+	step         time.Duration
+	mu           sync.Mutex
+	hits         []unwrapHit
+	rawHits      int
+	writer       *unwrapLookupWriter
 	heavy        *unwrapHit
 	first        *unwrapFirstWindow
 	cancel       context.CancelFunc
 	firstMinSpan time.Duration
 	firstOnce    sync.Once
+	// confirmed counts the hits already looked up and lookups the lookups made: a request whose inner evaluations
+	// record their status before its last read decides again on the hits that came later, within one budget.
+	confirmed, lookups int
+	looked             map[unwrapHit]bool
+	// query is the request's query as it arrived, the key of the recent errors.
+	query string
 }
 
-// unwrapFirstWindow is the lookup of the rows of the first evaluation window
-// whose value the conversion rejects.
+// unwrapFirstWindow is the lookup of the first evaluation window: done closes when it answered, err is Loki's
+// error found there, nil when none.
 type unwrapFirstWindow struct {
 	done chan struct{}
 	err  *orderedJSONPipelineError
 }
 
+// unwrapCheckFrom returns the request's check, nil when the request has none.
 func unwrapCheckFrom(ctx context.Context) *unwrapCheck {
+	if ctx == nil {
+		return nil
+	}
 	c, _ := ctx.Value(unwrapCheckKey{}).(*unwrapCheck)
 	return c
 }
 
-// accepts reports whether some checked aggregation unwraps field (a VictoriaLogs
-// field) with conv.
+// accepts reports whether a probe of the check unwraps field (a VictoriaLogs name) with conv.
 func (c *unwrapCheck) accepts(field, conv string) bool {
 	return len(c.probesFor(field, conv)) > 0
 }
 
+// probesFor returns the probes that unwrap field (a VictoriaLogs name) with conv.
 func (c *unwrapCheck) probesFor(field, conv string) []unwrapErrorProbe {
+	if c == nil {
+		return nil
+	}
 	var out []unwrapErrorProbe
 	for _, probe := range c.probes {
-		if probe.conv == conv && (probe.label == field || (c.vlName != nil && c.vlName(probe.label) == field)) {
+		if probe.conv == conv && slices.Contains(c.fieldNames(probe), field) {
 			out = append(out, probe)
 		}
 	}
 	return out
 }
 
+// addHit remembers a hit.
 func (c *unwrapCheck) addHit(h unwrapHit) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(c.hits) < 4096 {
-		c.hits = append(c.hits, h)
-	}
+	c.hits = append(c.hits, h)
+	c.mu.Unlock()
 }
 
-// countingStatsQuery is the hook of the VictoriaLogs client: the query to
-// send for path and a function that strips the counter off a 200 answer.
+// countingStatsQuery rewrites a stats request of the check's request into its counting form; strip reads the
+// answer (the flags out, the hits remembered). ok is false when the request is not rewritten.
 func (c *unwrapCheck) countingStatsQuery(path string, params url.Values) (url.Values, func([]byte) ([]byte, error), bool) {
 	if c == nil || (path != "/select/logsql/stats_query_range" && path != "/select/logsql/stats_query") {
 		return params, nil, false
 	}
-	rewritten, base, field, conv, _, ok := unwrapCountingRewrite(params.Get("query"), func(field, conv string) (bool, bool) {
+	query := params.Get("query")
+	rewritten, base, field, conv, errors, ok := unwrapCountingRewrite(query, func(field, conv string) (bool, bool) {
 		errors := c.accepts(field, conv)
 		return errors, errors || conv == ""
 	})
 	if !ok {
 		return params, nil, false
 	}
-	if c.cancel != nil && c.accepts(field, conv) && unwrapVLSpan(params) >= c.firstMinSpan {
-		c.firstOnce.Do(func() {
-			h := unwrapHit{base: base, field: field, conv: conv}
-			c.mu.Lock()
-			c.heavy = &h
-			c.mu.Unlock()
-			if l := c.writer; unwrapRecentErrors.seen(c.recentKey(l.ctx, l.p, h)) {
-				c.startFirstWindow(h, true)
-			}
-		})
-	}
-	var nan *unwrapNaN
-	if conv == "" {
-		nan = unwrapNaNFor(rewritten)
-	}
-	sent := url.Values{}
+	out := make(url.Values, len(params))
 	for k, v := range params {
-		sent[k] = append([]string(nil), v...)
+		out[k] = v
 	}
-	sent.Set("query", rewritten)
-	step := parseVLStepParam(params.Get("step"))
+	out.Set("query", rewritten)
+	nan := unwrapNaNFor(rewritten)
+	span := unwrapVLSpan(params)
+	heavy := errors && c.firstMinSpan > 0 && isHeavyBackendRequest(path, params, c.firstMinSpan)
 	strip := func(body []byte) ([]byte, error) {
-		out, times, err := stripUnwrapFlags(body, nan)
+		stripped, times, err := stripUnwrapFlags(body, nan)
 		if err != nil {
 			return nil, err
 		}
-		for _, ts := range times {
-			h := unwrapHit{base: base, field: field, conv: conv}
-			if path == "/select/logsql/stats_query_range" && step > 0 {
-				// A bucket labelled T holds [T, T+step) or, with the offset
-				// argument, (T, T+step]: read a step on either side.
-				t := time.Unix(0, int64(ts*float64(time.Second)))
-				h.from, h.to = t.Add(-step), t.Add(2*step)
+		if errors {
+			for _, ts := range times {
+				from := time.Unix(0, int64(ts*float64(time.Second)))
+				h := unwrapHit{base: base, field: field, conv: conv, from: from, to: from.Add(span)}
+				if path == "/select/logsql/stats_query" {
+					h.from, h.to = unwrapParamTime(params.Get("start")), unwrapParamTime(params.Get("end"))
+				}
+				c.addHit(h)
+				if heavy {
+					c.mu.Lock()
+					if c.heavy == nil {
+						hh := h
+						c.heavy = &hh
+					}
+					c.mu.Unlock()
+				}
 			}
-			c.addHit(h)
 		}
-		return out, nil
+		return stripped, nil
 	}
-	return sent, strip, true
+	return out, strip, true
 }
 
-// rawRowRejected records a raw row a metric evaluator read and could not
-// convert: for each checked aggregation whose field (read by value) holds a
-// present value its conversion rejects, a hit at the row's time.
+// unwrapParamTime reads a VictoriaLogs time parameter (RFC 3339 or Unix time); zero when it is neither.
+func unwrapParamTime(raw string) time.Time {
+	if ns, ok := parseFlexibleUnixNanos(raw); ok {
+		return time.Unix(0, ns)
+	}
+	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return t
+	}
+	return time.Time{}
+}
+
+// rawRowRejected reports a raw row (of the query base, at ts) whose unwrapped value is present and the conversion
+// rejects; value reads a field of the row.
 func (c *unwrapCheck) rawRowRejected(base string, ts int64, value func(field string) string) {
 	if c == nil {
 		return
 	}
-	c.mu.Lock()
-	full := c.rawHits >= unwrapMaxRawHits
-	c.mu.Unlock()
-	if full {
-		return
-	}
-	t := time.Unix(0, ts)
 	for _, probe := range c.probes {
 		for _, field := range c.fieldNames(probe) {
 			v := value(field)
 			if v == "" {
 				continue
 			}
-			if _, err := convertUnwrap(v, probe.conv); err != nil {
-				c.mu.Lock()
+			if _, err := convertUnwrap(v, probe.conv); err == nil {
+				break
+			}
+			// A raw row's hit is its own time: the lookup reads that instant (and a nanosecond on either side).
+			c.mu.Lock()
+			if c.rawHits < unwrapMaxRawHits {
 				c.rawHits++
-				c.mu.Unlock()
-				c.addHit(unwrapHit{base: base, field: field, conv: probe.conv, from: t, to: t.Add(time.Nanosecond)})
-				return
+				at := time.Unix(0, ts)
+				c.hits = append(c.hits, unwrapHit{base: base, field: field, conv: probe.conv, from: at, to: at.Add(1)})
 			}
+			c.mu.Unlock()
+			return
 		}
 	}
 }
 
-// fieldNames are the VictoriaLogs fields that hold probe's unwrapped label.
+// fieldNames are the VictoriaLogs names of the probe's label.
 func (c *unwrapCheck) fieldNames(probe unwrapErrorProbe) []string {
-	names := []string{probe.label}
-	if c.vlName != nil {
-		if vl := c.vlName(probe.label); vl != probe.label {
-			names = append(names, vl)
+	name := probe.label
+	if c != nil && c.vlName != nil {
+		if v := c.vlName(name); v != "" && v != name {
+			return []string{v, name}
 		}
 	}
-	return names
+	return []string{name}
 }
 
-// unwrapMaxRawHits bounds the rows a raw evaluator records for confirmation.
-const unwrapMaxRawHits = 64
+// Bounds of the check: the raw rows reported, and the lookups after the read.
+const (
+	unwrapMaxRawHits = 64
+	unwrapMaxLookups = 4
+)
 
-// unwrapMaxLookups bounds the work spent confirming hits: at most this many
-// lookups of three rows, each row's stored line re-read side by side. A query
-// VictoriaLogs flags but Loki answers (an array VictoriaLogs renders as text, a
-// duplicate logfmt key) pays this bound on every request.
-const unwrapMaxLookups = 4
-
-// unwrapVLSpan is the time range a VictoriaLogs call reads, 0 when unknown.
+// unwrapVLSpan is the span of a stats request's bucket: the step of stats_query_range, the whole range of
+// stats_query.
 func unwrapVLSpan(params url.Values) time.Duration {
-	start, okS := parseLokiTimeToUnixNano(params.Get("start"))
-	end, okE := parseLokiTimeToUnixNano(params.Get("end"))
-	if !okS || !okE || end <= start {
-		return 0
+	if step := parseVLStepParam(params.Get("step")); step > 0 {
+		return step
 	}
-	return time.Duration(end - start)
+	from, to := unwrapParamTime(params.Get("start")), unwrapParamTime(params.Get("end"))
+	if !from.IsZero() && !to.IsZero() && to.After(from) {
+		return to.Sub(from)
+	}
+	return time.Nanosecond
 }
 
-// startFirstWindow looks up the first evaluation window (start-range, start]
-// of every probe of h's field and conv; early, it runs beside the metric's
-// queries and cancels them when Loki fails there.
+// startFirstWindow starts the lookup of the first evaluation window for the hit's field and conversion, once per
+// request; early runs it while the metric's read is still on its way, and cancels that read when it finds the
+// error.
 func (c *unwrapCheck) startFirstWindow(h unwrapHit, early bool) *unwrapFirstWindow {
-	first := &unwrapFirstWindow{done: make(chan struct{})}
-	c.mu.Lock()
-	if c.first != nil {
-		first = c.first
+	c.firstOnce.Do(func() {
+		fw := &unwrapFirstWindow{done: make(chan struct{})}
+		c.mu.Lock()
+		c.first = fw
 		c.mu.Unlock()
-		return first
-	}
-	c.first = first
-	c.mu.Unlock()
-	l := c.writer
-	go func() {
-		defer close(first.done)
-		for _, probe := range c.probesFor(h.field, h.conv) {
-			from := c.start.Add(-probe.window).Add(time.Nanosecond)
-			to := c.start.Add(time.Nanosecond)
-			if first.err = c.lookupHit(l.ctx, l.p, probe, h, from, to); first.err != nil {
-				if early {
-					c.cancel()
+		writer := c.writer
+		go func() {
+			if writer != nil {
+				for _, probe := range c.probesFor(h.field, h.conv) {
+					from, _, _ := c.windows(probe)
+					firstEnd := c.start.Add(-probe.offset)
+					if err := c.lookupHit(writer.ctx, writer.p, probe, h, from, firstEnd); err != nil {
+						fw.err = err
+						break
+					}
 				}
-				return
 			}
-		}
-	}()
-	return first
+			close(fw.done)
+			if fw.err != nil && early && c.cancel != nil {
+				// Loki stops at the first rejected value: the metric's read is not needed any more.
+				c.cancel()
+			}
+		}()
+	})
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.first
 }
 
-// recentKey identifies the query of a heavy read for unwrapRecentErrors.
+// recentKey names the request's query, tenant and probed field: a recent conversion error of the same key starts
+// the next heavy read's first-window lookup early.
 func (c *unwrapCheck) recentKey(ctx context.Context, p *Proxy, h unwrapHit) string {
-	return fmt.Sprintf("%p\x00%s\x00%s\x00%s\x00%s\x00%s", p, p.backend, p.contextScopeFingerprint(ctx), h.base, h.field, h.conv)
+	return p.contextScopeFingerprint(ctx) + "\x00" + c.query + "\x00" + h.field + "\x00" + h.conv
 }
 
-// unwrapRecentErrors remembers the heavy queries that answered Loki's
-// conversion error lately, so their next heavy read looks the first window
-// up beside the stats read; a query that never errs pays nothing.
+// unwrapRecentErrors remembers the queries that met a conversion error lately, per tenant.
 var unwrapRecentErrors = &unwrapRecent{at: map[string]time.Time{}}
 
-// unwrapRecentTTL and unwrapRecentMax bound unwrapRecentErrors.
+// How long, and how many, recent conversion errors are remembered.
 const (
 	unwrapRecentTTL = 10 * time.Minute
 	unwrapRecentMax = 1024
 )
 
+// unwrapRecent is a bounded set of keys with the time each was marked.
 type unwrapRecent struct {
 	mu sync.Mutex
 	at map[string]time.Time
 }
 
+// seen reports a key marked within unwrapRecentTTL.
 func (r *unwrapRecent) seen(key string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	at, ok := r.at[key]
-	return ok && time.Since(at) <= unwrapRecentTTL
+	t, ok := r.at[key]
+	if ok && time.Since(t) > unwrapRecentTTL {
+		delete(r.at, key)
+		return false
+	}
+	return ok
 }
 
+// mark remembers a key, dropping expired keys (and, when still full, the oldest) to stay bounded.
 func (r *unwrapRecent) mark(key string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if len(r.at) >= unwrapRecentMax {
-		clear(r.at)
+	now := time.Now()
+	if _, ok := r.at[key]; !ok && len(r.at) >= unwrapRecentMax {
+		oldest, oldestAt := "", now
+		for k, t := range r.at {
+			if now.Sub(t) > unwrapRecentTTL {
+				delete(r.at, k)
+				continue
+			}
+			if t.Before(oldestAt) {
+				oldest, oldestAt = k, t
+			}
+		}
+		if len(r.at) >= unwrapRecentMax {
+			delete(r.at, oldest)
+		}
 	}
-	r.at[key] = time.Now()
+	r.at[key] = now
 }
 
-// confirm returns Loki's error for the first hit whose row Loki fails on, or
-// nil. Each lookup reads at most three rows of one hit's span. After a heavy
-// read with hits, the first evaluation window's lookup answers first (the
-// early one when it ran), so the answer is the same whichever way it came.
+// confirm decides the check: Loki's error when a line of the read's hits fails Loki's conversion, nil otherwise.
 func (c *unwrapCheck) confirm(ctx context.Context, p *Proxy) *orderedJSONPipelineError {
+	if c == nil || len(c.probes) == 0 {
+		return nil
+	}
 	c.mu.Lock()
-	hits := append([]unwrapHit(nil), c.hits...)
-	heavy, first := c.heavy, c.first
+	fw := c.first
+	heavy := c.heavy
+	hits := append([]unwrapHit(nil), c.hits[c.confirmed:]...)
+	c.confirmed = len(c.hits)
 	c.mu.Unlock()
-	if first != nil {
-		<-first.done
-		if first.err != nil {
-			return first.err
+	if fw == nil && heavy != nil {
+		fw = c.startFirstWindow(*heavy, false)
+	}
+	if fw != nil {
+		// The lookup reads with the request's context and ends with it.
+		<-fw.done
+		if fw.err != nil {
+			return fw.err
 		}
 	}
 	if len(hits) == 0 {
 		return nil
 	}
-	if heavy != nil && first == nil {
-		first = c.startFirstWindow(*heavy, false)
-		<-first.done
-		if first.err != nil {
-			unwrapRecentErrors.mark(c.recentKey(ctx, p, *heavy))
-			return first.err
-		}
-	}
-	err := c.confirmHits(ctx, p, hits)
-	if err != nil && heavy != nil {
-		unwrapRecentErrors.mark(c.recentKey(ctx, p, *heavy))
-	}
-	return err
+	return c.confirmHits(ctx, p, hits)
 }
 
-// confirmHits returns Loki's error for the first of hits whose row Loki fails
-// on, or nil.
+// confirmHits looks the hits up, earliest first, at most unwrapMaxLookups of them; the first line that fails
+// Loki's conversion decides.
 func (c *unwrapCheck) confirmHits(ctx context.Context, p *Proxy, hits []unwrapHit) *orderedJSONPipelineError {
 	sort.SliceStable(hits, func(i, j int) bool { return hits[i].from.Before(hits[j].from) })
-	seen := map[string]bool{}
-	lookups := 0
 	for _, h := range hits {
+		if c.looked[h] {
+			continue // the same rows read by an earlier operand, or twice by one
+		}
+		if c.looked == nil {
+			c.looked = map[unwrapHit]bool{}
+		}
+		c.looked[h] = true
+		looked := map[[2]time.Duration]bool{}
 		for _, probe := range c.probesFor(h.field, h.conv) {
-			from, to, _ := c.windows(probe)
-			if !h.from.IsZero() {
-				if h.from.After(from) {
-					from = h.from
-				}
-				if h.to.Before(to) {
-					to = h.to
-				}
+			if looked[[2]time.Duration{probe.window, probe.offset}] {
+				continue // an identical aggregation (both operands of a binary operation) reads the same rows
 			}
-			if !to.After(from) {
-				continue
-			}
-			key := unwrapLookupQuery(h.base, h.field, h.conv) + from.String() + to.String()
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			if lookups++; lookups > unwrapMaxLookups {
+			looked[[2]time.Duration{probe.window, probe.offset}] = true
+			if c.lookups >= unwrapMaxLookups {
 				return nil
 			}
-			if pipelineErr := c.lookupHit(ctx, p, probe, h, from, to); pipelineErr != nil {
-				return pipelineErr
+			from, to, _ := c.windows(probe)
+			span := h.to.Sub(h.from)
+			lo, hi := h.from.Add(-span), h.to.Add(span)
+			if lo.Before(from) {
+				lo = from
+			}
+			if hi.After(to) {
+				hi = to
+			}
+			if hi.Before(lo) {
+				continue
+			}
+			c.lookups++
+			if err := c.lookupHit(ctx, p, probe, h, lo, hi); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
 }
 
-// lookupHit reads at most three rows of h's base in [from, to) whose value the
-// conversion rejects and returns Loki's error for the first one, in the
-// lookup's order, that Loki fails on.
+// lookupHit reads the flagged rows of the hit's query between from and to (inclusive) and returns Loki's error
+// for the first row Loki fails on.
 func (c *unwrapCheck) lookupHit(ctx context.Context, p *Proxy, probe unwrapErrorProbe, h unwrapHit, from, to time.Time) *orderedJSONPipelineError {
-	_, _, last := c.windows(probe)
-	query := unwrapLookupQuery(h.base, h.field, h.conv)
-	if !c.instant && c.step > probe.window && !strings.Contains(h.base, "__lvp_window_phase") {
-		// A base read through the window evaluator holds the filter already.
-		query = withWindowPhaseFilter(ctx, query, c.start, c.step, probe.window)
-	}
-	query += " | limit 3"
-	rows, err := p.unwrapLookupRows(ctx, query, from, to)
+	rows, err := p.unwrapLookupRows(ctx, unwrapLookupQuery(h.base, h.field, h.conv)+" | limit 3", from, to)
 	if err != nil {
-		p.log.Warn("unwrap conversion lookup failed", "error", err)
 		return nil
 	}
-	// The stored rows are re-read side by side; the first row in the
-	// lookup's order that Loki fails on answers.
-	found := make([]*orderedJSONPipelineError, len(rows))
-	var wg sync.WaitGroup
-	for i, row := range rows {
-		ts, ok := parseFlexibleUnixNanos(row["_time"])
-		if !ok || !c.visible(ts, probe, last) {
+	_, _, last := c.windows(probe)
+	var visible []map[string]string
+	for _, row := range rows {
+		ts, err := time.Parse(time.RFC3339Nano, row["_time"])
+		if err != nil || !c.visible(ts.UnixNano(), probe, last) {
 			continue
 		}
+		visible = append(visible, row)
+	}
+	if len(visible) == 0 {
+		return nil
+	}
+	stored := make([]map[string]string, len(visible))
+	var wg sync.WaitGroup
+	for i, row := range visible {
 		wg.Add(1)
-		go func(i int, row map[string]string) {
+		go func() {
 			defer wg.Done()
-			found[i] = p.unwrapRowError(ctx, probe, row, h.field)
-		}(i, row)
+			stored[i], _ = p.unwrapStoredRow(ctx, probe, row)
+		}()
 	}
 	wg.Wait()
-	for _, pipelineErr := range found {
-		if pipelineErr != nil {
-			return pipelineErr
+	for _, row := range stored {
+		if row == nil {
+			continue
+		}
+		if err := p.unwrapRowError(ctx, probe, row, h.field); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// windows returns the range Loki evaluates for probe, as VictoriaLogs bounds
-// [from, to), and the last evaluation time.
+// windows are the bounds of the lines Loki reads for probe, in the stored time (the offset applied): from is
+// exclusive, to inclusive; last is the last evaluation time.
 func (c *unwrapCheck) windows(probe unwrapErrorProbe) (from, to, last time.Time) {
-	last = c.start
-	if !c.instant && c.step > 0 && !c.end.Before(c.start) {
+	last = c.end
+	if !c.instant && c.step > 0 && c.end.After(c.start) {
 		last = c.start.Add(c.end.Sub(c.start) / c.step * c.step)
 	}
-	// Loki's window is left-open, right-closed; VictoriaLogs' end is exclusive.
-	return c.start.Add(-probe.window).Add(time.Nanosecond), last.Add(time.Nanosecond), last
-}
-
-func (c *unwrapCheck) visible(ts int64, probe unwrapErrorProbe, last time.Time) bool {
-	if c.instant || c.step <= 0 {
-		return ts > c.start.Add(-probe.window).UnixNano() && ts <= c.start.UnixNano()
+	if c.instant {
+		last = c.start
 	}
-	return orderedJSONSampleVisible(ts, c.start.UnixNano(), last.UnixNano(), int64(c.step), int64(probe.window))
+	from = c.start.Add(-probe.offset - probe.window).Add(1)
+	to = last.Add(-probe.offset)
+	return from, to, last
 }
 
-// unwrapLookupRows runs a lookup over [from, to).
+// visible reports whether a line at ts (stored time) is inside a window (t-range, t] of an evaluation time t.
+func (c *unwrapCheck) visible(ts int64, probe unwrapErrorProbe, last time.Time) bool {
+	ts += int64(probe.offset)
+	window := int64(probe.window)
+	start := c.start.UnixNano()
+	if c.instant || c.step <= 0 {
+		return ts > start-window && ts <= start
+	}
+	if ts > last.UnixNano() || ts <= start-window {
+		return false
+	}
+	step := int64(c.step)
+	// The first evaluation time at or after ts.
+	k := (ts - start + step - 1) / step
+	if ts <= start {
+		k = 0
+	}
+	t := start + k*step
+	return t <= last.UnixNano() && ts > t-window
+}
+
+// unwrapLookupRows reads the rows of query between from and to (both inclusive: VictoriaLogs' end is exclusive),
+// each as its fields' text.
 func (p *Proxy) unwrapLookupRows(ctx context.Context, query string, from, to time.Time) ([]map[string]string, error) {
-	params := url.Values{"query": {query}, "start": {from.UTC().Format(time.RFC3339Nano)}, "end": {to.UTC().Format(time.RFC3339Nano)}}
+	params := url.Values{
+		"query": {query},
+		"start": {from.UTC().Format(time.RFC3339Nano)},
+		"end":   {to.Add(1).UTC().Format(time.RFC3339Nano)},
+	}
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
-		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return nil, p.redactedBackendStatusError("backend returned", resp.StatusCode, body)
+		return nil, &upstreamStatusError{status: resp.StatusCode}
 	}
 	var rows []map[string]string
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64<<10), 8<<20)
-	for scanner.Scan() && len(rows) < 64 {
-		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
+	sc := bufio.NewScanner(resp.Body)
+	sc.Buffer(make([]byte, 64<<10), 4<<20)
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 {
 			continue
 		}
-		var row map[string]string
-		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
-			return nil, fmt.Errorf("invalid backend unwrap row: %w", err)
+		row := map[string]string{}
+		if err := jsonparser.ObjectEach(line, func(key, value []byte, kind jsonparser.ValueType, _ int) error {
+			row[string(key)] = orderedJSONScalarText(value, kind)
+			return nil
+		}); err != nil {
+			continue
 		}
 		rows = append(rows, row)
 	}
-	return rows, scanner.Err()
+	return rows, sc.Err()
 }
 
-// unwrapStoredRow reads the row as stored (before any parser) by its stream id,
-// time and, when no line_format rewrote it, its exact line; nil when the rows
-// found are not one line (identical copies count as one).
-func (p *Proxy) unwrapStoredRow(ctx context.Context, probe unwrapErrorProbe, row map[string]string) (map[string]string, error) {
-	id, at := row["_stream_id"], row["_time"]
-	ts, ok := parseFlexibleUnixNanos(at)
-	if id == "" || !ok {
-		return nil, nil
-	}
-	query := "_stream_id:" + strconv.Quote(id)
-	formatted := false
-	for _, stage := range probe.pipeline {
-		if _, ok := stage.(*logqlpkg.LineFormatStage); ok {
-			formatted = true
+// orderedJSONScalarText is a JSON value's text: a string unescaped, anything else as written.
+func orderedJSONScalarText(value []byte, kind jsonparser.ValueType) string {
+	if kind == jsonparser.String {
+		if s, err := jsonparser.ParseString(value); err == nil {
+			return s
 		}
 	}
-	if !formatted {
-		query += " _msg:=" + strconv.Quote(row["_msg"])
-	}
-	t := time.Unix(0, ts)
-	rows, err := p.unwrapLookupRows(ctx, query+" | limit 64", t, t.Add(time.Nanosecond))
-	if err != nil {
+	return string(value)
+}
+
+// unwrapFormattedField carries the lookup's line (after the query's line_format stages) with the stored row.
+const unwrapFormattedField = "__lvp_formatted"
+
+// unwrapStoredRow reads a looked-up row again as it is stored (by its stream, time and line), without the fields
+// the query's parsers wrote over it.
+func (p *Proxy) unwrapStoredRow(ctx context.Context, probe unwrapErrorProbe, row map[string]string) (map[string]string, error) {
+	id, msg := row["_stream_id"], row["_msg"]
+	ts, err := time.Parse(time.RFC3339Nano, row["_time"])
+	if id == "" || err != nil {
 		return nil, err
 	}
-	var match []map[string]string
-	for _, r := range rows {
-		if rts, ok := parseFlexibleUnixNanos(r["_time"]); ok && rts == ts && (formatted || r["_msg"] == row["_msg"]) {
-			match = append(match, r)
+	rows, err := p.unwrapLookupRows(ctx, "_stream_id:"+strconv.Quote(id)+" _msg:="+strconv.Quote(msg)+" | limit "+strconv.Itoa(unwrapMaxRawHits), ts, ts)
+	if err != nil || len(rows) == 0 {
+		return nil, err
+	}
+	// The row of the same time and line; VictoriaLogs' filter already holds the line, the time picks among equal
+	// lines of the stream.
+	stored := rows[0]
+	for i := len(rows) - 1; i >= 0; i-- {
+		if rows[i]["_msg"] == msg && (rows[i]["_time"] == row["_time"] || stored["_msg"] != msg) {
+			stored = rows[i]
 		}
 	}
-	if len(match) == 0 {
-		return nil, nil
-	}
-	for _, other := range match[1:] {
-		if !maps.Equal(other, match[0]) {
-			return nil, nil
-		}
-	}
-	return match[0], nil
+	// The lookup's line is the one the query's line_format stages wrote.
+	stored[unwrapFormattedField] = msg
+	return stored, nil
 }
 
-// unwrapRowError is Loki's pipeline error for the row the lookup read, or nil
-// when Loki makes no failing sample of it: Loki's value of the label is derived
-// from the stored row with Loki's parsers, and only a value Loki's conversion
-// rejects fails the query.
+// unwrapRowError is Loki's error for a stored row, nil when Loki does not fail on it. The row's labels are the
+// ones the proxy answers for the stream (service_name and the level as every route derives them) and the row's
+// stored fields as structured metadata.
 func (p *Proxy) unwrapRowError(ctx context.Context, probe unwrapErrorProbe, row map[string]string, field string) *orderedJSONPipelineError {
-	stored, err := p.unwrapStoredRow(ctx, probe, row)
-	if err != nil {
-		p.log.Warn("unwrap conversion lookup failed", "error", err)
-		return nil
-	}
-	if stored == nil {
-		return nil
-	}
+	stored := cloneStringMap(row)
+	delete(stored, unwrapFormattedField)
 	dropIngestUnpackedFields(stored)
-	desc := p.logQueryStreamDescriptor(stored["_stream"], stored["level"], map[string]map[string]string{}, map[string]cachedLogQueryStreamDescriptor{})
+	desc := p.logQueryStreamDescriptor(row["_stream"], row["level"], map[string]map[string]string{}, map[string]cachedLogQueryStreamDescriptor{})
 	base, err := p.orderedJSONBaseLabels(stored, desc, map[string][]metadataFieldExposure{})
 	if err != nil {
 		return nil
 	}
-	return unwrapLokiError(probe, base, stored["_msg"], row["_msg"])
+	formatted := row[unwrapFormattedField]
+	if formatted == "" {
+		formatted = row["_msg"]
+	}
+	return unwrapLokiError(probe, base, row["_msg"], formatted)
 }
 
-// dropIngestUnpackedFields removes from a stored row the fields VictoriaLogs
-// unpacked from a JSON line at ingest (its Loki push API parses JSON lines and
-// keeps the line in _msg): a field named like a key path of the line (joined
-// with dots) holding the same value is the line's own key, not structured
-// metadata Loki stores beside the line.
+// dropIngestUnpackedFields drops the fields VictoriaLogs unpacked from a JSON line at ingest (each top-level scalar
+// of the line, stored under its key with its value): they are the line's, not structured metadata.
 func dropIngestUnpackedFields(stored map[string]string) {
-	msg := stored["_msg"]
-	if !strings.HasPrefix(strings.TrimSpace(msg), "{") {
+	line := stored["_msg"]
+	if len(line) < 2 || line[0] != '{' {
 		return
 	}
-	var walk func(data []byte, prefix string, depth int)
-	walk = func(data []byte, prefix string, depth int) {
-		if depth > 16 {
-			return
-		}
-		_ = jsonparser.ObjectEach(data, func(key, value []byte, kind jsonparser.ValueType, _ int) error {
-			name := string(key)
-			if prefix != "" {
-				name = prefix + "." + name
-			}
-			switch kind {
-			case jsonparser.Object:
-				walk(value, name, depth+1)
-			case jsonparser.String, jsonparser.Number, jsonparser.Boolean:
-				if v, ok := stored[name]; ok && v == orderedJSONScalar(value, kind) {
-					delete(stored, name)
-				}
-			}
+	_ = jsonparser.ObjectEach([]byte(line), func(key, value []byte, kind jsonparser.ValueType, _ int) error {
+		name := string(key)
+		if strings.HasPrefix(name, "_") {
 			return nil
-		})
-	}
-	walk([]byte(msg), "", 0)
+		}
+		if v, ok := stored[name]; ok && kind != jsonparser.Object && kind != jsonparser.Array && v == orderedJSONScalarText(value, kind) {
+			delete(stored, name)
+		}
+		return nil
+	})
 }
 
-// unwrapLokiError is Loki's pipeline error for a stored line whose labels
-// before the pipeline are base, or nil when Loki makes no failing sample of it.
+// unwrapLokiError is Loki's pipeline error for the line (with the stored labels base) under probe, nil when Loki
+// makes a sample of it, makes none, or the pipeline is not one the check reproduces.
 func unwrapLokiError(probe unwrapErrorProbe, base map[string]string, line, formatted string) *orderedJSONPipelineError {
 	labels, parsed, ok := unwrapLokiLabels(probe, base, line, formatted)
-	if !ok || labels == nil {
+	if !ok || labels == nil || labels["__preserve_error__"] != "" {
 		return nil
 	}
 	value := labels[probe.label]
-	if value == "" || labels["__preserve_error__"] == "true" {
+	if value == "" {
 		return nil
 	}
-	_, convErr := convertUnwrap(value, probe.conv)
-	if convErr == nil {
+	_, err := convertUnwrap(value, probe.conv)
+	if err == nil {
 		return nil
 	}
-	for _, stage := range probe.post {
-		lf, isFilter := stage.(*logqlpkg.LabelFilterStage)
-		if !isFilter {
-			return nil
-		}
-		if compiled, valid := compileOrderedJSONStage(lf); valid && compiled.filter != nil &&
-			(compiled.filter.Field == "__error__" || compiled.filter.Field == "__error_details__") {
-			continue // evaluated with the error set (unwrapErrorPostFilters)
-		}
-		if keep, known := unwrapLabelFilterKeeps(lf, labels); !known || !keep {
-			return nil
-		}
-	}
-	if probe.hints != nil {
-		for name := range parsed {
-			if !probe.hints[name] {
-				delete(labels, name)
-			}
-		}
-	}
+	out := make(map[string]string, len(labels))
 	for name, v := range labels {
-		if v == "" {
-			delete(labels, name) // a label set holds no empty value
+		if parsed[name] && probe.hints != nil && !probe.hints[name] {
+			continue
+		}
+		out[name] = v
+	}
+	out[errorLabel] = "SampleExtractionErr"
+	out[errorDetailsLabel] = ""
+	for _, st := range probe.post {
+		lf, _ := st.(*logqlpkg.LabelFilterStage)
+		if keep, known := unwrapLabelFilterKeeps(lf, out); !known || !keep {
+			return nil
 		}
 	}
-	labels["__error__"] = "SampleExtractionErr"
-	labels["__error_details__"] = convErr.Error()
-	return lokiPipelineError(labels)
+	out[errorDetailsLabel] = err.Error()
+	return lokiPipelineError(out)
 }
 
-// unwrapLokiLabels runs the pipeline before the unwrap on a stored line the way
-// Loki does, from the labels Loki starts with (stream labels, structured
-// metadata). formatted is the line after the pipeline's line_format, as
-// VictoriaLogs returned it. It returns the labels (nil when a label filter
-// drops the line), the names the parsers extracted, and ok false when a stage
-// is one this derivation does not reproduce exactly (the query then answers as
-// the metric does).
+// unwrapLokiLabels runs the probe's stages before the unwrap over the line, as Loki does, from the stored labels
+// base: the labels, the names the parsers extracted, and ok false when a stage is not one the check reproduces.
+// formatted is the line after the query's line_format stages (VictoriaLogs' answer to the lookup), which the
+// parsers after a line_format read. labels is nil when a filter drops the line.
 func unwrapLokiLabels(probe unwrapErrorProbe, base map[string]string, line, formatted string) (map[string]string, map[string]bool, bool) {
 	labels := cloneStringMap(base)
 	parsed := map[string]bool{}
-	formattedOnce := false
-	for _, stage := range probe.pipeline {
-		switch s := stage.(type) {
-		case *logqlpkg.LineFilterStage:
-			// VictoriaLogs applied it to the line the lookup read.
+	preserve := probe.hints[errorLabel]
+	text := line
+	for _, st := range probe.pipeline {
+		switch s := st.(type) {
+		case *logqlpkg.ParserStage:
+			if !unwrapParseLine(s, text, labels, parsed, preserve) {
+				return nil, nil, false
+			}
+		case *logqlpkg.LineFormatStage:
+			text = formatted
+		case *logqlpkg.LabelFormatStage:
+			if !unwrapLabelFormat(s, labels, probe.label) {
+				return nil, nil, false
+			}
 		case *logqlpkg.LabelFilterStage:
-			// VictoriaLogs compared its own unpacked values; Loki's may differ.
 			keep, known := unwrapLabelFilterKeeps(s, labels)
 			if !known {
 				return nil, nil, false
@@ -1315,27 +1542,14 @@ func unwrapLokiLabels(probe unwrapErrorProbe, base map[string]string, line, form
 			if !keep {
 				return nil, parsed, true
 			}
-		case *logqlpkg.LineFormatStage:
-			if formattedOnce {
-				return nil, nil, false
-			}
-			formattedOnce, line = true, formatted
-		case *logqlpkg.ParserStage:
-			if !unwrapParseLine(s, line, labels, parsed, probe.hints["__error__"]) {
-				return nil, nil, false
-			}
+		case *logqlpkg.LineFilterStage:
+			// VictoriaLogs ran the line filters on the line the lookup read.
 		case *logqlpkg.DropStage, *logqlpkg.KeepStage:
-			compiled, ok := compileOrderedJSONStage(stage)
+			compiled, ok := compileOrderedJSONStage(st)
 			if !ok {
 				return nil, nil, false
 			}
 			applyOrderedJSONFields(compiled, labels)
-		case *logqlpkg.LabelFormatStage:
-			for _, f := range s.Formats {
-				if f.Name == probe.label || (f.Rename && f.Value == probe.label) {
-					return nil, nil, false
-				}
-			}
 		default:
 			return nil, nil, false
 		}
@@ -1343,13 +1557,48 @@ func unwrapLokiLabels(probe unwrapErrorProbe, base map[string]string, line, form
 	return labels, parsed, true
 }
 
-// unwrapLabelFilterKeeps evaluates a label filter on Loki's labels of a line
-// a string filter compares the value (absent
-// is empty); a comparison drops a line without the label, keeps one whose value
-// it cannot parse (Loki marks it with an error that the unwrap's own error
-// replaces) and compares otherwise. known is false for an expression this does
-// not evaluate (and/or, ip()).
+// unwrapLabelFormatRefRE is a template that is one label reference ({{.name}}).
+var unwrapLabelFormatRefRE = regexp.MustCompile(`^\{\{-?\s*\.([A-Za-z_][A-Za-z0-9_]*)\s*-?\}\}$`)
+
+// unwrapLabelFormat applies a label_format stage whose formats rename a label or copy one label's value
+// ({{.name}}), as Loki does (recorded: TestUnwrapConversionErrorMatchesRecordedLoki): the formats read the labels
+// as they were before the stage; a label another template writes is left out of the error's series. A stage that
+// writes the unwrapped label is not reproduced (ok false).
+func unwrapLabelFormat(stage *logqlpkg.LabelFormatStage, labels map[string]string, unwrapped string) bool {
+	before := cloneStringMap(labels)
+	for _, f := range stage.Formats {
+		if f.Name == unwrapped {
+			// The unwrapped label written by the stage: not reproduced.
+			return false
+		}
+		source := f.Value
+		if !f.Rename {
+			m := unwrapLabelFormatRefRE.FindStringSubmatch(f.Value)
+			if m == nil {
+				delete(labels, f.Name)
+				continue
+			}
+			source = m[1]
+		}
+		if v := before[source]; v != "" {
+			labels[f.Name] = v
+		} else {
+			delete(labels, f.Name)
+		}
+		if f.Rename && source != f.Name {
+			delete(labels, source)
+		}
+	}
+	return true
+}
+
+// unwrapLabelFilterKeeps evaluates a label filter stage over labels as Loki does: a string or ip() comparison, or a
+// comparison with a number, a duration or a byte size (a label missing is dropped, one that does not convert kept,
+// with Loki's error). known is false for any other filter.
 func unwrapLabelFilterKeeps(stage *logqlpkg.LabelFilterStage, labels map[string]string) (keep, known bool) {
+	if stage == nil {
+		return false, false
+	}
 	if compiled, valid := compileOrderedJSONStage(stage); valid && compiled.filter != nil {
 		return compiled.filter.Matches(labels[compiled.filter.Field]), true
 	}
@@ -1381,13 +1630,11 @@ func unwrapLabelFilterKeeps(stage *logqlpkg.LabelFilterStage, labels map[string]
 		return value <= bound, true
 	case "!=":
 		return value != bound, true
-	default:
-		return value == bound, true
 	}
+	return value == bound, true
 }
 
-// unwrapComparisonConv returns the conversion a comparison filter's literal
-// selects in Loki's grammar: a number, a duration or a byte size.
+// unwrapComparisonConv is the conversion a comparison literal is read with: a number, a duration, a byte size.
 func unwrapComparisonConv(literal string) (string, bool) {
 	if _, err := strconv.ParseFloat(literal, 64); err == nil {
 		return "", true
@@ -1401,277 +1648,419 @@ func unwrapComparisonConv(literal string) (string, bool) {
 	return "", false
 }
 
-// unwrapParseLine extracts a parser stage's labels from line into labels, as
-// Loki v3.7.7 does: a key named like a label it
-// already has gets the _extracted suffix; `| json` keeps strings, numbers and
-// booleans and flattens objects, skipping arrays and null; `| unpack` keeps
-// the strings of a packed entry only; `| regexp` keeps its named captures. ok is false for a parser
-// with arguments or one this does not reproduce.
+// unwrapParseLine runs one parser stage over the line into labels, as Loki's parser does (recorded:
+// TestUnwrapParsersMatchRecordedLoki): a name the stage extracts that a stored label already holds gets the
+// _extracted suffix, a name an earlier stage extracted is kept, and the stage's own first non-empty value of a
+// name wins (json, logfmt) or its last (unpack). ok is false for a stage the check does not reproduce.
 func unwrapParseLine(stage *logqlpkg.ParserStage, line string, labels map[string]string, parsed map[string]bool, preserveError bool) bool {
-	set := func(name, value string) {
-		if _, exists := labels[name]; exists && !parsed[name] {
-			name += "_extracted"
+	add := func(name, value string, last bool) {
+		if name == "" || name == errorLabel || name == errorDetailsLabel {
+			return
 		}
-		if parsed[name] {
+		if _, stored := labels[name]; stored && !parsed[name] {
+			name += extractedSuffix
+		}
+		if parsed[name] && !last {
 			return
 		}
 		labels[name], parsed[name] = value, true
 	}
 	switch stage.Type {
 	case logqlpkg.ParserJSON:
-		if stage.Param != "" || len(stage.Fields) != 0 {
+		if stage.Param != "" || len(stage.Fields) > 0 {
 			return false
 		}
-		plan := &orderedJSONMetricPlan{preserveError: preserveError}
-		extracted := map[string]bool{}
-		before := cloneStringMap(labels)
-		if err := plan.parseJSON(line, before, before, false, labels, extracted); err != nil {
-			return false
+		own := map[string]bool{}
+		err := unwrapWalkJSON([]byte(line), "", 0, func(name, value string) {
+			if own[name] {
+				return
+			}
+			own[name] = true
+			add(name, value, false)
+		})
+		if err != nil {
+			labels[errorLabel] = "JSONParserErr"
+			labels[errorDetailsLabel] = err.Error()
+			if preserveError {
+				labels["__preserve_error__"] = "true"
+			}
 		}
-		// parseJSON stores only true values.
-		maps.Copy(parsed, extracted)
+		return true
 	case logqlpkg.ParserLogfmt:
-		if stage.Param != "" || len(stage.Fields) != 0 {
+		if stage.Param != "" || len(stage.Fields) > 0 {
 			return false
 		}
-		// Loki's decoder (lokiLogfmtPairs): the first non-empty value of a key wins.
+		own := map[string]bool{}
 		lokiLogfmtPairs(line, func(key, value string) {
 			name := orderedJSONLabelName(key, true)
-			if value = lokiLabelValue(value); name != "" && value != "" {
-				set(name, value)
+			if value == "" || own[name] {
+				return
 			}
+			own[name] = true
+			add(name, lokiLabelValue(value), false)
 		})
+		return true
 	case logqlpkg.ParserUnpack:
-		// Loki adds the string keys only to a packed entry, one holding _entry,
-		// and the last value of a key wins (the keys are
-		// buffered and set when _entry is found). A key named like a label the
-		// line had before the parser gets the _extracted suffix; one an earlier
-		// parser extracted is skipped.
-		type pair struct{ name, value string }
-		var pairs []pair
-		packed := false
+		if !strings.Contains(line, `"_entry"`) {
+			return true
+		}
 		_ = jsonparser.ObjectEach([]byte(line), func(key, value []byte, kind jsonparser.ValueType, _ int) error {
-			if kind != jsonparser.String {
+			if kind != jsonparser.String || string(key) == "_entry" {
 				return nil
 			}
-			if string(key) == "_entry" {
-				packed = true
-				return nil
-			}
-			name := string(key)
-			if _, exists := labels[name]; exists && !parsed[name] {
-				name += "_extracted"
-			}
-			if parsed[name] {
-				return nil
-			}
-			pairs = append(pairs, pair{orderedJSONLabelName(name, true), orderedJSONScalar(value, kind)})
+			add(orderedJSONLabelName(string(key), true), orderedJSONScalar(value, kind), true)
 			return nil
 		})
-		if packed {
-			for _, kv := range pairs {
-				labels[kv.name], parsed[kv.name] = kv.value, true
-			}
-		}
+		return true
 	case logqlpkg.ParserRegexp:
-		re, err := regexp.Compile(stage.Param)
+		re, err := regexp.Compile(unwrapRegexpParam(stage.Param))
 		if err != nil {
 			return false
 		}
-		match := re.FindStringSubmatch(line)
+		m := re.FindStringSubmatch(line)
 		for i, name := range re.SubexpNames() {
-			if name != "" && match != nil && i < len(match) {
-				set(name, match[i])
+			if name == "" || i >= len(m) || m == nil {
+				continue
 			}
+			add(name, m[i], false)
 		}
-	default:
-		return false
+		return true
 	}
-	return true
+	return false
 }
 
-// unwrapLookupWriter holds the metric's answer until the detection decided:
-// Loki's error replaces it when a hit is confirmed. The decision is taken when
-// the metric writes, after its VictoriaLogs queries ran, so the status the
-// route records is the status sent (unwrapRecordedStatus).
-type unwrapLookupWriter struct {
-	p      *Proxy
-	ctx    context.Context
-	check  *unwrapCheck
-	out    http.ResponseWriter
-	header http.Header
-	status int
-	body   bytes.Buffer
+// unwrapRegexpParam is a regexp parser's expression: its string literal unquoted.
+func unwrapRegexpParam(param string) string {
+	param = strings.TrimSpace(param)
+	if strings.HasPrefix(param, "`") && strings.HasSuffix(param, "`") && len(param) >= 2 {
+		return param[1 : len(param)-1]
+	}
+	if s, err := strconv.Unquote(param); err == nil {
+		return s
+	}
+	return param
+}
 
-	decided  bool
+// unwrapWalkJSON calls yield with every scalar of a JSON object line (strings unescaped, numbers and booleans as
+// written), nested objects flattened with "_" between the sanitized parts; arrays and null yield nothing.
+func unwrapWalkJSON(data []byte, prefix string, depth int, yield func(name, value string)) error {
+	if depth > 64 {
+		return errOrderedJSONComplexity
+	}
+	return jsonparser.ObjectEach(data, func(key, value []byte, kind jsonparser.ValueType, _ int) error {
+		name := orderedJSONLabelName(string(key), prefix == "")
+		if prefix != "" {
+			name = prefix + "_" + name
+		}
+		switch kind {
+		case jsonparser.Object:
+			return unwrapWalkJSON(value, name, depth+1, yield)
+		case jsonparser.String, jsonparser.Number, jsonparser.Boolean:
+			yield(name, orderedJSONScalar(value, kind))
+		}
+		return nil
+	})
+}
+
+// unwrapLookupWriter holds a checked request's answer until the check decides: the handler's answer, or Loki's
+// error in its place.
+type unwrapLookupWriter struct {
+	p        *Proxy
+	ctx      context.Context
+	parent   context.Context
+	check    *unwrapCheck
+	out      http.ResponseWriter
+	header   http.Header
+	status   int
+	query    string
+	passed   bool
 	err      *orderedJSONPipelineError
 	recorded bool
+	mu       sync.Mutex
 }
 
-// startUnwrapConversionCheck attaches the detection of logql's unwrap range
-// aggregations to the request and returns the request and the writer the
-// metric answers into; the writer is nil when the query has nothing to check
-// or an outer request already checks it (a binary operand).
+// startUnwrapConversionCheck gives a metric request with an unwrap its check: the request to serve (carrying the
+// check) and, when a conversion error can fail the query, the writer the handler writes to. A heavy range read of
+// a query that met a conversion error lately looks its first window up at once.
 func (p *Proxy) startUnwrapConversionCheck(w http.ResponseWriter, r *http.Request, logql string, isRange bool) (*http.Request, *unwrapLookupWriter) {
 	if !strings.Contains(logql, "unwrap") || unwrapCheckFrom(r.Context()) != nil {
+		// An inner request (an operand, a fold's evaluation) reports to the check of the request it serves.
 		return r, nil
 	}
 	expr, err := parseLogQLExpr(r.Context(), logql)
-	if err != nil {
+	if err != nil || !unwrapExprHasUnwrap(expr) {
 		return r, nil
 	}
-	probes := unwrapErrorProbes(expr)
-	start, end, step, err := orderedJSONMetricTimes(r, isRange)
-	if err != nil {
-		return r, nil
-	}
-	if len(probes) == 0 {
-		// No conversion error reaches the result, but the nan values the gate drops
-		// still count (unwrapNaN): the stats queries are rewritten, nothing else.
-		// No vlName: it only maps the unwrapped labels of the probes to VictoriaLogs
-		// fields, and there is no probe.
-		c := &unwrapCheck{instant: !isRange, start: start, end: end, step: step}
-		return r.WithContext(context.WithValue(r.Context(), unwrapCheckKey{}, c)), nil
-	}
-	if _, binary := expr.(*logqlpkg.BinOpExpr); binary && isRange && step > 0 {
-		// Binary operands are evaluated on the step-aligned axis (alignBinaryRangeRequest).
-		start, end = start.Add(-time.Duration(start.UnixNano()%int64(step))), end.Add(-time.Duration(end.UnixNano()%int64(step)))
-	}
-	c := &unwrapCheck{probes: probes, instant: !isRange, start: start, end: end, step: step}
+	check := &unwrapCheck{probes: unwrapErrorProbes(expr), instant: !isRange, query: logql}
 	if p.labelTranslator != nil {
-		c.vlName = p.labelTranslator.ToVL
+		check.vlName = p.labelTranslator.ToVL
 	}
-	ctx := context.WithValue(r.Context(), unwrapCheckKey{}, c)
-	if run := queryStepsRunFor(r); isRange && p.backendHeavyQueryMinRange > 0 && (run == nil || !run.inner) {
-		ctx, c.cancel = context.WithCancel(ctx)
-		c.firstMinSpan = p.backendHeavyQueryMinRange
+	if isRange {
+		if ns, ok := parseLokiTimeToUnixNano(r.FormValue("start")); ok {
+			check.start = time.Unix(0, ns)
+		}
+		if ns, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
+			check.end = time.Unix(0, ns)
+		}
+		check.step, _ = parsePositiveStepDuration(r.FormValue("step"))
+	} else {
+		at := time.Now()
+		if ns, ok := parseLokiTimeToUnixNano(r.FormValue("time")); ok {
+			at = time.Unix(0, ns)
+		}
+		check.start, check.end = at, at
 	}
-	l := &unwrapLookupWriter{p: p, ctx: ctx, check: c, out: w, header: http.Header{}}
-	c.writer = l
-	return r.WithContext(ctx), l
+	if len(check.probes) == 0 {
+		return r.WithContext(context.WithValue(r.Context(), unwrapCheckKey{}, check)), nil
+	}
+	check.firstMinSpan = p.backendHeavyQueryMinRange
+	ctx, cancel := context.WithCancel(r.Context())
+	check.cancel = cancel
+	ctx = context.WithValue(ctx, unwrapCheckKey{}, check)
+	writer := &unwrapLookupWriter{p: p, ctx: ctx, parent: r.Context(), check: check, out: w, header: make(http.Header), query: logql}
+	check.writer = writer
+	if isRange && check.firstMinSpan > 0 {
+		probe := check.probes[0]
+		h := unwrapHit{field: check.fieldNames(probe)[0], conv: probe.conv}
+		if check.end.Sub(check.start)+probe.window >= check.firstMinSpan && unwrapRecentErrors.seen(check.recentKey(ctx, p, h)) {
+			if base, ok := p.unwrapFirstWindowBase(ctx, logql, h.field, h.conv); ok {
+				h.base = base
+				check.startFirstWindow(h, true)
+			}
+		}
+	}
+	return r.WithContext(ctx), writer
 }
 
-// setQuery re-reads the aggregations after the query was rewritten before
-// translation (preferWorkingParser), so the derivation follows the pipeline the
-// metric runs.
+// unwrapExprHasUnwrap reports a range aggregation over an unwrapped label in expr.
+func unwrapExprHasUnwrap(expr logqlpkg.Expr) bool {
+	found := false
+	var walk func(logqlpkg.Expr)
+	walk = func(e logqlpkg.Expr) {
+		switch n := e.(type) {
+		case *logqlpkg.RangeAggregation:
+			if lq, ok := n.Inner.(*logqlpkg.LogQuery); ok {
+				for _, st := range lq.Pipeline {
+					if _, ok := st.(*logqlpkg.UnwrapStage); ok {
+						found = true
+					}
+				}
+			}
+		case *logqlpkg.VectorAggregation:
+			walk(n.Inner)
+		case *logqlpkg.BinOpExpr:
+			walk(n.Left)
+			walk(n.Right)
+		case *logqlpkg.OpaqueMetricExpr:
+			if n.Inner != nil {
+				walk(n.Inner)
+			}
+		}
+	}
+	walk(expr)
+	return found
+}
+
+// unwrapFirstWindowBase is the translated query before the unwrap gate of field and conv, for an early
+// first-window lookup.
+func (p *Proxy) unwrapFirstWindowBase(ctx context.Context, logql, field, conv string) (string, bool) {
+	text, err := p.translateQueryWithContext(ctx, logql)
+	if err != nil {
+		return "", false
+	}
+	clean, _ := translator.SplitPost(text)
+	_, base, _, _, _, ok := unwrapCountingRewrite(clean, func(f, c string) (bool, bool) { return true, f == field && c == conv })
+	return base, ok
+}
+
+// setQuery records the query the handler serves (after a rewrite of its text).
 func (l *unwrapLookupWriter) setQuery(logql string) {
 	if l == nil {
 		return
 	}
-	if expr, err := parseLogQLExpr(noFlowCtx, logql); err == nil {
-		if probes := unwrapErrorProbes(expr); len(probes) > 0 {
-			l.check.probes = probes
+	l.mu.Lock()
+	l.query = logql
+	l.mu.Unlock()
+}
+
+// decide runs the check on the hits not looked up yet, as long as nothing of the answer went out: before the first
+// byte, when the route records its status, and when the route asks whether the answer failed. Loki's error is written
+// at once and ends the decision.
+func (l *unwrapLookupWriter) decide() {
+	if l.err != nil || l.passed {
+		return
+	}
+	l.err = l.check.confirm(l.ctx, l.p)
+	if l.err != nil {
+		if key := l.recentHitKey(); key != "" {
+			unwrapRecentErrors.mark(key)
+		}
+		// Written with the client's context; the request's own reads (a later operand's) stop: the answer is sent.
+		l.p.writeErr(l.out, l.parent, l.err)
+		if l.check.cancel != nil {
+			l.check.cancel()
 		}
 	}
 }
 
-func (l *unwrapLookupWriter) decide() {
-	if l.decided {
+// pass sends the handler's header and status once, when its answer goes out.
+func (l *unwrapLookupWriter) pass() {
+	if l.passed {
 		return
 	}
-	l.decided = true
-	l.err = l.check.confirm(l.ctx, l.p)
+	l.passed = true
+	dst := l.out.Header()
+	for k, v := range l.header {
+		dst[k] = v
+	}
+	if l.status != 0 {
+		l.out.WriteHeader(l.status)
+	}
 }
 
+// recentHitKey is the recent-error key of the check's first probe.
+func (l *unwrapLookupWriter) recentHitKey() string {
+	if len(l.check.probes) == 0 {
+		return ""
+	}
+	probe := l.check.probes[0]
+	return l.check.recentKey(l.ctx, l.p, unwrapHit{field: l.check.fieldNames(probe)[0], conv: probe.conv})
+}
+
+// Header is the handler's header, copied out when its answer goes out.
 func (l *unwrapLookupWriter) Header() http.Header { return l.header }
 
+// WriteHeader decides the check, then writes the handler's status unless Loki's error went out instead.
 func (l *unwrapLookupWriter) WriteHeader(code int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.passed || l.err != nil {
+		return
+	}
+	l.status = code
 	l.decide()
-	if l.status == 0 {
-		l.status = code
+	if l.err == nil {
+		l.pass()
 	}
 }
 
+// Write decides the check first; the handler's bytes go out only when no error did.
 func (l *unwrapLookupWriter) Write(b []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.decide()
-	if l.status == 0 {
-		l.status = http.StatusOK
-	}
 	if l.err != nil {
 		return len(b), nil
 	}
-	return l.body.Write(b)
+	if !l.passed {
+		// The handler's header and status go out with its first bytes; an implicit 200 takes the defaults every
+		// answer writer applies.
+		l.passed = true
+		dst := l.out.Header()
+		for k, v := range l.header {
+			dst[k] = v
+		}
+		if l.status == 0 {
+			l.status = http.StatusOK
+			if dst.Get("Content-Type") == "" {
+				dst.Set("Content-Type", "application/json")
+			}
+			dst.Set("X-Content-Type-Options", "nosniff")
+		}
+		l.out.WriteHeader(l.status)
+	}
+	return l.out.Write(b)
 }
 
-// Flush is a no-op: the answer is held until the detection decided.
-func (l *unwrapLookupWriter) Flush() {}
+// Flush flushes the handler's answer.
+func (l *unwrapLookupWriter) Flush() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.passed {
+		if f, ok := l.out.(http.Flusher); ok {
+			f.Flush()
+		}
+	}
+}
 
-// failed reports whether the answer is Loki's error. A nil writer never fails.
+// unwrapAnswerFailed reports whether the answer a route is about to keep is replaced by Loki's error: the route's own
+// check, or, for an inner request (an operand), the check of the request it serves.
+func unwrapAnswerFailed(ctx context.Context, l *unwrapLookupWriter) bool {
+	if l == nil {
+		if c := unwrapCheckFrom(ctx); c != nil {
+			l = c.writer
+		}
+	}
+	return l.failed()
+}
+
+// failed reports an answer replaced by Loki's error; it decides on the hits so far first, so a route that keeps
+// its answer (the response cache) asks after its reads.
 func (l *unwrapLookupWriter) failed() bool {
 	if l == nil {
 		return false
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.decide()
 	return l.err != nil
 }
 
-// unwrapRecordedStatus is the status a route records for a request: Loki's 400
-// when the detection replaced the metric's answer. The route's record is then
-// the only one.
+// unwrapRecordedStatus is the status a route records for its request: Loki's 400 when the check answers the
+// error (it decides now when the answer has not gone out yet), the handler's otherwise.
 func unwrapRecordedStatus(ctx context.Context, code int) int {
 	c := unwrapCheckFrom(ctx)
 	if c == nil || c.writer == nil {
 		return code
 	}
-	c.writer.recorded = true
-	if c.writer.failed() {
+	l := c.writer
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.decide()
+	l.recorded = true
+	if l.err != nil {
 		return http.StatusBadRequest
 	}
 	return code
 }
 
-// finish writes Loki's pipeline error or the metric's own answer.
+// finish decides a check the handler never wrote for, and records the request when Loki's error went out and the
+// handler did not record it.
 func (l *unwrapLookupWriter) finish(endpoint, logql string, requestStart time.Time) {
+	l.mu.Lock()
+	l.decide()
+	failed, recorded := l.err != nil, l.recorded
+	l.mu.Unlock()
 	if l.check.cancel != nil {
-		defer l.check.cancel()
+		l.check.cancel()
 	}
-	if l.failed() {
-		l.p.writeLokiTextError(l.out, http.StatusBadRequest, l.err.Error())
-		if !l.recorded {
-			l.p.metrics.RecordRequest(endpoint, http.StatusBadRequest, time.Since(requestStart))
-			l.p.queryTracker.Record(endpoint, logql, time.Since(requestStart), true)
-		}
-		return
+	if failed && !recorded {
+		elapsed := time.Since(requestStart)
+		l.p.metrics.RecordRequest(endpoint, http.StatusBadRequest, elapsed)
+		l.p.queryTracker.Record(endpoint, logql, elapsed, true)
 	}
-	for name, values := range l.header {
-		l.out.Header()[name] = values
-	}
-	if l.status != 0 {
-		l.out.WriteHeader(l.status)
-	}
-	_, _ = l.out.Write(l.body.Bytes())
 }
 
-// writeLokiTextError answers an error the way Loki writes it
-// (internal/lokierr/testdata/loki_error_answers.jsonl): the message as text/plain.
-func (p *Proxy) writeLokiTextError(w http.ResponseWriter, code int, msg string) {
-	if p.log != nil {
-		p.log.Warn("request error", "code", code, "error", msg)
-	}
-	writeLokiErrorBody(w, code, msg)
-}
-
-// unwrapStripResponse applies strip to a 200 answer's body, bounded like the
-// other buffered backend reads.
+// unwrapStripResponse replaces a successful VictoriaLogs answer's body with what strip makes of it.
 func (p *Proxy) unwrapStripResponse(resp *http.Response, strip func([]byte) ([]byte, error)) error {
-	if resp.StatusCode != http.StatusOK {
+	if resp == nil || resp.StatusCode < 200 || resp.StatusCode >= 300 || resp.Body == nil {
 		return nil
 	}
-	limit := int64(p.limits().BufferedBackendBodyBytes)
+	limit := p.decodedBodyLimit()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	_ = resp.Body.Close()
 	if err != nil {
 		return err
 	}
 	if int64(len(body)) > limit {
-		return newManualMetricResponseTooLarge(limit)
+		return newBackendBodyTooLarge(limit)
 	}
 	out, err := strip(body)
 	if err != nil {
-		return fmt.Errorf("invalid backend stats answer: %w", err)
+		return err
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(out))
 	resp.ContentLength = int64(len(out))
-	resp.Header.Del("Content-Length")
+	resp.Header.Set("Content-Length", strconv.Itoa(len(out)))
 	return nil
 }
