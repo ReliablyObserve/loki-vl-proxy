@@ -21,15 +21,9 @@ why: |
   vector() spelled so are semantics/translator-reads-blank-before-range-call-as-text
   and semantics/vector-call-blank-before-parenthesis-as-query). Not changed here.
 request:
-  method: GET
-  path: /loki/api/v1/query_range
-  params:
-    query: "label_replace\t(rate({app=\"api-gateway\"}[5m]), \"a\", \"b\", \"c\", \"d\")"
-    start: 'now-1h'
-    end: 'now'
-    step: '60'
-  headers:
-    X-Scope-OrgID: "0"
+  scope: query-grammar
+  entry: "TestKeywordBlankRequestsEqualSpaced (internal/proxy): the rows pinned to this case"
+  setup: "Send as the query of /loki/api/v1/query_range (start now-1h, end now, step 60s): label_replace<TAB>(rate({app=\"api-gateway\"}[5m]), \"a\", \"b\", \"c\", \"d\"), with a tab before the parenthesis. The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
 compare:
   mode: observed
   fields: [status, data]

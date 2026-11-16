@@ -1,7 +1,7 @@
 {
   "description": "Ratchets of the query plan (internal/queryplan), one section per gate; a count may only fall, and LVP_QUERY_PLAN_UPDATE=1 rewrites the section of the test that ran. `logical` is the logical plan built from every query of the plan corpus (the curated sources and the capture sample): how many rows parse and build (all of them), and the spots the plan still holds as text, per construct (typing them lowers the count). `logical_key_sound` is, per profile, how the logical keys group the corpus and what the string translator wrote for the queries of a group: no group may differ in structure. `predicate_parity` is, per attribute of the resolver (queryplan.Resolve), the text predicate it replaces and every corpus row where the two differ, each with its reason (internal/proxy TestPlanPredicateParity: an unexplained or stale row fails).",
   "logical": {
-    "rows": 2685,
+    "rows": 2686,
     "parsed": 2606,
     "built": 2606,
     "untyped_by_construct": {
@@ -561,7 +561,7 @@
       "24h chunk/LabelReplace": "34b8c8aa4bd45211",
       "24h chunk/LogSelect": "aefbd87a1712a487",
       "24h chunk/RangeAgg": "fa66217f25c3a5e4",
-      "24h chunk/Rank": "c33e1e5c9176abe2",
+      "24h chunk/Rank": "0456ae529b6b121a",
       "24h chunk/Scalar": "b01ddfee0a162681",
       "24h chunk/VectorAgg": "d7e428d6afc47f7b",
       "24h chunk/VectorLit": "fafe78111335aec9",
@@ -569,7 +569,7 @@
       "instant/LabelReplace": "1eda7f007cfc3480",
       "instant/LogSelect": "d768315233c83eac",
       "instant/RangeAgg": "e579bc1dc41eae81",
-      "instant/Rank": "034393f33fba176f",
+      "instant/Rank": "9205b4d2a2528618",
       "instant/Scalar": "058ee94c303a0c46",
       "instant/VectorAgg": "b9969e1c4d17ae9e",
       "instant/VectorLit": "29ac61516bcfbcbb",
@@ -577,7 +577,7 @@
       "step\u003crange/LabelReplace": "7e2339de2a64039d",
       "step\u003crange/LogSelect": "aefbd87a1712a487",
       "step\u003crange/RangeAgg": "e6d0baa0dec892ec",
-      "step\u003crange/Rank": "7c47b9628b29b772",
+      "step\u003crange/Rank": "e6ea44e226282b23",
       "step\u003crange/Scalar": "b01ddfee0a162681",
       "step\u003crange/VectorAgg": "db7763b50ebe29c4",
       "step\u003crange/VectorLit": "fafe78111335aec9",
@@ -585,7 +585,7 @@
       "step=range/LabelReplace": "f814664e0f744be4",
       "step=range/LogSelect": "aefbd87a1712a487",
       "step=range/RangeAgg": "3c305ccd99f8d244",
-      "step=range/Rank": "8378f88abd3abdf8",
+      "step=range/Rank": "5bf6bf23bfc0b98d",
       "step=range/Scalar": "b01ddfee0a162681",
       "step=range/VectorAgg": "3bdd1e3f5e566644",
       "step=range/VectorLit": "fafe78111335aec9",
@@ -593,7 +593,7 @@
       "step\u003erange/LabelReplace": "266dba9d6112ebe9",
       "step\u003erange/LogSelect": "aefbd87a1712a487",
       "step\u003erange/RangeAgg": "653a4171683f11b3",
-      "step\u003erange/Rank": "37525f9c32d6423a",
+      "step\u003erange/Rank": "71e64bfd0ec9ba11",
       "step\u003erange/Scalar": "b01ddfee0a162681",
       "step\u003erange/VectorAgg": "6283ee3c4f1b7d46",
       "step\u003erange/VectorLit": "fafe78111335aec9"

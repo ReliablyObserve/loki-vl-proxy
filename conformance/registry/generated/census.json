@@ -343,7 +343,6 @@
     "semantics/binary-step-grid | query",
     "semantics/blank-before-call-parenthesis-read-unlike-loki | compare:observed",
     "semantics/blank-before-call-parenthesis-read-unlike-loki | gap:open",
-    "semantics/blank-before-call-parenthesis-read-unlike-loki | query",
     "semantics/client-cancellation-propagates | compare:exact",
     "semantics/comment-between-function-and-parenthesis-accepted | compare:observed",
     "semantics/comment-between-function-and-parenthesis-accepted | gap:open",
