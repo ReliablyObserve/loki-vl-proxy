@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The query plan now describes binary operations with a `bool` modifier, the set operators `and`, `or` and `unless`,
+  and chains of operations (`a + b * 2`, `a / b * 100`, `a > 2 and b > 1`) as the operations the proxy evaluates: each
+  operand a query of its own, a chained operand its own binary operation, in Loki's precedence and associativity. The
+  plan's reading of these 207 corpus rows is held to the proxy's binary route and to Loki's own syntax tree. A new
+  differential holds the proxy's answers for 30 such shapes at the top of a query (comparisons with and without `bool`,
+  set operators with and without `on`/`ignoring`, `group_left`/`group_right`, precedence and associativity, NaN and
+  infinities, empty operands, and the many-to-many and many-to-one errors) to Loki's on query and query_range, on
+  VictoriaLogs v1.49.0 and v1.53.0: all match. No answer, request or cache key changes.
 - Test support: the plan corpus leaves out the request of a registry case that compares only a client error, and six
   conformance cases for queries Loki rejects now carry an HTTP request the live verifier sends. No proxy behaviour changes.
 

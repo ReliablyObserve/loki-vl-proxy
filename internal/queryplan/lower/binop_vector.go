@@ -39,9 +39,12 @@ func vectorText(v float64) string { return "vector(" + binNumber(v) + ")" }
 
 // constantOperand reports whether x is a number or a vector(n).
 func constantOperand(x queryplan.Node) bool {
-	switch x.(type) {
+	switch v := x.(type) {
 	case *queryplan.Scalar, *queryplan.VectorLit:
 		return true
+	case *queryplan.BinOp:
+		// A chain of constants is a constant.
+		return constantOperand(v.L) && constantOperand(v.R)
 	}
 	return false
 }

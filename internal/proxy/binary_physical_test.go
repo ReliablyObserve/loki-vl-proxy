@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -78,9 +79,8 @@ func constantAnswer(t *testing.T, operand logqlpkg.Expr, resultType string) (val
 // BinaryOperandsPhysical describes a vector(n) operand as evaluateBinaryLogQLOperand treats it: a VectorOp of the
 // constant the handler answers with (one series without labels, the number at every step), with no translation and no
 // request to VictoriaLogs; and every operand the handler does not answer from a constant is translated as a query,
-// whatever it looks like. Instant and range answers both. An operand that is itself a binary operation (`vector(2) * 3`)
-// is a query to the branch under test; the child handler folds its constants, which the plan leaves delegated
-// (BinOp operand BinOp), so it is not in the table.
+// whatever it looks like. Instant and range answers both. An operand that is itself a binary operation is described as
+// the binary operation the child request evaluates (TestBinaryOperandLeavesFollowChains), so it is not in the table.
 //
 // conformance: architecture-syntax-package-layering
 func TestBinaryOperandsPhysicalReadsVectorLiteralLikeTheHandler(t *testing.T) {
@@ -289,5 +289,54 @@ func BenchmarkBinaryVectorLowered(b *testing.B) {
 		if _, err := lower.PlanQuery(q, plan, lower.Profile{}); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// An operand that is itself a binary operation is a request through the handlers that takes the binary route again:
+// the reference describes it as its own physical.Binary (with its bool modifier and matching), every query operand of
+// the chain is translated once, left first, and the leaves are those texts in that order ("" for a number).
+//
+// conformance: operator-and, operator-optypegt
+func TestBinaryOperandLeavesFollowChains(t *testing.T) {
+	a, b, c := `sum by (app) (rate({app="a"}[5m]))`, `sum by (app) (rate({app="b"}[5m]))`, `sum by (app) (rate({app="c"}[5m]))`
+	query := a + ` + ` + b + ` * 2 > bool on (app) ` + c + ` unless ` + c
+	var translated []string
+	translate := func(q string) (string, error) {
+		translated = append(translated, q)
+		return `t` + strconv.Itoa(len(translated)) + ` | stats count()`, nil
+	}
+	op, leaves, routed, err := BinaryOperandLeaves(query, translate)
+	if err != nil || !routed {
+		t.Fatalf("routed %v, %v", routed, err)
+	}
+	// (((a + (b * 2)) > bool on (app) c) unless c)
+	top, ok := op.(physical.Binary)
+	if !ok || top.Op != "unless" || top.Bool {
+		t.Fatalf("top %#v", op)
+	}
+	cmp, ok := top.L.(physical.Binary)
+	if !ok || cmp.Op != ">" || !cmp.Bool || cmp.Match == nil || !cmp.Match.MatchOn {
+		t.Fatalf("comparison %#v", top.L)
+	}
+	sum, ok := cmp.L.(physical.Binary)
+	if !ok || sum.Op != "+" {
+		t.Fatalf("sum %#v", cmp.L)
+	}
+	if mul, ok := sum.R.(physical.Binary); !ok || mul.Op != "*" {
+		t.Fatalf("product %#v", sum.R)
+	}
+	want := []string{a, b, c, c}
+	if strings.Join(translated, "\n") != strings.Join(want, "\n") {
+		t.Errorf("translated %q, want %q", translated, want)
+	}
+	wantLeaves := []string{"t1 | stats count()", "t2 | stats count()", "", "t3 | stats count()", "t4 | stats count()"}
+	if strings.Join(leaves, "\n") != strings.Join(wantLeaves, "\n") {
+		t.Errorf("leaves %q, want %q", leaves, wantLeaves)
+	}
+	// The exported reference without leaves describes the same operators.
+	translated = nil
+	op2, operands, _, err := BinaryOperandsPhysical(query, translate)
+	if err != nil || !physical.Equal(op, op2) || operands[0] != "" || operands[1] == "" {
+		t.Errorf("BinaryOperandsPhysical %#v %q %v", op2, operands, err)
 	}
 }
