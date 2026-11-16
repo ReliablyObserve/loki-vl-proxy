@@ -1096,6 +1096,18 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
+      "expression": "r.Context(), p.levelLessErr(\"stats_query\", err)",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/metric_binary.go proxyStatsQuery",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
       "expression": "r.Context(), err",
       "kind": "layer",
       "message": null,
@@ -2766,11 +2778,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 178,
+        "count": 179,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 174,
+        "layer_sites": 175,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2778,6 +2790,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 222
+    "call_sites": 223
   }
 }

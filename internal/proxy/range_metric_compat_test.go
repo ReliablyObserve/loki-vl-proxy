@@ -710,6 +710,14 @@ func TestQueryRange_SumOverTimeUsesStatsPath(t *testing.T) {
 			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
 				`{"metric":{"_stream":"{app=\"api\"}"},` +
 				`"values":[[1699999980,"100"],[1700000040,"200"],[1700000100,"300"]]}]}}`))
+		case "/select/logsql/query":
+			// The presence probe of the detected_level chain the stream without a level label is read with
+			// (withLevelLessStreams): not a raw log fetch. Without an answer the chain stays whole.
+			_ = r.ParseForm()
+			if !strings.Contains(r.FormValue("query"), "as __p_h") {
+				t.Errorf("unexpected raw log fetch %q", r.FormValue("query"))
+			}
+			http.Error(w, "no probe", http.StatusInternalServerError)
 		default:
 			t.Errorf("unexpected backend path %s — should use stats_query_range not raw log fetch", r.URL.Path)
 			http.NotFound(w, r)
