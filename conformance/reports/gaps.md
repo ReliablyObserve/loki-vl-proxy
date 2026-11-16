@@ -66,9 +66,9 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 
 | Track | Item | Cases named | Wired | State |
 |---|---|---:|---:|---|
-| architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 99 | unknown |
+| architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 100 | unknown |
 | limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 15 | 8 | proven |
-| resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 11 | 10 | proven |
+| resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 11 | 11 | proven |
 | semantics | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | 6 | 1 | unknown |
 | data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 5 | 7 | unknown |
 | semantics | `credential-passthrough-as-configured` — Credentials Grafana sends reach VictoriaLogs only as configured, and never the log or a shared cache key | 2 | 1 | proven |
@@ -110,16 +110,8 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 
 ## LogQL surface (v3.7.7)
 
-64/72 constructs are referenced in proxy code. Not referenced anywhere:
+68/68 constructs are referenced in proxy code. Not referenced anywhere:
 
-- `--keep-empty` (operator, OpKeepEmpty)
-- `__first_over_time_ts__` (range_function, OpRangeTypeFirstWithTimestamp)
-- `__last_over_time_ts__` (range_function, OpRangeTypeLastWithTimestamp)
-- `__quantile_sketch_over_time__` (range_function, OpRangeTypeQuantileSketch)
-- `--strict` (operator, OpStrict)
-- `approx_topk` (operator, OpTypeApproxTopK)
-- `__count_min_sketch__` (operator, OpTypeCountMinSketch)
-- `variants` (operator, OpVariants)
 
 ## VictoriaLogs reuse opportunities
 
@@ -135,7 +127,7 @@ those apart needs translating each construct.
 | `and` | pipe-join | v1.40.0 | part: join inner keeps the rows with a match on the join fields; Loki's and matches whole label sets (or on/ignoring) per step |
 | `or` | pipe-union | v1.40.0 | part: union appends the rows of a second query; Loki's or keeps a right-side series only when no left-side series has its labels |
 
-LogQL constructs the proxy supports with no VictoriaLogs construct to serve them (7): `group_left`, `group_right`, `ignoring`, `on`, `rate_counter`, `unless`, `vector`
+LogQL constructs the proxy supports with no VictoriaLogs construct to serve them (11): `--keep-empty`, `--strict`, `approx_topk`, `group_left`, `group_right`, `ignoring`, `on`, `rate_counter`, `unless`, `variants`, `vector`
 
 Not a backend construct: `offset` (the proxy shifts the window it sends to VictoriaLogs, internal/proxy/query_translation.go extractLogQLOffset); `|` (pipeline syntax).
 

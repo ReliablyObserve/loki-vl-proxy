@@ -1326,6 +1326,7 @@
     "internal/proxy/blank_after_keyword_test.go | semantics/parser-reads-unicode-blank-as-white-space",
     "internal/proxy/blank_after_keyword_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/proxy/blank_grouping_test.go | semantics/translator-reads-blank-grouping-as-none",
+    "internal/proxy/breaker_size_limit_test.go | backend-deadlines-and-cancellation",
     "internal/proxy/build_phase_replay_test.go | semantics/loki-build-phase-window",
     "internal/proxy/build_phase_replay_test.go | semantics/loki-error-phase-order",
     "internal/proxy/build_phase_window_loki_test.go | semantics/loki-build-phase-window",
@@ -2240,6 +2241,7 @@
     "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/logql_surface_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/metric_stages_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/odd_spellings_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
     "internal/querycorpus/odd_spellings_loki_test.go | semantics/translator-writes-exotic-field-names-bare",
@@ -2948,7 +2950,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 686,
+      "go": 687,
       "playwright": 1
     },
     "page_kinds": {
