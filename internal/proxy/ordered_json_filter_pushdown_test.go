@@ -2176,7 +2176,7 @@ func TestOrderedJSONDetectedLevelFilterBeforeParserWithoutBodyScan(t *testing.T)
 
 // A `| json` metric that Loki fails on a line that is not a JSON object
 // (no `drop __error__`, no filter an unparsed line fails) is failed the way
-// Loki fails it: the exact text of logqlmodel.PipelineError with the line's
+// Loki fails it: the exact text of Loki's pipeline error with the line's
 // series, and before the rows are scanned, from one `| limit 1` lookup of
 // such a line. A line at the window's left edge is excluded, as Loki
 // excludes it.

@@ -284,8 +284,7 @@ func TestCompat_JSONExtractionListExposesOnlyListed(t *testing.T) {
 
 // TestCompat_ExtractedSuffixOnParsedCollision: a key a parser stage reads
 // from the line that is also a stream label's name leaves the stream label
-// alone and shows as name_extracted (a collision Loki renames: pkg/logql/log
-// parser.go duplicateSuffix); structured metadata named like a stream label
+// alone and shows as name_extracted (a collision Loki renames); structured metadata named like a stream label
 // gets the suffix too. Compared name=value with Loki for JSON, logfmt, regexp
 // and extraction-list stages, label filters, drop and metric grouping on the
 // renamed label, in the default and categorize-labels encodings.

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `absent_over_time` over a zero range (`[0s]`, `[0]`, with or without `offset`) now answers as Loki does: one
+  series valued 1 at every step on query_range and at the evaluation time on query, labelled with the selector's
+  equality matchers, also under `sum`, `count`, `stddev`, `max without (...)` and the other vector aggregations,
+  `topk`, `bottomk`, `sort`, `sort_desc` and `label_replace`. A zero range holds no sample in any window, so the
+  answer reads no data: it is written from the parsed query before the response cache, the query plan and any
+  VictoriaLogs call. The proxy answered `500 Internal Server Error` (and, on query with VictoriaLogs data behind it,
+  a series carrying a `detected_level` label Loki does not write) (semantics/zero-range-metric).
 - A metric series of a stream with no level label now carries the level of its lines, as Loki gives. Loki gives
   every line the level its structured metadata or its body carries (a logfmt or JSON level key, a level word of a
   plain line), else `unknown`, so one such stream is one series per level. Queries the proxy reads per stream (for
@@ -20,6 +27,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are split by it. A window whose streams all carry a level label sends the same VictoriaLogs query as before and
   nothing more. Answers cached before the fix are not served again (the response key fence moves to
   `@stream-level-series-v4`), so each cached metric answer is read from VictoriaLogs once after the upgrade.
+
+### Changed
+
+- Code comments, operator-facing limit descriptions and the generated configuration pages no longer cite Loki source
+  files or lines. They state what Loki does and name the evidence kept in this repository: a recorded Loki answer, a test
+  that compares with Loki, a registry case or Loki's public documentation. No behaviour changes.
+- Loki's error answers are recorded from a Loki that holds data. The recorder (`test/errorrecord`) writes a small
+  fixture to the Loki and waits until its range metric path serves it (`-ingest`, a step of the weekly
+  `error-answers-record` workflow) before it asks the recorded requests, and every row it records carries the state
+  of the Loki it was recorded from (`"state": "serving"`); the recorder also waits until every Loki module is running.
+  Each row asks the window it asked when it was written, moved to now, as the end-to-end comparison asks it: over a
+  window older than what it holds, Loki answers `/patterns` given a query that is not a stream selector with its
+  empty success instead of `400 only label matchers are supported`, so an unmoved window recorded that instead of
+  the answer a client gets. A row added by hand with no answer yet is recorded whatever it is marked.
+
+## [2.305.0] - 2026-11-16
+
+### Fixed
+
+- `/loki/api/v1/tail` now sends the entries since `start`, up to `limit`, before the live ones, as Loki does:
+  Grafana's live view shows the latest lines at once instead of staying empty until new lines arrive. Like Loki,
+  `start` defaults to one hour ago and `limit` to 100. The history is the newest `limit` entries, oldest first,
+  through the same pipeline as live entries, on every tail mode (native, polling and auto). The history entries carry `detected_level` in the stream labels, as Loki's do; a `start` further back than `max_query_length` sends no history. The native stream does
+  not repeat an entry the history sent. A label filter VictoriaLogs cannot evaluate like Loki counts only the
+  entries it keeps toward the limit. The history read replaces the probe the tail already sent before the upgrade,
+  so a tail still makes one VictoriaLogs query before it streams, and a failing backend still fails the request. The read is held to `max_entries_limit_per_query`,
+  and it is best effort: a read that takes more than two seconds is skipped, and the tail starts with its live
+  entries. `start` is now read in all of Loki's time forms; Unix seconds were read as nanoseconds before.
+
+## [2.304.0] - 2026-11-16
+
+### Fixed
+- `/loki/api/v1/patterns` now counts the last 10 s sample of a range whole when the range ends inside it, as Loki
+  does: Loki answers every sample that starts inside the range with all of its lines, including the lines after the
+  range's end. The proxy read lines only up to the end, so a range ending at, for example, `...019` showed 76 of the
+  sample's 98 lines in Logs Drilldown's patterns chart. The count also depended on timing: the request that started
+  the pattern state's background build got the partial sample (and kept it in the cache), later ones the whole
+  sample. The pattern state, the exact tier and the counts tier now read up to the end of that sample (up to now
+  while it is still being written, completed by the next refresh); the counts tier, with a step of whole 10 s
+  samples, also leaves out the lines of a sample that starts before the range, as Loki does. A range ending on a
+  sample's start reads exactly as before, and a repeat or a range ending earlier inside a sample already read makes
+  no VictoriaLogs call.
+
+## [2.303.0] - 2026-11-16
+
+### Fixed
+
 - One stream now gets one `detected_level` on every metric query type, as Loki gives. For a stream labelled
   `level="ERROR"`, `count_over_time({...} | logfmt [5m])`, `rate({...} | json [1m])`, `sort(rate({...} | json [1m]))`
   and an unwrap at step 300 said `ERROR` while plain `rate` and `count_over_time` said `error`. A stream labelled
@@ -45,6 +99,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the stream's level fields first, then the row's `level`, normalised. VictoriaLogs calls per request do not change.
   Answers cached before are not served again: the response key fence (`@stream-level-series-v3`) now covers every
   metric query and every query naming `detected_level` (one cache miss per such key after the upgrade).
+- `/loki/api/v1/patterns` now counts the last 10 s sample of a range whole when the range ends inside it, as Loki
+  does: Loki answers every sample that starts inside the range with all of its lines, including the lines after the
+  range's end. The proxy read lines only up to the end, so a range ending at, for example, `...019` showed 76 of the
+  sample's 98 lines in Logs Drilldown's patterns chart. The count also depended on timing: the request that started
+  the pattern state's background build got the partial sample (and kept it in the cache), later ones the whole
+  sample. The pattern state, the exact tier and the counts tier now read up to the end of that sample (up to now
+  while it is still being written, completed by the next refresh); the counts tier, with a step of whole 10 s
+  samples, also leaves out the lines of a sample that starts before the range, as Loki does. A range ending on a
+  sample's start reads exactly as before, and a repeat or a range ending earlier inside a sample already read makes
+  no VictoriaLogs call.
 
 ## [2.302.1] - 2026-11-15
 

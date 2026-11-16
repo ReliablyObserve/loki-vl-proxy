@@ -1462,8 +1462,8 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		statsCtx = withLevelSharedUnpack(statsCtx, pipes.shared)
 	}
 	// Windows shorter than the step are disjoint, and Loki never evaluates the
-	// lines between them (pkg/logql/range_vector.go batchRangeVectorIterator.load
-	// skips every sample at or before the window start): neither their counts
+	// lines between them (it skips every sample at or before the window start;
+	// registry semantics/stddev-stdvar-over-time-range-window): neither their counts
 	// nor a line its parser rejects there reach the answer. The stats, the
 	// probes and the raw rows then read only the lines inside a window
 	// (windowPhaseFilter), and a bucket per step, (t-step, t], holds exactly the
@@ -3036,7 +3036,7 @@ func lokiSeriesString(labels map[string]string) string {
 }
 
 // lokiPipelineError is Loki v3.7.7's error for a metric sample that carries
-// __error__ (logqlmodel.PipelineError.Error), with the sample's series.
+// __error__ (its pipeline error), with the sample's series.
 func lokiPipelineError(labels map[string]string) *orderedJSONPipelineError {
 	series := make(map[string]string, len(labels))
 	for name, value := range labels {

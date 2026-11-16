@@ -6,10 +6,8 @@ proves:
 consumer: api
 why: |
   Loki v3.7.9 rejects a step that does not parse with 400
-  `cannot parse "<step>" to a valid duration` (pkg/loghttp/params.go:191-203
-  parseSecondsOrDuration) and a step <= 0 with 400
-  `zero or negative query resolution step widths are not accepted. Try a positive integer`
-  (pkg/loghttp/query.go:503-505). The proxy's query_range handler answers
+  `cannot parse "<step>" to a valid duration` and a step <= 0 with 400
+  `zero or negative query resolution step widths are not accepted. Try a positive integer`. The proxy's query_range handler answers
   `step=0`, `step=-1` and `step=abc` with an empty matrix and HTTP 200
   (found while testing sub-second steps, semantics/sub-second-step-grid).
 
@@ -35,7 +33,7 @@ gap:
   impact: api-only
   effort: S
   area: 'internal/proxy/proxy.go handleQueryRange (step validation beside exceedsLokiRangeResolution)'
-  loki: 'pkg/loghttp/params.go:191-203; pkg/loghttp/query.go:503-505'
+  loki: 'a step that does not parse is a 400 ''cannot parse ... to a valid duration'', a step <= 0 a 400 ''zero or negative query resolution step widths are not accepted'' (live case runs of 2026-11-14, in this case)'
   proxy: '400 with Loki''s text, before any VictoriaLogs call'
   planned_test: 'TestRequestParamAnswers (replay of the recorded parameter rows) and TestStepGrammarIsLokis (internal/proxy)'
   note: 'Verified 2026-11-14 on build 726dfb48f against Loki 3.7.9 and VictoriaLogs v1.53.0 (two live case runs, same data on both sides): step=0 answers 400 `zero or negative query resolution step widths are not accepted. Try a positive integer` on both sides.'

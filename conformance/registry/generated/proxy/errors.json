@@ -1084,7 +1084,7 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
-      "expression": "r.Context(), err",
+      "expression": "r.Context(), p.levelLessErr(\"stats_query\", err)",
       "kind": "layer",
       "message": null,
       "status": null,

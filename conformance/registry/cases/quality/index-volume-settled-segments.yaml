@@ -15,16 +15,11 @@ why: |
   metadata-inventory set, warm p50 0.31 s with loki-defaults and 0.42 s
   aligned, against Loki's 0.09 s served from its volume results cache).
 
-  Loki's answer, from v3.7.9's source: a volume is split by time and the
-  splits are summed per series name before the limit is applied once
-  (pkg/storage/stores/index/seriesvolume/volume.go:57-98 Merge and
-  MapToVolumeResponse: volumes summed per name, ordered by volume then name,
-  the first `limit` kept; pkg/querier/queryrange/volume.go:104-211
-  ToPrometheusResponse and toPrometheusData for the vector and its order).
-  Loki keeps settled volume splits in its results cache, except a request
-  that ends within max_stats_cache_freshness of now (default 10m,
-  pkg/validation/limits.go:413; pkg/querier/queryrange/volume_cache.go:85-96
-  shouldCacheVolume).
+  Loki's answer: a volume is split by time and the splits are summed per
+  series name (ordered by volume, then name) before the limit is applied
+  once, the first `limit` kept. Loki keeps settled volume splits in its
+  results cache, except a request that ends within max_stats_cache_freshness
+  of now (default 10m, https://grafana.com/docs/loki/latest/configure/).
 
   The proxy now sums an instant volume per VictoriaLogs stats row
   (sum_len(_msg) by the plan's grouping fields, additive over disjoint
@@ -84,7 +79,7 @@ gap:
   impact: drilldown-visible
   effort: M
   area: 'internal/proxy/volume_segments.go (computeVolumeSegmented, fillVolumeSegments, mergeVolumeSegments); internal/proxy/volume.go computeVolume'
-  loki: 'pkg/storage/stores/index/seriesvolume/volume.go:57-98 Merge/MapToVolumeResponse; pkg/querier/queryrange/volume.go:104-211; pkg/querier/queryrange/volume_cache.go:85-96 shouldCacheVolume; pkg/validation/limits.go:413'
+  loki: 'splits summed per series name, limit applied once, settled splits cached except within max_stats_cache_freshness (TestDrilldown_IndexVolumeSegmentsMatchLokiOnRepeat)'
   proxy: 'every moved window one whole-window VictoriaLogs stats_query (0.30 s at 24h)'
   planned_test: 'proxy TestVolumeSegmentsRepeatReadsOnlyTheEdges, TestVolumeSegmentsMatchWholeWindowOverRandomWindows, TestVolumeSegmentsEdgeTable, TestVolumeSegmentsFallBackToTheWholeWindow, FuzzVolumeSegmentsMergeLikeOneWindow, BenchmarkVolumeLandingRepeat; e2e TestDrilldown_IndexVolumeSegmentsMatchLokiOnRepeat; fleet TestFleetPeerCacheProof volume layer'
   clusters: []

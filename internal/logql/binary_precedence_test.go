@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// Precedence and associativity match Loki v3.7.7 pkg/logql/syntax/syntax.y.
+// Precedence and associativity match Loki v3.7.7's.
 // String adds explicit parentheses, so reparsing must preserve the same tree.
 func TestBinaryPrecedenceAndAssociativity(t *testing.T) {
 	for _, tc := range []struct{ query, want string }{

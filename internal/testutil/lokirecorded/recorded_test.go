@@ -1,6 +1,7 @@
 package lokirecorded
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
 	"os"
@@ -177,5 +178,111 @@ func TestParseRejectsMalformedFiles(t *testing.T) {
 	}
 	if _, err := Read("does-not-exist.jsonl"); !os.IsNotExist(err) {
 		t.Fatalf("missing file: %v", err)
+	}
+}
+
+// Answers holds the recorded answer and the recorded alternatives, nothing else; a row without alternatives
+// answers only its recorded answer.
+func TestAnswersHoldsTheRecordedAlternatives(t *testing.T) {
+	r405 := Reply{Status: 405}
+	r404 := Reply{Status: 404, ContentType: "text/plain; charset=utf-8", Nosniff: "nosniff", Body: "404 page not found\n"}
+	plain := Row{Loki: r405}
+	varied := Row{Loki: r405, LokiAlso: []Reply{r404}, Varies: "the Loki process"}
+	other := r404
+	other.Nosniff = ""
+	for _, c := range []struct {
+		row   Row
+		reply Reply
+		want  bool
+	}{
+		{plain, r405, true}, {plain, r404, false},
+		{varied, r405, true}, {varied, r404, true}, {varied, other, false}, {varied, Reply{Status: 500}, false},
+	} {
+		if got := c.row.Answers(c.reply); got != c.want {
+			t.Errorf("row %+v answers %+v = %v, want %v", c.row.LokiAlso, c.reply, got, c.want)
+		}
+	}
+}
+
+// Every recorded alternative is an error answer, different from the row's answer, and says why the answer varies.
+func TestRecordedAlternativesAreWellFormed(t *testing.T) {
+	f, err := Read(answersPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, r := range f.Rows {
+		if len(r.LokiAlso) == 0 {
+			if r.Varies != "" {
+				t.Errorf("%s: varies without an alternative answer", r.ID)
+			}
+			continue
+		}
+		n++
+		if r.Varies == "" {
+			t.Errorf("%s: alternative answers without the reason they vary", r.ID)
+		}
+		for _, also := range r.LokiAlso {
+			if also.Status < 400 || also == r.Loki {
+				t.Errorf("%s: alternative %+v is not another error answer", r.ID, also)
+			}
+		}
+	}
+	if n == 0 {
+		t.Fatal("no row records an alternative answer")
+	}
+}
+
+// WithState adds the state after the loki object, replaces one already
+// there, and keeps every other byte of the line.
+func TestWithStateAddsOrReplacesTheState(t *testing.T) {
+	line := `{"id":"r1","loki":{"status":405,"content_type":"","nosniff":"","body":"\"state\":"},"msg":"m"}`
+	got, err := WithState(line, StateServing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"id":"r1","loki":{"status":405,"content_type":"","nosniff":"","body":"\"state\":"},"state":"serving","msg":"m"}`
+	if got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+	again, err := WithState(got, StateFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.Replace(want, `"state":"serving"`, `"state":"fresh"`, 1); again != want {
+		t.Fatalf("got  %s\nwant %s", again, want)
+	}
+	if got, _ := WithState(`{"id":"r2"}`, StateServing); got != `{"id":"r2","state":"serving"}` {
+		t.Fatalf("no loki object: %s", got)
+	}
+	if _, err := WithState(`[1]`, StateServing); err == nil {
+		t.Fatal("a line that is not an object was accepted")
+	}
+	var row Row
+	if err := json.Unmarshal([]byte(again), &row); err != nil || row.State != StateFresh {
+		t.Fatalf("state read back %q (%v)", row.State, err)
+	}
+}
+
+// Delta moves the latest end or time in seconds that is not ahead of now to
+// now; a time ahead of now is left out, and rows without one do not move.
+func TestDeltaMovesTheLatestTimeToNow(t *testing.T) {
+	rows := []Row{
+		{Target: "/loki/api/v1/query_range?query=x&start=1794567075&end=1794570675"},
+		{Target: "/loki/api/v1/query?query=x&time=1794570000"},
+		{Target: "/loki/api/v1/tail?query=x&start=1794567075000000000"},
+		{Target: "/loki/api/v1/labels"},
+		// A time in the future on purpose is not the latest the rows were asked at.
+		{Target: "/loki/api/v1/delete?query=x&start=1794567075&end=9999999999"},
+	}
+	now := time.Unix(1794570675, 0).Add(2 * time.Hour)
+	if got := Delta(rows, now); got != 2*time.Hour {
+		t.Fatalf("delta %s, want 2h", got)
+	}
+	if got := Delta(rows, time.Unix(1794570000, 0)); got != 0 {
+		t.Fatalf("rows whose times are all ahead of now (or at it) moved by %s", got)
+	}
+	if got := Delta(rows[3:], now); got != 0 {
+		t.Fatalf("rows without a time moved by %s", got)
 	}
 }

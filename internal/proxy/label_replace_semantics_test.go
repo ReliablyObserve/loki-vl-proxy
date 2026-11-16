@@ -19,19 +19,17 @@ import (
 // label_replace adds, rewrites or removes one label of every series its
 // expression yields. Loki v3.7.7:
 //
-//   - pkg/logql/syntax/ast.go mustNewLabelReplaceExpr compiles the regexp as
-//     `^(?:regex)$`, so it must match the whole source value; an invalid one is
-//     the parse error "invalid regex in label_replace: ...";
-//   - pkg/logql/evaluator.go LabelReplaceEvaluator.Next reads the source label
-//     (empty when absent), leaves the series as it is when the regexp does not
+//   - the parser compiles the regexp as `^(?:regex)$`, so it must match the
+//     whole source value; an invalid one is the parse error "invalid regex in
+//     label_replace: ...";
+//   - the evaluation reads the source label (empty when absent), leaves the series as it is when the regexp does not
 //     match, otherwise expands the replacement with Regexp.ExpandString ($1,
 //     ${1}, $name, ${name}, $$) and deletes the destination label before
 //     setting it when the expansion is not empty. It checks no label name and
 //     raises no error for two series that end with one label set;
-//   - pkg/logql/engine.go JoinSampleVector keeps those series apart on an
-//     instant query (one sample each) and, on a range query, files their
-//     points under one series (vectorsToSeries keys by label hash, appending
-//     the points of each step in turn).
+//   - the result keeps those series apart on an instant query (one sample
+//     each) and, on a range query, files their points under one series
+//     (keyed by label hash, appending the points of each step in turn).
 //
 // The proxy applies the transform to the series VictoriaLogs aggregated, so an
 // instant vector and a range matrix go through the same function.
@@ -144,7 +142,7 @@ func lrAskAs(t *testing.T, p *Proxy, endpoint, q string, headers map[string]stri
 }
 
 // lrReference is Loki's label_replace written apart from the proxy: the
-// evaluator step (LabelReplaceEvaluator.Next) on one label set.
+// evaluator step on one label set.
 func lrReference(in map[string]string, dst, repl, src, regex string) map[string]string {
 	re := regexp.MustCompile("^(?:" + regex + ")$")
 	out := make(map[string]string, len(in)+1)
@@ -164,7 +162,7 @@ func lrReference(in map[string]string, dst, repl, src, regex string) map[string]
 	return out
 }
 
-// lrReferenceJoin is JoinSampleVector for the series of a transformed answer:
+// lrReferenceJoin is Loki's result assembly for the series of a transformed answer:
 // an instant vector keeps every sample, a range matrix files the points of the
 // series that now share a label set under one series, step by step.
 func lrReferenceJoin(base []lrSeries, instant bool, f func(map[string]string) map[string]string) map[string][]string {
@@ -502,9 +500,8 @@ func TestLabelReplaceMalformedArguments(t *testing.T) {
 	}
 }
 
-// Loki sorts the result after the transform (pkg/logql/engine.go JoinSampleVector:
-// sort.Sort(result) for a range, sort.Slice(vec, labels.Compare) for an instant
-// query), so the order of the backend's series does not survive it.
+// Loki sorts the result after the transform (by label set, for a range and for
+// an instant query), so the order of the backend's series does not survive it.
 // conformance: semantics/label-replace-new-label, loki_api_v1_query_range, loki_api_v1_query
 func TestLabelReplaceSortsTheResult(t *testing.T) {
 	agg := `sum by (app) (count_over_time({app="x"}[5m]))`

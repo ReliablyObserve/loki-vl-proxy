@@ -22,12 +22,11 @@ import (
 //
 // rate_counter is evaluated per series of its sample extractor: the stream,
 // its structured metadata and every label a parser extracted, less the
-// unwrapped one (pkg/logql/log/metrics_extraction.go:160-166 and :202-231,
-// labels.go:664-688 GroupedLabels). A `sum` does not hand its grouping to
-// rate_counter (pkg/logql/syntax/ast.go:1630-1640 canInjectVectorGrouping), so
+// unwrapped one (registry semantics/unwrap-rate-counter-one-sample-series). A
+// `sum` does not hand its grouping to rate_counter, so
 // a parser that extracts a per-line key (a transaction or request id) makes
 // every line a series of its own. A series with fewer than two samples in a
-// window rates 0 (pkg/logql/range_vector.go:286-291 extrapolatedRate), and the
+// window rates 0 (registry semantics/unwrap-rate-counter-window-extrapolation), and the
 // step still has its point. Under `sum` or `sum by`, Loki then answers 0 at
 // every step whose window holds a sample of the group, whatever the values.
 //
@@ -189,7 +188,7 @@ func (p *Proxy) rateCounterOneSample(ctx context.Context, base, field, label str
 
 // rateCounterIdentityKeys returns the logfmt keys of a sample of the lines,
 // the busiest first, less the unwrapped label and every key whose Loki label
-// name (pkg/logql/log/util.go:22-39 sanitizeLabelKey) another key or the
+// name (a key is sanitised into a label name) another key or the
 // unwrapped label shares.
 func (p *Proxy) rateCounterIdentityKeys(ctx context.Context, lines, label string, from, to time.Time) []string {
 	cacheKey := fmt.Sprintf("%p\x00%s\x00%s\x00%s\x00%s", p, p.backend, p.contextScopeFingerprint(ctx), lines, label)

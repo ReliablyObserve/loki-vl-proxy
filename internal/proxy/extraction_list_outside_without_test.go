@@ -310,10 +310,8 @@ var extractionListGoldens = map[string]extractionListGolden{
 // lokiExtractionListInstant is the instant answer Loki v3.7.7 gives the shapes
 // below over the fixture, from a reference evaluator written apart from the
 // proxy: a series is the stream plus the labels the parser names, less the
-// unwrapped one (pkg/logql/log/metrics_extraction.go), the range function is
-// taken per series over (t-5m, t], and the aggregation over those values
-// (pkg/logql/evaluator.go VectorAggEvaluator.Next). Nothing here ran against a
-// real Loki.
+// unwrapped one, the range function is taken per series over (t-5m, t], and
+// the aggregation over those values. Nothing here ran against a real Loki.
 func lokiExtractionListInstant(t *testing.T, query string) map[string]float64 {
 	t.Helper()
 	rows, end := extractionListFixture()

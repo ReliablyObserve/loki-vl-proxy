@@ -13,8 +13,7 @@ why: |
   the join is not the defect. `sum by (cluster) (rate(..)) + ignoring(machine)
   sum by (cluster, machine) (rate(..))` on its own is evaluated by the binary
   evaluator and gives Loki's series: the ignored label is dropped from the
-  match key and from the result, an empty value counts as absent (Loki
-  pkg/logql/evaluator.go matchingSignature :945, resultMetric :1096). Under the
+  match key and from the result, an empty value counts as absent. Under the
   outer `sum by (cluster) (...)` the query never reaches the evaluator: the
   translator takes the first operand of the binary and sends only
   `stats by (cluster) count()` to VictoriaLogs, so the answer is that operand's
@@ -23,11 +22,9 @@ why: |
   binary (`sum(A / B)`), with or without a vector-matching modifier.
 
   Fixed in the matching code, found while pinning it to Loki: the duplicate
-  series text had a space after the semicolon (Loki joins the two halves of the
-  text with ";" alone, evaluator.go:974-975); and the join checked every
+  series text had a space after the semicolon (Loki joins the two halves of the text with ";" alone); and the join checked every
   step's right-hand duplicates before any left-hand ones and before the
-  group-label collisions, where Loki stops at the first step whose join fails
-  (engine.go reads the evaluator's error after every step).
+  group-label collisions, where Loki stops at the first step whose join fails.
 
   Fixed (#741): an aggregation over a binary expression aggregates the whole binary, so `sum by (cluster) (A + ignoring(machine) B)` joins the operands first. The live answer is 2 series of 61 points, every value equal to Loki's.
 request:
@@ -52,7 +49,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'translator and handleQueryRange/handleQuery: an outer aggregation over a binary expression (the binary evaluator itself matches Loki)'
-  loki: 'pkg/logql/evaluator.go:791-1128 newBinOpStepEvaluator, matchingSignature, vectorBinop, resultMetric; pkg/logql/engine.go step loop'
+  loki: 'the join drops the ignored label from the match key and the result; an empty value counts as absent; the first failing step decides the error (TestCompat_BinaryIgnoringOuterSum)'
   proxy: 'the join first, then the outer aggregation: one series per cluster holding the sum of both operands, as Loki'
   planned_test: 'TestBinaryIgnoringUnderOuterSum, TestBinaryIgnoringThroughHandler, TestBinaryIgnoringMatchingEdgeTable, TestBinaryMatchingErrorTextAndStepOrder, TestBinaryMatchingDifferential (internal/proxy); TestCompat_BinaryIgnoringOuterSum and TestCompat_BinaryIgnoringAbsentLabel (test/e2e-compat, group semantics)'
   note: 'Verified 2026-11-14 on build 726dfb48f against Loki 3.7.9 and VictoriaLogs v1.53.0 (two live case runs, same data on both sides): 2 series, 122 points, labels and values equal.'

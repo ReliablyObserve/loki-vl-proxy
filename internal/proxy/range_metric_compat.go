@@ -340,7 +340,7 @@ func parseUnwrapExpression(expr string) (field, conv string) {
 
 	switch {
 	case strings.HasPrefix(expr, "duration_seconds(") && strings.HasSuffix(expr, ")"):
-		// Loki converts it as duration() (syntax/extractor.go:63-71).
+		// Loki converts it as duration() (registry semantics/unwrap-duration-seconds).
 		field = strings.TrimSpace(expr[len("duration_seconds(") : len(expr)-1])
 		conv = "duration"
 	case strings.HasPrefix(expr, "duration(") && strings.HasSuffix(expr, ")"):
@@ -1039,8 +1039,7 @@ func (p *Proxy) writeHitsRangeMetricMatrixFolded(w http.ResponseWriter, manualFu
 
 // ungroupedSumRange returns the range aggregation under a bare `sum(...)`, one
 // with no by() or without() (`sum by ()` included): Loki folds every series the
-// range aggregation yields into one series per step
-// (pkg/logql/evaluator.go newVectorAggEvaluator, VectorAggEvaluator.Next).
+// range aggregation yields into one series per step.
 func ungroupedSumRange(query string) (*logqlpkg.RangeAggregation, bool) {
 	// The shared parse of the query: the range aggregation is read, never changed.
 	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
@@ -1070,8 +1069,7 @@ func hasUnwrapStage(lq *logqlpkg.LogQuery) bool {
 // series identity is, so the evaluator may sum the lines (or the unwrapped
 // values) of all the streams before windowing and read one series from
 // VictoriaLogs: the count and byte functions, and rate and sum_over_time over an
-// unwrapped label, whose value is the sum of the values (pkg/logql/range_vector.go
-// rateLogs with computeValues, sumOverTime). avg, max, min, quantile and the
+// unwrapped label, whose value is the sum of the values. avg, max, min, quantile and the
 // other functions take a value per series, so their series stay apart until the
 // outer sum (foldUngroupedSum).
 func isSumAllLogRange(query string) bool {
@@ -3322,9 +3320,9 @@ func aggregateManualWindow(functionName string, quantile float64, samples []rang
 		lastVal  float64
 		hasFirst bool
 	)
-	// A LogQL range vector is (start, end] for EVERY function: Loki's
-	// batchRangeVectorIterator.load skips `sample.Timestamp <= start` and the
-	// iterator is shared by unwrapped ranges too (pkg/logql/range_vector.go).
+	// A LogQL range vector is (start, end] for EVERY function: Loki skips
+	// `sample.Timestamp <= start`, for unwrapped ranges too (registry
+	// semantics/stddev-stdvar-over-time-range-window).
 	const excludeStart = true
 	for _, sample := range samples {
 		if sample.ts < windowStart || sample.ts > windowEnd || (excludeStart && sample.ts == windowStart) {
@@ -3452,8 +3450,7 @@ func (p *Proxy) manualSeriesLimit(ctx context.Context) int {
 // foldUngroupedSum runs a manual range metric evaluator and, for an ungrouped
 // `sum(...)` over a function whose series do not add up before the window
 // (isSumAllLogRange), sums the series it returns per step: Loki's vector
-// aggregation folds every series of its input into one
-// (pkg/logql/evaluator.go VectorAggEvaluator.Next, groupingKey of no labels).
+// aggregation folds every series of its input into one.
 func foldUngroupedSum(w http.ResponseWriter, r *http.Request, query string, serve func(http.ResponseWriter, *http.Request) bool) bool {
 	if _, ok := ungroupedSumRange(query); !ok || isSumAllLogRange(query) {
 		return serve(w, r)

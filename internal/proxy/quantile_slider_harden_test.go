@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// lokiQuantileOfWindow is Loki's quantile_over_time (pkg/logql/range_vector.go:449-487)
+// lokiQuantileOfWindow models Loki's quantile_over_time
 // written apart from the slider and the count arithmetic: the values of the
 // buckets whose label is in [start, end), each held count times, sorted (NaN
 // first), interpolated at rank phi*(n-1). false: no value in the window (Loki

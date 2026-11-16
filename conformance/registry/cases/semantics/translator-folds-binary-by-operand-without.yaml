@@ -9,8 +9,7 @@ why: |
   Loki applies a `without (labels)` clause to the vector aggregation it is
   written on: in `sum without (pod) (rate(..[5m])) / 2` the left operand has one
   series per label set without pod, and the division is applied to each
-  (pkg/logql/evaluator.go newBinOpStepEvaluator over the operand's
-  VectorAggEvaluator; the Loki oracle `facts` reads the clause on the operand,
+  (the Loki oracle `facts` reads the clause on the operand,
   left_groupings / right_groupings).
 
   The string translator reads the whole query text: it removes every
@@ -66,7 +65,7 @@ gap:
   impact: edge
   effort: S
   area: 'internal/translator (the whole-query text of a binary operation, which the proxy does not send); fixed when the string translator is removed'
-  loki: 'pkg/logql/evaluator.go newBinOpStepEvaluator: each operand is evaluated with its own grouping'
+  loki: 'each operand of a binary is evaluated with its own grouping (Loki oracle facts: left_groupings and right_groupings)'
   proxy: 'the translator''s text folds the binary result by the first clause; the binary route evaluates each operand alone, as Loki does'
   planned_test: 'TestPlanShadow and TestBinOpMoreGridShadow hold the plan to proxy.BinaryOperandsPhysical (internal/querycorpus); an e2e row against Loki when the plan serves binary operations'
   visual: none

@@ -14,7 +14,7 @@ import (
 
 // An empty pattern line filter reaches VictoriaLogs as the filter for the empty
 // line on every read path: Loki accepts only an empty line under `|> ""` and
-// every other line under `!> ""` (pkg/logql/log/pattern ParseLineFilter, Test).
+// every other line under `!> ""`.
 // conformance: semantics/pattern-line-filter
 func TestEmptyPatternLineFilterReachesVictoriaLogs(t *testing.T) {
 	var mu sync.Mutex
@@ -85,7 +85,7 @@ func TestPatternLineFilterIsNotPartOfPatternsQuery(t *testing.T) {
 
 // A non-empty pattern line filter reaches VictoriaLogs as Loki's exact matcher
 // on every read path: the extract pipe searches each literal at its first
-// occurrence like pattern.Matcher.Test (pkg/logql/log/pattern/pattern.go:124-165)
+// occurrence like Loki's pattern matcher
 // and the filter on its fields keeps non-empty captures and lines that end on a
 // trailing literal. VictoriaLogs applies the log query's limit after that
 // filter, and metric queries keep the filter inside the stats query, so the

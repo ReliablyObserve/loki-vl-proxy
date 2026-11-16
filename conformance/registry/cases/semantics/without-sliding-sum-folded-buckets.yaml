@@ -7,8 +7,8 @@ proves:
 consumer: explore
 why: |
   Loki's `sum without (l...)` folds the series of its range aggregation by
-  every label but l (pkg/logql/evaluator.go VectorAggEvaluator.Next), each
-  series' sample being its window (t-range, t] (pkg/logql/range_vector.go:102-189).
+  every label but l, each
+  series' sample being its window (t-range, t].
 
   For a window longer than the step the proxy read a bucket series per stream
   from VictoriaLogs, merged each stream's windows, wrote the per-stream
@@ -57,7 +57,7 @@ gap:
   visual_reason: 'a route change with the same series and values: proven against a reference of Loki''s windows and the per-stream route over generated streams (TestWithoutSlidingSumMatchesFoldAndLoki) and against Loki in the e2e'
   effort: S
   area: 'internal/proxy/nested_vector_fold.go withSlidingWithoutCut (from proxyManualRangeMetricRange); internal/translator/without_pushdown.go WithoutStreamCut'
-  loki: 'pkg/logql/evaluator.go VectorAggEvaluator.Next; pkg/logql/range_vector.go:102-189'
+  loki: 'without folds the per-series values per step over (t-range, t] (TestCompat_SlidingSumWithoutStreamFold)'
   proxy: 'the excluded pairs cut out of _stream and the buckets summed per remaining stream in VictoriaLogs; the windows merged per fold'
   planned_test: 'TestWithoutSlidingSumMatchesFoldAndLoki, TestSlidingSumWithoutCutMatchesFoldAndLoki, TestSlidingSumWithoutCutDirectedStreams, TestSlidingSumWithoutCutScope, TestSlidingSumWithoutCutUnderTopk, TestSlidingSumWithoutCutExtentCache, BenchmarkSlidingSumWithout (internal/proxy); TestWithoutStreamCut (internal/translator); TestCompat_SlidingSumWithoutStreamFold, TestCompat_QueryRangeSettledSteps (test/e2e-compat, group core)'
   note: 'Extends the tumbling push-down of semantics/without-over-inner-aggregation-collapses to sliding windows.'

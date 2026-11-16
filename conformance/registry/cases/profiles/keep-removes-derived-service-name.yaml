@@ -6,7 +6,7 @@ proves:
 consumer: explore
 why: |
   Loki's keep stage deletes every non-special label not named in its list,
-  including service_name (pkg/logql/log/keep_labels.go). The proxy derives
+  including service_name. The proxy derives
   service_name on the read path for rows whose stream has none and adds it
   after the pipeline, so `| keep a, b` still shows service_name.
 request:
@@ -31,7 +31,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy service_name derivation after keep/drop'
-  loki: 'pkg/logql/log/keep_labels.go:15-44 KeepLabels.Process'
+  loki: 'keep deletes every non-special label not in its list, service_name included (TestCompat_KeepRemovesDerivedServiceName)'
   proxy: 'translated stream labels now obey bare keep/drop even when absent from the stored _stream'
   planned_test: 'TestCompat_KeepRemovesDerivedServiceName (test/e2e-compat, group semantics)'
   note: 'Reproduced on main a1d16276 against Loki 3.7.9; the paired E2E fixture checks default and categorize-labels responses. The separate structured-metadata keep case remains open.'
