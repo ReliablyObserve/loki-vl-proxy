@@ -86,7 +86,7 @@ func TestScreenMetric(t *testing.T) {
 		// An existence check after the parser under a resolved label: left to the translator under a rate or before
 		// another stage, served as the Drilldown field breakdown.
 		{`sum by (a_b) (rate({app="a"} | json | a_b != "" [5m]))`, ""},
-		{`sum by (a_b) (bytes_rate({app="a"} | logfmt | a_b!=`+"``"+` [5m]))`, ""},
+		{`sum by (a_b) (bytes_rate({app="a"} | logfmt | a_b!=` + "``" + ` [5m]))`, ""},
 		{`sum by (export_ms) (count_over_time({e="p"} | json | export_ms!="" | pipeline="x" [2m]))`, ""},
 		{`sum by (a_b) (count_over_time({app="a"} | json | a_b != "" [5m]))`, "VectorAgg"},
 		{`sum by (app) (rate({app="a"} | json | b != "" [5m]))`, "VectorAgg"},
