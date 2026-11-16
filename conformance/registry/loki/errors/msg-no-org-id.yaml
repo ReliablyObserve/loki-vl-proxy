@@ -4,10 +4,10 @@ id: msg-no-org-id
 message: no-org-id
 source: lokierr
 const: MsgNoOrgID
-constructors: []
+constructors: ["NoOrgID"]
 summary: "\"no org id\", a request without the credential its route needs (401)."
 templates:
-  []
+  - "no org id"
 kind: route
 status: 401
 error_type: bad_data

@@ -4,10 +4,10 @@ id: msg-delete-request-not-found
 message: delete-request-not-found
 source: lokierr
 const: MsgDeleteRequestNotFound
-constructors: []
+constructors: ["DeleteRequestNotFound"]
 summary: "a cancel of a delete request the tenant does not have (404)."
 templates:
-  []
+  - "could not find delete request with given id"
 kind: route
 status: 404
 error_type: not_found

@@ -4,10 +4,10 @@ id: msg-delete-start-not-set
 message: delete-start-not-set
 source: lokierr
 const: MsgDeleteStartNotSet
-constructors: []
-summary: ""
+constructors: ["DeleteStartNotSet"]
+summary: "\"start time not set\"."
 templates:
-  []
+  - "start time not set"
 kind: param
 status: 400
 error_type: bad_data

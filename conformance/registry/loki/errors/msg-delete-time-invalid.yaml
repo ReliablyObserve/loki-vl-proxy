@@ -4,10 +4,10 @@ id: msg-delete-time-invalid
 message: delete-time-invalid
 source: lokierr
 const: MsgDeleteTimeInvalid
-constructors: []
-summary: ""
+constructors: ["DeleteTimeInvalid"]
+summary: "\"invalid <start|end> time: require unix seconds or RFC3339 format\"."
 templates:
-  []
+  - "invalid <param> time: require unix seconds or RFC3339 format"
 kind: param
 status: 400
 error_type: bad_data

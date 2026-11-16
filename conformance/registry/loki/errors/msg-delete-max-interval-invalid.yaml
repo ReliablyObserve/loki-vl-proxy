@@ -4,10 +4,10 @@ id: msg-delete-max-interval-invalid
 message: delete-max-interval-invalid
 source: lokierr
 const: MsgDeleteMaxIntervalInvalid
-constructors: []
-summary: ""
+constructors: ["DeleteMaxIntervalInvalid"]
+summary: "max_interval of a query with a filter that is not hours, minutes or seconds."
 templates:
-  []
+  - "invalid max_interval: valid time units are 's', 'm', 'h'"
 kind: param
 status: 400
 error_type: bad_data

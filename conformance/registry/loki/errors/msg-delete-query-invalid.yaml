@@ -4,10 +4,10 @@ id: msg-delete-query-invalid
 message: delete-query-invalid
 source: lokierr
 const: MsgDeleteQueryInvalid
-constructors: []
-summary: ""
+constructors: ["DeleteQueryInvalid"]
+summary: "\"invalid query expression\", a delete query that is not a log query."
 templates:
-  []
+  - "invalid query expression"
 kind: param
 status: 400
 error_type: bad_data

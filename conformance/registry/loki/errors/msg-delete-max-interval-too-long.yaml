@@ -4,10 +4,10 @@ id: msg-delete-max-interval-too-long
 message: delete-max-interval-too-long
 source: lokierr
 const: MsgDeleteMaxIntervalTooLong
-constructors: []
-summary: ""
+constructors: ["DeleteMaxIntervalTooLong"]
+summary: "max_interval longer than the interval to delete."
 templates:
-  []
+  - "max_interval can't be greater than the interval to be deleted (<interval>)"
 kind: param
 status: 400
 error_type: bad_data

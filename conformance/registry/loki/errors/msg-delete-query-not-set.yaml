@@ -4,10 +4,10 @@ id: msg-delete-query-not-set
 message: delete-query-not-set
 source: lokierr
 const: MsgDeleteQueryNotSet
-constructors: []
-summary: "The delete API's checks of a delete request, in Loki's order (delete_messages.go)."
+constructors: ["DeleteQueryNotSet"]
+summary: "\"query not set\", a delete request without a query."
 templates:
-  []
+  - "query not set"
 kind: param
 status: 400
 error_type: bad_data

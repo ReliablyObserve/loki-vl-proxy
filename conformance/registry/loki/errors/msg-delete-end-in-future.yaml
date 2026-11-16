@@ -4,10 +4,10 @@ id: msg-delete-end-in-future
 message: delete-end-in-future
 source: lokierr
 const: MsgDeleteEndInFuture
-constructors: []
-summary: ""
+constructors: ["DeleteEndInFuture"]
+summary: "\"deletes in the future are not allowed\", an end after now."
 templates:
-  []
+  - "deletes in the future are not allowed"
 kind: param
 status: 400
 error_type: bad_data

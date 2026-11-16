@@ -20,7 +20,7 @@ why: |
   find delete request with given id`. Any other method is a bodyless 405.
 
   The proxy (-delete-api-enabled, behind -delete-api-auth-token, delete-api-requires-token) makes the same checks in
-  the same order with Loki's texts (internal/lokierr/delete_messages.go). A create request starts a VictoriaLogs
+  the same order with Loki's texts (internal/lokierr/messages.go). A create request starts a VictoriaLogs
   delete task (POST /delete/run_task, VictoriaLogs v1.49 and later with -delete.enable) with the tenant's
   AccountID/ProjectID and the filter `_time:[start, end] (<filter>)`, both ends included, where <filter> is the
   filter of the same log query on the read path (lower.PlanLogFilter, the read path's lowering profile), so a delete

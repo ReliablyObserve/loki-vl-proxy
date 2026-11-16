@@ -4,10 +4,10 @@ id: msg-delete-start-not-before-end
 message: delete-start-not-before-end
 source: lokierr
 const: MsgDeleteStartNotBeforeEnd
-constructors: []
-summary: ""
+constructors: ["DeleteStartNotBeforeEnd"]
+summary: "\"start time can't be greater than or equal to end time\"."
 templates:
-  []
+  - "start time can't be greater than or equal to end time"
 kind: param
 status: 400
 error_type: bad_data
