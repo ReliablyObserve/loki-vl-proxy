@@ -192,3 +192,20 @@ func (p *Proxy) levelLessErr(path string, err error) error {
 	}
 	return upstream.err
 }
+
+// takeStatsQueryRangeSlot waits for a stats_query_range slot
+// (-stats-query-range-concurrency) and returns its release, which may be called
+// more than once; without the limit it returns at once.
+func (p *Proxy) takeStatsQueryRangeSlot(ctx context.Context) (func(), error) {
+	sem := p.statsQueryRangeSem
+	if sem == nil {
+		return func() {}, nil
+	}
+	select {
+	case <-sem:
+		var once sync.Once
+		return func() { once.Do(func() { sem <- struct{}{} }) }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}

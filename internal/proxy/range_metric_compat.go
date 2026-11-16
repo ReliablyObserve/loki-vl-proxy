@@ -1627,14 +1627,11 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	// Acquire concurrency slot. The Drilldown Fields page fires ~30 of these
 	// in parallel; without a cap all 30 hit VL simultaneously, causing a CPU storm.
 	// Block until a slot is free or the request is cancelled.
-	if sem := p.statsQueryRangeSem; sem != nil {
-		select {
-		case <-sem:
-			defer func() { sem <- struct{}{} }()
-		case <-ctx.Done():
-			return nil, nil, ctx.Err()
-		}
+	release, err := p.takeStatsQueryRangeSlot(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
+	defer release()
 
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
 	if err != nil {
@@ -1654,6 +1651,9 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		return nil, nil, err
 	}
 	// A stream without a level label is one series per level its lines carry.
+	// The slot is free again first: the second read and its presence probe do
+	// not hold it.
+	release()
 	if body, err = p.withLevelLessStreams(ctx, "/select/logsql/stats_query_range", params, body, 0); err != nil {
 		return nil, nil, p.levelLessErr("stats_query_range backend", err)
 	}
