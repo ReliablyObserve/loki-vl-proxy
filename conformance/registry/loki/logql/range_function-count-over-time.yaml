@@ -1,7 +1,7 @@
 id: range_function-count-over-time
 kind: range_function
 logql: "count_over_time"
-loki_constant: OpRangeTypeCount
+source: https://grafana.com/docs/loki/v3.7.x/query/metric_queries/
 generated:
   supported_by_proxy: true
   seen_in:

@@ -288,7 +288,7 @@ Loki comparisons, retained fixtures or response proofs.
 ## Refresh
 
 ```bash
-python3 conformance/scripts/sync_loki.py --version v3.7.7
+python3 conformance/scripts/sync_loki.py --version v3.7.7   # Loki API surface: the published HTTP API reference and recorded answers
 python3 conformance/scripts/sync_proxy.py --endpoints conformance/registry/generated/loki/v3.7.7/endpoints.json
 python3 conformance/scripts/sync_impl.py --coverage conformance/registry/generated/proxy/coverage.json
 python3 conformance/scripts/sync_errors.py
