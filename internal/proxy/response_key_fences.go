@@ -144,8 +144,9 @@ func keepUnwrapIdentityResponseKeyVersion(query string) string {
 // severity, LEVEL and lvl; VictoriaLogs' detected_level chain read the level fields stored on a row before the
 // stream's, so a stream labelled severity="error" whose lines carry structured metadata level="debug" said debug on
 // every chain-served query, and a `| detected_level` filter kept those rows by that value). v1 named only the first
-// change, v2 (never released) the first two.
-const streamLevelSeriesResponseVersion = "@stream-level-series-v3:"
+// change, v2 (never released) the first two. v4: a series read per stream from a stream without a level label carried
+// no detected_level, where Loki gives its lines' level (semantics/detected-level-stream-stats-without-level).
+const streamLevelSeriesResponseVersion = "@stream-level-series-v4:"
 
 // streamLevelSeriesResponseKeyVersion is the fence of a query whose VictoriaLogs read may carry the detected_level
 // chain (levelChainReadIn: any metric query, any query naming detected_level), and of a
