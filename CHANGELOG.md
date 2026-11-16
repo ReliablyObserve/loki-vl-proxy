@@ -9,13 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-- Metric queries over streams without a level label take VictoriaLogs less time, with the same answers: about a
-  quarter less for `rate` and `sort(rate(...))` over a parser on a first load, and 15-50% less on a refresh. Such a query, read per stream (for example `count_over_time({...} | logfmt [5m])` or
-  `max_over_time({...} | logfmt amount | unwrap amount [5m])`), reads those streams a second time to give each line
-  Loki's `detected_level`. That second read now narrows its level derivation to the level fields and keys the window
-  holds on every route, including instant queries and `rate` or `sort(rate(...))` over a parser, which sent the full
-  derivation before. Once the proxy has seen that a query holds such streams, its next reads (a refresh, a moved
-  window) read the labelled streams and the others separately, so no stream is read twice.
 - A cold `/patterns` request for a busy selector (the first Logs Drilldown patterns view of a service or an
   environment) mines its lines on several cores. When the read holds at least 40,000 lines, the lines VictoriaLogs
   answers are decoded on worker goroutines and each stream is mined by one worker, in the order it was read. The
@@ -29,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   environment of the Drilldown patterns benchmark): 302 ms to 95 ms with 4 cores and 312 ms to 172 ms with 2, with
   43% fewer bytes, 67% fewer allocations and 9-16% less CPU time.
 
+## [2.310.0] - 2026-11-16
+
 ### Changed
 
 - The tests that compare the proxy's metric answers with Loki's now take Loki's answer from Loki itself: answers
@@ -40,6 +35,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   LogQL's documented meaning and is held to the recorded answers. The engine oracle gains an unaligned mode (Loki's
   engine at the request's own bounds). The query_range step alignment middleware is renamed for what it does
   (alignToStepMiddleware); behaviour is unchanged.
+
+## [2.309.0] - 2026-11-16
+
+### Performance
+
+- Metric queries over streams without a level label take VictoriaLogs less time, with the same answers: about a
+  quarter less for `rate` and `sort(rate(...))` over a parser on a first load, and 15-50% less on a refresh. Such a query, read per stream (for example `count_over_time({...} | logfmt [5m])` or
+  `max_over_time({...} | logfmt amount | unwrap amount [5m])`), reads those streams a second time to give each line
+  Loki's `detected_level`. That second read now narrows its level derivation to the level fields and keys the window
+  holds on every route, including instant queries and `rate` or `sort(rate(...))` over a parser, which sent the full
+  derivation before. Once the proxy has seen that a query holds such streams, its next reads (a refresh, a moved
+  window) read the labelled streams and the others separately, so no stream is read twice.
 
 ## [2.308.0] - 2026-11-16
 
