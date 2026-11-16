@@ -1,0 +1,52 @@
+id: semantics/topk-first-argument-error-text
+title: "A topk or bottomk whose first argument is not a number followed by a comma is answered with Loki's parse error (fixed)"
+pending: true
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki reads the first argument of topk and bottomk as the expression the operation aggregates unless it is a number
+  followed by a comma, so the error comes after that expression (Loki oracle check command and Loki 3.7.9 over HTTP):
+  `topk(-1, sum by (level) (count_over_time({app="api-gateway"}[5m])))` answers 400 `parse error at line 1, col 8:
+  syntax error: unexpected ,` (the comma), and so do `topk(1 + 2, …)`, `topk((1), …)`, `topk(rate(…), 2)` and
+  `topk({…}, 2)` at their comma; `topk(-1)` and `topk(rate(…))` answer `parse error : parameter required for
+  operation topk`; `topk({…})` fails at its closing parenthesis; `topk(--1, …)` answers `unexpected -, expecting
+  NUMBER` at the second minus. The error stays through every wrapper (sum, sort, sort_desc, max by, avg without,
+  count, label_replace, topk, a binary operation, parentheses).
+
+  The proxy failed at the first token that was not a number (`col 6: syntax error: unexpected -` for `topk(-1, …)`,
+  `unexpected +` for `topk(1 + 2, …)`) and answered "parameter required" for `topk(rate(…), 2)` and
+  `topk({…}, 2)`. The status was the same (400); Grafana shows the text. Found by the daily differential run's
+  slice (cluster a929e17f, /loki/api/v1/query; 36c75ea8 is the same signature on query_range). Neither is in the
+  last full run's discovery file, which predates the proxy's current text, so the case claims no cluster.
+
+  Fixed: the parser reads the first argument the way Loki does (internal/logql parseVectorAggregation,
+  vectorParamError): a number followed by a comma stays the parameter; anything else is parsed as an expression,
+  and the token after it decides the error. A leading plus (`topk(+1, …)`) is still rejected at the plus:
+  semantics/unary-plus-literal-rejected.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'topk(-1, sum by (level) (count_over_time({app="api-gateway"}[5m])))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    400 with Loki's text: parse error at line 1, col 8: syntax error: unexpected ,
+gap:
+  status: fixed
+  impact: api-only
+  effort: S
+  area: 'internal/logql parser.go parseVectorAggregation, vectorParamError'
+  loki: 'the first argument is an expression unless it is a number followed by a comma; the error is at the token after it'
+  proxy: 'the same reading, with the same errors through every wrapper'
+  planned_test: 'TestTopkFirstArgumentMatchesLoki (internal/logql, 1462 queries against Loki recorded answers), TestLokiErrorAnswersReplay rows r1800-r1811 (internal/proxy), TestCompat_ErrorAnswersLikeLoki (test/e2e-compat, the same rows against a live Loki), TestGrammarSweep (internal/querycorpus)'
+  visual: none
+  visual_reason: 'a 400 parse error, which Grafana shows as the error text only; the recorded rows compare the status and body bytes with Loki on query and query_range'
+  fixed_by: '#1558'
+  clusters: []

@@ -88,7 +88,7 @@ A row is green below Loki or within the noise of it (below + close); the target 
 |---|---|---|---|---|---|---|---|---|---|---|
 | aligned | cold | 26 | 17 (65.4%) | 3 | 0 | 6 | 133 | 20 (76.9%) | **no** | **no** |
 | aligned | warm | 40 | 1 (2.5%) | 30 | 0 | 9 | 257 | 31 (77.5%) | **no** | **no** |
-| loki-defaults | cold | 570 | 365 (64.0%) | 183 | 14 | 8 | 133 | 548 (96.1%) | yes | **no** |
+| loki-defaults | cold | 568 | 365 (64.3%) | 183 | 14 | 6 | 133 | 548 (96.5%) | yes | **no** |
 | loki-defaults | warm | 765 | 187 (24.4%) | 568 | 4 | 6 | 257 | 755 (98.7%) | yes | **no** |
 
 ### Between 1× and 2× Loki

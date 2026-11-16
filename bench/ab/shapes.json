@@ -422,6 +422,9 @@
       "X-Query-Tags": "Source=grafana-lokiexplore-app",
       "User-Agent": "Grafana/13.3.0"
      },
+     "first_ask_max_s": {
+      "1h": 0.6
+     },
      "covers": [
       "loki_api_v1_patterns",
       "drilldown/patterns-full-range-counts",
@@ -435,6 +438,9 @@
      "headers": {
       "X-Query-Tags": "Source=grafana-lokiexplore-app",
       "User-Agent": "Grafana/13.3.0"
+     },
+     "first_ask_max_s": {
+      "1h": 1.6
      },
      "covers": [
       "loki_api_v1_patterns",

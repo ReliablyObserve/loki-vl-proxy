@@ -234,6 +234,7 @@ After parsing, `validateSemantics` walks the AST and enforces constraints:
 | `quantile_over_time` phi < 0 | `parse error at line 1, col 1: invalid parameter for quantile_over_time: …` |
 | `\| line_format` with unclosed `{{ }}` | `parse error : stage '…' : invalid line template: …` |
 | Binary op with log stream on either side | `parse error at line 1, col 1: unexpected expression for binary operation` |
+| `topk`/`bottomk` whose first argument is not a number followed by a comma | The argument is read as the expression the operation aggregates, as Loki does: a comma after it is `syntax error: unexpected ,` at the comma (`topk(-1, …)`, `topk(1 + 2, …)`, `topk(rate(…), 2)`), a `)` after a metric expression is `parse error : parameter required for operation topk` (`topk(-1)`), a `)` after a log query is `syntax error: unexpected )` |
 
 All error strings are formatted to match Loki 3.x responses so Grafana datasource clients receive the error shape they expect.
 

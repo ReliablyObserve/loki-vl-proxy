@@ -65,7 +65,8 @@ func fixture(t testing.TB) Inputs {
 		Parity: write(t, filepath.Join(dir, "parity.json"), `{"mode":"validate","exit":0,"clusters":40,"requests":900,"unclaimed":0,"problems":0,"conformance_ok":true}`),
 		Smoke: write(t, filepath.Join(dir, "smoke.json"), `{"date":"2026-11-14","commit":"c0ffee","rows":120,"comparable":400,"loki_failed":2,
 			"distribution":{"cold":{"rows":200}},"over_2x":[],"ratchet_lost":[],"ratchet_problem":"",
-			"reuse":{"rows":110,"cold_vl_calls":300,"repeat_vl_calls":12,"repeat_without_vl_calls":100},"reuse_lost":[]}`),
+			"reuse":{"rows":110,"cold_vl_calls":300,"repeat_vl_calls":12,"repeat_without_vl_calls":100},"reuse_lost":[],
+			"first_ask":[{"shape":"DP2 patterns of an environment","range":"1h","state":"within"}],"first_ask_over":[]}`),
 		SiteData: write(t, filepath.Join(dir, "site.json"), `{"date":"2026-11-09","loki":"3.7.9","by_range":[
 			{"pairs":40,"faster":25,"par":13,"slower":2},{"pairs":36,"faster":25,"par":11,"slower":0}],"distribution":[{"above":5}]}`),
 		Over2x: write(t, filepath.Join(dir, "over.json"), `{"rows":[{},{},{}]}`),
@@ -113,7 +114,8 @@ func TestAGreenDay(t *testing.T) {
 		"| open | 2 |", "Open by impact: edge 1, explore-visible 1.", "| v1.53.0 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |",
 		"221 of 231 recorded Loki answers match, 10 known differences, 2 known leaks. Live re-record: 273 rows asked, 0 changed. Unit replay: passes.",
 		"| proxy accepts, Loki rejects | 547 |", "`query-corpus.yaml` success on 2026-11-14", "40 clusters over 900 requests, 0 claimed by no case",
-		"120 rows, 400 comparable timings, 0 above 2x Loki, 0 ratchet rows lost", "76 comparable shape x range pairs: 50 faster, 24 on par, 2 slower; 3 rows",
+		"120 rows, 400 comparable timings, 0 above 2x Loki, 0 ratchet rows lost",
+		"1 first asks (the pattern state not built yet) held to an absolute bound instead of Loki's time, 0 above it.", "76 comparable shape x range pairs: 50 faster, 24 on par, 2 slower; 3 rows",
 		"8 scheduled workflows checked",
 		"- Registry cases, VictoriaLogs v1.53.0: 2 repeats reused, 1 not reused, 0 not measured; VictoriaLogs calls 4 cold, 1 on the repeats.",
 		"- Perf smoke: 110 rows measured, VictoriaLogs calls 300 cold and 12 on the repeats, 100 rows repeat without calling VictoriaLogs, 0 rows lost reuse."} {
@@ -185,6 +187,9 @@ func TestRedReasons(t *testing.T) {
 		{"parity failed", func(t *testing.T, in *Inputs) { write(t, in.Parity, `{"exit":2}`) }, "could not speak for its slice (exit 2)"},
 		{"over 2x", func(t *testing.T, in *Inputs) { write(t, in.Smoke, `{"over_2x":[{}],"ratchet_lost":[]}`) }, "perf smoke: 1 row(s) above 2x Loki"},
 		{"ratchet", func(t *testing.T, in *Inputs) { write(t, in.Smoke, `{"over_2x":[],"ratchet_lost":[{},{}]}`) }, "perf smoke: 2 row(s) of the weekly ratchet lost"},
+		{"first ask", func(t *testing.T, in *Inputs) {
+			write(t, in.Smoke, `{"over_2x":[],"ratchet_lost":[],"first_ask":[{},{}],"first_ask_over":[{}]}`)
+		}, "perf smoke: 1 first ask(s) above their absolute bound"},
 		{"reuse lost", func(t *testing.T, in *Inputs) {
 			write(t, in.Smoke, `{"over_2x":[],"ratchet_lost":[],"reuse_lost":[{}]}`)
 		},
