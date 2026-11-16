@@ -228,8 +228,9 @@ func (r Row) Shifted(delta time.Duration) Row {
 // (Row.Shifted) so the rows are asked as of now, as they were when they were
 // recorded: a Loki limits how far back a query may reach, and some routes
 // answer a window older than what they hold differently. It is measured from
-// the latest end or time in seconds the rows carry; 0 when they carry none or
-// the latest is ahead of now.
+// the latest end or time in seconds the rows carry that is not ahead of now (a
+// row may ask a time in the future on purpose, such as end=9999999999); 0 when
+// they carry none.
 func Delta(rows []Row, now time.Time) time.Duration {
 	var latest int64
 	for _, row := range rows {
@@ -239,7 +240,7 @@ func Delta(rows []Row, now time.Time) time.Duration {
 			if name != "end" && name != "time" {
 				continue
 			}
-			if n, err := strconv.ParseInt(value, 10, 64); err == nil && n >= 1_000_000_000 && n < 100_000_000_000 && n > latest {
+			if n, err := strconv.ParseInt(value, 10, 64); err == nil && n >= 1_000_000_000 && n < 100_000_000_000 && n <= now.Unix() && n > latest {
 				latest = n
 			}
 		}
