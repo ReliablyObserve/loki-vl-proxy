@@ -10,9 +10,6 @@ why: |
   evaluator reads, and never scans the rows again. Shapes where neither carries
   the counter answer as before (200 without the rows that do not convert):
 
-  - `label_replace(sum by (service_name) (sum_over_time({...} | json | unwrap s [5m])), "x", "$1", "service_name", "(.*)")`
-    and `label_join(...)`: the parser keeps them opaque, so no aggregation is
-    checked (Loki 3.7.7 400, proxy 200, measured on an isolated stack);
   - a stats query whose stats pipe is followed by a pipe that could mix or drop
     the counted groups (`sort`, `limit`, `fields`), or that carries two unwrap
     gates: sent without the counter;
@@ -28,21 +25,16 @@ why: |
   `sum(quantile_over_time(0.5, {app="payment-service"} | logfmt | unwrap tx_id [5m]))`,
   `max(quantile_over_time(...))` and
   `sum(quantile_over_time(0.5, {app="frontend-ssr"} | json | unwrap duration(load_ms) [5m]))`
-  are detected (400 like Loki, TestCompat_UnwrapConversionErrorParity).
+  are detected (400 like Loki, TestCompat_UnwrapConversionErrorParity), and so is
+  `label_replace(sum by (service_name) (sum_over_time({...} | logfmt | unwrap t [5m])), "x", "$1", "service_name", "(.*)")`
+  since the probes descend into `label_replace` (semantics/json-parser-error-under-wrappers).
 
   Multi-tenant fanout (`X-Scope-OrgID: a|b`) is detected per tenant (400
   text/plain measured on an isolated stack); its series text is not compared
   with Loki's multi-tenant answer.
 request:
-  method: GET
-  path: /loki/api/v1/query_range
-  params:
-    query: 'label_replace(sum by (service_name) (sum_over_time({service_name="payment-service"} | logfmt | unwrap msg [5m])), "x", "$1", "service_name", "(.*)")'
-    start: 'now-1h'
-    end: 'now'
-    step: '60'
-  headers:
-    X-Scope-OrgID: "0"
+  scope: query-grammar
+  entry: "internal/proxy unwrapCountingQuery (a pipe after the stats, two unwrap gates) and unwrapLokiLabels (pipeline stages the confirmation does not re-derive)"
 compare:
   mode: observed
   fields: [status, error_text]
@@ -52,10 +44,10 @@ gap:
   status: open
   impact: edge
   effort: M
-  area: 'internal/proxy/unwrap_conversion_error.go unwrapErrorProbes (opaque expressions), unwrapCountingQuery (pipes after stats), unwrapLokiLabels (pipeline stages)'
+  area: 'internal/proxy/unwrap_conversion_error.go unwrapCountingQuery (pipes after stats), unwrapLokiLabels (pipeline stages)'
   loki: 'pkg/logql/evaluator.go:726-733'
   proxy: '200 without the rows that do not convert'
-  planned_test: 'TestCompat_UnwrapConversionErrorParity open/* asserts Loki''s 400 and skips naming this case (label_replace); TestUnwrapCountingQuery and TestUnwrapLokiLabels pin the shapes left out'
+  planned_test: 'TestUnwrapCountingQuery and TestUnwrapLokiLabels pin the shapes left out; TestCompat_UnwrapConversionErrorParity holds the label_replace form to Loki''s 400'
   clusters:
     - 4f45a29f
     - a48d17e7

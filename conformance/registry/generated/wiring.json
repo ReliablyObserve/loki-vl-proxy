@@ -1495,7 +1495,8 @@
       "internal/proxy/json_parser_error_check_handler_test.go",
       "internal/proxy/json_parser_error_check_test.go",
       "internal/proxy/json_parser_error_corpus_test.go",
-      "internal/querycorpus/parser_error_wrappers_loki_diff_test.go"
+      "internal/querycorpus/parser_error_wrappers_loki_diff_test.go",
+      "test/e2e-compat/unwrap_conversion_error_test.go"
     ],
     "semantics/keep-before-parser-unwrap-identity": [
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
@@ -5433,6 +5434,7 @@
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "parser-error-and-label-collision",
+      "semantics/json-parser-error-under-wrappers",
       "semantics/unwrap-conversion-error",
       "semantics/unwrap-conversion-error-stored-value-overwritten",
       "status-400"
