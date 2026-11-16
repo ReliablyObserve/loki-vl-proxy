@@ -529,7 +529,7 @@ func TestJSONDetectedLevelSplitOffGridBoundsAlign(t *testing.T) {
 		// Through the alignment middleware, as the server routes query_range.
 		params := url.Values{"query": {tc.query}, "start": {strconv.FormatInt(start.Add(off).UnixNano(), 10)}, "end": {strconv.FormatInt(end.Add(off).UnixNano(), 10)}, "step": {"60"}}
 		rec := httptest.NewRecorder()
-		p.stepAlignMiddleware("query_range", p.handleQueryRange)(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+		p.alignToStepMiddleware("query_range", p.handleQueryRange)(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s: status %d: %s", tc.query, rec.Code, rec.Body)
 		}

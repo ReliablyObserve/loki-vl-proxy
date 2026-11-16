@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   derivation before. Once the proxy has seen that a query holds such streams, its next reads (a refresh, a moved
   window) read the labelled streams and the others separately, so no stream is read twice.
 
+### Changed
+
+- The tests that compare the proxy's metric answers with Loki's now take Loki's answer from Loki itself: answers
+  recorded with Loki's query engine and request parser over the same lines and requests (test/oracle/loki, used
+  only in tests), for binary operators and vector matching, topk and bottomk, vector aggregations (nested,
+  `without`, stddev and stdvar), unwrap range functions over sliding and tumbling windows, absent_over_time,
+  first and last over time, rate_counter, quantile_over_time, keep, ip() label filters and sub-second steps. Where a
+  test needs to evaluate an expected answer itself (fuzz targets, tie detection), the evaluator is written from
+  LogQL's documented meaning and is held to the recorded answers. The engine oracle gains an unaligned mode (Loki's
+  engine at the request's own bounds). The query_range step alignment middleware is renamed for what it does
+  (alignToStepMiddleware); behaviour is unchanged.
+
 ### Fixed
 
 - `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` and `stdvar` over a binary operation now answer Loki's matrix on

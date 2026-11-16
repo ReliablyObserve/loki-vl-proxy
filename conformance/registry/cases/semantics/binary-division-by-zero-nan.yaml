@@ -16,8 +16,9 @@ why: |
   expression answered 0 for both operators. `%` by zero was already NaN through
   math.Mod on the main path. The comparison operators, `^`, NaN operands and
   infinite operands already matched Loki; the edge table in
-  TestBinarySampleValueMatchesLokiMergeBinOp pins every operator, with and
-  without bool.
+  TestBinarySampleValueMatchesRecordedLokiAnswers pins every operator, with and
+  without bool, to Loki's answers recorded with Loki's engine
+  (internal/proxy/testdata/loki_engine/binary_operator_values.jsonl.gz).
 
   min and max across series skip a NaN unless every value is NaN: Loki's
   its fold replaces a NaN accumulator,
@@ -52,6 +53,6 @@ gap:
   area: 'internal/proxy binary_matching.go (binarySampleValue), metric_binary.go (applyOp)'
   loki: 'a zero right operand of / and % is NaN in a literal fold, a vector against a literal and two vectors (TestCompat_BinaryDivisionByZeroIsNaN)'
   proxy: 'a zero divisor of / and % is NaN in every sample-arithmetic path'
-  planned_test: 'TestCompat_BinaryDivisionByZeroIsNaN (test/e2e-compat, group core); TestBinarySampleValueMatchesLokiMergeBinOp, TestBinaryScalarFoldMatchesLokiReduceBinOp, TestBinaryMatchersMatchLokiMergeBinOp, TestApplyOpDivisionAndModuloByZeroAreNaN, TestBinaryVectorDivisionByZeroHandlers and TestBinaryConstantVectorDivisionByZeroInstant (internal/proxy)'
+  planned_test: 'TestCompat_BinaryDivisionByZeroIsNaN (test/e2e-compat, group core); TestBinarySampleValueMatchesRecordedLokiAnswers, TestBinaryScalarFoldMatchesRecordedLokiAnswers, TestBinaryMatchersMatchRecordedLokiAnswers, TestBinaryOperatorLiteralSidesMatchVectorJoin, TestApplyOpDivisionAndModuloByZeroAreNaN, TestBinaryVectorDivisionByZeroHandlers and TestBinaryConstantVectorDivisionByZeroInstant (internal/proxy)'
   note: 'Measured on origin/main b20a550f. The e2e is written and not yet run. min/max NaN folding: residual in #734 (withoutMerge.combine) and #741 (aggregation over binary).'
   clusters: []

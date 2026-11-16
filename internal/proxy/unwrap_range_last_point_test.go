@@ -185,7 +185,7 @@ func TestUnwrapOverTimeTumblingMatchesLoki(t *testing.T) {
 							for ts, v := range got[pod] {
 								gotNs[ts*1e9] = v
 							}
-							compareUnwrapSum(t, fmt.Sprintf("%s #%d pod=%s", name, i, pod), s, gotNs, lokiUnwrapSum(rows, fn, int64(s.window), s.times()), 1)
+							compareUnwrapSum(t, fmt.Sprintf("%s #%d pod=%s", name, i, pod), s, gotNs, unwrapSumReference(rows, fn, int64(s.window), s.times()), 1)
 						}
 					}
 				})
@@ -255,7 +255,7 @@ func TestUnwrapOverTimeShortRangeMatchesLoki(t *testing.T) {
 								for ts, v := range got[pod] {
 									gotNs[ts*1e9] = v
 								}
-								want := lokiUnwrapSum(rows, fn, int64(s.window), s.times())
+								want := unwrapSumReference(rows, fn, int64(s.window), s.times())
 								if form.name == "vector operands" {
 									for ts, v := range want {
 										want[ts] = 2 * v
