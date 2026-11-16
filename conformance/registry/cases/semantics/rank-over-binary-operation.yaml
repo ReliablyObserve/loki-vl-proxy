@@ -41,9 +41,14 @@ why: |
   instant keys keep theirs (the instant answers that changed were 500s, never
   cached).
 
-  A tie at the k-th place follows Loki's Go map order; the differential's
-  shapes rank without ties (a bool comparison is ranked with k as large as
-  its series). A pipeline error inside an operand answers Loki's status and
+  A tie at the k-th place follows Loki's Go map order: at a step where
+  several samples tie at the cut, Loki keeps any of them, so over a range the
+  union of the series it keeps differs from run to run (a bottomk(1) over
+  counts that tie at many steps keeps one series on the proxy, several on
+  Loki). The differential holds those runs to the values Loki keeps at every
+  step (rankedTieOnly), with shapes whose ranking changes between steps (and,
+  unless and a division over pods busy in turn) and +Inf and NaN at every
+  step. A pipeline error inside an operand answers Loki's status and
   text; the series the text names is the one difference, held by
   semantics/pipeline-error-text-parity (Loki's choice is not deterministic).
 request:

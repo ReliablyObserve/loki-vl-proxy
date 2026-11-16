@@ -2,6 +2,7 @@ package querycorpus_test
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"sort"
 	"strconv"
@@ -28,7 +29,10 @@ import (
 // operands joined by |||, after __binary__:): that text is two queries, never one VictoriaLogs reads.
 //
 // The answers are recorded (rankBinaryAnswersPath; LVP_RUN_ORACLES=1 records them again). Every run must match Loki,
-// or be listed in rankBinaryKnown with the registry case that holds the difference open.
+// or differ only by a tie at the k-th place (rankedTieOnly: the values kept at every step are Loki's; Loki keeps one of
+// the tied samples by the order of a Go map, so the union of the kept series over a range can differ), or be listed in
+// rankBinaryKnown with the registry case that holds the difference open. The shapes over job=rbx rank pods whose
+// order changes between steps, under and, unless and a division, and +Inf and NaN at every step.
 
 const rankBinaryAnswersPath = "testdata/rank-binary-loki-diff.jsonl.gz"
 
@@ -55,6 +59,15 @@ var rankBinaryShapes = []string{
 	`sort(label_replace(sum by (pod) (count_over_time({job="rb"}[1m])) / sum by (pod) (count_over_time({job="rb", level="info"}[1m])), "p", "$1", "pod", "(.*)"))`,
 	// A parser error inside an operand: the lines are logfmt, so | json marks every sample with __error__.
 	`topk(2, count_over_time({job="rb"} | json [1m]) > 0)`,
+	// The winners change between steps, under a set operator and a division.
+	`bottomk(1, sum by (pod) (count_over_time({job="rbx"}[1m])) and sum by (pod) (count_over_time({job="rbx"} |= "x" [1m])))`,
+	`bottomk(1, sum by (pod) (count_over_time({job="rbx"}[5m])) and sum by (pod) (count_over_time({job="rbx"} |= "x" [5m])))`,
+	`topk(1, sum by (pod) (count_over_time({job="rbx"}[1m])) unless sum by (pod) (count_over_time({job="rbx"} |= "y" [1m])))`,
+	`topk(2, sum by (pod) (rate({job="rbx"}[5m])) / sum by (pod) (rate({job="rbx"} |= "x" [5m])))`,
+	`topk(2, sum by (pod) (rate({job="rbx"}[5m])) / on (pod) sum by (pod) (rate({job="rbx", pod=~"p|q"}[5m])))`,
+	// +Inf and NaN per step: x/0 ranks above every number, NaN last.
+	`topk(2, (sum by (pod) (count_over_time({job="rb"}[1m])) - sum by (pod) (count_over_time({job="rb", level="info"}[1m]))) / (sum by (pod) (count_over_time({job="rb"}[1m])) - sum by (pod) (count_over_time({job="rb"}[1m]))))`,
+	`bottomk(3, sum by (pod) (count_over_time({job="rbx"}[1m])) / (sum by (pod) (count_over_time({job="rbx"}[1m])) - 30))`,
 	// Loki's errors: a many-to-one match without group_left, and a set operator with a number operand.
 	`topk(1, sum by (pod, level) (count_over_time({job="rb"}[1m])) / on (pod) sum by (pod) (count_over_time({job="rb"}[1m])))`,
 	`topk(1, sum by (pod) (count_over_time({job="rb"}[1m])) and 1)`,
@@ -79,11 +92,17 @@ func rankBinaryFixture() metricFixture {
 		{"job": "rb", "pod": "b", "level": "info", "service_name": "rank-service"},
 		{"job": "rb", "pod": "b", "level": "warn", "service_name": "rank-service"},
 		{"job": "rb", "pod": "c", "level": "info", "service_name": "rank-service"},
+		// Three pods whose ranking changes between steps: p is busy in the first half of every ten minutes, q in the
+		// second, r at a steady pace in between; s writes no line with "x".
+		{"job": "rbx", "pod": "p", "service_name": "rank-service"},
+		{"job": "rbx", "pod": "q", "service_name": "rank-service"},
+		{"job": "rbx", "pod": "r", "service_name": "rank-service"},
+		{"job": "rbx", "pod": "s", "service_name": "rank-service"},
 	}}
 	// A line every 3.1 to 11.5 seconds, by stream, with a jitter that moves every stream's count between windows.
 	paces := []time.Duration{3100 * time.Millisecond, 9700 * time.Millisecond, 4300 * time.Millisecond, 5900 * time.Millisecond, 11500 * time.Millisecond}
 	first := metricEnd.Add(-metricWindow - 10*time.Minute)
-	for s := range f.Streams {
+	for s := range paces {
 		for i := 0; ; i++ {
 			// Half a millisecond past a millisecond: no line sits on a window edge.
 			at := first.Add(time.Duration(i)*paces[s] + time.Duration(s)*700*time.Millisecond + time.Duration(i*7919%2300)*time.Millisecond + 500*time.Microsecond)
@@ -91,6 +110,25 @@ func rankBinaryFixture() metricFixture {
 				break
 			}
 			f.Entries = append(f.Entries, metricEntry{Stream: s, TS: at.UnixNano(), Line: "level=" + f.Streams[s]["level"] + " seq=" + strconv.Itoa(i)})
+		}
+	}
+	for s := len(paces); s < len(f.Streams); s++ {
+		pod := f.Streams[s]["pod"]
+		for at := first.Add(time.Duration(s)*300*time.Millisecond + 500*time.Microsecond); at.Before(metricEnd); {
+			busy := at.Sub(first)%(10*time.Minute) < 5*time.Minute
+			pace := 6 * time.Second
+			switch {
+			case pod == "p" && busy, pod == "q" && !busy:
+				pace = 2100 * time.Millisecond
+			case pod == "p", pod == "q":
+				pace = 17 * time.Second
+			}
+			line := "x pod=" + pod
+			if pod == "s" {
+				line = "y pod=" + pod
+			}
+			f.Entries = append(f.Entries, metricEntry{Stream: s, TS: at.UnixNano(), Line: line})
+			at = at.Add(pace)
 		}
 	}
 	sort.SliceStable(f.Entries, func(i, j int) bool { return f.Entries[i].TS < f.Entries[j].TS })
@@ -129,7 +167,7 @@ func TestRankOverBinaryMatchesLoki(t *testing.T) {
 		recordMetricAnswers(t, rankBinaryAnswersPath, queries)
 	}
 	answers := readMetricAnswersFrom(t, rankBinaryAnswersPath)
-	type row struct{ match, runs int }
+	type row struct{ match, runs, ties int }
 	table := map[string]*row{}
 	seenKnown := map[string]bool{}
 	nonEmpty, errorsSeen := 0, 0
@@ -167,6 +205,11 @@ func TestRankOverBinaryMatchesLoki(t *testing.T) {
 				known := rankBinaryKnown[mq.q][mr.kind]
 				seenKnown[mq.q+"\x00"+mr.kind] = true
 				switch {
+				case len(d.classes) > 0 && known == "" && rankedTieOnly(loki, run):
+					// Loki keeps one of the samples tied at the k-th place by the order of a Go map: any of them is
+					// its answer. The values kept at every step are Loki's.
+					table[key].ties++
+					table[key].match++
 				case len(d.classes) == 0 && known != "":
 					t.Errorf("%s %s %s matches Loki: remove it from rankBinaryKnown (%s)", prof.name, mr.kind, mq.q, known)
 				case len(d.classes) == 0:
@@ -193,7 +236,7 @@ func TestRankOverBinaryMatchesLoki(t *testing.T) {
 	sort.Strings(keys)
 	var b strings.Builder
 	for _, k := range keys {
-		fmt.Fprintf(&b, "\n  %-36s %3d of %3d match Loki", k, table[k].match, table[k].runs)
+		fmt.Fprintf(&b, "\n  %-36s %3d of %3d match Loki (%d by a tie at the k-th place)", k, table[k].match, table[k].runs, table[k].ties)
 	}
 	t.Logf("rankings over binary operations against Loki (%d non-empty Loki answers, %d Loki errors):%s", nonEmpty, errorsSeen, b.String())
 	if errorsSeen == 0 {
@@ -202,4 +245,58 @@ func TestRankOverBinaryMatchesLoki(t *testing.T) {
 	if nonEmpty < (len(queries)-3)*len(metricRequests("", time.Minute))*len(diffProfiles())*3/4 {
 		t.Errorf("only %d of the runs have a non-empty Loki answer", nonEmpty)
 	}
+}
+
+// rankedTieOnly reports two answers of a ranking that differ only in which of the samples tied at the cut a step
+// keeps: the same status, and at every step the same values kept, as a multiset (a tie Loki breaks by the order of a
+// Go map, so any of the tied series is its answer).
+func rankedTieOnly(loki metricLokiAnswer, run metricHandlerRun) bool {
+	if loki.Status != http.StatusOK || run.status != http.StatusOK {
+		return false
+	}
+	l, errL := decodeMetricBody(loki.Body)
+	p, errP := decodeMetricBody([]byte(run.body))
+	if errL != nil || errP != nil || l.resultType != p.resultType {
+		return false
+	}
+	// The kept series carry the same label names as Loki's: a tie changes which series, never its labels' shape.
+	names := func(r metricResult) string {
+		seen := map[string]bool{}
+		for _, s := range r.series {
+			for k := range s.labels {
+				seen[k] = true
+			}
+		}
+		out := make([]string, 0, len(seen))
+		for k := range seen {
+			out = append(out, k)
+		}
+		sort.Strings(out)
+		return strings.Join(out, ",")
+	}
+	if names(l) != names(p) {
+		return false
+	}
+	byStep := func(r metricResult) map[string][]string {
+		out := map[string][]string{}
+		for _, s := range r.series {
+			for ts, v := range s.points {
+				out[ts] = append(out[ts], v)
+			}
+		}
+		for ts := range out {
+			sort.Strings(out[ts])
+		}
+		return out
+	}
+	ls, ps := byStep(l), byStep(p)
+	if len(ls) != len(ps) {
+		return false
+	}
+	for ts, lv := range ls {
+		if strings.Join(lv, ",") != strings.Join(ps[ts], ",") {
+			return false
+		}
+	}
+	return true
 }
