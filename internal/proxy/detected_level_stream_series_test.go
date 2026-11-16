@@ -268,7 +268,7 @@ func TestStreamDetectedLevelMatchesLokiGolden(t *testing.T) {
 // label sets the fix changed (a diff of range functions x parsers x outer
 // forms against the previous build: without folds, unwrap functions, topk,
 // bottomk, sort, sort_desc, label_replace) is fenced over every inner range
-// function, and the forms whose answers did not change keep their keys.
+// function, and so is every other form since the detected_level chain changed.
 //
 // conformance: semantics/without-fold-stream-detected-level, cache-response-key-versions
 func TestStreamLevelSeriesFenceCoversTheChangedShapes(t *testing.T) {
@@ -289,8 +289,10 @@ func TestStreamLevelSeriesFenceCoversTheChangedShapes(t *testing.T) {
 			}
 		}
 		for _, f := range kept {
-			if q := fmt.Sprintf(f, in); streamLevelSeriesResponseKeyVersion(q) != "" {
-				t.Errorf("fenced, but its answer did not change: %s", q)
+			// Every metric query is fenced since the detected_level chain reads a stream's level fields first
+			// (TestStreamLevelSeriesFenceCoversParserShapes).
+			if q := fmt.Sprintf(f, in); streamLevelSeriesResponseKeyVersion(q) == "" {
+				t.Errorf("not fenced: %s", q)
 			}
 		}
 	}
@@ -355,8 +357,10 @@ func FuzzMayHoldDropStage(f *testing.F) {
 // compat range key, the inner query_range key and the settled-steps key built
 // from it, and a stale answer stored under the old key is never served. The
 // fenced words are those of every query whose label sets changed in a diff of
-// range functions x parsers x wrappers against the previous build; other
-// queries keep their keys.
+// range functions x parsers x wrappers against the previous build; since the
+// detected_level chain reads a stream's level fields first, every metric query
+// and every query naming detected_level is fenced too, and a log query
+// without detected_level keeps its key.
 //
 // conformance: semantics/without-fold-stream-detected-level, cache-response-key-versions
 func TestStreamLevelSeriesFence(t *testing.T) {
@@ -386,14 +390,20 @@ func TestStreamLevelSeriesFence(t *testing.T) {
 		{`sort by (app) (rate({app="a"}[5m]))`, true},
 		{`sort_desc BY(app) (rate({app="a"}[5m]))`, true},
 		{"sort\tby (app) (rate({app=\"a\"}[5m]))", true},
-		{`nearby(rate({app="a"}[5m]))`, false},
-		{`SUM BY (app) (count_over_time({app="a"}[5m]))`, false},
-		{`sum by (app) (count_over_time({app="a"}[5m]))`, false},
-		{`sum by (detected_level) (rate({app="a"} | json [1m]))`, false},
-		{`count(rate({app="a"} | logfmt | status = "sort" [1m]))`, false},
+		// Every metric query is fenced since the detected_level chain reads a stream's level fields first.
+		{`nearby(rate({app="a"}[5m]))`, true},
+		{`SUM BY (app) (count_over_time({app="a"}[5m]))`, true},
+		{`sum by (app) (count_over_time({app="a"}[5m]))`, true},
+		{`sum by (detected_level) (rate({app="a"} | json [1m]))`, true},
+		{`count(rate({app="a"} | logfmt | status = "sort" [1m]))`, true},
+		{`sum by (detected_level) (rate({app="a"} |= "json" [1m]))`, true},
+		{`count(rate({app="a"} | line_format "x" | status = "sort" [1m]))`, true},
 		{`{app="topk"} |= "without"`, false},
-		{`rate({app="a"} | json [1m]) / rate({app="a"} | logfmt [1m])`, false},
-		{`rate({app="a"}[5m])`, false},
+		{`{app="a"} | json | level="error"`, false},
+		{`{app="a"} | detected_level="error"`, true},
+		{`rate({app="a"} | json [1m]) / rate({app="a"} | logfmt [1m])`, true},
+		{`rate({app="a"} |= "json" [1m]) / rate({app="a"} | decolorize [1m])`, true},
+		{`rate({app="a"}[5m])`, true},
 		{`{app="a"} |= "x"`, false},
 	} {
 		if got := streamLevelSeriesResponseKeyVersion(c.query) != ""; got != c.fence {
@@ -444,7 +454,7 @@ func TestStreamLevelSeriesFence(t *testing.T) {
 // a next-line character.
 func FuzzStreamLevelSeriesFenceSpelling(f *testing.F) {
 	for _, q := range []string{`topk(1, rate({app="a"} | json [1m]))`, `bottomk by (pod) (1, count_over_time({app="a"} | logfmt [5m]))`, `sum without (pod) (rate({app="a"}[1m]))`,
-		`max_over_time({app="a"} | unwrap amount [5m])`, `sort (rate({app="a"} | json [1m]))`, `sort_desc(rate({app="a"}[1m]))`, `label_replace(rate({app="a"}[1m]), "x", "$1", "pod", "(.*)")`} {
+		`max_over_time({app="a"} | unwrap amount [5m])`, `sort (rate({app="a"} | json [1m]))`, `sort_desc(rate({app="a"}[1m]))`, `sum by (app) (rate({app="a"} | logfmt [1m]))`, `label_replace(rate({app="a"}[1m]), "x", "$1", "pod", "(.*)")`} {
 		f.Add(q, uint64(0x5a5a5a5a5a5a5a5a), uint8(1))
 	}
 	blanks := [...]string{" ", "\v", "\f", "\u00a0", "\u0085", "\t\n"}

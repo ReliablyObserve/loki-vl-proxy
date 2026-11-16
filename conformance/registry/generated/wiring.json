@@ -137,6 +137,7 @@
       "internal/proxy/backend_url_test.go"
     ],
     "cache-response-key-versions": [
+      "internal/proxy/detected_level_one_value_test.go",
       "internal/proxy/detected_level_stream_series_test.go",
       "internal/proxy/fail_fast_unicode_test.go",
       "internal/proxy/reserved_field_case_fence_test.go",
@@ -710,7 +711,9 @@
     ],
     "metric-series-identity": [
       "internal/proxy/absent_over_time_differential_test.go",
+      "internal/proxy/detected_level_one_value_test.go",
       "internal/proxy/detected_level_stream_series_test.go",
+      "internal/proxy/detected_level_sweep_test.go",
       "internal/proxy/extraction_list_outside_without_test.go",
       "internal/proxy/first_last_unwrap_differential_test.go",
       "internal/proxy/nested_vector_aggregation_differential_test.go",
@@ -1202,6 +1205,11 @@
       "internal/proxy/parser_capture_identity_test.go",
       "internal/translator/detected_level_logsql_test.go",
       "test/e2e-compat/detected_level_unknown_stats_test.go"
+    ],
+    "semantics/detected-level-one-value-per-stream": [
+      "internal/proxy/detected_level_one_value_test.go",
+      "internal/proxy/detected_level_sweep_test.go",
+      "internal/translate/detected_level_stream_picks_test.go"
     ],
     "semantics/detected-level-pipes-known-differences": [
       "internal/proxy/detected_level_presence_test.go",
@@ -2300,7 +2308,9 @@
     "severity-detected-level-derivation": [
       "internal/proxy/detected_level_filter_test.go",
       "internal/proxy/detected_level_keys_gate_test.go",
+      "internal/proxy/detected_level_one_value_test.go",
       "internal/proxy/detected_level_stream_series_test.go",
+      "internal/proxy/detected_level_sweep_test.go",
       "internal/proxy/detected_level_test.go",
       "internal/proxy/logfmt_risk_candidates_test.go",
       "internal/proxy/ordered_json_detected_level_split_test.go",
@@ -2308,6 +2318,7 @@
       "internal/translate/detected_level_filter_test.go",
       "internal/translate/detected_level_keyword_test.go",
       "internal/translate/detected_level_normalize_test.go",
+      "internal/translate/detected_level_stream_picks_test.go",
       "internal/translator/detected_level_filter_stage_test.go",
       "internal/translator/detected_level_logsql_test.go",
       "test/e2e-compat/detected_level_corpus_test.go",
@@ -2495,7 +2506,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 592,
+  "registry_items": 594,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2937,6 +2948,12 @@
     "internal/proxy/detected_level_long_selector_test.go": [
       "semantics/json-metric-detected-level-derivation"
     ],
+    "internal/proxy/detected_level_one_value_test.go": [
+      "cache-response-key-versions",
+      "metric-series-identity",
+      "semantics/detected-level-one-value-per-stream",
+      "severity-detected-level-derivation"
+    ],
     "internal/proxy/detected_level_presence_sweep_test.go": [
       "semantics/json-metric-detected-level-derivation"
     ],
@@ -2958,6 +2975,11 @@
       "semantics/topk-bottomk-without-strips-label",
       "semantics/unwrap-sum-without-collapses",
       "semantics/without-fold-stream-detected-level",
+      "severity-detected-level-derivation"
+    ],
+    "internal/proxy/detected_level_sweep_test.go": [
+      "metric-series-identity",
+      "semantics/detected-level-one-value-per-stream",
       "severity-detected-level-derivation"
     ],
     "internal/proxy/detected_level_test.go": [
@@ -4574,6 +4596,10 @@
     "internal/translate/detected_level_normalize_test.go": [
       "severity-detected-level-derivation"
     ],
+    "internal/translate/detected_level_stream_picks_test.go": [
+      "semantics/detected-level-one-value-per-stream",
+      "severity-detected-level-derivation"
+    ],
     "internal/translate/extract_stages_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -5536,7 +5562,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 653,
+  "tests_with_markers": 656,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5584,6 +5610,7 @@
     "quality/stats-volume-freshness",
     "semantics/binary-step-grid",
     "semantics/detected-fields-extracted-suffix",
+    "semantics/detected-level-stream-stats-without-level",
     "semantics/drop-keep-plain-name-after-parser",
     "semantics/eager-pipeline-validation",
     "semantics/extracted-derived-labels-raw-evaluator",
@@ -5635,5 +5662,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 381
+  "wired_items": 382
 }
