@@ -2433,7 +2433,7 @@ func applyOp(a, b float64, op string) float64 {
 	switch op {
 	case "/":
 		if b == 0 {
-			return math.NaN() // Loki: a zero divisor is NaN (syntax.MergeBinOp)
+			return math.NaN() // Loki: a zero divisor is NaN (recorded answers: binary_operator_values)
 		}
 		return a / b
 	case "*":

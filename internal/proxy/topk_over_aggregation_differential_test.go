@@ -125,15 +125,25 @@ func (l aggLayer) eval(vec []topKFoldRefSample) (out []topKFoldRefSample, tied b
 		a.sum += s.value
 		a.n++
 		a.values = append(a.values, s.value)
-		a.min = math.Min(a.min, s.value)
-		a.max = math.Max(a.max, s.value)
+		// min and max skip a NaN unless every value is NaN (the fold edge table, held to Loki's answers).
+		if math.IsNaN(a.min) || s.value < a.min {
+			a.min = s.value
+		}
+		if math.IsNaN(a.max) || s.value > a.max {
+			a.max = s.value
+		}
 	}
 	for _, key := range order {
 		a := groups[key]
 		v := a.sum
 		switch l.op {
 		case "avg":
-			v = a.sum / a.n
+			// A running mean: Loki's avg of +Inf and a finite value then +Inf again is NaN (Inf - Inf), where
+			// sum/n would be +Inf (TestVectorFoldReferenceMatchesRecordedLoki).
+			v = 0
+			for i, x := range a.values {
+				v += (x - v) / float64(i+1)
+			}
 		case "min":
 			v = a.min
 		case "max":

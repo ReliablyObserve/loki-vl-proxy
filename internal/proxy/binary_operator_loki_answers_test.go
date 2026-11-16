@@ -168,6 +168,8 @@ func (a binaryLokiAnswers) vector(t testing.TB, op string, i, j int, returnBool 
 }
 
 // Every operand reads back as itself, so a recorded join is the operator applied to the operands.
+//
+// conformance: semantics/binary-division-by-zero-nan
 func TestBinaryOperatorRecordedOperands(t *testing.T) {
 	answers := readBinaryLokiAnswers(t)
 	for i, v := range binaryEdgeOperands {

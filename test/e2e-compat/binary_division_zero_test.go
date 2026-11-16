@@ -15,8 +15,9 @@ import (
 )
 
 // Loki guards a zero right operand of `/` and `%` with NaN, for a literal
-// fold, a vector against a literal and a vector against a vector, all through
-// syntax.MergeBinOp (ast.go:1978-2005). The proxy computed IEEE a/b, so a
+// fold, a vector against a literal and a vector against a vector (recorded with
+// Loki's engine in internal/proxy TestBinarySampleValueMatchesRecordedLokiAnswers).
+// The proxy computed IEEE a/b, so a
 // nonzero numerator over zero was +Inf or -Inf.
 // conformance: semantics/binary-division-by-zero-nan, loki_api_v1_query, loki_api_v1_query_range
 func TestCompat_BinaryDivisionByZeroIsNaN(t *testing.T) {

@@ -14,7 +14,8 @@ import (
 
 // The reference vector aggregation (aggLayer.eval, which FuzzFoldBinaryAggregation and the over-aggregation
 // differentials use) gives Loki's answer over the fuzz target's domain: label values holding `,`, `=` and quotes,
-// absent labels, by() a label no series has, without() every label, every operator, negative and zero values.
+// absent labels, by() a label no series has, without() every label, every operator, negative and zero values, NaN
+// and the infinities.
 // Loki's answers are recorded with its engine (test/oracle/loki engine; LVP_RUN_ORACLES=1 records again).
 //
 // conformance: semantics/aggregation-over-binary-dropped
@@ -59,6 +60,9 @@ func TestVectorFoldReferenceMatchesRecordedLoki(t *testing.T) {
 			}
 			seen[canonicalLabelText(labels)] = true
 			v := float64(rng.Intn(41) - 20)
+			if i%4 == 3 {
+				v = []float64{math.NaN(), math.Inf(1), math.Inf(-1), v, v}[rng.Intn(5)]
+			}
 			vec = append(vec, topKFoldRefSample{labels, v})
 			stream := map[string]string{"i": strconv.Itoa(j)}
 			for k, lv := range labels {
@@ -88,7 +92,7 @@ func TestVectorFoldReferenceMatchesRecordedLoki(t *testing.T) {
 		}
 		for _, s := range ref {
 			v, ok := loki[binaryLabelKey(s.labels)]
-			if !ok || math.Abs(v-s.value) > 1e-9*math.Max(1, math.Abs(v)) {
+			if !ok || !(math.IsNaN(v) && math.IsNaN(s.value) || v == s.value || math.Abs(v-s.value) <= 1e-9*math.Max(1, math.Abs(v))) {
 				t.Fatalf("%s: reference %v = %v, Loki %v (present %v)", desc, s.labels, s.value, v, ok)
 			}
 		}

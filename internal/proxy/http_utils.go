@@ -150,7 +150,7 @@ func validateLogQLSyntax(query string) string {
 
 // queryValidation is the validationCache entry of a raw query: Loki's error
 // for it, or "" and whether it is a metric (sample) expression, which
-// stepAlignMiddleware reads before the handler validates the same string, and
+// alignToStepMiddleware reads before the handler validates the same string, and
 // the offsets and ranges of its range selectors (requestTimeBounds).
 type queryValidation struct {
 	msg string
