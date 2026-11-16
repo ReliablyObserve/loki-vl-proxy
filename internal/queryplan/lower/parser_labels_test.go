@@ -104,8 +104,8 @@ func TestPlanDelegatesParserLabels(t *testing.T) {
 }
 
 // A resolved label that the printed log query checks for existence (`| filter label:!""`, which only a label filter
-// after the parser prints, and that the lowering delegates by cost first) is moved by the translator behind the key
-// pipes: the lowering delegates the text it would have to edit.
+// after the parser prints) is moved by the translator behind the key pipes: the lowering delegates the text it would
+// have to edit.
 func TestKeyPipesDelegatesAnExistenceCheck(t *testing.T) {
 	m, err := metricLogQuery(selectOf(t, `{a="b"} | json`), Profile{}, "VectorAgg")
 	if err != nil {

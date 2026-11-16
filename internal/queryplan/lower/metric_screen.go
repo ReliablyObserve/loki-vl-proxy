@@ -22,6 +22,9 @@ import (
 //     unwrap, a range function that reads an unwrapped value with no unwrap;
 //   - a binary operation inside an aggregation, more than one at the top, one with a without clause or a
 //     label_replace operand (the binary route evaluates those operand by operand), one with no range function;
+//   - a check that a label is not empty (`!= ""`) after a json or logfmt parser, with a grouping or unwrapped label
+//     that may be a sanitized parser key, under a rate or bytes_rate or followed by another stage (the lowering
+//     leaves the existence check the translator moves to it, parser label filter);
 //   - a label filter with an equality on a number, duration or byte size after a json or logfmt parser
 //     (WritesNumericEquality), or a comparison with a signed number;
 //   - a word VictoriaLogs reserves as a field name (_time, _msg, _stream, _stream_id in any letter case) before a parser
@@ -38,7 +41,8 @@ func ScreenMetric(query string) string {
 	query = strings.TrimSpace(query)
 	var s metricScan
 	if !s.scan(query) || s.ranges == 0 || s.needsUnwrap && !s.unwrap || s.keep && s.unwrap ||
-		s.nestedVector && s.unwrap || s.lrBinary && s.quotedParen {
+		s.nestedVector && s.unwrap || s.lrBinary && s.quotedParen ||
+		s.exists && s.candidate && (s.rate || s.existsThen) {
 		return ""
 	}
 	if s.binary {
@@ -164,8 +168,11 @@ type metricScan struct {
 	// needsUnwrap is a range function that reads an unwrapped value; unwrap the unwrap stage, unwrapLabel the label it
 	// names next.
 	needsUnwrap, unwrap, unwrapLabel bool
-	// without, keep: those words.
-	without, keep bool
+	// without, keep: those words; candidate: a grouping or unwrapped label that may be a sanitized parser key.
+	without, keep, candidate bool
+	// exists is a label filter `!= ""` after a json or logfmt parser, existsThen a pipe after it, rate a rate or
+	// bytes_rate call.
+	exists, existsThen, rate bool
 	// parsedOther is a regexp or pattern parser; groupsServiceName a clause naming service_name.
 	parsedOther, groupsServiceName bool
 	// log is set for a log query (ScreenLogStages): its whole text after the selector is a pipeline. stages are the
@@ -231,6 +238,7 @@ func (s *metricScan) step(q string, i int) (int, bool) {
 			i++
 		}
 		s.operand, s.names = false, false
+		s.existsThen = s.existsThen || s.exists
 		s.flags, s.keepStage, s.keepName, s.keepMatcher, s.template = false, false, false, false, false
 		return i, true
 	case c >= '0' && c <= '9' || c == '.':
@@ -478,6 +486,7 @@ func (s *metricScan) label(w string) (done, ok bool) {
 	case s.brace > 0:
 		return true, true // a selector's label name
 	case s.clauseAt > 0 && s.paren == s.clauseAt:
+		s.candidate = s.candidate || translate.ParsedLabelCandidate(w)
 		s.groupsServiceName = s.groupsServiceName || w == "service_name"
 		return true, true
 	case !s.unwrapLabel:
@@ -488,6 +497,7 @@ func (s *metricScan) label(w string) (done, ok bool) {
 		return true, true
 	}
 	s.unwrapLabel = false
+	s.candidate = s.candidate || translate.ParsedLabelCandidate(w)
 	// An unwrap of a reserved name in another letter case (UnwrapsReservedFieldOtherCase).
 	return true, !reservedWord(w)
 }
@@ -555,6 +565,7 @@ func (s *metricScan) call(w string) bool {
 	s.ranges++
 	s.pending = pendingRange
 	s.quantileArg = w == "quantile_over_time"
+	s.rate = s.rate || w == "rate" || w == "bytes_rate"
 	switch w {
 	case "rate", "bytes_rate", "count_over_time", "bytes_over_time", "absent_over_time":
 	default:
@@ -627,6 +638,9 @@ func (s *metricScan) comparison(q string, i int, op string) bool {
 	c := q[i]
 	if c == '-' || c == '+' {
 		return false
+	}
+	if op == "!=" && s.parsed && i+1 < len(q) && (c == '"' || c == '`') && q[i+1] == c {
+		s.exists = true
 	}
 	numeric := c >= '0' && c <= '9' || c == '.'
 	return !numeric || !s.parsed || op != "=" && op != "==" && op != "!="

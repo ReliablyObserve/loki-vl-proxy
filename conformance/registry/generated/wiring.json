@@ -88,6 +88,7 @@
       "internal/queryplan/lower/marker_bytes_test.go",
       "internal/queryplan/lower/metric_screen_test.go",
       "internal/queryplan/lower/metric_stages_test.go",
+      "internal/queryplan/lower/parser_label_filters_test.go",
       "internal/queryplan/lower/parser_labels_test.go",
       "internal/queryplan/lower/parser_test.go",
       "internal/queryplan/lower/pattern_filter_test.go",
@@ -2151,6 +2152,9 @@
     "semantics/unwrap-over-time-range-windows-residual-forms": [
       "internal/proxy/unwrap_over_time_window_test.go"
     ],
+    "semantics/unwrap-per-series-identity-label-filter": [
+      "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go"
+    ],
     "semantics/unwrap-per-series-identity-raw-rows": [
       "internal/proxy/unwrap_dynamic_identity_binary_test.go",
       "internal/proxy/unwrap_dynamic_identity_cache_test.go",
@@ -2159,6 +2163,7 @@
       "internal/querycorpus/stddev_stdvar_loki_diff_test.go",
       "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go",
       "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go",
+      "internal/queryplan/lower/parser_label_filters_test.go",
       "internal/queryplan/lower/unwrap_dynamic_test.go",
       "test/e2e-compat/unwrap_per_series_identity_test.go"
     ],
@@ -4370,6 +4375,7 @@
     ],
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go": [
       "semantics/stdvar-grouped-pooled-variance",
+      "semantics/unwrap-per-series-identity-label-filter",
       "semantics/unwrap-per-series-identity-raw-rows",
       "semantics/unwrap-quantile-sum-by-group-quantile"
     ],
@@ -4463,6 +4469,10 @@
     ],
     "internal/queryplan/lower/outbound_guard_test.go": [
       "semantics/reserved-field-name-case-outbound"
+    ],
+    "internal/queryplan/lower/parser_label_filters_test.go": [
+      "architecture-syntax-package-layering",
+      "semantics/unwrap-per-series-identity-raw-rows"
     ],
     "internal/queryplan/lower/parser_labels_test.go": [
       "architecture-syntax-package-layering"
@@ -5518,7 +5528,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 650,
+  "tests_with_markers": 651,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5604,7 +5614,6 @@
     "semantics/unwrap-count-avg-without-after-parser",
     "semantics/unwrap-over-time-short-range-windows",
     "semantics/unwrap-parserless-reads-stored-field",
-    "semantics/unwrap-per-series-identity-label-filter",
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
     "semantics/uppercase-topk-ranks-once",
@@ -5617,5 +5626,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 380
+  "wired_items": 381
 }

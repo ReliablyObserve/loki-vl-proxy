@@ -2184,6 +2184,7 @@
     "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/stdvar-grouped-pooled-variance",
     "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go | semantics/stdvar-grouped-pooled-variance",
+    "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go | semantics/unwrap-per-series-identity-label-filter",
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go | semantics/unwrap-quantile-sum-by-group-quantile",
     "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go | semantics/unwrap-gate-parsefloat-divergences",
@@ -2219,6 +2220,8 @@
     "internal/queryplan/lower/metric_screen_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/metric_stages_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/outbound_guard_test.go | semantics/reserved-field-name-case-outbound",
+    "internal/queryplan/lower/parser_label_filters_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/parser_label_filters_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/parser_labels_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/parser_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/pattern_filter_test.go | architecture-syntax-package-layering",
@@ -2843,7 +2846,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 649,
+      "go": 650,
       "playwright": 1
     },
     "page_kinds": {
@@ -2862,8 +2865,8 @@
     },
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
-    "unwired_items": 95,
-    "wired_items": 380
+    "unwired_items": 94,
+    "wired_items": 381
   },
   "gates": [
     "A/B shape selection",
