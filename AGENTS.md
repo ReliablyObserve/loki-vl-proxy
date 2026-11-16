@@ -43,11 +43,10 @@ generators either. Loki is used only as a test comparison.
   parses with Loki's parser, daily in `query-corpus.yaml`) and
   `sync_loki.py --record-live` (every route and method against the stack's
   Loki, weekly in `parity-refresh.yaml`). The parity corpus takes its Loki queries
-  from the published query documentation, never from Loki's test files. The two
-  exceptions are inside the test-only oracle module and await the owner's
+  from the published query documentation, never from Loki's test files. The one
+  exception is inside the test-only oracle module and awaits the owner's
   decision: the similarity scan above fingerprints Loki's `pkg/` to detect
-  copies, and `test/oracle/loki cases` reads the queries of Loki's syntax tests
-  for the PR quality report's parse-oracle rows. Add no other.
+  copies. Add no other.
 
 ### Expected answers come from Loki, recorded (hard rule)
 
