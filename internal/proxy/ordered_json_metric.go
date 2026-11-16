@@ -546,9 +546,12 @@ func (plan *orderedJSONMetricPlan) levelRestriction() string {
 
 // acceptDerivedLevel gives a row of the raw evaluator the detected_level
 // Loki's ingest set (withDerivedLevel) when the plan reads it, and reports
-// whether the filters on it before the parser let the row through.
+// whether the filters on it before the parser let the row through. A plan
+// without an aggregation keeps every label of the row in its series, so a row
+// of a stream that decides no level (its descriptor carries none) gets the
+// value its line or metadata gives, as every Loki series does.
 func (plan *orderedJSONMetricPlan) acceptDerivedLevel(base map[string]string, levels *logRowLevels, row map[string]string, desc cachedLogQueryStreamDescriptor) bool {
-	if plan.derivesLevel {
+	if plan.derivesLevel || !plan.aggregated && base[detectedLevelLabel] == "" {
 		withDerivedLevel(base, levels.stringRow(row, levels.streamLabels(row["_stream"], desc.streamLabels)), desc.streamLabels)
 	}
 	return plan.passesLevelFilters(base)
