@@ -19,8 +19,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// lokiClientStatuses is every status Loki v3.7.9 answers a failed query with
-// (recorded in internal/lokierr/testdata/loki_error_answers.jsonl).
+// lokiClientStatuses is every status Loki v3.7.9 answers a failed query with.
 var lokiClientStatuses = map[int]bool{
 	http.StatusBadRequest:          true,
 	http.StatusTooManyRequests:     true,
@@ -45,8 +44,7 @@ func (mapperTimeoutErr) Timeout() bool   { return true }
 func (mapperTimeoutErr) Temporary() bool { return true }
 
 // TestLokiClientError_LokiAnswers locks the error layer's mapping to Loki's
-// client error answers (Loki v3.7.9, recorded in
-// internal/lokierr/testdata/loki_error_answers.jsonl): every input
+// client error answers (Loki v3.7.9): every input
 // a route can fail with, and the status, errorType and text the client reads.
 // conformance: semantics/error-layer-backend-failure-status, semantics/error-layer-transport-text, semantics/error-layer-backend-text, semantics/error-layer-cancel-deadline, semantics/error-layer-internal-go-text, status-500, status-502, status-503, status-400
 func TestLokiClientError_LokiAnswers(t *testing.T) {

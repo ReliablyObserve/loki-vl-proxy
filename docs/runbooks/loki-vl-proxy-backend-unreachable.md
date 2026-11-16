@@ -1,7 +1,7 @@
 # LokiVLProxyBackendUnreachable
 
-- Signal: sustained `500` responses from proxy to clients. Like Loki
-  (recorded in `internal/lokierr/testdata/loki_error_answers.jsonl`), the proxy answers every failed backend call
+- Signal: sustained `500` responses from proxy to clients. Like Loki,
+  the proxy answers every failed backend call
   with `500` and Loki's text (`Internal Server Error`, as `text/plain`): VictoriaLogs refusing or
   resetting the connection, a VictoriaLogs or front-proxy error status, a
   truncated or malformed body. It never answers `502` or `503` for a query.

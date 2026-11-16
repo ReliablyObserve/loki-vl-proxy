@@ -33,8 +33,7 @@ import (
 // Loki has one, and no VictoriaLogs status, body, LogsQL, host:port or internal
 // Go error in the body or the headers.
 //
-// Loki's answers (v3.7.9, recorded in internal/lokierr/testdata/loki_error_answers.jsonl
-// and internal/proxy/testdata/error_writer_answers.json):
+// Loki's answers (v3.7.9):
 //   - client cancel: 499 "the request was cancelled by the client";
 //   - deadline: 504 "request timed out, decrease the duration ...";
 //   - any other failed backend call: 500 with Loki's own text;
