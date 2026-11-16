@@ -2673,7 +2673,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/vector_agg_fold.go foldVectorChain",
+      "where": "internal/proxy/vector_agg_fold.go foldVectorChainCapped",
       "writer": "writeErr"
     },
     {
