@@ -10,8 +10,8 @@ Steps (bench/visual/stack.py does the stack, bench/parity/README.md describes th
   1. a fresh Loki + VictoriaLogs stack under its own compose project and ports (own proxies, Grafana);
   2. Grafana's own requests: the bench/visual pages, captured once (a warm-up first);
   3. the corpus (corpus.py) from the LogQL examples of Loki's published documentation for the release the stack
-     runs, the repository's cases, what Loki reports for the seeded window, and the captures (no Loki source is
-     read);
+     runs, the repository's grammar sweep and cases, what Loki reports for the seeded window, and the captures (no
+     Loki source is read);
   4. run.py, after Loki's range-metric path left its fresh-stack blank window;
   5. publish.py records the run in the registry, parity_gaps.py --prune drops the cluster ids the run no longer
      shows, every generator of the conformance gate rewrites its report, the gate runs once for its verdict;
@@ -312,7 +312,7 @@ def main():
 
         t0 = time.time()
         corpus = os.path.join(out, "corpus.json")
-        run([PY, os.path.join(HERE, "corpus.py"), "--out", corpus, "--loki-docs", loki_docs_version(result["loki"]),
+        run([PY, os.path.join(HERE, "corpus.py"), "--out", corpus, "--loki-docs", loki_docs_version(result["loki"]), "--sweep",
              "--seeded", f"http://127.0.0.1:{state['ports']['loki']}", "--end", str(state["end"]),
              "--captures", os.path.join(out, "cap", "data")], log=step_log)
         if a.mode == "validate":
