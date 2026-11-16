@@ -1193,9 +1193,14 @@ func (p *Proxy) logRowStreamDescriptor(rawStream []byte, s logRowStream, levelBy
 	return desc
 }
 
+// maxPresizedStreamLabels bounds the size hint of a descriptor's label map; a
+// larger stream just grows the map once.
+const maxPresizedStreamLabels = 1 << 10
+
 // logQueryStreamDescriptorMiss is the slow path of logQueryStreamDescriptor,
 // used by the metric paths that group raw rows by stream and level: detected_level
-// there still mirrors the level label until metric grouping derives it.
+// there takes the stream rule (ensureStreamDetectedLevel) until metric grouping
+// derives it.
 func (p *Proxy) logQueryStreamDescriptorMiss(rawStream, level, cacheKey string, streamLabelCache map[string]map[string]string, descriptorCache map[string]cachedLogQueryStreamDescriptor) cachedLogQueryStreamDescriptor {
 	baseLabels, ok := streamLabelCache[rawStream]
 	if !ok {
@@ -1203,18 +1208,35 @@ func (p *Proxy) logQueryStreamDescriptorMiss(rawStream, level, cacheKey string, 
 		streamLabelCache[rawStream] = baseLabels
 	}
 
-	rawLabels := cloneStringMap(baseLabels)
-	if _, stored := baseLabels["level"]; level != "" && !stored {
+	// Room for the labels added below (level, detected_level, service_name), so
+	// the map is not grown and copied once they join.
+	_, stored := baseLabels["level"]
+	extra := 1
+	if level != "" && !stored {
+		extra++
+	}
+	if _, ok := baseLabels["service_name"]; !ok {
+		extra++
+	}
+	size := len(baseLabels)
+	if size < maxPresizedStreamLabels {
+		size += extra
+	}
+	rawLabels := make(map[string]string, size)
+	for k, v := range baseLabels {
+		rawLabels[k] = v
+	}
+	if level != "" && !stored {
 		rawLabels["level"] = level // a stream label level keeps its value (see logRowStreamDescriptor)
 	}
-	ensureDetectedLevel(rawLabels)
+	ensureStreamDetectedLevel(rawLabels, baseLabels)
 	ensureSyntheticServiceName(rawLabels)
 
 	passthrough := p == nil || p.labelTranslator == nil || p.labelTranslator.IsPassthrough()
 	translatedLabels := rawLabels
 	if !passthrough {
 		translatedLabels = p.labelTranslator.TranslateLabelsMap(rawLabels)
-		ensureDetectedLevel(translatedLabels)
+		ensureStreamDetectedLevel(translatedLabels, baseLabels)
 		ensureSyntheticServiceName(translatedLabels)
 	}
 

@@ -78,7 +78,7 @@ func TestBlockedVerdictsCarryTheirClass(t *testing.T) {
 		"down":    both(Answer{Err: "refused"}, ok(`{}`)),
 		"loki500": both(Answer{Status: 500, Body: "x"}, ok(`{}`)),
 	}
-	ph := Probe{ID: "ph", Method: "GET", Path: "/x", Params: map[string]string{"start": "<start>"}}
+	ph := Probe{ID: "ph", Method: "GET", Path: "/x", Params: map[string]string{"start": "<a row time in ns>"}}
 	pre := Probe{ID: "pre", Blocked: "needs", BlockedClass: classLoad}
 	for _, c := range []struct {
 		p    Probe
@@ -268,7 +268,7 @@ func TestClassifyRoutesAndCounts(t *testing.T) {
 		caseOf(t, "a/default", "request: {method: GET, path: /loki/api/v1/labels, proxy_flags: ['-d=1']}\ncompare: {mode: status}\n"),
 		caseOf(t, "a/none", "request: {method: GET, path: /loki/api/v1/labels, proxy_flags: ['-nowhere']}\ncompare: {mode: status}\n"),
 		caseOf(t, "a/load", "request: {method: GET, path: /loki/api/v1/labels, verify: {blocked_by: load}}\ncompare: {mode: status}\n"),
-		caseOf(t, "a/ph", "request: {method: GET, path: /loki/api/v1/labels, params: {start: '<start>'}}\ncompare: {mode: status}\n"),
+		caseOf(t, "a/ph", "request: {method: GET, path: /loki/api/v1/labels, params: {start: '<a row time in ns>'}}\ncompare: {mode: status}\n"),
 		caseOf(t, "a/scn", "request: {scope: cache, entry: e}\ncompare: {mode: observed}\n"),
 	}
 	c := Classify(cases, []string{"-d=1"}, []Variant{{Name: "v", URL: "http://x", Flags: []string{"-x=1"}}}, func() time.Time { return testNow })
