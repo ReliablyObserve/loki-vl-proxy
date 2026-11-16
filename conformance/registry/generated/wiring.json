@@ -2306,6 +2306,7 @@
     ],
     "semantics/zero-range-metric": [
       "internal/logql/zero_range_comments_loki_test.go",
+      "internal/proxy/absent_zero_range_test.go",
       "internal/proxy/error_refusals_test.go",
       "internal/proxy/zero_range_test.go"
     ],
@@ -2767,6 +2768,9 @@
     "internal/proxy/absent_over_time_test.go": [
       "semantics/absent-over-time-semantics",
       "status-400"
+    ],
+    "internal/proxy/absent_zero_range_test.go": [
+      "semantics/zero-range-metric"
     ],
     "internal/proxy/alerting_backend_failure_test.go": [
       "semantics/error-layer-backend-failure-status",
@@ -5600,7 +5604,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 661,
+  "tests_with_markers": 662,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
