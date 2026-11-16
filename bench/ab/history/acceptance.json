@@ -806,13 +806,13 @@
     },
     "loki-defaults": {
      "cold": {
-      "above": 8,
+      "above": 6,
       "below": 365,
       "between": 14,
       "close": 183,
-      "rows": 570,
-      "share_below": 64.0,
-      "share_green": 96.1
+      "rows": 568,
+      "share_below": 64.3,
+      "share_green": 96.5
      },
      "sets": 39,
      "warm": {
