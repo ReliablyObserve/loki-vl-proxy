@@ -25,13 +25,14 @@ request:
   params:
     start: 'T+1m'
     end: 'T+11m'
-    query: '{app="<fixture>"}'
   headers:
     X-Scope-OrgID: "0"
   precondition: |
     One stream with a unique label pushed seconds before the request with a
     sample at T (hours back), another stream of the app pushed with a sample
-    at T+10m; both backends flushed.
+    at T+10m; both backends flushed. Observed with the request scoped to the
+    fixture's app (query={app="..."}), which the shared stack needs to read
+    the fixture's labels apart from other data.
   verify:
     blocked_by: write
     reason: "the fixture streams must be pushed seconds before the request"

@@ -267,7 +267,6 @@
     "quality/labels-backfill-into-cached-bucket | gap:open",
     "quality/labels-just-pushed-stream-before-window | compare:observed",
     "quality/labels-just-pushed-stream-before-window | gap:open",
-    "quality/labels-just-pushed-stream-before-window | query",
     "quality/logfmt-parse-risk-candidates | compare:exact",
     "quality/logfmt-parse-risk-candidates | gap:fixed",
     "quality/logfmt-parse-risk-candidates | perf",
