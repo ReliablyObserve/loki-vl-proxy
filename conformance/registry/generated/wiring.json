@@ -870,6 +870,7 @@
       "test/e2e-fleet/peer_cache_proof_test.go"
     ],
     "peer-cache-read-hedge": [
+      "cmd/proxy/peer_config_test.go",
       "internal/cache/peer_hedge_test.go",
       "internal/cache/peer_replication_test.go"
     ],
@@ -2506,7 +2507,8 @@
       "semantics/query-range-step-alignment"
     ],
     "cmd/proxy/peer_config_test.go": [
-      "peer-cache-push-replay"
+      "peer-cache-push-replay",
+      "peer-cache-read-hedge"
     ],
     "cmd/proxy/tenant_routing_test.go": [
       "limits/max-query-length-default",
