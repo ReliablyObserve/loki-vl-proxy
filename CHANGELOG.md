@@ -21,17 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The `detected_level` escaped-value regexp now runs only on lines holding a backslash. The lines every probe
   selects and every answer are unchanged (quality/probe-regexp-parse-cost).
 
-## [2.306.0] - 2026-11-16
-
 ### Fixed
 
-- `absent_over_time` over a zero range (`[0s]`, `[0]`, with or without `offset`) now answers as Loki does: one
-  series valued 1 at every step on query_range and at the evaluation time on query, labelled with the selector's
-  equality matchers, also under `sum`, `count`, `stddev`, `max without (...)` and the other vector aggregations,
-  `topk`, `bottomk`, `sort`, `sort_desc` and `label_replace`. A zero range holds no sample in any window, so the
-  answer reads no data: it is written from the parsed query before the response cache, the query plan and any
-  VictoriaLogs call. The proxy answered `500 Internal Server Error` (and, on query with VictoriaLogs data behind it,
-  a series carrying a `detected_level` label Loki does not write) (semantics/zero-range-metric).
 - A binary operation whose operand is a `sum`, `avg`, `min` or `max` with an empty `without ()` clause
   (`sum without () (count_over_time({app="x"}[5m])) / 2`, `max(rate({app="x"}[5m])) without () > on(app) group_left …`)
   now answers every series of that operand, as Loki does: a clause of no label drops none, so each series is its own
@@ -46,6 +37,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Internal: the translation's query-plan decisions are one helper, with a reference entry point the corpus shadow reads,
+  so the shadow counts the recorded differences the proxy already serves from the plan (a keep before an unwrap, a
+  parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
+  `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
+  parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
+
+## [2.306.0] - 2026-11-16
+
+### Fixed
+
+- `absent_over_time` over a zero range (`[0s]`, `[0]`, with or without `offset`) now answers as Loki does: one
+  series valued 1 at every step on query_range and at the evaluation time on query, labelled with the selector's
+  equality matchers, also under `sum`, `count`, `stddev`, `max without (...)` and the other vector aggregations,
+  `topk`, `bottomk`, `sort`, `sort_desc` and `label_replace`. A zero range holds no sample in any window, so the
+  answer reads no data: it is written from the parsed query before the response cache, the query plan and any
+  VictoriaLogs call. The proxy answered `500 Internal Server Error` (and, on query with VictoriaLogs data behind it,
+  a series carrying a `detected_level` label Loki does not write) (semantics/zero-range-metric).
+
+### Changed
+
 - Code comments, operator-facing limit descriptions and the generated configuration pages no longer cite Loki source
   files or lines. They state what Loki does and name the evidence kept in this repository: a recorded Loki answer, a test
   that compares with Loki, a registry case or Loki's public documentation. No behaviour changes.
@@ -57,11 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window older than what it holds, Loki answers `/patterns` given a query that is not a stream selector with its
   empty success instead of `400 only label matchers are supported`, so an unmoved window recorded that instead of
   the answer a client gets. A row added by hand with no answer yet is recorded whatever it is marked.
-- Internal: the translation's query-plan decisions are one helper, with a reference entry point the corpus shadow reads,
-  so the shadow counts the recorded differences the proxy already serves from the plan (a keep before an unwrap, a
-  parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
-  `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
-  parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
 
 ## [2.305.0] - 2026-11-16
 
