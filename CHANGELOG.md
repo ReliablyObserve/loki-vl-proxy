@@ -31,17 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shapes x 4 request kinds x 2 versions: 144 of 160 runs match Loki, from 86 (every run of the 15 operations, and
   under `sum(…)`, `label_replace(…)` and with an `offset`). A `count`, `stddev` or `stdvar` under the clause, and a ranking over the operation, are unchanged. Answers cached before the fix are not served again
   (semantics/binary-operand-without-empty-collapses). `-query-plan-lowering=false` keeps the previous reading.
-
-## [2.310.2] - 2026-11-16
-
-### Changed
-
-- A code comment on the 24h query split now names its registry case. No behaviour changes.
-
-## [2.310.1] - 2026-11-16
-
-### Fixed
-
 - A paused or hung peer-cache replica no longer stalls a request for `-peer-timeout` (2 s by default). A lookup that
   misses memory and disk asks the key's replicas in ring order; when the replica asked has not sent its response headers
   within the read hedge delay, the lookup also asks the next replica and takes the first answer, and with no replica left
@@ -54,6 +43,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timeout (one query per run at 2.0 s and a `/labels` p99 at the timeout in a fleet run with one replica paused). New
   metrics: `loki_vl_proxy_peer_cache_read_hedges_total{action="next_replica"|"gave_up"}` and
   `loki_vl_proxy_peer_cache_read_hedge_delay_seconds`; peer error reason `peer_slow`.
+
+## [2.310.2] - 2026-11-16
+
+### Changed
+
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
+
+## [2.310.1] - 2026-11-16
+
+### Fixed
+
+- A query whose VictoriaLogs answer is larger than the proxy buffers (`-backend-max-buffered-response-bytes`), or that
+  passes a series or row budget, no longer counts as a backend failure. Five such requests opened the circuit breaker,
+  and every other query on that proxy then answered 500 "circuit breaker open" without reaching VictoriaLogs; now
+  only the request itself answers its limit error. The stats extent cache surfaced an oversized bucket read as a
+  transport error, which the breaker counted.
 
 ### Changed
 
