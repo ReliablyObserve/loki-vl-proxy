@@ -105,16 +105,6 @@ func TestChunkedRangeWindowsMatchLoki(t *testing.T) {
 	loki := lokiEngineAnswers(t, "chunked_range_windows", []oraclerun.EngineDataSet{set})
 
 	for _, version := range []string{"v1.49.0", "v1.53.0"} {
-		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: version}
-		backend := httptest.NewServer(emu.Handler())
-		t.Cleanup(backend.Close)
-		p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, AlignQueriesWithStep: true})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
-			t.Fatal(err)
-		}
 		for _, client := range []struct {
 			name    string
 			headers map[string]string
@@ -122,6 +112,17 @@ func TestChunkedRangeWindowsMatchLoki(t *testing.T) {
 			{"api", map[string]string{"X-Scope-OrgID": "0"}},
 			{"grafana", map[string]string{"X-Scope-OrgID": "0", "User-Agent": "Grafana/13.3.0", "X-Grafana-Org-Id": "1"}},
 		} {
+			// A proxy and a cache of its own per client: no client's piece is answered from another's.
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: version}
+			backend := httptest.NewServer(emu.Handler())
+			t.Cleanup(backend.Close)
+			p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, AlignQueriesWithStep: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+				t.Fatal(err)
+			}
 			for _, w := range windows {
 				t.Run(fmt.Sprintf("%s/%s/%s", version, client.name, w.name), func(t *testing.T) {
 					want, wantLabels := lokiMetricPoints(t, w.name, loki[w.name])

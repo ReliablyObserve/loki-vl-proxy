@@ -176,14 +176,24 @@ func seedChunkMergeHistory(t *testing.T) (string, time.Time) {
 	dlPost(t, lokiURL+"/loki/api/v1/push", "application/json", body)
 	dlPost(t, vlURL+"/insert/loki/api/v1/push?disable_message_parsing=1", "application/json", body)
 	forceVLFlush(t)
+	// The lines are older than the stack Loki's query_ingesters_within (30m): Loki serves them only once its
+	// ingester has flushed them to the store.
+	flush, err := http.Post(lokiURL+"/flush", "text/plain", nil)
+	if err != nil {
+		t.Fatalf("Loki flush: %v", err)
+	}
+	_ = flush.Body.Close()
+	if flush.StatusCode >= 300 {
+		t.Fatalf("Loki flush: status %d", flush.StatusCode)
+	}
 	query := fmt.Sprintf(`sum by (pod) (count_over_time({app=%q,namespace="prod",pod!=""}[2m]))`, app)
 
-	// Loki's range path can answer empty for a stream it has just received (its sharding reads the ingester's
-	// index statistics): wait until it counts every line.
-	count := fmt.Sprintf(`sum(count_over_time({app=%q}[61h]))`, app)
+	// Wait until Loki's range path counts every line. Each poll filters on a new nonce so Loki's results cache
+	// cannot answer it with an earlier, incomplete count.
 	deadline := time.Now().Add(4 * time.Minute)
 	var last string
 	for time.Now().Before(deadline) {
+		count := fmt.Sprintf(`sum(count_over_time({app=%q} != %q [61h]))`, app, "nonce-"+strconv.FormatInt(time.Now().UnixNano(), 10))
 		got := chunkLockQuery(t, lokiURL, count, chunkLockPiece{"fixture-count", evaluation, evaluation}, "api")
 		for _, v := range got {
 			last = v

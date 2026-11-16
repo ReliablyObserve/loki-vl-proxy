@@ -36,18 +36,22 @@ async function seed(page: Page, app: string, endMs: number): Promise<number> {
   const vl = await page.request.post(`${VL}/insert/loki/api/v1/push?disable_message_parsing=1`, { data: body });
   expect(vl.ok(), await vl.text()).toBeTruthy();
   expect((await page.request.post(`${VL}/internal/force_flush`)).ok()).toBeTruthy();
+  // The lines are older than the stack Loki's query_ingesters_within (30m):
+  // Loki serves them only once its ingester has flushed them to the store.
+  const flushed = await page.request.post(`${LOKI}/flush`);
+  expect(flushed.status(), await flushed.text()).toBeLessThan(300);
   return lines;
 }
 
-// Loki's range path can answer empty for a stream it has just received: wait
-// until it counts every seeded line.
+// Wait until Loki's range path counts every seeded line. Each poll filters on
+// a new nonce so Loki's results cache cannot answer it with an earlier count.
 async function waitForLoki(page: Page, app: string, endMs: number, lines: number) {
   test.info().setTimeout(test.info().timeout + 240_000);
   const deadline = Date.now() + 240_000;
   let last = "";
   while (Date.now() < deadline) {
     const params = new URLSearchParams({
-      query: `sum(count_over_time({app="${app}"}[61h]))`,
+      query: `sum(count_over_time({app="${app}"} != "nonce-${Date.now()}" [61h]))`,
       start: String(endMs / 1000),
       end: String(endMs / 1000),
       step: "60",
