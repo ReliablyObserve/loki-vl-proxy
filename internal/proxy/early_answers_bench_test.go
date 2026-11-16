@@ -41,3 +41,18 @@ func BenchmarkQueryRangeEarlyAnswers(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkAbsentZeroRangeEarlyAnswer: the answer of an absent_over_time over a zero range, written from the parsed
+// query (cached validation and parse) without any VictoriaLogs call.
+func BenchmarkAbsentZeroRangeEarlyAnswer(b *testing.B) {
+	p := newBenchProxy(b)
+	q := `sum by (app) (absent_over_time({app="api", pod="p1"}[0s]))`
+	r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+url.Values{"query": {q}, "start": {"1700001000"}, "end": {"1700004600"}, "step": {"60"}}.Encode(), nil)
+	_ = cachedQueryValidation(q)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if !earlyAnswers(p, httptest.NewRecorder(), r, q) {
+			b.Fatal("not answered early")
+		}
+	}
+}
