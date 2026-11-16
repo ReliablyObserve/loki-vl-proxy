@@ -61,6 +61,14 @@ distribution() give the share of comparable rows below Loki, close to it, betwee
 history.py ratchets the share below Loki and the count above 2×. A row below Loki or close to it is green (owner
 2026-11-07), and a mode meets the target when GREEN_SHARE percent of its rows are green.
 
+First ask, state not built (owner 2026-11-15). A shape whose cold run at a range is the first request for a
+selector on a proxy that holds no state for it yet carries "first_ask_max_s" in shapes.json ({range: seconds}):
+Loki answers such a request from a structure its ingester built at push time (the pattern ingester), while the
+proxy has no ingest path and reads the selector's lines from VictoriaLogs. That cold run is not compared with
+Loki's: summary_pairs and history_pairs leave it out of every ratio judgement (above 2x, bands, locks, ratchets,
+the PR gate), and first_ask_judge holds it to the absolute bound instead (smoke.py reports and fails on it).
+Its warm and refresh runs, and its other ranges, keep the Loki ratio.
+
   over2x.py locks seed [--results bench/ab/results]
       Writes a perf: block into every covered item that has none, locked when every comparable row of its
       shapes measured within max_ratio in every mode on the latest daily results.
@@ -108,6 +116,35 @@ PROFILE_NOTES = {
 }
 RULE = (f"proxy time > {RATIO:g} x Loki time and more than {MIN_GAP * 1000:.0f} ms slower; both answer 200; "
         "on cold, Loki's results cache did not answer")
+
+
+FIRST_ASK_KEY = "first_ask_max_s"
+_FIRST_ASK = None
+
+
+def first_ask_bounds(spec=None):
+    """shape name -> {range: seconds}: the shapes whose cold run at a range is a first ask (see the module
+    doc), from shapes.json (read once) or the given spec."""
+    global _FIRST_ASK
+    if spec is not None:
+        return {sh["name"]: dict(sh[FIRST_ASK_KEY]) for v in spec["sets"].values() for sh in v.get("shapes", [])
+                if sh.get(FIRST_ASK_KEY)}
+    if _FIRST_ASK is None:
+        with open(SHAPES) as f:
+            _FIRST_ASK = first_ask_bounds(json.load(f))
+    return _FIRST_ASK
+
+
+def first_ask_bound(shape, rng):
+    """The absolute bound in seconds of the shape's cold run at rng when it is a first ask, else None."""
+    return first_ask_bounds().get(shape, {}).get(rng)
+
+
+def first_ask_judge(proxy, status, bound):
+    """'above_bound' (the proxy answered 200 slower than the bound), 'within' or 'not_comparable'."""
+    if status != "200" or proxy is None:
+        return "not_comparable"
+    return "above_bound" if proxy > bound else "within"
 
 
 def above(proxy, loki, bound=RATIO):
@@ -316,6 +353,8 @@ def summary_pairs(summary, row, target):
     mine = like_for_like(summary, target)
     got = (lambda d: d.get(target)) if mine else (lambda d: None)
     out = {"cold": (got(row["cold"]), row["cold"].get(ref), got(status), status.get(ref), served)}
+    if first_ask_bound(row.get("shape"), row.get("range")) is not None:
+        del out["cold"]  # a first ask: held to its absolute bound, never to Loki's time
     if summary.get("timing") != "cold":  # a --cold summary's p50 holds first runs
         out["warm"] = (got(row["p50"]), row["p50"].get(ref), got(status), status.get(ref), False)
     if row.get("refresh"):
@@ -331,8 +370,11 @@ def history_pairs(row):
     served = row.get("loki_cold_computed") is False
     mine = row.get("like_for_like") is not False
     got = (lambda v: v) if mine else (lambda v: None)
-    return {"cold": (got(row["cold"]), row["loki_cold"], got(row["status"]), row["loki_status"], served),
-            "warm": (got(row["p50"]), row["loki_p50"], got(row["status"]), row["loki_status"], False)}
+    out = {"cold": (got(row["cold"]), row["loki_cold"], got(row["status"]), row["loki_status"], served),
+           "warm": (got(row["p50"]), row["loki_p50"], got(row["status"]), row["loki_status"], False)}
+    if first_ask_bound(row.get("shape"), row.get("range")) is not None:
+        del out["cold"]  # a first ask: held to its absolute bound, never to Loki's time
+    return out
 
 
 def key(entry):
