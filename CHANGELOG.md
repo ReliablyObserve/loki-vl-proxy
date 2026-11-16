@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Shutting the proxy down closes the peer cache's connections to its peers: idle ones are closed, and a dial that
+  finishes after the shutdown is closed instead of kept open for its 30 s idle timeout.
 - `/labels` no longer keeps label names whose last stream left the requested window. Each listing of a window now
   replaces the cached answer instead of being merged into it, so a refreshed or re-read answer lists the labels of the
   streams with data in the window, as Loki does; an empty listing replaces it too (kept for the short negative TTL).
