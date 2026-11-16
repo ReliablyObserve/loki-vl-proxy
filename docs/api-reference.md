@@ -96,6 +96,7 @@ For Grafana Logs Drilldown and Explore compatibility:
 - Peer cache payload fetches (`/_cache/get`) support `zstd` or `gzip` response compression for lower network latency/cost on large cache objects.
 - `GET /_cache/has?keys=k1,k2,...` is a lightweight batch peer endpoint that returns key presence and remaining TTL without transferring values. Used during startup warmup so instances can discover which peer has the freshest copy of each label window before fetching.
 - `/loki/api/v1/tail` accepts at most 4 KiB per client WebSocket message and closes with code `1009` when exceeded; server log frames are not limited by this.
+- `/loki/api/v1/tail` sends the newest `limit` entries since `start` (default 100 entries from the last hour, as in Loki), oldest first, before the live entries; see the configuration reference for the bounds of that read.
 - Parsed fields and structured metadata are surfaced through `detected_fields` and `detected_field/{name}/values`.
 - With `-metadata-field-mode=translated` (the default), field-oriented APIs expose Loki-style aliases only. With `-metadata-field-mode=hybrid`, they expose both native VictoriaLogs dotted names and translated Loki aliases when they differ, for example `service.name` and `service_name`.
 - Synthetic compatibility labels such as `service_name` and `detected_level` stay available on the stream and label APIs.
