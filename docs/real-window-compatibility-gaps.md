@@ -18,15 +18,15 @@ mdx:
 
 <!-- verified-numbers:start -->
 
-Verified 2026-11-15 on `8d3d89252cf1` (Loki 3.7.9, VictoriaLogs v1.49.0 and v1.53.0), 8 check(s) red; see the [daily summary](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/registry/generated/verification/summary.json).
+Verified 2026-11-16 on `23ea2aa56ee5` (Loki 3.7.9, VictoriaLogs v1.49.0 and v1.53.0), 43 check(s) red; see the [daily summary](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/registry/generated/verification/summary.json).
 
-- Registry: 131 open, 131 fixed, 15 documented, 7 owner-kept, 3 upstream; open by impact: 60 explore-visible, 13 drilldown-visible, 1 grafana-datasource, 22 api-only, 35 edge.
-- Registry cases sent to Loki and the proxy, per VictoriaLogs version: v1.49.0: 33 match, 1 differ on equal data, 240 not comparable on that day's data, 52 blocked; v1.53.0: 33 match, 1 differ on equal data, 240 not comparable on that day's data, 52 blocked.
-- Errors: 223 of 231 recorded Loki answers match, 8 known differences, 0 known leaks; 323 of 335 rows answered as recorded by the live Loki.
-- Grammar sweep of 25824 queries, re-verified live by `query-corpus.yaml` on 2026-11-15 (failure): 393 VictoriaLogs rejects the translator text, 124 error text differs, 48 proxy accepts, Loki rejects, 32 accepted, translation fails, 18 proxy rejects, Loki accepts, 17 tree fact differs: binary operation, 12 error text differs, rejected at translation, 4 tree fact differs: offsets, 4 tree fact differs: outermost operation, 3 tree fact differs: has a log pipeline.
-- Performance, weekly full run verified 2026-11-09 (Loki 3.7.9): 522 comparable shape x range pairs, 324 faster, 187 on par, 11 slower; 4 rows above 2x Loki.
-- Performance, daily smoke verified 2026-11-15: 217 rows, 2 above 2x Loki, 0 weekly ratchet rows lost.
-- Cache reuse, verified 2026-11-15: registry cases on v1.49.0: 231 repeats served from the cache, 0 not (2 VictoriaLogs calls on the repeats); registry cases on v1.53.0: 229 repeats served from the cache, 0 not (1 VictoriaLogs calls on the repeats); perf smoke: 8 of 217 rows repeat without calling VictoriaLogs.
+- Registry: 131 open, 145 fixed, 15 documented, 7 owner-kept, 3 upstream; open by impact: 60 explore-visible, 14 drilldown-visible, 1 grafana-datasource, 19 api-only, 37 edge.
+- Registry cases sent to Loki and the proxy, per VictoriaLogs version: v1.49.0: 160 match, 98 differ on equal data, 33 not comparable on that day's data, 56 blocked; v1.53.0: 159 match, 97 differ on equal data, 33 not comparable on that day's data, 58 blocked.
+- Errors: 223 of 231 recorded Loki answers match, 8 known differences, 0 known leaks; 334 of 335 rows answered as recorded by the live Loki.
+- Grammar sweep of 25824 queries, re-verified live by `query-corpus.yaml` on 2026-11-16 (cancelled): 393 VictoriaLogs rejects the translator text, 124 error text differs, 32 accepted, translation fails, 32 proxy accepts, Loki rejects, 17 tree fact differs: binary operation, 12 error text differs, rejected at translation, 10 proxy rejects, Loki accepts, 4 tree fact differs: offsets, 4 tree fact differs: outermost operation, 3 tree fact differs: has a log pipeline.
+- Performance, weekly full run verified 2026-11-16 (Loki 3.7.9): 525 comparable shape x range pairs, 353 faster, 153 on par, 19 slower; 6 rows above 2x Loki.
+- Performance, daily smoke verified 2026-11-16: 217 rows, 5 above 2x Loki, 5 weekly ratchet rows lost.
+- Cache reuse, verified 2026-11-16: registry cases on v1.49.0: 236 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); registry cases on v1.53.0: 236 repeats served from the cache, 1 not (2 VictoriaLogs calls on the repeats); perf smoke: 12 of 217 rows repeat without calling VictoriaLogs.
 
 <!-- verified-numbers:end -->
 
@@ -63,7 +63,7 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 
 - First request: **22 of 570** pairs are slower (4%): log queries **1 of 79**, Drilldown and Explore pages **8 of 118**, metric queries **10 of 366**.
 - Between 1× and 2× Loki: **14** rows on the first request, **4** on a repeat; above 2× Loki: **8** on the first request and **6** on a repeat (the 2026-11-16 distribution).
-- **4 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **4** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 109 covered registry items are locked at the 2× bound.
+- **4 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **4** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 110 covered registry items are locked at the 2× bound.
 - Largest gaps on that list in the run shown, first request: `DP2 patterns of an environment` over 1h, **1.62 s** against **0.27 s**; `LS8 json count by level_extracted, collision` over 6h, **0.56 s** against **0.17 s**; `DP1 patterns of a plain-text service` over 1h, **0.33 s** against **0.02 s**.
 - Answers: **51 of 785** pairs return a different result from Loki, and **15** could not be compared.
 

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- The parse-risk probes of a `| json` metric, the `detected_level` keys probe and the JSON hazard filter cost
+  VictoriaLogs 7-24 ms of query parsing each, on every request whose window is not covered yet (a refresh that
+  moves the window). Each held a `[^"]`-style class, and Go's regexp package prints such a class in about a
+  millisecond; VictoriaLogs prints every regexp several times per query parse. The classes are now written as a run
+  of non-letters and a run of letters (`vlNotInRun`), which matches the same text. Measured with VictoriaLogs' own
+  query parser on v1.49.0 and v1.53.0:
+  - the partial-parse probe: 17-24 ms to 0.24-0.39 ms;
+  - the `detected_level` keys probe: 7.4-8.2 ms to 0.37-0.44 ms;
+  - the hazard filter: 7.4-7.9 ms to 0.07 ms.
+  The `detected_level` escaped-value regexp now runs only on lines holding a backslash. The lines every probe
+  selects and every answer are unchanged (quality/probe-regexp-parse-cost).
+
+## [2.306.0] - 2026-11-16
+
 ### Fixed
 
 - `absent_over_time` over a zero range (`[0s]`, `[0]`, with or without `offset`) now answers as Loki does: one
@@ -19,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Code comments, operator-facing limit descriptions and the generated configuration pages no longer cite Loki source
+  files or lines. They state what Loki does and name the evidence kept in this repository: a recorded Loki answer, a test
+  that compares with Loki, a registry case or Loki's public documentation. No behaviour changes.
 - Loki's error answers are recorded from a Loki that holds data. The recorder (`test/errorrecord`) writes a small
   fixture to the Loki and waits until its range metric path serves it (`-ingest`, a step of the weekly
   `error-answers-record` workflow) before it asks the recorded requests, and every row it records carries the state

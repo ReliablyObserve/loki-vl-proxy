@@ -457,9 +457,16 @@ func FuzzStreamLevelSeriesFenceSpelling(f *testing.F) {
 		`max_over_time({app="a"} | unwrap amount [5m])`, `sort (rate({app="a"} | json [1m]))`, `sort_desc(rate({app="a"}[1m]))`, `sum by (app) (rate({app="a"} | logfmt [1m]))`, `label_replace(rate({app="a"}[1m]), "x", "$1", "pod", "(.*)")`} {
 		f.Add(q, uint64(0x5a5a5a5a5a5a5a5a), uint8(1))
 	}
+	// A comment: a blank written as \t\n ends it early, any other blank keeps it.
+	f.Add("A by#00 00000000\"00000000000[0000", uint64(0x10), uint8(5))
+	f.Add("A by#00 00000000\"00000000000[0000", uint64(0x10), uint8(1))
 	blanks := [...]string{" ", "\v", "\f", "\u00a0", "\u0085", "\t\n"}
 	f.Fuzz(func(t *testing.T, q string, mask uint64, blank uint8) {
 		if streamLevelSeriesResponseKeyVersion(q) == "" {
+			return
+		}
+		// A newline ends a # comment, so writing a blank as one changes the query, not its spelling.
+		if strings.IndexByte(q, '#') >= 0 && strings.IndexByte(blanks[int(blank)%len(blanks)], '\n') >= 0 {
 			return
 		}
 		var b strings.Builder

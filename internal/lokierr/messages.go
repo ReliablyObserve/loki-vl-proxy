@@ -321,7 +321,7 @@ func IndexSeriesLimit(limit int) *Error {
 }
 
 // LimitReached is a query that went over a limit of its own evaluation: the
-// class of Loki's logqlmodel.ErrLimit, answered 400 with its fixed text. flag
+// class of Loki's query limits, answered 400 with its fixed text. flag
 // is the proxy flag that sets the limit and value its setting, for the log
 // line only; cause says what was counted, for the log line only.
 func LimitReached(flag string, value int64, cause error) *Error {

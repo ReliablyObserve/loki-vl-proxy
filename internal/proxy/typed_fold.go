@@ -10,8 +10,7 @@ import (
 )
 
 // foldLevel is one vector aggregation of a fold: the series that share the
-// labels it keeps become one, valued by its operator (pkg/logql/evaluator.go
-// VectorAggEvaluator.Next).
+// labels it keeps become one, valued by its operator.
 type foldLevel struct {
 	merge  withoutMerge
 	labels map[string]bool
@@ -528,8 +527,8 @@ func (a *foldAccumulator) add(metric map[string]string, points []typedPoint) {
 func (a *foldAccumulator) result() typedBody {
 	order := a.order
 	out := typedBody{vector: a.vector, series: make([]typedSeries, 0, len(order))}
-	// Loki's series order (labels.Compare: pkg/logql/engine.go:569 sorts an
-	// instant vector, :604 sort.Sort a matrix): label by label in name order,
+	// Loki's series order (labels.Compare, for an instant vector and a matrix
+	// alike): label by label in name order,
 	// the name and then the value, a shorter set first. The key's
 	// length-prefixed text is not that order ({x="a"} before {job="a",x="a"},
 	// {pod="b"} before {pod="ab"}).
