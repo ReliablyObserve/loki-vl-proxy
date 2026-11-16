@@ -15,10 +15,9 @@ import (
 )
 
 // TestCompat_DrilldownFieldsPillJSONPathExtracted: the Logs Drilldown Fields
-// tab breaks a nested JSON field down with a JSON-path extraction list
-// (pkg/logql/log/parser.go:671 JSONExpressionParser.Process), with a level
-// pill before the parser or without it. The fixture is one stream of JSON
-// lines with a level key and service.name nested (two values, or none),
+// tab breaks a nested JSON field down with a JSON-path extraction list, with
+// a level pill before the parser or without it. The fixture is one stream of
+// JSON lines with a level key and service.name nested (two values, or none),
 // ingested alike into Loki and VictoriaLogs; the proxy answers Loki's series
 // and values on query_range and query.
 // conformance: drilldown/fields-pill-json-path-extracted-empty, loki_api_v1_query_range, loki_api_v1_query

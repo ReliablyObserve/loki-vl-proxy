@@ -65,7 +65,7 @@ gap:
   impact: drilldown-visible
   effort: L
   area: 'internal/translator label filters before the first parser (field filters on stored fields); ingest: VictoriaLogs Loki push JSON message parsing'
-  loki: 'pkg/logql/log label filters before a parser read stream labels and structured metadata'
+  loki: 'a label filter before a parser reads stream labels and structured metadata only (compose stack counts in this case)'
   proxy: 'a field filter that also matches keys VictoriaLogs parsed out of the JSON line at ingest'
   planned_test: 'e2e vs Loki on a fixture pushed with and without disable_message_parsing (test/e2e-compat, group drilldown)'
   clusters: []

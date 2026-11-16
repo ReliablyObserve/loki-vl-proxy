@@ -20,9 +20,8 @@ import (
 
 // This file reproduces the shapes around `without` that the proxy still answers
 // differently from Loki v3.7.7. Each case states the answer the proxy gives now
-// and the answer Loki gives, computed from the rows with the evaluator of Loki's
-// source (pkg/logql/evaluator.go: VectorAggEvaluator.Next for the aggregations,
-// LabelReplaceEvaluator.Next for label_replace; not run against a Loki here).
+// and the answer Loki gives, computed from the rows with a reference evaluator
+// of Loki's aggregations and label_replace (not run against a Loki here).
 // The test fails when the proxy's answer changes, in either direction: a fix
 // moves the answer to Loki's and the case and its registry row are updated with it.
 //
@@ -295,7 +294,7 @@ func TestWithoutShapesStillDifferFromLoki(t *testing.T) {
 		loki       func(instant bool) map[string]string
 	}{
 		// sum without () (max_over_time ...) on query_range: `without ()` drops no
-		// label (Grouping.Noop: pkg/logql/syntax/ast.go), so every series stays
+		// label, so every series stays
 		// (the proxy folds them into one); at an instant the proxy keeps them.
 		{"without-empty-grouping-range-collapses", `sum without () (max_over_time({app="uw"} | unwrap amount [5m]))`, false, true,
 			`{-}=`, func(bool) map[string]string {
@@ -327,7 +326,7 @@ func TestWithoutShapesStillDifferFromLoki(t *testing.T) {
 // TestWithoutTopKBottomKKeepsEveryLabelLikeLoki: topk and bottomk without keep,
 // per group of the labels other than the excluded ones, the series with the top
 // (bottom) value at each step, with all its labels, pod included
-// (VectorAggEvaluator.Next keeps the sample's metric: pkg/logql/evaluator.go).
+// (Loki's aggregation keeps the sample's metric).
 // The proxy stripped pod and folded the rows by sum before
 // (semantics/topk-bottomk-without-strips-label). Instant and query_range, topk
 // and bottomk, in the leading and the trailing spelling of the clause.
@@ -366,7 +365,7 @@ func TestWithoutTopKBottomKKeepsEveryLabelLikeLoki(t *testing.T) {
 
 // TestWithoutNestedAggregationMatchesLoki: a `without` over an inner aggregation,
 // and a `without` under an outer one, are folded level by level, innermost first,
-// as Loki's VectorAggEvaluator does (pkg/logql/evaluator.go:435-529), on an
+// as Loki's vector aggregation does, on an
 // instant query and on a sliding range. The answers were one series {} (the
 // whole inner vector summed) before
 // (semantics/without-over-inner-aggregation-collapses,
@@ -409,8 +408,7 @@ func TestWithoutNestedAggregationMatchesLoki(t *testing.T) {
 
 // TestWithoutComparisonInsideMatchesLoki: a comparison inside a `sum without`
 // filters the series of the inner vector before the sum, as Loki evaluates the
-// comparison (vectorBinop) and then the aggregation (VectorAggEvaluator.Next,
-// pkg/logql/evaluator.go:451-466): the aggregation over a binary sends it to the
+// comparison and then the aggregation: the aggregation over a binary sends it to the
 // binary evaluator and folds the filtered series. Range and instant for the
 // rate; instant for max_over_time (its range values are another row:
 // semantics/unwrap-over-time-range-windows).
@@ -489,8 +487,7 @@ func toStreams(series map[string]string) map[string][]float64 {
 // TestLabelReplaceOnAVectorAddsTheLabelAtAnInstant: label_replace around a
 // vector aggregation sets the destination label on every series whose source
 // label matches, on an instant query as on query_range. Loki evaluates the
-// call per step on the vector its operand answers
-// (pkg/logql/evaluator.go:387, LabelReplaceEvaluator.Next at :1279-1309).
+// call per step on the vector its operand answers.
 //
 // conformance: semantics/label-replace-instant-vector
 func TestLabelReplaceOnAVectorAddsTheLabelAtAnInstant(t *testing.T) {
@@ -513,8 +510,7 @@ func TestLabelReplaceOnAVectorAddsTheLabelAtAnInstant(t *testing.T) {
 
 // TestLabelReplaceOfABinaryExpressionRoutesByTheBinary: a label_replace around
 // a binary expression evaluates the binary, then replaces the label, on
-// query_range as on an instant query (pkg/logql/evaluator.go:385-388; the
-// transform is LabelReplaceEvaluator.Next at :1279-1309 over the binary's
+// query_range as on an instant query (the transform runs over the binary's
 // vector). Each ns divided by itself is 1 at every step, with dst equal to ns.
 // The translator's binary marker never reaches VictoriaLogs as a query.
 //

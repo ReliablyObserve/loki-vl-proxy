@@ -1,0 +1,44 @@
+id: semantics/loki-error-phases
+title: "Loki raises a query's errors in phases: parser actions, lexer, syntax, tree checks, then the pipeline build (recorded)"
+pending: true
+proves:
+  - loki-error-phases
+consumer: api
+why: |
+  When a query holds two errors, Loki answers the one of the earliest phase, and the error text shows the phase.
+  Recorded with the Loki oracle (Loki 3.7.9, `test/oracle/loki check`: Loki's parser and pipeline build) over a
+  grid of 30 checks, each alone and with a second error placed before or after it (a syntax error at the next token
+  or further right, a lexer error that lets the parse go on such as `1PB` or `[1ns]`, an invalid escape that ends
+  it, a second check), each inside 9 wrappers (sum, sort, topk, label_replace, arithmetic on either side, and, or,
+  unless) with and without a later syntax error, and the parameter of 12 vector and range operations written 16 ways
+  (internal/logql/testdata/error-order-loki.jsonl.gz, 1628 queries):
+
+  - Actions, run while the parser reads the stage or matcher: a pattern or regexp parser that does not compile, a
+    regex in a selector, a label filter, a drop or a keep. The first one read wins over any later syntax or lexer
+    error and over an earlier lexer error the parse goes on after; a syntax error before it, an invalid escape
+    before it and an earlier action win over it.
+  - Lexer errors, then the syntax error, once the parse stops.
+  - Tree checks, once the whole query has parsed: a grouping a range aggregation does not allow, an unwrap missing
+    or refused, a log query or a literal as a binary operand, a label_replace regex, `unsupported parameter for
+    operation sum(1,`, `invalid parameter topk(1.5,`, topk(0), approx_topk with a grouping, sort with a grouping,
+    quantile_over_time without its parameter, the empty-compatible selector. Each loses to every error above; among
+    them the one Loki's walk meets first answers (a node before its operands, the left operand first).
+  - Every wrapper keeps the check's error; a syntax error after the whole expression answers ahead of a tree check or
+    a build error, never ahead of an action.
+  - The pipeline build last: a line filter regex or pattern, line_format and label_format templates, a
+    label_format of `__error__`, json and logfmt expressions, an `ip()` label filter.
+  - The parameter of a vector operation is a NUMBER token: `sum(-1, …)`, `sum(1 + 2, …)`, `sum((1), …)` fail at the
+    comma; `sum(1.5, …)` parses and fails the tree check; quantile_over_time reads its parameter as a NUMBER
+    (`syntax error: unexpected -, expecting NUMBER or { or (` at the parameter).
+
+  The proxy's parser reports a later syntax or lexer error ahead of an earlier action, rejects the parameter of a
+  vector operation other than topk and bottomk at the comma, checks topk(0) while it parses, and builds the
+  pipeline before the tree checks of the query plan (sort with a grouping).
+request:
+  scope: query-grammar
+  entry: "TestLokiErrorPhasesRecorded (internal/logql): every row of the recorded grid held to the phase rules"
+  setup: "The grid of internal/logql/error_order_loki_test.go, answers recorded with LVP_RUN_ORACLES=1."
+compare:
+  mode: exact
+  fields: [error_text]
+  expect: "Loki's answer for every grid query follows the phase rules above."

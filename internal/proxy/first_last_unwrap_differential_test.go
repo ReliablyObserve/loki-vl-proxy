@@ -23,11 +23,9 @@ import (
 
 // This file pins an aggregation over first_over_time and last_over_time with
 // unwrap to Loki's, over generated rows and windows, with a reference written
-// apart from the proxy: Loki v3.7.7 pkg/logql/range_vector.go (FirstOverTime and
-// LastOverTime take the first and the last sample, in timestamp order, of each
-// series' window (t-range, t]; first at :818-833, last at :835-843) and
-// pkg/logql/evaluator.go VectorAggEvaluator.Next (the aggregation folds the
-// per-series values of a step). VictoriaLogs has no first or last stats function,
+// apart from the proxy: first_over_time and last_over_time take the first and
+// the last sample, in timestamp order, of each series' window (t-range, t], and
+// the aggregation folds the per-series values of a step. VictoriaLogs has no first or last stats function,
 // so the emulator (vlemu.Emulator) answers only row_min(_time, f) and row_max(_time,
 // f), as a JSON row that is a label to VictoriaLogs, and refuses a query whose
 // last stats pipe holds only those.

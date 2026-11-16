@@ -7,7 +7,7 @@ proves:
 consumer: drilldown
 why: |
   Loki's results cache skips stats and volume requests whose end lies within
-  max_stats_cache_freshness (default 10m, pkg/validation/limits.go:413), so
+  max_stats_cache_freshness (default 10m, https://grafana.com/docs/loki/latest/configure/), so
   Drilldown's landing counts and volumes always include the last minutes. The
   proxy caches these answers by time bucket regardless of how recent the end
   is, so the landing page under-counts the newest lines until the entry
@@ -32,7 +32,7 @@ gap:
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy/volume.go handleVolume, label_handlers.go handleIndexStats (cache freshness)'
-  loki: 'pkg/validation/limits.go:413-414 max_stats_cache_freshness default 10m'
+  loki: 'stats and volume requests ending within max_stats_cache_freshness (default 10m) are not cached'
   proxy: 'cached regardless of end'
   planned_test: 'TestE2E_StatsVolumeFreshness (test/e2e-compat, group drilldown)'
   clusters: []

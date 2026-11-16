@@ -21,20 +21,20 @@ import (
 // A `| detected_level <op> "<value>"` filter that no parser precedes selects
 // the lines whose ingest-time level, as Loki v3.7.9 assigns it, the matcher
 // accepts. The proxy has no ingest path, so the filter derives the value from
-// what VictoriaLogs stored: the reference below is written from Loki's source
-// alone and calls nothing of the proxy, and the plans are run over the rows
+// what VictoriaLogs stored: the reference below is written apart from the
+// proxy and calls nothing of it, and the plans are run over the rows
 // with the fake VictoriaLogs' filter semantics and the chain emulation that
 // the e2e tests pin against VictoriaLogs.
 
-// lokiRefAllowedLevelFields is validation.DefaultAllowedLevelFields
-// (Loki v3.7.9 pkg/validation/limits.go:70-85).
+// lokiRefAllowedLevelFields is the list of fields Loki v3.7.9 reads a level from
+// by default.
 var lokiRefAllowedLevelFields = []string{
 	"level", "LEVEL", "Level", "log.level", "severity", "SEVERITY", "Severity", "SeverityText",
 	"lvl", "LVL", "Lvl", "severity_text", "Severity_Text", "SEVERITY_TEXT",
 }
 
-// lokiRefSpellings is normalizeLogLevel's table (pkg/distributor/
-// field_detection.go:156-177): a case-insensitive spelling and its level.
+// lokiRefSpellings is Loki's level spelling table: a case-insensitive spelling
+// and its level.
 var lokiRefSpellings = map[string]string{
 	"trace": "trace", "trc": "trace", "debug": "debug", "dbg": "debug",
 	"info": "info", "inf": "info", "information": "info",
@@ -42,7 +42,7 @@ var lokiRefSpellings = map[string]string{
 	"error": "error", "err": "error", "critical": "critical", "fatal": "fatal",
 }
 
-// lokiRefKeywords is levelPatterns (field_detection.go:42-55), in its order.
+// lokiRefKeywords is Loki's level keyword list, in its order.
 var lokiRefKeywords = []struct{ word, level string }{
 	{"trace", "trace"}, {"debug", "debug"}, {"fatal", "fatal"}, {"critical", "critical"},
 	{"error", "error"}, {"err", "error"}, {"warning", "warn"}, {"warn", "warn"}, {"info", "info"},
@@ -198,8 +198,7 @@ func lokiRefKeywordLevel(line string) string {
 }
 
 // lokiRefMatches is a Loki label filter on a value: = and != compare; =~ and
-// !~ match the regexp after Loki's simplifier (pkg/logql/log/filter.go
-// parseRegexpFilter, RegexSimplifier.Simplify: a literal alternation such as
+// !~ match the regexp after Loki's simplifier (a literal alternation such as
 // `w|wA` is a substring check per branch, `=~""` keeps every value), which
 // translator.NewLabelFilterCondition models and the label filter e2e tests pin
 // against Loki.

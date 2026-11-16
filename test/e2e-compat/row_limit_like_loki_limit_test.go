@@ -16,8 +16,8 @@ import (
 // TestCompat_RowLimitAnswersLikeLokiLimit compares the proxy's answer to a
 // metric that passes -manual-range-metric-row-limit with live Loki's answer to
 // a query over one of its own limits. Loki answers such a query 400 with the
-// raw message (pkg/util/server/error.go ClientHTTPStatusAndError, ErrLimit and
-// user errors; WriteError); the stack's max_query_series is 1,000,000, which a
+// raw message (internal/lokierr/testdata/loki_error_answers.jsonl holds the
+// recorded rows); the stack's max_query_series is 1,000,000, which a
 // query cannot reach, so the Loki side is max_query_length (default 721h), a
 // limit the stack Loki enforces with the same status. The proxy side is an
 // in-process proxy on the stack's VictoriaLogs with a row limit of 1, reading

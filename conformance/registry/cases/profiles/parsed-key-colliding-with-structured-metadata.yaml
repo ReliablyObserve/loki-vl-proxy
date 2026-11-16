@@ -5,10 +5,10 @@ proves:
   - loki-compatible-profile
   - loki_api_v1_query_range
 consumer: explore
+evidence: needs recording
 why: |
   Loki keeps structured metadata `trace_id` and exposes a parsed key of the
-  same name as `trace_id_extracted` (parser.go: HasInCategory(key,
-  StructuredMetadataLabel)). VictoriaLogs stores one field `trace_id`. In a
+  same name as `trace_id_extracted`. VictoriaLogs stores one field `trace_id`. In a
   log query without a parser the proxy hides it when the line is JSON holding
   the key (it cannot tell the metadata from the line's content), so the entry
   shows no trace_id where Loki shows the metadata; after `| json` the
@@ -43,6 +43,6 @@ gap:
   impact: explore-visible
   effort: L
   area: 'internal/translator json / logfmt unpack (original stored value) and internal/proxy row classification'
-  loki: 'pkg/logql/log/parser.go:152 HasInCategory(key, StructuredMetadataLabel) then duplicateSuffix'
+  loki: 'a parsed key equal to a structured-metadata key becomes name_extracted, the metadata stays'
   proxy: 'the line''s value under trace_id, the metadata value missing'
   planned_test: 'TestCompat_ParsedKeyAgainstStructuredMetadata (test/e2e-compat, group otel-edge)'

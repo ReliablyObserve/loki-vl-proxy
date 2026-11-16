@@ -6,9 +6,8 @@ proves:
 consumer: explore
 why: |
   Loki splits a log query by interval, takes the splits newest first for a
-  backward query (pkg/querier/queryrange/split_by_interval.go:216) and stops
-  once the limit is met (:136-146); every split keeps the request's limit
-  (splitters.go:44). The answer is the newest (forward: oldest) `limit`
+  backward query and stops
+  once the limit is met; every split keeps the request's limit. The answer is the newest (forward: oldest) `limit`
   lines of the range.
 
   The proxy's windowed path started a log query with the /hits prefilter
@@ -58,7 +57,7 @@ gap:
   visual_reason: 'a latency change: every answer is the one main and Loki give (the newest or oldest limit lines), proven by the edge-case table, the random differential and the fuzz target against Loki''s newest/oldest N; the first-load time is measured by the A/B shapes covering this case, and lvl-explore-logs-drop-dl still captures the page against Loki at 1h, 6h and 24h'
   effort: S
   area: 'internal/proxy/query_range_windowing.go proxyLogQueryWindowed and prefilterQueryRangeWindowsByHits'
-  loki: 'pkg/querier/queryrange/split_by_interval.go Process and Do; splitters.go'
+  loki: 'the splits are taken newest first for a backward query, oldest first for a forward one, and the lead window decides the limit (test/e2e-compat query_range_lead_window_test.go)'
   proxy: 'first window read alone before the /hits prefilter and the batches; the next batch sized by its line density'
   planned_test: 'TestQueryRangeWindow_LeadWindowFillsBeforeFanOut, TestQueryRangeWindow_LeadWindowCachedAndNearNow, TestQueryRangeWindow_LeadWindowMatchesLokiDifferential, FuzzQueryRangeWindowLeadWindow (internal/proxy); TestCompat_QueryRangeLeadWindowLikeLoki (test/e2e-compat, core)'
   clusters: []

@@ -28,7 +28,7 @@ why: |
   lines where the query asked for a rate.
 
   Fix: the proxy applies the query's vector aggregations to the series its
-  evaluator returns, per step, the way VectorAggEvaluator.Next does (each series
+  evaluator returns, per step, the way Loki does (each series
   falls into the group its labels name, `by` keeping the listed labels, none
   keeping none; count is the number of series with a sample at the step, avg a
   running mean, min and max the extreme), innermost first, and checks
@@ -74,7 +74,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy vector_agg_fold.go (foldVectorAggregations, called from handleStatsCompatRange and handleStatsCompatInstant); range_metric_compat.go parseOriginalRangeMetricSpec'
-  loki: 'pkg/logql/evaluator.go:400-433 newVectorAggEvaluator, :435-529 VectorAggEvaluator.Next (fold per group per step: avg :525, max :529, min :534, count :539 and :589)'
+  loki: 'each series falls into the group its labels name, per step, innermost first (test/e2e-compat non_sum_vector_aggregation_range_test.go)'
   proxy: 'the series of the range evaluator folded per step by the query vector aggregations'
   planned_test: 'TestCompat_NonSumVectorAggregationRange (test/e2e-compat, group core); TestVectorAggregationOverRangeFunctionDifferential, TestVectorAggregationGroupedLabelsSlidingWindow, TestVectorAggregationOverRateCounterFolds, TestFoldByGroupingEdgeCases, TestSeriesAggregationChain, TestParseOriginalRangeMetricSpecNestedAggregations (internal/proxy)'
   note: 'Found on origin/main cf738b80. The differential tests run the real handler against an emulated VictoriaLogs (unknown version, v1.52.0, v1.49.0); the e2e against Loki is written, not yet run.'

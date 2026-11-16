@@ -650,8 +650,7 @@ func TestUnwrapCountedGateFlagsOverflow(t *testing.T) {
 
 // A nan value is a sample for Loki (strconv.ParseFloat reads it): sum_over_time,
 // avg_over_time, stddev_over_time and rate over a window that holds one are NaN,
-// and so is the sum of such series; max_over_time and min_over_time ignore it
-// (pkg/logql/range_vector.go). VictoriaLogs' sum restarts at a NaN, so the gate
+// and so is the sum of such series; max_over_time and min_over_time ignore it. VictoriaLogs' sum restarts at a NaN, so the gate
 // counts the nan rows apart (flag 2) and the proxy applies them to the answer:
 // when every function of the query poisons its result, the value is NaN where a
 // nan group sits (a series made only of nan rows included) and a count series

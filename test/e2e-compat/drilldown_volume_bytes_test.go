@@ -318,8 +318,7 @@ func expectedVolumeBytes(streams []volumeBytesStream, lines []volumeBytesLine, s
 		maxLine int
 	}
 	sums := map[string]map[float64]*acc{}
-	// Loki stamps the last sample at the end rounded up to the millisecond
-	// (pkg/util/conv.go RoundToMilliseconds).
+	// Loki stamps the last sample at the end rounded up to the millisecond.
 	endMs := end.UnixMilli()
 	if end.UnixNano()%int64(time.Millisecond) != 0 {
 		endMs++

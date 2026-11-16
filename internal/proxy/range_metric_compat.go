@@ -340,7 +340,7 @@ func parseUnwrapExpression(expr string) (field, conv string) {
 
 	switch {
 	case strings.HasPrefix(expr, "duration_seconds(") && strings.HasSuffix(expr, ")"):
-		// Loki converts it as duration() (syntax/extractor.go:63-71).
+		// Loki converts it as duration() (registry semantics/unwrap-duration-seconds).
 		field = strings.TrimSpace(expr[len("duration_seconds(") : len(expr)-1])
 		conv = "duration"
 	case strings.HasPrefix(expr, "duration(") && strings.HasSuffix(expr, ")"):
@@ -1039,8 +1039,7 @@ func (p *Proxy) writeHitsRangeMetricMatrixFolded(w http.ResponseWriter, manualFu
 
 // ungroupedSumRange returns the range aggregation under a bare `sum(...)`, one
 // with no by() or without() (`sum by ()` included): Loki folds every series the
-// range aggregation yields into one series per step
-// (pkg/logql/evaluator.go newVectorAggEvaluator, VectorAggEvaluator.Next).
+// range aggregation yields into one series per step.
 func ungroupedSumRange(query string) (*logqlpkg.RangeAggregation, bool) {
 	// The shared parse of the query: the range aggregation is read, never changed.
 	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
@@ -1070,8 +1069,7 @@ func hasUnwrapStage(lq *logqlpkg.LogQuery) bool {
 // series identity is, so the evaluator may sum the lines (or the unwrapped
 // values) of all the streams before windowing and read one series from
 // VictoriaLogs: the count and byte functions, and rate and sum_over_time over an
-// unwrapped label, whose value is the sum of the values (pkg/logql/range_vector.go
-// rateLogs with computeValues, sumOverTime). avg, max, min, quantile and the
+// unwrapped label, whose value is the sum of the values. avg, max, min, quantile and the
 // other functions take a value per series, so their series stay apart until the
 // outer sum (foldUngroupedSum).
 func isSumAllLogRange(query string) bool {
@@ -2140,15 +2138,72 @@ func (p *Proxy) manualSeriesEntry(seriesCache map[string]*metricSeriesCacheEntry
 // every row of it (deriveRowLevel's stream rule): the first non-empty field
 // named in levelFieldNames, normalised, else unknown.
 func streamDetectedLevel(stream map[string]string) string {
-	for _, name := range levelFieldNames {
-		if v := stream[name]; v != "" {
-			if c := canonicalLevel([]byte(v)); c != "" {
-				return c
-			}
-			return v
-		}
+	if v, ok := streamLevel(stream); ok {
+		return v
 	}
 	return levelUnknown
+}
+
+// streamLevel is the stream rule of streamDetectedLevel; ok is false when the
+// stream holds none of the level fields. level, the first name and the common
+// one, is looked up directly; otherwise the stream's labels are walked once and
+// the non-empty one earliest in levelFieldNames (levelFieldSlot) is kept, the
+// names screened by first byte and length before the switch.
+func streamLevel(stream map[string]string) (string, bool) {
+	if v := stream["level"]; v != "" {
+		return normalizedLevel(v), true
+	}
+	best, value := levelSlotSeverityNumber, ""
+	for k, v := range stream {
+		if v == "" || len(k) < 3 {
+			continue
+		}
+		switch k[0] {
+		case 'l', 'L', 's', 'S':
+		default:
+			continue
+		}
+		switch len(k) {
+		case 3, 5, 8, 9, 12, 13: // the lengths of levelFieldNames
+		default:
+			continue
+		}
+		if slot := levelFieldSlot([]byte(k)); slot >= levelSlotFirstName && slot < best {
+			best, value = slot, v
+		}
+	}
+	if best == levelSlotSeverityNumber {
+		return "", false
+	}
+	return normalizedLevel(value), true
+}
+
+// normalizedLevel is a level value as Loki writes it into detected_level: a
+// known spelling normalised (ERROR is error, Warning warn), any other word kept.
+func normalizedLevel(v string) string {
+	if c := canonicalLevel([]byte(v)); c != "" {
+		return c
+	}
+	return v
+}
+
+// ensureStreamDetectedLevel fills detected_level on the labels of a series
+// built from one stream, with the rule of streamDetectedLevel: the stream's
+// first level field, else the row's level field (labels["level"]), normalised.
+// A detected_level already present stays. With neither field the label stays
+// absent: the line bodies decide it in Loki, which one series per stream
+// cannot split. The level label itself keeps its stored value, as in Loki.
+func ensureStreamDetectedLevel(labels, stream map[string]string) {
+	if labels == nil || strings.TrimSpace(labels["detected_level"]) != "" {
+		return
+	}
+	if v, ok := streamLevel(stream); ok {
+		labels["detected_level"] = v
+		return
+	}
+	if v := strings.TrimSpace(labels["level"]); v != "" {
+		labels["detected_level"] = normalizedLevel(v)
+	}
 }
 
 // buildMetricSeriesEntry constructs the label maps and series key for a given
@@ -2164,18 +2219,28 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, derived *stri
 	}
 	if levelStr != "" {
 		streamLabels["level"] = levelStr
-		streamLabels["detected_level"] = levelStr
 	}
 	switch {
 	case derived != nil && *derived != "":
 		streamLabels["detected_level"] = *derived
 	case derived != nil:
 		delete(streamLabels, "detected_level")
-	case strings.TrimSpace(streamLabels["detected_level"]) == "":
-		// A row of a group read by stream alone (stats by (_stream)) carries
-		// no level column: the stream's level field decides it for every row
-		// of the stream, as Loki's ingest does (rule 2), else unknown.
-		streamLabels["detected_level"] = streamDetectedLevel(rawStreamLabels)
+	case levelStr == "" && strings.TrimSpace(streamLabels["detected_level"]) != "":
+		// A detected_level stream label stays as it was.
+	default:
+		// Without VictoriaLogs' derivation the stream's level fields decide
+		// for every row of the stream, as Loki's ingest does (rule 2): a raw
+		// row holds them as fields too, so its level field is the stream's
+		// level="ERROR" (error) rather than a value of the row. Then the row's
+		// level field (rule 3), normalised, then unknown. A group read by
+		// stream alone (stats by (_stream)) carries no level column.
+		if v, ok := streamLevel(rawStreamLabels); ok {
+			streamLabels["detected_level"] = v
+		} else if levelStr != "" {
+			streamLabels["detected_level"] = normalizedLevel(levelStr)
+		} else {
+			streamLabels["detected_level"] = levelUnknown
+		}
 	}
 	ensureSyntheticServiceName(streamLabels)
 
@@ -3242,9 +3307,9 @@ func aggregateManualWindow(functionName string, quantile float64, samples []rang
 		lastVal  float64
 		hasFirst bool
 	)
-	// A LogQL range vector is (start, end] for EVERY function: Loki's
-	// batchRangeVectorIterator.load skips `sample.Timestamp <= start` and the
-	// iterator is shared by unwrapped ranges too (pkg/logql/range_vector.go).
+	// A LogQL range vector is (start, end] for EVERY function: Loki skips
+	// `sample.Timestamp <= start`, for unwrapped ranges too (registry
+	// semantics/stddev-stdvar-over-time-range-window).
 	const excludeStart = true
 	for _, sample := range samples {
 		if sample.ts < windowStart || sample.ts > windowEnd || (excludeStart && sample.ts == windowStart) {
@@ -3372,8 +3437,7 @@ func (p *Proxy) manualSeriesLimit(ctx context.Context) int {
 // foldUngroupedSum runs a manual range metric evaluator and, for an ungrouped
 // `sum(...)` over a function whose series do not add up before the window
 // (isSumAllLogRange), sums the series it returns per step: Loki's vector
-// aggregation folds every series of its input into one
-// (pkg/logql/evaluator.go VectorAggEvaluator.Next, groupingKey of no labels).
+// aggregation folds every series of its input into one.
 func foldUngroupedSum(w http.ResponseWriter, r *http.Request, query string, serve func(http.ResponseWriter, *http.Request) bool) bool {
 	if _, ok := ungroupedSumRange(query); !ok || isSumAllLogRange(query) {
 		return serve(w, r)

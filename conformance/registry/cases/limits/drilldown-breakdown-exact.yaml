@@ -12,8 +12,7 @@ why: |
   with step equal to the range. The plugin (2.5.2, src/services/labels.ts and
   fields.ts) neither caps nor samples the series; it sorts them. Loki answers
   like any other metric query: every series with exact values, and above
-  max_query_series the Drilldown partial result with its warning
-  (pkg/logql/engine.go JoinSampleVector, v3.7.7). A breakdown answered from a
+  max_query_series the Drilldown partial result with its warning. A breakdown answered from a
   sample of top values shows fewer series than Loki, wrong counts and no
   warning, so the panel looks complete when it is not. A field breakdown is
   sent to VictoriaLogs parsing only the lines that can hold the field (a

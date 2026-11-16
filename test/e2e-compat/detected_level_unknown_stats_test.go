@@ -12,15 +12,13 @@ import (
 )
 
 // Loki attaches detected_level to every entry at ingest and falls back to
-// "unknown" (pkg/distributor/field_detection.go), so a metric over lines that
-// carry no level is still labelled detected_level="unknown", and a line whose
-// level only the body gives (logfmt, JSON, a keyword) is labelled with it
-// (pkg/logql/log/metrics_extraction.go streamLineSampleExtractor.Process adds
-// the structured metadata; labels.go GroupedLabels returns it for an ungrouped
-// or without() grouping). The proxy answered the instant and the tumbling route
-// of a bare or without() metric without the label for a stream with no level
-// field, and merged the lines of different body levels into one series
-// (semantics/detected-level-missing-from-stats-answers).
+// "unknown", so a metric over lines that carry no level is still labelled
+// detected_level="unknown", and a line whose level only the body gives
+// (logfmt, JSON, a keyword) is labelled with it, the structured metadata
+// being part of an ungrouped or without() grouping's labels. The proxy answered the instant and the
+// tumbling route of a bare or without() metric without the label for a stream
+// with no level field, and merged the lines of different body levels into one
+// series (semantics/detected-level-missing-from-stats-answers).
 
 type dlUnknownFixture struct {
 	fx       slidingLiveFixture

@@ -88,7 +88,7 @@ func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, 
 	ctx := r.Context()
 	if lines < 0 { // not counted by the state
 		var err error
-		if lines, err = p.countPatternLines(ctx, scope, scope.startNs, scope.endNs); err != nil {
+		if lines, err = p.countPatternLines(ctx, scope, scope.startNs, patternSamplesEndNs(scope.endNs)); err != nil {
 			return nil, false, false
 		}
 	}
@@ -114,7 +114,9 @@ func (p *Proxy) minePatternLines(ctx context.Context, scope patternQueryScope, m
 	miner.fillStep = int64(scope.step / time.Second)
 	miner.sampleFromNs, miner.sampleToNs = scope.startNs, scope.endNs
 	read := newPatternLineReader(miner, p.newLogRowLevels())
-	err := p.readPatternCountRows(ctx, patternExactLinesQuery(scope.filter), scope.startNs, scope.endNs, maxLines, read)
+	// The samples starting inside the range are counted whole, as Loki counts them: the last one's lines after the
+	// range's end are read too.
+	err := p.readPatternCountRows(ctx, patternExactLinesQuery(scope.filter), scope.startNs, patternSamplesEndNs(scope.endNs), maxLines, read)
 	return miner, err
 }
 

@@ -43,6 +43,9 @@ type Run struct {
 	At         string `json:"at,omitempty"`
 	Event      string `json:"event,omitempty"`
 	URL        string `json:"url,omitempty"`
+	// Jobs is each job's conclusion of the run, kept for the runs whose jobs the daily report asked GitHub for (ci.yaml's
+	// last run on main): a run ends failure when any one job does, so what the test job concluded is its own fact.
+	Jobs map[string]string `json:"jobs,omitempty"`
 }
 
 // RunsFile is the bot-owned record of the last runs (written by the daily report, read here).
@@ -72,6 +75,8 @@ type Workflow struct {
 	Events    []string // sorted event names
 	Triggers  []string // rendered, one per event
 	Schedules []Schedule
+	// AddedAt is when the file first entered the repository's history (AddedDates); zero when unknown.
+	AddedAt time.Time
 }
 
 // HasEvent reports whether the workflow runs on the event.

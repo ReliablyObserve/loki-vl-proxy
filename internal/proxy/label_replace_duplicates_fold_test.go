@@ -8,7 +8,7 @@ import (
 )
 
 // stddev and stdvar fold every sample at a step before label_replace's duplicates are filed under one series
-// (pkg/logql evaluator VectorAggEvaluator.Next, then JoinSampleVector), so over label sets that label_replace
+// (and only then files the duplicates under one series), so over label sets that label_replace
 // made equal they are the population deviation and variance of all the apps' samples, not of one merged series
 // (which would read 0). On the ranked route's stack, with the extent cache on and off.
 //

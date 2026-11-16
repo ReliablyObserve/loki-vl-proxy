@@ -1,0 +1,84 @@
+id: quality/probe-regexp-parse-cost
+title: The parse-risk probes and the JSON hazard filter hold no regexp class that costs VictoriaLogs milliseconds to parse
+pending: true
+proves:
+  - data-probing-and-freshness
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  A metric over a label parsed by `| json` asks VictoriaLogs whether a line of
+  the window not yet covered could be read differently by Loki's parser
+  (quality/json-label-probe-gates). The probe for a partial parse held the
+  regexp `\\u[0-9A-Fa-f]{4}[^"]*"\s*:` twice, the detected_level keys probe
+  held `[^"\\]*`, and the JSON hazard filter held `[^"]*`. Each `[^"]`-style
+  class spans almost all of Unicode, holds the ASCII letters and is closed
+  under case folding, and Go's regexp/syntax prints such a class in about a
+  millisecond. VictoriaLogs prints each regexp several times while it
+  simplifies it (lib/regexutil SimplifyRegex), on every query parse.
+  Measured with VictoriaLogs' own query parser (logstorage.ParseQuery) on
+  v1.49.0 and v1.53.0:
+  - the partial-parse probe took 17-24 ms to parse;
+  - the detected_level keys probe took 7.4-8.2 ms;
+  - a filter holding the hazard took 7.4-7.9 ms.
+  The probes run for every window part not yet covered, so a refresh paid
+  this on every request. On the 2026-11-16 weekly run, K6
+  (`sum by (level) (count_over_time({service_name="api-gateway"} | json | keep level [1m]))`
+  at 6h) answered its repeats in 55-70 ms (Loki: 13 ms): four VictoriaLogs
+  calls side by side, the slowest a 33 ms probe.
+
+  The class is now a run of non-letters and a run of letters, repeated
+  (`(?:[^"A-Za-z]*[A-Za-z]*)*`, vlNotInRun). It matches the same runs, and
+  neither class is closed under case folding, so each prints in microseconds.
+  The parser does not merge the two classes back into one, as it would an
+  alternation of them. The detected_level escaped-value regexp now also runs
+  behind `_msg:"\\"`, which every line it matches passes. Parse times after
+  the change:
+  - the partial-parse probe: 0.25-0.39 ms;
+  - the detected_level keys probe: 0.37-0.44 ms;
+  - the hazard filter: 0.07 ms.
+  The lines each probe selects are the same on both versions (VictoriaLogs'
+  store, adversarial lines) and in Go's regexp (edge table, fuzz).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (count_over_time({service_name="api-gateway"} | json | keep level [1m]))'
+    start: now-6h
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    JSON bodies with a level key (the log generator's api-gateway); the
+    request repeated with the window moved by a minute, so the probes run over
+    the part of the window not covered yet.
+  verify:
+    met_by: stack
+    evidence: "test/e2e-compat/log-generator.py writes level as a key of the JSON bodies of api-gateway; bench/ab/shapes.json set keep-series-grouping shape K6 measures this request cold and on moved-window repeats."
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200 with Loki's series and values, unchanged from the base; the
+    probes select the same lines; VictoriaLogs parses each probe in under
+    0.5 ms instead of 7-24 ms.
+gap:
+  status: fixed
+  fixed_by: '#1573'
+  impact: explore-visible
+  visual: none
+  visual_reason: 'a latency change: the probes select the same lines, so every answer and every panel is the base''s'
+  effort: S
+  area: 'internal/proxy/vl_regexp_class.go vlNotInRun; internal/proxy/ordered_json_metric.go orderedJSONEscapedKey, detectedLevelEscapedValue, detectedLevelKeysQuery; internal/proxy/ordered_json_valid_split.go jsonLokiRejectHazard'
+  loki: 'none: Loki runs no probes'
+  proxy: 'a [^"]-style class in three probe regexps costs VictoriaLogs 7-24 ms of query parse per probe round (v1.49.0, v1.53.0)'
+  planned_test: 'proxy TestVLNotInMatchesTheNegatedClass, TestVLNotInPatternsHoldNoWideLetterClass, TestVLNotInPrintsCheaply, TestVLNotInVictoriaLogsSelectsTheSameLines (LVP_RUN_ORACLES=1, v1.49.0 and v1.53.0), FuzzVLNotInMatchesTheNegatedClass, BenchmarkVLNotInMatch; bench/ab sets keep-series-grouping, extracted-pushdown, extracted-suffix, level-filter-stored, json-filter-pushdown, metric-latency-gap'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

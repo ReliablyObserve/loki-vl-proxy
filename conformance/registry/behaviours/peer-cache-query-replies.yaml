@@ -5,7 +5,7 @@ title: Completed query replies computed on one replica answer the same request o
 loki: |
   Loki's results cache is shared by every query frontend: a query_range,
   instant or series answer computed once is served again whichever frontend
-  receives the same request (pkg/storage/chunk/cache/resultscache).
+  receives the same request (Loki's documented results cache).
 
 victorialogs: |
   VictoriaLogs keeps no answer a proxy replica can share: every request is
