@@ -167,7 +167,7 @@ var siteWants = map[string]siteAnswer{
 	"plain/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
@@ -179,7 +179,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -190,7 +190,7 @@ var siteWants = map[string]siteAnswer{
 	"without/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\"} [1.70406726e+09 3][]",
@@ -201,7 +201,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range c3980eedd765290b5c892a1472c9cb644f31e00cb9865bac830eea02e4308afd/8512",
+			"stats_query_range fe6a7cff2d58863e65b27d7d9be0e77300fc06b199049bd4f1a9966468375862/8037",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -212,7 +212,7 @@ var siteWants = map[string]siteAnswer{
 	"without nested/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\"} [1.70406726e+09 3][]",
@@ -223,7 +223,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"api-gateway\"} [][[1.70406726e+09 3]]",
@@ -233,7 +233,7 @@ var siteWants = map[string]siteAnswer{
 	"without with op/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 558a78b2ec394b04a55b9f9a67eaf6a566474ce81148798c15761995b73cd200/8413",
+			"stats_query 32da04749a41154b4bbfeb364330cb373d9147fe0af0221a3c2d88a3cbfec9b5/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\"} [1.70406726e+09 2][]",
@@ -244,7 +244,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range b866065573fd4086f65264bf2e25b8bda638e668cb1ce941630d183afc95afc6/8657",
+			"stats_query_range 9b903e7f9a9bfdc89801eceb26044ffeb7ec039468b411c13d03c8149d7ca7c2/8182",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -255,7 +255,7 @@ var siteWants = map[string]siteAnswer{
 	"label_replace once/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\",short=\"api\"} [1.70406726e+09 1][]",
@@ -267,7 +267,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\",short=\"api\"} [][[1.70406726e+09 1]]",
@@ -278,7 +278,7 @@ var siteWants = map[string]siteAnswer{
 	"label_replace three/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{a=\"api\",app=\"api-gateway\",b=\"x\",c=\"x\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
@@ -290,7 +290,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{a=\"api\",app=\"api-gateway\",b=\"x\",c=\"x\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -301,7 +301,7 @@ var siteWants = map[string]siteAnswer{
 	"label_replace over without/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",short=\"api\"} [1.70406726e+09 3][]",
@@ -312,7 +312,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",short=\"api\"} [][[1.70406726e+09 3]]",
@@ -322,8 +322,8 @@ var siteWants = map[string]siteAnswer{
 	"binary/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
-			"stats_query e12c9c675d206fe13400000a897a84c872abf542ea1f731d576281a1d95274f0/8413",
+			"stats_query a98d07e6aac0c7ead0ed03539c8ce8414fca0f1a42201353065f4a1005874879/7938",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
@@ -336,8 +336,8 @@ var siteWants = map[string]siteAnswer{
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
 			"query c7ccd74cc4e9722ac757e820afe0a628a264b7cab5b38e3e9d0e5ff4a39f672e/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
-			"stats_query_range 4e0e1ab567f9aefdae8943cafb5632ccfeb93e7232d6dc11e4d6c4d8e02c28b3/8377",
+			"stats_query_range ccd27f1b1a1c263e53297b2ede67b10a5b088c9473800b97382cddbb627d4d77/7902",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -372,8 +372,8 @@ var siteWants = map[string]siteAnswer{
 	"binary over without/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
-			"stats_query e12c9c675d206fe13400000a897a84c872abf542ea1f731d576281a1d95274f0/8413",
+			"stats_query a98d07e6aac0c7ead0ed03539c8ce8414fca0f1a42201353065f4a1005874879/7938",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\"} [1.70406726e+09 1][]",
@@ -385,8 +385,8 @@ var siteWants = map[string]siteAnswer{
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
 			"query c7ccd74cc4e9722ac757e820afe0a628a264b7cab5b38e3e9d0e5ff4a39f672e/1423",
-			"stats_query_range 8be8fbe2e9fbcb509324af37ddb4b4831e723c7109793e6872c9eede2ae8bef6/8512",
-			"stats_query_range c3980eedd765290b5c892a1472c9cb644f31e00cb9865bac830eea02e4308afd/8512",
+			"stats_query_range ccc3b29bc4931110297d0c985493db606dc7798adcdf9e65071ef6e344ce8050/8037",
+			"stats_query_range fe6a7cff2d58863e65b27d7d9be0e77300fc06b199049bd4f1a9966468375862/8037",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -397,7 +397,7 @@ var siteWants = map[string]siteAnswer{
 	"scalar/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 100][]",
@@ -409,7 +409,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 100]]",
@@ -420,7 +420,7 @@ var siteWants = map[string]siteAnswer{
 	"scalar left/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 2][]",
@@ -432,7 +432,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 2]]",
@@ -443,7 +443,7 @@ var siteWants = map[string]siteAnswer{
 	"topk over without/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\"} [1.70406726e+09 3][]",
@@ -453,14 +453,14 @@ var siteWants = map[string]siteAnswer{
 	"topk over without/query_range": {
 		code: 200,
 		vl: []string{
-			"query 867663d634613619eb040a91b07a6b11f8b19cb224c9e30fbc48de3c03ea2d19/8266",
+			"query a09c510987f831b278685d50cd9f9ef55cbf48fa06d464dc1e0cc0a415fe8666/7791",
 		},
 		series: nil,
 	},
 	"topk over label_replace/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\",short=\"api\"} [1.70406726e+09 2][]",
@@ -470,14 +470,14 @@ var siteWants = map[string]siteAnswer{
 	"topk over label_replace/query_range": {
 		code: 200,
 		vl: []string{
-			"query 867663d634613619eb040a91b07a6b11f8b19cb224c9e30fbc48de3c03ea2d19/8266",
+			"query a09c510987f831b278685d50cd9f9ef55cbf48fa06d464dc1e0cc0a415fe8666/7791",
 		},
 		series: nil,
 	},
 	"sort over label_replace of without/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",short=\"api\"} [1.70406726e+09 3][]",
@@ -488,7 +488,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",short=\"api\"} [][[1.70406726e+09 3]]",
@@ -498,7 +498,7 @@ var siteWants = map[string]siteAnswer{
 	"label_replace four/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{a=\"api\",app=\"api-gateway\",b=\"api\",c=\"x\",d=\"y\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
@@ -510,7 +510,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{a=\"api\",app=\"api-gateway\",b=\"api\",c=\"x\",d=\"y\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -521,7 +521,7 @@ var siteWants = map[string]siteAnswer{
 	"label_replace empty arguments/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
@@ -533,7 +533,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -544,7 +544,7 @@ var siteWants = map[string]siteAnswer{
 	"label_replace empty replacement/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
@@ -556,7 +556,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -567,7 +567,7 @@ var siteWants = map[string]siteAnswer{
 	"label_replace braces/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\",short=\"api-x\"} [1.70406726e+09 1][]",
@@ -579,7 +579,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\",short=\"api-x\"} [][[1.70406726e+09 1]]",
@@ -614,8 +614,8 @@ var siteWants = map[string]siteAnswer{
 	"label_replace one side of a binary/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
-			"stats_query e12c9c675d206fe13400000a897a84c872abf542ea1f731d576281a1d95274f0/8413",
+			"stats_query a98d07e6aac0c7ead0ed03539c8ce8414fca0f1a42201353065f4a1005874879/7938",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 1][]",
@@ -626,8 +626,8 @@ var siteWants = map[string]siteAnswer{
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
 			"query c7ccd74cc4e9722ac757e820afe0a628a264b7cab5b38e3e9d0e5ff4a39f672e/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
-			"stats_query_range 4e0e1ab567f9aefdae8943cafb5632ccfeb93e7232d6dc11e4d6c4d8e02c28b3/8377",
+			"stats_query_range ccd27f1b1a1c263e53297b2ede67b10a5b088c9473800b97382cddbb627d4d77/7902",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -636,8 +636,8 @@ var siteWants = map[string]siteAnswer{
 	"label_replace both sides of a binary/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
-			"stats_query e12c9c675d206fe13400000a897a84c872abf542ea1f731d576281a1d95274f0/8413",
+			"stats_query a98d07e6aac0c7ead0ed03539c8ce8414fca0f1a42201353065f4a1005874879/7938",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\",short=\"api\"} [1.70406726e+09 1][]",
@@ -650,8 +650,8 @@ var siteWants = map[string]siteAnswer{
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
 			"query c7ccd74cc4e9722ac757e820afe0a628a264b7cab5b38e3e9d0e5ff4a39f672e/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
-			"stats_query_range 4e0e1ab567f9aefdae8943cafb5632ccfeb93e7232d6dc11e4d6c4d8e02c28b3/8377",
+			"stats_query_range ccd27f1b1a1c263e53297b2ede67b10a5b088c9473800b97382cddbb627d4d77/7902",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\",short=\"api\"} [][[1.70406726e+09 1]]",
@@ -675,7 +675,7 @@ var siteWants = map[string]siteAnswer{
 	"without empty labels/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
@@ -687,7 +687,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 29498c003aafccfcf5f17ee689de47373e9d3010e050a756a270aa5d8214aecc/8341",
+			"stats_query_range 02f029cc3d48dec6cc305c1abbdecf6aa574c8bbedb7f31f931b4233bcbcc33c/7866",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -698,7 +698,7 @@ var siteWants = map[string]siteAnswer{
 	"without repeated label/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\"} [1.70406726e+09 3][]",
@@ -709,7 +709,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 08be10d8e0e320989a399272e8e6a3f91e08f1aed0839f0abb6f00f3369afa18/8647",
+			"stats_query_range 71dcbf9b769d22d85a872c8fd31781a3a1c93a27e04579e7229a2253378c3dfb/8172",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -720,7 +720,7 @@ var siteWants = map[string]siteAnswer{
 	"without unicode label/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 4a618b49a0ce7b34fdc17775c8cbc3232340fa25a7dfdb50f182af1928baab72/8413",
+			"stats_query edc2cf183c2c0832a94cb41c018958da8da8eb28636cdc39a3a3f4cd8a350a17/7938",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
@@ -732,7 +732,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
-			"stats_query_range 186312a1304b9f0dd3cc71a7df4bf55dc77ffabfa37a3b6ead54f783d140815b/8377",
+			"stats_query_range d1cdbae61c5a582fb133162762805d7025c7407672a240d816102e919f4ae488/7902",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -761,7 +761,7 @@ var siteWants = map[string]siteAnswer{
 	"line filter holding a half label_replace marker/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 93a89a5f2f4c2975c3f0c60b9a52e02178eaa8fd3efed6a60ffd88ca34c14859/8322",
+			"stats_query 4c2eec464d8c1d1cfc2772b1457504bebdbcb65a8a2f11e4f6a748bdeda610d4/7847",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
@@ -773,7 +773,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 51e4b11b7d71d3b2469d20f9dddc76d40a886c51d1b45d99fa56eea2c5c72be2/1443",
-			"stats_query_range 1febcd5c2561d186822b1373d5726c0b57c4821c5877914ed7568ceedbee1e9e/8286",
+			"stats_query_range c7af58179e679530bf92e2deab3b3ec0fabfa88cf9820d8ba364fc69eb2f8f05/7811",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -786,7 +786,7 @@ var siteWants = map[string]siteAnswer{
 	"line filter holding a binary marker/query": {
 		code: 200,
 		vl: []string{
-			"stats_query a0d47bcbab67c122062772406607bea090b15ba098011cc918c07c71cdee2c13/8441",
+			"stats_query 751d7a0f631a50f7d7273d0bcee4eeecec8db04fe86b4dda79501dba50fef024/7966",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
@@ -798,7 +798,7 @@ var siteWants = map[string]siteAnswer{
 		code: 200,
 		vl: []string{
 			"query 440d207d4f5c4d5e0673410a852f49e4a5b00a6b4c1bbfecf4682a7dd6b67792/1451",
-			"stats_query_range a8bd0f2e4c8251d2eb3f4c942c9652a8f029e9da8f74a56ff7a10aba3ec65132/8405",
+			"stats_query_range 268b334ec6a4e6d34d745da882c74f3d01ac4a7f33b5c96fa388b234a806e609/7930",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
@@ -809,8 +809,8 @@ var siteWants = map[string]siteAnswer{
 	"line filters holding separators/query": {
 		code: 200,
 		vl: []string{
-			"stats_query 1d5d0813bc336b399197bd52862de2a0a2697b5800b0380ba9d0e4b4de4cacf3/8426",
-			"stats_query 50ee7b36e477addeef6a66023ab6d010259ddf9f3ef20444038da51c8cb1077a/8426",
+			"stats_query 0a31cd752892f53ceb9417920b74bf14b9a997330925178c098969114cc2b478/7951",
+			"stats_query 95fb4deb256c770ba2d6f38582bc4bf50b178b8c798a3c00adab112ebed62278/7951",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
@@ -823,8 +823,8 @@ var siteWants = map[string]siteAnswer{
 		vl: []string{
 			"query 1df733015b2cab6a6f526d1dbf47804e7de39394c4e93c745ac7241f49386d76/1436",
 			"query 3b34a419494892116ea6f83537ccb18be3b195bf968977c9b5859c5d82f467ea/1436",
-			"stats_query_range 5f8c4450ac8cbf9ed7238f0f2c1103efccb9520db471ab1d1a0aa4ebecd5a959/8390",
-			"stats_query_range e73450efe6d247f0149cd5c57cde5aacaa497d0515caea920135c25e3a673d11/8390",
+			"stats_query_range da3a0ca45ceeef193828322aef97d8fbee988cff131864af428bd6cf072a928d/7915",
+			"stats_query_range f2d412480b287b56732dc739ee6e14ec688af4218231350a370ed48d315683c1/7915",
 		},
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",

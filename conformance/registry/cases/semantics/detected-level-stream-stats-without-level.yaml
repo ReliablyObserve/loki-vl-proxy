@@ -30,8 +30,10 @@ why: |
   Measured by TestDetectedLevelSweepMatchesLoki (Loki engine answers recorded,
   the proxy over VictoriaLogs v1.49.0 and v1.53.0): 60 of 504 rows on each
   version, all for the streams with no level label (a logfmt, JSON or text
-  body, structured metadata only, nothing). The same rows differ on
-  origin/main and before semantics/detected-level-one-value-per-stream.
+  body, structured metadata only, nothing), and 14 rows where both answer
+  the JSONParserErr 400 but the series the text names lacks detected_level.
+  The same rows differ on origin/main and before
+  semantics/detected-level-one-value-per-stream.
 
   Fix to make (an owner decision on VictoriaLogs cost): group the per-stream
   stats read by the level field as well (structured metadata and a level the

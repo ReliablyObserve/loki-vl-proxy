@@ -22,10 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type and at every step, as Loki does (stream label, then structured metadata, then the line). A stream labelled
   `severity="error"` whose lines carry structured metadata `level="debug"` said `debug` on `rate`, `count_over_time`,
   `sum by (detected_level)` and the other queries VictoriaLogs' `detected_level` chain serves (and a
-  `| detected_level="error"` filter missed those lines); Loki answers `error`. The chain now reads each level field
-  from the stream first (`format if (f:* {f!=""})`), only where two or more level names are known, so a window with
-  one level name sends the same LogsQL as before; VictoriaLogs v1.49.0 and v1.53.0 answer Loki's value for every
-  recorded stream and every text survives their clone. The raw-row reads (`sum without (pod) (rate({...} | json
+  `| detected_level="error"` filter missed those lines); Loki answers `error`. The chain now marks the rows whose
+  stream holds a level field (one pipe, a stream filter evaluated once per block) and reads the level fields of those
+  rows from the stream only, where two or more level names are known, so a window with one level name sends the same
+  LogsQL as before; VictoriaLogs v1.49.0 and v1.53.0 answer Loki's value for every recorded stream, every text
+  survives their clone, and their CPU time for the chain stays within measurement noise. The raw-row reads (`sum without (pod) (rate({...} | json
   amount | unwrap amount [5m]))` at an instant and step 60, `sort(rate({...} | json [1m]))` at an instant and step
   300) answered `ERROR` and `Debug` for streams labelled `level="ERROR"` and `level="Debug"` (VictoriaLogs answers a
   raw row with its stream fields as fields, so the row's `level` was the stream's, copied as stored); they now take

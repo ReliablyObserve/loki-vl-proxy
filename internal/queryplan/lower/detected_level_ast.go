@@ -213,6 +213,11 @@ func emptyExcept(stored []string, skip ...string) logsql.AllOf {
 	return out
 }
 
+// inStream is `{f!=""}`: the row's stream holds the field.
+func inStream(field string) logsql.FilterExpr {
+	return logsql.StreamFilter{Matchers: []logsql.LabelMatcher{{Name: translate.LogsQLFieldName(field), Op: "!=", Value: ""}}}
+}
+
 // levelChainPipes are the pipes of translate.BuildDetectedLevelChain over every level field with no presence and no
 // shared unpack, for the Group (log filters) and Grouping (metric rows) modes.
 func levelChainPipes(mode translate.DetectedLevelChainMode) []logsql.Pipe {
@@ -224,17 +229,18 @@ func levelChainPipes(mode translate.DetectedLevelChainMode) []logsql.Pipe {
 		quoted[i] = translate.LogsQLFieldName(n)
 	}
 	pipes := make([]logsql.Pipe, 0, 64)
-	// The stored level fields in Loki's order, the stream's own before the row's, then the rows a stored level
-	// decides (storedLevelPicks).
-	streamPicks := translate.StreamLevelPickFields(texts)
+	// The stored level fields in Loki's order, read only from the stream on a row whose stream holds one (the
+	// mark), then the rows a stored level decides (storedLevelPicks).
+	gate := translate.StreamLevelPickFields(texts)
+	marked := false
 	for _, field := range texts {
-		if field != translate.DetectedLevelLabel {
-			for _, f := range streamPicks {
-				name := translate.LogsQLFieldName(f)
-				inStream := logsql.StreamFilter{Matchers: []logsql.LabelMatcher{{Name: name, Op: "!=", Value: ""}}}
-				pipes = append(pipes, lvFormat(logsql.AllOf{lvAny(name), inStream}, "<"+f+">", dlStored, true))
+		if gate != nil && !marked && field != translate.DetectedLevelLabel {
+			alts := make(logsql.AnyOf, len(gate))
+			for i, f := range gate {
+				alts[i] = inStream(f)
 			}
-			streamPicks = nil
+			pipes = append(pipes, lvFormat(alts, "1", translate.StreamLevelMark, false))
+			marked = true
 		}
 		name := translate.LogsQLFieldName(field)
 		cond := lvAny(name)
@@ -243,6 +249,9 @@ func levelChainPipes(mode translate.DetectedLevelChainMode) []logsql.Pipe {
 			cond = logsql.AllOf{cond, lvBang(synthesizedSeverityText()), lvBang(lvGroup(logsql.AllOf{lvExact(sevText, unspecified), lvExact(sevNumber, "0")}))}
 		case sevName:
 			cond = logsql.AllOf{cond, lvBang(synthesizedSeverityName())}
+		}
+		if marked {
+			cond = logsql.AllOf{cond, lvGroup(logsql.AnyOf{lvExcl(lvAny(translate.StreamLevelMark)), inStream(field)})}
 		}
 		pipes = append(pipes, lvFormat(cond, "<"+field+">", dlStored, true))
 	}

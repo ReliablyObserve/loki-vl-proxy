@@ -52,10 +52,11 @@ why: |
   - the chain VictoriaLogs runs (every chain-served metric query, the
     `| detected_level` filters) read its level fields by name, stored and
     stream fields alike, so level="debug" won over the stream's severity and
-    the series said debug. It now reads each level field from the stream
-    first (`format if (f:* {f!=""})`, one stream per block, before the row's
-    fields; only where two or more level names are known, so a presence of
-    one sends the chain unchanged). VictoriaLogs v1.49.0 and v1.53.0 answer
+    the series said debug. One pipe now marks the rows whose stream holds a
+    level field (`format if ({level!=""} OR ...) "1" as __dl_t`, one stream
+    per block), and on those rows each pick reads its field only from the
+    stream (`(-__dl_t:* OR {f!=""})`); only where two or more level names are
+    known, so a presence of one sends the chain unchanged. VictoriaLogs v1.49.0 and v1.53.0 answer
     error for that row and Loki's value for every recorded row, and every
     text survives their clone (testdata/detected_level_vl_chain_answers.json,
     TestPlanTextsSurviveVictoriaLogsClone). Fenced: @stream-level-series-v3
@@ -70,10 +71,11 @@ why: |
 
   The sweep of 14 query types x instant, step 60 and step 300 x 12 streams
   (TestDetectedLevelSweepMatchesLoki, Loki engine answers recorded, the proxy
-  over VictoriaLogs v1.49.0 and v1.53.0 themselves): 417 of 504 rows equal to
-  Loki on each version (origin/main 348, this change before the two paths
-  396), no row equal before and different now, and no series with another
-  detected_level than Loki's.
+  over VictoriaLogs v1.49.0 and v1.53.0 themselves; status, error text,
+  which queries answer series and the detected_level of each): 403 of 504
+  rows equal to Loki on each version (origin/main 306, this change before the
+  two paths 382), no row equal before and different now, and no series with
+  another detected_level than Loki's.
 
   Not covered:
   - a stream with no level field read by a per-stream stats read: Loki
