@@ -18,6 +18,8 @@ request:
   headers:
     X-Scope-OrgID: "0"
     X-Loki-Response-Encoding-Flags: categorize-labels
+  verify:
+    empty_range: "the case is Loki's answer to a range without data: 30 days ago, outside both stores' retention, so Loki builds no pipeline and answers 200 empty, while the proxy validates at parse time"
 compare:
   mode: observed
   fields: [status]
