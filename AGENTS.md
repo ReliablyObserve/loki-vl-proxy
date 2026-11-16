@@ -16,6 +16,14 @@ generators either. Loki is used only as a test comparison.
   reference model. Write the proxy's code from the behaviour (the HTTP API,
   recorded answers, observed responses) and compare it with Loki through an
   oracle.
+- Evidence for a Loki behaviour is never a source file or line (no
+  `pkg/...go:123` in code comments, tests, registry rows or docs). Cite a
+  recorded Loki answer (`test/oracle/loki` facts, `internal/lokierr/testdata`,
+  `internal/proxy/testdata/*loki*`, the plan corpus recordings), a test that
+  compares with Loki, a registry case id, or Loki's public documentation
+  (grafana.com/docs/loki URL, flag or config reference). A registry case whose
+  claim has none of these carries `evidence: needs recording` until the answer
+  is recorded.
 - The gates:
   - `TestProductModuleHasNoOracleDependency`: the proxy's `go.mod` and `go.sum`
     never name `github.com/grafana/loki`.

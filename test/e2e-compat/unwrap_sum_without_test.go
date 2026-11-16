@@ -12,10 +12,10 @@ import (
 )
 
 // Loki's `<op> without (...)` groups the series of its input by every label
-// but the excluded ones and folds each group (pkg/logql/evaluator.go:451-466
-// VectorAggEvaluator.Next, HashWithoutLabels), so the answer keeps a series per
-// remaining label set. The proxy answered one series for a range function with
-// unwrap, on query_range and at an instant (semantics/unwrap-sum-without-collapses).
+// but the excluded ones and folds each group, so the answer keeps a series
+// per remaining label set. The proxy answered one series for a range function
+// with unwrap, on query_range and at an instant
+// (semantics/unwrap-sum-without-collapses).
 //
 // The fixture's lines carry a parsed `route` and `msg`, which are part of
 // Loki's series and which the proxy does not expose

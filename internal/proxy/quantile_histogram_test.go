@@ -18,8 +18,8 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// lokiQuantile is Loki v3.7.7's Quantile (pkg/logql/range_vector.go:465-487)
-// over plain values, kept apart from the proxy's implementation.
+// lokiQuantile models Loki v3.7.7's quantile over plain values, kept apart from
+// the proxy's implementation.
 func lokiQuantile(q float64, values []float64) float64 {
 	if len(values) == 0 {
 		return math.NaN()
@@ -288,7 +288,7 @@ func TestQuantileHistogramDifferential(t *testing.T) {
 // conformance: semantics/unwrap-quantile-response-limit
 //
 // Differential: a vector aggregation over quantile_over_time folds the
-// quantile of every series (stream) per step (Loki's VectorAggEvaluator), while
+// quantile of every series (stream) per step (Loki's vector aggregation), while
 // the range aggregation's own by (...) takes one quantile over the group's
 // samples. The translation groups both alike; the proxy must not: `sum by
 // (level) (quantile_over_time(...))` adds per-stream quantiles. Ungrouped sum,
@@ -482,7 +482,7 @@ func TestQuantileStatsGroupByKeepsLevel(t *testing.T) {
 
 // TestQuantileSliderMatchesWindowSort: the sliding quantile answers every
 // window as the sort of its buckets' counts does (quantileOfCounts, Loki's
-// Quantile at pkg/logql/range_vector.go:465-487): bit for bit over generated
+// quantile): bit for bit over generated
 // buckets with repeated values, NaN and large counts, phi inside and outside
 // [0, 1], windows moving forward by a step, jumping, empty, and moving back.
 //

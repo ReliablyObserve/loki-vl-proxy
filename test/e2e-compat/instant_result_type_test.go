@@ -12,14 +12,13 @@ import (
 )
 
 // Loki answers every metric instant query with `resultType: vector` and a
-// scalar literal with `scalar` (pkg/logql/engine.go evalSample, evalLiteral;
-// pkg/querier/queryrange/marshal.go ResultToResponse), and its own decoder
-// fails on a missing or unknown type (pkg/loghttp/query.go UnmarshalJSON). The
-// Grafana Loki datasource parses the answer by that type. The proxy answered
-// `stdvar without (...)` and a `label_replace` around a binary expression with
-// a 200 and no resultType: the failure of the post-processed query was sent
-// with its status dropped, and the translator's binary marker was sent to
-// VictoriaLogs as a query (semantics/instant-result-type-missing).
+// scalar literal with `scalar`, and its own decoder fails on a missing or
+// unknown type. The Grafana Loki datasource parses the answer by that type.
+// The proxy answered `stdvar without (...)` and a `label_replace` around a
+// binary expression with a 200 and no resultType: the failure of the
+// post-processed query was sent with its status dropped, and the translator's
+// binary marker was sent to VictoriaLogs as a query
+// (semantics/instant-result-type-missing).
 //
 // Each shape is asked of Loki and of the proxy. Both must answer, and answer
 // the same status and the same resultType; the series of the answers are

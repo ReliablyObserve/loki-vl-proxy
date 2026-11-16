@@ -9,9 +9,8 @@ import (
 	"unicode"
 )
 
-// Loki v3.7.7 converts the unwrapped label with pkg/logql/log/metrics_extraction.go
-// convertFloat, convertDuration (time.ParseDuration, in seconds) and
-// convertBytes (humanize.ParseBytes). None of them trims the value: a value
+// Loki v3.7.7 converts the unwrapped label as a float, a duration
+// (time.ParseDuration, in seconds) or bytes (humanize.ParseBytes). None of them trims the value: a value
 // the conversion rejects makes a sample carrying __error__="SampleExtractionErr"
 // (see unwrapConversionError), and a label that is absent or empty makes no
 // sample at all. These functions are the same conversions, so every raw-sample

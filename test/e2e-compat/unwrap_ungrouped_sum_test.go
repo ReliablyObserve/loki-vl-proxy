@@ -13,10 +13,8 @@ import (
 )
 
 // Loki folds every series of a range aggregation into one with a bare outer
-// sum (pkg/logql/evaluator.go newVectorAggEvaluator: a grouping of no labels;
-// VectorAggEvaluator.Next adds the values of the input vector per step), and a
-// rate over an unwrapped label is the sum of its values per second
-// (pkg/logql/range_vector.go rateLogs with computeValues). The series of the
+// sum (a grouping of no labels adds the values of the input vector per step),
+// and a rate over an unwrapped label is the sum of its values per second. The series of the
 // range aggregation are the streams and the labels a parser extracts, so their
 // number varies with the data while the answer stays one series per step.
 // The proxy answered one series per stream and parsed label set on query_range

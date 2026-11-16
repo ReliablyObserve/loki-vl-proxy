@@ -8,8 +8,7 @@ import (
 )
 
 // TestSumWithoutExtractedLabelCollision: a parsed key that is also a label of
-// the stream becomes `<key>_extracted` on Loki (pkg/logql/log/labels.go,
-// parser.go), so a series is the stream, its `pod` and the parsed `pod_extracted`.
+// the stream becomes `<key>_extracted` on Loki, so a series is the stream, its `pod` and the parsed `pod_extracted`.
 // When the selector names the label (`pod=~".+"`) the translation sees the
 // collision and groups the fold as it did before the extraction list was read
 // (by the stream); when it does not, the translation cannot see it and the

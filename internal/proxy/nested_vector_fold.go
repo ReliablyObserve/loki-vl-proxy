@@ -16,8 +16,7 @@ import (
 // query, in the proxy because VictoriaLogs cannot list a series' own labels.
 // For a vector aggregation over another one whose innermost level is a
 // `without`, every level folds the output of the one below it with its own
-// grouping, innermost first, the way Loki's VectorAggEvaluator does
-// (pkg/logql/evaluator.go:435-529); otherwise the whole answer is one fold by
+// grouping, innermost first, the way Loki does; otherwise the whole answer is one fold by
 // the outermost operator, as before.
 func applyWithoutChain(body []byte, withoutLabels []string, logql, withoutOp string) []byte {
 	chain, ok := withoutAggregationChain(logql)
@@ -196,8 +195,7 @@ func (p *Proxy) pushDownWithoutFold(r *http.Request, logql, series string) (stri
 // A window's count is the sum of its buckets', so the per-stream windows
 // summed per step equal the windows of the summed buckets, and a fold that
 // has a line in a window has a sample there, as one of its streams does
-// (pkg/logql/evaluator.go VectorAggEvaluator.Next over range_vector.go
-// windows). The proxy then merges the windows of a series per remaining
+// (Loki folds the windows of its range vector). The proxy then merges the windows of a series per remaining
 // label set instead of one per stream (a stream per pod per batch is
 // thousands of series over hours). Anything else keeps statsAggFunc.
 func (p *Proxy) withSlidingWithoutCut(r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc, statsAggFunc string, step time.Duration) string {

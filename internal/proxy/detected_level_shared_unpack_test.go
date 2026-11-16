@@ -12,8 +12,7 @@ import (
 // Loki gives it for `sum by (level, detected_level) (... | json | drop
 // __error__ ...)`. The answers follow Loki v3.7.7: detected_level is set at
 // ingest from the first level label of the stream, then of the structured
-// metadata, then the OTLP severity number, then the line
-// (pkg/distributor/field_detection.go), and the level label is the stream's or
+// metadata, then the OTLP severity number, then the line, and the level label is the stream's or
 // the metadata's `level`, else the parser's `level` key (a body key that
 // collides with a stored label is renamed level_extracted). They are pinned
 // against real Loki by the e2e test

@@ -21,8 +21,7 @@ import (
 
 // The settled steps cache keeps the answers of the window evaluator per
 // evaluation time and evaluates only the steps a moved window does not hold,
-// the way Loki's results cache keeps extents of its query_range answers
-// (pkg/storage/chunk/cache/resultscache/cache.go Do, handleHit). Every answer
+// the way Loki's results cache keeps extents of its query_range answers. Every answer
 // must be byte for byte the uncached proxy's, Loki's 400 for a rejected value
 // included.
 
@@ -243,10 +242,8 @@ func TestQueryRangeStepsMatchUncached(t *testing.T) {
 }
 
 // TestQueryRangeStepsLokiWindows: answered from settled steps, the window
-// sums folded without the pod are Loki's (t-range, t] sums per step
-// (pkg/logql/range_vector.go:102-189 and 371-420; the fold,
-// pkg/logql/evaluator.go VectorAggEvaluator.Next), computed apart from the
-// proxy over the same rows, for every window of a refresh.
+// sums folded without the pod are Loki's (t-range, t] sums per step, computed
+// apart from the proxy over the same rows, for every window of a refresh.
 //
 // conformance: quality/query-range-settled-steps, semantics/unwrap-over-time-range-windows, loki_api_v1_query_range
 func TestQueryRangeStepsLokiWindows(t *testing.T) {

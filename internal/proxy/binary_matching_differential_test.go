@@ -14,18 +14,16 @@ import (
 
 // This file pins the vector-to-vector join of the binary evaluator to Loki
 // v3.7.7 over generated operands and generated modifiers. The reference below
-// is written apart from the proxy, step by step as Loki evaluates it:
-// pkg/logql/engine.go reads the evaluator's error after every step and stops
-// at the first one; pkg/logql/evaluator.go BinOpStepEvaluator.Next hashes each
-// sample with matchingSignature (:945, on keeps the listed labels, ignoring
-// removes them, an empty label value is no label) and calls vectorBinop (:955):
-// the right vector (the left one after a group_right swap) must be unique by
-// signature or the join fails with "found duplicate series on the <side>
-// hand-side", a left sample that meets an already matched signature without a
-// group modifier fails with "multiple matches for labels: many-to-one ...",
-// and resultMetric (:1096) builds the labels of a sample; syntax.MergeBinOp
-// (pkg/logql/syntax/ast.go:1944) gives the value (a filtering comparison
-// keeps the left value, a bool comparison is 1 or 0).
+// is written apart from the proxy, step by step as Loki evaluates it: the
+// evaluator stops at the first step whose join fails; each sample is hashed
+// by its matching signature (on keeps the listed labels, ignoring removes
+// them, an empty label value is no label): the right vector (the left one
+// after a group_right swap) must be unique by signature or the join fails with
+// "found duplicate series on the <side> hand-side", a left sample that meets an
+// already matched signature without a group modifier fails with "multiple
+// matches for labels: many-to-one ...", and the labels of a sample are built
+// from the matching modifiers; the value is the operator's (a filtering
+// comparison keeps the left value, a bool comparison is 1 or 0).
 
 type refSample struct {
 	labels map[string]string
@@ -143,7 +141,7 @@ func refMerge(op string, l, r float64, returnBool bool) (float64, bool) {
 	return l, truth
 }
 
-// refStep is one evaluation of Loki's vectorBinop.
+// refStep is one evaluation of a binary operation between two vectors, as Loki does.
 func refStep(op string, m refMatching, returnBool bool, lhs, rhs []refSample) ([]refSample, error) {
 	oneToMany := m.card == "group_right"
 	if oneToMany {

@@ -33,14 +33,14 @@ import (
 // Loki has one, and no VictoriaLogs status, body, LogsQL, host:port or internal
 // Go error in the body or the headers.
 //
-// Loki's answers (v3.7.9, pkg/util/server/error.go ClientHTTPStatusAndError):
-//   - client cancel: 499 "the request was cancelled by the client" (:26, :103-105);
-//   - deadline: 504 "request timed out, decrease the duration ..." (:27, :106-107);
-//   - any other failed backend call: 500 with Loki's own text (:124-128);
-//   - a full query queue: 429 "too many outstanding requests"
-//     (pkg/queue/queue.go:21, pkg/lokifrontend/frontend/v1/frontend.go:32);
-//   - max_query_series: 400 with limitErrTmpl (pkg/querier/queryrange/limits.go:46, :448);
-//   - too many points: 400 errStepTooSmall (pkg/querier/queryrange/queryrangebase/query_range.go:43).
+// Loki's answers (v3.7.9, recorded in internal/lokierr/testdata/loki_error_answers.jsonl
+// and internal/proxy/testdata/error_writer_answers.json):
+//   - client cancel: 499 "the request was cancelled by the client";
+//   - deadline: 504 "request timed out, decrease the duration ...";
+//   - any other failed backend call: 500 with Loki's own text;
+//   - a full query queue: 429 "too many outstanding requests";
+//   - max_query_series: 400 with Loki's limit text;
+//   - too many points: 400 with Loki's step-too-small text.
 //
 // Cells that still differ are listed in conformance/registry/error-layer-known-leaks.json
 // with the registry case of every class they fail; a listed cell is skipped with
@@ -72,13 +72,13 @@ const (
 
 // Error body shapes: what Loki writes on a route.
 const (
-	// The empty shape is pkg/util/server/error.go WriteError, the query
-	// frontend's shape on every query, metadata and tail route.
-	// errShapeRuler: pkg/ruler/base/api.go respondError, the Prometheus JSON of
-	// the rules API (no Content-Type, so Go sniffs text/plain; no nosniff).
+	// The empty shape is the query frontend's error writer, the shape on every
+	// query, metadata and tail route.
+	// errShapeRuler: the Prometheus JSON of the rules API (no Content-Type, so Go
+	// sniffs text/plain; no nosniff).
 	errShapeRuler = "ruler"
 	// errShapeAlerts: the same JSON from PrometheusAlerts, which sets
-	// Content-Type: application/json first (api.go:286).
+	// Content-Type: application/json first.
 	errShapeAlerts = "alerts"
 	// errShapeHTTPError: Go's http.Error, the legacy rule views and the delete API.
 	errShapeHTTPError = "httperr"
@@ -394,7 +394,7 @@ func errLayerExpect(mode string) (status int, text string) {
 		return 499, lokiClientCanceled
 	case "oversize":
 		// A buffered-size cap is a documented proxy limit: Loki's ResourceExhausted
-		// is a 500 (pkg/util/server/error.go:93-100); a route that streams answers 200.
+		// is a 500; a route that streams answers 200.
 		return http.StatusInternalServerError, ""
 	}
 	return http.StatusInternalServerError, ""
@@ -489,7 +489,7 @@ func errLayerClasses(rt errLayerRoute, mode string, o errLayerOutcome, backendHo
 	switch rt.shape {
 	case errShapeRuler, errShapeAlerts:
 		// The ruler answers every GetRules failure with respondServerError, a
-		// 500 (pkg/ruler/base/api.go:196-200, :301-305), whatever the cause.
+		// 500, whatever the cause.
 		wantStatus = http.StatusInternalServerError
 		if mode != "timeout" && mode != "client_cancel" {
 			wantText = ""
@@ -504,7 +504,7 @@ func errLayerClasses(rt errLayerRoute, mode string, o errLayerOutcome, backendHo
 	status := o.status
 	if status == http.StatusSwitchingProtocols {
 		// An upgraded tail reports failures in its close frame: Loki closes with
-		// 1011 and its error text (pkg/querier/http.go TailHandler).
+		// 1011 and its error text.
 		if o.closeCode == 0 || o.closeCode == websocket.CloseNormalClosure {
 			classes[leakSilentSuccess] = true
 		}
@@ -876,7 +876,7 @@ func TestErrorLayer_LokiLimitTexts(t *testing.T) {
 // every window with a retryable 502, and the request ends while the proxy
 // waits to retry, by a client cancel or by the tenant's query_timeout. Loki
 // answers 499 "the request was cancelled by the client" and 504 with its
-// deadline text (pkg/util/server/error.go:26-27, :103-107); a request whose
+// deadline text; a request whose
 // context ended has no other answer. Both backoff waits are covered: the batch
 // backoff (several windows fetched in parallel, then halved) and the
 // single-window retry.

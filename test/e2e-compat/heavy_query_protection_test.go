@@ -283,9 +283,9 @@ func isDocumentedLimitError(status int, body string) bool {
 		// Loki's queue-full text (pkg/queue/queue.go:21); the flag is in the log.
 		return strings.Contains(body, "too many outstanding requests")
 	case status == http.StatusGatewayTimeout:
-		// -backend-timeout, or VictoriaLogs' own -search.maxQueryDuration,
-		// which the proxy now passes as the per-query timeout argument: Loki's
-		// deadline text (pkg/util/server/error.go:27).
+		// -backend-timeout, or VictoriaLogs' own -search.maxQueryDuration, which
+		// the proxy now passes as the per-query timeout argument: Loki's deadline
+		// text.
 		return strings.Contains(body, "request timed out")
 	case status >= 400:
 		return strings.Contains(body, "limit reached while evaluating the query") ||

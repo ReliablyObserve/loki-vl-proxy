@@ -20,7 +20,7 @@ import (
 )
 
 // lokiClientStatuses is every status Loki v3.7.9 answers a failed query with
-// (pkg/util/server/error.go ClientHTTPStatusAndError; pkg/queue/queue.go:21).
+// (recorded in internal/lokierr/testdata/loki_error_answers.jsonl).
 var lokiClientStatuses = map[int]bool{
 	http.StatusBadRequest:          true,
 	http.StatusTooManyRequests:     true,
@@ -45,7 +45,8 @@ func (mapperTimeoutErr) Timeout() bool   { return true }
 func (mapperTimeoutErr) Temporary() bool { return true }
 
 // TestLokiClientError_LokiAnswers locks the error layer's mapping to Loki's
-// ClientHTTPStatusAndError (Loki v3.7.9 pkg/util/server/error.go): every input
+// client error answers (Loki v3.7.9, recorded in
+// internal/lokierr/testdata/loki_error_answers.jsonl): every input
 // a route can fail with, and the status, errorType and text the client reads.
 // conformance: semantics/error-layer-backend-failure-status, semantics/error-layer-transport-text, semantics/error-layer-backend-text, semantics/error-layer-cancel-deadline, semantics/error-layer-internal-go-text, status-500, status-502, status-503, status-400
 func TestLokiClientError_LokiAnswers(t *testing.T) {
@@ -79,7 +80,7 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 		{"client timeout awaiting headers", context.Background(), clientTimeout, http.StatusGatewayTimeout, lokiErrDeadlineExceeded},
 		{"net timeout", context.Background(), mapperTimeoutErr{}, http.StatusGatewayTimeout, lokiErrDeadlineExceeded},
 		{"VictoriaLogs aborted at its deadline", context.Background(), &vlResponseAbortedError{elapsed: time.Minute, timedOut: true}, http.StatusGatewayTimeout, lokiErrDeadlineExceeded},
-		// pkg/queue/queue.go:21: a full queue is 429 "too many outstanding requests".
+		// A full queue is 429 "too many outstanding requests".
 		{"proxy heavy-query queue", context.Background(), newHeavyQueueFull(&heavyQueryQueueFullError{maxConcurrent: 2, queueWait: time.Second}), http.StatusTooManyRequests, lokiTooManyOutstandingRequests},
 		// VictoriaLogs v1.49.0-v1.53.0 answer a query that waited
 		// -search.maxQueueDuration for a slot with 503 (app/vlselect/main.go:268
@@ -97,9 +98,9 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 		// The translator's wording never reaches a client: Loki's syntax error without a position.
 		{"translator parse error", context.Background(), &translator.ParseError{Msg: "unmatched '{' in stream selector", Pos: -1}, http.StatusBadRequest, "parse error : syntax error: unexpected $end"},
 		{"ordered JSON pipeline error", context.Background(), &orderedJSONPipelineError{errLokiStepTooSmall}, http.StatusBadRequest, ""},
-		// pkg/querier/queryrange/limits.go:46, :448: max_query_series is 400 with limitErrTmpl.
+		// max_query_series is 400 with Loki's limit text.
 		{"series limit", context.Background(), fmt.Errorf("fold: %w", newSeriesLimitError(context.Background(), 1)), http.StatusBadRequest, seriesLimit},
-		// error.go:124-128: every other failed backend call is 500, with no backend text.
+		// Every other failed backend call is 500, with no backend text.
 		{"connection refused", context.Background(), refused, http.StatusInternalServerError, lokiErrInternal},
 		{"VictoriaLogs 500", context.Background(), vl(http.StatusInternalServerError, `{"error":"unexpected error at lib/logstorage/storage.go:123"}`), http.StatusInternalServerError, lokiErrInternal},
 		{"front proxy 502", context.Background(), vl(http.StatusBadGateway, "<html><body>502 Bad Gateway nginx</body></html>"), http.StatusInternalServerError, lokiErrInternal},
@@ -122,14 +123,13 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 		{"text says deadline exceeded", context.Background(), errors.New("rpc: deadline exceeded"), http.StatusInternalServerError, lokiErrInternal},
 		{"text says context canceled", context.Background(), errors.New("post: context canceled"), http.StatusInternalServerError, lokiErrInternal},
 		// Loki's own 500 texts the proxy writes in Loki's words: a matching
-		// error (pkg/logql/engine.go vectorBinop), the gRPC size limit
-		// (error.go:93-100) and the proxy's limits, in the text of their Loki class.
+		// error, the gRPC size limit and the proxy's limits, in the text of their Loki class.
 		{"vector matching", context.Background(), vectorMatchError("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)"), http.StatusInternalServerError, ""},
 		{"label values too large", context.Background(), newLabelValuesTooLarge(10, 5), http.StatusInternalServerError, ""},
 		{"buffered response limit", context.Background(), fmt.Errorf("stats: %w", newBackendBodyTooLarge(4096)), http.StatusInternalServerError, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (4097 vs. 4096)"},
 		// A proxy buffer limit is Loki's message size answer (500), with no flag in it.
 		{"buffer limit", context.Background(), newManualMetricResponseTooLarge(64), http.StatusInternalServerError, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (65 vs. 64)"},
-		// error.go:110-118 (logqlmodel.ErrLimit): a query over a limit is 400. The raw-row limit has no Loki flag, so the text is the class's.
+		// A query over a limit is 400. The raw-row limit has no Loki flag, so the text is the class's.
 		{"row limit", context.Background(), manualRowLimitError(3), http.StatusBadRequest, rowLimit},
 		{"row limit wrapped", context.Background(), fmt.Errorf("fold: %w", manualRowLimitError(3)), http.StatusBadRequest, rowLimit},
 		{"row limit of a bucket grid", context.Background(), newRowLimitError(3, "stats rows in one bucket grid", 0), http.StatusBadRequest, rowLimit},

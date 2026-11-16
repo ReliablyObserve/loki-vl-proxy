@@ -65,7 +65,7 @@ var (
 // and text for both limits, when the caller gives no writer of its own.
 func rejectQueueFull(w http.ResponseWriter, _ *http.Request, err *lokierr.Error) {
 	// The message alone as text/plain, as Loki writes every error
-	// (pkg/util/server/error.go WriteError).
+	// (internal/lokierr/testdata/loki_error_answers.jsonl).
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(err.Status())
