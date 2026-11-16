@@ -2554,6 +2554,9 @@
     "test/e2e-compat/label_replace_new_label_test.go | semantics/label-replace-range-binary-marker",
     "test/e2e-compat/labels_alias_test.go | loki_api_v1_label",
     "test/e2e-compat/labels_alias_test.go | loki_api_v1_labels",
+    "test/e2e-compat/labels_backfill_age_out_test.go | quality/label-cache-aged-labels-kept",
+    "test/e2e-compat/labels_backfill_age_out_test.go | quality/labels-backfill-into-cached-bucket",
+    "test/e2e-compat/labels_backfill_age_out_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "test/e2e-compat/labels_zero_width_test.go | semantics/labels-end-inclusive-like-loki",
     "test/e2e-compat/line_fields_parity_test.go | loki_api_v1_detected_fields",
     "test/e2e-compat/line_fields_parity_test.go | loki_api_v1_index_stats",
@@ -2853,7 +2856,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 651,
+      "go": 652,
       "playwright": 1
     },
     "page_kinds": {
