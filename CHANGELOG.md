@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A binary operation whose operand is a `sum`, `avg`, `min` or `max` with an empty `without ()` clause
+  (`sum without () (count_over_time({app="x"}[5m])) / 2`, `max(rate({app="x"}[5m])) without () > on(app) group_left …`)
+  now answers every series of that operand, as Loki does: a clause of no label drops none, so each series is its own
+  group. On query_range with the step equal to the range the operand was answered as one ungrouped series, at an
+  instant `avg` and `min` collapsed the same way, and on the other steps the series said `detected_level="unknown"`.
+  The binary route now sends the operand without that level, and an operation Loki refuses (`… + on() vector(0)`
+  over several series) answers Loki's 500 `multiple matches for labels: many-to-one matching must be explicit
+  (group_left/group_right)` where it answered 200. Held to real Loki and VictoriaLogs v1.49.0 and v1.53.0 on 15
+  operations x 4 request kinds (120 of 120 runs match, from 72), and under `sum(…)`, `label_replace(…)` and with an
+  `offset`. A `count`, `stddev` or `stdvar` under the clause, and a ranking over the operation, are unchanged. Answers cached before the fix are not served again
+  (semantics/binary-operand-without-empty-collapses). `-query-plan-lowering=false` keeps the previous reading.
+
 - A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
   accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
   per-stream series took the stream's `detected_level`.
@@ -23,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Internal: the translation's query-plan decisions are one helper, with a reference entry point the corpus shadow reads,
+  so the shadow counts the recorded differences the proxy already serves from the plan (a keep before an unwrap, a
+  parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
+  `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
+  parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
 - Test support: the plan corpus leaves out the request of a registry case that compares only a client error, and six
   conformance cases for queries Loki rejects now carry an HTTP request the live verifier sends. No proxy behaviour changes.
 

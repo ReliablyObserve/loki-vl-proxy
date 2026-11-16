@@ -44,6 +44,27 @@ why: |
   series. A `without ()` over a range aggregation of an unwrapped label stays as
   BinOp operand without empty unwrap. Not run against a Loki here: the series
   count is Loki's from its tree and the evaluation its other without clauses use.
+
+  Fixed for sum, avg, min and max: such a level answers each series of its
+  operand unchanged (its sum, mean, minimum and maximum are its value), with
+  every label, so Loki's answer for the level is its operand's. The binary
+  route sends the operand without that level (proxy emptyWithoutOperand, the
+  outer levels only), and the lowering writes the operand the same way
+  (lower.EmptyWithoutLevelsOff), held to the route by the corpus shadow (the
+  324 rows of this divergence are native). Run against real Loki (the engine
+  oracle) and real VictoriaLogs v1.49.0 and v1.53.0 through the handlers
+  (internal/querycorpus TestEmptyWithoutOperandsMatchLoki, 15 operations x
+  instant, step = range, step < range and step > range): 120 of 120 runs
+  match, from 72 before (one ungrouped series on step = range, avg and min
+  collapsed at an instant, `detected_level="unknown"` on the other steps,
+  and 200 where Loki answers its many-to-one 500 for `+ on() vector(0)` over
+  several series). Answers cached before are fenced (`@binary-empty-without-v1:`).
+  The operation under sum, label_replace and with an offset matches too. A
+  count, stddev or stdvar under the clause (1 or 0 per series), a ranking over
+  the operation (`topk(2, max without () (..) * 2)`: the post-aggregation
+  route reads the operation as text), a `without ()` under another level of
+  a nest, and the route rule (lower.RouteQuery) keep the previous reading
+  (listed in the differential's known runs).
 corpus:
   size: 4
   dimensions:
@@ -73,8 +94,8 @@ gap:
   effort: S
   area: 'internal/translator (the marker of a without clause needs a label); internal/proxy (a fold only for a clause with labels); fixed when the plan serves binary operations'
   loki: 'a without clause with no label removes none: each series of the operand stays its own (the oracle facts report the clause)'
-  proxy: 'the operand is translated ungrouped; on query_range with the step equal to the range it reaches VictoriaLogs as stats count() and the binary operation is applied to one series (the instant and the other step shapes keep the operand''s series)'
-  planned_test: 'TestEmptyWithoutOperandsKeepEverySeries (internal/querycorpus) holds the lowering to the labelled clause; an e2e row against Loki when the plan serves binary operations'
+  proxy: 'a sum, avg, min or max `without ()` operand is sent as its operand alone and answers every series, as Loki does (fixed, TestEmptyWithoutOperandsMatchLoki); a count, stddev or stdvar under the clause is still translated ungrouped'
+  planned_test: 'TestEmptyWithoutOperandsMatchLoki (internal/querycorpus, recorded Loki and VictoriaLogs v1.49.0 and v1.53.0 answers through the handlers); TestEmptyWithoutOperandsKeepEverySeries (internal/querycorpus) and TestPlanLowersEmptyWithoutOperands (internal/queryplan/lower) hold the lowering; TestEmptyWithoutOperandAnswersEverySeries (internal/proxy) the route, the cache repeat and the rollback; an e2e row against Loki in group semantics'
   visual: none
   visual_reason: 'a rarely written clause; no Grafana panel writes it'
   clusters: []

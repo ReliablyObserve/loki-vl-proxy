@@ -31,7 +31,8 @@ func oldCompatQueryFences(r *http.Request, query string) string {
 		reservedFieldLabelResponseKeyVersion(query) +
 		keepUnwrapIdentityResponseKeyVersion(query) +
 		dynamicUnwrapIdentityResponseKeyVersion(query) +
-		streamLevelSeriesResponseKeyVersion(query)
+		streamLevelSeriesResponseKeyVersion(query) +
+		emptyWithoutOperandResponseKeyVersion(query)
 }
 
 func oldCompatQueryRangeFences(r *http.Request, query string) string {
@@ -53,6 +54,7 @@ func oldInnerQueryRangeFences(r *http.Request, query string) string {
 	key.WriteString(keepUnwrapIdentityResponseKeyVersion(query))
 	key.WriteString(dynamicUnwrapIdentityResponseKeyVersion(query))
 	key.WriteString(streamLevelSeriesResponseKeyVersion(query))
+	key.WriteString(emptyWithoutOperandResponseKeyVersion(query))
 	return key.String()
 }
 

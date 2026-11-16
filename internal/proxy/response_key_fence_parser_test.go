@@ -39,6 +39,21 @@ type fenceFacts struct {
 	// perStreamSeries is a construct whose series the proxy reads per stream: a without fold, an unwrap, or topk,
 	// bottomk, sort, sort_desc or label_replace.
 	perStreamSeries bool
+	// emptyWithoutOperand is a binary operation with an operand that is a sum, avg, min or max `without ()`.
+	emptyWithoutOperand bool
+}
+
+// keepsEveryOperandSeries reports a sum, avg, min or max with a `without` clause of no label, read from the tree.
+func keepsEveryOperandSeries(e logqlpkg.Expr) bool {
+	v, ok := e.(*logqlpkg.VectorAggregation)
+	if !ok || v.Grouping == nil || !v.Grouping.Without || len(v.Grouping.Labels) != 0 {
+		return false
+	}
+	switch v.Op {
+	case logqlpkg.VectorSum, logqlpkg.VectorAvg, logqlpkg.VectorMin, logqlpkg.VectorMax:
+		return true
+	}
+	return false
 }
 
 func (f *fenceFacts) name(name string, comparison bool) {
@@ -167,6 +182,9 @@ func (f *fenceFacts) expr(e logqlpkg.Expr) {
 		}
 		f.expr(e.Inner)
 	case *logqlpkg.BinOpExpr:
+		if keepsEveryOperandSeries(e.Left) || keepsEveryOperandSeries(e.Right) {
+			f.emptyWithoutOperand = true
+		}
 		f.expr(e.Left)
 		f.expr(e.Right)
 	case *logqlpkg.OpaqueMetricExpr:
@@ -298,6 +316,7 @@ func fenceWants(query string) map[string]bool {
 		"reserved-field-labels":    f.reservedLabel,
 		"keyword-label-names":      f.keywordSpelling,
 		"stream-level-series":      f.perStreamSeries,
+		"binary-empty-without":     f.emptyWithoutOperand,
 		// Read by fenceGains: the text screen of repeated filters also counts a quoted text that looks like a stage.
 		"a-label-filter-stage": f.labelFilterStages >= 1,
 	}
@@ -385,6 +404,8 @@ var fenceSpellingBases = []string{
 	`sum by (x) (avg_over_time({app="a"} | json | unwrap n [5m]))`,
 	`max(stddev_over_time({app="a"} | logfmt | unwrap n [5m]))`,
 	`min by (x) (min_over_time({app="a"} | json | unwrap n [5m])) / sum(max_over_time({app="a"} | json | unwrap n [5m]))`,
+	`sum without () (count_over_time({app="a"} | json [5m])) / 2`,
+	`max without () (rate({app="a"}[5m])) > on(app) group_left sum by (app) (rate({app="a"}[5m]))`,
 }
 
 // TestResponseKeyFencesFireOnEverySpelling re-spells each base query many ways and requires every fence whose
@@ -608,6 +629,7 @@ func fenceFires(name, query string) bool {
 		"logfmt-presence":          func() string { return logfmtPresenceResponseKeyVersion(r, query) },
 		"stream-level-series":      func() string { return streamLevelSeriesResponseKeyVersion(query) },
 		"unwrap-dynamic-identity":  func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
+		"binary-empty-without":     func() string { return emptyWithoutOperandResponseKeyVersion(query) },
 	}[name]() != ""
 }
 
@@ -700,6 +722,16 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"unwrap-dynamic-identity", "MAX(MAX_OVER_T\u0130ME({a=\"b\"} | LOGFMT | UNWRAP n [5m]))", true},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | json | keep x | unwrap n [5m]))`, false},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | unwrap n [5m]))`, false},
+		{"binary-empty-without", `sum without () (count_over_time({a="b"}[5m])) / 2`, true},
+		{"binary-empty-without", `SUM WITHOUT () (count_over_time({a="b"}[5m])) / 2`, true},
+		{"binary-empty-without", "sum w\u0130thout () (count_over_time({a=\"b\"}[5m])) / 2", false},
+		{"binary-empty-without", "2 * Avg(rate({a=\"b\"}[5m])) Without#c\n()", true},
+		{"binary-empty-without", `sum(sum without () (count_over_time({a="b"}[5m])) / 2)`, true},
+		{"binary-empty-without", `label_replace(max without () (rate({a="b"}[5m])) > 1, "x", "$1", "a", "(.*)")`, true},
+		{"binary-empty-without", `sum without () (count_over_time({a="b"}[5m]))`, false},
+		{"binary-empty-without", `count without () (count_over_time({a="b"}[5m])) / 2`, false},
+		{"binary-empty-without", `sum without (pod) (count_over_time({a="b"}[5m])) / 2`, false},
+		{"binary-empty-without", `sum by (a) (sum without () (count_over_time({a="b"}[5m]))) / 2`, false},
 		// Longer than the plan memo holds: the plan is built for the fence, uncached.
 		{"unwrap-dynamic-identity", `SUM BY (x) (AVG_OVER_TIME({a="b"} |= "` + strings.Repeat("x", validationCacheMaxQueryBytes) + `" | JSON | UNWRAP n [5m]))`, true},
 	} {

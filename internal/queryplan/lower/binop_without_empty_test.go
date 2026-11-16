@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
@@ -62,16 +63,47 @@ func withoutNoneLabel(b physical.Binary) physical.Binary {
 	return b
 }
 
+// emptyWithoutLevelsOffText is q, a binary operation, with the outer sum, avg, min and max levels that have a
+// `without ()` clause taken off each operand (EmptyWithoutLevelsOff), printed; q when it is no binary operation.
+func emptyWithoutLevelsOffText(q string) string {
+	expr, err := logql.Parse(q)
+	if err != nil {
+		return q
+	}
+	b, ok := expr.(*logql.BinOpExpr)
+	if !ok {
+		return q
+	}
+	off := func(e logql.Expr) logql.Expr {
+		for {
+			v, ok := e.(*logql.VectorAggregation)
+			if !ok || v.Grouping == nil || !v.Grouping.Without || len(v.Grouping.Labels) != 0 {
+				return e
+			}
+			switch v.Op {
+			case logql.VectorSum, logql.VectorAvg, logql.VectorMin, logql.VectorMax:
+				e = v.Inner
+			default:
+				return e
+			}
+		}
+	}
+	c := *b
+	c.Left, c.Right = off(b.Left), off(b.Right)
+	return c.String()
+}
+
 // emptyWithoutLikeLabelled reports whether the lowering op of q, a binary operation with `without ()` operands, is the
-// lowering of the same query with a label in each clause, the label taken out of the folds. A query whose clauses
-// cannot all be told by the spelling (a value that holds `without ()`), or whose reference the lowering leaves to the
-// translator, is not compared (compared is false).
+// lowering of its reference: the query with its sum, avg, min and max `without ()` levels taken off the operands
+// (each answers its operand's series), and a label in each clause left (count, stddev, stdvar), the label taken out of
+// the folds. A query whose clauses cannot all be told by the spelling (a value that holds `without ()`), or whose
+// reference the lowering leaves to the translator, is not compared (compared is false).
 func emptyWithoutLikeLabelled(t testing.TB, q string, p *queryplan.Plan, op physical.Op, prof rangeProfile) (same, compared bool) {
 	t.Helper()
-	ref := withLabelledClause(q)
 	if len(emptyWithoutClause.FindAllString(q, -1)) != emptyWithoutClauses(p.Root) {
 		return false, false
 	}
+	ref := withLabelledClause(emptyWithoutLevelsOffText(q))
 	rp := rangeAggPlan(ref)
 	if rp == nil {
 		return false, false
@@ -102,11 +134,12 @@ func lowerBinary(t *testing.T, q string) physical.Binary {
 	return b
 }
 
-// A `without ()` clause on an operand removes no label (Loki keeps every series of the operand), so the operand is the
-// fold of its per-series rows by no label: a physical.Fold whose level is the aggregation, without, and no labels,
-// over the very rows the same operand writes under a `without (pod)` clause. Every aggregation, the clause in the
-// head and tail spellings, either side, with a vector(n) beside it, and a range function that counts, rates and sums
-// bytes.
+// A `without ()` clause on an operand removes no label (Loki keeps every series of the operand). A sum, avg, min or
+// max level with it answers each series of its operand unchanged, so the operand lowers as that operand alone, as
+// the proxy's binary route sends it. A count is 1 for every series: its operand is the fold of its per-series rows by
+// no label, a physical.Fold whose level is the count, without, and no labels, over the very rows the same operand
+// writes under a `without (pod)` clause. Every aggregation, the clause in the head and tail spellings, either side,
+// with a vector(n) beside it, and a range function that counts, rates and sums bytes.
 //
 // conformance: semantics/binary-operand-without-empty-collapses
 func TestPlanLowersEmptyWithoutOperands(t *testing.T) {
@@ -121,16 +154,23 @@ func TestPlanLowersEmptyWithoutOperands(t *testing.T) {
 		for _, fn := range []string{`rate({app="a"}[5m])`, `count_over_time({app="a"}[5m])`, `bytes_over_time({app="a"} |= "x"[5m])`, `bytes_rate({app="a"}[5m])`, `absent_over_time({app="a"}[5m])`} {
 			for _, spelling := range spellings {
 				empty, labelled := spelling(agg, "", fn), spelling(agg, "pod", fn)
-				for _, shape := range []struct{ q, ref string }{
-					{empty + " / 2", labelled + " / 2"},
-					{"100 < " + empty, "100 < " + labelled},
-					{other + " / on(app) group_left(env) " + empty, other + " / on(app) group_left(env) " + labelled},
-					{empty + " - ignoring(pod) " + empty, labelled + " - ignoring(pod) " + labelled},
-					{empty + " + on() vector(0)", labelled + " + on() vector(0)"},
-					{"vector(1) > " + empty, "vector(1) > " + labelled},
+				for _, shape := range []struct{ q, ref, bare string }{
+					{empty + " / 2", labelled + " / 2", fn + " / 2"},
+					{"100 < " + empty, "100 < " + labelled, "100 < " + fn},
+					{other + " / on(app) group_left(env) " + empty, other + " / on(app) group_left(env) " + labelled, other + " / on(app) group_left(env) " + fn},
+					{empty + " - ignoring(pod) " + empty, labelled + " - ignoring(pod) " + labelled, fn + " - ignoring(pod) " + fn},
+					{empty + " + on() vector(0)", labelled + " + on() vector(0)", fn + " + on() vector(0)"},
+					{"vector(1) > " + empty, "vector(1) > " + labelled, "vector(1) > " + fn},
 				} {
 					got, want := lowerBinary(t, shape.q), lowerBinary(t, shape.ref)
 					checked++
+					if agg != "count" {
+						// The level answers its operand's series: the operation lowers as the one over the operand.
+						if bare := lowerBinary(t, shape.bare); !physical.Equal(got, bare) || physical.Encode(got) != physical.Encode(bare) {
+							t.Errorf("%s: lowered %#v, want the operation over its operand %#v", shape.q, got, bare)
+						}
+						continue
+					}
 					if got.Op != want.Op || !reflect.DeepEqual(got.Match, want.Match) || got.Tail != want.Tail {
 						t.Errorf("%s: operator or matching differs from the labelled clause's: %#v", shape.q, got)
 					}
@@ -202,22 +242,21 @@ func TestPlanLowersEmptyWithoutOperandsUnderEveryProfile(t *testing.T) {
 
 // An operand that the fold of one level cannot carry stays with the translator under its own name: a `without ()` at
 // a level of a nest (the levels above it are not in the operators, and `count without ()` is 1 for every series), and
-// over a range aggregation of an unwrapped label, whose lowering reads the clause the translator's way. An unwrap
-// that absent_over_time reads nothing from is no unwrap.
+// a count over a range aggregation of an unwrapped label, whose lowering reads the clause the translator's way. An
+// unwrap that absent_over_time reads nothing from is no unwrap. A sum, avg, min or max `without ()` at the top of the
+// operand is its operand's series, so the nest or unwrap under it lowers as the operand alone.
 //
 // conformance: semantics/binary-operand-without-empty-collapses
 func TestPlanDelegatesEmptyWithoutNestsAndUnwraps(t *testing.T) {
 	rate := `rate({app="a"}[5m])`
 	for q, construct := range map[string]string{
-		`count without () (sum without () (` + rate + `)) / 2`:                          "BinOp operand without empty nest",
-		`sum without () (sum without (pod) (` + rate + `)) / 2`:                         "BinOp operand without empty nest",
-		`sum without () (sum by (app) (` + rate + `)) / 2`:                              "BinOp operand without empty nest",
-		`sum by (app) (sum without () (` + rate + `)) / 2`:                              "BinOp operand without empty nest",
-		`2 * avg(sum without () (` + rate + `))`:                                        "BinOp operand without empty nest",
-		`sum(sum by (app, pod) (sum without () (` + rate + `))) / 2`:                    "BinOp operand without empty nest",
-		`sum without () (sum_over_time({app="a"} | unwrap n [5m])) / 2`:                 "BinOp operand without empty unwrap",
-		`vector(1) + max without () (rate({app="a"} | logfmt | unwrap n [5m]))`:         "BinOp operand without empty unwrap",
-		`sum without () (avg_over_time({app="a"} | unwrap n [5m])) / sum(` + rate + `)`: "BinOp operand without empty unwrap",
+		`count without () (sum without () (` + rate + `)) / 2`:                            "BinOp operand without empty nest",
+		`sum by (app) (sum without () (` + rate + `)) / 2`:                                "BinOp operand without empty nest",
+		`2 * avg(sum without () (` + rate + `))`:                                          "BinOp operand without empty nest",
+		`sum(sum by (app, pod) (sum without () (` + rate + `))) / 2`:                      "BinOp operand without empty nest",
+		`count without () (sum_over_time({app="a"} | unwrap n [5m])) / 2`:                 "BinOp operand without empty unwrap",
+		`vector(1) + count without () (rate({app="a"} | logfmt | unwrap n [5m]))`:         "BinOp operand without empty unwrap",
+		`count without () (avg_over_time({app="a"} | unwrap n [5m])) / sum(` + rate + `)`: "BinOp operand without empty unwrap",
 	} {
 		p := rangeAggPlan(q)
 		if p == nil {
@@ -232,9 +271,25 @@ func TestPlanDelegatesEmptyWithoutNestsAndUnwraps(t *testing.T) {
 	// absent_over_time reads no value, so the clause lowers over it as over any range aggregation.
 	for _, q := range []string{
 		`sum without () (absent_over_time({app="a"} | unwrap n [5m])) / 2`,
+		`count without () (absent_over_time({app="a"} | unwrap n [5m])) / 2`,
 	} {
 		if _, err := PlanQuery(q, rangeAggPlan(q), Profile{}); err != nil {
 			t.Errorf("%s: %v", q, err)
+		}
+	}
+	// A sum, avg, min or max `without ()` at the top of an operand is the operand alone, whatever is under it.
+	for q, bare := range map[string]string{
+		`sum without () (sum without (pod) (` + rate + `)) / 2`:                         `sum without (pod) (` + rate + `) / 2`,
+		`sum without () (sum by (app) (` + rate + `)) / 2`:                              `sum by (app) (` + rate + `) / 2`,
+		`sum without () (max without () (` + rate + `)) / 2`:                            rate + ` / 2`,
+		`sum without () (sum_over_time({app="a"} | unwrap n [5m])) / 2`:                 `sum_over_time({app="a"} | unwrap n [5m]) / 2`,
+		`vector(1) + max without () (rate({app="a"} | logfmt | unwrap n [5m]))`:         `vector(1) + rate({app="a"} | logfmt | unwrap n [5m])`,
+		`sum without () (avg_over_time({app="a"} | unwrap n [5m])) / sum(` + rate + `)`: `avg_over_time({app="a"} | unwrap n [5m]) / sum(` + rate + `)`,
+	} {
+		got, gerr := PlanQuery(q, rangeAggPlan(q), Profile{})
+		want, werr := PlanQuery(bare, rangeAggPlan(bare), Profile{})
+		if gerr != nil || werr != nil || !physical.Equal(got, want) || physical.Encode(got) != physical.Encode(want) {
+			t.Errorf("%s: lowered %v (%v), want the operation over its operand %s: %v (%v)", q, got, gerr, bare, want, werr)
 		}
 	}
 }
