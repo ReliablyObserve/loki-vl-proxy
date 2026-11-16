@@ -8,7 +8,7 @@ consumer: explore
 why: |
   Loki runs both stages on every line: a logfmt line gets the JSON parse error
   and then its logfmt keys, a JSON line its JSON keys (a key the first parser
-  extracted is skipped by the second, ParserHint.Extracted). The proxy probes
+  extracted is skipped by the second). The proxy probes
   VictoriaLogs for recent rows and removes one of the two stages
   (preferWorkingParser, internal/proxy/query_translation.go), so on a stream
   holding both formats the lines of the removed parser carry no parsed labels
@@ -38,7 +38,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy/query_translation.go preferWorkingParser (probe-based removal of a parser stage)'
-  loki: 'pkg/logql/log/pipeline.go: every stage runs on every line; parser.go skips a key ParserHint.Extracted'
+  loki: 'every stage runs on every line; a key an earlier parser extracted is skipped by a later one (measured 2026-10, in this case)'
   proxy: 'one of the two parser stages is removed from the query'
   planned_test: 'TestCompat_TwoParsersOnMixedFormats (test/e2e-compat, group semantics)'
   clusters:

@@ -38,7 +38,7 @@ gap:
   impact: drilldown-visible
   effort: M
   area: 'internal/translator (label-filter key variants, parsed_key_variants.go); Drilldown single-field fast paths'
-  loki: 'pkg/logql/log/parser.go:141 sanitizeLabelKey on every extracted key; label filter reads the parsed label'
+  loki: 'the json parser sanitizes every extracted key and the label filter reads the parsed label (15 entries on Loki against 0 on the proxy, on the visual stack, in this case)'
   proxy: 'filter on the stored dotted field only'
   planned_test: 'TestCompat_ExistenceFilterSanitizedKey (test/e2e-compat, group semantics)'
   clusters: []
