@@ -207,10 +207,12 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 		}()
 		// After the rebuild every inventory unit has its replicas again.
 		total := requireOwnerDownBound(t, set.all(), onA, cold, true, peerReadHedgeMax, "read hedge maximum")
-		if total.peerErrors < 1 {
-			t.Errorf("no lookup on B or C waited for the paused A (%s)", total)
+		// A lookup that found A slow hedged to the next replica or gave up on
+		// it; one that came after A's suspension counted a peer error.
+		if total.peerErrors+total.readHedges < 1 {
+			t.Errorf("no lookup on B or C found the paused A slow (%s)", total)
 		}
-		proofRec.addEdge("owner_paused_timeout_bound", map[string]any{"peer_errors": total.peerErrors, "vl_calls": total.vlSelect})
+		proofRec.addEdge("owner_paused_timeout_bound", map[string]any{"peer_errors": total.peerErrors, "read_hedges": total.readHedges, "vl_calls": total.vlSelect})
 	})
 
 	// The owner is killed while B is answering requests that need it.

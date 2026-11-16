@@ -59,8 +59,9 @@ var hedgeOutcomeNames = [hedgeOutcomes]string{"next_replica", "gave_up"}
 // headerLatency is a decaying histogram of the time peers took to send their
 // response headers, over peerFetchBuckets plus an overflow bucket.
 type headerLatency struct {
-	counts [len(peerFetchBuckets) + 1]atomic.Int64
-	total  atomic.Int64
+	counts  [len(peerFetchBuckets) + 1]atomic.Int64
+	total   atomic.Int64
+	halving atomic.Bool
 }
 
 func (h *headerLatency) observe(d time.Duration) {
@@ -73,9 +74,10 @@ func (h *headerLatency) observe(d time.Duration) {
 		}
 	}
 	h.counts[i].Add(1)
-	if h.total.Add(1) >= peerHeaderLatencyDecayAt {
-		// Halve every bucket. Concurrent observations may lose a count to
-		// the halving, which only blurs an estimate.
+	if h.total.Add(1) >= peerHeaderLatencyDecayAt && h.halving.CompareAndSwap(false, true) {
+		defer h.halving.Store(false)
+		// Halve every bucket, once. Concurrent observations may lose a count
+		// to the halving, which only blurs an estimate.
 		var sum int64
 		for j := range h.counts {
 			for {

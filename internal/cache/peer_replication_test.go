@@ -522,7 +522,13 @@ func TestPeerReplication_PausedOwnerCostsOneTimeout(t *testing.T) {
 		t.Fatalf("6 concurrent lookups with the owner paused took %s, want at most one timeout (%s) plus %s", concurrent, timeout, margin)
 	}
 
-	// After the cooldown: one probe, the others skip the owner.
+	// After the cooldown: one probe, the others skip the owner. The calls of
+	// the concurrent lookups end first (their timeout suspended the owner),
+	// so the owner is neither lagging nor slow and only the probe's own call
+	// can suspend it again.
+	ownerAddr := f.addr(owner)
+	idle := func() bool { return !f.nodes[other].pc.peerLagging(ownerAddr) && !f.nodes[other].pc.peerSlow(ownerAddr) }
+	waitFor(t, "the owner calls to end", idle)
 	pb.suspendedUntil.Store(time.Now().Add(-time.Millisecond).UnixNano())
 	probeDone := make(chan time.Duration)
 	go func() {
@@ -546,6 +552,7 @@ func TestPeerReplication_PausedOwnerCostsOneTimeout(t *testing.T) {
 
 	// The owner answers again: the next probe lifts the suspension.
 	resume()
+	waitFor(t, "the probe's call to end", idle)
 	pb.suspendedUntil.Store(time.Now().Add(-time.Millisecond).UnixNano())
 	if _, _, ok := f.nodes[other].pc.Get(keys[2]); !ok {
 		t.Fatal("the probe of a resumed owner missed")
