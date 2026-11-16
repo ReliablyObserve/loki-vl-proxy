@@ -41,8 +41,8 @@ type overAggLayer struct {
 	ref  aggLayer
 }
 
-// aggLayer is one vector aggregation: op (sum, avg, min, max, count, topk,
-// bottomk, sort, sort_desc), k for a ranking, and its by() or without() labels.
+// aggLayer is one vector aggregation: op (sum, avg, min, max, count, stddev,
+// stdvar, topk, bottomk, sort, sort_desc), k for a ranking, and its by() or without() labels.
 type aggLayer struct {
 	op             string
 	k              int
@@ -108,8 +108,8 @@ func (l aggLayer) eval(vec []topKFoldRefSample) (out []topKFoldRefSample, tied b
 	}
 	type acc struct {
 		labels   map[string]string
+		values   []float64
 		sum, n   float64
-		first    bool
 		min, max float64
 	}
 	groups := map[string]*acc{}
@@ -124,6 +124,7 @@ func (l aggLayer) eval(vec []topKFoldRefSample) (out []topKFoldRefSample, tied b
 		}
 		a.sum += s.value
 		a.n++
+		a.values = append(a.values, s.value)
 		a.min = math.Min(a.min, s.value)
 		a.max = math.Max(a.max, s.value)
 	}
@@ -139,6 +140,16 @@ func (l aggLayer) eval(vec []topKFoldRefSample) (out []topKFoldRefSample, tied b
 			v = a.max
 		case "count":
 			v = a.n
+		case "stddev", "stdvar":
+			// The population variance of the group's values.
+			mean, sq := a.sum/a.n, 0.0
+			for _, x := range a.values {
+				sq += (x - mean) * (x - mean)
+			}
+			v = sq / a.n
+			if l.op == "stddev" {
+				v = math.Sqrt(v)
+			}
 		}
 		out = append(out, topKFoldRefSample{a.labels, v})
 	}
