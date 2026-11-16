@@ -226,7 +226,7 @@ decisions:
       fuzz target); the 27 recorded Loki answers still match.
     performance:
       tracked: ['BenchmarkPatternColdMine148k (shape=many and shape=skewed, workers=1, 2, 4)', 'perf-smoke DP1 and DP2 cold']
-      bound: 'no VictoriaLogs request added; a read holds at most a few batches of lines per worker; the workers of all requests together at most GOMAXPROCS; CPU per read not above the serial base'
+      bound: 'no VictoriaLogs request added; a read holds at most a few batches of lines per worker; the workers (a decoding and a mining goroutine each) of all requests together at most GOMAXPROCS, plus one line-splitting goroutine per read; CPU per read not above the serial base'
       measured: |
         Apple M5 Pro, benchstat of interleaved runs, base 5b5c7965f vs this
         change (the base mines on one goroutine whatever the row's workers),

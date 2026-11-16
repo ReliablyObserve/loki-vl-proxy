@@ -27,8 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   environment) mines its lines on several cores. When the read holds at least 40,000 lines, the lines VictoriaLogs
   answers are decoded on worker goroutines and each stream is mined by one worker, in the order it was read. The
   miners are then merged in the order one goroutine makes them, so the patterns, samples and the pattern state's
-  snapshot stay byte for byte what they were. The workers of all requests together never exceed GOMAXPROCS; a read
-  that finds fewer than two free, a refresh of the pattern state, a background build and `-patterns-scope=selector`
+  snapshot stay byte for byte what they were. A worker is a decoding and a mining goroutine; the workers of all
+  requests together never exceed GOMAXPROCS (each read adds one goroutine that splits its lines). A read that finds
+  fewer than two workers free, a refresh of the pattern state, a background build and `-patterns-scope=selector`
   mine on the request's goroutine as before. No VictoriaLogs request is added. Mining also allocates less: a line's
   tokens are copied only when it starts a cluster, a new cluster's tree nodes are made in one allocation, and a
   row's time and a stream's name are read without a copy. Decoding and mining an hour of 148,000 lines (the

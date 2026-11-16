@@ -13,8 +13,9 @@ import (
 // patternMineCores workers. (A variable for the tests.)
 var patternMineLinesPerWorker = 20_000
 
-// patternMineCores is how many mining workers the process runs at most, over all requests: GOMAXPROCS. (A
-// variable for the tests.)
+// patternMineCores is how many workers the process runs at most, over all requests: GOMAXPROCS. A worker is a
+// pair of goroutines, one decoding the read's rows and one mining its streams, and each parallel read adds the
+// goroutine that splits its lines. (A variable for the tests.)
 var patternMineCores = func() int { return runtime.GOMAXPROCS(0) }
 
 const (
@@ -28,7 +29,7 @@ const (
 	patternMineQueueBatches = 2
 )
 
-// patternMineWorkersRunning counts the mining workers of every request: together they never exceed GOMAXPROCS,
+// patternMineWorkersRunning counts the workers of every request: together they never exceed patternMineCores,
 // so concurrent cold reads share the cores instead of multiplying goroutines; a read that finds none free is
 // mined on its own goroutine.
 var patternMineWorkersRunning atomic.Int64
