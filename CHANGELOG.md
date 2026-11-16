@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The unwrap code is rewritten from Loki's recorded answers and LogQL's documentation: the conversions of
+  `unwrap`, `duration()`, `duration_seconds()` and `bytes()`, the logfmt reading the conversion-error check and the
+  patterns miner use, the window merge of unwrap range functions from VictoriaLogs buckets, and the conversion-error
+  check (the counting gate, the lookups of a flagged bucket and the Loki error it answers). New tests hold it to
+  answers recorded with Loki's engine and pipeline for the same lines and queries: every conversion over number,
+  duration and size spellings (signs, units, overflow, NaN and infinities, blanks, logfmt and JSON lines), the
+  labels the logfmt, JSON, unpack and regexp parsers give generated lines, and the status and text of the error
+  over 39 query shapes. The VictoriaLogs requests and the answers are unchanged, except that stddev_over_time and
+  stdvar_over_time over a range longer than the step merge their buckets in two passes (a window's value can differ
+  from the previous build in its last bit, as close to the exact value as before). Two fuzz targets join
+  fuzz-smoke.
+
+### Fixed
+
+- The `SampleExtractionErr` answer of a metric whose pipeline holds a `label_format` before the unwrap
+  (`| logfmt | label_format w="{{.n}}" | unwrap v`) names the series with the label as the stage writes it, as
+  Loki does (recorded with Loki's engine) for a rename and a copy of one label (`{{.label}}`); a label another
+  template writes is left out of the series, which kept the line's own value of the label before.
+- A value the unwrap conversion rejects fails a binary operation whichever operand reads it, as Loki does (recorded
+  with Loki's engine at the instant and over a range: right operand, left operand, nested operand). A rejected
+  value only in an operand after the first answered 200 before; the check now decides again on the hits each later
+  operand records, as long as nothing of the answer went out (semantics/unwrap-conversion-error-binary-operand).
+  Rows an earlier operand already looked up are not looked up again, and once the answer is Loki's error the
+  request sends no further VictoriaLogs reads.
+  The response cache asks the check before it keeps an answer, an operand's included, so a repeat of the query
+  answers the same 400 (a repeated range query whose rejected value sat in the first operand answered 200 before);
+  a checked VictoriaLogs answer over the body-size limit answers the limit error.
+
 ## [2.315.0] - 2026-11-16
 
 ### Changed
