@@ -64,11 +64,13 @@ type Stream struct {
 }
 
 // Request is a Loki request: Instant is a /loki/api/v1/query request, else /loki/api/v1/query_range; Form is its
-// form, URL-encoded.
+// form, URL-encoded. Unaligned runs a range request at its own bounds, as Loki's engine does without a query
+// frontend's align_queries_with_step (Loki's default), instead of the step-aligned bounds.
 type Request struct {
-	ID      string `json:"id"`
-	Instant bool   `json:"instant,omitempty"`
-	Form    string `json:"form"`
+	ID        string `json:"id"`
+	Instant   bool   `json:"instant,omitempty"`
+	Form      string `json:"form"`
+	Unaligned bool   `json:"unaligned,omitempty"`
 }
 
 // Input is one data set and the requests over it.
@@ -184,7 +186,7 @@ func answer(q *querier, lim limits, r Request) (a Answer) {
 		start, end := rq.Start, rq.End
 		// A query frontend with align_queries_with_step moves both bounds down to a multiple of the step, in
 		// milliseconds.
-		if stepMs := rq.Step.Milliseconds(); stepMs > 0 {
+		if stepMs := rq.Step.Milliseconds(); stepMs > 0 && !r.Unaligned {
 			start = time.UnixMilli(start.UnixMilli() / stepMs * stepMs)
 			end = time.UnixMilli(end.UnixMilli() / stepMs * stepMs)
 		}
