@@ -78,7 +78,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 6 | partial |
 | semantics | `instrumentation-reveals-no-secrets` — /metrics and /config reveal no secret and no more than Loki's | 2 | 1 | proven |
 | semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 14 | 7 | partial |
-| identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 39 | partial |
+| identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 40 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 1 | gap |
 | observability | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | 6 | 5 | unknown |
 | observability | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | 8 | 4 | unknown |
@@ -105,7 +105,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `tenant-label-isolation` — Tenant-label mode confines every request to its org | 4 | 4 | proven |
 | semantics | `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | 4 | 13 | proven |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 16 | 6 | proven |
-| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 11 | 30 | partial |
+| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 11 | 31 | partial |
 
 ## LogQL surface (v3.7.7)
 

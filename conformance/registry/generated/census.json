@@ -2015,6 +2015,10 @@
     "internal/proxy/unwrap_dynamic_identity_cache_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/proxy/unwrap_dynamic_identity_test.go | semantics/stdvar-grouped-pooled-variance",
     "internal/proxy/unwrap_dynamic_identity_test.go | semantics/unwrap-per-series-identity-raw-rows",
+    "internal/proxy/unwrap_dynamic_identity_window_test.go | metric-series-identity",
+    "internal/proxy/unwrap_dynamic_identity_window_test.go | quality/query-range-extent-cache",
+    "internal/proxy/unwrap_dynamic_identity_window_test.go | semantics/unwrap-per-series-identity-raw-rows",
+    "internal/proxy/unwrap_dynamic_identity_window_test.go | window-bounds-and-step-alignment",
     "internal/proxy/unwrap_extent_cache_test.go | loki_api_v1_query_range",
     "internal/proxy/unwrap_extent_cache_test.go | quality/query-range-extent-cache",
     "internal/proxy/unwrap_extent_cache_test.go | quality/unwrap-query-range-extent-cache",
@@ -2238,6 +2242,7 @@
     "internal/queryplan/lower/unspaced_parser_test.go | semantics/translator-copies-unspaced-parser",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/stdvar-grouped-pooled-variance",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-per-series-identity-raw-rows",
+    "internal/queryplan/lower/unwrap_dynamic_window_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/unwrap_keep_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/queryplan/lower/unwrap_stats_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
@@ -2844,7 +2849,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 650,
+      "go": 652,
       "playwright": 1
     },
     "page_kinds": {
