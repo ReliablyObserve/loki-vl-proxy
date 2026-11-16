@@ -318,3 +318,79 @@ func sameSampleText(a, b string) bool {
 	}
 	return x == y && math.Signbit(x) == math.Signbit(y)
 }
+
+// lokiProcessRecord is one recorded pipeline answer (test/oracle/loki process) with the digest of its case.
+type lokiProcessRecord struct {
+	Key    string                  `json:"key"`
+	Answer oraclerun.ProcessAnswer `json:"answer"`
+}
+
+func lokiProcessKey(c oraclerun.ProcessCase) string {
+	c.ID = ""
+	data, _ := json.Marshal(c)
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:12])
+}
+
+// lokiProcessAnswers returns what Loki's pipeline makes of each case's line (test/oracle/loki process), in the order
+// of cases, read from testdata/loki_engine/<name>.jsonl.gz; with LVP_RUN_ORACLES=1 it runs the oracle and writes the
+// file first. A case whose query, labels or line changed finds no answer and says to record again.
+func lokiProcessAnswers(t testing.TB, name string, cases []oraclerun.ProcessCase) []oraclerun.ProcessAnswer {
+	t.Helper()
+	path := filepath.Join(lokiEngineDir(), name+".jsonl.gz")
+	if os.Getenv("LVP_RUN_ORACLES") == "1" {
+		answers, err := oraclerun.LokiProcess(filepath.Join("..", "..", "test", "oracle", "loki"), cases)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		zw, _ := gzip.NewWriterLevel(f, gzip.BestCompression)
+		enc := json.NewEncoder(zw)
+		enc.SetEscapeHTML(false)
+		for i, c := range cases {
+			if err := enc.Encode(lokiProcessRecord{Key: lokiProcessKey(c), Answer: answers[i]}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("%v: record Loki's answers with LVP_RUN_ORACLES=1", err)
+	}
+	defer func() { _ = f.Close() }()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byKey := map[string]oraclerun.ProcessAnswer{}
+	sc := bufio.NewScanner(zr)
+	sc.Buffer(make([]byte, 1<<20), 1<<26)
+	for sc.Scan() {
+		var r lokiProcessRecord
+		if err := json.Unmarshal(sc.Bytes(), &r); err != nil {
+			t.Fatal(err)
+		}
+		byKey[r.Key] = r.Answer
+	}
+	out := make([]oraclerun.ProcessAnswer, len(cases))
+	for i, c := range cases {
+		a, ok := byKey[lokiProcessKey(c)]
+		if !ok {
+			t.Fatalf("%s: no recorded Loki answer for %q over %q: record again with LVP_RUN_ORACLES=1", path, c.Query, c.Line)
+		}
+		out[i] = a
+	}
+	return out
+}
