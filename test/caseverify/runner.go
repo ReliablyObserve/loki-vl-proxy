@@ -524,7 +524,7 @@ func Verify(p Probe, src Source, cnt Counter, meter Meter, now time.Time, tenant
 // asked again, at attempts of its own so a replay finds them, up to indexTries times, indexWait apart, before the case
 // is called not comparable; both are variables so a test does not wait.
 const (
-	indexTries        = 6
+	indexTries        = 12
 	indexRetryAttempt = 20
 )
 
