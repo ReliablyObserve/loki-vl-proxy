@@ -2148,8 +2148,7 @@ func streamDetectedLevel(stream map[string]string) string {
 // streamLevel is the stream rule of streamDetectedLevel; ok is false when the
 // stream holds none of the level fields. level, the first name and the common
 // one, is looked up directly; otherwise the stream's labels are walked once and
-// the non-empty one earliest in levelFieldNames (levelFieldSlot, log.level left
-// out as in deriveRowLevel) is kept, the
+// the non-empty one earliest in levelFieldNames (levelFieldSlot) is kept, the
 // names screened by first byte and length before the switch.
 func streamLevel(stream map[string]string) (string, bool) {
 	if v := stream["level"]; v != "" {
@@ -2170,7 +2169,7 @@ func streamLevel(stream map[string]string) (string, bool) {
 		default:
 			continue
 		}
-		if slot := levelFieldSlot([]byte(k)); slot >= levelSlotFirstName && slot < best && slot != levelSlotLogDotLevel {
+		if slot := levelFieldSlot([]byte(k)); slot >= levelSlotFirstName && slot < best {
 			best, value = slot, v
 		}
 	}

@@ -77,8 +77,8 @@ func dlGoldenPushed(r dlGoldenRow) bool {
 }
 
 // dlGoldenSampleEvery: the check pushes every dlGoldenSampleEvery-th row of each category (the name up to its
-// second slash, e.g. sm/key-level or plain/boundary), the first of each included, about 200 rows; recording and
-// LVP_DETECTED_LEVEL_GOLDEN_FULL=1 push every row.
+// second slash, e.g. sm/key-level or plain/boundary, or up to its only slash, e.g. probe), the first of each
+// included, about 200 rows; recording and LVP_DETECTED_LEVEL_GOLDEN_FULL=1 push every row.
 const dlGoldenSampleEvery = 12
 
 // dlGoldenSample marks the rows the check pushes.
@@ -91,8 +91,9 @@ func dlGoldenSample(rows []dlGoldenRow, all bool) []bool {
 		}
 		category := r.Name
 		if a := strings.IndexByte(category, '/'); a >= 0 {
-			if b := strings.IndexByte(category[a+1:], '/'); b >= 0 {
-				category = category[:a+1+b]
+			category = category[:a] // probe/x, edge/x, live/x: one category each
+			if b := strings.IndexByte(r.Name[a+1:], '/'); b >= 0 {
+				category = r.Name[:a+1+b]
 			}
 		}
 		out[i] = all || seen[category]%dlGoldenSampleEvery == 0

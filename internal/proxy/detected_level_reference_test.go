@@ -372,7 +372,7 @@ func referenceDetectedLevel(stream, fields map[string]string, line string, unpac
 		return referenceNormalized(v)
 	}
 	for _, name := range referenceLevelNames {
-		if name != "log.level" && stream[name] != "" {
+		if stream[name] != "" {
 			return referenceNormalized(stream[name])
 		}
 	}

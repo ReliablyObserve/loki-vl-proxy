@@ -210,16 +210,3 @@ func TestDetectedLevelCacheKeyVersion(t *testing.T) {
 		t.Fatal("the response profile key does not carry the derivation version")
 	}
 }
-
-// TestStreamLevelSkipsLogDotLevel: a series built from one stream reads the stream's level labels as the log
-// read path does, log.level left out (Loki stores such metadata as log_level and never reads it).
-//
-// conformance: severity/recorded-level-table, semantics/without-fold-stream-detected-level
-func TestStreamLevelSkipsLogDotLevel(t *testing.T) {
-	if got := streamDetectedLevel(map[string]string{"log.level": "warn"}); got != levelUnknown {
-		t.Fatalf("log.level stream gives %q, want unknown", got)
-	}
-	if got := streamDetectedLevel(map[string]string{"log.level": "warn", "lvl": "debug"}); got != levelDebug {
-		t.Fatalf("log.level and lvl stream gives %q, want debug", got)
-	}
-}

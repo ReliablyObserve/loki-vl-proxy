@@ -65,7 +65,7 @@ func mayHoldDropStage(query string) bool {
 //
 //  1. a stored detected_level field (Loki's structured metadata), normalised;
 //  2. the stream's first level label in levelFieldNames order, normalised (a word Loki does not know stays as
-//     it is);
+//     it is; a log.level stream field, which no Loki stream label can be, counts);
 //  3. the row's first level field in levelFieldNames order, normalised; log.level is never one: Loki stores
 //     structured metadata named log.level as log_level, which it does not read;
 //  4. severity_number: 1-4 trace, 5-8 debug, 9-12 info, 13-16 warn, 17-20 error, 21-24 fatal, below 1 trace, 0
@@ -177,6 +177,15 @@ func mayBeLevelField(name []byte) bool {
 // nestedLevelName reports a field name VictoriaLogs writes for a level key one object down in a JSON line:
 // parent.name with one dot and name in levelFieldNames.
 func nestedLevelName(name []byte) bool {
+	// every level name ends in l, y or t (either case): most names are turned away before any scan
+	if len(name) < 5 {
+		return false
+	}
+	switch name[len(name)-1] {
+	case 'l', 'L', 'y', 'Y', 't', 'T':
+	default:
+		return false
+	}
 	i := bytes.IndexByte(name, '.')
 	if i <= 0 || i == len(name)-1 || bytes.IndexByte(name[i+1:], '.') >= 0 {
 		return false
@@ -202,13 +211,14 @@ func (f *levelFields) observe(name, value []byte) {
 	}
 }
 
-// firstName is the first level name with a value, in levelFieldNames order, log.level left out; -1 when none.
+// firstName is the first level name with a value, in levelFieldNames order; -1 when none. A stream field named
+// log.level (which no Loki stream label can be) counts, as the level-less stream rule reads it.
 func (f *levelFields) firstName() (int, []byte) {
 	if f == nil {
 		return -1, nil
 	}
 	for slot := levelSlotFirstName; slot < levelSlotSeverityNumber; slot++ {
-		if slot != levelSlotLogDotLevel && f.vals[slot] != nil {
+		if f.vals[slot] != nil {
 			return slot, f.vals[slot]
 		}
 	}
@@ -306,6 +316,9 @@ func deriveRowLevel(stream, fields *levelFields, body []byte, jsonUnpacked, body
 
 // storedFieldLevel is rules 3 and 4 over a row's stored fields; ok is false when they leave it to the line.
 func storedFieldLevel(f *levelFields) (detectedLevel, bool) {
+	if v := f.vals[levelSlotFirstName]; v != nil {
+		return normalizedDetectedLevel(v), true // level: first, never a derived OTLP text
+	}
 	number, text, severity := f.vals[levelSlotSeverityNumber], f.vals[levelSlotSeverityText], f.vals[levelSlotSeverity]
 	derivedText := number != nil && text != nil && string(text) == vlSeverityText(number)
 	// Before v1.50 VictoriaLogs stores an OTLP record's severity as one severity field, the record's text or the
@@ -392,31 +405,50 @@ func vlSeverityText(number []byte) string {
 // canonicalLevel is Loki's level name for a known spelling of a level (compared case-insensitively), "" for any
 // other value.
 func canonicalLevel(v []byte) string {
-	var b [11]byte
-	if len(v) < 3 || len(v) > len(b) {
-		return ""
-	}
-	for i, c := range v {
-		if 'A' <= c && c <= 'Z' {
-			c += 'a' - 'A'
+	switch len(v) {
+	case 3:
+		switch {
+		case asciiEqualFold(v, "trc"):
+			return levelTrace
+		case asciiEqualFold(v, "dbg"):
+			return levelDebug
+		case asciiEqualFold(v, "inf"):
+			return levelInfo
+		case asciiEqualFold(v, "wrn"):
+			return levelWarn
+		case asciiEqualFold(v, "err"):
+			return levelError
 		}
-		b[i] = c
-	}
-	switch string(b[:len(v)]) {
-	case "trace", "trc":
-		return levelTrace
-	case "debug", "dbg":
-		return levelDebug
-	case "info", "inf", "information":
-		return levelInfo
-	case "warn", "warning", "wrn":
-		return levelWarn
-	case "error", "err":
-		return levelError
-	case "critical":
-		return levelCritical
-	case "fatal":
-		return levelFatal
+	case 4:
+		switch {
+		case asciiEqualFold(v, "info"):
+			return levelInfo
+		case asciiEqualFold(v, "warn"):
+			return levelWarn
+		}
+	case 5:
+		switch {
+		case asciiEqualFold(v, "error"):
+			return levelError
+		case asciiEqualFold(v, "debug"):
+			return levelDebug
+		case asciiEqualFold(v, "trace"):
+			return levelTrace
+		case asciiEqualFold(v, "fatal"):
+			return levelFatal
+		}
+	case 7:
+		if asciiEqualFold(v, "warning") {
+			return levelWarn
+		}
+	case 8:
+		if asciiEqualFold(v, "critical") {
+			return levelCritical
+		}
+	case 11:
+		if asciiEqualFold(v, "information") {
+			return levelInfo
+		}
 	}
 	return ""
 }
