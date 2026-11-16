@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.302.1] - 2026-11-15
-
 ### Fixed
 
 - One stream now gets one `detected_level` on every metric query type, as Loki gives. For a stream labelled
@@ -36,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the stream's level fields first, then the row's `level`, normalised. VictoriaLogs calls per request do not change.
   Answers cached before are not served again: the response key fence (`@stream-level-series-v3`) now covers every
   metric query and every query naming `detected_level` (one cache miss per such key after the upgrade).
+
+## [2.302.1] - 2026-11-15
+
+### Fixed
+
 - A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
   accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
   per-stream series took the stream's `detected_level`.
