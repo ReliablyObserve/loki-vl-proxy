@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documentation instead; no behaviour changes. The pattern line filter tests no longer carry a port of Loki's matcher:
   they compare the filter with Loki's own verdicts, recorded with the Loki pipeline oracle.
 
+## [2.310.2] - 2026-11-16
+
+### Changed
+
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
+
 ## [2.310.1] - 2026-11-16
 
 ### Fixed
