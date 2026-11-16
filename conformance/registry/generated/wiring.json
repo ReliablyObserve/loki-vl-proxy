@@ -817,6 +817,8 @@
       "internal/proxy/ordered_json_result_cache_test.go",
       "internal/proxy/unwrap_conversion_error_differential_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
+      "internal/proxy/unwrap_fuzz_test.go",
+      "internal/proxy/unwrap_recorded_loki_test.go",
       "test/e2e-compat/extracted_metric_pushdown_test.go",
       "test/e2e-compat/json_filter_pushdown_test.go",
       "test/e2e-compat/ordered_json_result_cache_test.go",
@@ -2147,7 +2149,9 @@
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
       "internal/proxy/unwrap_first_window_test.go",
+      "internal/proxy/unwrap_fuzz_test.go",
       "internal/proxy/unwrap_over_time_window_test.go",
+      "internal/proxy/unwrap_recorded_loki_test.go",
       "internal/proxy/window_phase_filter_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_extent_cache_test.go",
@@ -2156,7 +2160,8 @@
     ],
     "semantics/unwrap-conversion-error-postfilter-forms": [
       "internal/proxy/unwrap_conversion_error_differential_test.go",
-      "internal/proxy/unwrap_conversion_error_test.go"
+      "internal/proxy/unwrap_conversion_error_test.go",
+      "internal/proxy/unwrap_recorded_loki_test.go"
     ],
     "semantics/unwrap-conversion-error-stored-value-overwritten": [
       "internal/proxy/unwrap_conversion_error_differential_test.go",
@@ -2164,6 +2169,7 @@
     ],
     "semantics/unwrap-duration-seconds": [
       "internal/proxy/unwrap_convert_test.go",
+      "internal/proxy/unwrap_recorded_loki_test.go",
       "internal/proxy/unwrap_samples_test.go",
       "internal/translator/unwrap_gate_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go"
@@ -2273,6 +2279,8 @@
     ],
     "semantics/unwrap-sample-validity": [
       "internal/proxy/unwrap_bytes_gate_property_test.go",
+      "internal/proxy/unwrap_fuzz_test.go",
+      "internal/proxy/unwrap_recorded_loki_test.go",
       "internal/translator/unwrap_gate_property_test.go",
       "internal/translator/unwrap_gate_test.go",
       "test/e2e-compat/unwrap_sample_validity_test.go",
@@ -4289,6 +4297,11 @@
     "internal/proxy/unwrap_first_window_test.go": [
       "semantics/unwrap-conversion-error"
     ],
+    "internal/proxy/unwrap_fuzz_test.go": [
+      "parser-error-and-label-collision",
+      "semantics/unwrap-conversion-error",
+      "semantics/unwrap-sample-validity"
+    ],
     "internal/proxy/unwrap_gate_spec_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -4313,6 +4326,13 @@
       "semantics/unwrap-over-time-range-windows",
       "semantics/unwrap-range-last-point",
       "window-bounds-and-step-alignment"
+    ],
+    "internal/proxy/unwrap_recorded_loki_test.go": [
+      "parser-error-and-label-collision",
+      "semantics/unwrap-conversion-error",
+      "semantics/unwrap-conversion-error-postfilter-forms",
+      "semantics/unwrap-duration-seconds",
+      "semantics/unwrap-sample-validity"
     ],
     "internal/proxy/unwrap_samples_test.go": [
       "loki_api_v1_query",
@@ -5758,7 +5778,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 687,
+  "tests_with_markers": 689,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

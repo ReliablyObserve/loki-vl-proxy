@@ -177,11 +177,16 @@ func unwrapComparison(stage *logqlpkg.LabelFilterStage) (label, cmp, literal str
 // the names a numeric comparison is read for.
 func unwrapPlainLabelName(name string) bool {
 	for i, c := range name {
-		if !(c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || i > 0 && c >= '0' && c <= '9') {
+		if !unwrapNameRune(c) || i == 0 && c >= '0' && c <= '9' {
 			return false
 		}
 	}
 	return name != ""
+}
+
+// unwrapNameRune reports an ASCII letter, digit or underscore.
+func unwrapNameRune(c rune) bool {
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
 
 // unwrapParserHints is the set of labels Loki's parsers extract for ra under parent: the labels the series of the
@@ -423,7 +428,7 @@ func statsFunctions(list string) ([]statsFunction, bool) {
 		}
 		fn := list[:open]
 		for _, c := range fn {
-			if !(c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9') {
+			if !unwrapNameRune(c) {
 				return nil, false
 			}
 		}
@@ -1323,11 +1328,12 @@ func (p *Proxy) unwrapStoredRow(ctx context.Context, probe unwrapErrorProbe, row
 	if err != nil || len(rows) == 0 {
 		return nil, err
 	}
+	// The row of the same time and line; VictoriaLogs' filter already holds the line, the time picks among equal
+	// lines of the stream.
 	stored := rows[0]
-	for _, r := range rows {
-		if r["_time"] == row["_time"] {
-			stored = r
-			break
+	for i := len(rows) - 1; i >= 0; i-- {
+		if rows[i]["_msg"] == msg && (rows[i]["_time"] == row["_time"] || stored["_msg"] != msg) {
+			stored = rows[i]
 		}
 	}
 	// The lookup's line is the one the query's line_format stages wrote.

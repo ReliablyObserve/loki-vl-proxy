@@ -2,8 +2,8 @@ id: status-400
 status: 400
 error_type: bad_data
 generated:   # rewritten by conformance/scripts/error_registry.py
-  proxy_call_sites: 25
-  dynamic_sites: 18
+  proxy_call_sites: 24
+  dynamic_sites: 17
   literal_messages:
     - "both start and end parameters required for delete"
     - "delete requires X-Delete-Confirmation: true header for safety"

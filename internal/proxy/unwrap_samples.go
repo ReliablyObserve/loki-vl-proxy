@@ -447,7 +447,8 @@ func unwrapWindowBuckets(spec statsCompatSpec, origSpec originalRangeMetricSpec,
 	form, rangeBy := unwrapWindowForm(query)
 	// The deviation buckets and the rows first and last pick fold no aggregation over a range aggregation grouped by
 	// its own labels: those keep the step buckets (registered as semantics/aggregation-over-range-by-not-applied).
-	return form && !(rangeBy && (manualFunc == "stddev" || manualFunc == "stdvar" || manualFunc == "first" || manualFunc == "last"))
+	rowOrDeviation := manualFunc == "stddev" || manualFunc == "stdvar" || manualFunc == "first" || manualFunc == "last"
+	return form && (!rangeBy || !rowOrDeviation)
 }
 
 // unwrapWindowForm reads query (an outer label_replace aside): form is a range aggregation alone, under topk or
@@ -497,10 +498,4 @@ func unwrapWindowForm(query string) (form, rangeBy bool) {
 		return seriesLevel && (inner.Grouping == nil || !inner.Grouping.Without), rangeBy
 	}
 	return false, rangeBy
-}
-
-// isRangeAggregation reports a range aggregation at the root of expr.
-func isRangeAggregation(expr logqlpkg.Expr) bool {
-	_, ok := expr.(*logqlpkg.RangeAggregation)
-	return ok
 }

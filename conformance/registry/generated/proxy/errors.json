@@ -2629,16 +2629,16 @@
       "writer": "writeError"
     },
     {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "bad_data",
-      "expression": "l.err.Error()",
-      "kind": "dynamic",
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "l.parent, l.err",
+      "kind": "layer",
       "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/unwrap_conversion_error.go finish",
-      "writer": "writeLokiTextError"
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/unwrap_conversion_error.go decide",
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -2680,9 +2680,9 @@
   "summary": {
     "by_status": {
       "400": {
-        "count": 25,
-        "dynamic_sites": 18,
-        "error_text_sites": 10,
+        "count": 24,
+        "dynamic_sites": 17,
+        "error_text_sites": 9,
         "error_type": "bad_data",
         "layer_sites": 0,
         "literal_sites": 7,
@@ -2778,11 +2778,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 179,
+        "count": 180,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 175,
+        "layer_sites": 176,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"

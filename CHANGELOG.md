@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The unwrap code is rewritten from Loki's recorded answers and LogQL's documentation: the conversions of
+  `unwrap`, `duration()`, `duration_seconds()` and `bytes()`, the logfmt reading the conversion-error check and the
+  patterns miner use, the window merge of unwrap range functions from VictoriaLogs buckets, and the conversion-error
+  check (the counting gate, the lookups of a flagged bucket and the Loki error it answers). New tests hold it to
+  answers recorded with Loki's engine and pipeline for the same lines and queries: every conversion over number,
+  duration and size spellings (signs, units, overflow, NaN and infinities, blanks, logfmt and JSON lines), the
+  labels the logfmt, JSON, unpack and regexp parsers give generated lines, and the status and text of the error
+  over 30 query shapes. The VictoriaLogs requests and the answers are unchanged, except that stddev_over_time and
+  stdvar_over_time over a range longer than the step merge their buckets in two passes (a window's value can differ
+  from the previous build in its last bit, as close to the exact value as before). Two fuzz targets join
+  fuzz-smoke.
 - The tests that compare the proxy's metric answers with Loki's now take Loki's answer from Loki itself: answers
   recorded with Loki's query engine and request parser over the same lines and requests (test/oracle/loki, used
   only in tests), for binary operators and vector matching, topk and bottomk, vector aggregations (nested,

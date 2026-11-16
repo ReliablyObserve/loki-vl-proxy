@@ -2109,6 +2109,9 @@
     "internal/proxy/unwrap_extent_cache_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/unwrap_extent_cache_test.go | semantics/unwrap-gate-parsefloat-divergences",
     "internal/proxy/unwrap_first_window_test.go | semantics/unwrap-conversion-error",
+    "internal/proxy/unwrap_fuzz_test.go | parser-error-and-label-collision",
+    "internal/proxy/unwrap_fuzz_test.go | semantics/unwrap-conversion-error",
+    "internal/proxy/unwrap_fuzz_test.go | semantics/unwrap-sample-validity",
     "internal/proxy/unwrap_gate_spec_test.go | architecture-syntax-package-layering",
     "internal/proxy/unwrap_over_time_reference_test.go | semantics/unwrap-over-time-range-windows",
     "internal/proxy/unwrap_over_time_reference_test.go | window-bounds-and-step-alignment",
@@ -2124,6 +2127,11 @@
     "internal/proxy/unwrap_range_last_point_test.go | semantics/unwrap-over-time-range-windows",
     "internal/proxy/unwrap_range_last_point_test.go | semantics/unwrap-range-last-point",
     "internal/proxy/unwrap_range_last_point_test.go | window-bounds-and-step-alignment",
+    "internal/proxy/unwrap_recorded_loki_test.go | parser-error-and-label-collision",
+    "internal/proxy/unwrap_recorded_loki_test.go | semantics/unwrap-conversion-error",
+    "internal/proxy/unwrap_recorded_loki_test.go | semantics/unwrap-conversion-error-postfilter-forms",
+    "internal/proxy/unwrap_recorded_loki_test.go | semantics/unwrap-duration-seconds",
+    "internal/proxy/unwrap_recorded_loki_test.go | semantics/unwrap-sample-validity",
     "internal/proxy/unwrap_samples_test.go | loki_api_v1_query",
     "internal/proxy/unwrap_samples_test.go | loki_api_v1_query_range",
     "internal/proxy/unwrap_samples_test.go | semantics/unwrap-duration-seconds",
@@ -2948,7 +2956,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 686,
+      "go": 688,
       "playwright": 1
     },
     "page_kinds": {
