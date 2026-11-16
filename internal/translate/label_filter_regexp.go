@@ -9,7 +9,7 @@ import (
 // LokiLabelFilterPattern returns the pattern whose whole-value match,
 // ^(?:pattern)$, selects what Loki's label filter `| label =~ "value"`
 // selects. Unlike a stream-selector matcher, Loki does not anchor a label
-// filter's regexp as written (registry semantics/label-filter-regexp-anchoring):
+// filter's regexp as written (registry profiles/label-filter-regexp-anchoring):
 // it first tries to simplify the regexp and only anchors, as ^(?:re)$ and
 // without the s flag, what it cannot simplify. The simplifier turns
 //   - a literal into an equality check, case-insensitively under (?i);

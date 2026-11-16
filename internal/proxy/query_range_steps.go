@@ -27,7 +27,7 @@ import (
 // extents of the response per split, the missing part evaluated and merged by
 // series labels, nothing newer than max_cache_freshness_per_query (Loki's
 // configuration reference, https://grafana.com/docs/loki/latest/configure/;
-// registry semantics/unwrap-query-range-extent-cache).
+// registry quality/unwrap-query-range-extent-cache).
 //
 // It is exact because a step's sample is a function of the lines in its
 // window (t-range, t] alone (registry semantics/stddev-stdvar-over-time-range-window), and every

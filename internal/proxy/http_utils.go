@@ -598,8 +598,7 @@ func writeLokiRulerJSON(w http.ResponseWriter, code int, msg, contentType string
 }
 
 // statusFromUpstreamErr classifies a failed backend call (or the proxy work
-// on its answer) into Loki's status set (recorded answers:
-// internal/lokierr/testdata/loki_error_answers.jsonl): a cancellation is 499,
+// on its answer) into Loki's status set: a cancellation is 499,
 // a deadline 504, a rejected query or a Loki limit 400, a full queue 429 and
 // every other failure 500. Loki never answers a query with 502, 503 or 422. The status
 // is also the one recorded in upstream metrics and logs (upstreamErrorStatus).
@@ -663,7 +662,7 @@ func statusFromUpstreamErr(err error) int {
 	return http.StatusInternalServerError
 }
 
-// Loki's fixed client texts (internal/lokierr/testdata/loki_error_answers.jsonl).
+// Loki's fixed client texts.
 const (
 	lokiErrClientCanceled = "the request was cancelled by the client"
 	// Loki returns a failed storage call's own error text and
