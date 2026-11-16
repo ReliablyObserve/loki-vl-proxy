@@ -16,18 +16,42 @@ const errEmptyCompatibleMatchers = `parse error : queries require at least one r
 
 // validateSemantics walks the AST and enforces constraints that cannot be
 // caught by the parser alone. Returns a Loki-compatible error string, or ""
-// if the expression is valid.
+// if the expression is valid. Loki checks the whole parsed tree before it builds
+// any pipeline, so the checks of the tree answer ahead of every build error.
 func validateSemantics(expr Expr, raw string) string {
+	if msg := semanticPass(expr, raw, false); msg != "" {
+		return msg
+	}
+	return semanticPass(expr, raw, true)
+}
+
+// semanticPass walks the AST for the checks of one of Loki's phases: those over the parsed tree (the actions a
+// query that parsed still carries, a range aggregation's grouping and unwrap, binary operands, a vector operation's
+// parameter, label_replace, the empty-compatible selector), or with build the pipeline build of every log query.
+func semanticPass(expr Expr, raw string, build bool) string {
 	switch x := expr.(type) {
 	case *LogQuery:
-		return validateLogQuerySemantics(x, false)
+		return validateLogQuerySemantics(x, false, build)
 	case *BadLiteralExpr:
+		if build {
+			return ""
+		}
 		return x.Err
 	case *RangeAggregation:
-		return validateRangeAggSemantics(x, raw)
+		return validateRangeAggSemantics(x, raw, build)
 	case *VectorAggregation:
-		return validateSemantics(x.Inner, raw)
+		// Loki checks a node before its operand: the operation's parameter first.
+		if x.treeErr != "" && !build {
+			return x.treeErr
+		}
+		return semanticPass(x.Inner, raw, build)
 	case *BinOpExpr:
+		if build {
+			if s := semanticPass(x.Left, raw, true); s != "" {
+				return s
+			}
+			return semanticPass(x.Right, raw, true)
+		}
 		// Log stream queries cannot participate in binary metric operations: Loki names the type of the
 		// operand, the left one first, before it looks at a literal.
 		if msg := binaryLogOperandError(x.Op, "left", x.Left); msg != "" {
@@ -45,13 +69,23 @@ func validateSemantics(expr Expr, raw string) string {
 				return fmt.Sprintf("parse error : unexpected literal for right leg of logical/set binary operation (%s): %f", x.Op, r.Value)
 			}
 		}
-		if s := validateSemantics(x.Left, raw); s != "" {
+		if s := semanticPass(x.Left, raw, false); s != "" {
 			return s
 		}
-		return validateSemantics(x.Right, raw)
+		return semanticPass(x.Right, raw, false)
 	case *OpaqueMetricExpr:
 		// label_replace(inner, ...) and similar wrappers: Loki validates the
 		// wrapped sample expression like any other.
+		if build {
+			inner := x.Inner
+			if inner == nil {
+				inner, _ = opaqueFirstArgument(raw, x.Raw)
+			}
+			if inner != nil {
+				return semanticPass(inner, raw, true)
+			}
+			return ""
+		}
 		if x.Func == "vector" {
 			var lokiErr *ParseError
 			if err := vectorArgumentError(raw, x.Raw); errors.As(err, &lokiErr) {
@@ -67,7 +101,7 @@ func validateSemantics(expr Expr, raw string) string {
 			return err.Error()
 		}
 		if inner != nil {
-			if msg := validateSemantics(inner, raw); msg != "" {
+			if msg := semanticPass(inner, raw, false); msg != "" {
 				return msg
 			}
 		}
@@ -206,15 +240,15 @@ func labelReplaceArgumentsError(call string) error {
 // optimisation (pkg/logql/optimize.go) drops a line_format stage before the
 // pipeline is built, unless a parser or line filter follows it, so only a
 // line_format that survives that rule can report an invalid template.
-func validateLogQuerySemantics(lq *LogQuery, lineIndependent bool) string {
+func validateLogQuerySemantics(lq *LogQuery, lineIndependent, build bool) string {
+	if build {
+		return pipelineBuildError(lq.Pipeline, lineIndependent)
+	}
 	parseMsg, emptyMsg := logQueryParseErrors(lq)
 	if parseMsg != "" {
 		return parseMsg
 	}
-	if emptyMsg != "" {
-		return emptyMsg
-	}
-	return pipelineBuildError(lq.Pipeline, lineIndependent)
+	return emptyMsg
 }
 
 // logQueryParseErrors returns the error Loki raises while it parses a log query (a selector regex, then a stage's;
@@ -264,11 +298,50 @@ func validateSelectorSemantics(sel *StreamSelector) string {
 	return ""
 }
 
-// invalidRegexPrefix starts the message for a selector regex that does not parse.
-const invalidRegexPrefix = "parse error at line 1, col 1: parse error : invalid regex: "
-
+// invalidRegexMessage is Loki's parse error for a selector regex that does not parse: the regexp package's error
+// without a position, as for a label filter regex.
 func invalidRegexMessage(err error) string {
-	return invalidRegexPrefix + err.Error()
+	return newParseError(0, 0, err.Error()).Msg
+}
+
+// firstActionError is the first error, in the order of the text, that Loki raises while it parses expr (a log
+// query's selector regexes and its stages, logQueryActionError), or "". It reads a call kept as text through its typed
+// sample expression.
+func firstActionError(expr Expr) string {
+	switch x := expr.(type) {
+	case *LogQuery:
+		return logQueryActionError(x)
+	case *RangeAggregation:
+		return firstActionError(x.Inner)
+	case *VectorAggregation:
+		return firstActionError(x.Inner)
+	case *BinOpExpr:
+		if msg := firstActionError(x.Left); msg != "" {
+			return msg
+		}
+		return firstActionError(x.Right)
+	case *OpaqueMetricExpr:
+		if x.Inner != nil {
+			return firstActionError(x.Inner)
+		}
+	}
+	return ""
+}
+
+// selectorRegexError is the error of the first regex matcher of a selector that does not parse, or "".
+func selectorRegexError(sel *StreamSelector) string {
+	if sel == nil {
+		return ""
+	}
+	for _, m := range sel.Matchers {
+		if m.Op != MatchRe && m.Op != MatchNotRe {
+			continue
+		}
+		if _, err := matcherMatchesEmpty(m); err != nil {
+			return invalidRegexMessage(err)
+		}
+	}
+	return ""
 }
 
 // matcherMatchesEmpty mirrors Prometheus labels.Matcher.Matches(""). Like
@@ -294,16 +367,15 @@ func matcherMatchesEmpty(m LabelMatcher) (bool, error) {
 	return false, nil
 }
 
-func validateRangeAggSemantics(ra *RangeAggregation, raw string) string {
-	// quantile_over_time phi must be in [0, 1] — negative is rejected, >1 is clamped externally.
-	if ra.Op == RangeQuantileOverTime && ra.HasParam && ra.Param < 0 {
-		phi := strconv.FormatFloat(ra.Param, 'f', -1, 64)
-		return "parse error at line 1, col 1: invalid parameter for quantile_over_time: expected range [0, 1] but got " + phi
-	}
-
+func validateRangeAggSemantics(ra *RangeAggregation, raw string, build bool) string {
 	lq, isLogQuery := ra.Inner.(*LogQuery)
 	if !isLogQuery {
-		return validateSemantics(ra.Inner, raw)
+		return semanticPass(ra.Inner, raw, build)
+	}
+	if build {
+		// Build the inner pipeline as Loki does.
+		lineIndependent := ra.Op != RangeBytesRate && ra.Op != RangeBytesOverTime
+		return pipelineBuildError(lq.Pipeline, lineIndependent)
 	}
 
 	parseMsg, emptyMsg := logQueryParseErrors(lq)
@@ -329,12 +401,7 @@ func validateRangeAggSemantics(ra *RangeAggregation, raw string) string {
 		return fmt.Sprintf("parse error : invalid aggregation %s with unwrap", ra.Op)
 	}
 
-	if emptyMsg != "" {
-		return emptyMsg
-	}
-	// Build the inner pipeline as Loki does.
-	lineIndependent := ra.Op != RangeBytesRate && ra.Op != RangeBytesOverTime
-	return pipelineBuildError(lq.Pipeline, lineIndependent)
+	return emptyMsg
 }
 
 // The range aggregation rules of Loki v3.7 (recorded with the test oracle: TestRangeAggregationRulesLikeLoki).

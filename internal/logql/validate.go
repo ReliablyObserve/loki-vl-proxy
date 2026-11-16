@@ -41,42 +41,75 @@ func ValidateLogQLExpr(query string) (Expr, string) {
 	return validateLogQL(query)
 }
 
+// ValidateLogQLPhases is ValidateLogQLExpr with the error of Loki's pipeline build apart: msg is the error of every
+// earlier phase (the parser and its actions, the lexer, the checks over the parsed tree), build the error of a stage
+// Loki refuses to build, reported only when msg is "". With a build error the parsed expression is returned, so a
+// caller can run checks Loki makes over the tree before it builds (the query plan's) and answer in Loki's order.
+func ValidateLogQLPhases(query string) (expr Expr, msg, build string) {
+	expr, msg, unknown := validateLogQLTree(query)
+	if msg != "" || expr == nil {
+		return nil, msg, ""
+	}
+	if build = semanticPass(expr, query, true); build != "" {
+		return expr, "", build
+	}
+	if unknown != "" {
+		// A name the translation cannot carry: the proxy's own refusal, after every check Loki makes.
+		return nil, unknown, ""
+	}
+	return expr, "", ""
+}
+
 // validateLogQL is ValidateLogQL that also returns the parsed expression (nil
 // for the bare wildcard or on error), so callers can inspect it without a
 // second parse.
 func validateLogQL(query string) (Expr, string) {
+	expr, msg, build := ValidateLogQLPhases(query)
+	if build != "" {
+		return nil, build
+	}
+	return expr, msg
+}
+
+// validateLogQLTree is validateLogQL without the pipeline build: the parser, its actions, the lexer and the checks
+// over the parsed tree. unknown is the refusal of a name the translation cannot carry, for the caller to report
+// after the build.
+func validateLogQLTree(query string) (expr Expr, msg, unknown string) {
 	if msg := InputSizeError(query); msg != "" {
-		return nil, msg
+		return nil, msg, ""
 	}
 	// Bare wildcard: some clients send query=* as "all streams". The parser
 	// would reject it, but translateQueryWithContext handles * specially so
 	// it must be allowed through validation unchanged. Only the white space
 	// Loki's lexer skips is dropped around it.
 	if isWildcard(query) {
-		return nil, ""
+		return nil, "", ""
 	}
 
 	// Structural parse. Loki does not trim the query: white space before the first token and after the last one
 	// counts in the line and column of an error, a trailing character that is not white space to Loki (a
 	// vertical tab) is a token, and a 0b literal after leading white space is read as after any white space.
 	// An empty query and one of white space only are errors of the parser, at the end of the text.
-	expr, unknown, plainUnwrap, err := parseExpression(query)
+	expr, unknownName, plainUnwrap, err := parseExpressionTree(query)
 	if err != nil {
-		return nil, formatParseError(err, query)
+		return nil, formatParseError(err, query), ""
 	}
 	if plainUnwrap != nil {
-		return nil, plainUnwrap.Msg
+		return nil, plainUnwrap.Msg, ""
 	}
 
-	// Semantic pass over the typed AST.
-	if msg := validateSemantics(expr, query); msg != "" {
-		return nil, msg
+	// Semantic pass over the typed AST. Loki raises its parser actions while it reads the query, ahead of every
+	// check over the parsed tree, in the order of the text.
+	if msg := semanticPass(expr, query, false); msg != "" {
+		if action := firstActionError(expr); action != "" {
+			return nil, action, ""
+		}
+		return nil, msg, ""
 	}
-	if unknown != nil {
-		return nil, unknown.Msg
+	if unknownName != nil {
+		unknown = unknownName.Msg
 	}
-
-	return expr, ""
+	return expr, "", unknown
 }
 
 // formatParseError converts a Go parse error to a Loki-compatible error
@@ -145,7 +178,12 @@ func ValidateMatchersQuery(query string) string {
 	// every selector's matchers, before rejecting a non-selector expression.
 	lq, ok := expr.(*LogQuery)
 	if !ok || len(lq.Pipeline) > 0 {
-		if msg := validateSemantics(expr, query); msg == errEmptyCompatibleMatchers || strings.HasPrefix(msg, invalidRegexPrefix) {
+		// Loki's parser actions (a selector, label filter, drop or keep regex, a regexp or pattern parser) fail
+		// syntax.ParseExpr itself, ahead of the selector rule.
+		if msg := firstActionError(expr); msg != "" {
+			return msg
+		}
+		if msg := validateSemantics(expr, query); msg == errEmptyCompatibleMatchers {
 			return msg
 		}
 		return errOnlyLabelMatchers
