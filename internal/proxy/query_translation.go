@@ -1524,6 +1524,7 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 	params := url.Values{}
 	params.Set("query", logsqlQuery+pre+" | stats by ("+group+") "+statsAggFunc)
 	setSlidingStatsRangeParams(params, fetchStart, time.Unix(0, evalEnd), bucket)
+	params = p.levelLessFirstRead(ctx, "/select/logsql/stats_query_range", params)
 
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
 	if err != nil {

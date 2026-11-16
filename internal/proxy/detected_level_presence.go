@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -240,9 +241,13 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 	query := params.Get("query")
 	chain, shared := levelChains(ctx, query)
 	// One chain only: its base is the probe's, and a second chain (a query of
-	// several segments) may sit on a different one.
+	// several segments) may sit on a different one. The read of the streams
+	// without a level label (levelLessRead) is narrowed on the instant stats
+	// route too, and its witness rides every stats pipe.
 	at := strings.Index(query, chain)
-	if path != "/select/logsql/stats_query_range" || at < 0 || strings.Count(query, chain) != 1 {
+	levelLess := levelLessRead(ctx)
+	statsPath := path == "/select/logsql/stats_query_range" || levelLess && path == "/select/logsql/stats_query"
+	if !statsPath || at < 0 || strings.Count(query, chain) != 1 {
 		return params, nil
 	}
 	from, okFrom := parseFlexibleUnixNanos(params.Get("start"))
@@ -263,10 +268,14 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 	rest, deleted := strings.CutPrefix(rest, levelChainDelete)
 	witness := levelWitnessPipes(mask)
 	if witness != "" {
-		var ok bool
-		if rest, ok = withWitnessGroup(rest); !ok {
+		grouped, ok := withWitnessGroup(rest)
+		if !ok && levelLess {
+			grouped, ok = logsql.WithGroupKeyInEveryStats(rest, levelWitnessField)
+		}
+		if !ok {
 			return params, nil // a stats pipe the witness cannot ride: the full chain
 		}
+		rest = grouped
 	}
 	if deleted {
 		pruned += levelChainDelete

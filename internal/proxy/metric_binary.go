@@ -366,6 +366,7 @@ func (p *Proxy) fetchStatsQueryRangeBody(r *http.Request, logsqlQuery string, tu
 	if params == nil {
 		params = buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	}
+	params = p.levelLessFirstRead(r.Context(), "/select/logsql/stats_query_range", params)
 
 	// Use vlPost directly (not coalesced) so readBodyLimited can bound the response
 	// before the full body is allocated. The coalescer's 256 MB cap is too generous
@@ -1772,6 +1773,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, stats ph
 	// Coalesce concurrent identical requests to avoid thundering herd when the
 	// compat cache expires under high concurrency. All 50 concurrent clients
 	// asking for the same instant metric query share one VL round-trip.
+	params = p.levelLessFirstRead(r.Context(), "/select/logsql/stats_query", params)
 	key := "stats_query:" + getOrgID(r.Context()) + ":" + params.Encode()
 	status, body, err := p.vlPostCoalesced(r.Context(), key, "/select/logsql/stats_query", params)
 	if err != nil {
