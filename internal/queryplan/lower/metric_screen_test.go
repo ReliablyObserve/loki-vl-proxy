@@ -81,8 +81,8 @@ func TestScreenMetric(t *testing.T) {
 		{`label_replace(rate({app="a"}[5m]), "d" "e", "$1", "app", "x")`, ""},
 		{`label_replace(sum by (service_name) (rate({e="p"}[5m])), "s", "$1", "service_name", "(.*)")`, ""},
 		{`label_replace(rate({a=~"x\\(y"}[5m]) + rate({b="z"}[5m]), "d", "$1", "app", "(.*)")`, ""},
-		{`max by (service_name) (max_over_time({e="p"} | logfmt | unwrap latency_ms | __error__="" [1m]))`, ""},
-		{`first_over_time({app="a"} | json duration_ms | drop pod | unwrap duration_ms [5m])`, ""},
+		{`max by (service_name) (max_over_time({e="p"} | logfmt | unwrap latency_ms | __error__="" [1m]))`, "VectorAgg"},
+		{`first_over_time({app="a"} | json duration_ms | drop pod | unwrap duration_ms [5m])`, "RangeAgg"},
 		// Label filters, values and names the translator reads unlike Loki.
 		{`sum(count_over_time({app="api"} |= "x" | json | status == 500 [5m]))`, ""},
 		{`sum(count_over_time({app="api"} | logfmt | status = 500 [5m]))`, ""},

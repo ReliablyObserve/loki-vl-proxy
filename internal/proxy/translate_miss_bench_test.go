@@ -104,6 +104,19 @@ var translateMissShapes = []struct {
 		return `max_over_time({app="api"} |= "` + i + `" | json | unwrap d [5m]) by (app)`
 	}},
 	{"range unpack", func(i string) string { return `count_over_time({app="api"} |= "` + i + `" | unpack | x="y" [5m])` }},
+	// A label filter or a drop after a parser under a label the lowering resolves under its other spellings.
+	{"vector parser label filter", func(i string) string {
+		return `sum by (service_name) (sum_over_time({app="api"} |= "` + i + `" | json | unwrap duration_ms | __error__="" [5m]))`
+	}},
+	{"vector parser label drop", func(i string) string {
+		return `sum by (user_id) (count_over_time({app="api"} |= "` + i + `" | json | drop __error__ [5m]))`
+	}},
+	{"vector parser label filter identity", func(i string) string {
+		return `sum(avg_over_time({app="api"} |= "` + i + `" | json | unwrap duration_ms | __error__="" [5m]))`
+	}},
+	{"range parser label filter", func(i string) string {
+		return `avg_over_time({app="api"} |= "` + i + `" | json | unwrap duration_ms | __error__="" [5m]) by (service_name)`
+	}},
 	{"binary operands", func(i string) string {
 		return `sum(rate({app="api"} |= "` + i + `" [5m])) / sum(rate({app="api"}[5m]))`
 	}},

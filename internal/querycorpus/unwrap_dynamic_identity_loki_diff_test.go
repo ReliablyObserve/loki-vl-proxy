@@ -141,12 +141,6 @@ var dynamicIdentityKnown = func() map[string]map[string]string {
 			add(perSeries, sliding, q)
 		}
 	}
-	// A label filter between the parser and an unwrapped label whose name holds an underscore (duration_ms, which the
-	// line can spell duration.ms or duration-ms): the lowering does not serve the query, and the string translator's
-	// series are the stream and each line.
-	for _, fn := range []string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time"} {
-		add("semantics/unwrap-per-series-identity-label-filter", all[1:], fmt.Sprintf(`sum(%s{job="de"} | json | __error__="" | unwrap duration_ms [5m]))`, keepIdentityHead(fn)))
-	}
 	return known
 }()
 

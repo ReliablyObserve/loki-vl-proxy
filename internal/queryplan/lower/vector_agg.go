@@ -138,11 +138,6 @@ func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src 
 	if err != nil {
 		return builtVector{}, err
 	}
-	// A fold over a parser, with a label filter or a drop after it, costs more allocations to write than the
-	// translator spends on the same text (the stage's own lowering does).
-	if without && log.parser && log.afterParser {
-		return builtVector{}, &NotLoweredError{Construct: "VectorAgg" + costConstruct}
-	}
 	// The series identity of count, min, max, avg and rate comes from the parsers the translator finds in the text
 	// (a quoted `| json` drops the level from it), and a rate reads the unwrapped label there.
 	if readsUnwrapOrParser(ra.In, log, rate, !log.parser) {

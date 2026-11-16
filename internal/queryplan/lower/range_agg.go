@@ -179,8 +179,6 @@ type metricLog struct {
 	// unpacks counts the json and logfmt unpack pipes (at most 8 are told apart), logfmtMask says which of them are
 	// logfmt (bit i for the i-th), and bareMask which are the plain pipe with no field list.
 	unpacks, logfmtMask, bareMask uint8
-	// afterParser says a label filter or a drop stands after a parser stage.
-	afterParser bool
 	// levelChain says the pipes derive detected_level for a filter on it (detectedLevelStages): a grouping by it
 	// reads that value, the translator derives it once.
 	levelChain bool
@@ -258,7 +256,7 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 		}
 	}
 	m := metricLog{head: head, restore: restore, pipes: pipesText, parser: hasParser(in), copies: copies, bareLogfmt: bare,
-		unpacks: uint8(min(unpacks, 255)), logfmtMask: mask, bareMask: bareMask, afterParser: filteredAfterParser(in), levelChain: levelChain}
+		unpacks: uint8(min(unpacks, 255)), logfmtMask: mask, bareMask: bareMask, levelChain: levelChain}
 	// The translator narrows the unpack when its text of the query holds exactly one unpack pipe, quoted text included.
 	if unpacks != 1 || strings.Count(head, "| unpack_")+strings.Count(restore, "| unpack_")+strings.Count(m.pipes, "| unpack_") != 1 {
 		m.bareLogfmt = -1

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `sum`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time` and
+  `stdvar_over_time` after `| json` or `| logfmt` with a label filter after the parser, before or after the unwrap
+  (`sum(stddev_over_time({app="api"} | json | __error__="" | unwrap duration_ms [5m]))`), now read Loki's series:
+  the stream plus every parsed label except the unwrapped one, as the same queries without the filter already do. They
+  read the stream and each line as a series, so a range query answered 0 where Loki sums the deviation of each series
+  (`semantics/unwrap-per-series-identity-label-filter`). A range longer than the step keeps the stream's series, as
+  without the filter. Answers cached before are not served again.
+
+### Changed
+
+- Metric queries with a label filter or a drop after a `| json` or `| logfmt` parser, under a grouping or unwrapped
+  label whose name holds `_` (`sum by (service_name) (sum_over_time({app="api"} | json | unwrap duration_ms |
+  __error__="" [5m]))`, `sum by (user_id) (count_over_time({app="api"} | json | drop __error__ [5m]))`), and the same
+  stages in a `without` fold over a parser or behind a trailing `keep`, are translated by the query plan. The requests
+  sent to VictoriaLogs are the same as before, and the translation costs fewer allocations than the string
+  translator's.
+
 ## [2.301.0] - 2026-11-15
 
 ### Fixed

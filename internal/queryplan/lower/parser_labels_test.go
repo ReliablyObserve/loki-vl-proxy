@@ -87,11 +87,7 @@ func TestPlanDelegatesParserLabels(t *testing.T) {
 		`min(count_over_time({app="a"} | logfmt | keep __error__ [5m]))`:                          "VectorAgg keep identity",
 		`sum by (level_extracted) (count_over_time({app="a"} | json | level_extracted="x" [5m]))`: "VectorAgg parser extracted label",
 		`sum_over_time({app="a"} | logfmt | a_extracted="x" | unwrap a_extracted [5m])`:           "RangeAgg parser extracted label",
-		`sum by (a_b) (count_over_time({app="a"} | json | a_b != "" [5m]))`:                       "VectorAgg parser label cost",
 		`sum by (a_b) (rate({app="a"} | json | a_b != "" [5m]))`:                                  "VectorAgg parser label filter",
-		`sum by (a_b) (count_over_time({app="a"} | json | status >= 500 [5m]))`:                   "VectorAgg parser label cost",
-		`sum by (service_version) (count_over_time({app="a"} | json | drop __error__ [5m]))`:      "VectorAgg parser label cost",
-		`sum_over_time({app="a"} | json | status >= 500 | unwrap duration_ms [5m])`:               "RangeAgg parser label cost",
 		`max(sum without (pod) (max_over_time({app="a"} | logfmt amount | unwrap amount [5m])))`:  "VectorAgg nested unwrap",
 		`sum by (a_extracted) (count_over_time({app="a"} | json |= "| unpack_json" [5m]))`:        "VectorAgg parser extracted label",
 	} {

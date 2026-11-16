@@ -22,8 +22,6 @@ import (
 //     unwrap, a range function that reads an unwrapped value with no unwrap;
 //   - a binary operation inside an aggregation, more than one at the top, one with a without clause or a
 //     label_replace operand (the binary route evaluates those operand by operand), one with no range function;
-//   - a fold or a grouping by a label that may be a sanitized parser key, or an unwrap of one, with a label filter or a
-//     drop after the parser (the lowering leaves those to the translator as costing more to write);
 //   - a label filter with an equality on a number, duration or byte size after a json or logfmt parser
 //     (WritesNumericEquality), or a comparison with a signed number;
 //   - a word VictoriaLogs reserves as a field name (_time, _msg, _stream, _stream_id in any letter case) before a parser
@@ -40,7 +38,7 @@ func ScreenMetric(query string) string {
 	query = strings.TrimSpace(query)
 	var s metricScan
 	if !s.scan(query) || s.ranges == 0 || s.needsUnwrap && !s.unwrap || s.keep && s.unwrap ||
-		s.nestedVector && s.unwrap || s.lrBinary && s.quotedParen || s.parsed && s.afterParser && (s.without || s.candidate) {
+		s.nestedVector && s.unwrap || s.lrBinary && s.quotedParen {
 		return ""
 	}
 	if s.binary {
@@ -161,13 +159,13 @@ type metricScan struct {
 	// ranges, vectors and labelReplaces count those calls; labelReplaceCommas the commas between the arguments of the
 	// top label_replace.
 	ranges, vectors, labelReplaces, labelReplaceCommas int
-	// parsed is a json or logfmt parser seen, afterParser a label filter or a drop after one.
-	parsed, afterParser bool
+	// parsed is a json or logfmt parser seen.
+	parsed bool
 	// needsUnwrap is a range function that reads an unwrapped value; unwrap the unwrap stage, unwrapLabel the label it
 	// names next.
 	needsUnwrap, unwrap, unwrapLabel bool
-	// without, keep: those words; candidate: a grouping or unwrapped label that may be a sanitized parser key.
-	without, keep, candidate bool
+	// without, keep: those words.
+	without, keep bool
 	// parsedOther is a regexp or pattern parser; groupsServiceName a clause naming service_name.
 	parsedOther, groupsServiceName bool
 	// log is set for a log query (ScreenLogStages): its whole text after the selector is a pipeline. stages are the
@@ -480,7 +478,6 @@ func (s *metricScan) label(w string) (done, ok bool) {
 	case s.brace > 0:
 		return true, true // a selector's label name
 	case s.clauseAt > 0 && s.paren == s.clauseAt:
-		s.candidate = s.candidate || translate.ParsedLabelCandidate(w)
 		s.groupsServiceName = s.groupsServiceName || w == "service_name"
 		return true, true
 	case !s.unwrapLabel:
@@ -491,7 +488,6 @@ func (s *metricScan) label(w string) (done, ok bool) {
 		return true, true
 	}
 	s.unwrapLabel = false
-	s.candidate = s.candidate || translate.ParsedLabelCandidate(w)
 	// An unwrap of a reserved name in another letter case (UnwrapsReservedFieldOtherCase).
 	return true, !reservedWord(w)
 }
@@ -519,8 +515,6 @@ func (s *metricScan) keyword(q, w string, j int) (done, ok bool) {
 		return true, s.pipeline()
 	case "json", "logfmt":
 		s.parsed = true
-	case "drop":
-		s.afterParser = s.afterParser || s.parsed
 	case "keep":
 		s.keep = true
 	case "unwrap":
@@ -600,10 +594,6 @@ func (s *metricScan) operator(q string, i int) (int, bool) {
 		}
 		if (s.paren > 0 || s.log) && !s.comparison(q, end+1, op) {
 			return 0, false
-		}
-		if s.pipeline() {
-			s.afterParser = s.afterParser || s.parsed
-			s.afterParser = s.afterParser || s.parsedOther
 		}
 	default:
 		return 0, false
