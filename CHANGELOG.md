@@ -31,6 +31,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   empty success instead of `400 only label matchers are supported`, so an unmoved window recorded that instead of
   the answer a client gets. A row added by hand with no answer yet is recorded whatever it is marked.
 
+### Performance
+
+- The parse-risk probes of a `| json` metric, the `detected_level` keys probe and the JSON hazard filter cost
+  VictoriaLogs 7-24 ms of query parsing each, on every request whose window is not covered yet (a refresh that
+  moves the window). Each held a `[^"]`-style class, and Go's regexp package prints such a class in about a
+  millisecond; VictoriaLogs prints every regexp several times per query parse. The classes are now written as a run
+  of non-letters and a run of letters (`vlNotInRun`), which matches the same text. Measured with VictoriaLogs' own
+  query parser on v1.49.0 and v1.53.0:
+  - the partial-parse probe: 17-24 ms to 0.24-0.39 ms;
+  - the `detected_level` keys probe: 7.4-8.2 ms to 0.37-0.44 ms;
+  - the hazard filter: 7.4-7.9 ms to 0.07 ms.
+  The `detected_level` escaped-value regexp now runs only on lines holding a backslash. The lines every probe
+  selects and every answer are unchanged (quality/probe-regexp-parse-cost).
+
 ## [2.305.0] - 2026-11-16
 
 ### Fixed
