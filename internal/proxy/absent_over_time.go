@@ -406,9 +406,8 @@ func isAbsentOverTimeQuery(query string) bool {
 
 // mergeAbsentMultiTenant merges the per-tenant answers of an absent_over_time.
 // Loki's multi-tenant querier merges the tenants' samples into one iterator
-// before the evaluator runs (pkg/querier/multi_tenant_querier.go SelectSamples),
-// so a step is absent only when no tenant has a sample, and the series carries
-// the selector's labels alone, never __tenant_id__ (evaluator.go absentLabels).
+// before the evaluator runs, so a step is absent only when no tenant has a sample, and the series carries
+// the selector's labels alone, never __tenant_id__.
 // A tenant's answer holds a step exactly when it has no sample there, so the
 // merged answer is the steps every tenant holds, per series. Samples are
 // compared by label set and value, which the tenants share.
