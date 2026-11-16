@@ -651,8 +651,8 @@ type unwrapPoint struct{ ts, value json.RawMessage }
 // (nil: dropped), and the clean series lose the flag. An answer without a flagged group keeps its bytes, the flag
 // cut out.
 func stripUnwrapFlags(body []byte, nan *unwrapNaN) ([]byte, []float64, error) {
-	if !bytes.Contains(body, []byte(`"`+unwrapBadField+`":"1"`)) && !bytes.Contains(body, []byte(`"`+unwrapBadField+`":"2"`)) {
-		return dropKeptFlag(body, []byte(`"`+unwrapBadField+`":"0"`)), nil, nil
+	if !unwrapFlagged(body) {
+		return dropKeptFlag(body, unwrapKeptFlag), nil, nil
 	}
 	var doc map[string]json.RawMessage
 	if err := json.Unmarshal(body, &doc); err != nil {
@@ -732,6 +732,24 @@ func stripUnwrapFlags(body []byte, nan *unwrapNaN) ([]byte, []float64, error) {
 	return out, times, err
 }
 
+// unwrapKeptFlag is the flag of the clean rows, as an answer writes it.
+var unwrapKeptFlag = []byte(`"` + unwrapBadField + `":"0"`)
+
+// unwrapFlagged reports an answer holding a group of flagged rows (1) or of nan rows (2), in one scan.
+func unwrapFlagged(body []byte) bool {
+	prefix := []byte(`"` + unwrapBadField + `":"`)
+	for i := 0; ; {
+		at := bytes.Index(body[i:], prefix)
+		if at < 0 {
+			return false
+		}
+		i += at + len(prefix)
+		if i < len(body) && (body[i] == '1' || body[i] == unwrapNaNFlag[0]) {
+			return true
+		}
+	}
+}
+
 // unwrapPointsOf reads the points of a series (values) or of a vector sample (value).
 func unwrapPointsOf(raw json.RawMessage, vector bool) ([]unwrapPoint, error) {
 	if len(raw) == 0 {
@@ -758,16 +776,15 @@ func unwrapPointsOf(raw json.RawMessage, vector bool) ([]unwrapPoint, error) {
 }
 
 // dropKeptFlag cuts the clean rows' flag (kept) out of an answer, with the comma that joins it to a neighbour: every
-// ",kept", then every "kept,", then every "kept". The answer is rewritten in place (it is the reader's own copy).
+// ",kept", then every "kept,", then every "kept". The answer is rewritten in place (it is the reader's own copy); a
+// pass that finds nothing costs one scan.
 func dropKeptFlag(body, kept []byte) []byte {
+	var with [64]byte
+	body = cutAll(body, append(append(with[:0], ','), kept...))
 	if !bytes.Contains(body, kept) {
 		return body
 	}
-	var with [64]byte
-	lead := append(append(with[:0], ','), kept...)
-	body = cutAll(body, lead)
-	trail := append(append(with[:0], kept...), ',')
-	body = cutAll(body, trail)
+	body = cutAll(body, append(append(with[:0], kept...), ','))
 	return cutAll(body, kept)
 }
 
@@ -1471,7 +1488,7 @@ func unwrapLokiError(probe unwrapErrorProbe, base map[string]string, line, forma
 	if err == nil {
 		return nil
 	}
-	out := make(map[string]string, len(labels)+2)
+	out := make(map[string]string, len(labels))
 	for name, v := range labels {
 		if parsed[name] && probe.hints != nil && !probe.hints[name] {
 			continue
@@ -1928,7 +1945,12 @@ func (l *unwrapLookupWriter) Write(b []byte) (int, error) {
 		return len(b), nil
 	}
 	if l.status == 0 {
+		// The implicit 200 of a first Write: the defaults every answer writer applies.
 		l.status = http.StatusOK
+		if l.header.Get("Content-Type") == "" {
+			l.header.Set("Content-Type", "application/json")
+		}
+		l.header.Set("X-Content-Type-Options", "nosniff")
 	}
 	l.pass()
 	return l.out.Write(b)

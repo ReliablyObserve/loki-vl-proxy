@@ -31,12 +31,17 @@ func lokiLogfmtPairs(line string, yield func(key, value string)) {
 			pos++
 			continue
 		}
-		start := pos
-		for pos < len(line) && line[pos] > ' ' && line[pos] != '=' && line[pos] != '"' {
+		start, ascii := pos, true
+		for pos < len(line) {
+			c := line[pos]
+			if c <= ' ' || c == '=' || c == '"' {
+				break
+			}
+			ascii = ascii && c < utf8.RuneSelf
 			pos++
 		}
 		key := line[start:pos]
-		if pos < len(line) && line[pos] == '"' || !logfmtKeyValid(key) {
+		if pos < len(line) && line[pos] == '"' || key == "" || !ascii && !logfmtKeyValid(key) {
 			pos = lokiLogfmtSkip(line, pos)
 			continue
 		}
@@ -89,8 +94,12 @@ func lokiLogfmtValue(line string, pos int) (string, int, bool) {
 		return value, end + 1, true
 	}
 	start := pos
-	for pos < len(line) && line[pos] > ' ' {
-		if line[pos] == '=' || line[pos] == '"' {
+	for pos < len(line) {
+		c := line[pos]
+		if c <= ' ' {
+			break
+		}
+		if c == '=' || c == '"' {
 			return "", lokiLogfmtSkip(line, pos), false
 		}
 		pos++
