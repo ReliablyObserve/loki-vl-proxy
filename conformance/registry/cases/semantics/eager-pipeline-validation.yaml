@@ -1,14 +1,17 @@
 id: semantics/eager-pipeline-validation
-title: Invalid pipeline stages fail with 400 regardless of data; Loki answers 200 empty over a range with no data (documented)
+title: Invalid pipeline stages fail with 400 over any window; Loki answers 200 empty over an old window it holds no line for (documented)
 proves:
   - loki-compatible-profile
 consumer: api
-evidence: needs recording
 why: |
-  Loki builds a pipeline (and reports invalid json/logfmt expressions,
-  line_format/label_format templates and ip() arguments) only for a range it
-  reads, so a range with no data answers 200 empty. The proxy validates at
-  parse time and answers Loki's 400 text over any range (KNOWN_ISSUES).
+  Loki answers a pipeline stage it refuses to build (an invalid json or logfmt expression, a line_format or
+  label_format template, a line filter regex or pattern, an ip() argument) with its 400 over a window ending 150
+  minutes or less before now, whatever the window holds, a selector no stream matches and a line filter no line
+  passes included. Over a window ending 165 minutes or more back, where Loki held no line, it answers 200 with an
+  empty result, past the retention too (recorded from a Loki that serves data:
+  internal/lokierr/testdata/loki_build_phase.jsonl, semantics/loki-build-phase-window). Not recorded yet: an old
+  window whose store holds lines of the selector. The proxy reports the build error after Loki's other checks
+  (semantics/loki-error-phase-order) and answers its 400 over any window (KNOWN_ISSUES).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -25,13 +28,13 @@ compare:
   mode: observed
   fields: [status]
   expect: |
-    200 empty over a range without data.
+    200 empty over a window ending 165 minutes or more back that holds no line; 400 over a recent window.
 gap:
   status: documented
   impact: edge
   effort: S
-  area: 'internal/translator validation'
-  loki: 'a pipeline is built only for a range it reads, so a range with no data answers 200 empty'
-  proxy: '400 at parse'
+  area: 'internal/logql semantic.go semanticPass (the build phase), internal/proxy validateQueryPhases'
+  loki: '400 over a window ending 150 minutes or less back; 200 empty over an older empty window'
+  proxy: '400 over any window, after the request, parse and tree checks'
   planned_test: 'TestCompat_EagerValidationEmptyRange (test/e2e-compat, group semantics)'
   clusters: []
