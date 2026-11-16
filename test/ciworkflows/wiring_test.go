@@ -204,6 +204,13 @@ func TestDailyReportBranchRunAndStack(t *testing.T) {
 			}
 		}
 	}
+	// The inventory reads the jobs of ci.yaml's last run on main before it ingests the runs: coverage by a test reads the
+	// test job's own conclusion, not the run's.
+	jobsAt, jobsRun := jobs["inventory"].step(t, "Read the jobs of ci.yaml's last run on main")
+	healthAt, _ := jobs["inventory"].step(t, "Inventory and scheduled workflow health")
+	if jobsAt >= healthAt || !strings.Contains(jobsRun, "ci.yaml.main.jobs.json") || !strings.Contains(jobsRun, "/actions/runs/${run_id}/jobs") {
+		t.Errorf("the inventory does not read ci.yaml's jobs before the health step:\n%s", jobsRun)
+	}
 	verify := jobs["verify"]
 	upAt, up := verify.step(t, "Start the stack")
 	backfillAt, backfill := verify.step(t, "Backfill the log generator's history")

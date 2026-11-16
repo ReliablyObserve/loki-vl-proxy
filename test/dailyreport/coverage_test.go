@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -160,5 +161,88 @@ func TestOnlyFilesCIRunsProveACase(t *testing.T) {
 	o := caseOutcome{verdict: "empty", reason: "both sides hold no line"}
 	if state, _ := coverageOf(o, ciTests([]string{"test/e2e-compat/x_test.go"}), greenCI); state != coverageNone {
 		t.Errorf("an e2e-only case is %s", state)
+	}
+}
+
+// ci.yaml's last run on main ends failure when an e2e shard does, while the test job passed: the run's own conclusion
+// must not hide the cases a test file proves (the first branch run showed 0 proven by a test for this reason).
+func TestARunFailedInAnE2EShardStillHasGreenTests(t *testing.T) {
+	failedRun := &CIRun{Workflow: "ci.yaml", Conclusion: "failure", Date: "2026-11-15", URL: "https://x/ci",
+		Jobs: map[string]string{"test": "success", "test-shard (1)": "success", "e2e-compat": "failure"}}
+	if !failedRun.Green() || !failedRun.testsOnly() {
+		t.Fatalf("a run whose test job succeeded: green %v, tests only %v", failedRun.Green(), failedRun.testsOnly())
+	}
+	for name, run := range map[string]*CIRun{
+		"the test job failed":         {Conclusion: "failure", Jobs: map[string]string{"test": "failure"}},
+		"jobs unknown, run failed":    {Conclusion: "failure"},
+		"test skipped, run failed":    {Conclusion: "failure", Jobs: map[string]string{"test": "skipped"}},
+		"test job absent, run failed": {Conclusion: "failure", Jobs: map[string]string{"e2e-compat": "success"}},
+		"test cancelled":              {Conclusion: "success", Jobs: map[string]string{"test": "cancelled"}},
+		"no run":                      nil,
+	} {
+		if run.Green() {
+			t.Errorf("%s: counted as green", name)
+		}
+	}
+	for name, run := range map[string]*CIRun{
+		"run succeeded, jobs unknown": {Conclusion: "success"},
+		"test skipped, run succeeded": {Conclusion: "success", Jobs: map[string]string{"test": "skipped"}},
+	} {
+		if !run.Green() {
+			t.Errorf("%s: not green", name)
+		}
+	}
+
+	// A case of the real registry, wired to real unit test files: proven by a test on a run that failed elsewhere.
+	in := fixture(t) // reads the registry's schema from this directory, so before the change of directory
+	t.Chdir("../..")
+	var wiring struct {
+		ItemToTests map[string][]string `json:"item_to_tests"`
+	}
+	if err := readJSON("conformance/registry/generated/wiring.json", &wiring); err != nil {
+		t.Fatal(err)
+	}
+	const known = "drilldown/fields-pill-json-path-extracted-empty"
+	files := wiring.ItemToTests[known]
+	if len(files) == 0 {
+		t.Fatalf("%s is no longer wired; pin another case", known)
+	}
+	tests := ciTests(files)
+	if len(tests) == 0 {
+		t.Fatalf("none of %v is a file ci.yaml's test job runs", files)
+	}
+	o := caseOutcome{verdict: "empty", reason: "both sides hold no line"}
+	if state, _ := coverageOf(o, tests, failedRun); state != coverageTest {
+		t.Errorf("%s on a run that failed in an e2e shard: %s", known, state)
+	}
+	if state, why := coverageOf(o, tests, &CIRun{Workflow: "ci.yaml", Conclusion: "failure", Jobs: map[string]string{"test": "failure"}}); state != coverageNone ||
+		!strings.Contains(why.reason, "its test job failure") {
+		t.Errorf("a red test job: %s %+v", state, why)
+	}
+
+	// End to end through Build: the runs record carries the jobs, the summary counts the case.
+	runs := filepath.Join(t.TempDir(), "runs.json")
+	write(t, runs, `{"fetched":"2026-11-15T07:00:00Z","workflows":{
+		"query-corpus.yaml":{"main":{"conclusion":"success","date":"2026-11-15","url":"https://x/1"}},
+		"ci.yaml":{"main":{"conclusion":"failure","date":"2026-11-15","url":"https://x/ci","jobs":{"test":"success","e2e-compat":"failure"}}}}}`)
+	in.Runs = runs
+	in.Wiring = write(t, filepath.Join(t.TempDir(), "wiring.json"), `{"item_to_tests":{"a/open2":["`+tests[0]+`"]}}`)
+	write(t, filepath.Join(in.CasesDir, "cases-v1.53.0.json"), `{"date":"2026-11-14T06:00:00Z","commit":"c0ffee","mode":"live","loki_version":"3.7.9","victorialogs_version":"v1.53.0",
+		"proxy_flags":"-x","window_end":"2026-11-14T05:58:00Z","counts":{"empty":1},"flags":{"regression":[],"proposed_close":[],"behaviour_changed":[]},
+		"proxy_build":{"revision":"c0ffee0","verified":true},"cases":{"a/open2":{"verdict":"empty","expected":"differ","gap_status":"open","reason":"both sides hold no line"}}}`)
+	write(t, filepath.Join(in.CasesDir, "cases-v1.49.0.json"), "")
+	if err := os.Remove(filepath.Join(in.CasesDir, "cases-v1.49.0.json")); err != nil {
+		t.Fatal(err)
+	}
+	s, _, err := Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := s.Coverage["v1.53.0"]
+	if c == nil || c.ProvenByTest != 1 || c.NotProven != 0 || !c.CI.testsOnly() {
+		t.Fatalf("coverage %+v", c)
+	}
+	if d := coverageDetail("v1.53.0", c); !strings.Contains(d, "the test job of the ci.yaml run of 2026-11-15") || !strings.Contains(d, "ended failure in other jobs") {
+		t.Errorf("detail: %s", d)
 	}
 }

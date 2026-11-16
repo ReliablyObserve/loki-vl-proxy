@@ -245,3 +245,33 @@ func TestAddedDates(t *testing.T) {
 		t.Errorf("asked %v", asked)
 	}
 }
+
+// The jobs of a workflow's last run on main (<file>.main.jobs.json) are kept with it: a run ends failure when any one job
+// does, and the daily report reads whether the test job passed.
+func TestIngestKeepsTheJobsOfTheLastMainRun(t *testing.T) {
+	dir := t.TempDir()
+	ci := workflow(t, "on: push\n")
+	ci.File = "ci.yaml"
+	other := workflow(t, "on: push\n")
+	other.File = "other.yaml"
+	for _, f := range []string{"ci.yaml", "other.yaml"} {
+		writeFile(t, filepath.Join(dir, f+".main.json"), apiAnswer(apiRun("completed", "failure", "2026-11-14T04:00:00Z")))
+	}
+	writeFile(t, filepath.Join(dir, "ci.yaml.main.jobs.json"),
+		`{"total_count":3,"jobs":[{"name":"test","conclusion":"success"},{"name":"test-shard (1)","conclusion":"success"},{"name":"e2e-compat","conclusion":"failure"}]}`)
+	got, err := Ingest(dir, []Workflow{ci, other}, fetched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"test": "success", "test-shard (1)": "success", "e2e-compat": "failure"}
+	if g := got.Workflows["ci.yaml"].Main.Jobs; len(g) != 3 || g["test"] != "success" || g["e2e-compat"] != "failure" {
+		t.Errorf("jobs %v, want %v", g, want)
+	}
+	if got.Workflows["other.yaml"].Main.Jobs != nil {
+		t.Errorf("a workflow whose jobs were not read has none: %v", got.Workflows["other.yaml"].Main.Jobs)
+	}
+	writeFile(t, filepath.Join(dir, "ci.yaml.main.jobs.json"), "{")
+	if _, err := Ingest(dir, []Workflow{ci}, fetched); err == nil {
+		t.Error("an unreadable jobs answer is an error")
+	}
+}

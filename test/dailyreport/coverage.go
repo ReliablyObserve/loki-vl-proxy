@@ -86,10 +86,28 @@ type CIRun struct {
 	Conclusion string `json:"conclusion"`
 	Date       string `json:"date,omitempty"`
 	URL        string `json:"url,omitempty"`
+	// Jobs is each job's conclusion of the run, when the daily report read them.
+	Jobs map[string]string `json:"jobs,omitempty"`
 }
 
-// Green reports whether the run passed its tests.
-func (c *CIRun) Green() bool { return c != nil && c.Conclusion == "success" }
+// testJob is the job of ci.yaml that is green only when every test shard is.
+const testJob = "test"
+
+// Green reports whether the run passed its tests: its `test` job succeeded, whatever the other jobs (an e2e shard) did,
+// as a run ends failure when any one job does; a run whose jobs are unknown, or whose test job did not run (a change
+// that touches no product code skips it), is judged by the run's own conclusion.
+func (c *CIRun) Green() bool {
+	if c == nil {
+		return false
+	}
+	if j, ok := c.Jobs[testJob]; ok && j != "skipped" && j != "" {
+		return j == "success"
+	}
+	return c.Conclusion == "success"
+}
+
+// testsOnly reports whether the run is green by its test job although the run itself did not succeed.
+func (c *CIRun) testsOnly() bool { return c.Green() && c.Conclusion != "success" }
 
 // caseOutcome is what one run said about one case: what coverage needs of it.
 type caseOutcome struct{ verdict, class, reason string }
@@ -183,6 +201,9 @@ func coverageOf(o caseOutcome, tests []string, ci *CIRun) (string, notProven) {
 		state := "no run recorded"
 		if ci != nil {
 			state = "ended " + ci.Conclusion
+			if j, ok := ci.Jobs[testJob]; ok {
+				state += " (its test job " + j + ")"
+			}
 		}
 		why.reason = join(why.reason, fmt.Sprintf("%d wired test file(s), but the last %s run on main %s", len(tests), ciWorkflow, state))
 	default:
@@ -216,6 +237,9 @@ func coverageDetail(v string, c *CoveragePart) string {
 		fmt.Fprintf(&b, " (%s)", strings.Join(parts, ", "))
 	}
 	switch {
+	case c.CI.testsOnly():
+		fmt.Fprintf(&b, "; tests passing: the %s job of the %s run of %s on main, %s (the run ended %s in other jobs; the wiring is per test file, not per function).",
+			testJob, c.CI.Workflow, c.CI.Date, c.CI.URL, c.CI.Conclusion)
 	case c.CI.Green():
 		fmt.Fprintf(&b, "; tests passing: %s run of %s on main, %s (the wiring is per test file, not per function).", c.CI.Workflow, c.CI.Date, c.CI.URL)
 	case c.CI != nil:

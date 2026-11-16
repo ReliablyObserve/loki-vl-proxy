@@ -186,6 +186,18 @@ jobs:
               > "/tmp/runs/${file}.schedule.json" 2>/dev/null || rm -f "/tmp/runs/${file}.schedule.json"
           done
 
+      - name: Read the jobs of ci.yaml's last run on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A run ends failure when any one job does (an e2e shard, say) while the test jobs passed: the coverage by a
+          # named test reads the test job's own conclusion.
+          run_id="$(jq -r '[.workflow_runs[] | select(.status == "completed")][0].id // empty' /tmp/runs/ci.yaml.main.json 2>/dev/null || true)"
+          if [ -n "$run_id" ]; then
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" > /tmp/runs/ci.yaml.main.jobs.json \
+              || rm -f /tmp/runs/ci.yaml.main.jobs.json
+          fi
+
       - name: Inventory and scheduled workflow health
         run: |
           set -euo pipefail

@@ -49,6 +49,32 @@ func newestCompleted(path string) (*Run, error) {
 	return nil, nil
 }
 
+// jobsOf reads GitHub's "list jobs of a run" answer saved next to a workflow's runs (<file>.main.jobs.json) into job name
+// -> conclusion; nil when there is none.
+func jobsOf(path string) (map[string]string, error) {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var answer struct {
+		Jobs []struct {
+			Name       string `json:"name"`
+			Conclusion string `json:"conclusion"`
+		} `json:"jobs"`
+	}
+	if err := json.Unmarshal(raw, &answer); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	out := map[string]string{}
+	for _, j := range answer.Jobs {
+		out[j.Name] = j.Conclusion
+	}
+	return out, nil
+}
+
 // Ingest reads the API answers the daily report saved for every workflow (<file>.main.json: the runs on
 // main; <file>.schedule.json: the scheduled runs) into a runs record. A missing answer is a workflow with
 // no run of that kind.
@@ -59,6 +85,11 @@ func Ingest(dir string, workflows []Workflow, fetched time.Time) (RunsFile, erro
 		var err error
 		if runs.Main, err = newestCompleted(filepath.Join(dir, w.File+".main.json")); err != nil {
 			return out, err
+		}
+		if runs.Main != nil {
+			if runs.Main.Jobs, err = jobsOf(filepath.Join(dir, w.File+".main.jobs.json")); err != nil {
+				return out, err
+			}
 		}
 		if len(w.Schedules) > 0 {
 			if runs.Scheduled, err = newestCompleted(filepath.Join(dir, w.File+".schedule.json")); err != nil {
