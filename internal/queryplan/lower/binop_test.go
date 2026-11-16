@@ -180,7 +180,7 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 		rate + ` > bool 1`:                       "BinOp bool",
 		`1 + 2`:                                  "BinOp scalar operands",
 		`2 * max(sum without () (` + rate + `))`: "BinOp operand without empty nest",
-		`sum without () (sum_over_time({app="a"} | unwrap n [5m])) / 2`:                "BinOp operand without empty unwrap",
+		`count without () (sum_over_time({app="a"} | unwrap n [5m])) / 2`:              "BinOp operand without empty unwrap",
 		`sum without () (` + rate + `) / sum by (app) (sum without () (` + rate + `))`: "BinOp operand without empty nest",
 		`label_replace(sum without (pod) (` + rate + `) / 2, "a", "b", "c", "d")`:      "LabelReplace operand BinOp",
 		rate + ` / (` + rate + ` + 1)`:                                                 "BinOp operand BinOp",

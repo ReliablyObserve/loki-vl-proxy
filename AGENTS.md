@@ -432,7 +432,11 @@ A construct moves from the string translator to the typed plan (`internal/queryp
 
 - The plan must write the translator's text byte for byte, not an equal parsed query: the text is the cache key and the
   request VictoriaLogs sees. `TestPlanShadow` and the generated grids assert it for every native row under the 12
-  profiles; fix a difference of spelling in the AST builders, never in `internal/translator`.
+  profiles; fix a difference of spelling in the AST builders, never in `internal/translator`. Where the translator is
+  wrong against Loki, the plan writes Loki's reading as a recorded known divergence; once the proxy serves such a row
+  (`proxy.PlanServedText` answers it), the shadow holds it to that text and counts it `native_loki_held`, which needs
+  the case's Loki differential in `servedDivergences`. Corpus queries the request validation rejects are `rejected`,
+  never rows.
 - Decide eligibility before planning (`logql.MayHaveNonFilterStage` and a first-byte test for log queries): a query the
   plan does not cover pays no plan. `TestFlipScreenAdmitsEveryNativeRow` holds the screen to the native rows. A log
   query with more than line and label filters moves by stage family (`proxy.QueryPlanFlippedLogStages`): it goes
