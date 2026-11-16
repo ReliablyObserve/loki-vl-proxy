@@ -405,3 +405,31 @@ func TestLevelLessSecondReadFailureAnswersLikeTheFirst(t *testing.T) {
 		}
 	}
 }
+
+// TestLevelLessMemory: the per-replica memory of reads holding a stream without a level label forgets a read after
+// its TTL or on forget, and starts again empty past its bound instead of growing.
+//
+// conformance: semantics/detected-level-stream-stats-without-level
+func TestLevelLessMemory(t *testing.T) {
+	var m levelLessMemory
+	now := time.Unix(1760000000, 0)
+	if m.known("a", now) {
+		t.Fatal("an empty memory knows a read")
+	}
+	m.remember("a", now)
+	if !m.known("a", now.Add(levelLessBaseTTL-time.Second)) || m.known("a", now.Add(levelLessBaseTTL+time.Second)) {
+		t.Fatal("the TTL is not kept")
+	}
+	m.remember("b", now)
+	m.forget("b")
+	if m.known("b", now) {
+		t.Fatal("forget kept the read")
+	}
+	for i := range levelLessMemoryMax {
+		m.remember(fmt.Sprint(i), now)
+	}
+	m.remember("last", now)
+	if !m.known("last", now) || m.known("0", now) || len(m.m) != 1 {
+		t.Fatalf("past the bound the memory holds %d reads", len(m.m))
+	}
+}

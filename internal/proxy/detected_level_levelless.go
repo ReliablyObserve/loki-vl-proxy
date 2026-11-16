@@ -254,6 +254,45 @@ var labelledStreamFilter = sync.OnceValue(func() string {
 // a stream without a level label.
 const levelLessBaseTTL = 10 * time.Minute
 
+// levelLessMemoryMax bounds the reads levelLessMemory remembers; past it the
+// memory starts again empty (the next read of each sends today's single read).
+const levelLessMemoryMax = 4096
+
+// levelLessMemory remembers, per replica and with no cache lookup (no tier, no
+// peer request), which per-stream reads lately held a stream without a level
+// label. It is a hint: a read it forgets is answered the same, with one more
+// read of those streams.
+type levelLessMemory struct {
+	mu sync.Mutex
+	m  map[string]time.Time
+}
+
+func (l *levelLessMemory) known(key string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	until, ok := l.m[key]
+	if ok && now.After(until) {
+		delete(l.m, key)
+		return false
+	}
+	return ok
+}
+
+func (l *levelLessMemory) remember(key string, now time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.m == nil || len(l.m) >= levelLessMemoryMax {
+		l.m = make(map[string]time.Time)
+	}
+	l.m[key] = now.Add(levelLessBaseTTL)
+}
+
+func (l *levelLessMemory) forget(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.m, key)
+}
+
 func (p *Proxy) levelLessBaseKey(ctx context.Context, path string, params url.Values) string {
 	return p.windowProbeKey(ctx, "level-less-base:v1:"+path+"\x00"+params.Get("query"))
 }
@@ -264,10 +303,7 @@ func (p *Proxy) levelLessBaseKey(ctx context.Context, path string, params url.Va
 // (withLevelLessStreams), instead of twice. The two reads cover disjoint
 // streams whose union is every stream the read matches.
 func (p *Proxy) levelLessFirstRead(ctx context.Context, path string, params url.Values) url.Values {
-	if p.cache == nil {
-		return params
-	}
-	if _, ok := p.cacheGet(ctx, p.cache, p.levelLessBaseKey(ctx, path, params)); !ok {
+	if !p.levelLessBases.known(p.levelLessBaseKey(ctx, path, params), time.Now()) {
 		return params
 	}
 	out := cloneURLValues(params)
@@ -276,15 +312,11 @@ func (p *Proxy) levelLessFirstRead(ctx context.Context, path string, params url.
 }
 
 func (p *Proxy) rememberLevelLessBase(ctx context.Context, path string, params url.Values) {
-	if p.cache != nil {
-		p.cache.SetWithTTL(p.levelLessBaseKey(ctx, path, params), []byte("1"), levelLessBaseTTL)
-	}
+	p.levelLessBases.remember(p.levelLessBaseKey(ctx, path, params), time.Now())
 }
 
 func (p *Proxy) forgetLevelLessBase(ctx context.Context, path string, params url.Values) {
-	if p.cache != nil {
-		p.cache.Invalidate(p.levelLessBaseKey(ctx, path, params))
-	}
+	p.levelLessBases.forget(p.levelLessBaseKey(ctx, path, params))
 }
 
 // withoutLabelledRestriction returns params without the restriction
