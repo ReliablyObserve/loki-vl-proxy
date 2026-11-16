@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- A cold `/patterns` request for a busy selector (the first Logs Drilldown patterns view of a service or an
+  environment) mines its lines on several cores. When the read holds at least 40,000 lines, the lines VictoriaLogs
+  answers are decoded on worker goroutines and each stream is mined by one worker, in the order it was read. The
+  miners are then merged in the order one goroutine makes them, so the patterns, samples and the pattern state's
+  snapshot stay byte for byte what they were. A worker is a decoding and a mining goroutine; the workers of all
+  requests together never exceed GOMAXPROCS (each read adds one goroutine that splits its lines). A read that finds
+  fewer than two workers free, a refresh of the pattern state, a background build and `-patterns-scope=selector`
+  mine on the request's goroutine as before. No VictoriaLogs request is added. Mining also allocates less: a line's
+  tokens are copied only when it starts a cluster, a new cluster's tree nodes are made in one allocation, and a
+  row's time and a stream's name are read without a copy. Decoding and mining an hour of 148,000 lines (the
+  environment of the Drilldown patterns benchmark): 302 ms to 95 ms with 4 cores and 312 ms to 172 ms with 2, with
+  43% fewer bytes, 67% fewer allocations and 9-16% less CPU time.
+
+### Changed
+
+- The query plan now describes binary operations with a `bool` modifier, the set operators `and`, `or` and `unless`,
+  and chains of operations (`a + b * 2`, `a / b * 100`, `a > 2 and b > 1`) as the operations the proxy evaluates: each
+  operand a query of its own, a chained operand its own binary operation, in Loki's precedence and associativity. The
+  plan's reading of these queries is held to the proxy's binary route and to Loki's own syntax tree. A new
+  differential holds the proxy's answers for 32 such shapes at the top of a query (comparisons with and without `bool`,
+  set operators with and without `on`/`ignoring`, `group_left`/`group_right`, precedence and associativity, NaN and
+  infinities, empty operands, and the many-to-many and many-to-one errors) to Loki's on query and query_range, on
+  VictoriaLogs v1.49.0 and v1.53.0: all match. No answer, request or cache key changes.
+
+## [2.316.0] - 2026-11-16
+
 ### Changed
 
 - The unwrap code is rewritten from Loki's recorded answers and LogQL's documentation: the conversions of
@@ -20,14 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stdvar_over_time over a range longer than the step merge their buckets in two passes (a window's value can differ
   from the previous build in its last bit, as close to the exact value as before). Two fuzz targets join
   fuzz-smoke.
-- The query plan now describes binary operations with a `bool` modifier, the set operators `and`, `or` and `unless`,
-  and chains of operations (`a + b * 2`, `a / b * 100`, `a > 2 and b > 1`) as the operations the proxy evaluates: each
-  operand a query of its own, a chained operand its own binary operation, in Loki's precedence and associativity. The
-  plan's reading of these queries is held to the proxy's binary route and to Loki's own syntax tree. A new
-  differential holds the proxy's answers for 32 such shapes at the top of a query (comparisons with and without `bool`,
-  set operators with and without `on`/`ignoring`, `group_left`/`group_right`, precedence and associativity, NaN and
-  infinities, empty operands, and the many-to-many and many-to-one errors) to Loki's on query and query_range, on
-  VictoriaLogs v1.49.0 and v1.53.0: all match. No answer, request or cache key changes.
 
 ### Fixed
 
@@ -44,21 +64,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The response cache asks the check before it keeps an answer, an operand's included, so a repeat of the query
   answers the same 400 (a repeated range query whose rejected value sat in the first operand answered 200 before);
   a checked VictoriaLogs answer over the body-size limit answers the limit error.
-
-### Performance
-
-- A cold `/patterns` request for a busy selector (the first Logs Drilldown patterns view of a service or an
-  environment) mines its lines on several cores. When the read holds at least 40,000 lines, the lines VictoriaLogs
-  answers are decoded on worker goroutines and each stream is mined by one worker, in the order it was read. The
-  miners are then merged in the order one goroutine makes them, so the patterns, samples and the pattern state's
-  snapshot stay byte for byte what they were. A worker is a decoding and a mining goroutine; the workers of all
-  requests together never exceed GOMAXPROCS (each read adds one goroutine that splits its lines). A read that finds
-  fewer than two workers free, a refresh of the pattern state, a background build and `-patterns-scope=selector`
-  mine on the request's goroutine as before. No VictoriaLogs request is added. Mining also allocates less: a line's
-  tokens are copied only when it starts a cluster, a new cluster's tree nodes are made in one allocation, and a
-  row's time and a stream's name are read without a copy. Decoding and mining an hour of 148,000 lines (the
-  environment of the Drilldown patterns benchmark): 302 ms to 95 ms with 4 cores and 312 ms to 172 ms with 2, with
-  43% fewer bytes, 67% fewer allocations and 9-16% less CPU time.
 
 ## [2.315.0] - 2026-11-16
 
