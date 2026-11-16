@@ -203,6 +203,7 @@ func runMetricHandler(t *testing.T, prof diffProfile, mr metricRequest, front *m
 		LabelStyle:             prof.style,
 		MetadataFieldMode:      prof.mode,
 		EmitStructuredMetadata: true,
+		AlignQueriesWithStep:   mr.align,
 	})
 	if err != nil {
 		t.Fatal(err)

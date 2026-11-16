@@ -3,6 +3,7 @@ package querycorpus_test
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -65,6 +66,9 @@ var rankBinaryShapes = []string{
 	`topk(1, sum by (pod) (count_over_time({job="rbx"}[1m])) unless sum by (pod) (count_over_time({job="rbx"} |= "y" [1m])))`,
 	`topk(2, sum by (pod) (rate({job="rbx"}[5m])) / sum by (pod) (rate({job="rbx"} |= "x" [5m])))`,
 	`topk(2, sum by (pod) (rate({job="rbx"}[5m])) / on (pod) sum by (pod) (rate({job="rbx", pod=~"p|q"}[5m])))`,
+	// The stack shapes at an hour with Grafana's steps (rankBinaryHourRequests).
+	`sort_desc(sum by (pod) (count_over_time({job="rbx"}[5m])) > bool 10)`,
+	`stddev(sum by (pod) (count_over_time({job="rbx"}[5m])) / sum by (pod) (count_over_time({job="rbx"} |= "x" [5m])) * 100)`,
 	// +Inf and NaN per step: x/0 ranks above every number, NaN last.
 	`topk(2, (sum by (pod) (count_over_time({job="rb"}[1m])) - sum by (pod) (count_over_time({job="rb", level="info"}[1m]))) / (sum by (pod) (count_over_time({job="rb"}[1m])) - sum by (pod) (count_over_time({job="rb"}[1m]))))`,
 	`bottomk(3, sum by (pod) (count_over_time({job="rbx"}[1m])) / (sum by (pod) (count_over_time({job="rbx"}[1m])) - 30))`,
@@ -148,7 +152,25 @@ func rankBinaryQueries(t *testing.T) []metricQuery {
 			out = append(out, metricQuery{q: q, id: queryID("logql", q), fix: fix, reqs: metricRequests(q, time.Minute)})
 			continue
 		}
-		out = append(out, metricQuery{q: q, id: queryID("logql", q), plan: p, fix: fix, reqs: metricRequests(q, firstRangeOf(p.Root))})
+		reqs := metricRequests(q, firstRangeOf(p.Root))
+		if strings.Contains(q, `job="rbx"`) {
+			reqs = append(reqs, rankBinaryHourRequests(q)...)
+		}
+		out = append(out, metricQuery{q: q, id: queryID("logql", q), plan: p, fix: fix, reqs: reqs})
+	}
+	return out
+}
+
+// rankBinaryHourRequests are query_range requests over an hour that ends a minute before the data does, as a dashboard
+// asks: the steps Grafana picks for an hour (15 s, 30 s, 60 s), and bounds off the step's grid, which Loki's frontend
+// and the proxy (-align-queries-with-step, on as deployed) move down to it.
+func rankBinaryHourRequests(q string) []metricRequest {
+	var out []metricRequest
+	end := metricEnd.Add(-53 * time.Second)
+	start := end.Add(-time.Hour)
+	for _, step := range []int{15, 30, 60} {
+		form := url.Values{"query": {q}, "start": {strconv.FormatInt(start.Unix(), 10)}, "end": {strconv.FormatInt(end.Unix(), 10)}, "step": {strconv.Itoa(step)}}
+		out = append(out, metricRequest{kind: "1h step=" + strconv.Itoa(step), form: form, align: true})
 	}
 	return out
 }
