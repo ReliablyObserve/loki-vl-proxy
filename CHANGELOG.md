@@ -36,9 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `| json amount`) now read Loki's series: the stream plus the labels the list names, less the unwrapped one, where
   the proxy read each line as a series of its own. On an instant query and on a range up to the step, for example
   `sum(max_over_time({...} | logfmt amount | unwrap amount [5m]))` adds one maximum per stream as Loki does.
-  VictoriaLogs groups the rows by the stream, its level fields and the listed labels, reading each line once; the
-  query is 16% to 72% faster in VictoriaLogs than before on most of these shapes, and `sum by (...)` over
-  `max_over_time` costs up to 48% more, for the per-series step Loki's answer needs. Count,
+  VictoriaLogs groups the rows by the stream, its level fields and the listed labels, reading each line once.
+  Measured with VictoriaLogs' own handlers on synthetic logfmt rows (v1.49.0 and v1.53.0), most of these shapes run
+  16% to 72% faster in VictoriaLogs than before; `sum by (...)` over `max_over_time` costs up to 48% more and over
+  `avg_over_time` up to 12% more, for the per-series step Loki's answer needs. Count,
   first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
   read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
 

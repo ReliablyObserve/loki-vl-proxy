@@ -183,6 +183,19 @@ func TestDynamicUnwrapIdentityLowering(t *testing.T) {
 			t.Errorf("extraction list %s: %s does not parse: %v", q, physical.Encode(op), err)
 		}
 	}
+	// A listed label the clause names too, with an underscore: the unpack, the spellings it resolves into the label
+	// and both stats read the one field, so a series and its group agree (the underscore-style proxy reads its
+	// clause the same way).
+	got = unwrapText(t, `sum by (user_id) (max_over_time({app="a"} | logfmt n, user_id | unwrap n [5m]))`, Profile{})
+	for _, part := range []string{
+		`| unpack_logfmt fields (n, user_id, "user.id", "user-id") skip_empty_results`,
+		`"<user.id>" as user_id keep_original_fields`,
+		`| stats by (user_id, _stream, level, detected_level) max(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats by (user_id) sum(__lvp_inner)`,
+	} {
+		if !strings.Contains(got, part) {
+			t.Errorf("listed clause label: %s holds no %s", got, part)
+		}
+	}
 	// The text VictoriaLogs reads: every pipe parses.
 	const q = `sum(avg_over_time({app="a"} | logfmt | unwrap a_b [5m]))`
 	op, err := PlanQuery(q, rangeAggPlan(q), Profile{})

@@ -22,9 +22,11 @@ import (
 // empty value is no label), less the unwrapped one; every other key of the line is no label. A vector aggregation
 // over the range function folds those series.
 //
-//   - Data (extractionListFixture): logfmt lines on four streams of two namespaces and json lines on two more, a line
-//     every 13 seconds per stream, each on a phase of its own; every line has an amount, a route of three, a unique
-//     id and a message, and every fifth line no route.
+//   - Data (extractionListFixture): logfmt lines on five streams of three namespaces (one written as the e2e
+//     generator writes payment-service), json lines on two more, a stream with an unconvertible value and one (app
+//     um) with structured metadata named route on the lines without a route key; a line every 13 seconds per
+//     stream, each on a phase of its own; every line has an amount, a route of three, a unique id and a message, and
+//     every fifth line no route.
 //   - Requests (metricRequests): instant, and query_range with the step equal to the range, a fifth of it and three
 //     times it.
 //
@@ -93,6 +95,13 @@ func extractionListQueryTexts() []string {
 		`bytes_over_time({app="uw"} | logfmt route [5m])`,
 		`count_over_time({app="uj"} | json route [5m])`,
 		`count by (ns) (count_over_time({app="uj"} | json route [5m]))`,
+		// Structured metadata named route on the lines without a route key: read as the listed label after
+		// `| logfmt amount, route`, and a series of its own on Loki after `| logfmt amount` (owner-kept).
+		`sum(max_over_time({app="um"} | logfmt amount, route | unwrap amount [5m]))`,
+		`sum by (route) (max_over_time({app="um"} | logfmt amount, route | unwrap amount [5m]))`,
+		`avg(avg_over_time({app="um"} | logfmt amount, route | unwrap amount [5m]))`,
+		`sum(max_over_time({app="um"} | logfmt amount | unwrap amount [5m]))`,
+		`avg(avg_over_time({app="um"} | logfmt amount | unwrap amount [5m]))`,
 		// The unwrapped label carries a value Loki cannot convert: the error answers.
 		`max_over_time({app="ub"} | logfmt amount | unwrap amount [5m])`,
 		`sum by (ns) (max_over_time({app="ub"} | logfmt amount | unwrap amount [5m]))`,
@@ -128,8 +137,10 @@ func extractionListFixture() metricFixture {
 		{"app": "ub", "ns": "x", "pod": "f", "service_name": "ub"},
 		// As the e2e generator writes payment-service: a level stream label, a level= key and a quoted message.
 		{"app": "uw", "level": "info", "ns": "z", "pod": "g", "service_name": "uw"},
-		// Structured metadata named like a listed key, on the lines without the key.
-		{"app": "uw", "ns": "z", "pod": "h", "service_name": "uw"},
+		// Structured metadata named like a listed key, on the lines without the key: an app of its own, so the
+		// owner-kept split of a stream by its structured metadata (metric-identity/structured-metadata-splits-series)
+		// touches its own queries only.
+		{"app": "um", "ns": "z", "pod": "h", "service_name": "um"},
 	}}
 	span := metricWindow + 20*time.Minute
 	first := metricEnd.Add(-span)
@@ -202,9 +213,8 @@ var extractionListKnown = func() map[string]map[string]string {
 //   - semantics/stdvar-grouped-pooled-variance: an aggregation by labels over stdvar_over_time the identity does not
 //     serve (count by, and a range longer than the step) takes the variance of the group's pooled samples;
 //   - metric-identity/structured-metadata-splits-series (owner-kept): Loki splits a stream's series by its structured
-//     metadata (the stream of pod h carries route=/sm on the lines without a route key); after `| logfmt amount` the
-//     proxy reads that stream as one series, after `| logfmt amount, route` the metadata is the listed label and is
-//     read;
+//     metadata (app um carries route=/sm on the lines without a route key); after `| logfmt amount` the proxy reads
+//     that stream as one series, after `| logfmt amount, route` the metadata is the listed label and is read;
 //   - semantics/extraction-list-empty-label: Loki labels a line without an extracted key with the key empty;
 //   - semantics/unwrap-rate-counter-window-extrapolation: rate_counter's sixth digit;
 //   - semantics/unwrap-extraction-list-conversion-error: a value the unwrap cannot convert after an extraction list.
@@ -212,15 +222,12 @@ var extractionListKnownRuns = []struct {
 	id, q string
 	kinds []string
 }{
-	{"metric-identity/structured-metadata-splits-series", `sum(max_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(max_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `sum(min_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(min_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(min_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (min_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `sum(avg_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(avg_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
@@ -246,7 +253,6 @@ var extractionListKnownRuns = []struct {
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(quantile_over_time(0.9, {app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `sum by (ns) (quantile_over_time(0.9, {app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (quantile_over_time(0.9, {app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `sum(stddev_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stddev_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stddev_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (stddev_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
@@ -283,16 +289,12 @@ var extractionListKnownRuns = []struct {
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (rate({app="uw"} | logfmt route [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count_over_time({app="uj"} | json route [5m])`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-series-identity", `count by (ns) (count_over_time({app="uj"} | json route [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `sum by (ns) (max_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (max_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
-	{"metric-identity/structured-metadata-splits-series", `sum by (ns) (min_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (min_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (min_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
-	{"metric-identity/structured-metadata-splits-series", `sum by (ns) (avg_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (avg_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
-	{"metric-identity/structured-metadata-splits-series", `sum by (ns) (stddev_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (stddev_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum by (ns) (stddev_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `avg by (ns) (avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
@@ -308,27 +310,12 @@ var extractionListKnownRuns = []struct {
 	{"semantics/unwrap-extraction-list-conversion-error", `max_over_time({app="ub"} | logfmt amount | unwrap amount [5m])`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-conversion-error", `sum by (ns) (max_over_time({app="ub"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-extraction-list-conversion-error", `max_over_time({app="ub"} | logfmt amount | __error__="" | unwrap amount [5m])`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `max_over_time({app="uw"} | logfmt amount | unwrap amount [5m])`, []string{"step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `count by (ns) (max_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `min_over_time({app="uw"} | logfmt amount | unwrap amount [5m])`, []string{"step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `count by (ns) (min_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `count by (ns) (avg_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `sum_over_time({app="uw"} | logfmt amount | unwrap amount [5m])`, []string{"step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `count by (ns) (sum_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `sum(quantile_over_time(0.9, {app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `sum by (ns) (quantile_over_time(0.9, {app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `count by (ns) (quantile_over_time(0.9, {app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `count by (ns) (stddev_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `sum(stdvar_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stdvar_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
-	{"metric-identity/structured-metadata-splits-series", `sum by (ns) (stdvar_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step>range"}},
 	{"semantics/stdvar-grouped-pooled-variance", `sum by (ns) (stdvar_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/stdvar-grouped-pooled-variance", `count by (ns) (stdvar_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stdvar_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/stdvar-grouped-pooled-variance", `sum by (ns) (stdvar_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/stdvar-grouped-pooled-variance", `count by (ns) (stdvar_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `count by (ns) (rate({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
-	{"metric-identity/structured-metadata-splits-series", `count by (ns) (rate_counter({app="uw"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stdvar_over_time({app="uj"} | json amount | unwrap amount [5m]))`, []string{"step<range"}},
 	{"semantics/stdvar-grouped-pooled-variance", `count by (ns) (stdvar_over_time({app="uj"} | json amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stdvar_over_time({app="uj"} | json amount, route | unwrap amount [5m]))`, []string{"step<range"}},
@@ -336,6 +323,10 @@ var extractionListKnownRuns = []struct {
 	{"semantics/unwrap-extraction-list-series-identity", `sum(stdvar_over_time({app="uj"} | json a="amount", route | unwrap a [5m]))`, []string{"instant", "step=range", "step>range"}},
 	{"semantics/unwrap-per-series-identity-raw-rows", `sum(stdvar_over_time({app="uj"} | json a="amount", route | unwrap a [5m]))`, []string{"step<range"}},
 	{"semantics/stdvar-grouped-pooled-variance", `count by (ns) (stdvar_over_time({app="uj"} | json a="amount", route | unwrap a [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
+	{"semantics/unwrap-per-series-identity-raw-rows", `sum(max_over_time({app="um"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
+	{"semantics/unwrap-per-series-identity-raw-rows", `avg(avg_over_time({app="um"} | logfmt amount, route | unwrap amount [5m]))`, []string{"step<range"}},
+	{"metric-identity/structured-metadata-splits-series", `sum(max_over_time({app="um"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
+	{"metric-identity/structured-metadata-splits-series", `avg(avg_over_time({app="um"} | logfmt amount | unwrap amount [5m]))`, []string{"instant", "step=range", "step<range", "step>range"}},
 }
 
 // TestExtractionListIdentityMatchLoki replays the recorded answers through the handlers and holds every run to Loki's
