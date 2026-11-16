@@ -46,46 +46,37 @@ func isVLPlaceholderMsg[T string | []byte](msg T, defaultMsgValue string) bool {
 }
 
 // placeholderPipelineLineFields are the fields a placeholder row's rebuilt line
-// leaves out with the flag on: those of pipelineLineFields except the names of
-// json and logfmt extraction lists. VictoriaLogs' unpack pipes read those from
-// the placeholder text, which holds none of them, so a stored field of such a
-// name is the line's own key and stays in the line Loki returns.
+// leaves out with the flag on: the fields regexp and pattern captures and
+// label_format targets write (pipelineLineFields without the json and logfmt
+// extraction lists). VictoriaLogs' unpack pipes read an extraction list from
+// the placeholder text, which holds none of its names, so a stored field of
+// such a name is the line's own key and stays in the line Loki returns.
 func placeholderPipelineLineFields(pipeline []logqlpkg.Stage) map[string]bool {
-	names := pipelineLineFields(pipeline)
-	if len(names) == 0 {
-		return names
-	}
-	kept := make(map[string]bool, len(names))
-	for name := range names {
-		kept[name] = true
+	out := pipelineRegexpCaptureFields(pipeline)
+	add := func(name string) {
+		if name == "" || name == "_" {
+			return
+		}
+		if out == nil {
+			out = make(map[string]bool)
+		}
+		out[name] = true
 	}
 	for _, stage := range pipeline {
-		s, ok := stage.(*logqlpkg.ParserStage)
-		if !ok || (s.Type != logqlpkg.ParserJSON && s.Type != logqlpkg.ParserLogfmt) {
-			continue
-		}
-		for _, field := range s.Fields {
-			delete(kept, field.Name)
-		}
-	}
-	// A name another stage also writes (a regexp capture, a label_format
-	// target) stays out.
-	for name := range pipelineRegexpCaptureFields(pipeline) {
-		kept[name] = true
-	}
-	for _, stage := range pipeline {
-		if s, ok := stage.(*logqlpkg.LabelFormatStage); ok {
+		switch s := stage.(type) {
+		case *logqlpkg.ParserStage:
+			if s.Type == logqlpkg.ParserPattern {
+				for _, match := range patternCaptureRE.FindAllStringSubmatch(s.Param, -1) {
+					add(match[1])
+				}
+			}
+		case *logqlpkg.LabelFormatStage:
 			for _, f := range s.Formats {
-				kept[f.Name] = true
-			}
-		}
-		if s, ok := stage.(*logqlpkg.ParserStage); ok && s.Type == logqlpkg.ParserPattern {
-			for _, match := range patternCaptureRE.FindAllStringSubmatch(s.Param, -1) {
-				kept[match[1]] = true
+				add(f.Name)
 			}
 		}
 	}
-	return kept
+	return out
 }
 
 // rowLineFields picks the fields a row's rebuilt line leaves out: the
@@ -114,7 +105,7 @@ func (p *Proxy) rowLineFieldsOf(query string, base map[string]bool) rowLineField
 	return out
 }
 
-// forMsg is the field set for a row whose _msg is msg.
+// forRowMsg is the field set for a row whose _msg is msg.
 func forRowMsg[T string | []byte](f rowLineFields, msg T) map[string]bool {
 	if f.active && (isVLPlaceholderMsg(msg, f.defaultMsg) || (len(msg) == 0 && f.blankIsPlaceholder)) {
 		return f.placeholder
@@ -288,7 +279,7 @@ func placeholderGuardable(name string) bool {
 // placeholderMsg matches the rows whose _msg is the placeholder: VictoriaLogs'
 // built-in one and the configured one.
 func (p *Proxy) placeholderMsg() logsql.FilterExpr {
-	var f logsql.FilterExpr = logsql.FieldExact("_msg", vlDefaultMsgValue)
+	f := logsql.FieldExact("_msg", vlDefaultMsgValue)
 	if custom := p.defaultMsgValue(); custom != "" && custom != vlDefaultMsgValue {
 		f = logsql.Or(f, logsql.FieldExact("_msg", custom))
 	}

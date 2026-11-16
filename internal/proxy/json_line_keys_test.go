@@ -138,6 +138,19 @@ func TestJSONLineKeysOffChangesNothing(t *testing.T) {
 	if off.placeholderRiskFilter() != "" || off.placeholderValidPipe() != "" || off.placeholderJSONStartFilter() != jsonObjectStartFilter {
 		t.Fatal("the flag off changed a | json split or probe")
 	}
+	const placeholder = `_msg:="missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field"`
+	if got := on.placeholderJSONStartFilter(); got != "("+jsonObjectStartFilter+" or "+placeholder+")" {
+		t.Fatalf("the | json split's brace filter with the flag on: %s", got)
+	}
+	if got := on.placeholderValidPipe(); got != ` | format if (`+placeholder+`) "1" as `+jsonValidField {
+		t.Fatalf("the | json split's validity mark with the flag on: %s", got)
+	}
+	if got := on.withPlaceholderExclusion(r, `{a="b"} | unknown_stage`); got != r {
+		t.Fatal("a query without a plan attached an exclusion")
+	}
+	if got := on.withPlaceholderExclusion(r, `sum(count_over_time({a="b"} | json [5m]))`); got != r {
+		t.Fatal("a | json query attached an exclusion")
+	}
 	if off.lineFieldExposure(`{a="b"} | json`).placeholderLine {
 		t.Fatal("the flag off reads placeholder rows as lines")
 	}
