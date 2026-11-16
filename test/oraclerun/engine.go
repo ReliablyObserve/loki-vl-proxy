@@ -21,11 +21,13 @@ type EngineStream struct {
 	Entries []EngineEntry     `json:"entries"`
 }
 
-// EngineRequest is a Loki query (Instant) or query_range request, its form URL-encoded.
+// EngineRequest is a Loki query (Instant) or query_range request, its form URL-encoded. Unaligned runs a range
+// request at its own bounds (Loki's engine without a query frontend's step alignment).
 type EngineRequest struct {
-	ID      string `json:"id"`
-	Instant bool   `json:"instant,omitempty"`
-	Form    string `json:"form"`
+	ID        string `json:"id"`
+	Instant   bool   `json:"instant,omitempty"`
+	Form      string `json:"form"`
+	Unaligned bool   `json:"unaligned,omitempty"`
 }
 
 // EngineDataSet is a data set and the requests over it.

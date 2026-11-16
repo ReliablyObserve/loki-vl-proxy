@@ -315,7 +315,7 @@ type Config struct {
 	ExactParserSeriesIdentity bool
 	// AlignQueriesWithStep moves the bounds of a metric query_range request
 	// down to multiples of its step, as Loki's step-align middleware does
-	// under query_range.align_queries_with_step (stepAlignMiddleware). The
+	// under query_range.align_queries_with_step (alignToStepMiddleware). The
 	// -align-queries-with-step flag defaults to true.
 	AlignQueriesWithStep bool
 	// PatternsCustom is a static list of patterns always prepended to
@@ -2092,7 +2092,7 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 				p.requestLogger(endpoint, route,
 					p.queryStatsLayer(endpoint, lowercaseQueryKeywords(p.lokiQueryParamValidation(endpoint,
 						p.tenantLimitsMiddleware(endpoint,
-							p.stepAlignMiddleware(endpoint,
+							p.alignToStepMiddleware(endpoint,
 								p.compatCacheMiddleware(endpoint, route,
 									p.requestTimeBounds(endpoint, h)))))))), p.rejectAdmission)))))
 }
@@ -2619,7 +2619,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	// Loki validates the range parameters before it parses the query, on the
 	// bounds the client sent: a request moved onto the step grid was checked
-	// before it was moved (stepAlignMiddleware).
+	// before it was moved (alignToStepMiddleware).
 	if !requestStepAligned(r) && exceedsLokiRangeResolution(r, start) {
 		status := p.fail(w, r, lokierr.TooManyPoints())
 		p.metrics.RecordRequest("query_range", status, time.Since(start))

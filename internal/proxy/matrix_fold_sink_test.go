@@ -320,7 +320,7 @@ func TestAggregationOverBinaryRateCountRatioSlidingWindowWithinBudget(t *testing
 		active := map[string]map[string]bool{}
 		for _, row := range rows {
 			if row.TS > ts-int64(window) && row.TS <= ts {
-				svc := refStreamLabels(row.Stream)["service_name"]
+				svc := vlemu.StreamLabels(row.Stream)["service_name"]
 				if active[svc] == nil {
 					active[svc] = map[string]bool{}
 				}
@@ -382,7 +382,7 @@ func TestSeriesLevelAggregationRepeatedAndMovedWindows(t *testing.T) {
 		out := map[string]map[string]int{}
 		for _, row := range rows {
 			if row.TS > ts-int64(window) && row.TS <= ts {
-				svc := refStreamLabels(row.Stream)["service_name"]
+				svc := vlemu.StreamLabels(row.Stream)["service_name"]
 				if out[svc] == nil {
 					out[svc] = map[string]int{}
 				}

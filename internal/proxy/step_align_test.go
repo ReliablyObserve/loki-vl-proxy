@@ -30,7 +30,7 @@ func lokiStepAlignNanos(t time.Time, stepMs int64) int64 {
 // requests Loki aligns (metric range queries with a step that pass decoding)
 // are moved.
 // conformance: semantics/query-range-step-alignment, loki_api_v1_query_range
-func TestAlignQueryRangeToStep_LokiStepAlignMiddleware(t *testing.T) {
+func TestAlignQueryRangeToStep_LokiAlignedBounds(t *testing.T) {
 	now := time.Unix(1700003600, 123456789)
 	metric := `sum(count_over_time({app="a"}[5m]))`
 	ns := func(sec int64) string { return strconv.FormatInt(sec*int64(time.Second), 10) }
@@ -250,7 +250,7 @@ func TestAlignQueryRangeToStep_LokiStepAlignMiddleware(t *testing.T) {
 // and every other endpoint, and every request with the flag off, reach the
 // handler as they came.
 // conformance: semantics/query-range-step-alignment
-func TestStepAlignMiddleware_OnlyQueryRangeWithTheFlag(t *testing.T) {
+func TestAlignToStepMiddleware_OnlyQueryRangeWithTheFlag(t *testing.T) {
 	params := url.Values{"query": {`sum(count_over_time({app="a"}[5m]))`}, "start": {"1700000000000000000"}, "end": {"1700003600000000000"}, "step": {"137"}, "time": {"1700003600000000000"}}
 	for _, tc := range []struct {
 		endpoint string
@@ -265,7 +265,7 @@ func TestStepAlignMiddleware_OnlyQueryRangeWithTheFlag(t *testing.T) {
 	} {
 		p := &Proxy{alignQueriesWithStep: tc.on}
 		var seen *http.Request
-		h := p.stepAlignMiddleware(tc.endpoint, func(_ http.ResponseWriter, r *http.Request) { seen = r })
+		h := p.alignToStepMiddleware(tc.endpoint, func(_ http.ResponseWriter, r *http.Request) { seen = r })
 		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/"+tc.endpoint+"?"+params.Encode(), nil)
 		h(httptest.NewRecorder(), req)
 		if moved := seen.FormValue("start") != params.Get("start"); moved != tc.moved {
@@ -280,7 +280,7 @@ func TestStepAlignMiddleware_OnlyQueryRangeWithTheFlag(t *testing.T) {
 // differently from Loki is moved as before, and the caller's request is not
 // written. A log query passes through unparsed.
 // conformance: semantics/query-range-step-alignment
-func TestStepAlignMiddleware_OnGridRequestsPassThrough(t *testing.T) {
+func TestAlignToStepMiddleware_OnGridRequestsPassThrough(t *testing.T) {
 	p := &Proxy{alignQueriesWithStep: true}
 	metric := `sum by (app) (count_over_time({app=~".+"}[5m]))`
 	for _, tc := range []struct {
@@ -323,7 +323,7 @@ func TestStepAlignMiddleware_OnGridRequestsPassThrough(t *testing.T) {
 				return httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+form.Encode(), nil)
 			}
 			var seen *http.Request
-			h := p.stepAlignMiddleware("query_range", func(_ http.ResponseWriter, r *http.Request) { seen = r })
+			h := p.alignToStepMiddleware("query_range", func(_ http.ResponseWriter, r *http.Request) { seen = r })
 			req := newReq()
 			rawQuery := req.URL.RawQuery
 			h(httptest.NewRecorder(), req)

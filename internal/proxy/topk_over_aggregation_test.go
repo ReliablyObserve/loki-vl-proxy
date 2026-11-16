@@ -269,7 +269,7 @@ func TestOuterFoldEmptyAndInstantHandlers(t *testing.T) {
 			}
 			var got []string
 			for _, s := range resp.Data.Result {
-				got = append(got, refLabelKey(s.Metric)+"="+s.Value[1].(string))
+				got = append(got, overAggLabelKey(s.Metric)+"="+s.Value[1].(string))
 			}
 			if len(got) != len(tc.want) {
 				t.Fatalf("got %v, want %v", got, tc.want)
