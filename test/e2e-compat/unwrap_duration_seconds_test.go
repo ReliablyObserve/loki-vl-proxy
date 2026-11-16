@@ -13,9 +13,7 @@ import (
 )
 
 // TestCompat_UnwrapDurationSeconds: Loki converts `unwrap duration_seconds(x)`
-// with convertDuration, exactly as `unwrap duration(x)` (pkg/logql/syntax/extractor.go:63-71,
-// pkg/logql/log/metrics_extraction.go convertDuration: time.ParseDuration, in
-// seconds). The proxy answered an empty matrix, because it translated only
+// exactly as `unwrap duration(x)` (time.ParseDuration, in seconds). The proxy answered an empty matrix, because it translated only
 // duration() and bytes() (semantics/unwrap-duration-seconds). The values Go's
 // time.ParseDuration reads (250ms, 1.5s, 1h, -1s, 5.s, .5s) are rated and
 // summed like Loki does (values compared) on range and instant windows; the

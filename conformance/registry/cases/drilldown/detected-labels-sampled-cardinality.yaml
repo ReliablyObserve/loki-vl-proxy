@@ -3,9 +3,10 @@ title: detected_labels cardinality is sampled from the window's last minutes; Lo
 proves:
   - loki_api_v1_detected_labels
 consumer: drilldown
+evidence: needs recording
 why: |
   Loki answers detected_labels from the streams its ingesters hold, whatever
-  the requested window (pkg/ingester/instance.go LabelsWithValues); the proxy
+  the requested window; the proxy
   samples the window's last 5 minutes (metadataMaxFieldNamesWindow). The label
   names must match; only the cardinality numbers are covered by this case
   (bench/visual's compare rule says the same).
@@ -28,7 +29,7 @@ gap:
   impact: drilldown-visible
   effort: M
   area: 'internal/proxy/patterns.go handleDetectedLabels'
-  loki: 'pkg/ingester/instance.go LabelsWithValues'
+  loki: 'cardinality over every stream the ingesters hold, whatever the requested window'
   proxy: 'sampled cardinality'
   planned_test: 'bench/parity diff rule (documented facet)'
   clusters: []

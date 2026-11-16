@@ -17,13 +17,9 @@ why: |
   `key_1`.. in the same way, and a plain-text service listed each word of its
   lines.
 
-  Loki v3.7.9 builds the list from the sampled lines only
-  (pkg/querier/queryrange/detected_fields.go:282-363 parseDetectedFields):
+  Loki v3.7.9 builds the list from the sampled lines only:
   their structured metadata, the labels the query's own parsers extracted,
-  and a json re-parse of the line, logfmt when json fails (parseEntry,
-  :387-460). Its logfmt parser skips a key without a value
-  (pkg/logql/log/parser.go:423) and rejects a key holding a quote
-  (pkg/logql/log/logfmt/decode.go:78-81), so `| logfmt` over a JSON or
+  and a json re-parse of the line, logfmt when json fails. Its logfmt parser skips a key without a value and rejects a key holding a quote, so `| logfmt` over a JSON or
   plain-text line extracts nothing from it.
 
   The proxy adds the fields VictoriaLogs' field_names reports for the same
@@ -72,7 +68,7 @@ gap:
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy/drilldown.go fetchNativeFieldNamesForCandidate (stripUnrestrictedLogfmtUnpacks)'
-  loki: 'pkg/querier/queryrange/detected_fields.go:282-460; pkg/logql/log/parser.go:379-447; pkg/logql/log/logfmt/decode.go:43-140'
+  loki: 'the list is built from the sampled lines only: structured metadata, labels the query''s parsers extracted, then a json re-parse, logfmt when json fails; logfmt skips a key without a value and rejects a key holding a quote (TestCompat_DetectedFieldsNoLogfmtTokenFields)'
   proxy: 'field_names runs the query without unpack_logfmt pipes that read every key; the sampled-line scan is unchanged'
   planned_test: 'TestDetectedFields_NoLogfmtTokenFields_EdgeTable, TestDetectedFieldValues_LevelPillKeepsLineKeys, TestDetectedFields_LevelPillFieldNamesWithoutUnrestrictedUnpack, TestDetectedFields_DifferentialAgainstLokiReference, TestStripUnrestrictedLogfmtUnpacks_Table, FuzzStripUnrestrictedLogfmtUnpacks (internal/proxy, CI fuzz-smoke); TestCompat_DetectedFieldsNoLogfmtTokenFields (test/e2e-compat, group core)'
   clusters: []

@@ -15,8 +15,8 @@ generated:   # rewritten by conformance/scripts/error_registry.py
 
 loki_behaviour: |
   Loki v3.7.9 answers any failed querier or storage call it cannot classify
-  with 500 and its own text (pkg/util/server/error.go:124-128), a message over
-  the gRPC size limit with 500 ResourceExhausted (:93-100). This is the status
+  with 500 and its own text, a message over the gRPC size limit with 500
+  ResourceExhausted. This is the status
   the single error layer gives every failed VictoriaLogs call (refused, reset,
   VictoriaLogs 4xx/5xx other than a query rejection, a front proxy's 502/503,
   a truncated or malformed body) and every documented proxy buffer limit, with

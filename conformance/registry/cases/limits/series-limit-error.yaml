@@ -14,7 +14,7 @@ why: |
   limit is named in the proxy's log line instead.
 
   Loki counts the series of the answer of the expression, after an aggregation
-  has folded them (pkg/logql/engine.go:536-548 and :575-590 JoinSampleVector), so
+  has folded them, so
   `sum without (pod) (count_over_time({app="wide"}[1m]))` over many pods fits a
   limit its per-stream rows exceed. The proxy applies the limit the same way:
   a `without` query reads the per-stream rows under the raw-row budget

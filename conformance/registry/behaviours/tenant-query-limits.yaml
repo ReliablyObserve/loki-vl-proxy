@@ -4,7 +4,8 @@ title: Loki's per-tenant query limits, enforced as published
 
 loki: |
   Loki's query limits are limits_config fields with a default, a global value
-  and per-tenant overrides (pkg/validation/limits.go, v3.7.7):
+  and per-tenant overrides (Loki's limits_config reference,
+  https://grafana.com/docs/loki/latest/configure/#limits_config, v3.7.7):
   max_query_series (500), max_entries_limit_per_query (5000), max_query_length
   (721h), max_query_lookback (0), max_query_range (0) and query_timeout (1m).
   /config/tenant/v1/limits (YAML) and /loki/api/v1/drilldown-limits (JSON)

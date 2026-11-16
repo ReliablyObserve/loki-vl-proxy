@@ -4,6 +4,7 @@ proves:
   - loki_api_v1_index_volume
   - loki-compatible-profile
 consumer: drilldown
+evidence: needs recording
 why: |
   Loki keeps detected_level in structured metadata and its volume index has no
   entry for it, so `targetLabels=detected_level` answers no series. The proxy
@@ -30,7 +31,7 @@ gap:
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy/volume.go'
-  loki: 'pkg/storage volume index (stream labels only)'
+  loki: 'volume index holds stream labels only; detected_level answers no series'
   proxy: 'per-level volumes'
   planned_test: 'differential run row volume by detected_level'
   clusters:

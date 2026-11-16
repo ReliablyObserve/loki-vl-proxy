@@ -6,8 +6,7 @@ proves:
   - loki_api_v1_query
 consumer: explore
 why: |
-  Loki's logfmt parser extracts the `key=value` pairs of the line
-  (pkg/logql/log/parser.go:379 LogfmtParser.Process); a JSON line such as
+  Loki's logfmt parser extracts the `key=value` pairs of the line; a JSON line such as
   `{"model": "m", "latency_ms": 12}` yields no latency_ms, so
   `| logfmt | unwrap latency_ms` has no sample for it.
 
@@ -46,7 +45,7 @@ gap:
   impact: edge
   effort: M
   area: 'internal/translator logfmt pipeline (stored JSON fields read as logfmt keys)'
-  loki: 'pkg/logql/log/parser.go:379 (LogfmtParser.Process reads only the line)'
+  loki: '| logfmt reads only the key=value pairs of the line (differential run of 2026-11-04, in this case)'
   proxy: 'the stored field of a JSON line is read as a logfmt key'
   planned_test: 'TestCompat_LogfmtOverJSONLine (test/e2e-compat, group semantics)'
   clusters:

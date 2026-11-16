@@ -7,6 +7,7 @@ proves:
   - status-500
   - status-400
 consumer: any
+evidence: needs recording
 why: |
   Every read route validates its query and parameters as Loki does before it
   asks VictoriaLogs (fail-fast rule), so a query that reaches VictoriaLogs is
@@ -14,10 +15,10 @@ why: |
   the proxy wrote, the request is one Loki would have answered with data: the
   refusal is a defect of the proxy's plan or translation, not the client's
   mistake. The proxy answered it with 400 `failed to parse the log query`
-  (logqlmodel.ErrParse), which tells the user to fix a query that is valid.
+  (its parse-error class), which tells the user to fix a query that is valid.
   It now answers what Loki answers when its storage call fails: 500
   `Internal Server Error`, in the route's body shape (Loki returns its storage
-  error's own text there, pkg/util/server/error.go:124-128; the proxy never
+  error's own text there; the proxy never
   forwards VictoriaLogs' text). The refusal is typed where it is classified
   (redactedBackendStatusError, lokierr.KindInternal), counted in
   loki_vl_proxy_plan_defects_total{endpoint,plan_route}, and the request error

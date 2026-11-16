@@ -51,7 +51,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/translator stream selector matchers (streamMatcherToFieldFilter); internal/proxy/drilldown.go detected_labels field_values'
-  loki: 'pkg/logql/syntax stream selector: stream labels only'
+  loki: 'a stream selector matches stream labels only (visual-stack detected_labels observation, in this case)'
   proxy: 'a field filter on the stored value'
   planned_test: 'TestStreamLabelSelectorShadowedByIngestJSONKey (internal/proxy) and TestCompat_StreamLabelSelectorShadowedByIngestJSONKey (test/e2e-compat, group core)'
   clusters:

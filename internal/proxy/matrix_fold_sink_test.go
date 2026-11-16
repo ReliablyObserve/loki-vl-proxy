@@ -286,8 +286,7 @@ func TestSeriesLevelAggregationStaysWithinResponseBudget(t *testing.T) {
 // bench/ab (aggregation-over-binary): `sum by (service_name) (rate(...[5m]) /
 // count_over_time(...[5m]))` at a 120s step. The ratio is 1/300 for every
 // stream with a line in the window, so the sum is the number of active streams
-// over 300 (Loki evaluates the binary per stream and sums per step,
-// pkg/logql/evaluator.go newBinOpStepEvaluator, VectorAggEvaluator.Next). The
+// over 300 (Loki evaluates the binary per stream and sums per step). The
 // proxy reads that as `count by (service_name)` of the per-stream counts, and
 // 120 streams over four hours passed a 128 KiB response bound as a matrix of
 // streams x steps before the count; they now answer within it, with Loki's

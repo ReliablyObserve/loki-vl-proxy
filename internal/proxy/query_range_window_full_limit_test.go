@@ -20,9 +20,8 @@ import (
 
 // The tests in this file pin how a windowed log query reads its windows
 // (semantics/query-range-window-full-limit-reads). Like Loki's own interval
-// split (pkg/querier/queryrange/splitters.go: every split LokiRequest keeps
-// Limit: r.Limit; split_by_interval.go: splits are taken newest first for a
-// backward query until the limit is reached), every window is read with the
+// split (every split request keeps the request's limit; splits are taken
+// newest first for a backward query until the limit is reached), every window is read with the
 // request's whole limit. A window's cached rows then depend only on the
 // window and the limit, so a moved, longer or shorter range, and a parallel
 // or a sequential batch layout, reuse the windows an earlier request read.

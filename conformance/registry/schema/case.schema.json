@@ -38,6 +38,11 @@
       "type": "boolean"
     },
     "loki_parity": {"type": "string", "minLength": 1},
+    "evidence": {
+      "description": "Set only to 'needs recording' on a case whose Loki claim is not yet backed by a recorded Loki answer, an oracle fact, a wired test that compares with Loki, or Loki's public documentation. The recording step lists these cases and removes the key once the answer is recorded.",
+      "type": "string",
+      "enum": ["needs recording"]
+    },
     "owner_kept": {
       "description": "Owner-kept deviation cases whose difference from Loki this case's answers show (for example metric-identity/structured-metadata-splits-series). test/caseverify reports a fixed case that differs from Loki as differs_owner_kept, naming them, instead of as a regression; the difference stays listed and the case is never passed.",
       "type": "array",
