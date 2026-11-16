@@ -32,6 +32,9 @@ request:
   headers:
     X-Scope-OrgID: "0"
     X-Loki-Response-Encoding-Flags: categorize-labels
+  verify:
+    blocked_by: fixture
+    reason: "OTLP records reach Loki and VictoriaLogs by two OTLP endpoints (TestCompat_DetectedLevelQueryRange in test/e2e-compat), and the severity each stores is the case; the seeder writes Loki push bodies only"
 compare:
   mode: observed
   fields: [detected_level]

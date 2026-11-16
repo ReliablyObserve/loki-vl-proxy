@@ -327,6 +327,8 @@ const o1Query = "{env=\"production\"} | json | pipeline=`metrics/prometheus` | k
 // 1h run of the same end). With the remaining budget as the read limit, every
 // 24h run read the second-newest hour again under a limit no earlier read had
 // used (22 ms -> 170 ms warm p50 in the daily run, 2026-11-03).
+//
+// conformance: semantics/query-range-window-full-limit-reads
 func TestQueryRangeWindow_ShiftedRangesReuseHistoryWindows(t *testing.T) {
 	anchor := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Hour)
 	rows := windowReuseRows(anchor.Add(-30*time.Hour), anchor.Add(50*time.Minute), 3*time.Second, 0, 0)

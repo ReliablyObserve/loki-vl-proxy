@@ -38,6 +38,9 @@ request:
     limit: '100'
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    blocked_by: fixture
+    reason: "the selector names a label that only a JSON key of the line holds on the VictoriaLogs side (626 lines in the stack) and that no Loki stream has: the data precheck counts the two sides differently by construction, so the verifier cannot call the data equal"
 compare:
   mode: observed
   fields: [streams.values]

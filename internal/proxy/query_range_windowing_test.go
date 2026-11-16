@@ -163,6 +163,8 @@ func TestQueryRangeWindow_ExpandingRangeReusesCachedWindows(t *testing.T) {
 // A window read for one range must answer a shifted range which needs more
 // rows from it: every window is read with the request's whole limit, never
 // with only the rows still missing.
+//
+// conformance: semantics/query-range-window-budget
 func TestQueryRangeWindow_ShiftedRangeDoesNotReuseTruncatedWindow(t *testing.T) {
 	for _, tc := range []struct {
 		name           string

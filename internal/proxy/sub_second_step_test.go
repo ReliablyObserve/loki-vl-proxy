@@ -798,7 +798,7 @@ func TestSubSecondStepEdgeTable(t *testing.T) {
 // one VictoriaLogs call is given (see beyondBucketBudget) and fall to the
 // bounded raw-sample evaluator, which must give Loki's answer all the same.
 //
-// conformance: semantics/sub-second-step-grid
+// conformance: semantics/sub-second-step-grid, semantics/window-wider-than-step-raw-rows
 func TestSubSecondStepGrafanaShapes(t *testing.T) {
 	for _, tc := range []struct {
 		name, step string
@@ -1112,7 +1112,7 @@ func TestRestampInstantVectorBodies(t *testing.T) {
 // so the proxy answered 8 samples where Loki answered 9. Lines sit on every
 // step time, on every window start, and a millisecond either side of both.
 //
-// conformance: semantics/sub-second-step-grid, window-bounds-and-step-alignment
+// conformance: semantics/sub-second-step-grid, window-bounds-and-step-alignment, semantics/window-edge-float64-nanoseconds
 func TestSubSecondStepLineOnTheWindowEdge(t *testing.T) {
 	const stepMs, windowMs = 999, 600
 	startMs := int64(1793671800000)

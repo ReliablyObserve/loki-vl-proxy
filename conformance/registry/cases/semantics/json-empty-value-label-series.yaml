@@ -29,8 +29,8 @@ request:
   precondition: |
     The stream holds lines `{"a":""}`, `{"a":"x"}` and `{"b":1}`.
   verify:
-    blocked_by: fixture
-    reason: "a stream holding {\"a\":\"\"}, {\"a\":\"x\"} and {\"b\":1}"
+    met_by: stack
+    evidence: "test/casefixtures writes the stream {app=\"json-empty\"} (stream json-empty: the lines {\"a\":\"\"}, {\"a\":\"x\"} and {\"b\":1}) to Loki and VictoriaLogs before the verifier asks, in the daily report's seed step."
 compare:
   mode: exact
   fields: [series_labels, values]
