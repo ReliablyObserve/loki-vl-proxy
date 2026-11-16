@@ -19,8 +19,8 @@ import (
 // (none is set in docker-compose.yml): -max-metadata-cache-freshness 24h,
 // -recent-tail-refresh-max-staleness 15s (a near-now metadata answer and an
 // inventory row count are reused that long) and -metadata-max-staleness 10s
-// (a refresh may answer from the last read that long). Both tests below use
-// windows that end a few hours back: inside the freshness window, so Loki
+// (a refresh may answer from the last read that long). The test below uses a
+// window that ends a few hours back: inside the freshness window, so Loki
 // reads them live, and fully sealed for the proxy's inventory. A proxy
 // answer is polled until it matches Loki or labelsFreshnessBound passes; the
 // polls take the time the proxy needs, never a tuned sleep.
@@ -155,49 +155,4 @@ func TestCompat_LabelsBackfillIntoCachedBucket(t *testing.T) {
 	waitBothHold(t, selector, start, end, []string{"app", "env", uniq}, nil)
 	took := pollProxyLikeLoki(t, "after the backfill", params, "app", "env", uniq)
 	t.Logf("the proxy listed the backfilled label %s after Loki did", took)
-}
-
-// TestE2E_LabelsAgeOutOfWindow: a label whose only stream has data on an
-// earlier UTC day than the requested window is not listed by /labels, as Loki
-// does not list it, while a window that reaches back to the stream lists it
-// on both sides; the two windows ask one after the other on the same proxy.
-// Loki lists label names per index day (TSDB, 24h tables) for data it reads
-// from its store, not per stream time: a stream earlier on the same UTC day
-// as the window is listed by Loki (seen on the stack: a narrow window that
-// starts a minute after the stream), so the window is put on the next day.
-// The fixture is more than query_ingesters_within (30m on the stack) old, so
-// Loki reads it from the store only.
-//
-// conformance: quality/label-cache-aged-labels-kept
-func TestE2E_LabelsAgeOutOfWindow(t *testing.T) {
-	id := strconv.FormatInt(time.Now().UnixNano(), 36)
-	app := "labels-age-out-" + id
-	gone := "lgone_" + id
-	day := time.Now().UTC().Truncate(24 * time.Hour)
-	if time.Since(day) < 2*time.Hour {
-		day = day.Add(-24 * time.Hour) // the whole fixture stays more than 30m old
-	}
-	oldAt := day.Add(-30 * time.Minute) // the day before
-	newAt := day.Add(30 * time.Minute)
-	selector := fmt.Sprintf(`{app=%q}`, app)
-	end := day.Add(time.Hour)
-	wideStart, narrowStart := day.Add(-time.Hour), day.Add(10*time.Minute)
-	wide := labelsWindow(selector, wideStart, end)
-	narrow := labelsWindow(selector, narrowStart, end)
-
-	labelsFixtureIngest(t, map[string]string{"app": app, gone: "v1"}, oldAt, "labels age out old "+id)
-	labelsFixtureIngest(t, map[string]string{"app": app, "env": "new"}, newAt, "labels age out new "+id)
-	// Both backends hold both streams over the wide window, and neither lists
-	// the old one over the narrow window.
-	waitBothHold(t, selector, wideStart, end, []string{"app", "env", gone}, nil)
-	waitBothHold(t, selector, narrowStart, end, []string{"app", "env"}, []string{gone})
-
-	// The wide window lists the old stream's label, on both sides.
-	pollProxyLikeLoki(t, "the wide window", wide, "app", "env", gone)
-	if !slices.Contains(labelsFullRangeStrings(t, proxyURL+"/loki/api/v1/labels?"+wide), gone) {
-		t.Fatalf("the proxy does not list %s for the window that holds its stream", gone)
-	}
-	// The narrow window starts on the next day: like Loki, no gone label.
-	took := pollProxyLikeLoki(t, "the narrow window", narrow, "app", "env", gone)
-	t.Logf("the proxy listed the narrow window like Loki after %s", took)
 }

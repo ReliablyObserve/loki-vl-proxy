@@ -1,0 +1,49 @@
+id: quality/labels-just-pushed-stream-before-window
+title: /labels omits the label of a just-pushed stream whose samples lie before the window, which Loki lists (open)
+proves:
+  - data-probing-and-freshness
+  - loki_api_v1_labels
+consumer: explore
+why: |
+  Observed on the e2e core stack (Loki 3.7.7, TSDB, query_ingesters_within
+  30m, VictoriaLogs v1.53.0), twice on fresh stacks: a stream
+  {app, lgone_<id>} pushed seconds before the request with one sample at T
+  (3h back in the first run, 23:30 UTC of the previous day in the second)
+  was listed by Loki's /labels for a window that starts after T (T+1m, and
+  00:10 UTC of the next day), scoped to the app, after both backends had
+  been flushed. VictoriaLogs' stream_field_names over the same window, and so
+  the proxy, lists only the streams with samples in the window. The cause on
+  Loki's side is not established: an index-table (24h) granularity does not
+  explain the second run; a likely one is that Loki answers label names for
+  the streams it still holds after a push (ingesters or the not yet compacted
+  index head) without the window's time filter, whatever the samples'
+  timestamps. The e2e stack cannot make such a fixture old in Loki's sense, so
+  no e2e test pins either side yet.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: 'T+1m'
+    end: 'T+11m'
+    query: '{app="<fixture>"}'
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    One stream with a unique label pushed seconds before the request with a
+    sample at T (hours back), another stream of the app pushed with a sample
+    at T+10m; both backends flushed.
+compare:
+  mode: observed
+  fields: [data]
+  expect: |
+    Loki lists the unique label of the stream at T; the proxy does not.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy/metadata_inventory.go (listing granularity)'
+  loki: 'label names of just-pushed streams listed outside their samples'' window (cause not established)'
+  proxy: 'labels of streams with samples in the window (VictoriaLogs stream_field_names)'
+  planned_test: 'a Loki-side recording of when the label stops being listed for the window'
+  note: 'Related: quality/label-cache-aged-labels-kept.'
+  clusters: []

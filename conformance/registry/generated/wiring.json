@@ -1018,8 +1018,7 @@
       "test/e2e-compat/json_label_probe_gates_test.go"
     ],
     "quality/label-cache-aged-labels-kept": [
-      "internal/proxy/label_cache_behavior_test.go",
-      "test/e2e-compat/labels_backfill_age_out_test.go"
+      "internal/proxy/label_cache_behavior_test.go"
     ],
     "quality/label-cache-warm": [
       "internal/proxy/labels_cache_warm_test.go",
@@ -1028,7 +1027,7 @@
     ],
     "quality/labels-backfill-into-cached-bucket": [
       "internal/proxy/label_backfill_cached_bucket_test.go",
-      "test/e2e-compat/labels_backfill_age_out_test.go"
+      "test/e2e-compat/labels_backfill_cached_bucket_test.go"
     ],
     "quality/logfmt-parse-risk-candidates": [
       "internal/proxy/logfmt_risk_candidates_test.go",
@@ -1670,7 +1669,7 @@
       "internal/proxy/label_metadata_freshness_test.go",
       "internal/proxy/recent_tail_bypass_clamp_test.go",
       "test/e2e-compat/label_freshness_e2e_test.go",
-      "test/e2e-compat/labels_backfill_age_out_test.go"
+      "test/e2e-compat/labels_backfill_cached_bucket_test.go"
     ],
     "semantics/metadata-routes-validate-before-selector-rule": [
       "internal/proxy/query_tree_validation_test.go"
@@ -5078,8 +5077,7 @@
       "loki_api_v1_label",
       "loki_api_v1_labels"
     ],
-    "test/e2e-compat/labels_backfill_age_out_test.go": [
-      "quality/label-cache-aged-labels-kept",
+    "test/e2e-compat/labels_backfill_cached_bucket_test.go": [
       "quality/labels-backfill-into-cached-bucket",
       "semantics/metadata-answers-include-last-24h-like-loki"
     ],
@@ -5584,7 +5582,7 @@
     "quality/detected-metadata-proxy-cache",
     "quality/index-stats-bytes-and-chunks",
     "quality/label-values-chunk-window",
-    "quality/labels-same-day-stream-before-window",
+    "quality/labels-just-pushed-stream-before-window",
     "quality/parity-corpus-asymmetric-visual-fixtures",
     "quality/stats-volume-freshness",
     "semantics/binary-step-grid",

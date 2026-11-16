@@ -5,10 +5,17 @@ proves:
   - loki_api_v1_labels
 consumer: explore
 why: |
-  Loki's /labels lists the labels of the streams in the requested window only.
-  The proxy merges new label names into its cached list (mergeLabelsIntoCache)
-  and never removes one, so a label whose last stream left the window is still
-  listed by the label browser.
+  Loki's /labels is bounded by the requested window: label names of streams
+  without samples in the window are not listed once Loki reads them from its
+  store. The proxy merged new label names into its cached list
+  (mergeLabelsIntoCache) and never removed one, so a label whose last stream
+  left the window stayed listed for as long as the cache key (the window
+  start bucketed to 5m, 1h or 6h) kept being refreshed. Loki lists a
+  just-pushed stream's label outside its samples' window
+  (quality/labels-just-pushed-stream-before-window), so an e2e fixture pushed
+  during the test cannot show the aged-out answer against Loki; the
+  proxy-side behaviour is pinned by TestStoreLabelsCache_ReplacesExisting and
+  TestHandleLabels_RefreshReplacesCachedAnswer.
 request:
   method: GET
   path: /loki/api/v1/labels
@@ -21,13 +28,15 @@ compare:
   mode: observed
   fields: [data]
   expect: |
-    Only labels of streams in the window.
+    The labels Loki lists for the window: a label whose streams have no
+    samples in the window and that Loki reads from its store is not listed;
+    a cached answer never adds labels a later listing of the window dropped.
 gap:
   status: open
   impact: explore-visible
   effort: S
-  area: 'internal/proxy/label_metadata.go:1259 mergeLabelsIntoCache'
+  area: 'internal/proxy/label_metadata.go storeLabelsCache (was mergeLabelsIntoCache)'
   loki: 'pkg/querier/querier.go Label (window-bounded)'
   proxy: 'union never shrinks'
-  planned_test: 'TestE2E_LabelsAgeOutOfWindow (test/e2e-compat, group core)'
+  planned_test: 'an e2e against Loki once a fixture can be made old in Loki''s sense (see quality/labels-just-pushed-stream-before-window)'
   clusters: []
