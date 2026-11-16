@@ -244,10 +244,21 @@ type tailResume struct {
 }
 
 // start notes the time the tail connected: VictoriaLogs' first read covers
-// the lookback before it.
+// the lookback before it. A tail that sent its history keeps tracking, so the
+// first read drops what the history sent.
 func (r *tailResume) start(track bool, now time.Time) {
-	r.track = track
+	r.track = track || r.dedupe
 	r.cursor = now.Add(-tailResumeLookback).UnixNano()
+}
+
+// afterHistory arms the dedupe of the native stream's first read once the
+// history has been sent: that read covers the lookback before the stream
+// opens, which the history may already have sent.
+func (r *tailResume) afterHistory() {
+	if r.track && r.last != 0 {
+		r.dedupe = true
+		r.dedupeUntil = time.Time{}
+	}
 }
 
 // advance moves the cursor after a healthy stream failed at now: VictoriaLogs
@@ -335,7 +346,11 @@ func (r *tailResume) entryKey(e tailEntry) uint64 {
 	}
 	r.names = r.names[:0]
 	for k := range e.stream {
-		r.names = append(r.names, k)
+		// detected_level is derived: the history carries it in the stream
+		// labels where the live frame of the same entry does not.
+		if k != detectedLevelLabel {
+			r.names = append(r.names, k)
+		}
 	}
 	slices.Sort(r.names)
 	h := &r.hash
