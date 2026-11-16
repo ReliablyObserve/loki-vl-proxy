@@ -687,3 +687,55 @@ func identityStatsCalls(emu *vlemu.Emulator) (buckets []string, counts int) {
 	}
 	return buckets, counts
 }
+
+// A chunked window read is not kept as per-series buckets (they hold a series per line): its folded steps are, so a
+// repeat asks VictoriaLogs nothing and a refresh one step later reads one row count and one small bucket read for the
+// step it lacks, and answers what an uncached proxy answers.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows, quality/query-range-extent-cache
+func TestDynamicIdentityWindowsChunkedRefresh(t *testing.T) {
+	old := maxStatsBucketResponseBytes
+	t.Cleanup(func() { maxStatsBucketResponseBytes = old })
+	maxStatsBucketResponseBytes = 1 << 20
+	s := dynChunkScenario(6000, true)
+	shift := time.Now().Add(-3*time.Hour).Truncate(time.Minute).UnixNano() - s.end
+	for i := range s.rows {
+		s.rows[i].TS += shift
+	}
+	end := time.Unix(0, s.end+shift)
+	q := s.query()
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+	counter := &stubCallCounter{inner: emu.Handler()}
+	srv := httptest.NewServer(counter)
+	t.Cleanup(srv.Close)
+	p := newExtentTestProxy(t, srv.URL, true, 256<<20)
+	uncachedSrv := httptest.NewServer(emu.Handler())
+	t.Cleanup(uncachedSrv.Close)
+	uncached := newExtentTestProxy(t, uncachedSrv.URL, false, 256<<20)
+	span := time.Duration(s.end - s.start)
+	get := func(e time.Time) []byte {
+		t.Helper()
+		code, body := extentQueryRange(t, p, q, e.Add(-span), e, s.step, nil)
+		p.statsExtentStores.wait()
+		if code != http.StatusOK {
+			t.Fatalf("%d %.300s", code, body)
+		}
+		return body
+	}
+	counter.take()
+	get(end)
+	cold, _ := counter.take()
+	get(end)
+	repeat, _ := counter.take()
+	before := len(emu.EndpointCalls("/select/logsql/stats_query_range"))
+	refreshed := get(end.Add(s.step))
+	refresh, _ := counter.take()
+	calls := emu.EndpointCalls("/select/logsql/stats_query_range")[before:]
+	if cold < 3 || repeat != 0 || refresh > 2 {
+		t.Fatalf("calls: cold %d, repeat %d, refresh %d; want a chunked cold read, no call on repeat, at most a count and one read on refresh: %d", cold, repeat, refresh, len(calls))
+	}
+	if _, want := extentQueryRange(t, uncached, q, end.Add(s.step-span), end.Add(s.step), s.step, nil); string(dynamicIdentityResult(t, refreshed)) != string(dynamicIdentityResult(t, want)) {
+		t.Fatalf("the refreshed answer differs from an uncached proxy's\n cached: %.300s\nuncached: %.300s", refreshed, want)
+	}
+	t.Logf("calls: cold %d, repeat %d, refresh %d", cold, repeat, refresh)
+}
