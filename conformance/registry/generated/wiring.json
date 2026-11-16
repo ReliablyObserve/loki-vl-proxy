@@ -1661,10 +1661,19 @@
       "internal/proxy/fail_fast_unicode_test.go",
       "test/e2e-compat/logql_unicode_runes_test.go"
     ],
+    "semantics/loki-build-phase-window": [
+      "internal/proxy/build_phase_window_loki_test.go"
+    ],
+    "semantics/loki-error-phases": [
+      "internal/logql/error_order_loki_test.go"
+    ],
     "semantics/loki-keyword-label-names": [
       "internal/logql/keyword_case_test.go",
       "internal/logql/keyword_label_names_loki_test.go",
       "test/e2e-compat/keyword_label_names_test.go"
+    ],
+    "semantics/loki-pipeline-error-rules": [
+      "internal/proxy/pipeline_error_rules_loki_test.go"
     ],
     "semantics/lower-bound-exclusive": [
       "internal/proxy/range_lower_bound_test.go",
@@ -2520,7 +2529,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 597,
+  "registry_items": 601,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2585,6 +2594,9 @@
     ],
     "internal/logql/dotted_names_test.go": [
       "profiles/dotted-name-parse-error"
+    ],
+    "internal/logql/error_order_loki_test.go": [
+      "semantics/loki-error-phases"
     ],
     "internal/logql/input_size_test.go": [
       "architecture-syntax-package-layering"
@@ -2881,6 +2893,9 @@
     ],
     "internal/proxy/blank_grouping_test.go": [
       "semantics/translator-reads-blank-grouping-as-none"
+    ],
+    "internal/proxy/build_phase_window_loki_test.go": [
+      "semantics/loki-build-phase-window"
     ],
     "internal/proxy/capture_error_replay_test.go": [
       "limits/series-limit-error",
@@ -3630,6 +3645,9 @@
       "loki_api_v1_query_range",
       "semantics/label-replace-new-label",
       "semantics/without-over-inner-aggregation-collapses"
+    ],
+    "internal/proxy/pipeline_error_rules_loki_test.go": [
+      "semantics/loki-pipeline-error-rules"
     ],
     "internal/proxy/plain_stream_labels_test.go": [
       "loki_api_v1_query_range",
@@ -5596,7 +5614,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 661,
+  "tests_with_markers": 664,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5617,6 +5635,7 @@
     "limits/drilldown-7d-breakdown-response-limit",
     "limits/parser-metric-raw-rows-body-cap",
     "limits/series-cap-and-byte-budget-interact",
+    "loki-error-phases",
     "loki_api_v1_cache_generation_numbers",
     "loki_api_v1_format_query",
     "loki_api_v1_index_shards",
@@ -5697,5 +5716,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 384
+  "wired_items": 387
 }

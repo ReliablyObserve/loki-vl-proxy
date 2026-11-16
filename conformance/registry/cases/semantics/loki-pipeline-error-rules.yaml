@@ -1,0 +1,34 @@
+id: semantics/loki-pipeline-error-rules
+title: "Which metric queries Loki fails on a pipeline error, and ahead of which other errors (recorded)"
+pending: true
+proves:
+  - loki-error-phases
+consumer: api
+why: |
+  Recorded with Loki's engine (`test/oracle/loki engine`, Loki 3.7.9) over a data set with lines each producer
+  fails on, on query_range and query (internal/proxy/testdata/pipeline_error_rules_loki_answers.jsonl.gz, 48
+  queries):
+
+  - LabelFilterErr fails a metric: a numeric, duration or size filter on a value that is not one, `==` included,
+    and under an `or`; the parser runs for the filter even under a sum with no grouping.
+  - TemplateFormatErr fails a metric when a later stage reads the line_format's line, and always for a
+    label_format template; an unread line_format is not built.
+  - Plain logfmt never fails on an unterminated value; logfmt --strict does (LogfmtParserErr).
+  - unpack, and json with an extraction list, fail on a line that is not one JSON object (JSONParserErr).
+  - A sum with no grouping or `by ()` directly over the range aggregation needs no label, so its parser does not run
+    and it answers 200; `sum without (…)`, `sum without ()`, `sum by` a stream or parsed label, count, max, min,
+    avg, stddev, topk and sort need labels and fail. A label filter that keeps the failing line makes the parser run
+    under an ungrouped sum.
+  - `| __error__=""` and `| drop __error__, __error_details__` after the producer remove the error; a sum grouped
+    by `__error__` keeps a parser's error as a series (200) but not a label filter's or a template's (400).
+  - An unwrap of a value a label filter failed on reports SampleExtractionErr.
+  - A pipeline error answers 400 ahead of a vector matching failure (500) on either side, and ahead of the series
+    limit (400).
+request:
+  scope: query-grammar
+  entry: "TestPipelineErrorRulesRecorded (internal/proxy): Loki's recorded answer for every rule"
+  setup: "The data set and queries of internal/proxy/pipeline_error_rules_loki_test.go, recorded with LVP_RUN_ORACLES=1."
+compare:
+  mode: exact
+  fields: [status, error_text]
+  expect: "Loki's status and pipeline error type for every rule, on query_range and query."
