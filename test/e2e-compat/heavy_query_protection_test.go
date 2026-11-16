@@ -280,7 +280,7 @@ func ingestHeavyRankFixture(t *testing.T, app, vlRows string, streams map[string
 func isDocumentedLimitError(status int, body string) bool {
 	switch {
 	case status == http.StatusTooManyRequests:
-		// Loki's queue-full text (pkg/queue/queue.go:21); the flag is in the log.
+		// Loki's queue-full text; the flag is in the log.
 		return strings.Contains(body, "too many outstanding requests")
 	case status == http.StatusGatewayTimeout:
 		// -backend-timeout, or VictoriaLogs' own -search.maxQueryDuration, which
