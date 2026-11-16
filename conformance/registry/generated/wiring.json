@@ -1017,10 +1017,16 @@
       "internal/proxy/json_label_probe_gates_test.go",
       "test/e2e-compat/json_label_probe_gates_test.go"
     ],
+    "quality/label-cache-aged-labels-kept": [
+      "internal/proxy/label_cache_behavior_test.go"
+    ],
     "quality/label-cache-warm": [
       "internal/proxy/labels_cache_warm_test.go",
       "internal/proxy/metadata_edge_refresh_test.go",
       "test/e2e-compat/stack_profiles_test.go"
+    ],
+    "quality/labels-backfill-into-cached-bucket": [
+      "internal/proxy/label_backfill_cached_bucket_test.go"
     ],
     "quality/logfmt-parse-risk-candidates": [
       "internal/proxy/logfmt_risk_candidates_test.go",
@@ -1657,6 +1663,7 @@
     ],
     "semantics/metadata-answers-include-last-24h-like-loki": [
       "internal/proxy/compat_cache_freshness_test.go",
+      "internal/proxy/label_backfill_cached_bucket_test.go",
       "internal/proxy/label_empty_run_test.go",
       "internal/proxy/label_metadata_freshness_test.go",
       "internal/proxy/recent_tail_bypass_clamp_test.go",
@@ -3165,8 +3172,13 @@
     "internal/proxy/keep_unwrap_identity_test.go": [
       "semantics/keep-before-unwrap-series-identity"
     ],
+    "internal/proxy/label_backfill_cached_bucket_test.go": [
+      "quality/labels-backfill-into-cached-bucket",
+      "semantics/metadata-answers-include-last-24h-like-loki"
+    ],
     "internal/proxy/label_cache_behavior_test.go": [
-      "loki_api_v1_labels"
+      "loki_api_v1_labels",
+      "quality/label-cache-aged-labels-kept"
     ],
     "internal/proxy/label_empty_run_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
@@ -5522,7 +5534,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 651,
+  "tests_with_markers": 652,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5563,9 +5575,7 @@
     "profiles/volume-detected-level-extension",
     "quality/detected-metadata-proxy-cache",
     "quality/index-stats-bytes-and-chunks",
-    "quality/label-cache-aged-labels-kept",
     "quality/label-values-chunk-window",
-    "quality/labels-backfill-into-cached-bucket",
     "quality/parity-corpus-asymmetric-visual-fixtures",
     "quality/stats-volume-freshness",
     "semantics/binary-step-grid",
@@ -5621,5 +5631,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 380
+  "wired_items": 382
 }

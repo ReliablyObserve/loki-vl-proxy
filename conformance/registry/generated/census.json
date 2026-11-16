@@ -1481,7 +1481,10 @@
     "internal/proxy/keep_series_grouping_test.go | semantics/keep-leaves-labels-loki-drops",
     "internal/proxy/keep_series_grouping_test.go | semantics/stage-name-followed-by-more-of-stage",
     "internal/proxy/keep_unwrap_identity_test.go | semantics/keep-before-unwrap-series-identity",
+    "internal/proxy/label_backfill_cached_bucket_test.go | quality/labels-backfill-into-cached-bucket",
+    "internal/proxy/label_backfill_cached_bucket_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/label_cache_behavior_test.go | loki_api_v1_labels",
+    "internal/proxy/label_cache_behavior_test.go | quality/label-cache-aged-labels-kept",
     "internal/proxy/label_empty_run_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/label_filter_expression_test.go | loki_api_v1_query_range",
     "internal/proxy/label_filter_expression_test.go | semantics/label-filter-expression-syntax",
@@ -2850,7 +2853,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 650,
+      "go": 651,
       "playwright": 1
     },
     "page_kinds": {
@@ -2869,8 +2872,8 @@
     },
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
-    "unwired_items": 95,
-    "wired_items": 380
+    "unwired_items": 93,
+    "wired_items": 382
   },
   "gates": [
     "A/B shape selection",
