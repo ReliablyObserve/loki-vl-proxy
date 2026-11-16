@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.303.0] - 2026-11-16
+
 ### Fixed
 
 - One stream now gets one `detected_level` on every metric query type, as Loki gives. For a stream labelled
