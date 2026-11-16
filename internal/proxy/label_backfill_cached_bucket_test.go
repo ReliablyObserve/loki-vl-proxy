@@ -77,3 +77,39 @@ func TestMetadataFreshness_RowsBackfilledIntoACachedNonEmptyHourAppearOnTheNextR
 		t.Fatalf("the refresh after the rescan made %d scans, want only the %d edges", d, edges)
 	}
 }
+
+// A shipper that delivers rows a little late keeps adding rows to the newest
+// sealed hour. That hour holds rows and ended within the last hour, so it is
+// no part of a run: refreshes of an unchanged older window keep sending only
+// the edges and about one count, and the hour is revalidated on its labels TTL
+// schedule, not rescanned on every listing.
+//
+// conformance: quality/labels-backfill-into-cached-bucket
+func TestMetadataFreshness_RowsTricklingIntoTheNewestHourDoNotRescanEveryListing(t *testing.T) {
+	now := time.Now()
+	start := now.Add(-6 * time.Hour).Truncate(time.Hour).Add(7*time.Minute + 30*time.Second)
+	end := sealedWindowEnd(now)
+	newest := end.Add(-time.Minute).Truncate(time.Hour).Add(-time.Hour) // a sealed hour that ended within the last hour
+	vl := &backfillVL{trickleFrom: newest.UnixNano(), trickleTo: newest.Add(time.Hour).UnixNano()}
+	vl.trickle.Store(1)
+	_, mux := newFreshnessProxy(t, vl.server(t).URL, 24*time.Hour)
+	path := fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d", start.UnixNano(), end.UnixNano())
+	edges := inventoryEdgeCount(start, end)
+	if got := getMetadataList(t, mux, path); !contains(got, "late_label") {
+		t.Fatalf("the first listing: %v", got)
+	}
+	for i := 0; i < 4; i++ {
+		vl.trickle.Add(1)
+		time.Sleep(200 * time.Millisecond) // past the recent-tail staleness
+		scans, counts := vl.scan.Load(), vl.counts.Load()
+		_ = getMetadataList(t, mux, path)
+		scans, counts = vl.scan.Load()-scans, vl.counts.Load()-counts
+		t.Logf("refresh %d with a row trickling into the newest hour: %d scans, %d counts", i, scans, counts)
+		if scans != edges {
+			t.Fatalf("refresh %d made %d scans, want only the %d edges: the newest hour is rescanned on every listing", i, scans, edges)
+		}
+		if counts > 2 {
+			t.Fatalf("refresh %d made %d counts", i, counts)
+		}
+	}
+}

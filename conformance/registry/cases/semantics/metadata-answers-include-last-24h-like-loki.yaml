@@ -42,8 +42,8 @@ why: |
   edge cache).
 
   Buckets of a countable query (stream and field filters only) whose row
-  count is known, every hour and day bucket and every empty bucket of any
-  size, that ended within the freshness window are confirmed on every
+  count is known, every empty bucket of any size and every hour and day
+  bucket with rows that ended more than an hour ago, that ended within the freshness window are confirmed on every
   listing with one row count per contiguous run of such buckets, compared
   with the rows the buckets held (a count is cheap for * and stream filters,
   but with a field filter it reads the filtered column of every row in the
@@ -59,8 +59,11 @@ why: |
 
   Accepted limit: a row that lands more than a minute late in an already
   sealed, non-empty 5m or 1m inventory bucket (no row count is kept for
-  them), or in a bucket of a query that cannot be counted and ended more
-  than an hour ago, appears after that bucket's revalidation, not at once.
+  them), in a bucket with rows that ended within the last hour (where
+  shippers' late rows land; revalidated every labels TTL rather than
+  rescanned on every listing), or in a bucket of a query that cannot be
+  counted and ended more than an hour ago, appears after that bucket's
+  revalidation, not at once.
 
 request:
   method: GET

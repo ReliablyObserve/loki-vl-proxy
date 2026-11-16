@@ -15,12 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Storing a listing is also cheaper (40 labels: 4.4 µs and 16 allocations instead of 11.9 µs and 64).
 - Rows written with old timestamps into an hour or day the label inventory already cached with data are listed by the
   next `/labels` or `/label/{name}/values` request, as Loki lists them as soon as they are ingested. Within
-  `-max-metadata-cache-freshness` every bucket whose row count is known (hours, days and empty buckets) is confirmed
+  `-max-metadata-cache-freshness` every bucket whose row count is known (empty buckets, and hours and days that ended
+  more than an hour ago) is confirmed
   by one row count per contiguous run, compared with the rows the buckets held; a run that grew is halved to find the
   buckets that received rows, and only those are rescanned. Before, only empty buckets were confirmed this way and a
   bucket with data showed backfilled rows only after its revalidation delay. A run count taken within
   `-recent-tail-refresh-max-staleness` is reused, so a repeat inside it sends no count; non-empty 5-minute and
-  1-minute buckets (no row count) and listings that cannot be counted keep their revalidation schedule.
+  1-minute buckets (no row count), hours with rows from the last hour (where shippers' late rows land, revalidated
+  every labels TTL) and listings that cannot be counted keep their revalidation schedule.
 - A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
   accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
   per-stream series took the stream's `detected_level`.

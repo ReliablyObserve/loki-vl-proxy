@@ -740,8 +740,8 @@ type runBucket struct {
 }
 
 // revalidateLiveRuns confirms the buckets of a plan that ended within the
-// live window and whose row count is known (every hour and day bucket, and
-// every empty bucket), with one row count over each contiguous run of such
+// live window and whose row count is known (every empty bucket, and every
+// hour and day bucket that ended an hour ago), with one row count over each contiguous run of such
 // buckets instead of one call per bucket, on every listing: Loki reads the
 // last max_metadata_cache_freshness live, and rows written with old
 // timestamps (a shipper outage, a replay, a late fixture) land in buckets
@@ -762,7 +762,10 @@ type runBucket struct {
 // non-empty 5m or 1m bucket carries no row count from its scan and follows
 // its schedule (rows backfilled into it show up within the labels TTL while
 // it is recent, at most an hour later when older); so do the buckets of a
-// listing that cannot be counted (word, phrase or pipe filters).
+// listing that cannot be counted (word, phrase or pipe filters), and buckets
+// with rows that ended within the last hour: shippers deliver rows a little
+// late into the newest hours all the time, and those buckets are revalidated
+// every labels TTL instead of being rescanned on every listing.
 func (p *Proxy) revalidateLiveRuns(ctx context.Context, path string, params url.Values, base string, plan []inventorySegment) map[string]struct{} {
 	now := cache.Now().UnixNano()
 	notBefore := now - int64(p.recentTailRefreshMaxStaleness)
@@ -779,7 +782,13 @@ func (p *Proxy) revalidateLiveRuns(ctx context.Context, path string, params url.
 		ok := false
 		if seg.level >= 0 && seg.end > now-int64(p.inventoryLiveWindow()) {
 			key := inventoryBucketKey(base, seg)
-			if e, found := p.loadInventoryEntry(ctx, key); found && (e.Rows >= 0 || len(e.Values) == 0) {
+			e, found := p.loadInventoryEntry(ctx, key)
+			empty := found && len(e.Values) == 0 && e.Rows <= 0
+			// A bucket with rows joins once it ended an hour ago: rows that
+			// shippers deliver late land in the newest hours, which follow the
+			// labels TTL schedule instead of a rescan on every listing.
+			settled := found && e.Rows > 0 && seg.end <= now-int64(time.Hour)
+			if empty || settled {
 				bucket, ok = runBucket{key: key, seg: seg, entry: e, expected: max(e.Rows, 0)}, true
 			}
 		}
