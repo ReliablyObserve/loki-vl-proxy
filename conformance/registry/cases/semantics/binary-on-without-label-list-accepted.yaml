@@ -14,12 +14,20 @@ why: |
   (internal/logql TestRangeAndUnwrapGrammarMatchLoki and TestWhitespaceMatchesLoki, recorded with the Loki oracle).
 
 request:
-  scope: query-grammar
-  entry: "TestGrammarSweep (internal/querycorpus): the class of conformance/registry/grammar-sweep.json cased semantics/binary-on-without-label-list-accepted"
-  setup: "Send as the query of /loki/api/v1/query_range (start now-15m, end now, step 60s): rate({app=\"x\"}[5m]) + on 1 . The query is kept out of the plan corpus while the difference is open (the plan ratchets count the corpus rows); promote it to an HTTP request with the e2e proof when it is fixed."
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'rate({app="x"}[5m]) + on 1'
+    start: now-15m
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
 compare:
   mode: observed
   fields: [status, error_text]
+  values:
+    status: 400
   expect: "Loki's 400 syntax error at the token after on."
 gap:
   status: fixed
