@@ -100,50 +100,70 @@ func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, 
 	if lines == 0 {
 		return nil, true, false
 	}
-	miner, err := p.minePatternLines(ctx, scope, maxLines)
+	miner, err := p.minePatternLines(ctx, scope, maxLines, lines)
 	if err != nil {
 		return nil, false, false
 	}
 	return patternResultEntriesFromMaps(buildPatternResponse(miner, patternLimit)), true, true
 }
 
-// minePatternLines reads the lines of the scope, sorted by stream and time, and mines them as they come; no more
-// than a line is held at a time, so memory is that of the clusters.
-func (p *Proxy) minePatternLines(ctx context.Context, scope patternQueryScope, maxLines int) (*patternMiner, error) {
+// minePatternLines reads the lines of the scope, sorted by stream and time, and mines them as they come, on
+// workers when the range holds many (lines, as counted): no more than a few batches of lines are held at a time,
+// so memory is that of the clusters.
+func (p *Proxy) minePatternLines(ctx context.Context, scope patternQueryScope, maxLines, lines int) (*patternMiner, error) {
 	miner := newPatternMiner()
 	miner.oneStream = p.patternsSelectorScope
 	miner.shortWholeLine = p.patternsSelectorScope
 	miner.fillStep = int64(scope.step / time.Second)
 	miner.sampleFromNs, miner.sampleToNs = scope.startNs, scope.endNs
-	read := newPatternLineReader(miner, p.newLogRowLevels())
+	pm := startPatternMining(miner, lines)
+	decoders := 0
+	if pm != nil {
+		defer pm.finish()
+		decoders = len(pm.workers)
+	}
+	levels := p.newLogRowLevels()
+	mine := patternLineConsumer(miner, patternLineSink(miner, pm))
 	// The samples starting inside the range are counted whole, as Loki counts them: the last one's lines after the
 	// range's end are read too.
-	err := p.readPatternCountRows(ctx, patternExactLinesQuery(scope.filter), scope.startNs, patternSamplesEndNs(scope.endNs), maxLines, read)
+	err := p.readPatternAnswer(ctx, patternExactLinesQuery(scope.filter), scope.startNs, patternSamplesEndNs(scope.endNs), func(body io.Reader) error {
+		return scanPatternLineRows(body, maxLines, levels, decoders, mine)
+	})
 	return miner, err
 }
 
 // newPatternLineReader returns the function that mines one row of the lines query into the miner.
 func newPatternLineReader(miner *patternMiner, levels logRowLevels) func(*fj.Value) bool {
-	step := miner.fillStep
+	d := newPatternLineRowDecoder(levels)
+	mine := patternLineConsumer(miner, patternLineSink(miner, nil))
+	var row patternLineRow
 	return func(v *fj.Value) bool {
-		msg := v.GetStringBytes("_msg")
-		if len(msg) == 0 {
+		d.decode(v, &row)
+		return mine(&row)
+	}
+}
+
+// patternLineConsumer returns the function that hands one decoded row of the lines query to mine, with the step
+// and count the miner's settings give it, or returns false for a row the tier cannot use.
+func patternLineConsumer(miner *patternMiner, mine func(stream, level, msg string, bucket int64, count int)) func(*patternLineRow) bool {
+	step := miner.fillStep
+	return func(row *patternLineRow) bool {
+		if row.msg == "" {
 			return true // an empty line has no tokens
 		}
-		if isVLMissingMsgBytes(msg, levels.defaultMsg) {
+		if row.missing {
 			// A row without a message is built from all of its fields, which the query does not keep.
 			return false
 		}
-		timeNs, ok := parseLokiTimeToUnixNano(string(v.GetStringBytes("_time")))
-		if !ok {
+		if !row.timeOK {
 			return false
 		}
-		miner.observeStreamLine(string(v.GetStringBytes(patternExactStreamField)), patternLevelFromFJ(v, &levels), string(msg), patternBucketStart(timeNs, step), miner.sampleCount(timeNs))
+		mine(row.stream, row.level, row.msg, patternBucketStart(row.timeNs, step), miner.sampleCount(row.timeNs))
 		return true
 	}
 }
 
 // readPatternLines mines the rows of a lines query's answer, for callers that hold the answer as a stream.
 func readPatternLines(r io.Reader, miner *patternMiner, levels logRowLevels, maxLines int) error {
-	return scanPatternRows(r, maxLines, newPatternLineReader(miner, levels))
+	return scanPatternLineRows(r, maxLines, levels, 0, patternLineConsumer(miner, patternLineSink(miner, nil)))
 }

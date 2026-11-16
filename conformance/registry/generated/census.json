@@ -1791,6 +1791,10 @@
     "internal/proxy/patterns_exact_test.go | drilldown/patterns-full-range-counts",
     "internal/proxy/patterns_exact_test.go | drilldown/patterns-mined-differently",
     "internal/proxy/patterns_exact_test.go | loki_api_v1_patterns",
+    "internal/proxy/patterns_mine_parallel_test.go | drilldown/patterns-full-range-counts",
+    "internal/proxy/patterns_mine_parallel_test.go | loki_api_v1_patterns",
+    "internal/proxy/patterns_mine_parallel_test.go | patterns-loki-mining",
+    "internal/proxy/patterns_mine_parallel_test.go | peer-cache-patterns",
     "internal/proxy/patterns_non_selector_test.go | drilldown/patterns-non-selector-query",
     "internal/proxy/patterns_non_selector_test.go | loki_api_v1_patterns",
     "internal/proxy/patterns_owner_test.go | loki_api_v1_patterns",
@@ -3006,7 +3010,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 705,
+      "go": 706,
       "playwright": 2
     },
     "page_kinds": {

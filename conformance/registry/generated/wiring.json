@@ -187,6 +187,7 @@
     "drilldown/patterns-full-range-counts": [
       "internal/proxy/patterns_counts_test.go",
       "internal/proxy/patterns_exact_test.go",
+      "internal/proxy/patterns_mine_parallel_test.go",
       "internal/proxy/patterns_sample_end_test.go",
       "internal/proxy/patterns_state_test.go",
       "test/e2e-compat/patterns_counts_test.go"
@@ -468,6 +469,7 @@
       "internal/proxy/pattern_tokenizer_test.go",
       "internal/proxy/patterns_counts_test.go",
       "internal/proxy/patterns_exact_test.go",
+      "internal/proxy/patterns_mine_parallel_test.go",
       "internal/proxy/patterns_non_selector_test.go",
       "internal/proxy/patterns_owner_test.go",
       "internal/proxy/patterns_sample_end_test.go",
@@ -863,6 +865,7 @@
       "internal/proxy/pattern_cluster_test.go",
       "internal/proxy/pattern_loki_answers_test.go",
       "internal/proxy/pattern_tie_order_test.go",
+      "internal/proxy/patterns_mine_parallel_test.go",
       "internal/proxy/patterns_owner_test.go",
       "internal/proxy/patterns_sample_end_test.go",
       "internal/proxy/patterns_scope_test.go",
@@ -884,6 +887,7 @@
     "peer-cache-patterns": [
       "internal/cache/peer_hedge_test.go",
       "internal/cache/peer_test.go",
+      "internal/proxy/patterns_mine_parallel_test.go",
       "internal/proxy/patterns_owner_test.go",
       "internal/proxy/patterns_state_test.go",
       "test/e2e-fleet/peer_cache_proof_test.go"
@@ -3781,6 +3785,12 @@
       "drilldown/patterns-mined-differently",
       "loki_api_v1_patterns"
     ],
+    "internal/proxy/patterns_mine_parallel_test.go": [
+      "drilldown/patterns-full-range-counts",
+      "loki_api_v1_patterns",
+      "patterns-loki-mining",
+      "peer-cache-patterns"
+    ],
     "internal/proxy/patterns_non_selector_test.go": [
       "drilldown/patterns-non-selector-query",
       "loki_api_v1_patterns"
@@ -5902,7 +5912,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 707,
+  "tests_with_markers": 708,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
