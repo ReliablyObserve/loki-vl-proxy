@@ -70,7 +70,7 @@ func TestScalarMatrix_ApplyScalarOp_DivisionAndModuloByZero(t *testing.T) {
 	t.Run("right_scalar_zero", func(t *testing.T) {
 		body := scalarMatrixBody(4)
 
-		// Loki: a zero divisor of / and % is NaN (syntax.MergeBinOp).
+		// Loki: a zero divisor of / and % is NaN (recorded answers: binary_operator_values).
 		outDiv := okBytes(applyScalarOp(body, "/", 0, "matrix"))
 		assertNaN(t, firstMatrixValue(t, outDiv))
 

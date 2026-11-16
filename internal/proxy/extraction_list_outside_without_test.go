@@ -17,6 +17,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
 // extractionListFixture is the rows the shapes below read: four streams (two
@@ -173,7 +174,7 @@ var extractionListShapes = []string{
 // fields and the listed labels, a value per series, then the aggregation), whose
 // answers are Loki's: real VictoriaLogs' against recorded Loki answers
 // (internal/querycorpus TestExtractionListIdentityMatchLoki), and the emulator's
-// against the reference evaluator (TestExtractionListSeriesIdentityStillDiffers).
+// against Loki's recorded engine answers (TestExtractionListSeriesIdentityStillDiffers).
 // The three `without` nested under another aggregation (min, max and sum by (ns)
 // over a `sum without`) are the exception: a sum, avg, min, max or count over a
 // `without` is folded level by level, innermost first, so their instant and
@@ -314,82 +315,6 @@ var extractionListGoldens = map[string]extractionListGolden{
 	"sliding|sum by (ns) (sum without (pod) (max_over_time({app=\"uw\"} | logfmt amount, route | unwrap amount [5m])))":  {Sent: []string{"app:=\"uw\" | unpack_logfmt | format if (\"amount\":~\"^[+-]?(?:(?:[0-9]+(?:_[0-9]+)*(?:[.](?:[0-9]+(?:_[0-9]+)*)?)?|[.][0-9]+(?:_[0-9]+)*)(?:[eE][+-]?[0-9]+(?:_[0-9]+)*)?|0[xX](?:_?[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*(?:[.](?:[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*)?)?|[.][0-9a-fA-F]+(?:_[0-9a-fA-F]+)*)[pP][+-]?[0-9]+(?:_[0-9]+)*)$|^[+-]?(?i:inf)$\") \"0\" as __lvp_bad | format if (-__lvp_bad:=\"0\" \"amount\":~\"^[+-]?(?i:infinity)$\") \"3\" as __lvp_bad | format if (-__lvp_bad:=\"0\" -__lvp_bad:=\"3\" \"amount\":~\"^(?i:nan)$\") \"2\" as __lvp_bad | format if (-__lvp_bad:=\"0\" -__lvp_bad:=\"3\" -__lvp_bad:=\"2\" \"amount\":*) \"1\" as __lvp_bad | filter __lvp_bad:=\"0\" or __lvp_bad:=\"3\" or __lvp_bad:=\"2\" or __lvp_bad:=\"1\" | copy \"amount\" as __lvp_n | replace_regexp if (__lvp_bad:=\"3\") (\"(?i)inity$\",\"\") at __lvp_n | math __lvp_n as __lvp_v | format if (__lvp_bad:=\"3\") \"0\" as __lvp_bad | format if (__lvp_bad:=\"0\" -(__lvp_v:<=inf)) \"1\" as __lvp_bad | math __lvp_v default 0 as __lvp_v | stats by (_stream, route, __lvp_bad) max(__lvp_v) as __lvp_inner | stats by (_stream, route, __lvp_bad) sum(__lvp_inner)", "app:=\"uw\" | format if (detected_level:*) \"<detected_level>\" as __dl_s keep_original_fields | format if ({level!=\"\"} OR {LEVEL!=\"\"} OR {Level!=\"\"} OR {log.level!=\"\"} OR {severity!=\"\"} OR {SEVERITY!=\"\"} OR {Severity!=\"\"} OR {SeverityText!=\"\"} OR {lvl!=\"\"} OR {LVL!=\"\"} OR {Lvl!=\"\"} OR {severity_text!=\"\"} OR {Severity_Text!=\"\"} OR {SEVERITY_TEXT!=\"\"}) \"1\" as __dl_t | format if (level:* (-__dl_t:* OR {level!=\"\"})) \"<level>\" as __dl_s keep_original_fields | format if (LEVEL:* (-__dl_t:* OR {LEVEL!=\"\"})) \"<LEVEL>\" as __dl_s keep_original_fields | format if (Level:* (-__dl_t:* OR {Level!=\"\"})) \"<Level>\" as __dl_s keep_original_fields | format if (log.level:* (-__dl_t:* OR {log.level!=\"\"})) \"<log.level>\" as __dl_s keep_original_fields | format if (severity:* !(severity:~`^(Unspecified|(Trace|Debug|Info|Warn|Error|Fatal)[234]?)$` -severity_number:*) (-__dl_t:* OR {severity!=\"\"})) \"<severity>\" as __dl_s keep_original_fields | format if (SEVERITY:* (-__dl_t:* OR {SEVERITY!=\"\"})) \"<SEVERITY>\" as __dl_s keep_original_fields | format if (Severity:* (-__dl_t:* OR {Severity!=\"\"})) \"<Severity>\" as __dl_s keep_original_fields | format if (SeverityText:* (-__dl_t:* OR {SeverityText!=\"\"})) \"<SeverityText>\" as __dl_s keep_original_fields | format if (lvl:* (-__dl_t:* OR {lvl!=\"\"})) \"<lvl>\" as __dl_s keep_original_fields | format if (LVL:* (-__dl_t:* OR {LVL!=\"\"})) \"<LVL>\" as __dl_s keep_original_fields | format if (Lvl:* (-__dl_t:* OR {Lvl!=\"\"})) \"<Lvl>\" as __dl_s keep_original_fields | format if (severity_text:* !((severity_text:~`^Trace[234]?$` severity_number:~`^(1|2|3|4)$`) OR (severity_text:~`^Debug[234]?$` severity_number:~`^(5|6|7|8)$`) OR (severity_text:~`^Info[234]?$` severity_number:~`^(9|10|11|12)$`) OR (severity_text:~`^Warn[234]?$` severity_number:~`^(13|14|15|16)$`) OR (severity_text:~`^Error[234]?$` severity_number:~`^(17|18|19|20)$`) OR (severity_text:~`^Fatal[234]?$` severity_number:~`^(21|22|23|24)$`) OR (severity_text:=\"Unspecified\" severity_number:~`^(-[1-9][0-9]*|2[5-9]|[3-9][0-9]|[1-9][0-9]{2,})$`)) !(severity_text:=\"Unspecified\" severity_number:=\"0\") (-__dl_t:* OR {severity_text!=\"\"})) \"<severity_text>\" as __dl_s keep_original_fields | format if (Severity_Text:* (-__dl_t:* OR {Severity_Text!=\"\"})) \"<Severity_Text>\" as __dl_s keep_original_fields | format if (SEVERITY_TEXT:* (-__dl_t:* OR {SEVERITY_TEXT!=\"\"})) \"<SEVERITY_TEXT>\" as __dl_s keep_original_fields | format if (__dl_s:*) \"1\" as __dl_h | format if (-__dl_h:* severity_number:* !(severity_number:=\"0\" severity_text:=\"Unspecified\")) \"1\" as __dl_h | format if (-__dl_h:* (severity:~`^(Unspecified|(Trace|Debug|Info|Warn|Error|Fatal)[234]?)$` -severity_number:*) -severity:=\"Unspecified\") \"1\" as __dl_h | format if (__dl_s:*) \"<__dl_s>\" as __dl_v keep_original_fields | unpack_json if (-__dl_h:*) from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix \"__j_\" | unpack_logfmt if (-__dl_h:* -_msg:~`^[\\s\\v\\x{85}\\p{Z}]*\\{`) from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix \"__l_\" | format if (__j_level:*) \"<__j_level>\" as __dl_v keep_original_fields | format if (__j_LEVEL:*) \"<__j_LEVEL>\" as __dl_v keep_original_fields | format if (__j_Level:*) \"<__j_Level>\" as __dl_v keep_original_fields | format if (__j_log.level:*) \"<__j_log.level>\" as __dl_v keep_original_fields | format if (__j_severity:*) \"<__j_severity>\" as __dl_v keep_original_fields | format if (__j_SEVERITY:*) \"<__j_SEVERITY>\" as __dl_v keep_original_fields | format if (__j_Severity:*) \"<__j_Severity>\" as __dl_v keep_original_fields | format if (__j_SeverityText:*) \"<__j_SeverityText>\" as __dl_v keep_original_fields | format if (__j_lvl:*) \"<__j_lvl>\" as __dl_v keep_original_fields | format if (__j_LVL:*) \"<__j_LVL>\" as __dl_v keep_original_fields | format if (__j_Lvl:*) \"<__j_Lvl>\" as __dl_v keep_original_fields | format if (__j_severity_text:*) \"<__j_severity_text>\" as __dl_v keep_original_fields | format if (__j_Severity_Text:*) \"<__j_Severity_Text>\" as __dl_v keep_original_fields | format if (__j_SEVERITY_TEXT:*) \"<__j_SEVERITY_TEXT>\" as __dl_v keep_original_fields | format if (__l_level:*) \"<__l_level>\" as __dl_v keep_original_fields | format if (__l_LEVEL:*) \"<__l_LEVEL>\" as __dl_v keep_original_fields | format if (__l_Level:*) \"<__l_Level>\" as __dl_v keep_original_fields | format if (__l_log.level:*) \"<__l_log.level>\" as __dl_v keep_original_fields | format if (__l_severity:*) \"<__l_severity>\" as __dl_v keep_original_fields | format if (__l_SEVERITY:*) \"<__l_SEVERITY>\" as __dl_v keep_original_fields | format if (__l_Severity:*) \"<__l_Severity>\" as __dl_v keep_original_fields | format if (__l_SeverityText:*) \"<__l_SeverityText>\" as __dl_v keep_original_fields | format if (__l_lvl:*) \"<__l_lvl>\" as __dl_v keep_original_fields | format if (__l_LVL:*) \"<__l_LVL>\" as __dl_v keep_original_fields | format if (__l_Lvl:*) \"<__l_Lvl>\" as __dl_v keep_original_fields | format if (__l_severity_text:*) \"<__l_severity_text>\" as __dl_v keep_original_fields | format if (__l_Severity_Text:*) \"<__l_Severity_Text>\" as __dl_v keep_original_fields | format if (__l_SEVERITY_TEXT:*) \"<__l_SEVERITY_TEXT>\" as __dl_v keep_original_fields | format if (__dl_v:~`(?i)^(trace|trc)$`) \"trace\" as __dl keep_original_fields | format if (__dl_v:~`(?i)^(debug|dbg)$`) \"debug\" as __dl keep_original_fields | format if (__dl_v:~`(?i)^(info|inf|information)$`) \"info\" as __dl keep_original_fields | format if (__dl_v:~`(?i)^(warn|wrn|warning)$`) \"warn\" as __dl keep_original_fields | format if (__dl_v:~`(?i)^(error|err)$`) \"error\" as __dl keep_original_fields | format if (__dl_v:~`(?i)^(critical)$`) \"critical\" as __dl keep_original_fields | format if (__dl_v:~`(?i)^(fatal)$`) \"fatal\" as __dl keep_original_fields | extract_regexp if (-__dl_h:* __dl:\"\" _msg:(i(trace) OR i(debug) OR i(fatal) OR i(critical) OR i(error) OR i(err) OR i(warning) OR i(warn) OR i(info))) `(?i)(?:^|[ \\t\\n\\[({\"=])(?P<__dl_e>trace|debug|fatal|critical|error|err|warning|warn|info)(?:$|[ \\t\\n\\[\\](){}:,!\"=])` from _msg | format if (__dl:\"\" __dl_e:~\"(?i)^(error|err)$\") \"error\" as __dl keep_original_fields | format if (__dl:\"\" __dl_e:~\"(?i)^(warning|warn)$\") \"warn\" as __dl keep_original_fields | format if (__dl:\"\" __dl_e:*) \"<lc:__dl_e>\" as __dl keep_original_fields | format if (__dl:\"\" __dl_s:*) \"<__dl_s>\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* (severity_number:~`^(-[1-9][0-9]*|[1-4])$` OR (-severity_number:* severity:~`^(Trace)[234]?$`))) \"trace\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* (severity_number:~`^[5-8]$` OR (-severity_number:* severity:~`^(Debug)[234]?$`))) \"debug\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* (severity_number:~`^(9|1[0-2])$` OR (-severity_number:* severity:~`^(Info)[234]?$`))) \"info\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* (severity_number:~`^1[3-6]$` OR (-severity_number:* severity:~`^(Warn)[234]?$`))) \"warn\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* (severity_number:~`^(1[7-9]|20)$` OR (-severity_number:* severity:~`^(Error)[234]?$`))) \"error\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* (severity_number:~`^2[1-4]$` OR (-severity_number:* severity:~`^(Fatal)[234]?$`))) \"fatal\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* severity_number:~`^(-?0|2[5-9]|[3-9][0-9]|[1-9][0-9]{2,})$`) \"unknown\" as __dl keep_original_fields | format if (__dl:\"\" -__dl_s:* severity_number:*) \"info\" as __dl keep_original_fields | format \"unknown\" as __dl keep_original_fields | format \"<__dl>\" as detected_level | delete __dl, __dl_*, __j_*, __l_* | unpack_logfmt | format if (\"amount\":~\"^[+-]?(?:(?:[0-9]+(?:_[0-9]+)*(?:[.](?:[0-9]+(?:_[0-9]+)*)?)?|[.][0-9]+(?:_[0-9]+)*)(?:[eE][+-]?[0-9]+(?:_[0-9]+)*)?|0[xX](?:_?[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*(?:[.](?:[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*)?)?|[.][0-9a-fA-F]+(?:_[0-9a-fA-F]+)*)[pP][+-]?[0-9]+(?:_[0-9]+)*)$|^[+-]?(?i:inf)$\") \"0\" as __lvp_bad | format if (-__lvp_bad:=\"0\" \"amount\":~\"^[+-]?(?i:infinity)$\") \"3\" as __lvp_bad | format if (-__lvp_bad:=\"0\" -__lvp_bad:=\"3\" \"amount\":~\"^(?i:nan)$\") \"2\" as __lvp_bad | format if (-__lvp_bad:=\"0\" -__lvp_bad:=\"3\" -__lvp_bad:=\"2\" \"amount\":*) \"1\" as __lvp_bad | filter __lvp_bad:=\"0\" or __lvp_bad:=\"3\" or __lvp_bad:=\"2\" or __lvp_bad:=\"1\" | copy \"amount\" as __lvp_n | replace_regexp if (__lvp_bad:=\"3\") (\"(?i)inity$\",\"\") at __lvp_n | math __lvp_n as __lvp_v | format if (__lvp_bad:=\"3\") \"0\" as __lvp_bad | format if (__lvp_bad:=\"0\" -(__lvp_v:<=inf)) \"1\" as __lvp_bad | math __lvp_v default 0 as __lvp_v | stats by (_stream, detected_level, route, __lvp_bad) max(__lvp_v) as __lvp_inner | stats by (_stream, detected_level, route, __lvp_bad) sum(__lvp_inner)"}, Answer: "2 series: {ns=x} 1.79999922e+09=151 1.79999928e+09=214 1.79999934e+09=63 1.7999994e+09=138 1.79999946e+09=154 1.79999952e+09=83 1.79999958e+09=178 1.79999964e+09=194 1.7999997e+09=103 1.79999976e+09=218 1.79999982e+09=234 1.79999988e+09=123 1.79999994e+09=258 1.8e+09=174; {ns=y} 1.79999922e+09=20 1.79999928e+09=190 1.79999934e+09=226 1.7999994e+09=199 1.79999946e+09=170 1.79999952e+09=266 1.79999958e+09=179 1.79999964e+09=150 1.7999997e+09=206 1.79999976e+09=159 1.79999982e+09=130 1.79999988e+09=146 1.79999994e+09=139 1.8e+09=110"},
 }
 
-// lokiExtractionListInstant is the instant answer Loki v3.7.7 gives the shapes
-// below over the fixture, from a reference evaluator written apart from the
-// proxy: a series is the stream plus the labels the parser names, less the
-// unwrapped one, the range function is taken per series over (t-5m, t], and
-// the aggregation over those values. Nothing here ran against a real Loki.
-func lokiExtractionListInstant(t *testing.T, query string) map[string]float64 {
-	t.Helper()
-	rows, end := extractionListFixture()
-	named := func(row vlemu.Row, keys ...string) string {
-		key := row.Stream
-		for _, k := range keys {
-			key += "|" + k + "=" + row.Labels[k]
-		}
-		return key
-	}
-	ns := func(stream string) string { return vlemu.StreamLabelRE.FindAllStringSubmatch(stream, -1)[1][2] }
-	// perSeries: series key -> its values in the window.
-	perSeries := func(keys ...string) map[string][]float64 {
-		out := map[string][]float64{}
-		for _, row := range rows {
-			if row.TS > end-300e9 && row.TS <= end {
-				out[named(row, keys...)] = append(out[named(row, keys...)], row.Value)
-			}
-		}
-		return out
-	}
-	fold := func(series map[string][]float64, valueOf func([]float64) float64, byNS bool, agg func([]float64) float64) map[string]float64 {
-		groups := map[string][]float64{}
-		for key, values := range series {
-			group := ""
-			if byNS {
-				group = "ns=" + ns(key)
-			}
-			groups[group] = append(groups[group], valueOf(values))
-		}
-		out := map[string]float64{}
-		for group, values := range groups {
-			out[group] = agg(values)
-		}
-		return out
-	}
-	maxOf := func(v []float64) float64 { return slicesMax(v) }
-	sumOf := func(v []float64) float64 { return slicesSum(v) }
-	avgOf := func(v []float64) float64 { return slicesSum(v) / float64(len(v)) }
-	countOf := func(v []float64) float64 { return float64(len(v)) }
-	one := func(v []float64) float64 { return 1 }
-	switch query {
-	case `sum(max_over_time({app="uw"} | logfmt amount | unwrap amount [5m]))`:
-		return fold(perSeries(), maxOf, false, sumOf)
-	case `avg by (ns) (avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`:
-		return fold(perSeries("route"), avgOf, true, avgOf)
-	case `count by (ns) (max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`:
-		return fold(perSeries("route"), maxOf, true, countOf)
-	case `count by (ns) (count_over_time({app="uw"} | logfmt route [5m]))`:
-		return fold(perSeries("route"), one, true, countOf)
-	}
-	t.Fatalf("no reference for %s", query)
-	return nil
-}
-
-func slicesMax(v []float64) float64 {
-	m := v[0]
-	for _, x := range v {
-		m = max(m, x)
-	}
-	return m
-}
-
-func slicesSum(v []float64) float64 {
-	var s float64
-	for _, x := range v {
-		s += x
-	}
-	return s
-}
-
 var extractionListPointRE = regexp.MustCompile(`\{([^}]*)\} [^ =]+=([0-9.e+-]+)`)
 
 // extractionListInstantValues reads the instant answer text of a shape as
@@ -407,15 +332,13 @@ func extractionListInstantValues(answer string) map[string]float64 {
 // keys it extracts a Loki series is the stream plus those labels, less the
 // unwrapped one. sum, max, min and avg over avg, max, min, stddev and stdvar over
 // time read those series (lower.DynamicUnwrapIdentity), and the rows marked fixed
-// answer the reference evaluator's figures. Outside them the proxy still groups
-// the inner stats by the line (an unwrap function) or by the stream (a rate, a
-// count) and the aggregation over them reads other series than Loki's: the test
-// pins both answers over the fixture, the proxy's as origin/main gives it and
-// Loki's from the reference evaluator, so that a fix of
-// semantics/unwrap-extraction-list-series-identity fails it and asks for a
-// parity case. The figures come from an emulator run with a Loki-following
-// reference evaluator, not from a real Loki (TestExtractionListIdentityMatchLoki
-// holds the same shapes to recorded Loki answers).
+// answer Loki's figures. Outside them the proxy still groups the inner stats by
+// the line (an unwrap function) or by the stream (a rate, a count) and the
+// aggregation over them reads other series than Loki's. The test pins both
+// answers over the fixture, the proxy's and Loki's, recorded with Loki's engine
+// over the same lines (test/oracle/loki engine; LVP_RUN_ORACLES=1 records
+// again), so that a fix of semantics/unwrap-extraction-list-series-identity
+// fails it and asks for a parity case.
 //
 // conformance: semantics/unwrap-extraction-list-series-identity, metric-series-identity
 func TestExtractionListSeriesIdentityStillDiffers(t *testing.T) {
@@ -432,13 +355,13 @@ func TestExtractionListSeriesIdentityStillDiffers(t *testing.T) {
 		t.Run(c.query, func(t *testing.T) {
 			_, answer := runExtractionListShape(t, c.query, extractionListModes[0])
 			got := extractionListInstantValues(answer)
-			ref := lokiExtractionListInstant(t, c.query)
-			t.Logf("proxy %v reference %v", got, ref)
+			ref := extractionListLoki(t, c.query)
+			t.Logf("proxy %v Loki %v", got, ref)
 			if !sameFigures(got, c.proxy) {
 				t.Fatalf("the proxy answers %v, want %v", got, c.proxy)
 			}
 			if !sameFigures(ref, c.ref) {
-				t.Fatalf("the reference answers %v, want %v", ref, c.ref)
+				t.Fatalf("Loki answers %v, the case states %v", ref, c.ref)
 			}
 			if !c.fixed && sameFigures(got, ref) {
 				t.Fatalf("the proxy answers Loki's %v: semantics/unwrap-extraction-list-series-identity is fixed, turn this into a parity case", ref)
@@ -478,4 +401,27 @@ func TestExtractionListTopKWithoutIsBoundedByTheSeriesLimit(t *testing.T) {
 			}
 		}
 	}
+}
+
+// extractionListLoki is Loki's instant answer to query over the fixture's lines at its end, as group (`ns=x`,
+// empty for a series with no ns label) -> value.
+func extractionListLoki(t *testing.T, query string) map[string]float64 {
+	t.Helper()
+	rows, end := extractionListFixture()
+	set := oraclerun.EngineDataSet{
+		Streams:  engineStreams(rows, func(r vlemu.Row) (string, map[string]string) { return r.Msg, nil }),
+		Requests: []oraclerun.EngineRequest{lokiMetricRequest("q", query, end, end, 0)},
+	}
+	points, labels := lokiMetricPoints(t, query, lokiEngineAnswerOf(t, "extraction_list_outside_without", set))
+	out := map[string]float64{}
+	for key, series := range points {
+		group := ""
+		if ns, ok := labels[key]["ns"]; ok {
+			group = "ns=" + ns
+		}
+		for _, v := range series {
+			out[group] = v
+		}
+	}
+	return out
 }

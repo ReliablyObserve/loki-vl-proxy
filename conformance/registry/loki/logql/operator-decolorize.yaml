@@ -1,7 +1,7 @@
 id: operator-decolorize
 kind: operator
 logql: "decolorize"
-loki_constant: OpDecolorize
+source: https://grafana.com/docs/loki/v3.7.x/query/log_queries/
 generated:
   supported_by_proxy: true
   seen_in:

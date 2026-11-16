@@ -7,8 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Comments in the string translator that named lines of Loki's sources now cite recorded Loki answers or Loki's public
+  documentation instead; no behaviour changes. The pattern line filter tests no longer carry a port of Loki's matcher:
+  they compare the filter with Loki's own verdicts, recorded with the Loki pipeline oracle.
+- Internal: the translation's query-plan decisions are one helper, with a reference entry point the corpus shadow reads,
+  so the shadow counts the recorded differences the proxy already serves from the plan (a keep before an unwrap, a
+  parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
+  `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
+  parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
+
 ### Fixed
 
+- A binary operation whose operand is a `sum`, `avg`, `min` or `max` with an empty `without ()` clause
+  (`sum without () (count_over_time({app="x"}[5m])) / 2`, `max(rate({app="x"}[5m])) without () > on(app) group_left …`)
+  now answers every series of that operand, as Loki does: a clause of no label drops none, so each series is its own
+  group. On query_range with the step equal to the range the operand was answered as one ungrouped series, at an
+  instant `avg` and `min` collapsed the same way, and on the other steps the series said `detected_level="unknown"`.
+  The binary route now sends the operand without that level, and an operation Loki refuses (`… + on() vector(0)`
+  over several series) answers Loki's 500 `multiple matches for labels: many-to-one matching must be explicit
+  (group_left/group_right)` where it answered 200. Held to real Loki and VictoriaLogs v1.49.0 and v1.53.0 on 20
+  shapes x 4 request kinds x 2 versions: 144 of 160 runs match Loki, from 86 (every run of the 15 operations, and
+  under `sum(…)`, `label_replace(…)` and with an `offset`). A `count`, `stddev` or `stdvar` under the clause, and a ranking over the operation, are unchanged. Answers cached before the fix are not served again
+  (semantics/binary-operand-without-empty-collapses). `-query-plan-lowering=false` keeps the previous reading.
 - `sum`, `max`, `min` and `avg` (with or without `by`) over `avg_over_time`, `max_over_time`, `min_over_time`,
   `stddev_over_time` or `stdvar_over_time` of a label unwrapped after an extraction list (`| logfmt amount, route`,
   `| json amount`) now read Loki's series: the stream plus the labels the list names, less the unwrapped one, where
@@ -19,6 +41,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `max_over_time` costs up to 48% more, for the per-series step Loki's answer needs. Count,
   first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
   read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
+
+## [2.310.2] - 2026-11-16
+
+### Changed
+
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
+
+## [2.310.1] - 2026-11-16
+
+### Fixed
+
+- A query whose VictoriaLogs answer is larger than the proxy buffers (`-backend-max-buffered-response-bytes`), or that
+  passes a series or row budget, no longer counts as a backend failure. Five such requests opened the circuit breaker,
+  and every other query on that proxy then answered 500 "circuit breaker open" without reaching VictoriaLogs; now
+  only the request itself answers its limit error. The stats extent cache surfaced an oversized bucket read as a
+  transport error, which the breaker counted.
+
+### Changed
+
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
+
+## [2.310.0] - 2026-11-16
+
+### Changed
+
+- The tests that compare the proxy's metric answers with Loki's now take Loki's answer from Loki itself: answers
+  recorded with Loki's query engine and request parser over the same lines and requests (test/oracle/loki, used
+  only in tests), for binary operators and vector matching, topk and bottomk, vector aggregations (nested,
+  `without`, stddev and stdvar), unwrap range functions over sliding and tumbling windows, absent_over_time,
+  first and last over time, rate_counter, quantile_over_time, keep, ip() label filters and sub-second steps. Where a
+  test needs to evaluate an expected answer itself (fuzz targets, tie detection), the evaluator is written from
+  LogQL's documented meaning and is held to the recorded answers. The engine oracle gains an unaligned mode (Loki's
+  engine at the request's own bounds). The query_range step alignment middleware is renamed for what it does
+  (alignToStepMiddleware); behaviour is unchanged.
+
+## [2.309.0] - 2026-11-16
 
 ### Performance
 

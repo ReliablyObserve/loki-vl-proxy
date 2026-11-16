@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// A Loki JSON path in bracket notation (pkg/logql/log/jsonexpr, as Logs
+// A Loki JSON path in bracket notation (LogQL's JSON path expression, as Logs
 // Drilldown writes a nested field: ["service"]["name"]) names the field
 // VictoriaLogs' unpack_json writes, the nested keys joined with dots; a path
 // VictoriaLogs has no field for resolves to "" and is skipped.

@@ -129,6 +129,10 @@ func (w *binaryOperandResponse) Write(data []byte) (int, error) {
 }
 
 func (p *Proxy) evaluateBinaryLogQLOperand(r *http.Request, expr logqlpkg.Expr, resultType string) *binaryOperandResponse {
+	if p.queryPlanLowering {
+		// A sum, avg, min or max `without ()` answers its operand's series: the operand is sent alone.
+		expr = emptyWithoutOperand(expr)
+	}
 	w := &binaryOperandResponse{header: make(http.Header), limit: p.limits().BufferedBackendBodyBytes}
 	child, err := nextBinaryEvaluation(r)
 	if err != nil {

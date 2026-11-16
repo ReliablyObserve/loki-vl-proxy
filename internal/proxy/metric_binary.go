@@ -562,7 +562,7 @@ func isGrafanaSourcedRequest(r *http.Request) bool {
 // suppressed on every metric path; the caller is responsible for confirming the
 // query is a metric (matrix) query so a log query is never blanked. A real metric
 // query never spans < one step except as this residual — Grafana aligns standalone
-// ranges to the step. See [[grafana-loki-querysplitting-24h]].
+// ranges to the step (registry case semantics/query-range-step-alignment).
 func isQuerySplitResidual(r *http.Request) bool {
 	if !isGrafanaDrilldownRequest(r) { // before r.URL.Query(), which allocates
 		return false
@@ -2444,7 +2444,7 @@ func applyOp(a, b float64, op string) float64 {
 	switch op {
 	case "/":
 		if b == 0 {
-			return math.NaN() // Loki: a zero divisor is NaN (syntax.MergeBinOp)
+			return math.NaN() // Loki: a zero divisor is NaN (recorded answers: binary_operator_values)
 		}
 		return a / b
 	case "*":

@@ -70,6 +70,14 @@ jobs:
           go test ./internal/querycorpus -run '^TestVLOracle$' -count=1 -v
           go test ./internal/proxy -run '^TestLokiOracle$' -count=1 -v
 
+      # The registry's LogQL surface comes from Loki's public documentation (conformance/scripts/sync_ast.py); every
+      # construct's probe must still parse with Loki's own parser, so a drift between the documentation and Loki
+      # fails here. No Loki source is read.
+      - name: Check the registry's LogQL surface with Loki's parser
+        env:
+          LVP_RUN_ORACLES: "1"
+        run: go test ./internal/querycorpus -run '^TestLogQLSurfaceMatchesLokiParser$' -count=1 -v
+
       - name: Save the corpus for pull requests based on this commit
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] a gzipped list of test queries read as data by the PR quality report; nothing from this job is published
         with:

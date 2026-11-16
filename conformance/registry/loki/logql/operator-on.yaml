@@ -1,7 +1,7 @@
 id: operator-on
 kind: operator
 logql: "on"
-loki_constant: OpOn
+source: https://grafana.com/docs/loki/v3.7.x/query/query_reference/
 generated:
   supported_by_proxy: true
   seen_in:

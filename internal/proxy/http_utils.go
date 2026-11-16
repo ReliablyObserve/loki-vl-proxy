@@ -156,7 +156,7 @@ func validateLogQLSyntax(query string) string {
 
 // queryValidation is the validationCache entry of a raw query: Loki's error
 // for it, or "" and whether it is a metric (sample) expression, which
-// stepAlignMiddleware reads before the handler validates the same string, and
+// alignToStepMiddleware reads before the handler validates the same string, and
 // the offsets and ranges of its range selectors (requestTimeBounds).
 type queryValidation struct {
 	msg string
@@ -1053,6 +1053,12 @@ func shouldRecordBreakerFailure(ctx context.Context, err error) bool {
 	if isHeavyQueryQueueFull(err) {
 		return false
 	}
+	// A proxy-side bound on what one request reads (an answer above the bytes the proxy buffers, a series or row
+	// budget, a group guard) is that request's outcome: VictoriaLogs answered. Counting it would open the breaker for
+	// every other query on the proxy.
+	if isProxySideLimit(err) {
+		return false
+	}
 	// HTTP responses from VL (even 4xx/5xx) prove the backend is up.
 	var hsc httpStatusCoder
 	if errors.As(err, &hsc) {
@@ -1066,6 +1072,27 @@ func shouldRecordBreakerFailure(ctx context.Context, err error) bool {
 		return false
 	}
 	return true
+}
+
+// isProxySideLimit reports an error the proxy raised on its own bound for one request, bare or wrapped: a body above
+// what it buffers, a series or row budget, a group guard, or any Loki-shaped error other than a failed backend or an
+// internal error.
+//
+// It walks the error's chain by type, without errors.As, so a transport failure (the path it must not slow) is
+// classified with no allocation.
+func isProxySideLimit(err error) bool {
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		switch x := e.(type) {
+		case *lokierr.Error:
+			return x.Kind() != lokierr.KindBackendFailed && x.Kind() != lokierr.KindInternal
+		case *seriesLimitError, *backendBodyTooLargeError:
+			return true
+		}
+		if e == errBodyTooLarge || e == errSeriesCountExceeded || e == errStatsGroupGuard {
+			return true
+		}
+	}
+	return false
 }
 
 // extractVLErrorMsg parses a VictoriaLogs JSON error body and returns the "error"

@@ -25,12 +25,12 @@ class SliceTest(unittest.TestCase):
                 return json.load(handle), kept, total, os.path.basename(sliced)
 
     def test_every_source_keeps_evenly_spaced_entries(self):
-        doc = {"entries": entries("loki-tests", 100) + entries("repo", 10) + entries("seeded", 7), "meta": 1}
+        doc = {"entries": entries("loki-docs", 100) + entries("repo", 10) + entries("seeded", 7), "meta": 1}
         out, kept, total, name = self.slice(doc, 5)
         by_source = {}
         for e in out["entries"]:
             by_source.setdefault(e["source"], []).append(int(e["id"].rsplit("-", 1)[1]))
-        self.assertEqual(by_source["loki-tests"], [0, 20, 40, 60, 80])  # spread over the source, not its head
+        self.assertEqual(by_source["loki-docs"], [0, 20, 40, 60, 80])  # spread over the source, not its head
         self.assertEqual(by_source["repo"], [0, 2, 4, 6, 8])
         self.assertEqual(by_source["seeded"], [0, 1, 2, 3, 4])
         self.assertEqual((kept, total, name), (15, 117, "corpus-slice.json"))
