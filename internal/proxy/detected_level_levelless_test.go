@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -283,22 +284,25 @@ func BenchmarkWithLevelLessStreams(b *testing.B) {
 
 // TestLevelLessSecondReadFailureAnswersLikeTheFirst: when the read of the streams without a level label fails
 // (VictoriaLogs answers 500 with its own text, or the connection drops), each route that sends it answers as it
-// answers a failure of its own read: Loki's status for a failed backend, and none of VictoriaLogs' text.
+// answers a failure of its own stats read. The bare-parser and sliding reads fall back to the raw-row evaluator,
+// which derives each row's level itself; the stats_query_range and stats_query routes answer Loki's status for a
+// failed backend. No VictoriaLogs text reaches the client.
 //
 // conformance: semantics/detected-level-stream-stats-without-level
 func TestLevelLessSecondReadFailureAnswersLikeTheFirst(t *testing.T) {
 	const vlText = "backend detail the client must not see"
 	for _, route := range []struct {
 		name, path, query, step string
+		rawFallback             bool
 	}{
-		{"bare-parser stats read", "/loki/api/v1/query_range", `count_over_time({app="b"} | logfmt [5m])`, "300"},
-		{"stats_query_range route", "/loki/api/v1/query_range", `sort(rate({app="b"} | json [1m]))`, "60"},
-		{"sliding stats read", "/loki/api/v1/query_range", `sum without (pod) (max_over_time({app="b"} | logfmt amount | unwrap amount [5m]))`, "60"},
-		{"stats_query route", "/loki/api/v1/query", `sum without (pod) (max_over_time({app="b"} | logfmt amount | unwrap amount [5m]))`, ""},
+		{"bare-parser stats read", "/loki/api/v1/query_range", `count_over_time({app="b"} | logfmt [5m])`, "300", true},
+		{"stats_query_range route", "/loki/api/v1/query_range", `sort(rate({app="b"} | json [1m]))`, "60", false},
+		{"sliding stats read", "/loki/api/v1/query_range", `sum without (pod) (max_over_time({app="b"} | logfmt amount | unwrap amount [5m]))`, "60", true},
+		{"stats_query route", "/loki/api/v1/query", `sum without (pod) (max_over_time({app="b"} | logfmt amount | unwrap amount [5m]))`, "", false},
 	} {
 		for _, failure := range []string{"status 500", "connection dropped"} {
 			t.Run(route.name+"/"+failure, func(t *testing.T) {
-				second := 0
+				var second, raw atomic.Int32
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					switch r.URL.Path {
 					case "/health":
@@ -310,7 +314,7 @@ func TestLevelLessSecondReadFailureAnswersLikeTheFirst(t *testing.T) {
 					}
 					_ = r.ParseForm()
 					if r.Form.Get("extra_filters") != "" {
-						second++
+						second.Add(1)
 						if failure == "status 500" {
 							http.Error(w, "victorialogs: "+vlText, http.StatusInternalServerError)
 							return
@@ -326,8 +330,19 @@ func TestLevelLessSecondReadFailureAnswersLikeTheFirst(t *testing.T) {
 						_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"_stream":"{app=\"b\",pod=\"p\"}","__lvp_bad":"0"},"value":[1760000700,"3"]}]}}`)
 					case "/select/logsql/stats_query_range":
 						_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"_stream":"{app=\"b\",pod=\"p\"}","__lvp_bad":"0"},"values":[[1760000400,"3"],[1760000460,"3"],[1760000700,"3"]]}]}}`)
+					case "/select/logsql/query":
+						if !strings.Contains(r.Form.Get("query"), " as __p_h") {
+							raw.Add(1) // the raw-row evaluator's read: no row
+							return
+						}
+						// The presence probe of the chain: every field and key present, so the chain stays whole.
+						row := map[string]string{}
+						for i := range levelPresenceMaskLen() {
+							row[fmt.Sprintf("p%d", i)] = "1"
+						}
+						b, _ := json.Marshal(row)
+						_, _ = w.Write(append(b, '\n'))
 					default:
-						// The presence probe and any raw read: no answer, so the chain stays whole.
 						http.Error(w, "not served", http.StatusInternalServerError)
 					}
 				}))
@@ -346,10 +361,13 @@ func TestLevelLessSecondReadFailureAnswersLikeTheFirst(t *testing.T) {
 					form.Set("step", route.step)
 				}
 				res := doCompatProxyRequest(p, route.path+"?"+form.Encode(), map[string]string{"X-Scope-OrgID": "0"})
-				if second == 0 {
+				if second.Load() == 0 {
 					t.Fatalf("the second read was not sent: %d %s", res.Code, res.Body.String())
 				}
-				if res.Code != http.StatusInternalServerError {
+				switch {
+				case route.rawFallback && (res.Code != http.StatusOK || raw.Load() == 0):
+					t.Fatalf("status %d after %d raw reads, want the raw-row evaluator's answer: %s", res.Code, raw.Load(), res.Body.String())
+				case !route.rawFallback && res.Code != http.StatusInternalServerError:
 					t.Fatalf("status %d, want Loki's 500 for a failed backend: %s", res.Code, res.Body.String())
 				}
 				if body := res.Body.String(); strings.Contains(body, vlText) || strings.Contains(strings.ToLower(body), "victorialogs") {
