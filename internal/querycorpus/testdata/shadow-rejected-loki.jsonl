@@ -1,0 +1,42 @@
+{"q":"rate({env=\"production\"}[5m]) by( )","accept":false,"error":"parse error : grouping not allowed for rate aggregation"}
+{"q":"sum(count_over_time({app=\"api-gateway\"} |~ \"a{2,1}\" [1m]))","accept":false,"error":"parse error : stage '|~ \"a{2,1}\"' : error parsing regexp: invalid repeat count: `{2,1}`"}
+{"q":"{app=\"api\"} | line_format \"{{\"","accept":false,"error":"parse error : stage '| line_format \"{{\"' : invalid line template: template: line:1: unclosed action"}
+{"q":"{app=\"api-gateway\",env=\"production\"} / 2","accept":false,"error":"parse error : unexpected type for left leg of binary operation (/): *syntax.MatchersExpr"}
+{"q":"{app=\"api-gateway\",env=\"production\"} > 0","accept":false,"error":"parse error : unexpected type for left leg of binary operation (>): *syntax.MatchersExpr"}
+{"q":"{app=\"x\"} | addr=ip(\"zzz\")","accept":false,"error":"parse error : stage '| addr=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"q":"{app=\"x\"} | unwrap x","accept":false,"error":"parse error at line 1, col 13: syntax error: unexpected unwrap"}
+{"q":"{app=\"x\"} | x=~\"(\"","accept":false,"error":"parse error : error parsing regexp: missing closing ): `(`"}
+{"q":"{app=\"x\"} |= \"x\" |~ \"(\"","accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"q":"{service_name=\"api-gateway\"} | line_format \"{{.a\"","accept":false,"error":"parse error : stage '| line_format \"{{.a\"' : invalid line template: template: line:1: unclosed action"}
+{"q":"{service_name=\"api-gateway\"} |> \"<_><_>\"","accept":false,"error":"parse error : stage '|> \"<_><_>\"' : found consecutive capture '<_><_>': invalid expression"}
+{"q":"1 unless vector(2)","accept":false,"error":"parse error : unexpected literal for left leg of logical/set binary operation (unless): 1.000000"}
+{"q":"absent_over_time({app=\"a\"} | json [1m]) without (app)","accept":false,"error":"parse error : grouping not allowed for absent_over_time aggregation"}
+{"q":"bytes_rate({__error__=\"\"}[5m])","accept":false,"error":"parse error : queries require at least one regexp or equality matcher that does not have an empty-compatible value. For instance, app=~\".*\" does not meet this requirement, but app=~\".+\" will"}
+{"q":"count_over_time({app=\"x\"} | regexp \"(\\\\w+)\" [1m])","accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"q":"label_replace(label_join(rate({app=\"a\"}[5m]), \"d\", \",\", \"app\"), \"a\", \"b\", \"c\", \"d\")","accept":false,"error":"parse error at line 1, col 15: syntax error: unexpected IDENTIFIER"}
+{"q":"label_replace(label_replace(sum by (app) (count_over_time({app=\"a\"}[5m])), \"d\", \"$1\", \"app\", \"(.*)\"), \"e\", \"$1\", \"d\", \"(unclosed\")","accept":false,"error":"parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:(unclosed)$`"}
+{"q":"label_replace(rate({app=\"\"}[5m]), \"a\", \"b\", \"c\", \"d\")","accept":false,"error":"parse error : queries require at least one regexp or equality matcher that does not have an empty-compatible value. For instance, app=~\".*\" does not meet this requirement, but app=~\".+\" will"}
+{"q":"label_replace(sum by (app) (count_over_time({app=\"a\"}[5m])) \"d\", \"$1\", \"app\", \"x\")","accept":false,"error":"parse error at line 1, col 61: syntax error: unexpected STRING"}
+{"q":"label_replace(sum by (app) (count_over_time({app=\"a\"}[5m])) * 2, \"d\", \"$1\", \"app\", \"*bad\")","accept":false,"error":"parse error : invalid regex in label_replace: error parsing regexp: missing argument to repetition operator: `*`"}
+{"q":"label_replace(sum by (app) (count_over_time({app=\"a\"}[5m])), \"d\", \"$1\")","accept":false,"error":"parse error at line 1, col 71: syntax error: unexpected ), expecting ,"}
+{"q":"label_replace(sum by (app) (count_over_time({app=\"a\"}[5m])), \"d\", \"$1\", \"app\")","accept":false,"error":"parse error at line 1, col 78: syntax error: unexpected ), expecting ,"}
+{"q":"label_replace(sum by (app) (count_over_time({app=\"a\"}[5m])), \"d\", \"$1\", \"app\", \"(.+):\\d+\")","accept":false,"error":"parse error at line 1, col 80: invalid char escape"}
+{"q":"label_replace(sum by (app) (count_over_time({app=\"a\"}[5m])), \"d\", \"$1\", \"app\", \"[invalid\")","accept":false,"error":"parse error : invalid regex in label_replace: error parsing regexp: missing closing ]: `[invalid)$`"}
+{"q":"label_replace(sum by (app) (count_over_time({app=\"a\"}[5m])), \"d\", \"$1\", \"app\", \"x\", \"y\")","accept":false,"error":"parse error at line 1, col 83: syntax error: unexpected ,, expecting )"}
+{"q":"label_replace(sum by (app) (count_over_time({app=\"a\"}[5m])), \"d\", \"$1\", \"app\", 5)","accept":false,"error":"parse error at line 1, col 80: syntax error: unexpected NUMBER, expecting STRING"}
+{"q":"label_replace(sum by (app) (count_over_time({app=\"a\"}[5m])), d, \"$1\", \"app\", \"x\")","accept":false,"error":"parse error at line 1, col 62: syntax error: unexpected IDENTIFIER, expecting STRING"}
+{"q":"max(avg without (route) (sum by (route) (sum_over_time({app=\"x\"} | json first=\"servers[0]\", second=\"f(1) | x\" | unwrap amount [5m])) > bool sum by (route) (count_over_time({app=\"y\"} | logfmt a=\"b[1]\" [5m]))))","accept":false,"error":"parse error : stage '| json first=\"servers[0]\",second=\"f(1) | x\"' : cannot parse expression [f(1) | x]: unexpected char ("}
+{"q":"quantile_over_time(-0.1, {app=\"api\"} | unwrap lat [5m])","accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected -, expecting NUMBER or { or ("}
+{"q":"quantile_over_time(0.95, {app=\"nginx\"}[5m])","accept":false,"error":"parse error : invalid aggregation quantile_over_time without unwrap"}
+{"q":"rate_counter({app=\"api\"}[5m])","accept":false,"error":"parse error : invalid aggregation rate_counter without unwrap"}
+{"q":"rate_counter({app=\"nginx\"}[5m])","accept":false,"error":"parse error : invalid aggregation rate_counter without unwrap"}
+{"q":"rate_counter({app=\"top\"} | unwrap latency [5m]) by (pod)","accept":false,"error":"parse error : grouping not allowed for rate_counter aggregation"}
+{"q":"sort(label_replace(sum by (app) (count_over_time({app=\"x\"}[5m])), \"d\", \"$1\", \"app\", \"(unclosed\"))","accept":false,"error":"parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:(unclosed)$`"}
+{"q":"stddev_over_time({app=\"nginx\"}[5m])","accept":false,"error":"parse error : invalid aggregation stddev_over_time without unwrap"}
+{"q":"sum without () (count_over_time({app=\"a\", value=\"a\\\\b\"} | regexp `a\\b`[5m])) + on() vector(0)","accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"q":"sum without () (count_over_time({app=\"a\", value=\"line\\nnext\\r\\t\\x00\"} | regexp \"line\\nnext\\r\\t\\x00\"[5m])) + on() vector(0)","accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"q":"sum without()(count_over_time({app=\"a\",value=\"a\\\"b\"} | regexp \"a\\\"b\"[5m])) + on() vector(0)","accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"q":"sum without()(count_over_time({app=\"a\",value=\"a\\\\b\"} | pattern \"a\\\\b\"[5m])) + on() vector(0)","accept":false,"error":"parse error : invalid pattern parser: at least one capture is required"}
+{"q":"sum without()(count_over_time({app=\"a\",value=\"a`b\"} | regexp \"a`b\"[5m])) + on() vector(0)","accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"q":"sum without()(count_over_time({app=\"a\",value=\"line\\nnext\\r\\t\\x00\"} | pattern \"line\\nnext\\r\\t\\x00\"[5m])) + on() vector(0)","accept":false,"error":"parse error : invalid pattern parser: at least one capture is required"}
+{"q":"sum_over_time({app=\"nginx\"}[5m])","accept":false,"error":"parse error : invalid aggregation sum_over_time without unwrap"}

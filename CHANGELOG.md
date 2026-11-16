@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Comments in the string translator that named lines of Loki's sources now cite recorded Loki answers or Loki's public
+  documentation instead; no behaviour changes. The pattern line filter tests no longer carry a port of Loki's matcher:
+  they compare the filter with Loki's own verdicts, recorded with the Loki pipeline oracle.
+- Internal: the translation's query-plan decisions are one helper, with a reference entry point the corpus shadow reads,
+  so the shadow counts the recorded differences the proxy already serves from the plan (a keep before an unwrap, a
+  parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
+  `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
+  parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
+
+### Fixed
+
+- A binary operation whose operand is a `sum`, `avg`, `min` or `max` with an empty `without ()` clause
+  (`sum without () (count_over_time({app="x"}[5m])) / 2`, `max(rate({app="x"}[5m])) without () > on(app) group_left …`)
+  now answers every series of that operand, as Loki does: a clause of no label drops none, so each series is its own
+  group. On query_range with the step equal to the range the operand was answered as one ungrouped series, at an
+  instant `avg` and `min` collapsed the same way, and on the other steps the series said `detected_level="unknown"`.
+  The binary route now sends the operand without that level, and an operation Loki refuses (`… + on() vector(0)`
+  over several series) answers Loki's 500 `multiple matches for labels: many-to-one matching must be explicit
+  (group_left/group_right)` where it answered 200. Held to real Loki and VictoriaLogs v1.49.0 and v1.53.0 on 20
+  shapes x 4 request kinds x 2 versions: 144 of 160 runs match Loki, from 86 (every run of the 15 operations, and
+  under `sum(…)`, `label_replace(…)` and with an `offset`). A `count`, `stddev` or `stdvar` under the clause, and a ranking over the operation, are unchanged. Answers cached before the fix are not served again
+  (semantics/binary-operand-without-empty-collapses). `-query-plan-lowering=false` keeps the previous reading.
+
+## [2.310.2] - 2026-11-16
+
+### Changed
+
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
+
+## [2.310.1] - 2026-11-16
+
 ### Fixed
 
 - A paused or hung peer-cache replica no longer stalls a request for `-peer-timeout` (2 s by default). A lookup that
@@ -21,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timeout (one query per run at 2.0 s and a `/labels` p99 at the timeout in a fleet run with one replica paused). New
   metrics: `loki_vl_proxy_peer_cache_read_hedges_total{action="next_replica"|"gave_up"}` and
   `loki_vl_proxy_peer_cache_read_hedge_delay_seconds`; peer error reason `peer_slow`.
+
+### Changed
+
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
 
 ## [2.310.0] - 2026-11-16
 

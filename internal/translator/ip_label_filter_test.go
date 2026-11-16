@@ -14,8 +14,8 @@ import (
 )
 
 // lokiIPLabelFilter is the reference: Loki's ip() label filter on a label
-// value (pkg/logql/log/ip.go:123-145 and the scan at :183-226), written from
-// its rules. present is false for a line without the label.
+// value, written from the documented rules of the ip() filter and held to
+// Loki's recorded answers. present is false for a line without the label.
 func lokiIPLabelFilter(pattern, value string, present, negate bool) (keep, ok bool) {
 	var contains func(netip.Addr) bool
 	if a, err := netip.ParseAddr(pattern); err == nil {
@@ -298,7 +298,7 @@ var ipEdgeTable = []struct {
 	pattern, value string
 	eq, ne         bool
 }{
-	// An absent label: dropped under both operators (ip.go:128-131).
+	// An absent label: dropped under both operators (recorded Loki answers).
 	{"1.2.3.4", absent, false, false},
 	{"1.2.3.0/24", absent, false, false},
 	{"2001:db8::/32", absent, false, false},

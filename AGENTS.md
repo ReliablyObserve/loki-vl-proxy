@@ -43,11 +43,10 @@ generators either. Loki is used only as a test comparison.
   parses with Loki's parser, daily in `query-corpus.yaml`) and
   `sync_loki.py --record-live` (every route and method against the stack's
   Loki, weekly in `parity-refresh.yaml`). The parity corpus takes its Loki queries
-  from the published query documentation, never from Loki's test files. The two
-  exceptions are inside the test-only oracle module and await the owner's
+  from the published query documentation, never from Loki's test files. The one
+  exception is inside the test-only oracle module and awaits the owner's
   decision: the similarity scan above fingerprints Loki's `pkg/` to detect
-  copies, and `test/oracle/loki cases` reads the queries of Loki's syntax tests
-  for the PR quality report's parse-oracle rows. Add no other.
+  copies. Add no other.
 
 ### Expected answers come from Loki, recorded (hard rule)
 
@@ -433,7 +432,11 @@ A construct moves from the string translator to the typed plan (`internal/queryp
 
 - The plan must write the translator's text byte for byte, not an equal parsed query: the text is the cache key and the
   request VictoriaLogs sees. `TestPlanShadow` and the generated grids assert it for every native row under the 12
-  profiles; fix a difference of spelling in the AST builders, never in `internal/translator`.
+  profiles; fix a difference of spelling in the AST builders, never in `internal/translator`. Where the translator is
+  wrong against Loki, the plan writes Loki's reading as a recorded known divergence; once the proxy serves such a row
+  (`proxy.PlanServedText` answers it), the shadow holds it to that text and counts it `native_loki_held`, which needs
+  the case's Loki differential in `servedDivergences`. Corpus queries the request validation rejects are `rejected`,
+  never rows.
 - Decide eligibility before planning (`logql.MayHaveNonFilterStage` and a first-byte test for log queries): a query the
   plan does not cover pays no plan. `TestFlipScreenAdmitsEveryNativeRow` holds the screen to the native rows. A log
   query with more than line and label filters moves by stage family (`proxy.QueryPlanFlippedLogStages`): it goes

@@ -4,9 +4,8 @@ import (
 	"testing"
 )
 
-// Loki's pattern line filter with an empty pattern is a matcher with no
-// expression (pkg/logql/log/pattern/pattern.go ParseLineFilter returns an empty
-// Matcher) and Matcher.Test accepts only an empty line then, so `|> ""` keeps
+// Loki's pattern line filter with an empty pattern accepts only an empty line
+// (recorded Loki answers, internal/translate TestPatternLineFilterKeepsLokiLines), so `|> ""` keeps
 // the empty lines and `!> ""` drops them; a non-empty line is kept by `!> ""`
 // and dropped by `|> ""`.
 // conformance: semantics/pattern-line-filter
