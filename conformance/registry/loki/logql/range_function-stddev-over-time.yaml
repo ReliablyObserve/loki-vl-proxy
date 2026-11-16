@@ -1,7 +1,7 @@
 id: range_function-stddev-over-time
 kind: range_function
 logql: "stddev_over_time"
-loki_constant: OpRangeTypeStddev
+source: https://grafana.com/docs/loki/v3.7.x/query/metric_queries/
 generated:
   supported_by_proxy: true
   seen_in:

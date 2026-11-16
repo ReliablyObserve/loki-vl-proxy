@@ -335,18 +335,16 @@ LOKI_COUNTS = (
 
 
 def loki_details(corpus):
-    """Loki's own parser against the proxy's validation, on the corpus's client queries and on Loki's syntax test
-    queries, base versus PR; the queries it now judges worse; and the proxy files that share code with Loki's."""
+    """Loki's own parser against the proxy's validation, on the corpus's client queries, base versus PR; the queries it now judges worse; and the proxy files that share code with Loki's."""
     loki = mapping(corpus.get("loki"))
     lines = []
     if loki:
         base = mapping(corpus.get("loki_base"))
         lines += ["", f"Loki {cell(loki.get('version'))}'s own parser (`test/oracle/loki`, test-only) against the proxy's query validation:", ""]
-        for kind, title in (("client", "Client queries of the corpus"), ("case", "Loki's syntax test queries")):
-            now, before = mapping(loki.get(kind)), mapping(base.get(kind))
-            rows = [[label, fmt(before.get(k)) if before else "no base", fmt(now.get(k)),
-                     f"{now[k] - before[k]:+d}" if numeric(before.get(k)) and numeric(now.get(k)) else "n/a"] for k, label in LOKI_COUNTS]
-            lines += [f"{title}:", "", *table(["Count", "Base", "PR", "Delta"], rows), ""]
+        now, before = mapping(loki.get("client")), mapping(base.get("client"))
+        rows = [[label, fmt(before.get(k)) if before else "no base", fmt(now.get(k)),
+                 f"{now[k] - before[k]:+d}" if numeric(before.get(k)) and numeric(now.get(k)) else "n/a"] for k, label in LOKI_COUNTS]
+        lines += ["Client queries of the corpus:", "", *table(["Count", "Base", "PR", "Delta"], rows), ""]
         reg = corpus.get("loki_regressions")
         if isinstance(reg, dict):
             lines.append("Regressions against Loki: " + "; ".join(f"{len(reg.get(k) or [])} {what}" for k, what in (

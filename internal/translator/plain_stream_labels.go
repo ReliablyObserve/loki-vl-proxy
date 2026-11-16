@@ -9,8 +9,8 @@ import (
 
 // Loki's parsers never overwrite a label the entry already has from its stream
 // or its structured metadata: the parsed key is renamed name_extracted and the
-// plain name keeps the stream value (pkg/logql/log/parser.go duplicateSuffix,
-// LabelsBuilder.getWithCategory), so a filter, grouping, unwrap or keep after
+// plain name keeps the stream value (the `_extracted` suffix of LogQL's parser
+// stages, recorded Loki answers), so a filter, grouping, unwrap or keep after
 // the parser reads the stream value. VictoriaLogs' unpack_json, unpack_logfmt,
 // extract and extract_regexp overwrite the stored field of that name.
 //

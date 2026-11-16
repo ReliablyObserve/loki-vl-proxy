@@ -50,7 +50,7 @@ IMPACT = ("explore-visible", "drilldown-visible", "grafana-datasource", "api-onl
 STATUS = ("open", "owner-kept", "documented", "upstream", "fixed")
 RECORDED = ("documented", "owner-kept", "upstream", "fixed")
 # The corpus sources of a whole run (bench/parity/corpus.py); a run missing one cannot prune.
-SOURCES = ("grafana", "loki-tests", "repo", "seeded")
+SOURCES = ("grafana", "loki-docs", "repo", "seeded", "sweep")
 
 
 def block(text, name):

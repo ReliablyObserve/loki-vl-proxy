@@ -32,7 +32,7 @@ Proven in part; the rest is named in the item's cases.
 | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | — | 8 / 8 | 14 | Dotted names return Loki v3.7.7's parse error (message, line and column recorded from Loki for 192 query shapes, unit-te |
 | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | — | 0 / 4 | 46 | count, min, max and avg of count_over_time, bytes_over_time, rate, bytes_rate and the unwrap functions read one value pe |
 | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | — | 0 / 4 | 5 | `| regexp` and `| pattern` captures are part of the series identity on the instant, range and byte routes, proven agains |
-| `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | — | 18 / 23 | 42 | The filtered-volume pushdown cases (underscore labels, filters without `drop __error__`, ungrouped sums, translated labe |
+| `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | — | 18 / 23 | 43 | The filtered-volume pushdown cases (underscore labels, filters without `drop __error__`, ungrouped sums, translated labe |
 | `patterns-loki-mining` — /loki/api/v1/patterns answers the patterns Loki's pattern ingester mines, from the lines VictoriaLogs holds | — | 0 / 0 | 8 | 27 of 27 recorded Loki answers matched live (TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines) and the recorded orac |
 | `peer-cache-fleet-recovery` — With a ring owner down or every cache lost, the fleet answers like Loki from VictoriaLogs | — | 0 / 0 | 4 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-label-values-index` — A replica that lost its disk restores the label-values index from its peers | — | 0 / 0 | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
@@ -71,9 +71,9 @@ No file under `conformance/registry/state/` gives these a state yet.
 
 | Item | Consumers | Cases written / named | Tests | Why |
 |---|---|---:|---:|---|
-| `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 99 | — |
+| `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | — | 0 / 0 | 102 | — |
 | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | — | 0 / 0 | 1 | — |
-| `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 7 | — |
+| `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 8 | — |
 | `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | — | 4 / 4 | 7 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 5 | — |
 | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | — | 0 / 0 | 4 | — |

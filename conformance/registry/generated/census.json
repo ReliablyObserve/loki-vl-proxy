@@ -28,6 +28,8 @@
     "drilldown/logs-footer-query-stats | compare:observed",
     "drilldown/logs-footer-query-stats | gap:documented",
     "drilldown/logs-footer-query-stats | query",
+    "drilldown/long-range-pieces-answer-like-loki | compare:exact",
+    "drilldown/long-range-pieces-answer-like-loki | query",
     "drilldown/patterns-counts-tier-step-buckets | compare:observed",
     "drilldown/patterns-counts-tier-step-buckets | gap:open",
     "drilldown/patterns-counts-tier-step-buckets | query",
@@ -1311,6 +1313,8 @@
     "internal/proxy/binary_budget_status_test.go | semantics/error-layer-proxy-limit-status",
     "internal/proxy/binary_budget_status_test.go | status-400",
     "internal/proxy/binary_division_zero_test.go | semantics/binary-division-by-zero-nan",
+    "internal/proxy/binary_empty_without_test.go | cache-response-key-versions",
+    "internal/proxy/binary_empty_without_test.go | semantics/binary-operand-without-empty-collapses",
     "internal/proxy/binary_ignoring_matching_test.go | loki_api_v1_query",
     "internal/proxy/binary_ignoring_matching_test.go | loki_api_v1_query_range",
     "internal/proxy/binary_ignoring_matching_test.go | semantics/binary-ignoring-matching",
@@ -1338,6 +1342,8 @@
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-body-shape",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-cancel-deadline",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-transport-text",
+    "internal/proxy/chunked_range_windows_loki_test.go | drilldown/long-range-pieces-answer-like-loki",
+    "internal/proxy/chunked_range_windows_loki_test.go | loki_api_v1_query_range",
     "internal/proxy/cold_bad_row_test.go | semantics/error-layer-silent-success",
     "internal/proxy/comment_before_call_test.go | semantics/comment-between-function-and-parenthesis-accepted",
     "internal/proxy/comment_forms_test.go | semantics/comment-between-function-and-parenthesis-accepted",
@@ -1805,6 +1811,9 @@
     "internal/proxy/plan_predicate_parity_test.go | architecture-syntax-package-layering",
     "internal/proxy/plan_route_metric_test.go | architecture-syntax-package-layering",
     "internal/proxy/plan_route_parity_test.go | architecture-syntax-package-layering",
+    "internal/proxy/plan_served_test.go | architecture-syntax-package-layering",
+    "internal/proxy/plan_served_test.go | semantics/keep-before-unwrap-series-identity",
+    "internal/proxy/plan_served_test.go | semantics/translator-writes-reserved-field-names",
     "internal/proxy/post_aggregation_physical_test.go | architecture-syntax-package-layering",
     "internal/proxy/proxy_helpers_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/proxy_test.go | semantics/error-layer-silent-success",
@@ -2192,6 +2201,8 @@
     "internal/querycorpus/binop_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/binop_more_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/binop_route_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/binop_without_empty_loki_diff_test.go | semantics/binary-operand-without-empty-collapses",
+    "internal/querycorpus/binop_without_empty_loki_diff_test.go | semantics/pipeline-error-text-parity",
     "internal/querycorpus/binop_without_empty_test.go | semantics/binary-operand-without-empty-collapses",
     "internal/querycorpus/detected_level_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
@@ -2247,6 +2258,7 @@
     "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/logql_surface_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/metric_stages_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/odd_spellings_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
     "internal/querycorpus/odd_spellings_loki_test.go | semantics/translator-writes-exotic-field-names-bare",
@@ -2284,6 +2296,8 @@
     "internal/querycorpus/rank_step_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/series_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/series_agg_grid_test.go | semantics/stddev-stdvar-nested-or-binary",
+    "internal/querycorpus/shadow_rejected_loki_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/shadow_rejected_loki_test.go | semantics/parse-error-text-parity",
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/aggregation-over-range-by-not-applied",
     "internal/querycorpus/stddev_stdvar_loki_diff_test.go | semantics/stddev-stdvar-over-time-range-window",
@@ -2384,7 +2398,8 @@
     "internal/translate/label_filter_test.go | semantics/numeric-label-filter-not-equal-missing-label",
     "internal/translate/line_format_test.go | architecture-syntax-package-layering",
     "internal/translate/linefilter_pattern_loki_test.go | semantics/pattern-line-filter",
-    "internal/translate/linefilter_pattern_loki_test.go | semantics/pattern-line-filter-anchoring",
+    "internal/translate/linefilter_pattern_recorded_test.go | semantics/pattern-line-filter",
+    "internal/translate/linefilter_pattern_recorded_test.go | semantics/pattern-line-filter-anchoring",
     "internal/translate/linefilter_pattern_test.go | semantics/pattern-line-filter",
     "internal/translate/linefilter_test.go | semantics/ip-line-filter-ipv4-like-loki",
     "internal/translate/linefilter_test.go | semantics/line-filter-invalid-utf8",
@@ -2428,7 +2443,6 @@
     "internal/translator/nested_vector_chain_test.go | semantics/nested-aggregation-outer-by-native-routes",
     "internal/translator/parsed_key_variants_test.go | profiles/sanitized-json-key-filter",
     "internal/translator/parsed_key_variants_test.go | profiles/sanitized-json-key-grouping",
-    "internal/translator/pattern_line_filter_anchoring_test.go | semantics/pattern-line-filter-anchoring",
     "internal/translator/pattern_line_filter_test.go | semantics/pattern-line-filter",
     "internal/translator/regexp_escaping_test.go | loki_api_v1_query_range",
     "internal/translator/repeated_label_filter_test.go | semantics/repeated-label-filter-replaced-across-label-format",
@@ -2516,6 +2530,8 @@
     "test/e2e-compat/detected_level_unknown_stats_test.go | semantics/without-instant-detected-level-unknown",
     "test/e2e-compat/detected_level_unknown_stats_test.go | severity-exposure-surfaces",
     "test/e2e-compat/detected_level_variants_test.go | semantics/json-metric-detected-level-derivation",
+    "test/e2e-compat/drilldown_chunked_merge_lock_test.go | drilldown/long-range-pieces-answer-like-loki",
+    "test/e2e-compat/drilldown_chunked_merge_lock_test.go | loki_api_v1_query_range",
     "test/e2e-compat/drilldown_field_bounds_test.go | limits/drilldown-breakdown-exact",
     "test/e2e-compat/drilldown_field_bounds_test.go | limits/top-n-ranking-not-silent",
     "test/e2e-compat/drilldown_field_bounds_test.go | loki_api_v1_query_range",
@@ -2945,7 +2961,8 @@
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/dotted-name-parse-error",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/grafana-shows-loki-error-text",
-    "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile"
+    "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile",
+    "test/e2e-ui/tests/explore-long-range-pieces.spec.ts | drilldown/long-range-pieces-answer-like-loki"
   ],
   "counts": {
     "case_consumers": {
@@ -2953,12 +2970,12 @@
       "api": 109,
       "drilldown": 53,
       "explore": 191,
-      "grafana-datasource": 2,
+      "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 690,
-      "playwright": 1
+      "go": 697,
+      "playwright": 2
     },
     "page_kinds": {
       "drilldown": 18,
@@ -2977,7 +2994,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 94,
-    "wired_items": 395
+    "wired_items": 396
   },
   "gates": [
     "A/B shape selection",
@@ -3210,6 +3227,8 @@
     "explore-comprehensive-ui.spec.ts | should support unwrap operations",
     "explore-json-filter-panels.spec.ts | ${name} @explore-core @cov:${cov}",
     "explore-json-filter-panels.spec.ts | shard:explore-core",
+    "explore-long-range-pieces.spec.ts | ${hours}h range @explore-core @cov:drilldown/long-range-pieces-answer-like-loki",
+    "explore-long-range-pieces.spec.ts | shard:explore-core",
     "explore-multitenant.spec.ts | filter-for-value in multi-tenant explore adds label to query without error @explore-mt",
     "explore-multitenant.spec.ts | multi-tenant explore for missing tenant shows empty result not error banner @explore-mt",
     "explore-multitenant.spec.ts | multi-tenant explore shows logs for valid tenant and no error banner @explore-mt",
