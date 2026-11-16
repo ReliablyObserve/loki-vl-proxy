@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only the request itself answers its limit error. The stats extent cache surfaced an oversized bucket read as a
   transport error, which the breaker counted.
 
+### Changed
+
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
+
 ## [2.310.0] - 2026-11-16
 
 ### Changed
