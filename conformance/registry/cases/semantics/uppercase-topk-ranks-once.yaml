@@ -5,9 +5,9 @@ proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  Loki's lexer lowercases keywords (pkg/logql/syntax/lex.go:226-227), so
+  Loki's lexer lowercases keywords, so
   `TOPK(3, SUM BY (app) (RATE(...)))` is the same query as the lowercase
-  spelling and ranks every step (pkg/logql/evaluator.go:494-560).
+  spelling and ranks every step.
 
   The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
   VictoriaLogs v1.53.0), Grafana Explore, 1h:
@@ -37,7 +37,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy per-step topk/bottomk detection (case-sensitive keyword match)'
-  loki: 'pkg/logql/syntax/lex.go:226-227 (keywords lowercased); pkg/logql/evaluator.go:494-560 (per-step ranking)'
+  loki: 'keywords are lowercased by the lexer, so TOPK ranks every step like topk (differential run of 2026-11-04, in this case)'
   proxy: 'k series over the whole range, every point kept'
   planned_test: 'TestCompat_UppercaseKeywordsRankPerStep (test/e2e-compat, group semantics)'
   clusters:

@@ -5,8 +5,7 @@ proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  Loki ranks k series per step, per group for `topk by` / `topk without`
-  (pkg/logql/evaluator.go:494-560). The plain forms match Loki
+  Loki ranks k series per step, per group for `topk by` / `topk without`. The plain forms match Loki
   (semantics/topk-bottomk-range-series, semantics/topk-grouped-spellings);
   the differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
   VictoriaLogs v1.53.0) still shows other members at some steps:
@@ -50,7 +49,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy per-step topk ranking (ties, grouped ranking) and the detected_level-filtered operand'
-  loki: 'pkg/logql/evaluator.go:494-560 (per-step, per-group ranking)'
+  loki: 'topk ranks k series per step and per group (differential run of 2026-11-04, in this case)'
   proxy: 'other members at some steps'
   planned_test: 'TestCompat_TopkPerStepMembership (test/e2e-compat, group semantics): compare the operand per step, then the ranking'
   clusters:

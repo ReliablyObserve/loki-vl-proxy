@@ -19,8 +19,7 @@ why: |
   (internal/proxy/binary_aggregation.go sumRateCountRatio): a `count by
   (service_name)` of count_over_time divided by 300. There is no binary left to
   join, and the 48h answer failed in the count. A count, min, max or avg takes one
-  value per Loki series (pkg/logql/evaluator.go VectorAggEvaluator.Next, per
-  step), so the translation keeps the series identity (`stats by (service_name,
+  value per Loki series (per step), so the translation keeps the series identity (`stats by (service_name,
   _stream, level, detected_level)`) and the sliding window needs each stream's
   window before any fold. VictoriaLogs answered that stats query with a 200; the
   bucket matrix builder (internal/proxy/range_metric_compat.go
@@ -91,7 +90,7 @@ gap:
   visual_reason: 'the failure is one query_range wider than the visual ranges (Grafana splits a metric range at 24h, and each chunk fits the bound), and the captured shape compares main = PR (4/4) with a value difference to Loki that is the owner-accepted structured-metadata series split, which a fix proof cannot show; proven by the byte-for-byte differential against the previous fold, the tight-bound handler tests and the 48h check of the A/B run'
   effort: M
   area: 'internal/proxy/matrix_fold_sink.go (matrixFold, matrixFoldSink); internal/proxy/range_metric_compat.go buildHitsRangeMetricMatrixFolded; internal/proxy/typed_fold.go foldAccumulator; internal/proxy/vector_agg_fold.go foldVectorAggregations'
-  loki: 'pkg/logql/evaluator.go:400-433 newVectorAggEvaluator, :435-529 VectorAggEvaluator.Next (the groups of a step fold per step; the per-stream samples are not kept); pkg/logql/range_vector.go (count_over_time and rate over the window (t-range, t])'
+  loki: 'a count, min, max or avg folds one value per series per step; the groups of a step fold and the per-stream samples are not kept (test/e2e-compat series_level_aggregation_fine_step_test.go)'
   proxy: 'the bucket matrix builder folds each stream into its group as it builds it; the response bound and the series cap apply to the folded answer'
   planned_test: 'TestCompat_SeriesLevelAggregationFineStep (test/e2e-compat, group core); TestMatrixFoldSinkMatchesFoldedMatrix, TestMatrixFoldSinkBuffersGroupsNotStreams, TestSeriesLevelAggregationStaysWithinResponseBudget, TestAggregationOverBinaryRateCountRatioSlidingWindowWithinBudget, TestSeriesLevelAggregationRepeatedAndMovedWindows, TestVectorAggregationOverRangeFunctionDifferential (internal/proxy); FuzzMatrixFoldSink (internal/proxy, CI fuzz smoke)'
   note: 'Found by the 48h perf pass on main 7eaf79ce (B2 answered 500 in all 7 runs and both Loki profiles). The e2e against Loki and the bench/ab 24h-20s set and the 48h B2 check are written, not yet run in a stack window.'

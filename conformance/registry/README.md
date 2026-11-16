@@ -43,6 +43,14 @@ expressions on the same files). `conformance/reports/census.md` and
 are regenerated with `python3 conformance/scripts/census.py`, and
 `census.py --diff OLD.json NEW.json` lists the cells one census lacks.
 
+## Evidence for a Loki claim
+
+A case states what Loki does and proves it with a recorded Loki answer, an oracle fact, a test
+wired to the case that compares with Loki, or Loki's public documentation; it never cites a Loki
+source file or line. A case whose claim has none of these yet carries the top-level key
+`evidence: needs recording` (the only value the schema accepts); the error-machinery recording step
+lists those cases and removes the key once the answer is recorded.
+
 ## Write methods are out of scope
 
 The proxy serves Loki's read API. A state file lists the write methods of an endpoint that
@@ -119,7 +127,7 @@ gap:
   impact: explore-visible   # explore-visible | drilldown-visible | grafana-datasource | api-only | edge
   effort: S             # S | M | L
   area: 'internal/... (where the fix belongs)'
-  loki: 'pkg/logql/...:line (Loki v3.7.7 reference)'
+  loki: 'what Loki answers, stated as behaviour (Loki v3.7.7); evidence is a recorded answer, an oracle fact or a docs URL, never a source line'
   proxy: 'what the proxy does instead'
   planned_test: 'the test that will prove the fix and stay as its regression guard'
   fixed_by: '#700'      # required with status fixed: the PR or commit that removed the difference
@@ -171,7 +179,7 @@ backend host:port or Go transport and decoder error. Every route answers a failu
 the proxy's single error layer (`writeError` and the status mapping beside it in
 `internal/proxy/http_utils.go`) with Loki's status, `errorType` and text: a failed backend
 call is 500, a client cancellation 499 and a deadline 504 with Loki's fixed texts
-(`pkg/util/server/error.go`), a full queue 429 "too many outstanding requests", a bad query
+(recorded in `internal/lokierr/testdata/loki_error_answers.jsonl`), a full queue 429 "too many outstanding requests", a bad query
 400 with Loki's wording. A proxy-only status (502, 503, 422, 408) is a leak unless it is a
 documented proxy limit listed here whose message names its flag. `loki/errors/status-<code>.yaml`
 records when Loki answers each status and the cases that assert it.

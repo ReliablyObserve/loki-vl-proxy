@@ -5,7 +5,7 @@ title: Stats extent buckets read on one replica are served by every replica with
 loki: |
   Loki's results cache is shared by every query frontend (memcached or the
   embedded cache behind one frontend): a split read once is reused whichever
-  frontend receives the next request (pkg/storage/chunk/cache/resultscache).
+  frontend receives the next request (Loki's documented results cache).
 
 victorialogs: |
   VictoriaLogs has no cache a proxy replica can share: every stats_query_range

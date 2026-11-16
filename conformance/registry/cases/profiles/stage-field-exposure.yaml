@@ -6,7 +6,7 @@ proves:
 consumer: explore
 why: |
   Loki adds labels to an entry only through a stage, and each stage adds its
-  own (pkg/logql/log, v3.7.7): `| json` and `| logfmt` every key that parser
+  own: `| json` and `| logfmt` every key that parser
   reads from the line, `| json a, b="x.y"` and `| logfmt a` only the named
   labels (every one of them, empty when the line lacks the key; a nested
   object as its JSON text), `| regexp` and `| pattern` their named captures,

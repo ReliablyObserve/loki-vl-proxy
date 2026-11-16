@@ -7,7 +7,7 @@ consumer: explore
 why: |
   Before a stage exposes a key of the line, Loki's entry has no such label:
   a string label filter is evaluated on an empty value and a numeric,
-  duration or bytes comparison fails (pkg/logql/log/label_filter.go), so
+  duration or bytes comparison fails, so
   `{app="x"} | user="u1"` and `| json user | status="200"` return nothing.
   VictoriaLogs holds the JSON line's keys as stored fields and matched them.
   Measured 2026-10-02 against Loki 3.7.7 (VictoriaLogs v1.52.0 and v1.30.0
@@ -65,7 +65,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy label-filter refill (-label-filter-refill-max-pages); metric queries on keys no stage exposes'
-  loki: 'pkg/logql/log/label_filter.go (filter reads only labels the pipeline set)'
+  loki: 'a filter reads only labels the pipeline set (measured against Loki 3.7.7 on 2026-10-02, in this case)'
   proxy: 'metric-query filters/grouping on keys no stage exposes read the stored field (documented, owner kept)'
   planned_test: 'TestCompat_LabelFilterOnLineField (exists, profile tests)'
   clusters: []

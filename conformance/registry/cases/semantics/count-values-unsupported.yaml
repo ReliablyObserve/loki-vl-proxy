@@ -4,9 +4,8 @@ proves:
   - loki_api_v1_query_range
 consumer: api
 why: |
-  Loki v3.7.7 has no `count_values`: pkg/logql/syntax/lex.go:114-125 maps no
-  token to it and the vectorOp production (syntax.y:477-490, ast.go:1243-1254)
-  has no entry for it, so ParseExpr
+  Loki v3.7.7 has no `count_values`: its lexer maps no
+  token to it and its grammar has no entry for it, so a query using it
   answers HTTP 400 `parse error at line 1, col 1: syntax error: unexpected
   IDENTIFIER` for `count_values("v", sum by (level)
   (count_over_time({env="production"}[5m])))` on query and query_range, with
@@ -46,7 +45,7 @@ gap:
   visual_reason: 'an error response for a query Loki also rejects; no Grafana panel renders a different result'
   effort: S
   area: 'internal/logql parser (parsePrimary rejects the count_values name with the position helper)'
-  loki: 'pkg/logql/syntax/lex.go:114-125, syntax.y:477-490, ast.go:1243-1254 (no count_values token, production or op type; v3.7.7)'
+  loki: 'no count_values token, production or operator; the parse error is a 400 (TestCompat_CountValues)'
   proxy: 'Loki parse error at the position of the name, 400 bad_data, before any backend call'
   planned_test: 'TestCompat_CountValues (test/e2e-compat, core group via TestCompat_.*)'
   clusters: []

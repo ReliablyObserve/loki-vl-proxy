@@ -4,8 +4,8 @@ title: The LogQL and LogsQL syntax packages depend on nothing but the standard l
 pending: true
 
 loki: |
-  Not client-visible: Loki's own LogQL syntax package (pkg/logql/syntax) holds
-  the scanner, parser and printer apart from its engine.
+  Not client-visible: Loki's own LogQL syntax holds the scanner, parser and
+  printer apart from its engine.
 
 victorialogs: |
   Not client-visible: VictoriaLogs keeps its LogsQL parser in lib/logstorage.
@@ -1059,7 +1059,7 @@ decisions:
       translator. The translator writes it as one text of stacked stats
       pipes, so it is byte-comparable in the corpus shadow, and each level
       above the first needs only the labels its input series have, which
-      Loki's VectorAggEvaluator defines and the translator already applies
+      the Loki oracle's facts define (TestPlanMatchesLokiOracle) and the translator already applies
       (it moved to translate.LevelKeeps, with intersect and subtract, and the
       translator forwards to it). stddev and stdvar are not a query: the
       proxy folds the operand's series per step (population variance,

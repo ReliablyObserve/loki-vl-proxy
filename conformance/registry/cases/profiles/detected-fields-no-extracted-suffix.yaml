@@ -4,6 +4,7 @@ proves:
   - loki_api_v1_detected_fields
   - loki-compatible-profile
 consumer: drilldown
+evidence: needs recording
 why: |
   Where structured metadata service.name collides with the stream label
   service_name, Loki's detected_fields lists service_name_extracted; the proxy
@@ -30,7 +31,7 @@ gap:
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy/label_handlers.go handleDetectedFields'
-  loki: 'pkg/logql/log/parser.go:25 duplicateSuffix'
+  loki: 'detected_fields lists service_name_extracted where metadata service.name collides with the stream label'
   proxy: 'service / service.name'
   planned_test: 'bench/parity diff rule (documented facet, service fields only)'
   clusters: []

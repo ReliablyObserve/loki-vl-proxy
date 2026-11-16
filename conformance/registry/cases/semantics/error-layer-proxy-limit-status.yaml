@@ -5,6 +5,7 @@ proves:
   - status-502
   - limits/series-limit-error
 consumer: any
+evidence: needs recording
 why: |
   The proxy's limits (-backend-max-buffered-response-bytes,
   -manual-range-metric-row-limit, -binary-metric-max-arrays, the admission
@@ -12,11 +13,10 @@ why: |
   A client reads Loki's status and text for the class and never a flag name;
   the request error log line carries the flag (`limit_flag`) and its setting
   (`limit_value`), and its `upstream_error` the operator wording.
-  Loki's message-size limit is a 500 ResourceExhausted
-  (pkg/util/server/error.go:93-100), which is how every buffer limit answers
+  Loki's message-size limit is a 500 ResourceExhausted, which is how every buffer limit answers
   (`rpc error: code = ResourceExhausted desc = grpc: trying to send message
   larger than max (N vs. LIMIT)`), never 502. Its query limits
-  (logqlmodel.ErrLimit) answer 400, which is how the row limit, the binary
+  answer 400, which is how the row limit, the binary
   evaluation budgets and the multi-tenant fanout answer
   (`limit reached while evaluating the query`; limits/row-limit-answers-loki-limit-text).
   Its full queue is 429 `too many outstanding requests`, which is how the
@@ -65,6 +65,6 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy/label_handlers.go computeIndexStatsResult (vlPostCoalesced)'
-  loki: 'pkg/util/server/error.go:93-100'
+  loki: 'a message-size limit is a 500 ResourceExhausted, a query limit a 400'
   proxy: '500 Internal Server Error on index stats (coalesced read, no buffered-bytes bound)'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'
