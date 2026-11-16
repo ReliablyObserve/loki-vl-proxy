@@ -23,7 +23,7 @@ func TestPeerFetchRejectsTTLDurationOverflow(t *testing.T) {
 			defer server.Close()
 			peer := NewPeerCache(PeerConfig{Timeout: time.Second})
 			defer peer.Close()
-			body, ttl, _, status := peer.fetchFrom(strings.TrimPrefix(server.URL, "http://"), "tenant-isolated-key")
+			body, ttl, _, status := peer.fetchFrom(strings.TrimPrefix(server.URL, "http://"), "tenant-isolated-key", headerSink{})
 			if status != 0 || len(body) != 0 || ttl != 0 {
 				t.Fatalf("overflow TTL accepted: status=%d ttl=%s value=%q", status, ttl, body)
 			}
@@ -80,7 +80,7 @@ func TestPeerFetchAcceptsMaximumRepresentableTTL(t *testing.T) {
 	defer server.Close()
 	peer := NewPeerCache(PeerConfig{Timeout: time.Second})
 	defer peer.Close()
-	body, ttl, _, status := peer.fetchFrom(strings.TrimPrefix(server.URL, "http://"), "boundary")
+	body, ttl, _, status := peer.fetchFrom(strings.TrimPrefix(server.URL, "http://"), "boundary", headerSink{})
 	if status != http.StatusOK || string(body) != "maximum safe duration" || ttl != 9223372036854000000 {
 		t.Fatalf("valid maximum TTL rejected: status=%d ttl=%s value=%q", status, ttl, body)
 	}
@@ -100,7 +100,7 @@ func TestPeerFetchRejectsOverlongTTLHeader(t *testing.T) {
 			defer server.Close()
 			peer := NewPeerCache(PeerConfig{Timeout: time.Second})
 			defer peer.Close()
-			body, ttl, _, status := peer.fetchFrom(strings.TrimPrefix(server.URL, "http://"), "overlong")
+			body, ttl, _, status := peer.fetchFrom(strings.TrimPrefix(server.URL, "http://"), "overlong", headerSink{})
 			if status != 0 || len(body) != 0 || ttl != 0 {
 				t.Fatalf("overlong header accepted: status=%d ttl=%s", status, ttl)
 			}

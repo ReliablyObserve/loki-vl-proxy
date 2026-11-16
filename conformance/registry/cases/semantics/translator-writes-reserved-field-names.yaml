@@ -74,6 +74,13 @@ why: |
   open. A name in another case (`_TIME`) is a plain field there and is lowered
   (the outbound guard writes its filters).
 
+  The corpus shadow (TestPlanShadow) holds every row the proxy serves from the
+  plan (proxy.PlanServedText) to that text, byte for byte, and counts it native
+  and held to Loki by TestReservedFieldLabelsMatchLoki (native_loki_held in
+  conformance/registry/query-plan.json): the 84 rows of the filter-only log
+  queries. The metric row (`count_over_time(.. | _time="x" [5m])`) is still the
+  translator's text and stays this known divergence.
+
   Not reachable from the proxy: a structured metadata `_time`, `_stream` or
   `_stream_id` that Loki filters is gone in VictoriaLogs, and a line whose
   stream label or metadata `_msg` replaced it is that value to a line filter.

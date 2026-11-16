@@ -71,7 +71,7 @@ func binaryRoutePhysical(bin *logqlpkg.BinOpExpr, translate func(string) (string
 			sides[i] = b
 			continue
 		}
-		text := side.String()
+		text := emptyWithoutOperand(side).String()
 		if v, vector := binaryVectorLiteral(text); vector {
 			sides[i] = physical.VectorOp{V: v}
 			appendLeaf(leaves, "")

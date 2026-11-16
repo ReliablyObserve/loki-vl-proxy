@@ -202,9 +202,13 @@ func checkBinaryRoute(q string, prof planProfile, got physical.Binary) string {
 		}
 	}
 	// The text has no spelling for a bool modifier (the route reads it from the query), so a comparison with bool
-	// encodes like the translator's text, which drops it.
+	// encodes like the translator's text, which drops it. Otherwise the translator's text for the whole query is not
+	// the route's reading, unless it decodes to the route's operators (a sum `without ()` against a number: the route
+	// sends the operand alone, which the translator happens to write).
 	if legacy, ok := prof.translate(q); ok && physical.Encode(got) == legacy && !holdsBool(got) {
-		return fmt.Sprintf("%s: %q: lowered to the translator's text for the whole query, which the route does not read", prof.name, q)
+		if lw, err := translator.DecodePhysical(legacy); err != nil || !physical.Equal(lw, want) {
+			return fmt.Sprintf("%s: %q: lowered to the translator's text for the whole query, which the route does not read", prof.name, q)
+		}
 	}
 	return ""
 }

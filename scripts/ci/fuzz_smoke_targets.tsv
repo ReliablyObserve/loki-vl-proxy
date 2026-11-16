@@ -17,12 +17,16 @@ smoke	internal/proxy	FuzzNormalizeMetadataPairsFromJSON	12s	-	structured metadat
 smoke	internal/proxy	FuzzMergeLokiQueryResponsesStructuredMetadataContract	12s	-	merged categorized stream contract
 smoke	internal/proxy	FuzzParseLokiDuration	12s	-	parse Loki duration
 smoke	internal/proxy	FuzzParseTimestamp	12s	-	parse timestamp
+smoke	internal/proxy	FuzzPlaceholderExclusion	12s	-	the placeholder exclusion of -json-line-fields-as-line-keys terminates and writes a filter VictoriaLogs parses
 smoke	internal/proxy	FuzzMayHoldDropStage	12s	-	the precheck in front of the detected_level source-drop fence regexp never hides a match
 smoke	internal/proxy	FuzzStreamLevelSeriesFenceSpelling	12s	-	the stream level fence covers every case and blank spelling the parser reads
 smoke	internal/proxy	FuzzEnsureStreamDetectedLevel	12s	-	a series built from one stream takes the stream's level field, else the row's level field, normalised; the level label and a present detected_level never change
+smoke	internal/proxy	FuzzDetectedLevelMatchesReference	12s	-	the byte-level detected_level derivation equals the reference held to recorded Loki answers on any line, stream label and stored field
 smoke	internal/proxy	FuzzScalarStatsBinaryOf	12s	-	a stats query joined to a number is read back to the same operator and number
 smoke	internal/proxy	FuzzMergeDeviationBuckets	12s	-	stddev and stdvar windows merged from bucket mean, count and deviation equal the window's variance
 smoke	internal/proxy	FuzzUnwrapWindowForm	12s	-	the unwrap window forms, and a range aggregation with its own by under a vector aggregation, are told from the query's tree
+smoke	internal/proxy	FuzzConvertUnwrap	12s	-	the unwrap conversion is ParseFloat's, ParseDuration's and humanize v1.0.1's ParseBytes', and the gate keeps every value it converts
+smoke	internal/proxy	FuzzLokiLogfmtPairs	12s	-	the logfmt reading terminates, yields valid keys and reads back the pairs it yields
 smoke	internal/proxy	FuzzResponseKeyFencesMatchParsedTree	12s	-	every response key fence fires for the construct the parsed tree holds, in any keyword case, comment and name spelling, and keeps the keys its older screen fired for
 smoke	internal/proxy	FuzzTumblingStatsRangeParams	12s	-	the tumbling stats_query_range form built once equals the form built and overwritten
 smoke	internal/proxy	FuzzSeriesKeyFromMetric	20s	60s	series key from metric
@@ -42,6 +46,8 @@ smoke	internal/proxy	FuzzPatternsMatchTheirLines	12s	-	patterns every mined line
 smoke	internal/proxy	FuzzMinedPatternsAreValidLineFilters	12s	-	every mined pattern is a pattern line filter Loki accepts (|> and !>)
 smoke	internal/proxy	FuzzPatternLineTokens	12s	-	patterns lines tokenized by format
 smoke	internal/proxy	FuzzPatternCountsStep	12s	-	patterns counts step
+smoke	internal/proxy	FuzzPatternParallelMiningMinesAsSerial	12s	-	patterns mined on workers give the miner mining on one goroutine gives
+smoke	internal/proxy	FuzzPatternRowTimeReadsAsLokiTimes	12s	-	patterns row times read from bytes as parseLokiTimeToUnixNano reads them
 smoke	internal/proxy	FuzzJSONValidSplitPredicate	12s	-	json error filter split predicate
 smoke	internal/proxy	FuzzJSONErrorSplitPredicate	12s	-	json parser error count split predicate
 smoke	internal/proxy	FuzzOrderedJSONStepWiderThanRange	12s	-	json metric with a range shorter than the step against the Loki-semantics reference
@@ -101,7 +107,7 @@ smoke	internal/logsql	FuzzParseRoundTrip	12s	-	parse round trip
 smoke	internal/logsql	FuzzOutboundGuard	12s	-	outbound guard
 smoke	internal/logsql	FuzzQuoteFieldName	12s	-	quote field name
 smoke	internal/logsql	FuzzQueryString	12s	-	query string
-smoke	internal/proxy	FuzzMergeLabelsIntoCache	12s	-	label merge is sorted and deduplicated
+smoke	internal/proxy	FuzzStoreLabelsCache	12s	-	stored label list is sorted and deduplicated
 smoke	internal/proxy	FuzzTwiceGateIsASupersetOfTheKeyPatterns	12s	-	twice gate is a superset of the key patterns
 smoke	internal/proxy	FuzzVolumeSegmentsMergeLikeOneWindow	12s	-	volume segments merge like one window
 smoke	internal/translate	FuzzKeywordGateIsASupersetOfTheRegexp	12s	-	keyword gate is a superset of the regexp

@@ -61,11 +61,11 @@ func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
 	if err := binOpShape(n); err != nil {
 		return nil, err
 	}
-	l, err := binOperand(n.L, prof)
+	l, err := binOperand(EmptyWithoutLevelsOff(n.L), prof)
 	if err != nil {
 		return nil, err
 	}
-	r, err := binOperand(n.R, prof)
+	r, err := binOperand(EmptyWithoutLevelsOff(n.R), prof)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func binOpShape(n *queryplan.BinOp) error {
 	if lc && rc {
 		return errBinConstants
 	}
-	for _, x := range [2]queryplan.Node{n.L, n.R} {
+	for _, x := range [2]queryplan.Node{EmptyWithoutLevelsOff(n.L), EmptyWithoutLevelsOff(n.R)} {
 		switch v := x.(type) {
 		case *queryplan.Scalar, *queryplan.RangeAgg, *queryplan.VectorLit:
 		case *queryplan.VectorAgg:
@@ -150,6 +150,32 @@ func translatorShape(n *queryplan.BinOp) error {
 		}
 	}
 	return nil
+}
+
+// EmptyWithoutLevelsOff is a binary operand as the proxy's binary route sends it (proxy emptyWithoutOperand): its outer
+// sum, avg, min and max levels with a `without ()` clause taken off. Such a clause drops no label, so each series of
+// the level's operand is a group of its own, and the level answers that series unchanged with every label it has:
+// Loki's answer for the level is its operand's (semantics/binary-operand-without-empty-collapses). A count, stddev,
+// stdvar or ranking under the clause is kept (each series answers 1 or 0, or is ranked).
+func EmptyWithoutLevelsOff(x queryplan.Node) queryplan.Node {
+	for {
+		v, ok := x.(*queryplan.VectorAgg)
+		if !ok || !keepsEverySeries(v) {
+			return x
+		}
+		x = v.In
+	}
+}
+
+// keepsEverySeries reports a vector aggregation whose answer is its operand's: sum, avg, min or max with a `without`
+// clause of no label.
+func keepsEverySeries(v *queryplan.VectorAgg) bool {
+	switch v.Op {
+	case logql.VectorSum, logql.VectorAvg, logql.VectorMin, logql.VectorMax:
+	default:
+		return false
+	}
+	return v.By != nil && v.By.Without && len(v.By.Labels) == 0 && v.In != nil
 }
 
 // emptyWithoutShape answers the NotLoweredError of an operand with a `without ()` clause the lowering does not write:
