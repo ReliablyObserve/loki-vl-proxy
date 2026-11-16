@@ -9,10 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"slices"
-	"sort"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -32,55 +29,6 @@ import (
 // vlemu.Emulator: the stats_query_range and stats_query endpoints over the three
 // stats pipes the translation uses (stats, math <field>/<number>, stats), with
 // VictoriaLogs' bucket semantics, and the raw /select/logsql/query rows.
-
-// lokiUnwrapSum is the reference: for every evaluation time t, the windows
-// (t-window, t] of the series (stream plus parsed labels), the range function
-// over each series' values, and the ungrouped sum over the series that have a
-// sample. A time with no sample in any series has no point.
-func lokiUnwrapSum(rows []vlemu.Row, fn string, window int64, times []int64) map[int64]float64 {
-	out := map[int64]float64{}
-	for _, t := range times {
-		perSeries := map[string][]float64{}
-		for _, row := range rows {
-			if row.TS <= t-window || row.TS > t {
-				continue
-			}
-			labels := make([]string, 0, len(row.Labels))
-			for k, v := range row.Labels {
-				labels = append(labels, k+"="+v)
-			}
-			sort.Strings(labels)
-			key := row.Stream + "|" + strings.Join(labels, ",")
-			perSeries[key] = append(perSeries[key], row.Value)
-		}
-		if len(perSeries) == 0 {
-			continue
-		}
-		var total float64
-		for _, values := range perSeries {
-			var sum float64
-			for _, v := range values {
-				sum += v
-			}
-			switch fn {
-			case "rate":
-				total += sum / (float64(window) / 1e9)
-			case "sum_over_time":
-				total += sum
-			case "avg_over_time":
-				total += sum / float64(len(values))
-			case "max_over_time":
-				total += slices.Max(values)
-			case "min_over_time":
-				total += slices.Min(values)
-			default:
-				panic("reference: " + fn)
-			}
-		}
-		out[t] = total
-	}
-	return out
-}
 
 type uwScenario struct {
 	fn, parser string
@@ -289,7 +237,7 @@ func TestUngroupedSumUnwrapDifferential(t *testing.T) {
 							}
 							emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 							got, series := runUnwrapScenario(t, emu, s)
-							want := lokiUnwrapSum(s.rows, "rate", int64(s.window), s.times())
+							want := unwrapSumReference(s.rows, "rate", int64(s.window), s.times())
 							compareUnwrapSum(t, fmt.Sprintf("%s #%d", name, i), s, got, want, series)
 							rawRows := emu.EndpointCalls("/select/logsql/query")
 							switch {
@@ -333,7 +281,7 @@ func TestUngroupedSumUnwrapPerSeriesFunctions(t *testing.T) {
 					}
 					emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount"}
 					got, series := runUnwrapScenario(t, emu, s)
-					want := lokiUnwrapSum(s.rows, fn, int64(s.window), s.times())
+					want := unwrapSumReference(s.rows, fn, int64(s.window), s.times())
 					if parser == "json" {
 						if series > 1 || (len(want) == 1 && len(got) != 1) {
 							t.Fatalf("%s/%s #%d: %d series with %d points, want one series with Loki's %d point(s)", parser, fn, i, series, len(got), len(want))
@@ -362,7 +310,7 @@ func TestUngroupedSumUnwrapUnderLabelReplace(t *testing.T) {
 					s.wrap = wrap
 					emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount"}
 					got, series := runUnwrapScenario(t, emu, s)
-					compareUnwrapSum(t, fmt.Sprintf("label_replace %s #%d", parser, i), s, got, lokiUnwrapSum(s.rows, "rate", int64(s.window), s.times()), series)
+					compareUnwrapSum(t, fmt.Sprintf("label_replace %s #%d", parser, i), s, got, unwrapSumReference(s.rows, "rate", int64(s.window), s.times()), series)
 				}
 			})
 		}
@@ -455,7 +403,7 @@ func TestGroupedSumUnwrapRateRawWindow(t *testing.T) {
 					rows = append(rows, row)
 				}
 			}
-			want := lokiUnwrapSum(rows, "rate", int64(s.window), s.times())
+			want := unwrapSumReference(rows, "rate", int64(s.window), s.times())
 			if len(want) == 0 && len(got[pod]) == 0 {
 				continue
 			}

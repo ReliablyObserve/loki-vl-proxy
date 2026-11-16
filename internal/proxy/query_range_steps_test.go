@@ -269,7 +269,7 @@ func TestQueryRangeStepsLokiWindows(t *testing.T) {
 			for at := from; !at.After(to); at = at.Add(10 * time.Second) {
 				times = append(times, at.UnixNano())
 			}
-			want := lokiOverTimeGroups(rows, tc.fn, tc.outer, int64(5*time.Minute), 0, times, group)
+			want := overTimeReference(rows, tc.fn, tc.outer, int64(5*time.Minute), 0, times, group)
 			var resp struct {
 				Data struct {
 					Result []struct {
