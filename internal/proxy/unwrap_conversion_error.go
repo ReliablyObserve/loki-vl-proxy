@@ -106,7 +106,7 @@ func unwrapErrorProbeFor(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorA
 		pipeline: pipeline,
 		post:     post,
 	}
-	probe.hints = unwrapParserHints(ra, parent, pipeline, uw.Label)
+	probe.hints = unwrapParserHints(ra, parent, pipeline, post, uw.Label)
 	return probe, true
 }
 
@@ -191,9 +191,10 @@ func unwrapNameRune(c rune) bool {
 
 // unwrapParserHints is the set of labels Loki's parsers extract for ra under parent: the labels the series of the
 // aggregation keep and the unwrapped label, when the query names them (a range aggregation's own by, a sum by labels
-// or none of sum_over_time or rate, absent_over_time, which keeps none); nil when Loki extracts every label.
+// or none of sum_over_time or rate, absent_over_time, which keeps none), with the labels the query's label filters
+// read; nil when Loki extracts every label.
 // Recorded: TestUnwrapConversionErrorMatchesRecordedLoki (the series named in the error).
-func unwrapParserHints(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAggregation, pipeline []logqlpkg.Stage, label string) map[string]bool {
+func unwrapParserHints(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAggregation, pipeline, post []logqlpkg.Stage, label string) map[string]bool {
 	var labels []string
 	switch {
 	case ra.Op == logqlpkg.RangeAbsentOverTime:
@@ -214,10 +215,35 @@ func unwrapParserHints(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAgg
 	}
 	hints := make(map[string]bool, len(labels)+1)
 	hints[label] = true
+	if base, ok := strings.CutSuffix(label, extractedSuffix); ok && base != "" {
+		// The parser extracts the key under its own name; the suffix comes from the collision.
+		hints[base] = true
+	}
 	for _, name := range labels {
 		hints[name] = true
 	}
+	// A label a filter reads is extracted for it.
+	for _, st := range append(append([]logqlpkg.Stage{}, pipeline...), post...) {
+		if lf, ok := st.(*logqlpkg.LabelFilterStage); ok && lf.Expr != nil {
+			unwrapFilterLabels(lf.Expr, hints)
+		}
+	}
 	return hints
+}
+
+// unwrapFilterLabels adds the labels a label filter expression reads to names.
+func unwrapFilterLabels(e *logqlpkg.LabelFilterExpr, names map[string]bool) {
+	if e == nil {
+		return
+	}
+	if e.IsLeaf() {
+		if e.Name != "" {
+			names[e.Name] = true
+		}
+		return
+	}
+	unwrapFilterLabels(e.Left, names)
+	unwrapFilterLabels(e.Right, names)
 }
 
 // unwrapNaNPattern is a nan value, which strconv.ParseFloat reads and the gate counts apart.
@@ -487,6 +513,35 @@ const (
 // errors) or dropped, and the value is converted as the plain gate converts it. Without errors a duration or a
 // byte size keeps only the values that convert.
 func unwrapCountedGateMode(field, conv string, errors bool) string {
+	i := 0
+	switch conv {
+	case "duration":
+		i = 2
+	case "bytes":
+		i = 4
+	}
+	if errors {
+		i++
+	}
+	unwrapCountedGateOnce.Do(func() {
+		for k, c := range []string{"", "", "duration", "duration", "bytes", "bytes"} {
+			unwrapCountedGateTemplates[k] = buildUnwrapCountedGate(unwrapGateFieldMark, c, k%2 == 1)
+		}
+	})
+	return strings.ReplaceAll(unwrapCountedGateTemplates[i], strconv.Quote(unwrapGateFieldMark), strconv.Quote(field))
+}
+
+// The counting gates are written once per conversion and mode around a marker field, which a request's quoted field
+// replaces.
+const unwrapGateFieldMark = "§field§"
+
+var (
+	unwrapCountedGateOnce      sync.Once
+	unwrapCountedGateTemplates [6]string
+)
+
+// buildUnwrapCountedGate writes the counting gate of unwrapCountedGateMode.
+func buildUnwrapCountedGate(field, conv string, errors bool) string {
 	q := strconv.Quote(field)
 	type class struct{ flag, cond string }
 	var classes []class
@@ -702,14 +757,36 @@ func unwrapPointsOf(raw json.RawMessage, vector bool) ([]unwrapPoint, error) {
 	return out, nil
 }
 
-// dropKeptFlag cuts the clean rows' flag (kept) out of an answer, with the comma that joins it to a neighbour.
+// dropKeptFlag cuts the clean rows' flag (kept) out of an answer, with the comma that joins it to a neighbour: every
+// ",kept", then every "kept,", then every "kept". The answer is rewritten in place (it is the reader's own copy).
 func dropKeptFlag(body, kept []byte) []byte {
 	if !bytes.Contains(body, kept) {
 		return body
 	}
-	body = bytes.ReplaceAll(body, append([]byte{','}, kept...), nil)
-	body = bytes.ReplaceAll(body, append(append([]byte(nil), kept...), ','), nil)
-	return bytes.ReplaceAll(body, kept, nil)
+	var with [64]byte
+	lead := append(append(with[:0], ','), kept...)
+	body = cutAll(body, lead)
+	trail := append(append(with[:0], kept...), ',')
+	body = cutAll(body, trail)
+	return cutAll(body, kept)
+}
+
+// cutAll removes every occurrence of pat from b, in place.
+func cutAll(b, pat []byte) []byte {
+	at := bytes.Index(b, pat)
+	if at < 0 {
+		return b
+	}
+	w := at
+	for r := at + len(pat); ; {
+		next := bytes.Index(b[r:], pat)
+		if next < 0 {
+			w += copy(b[w:], b[r:])
+			return b[:w]
+		}
+		w += copy(b[w:], b[r:r+next])
+		r += next + len(pat)
+	}
 }
 
 // unwrapSeriesKey is a series' identity: its labels, sorted, quoted.
@@ -1431,11 +1508,8 @@ func unwrapLokiLabels(probe unwrapErrorProbe, base map[string]string, line, form
 		case *logqlpkg.LineFormatStage:
 			text = formatted
 		case *logqlpkg.LabelFormatStage:
-			// A label written from a template is not reproduced; the stage reads as nothing for other labels.
-			for _, f := range s.Formats {
-				if f.Name == probe.label {
-					return nil, nil, false
-				}
+			if !unwrapLabelFormat(s, labels, probe.label) {
+				return nil, nil, false
 			}
 		case *logqlpkg.LabelFilterStage:
 			keep, known := unwrapLabelFilterKeeps(s, labels)
@@ -1458,6 +1532,41 @@ func unwrapLokiLabels(probe unwrapErrorProbe, base map[string]string, line, form
 		}
 	}
 	return labels, parsed, true
+}
+
+// unwrapLabelFormatRefRE is a template that is one label reference ({{.name}}).
+var unwrapLabelFormatRefRE = regexp.MustCompile(`^\{\{-?\s*\.([A-Za-z_][A-Za-z0-9_]*)\s*-?\}\}$`)
+
+// unwrapLabelFormat applies a label_format stage whose formats rename a label or copy one label's value
+// ({{.name}}), as Loki does (recorded: TestUnwrapConversionErrorMatchesRecordedLoki): the formats read the labels
+// as they were before the stage; a label another template writes is left out of the error's series. A stage that
+// writes the unwrapped label is not reproduced (ok false).
+func unwrapLabelFormat(stage *logqlpkg.LabelFormatStage, labels map[string]string, unwrapped string) bool {
+	before := cloneStringMap(labels)
+	for _, f := range stage.Formats {
+		if f.Name == unwrapped {
+			// The unwrapped label written by the stage: not reproduced.
+			return false
+		}
+		source := f.Value
+		if !f.Rename {
+			m := unwrapLabelFormatRefRE.FindStringSubmatch(f.Value)
+			if m == nil {
+				delete(labels, f.Name)
+				continue
+			}
+			source = m[1]
+		}
+		if v := before[source]; v != "" {
+			labels[f.Name] = v
+		} else {
+			delete(labels, f.Name)
+		}
+		if f.Rename && source != f.Name {
+			delete(labels, source)
+		}
+	}
+	return true
 }
 
 // unwrapLabelFilterKeeps evaluates a label filter stage over labels as Loki does: a string or ip() comparison, or a

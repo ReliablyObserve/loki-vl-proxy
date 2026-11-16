@@ -177,14 +177,19 @@ func finite(v float64) bool { return !math.IsInf(v, 0) && !math.IsNaN(v) }
 // deviationPartials gathers the three stats results of the deviation buckets (deviationBucketStats) per series
 // and per VictoriaLogs group, and folds them into the series' samples, counts and deviations.
 type deviationPartials struct {
-	groups map[string]*deviationGroup
+	series map[string]*deviationSeries
 	order  []string
+}
+
+// deviationSeries is one series' VictoriaLogs groups, in the order they came.
+type deviationSeries struct {
+	metric map[string]string
+	groups map[string]*deviationGroup
+	order  []*deviationGroup
 }
 
 // deviationGroup is one VictoriaLogs group of a series: its mean, count and deviation per bucket.
 type deviationGroup struct {
-	seriesKey           string
-	metric              map[string]string
 	means, counts, devs []rangeMetricSample
 }
 
@@ -213,15 +218,20 @@ func deviationResults(statsAggFunc string) int {
 
 // add reads one stats result (name, its points) of the group group of the series seriesKey.
 func (d *deviationPartials) add(seriesKey, group string, metric map[string]string, name string, values []byte, start time.Time, step time.Duration) {
-	if d.groups == nil {
-		d.groups = map[string]*deviationGroup{}
+	if d.series == nil {
+		d.series = map[string]*deviationSeries{}
 	}
-	key := seriesKey + "\xff" + group
-	g, ok := d.groups[key]
+	s, ok := d.series[seriesKey]
 	if !ok {
-		g = &deviationGroup{seriesKey: seriesKey, metric: metric}
-		d.groups[key] = g
-		d.order = append(d.order, key)
+		s = &deviationSeries{metric: metric, groups: map[string]*deviationGroup{}}
+		d.series[seriesKey] = s
+		d.order = append(d.order, seriesKey)
+	}
+	g, ok := s.groups[group]
+	if !ok {
+		g = &deviationGroup{}
+		s.groups[group] = g
+		s.order = append(s.order, g)
 	}
 	switch name {
 	case deviationMeanName:
@@ -239,26 +249,31 @@ func (d *deviationPartials) fold(series map[string]manualSeriesSamples) {
 	if d == nil {
 		return
 	}
-	bySeries := map[string][]deviationPoint{}
-	var seriesOrder []string
+	var points []deviationPoint
 	for _, key := range d.order {
-		g := d.groups[key]
-		if _, ok := bySeries[g.seriesKey]; !ok {
-			seriesOrder = append(seriesOrder, g.seriesKey)
-			entry := series[g.seriesKey]
-			if entry.Metric == nil {
-				entry.Metric = g.metric
-			}
-			series[g.seriesKey] = entry
+		s := d.series[key]
+		points = points[:0]
+		for _, g := range s.order {
+			points = g.appendPoints(points)
 		}
-		bySeries[g.seriesKey] = g.appendPoints(bySeries[g.seriesKey])
-	}
-	for _, seriesKey := range seriesOrder {
-		points := bySeries[seriesKey]
-		sort.SliceStable(points, func(i, j int) bool { return points[i].ts < points[j].ts })
-		entry := series[seriesKey]
+		if len(s.order) > 1 {
+			sort.SliceStable(points, func(i, j int) bool { return points[i].ts < points[j].ts })
+		}
+		buckets := 0
+		for i := range points {
+			if i == 0 || points[i].ts != points[i-1].ts {
+				buckets++
+			}
+		}
+		entry := series[key]
+		if entry.Metric == nil {
+			entry.Metric = s.metric
+		}
+		entry.Samples = slices.Grow(entry.Samples, buckets)
+		entry.Counts = slices.Grow(entry.Counts, buckets)
+		entry.Deviations = slices.Grow(entry.Deviations, buckets)
 		if entry.PresentBuckets == nil {
-			entry.PresentBuckets = []int64{}
+			entry.PresentBuckets = make([]int64, 0, buckets)
 		}
 		for i := 0; i < len(points); {
 			acc := points[i]
@@ -276,7 +291,7 @@ func (d *deviationPartials) fold(series map[string]manualSeriesSamples) {
 			entry.Deviations = append(entry.Deviations, rangeMetricSample{ts: acc.ts, value: dev})
 			entry.PresentBuckets = append(entry.PresentBuckets, acc.ts)
 		}
-		series[seriesKey] = entry
+		series[key] = entry
 	}
 }
 
@@ -290,8 +305,9 @@ func (g *deviationGroup) appendPoints(dst []deviationPoint) []deviationPoint {
 		}
 		return math.NaN()
 	}
+	dst = slices.Grow(dst, len(g.counts))
 	for _, c := range g.counts {
-		if !(c.value > 0) {
+		if math.IsNaN(c.value) || c.value <= 0 {
 			continue
 		}
 		mean, dev := at(g.means, c.ts), at(g.devs, c.ts)
@@ -365,18 +381,18 @@ func (p *Proxy) unwrapWindowRoute(r *http.Request, spec statsCompatSpec, origSpe
 
 // unwrapFoldsSeries reports a query whose root (an outer label_replace aside) is a vector aggregation.
 func unwrapFoldsSeries(query string) bool {
-	expr, err := parseLogQLExpr(noFlowCtx, stripOuterLabelReplace(strings.TrimSpace(query)))
-	if err != nil {
+	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
+	if !ok {
 		return false
 	}
-	_, ok := expr.(*logqlpkg.VectorAggregation)
+	_, ok = expr.(*logqlpkg.VectorAggregation)
 	return ok
 }
 
 // unwrapSumOfSums reports a sum by no labels directly over sum_over_time.
 func unwrapSumOfSums(query string) bool {
-	expr, err := parseLogQLExpr(noFlowCtx, strings.TrimSpace(query))
-	if err != nil {
+	expr, ok := sharedLogQLExpr(strings.TrimSpace(query))
+	if !ok {
 		return false
 	}
 	va, ok := expr.(*logqlpkg.VectorAggregation)
@@ -425,8 +441,8 @@ func (p *Proxy) unwrapGroupPushdown(spec statsCompatSpec, manualFunc, query stri
 // manualFunc ("max" or "min") by labels or none, and reports whether it is directly over a range aggregation with
 // no grouping of its own. Anything else is nil.
 func decomposableUnwrapAggregation(query, manualFunc string) (*logqlpkg.VectorAggregation, bool) {
-	expr, err := parseLogQLExpr(noFlowCtx, strings.TrimSpace(query))
-	if err != nil {
+	expr, ok := sharedLogQLExpr(strings.TrimSpace(query))
+	if !ok {
 		return nil, false
 	}
 	va, ok := expr.(*logqlpkg.VectorAggregation)
@@ -456,8 +472,8 @@ func unwrapWindowBuckets(spec statsCompatSpec, origSpec originalRangeMetricSpec,
 // is not a without (each optionally under topk or bottomk); rangeBy is a range aggregation with a grouping of its own
 // under one of those aggregations.
 func unwrapWindowForm(query string) (form, rangeBy bool) {
-	expr, err := parseLogQLExpr(noFlowCtx, stripOuterLabelReplace(strings.TrimSpace(query)))
-	if err != nil {
+	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
+	if !ok {
 		return false, false
 	}
 	if va, ok := expr.(*logqlpkg.VectorAggregation); ok && (va.Op == logqlpkg.VectorTopK || va.Op == logqlpkg.VectorBottomK) {

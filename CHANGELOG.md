@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   derivation before. Once the proxy has seen that a query holds such streams, its next reads (a refresh, a moved
   window) read the labelled streams and the others separately, so no stream is read twice.
 
+### Fixed
+
+- The `SampleExtractionErr` answer of a metric whose pipeline holds a `label_format` before the unwrap
+  (`| logfmt | label_format w="{{.n}}" | unwrap v`) names the series with the label as the stage writes it, as
+  Loki does (recorded with Loki's engine); it kept the line's own value of the label before.
+
 ### Changed
 
 - The unwrap code is rewritten from Loki's recorded answers and LogQL's documentation: the conversions of

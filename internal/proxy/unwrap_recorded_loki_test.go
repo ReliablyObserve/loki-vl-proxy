@@ -28,17 +28,26 @@ const unwrapRecordedT = int64(1_800_000_000) * 1e9
 var unwrapEdgeValues = map[string][]string{
 	"": {"0", "-0", "+5", "5.", ".5", "1e3", "1E-3", "1_000", "1__0", "_1", "0x1p4", "0x1P-2", "0x10", "0b101", "1e309", "-1e309",
 		"1e-400", "1.7976931348623157e308", "NaN", "nan", "-nan", "+NaN", "Inf", "+inf", "-Infinity", "infinity", "infin",
-		" 5", "5 ", "12ms", "abc", "1.2.3", "٣", "５", "1e+5", "1e", "-"},
+		" 5", "5 ", "12ms", "abc", "1.2.3", "٣", "５", "1e+5", "1e", "-", "", unwrapMissing},
 	"duration": {"0", "-0", "+0", "1h", "1.5h", "-1s", "+2m", "01m", "5.s", ".5s", "100us", "100µs", "100μs", "1d", "42",
 		"2562047h", "2562048h", "-2562048h", "9223372036854775807ns", "9223372036854775808ns", "1h-1m", "1h30m15s",
-		" 1s", "1s ", "1S", "1H", "abc", "1e3s", "1_0s", "0.000000001s", "0.0000000001s"},
+		" 1s", "1s ", "1S", "1H", "abc", "1e3s", "1_0s", "0.000000001s", "0.0000000001s", "", unwrapMissing},
 	"bytes": {"0", "1", "1B", "1b", "1KB", "1kb", "1KiB", "1 KiB", "1,000", ",5", "1.5KB", "1.5B", "16EiB", "15EiB", "19EB",
 		"18446744073709551615", "18446744073709551616", "1PB", "1ZB", "5 MB ", "5MBs", "-1KB", "1e3", "1.2.3", "KB", "",
-		"1\u00a0KB", "1\u212aB", "1kİB", "٣KB"},
+		"1\u00a0KB", "1\u212aB", "1kİB", "٣KB", unwrapMissing},
 }
+
+// unwrapMissing stands for a line without the unwrapped key.
+const unwrapMissing = "\x00missing"
 
 // unwrapEncode writes value as the line of an encoding: logfmt (quoted when it is not a bare value) or json.
 func unwrapEncode(encoding, value string) string {
+	if value == unwrapMissing {
+		if encoding == "json" {
+			return `{"w":"1"}`
+		}
+		return "w=1"
+	}
 	if encoding == "json" {
 		b, _ := json.Marshal(map[string]string{"v": value})
 		return string(b)
@@ -139,6 +148,9 @@ func TestUnwrapConversionMatchesRecordedLoki(t *testing.T) {
 		loki, ok := answers[id]
 		if !ok {
 			t.Fatalf("%s: no recorded answer", id)
+		}
+		if value == unwrapMissing {
+			value = ""
 		}
 		got, err := convertUnwrap(value, conv)
 		switch loki.Status {
@@ -331,6 +343,19 @@ var unwrapErrorShapes = []string{
 	`sum_over_time({app="x"} | %s | unwrap duration(v) [1m])`,
 	`sum_over_time({app="x"} | %s | unwrap bytes(v) [1m])`,
 	`sum_over_time({app="x"} | %s | unwrap app [1m])`,
+	`sum by (app) (sum_over_time({app="x"} | %s | n="1" | unwrap v [1m]))`,
+	`sum by (app) (sum_over_time({app="x"} | %s | unwrap v | w!="zz" [1m]))`,
+	`sum(rate({app="x"} | %s | unwrap v [1m]))`,
+}
+
+// unwrapErrorLogfmtShapes are the logfmt parser's flags and the stages around it the check reads as written.
+var unwrapErrorLogfmtShapes = []string{
+	`sum_over_time({app="x"} | logfmt --strict | unwrap v [1m])`,
+	`sum_over_time({app="x"} | logfmt --keep-empty | unwrap v [1m])`,
+	`sum_over_time({app="x"} | logfmt --strict --keep-empty | unwrap v [1m])`,
+	`sum_over_time({app="x"} | logfmt | label_format w="{{.n}}" | unwrap v [1m])`,
+	`sum_over_time({app="x"} | line_format "{{__line__}}" | logfmt | unwrap v [1m])`,
+	`sum_over_time({app="x"} | logfmt | keep v | unwrap v [1m])`,
 }
 
 // TestUnwrapConversionErrorMatchesRecordedLoki: over one stream with one line whose unwrapped value Loki rejects,
@@ -347,8 +372,12 @@ func TestUnwrapConversionErrorMatchesRecordedLoki(t *testing.T) {
 	type shape struct{ id, query, parser string }
 	var shapes []shape
 	for _, parser := range []string{"logfmt", "json"} {
-		for i, s := range unwrapErrorShapes {
-			q := fmt.Sprintf(s, parser)
+		queries := unwrapErrorShapes
+		if parser == "logfmt" {
+			queries = append(append([]string{}, queries...), unwrapErrorLogfmtShapes...)
+		}
+		for i, s := range queries {
+			q := strings.ReplaceAll(s, "%s", parser)
 			id := fmt.Sprintf("%s/%d", parser, i)
 			form := url.Values{"query": {q}, "time": {strconv.FormatInt(unwrapRecordedT+int64(time.Second), 10)}}
 			sets = append(sets, oraclerun.EngineDataSet{
