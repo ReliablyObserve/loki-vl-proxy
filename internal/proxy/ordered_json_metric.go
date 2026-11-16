@@ -1648,9 +1648,9 @@ func (p *Proxy) orderedJSONStatsPipeline(plan *orderedJSONMetricPlan, base strin
 		// the lines Loki rejects keeps the lines without a brace: they are the
 		// lines it counts (splitStatsQuery).
 		if plan.split != jsonSplitErrors {
-			query += " | filter " + jsonObjectStartFilter
+			query += " | filter " + p.placeholderJSONStartFilter()
 		}
-		query += jsonValidityPipes(bytesMetric)
+		query += jsonValidityPipes(bytesMetric) + p.placeholderValidPipe()
 		if plan.groupServiceName {
 			query += serviceNameFromStreamPipes()
 		}
@@ -2839,6 +2839,9 @@ func (p *Proxy) statsPushdownRiskExists(ctx context.Context, query string, start
 		}
 	}
 	params := url.Values{"query": {query}, "start": {start.UTC().Format(time.RFC3339Nano)}, "end": {end.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)}}
+	if f := p.placeholderRiskFilter(); f != "" {
+		params.Set("extra_filters", f)
+	}
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
 		return false, err
@@ -3126,6 +3129,9 @@ func (p *Proxy) unparsedLinePipelineError(ctx context.Context, plan *orderedJSON
 	// Loki's window is left-open, right-closed; VictoriaLogs' end is exclusive.
 	params := url.Values{"query": {query + " | filter -" + jsonObjectStartFilter + " | limit 1"},
 		"start": {start.Add(-plan.window).Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)}, "end": {last.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)}}
+	if f := p.placeholderRiskFilter(); f != "" {
+		params.Set("extra_filters", f)
+	}
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
 		return nil, err
@@ -3155,7 +3161,7 @@ func (p *Proxy) unparsedLinePipelineError(ctx context.Context, plan *orderedJSON
 	if !plan.acceptDerivedLevel(base, &levels, row, desc) {
 		return nil, nil
 	}
-	labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.translatedLabels, row)
+	labels, keep, err := plan.processWithContext(ctx, p.placeholderRowLine(row, desc.rawLabels), base, desc.translatedLabels, row)
 	if err != nil || !keep || labels["__error__"] == "" {
 		return nil, err
 	}
@@ -3563,7 +3569,7 @@ func (p *Proxy) readOrderedJSONMetricRows(ctx context.Context, plan *orderedJSON
 		if !plan.acceptDerivedLevel(base, &reader.levels, row, desc) {
 			continue
 		}
-		labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.translatedLabels, row)
+		labels, keep, err := plan.processWithContext(ctx, p.placeholderRowLine(row, desc.rawLabels), base, desc.translatedLabels, row)
 		if err != nil {
 			return err
 		}

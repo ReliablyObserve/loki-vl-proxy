@@ -118,7 +118,7 @@ VL stores `_msg` = `"POST /api/v1/payments 502 30000ms"` — the explicit value 
 
 ### Rule: VL's `_msg` must hold the full JSON line
 
-Send JSON lines to VL with `disable_message_parsing=1`, or add a `_msg` key whose value is the whole original line. Never send a default-settings JSON push without `_msg` (VL keeps only the placeholder) and never set `_msg` to a short summary.
+Send JSON lines to VL with `disable_message_parsing=1`, or add a `_msg` key whose value is the whole original line. Never send a default-settings JSON push without `_msg` (VL keeps only the placeholder) and never set `_msg` to a short summary. Where such pushes already exist and carry no structured metadata, `-json-line-fields-as-line-keys` reads the stored fields of those rows as the keys of their JSON line, as Loki would (see [KNOWN_ISSUES](KNOWN_ISSUES.md) for what it cannot recover and what it hides).
 
 **Correct line format:**
 ```json
