@@ -119,7 +119,7 @@
         "len"
       ],
       "where": [
-        "internal/proxy/delete_api.go:54 handleDelete"
+        "internal/proxy/delete_api.go:55 handleDelete"
       ]
     },
     {

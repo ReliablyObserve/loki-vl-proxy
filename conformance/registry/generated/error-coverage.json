@@ -2189,7 +2189,7 @@
       "unit_gate": false
     },
     {
-      "comparable_rows": 11,
+      "comparable_rows": 17,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
@@ -2197,7 +2197,8 @@
         "r1187",
         "r1191",
         "r1197",
-        "r1200"
+        "r1200",
+        "r1763"
       ],
       "kind": "methods_routing",
       "known_difference_ids": [
@@ -2207,7 +2208,7 @@
         "r1189",
         "r1200"
       ],
-      "matching_rows": 6,
+      "matching_rows": 12,
       "messages": [
         "delete-max-interval-invalid",
         "delete-max-interval-too-long",
@@ -2229,7 +2230,7 @@
       "reason": "",
       "recorded": true,
       "route": "other_routes",
-      "rows": 79,
+      "rows": 85,
       "state": "differs",
       "unit_gate": true
     },
@@ -3909,7 +3910,8 @@
     "r1439",
     "r1449",
     "r1451",
-    "r1561"
+    "r1561",
+    "r1763"
   ],
   "kinds": [
     {
@@ -5329,20 +5331,20 @@
     "cells_matching": 98,
     "cells_recorded": 65,
     "check_order_rows": 33,
-    "comparable_rows": 231,
+    "comparable_rows": 237,
     "coverage_ratio": 0.5726,
     "covered_cells": 71,
     "differing_rows": 8,
-    "e2e_rows": 140,
-    "match_ratio": 0.9654,
-    "matching_rows": 223,
+    "e2e_rows": 141,
+    "match_ratio": 0.9662,
+    "matching_rows": 229,
     "messages": 45,
     "messages_documented": 10,
     "messages_recorded": 35,
     "not_comparable_rows": 134,
     "recorded_loki": "3.7.9",
     "recorded_on": "2026-11-13",
-    "recorded_rows": 365,
+    "recorded_rows": 371,
     "unmapped_items": 7
   }
 }

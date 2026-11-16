@@ -295,6 +295,13 @@ func TestDeleteRequestChecksInLokisOrder(t *testing.T) {
 		{url.Values{"query": {`{a="b"}`}, "start": {"1794567075"}, "end": {"1794567075"}}, lokierr.MsgDeleteStartNotBeforeEnd},
 		{url.Values{"query": {`{a="b"}`}, "start": {"1794567075"}, "end": {"9999999999"}}, lokierr.MsgDeleteStartNotBeforeEnd},
 		{url.Values{"query": {`{a="b"}`}, "start": {"2147483647"}}, lokierr.MsgDeleteStartNotBeforeEnd},
+		// A start past 2262 would wrap below zero and reach back to 1677: Loki's 500, no request served.
+		{url.Values{"query": {`{a="b"}`}, "start": {"9999999999"}}, lokierr.MsgInternal},
+		{url.Values{"query": {`{a="b"}`}, "start": {"9999999999"}, "end": {"1794570675"}}, lokierr.MsgInternal},
+		{url.Values{"query": {`{a="b"}`}, "start": {"3000-01-01T00:00:00Z"}}, lokierr.MsgInternal},
+		{url.Values{"query": {`{a="b"}`}, "start": {"1600-01-01T00:00:00Z"}}, lokierr.MsgInternal},
+		{url.Values{"query": {`{a="b"}`}, "start": {"1969-12-31T00:00:00Z"}, "end": {"1794570675"}}, lokierr.MsgInternal},
+		{url.Values{"query": {`{a="b"}`}, "start": {"1794567075"}, "end": {"3000-01-01T00:00:00Z"}}, lokierr.MsgInternal},
 		{url.Values{"query": {`{a="b"} |= "x"`}, "start": {"1794567075"}, "end": {"1794570675"}, "max_interval": {"1d"}}, lokierr.MsgDeleteMaxIntervalInvalid},
 		{url.Values{"query": {`{a="b"} | c="d"`}, "start": {"1794567075"}, "end": {"1794570675"}, "max_interval": {"0"}}, lokierr.MsgDeleteMaxIntervalInvalid},
 		{url.Values{"query": {`{a="b"} |= "x"`}, "start": {"1794567075"}, "end": {"1794570675"}, "max_interval": {"1ms"}}, lokierr.MsgDeleteMaxIntervalInvalid},
@@ -339,12 +346,14 @@ func FuzzDeleteRequest(f *testing.F) {
 		form := url.Values{"query": {query}, "start": {start}, "end": {end}, "max_interval": {maxInterval}}
 		req, err := deleteRequestOf(form, now)
 		if err != nil {
-			if e, ok := lokierr.As(err); !ok || e.Status() != http.StatusBadRequest {
-				t.Fatalf("%v: %v is not Loki's 400", form, err)
+			// Loki's 400, or Loki's 500 for a time the proxy serves no request with.
+			if e, ok := lokierr.As(err); !ok || e.Status() != http.StatusBadRequest && constructOf(e.Cause()) == "" {
+				t.Fatalf("%v: %v is not Loki's 400 nor a construct the proxy does not serve", form, err)
 			}
 			return
 		}
-		if req.query == nil || req.start >= req.end {
+		// An accepted request deletes a window after 1970 that ends after it starts: never a start that wrapped.
+		if req.query == nil || req.start < 0 || req.start >= req.end {
 			t.Fatalf("%v: accepted %+v", form, req)
 		}
 	})
@@ -484,5 +493,72 @@ func TestDeleteFiltersParseInVictoriaLogs(t *testing.T) {
 				t.Errorf("%s: VictoriaLogs %s on %q: %v", q, v, f, r.V[v])
 			}
 		}
+	}
+}
+
+// A multi-tenant header is Loki's 400 on create and cancel, with and without a tenant map, and reaches no delete
+// task: a delete never runs over two tenants, nor over the default tenant a joined org could fall back to.
+//
+// conformance: semantics/delete-api-via-victorialogs
+func TestDeleteMultiTenantHeaderStartsNoTask(t *testing.T) {
+	want := lokiErrorReply{Status: 400, ContentType: "text/plain; charset=utf-8", Nosniff: "nosniff", Body: "multiple org IDs present\n"}
+	for _, withMap := range []bool{true, false} {
+		vl := &fakeDeleteVL{tasks: `[{"task_id":"111","tenant_ids":[{"account_id":0,"project_id":0}]}]`}
+		var opts []testProxyOption
+		if !withMap {
+			opts = append(opts, func(c *Config) { c.TenantMap = nil })
+		}
+		_, addr := newDeleteAPIProxy(t, vl, opts...)
+		for _, org := range []string{"team-a|team-b", "team-a|", "|team-b", "0|1"} {
+			for _, target := range []string{
+				"/loki/api/v1/delete?" + url.Values{"query": {`{app="x"}`}, "start": {"1794567075"}, "end": {"1794570675"}}.Encode(),
+				"/loki/api/v1/delete?request_id=111",
+			} {
+				method := http.MethodPost
+				if strings.Contains(target, "request_id") {
+					method = http.MethodDelete
+				}
+				row := lokiErrorAnswer{ID: org, Method: method, Target: target, Headers: []string{"X-Scope-OrgID: " + org, "X-Delete-Token: " + testDeleteToken}}
+				if got := row.replay(t, addr); got != want {
+					t.Errorf("map %v, %q, %s: %s, want Loki's 400", withMap, org, method, summarizeReply(got))
+				}
+				if calls := vl.taken(); len(calls) != 0 {
+					t.Errorf("map %v, %q, %s: VictoriaLogs calls %+v", withMap, org, method, calls)
+				}
+			}
+		}
+	}
+}
+
+// The rows a delete removes are the rows the read path reads: for every query of deleteFilterQueries the delete API
+// serves, the filter after the time window is the query's read translation under the same request.
+//
+// conformance: semantics/delete-api-via-victorialogs
+func TestDeleteFilterIsTheReadTranslation(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	served := 0
+	for _, q := range deleteFilterQueries {
+		req, err := deleteRequestOf(url.Values{"query": {q}, "start": {"1794567075"}, "end": {"1794570675"}}, time.Now())
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		ctx := context.WithValue(context.Background(), origRequestKey, httptest.NewRequest(http.MethodPost, "/loki/api/v1/delete", nil))
+		f, err := p.deleteFilter(ctx, req)
+		if err != nil {
+			continue
+		}
+		served++
+		read, err := p.translateQueryWithContext(ctx, q)
+		if err != nil {
+			t.Errorf("%s: the read path refuses the query (%v) the delete serves", q, err)
+			continue
+		}
+		window := "_time:[" + time.Unix(1794567075, 0).UTC().Format(time.RFC3339Nano) + ", " + time.Unix(1794570675, 0).UTC().Format(time.RFC3339Nano) + "] "
+		if want := window + "(" + read + ")"; f != want {
+			t.Errorf("%s:\n delete %s\n read   %s", q, f, want)
+		}
+	}
+	if served < len(deleteFilterQueries)-3 {
+		t.Fatalf("the delete API served %d of %d queries", served, len(deleteFilterQueries))
 	}
 }

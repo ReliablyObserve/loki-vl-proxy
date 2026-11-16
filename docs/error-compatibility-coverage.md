@@ -13,7 +13,7 @@ The answers are those of Grafana Loki 3.7.9, recorded over HTTP on 2026-11-13. E
 
 | Score | Value | Meaning |
 |---|---|---|
-| Errors that match Loki | 96.5% (223/231) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
+| Errors that match Loki | 96.6% (229/237) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
 | Matrix coverage | 57.3% (71/124) | route x error kind cells with a recorded or documented Loki answer, a unit gate and an end-to-end comparison |
 | Cells that match | 98/124 | cells where every comparable row matches and no known leak remains |
 | Messages recorded | 35/45 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
@@ -43,7 +43,7 @@ Each cell shows whether the proxy matches (`match` or `differs`), the matching a
 | `series` | match 2/2 UE | match 2/2 UE | match 1/1 UE | match 1/1 UE | match gate U | match 5/5 UE | not comparable (6) | match gate U |
 | `tail` | match 4/4 UE | match 2/2 UE | match 1/1 UE | match gate U | match gate U | match 5/5 UE | gap | match gate U |
 | `tail_upgrade` | match 4/4 UE | match 2/2 UE | gap |  |  | differs 1/2 UE | not comparable (2) |  |
-| other routes (rules views, push, delete, shards, exemplars, aliases) |  |  |  |  |  | differs 6/11 UE |  |  |
+| other routes (rules views, push, delete, shards, exemplars, aliases) |  |  |  |  |  | differs 12/17 UE |  |  |
 | unknown paths |  |  |  |  |  | match 23/23 UE |  |  |
 
 Error kinds:

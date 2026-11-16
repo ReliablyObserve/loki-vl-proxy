@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -110,10 +111,20 @@ func deleteRequestOf(form url.Values, now time.Time) (deleteRequest, error) {
 	if !ok {
 		return deleteRequest{}, lokierr.DeleteTimeInvalid("start")
 	}
+	// A start Loki reads past 2262 wraps below zero; the request would reach back to 1677 and delete a tenant's whole
+	// history. What Loki answers for it is not recorded, so the proxy serves no such request.
+	if start < 0 || !inNanosRange(startRaw) {
+		return deleteRequest{}, notServed("delete-start-out-of-range", errors.New("a start that does not fit in Unix nanoseconds"))
+	}
 	end := now.UnixNano()
 	if endRaw := form.Get("end"); endRaw != "" {
 		if end, ok = deleteTime(endRaw); !ok {
 			return deleteRequest{}, lokierr.DeleteTimeInvalid("end")
+		}
+		// Ten digits of seconds past 2262 wrap below every start (Loki's answer, recorded); an RFC3339 end out of
+		// range is not recorded, so it is served by no request.
+		if !allDigits(endRaw) && !inNanosRange(endRaw) {
+			return deleteRequest{}, notServed("delete-end-out-of-range", errors.New("an end that does not fit in Unix nanoseconds"))
 		}
 	}
 	if start >= end {
@@ -144,6 +155,23 @@ func deleteTime(raw string) (int64, bool) {
 	t, err := time.Parse(time.RFC3339Nano, raw)
 	return t.UnixNano(), err == nil
 }
+
+// inNanosRange reports whether an RFC3339 time fits in Unix nanoseconds (1678 to 2262); a time of digits, Loki's
+// unix seconds, is checked by its caller.
+func inNanosRange(raw string) bool {
+	if allDigits(raw) {
+		sec, err := strconv.ParseInt(raw, 10, 64)
+		return err == nil && sec <= math.MaxInt64/int64(time.Second)
+	}
+	t, err := time.Parse(time.RFC3339Nano, raw)
+	return err == nil && !t.Before(minNanosTime) && !t.After(maxNanosTime)
+}
+
+// The times a Unix nanosecond count holds.
+var (
+	minNanosTime = time.Unix(0, math.MinInt64)
+	maxNanosTime = time.Unix(0, math.MaxInt64)
+)
 
 func allDigits(s string) bool {
 	for i := 0; i < len(s); i++ {
