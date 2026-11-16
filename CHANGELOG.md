@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and it is best effort: a read that takes more than two seconds is skipped, and the tail starts with its live
   entries. `start` is now read in all of Loki's time forms; Unix seconds were read as nanoseconds before.
 
+### Changed
+
+- Code comments, operator-facing limit descriptions and the generated configuration pages no longer cite Loki source
+  files or lines. They state what Loki does and name the evidence kept in this repository: a recorded Loki answer, a test
+  that compares with Loki, a registry case or Loki's public documentation. No behaviour changes.
+
 ## [2.303.0] - 2026-11-16
 
 ### Fixed

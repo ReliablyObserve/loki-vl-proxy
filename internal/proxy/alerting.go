@@ -105,8 +105,7 @@ func (p *Proxy) handleRules(w http.ResponseWriter, r *http.Request) {
 		p.writeEmptyLegacyRules(w)
 		return
 	}
-	// PrometheusRules rejects any other rule type before it asks the ruler
-	// (pkg/ruler/base/api.go:166-179).
+	// PrometheusRules rejects any other rule type before it asks the ruler.
 	if ruleType := strings.ToLower(r.URL.Query().Get("type")); ruleType != "" && ruleType != "alert" && ruleType != "record" {
 		p.writeErrorShaped(w, http.StatusBadRequest, fmt.Sprintf("not supported value %q", ruleType), nil, writeLokiRulerError)
 		return
@@ -153,8 +152,8 @@ func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 // with an error status. Its body is vmalert's, so the client reads only the
 // failure in Loki's words: 500 in the ruler's JSON or the legacy views' text.
 func (p *Proxy) writeAlertingBackendStatus(w http.ResponseWriter, status int, shape errorShape) {
-	// Loki answers every GetRules error with respondServerError, 500
-	// (pkg/ruler/base/api.go:196-200, :301-305); a backend 4xx is no different.
+	// Loki answers every GetRules error with a 500 (registry
+	// semantics/ruler-store-failure-status); a backend 4xx is no different.
 	p.writeErrorShaped(w, http.StatusInternalServerError, lokiErrInternal, fmt.Errorf("alerting backend replied %d", status), shape)
 }
 
@@ -536,8 +535,7 @@ func isLegacyRulesPath(path string) bool {
 // is gorilla/mux's 404; a namespace or group that is not a local name is a
 // client error (Loki looks the name up in its store and answers the miss with
 // a 400 http.Error); an escape that cannot be decoded is parseRequest's
-// respondServerError, a 500 in the ruler's JSON (pkg/ruler/base/api.go:523,
-// :564).
+// server error, a 500 in the ruler's JSON.
 type legacyRulesPathError struct {
 	status int
 	msg    string
@@ -651,7 +649,7 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 
 	if group != "" {
 		if len(decoded.Data.Groups) == 0 {
-			p.writeErrorShaped(w, http.StatusNotFound, "group does not exist", nil, writeLokiHTTPError) // rulestore.ErrGroupNotFound, api.go:572
+			p.writeErrorShaped(w, http.StatusNotFound, "group does not exist", nil, writeLokiHTTPError) // a missing group
 			return
 		}
 		out := legacyRuleGroupFromBackend(decoded.Data.Groups[0])

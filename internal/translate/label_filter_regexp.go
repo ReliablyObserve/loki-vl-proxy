@@ -9,9 +9,8 @@ import (
 // LokiLabelFilterPattern returns the pattern whose whole-value match,
 // ^(?:pattern)$, selects what Loki's label filter `| label =~ "value"`
 // selects. Unlike a stream-selector matcher, Loki does not anchor a label
-// filter's regexp as written: parseRegexpFilter (pkg/logql/log/filter.go:645,
-// reached from NewStringLabelFilter in label_filter.go:360) first tries
-// RegexSimplifier.Simplify (filter.go:696) and only anchors, as ^(?:re)$ and
+// filter's regexp as written (registry semantics/label-filter-regexp-anchoring):
+// it first tries to simplify the regexp and only anchors, as ^(?:re)$ and
 // without the s flag, what it cannot simplify. The simplifier turns
 //   - a literal into an equality check, case-insensitively under (?i);
 //   - `.*` and the empty pattern into a filter that keeps everything;
@@ -22,8 +21,7 @@ import (
 //     prefix, so `prod-eu|prod` and `api|api-gateway`) into one substring
 //     check per branch;
 //   - an alternation into the OR of its branches, where a branch that keeps
-//     everything is dropped (newOrFilter, filter.go:309): `GET|` is an equality
-//     check on GET.
+//     everything is dropped: `GET|` is an equality check on GET.
 //
 // The cases were checked against Loki v3.7.7's pipeline.
 func LokiLabelFilterPattern(value string) string {
@@ -44,7 +42,7 @@ func LokiLabelFilterPattern(value string) string {
 
 func containsPattern(literal string, foldCase bool) string {
 	if literal == "" {
-		return KeepAllPattern // newContainsFilter (filter.go:556)
+		return KeepAllPattern
 	}
 	return KeepAllPattern + quoteLiteralPattern(literal, foldCase) + KeepAllPattern
 }
@@ -77,7 +75,7 @@ func isAnyCharNotNLStar(reg *syntax.Regexp) bool {
 	return reg.Op == syntax.OpStar && reg.Sub[0].Op == syntax.OpAnyCharNotNL
 }
 
-// simplifiedLabelFilter mirrors RegexSimplifier.Simplify (filter.go:696).
+// simplifiedLabelFilter simplifies a regexp the way Loki does.
 func simplifiedLabelFilter(reg *syntax.Regexp) (string, bool) {
 	switch reg.Op {
 	case syntax.OpAlternate:
@@ -110,7 +108,7 @@ func simplifiedLabelFilter(reg *syntax.Regexp) (string, bool) {
 	return "", false
 }
 
-// simplifiedLabelFilterConcat mirrors simplifyConcat (filter.go:754): at most
+// simplifiedLabelFilterConcat simplifies a concatenation: at most
 // three parts, one literal, `.*` parts, and an alternation after the literal.
 func simplifiedLabelFilterConcat(reg *syntax.Regexp, base string, haveBase bool) (string, bool) {
 	subs := make([]*syntax.Regexp, 0, len(reg.Sub))
@@ -158,8 +156,8 @@ func simplifiedLabelFilterConcat(reg *syntax.Regexp, base string, haveBase bool)
 	return "", false
 }
 
-// simplifiedLabelFilterConcatAlternate mirrors simplifyConcatAlternate
-// (filter.go:812): one substring check per branch of the alternation.
+// simplifiedLabelFilterConcatAlternate simplifies a literal followed by an
+// alternation: one substring check per branch of the alternation.
 func simplifiedLabelFilterConcatAlternate(reg *syntax.Regexp, literal string, foldCase bool) ([]string, bool) {
 	branches := make([]string, 0, len(reg.Sub))
 	for _, alt := range reg.Sub {

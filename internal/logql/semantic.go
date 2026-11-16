@@ -10,8 +10,8 @@ import (
 	"unicode/utf8"
 )
 
-// errEmptyCompatibleMatchers is Loki's syntax.errAtleastOneEqualityMatcherRequired,
-// rendered through logqlmodel.NewParseError.
+// errEmptyCompatibleMatchers is Loki's text for a selector with no equality matcher, rendered as a
+// parse error.
 const errEmptyCompatibleMatchers = `parse error : queries require at least one regexp or equality matcher that does not have an empty-compatible value. For instance, app=~".*" does not meet this requirement, but app=~".+" will`
 
 // validateSemantics walks the AST and enforces constraints that cannot be
@@ -156,7 +156,7 @@ func opaqueFirstArgument(query, call string) (Expr, error) {
 
 // labelReplaceArgumentsError reports the parse error Loki raises for a
 // label_replace call that does not hold exactly four string arguments after its
-// expression (pkg/logql/syntax/syntax.y labelReplaceExpr), a string whose
+// expression, a string whose
 // escapes are invalid (the LogQL lexer unquotes it) included. It is nil for
 // any other call.
 func labelReplaceArgumentsError(call string) error {
@@ -203,7 +203,7 @@ func labelReplaceArgumentsError(call string) error {
 // validateLogQuerySemantics validates a log query. lineIndependent is true
 // inside range aggregations whose result does not depend on the log line
 // (every op except bytes_rate/bytes_over_time): there Loki's removeLineformat
-// optimisation (pkg/logql/optimize.go) drops a line_format stage before the
+// optimisation drops a line_format stage before the
 // pipeline is built, unless a parser or line filter follows it, so only a
 // line_format that survives that rule can report an invalid template.
 func validateLogQuerySemantics(lq *LogQuery, lineIndependent bool) string {

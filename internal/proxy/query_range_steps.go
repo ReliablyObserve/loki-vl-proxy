@@ -25,13 +25,12 @@ import (
 // (a dashboard refresh, a re-run moved back) evaluates only the steps it does
 // not hold. Loki's results cache does the same with its query_range answers:
 // extents of the response per split, the missing part evaluated and merged by
-// series labels, nothing newer than max_cache_freshness_per_query
-// (pkg/storage/chunk/cache/resultscache/cache.go Do, handleHit,
-// filterRecentExtents; pkg/querier/queryrange/queryrangebase/query_range.go:310-350
-// matrixMerge).
+// series labels, nothing newer than max_cache_freshness_per_query (Loki's
+// configuration reference, https://grafana.com/docs/loki/latest/configure/;
+// registry semantics/unwrap-query-range-extent-cache).
 //
 // It is exact because a step's sample is a function of the lines in its
-// window (t-range, t] alone (pkg/logql/range_vector.go:102-189), and every
+// window (t-range, t] alone (registry semantics/stddev-stdvar-over-time-range-window), and every
 // aggregation the evaluator and handleQueryRange apply after the window works
 // per step (topk, the folds, label_replace). A step is kept only once its
 // window is older than -query-range-freshness, in the response cache tiers
