@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.303.0] - 2026-11-16
-
 ### Fixed
 
 - A `topk` or `bottomk` whose first argument is not a number followed by a comma now answers Loki's parse error.
@@ -21,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   label_replace, binary operations), held by 1462 queries recorded with the Loki oracle and 12 rows recorded over
   HTTP (semantics/topk-first-argument-error-text). A leading plus (`topk(+1, ...)`) is still rejected at the plus
   (semantics/unary-plus-literal-rejected).
+
+## [2.303.0] - 2026-11-16
+
+### Fixed
+
 - One stream now gets one `detected_level` on every metric query type, as Loki gives. For a stream labelled
   `level="ERROR"`, `count_over_time({...} | logfmt [5m])`, `rate({...} | json [1m])`, `sort(rate({...} | json [1m]))`
   and an unwrap at step 300 said `ERROR` while plain `rate` and `count_over_time` said `error`. A stream labelled
