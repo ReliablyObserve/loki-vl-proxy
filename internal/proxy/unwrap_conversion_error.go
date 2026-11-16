@@ -1944,15 +1944,23 @@ func (l *unwrapLookupWriter) Write(b []byte) (int, error) {
 	if l.err != nil {
 		return len(b), nil
 	}
-	if l.status == 0 {
-		// The implicit 200 of a first Write: the defaults every answer writer applies.
-		l.status = http.StatusOK
-		if l.header.Get("Content-Type") == "" {
-			l.header.Set("Content-Type", "application/json")
+	if !l.passed {
+		// The handler's header and status go out with its first bytes; an implicit 200 takes the defaults every
+		// answer writer applies.
+		l.passed = true
+		dst := l.out.Header()
+		for k, v := range l.header {
+			dst[k] = v
 		}
-		l.header.Set("X-Content-Type-Options", "nosniff")
+		if l.status == 0 {
+			l.status = http.StatusOK
+			if dst.Get("Content-Type") == "" {
+				dst.Set("Content-Type", "application/json")
+			}
+			dst.Set("X-Content-Type-Options", "nosniff")
+		}
+		l.out.WriteHeader(l.status)
 	}
-	l.pass()
 	return l.out.Write(b)
 }
 

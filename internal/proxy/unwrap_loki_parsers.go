@@ -31,17 +31,17 @@ func lokiLogfmtPairs(line string, yield func(key, value string)) {
 			pos++
 			continue
 		}
-		start, ascii := pos, true
+		start, bits := pos, byte(0)
 		for pos < len(line) {
 			c := line[pos]
 			if c <= ' ' || c == '=' || c == '"' {
 				break
 			}
-			ascii = ascii && c < utf8.RuneSelf
+			bits |= c
 			pos++
 		}
 		key := line[start:pos]
-		if pos < len(line) && line[pos] == '"' || key == "" || !ascii && !logfmtKeyValid(key) {
+		if pos < len(line) && line[pos] == '"' || key == "" || bits >= utf8.RuneSelf && !logfmtKeyValid(key) {
 			pos = lokiLogfmtSkip(line, pos)
 			continue
 		}
