@@ -51,6 +51,12 @@ why: |
   may pay. Open, in their own cases: the strict logfmt parser's errors
   (semantics/logfmt-strict-parser-error-not-raised) and an unwrap conversion error in an `and`/`or` operand
   next to a clean operand (semantics/unwrap-conversion-error-set-operand).
+corpus:
+  size: 2
+  dimensions:
+    shapes:
+      - query: 'sort(rate({service_name="payment-service"} | json [1m]))'
+      - query: 'label_replace(sum by (service_name) (sum_over_time({service_name="payment-service"} | logfmt | unwrap msg [5m])), "x", "$1", "service_name", "(.*)")'
 request:
   method: GET
   path: /loki/api/v1/query_range
