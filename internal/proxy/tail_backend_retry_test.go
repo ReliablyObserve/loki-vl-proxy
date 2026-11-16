@@ -50,6 +50,10 @@ type retryVL struct {
 	badCalls  atomic.Int64 // calls that failed
 	gen       atomic.Int64 // bumped to end the open native streams
 	abrupt    atomic.Bool  // end them mid-stream instead of cleanly
+	// history: the read before the upgrade returns the newest rows from start
+	// to end, at most limit (otherwise it answers 204, no history).
+	history      atomic.Bool
+	historyCalls atomic.Int64
 	// resumeDelay is how long a reopened stream (one that carries start_offset)
 	// takes to send its first rows after its headers, as a backend that has just
 	// restarted does while it reads the resumed window.
@@ -184,7 +188,8 @@ func (v *retryVL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (v *retryVL) serveQuery(w http.ResponseWriter, r *http.Request) {
-	probe := r.URL.Query().Get("limit") == "1"
+	// The history read before the upgrade asks for the newest rows first.
+	probe := strings.HasSuffix(r.URL.Query().Get("query"), "sort by (_time desc)")
 	if !probe {
 		v.pollCalls.Add(1)
 	}
@@ -213,7 +218,11 @@ func (v *retryVL) serveQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if probe {
-		w.WriteHeader(http.StatusNoContent)
+		if !v.history.Load() {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		v.serveHistory(w, r)
 		return
 	}
 	start, _ := parseEntryTime(r.URL.Query().Get("start"))
@@ -225,6 +234,29 @@ func (v *retryVL) serveQuery(w http.ResponseWriter, r *http.Request) {
 	n := 0
 	for _, row := range rows {
 		if row.hidden || row.ts.Before(start) || n >= 200 {
+			continue
+		}
+		_, _ = io.WriteString(w, v.rowJSON(row))
+		n++
+	}
+}
+
+// serveHistory answers the history read: the newest rows from start to end,
+// at most limit, newest first.
+func (v *retryVL) serveHistory(w http.ResponseWriter, r *http.Request) {
+	v.historyCalls.Add(1)
+	q := r.URL.Query()
+	start, _ := parseEntryTime(q.Get("start"))
+	end, _ := parseEntryTime(q.Get("end"))
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	v.mu.Lock()
+	rows := append([]retryRow(nil), v.rows...)
+	v.mu.Unlock()
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].ts.After(rows[j].ts) })
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	n := 0
+	for _, row := range rows {
+		if row.hidden || row.ts.Before(start) || row.ts.After(end) || n >= limit {
 			continue
 		}
 		_, _ = io.WriteString(w, v.rowJSON(row))
