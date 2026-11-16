@@ -872,6 +872,9 @@
     "semantics/topk-bottomk-without-strips-label | compare:observed",
     "semantics/topk-bottomk-without-strips-label | gap:fixed",
     "semantics/topk-bottomk-without-strips-label | query",
+    "semantics/topk-first-argument-error-text | compare:observed",
+    "semantics/topk-first-argument-error-text | gap:fixed",
+    "semantics/topk-first-argument-error-text | query",
     "semantics/topk-grouped-spellings | compare:observed",
     "semantics/topk-grouped-spellings | gap:fixed",
     "semantics/topk-grouped-spellings | query",
@@ -1198,6 +1201,7 @@
     "internal/logql/stage_parse_validate_loki_test.go | semantics/label-filter-regex-parse-error",
     "internal/logql/stage_raw_test.go | semantics/keep-leaves-labels-loki-drops",
     "internal/logql/terminates_test.go | semantics/logql-unicode-runes",
+    "internal/logql/topk_param_loki_test.go | semantics/topk-first-argument-error-text",
     "internal/logql/unicode_runes_loki_test.go | semantics/logql-unicode-runes",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
     "internal/logql/whitespace_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
@@ -2883,14 +2887,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 107,
+      "api": 108,
       "drilldown": 53,
       "explore": 188,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 660,
+      "go": 661,
       "playwright": 1
     },
     "page_kinds": {
@@ -2910,7 +2914,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 98,
-    "wired_items": 386
+    "wired_items": 387
   },
   "gates": [
     "A/B shape selection",

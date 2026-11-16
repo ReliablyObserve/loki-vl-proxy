@@ -2619,7 +2619,7 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 2,
+      "comparable_rows": 8,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
@@ -2630,7 +2630,7 @@
       "known_difference_ids": [
         "r0043"
       ],
-      "matching_rows": 1,
+      "matching_rows": 7,
       "messages": [
         "instant-log-query",
         "parse"
@@ -2640,7 +2640,7 @@
       "reason": "",
       "recorded": true,
       "route": "query",
-      "rows": 2,
+      "rows": 8,
       "state": "differs",
       "unit_gate": true
     },
@@ -2866,7 +2866,7 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 5,
+      "comparable_rows": 11,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
@@ -2877,7 +2877,7 @@
       "known_difference_ids": [
         "r1561"
       ],
-      "matching_rows": 4,
+      "matching_rows": 10,
       "messages": [
         "parse",
         "unmapped-evaluator-unexpected-expr",
@@ -2888,7 +2888,7 @@
       "reason": "",
       "recorded": true,
       "route": "query_range",
-      "rows": 6,
+      "rows": 12,
       "state": "differs",
       "unit_gate": true
     },
@@ -4651,7 +4651,7 @@
       "status": 400
     },
     "parse": {
-      "comparable_rows": 49,
+      "comparable_rows": 61,
       "e2e_rows": [
         "r0001",
         "r0002",
@@ -4683,7 +4683,7 @@
       ],
       "item": "msg-parse",
       "kind": "parse",
-      "matching_rows": 46,
+      "matching_rows": 58,
       "routes": [
         "detected_field_values",
         "detected_fields",
@@ -4751,7 +4751,19 @@
         "r1429",
         "r1532",
         "r1533",
-        "r1551"
+        "r1551",
+        "r1800",
+        "r1801",
+        "r1802",
+        "r1803",
+        "r1804",
+        "r1805",
+        "r1806",
+        "r1807",
+        "r1808",
+        "r1809",
+        "r1810",
+        "r1811"
       ],
       "source": "lokierr",
       "stage": "logql_syntax",
@@ -5154,20 +5166,20 @@
     "cells_matching": 98,
     "cells_recorded": 65,
     "check_order_rows": 33,
-    "comparable_rows": 231,
+    "comparable_rows": 243,
     "coverage_ratio": 0.5726,
     "covered_cells": 71,
     "differing_rows": 8,
     "e2e_rows": 140,
-    "match_ratio": 0.9654,
-    "matching_rows": 223,
+    "match_ratio": 0.9671,
+    "matching_rows": 235,
     "messages": 36,
     "messages_documented": 9,
     "messages_recorded": 27,
     "not_comparable_rows": 71,
     "recorded_loki": "3.7.9",
     "recorded_on": "2026-11-13",
-    "recorded_rows": 302,
+    "recorded_rows": 314,
     "unmapped_items": 8
   }
 }
