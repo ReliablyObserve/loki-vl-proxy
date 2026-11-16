@@ -186,9 +186,9 @@ type refTok struct {
 	text string
 }
 
-// refParse is a second, independent implementation of Loki's grammar: a
-// shift-reduce parser that resolves the grammar's conflicts the way goyacc does
-// for syntax.y. A reduction `lf OP lf` happens when the lookahead has a lower or
+// refParse is a second, independent implementation of LogQL's label filter
+// grammar: a shift-reduce parser that resolves the grammar's conflicts the way
+// an LALR generator does. A reduction `lf OP lf` happens when the lookahead has a lower or
 // equal precedence than the rule (AND 2, OR 1) and shifts otherwise; a rule
 // without a precedence (COMMA, the juxtaposed `lf lf`) and a lookahead without
 // one (a filter, "(", COMMA) always shift. It returns false for a sequence the
