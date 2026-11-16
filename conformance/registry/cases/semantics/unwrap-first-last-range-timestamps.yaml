@@ -12,13 +12,11 @@ why: |
   points; the proxy answered as many, every one a step earlier than Loki's.
 
   Loki evaluates the range aggregation at start, start+step, ..., end
-  (v3.7.9 pkg/logql/range_vector.go:102-113 batchRangeVectorIterator.Next); the
-  sample at t reads the window (t-range, t], the lower bound exclusive
-  (range_vector.go:150-160 load), and is stamped t (range_vector.go:189 At); a
-  range shorter than the step reads the same window (range_vector.go:54-73).
-  The sharded merge that keeps sample timestamps (pkg/logql/
-  first_last_over_time.go) runs only under shard_aggregations, off by default
-  (pkg/logql/shardmapper.go:30-48, 616).
+  (TestCompat_UnwrapFirstLastRangeTimestamps); the
+  sample at t reads the window (t-range, t], the lower bound exclusive,
+  and is stamped t; a
+  range shorter than the step reads the same window.
+  The sharded merge that keeps sample timestamps runs only under shard_aggregations, off by default.
 
   The proxy reads first and last with row_min / row_max over VictoriaLogs
   stats_query_range buckets, labelled by their start and covering [T, T+step).
@@ -54,7 +52,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy/metric_binary.go logRangeFunctions, statsRateRangeEqualsStepShift (first_over_time / last_over_time with unwrap)'
-  loki: 'pkg/logql/range_vector.go:102-189 window (t-range, t] stamped t; pkg/logql/shardmapper.go:30-48 first/last sharding off by default'
+  loki: 'the sample at t reads the window (t-range, t], lower bound exclusive, and is stamped t; first and last sharding is off by default (test/e2e-compat first_last_range_timestamps_test.go)'
   proxy: 'step buckets fetched from start-step and relabelled onto the evaluation times, as for the other unwrap functions'
   planned_test: 'TestCompat_UnwrapFirstLastRangeTimestamps (test/e2e-compat, group core; written, not yet run); TestFirstLastOverTimeRangeTimestampsLikeLoki, TestFirstLastOverTimeRangeTimestampsBinaryAndTopk, TestFirstLastOverTimeRangeTimestampsDifferential, FuzzFirstLastOverTimeRangeTimestampsLikeLoki (internal/proxy)'
   clusters: []

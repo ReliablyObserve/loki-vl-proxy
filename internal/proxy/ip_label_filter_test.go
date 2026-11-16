@@ -82,8 +82,8 @@ func ipFilterRows(s0 time.Time) []pushdownRow {
 	return rows
 }
 
-// lokiIPLineKept is Loki's answer for a whole-address or absent addr
-// (pkg/logql/log/ip.go:123-145): an absent label never matches, = keeps a
+// lokiIPLineKept is Loki's answer for a whole-address or absent addr: an
+// absent label never matches, = keeps a
 // line whose address netip parses and the pattern contains, != the others.
 func lokiIPLineKept(msg, pattern string, negate bool) bool {
 	_, after, found := strings.Cut(msg, " addr=")

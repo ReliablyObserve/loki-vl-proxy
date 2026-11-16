@@ -6,6 +6,7 @@ proves:
   - status-502
   - status-503
 consumer: any
+evidence: needs recording
 why: |
   Loki never answers with storage or backend text: its querier failure is
   500 with Loki's text, a bad query 400 with its parse error. The error layer
@@ -53,6 +54,6 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy/http_utils.go writeError/writeBackendError/writeGrafanaStatsFailure; alerting.go passthrough'
-  loki: 'pkg/util/server/error.go:56-130; pkg/logql/syntax parse errors for 400'
+  loki: 'a failed querier call answers 500 with Loki''s own text, a bad query a 400 with its parse error'
   proxy: 'ruler non-2xx body copied (alerting.go)'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

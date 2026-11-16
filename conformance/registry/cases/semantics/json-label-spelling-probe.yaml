@@ -6,7 +6,7 @@ consumer: any
 why: |
   Loki v3.7.7's JSON parser trims the spaces around a key, prepends an
   underscore to a leading digit, replaces every rune outside `[A-Za-z0-9_]`
-  with an underscore (`sanitizeLabelKey`) and joins the sanitized keys of
+  with an underscore and joins the sanitized keys of
   nested objects with an underscore, skipping blank keys
   (`buildSanitizedPrefixFromBuffer`). VictoriaLogs `unpack_json` keeps keys
   raw and joins nesting with a dot. So `{"service-version":"1"}`,
@@ -28,7 +28,7 @@ why: |
   underscore (Loki prefixes a leading digit or sanitizes a leading rune)
   also admits a key starting with a non-ASCII rune by regexp. Among those
   lines a flat regexp matches a key spelled with a rune other than an
-  underscore where the label or a piece of it has one (`sanitizeLabelKey`),
+  underscore where the label or a piece of it has one,
   spaces around a key (Loki trims them) or a blank key (Loki skips it), and
   a loose regexp locates the keys of each nested split in order. Nesting is
   then verified by VictoriaLogs' own parser: a sentinel key is spliced into

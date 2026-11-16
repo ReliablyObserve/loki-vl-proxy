@@ -23,12 +23,9 @@ import (
 // long panel over a `[1m]` query) is answered from VictoriaLogs stats, like the
 // same query at a step equal to the range, and exactly as Loki answers it.
 // Loki evaluates each step over (t-range, t] and never reads the lines between
-// two windows (pkg/logql/range_vector.go: newRangeVectorIterator takes the
-// batch iterator when selRange < step, and batchRangeVectorIterator.load
-// consumes every sample at or before the window start without adding it), so
-// a line its JSON parser rejects there never fails the query
-// (pkg/logql/evaluator.go RangeVectorEvaluator.Next checks only the step's
-// vector for __error__).
+// two windows (it consumes every sample at or before the window start without
+// adding it), so a line its JSON parser rejects there never fails the query
+// (only the step's vector is checked for __error__).
 
 // stepWiderQueries are the shapes of the ordered JSON pushdown that the window
 // filter changes: the strict detected_level count (Logs Drilldown and the
@@ -435,7 +432,7 @@ func TestOrderedJSONStepWiderThanRangeRefresh(t *testing.T) {
 }
 
 // Loki's series limit counts the series of the answer, the ones with a point
-// at some step (pkg/logql/engine.go JoinSampleVector), so lines in the gap
+// at some step, so lines in the gap
 // between two windows never count toward it: with every line in a gap the
 // answer is an empty matrix, not the limit error, and with the same lines
 // inside the windows one series past the limit is the error. This is the

@@ -122,10 +122,9 @@ func applyDefaultMetadataLookback(start, end string, lookback time.Duration) (st
 }
 
 // Loki lists labels and label values from its index at millisecond precision:
-// the querier turns the request's bounds into model.Time (Unix milliseconds,
-// pkg/querier/querier.go Label) and a chunk matches when its From <= end and
-// its Through >= start, both milliseconds (tsdb/index ChunkMeta MinTime and
-// MaxTime). So Loki lists every row whose millisecond lies in
+// the querier turns the request's bounds into Unix milliseconds and a chunk
+// matches when its From <= end and its Through >= start, both milliseconds
+// (registry semantics/labels-end-inclusive-like-loki). So Loki lists every row whose millisecond lies in
 // [start, end] floored to milliseconds: a row at end, and with start == end
 // (Grafana's "Show context", which sends the row's time in milliseconds) the
 // rows of that millisecond. VictoriaLogs' time filter is [start, end) in

@@ -194,8 +194,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	shape := newLogQueryShape(r.FormValue("query"))
 
 	// Loki reads a limited log query's splits in the query's direction and
-	// stops once the limit is met (pkg/querier/queryrange/split_by_interval.go
-	// :136-146; backward splits are reversed at :216). A dense stream's limit
+	// stops once the limit is met (backward splits are read newest first). A dense stream's limit
 	// is usually held by the first window alone, so that window is read on its
 	// own (from the window cache when it is kept) before the /hits prefilter
 	// runs and before any batch fans out. When it fills the limit, VictoriaLogs

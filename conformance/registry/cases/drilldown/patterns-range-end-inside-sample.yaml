@@ -1,0 +1,56 @@
+id: drilldown/patterns-range-end-inside-sample
+title: A patterns range ending inside a 10 s sample lost that sample's lines after the end (fixed)
+pending: true
+proves:
+  - loki_api_v1_patterns
+consumer: drilldown
+why: |
+  Loki answers every 10 s sample that starts inside a /patterns range with
+  all of its lines, including the lines after the range's end. Measured
+  2026-11-14 on the compose stack (backfilled data, no two lines at one time,
+  Loki v3.7.9, VictoriaLogs v1.53.0): {env="production"} over 5 minutes ending
+  at 1794684012, ...015, ...017 and ...019 gives the same last sample
+  (1794684010, 98 lines) and the same total (3,291).
+
+  The proxy read a selector's lines only up to the range's end (VictoriaLogs'
+  end is exclusive), in the pattern state, the exact tier and the counts tier,
+  so the last sample held only the lines before the end: ending at 1794684019
+  it answered 76 lines there and 3,269 in all. The answer also depended on
+  timing: the request that started the state's background build was answered
+  by the exact tier (partial, and cached), later ones by the built state
+  (whole).
+
+  Fixed (internal/proxy/postprocess.go patternSamplesEndNs, used by
+  patterns_state.go, patterns_exact.go and patterns_counts.go): the lines are
+  read up to the end of the sample the range's end falls in (to now while
+  that sample is still being written, a refresh completing it), so the range's
+  last sample is counted whole, as Loki counts it. The counts tier also reads
+  from the first sample starting inside the range, when its step is made of
+  whole samples. A range ending on a sample's start reads exactly as before.
+request:
+  method: GET
+  path: /loki/api/v1/patterns
+  params:
+    query: '{env="production"}'
+    start: 'now-5m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data]
+  expect: |
+    Loki's patterns and samples, the last sample with all of its lines,
+    whatever second inside it the range ends at.
+gap:
+  status: fixed
+  fixed_by: "#1473"
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy/patterns_state.go (state reads), patterns_exact.go (exact tier), patterns_counts.go (counts tier), postprocess.go patternSamplesEndNs'
+  loki: 'recorded answers: samples starting in [start, end) answered whole'
+  proxy: 'lines read up to the end of the last sample'
+  planned_test: 'TestPatternSamplesEndNs, TestPatternsRangeEndingInsideASampleCountsItWhole, TestPatternsRangeEndingInsideASampleReusesItsRead, TestPatternsCountsTierRangeEndingInsideASampleReusesItsReads (internal/proxy)'
+  clusters: []
+  visual: none
+  visual_reason: 'the visual captures end on whole minutes, which are also sample (10 s) ends, so no capture holds a range ending inside a sample; the fix is proven by the tests above at a sample end minus 1 s and mid-sample, through the state, exact and counts tiers'

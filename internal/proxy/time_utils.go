@@ -14,7 +14,7 @@ import (
 
 // lokiSampleSeconds is the time Loki writes for a sample evaluated at ns
 // nanoseconds: its engine keeps whole milliseconds (the sample time is
-// current/1e6, a truncation, pkg/logql/range_vector.go) and prints them as
+// current/1e6, a truncation; registry semantics/window-edge-float64-nanoseconds) and prints them as
 // seconds, FormatFloat(ms/1000, 'f', -1, 64) (model.Time.String). Dividing the
 // nanoseconds instead keeps a fraction Loki drops and, above 2^53, rounds the
 // division the other way often enough to print 1793653191.6499999 for
@@ -165,7 +165,7 @@ func parseFlexibleUnixNanos(raw string) (int64, bool) {
 }
 
 // lokiFloatSecondsToNanos reads a timestamp written as float seconds the way
-// Loki does (pkg/loghttp/params.go parseTimestamp): the fraction is rounded to
+// Loki does: the fraction is rounded to
 // a millisecond. Multiplying the whole value by 1e9 instead lands below the
 // millisecond about half the time, where float64 steps are 256 ns, and Loki's
 // engine truncating it to milliseconds would then print .703 for .704.

@@ -12,11 +12,11 @@ import (
 
 // VictoriaLogs' Loki push API unpacks the keys of a JSON line into fields
 // after the stream labels, and the last value written for a name wins
-// (app/vlinsert/loki/loki_json.go, lib/logstorage/block.go): a line whose JSON
-// has a key named like a stream label stores the line's value under the
-// label's name. Loki keeps the stream label (pkg/logql/log/labels.go). This
-// fixture pushes the same Loki push payload to both backends: stream label
-// version="v2", JSON lines whose version key is v1 or v2.
+// (app/vlinsert/loki/loki_json.go, lib/logstorage/block.go): a line whose
+// JSON has a key named like a stream label stores the line's value under the
+// label's name. Loki keeps the stream label. This fixture pushes the same
+// Loki push payload to both backends: stream label version="v2", JSON lines
+// whose version key is v1 or v2.
 
 // TestCompat_StreamLabelShadowedByIngestJSONKey: grouping by such a stream
 // label answers Loki's series and counts, with and without a detected_level

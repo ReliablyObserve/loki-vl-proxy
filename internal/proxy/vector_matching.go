@@ -107,8 +107,7 @@ func (m withoutMerge) combine(acc, value float64, n int) float64 {
 	case m.count:
 		return acc + 1
 	case m.min:
-		// A NaN accumulator is replaced and a later NaN never wins, as in
-		// pkg/logql/evaluator.go VectorAggEvaluator.Next.
+		// A NaN accumulator is replaced and a later NaN never wins, as in Loki.
 		if math.IsNaN(acc) || value < acc {
 			return value
 		}
@@ -129,7 +128,7 @@ func (m withoutMerge) combine(acc, value float64, n int) float64 {
 // VictoriaLogs has answered (applyWithoutGrouping): VictoriaLogs returns a row
 // per stream, since a LogsQL `by` cannot name every label but the excluded ones,
 // and Loki counts max_query_series on the folded answer
-// (pkg/logql/engine.go:536-548 and :575-590 JoinSampleVector). It reuses
+// (registry limits/series-limit-error). It reuses
 // foldedSumKey, the mark of an ungrouped sum folded afterwards: the reads before
 // the fold are bounded by the raw-row budget (-manual-range-metric-row-limit)
 // unless the tenant's limit is lower, the budget's error is what they answer,
@@ -268,7 +267,7 @@ func applyWithoutVector(body []byte, exclude map[string]bool, merge withoutMerge
 		}
 	}
 
-	// Build result, in label order as Loki sorts the vector (pkg/logql/engine.go).
+	// Build result, in label order as Loki sorts the vector.
 	result := []map[string]interface{}{}
 	for _, key := range keysInLabelOrder(labelSets) {
 		g := groups[key]
@@ -489,7 +488,7 @@ func firstVectorMatchFailure(ctx context.Context, leftBody, rightBody []byte, on
 		return 0, err
 	}
 	// Loki joins one evaluation at a time and stops at the first one that
-	// fails (pkg/logql/engine.go reads the evaluator's error after every
+	// fails (it reads the evaluator's error after every
 	// step), so the checks run per evaluation, oldest first. Streams which
 	// never overlap must not create a false many-to-one error across the
 	// whole range.
@@ -522,8 +521,7 @@ func firstVectorMatchFailure(ctx context.Context, leftBody, rightBody []byte, on
 		}
 		for _, count := range oneSide[ts] {
 			if count > 1 {
-				// Loki's text joins the two halves with ";" and no space
-				// (pkg/logql/evaluator.go:974-975).
+				// Loki's text joins the two halves with ";" and no space.
 				return ts, vectorMatchError(fmt.Sprintf("found duplicate series on the %s hand-side;many-to-many matching not allowed: matching labels must be unique on one side", side))
 			}
 		}
@@ -748,7 +746,7 @@ func applyArithmeticOp(left, right float64, op string) float64 {
 // a vector answer with fn, keeping the rest of the answer as it is. Series
 // that end with one label set are not an error in Loki: an instant vector
 // keeps each sample, a range matrix files their points under one series, those
-// of each step in turn (pkg/logql/engine.go JoinSampleVector, vectorsToSeries).
+// of each step in turn.
 func transformSeriesLabels(body []byte, fn func(map[string]string) map[string]string) []byte {
 	var top, data map[string]json.RawMessage
 	if json.Unmarshal(body, &top) != nil || json.Unmarshal(top["data"], &data) != nil {
@@ -795,9 +793,8 @@ func transformSeriesLabels(body []byte, fn func(map[string]string) map[string]st
 }
 
 // sortSeriesByLabels orders the series of a matrix or vector answer as Loki
-// does after a label_replace: a range result by label set (pkg/logql/engine.go
-// JoinSampleVector, sort.Sort(result)), an instant vector the same way unless
-// the query sorts by value (sort, sort_desc: evaluator.go Sortable), in which
+// does after a label_replace: a range result by label set, an instant vector
+// the same way unless the query sorts by value (sort, sort_desc), in which
 // case sortable is set and the order is kept.
 func sortSeriesByLabels(body []byte, sortable bool) []byte {
 	var top, data map[string]json.RawMessage
@@ -838,8 +835,8 @@ func sortSeriesByLabels(body []byte, sortable bool) []byte {
 
 var sortCallRE = regexp.MustCompile(`(^|[^\w])sort(_desc)?\s*\(`)
 
-// queryIsSortable reports whether a query orders by value (evaluator.go
-// Sortable: a sort or sort_desc anywhere in it).
+// queryIsSortable reports whether a query orders by value (a sort or sort_desc
+// anywhere in it).
 func queryIsSortable(logql string) bool { return sortCallRE.MatchString(logql) }
 
 // keysInLabelOrder returns the keys of the label sets in Loki's series order.
@@ -881,7 +878,7 @@ func pointSeconds(point json.RawMessage) float64 {
 }
 
 // applyLabelReplace applies label_replace to every series of a matrix or vector
-// answer as Loki's LabelReplaceEvaluator does (pkg/logql/evaluator.go): the
+// answer as Loki does: the
 // regexp is anchored, a series it does not match is left as it is, and the
 // expanded replacement ($1, ${1}, $name) replaces the destination label, which
 // an empty expansion removes.

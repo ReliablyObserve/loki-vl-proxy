@@ -4,6 +4,7 @@ proves:
   - data-probing-and-freshness
   - loki_api_v1_labels
 consumer: explore
+evidence: needs recording
 why: |
   Loki's /labels is bounded by the requested window: label names of streams
   without samples in the window are not listed once Loki reads them from its
@@ -36,7 +37,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy/label_metadata.go storeLabelsCache (was mergeLabelsIntoCache)'
-  loki: 'pkg/querier/querier.go Label (window-bounded)'
+  loki: 'labels of the streams in the requested window only'
   proxy: 'union never shrinks'
   planned_test: 'an e2e against Loki once a fixture can be made old in Loki''s sense (see quality/labels-just-pushed-stream-before-window)'
   clusters: []

@@ -6,8 +6,7 @@ proves:
 consumer: drilldown
 why: |
   With a level pill set, the Fields tab of Logs Drilldown breaks a nested
-  JSON field down with a JSON-path extraction list
-  (pkg/logql/log/parser.go:671 JSONExpressionParser.Process):
+  JSON field down with a JSON-path extraction list:
 
     sum by (service_name_extracted) (count_over_time({service_name="api-gateway"}
       | detected_level="error" | json service_name_extracted="[\"service\"][\"name\"]"
@@ -52,7 +51,7 @@ gap:
   impact: drilldown-visible
   effort: M
   area: 'internal/translator/translator.go resolveJSONBracketPath (json extraction-list label from a multi-key bracket path)'
-  loki: 'pkg/logql/log/parser.go:671 (JSONExpressionParser.Process, JSON path into the named label)'
+  loki: 'the JSON path value lands in the named label (TestCompat_DrilldownFieldsPillJSONPathExtracted)'
   proxy: 'Loki''s series and values, with and without the level pill'
   planned_test: 'TestCompat_DrilldownFieldsPillJSONPathExtracted (test/e2e-compat, group core)'
   clusters: []

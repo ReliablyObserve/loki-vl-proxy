@@ -78,7 +78,7 @@ func TestBlockedVerdictsCarryTheirClass(t *testing.T) {
 		"down":    both(Answer{Err: "refused"}, ok(`{}`)),
 		"loki500": both(Answer{Status: 500, Body: "x"}, ok(`{}`)),
 	}
-	ph := Probe{ID: "ph", Method: "GET", Path: "/x", Params: map[string]string{"start": "<start>"}}
+	ph := Probe{ID: "ph", Method: "GET", Path: "/x", Params: map[string]string{"start": "<a row time in ns>"}}
 	pre := Probe{ID: "pre", Blocked: "needs", BlockedClass: classLoad}
 	for _, c := range []struct {
 		p    Probe
@@ -147,6 +147,45 @@ func TestIndexStatsOfALokiBehindItsDataIsNotComparable(t *testing.T) {
 	same := fake{"i": both(ok(`{"streams":70,"entries":10}`), ok(`{"streams":70,"entries":10,"bytes":3}`))}
 	if r = Verify(p, same, equalCounts, nil, testNow, "0"); r.Verdict != verdictMatches {
 		t.Errorf("equal numbers: %+v", r)
+	}
+}
+
+// Loki's index catches up with its data a little after the seed: the answer is asked again, and a case whose index
+// caught up on a later ask is compared like any other; one that never does stays not comparable.
+func TestIndexStatsIsAskedAgainWhileLokiCatchesUp(t *testing.T) {
+	p := Probe{ID: "i", Status: "documented", Mode: "observed", Fields: []string{"streams", "entries"}, Method: "GET", Path: indexStatsPath,
+		Params: map[string]string{"query": `{env="production"}`, "start": "now-1h", "end": "now"}}
+	behind := ok(`{"streams":2,"chunks":2,"bytes":1,"entries":4}`)
+	proxyAnswer := ok(`{"streams":70,"chunks":70,"bytes":9,"entries":10}`)
+	caught := ok(`{"streams":70,"chunks":70,"bytes":1,"entries":10}`)
+	src := fake{"i": {1: {"loki": behind, "proxy": proxyAnswer}, indexRetryAttempt + 3: {"loki": caught}}}
+	if r := Verify(p, src, equalCounts, nil, testNow, "0"); r.Verdict != verdictMatches || r.Reason != "" {
+		t.Errorf("caught up on the third ask: %+v", r)
+	}
+	never := fake{"i": {1: {"loki": behind, "proxy": proxyAnswer}}}
+	if r := Verify(p, never, equalCounts, nil, testNow, "0"); r.Verdict != verdictNotComparable || !strings.Contains(r.Reason, "has not caught up") {
+		t.Errorf("never caught up: %+v", r)
+	}
+}
+
+// A case whose point is the answer to a range without data (request.verify.empty_range) is not `empty`: the empty counts
+// are the data it needs, and the answers' status is compared. Without the declaration the same case is empty.
+func TestEmptyRangeIsTheDataOfACaseThatSaysSo(t *testing.T) {
+	q := map[string]string{"query": `{app="x"} | line_format "{{.a"`, "start": "now-30d", "end": "now-29d"}
+	probe := func(by string) Probe {
+		return Probe{ID: "e", Status: "documented", Mode: "observed", Fields: []string{"status"}, Method: "GET", Path: "/loki/api/v1/query_range", Params: q, EmptyRange: by}
+	}
+	none := counts{`{app="x"}`: {{Count: 0}, {Count: 0}}}
+	src := fake{"e": both(ok(`{"data":{"result":[]}}`), Answer{Status: 400, Body: "bad"})}
+	if r := Verify(probe("the range holds no data on purpose"), src, none, nil, testNow, "0"); r.Verdict != verdictDiffers || r.Expected != "accepted" || r.Flag != "" {
+		t.Errorf("a documented difference over an empty range: %+v", r)
+	}
+	if r := Verify(probe(""), src, none, nil, testNow, "0"); r.Verdict != verdictEmpty {
+		t.Errorf("not declared: %+v", r)
+	}
+	same := fake{"e": both(ok(`{"data":{"result":[]}}`), ok(`{"data":{"result":[]}}`))}
+	if r := Verify(probe("the range holds no data on purpose"), same, none, nil, testNow, "0"); r.Verdict != verdictMatches || r.Flag != flagBehaviourChanged {
+		t.Errorf("the proxy now answers like Loki: %+v", r)
 	}
 }
 
@@ -268,7 +307,7 @@ func TestClassifyRoutesAndCounts(t *testing.T) {
 		caseOf(t, "a/default", "request: {method: GET, path: /loki/api/v1/labels, proxy_flags: ['-d=1']}\ncompare: {mode: status}\n"),
 		caseOf(t, "a/none", "request: {method: GET, path: /loki/api/v1/labels, proxy_flags: ['-nowhere']}\ncompare: {mode: status}\n"),
 		caseOf(t, "a/load", "request: {method: GET, path: /loki/api/v1/labels, verify: {blocked_by: load}}\ncompare: {mode: status}\n"),
-		caseOf(t, "a/ph", "request: {method: GET, path: /loki/api/v1/labels, params: {start: '<start>'}}\ncompare: {mode: status}\n"),
+		caseOf(t, "a/ph", "request: {method: GET, path: /loki/api/v1/labels, params: {start: '<a row time in ns>'}}\ncompare: {mode: status}\n"),
 		caseOf(t, "a/scn", "request: {scope: cache, entry: e}\ncompare: {mode: observed}\n"),
 	}
 	c := Classify(cases, []string{"-d=1"}, []Variant{{Name: "v", URL: "http://x", Flags: []string{"-x=1"}}}, func() time.Time { return testNow })

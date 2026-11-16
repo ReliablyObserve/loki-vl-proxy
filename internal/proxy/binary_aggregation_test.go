@@ -238,7 +238,6 @@ func TestAggregationOverBinaryRateCountRatioUsesActiveStreamCount(t *testing.T) 
 
 // TestAggregationOverBinaryEdgeCases: a vector aggregation over a binary
 // expression aggregates the binary's answer, per step, like Loki
-// (pkg/logql/evaluator.go newBinOpStepEvaluator then VectorAggEvaluator.Next):
 // both operands, vector matching on the full label set or on()/ignoring() with
 // group_left, a scalar on either side, nested binaries, a comparison filtering
 // series or answering 0/1 with bool, then sum, avg, min, max and count grouped
@@ -287,8 +286,8 @@ func TestAggregationOverBinaryEdgeCases(t *testing.T) {
 		{"aggregation over the aggregation", `max(sum by (job) (` + amount + ` / ` + count + `))`, map[string]float64{none: 6}},
 		{"empty after the filter", `sum(` + count + ` > 100)`, map[string]float64{}},
 		// An operand with no series (its window, an hour back, holds no line):
-		// the join has none, so the aggregation has none (vectorBinop matches
-		// nothing; VectorAggEvaluator.Next folds an empty vector to an empty one).
+		// the join has none, so the aggregation has none (the join matches
+		// nothing; the aggregation folds an empty vector to an empty one).
 		{"empty right operand", `sum by (job) (` + count + ` / ` + emptyCount + `)`, map[string]float64{}},
 		{"empty left operand", `sum(` + emptyCount + ` * 2)`, map[string]float64{}},
 		{"empty operand under count", `count(` + amount + ` > ` + emptyCount + `)`, map[string]float64{}},
@@ -497,7 +496,7 @@ func TestAggregationOverBinaryMixedParsersAfterTheParserProbe(t *testing.T) {
 
 // The parser probe leaves a binary, and an aggregation over one, to its
 // operands: each operand is its own handler's query and keeps its own parser
-// (pkg/logql/evaluator.go:385). A query of one operand that names both
+// parser. A query of one operand that names both
 // parsers is still probed.
 //
 // conformance: semantics/aggregation-over-binary-dropped

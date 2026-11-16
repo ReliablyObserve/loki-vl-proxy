@@ -6,10 +6,10 @@ proves:
   - loki_api_v1_query
 consumer: explore
 why: |
-  Loki's batchRangeVectorIterator.load skips a sample with `Timestamp <= start`
-  ("the lower bound of the range is not inclusive") and keeps samples up to and
+  Loki skips a sample with `Timestamp <= start`
+  (the lower bound of the range is not inclusive) and keeps samples up to and
   including the evaluation time, for every range aggregation, unwrapped ones
-  included (pkg/logql/range_vector.go:148-189, Loki v3.7.7).
+  included.
 
   The raw-row evaluator (aggregateManualWindow) excluded the lower bound only for
   rate, count_over_time, bytes_over_time and bytes_rate, and extended its
@@ -26,8 +26,7 @@ why: |
   move, which second-precision timestamps make common.
 
   Not covered: rate_counter's value itself is this evaluator's counter
-  increase over the window; Loki extrapolates it to the window edges
-  (pkg/logql/range_vector.go:275-346 rateCounter, extrapolatedRate), which the
+  increase over the window; Loki extrapolates it to the window edges, which the
   evaluator does not.
 request:
   method: GET
@@ -53,7 +52,7 @@ gap:
   visual_reason: 'it moves only a sample that sits exactly on a window edge, one line per window at most, which no panel at Explore''s steps tells apart; proven by the window comparison over lines on every edge against Loki in the e2e'
   effort: S
   area: 'internal/proxy range_metric_compat.go aggregateManualWindow, proxyManualRangeMetricRange and proxyManualRangeMetricInstant (fetch end)'
-  loki: 'pkg/logql/range_vector.go:148-189 batchRangeVectorIterator.load'
+  loki: 'the window of a sample at t is (t-range, t], lower bound exclusive (test/e2e-compat unwrap_over_time_window_test.go)'
   proxy: '(t-range, t] for every function of the raw-row evaluator'
   planned_test: 'TestLowerBoundIsExclusiveForEveryRangeFunction, TestCompatHelpers_AggregateManualWindow, TestUnwrapOverTimeRawWindowBounds (internal/proxy); TestCompat_UnwrapOverTimeRangeWindows (test/e2e-compat, group core: the JSON instant over lines on the window edges)'
   note: 'Contributed in #570. rate_counter extrapolation is not covered.'

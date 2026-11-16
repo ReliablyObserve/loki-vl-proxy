@@ -14,13 +14,12 @@ import (
 
 // This file pins a vector aggregation over a binary expression to Loki's
 // answer, over generated rows, windows and expressions, with a reference
-// evaluator written apart from the proxy: Loki v3.7.7 pkg/logql/evaluator.go
-// newBinOpStepEvaluator and vectorBinop (per step, the right-hand samples by
-// matching signature, one match per left sample, resultMetric for the labels:
-// on() keeps the listed labels and ignoring() drops them for one-to-one,
-// group_left keeps the left labels; a comparison keeps the left value or, with
-// bool, answers 0 or 1), newLiteralStepEvaluator (a literal on either side) and
-// VectorAggEvaluator.Next (the aggregation per step over the binary's samples).
+// evaluator written apart from the proxy. It models Loki's binary evaluation
+// (per step, the right-hand samples by matching signature, one match per left
+// sample: on() keeps the listed labels and ignoring() drops them for
+// one-to-one, group_left keeps the left labels; a comparison keeps the left
+// value or, with bool, answers 0 or 1; a literal on either side) and the
+// aggregation per step over the binary's samples.
 // The operands are `sum by (...)` over count_over_time and rate, read on the
 // window (t-range, t]; only VictoriaLogs is simulated (vlemu.Emulator).
 

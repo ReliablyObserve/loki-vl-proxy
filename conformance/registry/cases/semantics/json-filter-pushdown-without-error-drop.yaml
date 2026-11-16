@@ -5,8 +5,7 @@ proves:
 consumer: api
 why: |
   A user's `sum by (level) (count_over_time({env="production"} | json |
-  pipeline=`logs/loki` [1m]))` carries no `drop __error__`. Loki's
-  `RangeVectorEvaluator` fails a metric whose sample carries `__error__`, so
+  pipeline=`logs/loki` [1m]))` carries no `drop __error__`. Loki fails a metric whose sample carries `__error__`, so
   v1.91.0 required the pipeline to drop parser errors before pushing the
   query down, and this shape fell to the raw-row evaluator (502 at 3 h, Loki
   1.2 s). Loki's string label filter compares the label value with no

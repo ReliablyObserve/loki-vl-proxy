@@ -6,7 +6,7 @@ proves:
 consumer: drilldown
 why: |
   Loki counts every line its pattern ingester saw, per step, over the whole
-  range (pkg/pattern/drain Chunk.ForRange at the 10 s TimeResolution). The
+  range (at a 10 s resolution). The
   proxy mined a sample of lines that VictoriaLogs returned newest first: one
   fetch under 20 minutes, up to ~25 windows of 200-4000 lines beyond, so a
   chart showed samples only at the end of the range (or of each window) and
@@ -50,7 +50,7 @@ gap:
   impact: drilldown-visible
   effort: L
   area: 'internal/proxy/patterns_state.go (pattern state), patterns_history.go (counts before the state), patterns_exact.go, patterns_counts.go'
-  loki: 'pkg/loghttp/patterns.go ParsePatternsQuery (step), pkg/pattern/drain/chunk.go (TimeResolution 10 s, ForRange)'
+  loki: 'every line counted per step over the whole range, at a 10 s resolution (TestDrilldown_Patterns_CountEveryLineAtLokisStep)'
   proxy: 'Loki''s samples inside the retention; with -patterns-full-range the whole range'
   planned_test: 'TestDrilldown_Patterns_CountEveryLineAtLokisStep, TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines (test/e2e-compat, group drilldown); TestPatternStateRefreshReadsOnlyNewLines, TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns, TestPatternSamplesAreCountedInTenSecondSamplesThenSteps, TestPatternsFromCountsCountEveryLine, TestPatternCountsStepIsLokis (internal/proxy)'
   clusters: []

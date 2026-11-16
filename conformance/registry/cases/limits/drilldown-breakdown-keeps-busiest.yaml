@@ -29,7 +29,7 @@ gap:
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy series limit ranking'
-  loki: 'pkg/logql engine series limit'
+  loki: 'series limit (max_query_series), documented at https://grafana.com/docs/loki/latest/configure/'
   proxy: 'busiest series kept'
   planned_test: 'cases/limits/drilldown-partial-with-warning (exists)'
   clusters:

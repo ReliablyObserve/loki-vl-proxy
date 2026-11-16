@@ -245,7 +245,7 @@ func TestLokiSummaryRegressionsAndSimilarity(t *testing.T) {
 	}
 	got := lokiFailures(&reg, []SimilarFile{
 		{File: "internal/logql/stage_validate.go", Shared: 9, Allowed: 9},
-		{File: "internal/proxy/new.go", Shared: 3, Best: "pkg/logql/log/util.go"},
+		{File: "internal/proxy/new.go", Shared: 3, Best: "reference/util.go"},
 	})
 	if len(got) != 4 || !strings.HasPrefix(got[3], "internal/proxy/new.go shares 3 token runs") {
 		t.Errorf("failures = %q", got)
