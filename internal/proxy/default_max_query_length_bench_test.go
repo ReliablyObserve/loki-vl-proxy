@@ -50,7 +50,7 @@ func BenchmarkTenantLimitsMiddleware_MaxQueryLength(b *testing.B) {
 			params.Set("start", strconv.FormatInt(start.UnixNano(), 10))
 			params.Set("end", strconv.FormatInt(end.UnixNano(), 10))
 			target := rq.path + "?" + params.Encode()
-			handler := p.tenantLimitsMiddleware(rq.endpoint, p.stepAlignMiddleware(rq.endpoint, p.requestTimeBounds(rq.endpoint, noop)))
+			handler := p.tenantLimitsMiddleware(rq.endpoint, p.alignToStepMiddleware(rq.endpoint, p.requestTimeBounds(rq.endpoint, noop)))
 			b.Run(rq.endpoint+"/"+length.name, func(b *testing.B) {
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {

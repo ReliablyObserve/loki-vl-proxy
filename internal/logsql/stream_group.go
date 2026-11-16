@@ -103,3 +103,100 @@ func insertAfter(query string, at []int, text string) (string, bool) {
 	}
 	return string(append(out, query[last:]...)), true
 }
+
+// WithGroupKeyInEveryStats returns query with key added to the group of every
+// top-level stats pipe: `| stats by (a) f` becomes `| stats by (a, key) f` and
+// `| stats f` becomes `| stats by (key) f`, so a field set ahead of the first
+// stats pipe reaches the last one's answer. Every other byte is kept. ok is false,
+// and query is returned unchanged, when the scanner cannot read the query, a
+// group already names key, a fields pipe (which could drop key) precedes a stats
+// pipe, or the query holds no stats pipe.
+func WithGroupKeyInEveryStats(query, key string) (string, bool) {
+	s := NewScanner(query)
+	var at []int
+	var text []string
+	depth, state, fields := 0, 0, false
+	for {
+		tok := s.Next()
+		switch {
+		case tok.Typ == TokEOF:
+			return insertTexts(query, at, text)
+		case tok.Typ == TokError && !strayCharacter(tok):
+			return query, false
+		case tok.Typ == TokPipe && depth == 0:
+			state = 1
+			continue
+		case tok.Typ == TokLParen:
+			depth++
+		case tok.Typ == TokRParen:
+			depth--
+		}
+		if state != 1 || tok.Typ != TokIdent {
+			state = 0
+			continue
+		}
+		state = 0
+		switch tok.Val {
+		case "fields":
+			fields = true
+		case "stats":
+			if fields {
+				return query, false
+			}
+			afterStats := s.end
+			if next := s.Next(); next.Typ == TokIdent && next.Val == "by" {
+				if open := s.Next(); open.Typ != TokLParen {
+					return query, false
+				}
+				end, ok := groupEnd(s, key)
+				if !ok {
+					return query, false
+				}
+				at, text = append(at, end), append(text, ", "+key)
+			} else {
+				at, text = append(at, afterStats), append(text, " by ("+key+")")
+				if next.Typ == TokLParen {
+					depth++
+				}
+			}
+		}
+	}
+}
+
+// groupEnd reads a stats group after its opening parenthesis and returns the
+// offset of its closing one; ok is false when the group does not close or names key.
+func groupEnd(s *Scanner, key string) (int, bool) {
+	depth := 0
+	for {
+		tok := s.Next()
+		switch {
+		case tok.Typ == TokEOF || tok.Typ == TokError && !strayCharacter(tok):
+			return 0, false
+		case tok.Typ == TokIdent && tok.Val == key:
+			return 0, false
+		case tok.Typ == TokLParen:
+			depth++
+		case tok.Typ == TokRParen && depth == 0:
+			return s.start, true
+		case tok.Typ == TokRParen:
+			depth--
+		}
+	}
+}
+
+// insertTexts returns query with text[i] inserted at offset at[i] (ascending),
+// and whether there was any.
+func insertTexts(query string, at []int, text []string) (string, bool) {
+	if len(at) == 0 {
+		return query, false
+	}
+	var b strings.Builder
+	last := 0
+	for i, o := range at {
+		b.WriteString(query[last:o])
+		b.WriteString(text[i])
+		last = o
+	}
+	b.WriteString(query[last:])
+	return b.String(), true
+}
