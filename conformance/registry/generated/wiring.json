@@ -30,6 +30,7 @@
       "internal/proxy/plan_predicate_parity_test.go",
       "internal/proxy/plan_route_metric_test.go",
       "internal/proxy/plan_route_parity_test.go",
+      "internal/proxy/plan_served_test.go",
       "internal/proxy/post_aggregation_physical_test.go",
       "internal/proxy/query_lowering_corpus_test.go",
       "internal/proxy/query_lowering_log_stages_test.go",
@@ -66,6 +67,7 @@
       "internal/querycorpus/rank_step_alloc_test.go",
       "internal/querycorpus/rank_step_grid_test.go",
       "internal/querycorpus/series_agg_grid_test.go",
+      "internal/querycorpus/shadow_rejected_loki_test.go",
       "internal/querycorpus/stats_decode_test.go",
       "internal/querycorpus/unwrap_grid_test.go",
       "internal/querycorpus/vector_agg_blank_grid_test.go",
@@ -139,6 +141,7 @@
       "internal/proxy/backend_url_test.go"
     ],
     "cache-response-key-versions": [
+      "internal/proxy/binary_empty_without_test.go",
       "internal/proxy/detected_level_one_value_test.go",
       "internal/proxy/detected_level_stream_series_test.go",
       "internal/proxy/fail_fast_unicode_test.go",
@@ -1193,6 +1196,8 @@
       "test/e2e-compat/binary_operand_literals_test.go"
     ],
     "semantics/binary-operand-without-empty-collapses": [
+      "internal/proxy/binary_empty_without_test.go",
+      "internal/querycorpus/binop_without_empty_loki_diff_test.go",
       "internal/querycorpus/binop_without_empty_test.go",
       "internal/queryplan/lower/binop_without_empty_test.go"
     ],
@@ -1539,6 +1544,7 @@
     ],
     "semantics/keep-before-unwrap-series-identity": [
       "internal/proxy/keep_unwrap_identity_test.go",
+      "internal/proxy/plan_served_test.go",
       "internal/proxy/query_lowering_test.go",
       "internal/querycorpus/first_last_loki_diff_test.go",
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
@@ -1780,6 +1786,7 @@
       "internal/proxy/loki_error_answers_replay_test.go",
       "internal/proxy/ordered_json_recorded_test.go",
       "internal/querycorpus/grammar_sweep_test.go",
+      "internal/querycorpus/shadow_rejected_loki_test.go",
       "test/e2e-compat/error_answers_like_loki_test.go"
     ],
     "semantics/parser-reads-unicode-blank-as-white-space": [
@@ -1802,14 +1809,14 @@
       "internal/proxy/pattern_line_filter_test.go",
       "internal/queryplan/lower/pattern_filter_test.go",
       "internal/translate/linefilter_pattern_loki_test.go",
+      "internal/translate/linefilter_pattern_recorded_test.go",
       "internal/translate/linefilter_pattern_test.go",
       "internal/translator/pattern_line_filter_test.go",
       "test/e2e-compat/pattern_line_filter_test.go"
     ],
     "semantics/pattern-line-filter-anchoring": [
       "internal/proxy/pattern_line_filter_test.go",
-      "internal/translate/linefilter_pattern_loki_test.go",
-      "internal/translator/pattern_line_filter_anchoring_test.go",
+      "internal/translate/linefilter_pattern_recorded_test.go",
       "test/e2e-compat/pattern_line_filter_test.go"
     ],
     "semantics/pattern-line-filter-invalid-captures": [
@@ -1825,6 +1832,7 @@
       "internal/proxy/ordered_json_valid_split_test.go",
       "internal/proxy/ordered_json_vector_cache_test.go",
       "internal/proxy/ordered_json_vector_test.go",
+      "internal/querycorpus/binop_without_empty_loki_diff_test.go",
       "test/e2e-compat/parser_error_matrix_test.go"
     ],
     "semantics/plain-name-after-parser-reads-stream-label": [
@@ -2122,6 +2130,7 @@
     ],
     "semantics/translator-writes-reserved-field-names": [
       "internal/logsql/reserved_fields_test.go",
+      "internal/proxy/plan_served_test.go",
       "internal/proxy/reserved_field_test.go",
       "internal/queryplan/lower/exotic_field_names_test.go",
       "internal/queryplan/lower/reserved_field_test.go",
@@ -2938,6 +2947,10 @@
     ],
     "internal/proxy/binary_division_zero_test.go": [
       "semantics/binary-division-by-zero-nan"
+    ],
+    "internal/proxy/binary_empty_without_test.go": [
+      "cache-response-key-versions",
+      "semantics/binary-operand-without-empty-collapses"
     ],
     "internal/proxy/binary_ignoring_matching_test.go": [
       "loki_api_v1_query",
@@ -3778,6 +3791,11 @@
     "internal/proxy/plan_route_parity_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/proxy/plan_served_test.go": [
+      "architecture-syntax-package-layering",
+      "semantics/keep-before-unwrap-series-identity",
+      "semantics/translator-writes-reserved-field-names"
+    ],
     "internal/proxy/post_aggregation_physical_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -4437,6 +4455,10 @@
     "internal/querycorpus/binop_route_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/binop_without_empty_loki_diff_test.go": [
+      "semantics/binary-operand-without-empty-collapses",
+      "semantics/pipeline-error-text-parity"
+    ],
     "internal/querycorpus/binop_without_empty_test.go": [
       "semantics/binary-operand-without-empty-collapses"
     ],
@@ -4607,6 +4629,10 @@
     "internal/querycorpus/series_agg_grid_test.go": [
       "architecture-syntax-package-layering",
       "semantics/stddev-stdvar-nested-or-binary"
+    ],
+    "internal/querycorpus/shadow_rejected_loki_test.go": [
+      "architecture-syntax-package-layering",
+      "semantics/parse-error-text-parity"
     ],
     "internal/querycorpus/stats_decode_test.go": [
       "architecture-syntax-package-layering"
@@ -4846,6 +4872,9 @@
       "architecture-syntax-package-layering"
     ],
     "internal/translate/linefilter_pattern_loki_test.go": [
+      "semantics/pattern-line-filter"
+    ],
+    "internal/translate/linefilter_pattern_recorded_test.go": [
       "semantics/pattern-line-filter",
       "semantics/pattern-line-filter-anchoring"
     ],
@@ -4941,9 +4970,6 @@
     "internal/translator/parsed_key_variants_test.go": [
       "profiles/sanitized-json-key-filter",
       "profiles/sanitized-json-key-grouping"
-    ],
-    "internal/translator/pattern_line_filter_anchoring_test.go": [
-      "semantics/pattern-line-filter-anchoring"
     ],
     "internal/translator/pattern_line_filter_test.go": [
       "semantics/pattern-line-filter"
@@ -5784,7 +5810,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 692,
+  "tests_with_markers": 696,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

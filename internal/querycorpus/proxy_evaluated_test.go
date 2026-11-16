@@ -197,8 +197,12 @@ func checkBinaryRoute(q string, prof planProfile, got physical.Binary) string {
 			return fmt.Sprintf("%s: %q: operand %d:\n lowered text %s\n   proxy text %s", prof.name, q, i, physical.Encode(x), operands[i])
 		}
 	}
+	// The translator's text for the whole query is not the route's reading, unless it decodes to the route's operators
+	// (a sum `without ()` against a number: the route sends the operand alone, which the translator happens to write).
 	if legacy, ok := prof.translate(q); ok && physical.Encode(got) == legacy {
-		return fmt.Sprintf("%s: %q: lowered to the translator's text for the whole query, which the route does not read", prof.name, q)
+		if lw, err := translator.DecodePhysical(legacy); err != nil || !physical.Equal(lw, want) {
+			return fmt.Sprintf("%s: %q: lowered to the translator's text for the whole query, which the route does not read", prof.name, q)
+		}
 	}
 	return ""
 }
