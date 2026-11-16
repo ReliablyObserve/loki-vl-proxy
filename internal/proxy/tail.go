@@ -705,7 +705,7 @@ func (p *Proxy) writeTailControl(conn tailConn, messageType int, data []byte) er
 
 // tailPipeline turns the VictoriaLogs rows of a tail query into Loki tail
 // frames. Loki's tail runs the query's whole pipeline on every entry (the
-// ingester's tailer), so the rows go
+// ingester's tailer, pkg/ingester/tailer.go processStream), so the rows go
 // through the conversion of a query_range response (vlReaderToLokiStreams)
 // and the proxy-side stages a query_range response gets: the label filters
 // VictoriaLogs cannot evaluate like Loki (lineFieldExposure), line_format,
@@ -731,7 +731,7 @@ type tailPipeline struct {
 }
 
 // maxTailFrameEntries is the most entries one tail frame holds, as Loki's
-// querier batches them.
+// querier batches them (pkg/querier/tail/tail.go maxEntriesPerTailResponse).
 const maxTailFrameEntries = 100
 
 // tailScanBufferInitial is the first size of a tail row scanner's buffer;

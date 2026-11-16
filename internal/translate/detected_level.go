@@ -949,7 +949,8 @@ const (
 )
 
 // BuildDetectedLevelFilter plans `| detected_level <op> "<value>"`: the rows
-// whose ingest-time value (Loki v3.7.9: the stream labels, then structured metadata, then the OTLP
+// whose ingest-time value (Loki v3.7.9 pkg/distributor/field_detection.go
+// extractLogLevel: the stream labels, then structured metadata, then the OTLP
 // severity_number, then the line's JSON or logfmt level key, then its first
 // bounded keyword, else unknown) the matcher accepts. Every row has a non-empty
 // value, so `=""` matches no row and `!=""` every row.

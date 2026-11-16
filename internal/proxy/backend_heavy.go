@@ -56,7 +56,7 @@ const (
 
 // lokiTooManyOutstandingRequests is the message Loki's query frontend and
 // scheduler return with HTTP 429 when their queue is full
-// (registry limits/admission-limits-answer-queue-full).
+// (pkg/queue/queue.go ErrTooManyRequests).
 const lokiTooManyOutstandingRequests = "too many outstanding requests"
 
 // heavyQueryQueueFullError reports that a heavy backend call waited in the

@@ -59,7 +59,7 @@ func (p *Proxy) precheckRawMetricRows(ctx context.Context, baseQuery string, fet
 
 // rowLimitError is a metric evaluation that passed -manual-range-metric-row-limit.
 // The error layer answers it as Loki answers a query over one of its own limits
-// (recorded answers: internal/lokierr/testdata/loki_error_answers.jsonl): 400.
+// (logqlmodel.ErrLimit, pkg/util/server/error.go ClientHTTPStatusAndError): 400.
 // Loki has no equivalent flag, so the text names the proxy's own.
 type rowLimitError struct {
 	limit   int
@@ -95,7 +95,7 @@ func isRowLimitError(err error) bool {
 const seriesLimitMessagePrefix = "maximum number of series ("
 
 // seriesLimitError is the cause of Loki's answer to a metric query over its
-// series limit (HTTP 400), word for word:
+// series limit (logqlmodel.NewSeriesLimitError, HTTP 400), word for word:
 // Grafana shows the message to the user, so it stays Loki's. It is the typed
 // error's cause (newSeriesLimitError builds it), which tells the series
 // limit apart for the callers that degrade on it; the proxy's limit is set by
@@ -149,8 +149,7 @@ func isSeriesLimitError(err error) bool {
 
 // seriesLimitScope records how a request answers a metric result over the series
 // limit. Loki gives Grafana Logs Drilldown the first series with a warning
-// (registry limits/drilldown-partial-with-warning) and every other client an
-// error (registry limits/series-limit-error).
+// (pkg/logql/engine.go JoinSampleVector) and every other client an error.
 type seriesLimitScope struct {
 	drilldown  bool
 	foldBudget int          // the raw-row budget a request that folds its series afterwards reads under, unless the tenant's limit is lower; 0 = none
@@ -171,7 +170,7 @@ type outerFoldedSeriesKey struct{}
 
 // withFoldedSeries marks a request whose stats answer feeds aggregations
 // written around it: Loki counts max_query_series on the answer of the whole
-// query (registry limits/series-limit-error), so the handler of the outer
+// query (pkg/logql/engine.go JoinSampleVector), so the handler of the outer
 // layers applies the limit and the answer of the layer below is not capped.
 func withFoldedSeries(r *http.Request) *http.Request {
 	return r.Clone(context.WithValue(r.Context(), outerFoldedSeriesKey{}, true))

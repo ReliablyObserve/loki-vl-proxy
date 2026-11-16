@@ -30,8 +30,8 @@ import (
 // a dashboard refresh, the oldest ones when a window moves back. Loki's
 // results cache does the same with its query_range answers (split by
 // -querier.split-queries-by-interval, extents per split, nothing newer than
-// max_cache_freshness_per_query; defaults in Loki's configuration reference,
-// https://grafana.com/docs/loki/latest/configure/).
+// max_cache_freshness_per_query: pkg/storage/chunk/cache/resultscache/cache.go
+// Do, handleHit and filterRecentExtents; defaults in pkg/validation/limits.go).
 //
 // It works below the proxy's own evaluation, on VictoriaLogs' answers, which
 // are made of whole buckets: with a step, VictoriaLogs widens start and end to
@@ -48,7 +48,7 @@ import (
 // the proxy's response cache (memory, the disk tier and the peer fleet when
 // configured) under the tenant's scope, for -query-range-extent-cache-ttl
 // counted from the oldest read the entry holds (Loki keeps results cache
-// entries for its default validity, 1h: the same reference). A query whose buckets depend on
+// entries for its default validity, 1h: pkg/storage/chunk/cache/cache.go:50). A query whose buckets depend on
 // more than their own rows (a subquery, a relative time filter, time_add,
 // running or total stats) and an answer the cache cannot read back exactly go
 // to VictoriaLogs as before. An unwrap checked for conversion errors is cached
@@ -67,7 +67,7 @@ const statsQueryRangePath = "/select/logsql/stats_query_range"
 
 const (
 	// statsExtentSplit is the time one cache entry covers at most, Loki's
-	// default split_queries_by_interval (1h, Loki's configuration reference).
+	// default split_queries_by_interval (pkg/validation/limits.go).
 	statsExtentSplit = time.Hour
 	// statsExtentMinChunkBuckets keeps coarse steps from spreading a range
 	// over many small entries.

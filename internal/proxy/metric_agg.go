@@ -48,8 +48,8 @@ func unwrapEmptySumWithout(query string) (logqlpkg.Expr, int) {
 
 // evaluateConstantInstantQuery answers an instant query of constants, which has
 // no data behind it. vector(n), and a binary operation of two of them, is a
-// vector of one sample with no labels; a
-// literal, or a binary operation of literals, is a scalar, whose
+// vector of one sample with no labels (Loki pkg/logql/engine.go evalVector); a
+// literal, or a binary operation of literals, is a scalar (evalLiteral), whose
 // sample time is integer milliseconds (see constantInstantMillis).
 func evaluateConstantInstantQuery(expr, timeParam string) ([]byte, bool) {
 	parsed, err := parseLogQLExpr(noFlowCtx, strings.TrimSpace(expr))
@@ -74,15 +74,17 @@ func evaluateConstantInstantQuery(expr, timeParam string) ([]byte, bool) {
 }
 
 // constantInstantSeconds is the evaluation time as a vector sample time: seconds
-// with millisecond precision, not the nanoseconds the request carries.
+// with millisecond precision (Loki pkg/querier/queryrange/prometheus.go
+// marshalVector, model.Time(ms)), not the nanoseconds the request carries.
 func constantInstantSeconds(timeParam string) float64 {
 	return float64(constantInstantMillis(timeParam)) / 1e3
 }
 
 // constantInstantMillis is the evaluation time as a scalar sample time. Loki
-// answers it as integer milliseconds, not seconds: the millisecond timestamp of
-// the scalar goes to model.TimeFromUnix, which reads seconds, so
-// model.Time.String prints the millisecond count.
+// answers it as integer milliseconds, not seconds: marshalScalar
+// (pkg/querier/queryrange/prometheus.go) hands the millisecond timestamp of
+// promql.Scalar.T (pkg/logql/engine.go evalLiteral) to model.TimeFromUnix,
+// which reads seconds, so model.Time.String prints the millisecond count.
 func constantInstantMillis(timeParam string) int64 {
 	return parseInstantVectorTime(timeParam) / int64(time.Millisecond)
 }
@@ -143,7 +145,7 @@ type instantMetricPostAgg struct {
 
 // parseStddevStdvarQuery recognises stddev and stdvar over a vector with a
 // `by`/`without` clause in either position, which Loki folds across the series
-// of each group. The operand
+// of each group (pkg/logql/evaluator.go VectorAggEvaluator.Next). The operand
 // is sliced from the query as written, the way the translator reads it.
 func parseStddevStdvarQuery(logql string) (instantMetricPostAgg, bool) {
 	expr, err := parseLogQLExpr(noFlowCtx, logql)
@@ -164,8 +166,8 @@ func parseStddevStdvarQuery(logql string) (instantMetricPostAgg, bool) {
 }
 
 // foldedGroupsKey marks a stddev or stdvar whose operand's series are folded
-// into groups by the proxy: Loki counts max_query_series on that answer,
-// so the operand's own answer is bounded by
+// into groups by the proxy: Loki counts max_query_series on that answer
+// (pkg/logql/engine.go), so the operand's own answer is bounded by
 // foldedGroupsSeriesCeiling instead and the limit applies to the groups.
 type foldedGroupsKey struct{}
 
@@ -309,10 +311,11 @@ func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 }
 
 // parseTopKPostAgg splits topk and bottomk in every spelling Loki's grammar
-// accepts: `topk(k, expr)`, `topk (k,
+// accepts (pkg/logql/syntax/syntax.y:182-184): `topk(k, expr)`, `topk (k,
 // expr)`, `topk by (l) (k, expr)`, `topk without (l) (k, expr)` and
 // `topk(k, expr) by (l)`. The by()/without() clause ranks k series per group
-// of its labels (Loki keeps one heap per grouping key). The inner expression is the source text, not a
+// of its labels (pkg/logql/evaluator.go VectorAggEvaluator.Next keeps one heap
+// per grouping key). The inner expression is the source text, not a
 // reserialised AST.
 func parseTopKPostAgg(logql string) (instantMetricPostAgg, bool) {
 	for _, name := range []string{"topk", "bottomk"} {
@@ -342,7 +345,7 @@ func aggregationArgs(logql, name string) (string, bool) { return logqlpkg.Aggreg
 // ranking layer (topk, bottomk, sort or sort_desc) sits under other vector
 // aggregations: `sum(topk(3, x))`, `max by (app) (bottomk(2, x))`,
 // `topk(2, topk(3, x))`, `topk(3, sort(x))`. Loki evaluates each layer on the
-// vector of one step, so the
+// vector of one step (pkg/logql/evaluator.go VectorAggEvaluator.Next), so the
 // ranking layer is the post-aggregation the proxy runs on VictoriaLogs' series
 // and the layers above it fold what survived. A query with the ranking layer
 // outermost, or without one, keeps its own route.
@@ -416,9 +419,9 @@ func closingParen(s string, open int) int { return logqlpkg.ClosingParen(s, open
 
 // topKCompare orders two sample values for topk, bottomk, sort and sort_desc:
 // negative when a ranks before b, positive after, zero when they tie. NaN ranks
-// last in both directions, as in Loki's heaps (a NaN is the lowest of both the
-// ascending and the descending heap, and a full heap lets any number displace
-// a NaN root), so it never blocks a number.
+// last in both directions, as in Loki's heaps (pkg/logql/vector.go: a NaN is
+// the lowest of vectorByValueHeap and of vectorByReverseValueHeap, and a full
+// heap lets any number displace a NaN root), so it never blocks a number.
 func topKCompare(a, b float64, descending bool) int {
 	switch aNaN, bNaN := math.IsNaN(a), math.IsNaN(b); {
 	case aNaN && bNaN, a == b:
@@ -749,7 +752,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 	// Loki ranks the samples a label_replace leaves apart (two series that end
 	// with one label set stay two samples) and files the survivors under one
-	// series afterwards: without a grouping
+	// series afterwards (pkg/logql/engine.go JoinSampleVector): without a grouping
 	// topk and bottomk rank first, then the transform runs on what they kept.
 	rankFirst := (postAgg.name == "topk" || postAgg.name == "bottomk") && postAgg.group == nil
 	if sc.code < http.StatusBadRequest && !rankFirst {
@@ -840,7 +843,7 @@ func applyMatrixPostAggregation(body []byte, postAgg instantMetricPostAgg) []byt
 // applyOuterPostAggregation applies the aggregations written around the
 // ranking layer to its answer, layer by layer from the innermost, and limits
 // the series of the final answer: Loki counts max_query_series on the result of
-// the whole query (registry limits/series-limit-error), not on the vector a
+// the whole query (pkg/logql/engine.go JoinSampleVector), not on the vector a
 // layer below hands up. It writes the error and reports false when the limit
 // is exceeded.
 func (p *Proxy) applyOuterPostAggregation(w http.ResponseWriter, r *http.Request, endpoint string, start time.Time, body []byte, outer *instantMetricPostAgg, matrix bool) ([]byte, bool) {
@@ -902,7 +905,8 @@ func foldExcludeLabels(body []byte, g *logqlpkg.Grouping) []string {
 	return drop
 }
 
-// stddevAccumulator folds the values of one group the way Loki does: seeded with the first
+// stddevAccumulator folds the values of one group the way Loki's
+// VectorAggEvaluator does (pkg/logql/evaluator.go): seeded with the first
 // value, then Welford's update; the population variance is m2/n, the standard
 // deviation its square root, 0 for a group of one value.
 type stddevAccumulator struct{ mean, m2, n float64 }
@@ -927,7 +931,7 @@ func (a *stddevAccumulator) result(funcName string) float64 {
 
 // stddevGroupLabels returns the labels of the group a series falls into: `by`
 // keeps the listed labels the series has, `without` drops them, no grouping
-// keeps none (__name__ is never kept).
+// keeps none (__name__ is never kept, as in VectorAggEvaluator).
 func stddevGroupLabels(metric map[string]string, g *logqlpkg.Grouping) map[string]string {
 	out := map[string]string{}
 	if g == nil {

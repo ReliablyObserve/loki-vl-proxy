@@ -276,7 +276,7 @@ func timeBoundsWindow(endpoint string, r *http.Request, now time.Time) (start, e
 		}
 		return ns, ns, true, ""
 	}
-	// Loki reads end before start (registry semantics/request-time-bounds).
+	// Loki reads end before start (pkg/loghttp/params.go determineBounds).
 	end, endState, text := read("end")
 	switch endState {
 	case boundAbsent:

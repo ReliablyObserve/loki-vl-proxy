@@ -9,7 +9,7 @@ import (
 )
 
 // LabelFilterExpr is a parsed label filter stage (`| status>=500, (a="1" or
-// b="2")`), the grammar of Loki's labelFilter rule:
+// b="2")`), the grammar of Loki's labelFilter rule in pkg/logql/syntax/syntax.y:
 //
 //	labelFilter: matcher | ipLabelFilter | unitFilter | numberFilter
 //	           | '(' labelFilter ')'

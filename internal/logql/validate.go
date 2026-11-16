@@ -117,7 +117,8 @@ func formatParseError(err error, raw string) string {
 	}
 }
 
-// Loki's metadata-endpoint rejections (a selector that cannot be parsed).
+// Loki's metadata-endpoint rejections (logqlmodel.ErrParseMatchers and
+// syntax.ParseLogSelector).
 const (
 	errOnlyLabelMatchers = "only label matchers are supported"
 	errOnlyLogSelector   = "only log selector is supported"

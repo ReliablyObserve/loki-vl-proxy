@@ -10,7 +10,7 @@ import (
 )
 
 // patternFormat is how a line is tokenized for the patterns miner, by the format Loki's pattern ingester gives
-// it: a JSON object, a logfmt line, or any other line.
+// it (pkg/pattern/drain DetectLogFormat): a JSON object, a logfmt line, or any other line.
 type patternFormat uint8
 
 const (

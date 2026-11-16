@@ -11,7 +11,7 @@ import (
 )
 
 // IPPattern is the address set of a Loki ip("...") pattern, read the way
-// Loki reads it: a single address
+// Loki reads it (pkg/logql/log/ip.go:240-261 getMatcher): a single address
 // (netip.ParseAddr), then a CIDR (netip.ParsePrefix), then a range of two
 // addresses of one family joined by a hyphen (go4.org/netipx ParseIPRange).
 type IPPattern struct {
@@ -204,9 +204,9 @@ var (
 )
 
 // IPLabelFilter translates Loki's `label = ip("pattern")` (negate: `!=`)
-// label filter (registry semantics/ip-label-filter-missing-label). Loki
+// label filter (pkg/logql/log/ip.go:123-145 IPLabelFilter.filterTy). Loki
 // drops a line whose label is absent under both operators; otherwise `=`
-// keeps it when an address it scans out of the value is in
+// keeps it when an address it scans out of the value (ip.go:183-226) is in
 // the pattern and `!=` when none is. The scan starts an address at a digit
 // followed by a dot within three characters, or at the start of an IPv6
 // group, reads the longest run of address characters and parses it with
@@ -288,7 +288,7 @@ func buildIPLabelFilter(field, pattern string, negate bool) (logsql.FilterExpr, 
 	ranged := ipRangeFilter(field, p.Lo, p.Hi)
 	// Loki reads an IPv6 value whole only where its scan starts one at the
 	// first character: an IPv6 group or "::" and a hex digit there, and at
-	// least five characters in the value.
+	// least five characters in the value (ip.go:216-223 ipv6Hint).
 	inPattern := logsql.Group{Expr: logsql.AllOf{ranged, re(`^.{5,}`), re(`^(::[0-9a-fA-F]|[0-9a-fA-F]{1,4}:)`), logsql.Exclude{Expr: ipv4Text}}}
 	if p.Lo.Is4() {
 		inPattern = logsql.Group{Expr: logsql.AllOf{ranged, ipv4Text, logsql.Exclude{Expr: re(`(^|\.)0[0-9]`)}}}

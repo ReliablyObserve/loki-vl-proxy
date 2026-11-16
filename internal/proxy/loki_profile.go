@@ -270,8 +270,8 @@ func (p *Proxy) labelLimitParam(r *http.Request) string {
 // lineFieldExposure is what a log query's pipeline exposes, as Loki labels,
 // of the fields VictoriaLogs unpacked from a JSON log line at ingest. Loki has
 // no labels from the line until a stage adds them, and each stage adds only
-// its own (the json, logfmt, regexp, pattern and unpack parsers and
-// label_format; line_format adds none):
+// its own (pkg/logql/log: JSONParser, LogfmtParser, RegexpParser,
+// PatternParser, UnpackParser, LabelsFormatter; LineFormatter adds none):
 //   - | json and | logfmt without an extraction list: every key that parser
 //     reads from the line (a logfmt parse of a JSON line reads none);
 //   - | json a, b="x.y" and | logfmt a, b: only the named labels;
@@ -304,7 +304,7 @@ type lineFieldExposure struct {
 	filters []lineFieldFilter
 	// kept is the label list of the | keep stages after the last parser
 	// (their intersection): every other label the parser added is gone from
-	// the entry (registry semantics/keep-leaves-labels-loki-drops), a name_extracted
+	// the entry (Loki pkg/logql/log/keep_labels.go:15-45), a name_extracted
 	// label included unless the stages name it. A later label_format adds
 	// only its own target.
 	kept map[string]bool
@@ -333,7 +333,7 @@ type lineFieldFilter struct {
 	name string
 	// matchesEmpty is the filter's result on a label the entry does not have:
 	// Loki evaluates a string matcher on "" and fails a numeric, duration or
-	// bytes comparison.
+	// bytes comparison (pkg/logql/log/label_filter.go).
 	matchesEmpty bool
 	before       lineFieldExposure
 }
@@ -520,7 +520,7 @@ func labelFilterConditions(expr *logqlpkg.LabelFilterExpr, before lineFieldExpos
 			}
 		case logqlpkg.LabelFilterValueIP:
 			// An ip() filter drops a line without the label under = and !=
-			// (registry semantics/ip-label-filter-missing-label).
+			// (pkg/logql/log/ip.go:128-131).
 			if ipLabelFilterRE.MatchString(expr.Leaf) {
 				return []lineFieldFilter{{name: expr.Name, before: before}}
 			}
@@ -633,8 +633,8 @@ func (e *lineFieldExposure) fieldCategory(key string, lineKeys map[string]bool, 
 }
 
 // extractedSuffix is what Loki appends to the name of a parsed label or
-// structured metadata key that shares its name with a stream label (registry
-// semantics/extracted-suffix-collision): the stream label keeps its value
+// structured metadata key that shares its name with a stream label
+// (pkg/logql/log/parser.go duplicateSuffix): the stream label keeps its value
 // and the entry label is exposed as name_extracted.
 const extractedSuffix = "_extracted"
 

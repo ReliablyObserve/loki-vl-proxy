@@ -90,7 +90,7 @@ func lastOrGroup(alts []LineFilterAlt) []LineFilterAlt {
 }
 
 // parseLineFilterAlt parses a line filter operand, what follows the operator
-// or `or`: a string or ip("..."). The ip pattern is not
+// or `or` (syntax.y orFilter): a string or ip("..."). The ip pattern is not
 // validated here.
 func (p *parser) parseLineFilterAlt() (LineFilterAlt, error) {
 	switch {

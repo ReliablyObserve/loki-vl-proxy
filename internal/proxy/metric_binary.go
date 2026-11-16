@@ -85,7 +85,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, sta
 		if rng > 0 && rng < origSpec.Window {
 			// sum, avg, max, min, stddev and stdvar over time with unwrap and a
 			// range shorter than the step: the bucket (t-step, t] keeps only the
-			// lines of Loki's window (t-range, t] (registry semantics/stddev-stdvar-over-time-range-window),
+			// lines of Loki's window (t-range, t] (pkg/logql/range_vector.go:102-189),
 			// and a step whose window holds none has no sample.
 			query = withWindowPhaseFilter(r.Context(), query, time.Unix(0, origStartNs), origSpec.Window, rng)
 		}
@@ -236,7 +236,7 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	case err == nil:
 	case errors.As(err, &upstream):
 		// Grafana-sourced traffic gets the same partial-results carve-out
-		// Loki applies to a Logs Drilldown request (registry limits/drilldown-partial-with-warning).
+		// Loki applies (IsLogsDrilldownRequest in pkg/querier/queryrange/limits.go).
 		// Non-Grafana clients (curl, scripts, /ready probes) still see the
 		// upstream status so they can react meaningfully.
 		if isGrafanaSourcedRequest(r) {
@@ -2497,7 +2497,8 @@ func metricKey(metric map[string]interface{}) string {
 
 // applyTopKToMatrix ranks independently at each evaluation timestamp, as
 // Loki/PromQL range queries require, keeping the k best samples of every group
-// (Loki keeps one heap per grouping key and step). Winners can change, so the result may contain more than k
+// (pkg/logql/evaluator.go VectorAggEvaluator.Next keeps one heap per grouping
+// key and step). Winners can change, so the result may contain more than k
 // series, with only their winning samples retained. NaN ranks last for topk and
 // bottomk alike. Loki breaks ties by the order of an unordered map, so any
 // order is conformant; label order keeps the answer stable.

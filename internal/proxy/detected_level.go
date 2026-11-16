@@ -715,8 +715,8 @@ func levelFromLogfmtBody(line []byte) string {
 	return res
 }
 
-// logfmtLevelDecoder is a logfmt key/value decoder that follows Loki's, reduced
-// to what level detection reads. For quoted values with escapes value
+// logfmtLevelDecoder is Loki's logfmt key/value decoder (pkg/logql/log/logfmt)
+// reduced to what level detection reads. For quoted values with escapes value
 // holds the quoted text and hasEsc is set; the caller unquotes it.
 type logfmtLevelDecoder struct {
 	line   []byte

@@ -1966,7 +1966,7 @@ func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate
 // block on every row once it is not the first pipe (pipe_field_names.go). On a
 // JSON or plain-text line each word then shows up as a field name with full
 // hits. Loki's logfmt parser drops a key without a value and rejects a key
-// holding a quote, so
+// holding a quote (pkg/logql/log/parser.go:423, logfmt/decode.go:78-81), so
 // none of those names is a Loki field. The scan of the sampled lines still runs
 // the query unchanged and finds the keys a logfmt line really holds; the
 // field_names lookup only needs VictoriaLogs' stored fields. A restricted

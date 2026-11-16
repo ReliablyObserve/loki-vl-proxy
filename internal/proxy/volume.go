@@ -17,7 +17,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// Loki volume semantics (v3.7):
+// Loki volume semantics (pkg/storage/stores/index/seriesvolume, v3.7):
 //   - volume is the number of bytes of the matching log lines, not a line count;
 //   - limit defaults to 100 and keeps the largest volumes of each bucket,
 //     ties broken by name;

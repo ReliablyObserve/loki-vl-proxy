@@ -19,7 +19,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// patternCountsMinStep is the resolution Loki keeps pattern samples at (registry drilldown/patterns-counts-tier-step-buckets): a
+// patternCountsMinStep is the resolution Loki keeps pattern samples at (pkg/pattern/drain TimeResolution): a
 // smaller step is answered at it.
 const patternCountsMinStep = 10 * time.Second
 

@@ -11,17 +11,17 @@ import (
 )
 
 // Stage validation mirrors the checks Loki runs when it builds a query
-// pipeline (v3.7). Loki answers every one
+// pipeline (pkg/logql/log and pkg/logql/syntax, v3.7). Loki answers every one
 // of these failures with HTTP 400, so the proxy rejects the same queries before
 // they reach VictoriaLogs instead of returning a 200 that silently ignores the
 // broken stage.
 
-// lokiErrorLabel is Loki's error label.
+// lokiErrorLabel is logqlmodel.ErrorLabel.
 const lokiErrorLabel = "__error__"
 
 // lokiTemplateFunctions lists every function name Loki registers for
 // line_format and label_format templates: functionMap, the sprig subset in
-// templateFunctions, and __line__/__timestamp__.
+// templateFunctions, and __line__/__timestamp__ (pkg/logql/log/fmt.go).
 // text/template only needs the names to parse, so each maps to a stub.
 var lokiTemplateFunctions = func() template.FuncMap {
 	names := []string{
@@ -56,7 +56,7 @@ func validateTemplate(name, tmpl string) error {
 	return err
 }
 
-// stageError renders Loki's stage error.
+// stageError mirrors logqlmodel.NewStageError.
 func stageError(stage string, err error) string {
 	return newParseError(0, 0, fmt.Sprintf("stage '%s' : %s", stage, err)).Msg
 }

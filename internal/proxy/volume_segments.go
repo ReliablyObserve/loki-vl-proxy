@@ -27,14 +27,15 @@ import (
 // since v1.36.0, so [a, b) and [b, c) never count a row twice), and the Loki
 // name of a stats row (volumeNamesForRow) depends on the row alone. Loki sums
 // its own time splits the same way and applies the limit once to the merged
-// volumes (registry quality/index-volume-settled-segments). So the volume of a window is computed from the rows of
+// volumes (pkg/storage/stores/index/seriesvolume/volume.go:57-98, Merge and
+// MapToVolumeResponse). So the volume of a window is computed from the rows of
 // any partition of it, summed per row, then named, limited and ordered by the
 // unchanged volumeResult.
 //
 // The window is split like the metadata inventory (planInventorySegments):
 // UTC-aligned day, hour, 5-minute and minute segments, plus edges. A segment
 // that ended before now minus -max-stats-cache-freshness (Loki's
-// max_stats_cache_freshness, registry quality/stats-volume-freshness) is
+// max_stats_cache_freshness, pkg/querier/queryrange/volume_cache.go:85-96) is
 // sealed: its rows are kept in the shared read cache (memory, disk and the
 // owner peer). The edges, which include everything newer than the freshness
 // window, are read from VictoriaLogs on every request. A Logs Drilldown refresh
@@ -57,7 +58,7 @@ const (
 	// volumeSegmentKeyVersion versions the segment cache keys.
 	volumeSegmentKeyVersion = "vlvolseg-v1"
 	// DefaultMaxStatsCacheFreshness is Loki's max_stats_cache_freshness
-	// default (https://grafana.com/docs/loki/latest/configure/).
+	// default (pkg/validation/limits.go:413 in v3.7.9).
 	DefaultMaxStatsCacheFreshness = 10 * time.Minute
 )
 

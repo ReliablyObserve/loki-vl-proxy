@@ -2559,8 +2559,8 @@ func exceedsLokiRangeResolution(r *http.Request, now time.Time) bool {
 }
 
 // lokiRangeBounds is the window Loki reads a range request for
-// (registry semantics/request-time-bounds): end defaults to now, start to
-// min(end, now) minus since, and since to one hour; start and
+// (pkg/loghttp/params.go:83-120 determineBounds): end defaults to now, start to
+// min(end, now) minus since, and since to one hour (params.go:23); start and
 // end are decoded as Loki decodes them (lokiBoundUnixNano). ok is false when a
 // given start, end or since does not parse.
 func lokiRangeBounds(r *http.Request, now time.Time) (start, end time.Time, ok bool) {
@@ -3063,7 +3063,7 @@ func (p *Proxy) detectedLevelCacheKey() string {
 }
 
 // lokiInstantLogQueryError is Loki's rejection of a log query sent to the
-// instant query endpoint.
+// instant query endpoint (pkg/logqlmodel/error.go ErrUnsupportedSyntaxForInstantQuery).
 const lokiInstantLogQueryError = "log queries are not supported as an instant query type, please change your query to a range query type"
 
 // handleQuery translates Loki instant queries.

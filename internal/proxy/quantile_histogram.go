@@ -21,7 +21,8 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// quantile_over_time (Loki v3.7.7; registry semantics/quantile-over-time-out-of-range) sorts every sample of the window (t-range, t]
+// quantile_over_time (Loki v3.7.7 pkg/logql/range_vector.go:449-487,
+// quantileOverTime and Quantile) sorts every sample of the window (t-range, t]
 // and interpolates linearly at rank phi*(n-1). VictoriaLogs' quantile stats
 // function is not that: it answers the value at rank int(phi*n) without
 // interpolation, keeps a random sample above 10,000 values per shard
@@ -292,7 +293,7 @@ func quantileWindow(phi float64, samples []quantileSample, windowStart, windowEn
 	return quantileOfCounts(phi, window), true
 }
 
-// quantileOfCounts is Loki's quantile over
+// quantileOfCounts is Loki's Quantile (pkg/logql/range_vector.go:465-487) over
 // the values in counts, each held count times; counts is reordered. NaN for no
 // values, -Inf for phi < 0 and +Inf for phi > 1; otherwise the sorted values
 // are interpolated at rank phi*(n-1), with Loki's arithmetic.
@@ -310,7 +311,7 @@ func quantileOfCounts(phi float64, counts []quantileSample) float64 {
 	if phi > 1 {
 		return math.Inf(+1)
 	}
-	// Loki's order: NaN first.
+	// Loki's order (pkg/logql/vector/heap.go HeapByMaxValue.Less): NaN first.
 	sort.Slice(counts, func(i, j int) bool {
 		return math.IsNaN(counts[i].value) && !math.IsNaN(counts[j].value) || counts[i].value < counts[j].value
 	})
@@ -495,10 +496,11 @@ func readsQuantileCounts(manualFunc string, spec statsCompatSpec) bool {
 
 // Series and groups (Loki v3.7.7). A range aggregation's own grouping,
 // `quantile_over_time(...) by (x)`, groups the samples before the quantile
-// (registry semantics/unwrap-quantile-sum-by-group-quantile): one quantile over every sample of the
+// (pkg/logql/syntax/extractor.go:21-60): one quantile over every sample of the
 // group. Without it the quantile is taken per series, and a vector aggregation
 // over it, `sum by (x) (quantile_over_time(...))`, folds those per-series values
-// per step (a quantile's grouping is never handed to the extractor). The
+// per step (pkg/logql/evaluator.go newVectorAggEvaluator; a quantile's grouping
+// is never handed to the extractor, syntax/ast.go canInjectVectorGrouping). The
 // translation groups both forms alike, so the quantile route reads the query's
 // shape itself: the series are the streams, and the vector aggregation folds
 // the evaluated windows (quantileOuter).

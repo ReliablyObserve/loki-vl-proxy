@@ -10,7 +10,8 @@ import (
 
 // binaryAggregationChain returns the sum, avg, min, max and count aggregations
 // over a binary expression, innermost first, and that expression. Loki
-// evaluates the binary per series and aggregates its answer per step; a binary of two
+// evaluates the binary per series (pkg/logql/evaluator.go newBinOpStepEvaluator)
+// and aggregates its answer per step (VectorAggEvaluator.Next); a binary of two
 // literals is a literal, which no aggregation here takes.
 func binaryAggregationChain(expr logqlpkg.Expr) ([]*logqlpkg.VectorAggregation, *logqlpkg.BinOpExpr, bool) {
 	var chain []*logqlpkg.VectorAggregation
@@ -136,8 +137,8 @@ func sumRateCountRatio(chain []*logqlpkg.VectorAggregation, binary *logqlpkg.Bin
 
 // foldBinaryAggregation applies one aggregation to a matrix or vector body:
 // series that share the labels the grouping keeps become one, valued by the
-// operator (`by` keeps the listed labels, `without` drops them, no
-// grouping keeps none).
+// operator (VectorAggEvaluator.Next: `by` keeps the listed labels, `without`
+// drops them, no grouping keeps none).
 func foldBinaryAggregation(body []byte, agg *logqlpkg.VectorAggregation) []byte {
 	op := string(agg.Op)
 	if agg.Grouping != nil && agg.Grouping.Without {
