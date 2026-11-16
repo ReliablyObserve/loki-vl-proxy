@@ -1228,6 +1228,11 @@
       "internal/proxy/detected_level_presence_test.go",
       "internal/proxy/ordered_json_detected_level_test.go"
     ],
+    "semantics/detected-level-stream-stats-without-level": [
+      "internal/logsql/stream_group_test.go",
+      "internal/proxy/detected_level_levelless_oracle_test.go",
+      "internal/proxy/detected_level_levelless_test.go"
+    ],
     "semantics/drop-before-unwrap-stream-label": [
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go"
     ],
@@ -2331,6 +2336,7 @@
     "severity-detected-level-derivation": [
       "internal/proxy/detected_level_filter_test.go",
       "internal/proxy/detected_level_keys_gate_test.go",
+      "internal/proxy/detected_level_levelless_oracle_test.go",
       "internal/proxy/detected_level_one_value_test.go",
       "internal/proxy/detected_level_stream_series_test.go",
       "internal/proxy/detected_level_sweep_test.go",
@@ -2529,7 +2535,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 601,
+  "registry_items": 602,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2736,6 +2742,9 @@
     ],
     "internal/logsql/reserved_fields_test.go": [
       "semantics/translator-writes-reserved-field-names"
+    ],
+    "internal/logsql/stream_group_test.go": [
+      "semantics/detected-level-stream-stats-without-level"
     ],
     "internal/lokierr/lokierr_test.go": [
       "architecture-syntax-package-layering",
@@ -2976,6 +2985,13 @@
     ],
     "internal/proxy/detected_level_label_probes_test.go": [
       "semantics/json-metric-detected-level-derivation"
+    ],
+    "internal/proxy/detected_level_levelless_oracle_test.go": [
+      "semantics/detected-level-stream-stats-without-level",
+      "severity-detected-level-derivation"
+    ],
+    "internal/proxy/detected_level_levelless_test.go": [
+      "semantics/detected-level-stream-stats-without-level"
     ],
     "internal/proxy/detected_level_long_selector_test.go": [
       "semantics/json-metric-detected-level-derivation"
@@ -5614,7 +5630,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 664,
+  "tests_with_markers": 667,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5664,7 +5680,6 @@
     "quality/stats-volume-freshness",
     "semantics/binary-step-grid",
     "semantics/detected-fields-extracted-suffix",
-    "semantics/detected-level-stream-stats-without-level",
     "semantics/drop-keep-plain-name-after-parser",
     "semantics/eager-pipeline-validation",
     "semantics/extracted-derived-labels-raw-evaluator",
@@ -5701,6 +5716,7 @@
     "semantics/unwrap-conversion-error-parser-divergence",
     "semantics/unwrap-conversion-error-undetected-shapes",
     "semantics/unwrap-count-avg-without-after-parser",
+    "semantics/unwrap-json-extraction-list-parser-error",
     "semantics/unwrap-over-time-short-range-windows",
     "semantics/unwrap-parserless-reads-stored-field",
     "semantics/unwrap-per-series-identity-label-filter",
@@ -5716,5 +5732,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 387
+  "wired_items": 388
 }
