@@ -150,7 +150,7 @@ const streamLevelSeriesResponseVersion = "@stream-level-series-v1:"
 // w for without and unwrap, and the name before each ( for sort, sort_desc and label_replace. The parser reads
 // keywords in any case and any Unicode blank before a parenthesis (TOPK, sum WITHOUT, sort\v(), so the screen does
 // too: it also jumps to K and W and compares the words case-folded, and reads a Kelvin sign as the k of topk and
-// bottomk (the one letter outside ASCII that lower cases into these words).
+// bottomk and U+0130 as the i of without (the letters outside ASCII that lower case into these words).
 func streamLevelSeriesResponseKeyVersion(query string) string {
 	if strings.IndexByte(query, '(') < 0 {
 		return ""
@@ -169,7 +169,7 @@ func streamLevelSeriesResponseKeyVersion(query string) string {
 	}
 	for _, c := range [...]byte{'w', 'W'} {
 		for s, i := query, strings.IndexByte(query, c); i >= 0; i = strings.IndexByte(s, c) {
-			if i+7 <= len(s) && strings.EqualFold(s[i:i+7], "without") || i >= 2 && i+4 <= len(s) && strings.EqualFold(s[i-2:i+4], "unwrap") {
+			if hasFoldPrefix(s[i:], "without") || i >= 2 && i+4 <= len(s) && strings.EqualFold(s[i-2:i+4], "unwrap") {
 				return streamLevelSeriesResponseVersion
 			}
 			s = s[i+1:]

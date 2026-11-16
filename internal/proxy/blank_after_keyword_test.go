@@ -73,21 +73,13 @@ func blankAfterKeywordRequestsLowering(t *testing.T, lowering bool, endpoint, qu
 	return seen, string(canon)
 }
 
-// blankAfterKeywordOpen are the templates whose blank spellings the proxy still answers differently from the spaced
-// spelling: an unwrap with no parser before it is not served from the query plan, and the string translator that reads it
-// looks for `| unwrap ` with a space (semantics/translator-reads-only-space-between-tokens: the same failure as for a
-// quantile_over_time with a tab before unwrap).
-var blankAfterKeywordOpen = map[string]bool{
-	`max_over_time({A="0"} | unwrap` + blankspace.Mark + `A [1m])`: true,
-	`max_over_time({A="0"}| unwrap` + blankspace.Mark + `A [1m])`:  true,
-}
-
 // A tab, a line feed, a carriage return or a run of them where a space stands after a parser keyword, a stage name, an
 // unwrap conversion, a grouping keyword or a binary operator is the same query to Loki (internal/logql
 // TestBlankAfterKeywordMatchesLoki, recorded Loki answers), so the proxy sends VictoriaLogs the same requests and answers
 // the client the same for every spelling, on query_range and query, for a log query and a metric query. The string
 // translator reads only the space and copies the rest into a pipe VictoriaLogs rejects (`| json<CR>A0`: unexpected pipe
-// name "json"); the query plan, which serves these constructs, reads the tree.
+// name "json"), or finds no `| unwrap ` and fails an unwrap with no parser before it with Loki's fixed 500
+// (`max_over_time({A="0"} | unwrap<CR>A [1m])`); the query plan, which serves these constructs, reads the tree.
 //
 // conformance: semantics/translator-reads-only-space-between-tokens
 func TestBlankAfterKeywordRequestsEqualSpaced(t *testing.T) {
@@ -113,15 +105,6 @@ func TestBlankAfterKeywordRequestsEqualSpaced(t *testing.T) {
 				q := strings.ReplaceAll(tpl, blankspace.Mark, blank)
 				gotVL, gotBody := blankAfterKeywordRequests(t, endpoint, q)
 				rows++
-				if blankAfterKeywordOpen[tpl] {
-					// The string translator reads `| unwrap` with a space only and fails the translation where the plan
-					// serves no unwrap without a parser: Loki's 500 for a query it answers, no VictoriaLogs request. The
-					// plan does not serve this construct yet (the case stays open until it does).
-					if blank != " \t " && (len(gotVL) != 0 || !strings.Contains(gotBody, "Internal Server Error")) {
-						t.Errorf("%s %q: %d requests, answer %q: the open difference changed; update semantics/translator-reads-only-space-between-tokens", endpoint, q, len(gotVL), gotBody)
-					}
-					continue
-				}
 				if !racy && !slices.Equal(gotVL, wantVL) {
 					t.Errorf("%s %q differs from %q at %s", endpoint, q, ref, firstDifference(strings.Join(gotVL, "\n"), strings.Join(wantVL, "\n")))
 				}
@@ -213,5 +196,37 @@ func TestBlankAfterKeywordRejectedNeverReachesVictoriaLogs(t *testing.T) {
 	}
 	if rows < 500 {
 		t.Fatalf("%d rows: the grid is too small", rows)
+	}
+}
+
+// An unwrap with a blank the string translator does not read as a space, under every wrapper the proxy evaluates
+// itself or Loki keeps the query through (a ranking, a sort, label_replace, a binary operation, an aggregation, an
+// offset), gets the requests and the answer of the spaced spelling: the proxy translates the operand, which the plan
+// serves (semantics/translator-reads-only-space-between-tokens).
+//
+// conformance: semantics/translator-reads-only-space-between-tokens
+func TestUnwrapBlankUnderWrappersEqualsSpaced(t *testing.T) {
+	prev := log.Writer()
+	log.SetOutput(io.Discard)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	for _, tpl := range []string{
+		`topk(3, sum_over_time({A="0"} | json |¤unwrap¤a [5m]))`, `bottomk(1, max_over_time({A="0"} |¤unwrap¤a [5m]))`,
+		`sort(max_over_time({A="0"} |¤unwrap¤a [5m]))`, `sort_desc(sum by (A) (sum_over_time({A="0"} |¤unwrap¤a [5m])))`,
+		`label_replace(max_over_time({A="0"} |¤unwrap¤a [5m]), "b", "$1", "A", "(.*)")`,
+		`sum(max_over_time({A="0"} |¤unwrap¤a [5m])) / sum(count_over_time({A="0"} [5m]))`,
+		`max_over_time({A="0"} |¤unwrap¤a [5m]) > 1`, `max_over_time({A="0"} |¤unwrap¤a [5m] offset 5m)`,
+		`avg by (A) (avg_over_time({A="0"} | logfmt |¤unwrap¤duration(a) [5m]))`, `rate({A="0"} |¤unwrap¤a [5m])`,
+		`quantile_over_time(0.5, {A="0"} |¤unwrap¤c [5m]) by (d)`,
+	} {
+		for _, endpoint := range []string{"query_range", "query"} {
+			wantVL, wantBody := blankAfterKeywordRequests(t, endpoint, strings.ReplaceAll(tpl, "¤", " "))
+			for _, blank := range []string{"\t", "\r\n", "  "} {
+				q := strings.ReplaceAll(tpl, "¤", blank)
+				gotVL, gotBody := blankAfterKeywordRequests(t, endpoint, q)
+				if !slices.Equal(gotVL, wantVL) || gotBody != wantBody {
+					t.Errorf("%s %q: %d requests, answer %s;\n want the spaced spelling's %d requests, answer %s", endpoint, q, len(gotVL), gotBody, len(wantVL), wantBody)
+				}
+			}
+		}
 	}
 }

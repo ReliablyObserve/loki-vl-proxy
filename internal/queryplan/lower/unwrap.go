@@ -941,6 +941,12 @@ func outerFuncOf(vop logql.VectorOp, field string) logsql.StatsFunc {
 // side) and cutting the text after it at the next `|` or `[`. A query that spells the stage another way (`|unwrap
 // n`), or holds the search text in an earlier quoted string, gives it another label, another conversion or none (a
 // query the translator rejects): the lowering leaves it to the translator.
+//
+// The text is read with each run of the blanks Loki's lexer skips (a space, a tab, a line feed, a carriage return)
+// outside quoted strings written as one space (spacedBlanks): `| unwrap<CR>n` and `|  unwrap n` are the query with
+// `| unwrap n` to Loki and to the plan, and the translator, which finds no `| unwrap ` in them, fails the query
+// with Loki's 500 (semantics/translator-reads-only-space-between-tokens). The plan serves them as it serves the
+// spaced spelling.
 func screenUnwrap(query string, p *queryplan.Plan) *NotLoweredError {
 	var ra *queryplan.RangeAgg
 	owner := "RangeAgg"
@@ -960,6 +966,9 @@ func screenUnwrap(query string, p *queryplan.Plan) *NotLoweredError {
 		return nil
 	}
 	field, conv, ok := unwrapFromText(query)
+	if !ok {
+		field, conv, ok = unwrapFromText(spacedBlanks(query))
+	}
 	if want, known := unwrapConv(u); !ok || !known || field != u.Label || conv != want {
 		return &NotLoweredError{Construct: owner + " unwrap spelling"}
 	}
@@ -969,6 +978,33 @@ func screenUnwrap(query string, p *queryplan.Plan) *NotLoweredError {
 		return &NotLoweredError{Construct: owner + " unwrap quantile spelling"}
 	}
 	return nil
+}
+
+// spacedBlanks is q with every run of a space, a tab, a line feed or a carriage return outside its quoted and
+// backquoted strings written as one space: the spelling Loki's lexer reads the same as q. It is q itself when q has
+// no such run but single spaces.
+func spacedBlanks(q string) string {
+	if !strings.ContainsAny(q, "\t\n\r") && !strings.Contains(q, "  ") {
+		return q
+	}
+	var b strings.Builder
+	b.Grow(len(q))
+	for i := 0; i < len(q); i++ {
+		switch c := q[i]; {
+		case c == '"' || c == '`':
+			j := min(skipQuoted(q, i), len(q)-1)
+			b.WriteString(q[i : j+1])
+			i = j
+		case isBlank(c):
+			for i+1 < len(q) && isBlank(q[i+1]) {
+				i++
+			}
+			b.WriteByte(' ')
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // quantileFromText is the parameter the string translator reads out of the text of a quantile_over_time: what stands

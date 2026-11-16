@@ -163,6 +163,11 @@ func FuzzMetricFlipGate(f *testing.F) {
 		"count_over_time({A=\"0\"} | logfmt\r\na [5m])", "count_over_time({A=\"0\"} | regexp\n`(?P<a>x)` [5m])",
 		"count_over_time({A=\"0\"} | pattern\r\"<a> x\" [5m])", "sum(count_over_time({A=\"0\"} | json | label_format\ta=b [5m]))",
 		"max_over_time({A=\"0\"}| unwrap\rA[0])", "sum_over_time({A=\"0\"} | json |\tunwrap\nduration(a) [5m])",
+		// An unwrap with no parser before it after another blank, and keywords written with the Kelvin sign or U+0130,
+		// which the request path writes in lower case.
+		"max_over_time({A=\"0\"} | unwrap\tA [5m])", "sum(max_over_time({A=\"0\"} |\nunwrap\r\nA [5m]))",
+		"top\u212A(2, sum by (app) (rate({app=\"a\"}[5m])))", "avg_over_t\u0130me({app=\"a\"} | unwrap n [5m])",
+		"sum w\u0130thout (pod) (rate({app=\"a\"}[5m]))",
 	} {
 		f.Add(q)
 	}

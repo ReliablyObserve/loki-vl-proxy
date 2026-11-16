@@ -330,6 +330,13 @@ func connectorKind(word string) lfTokKind {
 // lexString reads the quoted literal that starts at start; it reports false, with the lexer error set, when the
 // literal is not terminated.
 func (p *lfParser) lexString(start int, quote byte) bool {
+	if p.lexErr == nil && strings.IndexByte(p.src[start:], 0) >= 0 {
+		// A NUL byte in the string, or after it: Loki's scanner reports the string's errors in the order of the text
+		// (lokiStringError).
+		if msg := lokiStringError(p.src, start); msg != "" {
+			p.lexErr = &LabelFilterSyntaxError{Offset: start, Message: msg}
+		}
+	}
 	p.pos = start + 1
 	for p.pos < len(p.src) && p.src[p.pos] != quote && (quote != '"' || p.src[p.pos] != '\n') {
 		if quote == '"' && p.src[p.pos] == '\\' {
@@ -355,6 +362,10 @@ func (p *lfParser) skipSpace() (spaced bool) {
 		if p.src[p.pos] == '#' {
 			start := p.pos
 			for p.pos < len(p.src) && p.src[p.pos] != '\n' {
+				if p.src[p.pos] == 0 && p.lexErr == nil {
+					// A NUL in a comment is Loki's error at the comment, on line 0.
+					p.lexErr = &LabelFilterSyntaxError{Offset: start, Message: "invalid character NUL", ZeroLine: true}
+				}
 				p.pos++
 			}
 			if p.pos < len(p.src) {
@@ -467,18 +478,27 @@ func (p *lfParser) keywordName(start int) string {
 	if len(word) > 20 || len(word) < 2 {
 		return "IDENTIFIER"
 	}
+	// The word in lower case, as the lexer lower cases it: the Kelvin sign and U+0130 are k and i (`İp`).
 	var lower [20]byte
-	for i := 0; i < len(word); i++ {
+	n := 0
+	for i := 0; i < len(word); {
 		c := word[i]
 		if c >= utf8.RuneSelf {
-			return "IDENTIFIER"
+			r, size := utf8.DecodeRuneInString(word[i:])
+			if r = unicode.ToLower(r); r >= utf8.RuneSelf {
+				return "IDENTIFIER"
+			}
+			c, i = byte(r), i+size
+		} else {
+			if 'A' <= c && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			i++
 		}
-		if 'A' <= c && c <= 'Z' {
-			c += 'a' - 'A'
-		}
-		lower[i] = c
+		lower[n] = c
+		n++
 	}
-	if name := keywordTokenName(p.src, p.pos, string(lower[:len(word)])); name != "" {
+	if name := keywordTokenName(p.src, p.pos, string(lower[:n])); name != "" {
 		return name
 	}
 	return "IDENTIFIER"
@@ -696,7 +716,7 @@ func (p *lfParser) readSign(op string) (string, *LabelFilterSyntaxError) {
 // for the parenthesis over every character Go calls white space, so `ip` followed by one of those is the keyword
 // too, and the character after it is the unexpected token.
 func (p *lfParser) isIPCall() bool {
-	return strings.EqualFold(p.tok.text, "ip") && strings.HasPrefix(strings.TrimLeftFunc(p.src[p.tok.end:], unicode.IsSpace), "(")
+	return lowerPrefixLen(p.tok.text, "ip") == len(p.tok.text) && strings.HasPrefix(strings.TrimLeftFunc(p.src[p.tok.end:], unicode.IsSpace), "(")
 }
 
 // unquoteLabelFilterString is the value of a string literal the way the LogQL

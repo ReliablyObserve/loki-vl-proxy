@@ -9,6 +9,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankspace"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -134,6 +135,11 @@ func anyStddev(chain []queryplan.Node) bool {
 // text, with the `* ` a query that starts with a pipe needs in front of it.
 func (p planProfile) operandTranslate(q string) (string, error) {
 	s, ok := p.translate(q)
+	if spaced := blankspace.Collapse(q); !ok && spaced != q {
+		// An unwrap with a blank the translator does not read as a space: the proxy serves the operand from the
+		// plan, which writes the spaced spelling's text (semantics/translator-reads-only-space-between-tokens).
+		s, ok = p.translate(spaced)
+	}
 	if !ok {
 		return "", fmt.Errorf("the string translator rejects %q", q)
 	}

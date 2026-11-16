@@ -32,22 +32,27 @@ func CanonicalizeLogRanges(query string) string {
 
 // LowercaseKeywords writes in lower case the words Loki's lexer reads without
 // regard to case (pkg/logql/syntax/lex.go lower-cases a word before it looks it
-// up): SUM, TOPK(3, ...), RATE(...), BY, OFFSET, UNWRAP and the like. Names,
-// strings and label names that are not keywords keep their spelling. The
-// translator and the handlers match the lower-case spelling.
+// up): SUM, TOPK(3, ...), RATE(...), BY, OFFSET, UNWRAP and the like, and the
+// two letters outside ASCII that lower case into an ASCII one, the Kelvin sign
+// U+212A (topK, read as topk) and U+0130 (avg_over_tİme, read as
+// avg_over_time). Names, strings and label names that are not keywords keep
+// their spelling. The translator and the handlers match the lower-case
+// spelling.
 func LowercaseKeywords(query string) string {
-	upper := false
-	for i := 0; i < len(query) && !upper; i++ {
-		upper = query[i] >= 'A' && query[i] <= 'Z'
-	}
-	if !upper {
+	if !foldsToKeyword(query) {
 		return query
 	}
 	var out []byte
 	last := 0
 	s := newScanner(query)
 	for tok := s.next(); tok.Typ != TokEOF; tok = s.next() {
-		if span := query[s.start:s.pos]; span != tok.Val && strings.EqualFold(span, tok.Val) {
+		// The scanner's own rule (strings.ToLower, read without allocating by lowerPrefixLen): a letter that only
+		// case-folds to an ASCII one (U+017F, ſ) is not the keyword's to Loki's lexer either. A span that is not valid
+		// UTF-8 keeps its bytes (strings.ToLower would write U+FFFD for them), and so does a word right after a digit, a letter, an underscore or a dot: in
+		// lower case it could join the token before (`0KEEP` would read as the bytes literal 0k), and a word inside a
+		// range, which Loki's lexer reads as the range's text (its error quotes it as written).
+		if span := query[s.start:s.pos]; span != tok.Val && !s.inRange && lowerPrefixLen(span, tok.Val) == len(span) &&
+			(s.start == 0 || !isWordByte(query[s.start-1]) && query[s.start-1] != '.') {
 			out = append(append(out, query[last:s.start]...), tok.Val...)
 			last = s.pos
 		}
@@ -56,6 +61,33 @@ func LowercaseKeywords(query string) string {
 		return query
 	}
 	return string(append(out, query[last:]...))
+}
+
+// foldsToKeyword reports a query with a letter the scanner lower cases into an ASCII keyword letter: an ASCII
+// capital, the Kelvin sign (U+212A, UTF-8 E2 84 AA) or U+0130 (C4 B0). A query with none of them has every keyword
+// in lower case already. Every request asks it, so it reads eight bytes at a time: a word of ASCII bytes with no
+// capital is skipped whole, and only a word with a capital or a byte outside ASCII is read byte by byte.
+func foldsToKeyword(query string) bool {
+	const ones, highs = 0x0101010101010101, 0x8080808080808080
+	i := 0
+	for ; i+8 <= len(query); i += 8 {
+		w := uint64(query[i]) | uint64(query[i+1])<<8 | uint64(query[i+2])<<16 | uint64(query[i+3])<<24 |
+			uint64(query[i+4])<<32 | uint64(query[i+5])<<40 | uint64(query[i+6])<<48 | uint64(query[i+7])<<56
+		// A byte above 0x40 and below 0x5B ('A' to 'Z') in a word of ASCII bytes sets its high bit here.
+		capital := (ones*(127+'Z'+1) - w&(ones*127)) & ^w & (w&(ones*127) + ones*(127-('A'-1))) & highs
+		if w&highs != 0 || capital != 0 {
+			break
+		}
+	}
+	for ; i < len(query); i++ {
+		switch c := query[i]; {
+		case c >= 'A' && c <= 'Z':
+			return true
+		case c == 0xE2 && strings.HasPrefix(query[i:], "\u212A"), c == 0xC4 && strings.HasPrefix(query[i:], "\u0130"):
+			return true
+		}
+	}
+	return false
 }
 
 // hasAlternativeLogRange is the cheap pre-check for CanonicalizeLogRanges. It
@@ -176,7 +208,9 @@ func FirstArgumentLen(s string) int {
 // grouping: Loki's lexer reads the name as an identifier there, which removing
 // the comment would hide.
 func StripComments(query string) string {
-	if !strings.Contains(query, "#") {
+	if !strings.Contains(query, "#") || strings.IndexByte(query, 0) >= 0 {
+		// A NUL byte anywhere, a comment included, is Loki's lexer error: the query keeps its comments so that the
+		// validation reports it where Loki does.
 		return query
 	}
 	var spans [][2]int

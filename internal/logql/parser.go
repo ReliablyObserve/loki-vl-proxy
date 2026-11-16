@@ -435,7 +435,8 @@ func (p *parser) parsePrimary() (Expr, error) {
 		}
 		// Capture the full raw text and return it as-is so VictoriaLogs
 		// receives the original expression unchanged.
-		startPos := p.sc.pos - len(p.cur.Val)
+		// The name's own span: a name written with the Kelvin sign (approx_topK) is longer than its lower case value.
+		startPos := p.pos()
 		p.advance()
 		if p.cur.Typ == TokLParen {
 			p.advance() // consume '('
@@ -1556,24 +1557,25 @@ func (p *parser) keywordAhead(vector bool) bool {
 	}
 	if vector {
 		for _, word := range [...]string{"by", "without"} {
-			if startsWord(rest, word) {
-				return strings.HasPrefix(strings.TrimLeftFunc(rest[len(word):], unicode.IsSpace), "(")
+			if n := startsWord(rest, word); n >= 0 {
+				return strings.HasPrefix(strings.TrimLeftFunc(rest[n:], unicode.IsSpace), "(")
 			}
 		}
 	}
 	return false
 }
 
-// startsWord reports whether s starts with word, in any case, as a whole word.
-func startsWord(s, word string) bool {
-	if len(s) < len(word) || !strings.EqualFold(s[:len(word)], word) {
-		return false
+// startsWord is the length in bytes of word (ASCII lower case) at the start of s as a whole word, in any spelling
+// the scanner lower cases to it (lowerPrefixLen), or -1.
+func startsWord(s, word string) int {
+	n := lowerPrefixLen(s, word)
+	if n < 0 || n == len(s) {
+		return n
 	}
-	if len(s) == len(word) {
-		return true
+	if r, _ := utf8.DecodeRuneInString(s[n:]); r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) {
+		return -1
 	}
-	r, _ := utf8.DecodeRuneInString(s[len(word):])
-	return r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	return n
 }
 
 // errorAt reports Loki's "syntax error: unexpected <token>" for the token that
@@ -2155,7 +2157,8 @@ func (p *parser) checkRangeAggregationArgument(numberAllowed bool) error {
 	case TokIdent, TokNumber:
 		return p.errorMsgAt(probe.pos(), msg, false)
 	case TokDurationLit, TokBytes:
-		return newParseError(0, probe.sc.pos-len(probe.cur.Val)+1, msg)
+		// On line 0, at the literal's column on its own line, counted in characters.
+		return p.errorMsgAt(probe.pos(), msg, true)
 	}
 	return newParseError(0, 0, msg)
 }

@@ -521,6 +521,9 @@
     "semantics/keep-leaves-labels-loki-drops | gap:fixed",
     "semantics/keep-leaves-labels-loki-drops | perf",
     "semantics/keep-leaves-labels-loki-drops | query",
+    "semantics/keyword-fold-runes-read-as-keyword | compare:observed",
+    "semantics/keyword-fold-runes-read-as-keyword | gap:fixed",
+    "semantics/keyword-fold-runes-read-as-keyword | query",
     "semantics/label-browser-latency-cold-and-refresh | compare:exact",
     "semantics/label-browser-latency-cold-and-refresh | perf",
     "semantics/label-browser-latency-cold-and-refresh | perf:locked",
@@ -739,6 +742,9 @@
     "semantics/query-stats-shards-empty-pieces | query",
     "semantics/range-duration-grammar-wider-than-loki | compare:observed",
     "semantics/range-duration-grammar-wider-than-loki | gap:open",
+    "semantics/raw-nul-in-string-literal-accepted | compare:observed",
+    "semantics/raw-nul-in-string-literal-accepted | gap:fixed",
+    "semantics/raw-nul-in-string-literal-accepted | query",
     "semantics/regexp-chain-led-by-ip | compare:observed",
     "semantics/regexp-chain-led-by-ip | gap:open",
     "semantics/regexp-chain-led-by-ip | query",
@@ -972,6 +978,9 @@
     "semantics/unwrap-in-log-query | compare:observed",
     "semantics/unwrap-in-log-query | gap:fixed",
     "semantics/unwrap-in-log-query | query",
+    "semantics/unwrap-name-before-parenthesis-accepted | compare:observed",
+    "semantics/unwrap-name-before-parenthesis-accepted | gap:open",
+    "semantics/unwrap-name-before-parenthesis-accepted | query",
     "semantics/unwrap-over-time-range-windows | compare:observed",
     "semantics/unwrap-over-time-range-windows | gap:fixed",
     "semantics/unwrap-over-time-range-windows | query",
@@ -1148,6 +1157,9 @@
     "internal/logql/label_filter_expr_test.go | semantics/label-filter-expression-syntax",
     "internal/logql/label_filter_number_literal_loki_test.go | semantics/label-filter-number-literal-scan",
     "internal/logql/label_list_commas_loki_test.go | semantics/label-list-trailing-comma",
+    "internal/logql/lexer_edges_loki_test.go | semantics/keyword-fold-runes-read-as-keyword",
+    "internal/logql/lexer_edges_loki_test.go | semantics/raw-nul-in-string-literal-accepted",
+    "internal/logql/lexer_edges_loki_test.go | semantics/unwrap-name-before-parenthesis-accepted",
     "internal/logql/line_filter_runs_loki_test.go | semantics/line-filter-error-quotes-the-run",
     "internal/logql/line_template_cache_test.go | architecture-syntax-package-layering",
     "internal/logql/line_template_cache_test.go | formatter-line-format",
@@ -1475,6 +1487,8 @@
     "internal/proxy/keep_series_grouping_test.go | semantics/keep-leaves-labels-loki-drops",
     "internal/proxy/keep_series_grouping_test.go | semantics/stage-name-followed-by-more-of-stage",
     "internal/proxy/keep_unwrap_identity_test.go | semantics/keep-before-unwrap-series-identity",
+    "internal/proxy/keyword_fold_runes_test.go | cache-response-key-versions",
+    "internal/proxy/keyword_fold_runes_test.go | semantics/keyword-fold-runes-read-as-keyword",
     "internal/proxy/label_cache_behavior_test.go | loki_api_v1_labels",
     "internal/proxy/label_empty_run_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/label_filter_expression_test.go | loki_api_v1_query_range",
@@ -2236,6 +2250,7 @@
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unpack_test.go | semantics/translator-writes-unpack-as-unpack-json",
     "internal/queryplan/lower/unspaced_parser_test.go | semantics/translator-copies-unspaced-parser",
+    "internal/queryplan/lower/unwrap_blank_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/stdvar-grouped-pooled-variance",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/unwrap_keep_test.go | semantics/keep-before-unwrap-series-identity",
@@ -2837,14 +2852,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 103,
+      "api": 106,
       "drilldown": 51,
       "explore": 186,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 650,
+      "go": 653,
       "playwright": 1
     },
     "page_kinds": {
@@ -2864,7 +2879,7 @@
     "shape_covers_distinct": 109,
     "shapes_path_only": 8,
     "unwired_items": 95,
-    "wired_items": 380
+    "wired_items": 383
   },
   "gates": [
     "A/B shape selection",

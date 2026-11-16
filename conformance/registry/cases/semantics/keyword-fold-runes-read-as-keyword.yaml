@@ -1,0 +1,64 @@
+id: semantics/keyword-fold-runes-read-as-keyword
+title: A keyword written with the Kelvin sign for a k or U+0130 for an i (`topK(`, `avg_over_tİme(`, `wİthout`) is the lower case query, as in Loki (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's lexer lower cases a word before it looks it up, and Go's lower casing
+  turns the Kelvin sign (U+212A) into k and U+0130 into i: Loki accepts
+  `topK(1, rate({app="a"}[1m]))`, `bottomK(`, `| Keep a`, `| unpacK`,
+  `avg_over_tİme(`, `sum wİthout (a)`, `| x = İp("1.2.3.4")` and reads the
+  expression of the lower case spelling (Loki oracle, check command with the
+  lower case spelling as the printed form: the same expression). U+017F (ſ),
+  which only case-folds to s, is no keyword letter to it: Loki reads a name
+  there, as for any other letter.
+
+  The proxy's parser read them as keywords, but the request path wrote only
+  ASCII capitals in lower case before the handlers, the cache keys and the
+  translation read the query, so the string translator, which matches `topk(`,
+  sent `topK(1, rate({app="a"}[1m]))` to VictoriaLogs as a phrase search and
+  answered a log query, and the same for `avg_over_tİme(`. The lower casing now
+  covers both letters, so every handler, cache key and translation reads the
+  lower case query: the same VictoriaLogs requests and the same answer
+  (TestKeywordFoldRunesRequestsEqualLowerCase, 126 spellings on query_range and
+  query), and a repeat in either spelling is served from the lower case
+  spelling's cache entry (TestKeywordFoldRunesShareTheLowerCaseCacheEntry: zero
+  VictoriaLogs requests). The parser also read `wİthout` after an aggregation
+  and `İp(` in a label filter as names, and wrote an error after a duration
+  argument at a byte column; it now reads them as Loki does
+  (TestKeywordFoldRunesMatchLoki: 332 spellings of every keyword with each fold
+  rune, a capital and a trailing syntax error, recorded Loki answers).
+
+  The keys of the lower case spelling, which clients send, do not change, and
+  the answers cached under a fold rune's own text are never looked up again (no
+  key holds that text any more), so the fences of these constructs keep their
+  versions.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'topK(1, rate({app="api-gateway"}[5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, data]
+  expect: |
+    The answer of `topk(1, rate({app="api-gateway"}[5m]))`.
+gap:
+  status: fixed
+  fixed_by: "this change"
+  impact: edge
+  effort: S
+  area: 'internal/logql canonical.go (LowercaseKeywords, foldsToKeyword), scanner.go (lowerPrefixLen in parenAfter), parser.go (startsWord, the opaque call span, the duration argument column), label_filter_expr.go (isIPCall, keywordName)'
+  loki: 'the lexer lower cases a word (strings.ToLower) before it looks up a keyword'
+  proxy: 'the request path writes the keyword in lower case before any handler, cache key or translation reads the query'
+  planned_test: 'TestKeywordFoldRunesMatchLoki, FuzzLowercaseKeywords (internal/logql, recorded Loki answers); TestKeywordFoldRunesRequestsEqualLowerCase, TestKeywordFoldRunesShareTheLowerCaseCacheEntry, FuzzMetricFlipGate seeds, FuzzResponseKeyFencesMatchParsedTree (internal/proxy)'
+  visual: none
+  visual_reason: 'a spelling no Grafana panel writes'
+  clusters: []
