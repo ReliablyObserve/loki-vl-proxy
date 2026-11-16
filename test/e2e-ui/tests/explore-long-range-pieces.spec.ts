@@ -7,7 +7,8 @@
  * one), and every piece's frames must be the same on both (series labels,
  * sample times and values). Equal pieces give an equal joined chart, however
  * Grafana joins them. The data is a private app seeded into Loki and
- * VictoriaLogs with identical lines: two pods over 60 hours.
+ * VictoriaLogs with identical lines: two pods over 30 hours, inside the
+ * window the stack Loki accepts pushes for (its reject-old-samples max-age).
  */
 import { test, expect, type Page, type Response } from "@playwright/test";
 import { PROXY_DS, LOKI_DS, openExplore, waitForExploreIdle } from "./helpers";
@@ -15,6 +16,8 @@ import { PROXY_DS, LOKI_DS, openExplore, waitForExploreIdle } from "./helpers";
 const LOKI = process.env.LOKI_URL || "http://127.0.0.1:13101";
 const VL = process.env.VL_URL || "http://127.0.0.1:19428";
 const HOUR_MS = 3_600_000;
+// How far back the fixture reaches: past one day, so the range splits at a day.
+const SPAN_HOURS = 30;
 
 type Pieces = Map<string, string[]>;
 
@@ -24,7 +27,7 @@ async function seed(page: Page, app: string, endMs: number): Promise<number> {
     { pod: "pieces-b", everyMs: 7 * 60_000 },
   ].map(({ pod, everyMs }) => {
     const values: Array<[string, string]> = [];
-    for (let ts = endMs - 60 * HOUR_MS + 300; ts < endMs; ts += everyMs) {
+    for (let ts = endMs - SPAN_HOURS * HOUR_MS + 300; ts < endMs; ts += everyMs) {
       values.push([`${BigInt(ts) * 1_000_000n}`, "long range pieces fixture"]);
     }
     return { stream: { app, namespace: "prod", pod }, values };
@@ -51,7 +54,7 @@ async function waitForLoki(page: Page, app: string, endMs: number, lines: number
   let last = "";
   while (Date.now() < deadline) {
     const params = new URLSearchParams({
-      query: `sum(count_over_time({app="${app}"} != "nonce-${Date.now()}" [61h]))`,
+      query: `sum(count_over_time({app="${app}"} != "nonce-${Date.now()}" [31h]))`,
       start: String(endMs / 1000),
       end: String(endMs / 1000),
       step: "60",
@@ -105,7 +108,7 @@ async function explorePieces(page: Page, ds: string, expr: string, marker: strin
 }
 
 test.describe("Explore long metric ranges load in pieces that equal Loki's", () => {
-  for (const hours of [48, 168]) {
+  for (const hours of [30, 48]) {
     test(`${hours}h range @explore-core @cov:drilldown/long-range-pieces-answer-like-loki`, async ({ page }, testInfo) => {
       test.setTimeout(240_000);
       const app = `pieces-${Date.now()}-${hours}`;

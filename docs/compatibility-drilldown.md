@@ -183,8 +183,8 @@ These invariants fail CI when broken:
    non-Grafana callers with the same shape get Loki's answer
    (`TestLock_LeftoverChunkSuppressedInHits`,
    `TestE2ELock_DrilldownChunkedMerge_LeftoverChunkSuppressed`).
-3. Every piece (whole 24h, 25h, 2d and 7d ranges, day-long pieces with starts
-   off the step grid, short first and last pieces) equals Loki's answer to the
+3. Every piece (whole ranges from 24h to 7d, day-long pieces with starts off
+   the step grid, short first and last pieces) equals Loki's answer to the
    same request: against recorded Loki engine answers
    (`TestChunkedRangeWindowsMatchLoki`, internal/proxy), against the stack's
    Loki for Drilldown, Grafana and API clients

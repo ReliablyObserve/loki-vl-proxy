@@ -417,13 +417,15 @@ dense-pattern and high-cardinality memory harnesses; selector reachability does
 not prove that a test passed or that a runtime fixture was nonempty.
 
 The long-range pieces check seeds the same lines into Loki and VictoriaLogs (two
-pods over 60h in a private app, within the stack's 72h retention), waits until
-Loki's range path counts every line, and compares the proxy's answer for each
-piece a client can ask for (the whole 24h, 25h, 48h and 7d ranges, day-long
-pieces with starts off the step grid, short first and last pieces) with Loki's
-answer to the same request. A missing fixture fails the check rather than
-skipping the test. The 7d request covers empty older pieces; it does not claim
-seven days of retained data. How Grafana itself splits and joins the pieces is
+pods over 30h in a private app, inside the age the stack Loki accepts pushes for,
+read from its `-validation.reject-old-samples.max-age` in the compose files),
+waits until Loki's range path counts every line, and compares the proxy's answer
+for each piece a client can ask for (the whole 24h, 25h, 30h, 48h and 7d ranges,
+the 30h span split at a day with starts on and off the step grid, short first
+and last pieces, a piece ending inside a step) with Loki's answer to the same
+request. A missing fixture fails the check rather than skipping the test. The
+48h and 7d requests cover empty older pieces; they do not claim retained data
+that old. How Grafana itself splits and joins the pieces is
 observed in the e2e-ui explore-core shard (`explore-long-range-pieces.spec.ts`).
 
 Stack startup now uses [`wait_e2e_stack.sh`](../scripts/ci/wait_e2e_stack.sh) instead of `docker compose --wait` or fixed sleeps. That avoids false failures from services without Docker healthchecks and lets UI and compat jobs share the same readiness logic.

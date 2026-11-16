@@ -9,8 +9,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -34,25 +36,54 @@ type chunkLockPiece struct {
 func chunkLockPieces(evaluation time.Time) []chunkLockPiece {
 	const day = 24 * time.Hour
 	var pieces []chunkLockPiece
-	for _, h := range []int{24, 25, 48, 168} {
+	for _, h := range []int{24, 25, 30, 48, 168} {
 		pieces = append(pieces, chunkLockPiece{fmt.Sprintf("whole-%dh", h), evaluation.Add(-time.Duration(h) * time.Hour), evaluation})
 	}
-	for _, off := range []time.Duration{0, 37 * time.Second, 3*time.Hour + 11*time.Second} {
-		start := evaluation.Add(-2*day + off)
-		for i := 0; i < 2; i++ {
-			s := start.Add(time.Duration(i) * day)
-			e := s.Add(day - chunkLockStep)
-			if e.After(evaluation) {
-				e = evaluation
-			}
-			pieces = append(pieces, chunkLockPiece{fmt.Sprintf("day-piece-%d-off%s", i, off), s, e})
-		}
+	// The fixture's span split at a day: a day-long piece and the rest, with starts on and off the step grid.
+	for _, off := range []time.Duration{0, 37 * time.Second, time.Hour + 11*time.Second} {
+		start := evaluation.Add(-chunkLockSpan + off)
+		pieces = append(pieces,
+			chunkLockPiece{fmt.Sprintf("day-piece-off%s", off), start, start.Add(day - chunkLockStep)},
+			chunkLockPiece{fmt.Sprintf("rest-piece-off%s", off), start.Add(day), evaluation})
 	}
 	for _, n := range []time.Duration{30 * time.Second, 119 * time.Second, 120 * time.Second, 121 * time.Second, 239 * time.Second} {
 		pieces = append(pieces, chunkLockPiece{fmt.Sprintf("short-end-%s", n), evaluation.Add(-n), evaluation})
 		pieces = append(pieces, chunkLockPiece{fmt.Sprintf("short-start-%s", n), evaluation.Add(-day), evaluation.Add(-day + n)})
 	}
+	pieces = append(pieces, chunkLockPiece{"mid-step-end", evaluation.Add(-6 * time.Hour), evaluation.Add(-3*time.Hour + 59*time.Second)})
 	return pieces
+}
+
+// chunkLockSpan is how far back the fixture reaches: past one day, so a range of it splits at a day, and inside
+// the window the stack Loki accepts pushes for (chunkLockMaxAge).
+const chunkLockSpan = 30 * time.Hour
+
+// chunkLockMaxAge reads the stack Loki's -validation.reject-old-samples.max-age from the compose files (an
+// override file, when one is present, wins over the committed one).
+func chunkLockMaxAge(t *testing.T) time.Duration {
+	t.Helper()
+	var age time.Duration
+	for _, name := range []string{"docker-compose.yml", "docker-compose.override.yml"} {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			_, value, ok := strings.Cut(line, "-validation.reject-old-samples.max-age=")
+			if !ok {
+				continue
+			}
+			d, err := time.ParseDuration(strings.Trim(strings.TrimSpace(value), `"'`))
+			if err != nil {
+				t.Fatalf("%s: reject-old-samples max-age %q: %v", name, value, err)
+			}
+			age = d
+		}
+	}
+	if age == 0 {
+		t.Fatal("no -validation.reject-old-samples.max-age in the compose files")
+	}
+	return age
 }
 
 // TestE2ELock_DrilldownChunkedMerge_PiecesMatchLoki: every piece's answer, for a Logs Drilldown, a Grafana and an API
@@ -151,12 +182,14 @@ func chunkLockAnyMap(m map[string]string) map[string]interface{} {
 	return out
 }
 
-// seedChunkMergeHistory writes the same 60 hours of lines (two pods, one line every 5 and 7 minutes, inside the
-// stack's 72h retention and Loki's 168h reject_old_samples_max_age) to Loki and to VictoriaLogs through the Loki
-// push API, in a private app, and waits until Loki's range path counts every line. It returns the query and the
-// evaluation time, the end of every whole range (on the step grid).
+// seedChunkMergeHistory writes the same chunkLockSpan of lines (two pods, one line every 5 and 7 minutes) to Loki
+// and to VictoriaLogs through the Loki push API, in a private app, and waits until Loki's range path counts every
+// line. It returns the query and the evaluation time, the end of every whole range (on the step grid).
 func seedChunkMergeHistory(t *testing.T) (string, time.Time) {
 	t.Helper()
+	if maxAge := chunkLockMaxAge(t); chunkLockSpan+time.Hour > maxAge {
+		t.Fatalf("the fixture reaches %s back, the stack Loki accepts lines up to %s old: leave an hour", chunkLockSpan, maxAge)
+	}
 	evaluation := time.Now().UTC().Truncate(chunkLockStep).Add(-5 * chunkLockStep)
 	app := fmt.Sprintf("chunk-merge-%d", time.Now().UnixNano())
 	var streams []any
@@ -166,7 +199,7 @@ func seedChunkMergeHistory(t *testing.T) (string, time.Time) {
 		every time.Duration
 	}{{"chunk-merge-a", 5 * time.Minute}, {"chunk-merge-b", 7 * time.Minute}} {
 		var values [][2]string
-		for at := evaluation.Add(-60 * time.Hour).Add(300 * time.Millisecond); at.Before(evaluation); at = at.Add(pod.every) {
+		for at := evaluation.Add(-chunkLockSpan).Add(300 * time.Millisecond); at.Before(evaluation); at = at.Add(pod.every) {
 			values = append(values, [2]string{strconv.FormatInt(at.UnixNano(), 10), "bounded chunk merge fixture"})
 		}
 		lines += len(values)
@@ -193,7 +226,7 @@ func seedChunkMergeHistory(t *testing.T) (string, time.Time) {
 	deadline := time.Now().Add(4 * time.Minute)
 	var last string
 	for time.Now().Before(deadline) {
-		count := fmt.Sprintf(`sum(count_over_time({app=%q} != %q [61h]))`, app, "nonce-"+strconv.FormatInt(time.Now().UnixNano(), 10))
+		count := fmt.Sprintf(`sum(count_over_time({app=%q} != %q [31h]))`, app, "nonce-"+strconv.FormatInt(time.Now().UnixNano(), 10))
 		got := chunkLockQuery(t, lokiURL, count, chunkLockPiece{"fixture-count", evaluation, evaluation}, "api")
 		for _, v := range got {
 			last = v
