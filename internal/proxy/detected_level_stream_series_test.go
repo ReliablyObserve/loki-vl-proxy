@@ -386,6 +386,12 @@ func TestStreamLevelSeriesFence(t *testing.T) {
 		{"sort\v(rate({app=\"a\"} | json [1m]))", true},
 		{"Sort_Desc\u00a0(rate({app=\"a\"} | json [1m]))", true},
 		{"LABEL_REPLACE\u0085(rate({app=\"a\"} | json [1m]), \"x\", \"$1\", \"pod\", \"(.*)\")", true},
+		// sort and sort_desc with a grouping before their parenthesis.
+		{`sort by (app) (rate({app="a"}[5m]))`, true},
+		{`sort_desc BY(app) (rate({app="a"}[5m]))`, true},
+		{"sort\tby (app) (rate({app=\"a\"}[5m]))", true},
+		// Every metric query is fenced since the detected_level chain reads a stream's level fields first.
+		{`nearby(rate({app="a"}[5m]))`, true},
 		{`SUM BY (app) (count_over_time({app="a"}[5m]))`, true},
 		{`sum by (app) (count_over_time({app="a"}[5m]))`, true},
 		{`sum by (detected_level) (rate({app="a"} | json [1m]))`, true},

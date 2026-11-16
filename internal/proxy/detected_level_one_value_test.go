@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
-	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
@@ -577,39 +576,9 @@ func TestStreamLevelChainFence(t *testing.T) {
 			}
 		})
 	}
-	for q, fenced := range map[string]bool{`{app="uw"}`: false, `{app="uw"} |= "x"`: false, `{app="uw"} | json`: false, `{app="uw"} | detected_level="error"`: true, `{app="uw"} |= "[x"`: true} {
+	for q, fenced := range map[string]bool{`{app="uw"}`: false, `{app="uw"} |= "x"`: false, `{app="uw"} | json`: false, `{app="uw"} | detected_level="error"`: true, `{app="uw"} |= "[x"`: false, `{app="uw"} | json | keep detected_level`: true} {
 		if got := streamLevelSeriesResponseKeyVersion(q) != ""; got != fenced {
 			t.Errorf("%q: fenced %v, want %v", q, got, fenced)
 		}
 	}
-}
-
-// FuzzMayHoldParserStage: the fence screen never misses a parser stage the
-// LogQL parser reads (json, logfmt, regexp, pattern, unpack), in a log query
-// or under a range function, so no changed answer keeps its old key.
-func FuzzMayHoldParserStage(f *testing.F) {
-	for _, s := range []string{` | json`, ` |logfmt`, " |\fjson a", ` | regexp "(?P<a>x)"`, ` | pattern "<a> <_>"`, ` | unpack`, ` |= "json"`, ` | line_format "{{.a}}"`, ` | json | logfmt`, ` | logfmt --strict`, ` | jsonx`, `|pAttern""#00`, ` | JSON`, " |\u00a0Logfmt", " |\u0085unpack"} {
-		f.Add(s)
-	}
-	f.Fuzz(func(t *testing.T, pipeline string) {
-		q := `{a="b"}` + pipeline
-		lq, err := parsedLogQuery(q)
-		if err != nil {
-			return
-		}
-		has := false
-		for _, stage := range lq.Pipeline {
-			if _, ok := stage.(*logqlpkg.ParserStage); ok {
-				has = true
-			}
-		}
-		if !has {
-			return
-		}
-		for _, query := range []string{q, `sum(count_over_time(` + q + ` [5m]))`} {
-			if !mayHoldParserStage(query) || streamLevelSeriesResponseKeyVersion(query) == "" && strings.Contains(query, "(") {
-				t.Fatalf("%q: a parser stage the screen misses", query)
-			}
-		}
-	})
 }

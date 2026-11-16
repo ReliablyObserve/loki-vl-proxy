@@ -26,13 +26,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stream holds a level field (one pipe, a stream filter evaluated once per block) and reads the level fields of those
   rows from the stream only, where two or more level names are known, so a window with one level name sends the same
   LogsQL as before; VictoriaLogs v1.49.0 and v1.53.0 answer Loki's value for every recorded stream, every text
-  survives their clone, and their CPU time for the chain stays within measurement noise. The raw-row reads (`sum without (pod) (rate({...} | json
-  amount | unwrap amount [5m]))` at an instant and step 60, `sort(rate({...} | json [1m]))` at an instant and step
+  survives their clone, and their CPU time for the chain stays within measurement noise. The raw-row reads
+  (`sum without (pod) (rate({...} | json amount | unwrap amount [5m]))` at an instant and step 60, `sort(rate({...} | json [1m]))` at an instant and step
   300) answered `ERROR` and `Debug` for streams labelled `level="ERROR"` and `level="Debug"` (VictoriaLogs answers a
   raw row with its stream fields as fields, so the row's `level` was the stream's, copied as stored); they now take
   the stream's level fields first, then the row's `level`, normalised. VictoriaLogs calls per request do not change.
   Answers cached before are not served again: the response key fence (`@stream-level-series-v3`) now covers every
   metric query and every query naming `detected_level` (one cache miss per such key after the upgrade).
+- A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
+  accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
+  per-stream series took the stream's `detected_level`.
+- An answer cached before a behaviour change is no longer served for a query written in another spelling of the same
+  query. The version marker that keeps such answers out of the cache is now added for every spelling the LogQL parser
+  reads: keywords and function names in any case (`| KEEP a`, `| UNWRAP n`, `TOPK(`, `SUM BY`, `| JSON`, `| LOGFMT`,
+  `IP("...")`), comments between tokens (a quote inside a comment no longer hides what follows), a grouped label filter
+  (`| (a="b") | (c="d")`), an empty back-quoted string after `!=`, and names written with other Unicode letters. The
+  per-stream detected_level marker also reads `topK` and `bottomK` written with the Kelvin sign (U+212A), and the
+  marker of a parser's unwrap series identity reads a function name written with U+0130 (`avg_over_tİme`). A query spelled one of these ways may miss the cache once after the upgrade; queries spelled as
+  before keep their keys.
+
+### Changed
+
+- Test support: the plan corpus leaves out the request of a registry case that compares only a client error, and six
+  conformance cases for queries Loki rejects now carry an HTTP request the live verifier sends. No proxy behaviour changes.
 
 ## [2.301.0] - 2026-11-15
 
