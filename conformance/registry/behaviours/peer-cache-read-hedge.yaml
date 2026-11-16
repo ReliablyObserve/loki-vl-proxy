@@ -1,0 +1,68 @@
+id: peer-cache-read-hedge
+kind: resource_control
+title: A peer-cache read never waits on a paused or hung replica longer than the read hedge delay
+pending: true
+
+loki: |
+  Losing, pausing or slowing one results-cache node makes Loki's queries
+  slower by its cache client's timeout at most, never different; the
+  client then computes the answer.
+
+victorialogs: |
+  VictoriaLogs holds the data; every cached answer can be computed again.
+
+proxy: |
+  A lookup that misses memory and disk asks the key's replicas in ring
+  order (owner first). When the replica asked last has not sent its
+  response headers within the read hedge delay, the lookup also asks the
+  next replica and takes the first answer from either; with no replica left
+  to ask it waits at most -peer-read-hedge-max-delay (default 200 ms, at
+  most half of -peer-timeout) since the last one was asked, then goes on as
+  a miss and the request reads VictoriaLogs. A replica that sent its headers
+  is answering and is waited for. The hedge delay is twice the p99 of the
+  peer header latencies this proxy measured (a decaying histogram over the
+  fetch buckets), at least 5 ms and at most the maximum, and the maximum
+  until 64 latencies are measured, so a healthy fleet asks a second replica
+  for about one read in a hundred. A call a read stopped waiting for keeps
+  running in the background under the peer's context, bounded by
+  -peer-timeout and cancelled by Close: its timeout still suspends the peer
+  for the breaker cooldown and cancels the calls waiting on it, and the
+  hedge cut-off itself never counts as a failure. While a call another
+  replica beat is still running its peer is asked after the key's other
+  replicas; while a call a read gave up on is still running its peer is
+  skipped (error reason peer_slow), so one read per proxy pays the delay.
+  The half-open probe after the cooldown is such a read: it pays at most
+  the delay and its call suspends a still paused peer again. Singleflight
+  followers wait on the leader's read and no longer. The /patterns owner
+  presence check (Reachable) waits at most the same maximum. 0 turns
+  hedging off: a read waits up to -peer-timeout on each replica.
+  Cost: one extra peer read per hedge (never a VictoriaLogs read unless no
+  replica is left), a hedge only past twice the measured p99, and per peer
+  fetch one goroutine, the read's state (one allocation) and an event
+  channel.
+
+implementation:
+  - internal/cache/peer_hedge.go
+  - internal/cache/peer.go
+  - cmd/proxy/main.go
+
+decisions:
+  - id: hedged-peer-reads-bounded-by-a-measured-delay
+    chosen: 'Hedge on response headers: after twice the measured header p99 ask the next replica (keep both calls, take the first answer); with no replica left, go on as a miss after -peer-read-hedge-max-delay; the abandoned call runs on to -peer-timeout in the background and feeds the breaker'
+    over: [a shorter first-probe timeout (cancels slow but alive peers, suspends them and sends their reads to VictoriaLogs), waiting -peer-timeout as before (a paused replica cost one request 2 s per proxy and per breaker cooldown), giving up at the adaptive delay with no replica left (a peer read slower than a few milliseconds would become a VictoriaLogs read), connection-level liveness probes (extra traffic per peer and per proxy that grows with the fleet, and a paused process still accepts TCP connections)]
+    why: |
+      Owner rule (2026-11-16): be transparent to users, slow down rather
+      than fail, never stall a request on a peer. The #1505 fleet A/B showed
+      one query per run taking 2.0 s and a /labels p99 at the peer timeout
+      while one replica was paused: the first lookup on a paused peer waited
+      -peer-timeout before its timeout suspended the peer, and after each
+      10 s cooldown the half-open probe was a user lookup that waited again.
+      Hedging on response headers separates a dead peer from a slow body; a
+      measured delay keeps the extra peer reads near 1% on a healthy fleet;
+      a separate, longer give-up delay keeps VictoriaLogs reads for the case
+      where waiting would cost more than computing.
+    evidence: 'internal/cache/peer_hedge_test.go (2026-11-16, Go 1.27.4, darwin/arm64, -race): a paused owner answered from the backup within the 100 ms hedge maximum (timeout 2 s); a paused only replica gave up within it with four singleflight followers, was suspended by the call left running, and the post-cooldown probe paid at most the maximum; a replica that sent headers was waited for; hedging off waited the 250 ms timeout'
+    code: [internal/cache/peer_hedge.go, internal/cache/peer.go]
+    tests: [TestPeerReadHedge_PausedOwnerAnswersFromBackup, TestPeerReadHedge_PausedOnlyReplicaGivesUp, TestPeerReadHedge_AnsweringReplicaIsNotHedged, TestPeerReadHedge_HealthyFleetAsksOneReplica, TestPeerReadHedge_OffWaitsThePeerTimeout, TestPeerReadHedge_ReachableIsBoundedByTheGiveUpDelay, TestPeerReadHedge_CloseStopsBackgroundCalls, TestPeerReadHedge_DelayFollowsHeaderLatency, TestPeerReplication_PausedOwnerCostsOneTimeout, TestPeerReplication_OwnerDownOrSlowBackupServes, TestFleetPeerCacheProof]
+    quality: 'A lookup on a paused or hung replica answers within the read hedge maximum (from another replica or VictoriaLogs) and never within -peer-timeout; answers are unchanged; the breaker still opens on the peer timeout; no goroutine outlives Close.'
+    performance: 'BenchmarkPeerReplication_FetchOwner and FetchBackup (benchstat -count=6, Apple M5 Pro, GOMAXPROCS=2, 2026-11-16): time within noise, about 3 more allocations and 0.6-0.9 KiB more per peer fetch (goroutine, read state, event channel) on a round trip of about 105 allocations and 13.5 KiB; local hits and owner skips unchanged.'

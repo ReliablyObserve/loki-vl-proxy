@@ -26,6 +26,13 @@ type backfillVL struct {
 	now          time.Time
 	counts, scan atomic.Int64
 	countDelay   time.Duration // each row count takes this long
+	// held, when set, is one more row (label held_label) that is there from
+	// the start: the bucket holding it is cached with data.
+	held int64
+	// trickle rows (label late_label) sit in [trickleFrom, trickleTo): a test
+	// adds one per refresh, as a shipper delivering rows late.
+	trickle                atomic.Int64
+	trickleFrom, trickleTo int64
 }
 
 func (f *backfillVL) server(t *testing.T) *httptest.Server {
@@ -46,6 +53,11 @@ func (f *backfillVL) server(t *testing.T) *httptest.Server {
 		}
 		live := b > now.Add(-20*time.Minute).UnixNano()
 		late := f.backfilled.Load() && a <= f.ts && f.ts < b
+		heldRow := f.held != 0 && a <= f.held && f.held < b
+		trickled := int64(0)
+		if f.trickleTo > 0 && a < f.trickleTo && f.trickleFrom < b {
+			trickled = f.trickle.Load()
+		}
 		if strings.Contains(r.URL.Query().Get("query"), "count()") {
 			f.counts.Add(1)
 			time.Sleep(f.countDelay)
@@ -56,6 +68,10 @@ func (f *backfillVL) server(t *testing.T) *httptest.Server {
 			if late {
 				n++
 			}
+			if heldRow {
+				n++
+			}
+			n += int(trickled)
 			fmt.Fprintf(w, `{"rows":"%d"}`+"\n", n)
 			return
 		}
@@ -66,6 +82,12 @@ func (f *backfillVL) server(t *testing.T) *httptest.Server {
 		}
 		if late {
 			hits = append(hits, fieldHit{"backfill_label", 1})
+		}
+		if heldRow {
+			hits = append(hits, fieldHit{"held_label", 1})
+		}
+		if trickled > 0 {
+			hits = append(hits, fieldHit{"late_label", trickled})
 		}
 		writeVLFieldNames(w, hits)
 	}))
@@ -332,9 +354,12 @@ func TestMetadataInventory_RescanDecisionSurvivesAnotherListingConfirmingTheEntr
 		t.Fatal(err)
 	}
 	vl.backfilled.Store(true)
+	// A run count taken within -recent-tail-refresh-max-staleness is reused;
+	// this listing comes later.
+	time.Sleep(200 * time.Millisecond)
 	plan, _ := p.inventoryPlan(path, params, now)
 	base := p.inventoryKeyBase(ctx, path, params)
-	rescan := p.revalidateEmptyRuns(ctx, path, params, base, plan)
+	rescan := p.revalidateLiveRuns(ctx, path, params, base, plan)
 	if len(rescan) != 1 {
 		t.Fatalf("rescan set %v, want the one bucket that received the row", rescan)
 	}
