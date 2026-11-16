@@ -710,8 +710,10 @@
       "internal/proxy/plan_defect_test.go",
       "internal/proxy/tail_backend_errors_test.go",
       "internal/proxy/tail_backend_retry_test.go",
+      "internal/proxy/tail_history_test.go",
       "internal/proxy/tail_pipeline_test.go",
       "test/e2e-compat/tail_backend_outage_test.go",
+      "test/e2e-compat/tail_history_test.go",
       "test/e2e-compat/tail_pipeline_test.go"
     ],
     "metric-series-identity": [
@@ -1961,6 +1963,10 @@
       "internal/proxy/sub_second_step_test.go",
       "test/e2e-compat/sub_second_step_test.go"
     ],
+    "semantics/tail-history-start-limit": [
+      "internal/proxy/tail_history_test.go",
+      "test/e2e-compat/tail_history_test.go"
+    ],
     "semantics/tail-survives-backend-outage": [
       "internal/proxy/tail_backend_retry_test.go",
       "test/e2e-compat/tail_backend_outage_test.go"
@@ -2295,6 +2301,7 @@
     ],
     "semantics/zero-range-metric": [
       "internal/logql/zero_range_comments_loki_test.go",
+      "internal/proxy/absent_zero_range_test.go",
       "internal/proxy/error_refusals_test.go",
       "internal/proxy/zero_range_test.go"
     ],
@@ -2513,7 +2520,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 596,
+  "registry_items": 597,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2753,6 +2760,9 @@
     "internal/proxy/absent_over_time_test.go": [
       "semantics/absent-over-time-semantics",
       "status-400"
+    ],
+    "internal/proxy/absent_zero_range_test.go": [
+      "semantics/zero-range-metric"
     ],
     "internal/proxy/alerting_backend_failure_test.go": [
       "semantics/error-layer-backend-failure-status",
@@ -3986,6 +3996,10 @@
       "semantics/error-layer-cancel-deadline",
       "semantics/error-layer-internal-go-text",
       "semantics/tail-survives-backend-outage"
+    ],
+    "internal/proxy/tail_history_test.go": [
+      "loki_api_v1_tail",
+      "semantics/tail-history-start-limit"
     ],
     "internal/proxy/tail_pipeline_test.go": [
       "loki_api_v1_tail"
@@ -5407,6 +5421,10 @@
       "loki_api_v1_tail",
       "semantics/tail-survives-backend-outage"
     ],
+    "test/e2e-compat/tail_history_test.go": [
+      "loki_api_v1_tail",
+      "semantics/tail-history-start-limit"
+    ],
     "test/e2e-compat/tail_pipeline_test.go": [
       "loki_api_v1_tail"
     ],
@@ -5578,7 +5596,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 658,
+  "tests_with_markers": 661,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5654,7 +5672,7 @@
     "semantics/stream-label-selector-shadowed-by-ingest-json-key",
     "semantics/stream-label-shadowed-after-json-parser",
     "semantics/stream-level-shadowed-by-ingest-json-key",
-    "semantics/tail-history-start-limit",
+    "semantics/tail-history-limit-above-max-entries",
     "semantics/tenant-header-loki-answers",
     "semantics/topk-per-step-membership-differs",
     "semantics/translator-folds-binary-by-operand-without",
@@ -5679,5 +5697,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 383
+  "wired_items": 384
 }
