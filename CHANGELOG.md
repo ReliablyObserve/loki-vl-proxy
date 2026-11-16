@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `absent_over_time` over a zero range (`[0s]`, `[0]`, with or without `offset`) now answers as Loki does: one
+  series valued 1 at every step on query_range and at the evaluation time on query, labelled with the selector's
+  equality matchers, also under `sum`, `count`, `stddev`, `max without (...)` and the other vector aggregations,
+  `topk`, `bottomk`, `sort`, `sort_desc` and `label_replace`. A zero range holds no sample in any window, so the
+  answer reads no data: it is written from the parsed query before the response cache, the query plan and any
+  VictoriaLogs call. The proxy answered `500 Internal Server Error` (and, on query with VictoriaLogs data behind it,
+  a series carrying a `detected_level` label Loki does not write) (semantics/zero-range-metric).
+- `/loki/api/v1/patterns` given a valid query that names no stream (`1 + 1`, `vector(1)`) now answers Loki's empty
+  success, `{"status":"success","data":[]}`, as a Loki that serves data does, without a VictoriaLogs call. It
+  answered `400 only label matchers are supported`, the answer of a Loki that has just started with no data; the
+  other selector routes keep that 400, as Loki does (semantics/patterns-query-without-selector).
 - An answer cached before a behaviour change is no longer served for a query written in another spelling of the same
   query. The version marker that keeps such answers out of the cache is now added for every spelling the LogQL parser
   reads: keywords and function names in any case (`| KEEP a`, `| UNWRAP n`, `TOPK(`, `SUM BY`, `| JSON`, `| LOGFMT`,

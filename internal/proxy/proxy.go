@@ -2649,6 +2649,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if p.answerEmptyResult(w, "query_range", logqlQuery, start) {
 		return
 	}
+	if p.answerAbsentEveryStep(w, r, "query_range", logqlQuery, start) {
+		return
+	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, true)
 
 	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual)
@@ -3078,6 +3081,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.answerEmptyResult(w, "query", logqlQuery, start) {
+		return
+	}
+	if p.answerAbsentEveryStep(w, r, "query", logqlQuery, start) {
 		return
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, false)
