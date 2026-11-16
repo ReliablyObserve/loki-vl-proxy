@@ -466,7 +466,7 @@ func (s *Summary) perfDaily(in Inputs) error {
 	}
 	s.PerfDaily = map[string]any{}
 	for _, k := range []string{"date", "commit", "rows", "comparable", "loki_failed", "distribution", "over_2x", "ratchet_lost", "ratchet_problem",
-		"reuse", "reuse_lost"} {
+		"reuse", "reuse_lost", "first_ask", "first_ask_over"} {
 		if x, found := v[k]; found {
 			s.PerfDaily[k] = x
 		}
@@ -476,6 +476,11 @@ func (s *Summary) perfDaily(in Inputs) error {
 	}
 	if list, _ := v["ratchet_lost"].([]any); len(list) > 0 {
 		s.red("perf smoke: %d row(s) of the weekly ratchet lost", len(list))
+	}
+	if list, _ := v["first_ask_over"].([]any); len(list) > 0 {
+		// A first request for a selector whose state the proxy has not built is held to an absolute bound, not
+		// to Loki's time (bench/ab/over2x.py, first_ask_max_s in shapes.json).
+		s.red("perf smoke: %d first ask(s) above their absolute bound", len(list))
 	}
 	if list, _ := v["reuse_lost"].([]any); len(list) > 0 {
 		s.red("perf smoke: %d row(s) reuse the proxy's cache less than the day before", len(list))
@@ -606,6 +611,10 @@ func markdown(s Summary, executive string) string {
 	if p := s.PerfDaily; p != nil {
 		fmt.Fprintf(&b, "\n### Daily perf smoke\n\n%v rows, %v comparable timings, %d above 2x Loki, %d ratchet rows lost.\n", p["rows"], p["comparable"],
 			lenOf(p["over_2x"]), lenOf(p["ratchet_lost"]))
+		if n := lenOf(p["first_ask"]); n > 0 {
+			fmt.Fprintf(&b, "%d first asks (the pattern state not built yet) held to an absolute bound instead of Loki's time, %d above it.\n", n,
+				lenOf(p["first_ask_over"]))
+		}
 	}
 	if w := s.PerfWeekly; w != nil {
 		fmt.Fprintf(&b, "\n### Weekly performance (measured %s, Loki %s)\n\n%d comparable shape x range pairs: %d faster, %d on par, %d slower; %d rows on the above-2x list.\n",

@@ -879,6 +879,9 @@
     "semantics/topk-bottomk-without-strips-label | compare:observed",
     "semantics/topk-bottomk-without-strips-label | gap:fixed",
     "semantics/topk-bottomk-without-strips-label | query",
+    "semantics/topk-first-argument-error-text | compare:observed",
+    "semantics/topk-first-argument-error-text | gap:fixed",
+    "semantics/topk-first-argument-error-text | query",
     "semantics/topk-grouped-spellings | compare:observed",
     "semantics/topk-grouped-spellings | gap:fixed",
     "semantics/topk-grouped-spellings | query",
@@ -1208,6 +1211,7 @@
     "internal/logql/stage_parse_validate_loki_test.go | semantics/label-filter-regex-parse-error",
     "internal/logql/stage_raw_test.go | semantics/keep-leaves-labels-loki-drops",
     "internal/logql/terminates_test.go | semantics/logql-unicode-runes",
+    "internal/logql/topk_param_loki_test.go | semantics/topk-first-argument-error-text",
     "internal/logql/unicode_runes_loki_test.go | semantics/logql-unicode-runes",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
     "internal/logql/whitespace_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
@@ -1799,6 +1803,7 @@
     "internal/proxy/query_lowering_corpus_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/proxy/query_lowering_log_stages_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_log_stages_test.go | semantics/translator-copies-unspaced-parser",
+    "internal/proxy/query_lowering_log_stages_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/proxy/query_lowering_shared_parse_test.go | architecture-syntax-package-layering",
     "internal/proxy/query_lowering_shared_parse_test.go | observability-query-flow",
     "internal/proxy/query_lowering_test.go | architecture-syntax-package-layering",
@@ -2909,14 +2914,14 @@
   "counts": {
     "case_consumers": {
       "any": 35,
-      "api": 107,
+      "api": 108,
       "drilldown": 53,
       "explore": 191,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 670,
+      "go": 671,
       "playwright": 1
     },
     "page_kinds": {
@@ -2936,7 +2941,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 95,
-    "wired_items": 392
+    "wired_items": 393
   },
   "gates": [
     "A/B shape selection",

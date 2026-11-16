@@ -9,7 +9,7 @@
   "differences_by_kind": {
     "VictoriaLogs rejects the translator text": 393,
     "accepted, translation fails": 32,
-    "error text differs": 124,
+    "error text differs": 115,
     "error text differs, rejected at translation": 12,
     "proxy accepts, Loki rejects": 32,
     "proxy rejects, Loki accepts": 10,
@@ -1236,95 +1236,6 @@
         }
       ]
     },
-    "error text differs | syntax error at  || syntax error at % | literal number 1 % 0": {
-      "count": 1,
-      "case": "semantics/parse-error-text-parity",
-      "kind": "error text differs",
-      "key": "syntax error at  || syntax error at %",
-      "element": "literal number 1 % 0",
-      "examples": [
-        {
-          "query": "topk(1 % 0, rate({a=\"b\"}[5m]))",
-          "loki": "parse error at line 1, col 11: syntax error: unexpected ,",
-          "proxy": "parse error at line 1, col 8: syntax error: unexpected %"
-        }
-      ]
-    },
-    "error text differs | syntax error at  || syntax error at + | literal number 1 + 2": {
-      "count": 1,
-      "case": "semantics/parse-error-text-parity",
-      "kind": "error text differs",
-      "key": "syntax error at  || syntax error at +",
-      "element": "literal number 1 + 2",
-      "examples": [
-        {
-          "query": "topk(1 + 2, rate({a=\"b\"}[5m]))",
-          "loki": "parse error at line 1, col 11: syntax error: unexpected ,",
-          "proxy": "parse error at line 1, col 8: syntax error: unexpected +"
-        }
-      ]
-    },
-    "error text differs | syntax error at  || syntax error at - | vecagg agg topk|-1, ": {
-      "count": 3,
-      "case": "semantics/parse-error-text-parity",
-      "kind": "error text differs",
-      "key": "syntax error at  || syntax error at -",
-      "element": "vecagg agg topk|-1, ",
-      "examples": [
-        {
-          "query": "topk(-1, rate({a=\"b\"}[5m]))",
-          "loki": "parse error at line 1, col 8: syntax error: unexpected ,",
-          "proxy": "parse error at line 1, col 6: syntax error: unexpected -"
-        },
-        {
-          "query": "topk (-1, rate({a=\"b\"}[5m]))",
-          "loki": "parse error at line 1, col 9: syntax error: unexpected ,",
-          "proxy": "parse error at line 1, col 7: syntax error: unexpected -"
-        }
-      ]
-    },
-    "error text differs | syntax error at  || syntax error at / | literal number 0 / 0": {
-      "count": 1,
-      "case": "semantics/parse-error-text-parity",
-      "kind": "error text differs",
-      "key": "syntax error at  || syntax error at /",
-      "element": "literal number 0 / 0",
-      "examples": [
-        {
-          "query": "topk(0 / 0, rate({a=\"b\"}[5m]))",
-          "loki": "parse error at line 1, col 11: syntax error: unexpected ,",
-          "proxy": "parse error at line 1, col 8: syntax error: unexpected /"
-        }
-      ]
-    },
-    "error text differs | syntax error at  || syntax error at / | literal number 1 / 0": {
-      "count": 1,
-      "case": "semantics/parse-error-text-parity",
-      "kind": "error text differs",
-      "key": "syntax error at  || syntax error at /",
-      "element": "literal number 1 / 0",
-      "examples": [
-        {
-          "query": "topk(1 / 0, rate({a=\"b\"}[5m]))",
-          "loki": "parse error at line 1, col 11: syntax error: unexpected ,",
-          "proxy": "parse error at line 1, col 8: syntax error: unexpected /"
-        }
-      ]
-    },
-    "error text differs | syntax error at  || syntax error at and | literal number 1 and 2": {
-      "count": 1,
-      "case": "semantics/parse-error-text-parity",
-      "kind": "error text differs",
-      "key": "syntax error at  || syntax error at and",
-      "element": "literal number 1 and 2",
-      "examples": [
-        {
-          "query": "topk(1 and 2, rate({a=\"b\"}[5m]))",
-          "loki": "parse error at line 1, col 13: syntax error: unexpected ,",
-          "proxy": "parse error at line 1, col 8: syntax error: unexpected and"
-        }
-      ]
-    },
     "error text differs | syntax error at ) || syntax error at ) | rangeagg fn rate()": {
       "count": 1,
       "case": "semantics/parse-error-text-parity",
@@ -1374,20 +1285,6 @@
           "query": "quantile_over_time(-1, {a=\"b\"} | json | unwrap c[5m])",
           "loki": "parse error at line 1, col 20: syntax error: unexpected -, expecting NUMBER or { or (",
           "proxy": "parse error at line 1, col 1: invalid parameter for quantile_over_time: expected range [0, 1] but got -1"
-        }
-      ]
-    },
-    "error text differs | syntax error at - || syntax error at - | literal number --1": {
-      "count": 1,
-      "case": "semantics/parse-error-text-parity",
-      "kind": "error text differs",
-      "key": "syntax error at - || syntax error at -",
-      "element": "literal number --1",
-      "examples": [
-        {
-          "query": "topk(--1, rate({a=\"b\"}[5m]))",
-          "loki": "parse error at line 1, col 7: syntax error: unexpected -, expecting NUMBER",
-          "proxy": "parse error at line 1, col 6: syntax error: unexpected -"
         }
       ]
     },

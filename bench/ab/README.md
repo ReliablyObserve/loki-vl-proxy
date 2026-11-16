@@ -807,6 +807,24 @@ owner's approval. `python3 bench/ab/over2x.py replay summary-<set>.json ...`
 shows what the gate says about saved summaries; `conformance/reports/performance.md`
 lists the current rows under "Above 2× Loki (must fix)".
 
+#### First ask, state not built
+
+Some cold runs are a first request for a selector on a proxy that holds no
+state for it yet, which Loki answers from a structure it built at push time:
+the Drilldown patterns of a service or an environment (`DP1`, `DP2` at 1h),
+which Loki's pattern ingester mined while the lines arrived and the proxy,
+which has no ingest path, mines from the lines it reads from VictoriaLogs.
+Such a shape carries `first_ask_max_s` in `shapes.json` (`{range: seconds}`):
+its cold run at that range is held to that absolute bound instead of Loki's
+time. `over2x.summary_pairs` and `history_pairs` leave it out of every ratio
+judgement (above 2×, bands, locks, ratchets, the pull request gate); the
+daily smoke reports it under "First asks" and is red when it takes longer
+than its bound; the weekly run takes a listed one off the above-2× list. Its
+warm and refresh runs, and its other ranges (served from the state the first
+request built), keep the 2× bound. A bound is set from measured runs of the
+shape on the stack, and only for a request whose speed rests on a structure
+Loki builds at ingest.
+
 For docs, read `history/<set>.jsonl` (one JSON object per line; zip `cols`
 with each row) or reuse `history/trend.md` as is. A pull request that edits
 the daily pipeline runs a short version of it (control set, 1h, 3 runs) that
