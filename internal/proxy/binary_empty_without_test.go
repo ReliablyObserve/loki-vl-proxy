@@ -161,6 +161,35 @@ func binarySeriesOf(t *testing.T, body []byte) map[string]string {
 	return out
 }
 
+// The binary empty without fence fires for a query whose parsed tree holds a sum, avg, min or max `without ()`
+// operand, in any spelling the parser reads, and stays off for one the request validation rejects (Loki answers its
+// parse error, so the tree holds no such operation): an empty-compatible selector, the fuzz finding of
+// FuzzResponseKeyFencesMatchParsedTree, kept as a seed.
+//
+// conformance: cache-response-key-versions, semantics/binary-operand-without-empty-collapses
+func TestEmptyWithoutFenceFollowsTheValidatedTree(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		fires bool
+	}{
+		{`sum without () (count_over_time({app="a"}[5m])) % 0`, true},
+		{"Sum\nwiTHOUT\n()\t(COUNT_OVER_TIME\n({A0=\"a\"}[0y]))%0", true},
+		{`2 * max without () (rate({app="a"}[1m]))`, true},
+		{"Sum\nwiTHOUT\n()\t(COUNT_OVER_TIME\n({A0=\"\"}[0y]))%0", false},
+		{`sum without () (count_over_time({app=""}[5m])) / 2`, false},
+		{`sum without () (count_over_time({app=~".*"}[5m])) / 2`, false},
+		{`sum without () (count_over_time({app="a"}[5m])) / `, false},
+		{`count without () (count_over_time({app="a"}[5m])) / 2`, false},
+	} {
+		if _, msg := logqlpkg.ValidateLogQLExpr(tc.query); tc.fires && msg != "" {
+			t.Fatalf("%q: the validation rejects a row that must fire: %s", tc.query, msg)
+		}
+		if got := emptyWithoutOperandResponseKeyVersion(tc.query) != ""; got != tc.fires {
+			t.Errorf("%q: the fence fires %v, want %v", tc.query, got, tc.fires)
+		}
+	}
+}
+
 // BenchmarkEmptyWithoutFence times the binary empty without fence on the queries it turns away with its text screen
 // alone (a labelled without clause, a log query, a by clause) and on one it fires for (the plan read from the memo).
 func BenchmarkEmptyWithoutFence(b *testing.B) {

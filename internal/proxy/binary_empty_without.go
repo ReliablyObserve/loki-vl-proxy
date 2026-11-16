@@ -50,9 +50,15 @@ const emptyWithoutOperandResponseVersion = "@binary-empty-without-v1:"
 // with such an operand. It is read from the query's shared plan after a text screen (emptyWithoutClauseIn: a
 // `without` clause with nothing between its parentheses), so no other query's key changes and a query with no empty
 // clause pays one scan of its text. It does not read the -query-plan-lowering flag: with the flag off the fence costs
-// one more cache miss.
+// one more cache miss. A query the parser or its semantic pass rejects (an empty-compatible selector, a pipeline
+// Loki does not build) holds no such operation for Loki and is answered with its error, so the fence stays off: it
+// reads the query's cached validation (cachedQueryValidation, the one the handler reads), not a second parse. A
+// rejection of the plan's tree checks is of a query Loki parsed: the plan decides.
 func emptyWithoutOperandResponseKeyVersion(query string) string {
 	if !emptyWithoutClauseIn(query) {
+		return ""
+	}
+	if v := cachedQueryValidation(query); v.msg != "" && !v.tree {
 		return ""
 	}
 	if plan := resolvedPlan(dynamicQuery(query)); plan != nil && holdsEmptyWithoutOperand(plan.Root) {
