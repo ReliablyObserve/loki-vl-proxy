@@ -280,7 +280,8 @@
     "delete-max-interval-invalid": "parameters",
     "delete-max-interval-too-long": "parameters",
     "delete-request-not-found": "execution",
-    "no-org-id": "routing"
+    "no-org-id": "routing",
+    "delete-end-in-future": "parameters"
   },
   "stage_rank": {
     "routing": 0,

@@ -98,6 +98,7 @@ const (
 	MsgDeleteStartNotSet
 	MsgDeleteTimeInvalid
 	MsgDeleteStartNotBeforeEnd
+	MsgDeleteEndInFuture
 	MsgDeleteMaxIntervalInvalid
 	MsgDeleteMaxIntervalTooLong
 	// MsgDeleteRequestNotFound: a cancel of a delete request the tenant does not have (404).
@@ -162,6 +163,7 @@ var messages = [msgCount]message{
 	MsgDeleteStartNotSet:        {"delete-start-not-set", KindParam, http.StatusBadRequest, ShapeHTTPError},
 	MsgDeleteTimeInvalid:        {"delete-time-invalid", KindParam, http.StatusBadRequest, ShapeHTTPError},
 	MsgDeleteStartNotBeforeEnd:  {"delete-start-not-before-end", KindParam, http.StatusBadRequest, ShapeHTTPError},
+	MsgDeleteEndInFuture:        {"delete-end-in-future", KindParam, http.StatusBadRequest, ShapeHTTPError},
 	MsgDeleteMaxIntervalInvalid: {"delete-max-interval-invalid", KindParam, http.StatusBadRequest, ShapeHTTPError},
 	MsgDeleteMaxIntervalTooLong: {"delete-max-interval-too-long", KindParam, http.StatusBadRequest, ShapeHTTPError},
 	MsgDeleteRequestNotFound:    {"delete-request-not-found", KindRoute, http.StatusNotFound, ShapeHTTPError},

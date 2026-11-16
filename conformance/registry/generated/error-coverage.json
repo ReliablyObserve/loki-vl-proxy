@@ -2189,7 +2189,7 @@
       "unit_gate": false
     },
     {
-      "comparable_rows": 17,
+      "comparable_rows": 11,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
@@ -2197,8 +2197,7 @@
         "r1187",
         "r1191",
         "r1197",
-        "r1200",
-        "r1763"
+        "r1200"
       ],
       "kind": "methods_routing",
       "known_difference_ids": [
@@ -2208,8 +2207,9 @@
         "r1189",
         "r1200"
       ],
-      "matching_rows": 12,
+      "matching_rows": 6,
       "messages": [
+        "delete-end-in-future",
         "delete-max-interval-invalid",
         "delete-max-interval-too-long",
         "delete-query-invalid",
@@ -3910,8 +3910,7 @@
     "r1439",
     "r1449",
     "r1451",
-    "r1561",
-    "r1763"
+    "r1561"
   ],
   "kinds": [
     {
@@ -4043,6 +4042,23 @@
       "state": "matches",
       "status": 400
     },
+    "delete-end-in-future": {
+      "comparable_rows": 0,
+      "e2e_rows": [],
+      "item": "msg-delete-end-in-future",
+      "kind": "param",
+      "matching_rows": 0,
+      "routes": [
+        "other_routes"
+      ],
+      "rows": [
+        "r1767"
+      ],
+      "source": "lokierr",
+      "stage": "parameters",
+      "state": "recorded-not-comparable",
+      "status": 400
+    },
     "delete-max-interval-invalid": {
       "comparable_rows": 0,
       "e2e_rows": [],
@@ -4159,7 +4175,8 @@
         "r1742",
         "r1743",
         "r1749",
-        "r1750"
+        "r1750",
+        "r1764"
       ],
       "source": "lokierr",
       "stage": "parameters",
@@ -5331,17 +5348,17 @@
     "cells_matching": 98,
     "cells_recorded": 65,
     "check_order_rows": 33,
-    "comparable_rows": 237,
+    "comparable_rows": 231,
     "coverage_ratio": 0.5726,
     "covered_cells": 71,
     "differing_rows": 8,
-    "e2e_rows": 141,
-    "match_ratio": 0.9662,
-    "matching_rows": 229,
-    "messages": 45,
+    "e2e_rows": 140,
+    "match_ratio": 0.9654,
+    "matching_rows": 223,
+    "messages": 46,
     "messages_documented": 10,
-    "messages_recorded": 35,
-    "not_comparable_rows": 134,
+    "messages_recorded": 36,
+    "not_comparable_rows": 140,
     "recorded_loki": "3.7.9",
     "recorded_on": "2026-11-13",
     "recorded_rows": 371,

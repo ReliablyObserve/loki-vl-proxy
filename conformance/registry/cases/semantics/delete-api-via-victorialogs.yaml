@@ -12,8 +12,9 @@ why: |
   `| json`, a label filter after a parser, `{}` and a line filter regexp that does not compile are accepted), `start
   time not set`, `invalid start time: require unix seconds or RFC3339 format` (ten digits of seconds or RFC3339; 1,
   0, milliseconds, a leading zero, a sign, a fraction or spaces are refused), the same for the end (now when not
-  set), `start time can't be greater than or equal to end time` (compared in nanoseconds, so a time past 2262 wraps:
-  an end of 9999999999 is before any start), then, for a query with a line or label filter only, `invalid
+  set), `start time can't be greater than or equal to end time` (ten digits of seconds are read through Unix
+  nanoseconds, so past 2262 they wrap: an end of 9999999999 is before any start; an RFC3339 time does not wrap),
+  `deletes in the future are not allowed` (an end after now), then, for a query with a line or label filter only, `invalid
   max_interval: valid time units are 's', 'm', 'h'` (also for 0, 1d, 1ms and -1h) and `max_interval can't be greater
   than the interval to be deleted (1h0m0s)`. A cancel without request_id is 204; an unknown id is 404 `could not
   find delete request with given id`. Any other method is a bodyless 405.
@@ -31,7 +32,10 @@ why: |
     forgets a task when it ends, so the proxy cannot list Loki's requests (a proxy-held record is a follow-up);
   - a query Loki accepts whose rows a VictoriaLogs filter cannot select exactly: a parser (`| json`), a filter on a
     parsed or derived label, a formatting stage, a line filter regexp that does not compile;
-  - tenant-label routing (a delete task takes no tenant stream filter) and the unmapped global tenant `*`.
+  - tenant-label routing (a delete task takes no tenant stream filter) and the unmapped global tenant `*`;
+  - a start of ten digits past 2262 (r1763, r1768): it wraps to 1702 and Loki answers 204, deleting a tenant's
+    history back to then; the proxy serves no such request (a deliberate safety difference), nor a start before 1678
+    (r1765, Loki 204), which VictoriaLogs' nanosecond times cannot hold. A start before 1970 (r1766) is served.
   Loki processes a request after its cancellation period (24h by default); VictoriaLogs runs the task at once, so
   a cancel can only stop a task that is still running, and what it already deleted stays deleted (as Loki's
   force=true leaves it).

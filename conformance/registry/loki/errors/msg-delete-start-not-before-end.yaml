@@ -21,10 +21,10 @@ check_order:
   loses_to: []
   rows: []
 recorded:
-  rows: 8
+  rows: 9
   comparable_rows: 0
   matching_rows: 0
-  row_ids: ["r1702", "r1733", "r1740", "r1741", "r1742", "r1743", "r1749", "r1750"]
+  row_ids: ["r1702", "r1733", "r1740", "r1741", "r1742", "r1743", "r1749", "r1750", "r1764"]
   known_difference_ids: []
   e2e_rows: []
 coverage:

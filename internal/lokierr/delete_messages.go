@@ -13,6 +13,7 @@ const (
 	textDeleteStartNotSet       = "start time not set"
 	textDeleteTimeInvalidSuffix = " time: require unix seconds or RFC3339 format"
 	textDeleteStartNotBeforeEnd = "start time can't be greater than or equal to end time"
+	textDeleteEndInFuture       = "deletes in the future are not allowed"
 	textDeleteMaxInterval       = "invalid max_interval: valid time units are 's', 'm', 'h'"
 	textDeleteMaxIntervalLong   = "max_interval can't be greater than the interval to be deleted ("
 	textDeleteNotFound          = "could not find delete request with given id"
@@ -41,6 +42,9 @@ func DeleteTimeInvalid(param string) *Error {
 func DeleteStartNotBeforeEnd() *Error {
 	return newError(MsgDeleteStartNotBeforeEnd, textDeleteStartNotBeforeEnd, nil)
 }
+
+// DeleteEndInFuture is a delete request whose end is after now.
+func DeleteEndInFuture() *Error { return newError(MsgDeleteEndInFuture, textDeleteEndInFuture, nil) }
 
 // DeleteMaxIntervalInvalid is a delete request with a filter whose max_interval is not a positive duration of
 // seconds, minutes and hours.

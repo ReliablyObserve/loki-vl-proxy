@@ -80,16 +80,19 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 	p.metrics.RecordRequest("delete", status, time.Since(start))
 }
 
-// deleteRequest is a create request as Loki reads it: start and end in Unix nanoseconds.
+// deleteRequest is a create request as Loki reads it.
 type deleteRequest struct {
 	query      *logqlpkg.LogQuery
-	start, end int64
+	start, end time.Time
 }
 
 // deleteRequestOf reads and checks a create request in Loki's order: the query (not set, not a log query), the
-// start (not set, not unix seconds or RFC3339), the end (now when not set), the start against the end, and for a
-// query with a line or label filter its max_interval. Times are compared in Unix nanoseconds, as Loki compares
-// them: a time past the year 2262 does not fit and wraps (an end of 9999999999 is before any start).
+// start (not set, not unix seconds or RFC3339), the end (now when not set), the start against the end, an end in
+// the future, and for a query with a line or label filter its max_interval. Ten digits of seconds are read as Loki
+// reads them, through Unix nanoseconds, so a time past 2262 wraps: an end of 9999999999 is before any start, and a
+// start of 9999999999 is in 1702 (Loki accepts it and deletes back to then). The proxy serves no request with such
+// a start, nor one that starts before 1678, which VictoriaLogs' nanosecond times cannot hold: Loki's 500, after
+// Loki's own checks.
 func deleteRequestOf(form url.Values, now time.Time) (deleteRequest, error) {
 	raw := form.Get("query")
 	if raw == "" {
@@ -111,24 +114,17 @@ func deleteRequestOf(form url.Values, now time.Time) (deleteRequest, error) {
 	if !ok {
 		return deleteRequest{}, lokierr.DeleteTimeInvalid("start")
 	}
-	// A start Loki reads past 2262 wraps below zero; the request would reach back to 1677 and delete a tenant's whole
-	// history. What Loki answers for it is not recorded, so the proxy serves no such request.
-	if start < 0 || !inNanosRange(startRaw) {
-		return deleteRequest{}, notServed("delete-start-out-of-range", errors.New("a start that does not fit in Unix nanoseconds"))
-	}
-	end := now.UnixNano()
+	end := now
 	if endRaw := form.Get("end"); endRaw != "" {
 		if end, ok = deleteTime(endRaw); !ok {
 			return deleteRequest{}, lokierr.DeleteTimeInvalid("end")
 		}
-		// Ten digits of seconds past 2262 wrap below every start (Loki's answer, recorded); an RFC3339 end out of
-		// range is not recorded, so it is served by no request.
-		if !allDigits(endRaw) && !inNanosRange(endRaw) {
-			return deleteRequest{}, notServed("delete-end-out-of-range", errors.New("an end that does not fit in Unix nanoseconds"))
-		}
 	}
-	if start >= end {
+	if !start.Before(end) {
 		return deleteRequest{}, lokierr.DeleteStartNotBeforeEnd()
+	}
+	if end.After(now) {
+		return deleteRequest{}, lokierr.DeleteEndInFuture()
 	}
 	if hasDeleteFilter(lq) {
 		if raw := form.Get("max_interval"); raw != "" {
@@ -136,42 +132,40 @@ func deleteRequestOf(form url.Values, now time.Time) (deleteRequest, error) {
 			if !ok {
 				return deleteRequest{}, lokierr.DeleteMaxIntervalInvalid()
 			}
-			if span := time.Duration(end - start); interval > span {
+			if span := end.Sub(start); interval > span {
 				return deleteRequest{}, lokierr.DeleteMaxIntervalTooLong(span)
 			}
 		}
 	}
+	if secondsWrap(startRaw) || start.Before(minNanosTime) {
+		return deleteRequest{}, notServed("delete-start-out-of-range", errors.New("a start Loki reads before 1678 or past 2262"))
+	}
 	return deleteRequest{query: lq, start: start, end: end}, nil
 }
 
-// deleteTime reads a delete request's time in Unix nanoseconds: ten digits of unix seconds, or RFC3339 (fractions
-// and offsets allowed). Loki refuses a number of any other length (1, 0, milliseconds, a leading zero), a sign, a
-// fraction, spaces and a date without its T.
-func deleteTime(raw string) (int64, bool) {
+// deleteTime reads a delete request's time: ten digits of unix seconds, which Loki reads through Unix nanoseconds
+// (past 2262 they wrap), or RFC3339 (fractions and offsets allowed). Loki refuses a number of any other length (1, 0,
+// milliseconds, a leading zero), a sign, a fraction, spaces and a date without its T.
+func deleteTime(raw string) (time.Time, bool) {
 	if len(raw) == 10 && allDigits(raw) {
 		sec, err := strconv.ParseInt(raw, 10, 64)
-		return sec * int64(time.Second), err == nil // wraps past 2262, as Loki's time does
+		return time.Unix(0, sec*int64(time.Second)), err == nil
 	}
 	t, err := time.Parse(time.RFC3339Nano, raw)
-	return t.UnixNano(), err == nil
+	return t, err == nil
 }
 
-// inNanosRange reports whether an RFC3339 time fits in Unix nanoseconds (1678 to 2262); a time of digits, Loki's
-// unix seconds, is checked by its caller.
-func inNanosRange(raw string) bool {
-	if allDigits(raw) {
-		sec, err := strconv.ParseInt(raw, 10, 64)
-		return err == nil && sec <= math.MaxInt64/int64(time.Second)
+// secondsWrap reports ten digits of seconds past 2262, which wrap when Loki reads them.
+func secondsWrap(raw string) bool {
+	if len(raw) != 10 || !allDigits(raw) {
+		return false
 	}
-	t, err := time.Parse(time.RFC3339Nano, raw)
-	return err == nil && !t.Before(minNanosTime) && !t.After(maxNanosTime)
+	sec, err := strconv.ParseInt(raw, 10, 64)
+	return err != nil || sec > math.MaxInt64/int64(time.Second)
 }
 
-// The times a Unix nanosecond count holds.
-var (
-	minNanosTime = time.Unix(0, math.MinInt64)
-	maxNanosTime = time.Unix(0, math.MaxInt64)
-)
+// minNanosTime is the earliest time a Unix nanosecond count holds.
+var minNanosTime = time.Unix(0, math.MinInt64)
 
 func allDigits(s string) bool {
 	for i := 0; i < len(s); i++ {
@@ -245,7 +239,7 @@ func (p *Proxy) createDelete(r *http.Request) error {
 	}
 	tenant := r.Header.Get("X-Scope-OrgID")
 	p.log.Warn("DELETE request", "tenant", tenant, "query", r.FormValue("query"),
-		"start", time.Unix(0, req.start).UTC().Format(time.RFC3339Nano), "end", time.Unix(0, req.end).UTC().Format(time.RFC3339Nano), "client", r.RemoteAddr)
+		"start", req.start.UTC().Format(time.RFC3339Nano), "end", req.end.UTC().Format(time.RFC3339Nano), "client", r.RemoteAddr)
 	body, err := p.vlDeleteCall(r.Context(), http.MethodPost, vlDeleteRunTaskPath, url.Values{"filter": {filter}})
 	if err != nil {
 		return err
@@ -319,9 +313,9 @@ func lineFilterRegexpsCompile(lq *logqlpkg.LogQuery) error {
 	return nil
 }
 
-// deleteFilterExpr is the filter of the rows of f between start and end (Unix nanoseconds), both included.
-func deleteFilterExpr(f logsql.FilterExpr, start, end int64) logsql.FilterExpr {
-	window := logsql.TimeFilter{Range: "[" + time.Unix(0, start).UTC().Format(time.RFC3339Nano) + ", " + time.Unix(0, end).UTC().Format(time.RFC3339Nano) + "]"}
+// deleteFilterExpr is the filter of the rows of f between start and end, both included.
+func deleteFilterExpr(f logsql.FilterExpr, start, end time.Time) logsql.FilterExpr {
+	window := logsql.TimeFilter{Range: "[" + start.UTC().Format(time.RFC3339Nano) + ", " + end.UTC().Format(time.RFC3339Nano) + "]"}
 	if f == nil {
 		return window
 	}

@@ -97,6 +97,9 @@ var deleteAPIRowsServedOtherwise = map[string]string{
 	"r1715": "the list: VictoriaLogs keeps no record of a request's query and range",
 	"r1716": "the list: VictoriaLogs keeps no record of a request's query and range",
 	"r1735": "the list: VictoriaLogs keeps no record of a request's query and range",
+	"r1763": "a start of 9999999999 wraps to 1702 in nanoseconds: Loki deletes back to then, the proxy serves no such request",
+	"r1768": "a start of 9999999999 wraps to 1702 in nanoseconds: Loki deletes back to then, the proxy serves no such request",
+	"r1765": "a start before 1678, which VictoriaLogs' nanosecond times cannot hold",
 }
 
 // TestDeleteAPIAnswersLikeLoki replays every recorded delete API row (r1201 and r1700 and later, recorded from a
@@ -295,13 +298,15 @@ func TestDeleteRequestChecksInLokisOrder(t *testing.T) {
 		{url.Values{"query": {`{a="b"}`}, "start": {"1794567075"}, "end": {"1794567075"}}, lokierr.MsgDeleteStartNotBeforeEnd},
 		{url.Values{"query": {`{a="b"}`}, "start": {"1794567075"}, "end": {"9999999999"}}, lokierr.MsgDeleteStartNotBeforeEnd},
 		{url.Values{"query": {`{a="b"}`}, "start": {"2147483647"}}, lokierr.MsgDeleteStartNotBeforeEnd},
-		// A start past 2262 would wrap below zero and reach back to 1677: Loki's 500, no request served.
+		// An RFC3339 time is not wrapped: a start in 3000 is after the end (r1764), an end in 3000 is in the future (r1767).
+		{url.Values{"query": {`{a="b"}`}, "start": {"3000-01-01T00:00:00Z"}, "end": {"1794570675"}}, lokierr.MsgDeleteStartNotBeforeEnd},
+		{url.Values{"query": {`{a="b"}`}, "start": {"1794567075"}, "end": {"3000-01-01T00:00:00Z"}}, lokierr.MsgDeleteEndInFuture},
+		{url.Values{"query": {`{a="b"}`}, "start": {"1794567075"}, "end": {"1794800000"}}, lokierr.MsgDeleteEndInFuture},
+		// A start of 9999999999 wraps to 1702, and Loki deletes back to then (r1763): the proxy serves no such request,
+		// nor one that starts before 1678 (r1765).
 		{url.Values{"query": {`{a="b"}`}, "start": {"9999999999"}}, lokierr.MsgInternal},
 		{url.Values{"query": {`{a="b"}`}, "start": {"9999999999"}, "end": {"1794570675"}}, lokierr.MsgInternal},
-		{url.Values{"query": {`{a="b"}`}, "start": {"3000-01-01T00:00:00Z"}}, lokierr.MsgInternal},
-		{url.Values{"query": {`{a="b"}`}, "start": {"1600-01-01T00:00:00Z"}}, lokierr.MsgInternal},
-		{url.Values{"query": {`{a="b"}`}, "start": {"1969-12-31T00:00:00Z"}, "end": {"1794570675"}}, lokierr.MsgInternal},
-		{url.Values{"query": {`{a="b"}`}, "start": {"1794567075"}, "end": {"3000-01-01T00:00:00Z"}}, lokierr.MsgInternal},
+		{url.Values{"query": {`{a="b"}`}, "start": {"1600-01-01T00:00:00Z"}, "end": {"1794570675"}}, lokierr.MsgInternal},
 		{url.Values{"query": {`{a="b"} |= "x"`}, "start": {"1794567075"}, "end": {"1794570675"}, "max_interval": {"1d"}}, lokierr.MsgDeleteMaxIntervalInvalid},
 		{url.Values{"query": {`{a="b"} | c="d"`}, "start": {"1794567075"}, "end": {"1794570675"}, "max_interval": {"0"}}, lokierr.MsgDeleteMaxIntervalInvalid},
 		{url.Values{"query": {`{a="b"} |= "x"`}, "start": {"1794567075"}, "end": {"1794570675"}, "max_interval": {"1ms"}}, lokierr.MsgDeleteMaxIntervalInvalid},
@@ -321,6 +326,7 @@ func TestDeleteRequestChecksInLokisOrder(t *testing.T) {
 		{"query": {`{a="b"}`}, "start": {"1794567075"}, "end": {"1794570675"}, "max_interval": {"abc"}},
 		{"query": {`{a="b"} |= "x"`}, "start": {"1794567075"}, "end": {"1794570675"}, "max_interval": {"90s"}},
 		{"query": {`{}`}, "start": {"1794567075"}, "end": {"1794570675"}},
+		{"query": {`{a="b"}`}, "start": {"1969-12-31T00:00:00Z"}, "end": {"1794570675"}},
 	} {
 		if _, err := deleteRequestOf(form, now); err != nil {
 			t.Errorf("%v: %v, want Loki's acceptance", form, err)
@@ -352,8 +358,9 @@ func FuzzDeleteRequest(f *testing.F) {
 			}
 			return
 		}
-		// An accepted request deletes a window after 1970 that ends after it starts: never a start that wrapped.
-		if req.query == nil || req.start < 0 || req.start >= req.end {
+		// An accepted request deletes a window that ends after it starts and not after now, from 1678 on: never a
+		// start that wrapped.
+		if req.query == nil || !req.start.Before(req.end) || req.end.After(now) || req.start.Before(minNanosTime) || secondsWrap(start) {
 			t.Fatalf("%v: accepted %+v", form, req)
 		}
 	})
@@ -392,6 +399,14 @@ func deleteFiltersOf(t *testing.T) map[string]string {
 			continue // a query the delete API does not serve sends nothing
 		}
 		out[q] = f
+	}
+	// A window from before 1970, which Loki accepts (r1766).
+	req, err := deleteRequestOf(url.Values{"query": {`{app="nginx"}`}, "start": {"1969-12-31T00:00:00Z"}, "end": {"1794570675"}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["before 1970"], err = p.deleteFilter(context.Background(), req); err != nil {
+		t.Fatal(err)
 	}
 	return out
 }

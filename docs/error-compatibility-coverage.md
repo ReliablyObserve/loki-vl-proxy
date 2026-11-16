@@ -13,12 +13,12 @@ The answers are those of Grafana Loki 3.7.9, recorded over HTTP on 2026-11-13. E
 
 | Score | Value | Meaning |
 |---|---|---|
-| Errors that match Loki | 96.6% (229/237) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
+| Errors that match Loki | 96.5% (223/231) | recorded Loki answers the proxy reproduces exactly, of the rows that can be compared |
 | Matrix coverage | 57.3% (71/124) | route x error kind cells with a recorded or documented Loki answer, a unit gate and an end-to-end comparison |
 | Cells that match | 98/124 | cells where every comparable row matches and no known leak remains |
-| Messages recorded | 35/45 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
+| Messages recorded | 36/46 | typed Loki messages (`internal/lokierr`) with at least one recorded answer; the rest have a documented reason |
 
-134 recorded rows are not comparable (the recorded Loki ran with authentication disabled, or its answer depends on its own configuration) and are replayed but not counted.
+140 recorded rows are not comparable (the recorded Loki ran with authentication disabled, or its answer depends on its own configuration) and are replayed but not counted.
 
 ## Matrix
 
@@ -43,7 +43,7 @@ Each cell shows whether the proxy matches (`match` or `differs`), the matching a
 | `series` | match 2/2 UE | match 2/2 UE | match 1/1 UE | match 1/1 UE | match gate U | match 5/5 UE | not comparable (6) | match gate U |
 | `tail` | match 4/4 UE | match 2/2 UE | match 1/1 UE | match gate U | match gate U | match 5/5 UE | gap | match gate U |
 | `tail_upgrade` | match 4/4 UE | match 2/2 UE | gap |  |  | differs 1/2 UE | not comparable (2) |  |
-| other routes (rules views, push, delete, shards, exemplars, aliases) |  |  |  |  |  | differs 12/17 UE |  |  |
+| other routes (rules views, push, delete, shards, exemplars, aliases) |  |  |  |  |  | differs 6/11 UE |  |  |
 | unknown paths |  |  |  |  |  | match 23/23 UE |  |  |
 
 Error kinds:
@@ -60,7 +60,7 @@ Error kinds:
 ## Order of Loki's checks
 
 1. **request decoding**: The URL and form body are decoded first. Messages: `post-too-large`, `url-escape`, `url-semicolon`.
-2. **parameters**: Parameters are read next, in the order end, start, limit, step and direction; an end not after the start and the 11,000-point resolution check come before the query is parsed. Messages: `aggregate-by`, `delay-for`, `delete-max-interval-invalid`, `delete-max-interval-too-long`, `delete-query-invalid`, `delete-query-not-set`, `delete-start-not-before-end`, `delete-start-not-set`, `delete-time-invalid`, `direction`, `end-before-start`, `interval-negative`, `limit-not-positive`, `number`, `param-duration`, `param-number`, `step-duration`, `step-not-positive`, `step-overflow`, `step-too-many-points`.
+2. **parameters**: Parameters are read next, in the order end, start, limit, step and direction; an end not after the start and the 11,000-point resolution check come before the query is parsed. Messages: `aggregate-by`, `delay-for`, `delete-end-in-future`, `delete-max-interval-invalid`, `delete-max-interval-too-long`, `delete-query-invalid`, `delete-query-not-set`, `delete-start-not-before-end`, `delete-start-not-set`, `delete-time-invalid`, `direction`, `end-before-start`, `interval-negative`, `limit-not-positive`, `number`, `param-duration`, `param-number`, `step-duration`, `step-not-positive`, `step-overflow`, `step-too-many-points`.
 3. **logql syntax**: The query text is parsed; a syntax error is answered before the query-length limit on query_range, and on tail before the parameters. Messages: `parse`, `parse-input-size`.
 4. **limits**: The query-length limit follows the syntax check on query_range and comes before it on the metadata routes. Messages: `limit-lookback`, `limit-query-length`.
 5. **logql validation**: Checks of a query that parsed (stage compilation, matcher rules, query type) come last. Messages: `instant-log-query`, `only-label-matchers`, `only-log-selector`.
@@ -76,12 +76,13 @@ The order was observed by sending 33 requests that carry two errors each to a re
 | `msg-canceled` | 499 | canceled | 0 | - | documented | TestErrorLayer_NoVictoriaLogsLeak, TestErrorLayer_WindowRetryCancelDeadline | - |
 | `msg-deadline` | 504 | deadline | 0 | - | documented | TestErrorLayer_NoVictoriaLogsLeak, TestErrorLayer_WindowRetryCancelDeadline | - |
 | `msg-delay-for` | 400 | param | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |
+| `msg-delete-end-in-future` | 400 | param | 1 | - | recorded-not-comparable | - | - |
 | `msg-delete-max-interval-invalid` | 400 | param | 8 | - | recorded-not-comparable | - | - |
 | `msg-delete-max-interval-too-long` | 400 | param | 1 | - | recorded-not-comparable | - | - |
 | `msg-delete-query-invalid` | 400 | param | 4 | - | recorded-not-comparable | - | - |
 | `msg-delete-query-not-set` | 400 | param | 2 | - | recorded-not-comparable | - | - |
 | `msg-delete-request-not-found` | 404 | route | 4 | - | recorded-not-comparable | - | - |
-| `msg-delete-start-not-before-end` | 400 | param | 8 | - | recorded-not-comparable | - | - |
+| `msg-delete-start-not-before-end` | 400 | param | 9 | - | recorded-not-comparable | - | - |
 | `msg-delete-start-not-set` | 400 | param | 1 | - | recorded-not-comparable | - | - |
 | `msg-delete-time-invalid` | 400 | param | 15 | - | recorded-not-comparable | - | - |
 | `msg-direction` | 400 | param | 2 | 2/2 | matches | TestLokiErrorAnswersReplay | TestCompat_ErrorAnswersLikeLoki |

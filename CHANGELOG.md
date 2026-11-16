@@ -12,8 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** the delete API (`-delete-api-enabled`, behind `-delete-api-auth-token`) now deletes, and answers as
   Loki's delete API does. A create request (`POST`/`PUT /loki/api/v1/delete`) gets Loki's checks in Loki's order with
   its texts (`query not set`, `invalid query expression`, `start time not set`, `invalid start time: require unix
-  seconds or RFC3339 format`, the same for the end, `start time can't be greater than or equal to end time`, and
-  `max_interval` for a query with a filter), recorded from a Loki that serves the API, and then runs as a
+  seconds or RFC3339 format`, the same for the end, `start time can't be greater than or equal to end time`,
+  `deletes in the future are not allowed`, and `max_interval` for a query with a filter), recorded from a Loki that
+  serves the API, and then runs as a
   VictoriaLogs delete task (`/delete/run_task`; VictoriaLogs needs `-delete.enable`) scoped by the tenant's
   `AccountID`/`ProjectID` and a filter of the time range (both ends included) and the rows the same log query reads
   on the read path. A cancel (`DELETE`) answers 204 without `request_id`, stops the tenant's running task of that id,
@@ -25,8 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authentication required`, and start and end follow Loki's formats (ten-digit seconds or RFC3339, not milliseconds
   or nanoseconds). Not served, each Loki's `500` with the reason in the log line: the list (VictoriaLogs keeps no
   record of a request's query and range), a query whose rows a VictoriaLogs filter cannot select (a parser such as
-  `| json`, a filter on a parsed label, a line filter regexp that does not compile), tenant-label routing and the
-  unmapped global tenant `*`. VictoriaLogs runs a task at once, where Loki waits for its cancellation period, and
+  `| json`, a filter on a parsed label, a line filter regexp that does not compile), tenant-label routing, the
+  unmapped global tenant `*`, and a start of ten digits past 2262, which Loki reads as 1702 and so deletes a tenant's
+  history back to then (or a start before 1678). VictoriaLogs runs a task at once, where Loki waits for its cancellation period, and
   answers cached before a delete keep serving the deleted rows until they expire (semantics/delete-api-via-victorialogs).
 
 ### Security

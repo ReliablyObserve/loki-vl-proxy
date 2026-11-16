@@ -186,6 +186,8 @@ func build(t *testing.T, a answer) *Error {
 		return DeleteTimeInvalid(args.Param)
 	case "delete-start-not-before-end":
 		return DeleteStartNotBeforeEnd()
+	case "delete-end-in-future":
+		return DeleteEndInFuture()
 	case "delete-max-interval-invalid":
 		return DeleteMaxIntervalInvalid()
 	case "delete-max-interval-too-long":
@@ -238,7 +240,7 @@ func TestConstructorsRenderLokiRecordedAnswers(t *testing.T) {
 		"only-log-selector", "url-escape", "url-semicolon", "post-too-large", "parse-input-size",
 		"limit-query-length", "limit-lookback", "limit-index-series", "not-found", "method-not-allowed",
 		"tail-not-websocket", "delete-query-not-set", "delete-query-invalid", "delete-start-not-set",
-		"delete-time-invalid", "delete-start-not-before-end", "delete-max-interval-invalid",
+		"delete-time-invalid", "delete-start-not-before-end", "delete-end-in-future", "delete-max-interval-invalid",
 		"delete-max-interval-too-long", "delete-request-not-found"} {
 		if seen[id] == 0 {
 			t.Errorf("no recorded Loki answer renders message %q", id)
