@@ -1,6 +1,6 @@
 {
- "commit": "8d3d89252cf1",
- "date": "2026-11-15",
+ "commit": "23ea2aa56ee5",
+ "date": "2026-11-16",
  "errors": {
   "recorded": {
    "comparable_rows": 231,
@@ -10,7 +10,7 @@
   },
   "live": {
    "rows": 335,
-   "changed": 12,
+   "changed": 1,
    "not_re_recorded": 71,
    "ok": false
   },
@@ -18,67 +18,67 @@
  },
  "loki": "3.7.9",
  "perf_weekly": {
-  "date": "2026-11-09",
+  "date": "2026-11-16",
   "loki_version": "3.7.9",
-  "pairs": 522,
-  "faster": 324,
-  "par": 187,
-  "slower": 11,
+  "pairs": 525,
+  "faster": 353,
+  "par": 153,
+  "slower": 19,
   "distribution": [
    {
+    "above": 8,
+    "below": 365,
+    "between": 14,
+    "close": 183,
+    "profile": "loki-defaults",
+    "request": "first",
+    "rows": 570
+   },
+   {
+    "above": 6,
+    "below": 187,
+    "between": 4,
+    "close": 568,
+    "profile": "loki-defaults",
+    "request": "repeat",
+    "rows": 765
+   },
+   {
+    "above": 2,
+    "below": 312,
+    "between": 13,
+    "close": 120,
+    "profile": "aligned",
+    "request": "first",
+    "rows": 447
+   },
+   {
     "above": 5,
-    "below": 329,
-    "between": 8,
-    "close": 226,
-    "profile": "loki-defaults",
-    "request": "first",
-    "rows": 568
-   },
-   {
-    "above": 0,
-    "below": 76,
+    "below": 22,
     "between": 2,
-    "close": 684,
-    "profile": "loki-defaults",
-    "request": "repeat",
-    "rows": 762
-   },
-   {
-    "above": 3,
-    "below": 308,
-    "between": 10,
-    "close": 123,
-    "profile": "aligned",
-    "request": "first",
-    "rows": 444
-   },
-   {
-    "above": 0,
-    "below": 15,
-    "between": 3,
-    "close": 508,
+    "close": 500,
     "profile": "aligned",
     "request": "repeat",
-    "rows": 526
+    "rows": 529
    }
   ],
-  "over_2x_rows": 4
+  "over_2x_rows": 6
  },
  "red": true,
  "registry": {
-  "cases": 371,
+  "cases": 385,
   "by_status": {
    "documented": 15,
-   "fixed": 131,
+   "fixed": 145,
    "no gap": 84,
    "open": 131,
    "owner-kept": 7,
    "upstream": 3
   },
   "open_by_impact": {
-   "api-only": 22,
-   "drilldown-visible": 13,
-   "edge": 35,
+   "api-only": 19,
+   "drilldown-visible": 14,
+   "edge": 37,
    "explore-visible": 60,
    "grafana-datasource": 1
   }
@@ -94,17 +94,17 @@
    "accepted, translation fails": 32,
    "error text differs": 124,
    "error text differs, rejected at translation": 12,
-   "proxy accepts, Loki rejects": 48,
-   "proxy rejects, Loki accepts": 18,
+   "proxy accepts, Loki rejects": 32,
+   "proxy rejects, Loki accepts": 10,
    "tree fact differs: binary operation": 17,
    "tree fact differs: has a log pipeline": 3,
    "tree fact differs: offsets": 4,
    "tree fact differs: outermost operation": 4
   },
   "live_check": {
-   "conclusion": "failure",
-   "date": "2026-11-15",
-   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43667889923",
+   "conclusion": "cancelled",
+   "date": "2026-11-16",
+   "url": "https://github.com/ReliablyObserve/loki-vl-proxy/actions/runs/43829287153",
    "workflow": "query-corpus.yaml"
   },
   "recorded_file": "conformance/registry/grammar-sweep.json"
