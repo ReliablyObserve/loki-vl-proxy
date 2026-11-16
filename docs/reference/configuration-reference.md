@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (265), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (266), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -233,6 +233,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-peer-insecure-ip-allowlist` | bool | `false` | `extraArgs.peer-insecure-ip-allowlist` | When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured. |
 | `-peer-push-buffer-max-bytes` | int64 | `33554432` | `extraArgs.peer-push-buffer-max-bytes` | Bytes of the values in the peer push buffer (-peer-push-buffer-max-entries), across all peers. 0 turns buffering off. |
 | `-peer-push-buffer-max-entries` | int | `8192` | `extraArgs.peer-push-buffer-max-entries` | Pushes to replicas kept per proxy, across all peers, while a peer cannot take them (its breaker is open, it is still starting, the push queue is full or the push failed); they are replayed once the peer answers, slowly first, the newest value per key. Above the bound the oldest push of the largest backlog is dropped and counted. 0 turns buffering off: such pushes are dropped. |
+| `-peer-read-hedge-max-delay` | duration | `200ms` | `extraArgs.peer-read-hedge-max-delay` | Longest a peer-cache read waits on one replica's response headers before it also asks the key's next replica or, with none left, goes on as a miss (VictoriaLogs or a local compute) while that call finishes in the background, where its -peer-timeout still suspends a paused peer. The delay used is twice the p99 of the measured peer header latencies, at least 5ms and at most this value and half of -peer-timeout. 0 turns hedging off: a read waits up to -peer-timeout on each replica. |
 | `-peer-replication-factor` | int | `2` | `extraArgs.peer-replication-factor` | Replicas of every peer-cache key, owner included: the key's owner on the peer ring and the next distinct peers clockwise (1-5). Write-through writes are pushed to every replica, which keeps the copy in memory and on disk and never pushes it on; a lookup that misses memory and disk asks the replicas in ring order, so a replica that lost its disk, or whose owner is down, gets the key from another replica instead of recomputing it. Each extra replica adds one push per write-through write and the copies' memory and disk on the peers. 1 keeps one copy on the owner. |
 | `-peer-self` | string | (empty) | `peerCache.* (chart-managed)` | 10.0.0.1:3100 |
 | `-peer-self-az` | string | (empty) | `extraArgs.peer-self-az` | us-east-1a |

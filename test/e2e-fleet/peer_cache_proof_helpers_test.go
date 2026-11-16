@@ -340,6 +340,7 @@ type fleetCounters struct {
 	backupHits   float64 // of which from a replica other than the owner (replication builds)
 	peerMisses   float64
 	peerErrors   float64
+	readHedges   float64 // reads that asked the next replica or gave up on a slow one
 	wtPushes     float64 // write-through pushes to owner peers
 	wtErrors     float64
 	tierL1Hits   float64 // shared read path memory hits (a pushed copy on a cold replica)
@@ -425,6 +426,7 @@ func countersFrom(m promScrape) fleetCounters {
 		backupHits:         m.sum("loki_vl_proxy_peer_cache_backup_hits_total", nil),
 		peerMisses:         m.sum("loki_vl_proxy_peer_cache_misses_total", nil),
 		peerErrors:         m.sum("loki_vl_proxy_peer_cache_errors_total", nil),
+		readHedges:         m.sum("loki_vl_proxy_peer_cache_read_hedges_total", nil),
 		wtPushes:           m.sum("loki_vl_proxy_peer_cache_write_through_pushes_total", nil),
 		wtErrors:           m.sum("loki_vl_proxy_peer_cache_write_through_errors_total", nil),
 		tierL1Hits:         m.sum("loki_vl_proxy_cache_tier_hits_total", map[string]string{"tier": "l1_memory"}),
@@ -490,7 +492,7 @@ func (a fleetCounters) minus(b fleetCounters) fleetCounters {
 	return fleetCounters{
 		vlSelect: a.vlSelect - b.vlSelect, vlStats: a.vlStats - b.vlStats, vlSeconds: a.vlSeconds - b.vlSeconds,
 		peerHits: a.peerHits - b.peerHits, backupHits: a.backupHits - b.backupHits,
-		peerMisses: a.peerMisses - b.peerMisses, peerErrors: a.peerErrors - b.peerErrors,
+		peerMisses: a.peerMisses - b.peerMisses, peerErrors: a.peerErrors - b.peerErrors, readHedges: a.readHedges - b.readHedges,
 		wtPushes: a.wtPushes - b.wtPushes, wtErrors: a.wtErrors - b.wtErrors,
 		tierL1Hits: a.tierL1Hits - b.tierL1Hits, tierL2Hits: a.tierL2Hits - b.tierL2Hits, tierL3Hits: a.tierL3Hits - b.tierL3Hits,
 		windowHits: a.windowHits - b.windowHits, windowMisses: a.windowMisses - b.windowMisses,
@@ -519,8 +521,8 @@ func (a fleetCounters) topLevelL2Hits() float64 { return a.tierL2Hits - a.invDis
 func (a fleetCounters) topLevelL3Hits() float64 { return a.tierL3Hits - a.invPeer }
 
 func (a fleetCounters) String() string {
-	return fmt.Sprintf("vl_select=%.0f vl_stats=%.0f vl_time=%.3fs fleet_vl_select=%.0f fleet_vl_stats=%.0f peer_hits=%.0f backup_hits=%.0f peer_misses=%.0f peer_errors=%.0f wt_pushes=%.0f wt_errors=%.0f l1_hits=%.0f l2_hits=%.0f l3_hits=%.0f window_hits=%.0f window_misses=%.0f inventory_units(memory=%.0f disk=%.0f peer=%.0f vl=%.0f) stream_label_names_refreshes=%.0f steps(hit=%.0f partial=%.0f miss=%.0f stored=%.0f) reply_hits=%.0f missed_every_tier=%.0f peer_fetches=%.0f peer_fetch_time=%.3fs background_vl=%.0f fleet_vl_routes=%v",
-		a.vlSelect, a.vlStats, a.vlSeconds, a.fleetVLSelect, a.fleetVLStats, a.peerHits, a.backupHits, a.peerMisses, a.peerErrors, a.wtPushes, a.wtErrors, a.tierL1Hits, a.tierL2Hits, a.tierL3Hits, a.windowHits, a.windowMisses, a.invMemory, a.invDisk, a.invPeer, a.invVL, a.slnRefreshes, a.stepsHit, a.stepsPartial, a.stepsMiss, a.stepsStored, a.replyHits, a.missedAll, a.peerFetches, a.peerFetchSeconds, a.vlBackground, a.fleetVLRoutes)
+	return fmt.Sprintf("vl_select=%.0f vl_stats=%.0f vl_time=%.3fs fleet_vl_select=%.0f fleet_vl_stats=%.0f peer_hits=%.0f backup_hits=%.0f peer_misses=%.0f peer_errors=%.0f read_hedges=%.0f wt_pushes=%.0f wt_errors=%.0f l1_hits=%.0f l2_hits=%.0f l3_hits=%.0f window_hits=%.0f window_misses=%.0f inventory_units(memory=%.0f disk=%.0f peer=%.0f vl=%.0f) stream_label_names_refreshes=%.0f steps(hit=%.0f partial=%.0f miss=%.0f stored=%.0f) reply_hits=%.0f missed_every_tier=%.0f peer_fetches=%.0f peer_fetch_time=%.3fs background_vl=%.0f fleet_vl_routes=%v",
+		a.vlSelect, a.vlStats, a.vlSeconds, a.fleetVLSelect, a.fleetVLStats, a.peerHits, a.backupHits, a.peerMisses, a.peerErrors, a.readHedges, a.wtPushes, a.wtErrors, a.tierL1Hits, a.tierL2Hits, a.tierL3Hits, a.windowHits, a.windowMisses, a.invMemory, a.invDisk, a.invPeer, a.invVL, a.slnRefreshes, a.stepsHit, a.stepsPartial, a.stepsMiss, a.stepsStored, a.replyHits, a.missedAll, a.peerFetches, a.peerFetchSeconds, a.vlBackground, a.fleetVLRoutes)
 }
 
 // fleetDown holds the services the proof stopped or paused: they are left

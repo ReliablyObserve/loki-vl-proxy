@@ -28,22 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shapes x 4 request kinds x 2 versions: 144 of 160 runs match Loki, from 86 (every run of the 15 operations, and
   under `sum(…)`, `label_replace(…)` and with an `offset`). A `count`, `stddev` or `stdvar` under the clause, and a ranking over the operation, are unchanged. Answers cached before the fix are not served again
   (semantics/binary-operand-without-empty-collapses). `-query-plan-lowering=false` keeps the previous reading.
-- Shutting the proxy down closes the peer cache's connections to its peers: idle ones are closed, and a dial that
-  finishes after the shutdown is closed instead of kept open for its 30 s idle timeout.
-- `/labels` no longer keeps label names whose last stream left the requested window. Each listing of a window now
-  replaces the cached answer instead of being merged into it, so a refreshed or re-read answer lists the labels of the
-  streams with data in the window, as Loki does; an empty listing replaces it too (kept for the short negative TTL).
-  Storing a listing is also cheaper (40 labels: 4.4 µs and 16 allocations instead of 11.9 µs and 64).
-- Rows written with old timestamps into an hour or day the label inventory already cached with data are listed by the
-  next `/labels` or `/label/{name}/values` request, as Loki lists them as soon as they are ingested. Within
-  `-max-metadata-cache-freshness` every bucket whose row count is known (empty buckets, and hours and days that ended
-  more than an hour ago) is confirmed
-  by one row count per contiguous run, compared with the rows the buckets held; a run that grew is halved to find the
-  buckets that received rows, and only those are rescanned. Before, only empty buckets were confirmed this way and a
-  bucket with data showed backfilled rows only after its revalidation delay. A run count taken within
-  `-recent-tail-refresh-max-staleness` is reused, so a repeat inside it sends no count; non-empty 5-minute and
-  1-minute buckets (no row count), hours with rows from the last hour (where shippers' late rows land, revalidated
-  every labels TTL) and listings that cannot be counted keep their revalidation schedule.
+- A paused or hung peer-cache replica no longer stalls a request for `-peer-timeout` (2 s by default). A lookup that
+  misses memory and disk asks the key's replicas in ring order; when the replica asked has not sent its response headers
+  within the read hedge delay, the lookup also asks the next replica and takes the first answer, and with no replica left
+  it reads VictoriaLogs after `-peer-read-hedge-max-delay` (new flag and Helm value, default `200ms`, `0` turns it off).
+  The delay is twice the p99 of the peer header latencies the proxy measured, at least 5 ms, so a healthy fleet asks a
+  second replica for about one read in a hundred. The call left waiting runs on in the background, where its timeout
+  still suspends the peer for the breaker cooldown, and meanwhile reads ask that peer last or skip it, so one read per
+  proxy pays the delay; the half-open probe after the cooldown and the `/patterns` owner presence check are bounded the
+  same way. Before, the first lookup on a paused replica and the probe after every cooldown each waited the full peer
+  timeout (one query per run at 2.0 s and a `/labels` p99 at the timeout in a fleet run with one replica paused). New
+  metrics: `loki_vl_proxy_peer_cache_read_hedges_total{action="next_replica"|"gave_up"}` and
+  `loki_vl_proxy_peer_cache_read_hedge_delay_seconds`; peer error reason `peer_slow`.
 
 ## [2.311.0] - 2026-11-16
 

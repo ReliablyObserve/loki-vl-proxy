@@ -162,12 +162,18 @@ type PeerCache struct {
 	// fetchDurations times every replica fetch by the replica's role and the
 	// outcome.
 	fetchDurations [2][3]durationHistogram // [owner, backup][hit, miss, error]
-	RAHotReq       atomic.Int64
-	RAHotErr       atomic.Int64
-	RAPrefetch     atomic.Int64
-	RABytes        atomic.Int64
-	RABudget       atomic.Int64
-	RATenant       atomic.Int64
+	// Hedged reads (peer_hedge.go): the longest a read waits on one replica's
+	// response headers (0: off), the measured header latencies and the hedges
+	// by action.
+	hedgeMax      time.Duration
+	headerLatency headerLatency
+	readHedges    [hedgeOutcomes]atomic.Int64
+	RAHotReq      atomic.Int64
+	RAHotErr      atomic.Int64
+	RAPrefetch    atomic.Int64
+	RABytes       atomic.Int64
+	RABudget      atomic.Int64
+	RATenant      atomic.Int64
 }
 
 type inflightEntry struct {
@@ -210,7 +216,12 @@ type PeerConfig struct {
 	// DefaultPushBufferMaxBytes, a negative value turns buffering off.
 	PushBufferMaxEntries int
 	PushBufferMaxBytes   int64
-	Logger               *slog.Logger
+	// ReadHedgeMaxDelay bounds how long a read waits on one replica's
+	// response headers before it asks the next replica or goes on as a miss
+	// (peer_hedge.go): 0 uses DefaultPeerReadHedgeMaxDelay, a negative value
+	// turns hedging off (a read waits up to Timeout on each replica).
+	ReadHedgeMaxDelay time.Duration
+	Logger            *slog.Logger
 }
 
 type hotIndexResponse struct {
@@ -308,6 +319,7 @@ func NewPeerCache(cfg PeerConfig) *PeerCache {
 	if pc.wtMinTTL <= 0 {
 		pc.wtMinTTL = 30 * time.Second
 	}
+	pc.hedgeMax = resolveReadHedgeMax(cfg.ReadHedgeMaxDelay)
 	pc.replication = min(max(cfg.ReplicationFactor, 1), MaxReplicationFactor)
 	pc.pushQueue = make(chan pushJob, maxQueuedPushes)
 	pc.ctx, pc.cancel = context.WithCancel(context.Background())
@@ -511,39 +523,14 @@ func (pc *PeerCache) getReplica(key string) ([]byte, time.Duration, bool, bool) 
 		pc.inflight.Delete(key)
 	}()
 
-	asked := false
-	for i, addr := range replicas {
-		if addr == pc.selfAddr {
-			continue
-		}
-		if !pc.peerAllowed(addr) {
-			pc.RecordPeerErrorReason("breaker_open")
-			pc.PeerErrors.Add(1)
-			continue
-		}
-		asked = true
-		started := time.Now()
-		body, ttl, memOnly, status := pc.fetchFrom(addr, key)
-		role, outcome := 0, 0
-		if i > 0 {
-			role = 1
-		}
-		switch status {
-		case http.StatusNotFound:
-			outcome = 1
-		case 0:
-			outcome = 2
-		}
-		pc.fetchDurations[role][outcome].observe(time.Since(started))
-		if status != http.StatusOK {
-			continue
-		}
-		inf.result, inf.ttl, inf.memOnly, inf.ok = body, ttl, memOnly, true
+	a, ok, asked := pc.askReplicas(key, replicas)
+	if ok {
+		inf.result, inf.ttl, inf.memOnly, inf.ok = a.body, a.ttl, a.memOnly, true
 		pc.PeerHits.Add(1)
-		if i > 0 {
+		if a.index > 0 {
 			pc.BackupHits.Add(1)
 		}
-		return body, ttl, memOnly, true
+		return a.body, a.ttl, a.memOnly, true
 	}
 	if asked {
 		pc.PeerMisses.Add(1)
@@ -555,11 +542,18 @@ func (pc *PeerCache) getReplica(key string) ([]byte, time.Duration, bool, bool) 
 // presence check for key (/_cache/has) returns 200. A caller that may then wait on the peer much longer (a /patterns
 // request the owner may build a pattern state on) asks first, so a stopped or frozen peer costs it at most the peer
 // timeout; the check counts towards the peer's breaker like any other call.
+//
+// The caller waits at most the read hedge delay (peer_hedge.go): a peer that has not answered by then is not
+// reachable, and the check finishes in the background, where its timeout suspends a paused peer.
 func (pc *PeerCache) Reachable(addr, key string) bool {
-	if !pc.peerAllowed(addr) {
-		pc.RecordPeerErrorReason("breaker_open")
+	if !pc.peerReadAllowed(addr) {
 		return false
 	}
+	return pc.boundedPeerCheck(addr, func() bool { return pc.reachable(addr, key) })
+}
+
+// reachable is one presence check of Reachable, bounded by the peer timeout.
+func (pc *PeerCache) reachable(addr, key string) bool {
 	endpoint := "http://" + addr + "/_cache/has?keys=" + url.QueryEscape(key)
 	ctx, cancel := context.WithTimeout(pc.peerContext(addr), pc.client.Timeout)
 	defer cancel()
@@ -571,6 +565,7 @@ func (pc *PeerCache) Reachable(addr, key string) bool {
 	if pc.authToken != "" {
 		req.Header.Set("X-Peer-Token", pc.authToken)
 	}
+	sent := time.Now()
 	resp, err := pc.client.Do(req)
 	if err != nil {
 		if pc.recordPeerCallError(addr, ctx, err) {
@@ -580,6 +575,7 @@ func (pc *PeerCache) Reachable(addr, key string) bool {
 		}
 		return false
 	}
+	pc.headerLatency.observe(time.Since(sent))
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -593,8 +589,9 @@ func (pc *PeerCache) Reachable(addr, key string) bool {
 
 // fetchFrom asks one replica for key: the value, its remaining TTL and
 // whether the replica keeps it in memory only, with status 200; 404 on a
-// miss; 0 on an error (recorded against the peer).
-func (pc *PeerCache) fetchFrom(owner, key string) ([]byte, time.Duration, bool, int) {
+// miss; 0 on an error (recorded against the peer). onHeaders hears when the
+// replica's response headers arrived.
+func (pc *PeerCache) fetchFrom(owner, key string, onHeaders headerSink) ([]byte, time.Duration, bool, int) {
 	endpoint := "http://" + owner + "/_cache/get?key=" + url.QueryEscape(key)
 	ctx, cancel := context.WithTimeout(pc.peerContext(owner), pc.client.Timeout)
 	defer cancel()
@@ -611,6 +608,7 @@ func (pc *PeerCache) fetchFrom(owner, key string) ([]byte, time.Duration, bool, 
 	}
 	req.Header.Set("Accept-Encoding", "zstd, gzip")
 
+	sent := time.Now()
 	resp, err := pc.client.Do(req)
 	if err != nil {
 		if pc.recordPeerCallError(owner, ctx, err) {
@@ -622,6 +620,8 @@ func (pc *PeerCache) fetchFrom(owner, key string) ([]byte, time.Duration, bool, 
 		return nil, 0, false, 0
 	}
 	defer resp.Body.Close()
+	pc.headerLatency.observe(time.Since(sent))
+	onHeaders.arrived()
 
 	if resp.StatusCode == http.StatusNotFound {
 		pc.recordPeerSuccess(owner)
@@ -2261,9 +2261,16 @@ type peerBreaker struct {
 	buffered atomic.Int64
 	wake     chan struct{}
 	probeAt  atomic.Int64 // Unix ns the running probe started; 0 when none
-	mu       sync.Mutex
-	ctx      context.Context // cancelled when the peer is suspended
-	cancel   context.CancelFunc
+	// slowCalls counts calls to the peer still running that a read gave up
+	// on after the give-up delay (peer_hedge.go): reads skip the peer while
+	// it is above 0.
+	slowCalls atomic.Int32
+	// laggingCalls counts calls to the peer still running after another
+	// replica answered their read first: reads ask the peer last meanwhile.
+	laggingCalls atomic.Int32
+	mu           sync.Mutex
+	ctx          context.Context // cancelled when the peer is suspended
+	cancel       context.CancelFunc
 }
 
 func (pc *PeerCache) breaker(addr string) *peerBreaker {
@@ -2441,5 +2448,6 @@ func (pc *PeerCache) FetchDurationText() string {
 			fmt.Fprintf(&b, "loki_vl_proxy_peer_cache_fetch_duration_seconds_count{replica=%q,outcome=%q} %d\n", role, outcome, count)
 		}
 	}
+	b.WriteString(pc.readHedgeText())
 	return b.String()
 }

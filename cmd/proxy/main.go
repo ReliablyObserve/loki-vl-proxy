@@ -213,6 +213,7 @@ type proxyRuntimeConfig struct {
 	peerHTTPURL                         string
 	peerStatic                          string
 	peerTimeout                         time.Duration
+	peerReadHedgeMaxDelay               time.Duration
 	peerAuthToken                       string
 	peerWriteThrough                    bool
 	peerWriteThroughMinTTL              time.Duration
@@ -757,6 +758,7 @@ func run(
 	peerHTTPURL := fs.String("peer-http-url", "", `URL returning a JSON peer list for "http" discovery. Supported formats: simple array, {"peers":[...]}, Prometheus HTTP SD, Consul catalog API`)
 	peerStatic := fs.String("peer-static", "", `Static peer list for "static" discovery (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
 	peerTimeout := fs.Duration("peer-timeout", 2*time.Second, "Timeout for peer-cache fetch requests to owner peers")
+	peerReadHedgeMaxDelay := fs.Duration("peer-read-hedge-max-delay", 200*time.Millisecond, "Longest a peer-cache read waits on one replica's response headers before it also asks the key's next replica or, with none left, goes on as a miss (VictoriaLogs or a local compute) while that call finishes in the background, where its -peer-timeout still suspends a paused peer. The delay used is twice the p99 of the measured peer header latencies, at least 5ms and at most this value and half of -peer-timeout. 0 turns hedging off: a read waits up to -peer-timeout on each replica.")
 	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set")
 	peerInsecureIPAllowlist := fs.Bool("peer-insecure-ip-allowlist", false, "When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured.")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
@@ -1060,6 +1062,7 @@ func run(
 			peerHTTPURL:                         *peerHTTPURL,
 			peerStatic:                          *peerStatic,
 			peerTimeout:                         *peerTimeout,
+			peerReadHedgeMaxDelay:               *peerReadHedgeMaxDelay,
 			peerAuthToken:                       *peerAuthToken,
 			peerInsecureIPAllowlist:             *peerInsecureIPAllowlist,
 			peerWriteThrough:                    *peerWriteThrough,
@@ -2246,6 +2249,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			StaticPeers:              cfg.peerStatic,
 			Port:                     3100,
 			Timeout:                  cfg.peerTimeout,
+			ReadHedgeMaxDelay:        peerReadHedgeBound(cfg.peerReadHedgeMaxDelay),
 			AuthToken:                cfg.peerAuthToken,
 			WriteThrough:             cfg.peerWriteThrough,
 			WriteThroughMinTTL:       cfg.peerWriteThroughMinTTL,
@@ -2476,6 +2480,15 @@ func peerPushBufferBound[T int | int64](flag T) T {
 	return flag
 }
 
+// peerReadHedgeBound maps -peer-read-hedge-max-delay to the peer cache's
+// setting: 0 (hedging off) is a negative value there, where 0 is the default.
+func peerReadHedgeBound(flag time.Duration) time.Duration {
+	if flag == 0 {
+		return -1
+	}
+	return flag
+}
+
 func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 	for _, limit := range []struct {
 		flag  string
@@ -2500,6 +2513,9 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 		if limit.value < 0 {
 			return fmt.Errorf("invalid %s: %d (must be >= 0; 0 uses the built-in default)", limit.flag, limit.value)
 		}
+	}
+	if cfg.peerReadHedgeMaxDelay < 0 {
+		return fmt.Errorf("invalid -peer-read-hedge-max-delay=%s (must be >= 0; 0 turns hedged peer reads off)", cfg.peerReadHedgeMaxDelay)
 	}
 	if cfg.peerPushBufferMaxEntries < 0 || cfg.peerPushBufferMaxBytes < 0 {
 		return fmt.Errorf("invalid -peer-push-buffer-max-entries=%d / -peer-push-buffer-max-bytes=%d (must be >= 0; 0 turns the peer push buffer off)", cfg.peerPushBufferMaxEntries, cfg.peerPushBufferMaxBytes)

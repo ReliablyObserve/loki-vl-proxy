@@ -23,10 +23,11 @@ proxy: |
   asks the replicas in ring order, owner first, skipping this instance and
   peers whose breaker is open: an owner that lost its disk gets its keys from
   its backup, and with the owner down or slow another replica gets them from
-  the backup after at most -peer-timeout. A peer that times out is
-  suspended for the breaker cooldown at once and the calls still waiting on
-  it are cancelled, so a paused owner costs a request one -peer-timeout in
-  all, not one per lookup; after the cooldown one call probes it. A peer
+  the backup after at most the read hedge delay (peer-cache-read-hedge). A
+  peer that times out is suspended for the breaker cooldown at once and the
+  calls still waiting on it are cancelled, so a paused owner costs a request
+  at most the read hedge maximum per proxy, never a -peer-timeout per
+  lookup; after the cooldown one call probes it. A peer
   that never answered since this process started and refuses connections
   is still starting: it is skipped for 250 ms without counting towards its
   breaker, and pushes made meanwhile are kept in the push buffer and sent
