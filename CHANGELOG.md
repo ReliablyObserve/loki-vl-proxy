@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.317.0] - 2026-11-16
+
 ### Performance
 
 - A cold `/patterns` request for a busy selector (the first Logs Drilldown patterns view of a service or an
