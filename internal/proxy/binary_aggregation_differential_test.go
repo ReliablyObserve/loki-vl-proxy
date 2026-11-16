@@ -10,23 +10,14 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
 // This file pins a vector aggregation over a binary expression to Loki's
-// answer, over generated rows, windows and expressions, with a reference
-// evaluator written apart from the proxy. It models Loki's binary evaluation
-// (per step, the right-hand samples by matching signature, one match per left
-// sample: on() keeps the listed labels and ignoring() drops them for
-// one-to-one, group_left keeps the left labels; a comparison keeps the left
-// value or, with bool, answers 0 or 1; a literal on either side) and the
-// aggregation per step over the binary's samples.
-// The operands are `sum by (...)` over count_over_time and rate, read on the
-// window (t-range, t]; only VictoriaLogs is simulated (vlemu.Emulator).
-
-type aggRefSample struct {
-	labels map[string]string
-	v      float64
-}
+// answer, over generated rows, windows and expressions: Loki's answers are
+// recorded with Loki's engine over the same lines (test/oracle/loki engine;
+// LVP_RUN_ORACLES=1 records them again). The operands are `sum by (...)` over
+// count_over_time and rate; only VictoriaLogs is simulated (vlemu.Emulator).
 
 // refNode is an operand (fn set), a literal (scalar set) or a binary.
 type refNode struct {
@@ -81,161 +72,6 @@ func (n *refNode) joinsVectors() bool {
 	return (n.l.scalar == nil && n.r.scalar == nil) || n.l.joinsVectors() || n.r.joinsVectors()
 }
 
-func refStreamLabels(stream string) map[string]string {
-	out := map[string]string{}
-	for _, m := range vlemu.StreamLabelRE.FindAllStringSubmatch(stream, -1) {
-		out[m[1]] = m[2]
-	}
-	return out
-}
-
-func refValue(op string, a, b float64) (float64, bool) {
-	switch op {
-	case "+":
-		return a + b, true
-	case "-":
-		return a - b, true
-	case "*":
-		return a * b, true
-	case "/":
-		return a / b, true // the generator never divides by zero: Loki answers NaN there, the proxy ±Inf
-	case ">":
-		return a, a > b
-	case "<":
-		return a, a < b
-	case ">=":
-		return a, a >= b
-	case "<=":
-		return a, a <= b
-	}
-	panic("reference: " + op)
-}
-
-func refComparison(op string) bool {
-	return op == ">" || op == "<" || op == ">=" || op == "<="
-}
-
-// eval returns the vector at t, or the literal.
-func (n *refNode) eval(rows []vlemu.Row, t, window int64) ([]aggRefSample, float64, bool) {
-	if n.scalar != nil {
-		return nil, *n.scalar, true
-	}
-	if n.fn != "" {
-		type group struct {
-			labels     map[string]string
-			count, sum float64
-		}
-		groups := map[string]*group{}
-		for _, row := range rows {
-			if row.TS <= t-window || row.TS > t {
-				continue
-			}
-			stream := refStreamLabels(row.Stream)
-			labels := map[string]string{}
-			for _, name := range n.by {
-				if v := stream[name]; v != "" {
-					labels[name] = v
-				}
-			}
-			key := binaryLabelKey(labels)
-			if groups[key] == nil {
-				groups[key] = &group{labels: labels}
-			}
-			groups[key].count++
-			groups[key].sum += row.Value
-		}
-		var out []aggRefSample
-		seconds := float64(window) / 1e9
-		for _, g := range groups {
-			v := map[string]float64{"count": g.count, "rate": g.count / seconds, "amount": g.sum / seconds}[n.fn]
-			out = append(out, aggRefSample{g.labels, v})
-		}
-		return out, 0, false
-	}
-	lhs, lv, lScalar := n.l.eval(rows, t, window)
-	rhs, rv, rScalar := n.r.eval(rows, t, window)
-	var out []aggRefSample
-	if lScalar || rScalar {
-		vec := lhs
-		if lScalar {
-			vec = rhs
-		}
-		for _, s := range vec {
-			a, b := s.v, rv
-			if lScalar {
-				a, b = lv, s.v
-			}
-			v, keep := refValue(n.op, a, b)
-			if refComparison(n.op) {
-				v = s.v // the vector's value, whichever side the literal is on
-				if n.boolean {
-					v, keep = map[bool]float64{true: 1, false: 0}[keep], true
-				}
-			}
-			if keep {
-				out = append(out, aggRefSample{s.labels, v})
-			}
-		}
-		return out, 0, false
-	}
-	signature := func(labels map[string]string) string {
-		sig := map[string]string{}
-		for k, v := range labels {
-			sig[k] = v
-		}
-		switch n.match {
-		case "on":
-			sig = map[string]string{}
-			for _, name := range n.labels {
-				if v := labels[name]; v != "" {
-					sig[name] = v
-				}
-			}
-		case "ignoring":
-			for _, name := range n.labels {
-				delete(sig, name)
-			}
-		}
-		return binaryLabelKey(sig)
-	}
-	right := map[string]aggRefSample{}
-	for _, s := range rhs {
-		right[signature(s.labels)] = s
-	}
-	for _, s := range lhs {
-		match, ok := right[signature(s.labels)]
-		if !ok {
-			continue
-		}
-		labels := s.labels
-		if !n.groupLeft && n.match != "" { // one-to-one: resultMetric keeps on(), drops ignoring()
-			labels = map[string]string{}
-			if n.match == "on" {
-				for _, name := range n.labels {
-					if v := s.labels[name]; v != "" {
-						labels[name] = v
-					}
-				}
-			} else {
-				for k, v := range s.labels {
-					labels[k] = v
-				}
-				for _, name := range n.labels {
-					delete(labels, name)
-				}
-			}
-		}
-		v, keep := refValue(n.op, s.v, match.v)
-		if n.boolean {
-			v, keep = map[bool]float64{true: 1, false: 0}[keep], true
-		}
-		if keep {
-			out = append(out, aggRefSample{labels, v})
-		}
-	}
-	return out, 0, false
-}
-
 type refAggregation struct {
 	op      string
 	without bool
@@ -250,60 +86,6 @@ func (a refAggregation) wrap(q string) string {
 		return a.op + " without (" + strings.Join(a.labels, ", ") + ") (" + q + ")"
 	}
 	return a.op + " by (" + strings.Join(a.labels, ", ") + ") (" + q + ")"
-}
-
-func (a refAggregation) apply(in []aggRefSample) []aggRefSample {
-	type group struct {
-		labels map[string]string
-		v      float64
-		n      int
-	}
-	groups := map[string]*group{}
-	var order []string
-	for _, s := range in {
-		labels := map[string]string{}
-		if a.without {
-			for k, v := range s.labels {
-				labels[k] = v
-			}
-			for _, name := range a.labels {
-				delete(labels, name)
-			}
-		} else {
-			for _, name := range a.labels {
-				if v := s.labels[name]; v != "" {
-					labels[name] = v
-				}
-			}
-		}
-		key := binaryLabelKey(labels)
-		g := groups[key]
-		if g == nil {
-			groups[key] = &group{labels: labels, v: s.v, n: 1}
-			order = append(order, key)
-			continue
-		}
-		g.n++
-		switch a.op {
-		case "sum":
-			g.v += s.v
-		case "avg":
-			g.v += (s.v - g.v) / float64(g.n)
-		case "min":
-			g.v = math.Min(g.v, s.v)
-		case "max":
-			g.v = math.Max(g.v, s.v)
-		}
-	}
-	out := make([]aggRefSample, 0, len(order))
-	for _, key := range order {
-		g := groups[key]
-		if a.op == "count" {
-			g.v = float64(g.n)
-		}
-		out = append(out, aggRefSample{g.labels, g.v})
-	}
-	return out
 }
 
 // generateBinaryAggregation draws an expression: operands grouped by (job, pod)
@@ -399,59 +181,69 @@ func generateBinaryAggregation(rnd *rand.Rand) (*refNode, []refAggregation) {
 // conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query_range, loki_api_v1_query
 func TestAggregationOverBinaryDifferential(t *testing.T) {
 	jobs := map[string]string{"a": "x", "b": "x", "c": "y"}
+	type scenario struct {
+		name, query string
+		s           uwScenario
+	}
+	var scenarios []scenario
+	var sets []oraclerun.EngineDataSet
 	for _, version := range []string{"v1.52.0", "v1.49.0"} {
 		for _, instant := range []bool{false, true} {
 			name := fmt.Sprintf("version=%s/instant=%v", version, instant)
-			t.Run(name, func(t *testing.T) {
-				rnd := rand.New(rand.NewSource(int64(len(name))*6151 + 3))
-				offGrid := 0
-				for i := 0; i < 40; i++ {
-					s := generateUnwrapScenario(rnd, "rate", "", instant)
-					if s.step > 0 && rnd.Intn(2) == 0 { // the other half starts off the step grid
-						s.start -= s.start % int64(s.step)
-						s.end -= s.end % int64(s.step)
-					}
-					expr, chain := generateBinaryAggregation(rnd)
-					if s.step > 0 && s.start%int64(s.step) != 0 && expr.joinsVectors() {
-						// Loki evaluates at start+k*step; a join of two vectors evaluates
-						// on the step-aligned grid instead (semantics/binary-step-grid).
-						continue
-					}
-					for j := range s.rows {
-						pod := s.rows[j].Stream[len(`{app="uw",pod="`) : len(`{app="uw",pod="`)+1]
-						s.rows[j].Stream = fmt.Sprintf(`{app="uw",job="%s",machine="m-%[1]s",pod="%s"}`, jobs[pod], pod)
-					}
-					query := expr.query(uwWindowText(s.window))
-					for _, agg := range chain {
-						query = agg.wrap(query)
-					}
-					want := map[string]map[int64]float64{}
-					for _, ts := range s.times() {
-						samples, _, _ := expr.eval(s.rows, ts, int64(s.window))
-						for _, agg := range chain {
-							samples = agg.apply(samples)
-						}
-						for _, sample := range samples {
-							key := binaryLabelKey(sample.labels)
-							if want[key] == nil {
-								want[key] = map[int64]float64{}
-							}
-							want[key][ts/1e9] = sample.v
-						}
-					}
-					emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
-					got, _ := binaryAggregationAnswer(t, emu, query, s.start, s.end, s.step)
-					label := fmt.Sprintf("%s #%d %s step=%v window=%v rows=%d", name, i, query, s.step, s.window, len(s.rows))
-					compareBinaryAggregation(t, label, got, want)
-					if s.step > 0 && s.start%int64(s.step) != 0 {
-						offGrid++
-					}
+			rnd := rand.New(rand.NewSource(int64(len(name))*6151 + 3))
+			for i := 0; i < 40; i++ {
+				s := generateUnwrapScenario(rnd, "rate", "", instant)
+				if s.step > 0 && rnd.Intn(2) == 0 { // the other half starts off the step grid
+					s.start -= s.start % int64(s.step)
+					s.end -= s.end % int64(s.step)
 				}
-				if !instant && offGrid == 0 {
-					t.Fatal("no scenario started off the step grid")
+				expr, chain := generateBinaryAggregation(rnd)
+				if s.step > 0 && s.start%int64(s.step) != 0 && expr.joinsVectors() {
+					// Loki evaluates at start+k*step; a join of two vectors evaluates
+					// on the step-aligned grid instead (semantics/binary-step-grid).
+					continue
 				}
-			})
+				for j := range s.rows {
+					pod := s.rows[j].Stream[len(`{app="uw",pod="`) : len(`{app="uw",pod="`)+1]
+					s.rows[j].Stream = fmt.Sprintf(`{app="uw",job="%s",machine="m-%[1]s",pod="%s"}`, jobs[pod], pod)
+				}
+				query := expr.query(uwWindowText(s.window))
+				for _, agg := range chain {
+					query = agg.wrap(query)
+				}
+				id := fmt.Sprintf("%s #%d", name, i)
+				scenarios = append(scenarios, scenario{name: id, query: query, s: s})
+				sets = append(sets, oraclerun.EngineDataSet{
+					Streams:  engineStreams(s.rows, func(r vlemu.Row) (string, map[string]string) { return unwrapRowEntry("", "amount", r) }),
+					Requests: []oraclerun.EngineRequest{lokiMetricRequest(id, query, s.start, s.end, s.step)},
+				})
+			}
 		}
+	}
+	answers := lokiEngineAnswers(t, "aggregation_over_binary", sets)
+	offGrid := 0
+	for _, sc := range scenarios {
+		version := strings.TrimPrefix(strings.SplitN(sc.name, "/", 2)[0], "version=")
+		s := sc.s
+		points, labels := lokiMetricPoints(t, sc.name, answers[sc.name])
+		want := map[string]map[int64]float64{}
+		for key, series := range points {
+			byKey := map[int64]float64{}
+			for ts, v := range series {
+				byKey[ts/1e9] = v
+			}
+			want[binaryLabelKey(labels[key])] = byKey
+		}
+		emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
+		got, _ := binaryAggregationAnswer(t, emu, sc.query, s.start, s.end, s.step)
+		label := fmt.Sprintf("%s %s step=%v window=%v rows=%d", sc.name, sc.query, s.step, s.window, len(s.rows))
+		compareBinaryAggregation(t, label, got, want)
+		if s.step > 0 && s.start%int64(s.step) != 0 {
+			offGrid++
+		}
+	}
+	if offGrid == 0 {
+		t.Fatal("no scenario started off the step grid")
 	}
 }
 

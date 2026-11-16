@@ -137,110 +137,6 @@ var (
 // rateCounterEmuTenants holds the tenant headers the proof reads carried.
 var rateCounterEmuTenants sync.Map
 
-// lokiRateCounter is Loki's rate_counter of one series' samples in a window,
-// written apart from the proxy.
-func lokiRateCounter(ts []int64, vs []float64, window int64) float64 {
-	if len(ts) < 2 {
-		return 0
-	}
-	rangeStart := ts[0] - window
-	rangeEnd := ts[len(ts)-1]
-	result := vs[len(vs)-1] - vs[0]
-	var last float64
-	for _, v := range vs {
-		if v < last {
-			result += last
-		}
-		last = v
-	}
-	toStart := float64(ts[0]-rangeStart) / 1e9
-	toEnd := float64(rangeEnd-ts[len(ts)-1]) / 1e9
-	sampled := float64(ts[len(ts)-1]-ts[0]) / 1e9
-	avg := sampled / float64(len(ts)-1)
-	if result > 0 && vs[0] >= 0 {
-		if toZero := sampled * (vs[0] / result); toZero < toStart {
-			toStart = toZero
-		}
-	}
-	threshold := avg * 1.1
-	interval := sampled
-	if toStart < threshold {
-		interval += toStart
-	} else {
-		interval += avg / 2
-	}
-	if toEnd < threshold {
-		interval += toEnd
-	} else {
-		interval += avg / 2
-	}
-	return result * (interval / sampled) / (float64(window) / 1e9)
-}
-
-// lokiRateCounterSum is Loki's `sum [by (group)] (rate_counter(...))`: per
-// evaluation time, the series (stream plus parsed labels, the unwrapped one
-// left out) with a sample in (t-window, t], their rate_counter, summed per
-// group value. A group with
-// no sample at t has no point.
-func lokiRateCounterSum(rows []vlemu.Row, window int64, times []int64, group string) map[string]map[int64]float64 {
-	out := map[string]map[int64]float64{}
-	sorted := append([]vlemu.Row(nil), rows...)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].TS < sorted[j].TS })
-	for _, t := range times {
-		type series struct {
-			group string
-			ts    []int64
-			vs    []float64
-		}
-		perSeries := map[string]*series{}
-		for _, row := range sorted {
-			if row.TS <= t-window || row.TS > t {
-				continue
-			}
-			parsed := lokiRateCounterLabels(row.Msg)
-			labels := make([]string, 0, len(parsed))
-			for k, v := range parsed {
-				labels = append(labels, k+"="+v)
-			}
-			sort.Strings(labels)
-			key := row.Stream + "|" + strings.Join(labels, ",")
-			s := perSeries[key]
-			if s == nil {
-				s = &series{}
-				if group != "" {
-					s.group = parsed[group]
-				}
-				perSeries[key] = s
-			}
-			s.ts = append(s.ts, row.TS)
-			s.vs = append(s.vs, row.Value)
-		}
-		for _, s := range perSeries {
-			if out[s.group] == nil {
-				out[s.group] = map[int64]float64{}
-			}
-			out[s.group][t] += lokiRateCounter(s.ts, s.vs, window)
-		}
-	}
-	return out
-}
-
-// lokiRateCounterLabels are the labels Loki's `| logfmt` extracts from a
-// test line, the unwrapped one (amount) left out: the key sanitized like Loki,
-// the first value of a label kept, empty values dropped.
-func lokiRateCounterLabels(line string) map[string]string {
-	out := map[string]string{}
-	for _, kv := range emuLogfmt(line) {
-		name := orderedJSONLabelName(kv[0], true)
-		if _, done := out[name]; done || kv[1] == "" {
-			continue
-		}
-		out[name] = kv[1]
-	}
-	delete(out, "amount")
-	return out
-}
-
 type rcScenario struct {
 	window, step time.Duration
 	start, end   int64
@@ -437,7 +333,7 @@ func TestRateCounterOneSampleMatchesLoki(t *testing.T) {
 					if readRows {
 						t.Fatalf("#%d %s: rows were read, want stats only", i, s.query())
 					}
-					compareRateCounter(t, fmt.Sprintf("#%d", i), s, got, lokiRateCounterSum(s.rows, int64(s.window), s.times(), s.group))
+					compareRateCounter(t, fmt.Sprintf("#%d", i), s, got, rateCounterReference(t, s))
 				}
 			})
 		}
@@ -519,7 +415,7 @@ func TestRateCounterOneSampleProofEdges(t *testing.T) {
 				t.Fatalf("rows read %v, want %v", readRows, !tc.zeroOK)
 			}
 			if !readRows {
-				compareRateCounter(t, tc.name, s, got, lokiRateCounterSum(s.rows, int64(s.window), s.times(), s.group))
+				compareRateCounter(t, tc.name, s, got, rateCounterReference(t, s))
 			}
 		})
 	}
@@ -589,7 +485,7 @@ func FuzzRateCounterOneSample(f *testing.F) {
 		s := generateRateCounterScenario(rand.New(rand.NewSource(seed)), parser, shared)
 		got, readRows := runRateCounterScenario(t, "v1.53.0", s, "0")
 		if !readRows {
-			compareRateCounter(t, "fuzz", s, got, lokiRateCounterSum(s.rows, int64(s.window), s.times(), s.group))
+			compareRateCounter(t, "fuzz", s, got, rateCounterReference(t, s))
 		}
 	})
 }

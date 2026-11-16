@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// stepAlignedKey marks a query_range request whose bounds stepAlignMiddleware
+// stepAlignedKey marks a query_range request whose bounds alignToStepMiddleware
 // moved onto the step grid; the value is the end the client sent. Loki checks
 // the resolution limit and max_query_length on the bounds the client sent,
 // before its step alignment, and never again after it; the handler does not
@@ -33,7 +33,7 @@ func stepAlignedRawEnd(r *http.Request) (string, bool) {
 	return raw, ok
 }
 
-// stepAlignMiddleware is Loki's step alignment under
+// alignToStepMiddleware is Loki's step alignment under
 // query_range.align_queries_with_step (-align-queries-with-step). Loki's
 // query frontend runs it on metric range queries only, in the metric
 // tripperware after its limits middleware and before splitting and the
@@ -47,7 +47,7 @@ func stepAlignedRawEnd(r *http.Request) (string, bool) {
 // limits middleware) and before the response cache, so a refresh that moves a
 // window by less than a step becomes the same request and is answered from
 // the caches, as Loki's results cache answers it.
-func (p *Proxy) stepAlignMiddleware(endpoint string, next http.HandlerFunc) http.HandlerFunc {
+func (p *Proxy) alignToStepMiddleware(endpoint string, next http.HandlerFunc) http.HandlerFunc {
 	if endpoint != "query_range" || !p.alignQueriesWithStep {
 		return next
 	}

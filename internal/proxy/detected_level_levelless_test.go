@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -111,10 +112,12 @@ func (f *levelLessFakeVL) handler(t *testing.T) http.Handler {
 		}
 		vals := "[" + strings.Join(values, ",") + "]"
 		var results []string
-		restricted := r.Form.Get("extra_filters") != ""
+		restricted := slices.Contains(r.Form["extra_filters"], levelLessStreamFilter())
+		labelledOnly := slices.Contains(r.Form["extra_filters"], labelledStreamFilter())
 		for _, s := range f.streams {
 			levelLess := !streamDecidesLevel(parseStreamLabels(s))
 			switch {
+			case labelledOnly && levelLess:
 			case restricted && !levelLess:
 			case restricted:
 				for _, lv := range f.levels[s] {
@@ -231,6 +234,31 @@ func TestLevelLessStreamsReadAgainOnlyWhenNeeded(t *testing.T) {
 			// A repeat: no VictoriaLogs call.
 			if res = get(); res.Code != http.StatusOK || len(fake.takeCalls()) != 0 {
 				t.Fatalf("repeat: %d, calls made", res.Code)
+			}
+
+			// The window moves: the read is known to hold a stream without a level label, so it is sent for the
+			// labelled streams only and the others are read once, with the chain, not twice.
+			form.Set("end", "1760000820")
+			res = get()
+			calls = fake.takeCalls()
+			if res.Code != http.StatusOK || len(calls) != 2 ||
+				strings.Join(calls[0]["extra_filters"], "|") != labelledStreamFilter() ||
+				strings.Join(calls[1]["extra_filters"], "|") != levelLessStreamFilter() {
+				t.Fatalf("moved window: %d, calls %v", res.Code, calls)
+			}
+			if got := levelLessSeries(t, res.Body.Bytes()); strings.Join(got, " ") != "a=error b=error b=info" {
+				t.Fatalf("moved window series %v", got)
+			}
+
+			// The base holds no stream without a level label any more: the restriction is dropped on the next read.
+			form.Set("end", "1760000880")
+			fake.streams = []string{`{app="a",level="ERROR"}`}
+			_ = get()
+			fake.takeCalls()
+			form.Set("end", "1760000940")
+			res = get()
+			if calls = fake.takeCalls(); res.Code != http.StatusOK || len(calls) != 1 || calls[0].Get("extra_filters") != "" {
+				t.Fatalf("after the level-less streams left: %d, calls %v", res.Code, calls)
 			}
 		})
 	}
@@ -375,5 +403,33 @@ func TestLevelLessSecondReadFailureAnswersLikeTheFirst(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestLevelLessMemory: the per-replica memory of reads holding a stream without a level label forgets a read after
+// its TTL or on forget, and starts again empty past its bound instead of growing.
+//
+// conformance: semantics/detected-level-stream-stats-without-level
+func TestLevelLessMemory(t *testing.T) {
+	var m levelLessMemory
+	now := time.Unix(1760000000, 0)
+	if m.known("a", now) {
+		t.Fatal("an empty memory knows a read")
+	}
+	m.remember("a", now)
+	if !m.known("a", now.Add(levelLessBaseTTL-time.Second)) || m.known("a", now.Add(levelLessBaseTTL+time.Second)) {
+		t.Fatal("the TTL is not kept")
+	}
+	m.remember("b", now)
+	m.forget("b")
+	if m.known("b", now) {
+		t.Fatal("forget kept the read")
+	}
+	for i := range levelLessMemoryMax {
+		m.remember(fmt.Sprint(i), now)
+	}
+	m.remember("last", now)
+	if !m.known("last", now) || m.known("0", now) || len(m.m) != 1 {
+		t.Fatalf("past the bound the memory holds %d reads", len(m.m))
 	}
 }

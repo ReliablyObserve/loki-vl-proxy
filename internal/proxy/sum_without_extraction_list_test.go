@@ -56,7 +56,7 @@ func TestSumWithoutExtractionList(t *testing.T) {
 							group := func(row vlemu.Row) string {
 								return strings.TrimSuffix(withoutPodKey(row.Stream)+","+parsedKey(row, p.keys), ",")
 							}
-							want := lokiWithoutIdentity(s.rows, c.fn, c.op, int64(s.window), s.times(), identity, group)
+							want := withoutReferenceIdentity(s.rows, c.fn, c.op, int64(s.window), s.times(), identity, group)
 							mode := compareValues
 							switch {
 							case instant:

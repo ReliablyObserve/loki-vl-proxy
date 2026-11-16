@@ -39,7 +39,7 @@ func firstLastRangeRef(rows []vlemu.Row, fn, agg, by string, window, step time.D
 	}
 	out := map[string]map[int64]float64{}
 	for at := start; at <= end; at += int64(step) {
-		for g, v := range firstLastRef(rows, fn, agg, by, int64(window), at) {
+		for g, v := range unwrapFoldAt(rows, fn, agg, by, int64(window), at) {
 			if out[g] == nil {
 				out[g] = map[int64]float64{}
 			}
