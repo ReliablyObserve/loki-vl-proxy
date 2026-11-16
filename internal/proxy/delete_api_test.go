@@ -248,15 +248,22 @@ func TestDeleteRefusalsStartNoTask(t *testing.T) {
 		row := lokiErrorAnswer{ID: org, Method: http.MethodPost, Target: target, Headers: []string{"X-Scope-OrgID: " + org, "X-Delete-Token: " + testDeleteToken}}
 		return row.replay(t, addr)
 	}
+	// Tenant-label mode: a tenant the label confines is refused; a tenant mapped to its own account is deleted from.
 	vl := &fakeDeleteVL{}
 	_, addr := newDeleteAPIProxy(t, vl, withTenantLabel("tenant"))
-	if got := ask(addr, "team-a"); got != internal {
+	if got := ask(addr, "production"); got != internal {
 		t.Errorf("tenant-label mode: %s, want Loki's 500", summarizeReply(got))
 	}
 	for _, c := range vl.taken() {
 		if c.path == vlDeleteRunTaskPath {
 			t.Errorf("tenant-label mode started a task: %+v", c)
 		}
+	}
+	if got := ask(addr, "team-a"); got.Status != http.StatusNoContent {
+		t.Errorf("tenant-label mode, a mapped tenant: %s, want 204", summarizeReply(got))
+	}
+	if calls := vl.taken(); len(calls) != 1 || calls[0].account != "100" || calls[0].project != "1" {
+		t.Errorf("tenant-label mode, a mapped tenant: VictoriaLogs calls %+v, want one task for 100:1", calls)
 	}
 	vl = &fakeDeleteVL{}
 	_, addr = newDeleteAPIProxy(t, vl, func(c *Config) { c.AllowGlobalTenant = true })

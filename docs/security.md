@@ -65,7 +65,7 @@ By default `/loki/api/v1/delete` is not registered: every method answers `404` w
 - a create request runs as one VictoriaLogs delete task (`/delete/run_task`) scoped by the tenant's `AccountID`/`ProjectID` and a filter of the time range (both ends included) and the rows the same log query reads; a warning-level audit log line names the tenant, the query, the range, the client and the task id
 - a cancel stops a task only when VictoriaLogs lists it with the request's tenant alone (`/delete/stop_task` checks no tenant itself); any other id answers Loki's `404`
 
-Not served, each answered with Loki's `500`: the list of requests, a query whose rows a VictoriaLogs filter cannot select (a parser, a filter on a parsed label), tenant-label routing and the unmapped global tenant `*`. VictoriaLogs answers the delete task API only with `-delete.enable` (and, from v1.53, a `-deleteAuthKey` the proxy does not send yet); a refusal is Loki's `500`, VictoriaLogs' text in the log line only. See [Remaining delete API gap](security-hardening-migration.md#remaining-delete-api-gap).
+Not served, each answered with Loki's `500`: the list of requests, a query whose rows a VictoriaLogs filter cannot select (a parser, a filter on a parsed label), a tenant tenant-label routing confines with its label (a tenant mapped to its own account is served) and the unmapped global tenant `*`. VictoriaLogs answers the delete task API only with `-delete.enable` (and, from v1.53, a `-deleteAuthKey` the proxy does not send yet); a refusal is Loki's `500`, VictoriaLogs' text in the log line only. See [Remaining delete API gap](security-hardening-migration.md#remaining-delete-api-gap).
 
 ### 4) Request Hardening
 

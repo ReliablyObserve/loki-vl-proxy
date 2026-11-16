@@ -32,7 +32,8 @@ why: |
     forgets a task when it ends, so the proxy cannot list Loki's requests (a proxy-held record is a follow-up);
   - a query Loki accepts whose rows a VictoriaLogs filter cannot select exactly: a parser (`| json`), a filter on a
     parsed or derived label, a formatting stage, a line filter regexp that does not compile;
-  - tenant-label routing (a delete task takes no tenant stream filter) and the unmapped global tenant `*`;
+  - a tenant tenant-label routing confines with its label (a delete task takes no tenant stream filter; a tenant
+    mapped to its own AccountID/ProjectID is served) and the unmapped global tenant `*`;
   - a start of ten digits past 2262 (r1763, r1768): it wraps to 1702 and Loki answers 204, deleting a tenant's
     history back to then; the proxy serves no such request (a deliberate safety difference), nor a start before 1678
     (r1765, Loki 204), which VictoriaLogs' nanosecond times cannot hold. A start before 1970 (r1766) is served.

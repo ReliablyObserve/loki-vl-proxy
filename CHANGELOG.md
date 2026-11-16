@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authentication required`, and start and end follow Loki's formats (ten-digit seconds or RFC3339, not milliseconds
   or nanoseconds). Not served, each Loki's `500` with the reason in the log line: the list (VictoriaLogs keeps no
   record of a request's query and range), a query whose rows a VictoriaLogs filter cannot select (a parser such as
-  `| json`, a filter on a parsed label, a line filter regexp that does not compile), tenant-label routing, the
+  `| json`, a filter on a parsed label, a line filter regexp that does not compile), a tenant tenant-label routing confines with its label, the
   unmapped global tenant `*`, and a start of ten digits past 2262, which Loki reads as 1702 and so deletes a tenant's
   history back to then (or a start before 1678). VictoriaLogs runs a task at once, where Loki waits for its cancellation period, and
   answers cached before a delete keep serving the deleted rows until they expire (semantics/delete-api-via-victorialogs).
@@ -36,7 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The delete API's guard is its token alone, as Loki's is its tenant: a holder of `-delete-api-auth-token` can delete
   every stream of a tenant (`{}`) over any range, where the old handler, which deleted nothing, also asked for a
   confirmation header and refused `{}` and ranges above 30 days. A cancel checks the task's tenant in VictoriaLogs'
-  task list before it stops it (VictoriaLogs' stop call checks none), and a tenant-label proxy refuses deletes, since
+  task list before it stops it (VictoriaLogs' stop call checks none), and a tenant-label proxy refuses deletes for a
+  tenant its label confines (a tenant mapped to its own account is served), since
   a VictoriaLogs delete task takes no tenant stream filter. VictoriaLogs' answers to the delete calls reach the log
   only, never a client.
 

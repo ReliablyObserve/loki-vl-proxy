@@ -14,7 +14,7 @@ description: |
   VictoriaLogs source (app/vlselect/main.go deleteHandler, lib/logstorage/delete_task.go) of v1.49.0 and v1.53.0.
 proxy_usage: |
   The delete API (internal/proxy/delete_api.go) writes the request's time range into the filter
-  (`_time:[start, end] (...)`), sends the tenant's headers, refuses tenant-label routing (the tenant would have to be a
+  (`_time:[start, end] (...)`), sends the tenant's headers, refuses a tenant tenant-label routing confines with its label, serving one mapped to its own account (the label tenant would have to be a
   filter conjunct, unchecked by a live gate yet), and checks a task's tenant_ids in /delete/active_tasks before it
   stops it, since /delete/stop_task checks no tenant.
 fallback: |

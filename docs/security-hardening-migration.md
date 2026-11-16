@@ -151,8 +151,9 @@ What remains:
 - a query Loki accepts whose rows a VictoriaLogs filter cannot select exactly
   (a parser such as `| json`, a filter on a parsed or derived label, a formatting
   stage) answers Loki's `500`;
-- tenant-label routing (`-tenant-label`) answers Loki's `500` for every delete
-  operation: a VictoriaLogs delete task takes no tenant stream filter;
+- tenant-label routing (`-tenant-label`) answers Loki's `500` for a delete of a
+  tenant its label confines (a tenant mapped to its own account is served): a
+  VictoriaLogs delete task takes no tenant stream filter;
 - Loki processes a request after its cancellation period (24h by default);
   VictoriaLogs runs the task at once, so a cancel stops only what is still running;
 - answers cached before a delete (response cache, extent cache, peer tier) keep

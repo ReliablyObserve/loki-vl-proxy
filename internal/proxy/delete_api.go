@@ -252,14 +252,20 @@ func (p *Proxy) createDelete(r *http.Request) error {
 	return nil
 }
 
-// deleteTenantServed refuses what the proxy cannot scope a delete to: tenant-label routing, where VictoriaLogs'
-// delete task has no stream filter parameter to hold the tenant (a follow-up), and the global tenant bypass.
+// deleteTenantServed refuses what the proxy cannot scope a delete to: a tenant tenant-label routing confines with a
+// stream filter (a VictoriaLogs delete task has no stream filter parameter to hold it; a follow-up), and the global
+// tenant bypass, which reads every tenant. A tenant mapped to its own AccountID/ProjectID is served in either mode.
 func (p *Proxy) deleteTenantServed(r *http.Request) error {
-	if p.routingForContext(r.Context()).label != "" {
+	routing := p.routingForContext(r.Context())
+	orgID := getOrgID(r.Context())
+	route := p.resolveTenant(orgID, routing)
+	if route.kind == tenantMapped {
+		return nil
+	}
+	if routing.label != "" {
 		return notServed("delete-tenant-label", errors.New("a VictoriaLogs delete task takes no tenant stream filter"))
 	}
-	routing := p.routingForContext(r.Context())
-	if _, mapped := routing.tenants["*"]; getOrgID(r.Context()) == "*" && !mapped {
+	if orgID == "*" {
 		return notServed("delete-global-tenant", errors.New("a delete is never run over every tenant"))
 	}
 	return nil
