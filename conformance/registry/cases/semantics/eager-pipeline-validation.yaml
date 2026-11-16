@@ -3,12 +3,13 @@ title: Invalid pipeline stages fail with 400 regardless of data; Loki answers 20
 proves:
   - loki-compatible-profile
 consumer: api
-evidence: needs recording
 why: |
   Loki builds a pipeline (and reports invalid json/logfmt expressions,
   line_format/label_format templates and ip() arguments) only for a range it
   reads, so a range with no data answers 200 empty. The proxy validates at
-  parse time and answers Loki's 400 text over any range (KNOWN_ISSUES).
+  parse time and answers Loki's 400 text over any range (KNOWN_ISSUES). Recorded: Loki 3.7.9 serving data answers the
+  case's request with 200 and an empty result, and the same stage over a window ending within 150 minutes with 400
+  (internal/lokierr/testdata/loki_build_phase.jsonl, semantics/loki-build-phase-window).
 request:
   method: GET
   path: /loki/api/v1/query_range

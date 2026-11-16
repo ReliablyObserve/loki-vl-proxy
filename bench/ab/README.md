@@ -671,7 +671,16 @@ or to none, or a warm p50 slower beyond 25% and 50 ms that held for two runs
 (both worse than the run before them) or that the same run's verdict against
 the release newly calls `slower`. An improvement is the reverse of the first
 two (a status that now answers 200 while Loki still gives that error is not
-one), or a warm p50 faster beyond the same margin (one run is enough). Each
+one), or a warm p50 faster beyond the same margin (one run is enough). A warm
+p50 is compared with an earlier line's at the newer run's runner speed: the
+median move of Loki's computed cold times (at least 50 ms) between the two
+runs, over every set of the profile, at least 20 rows in common (else 1).
+Loki's version and the seeded data are the same from run to run, so a hosted
+runner that is slower or faster as a whole (0.5x to 1.7x between scheduled
+runs) moves every target's times together and is no slowdown or improvement of
+the proxy; the alert names the factor when it moved beyond 5%. The ratchet and
+the bounds against Loki compare with Loki's time of the same run and need no
+factor. Each
 alert names the commit range to bisect, `<previous line's commit>..<newest
 commit>` (a slowdown that held for two runs starts at the line before it
 began). Rows where Loki did not answer 200 are listed apart as "Loki failed",
