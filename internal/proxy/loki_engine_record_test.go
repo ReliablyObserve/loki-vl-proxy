@@ -422,7 +422,9 @@ var (
 	lokiInlineFiles   = map[string]map[string]lokiEngineAnswer{}
 )
 
-// lokiEngineAnswerOf is Loki's answer to the one request of set, from testdata/loki_engine/<name>.jsonl.gz.
+// lokiEngineAnswerOf is Loki's answer to the one request of set, from testdata/loki_engine/<name>.jsonl.gz. A
+// recording run writes the file again after every answer; a name's recording must come from one run of every
+// test using it.
 func lokiEngineAnswerOf(t testing.TB, name string, set oraclerun.EngineDataSet) lokiEngineAnswer {
 	t.Helper()
 	if len(set.Requests) != 1 {
@@ -447,14 +449,10 @@ func lokiEngineAnswerOf(t testing.TB, name string, set oraclerun.EngineDataSet) 
 		}
 		a := runInlineEngine(t, set)
 		a.ID, a.Key = req.ID, key
-		if _, started := lokiInlineRecords[name]; !started {
-			root := t
-			if tt, ok := t.(*testing.T); ok {
-				root = tt
-			}
-			root.Cleanup(func() { writeInlineRecords(t, name, path) })
-		}
 		lokiInlineRecords[name] = append(lokiInlineRecords[name], a)
+		// The whole file is written again with every answer, so it holds what the run recorded however its
+		// subtests end.
+		writeInlineRecords(t, name, path)
 		return a
 	}
 	file, ok := lokiInlineFiles[name]
@@ -516,10 +514,9 @@ func runInlineEngine(t testing.TB, set oraclerun.EngineDataSet) lokiEngineAnswer
 	return a
 }
 
+// writeInlineRecords writes the answers recorded under name; the caller holds lokiInlineMu.
 func writeInlineRecords(t testing.TB, name, path string) {
-	lokiInlineMu.Lock()
-	defer lokiInlineMu.Unlock()
-	records := lokiInlineRecords[name]
+	records := append([]lokiEngineAnswer(nil), lokiInlineRecords[name]...)
 	sort.SliceStable(records, func(i, j int) bool { return records[i].Key < records[j].Key })
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Error(err)
