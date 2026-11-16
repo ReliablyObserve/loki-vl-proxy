@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answer reads no data: it is written from the parsed query before the response cache, the query plan and any
   VictoriaLogs call. The proxy answered `500 Internal Server Error` (and, on query with VictoriaLogs data behind it,
   a series carrying a `detected_level` label Loki does not write) (semantics/zero-range-metric).
+- A `topk` or `bottomk` whose first argument is not a number followed by a comma now answers Loki's parse error.
+  Loki reads that argument as the expression the operation aggregates, so `topk(-1, sum by (level) (...))` answers
+  400 `parse error at line 1, col 8: syntax error: unexpected ,` (the comma), as do `topk(1 + 2, ...)`,
+  `topk((1), ...)`, `topk(rate(...), 2)` and `topk({...}, 2)`; `topk(-1)` answers `parse error : parameter required
+  for operation topk`. The proxy failed at the minus (`col 6: syntax error: unexpected -`) or the operator, and
+  answered "parameter required" for `topk(rate(...), 2)` and `topk({...}, 2)`. The status was already 400; the text,
+  which Grafana shows, is now Loki's on query and query_range and through every wrapper (sum, sort, max by,
+  label_replace, binary operations), held by 1462 queries recorded with the Loki oracle and 12 rows recorded over
+  HTTP (semantics/topk-first-argument-error-text). A leading plus (`topk(+1, ...)`) is still rejected at the plus
+  (semantics/unary-plus-literal-rejected).
 - A query that holds two errors now answers the one Loki answers, in Loki's order of checks, and a selector regex
   error has Loki's text. Loki first runs the checks it makes while it reads the query: a pattern or regexp parser
   it cannot build, and a regex in a selector, label filter, drop or keep that does not parse. Those answer ahead of
@@ -33,16 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     parse error : invalid regex:` prefix, on every route.
   - A log query with a pipeline stage that does not build, sent to `/loki/api/v1/query`, answers Loki's `log queries
     are not supported as an instant query type` (recorded row r0043).
-- A `topk` or `bottomk` whose first argument is not a number followed by a comma now answers Loki's parse error.
-  Loki reads that argument as the expression the operation aggregates, so `topk(-1, sum by (level) (...))` answers
-  400 `parse error at line 1, col 8: syntax error: unexpected ,` (the comma), as do `topk(1 + 2, ...)`,
-  `topk((1), ...)`, `topk(rate(...), 2)` and `topk({...}, 2)`; `topk(-1)` answers `parse error : parameter required
-  for operation topk`. The proxy failed at the minus (`col 6: syntax error: unexpected -`) or the operator, and
-  answered "parameter required" for `topk(rate(...), 2)` and `topk({...}, 2)`. The status was already 400; the text,
-  which Grafana shows, is now Loki's on query and query_range and through every wrapper (sum, sort, max by,
-  label_replace, binary operations), held by 1462 queries recorded with the Loki oracle and 12 rows recorded over
-  HTTP (semantics/topk-first-argument-error-text). A leading plus (`topk(+1, ...)`) is still rejected at the plus
-  (semantics/unary-plus-literal-rejected).
 
 ### Changed
 
