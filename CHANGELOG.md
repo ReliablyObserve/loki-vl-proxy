@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The `detected_level` the proxy derives for returned rows is rewritten from Loki's documented settings and from
-  answers recorded from a real Loki 3.7.9 for 1481 generated inputs, one stream each: structured metadata and stream
+  answers recorded from a real Loki 3.7.9 for 1551 generated inputs, one stream each: structured metadata and stream
   labels of every level field, field pairs, `severity_number` values, JSON lines to depth 5 with value types and
   broken shapes, logfmt variants, plain lines by letter case, position, boundary byte and near-miss words, long
   lines and OTLP records. The table and the evidence of the run are committed

@@ -13629,5 +13629,578 @@
     },
     "source": "loki-live",
     "want": "error"
+  },
+  {
+    "name": "probe/json-unknown-then-lvl",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"level\":\"chatty\",\"lvl\":\"inf\"}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-lvl-then-unknown",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"lvl\":\"inf\",\"level\":\"chatty\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-duplicate-first-short",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"level\":\"inf\",\"level\":\"dbg\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-syntax-error-after-level",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"level\":\"inf\",\"x\":{bad",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-trailing-comma",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"level\":\"inf\",}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-unterminated-object",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"level\":\"inf\"",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-trailing-text",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"level\":\"inf\"} trailing",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-trailing-letter",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"level\":\"inf\"}x",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-extra-brace",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"level\":\"inf\"}}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-second-object",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"level\":\"inf\"}{\"lvl\":\"dbg\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-invalid-after-nested-level",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"a\":{\"level\":\"inf\"},\"b\":[1,2,}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/brace-then-logfmt",
+    "stream": {},
+    "fields": {},
+    "msg": "{ x level=Information",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/object-then-logfmt",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"msg\":\"x\"} level=Information",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-escaped-key-long",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"le\\u0076el\":\"Information\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-escaped-key-upper",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"\\u004cEVEL\":\"inf\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-bad-key-escape",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"le\\x\":\"inf\"}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-escaped-value-short",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"level\":\"in\\u0066\"}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-level-in-array",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"a\":[{\"level\":\"inf\"}]}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-depth-2-short",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"a\":{\"level\":\"inf\"}}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-depth-3-short",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"a\":{\"b\":{\"level\":\"inf\"}}}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-lead-ff",
+    "stream": {},
+    "fields": {},
+    "msg": "\f{\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-lead-vt",
+    "stream": {},
+    "fields": {},
+    "msg": "\u000b{\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-lead-cr",
+    "stream": {},
+    "fields": {},
+    "msg": "\r{\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-lead-lf",
+    "stream": {},
+    "fields": {},
+    "msg": "\n{\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-lead-sp",
+    "stream": {},
+    "fields": {},
+    "msg": " {\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-lead-tab",
+    "stream": {},
+    "fields": {},
+    "msg": "\t{\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-lead-nbsp",
+    "stream": {},
+    "fields": {},
+    "msg": " {\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-lead-bom",
+    "stream": {},
+    "fields": {},
+    "msg": "﻿{\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-number-leading-zero",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"n\":01,\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-number-bad-literal",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"n\":tru,\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-number-dot",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"n\":1.,\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-number-minus",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"n\":-,\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-number-exponent",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"n\":1e5,\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-number-plus",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"n\":+1,\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-single-quotes",
+    "stream": {},
+    "fields": {},
+    "msg": "{'level':'inf'}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-bare-key",
+    "stream": {},
+    "fields": {},
+    "msg": "{level:\"inf\"}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/json-control-in-string",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"msg\":\"a\u0001b\",\"level\":\"inf\"}",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/json-empty-then-short",
+    "stream": {},
+    "fields": {},
+    "msg": "{\"level\":\"\",\"lvl\":\"inf\"}",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/logfmt-unknown-then-lvl",
+    "stream": {},
+    "fields": {},
+    "msg": "level=chatty lvl=inf",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/logfmt-two-spellings",
+    "stream": {},
+    "fields": {},
+    "msg": "LEVEL=dbg Level=inf",
+    "source": "loki-live",
+    "want": "debug"
+  },
+  {
+    "name": "probe/logfmt-lvl-then-empty-level",
+    "stream": {},
+    "fields": {},
+    "msg": "lvl=inf level=",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/logfmt-lvl-then-empty-quoted",
+    "stream": {},
+    "fields": {},
+    "msg": "lvl=inf level=\"\"",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/logfmt-empty-quoted-then-lvl",
+    "stream": {},
+    "fields": {},
+    "msg": "level=\"\" lvl=inf",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/logfmt-quoted-unicode-escape",
+    "stream": {},
+    "fields": {},
+    "msg": "level=\"\\u0069nf\"",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/logfmt-quoted-bad-escape",
+    "stream": {},
+    "fields": {},
+    "msg": "level=\"in\\x66\"",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/logfmt-unterminated-then",
+    "stream": {},
+    "fields": {},
+    "msg": "level=\"x lvl=inf",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/logfmt-key-case-mixed",
+    "stream": {},
+    "fields": {},
+    "msg": "sEvErItY=inf",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/logfmt-key-log-dot-level",
+    "stream": {},
+    "fields": {},
+    "msg": "log.level=inf",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/logfmt-key-log-dot-level-upper",
+    "stream": {},
+    "fields": {},
+    "msg": "LOG.LEVEL=inf",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/logfmt-cr-separated",
+    "stream": {},
+    "fields": {},
+    "msg": "a=1\rlevel=inf",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/logfmt-ff-separated",
+    "stream": {},
+    "fields": {},
+    "msg": "a=1\flevel=inf",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/keyword-left-ff",
+    "stream": {},
+    "fields": {},
+    "msg": "x\ferror y",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/keyword-right-ff",
+    "stream": {},
+    "fields": {},
+    "msg": "x error\fy",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/keyword-left-vt",
+    "stream": {},
+    "fields": {},
+    "msg": "x\u000berror y",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/keyword-right-vt",
+    "stream": {},
+    "fields": {},
+    "msg": "x error\u000by",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/keyword-left-cr",
+    "stream": {},
+    "fields": {},
+    "msg": "x\rerror y",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/keyword-right-cr",
+    "stream": {},
+    "fields": {},
+    "msg": "x error\ry",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/keyword-left-nul",
+    "stream": {},
+    "fields": {},
+    "msg": "x\u0000error y",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/keyword-right-nul",
+    "stream": {},
+    "fields": {},
+    "msg": "x error\u0000y",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/keyword-left-bs",
+    "stream": {},
+    "fields": {},
+    "msg": "x\berror y",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/keyword-right-bs",
+    "stream": {},
+    "fields": {},
+    "msg": "x error\by",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/keyword-lf-both",
+    "stream": {},
+    "fields": {},
+    "msg": "x\nerror\ny",
+    "source": "loki-live",
+    "want": "error"
+  },
+  {
+    "name": "probe/keyword-dotless-upper-i",
+    "stream": {},
+    "fields": {},
+    "msg": "INFO İnfo",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/keyword-kelvin-near",
+    "stream": {},
+    "fields": {},
+    "msg": "Kerror",
+    "source": "loki-live",
+    "want": "unknown"
+  },
+  {
+    "name": "probe/sm-mixed-case-wArN",
+    "stream": {},
+    "fields": {
+      "level": "wArN"
+    },
+    "msg": "hello",
+    "source": "loki-live",
+    "want": "warn"
+  },
+  {
+    "name": "probe/sm-mixed-case-iNf",
+    "stream": {},
+    "fields": {
+      "level": "iNf"
+    },
+    "msg": "hello",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/sm-mixed-case-eRr",
+    "stream": {},
+    "fields": {
+      "level": "eRr"
+    },
+    "msg": "hello",
+    "source": "loki-live",
+    "want": "error"
+  },
+  {
+    "name": "probe/sm-mixed-case-InFoRmAtIoN",
+    "stream": {},
+    "fields": {
+      "level": "InFoRmAtIoN"
+    },
+    "msg": "hello",
+    "source": "loki-live",
+    "want": "info"
+  },
+  {
+    "name": "probe/stream-mixed-case",
+    "stream": {
+      "lvl": "dBg"
+    },
+    "fields": {},
+    "msg": "hello",
+    "source": "loki-live",
+    "want": "debug"
+  },
+  {
+    "name": "probe/sm-sevnum-text-nonint",
+    "stream": {},
+    "fields": {
+      "severity_number": "A",
+      "severity_text": "Unspecified"
+    },
+    "msg": "hello",
+    "source": "loki-live",
+    "want": "Unspecified"
   }
 ]

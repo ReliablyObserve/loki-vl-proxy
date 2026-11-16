@@ -1404,6 +1404,7 @@
     "internal/proxy/detected_level_sweep_test.go | metric-series-identity",
     "internal/proxy/detected_level_sweep_test.go | semantics/detected-level-one-value-per-stream",
     "internal/proxy/detected_level_sweep_test.go | severity-detected-level-derivation",
+    "internal/proxy/detected_level_test.go | semantics/without-fold-stream-detected-level",
     "internal/proxy/detected_level_test.go | severity-detected-level-derivation",
     "internal/proxy/detected_level_test.go | severity/recorded-level-table",
     "internal/proxy/detected_level_unknown_differential_test.go | semantics/detected-level-missing-from-stats-answers",

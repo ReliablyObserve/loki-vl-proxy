@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"bytes"
 	"encoding/json"
 	"regexp"
 	"sort"
@@ -40,6 +39,9 @@ var referenceVLSeverityTexts = func() map[string]int {
 
 func referenceVLSeverityText(number string) string {
 	n, err := strconv.ParseInt(number, 10, 64)
+	if err != nil {
+		return ""
+	}
 	for name, i := range referenceVLSeverityTexts {
 		if err == nil && n >= 1 && n <= 24 && int64(i) == n {
 			return name
@@ -139,73 +141,167 @@ func referenceKeywords(line string) string {
 	return "unknown"
 }
 
-// referenceJSON reads a line as JSON with encoding/json: isJSON when it starts (after JSON blanks) with an object,
-// v the raw text of the first level key's non-empty string value in the top object or one object down, in
-// document order, arrays not entered.
-func referenceJSON(line string) (v string, isJSON bool) {
-	trimmed := strings.TrimLeft(line, " \t\n\r")
-	if !strings.HasPrefix(trimmed, "{") {
-		return "", false
-	}
-	var first json.RawMessage
-	if err := json.NewDecoder(strings.NewReader(trimmed)).Decode(&first); err != nil {
-		return "", false
-	}
-	dec := json.NewDecoder(bytes.NewReader(first))
-	if _, err := dec.Token(); err != nil {
-		return "", false
-	}
-	raw, _ := referenceJSONObject(dec, first, 1)
-	return raw, true
+// referenceJSONShaped: a line Loki reads as JSON, braces first and last once spaces, tabs, CRs and LFs are trimmed.
+func referenceJSONShaped(line string) (string, bool) {
+	t := strings.Trim(line, " \t\r\n")
+	return t, len(t) >= 2 && t[0] == '{' && t[len(t)-1] == '}'
 }
 
-func referenceJSONObject(dec *json.Decoder, data []byte, depth int) (string, bool) {
+// referenceJSON walks a JSON-shaped line: the raw value of the first level key holding a string (decoded key, top
+// object or one object down, arrays skipped), found before the first syntax error.
+func referenceJSON(t string) (string, bool) {
+	r := &referenceJSONReader{s: t}
+	r.value(1)
+	return r.v, r.found
+}
+
+type referenceJSONReader struct {
+	s     string
+	i     int
+	v     string
+	found bool
+	nest  int
+}
+
+func (r *referenceJSONReader) blanks() {
+	for r.i < len(r.s) && strings.IndexByte(" \t\r\n", r.s[r.i]) >= 0 {
+		r.i++
+	}
+}
+
+var referenceJSONStringRE = regexp.MustCompile(`^"((?:[^"\\]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*)"`)
+var referenceJSONNumberRE = regexp.MustCompile(`^-?[0-9.eE+-]*|^[0-9][0-9.eE+-]*`)
+
+func (r *referenceJSONReader) str() (string, bool) {
+	m := referenceJSONStringRE.FindStringSubmatch(r.s[r.i:])
+	if m == nil {
+		return "", false
+	}
+	r.i += len(m[0])
+	return m[1], true
+}
+
+func (r *referenceJSONReader) value(depth int) bool {
+	if r.i >= len(r.s) {
+		return false
+	}
+	switch c := r.s[r.i]; {
+	case c == '{':
+		return r.object(depth)
+	case c == '[':
+		return r.array()
+	case c == '"':
+		_, ok := r.str()
+		return ok
+	case c == '-' || ('0' <= c && c <= '9'):
+		r.i += len(referenceJSONNumberRE.FindString(r.s[r.i:]))
+		return true
+	}
+	for _, lit := range []string{"true", "false", "null"} {
+		if strings.HasPrefix(r.s[r.i:], lit) {
+			r.i += len(lit)
+			return true
+		}
+	}
+	return false
+}
+
+func (r *referenceJSONReader) object(depth int) bool {
+	if r.nest++; r.nest > 10000 {
+		return false
+	}
+	defer func() { r.nest-- }()
+	r.i++
 	for {
-		tok, err := dec.Token()
-		if err != nil {
-			return "", false
+		r.blanks()
+		if r.i >= len(r.s) {
+			return false
 		}
-		if d, ok := tok.(json.Delim); ok && d == '}' {
-			return "", false
+		if r.s[r.i] == '}' {
+			r.i++
+			return true
 		}
-		key, _ := tok.(string)
-		before := dec.InputOffset()
-		tok, err = dec.Token()
-		if err != nil {
-			return "", false
+		if r.s[r.i] != '"' {
+			return false
 		}
-		switch t := tok.(type) {
-		case json.Delim:
-			if t == '{' && depth < 2 {
-				if raw, ok := referenceJSONObject(dec, data, depth+1); ok {
-					return raw, true
-				}
-				continue
+		key, ok := r.str()
+		if !ok {
+			return false
+		}
+		r.blanks()
+		if r.i >= len(r.s) || r.s[r.i] != ':' {
+			return false
+		}
+		r.i++
+		r.blanks()
+		if r.i >= len(r.s) {
+			return false
+		}
+		switch {
+		case r.s[r.i] == '"':
+			v, ok := r.str()
+			if !ok {
+				return false
 			}
-			referenceJSONSkip(dec) // a deeper object or an array
-		case string:
-			raw := strings.TrimLeft(string(data[before:dec.InputOffset()]), " \t\n\r:")
-			raw = strings.TrimSuffix(strings.TrimPrefix(raw, `"`), `"`)
-			if raw != "" && referenceIsLevelName(key) {
-				return raw, true
+			var decoded string
+			if !r.found && depth <= 2 && json.Unmarshal([]byte(`"`+key+`"`), &decoded) == nil && referenceIsLevelName(decoded) {
+				r.v, r.found = v, true
 			}
+		case r.s[r.i] == '{' && depth < 2:
+			if !r.object(depth + 1) {
+				return false
+			}
+		default:
+			if !r.value(3) {
+				return false
+			}
+		}
+		r.blanks()
+		if r.i >= len(r.s) {
+			return false
+		}
+		switch r.s[r.i] {
+		case ',':
+			r.i++
+		case '}':
+			r.i++
+			return true
+		default:
+			return false
 		}
 	}
 }
 
-// referenceJSONSkip reads past the object or array whose opening token was just read.
-func referenceJSONSkip(dec *json.Decoder) {
-	for depth := 1; depth > 0; {
-		tok, err := dec.Token()
-		if err != nil {
-			return
+func (r *referenceJSONReader) array() bool {
+	if r.nest++; r.nest > 10000 {
+		return false
+	}
+	defer func() { r.nest-- }()
+	r.i++
+	for {
+		r.blanks()
+		if r.i >= len(r.s) {
+			return false
 		}
-		if d, ok := tok.(json.Delim); ok {
-			if d == '{' || d == '[' {
-				depth++
-			} else {
-				depth--
-			}
+		if r.s[r.i] == ']' {
+			r.i++
+			return true
+		}
+		if !r.value(3) {
+			return false
+		}
+		r.blanks()
+		if r.i >= len(r.s) {
+			return false
+		}
+		switch r.s[r.i] {
+		case ',':
+			r.i++
+		case ']':
+			r.i++
+			return true
+		default:
+			return false
 		}
 	}
 }
@@ -219,70 +315,49 @@ func referenceIsLevelName(name string) bool {
 	return false
 }
 
-// referenceLevelLogfmt is the value of the logfmt level key earliest in referenceLevelNames (names case-insensitive),
-// the first non-empty value of each; the scan stops at an unterminated quote.
-func referenceLevelLogfmt(line string) string {
+// referenceLevelLogfmt is the value of the logfmt level key earliest in referenceLevelNames (names case-insensitive,
+// the first occurrence of each, a bare or empty value counted), quoted values decoded; found is false without one.
+// The read stops at the first syntax error: a quote or equals sign inside a key or an unquoted value, an
+// unterminated quoted value or one with a bad escape, a quoted value followed by more than blanks.
+func referenceLevelLogfmt(line string) (string, bool) {
 	if !strings.Contains(line, "=") {
-		return ""
+		return "", false
 	}
 	groups := []string{"level", "log.level", "severity", "severitytext", "lvl", "severity_text"}
 	found := map[int]string{}
-	isBlank := func(c byte) bool { return strings.IndexByte(" \t\n\r\f\v", c) >= 0 }
-	for i := 0; i < len(line); {
-		if isBlank(line[i]) {
-			i++
-			continue
+	pairRE := regexp.MustCompile(`^([^\x00-\x20="]+)(?:=(?:"((?:[^"\\]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*)"|([^\x00-\x20="]*)))?(?:[\x00-\x20]|$)`)
+	for rest := strings.TrimLeft(line, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f "); rest != ""; {
+		m := pairRE.FindStringSubmatchIndex(rest)
+		if m == nil {
+			break
 		}
-		start := i
-		for i < len(line) && line[i] != '=' && !isBlank(line[i]) {
-			i++
-		}
-		if i >= len(line) || line[i] != '=' {
-			continue
-		}
-		key := line[start:i]
-		i++
-		value, valid := "", true
-		if i < len(line) && line[i] == '"' {
-			end := -1
-			for j := i + 1; j < len(line); j++ {
-				if line[j] == '\\' {
-					j++
-					continue
-				}
-				if line[j] == '"' {
-					end = j
-					break
-				}
+		key := rest[m[2]:m[3]]
+		value := ""
+		switch {
+		case m[4] >= 0:
+			decoded, err := referenceLevelUnquote(rest[m[4]:m[5]])
+			if err != nil {
+				return "", false
 			}
-			if end < 0 {
-				break
-			}
-			var err error
-			value, err = referenceLevelUnquote(line[i+1 : end])
-			valid = err == nil
-			i = end + 1
-		} else {
-			vs := i
-			for i < len(line) && !isBlank(line[i]) {
-				i++
-			}
-			value = line[vs:i]
+			value = decoded
+		case m[6] >= 0:
+			value = rest[m[6]:m[7]]
 		}
 		for g, name := range groups {
-			if strings.EqualFold(key, name) && len(key) == len(name) && valid && value != "" {
+			if strings.EqualFold(key, name) && len(key) == len(name) {
 				if _, ok := found[g]; !ok {
 					found[g] = value
 				}
 			}
 		}
+		rest = strings.TrimLeft(rest[m[1]:], "\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f ")
 	}
 	for g := range groups {
 		if v, ok := found[g]; ok {
-			return v
+			return v, true
 		}
 	}
-	return ""
+	return "", false
 }
 
 // referenceLevelUnquote decodes the escapes JSON strings have, as logfmt values carry them.
@@ -355,12 +430,16 @@ func referenceDetectedLevel(stream, fields map[string]string, line string, unpac
 	if !bodyScan {
 		return "unknown"
 	}
-	if v, isJSON := referenceJSON(line); isJSON {
+	if t, shaped := referenceJSONShaped(line); shaped {
+		if v, found := referenceJSON(t); found {
+			if c := referenceCanonicalASCII(v); c != "" {
+				return c
+			}
+		}
+	} else if v, found := referenceLevelLogfmt(line); found {
 		if c := referenceCanonicalASCII(v); c != "" {
 			return c
 		}
-	} else if c := referenceCanonicalASCII(referenceLevelLogfmt(line)); c != "" {
-		return c
 	}
 	return referenceKeywords(line)
 }
@@ -451,10 +530,10 @@ func TestDetectedLevelLineEdgesMatchReference(t *testing.T) {
 			t.Errorf("%q: proxy %q, reference %q", line, got, want)
 		}
 	}
-	// a line nested past encoding/json's bound is no JSON object for either, and is read without deep recursion
+	// the walk stops at a nesting past its bound, without deep recursion
 	nested := strings.Repeat("[", 20000) + strings.Repeat("]", 20000)
-	if _, isJSON := levelFromJSONBody([]byte(`{"a":` + nested + `,"level":"inf"}`)); isJSON {
-		t.Fatal("a line nested 20000 deep is read as JSON")
+	if _, found := levelFromJSONBody([]byte(`{"a":` + nested + `,"level":"inf"}`)); found {
+		t.Fatal("a level key after a line nested 20000 deep is read")
 	}
 }
 

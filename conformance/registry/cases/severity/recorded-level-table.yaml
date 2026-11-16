@@ -1,5 +1,5 @@
 id: severity/recorded-level-table
-title: detected_level of a returned row equals Loki's recorded answer for 1481 generated inputs
+title: detected_level of a returned row equals Loki's recorded answer for 1551 generated inputs
 pending: true
 proves:
   - severity-detected-level-derivation
@@ -8,8 +8,9 @@ consumer: explore
 why: |
   The read path derives the detected_level Loki sets at ingest. Its rules are
   held to answers recorded from a real Loki 3.7.9 (discover_log_levels on,
-  default log_level_fields, log_level_from_json_max_depth 2): 1481 generated
-  inputs pushed one stream each (structured metadata keys and values, field
+  default log_level_fields, log_level_from_json_max_depth 2): 1551 generated
+  inputs (recorded twice, the second run adding 70 probes of how the line is
+  read; the 1481 rows of the first run answered the same) pushed one stream each (structured metadata keys and values, field
   pairs, severity_number values, stream labels, JSON lines to depth 5 with
   value types and broken shapes, logfmt variants, plain lines by letter case,
   position, boundary byte and near-miss word, long lines, OTLP records),
@@ -24,12 +25,16 @@ why: |
   other value kept as stored; structured metadata named log.level is not a
   level (Loki stores it as log_level); then severity_number by the OTel
   ranges (0 and above 24 unknown, below 1 trace, a non-integer info); then
-  the line. A JSON line (an opening brace first and a well-formed first
-  object) gives the first level key in document order two objects deep,
-  arrays not entered, keys decoded and values read raw; any other line the
-  logfmt level key earliest in log_level_fields with names compared
-  case-insensitively. A line value counts only as a known spelling; anything
-  else falls to the keyword scan: the first of trace, debug, info, warn,
+  the line. A line with braces first and last (after spaces, tabs, CRs and
+  LFs) is JSON: the first level key holding a string, in document order two
+  objects deep, arrays not entered, keys decoded and values read raw, empty
+  included, up to the first syntax error (numbers read leniently); such a line
+  never goes to logfmt. Any other line is logfmt: the level key earliest in
+  log_level_fields with names compared case-insensitively, a bare or empty
+  value included, up to the first syntax error (a quote or equals sign in a
+  key or unquoted value, an unterminated or badly escaped quoted value). A line
+  value counts only as a known spelling; anything else falls to the keyword
+  scan: the first of trace, debug, info, warn,
   warning, error, err, critical, fatal in any letter case (U+0130 reads as
   i) after start, blank, newline, [ ( { " or = and before end, blank,
   newline, [ ] ( ) { } " : = , or !.

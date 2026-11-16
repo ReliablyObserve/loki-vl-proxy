@@ -70,9 +70,11 @@ func mayHoldDropStage(query string) bool {
 //     structured metadata named log.level as log_level, which it does not read;
 //  4. severity_number: 1-4 trace, 5-8 debug, 9-12 info, 13-16 warn, 17-20 error, 21-24 fatal, below 1 trace, 0
 //     and above 24 unknown, a value that is not a decimal integer info;
-//  5. the line: a JSON object's first level key (exact names, document order, two levels deep, arrays skipped),
-//     or a logfmt line's level key earliest in levelFieldNames (names compared case-insensitively), when its
-//     value is a known spelling; otherwise the first level word of the line (the keyword scan);
+//  5. the line: a line with braces first and last is read as JSON, its first level key holding a string (decoded
+//     names, document order, two objects deep, arrays skipped, up to the first syntax error); any other line as
+//     logfmt, its level key earliest in levelFieldNames (names compared case-insensitively, up to the first syntax
+//     error); the value counts when it is a known spelling, otherwise the first level word of the line (the
+//     keyword scan) decides;
 //  6. unknown.
 //
 // VictoriaLogs stores an OTLP record's severity with a severity text it derives from the number when the record
@@ -374,10 +376,14 @@ func vlSeverityIndex(text []byte) int {
 	return -1
 }
 
-// vlSeverityText is the text VictoriaLogs derives from a stored severity number.
+// vlSeverityText is the text VictoriaLogs derives from a stored severity number; "" for a value that is no
+// integer, which VictoriaLogs never stores as an OTLP number.
 func vlSeverityText(number []byte) string {
 	n, ok := parseLevelInt(number)
-	if !ok || n < 1 || n > 24 {
+	switch {
+	case !ok:
+		return ""
+	case n < 1 || n > 24:
 		return vlSeverityTexts[0]
 	}
 	return vlSeverityTexts[n]
@@ -474,12 +480,15 @@ func parseLevelInt(v []byte) (int64, bool) {
 	return int64(n), true
 }
 
-// levelFromBody is rule 5 over a line: Loki's level name or unknown. A line whose first byte after ASCII blanks is
-// an opening brace and whose first JSON value is a well-formed object is read as JSON, any other line as logfmt.
+// levelFromBody is rule 5 over a line: Loki's level name or unknown. A line whose first and last bytes after ASCII
+// blanks are braces is read as JSON (and never as logfmt), any other line as logfmt; a value that is not a known
+// spelling, or no value, leaves the level to the keyword scan.
 func levelFromBody(body []byte) string {
-	if v, isJSON := levelFromJSONBody(body); isJSON {
-		if c := canonicalLevel(v); c != "" {
-			return c
+	if t := trimLevelBlanks(body); len(t) >= 2 && t[0] == '{' && t[len(t)-1] == '}' {
+		if v, found := levelFromJSONBody(t); found {
+			if c := canonicalLevel(v); c != "" {
+				return c
+			}
 		}
 	} else if c := levelFromLogfmtBody(body); c != "" {
 		return c
@@ -487,49 +496,46 @@ func levelFromBody(body []byte) string {
 	return levelFromKeywords(body)
 }
 
-// isLokiJSONLine reports a line that may be read as JSON: its first byte after ASCII blanks is an opening brace.
-func isLokiJSONLine(line []byte) bool {
-	for _, c := range line {
-		switch c {
-		case ' ', '\t', '\n', '\r', '\f', '\v':
-			continue
-		case '{':
-			return true
-		}
-		return false
+// trimLevelBlanks trims the blanks Loki's JSON reading skips around a line: space, tab, CR and LF.
+func trimLevelBlanks(line []byte) []byte {
+	isBlank := func(c byte) bool { return c == ' ' || c == '\t' || c == '\r' || c == '\n' }
+	for len(line) > 0 && isBlank(line[0]) {
+		line = line[1:]
 	}
-	return false
+	for len(line) > 0 && isBlank(line[len(line)-1]) {
+		line = line[:len(line)-1]
+	}
+	return line
 }
 
 // levelJSONMaxDepth is Loki's default log_level_from_json_max_depth: the keys of the top object and of the
 // objects one level down.
 const levelJSONMaxDepth = 2
 
-// levelFromJSONBody reads a line as JSON. isJSON reports a line that starts with a well-formed object (what
-// follows it is not read); v is then the value of its first level key (names of levelFieldNames after decoding
-// the key, in document order, levelJSONMaxDepth objects deep, arrays not entered) with a non-empty string value,
-// raw as the line writes it, or nil.
-func levelFromJSONBody(body []byte) (v []byte, isJSON bool) {
-	if !isLokiJSONLine(body) {
-		return nil, false
-	}
+// levelFromJSONBody walks a JSON line (from its opening brace) and returns the value of its first level key in
+// document order (names of levelFieldNames after decoding the key, levelJSONMaxDepth objects deep, arrays not
+// entered) that holds a string, raw as the line writes it and possibly empty. The walk is lenient (numbers are
+// read as a run of number bytes, a comma may precede a closing brace) and stops at the first syntax error,
+// keeping what it found before it.
+func levelFromJSONBody(body []byte) (v []byte, found bool) {
 	w := jsonLevelWalk{data: body}
 	w.skipBlanks()
-	if !w.value(1) {
+	if w.pos >= len(w.data) || w.data[w.pos] != '{' {
 		return nil, false
 	}
-	return w.found, true
+	w.value(1)
+	return w.found, w.hasFound
 }
 
 type jsonLevelWalk struct {
-	data  []byte
-	pos   int
-	found []byte
-	nest  int
+	data     []byte
+	pos      int
+	found    []byte
+	hasFound bool
+	nest     int
 }
 
-// levelJSONMaxNesting bounds the objects and arrays the walk enters, as encoding/json does: a line nested deeper
-// is no JSON object (and the walk never recurses without bound).
+// levelJSONMaxNesting bounds the objects and arrays the walk enters: a walk nested deeper stops there.
 const levelJSONMaxNesting = 10000
 
 func (w *jsonLevelWalk) skipBlanks() {
@@ -544,17 +550,15 @@ func (w *jsonLevelWalk) skipBlanks() {
 }
 
 // str reads the string at pos (an opening quote) and returns its raw contents; ok is false for a string that does
-// not end or holds a bad escape or a control byte.
+// not end or holds an escape JSON does not have.
 func (w *jsonLevelWalk) str() ([]byte, bool) {
 	start := w.pos + 1
 	for i := start; i < len(w.data); i++ {
-		switch c := w.data[i]; {
-		case c == '"':
+		switch w.data[i] {
+		case '"':
 			w.pos = i + 1
 			return w.data[start:i], true
-		case c < 0x20:
-			return nil, false
-		case c == '\\':
+		case '\\':
 			i++
 			if i >= len(w.data) {
 				return nil, false
@@ -574,8 +578,7 @@ func (w *jsonLevelWalk) str() ([]byte, bool) {
 	return nil, false
 }
 
-// value reads the value at pos; the keys of an object there are at depth. It reports whether the value is
-// well-formed, and records the first level key of an object within reach.
+// value reads the value at pos; the keys of an object there are at depth. It reports whether the walk may go on.
 func (w *jsonLevelWalk) value(depth int) bool {
 	if w.pos >= len(w.data) {
 		return false
@@ -595,9 +598,16 @@ func (w *jsonLevelWalk) value(depth int) bool {
 	case c == 'n':
 		return w.literal("null")
 	case c == '-' || ('0' <= c && c <= '9'):
-		return w.number()
+		for w.pos < len(w.data) && isJSONNumberByte(w.data[w.pos]) {
+			w.pos++
+		}
+		return true
 	}
 	return false
+}
+
+func isJSONNumberByte(c byte) bool {
+	return ('0' <= c && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E'
 }
 
 func (w *jsonLevelWalk) literal(word string) bool {
@@ -608,44 +618,6 @@ func (w *jsonLevelWalk) literal(word string) bool {
 	return true
 }
 
-// number reads a JSON number.
-func (w *jsonLevelWalk) number() bool {
-	d := w.data
-	i := w.pos
-	if i < len(d) && d[i] == '-' {
-		i++
-	}
-	digits := func() bool {
-		start := i
-		for i < len(d) && '0' <= d[i] && d[i] <= '9' {
-			i++
-		}
-		return i > start
-	}
-	if i < len(d) && d[i] == '0' {
-		i++
-	} else if !digits() {
-		return false
-	}
-	if i < len(d) && d[i] == '.' {
-		i++
-		if !digits() {
-			return false
-		}
-	}
-	if i < len(d) && (d[i] == 'e' || d[i] == 'E') {
-		i++
-		if i < len(d) && (d[i] == '+' || d[i] == '-') {
-			i++
-		}
-		if !digits() {
-			return false
-		}
-	}
-	w.pos = i
-	return true
-}
-
 // object reads the object at pos (an opening brace) whose keys are at depth.
 func (w *jsonLevelWalk) object(depth int) bool {
 	if w.nest++; w.nest > levelJSONMaxNesting {
@@ -653,13 +625,16 @@ func (w *jsonLevelWalk) object(depth int) bool {
 	}
 	defer func() { w.nest-- }()
 	w.pos++
-	w.skipBlanks()
-	if w.pos < len(w.data) && w.data[w.pos] == '}' {
-		w.pos++
-		return true
-	}
 	for {
-		if w.pos >= len(w.data) || w.data[w.pos] != '"' {
+		w.skipBlanks()
+		if w.pos >= len(w.data) {
+			return false
+		}
+		if w.data[w.pos] == '}' {
+			w.pos++
+			return true
+		}
+		if w.data[w.pos] != '"' {
 			return false
 		}
 		key, ok := w.str()
@@ -681,8 +656,8 @@ func (w *jsonLevelWalk) object(depth int) bool {
 			if !ok {
 				return false
 			}
-			if w.found == nil && depth <= levelJSONMaxDepth && len(v) > 0 && isJSONLevelKey(key) {
-				w.found = v
+			if !w.hasFound && depth <= levelJSONMaxDepth && isJSONLevelKey(key) {
+				w.found, w.hasFound = v, true
 			}
 		case c == '{' && depth < levelJSONMaxDepth:
 			if !w.object(depth + 1) {
@@ -701,7 +676,6 @@ func (w *jsonLevelWalk) object(depth int) bool {
 		switch w.data[w.pos] {
 		case ',':
 			w.pos++
-			w.skipBlanks()
 		case '}':
 			w.pos++
 			return true
@@ -718,12 +692,15 @@ func (w *jsonLevelWalk) array() bool {
 	}
 	defer func() { w.nest-- }()
 	w.pos++
-	w.skipBlanks()
-	if w.pos < len(w.data) && w.data[w.pos] == ']' {
-		w.pos++
-		return true
-	}
 	for {
+		w.skipBlanks()
+		if w.pos >= len(w.data) {
+			return false
+		}
+		if w.data[w.pos] == ']' {
+			w.pos++
+			return true
+		}
 		if !w.value(levelJSONMaxDepth + 1) {
 			return false
 		}
@@ -734,7 +711,6 @@ func (w *jsonLevelWalk) array() bool {
 		switch w.data[w.pos] {
 		case ',':
 			w.pos++
-			w.skipBlanks()
 		case ']':
 			w.pos++
 			return true
@@ -744,7 +720,6 @@ func (w *jsonLevelWalk) array() bool {
 	}
 }
 
-// isJSONLevelKey reports a level key: one of levelFieldNames once its escapes are decoded.
 func isJSONLevelKey(key []byte) bool {
 	if bytes.IndexByte(key, '\\') >= 0 {
 		var buf [32]byte
@@ -809,9 +784,11 @@ func asciiEqualFold(a []byte, b string) bool {
 
 const levelFieldGroups = 6
 
-// levelFromLogfmtBody reads a logfmt line's level key earliest in levelFieldNames (the first non-empty value of
-// each name, quoted values unescaped) and returns Loki's level name when the value is a known spelling, "" when it
-// is not or the line has none. The scan stops at an unterminated quoted value.
+// levelFromLogfmtBody reads a logfmt line and returns Loki's level name for the value of its level key earliest in
+// levelFieldNames (names compared case-insensitively, the first occurrence of each; a bare or empty value counts and
+// is no level), "" when that value is not a known spelling or the line has no level key. The read stops at the
+// first syntax error (a quote or an equals sign inside a key or an unquoted value, an unterminated quoted value, an
+// escape JSON strings do not have), keeping the keys before it.
 func levelFromLogfmtBody(line []byte) string {
 	if bytes.IndexByte(line, '=') < 0 {
 		return ""
@@ -819,40 +796,55 @@ func levelFromLogfmtBody(line []byte) string {
 	var found [levelFieldGroups][]byte
 	var quoted [levelFieldGroups]bool
 	best := levelFieldGroups
+scan:
 	for i := 0; i < len(line) && best > 0; {
-		if isLogfmtBlank(line[i]) {
+		if line[i] <= ' ' {
 			i++
 			continue
 		}
 		start := i
-		for i < len(line) && line[i] != '=' && !isLogfmtBlank(line[i]) {
+		for i < len(line) && line[i] > ' ' && line[i] != '=' {
+			if line[i] == '"' {
+				break scan
+			}
 			i++
 		}
-		if i >= len(line) || line[i] != '=' {
-			continue // a bare key
+		if i == start {
+			break // a key that is empty
 		}
 		key := line[start:i]
-		i++
 		var value []byte
-		isQuoted, valid := false, true
-		if i < len(line) && line[i] == '"' {
-			end, ok := logfmtClosingQuote(line, i)
-			if !ok {
-				break
+		isQuoted := false
+		if i < len(line) && line[i] == '=' {
+			i++
+			switch {
+			case i < len(line) && line[i] == '"':
+				end, ok := logfmtClosingQuote(line, i)
+				if !ok || !validLogfmtEscapes(line[i+1:end]) {
+					break scan
+				}
+				value, isQuoted = line[i+1:end], true
+				i = end + 1
+				if i < len(line) && line[i] > ' ' {
+					break scan
+				}
+			default:
+				vs := i
+				for i < len(line) && line[i] > ' ' {
+					if line[i] == '"' || line[i] == '=' {
+						break scan
+					}
+					i++
+				}
+				value = line[vs:i]
 			}
-			value, isQuoted = line[i+1:end], true
-			valid = validLogfmtEscapes(value)
-			i = end + 1
-		} else {
-			vs := i
-			for i < len(line) && !isLogfmtBlank(line[i]) {
-				i++
-			}
-			value = line[vs:i]
 		}
 		g := levelFieldGroup(key)
-		if g < 0 || g >= best || !valid || len(value) == 0 || found[g] != nil {
+		if g < 0 || g >= best || found[g] != nil {
 			continue
+		}
+		if value == nil {
+			value = line[i:i] // a bare key: present, empty
 		}
 		found[g], quoted[g], best = value, isQuoted, g
 	}
@@ -868,10 +860,6 @@ func levelFromLogfmtBody(line []byte) string {
 		v, _ = unquoteLogfmtLevel(v, buf[:0])
 	}
 	return canonicalLevel(v)
-}
-
-func isLogfmtBlank(c byte) bool {
-	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'
 }
 
 // logfmtClosingQuote is the index of the quote that ends the quoted value starting at open.

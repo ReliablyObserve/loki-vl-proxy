@@ -26964,12 +26964,12 @@
       "push_status": 204,
       "labels": {
         "detected_level": "unknown",
-        "service_name": "dlgolden1794846818260930000-otlp"
+        "service_name": "dlgolden1794850122729037000-otlp"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "unknown"
@@ -26986,12 +26986,12 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794846818260930000-otlp"
+        "service_name": "dlgolden1794850122729037000-otlp"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error"
@@ -27008,13 +27008,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "trace",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "1"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "trace",
@@ -27032,13 +27032,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "trace",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "1"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "trace",
@@ -27056,13 +27056,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "debug",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "5"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "debug",
@@ -27080,13 +27080,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "debug",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "5"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "debug",
@@ -27104,13 +27104,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "info",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "9"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "info",
@@ -27128,13 +27128,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "info",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "9"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "info",
@@ -27152,13 +27152,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "info",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "10"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "info",
@@ -27176,13 +27176,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "info",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "10"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "info",
@@ -27200,13 +27200,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "13"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27224,13 +27224,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "13"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27248,13 +27248,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "17"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27272,13 +27272,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "17"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27296,13 +27296,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "fatal",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "21"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "fatal",
@@ -27320,13 +27320,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "fatal",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "21"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "fatal",
@@ -27344,13 +27344,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "fatal",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "24"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "fatal",
@@ -27368,13 +27368,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "fatal",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "24"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "fatal",
@@ -27392,13 +27392,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_text": "Warn"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27416,13 +27416,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_text": "Warn"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27440,13 +27440,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_text": "warning"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27464,13 +27464,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_text": "warning"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27488,13 +27488,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "chatty",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_text": "chatty"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "chatty",
@@ -27512,13 +27512,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "chatty",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_text": "chatty"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "chatty",
@@ -27536,14 +27536,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "notice",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "9",
         "severity_text": "notice"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "notice",
@@ -27562,14 +27562,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "notice",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "9",
         "severity_text": "notice"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "notice",
@@ -27588,14 +27588,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "13",
         "severity_text": "WARN"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27614,14 +27614,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "warn",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "13",
         "severity_text": "WARN"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "warn",
@@ -27640,14 +27640,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "17",
         "severity_text": "Error"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27666,14 +27666,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "17",
         "severity_text": "Error"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27692,14 +27692,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "9",
         "severity_text": "ERROR"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27718,14 +27718,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "9",
         "severity_text": "ERROR"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27744,14 +27744,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "fatal",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "21",
         "severity_text": "Fatal"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "fatal",
@@ -27770,14 +27770,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "fatal",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "21",
         "severity_text": "Fatal"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "fatal",
@@ -27796,14 +27796,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "trace",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "2",
         "severity_text": "Trace"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "trace",
@@ -27822,14 +27822,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "trace",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "2",
         "severity_text": "Trace"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "trace",
@@ -27848,13 +27848,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "unknown",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "30"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "unknown",
@@ -27872,13 +27872,13 @@
       "push_status": 204,
       "labels": {
         "detected_level": "unknown",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "30"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "unknown",
@@ -27896,14 +27896,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "30",
         "severity_text": "error"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27922,14 +27922,14 @@
       "push_status": 204,
       "labels": {
         "detected_level": "error",
-        "service_name": "dlgolden1794846818260930000-otlp",
+        "service_name": "dlgolden1794850122729037000-otlp",
         "severity_number": "30",
         "severity_text": "error"
       },
       "categories": {
         "parsed": null,
         "stream": {
-          "service_name": "dlgolden1794846818260930000-otlp"
+          "service_name": "dlgolden1794850122729037000-otlp"
         },
         "structured_metadata": {
           "detected_level": "error",
@@ -27942,6 +27942,1280 @@
         "severity_number": "30",
         "severity_text": "error"
       }
+    },
+    {
+      "name": "probe/json-unknown-then-lvl",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-lvl-then-unknown",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-duplicate-first-short",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-syntax-error-after-level",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-trailing-comma",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-unterminated-object",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-trailing-text",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-trailing-letter",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-extra-brace",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-second-object",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-invalid-after-nested-level",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/brace-then-logfmt",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/object-then-logfmt",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-escaped-key-long",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-escaped-key-upper",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-bad-key-escape",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-escaped-value-short",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-level-in-array",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-depth-2-short",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-depth-3-short",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-lead-ff",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-lead-vt",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-lead-cr",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-lead-lf",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-lead-sp",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-lead-tab",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-lead-nbsp",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-lead-bom",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-number-leading-zero",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-number-bad-literal",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-number-dot",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-number-minus",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-number-exponent",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-number-plus",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-single-quotes",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-bare-key",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/json-control-in-string",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/json-empty-then-short",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/logfmt-unknown-then-lvl",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/logfmt-two-spellings",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "debug",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "debug"
+        }
+      },
+      "level": "debug"
+    },
+    {
+      "name": "probe/logfmt-lvl-then-empty-level",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/logfmt-lvl-then-empty-quoted",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/logfmt-empty-quoted-then-lvl",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/logfmt-quoted-unicode-escape",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/logfmt-quoted-bad-escape",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/logfmt-unterminated-then",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/logfmt-key-case-mixed",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/logfmt-key-log-dot-level",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/logfmt-key-log-dot-level-upper",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/logfmt-cr-separated",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/logfmt-ff-separated",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/keyword-left-ff",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/keyword-right-ff",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/keyword-left-vt",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/keyword-right-vt",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/keyword-left-cr",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/keyword-right-cr",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/keyword-left-nul",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/keyword-right-nul",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/keyword-left-bs",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/keyword-right-bs",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/keyword-lf-both",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "error",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "error"
+        }
+      },
+      "level": "error"
+    },
+    {
+      "name": "probe/keyword-dotless-upper-i",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/keyword-kelvin-near",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "unknown",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "unknown"
+        }
+      },
+      "level": "unknown"
+    },
+    {
+      "name": "probe/sm-mixed-case-wArN",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "warn",
+        "level": "wArN",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "warn",
+          "level": "wArN"
+        }
+      },
+      "level": "warn"
+    },
+    {
+      "name": "probe/sm-mixed-case-iNf",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "level": "iNf",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info",
+          "level": "iNf"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/sm-mixed-case-eRr",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "error",
+        "level": "eRr",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "error",
+          "level": "eRr"
+        }
+      },
+      "level": "error"
+    },
+    {
+      "name": "probe/sm-mixed-case-InFoRmAtIoN",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "info",
+        "level": "InFoRmAtIoN",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "info",
+          "level": "InFoRmAtIoN"
+        }
+      },
+      "level": "info"
+    },
+    {
+      "name": "probe/stream-mixed-case",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "debug",
+        "lvl": "dBg",
+        "service_name": "unknown_service"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "lvl": "dBg",
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "debug"
+        }
+      },
+      "level": "debug"
+    },
+    {
+      "name": "probe/sm-sevnum-text-nonint",
+      "push_status": 204,
+      "labels": {
+        "detected_level": "Unspecified",
+        "service_name": "unknown_service",
+        "severity_number": "A",
+        "severity_text": "Unspecified"
+      },
+      "categories": {
+        "parsed": null,
+        "stream": {
+          "service_name": "unknown_service"
+        },
+        "structured_metadata": {
+          "detected_level": "Unspecified",
+          "severity_number": "A",
+          "severity_text": "Unspecified"
+        }
+      },
+      "level": "Unspecified"
     }
   ]
 }

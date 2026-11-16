@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"sort"
 	"strings"
@@ -187,5 +189,37 @@ func BenchmarkDeriveDetectedLevel(b *testing.B) {
 				detectedLevelBenchSink = deriveDetectedLevel(bc.in)
 			}
 		})
+	}
+}
+
+// TestDetectedLevelCacheKeyVersion: cached log responses, patterns and their state are keyed by the derivation's
+// version, moved with the derivation (dl2: a stored log.level field is no level field), so an answer written
+// before it is never served.
+//
+// conformance: severity/recorded-level-table
+func TestDetectedLevelCacheKeyVersion(t *testing.T) {
+	scan := newDetectedLevelTestProxy(t, LabelStyleUnderscores, false)
+	stored := newDetectedLevelTestProxy(t, LabelStyleUnderscores, true)
+	if got := scan.detectedLevelCacheKey(); got != "dl2" {
+		t.Fatalf("body-scan key %q, want dl2", got)
+	}
+	if got := stored.detectedLevelCacheKey(); got != "dl2-stored" {
+		t.Fatalf("stored-only key %q, want dl2-stored", got)
+	}
+	if !strings.Contains(scan.responseProfileCacheKey(httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range", nil)), "/dl2/") {
+		t.Fatal("the response profile key does not carry the derivation version")
+	}
+}
+
+// TestStreamLevelSkipsLogDotLevel: a series built from one stream reads the stream's level labels as the log
+// read path does, log.level left out (Loki stores such metadata as log_level and never reads it).
+//
+// conformance: severity/recorded-level-table, semantics/without-fold-stream-detected-level
+func TestStreamLevelSkipsLogDotLevel(t *testing.T) {
+	if got := streamDetectedLevel(map[string]string{"log.level": "warn"}); got != levelUnknown {
+		t.Fatalf("log.level stream gives %q, want unknown", got)
+	}
+	if got := streamDetectedLevel(map[string]string{"log.level": "warn", "lvl": "debug"}); got != levelDebug {
+		t.Fatalf("log.level and lvl stream gives %q, want debug", got)
 	}
 }

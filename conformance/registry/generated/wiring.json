@@ -2329,7 +2329,8 @@
       "internal/proxy/without_open_shapes_test.go"
     ],
     "semantics/without-fold-stream-detected-level": [
-      "internal/proxy/detected_level_stream_series_test.go"
+      "internal/proxy/detected_level_stream_series_test.go",
+      "internal/proxy/detected_level_test.go"
     ],
     "semantics/without-instant-detected-level-unknown": [
       "test/e2e-compat/detected_level_unknown_stats_test.go"
@@ -3116,6 +3117,7 @@
       "severity-detected-level-derivation"
     ],
     "internal/proxy/detected_level_test.go": [
+      "semantics/without-fold-stream-detected-level",
       "severity-detected-level-derivation",
       "severity/recorded-level-table"
     ],
