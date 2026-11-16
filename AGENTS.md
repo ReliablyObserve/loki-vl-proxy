@@ -47,6 +47,15 @@ spellings or nestings of one difference (for example
 `semantics/stddev-stdvar-nested-or-binary`); a different difference gets its
 own case.
 
+A case whose request is a query Loki refuses (a parse or validation error) is
+an HTTP request like any other, so the verifier compares the proxy's answer with
+Loki's, but it is not a corpus row (a corpus row is a query that runs). Say so in
+the compare block: `compare.values.status: 400` (any 4xx) with `fields` naming
+only `status` and an error facet (`error_text`, `error`, `message` or
+`errorType`). The corpus walker then leaves out the query of that case's
+`request`; a case without `values.status`, or one that also compares data, keeps
+its row (`internal/querycorpus/plancorpus`).
+
 - Record the actual ingest path, query stages, response encoding, tenant and
   time window that expose the difference. A passing variant with a different
   ingest path does not close the original gap.
@@ -114,6 +123,24 @@ Loki oracle (`test/oracle/loki`, API only).
   the parser and through the HTTP route (no upstream call is made for a rejected query).
 - A pull request that touches parsing or validation says in its body that rejected inputs still fail before any other
   work.
+
+## Response key fences read every spelling the parser reads
+
+A response key fence (`responseKeyFences`, `internal/proxy/response_key_fences.go`) is a text screen: it adds a version
+constant to a response cache key when the query holds the construct a fix changed, so an answer cached before the fix
+is not served. The parser reads more spellings than the lower case, single-space form clients usually send: every
+keyword and function name in any case (`| KEEP`, `TOPK(`, `Sum by`), letters that lower case to ASCII ones (U+212A,
+U+0130), `#` comments between tokens (a quote in a comment opens no string), and names of any Unicode letters.
+
+- A new or changed fence screen reads those spellings, allocates nothing, and keeps firing for every spelling its
+  older form fired for (so no key of the fleet's caches becomes unreachable). The shared readers are in
+  `internal/proxy/response_key_fence_text.go`.
+- Register a new fence in `responseKeyFences` (and a public wrapper), then in `response_key_fence_parser_test.go`: its
+  construct in `fenceFacts` and `fenceWants`, its name in `fenceFires`, a row per spelling class in
+  `TestResponseKeyFencesFireOnTheSpellingsTheParserReads`, and for a pure text screen an entry in `fenceScreens` with a
+  frozen reference of its first form in `response_key_fence_reference_test.go`.
+  `FuzzResponseKeyFencesMatchParsedTree` (fuzz-smoke) then checks the screen against the parsed tree and the keys its
+  older form wrote; an unchecked fence is unfinished.
 
 ## Cache semantic layers
 
