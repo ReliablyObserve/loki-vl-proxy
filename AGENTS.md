@@ -41,8 +41,8 @@ generators either. Loki is used only as a test comparison.
   recorded answers and live probes, and is held to Loki by checks that ask Loki
   itself: `TestLogQLSurfaceMatchesLokiParser` (every documented construct
   parses with Loki's parser, daily in `query-corpus.yaml`) and
-  `sync_loki.py --check-live` (every route and method against the stack's Loki,
-  weekly in `parity-refresh.yaml`). The parity corpus takes its Loki queries
+  `sync_loki.py --record-live` (every route and method against the stack's
+  Loki, weekly in `parity-refresh.yaml`). The parity corpus takes its Loki queries
   from the published query documentation, never from Loki's test files. The two
   exceptions are inside the test-only oracle module and await the owner's
   decision: the similarity scan above fingerprints Loki's `pkg/` to detect

@@ -26,9 +26,10 @@ prune.md, conformance.txt, result.json and summary.md (the job summary and the p
 
 Exit: 0 the run is recorded; 2 the run could not prove both sides healthy (run.py); 3 health changed during the run;
 4 the run cannot speak for the corpus (a source sent nothing, no cluster): nothing was pruned or published;
-5 the run is recorded, and the stack's Loki serves a route or method other than the registry's Loki surface lists
-(conformance/scripts/sync_loki.py --check-live: the surface comes from Loki's public documentation and recorded
-answers, and this is the check that it has not drifted from a live Loki); 1 any other failure.
+5 the run is recorded, and the stack's Loki serves routes or methods other than the registry's Loki surface listed
+(conformance/scripts/sync_loki.py --record-live re-records live-routes.json and regenerates endpoints.json, which
+the pull request then carries: the surface comes from Loki's public documentation, recorded answers and this live
+probe, and this is the check that it has not drifted from a live Loki); 1 any other failure.
 """
 import argparse
 import json
@@ -73,6 +74,22 @@ def loki_tag():
 def surface_version():
     """The release of the registry's recorded Loki surface (conformance/registry/generated/loki/<version>)."""
     return sorted(os.listdir(os.path.join(ROOT, "conformance", "registry", "generated", "loki")))[-1]
+
+
+def record_loki_surface(state, out, log):
+    """Ask the stack's Loki every route and method of the registry's Loki surface (sync_loki.py --record-live, which
+    writes live-routes.json and regenerates endpoints.json from it, the HTTP API reference and the recorded
+    answers). Returns whether endpoints.json changed: the live Loki serves something the surface did not list, or no
+    longer serves something it did. A copy of the probe goes to the run's output."""
+    directory = os.path.join(ROOT, "conformance", "registry", "generated", "loki", surface_version())
+    target = os.path.join(directory, "endpoints.json")
+    before = read_text(target) if os.path.exists(target) else ""
+    run([PY, os.path.join(ROOT, "conformance", "scripts", "sync_loki.py"), "--version", surface_version(),
+         "--record-live", f"http://127.0.0.1:{state['ports']['loki']}"], cwd=ROOT, log=log)
+    probe = os.path.join(directory, "live-routes.json")
+    if os.path.exists(probe):
+        write_text(os.path.join(out, "live-routes.json"), read_text(probe))
+    return read_text(target) != before
 
 
 def loki_docs_version(tag):
@@ -210,8 +227,9 @@ def summary_md(a, result, discovery, prune_text, problems):
              f"- elapsed {result['elapsed_s']} s ({', '.join(f'{k} {v} s' for k, v in result['phases_s'].items())})", ""]
     lines += run_table(discovery) + [""]
     if result.get("loki_surface_drift"):
-        lines += ["The stack's Loki serves routes or methods other than the registry's Loki surface lists "
-                  "(`sync_loki.py --check-live` in `steps.log`): record them with `sync_loki.py --record-live`.", ""]
+        lines += ["The stack's Loki serves routes or methods other than the registry's Loki surface listed: "
+                  "`sync_loki.py --record-live` re-recorded `live-routes.json` and regenerated `endpoints.json` "
+                  "(in this pull request); review the change.", ""]
     if result.get("slice"):
         lines += [f"This is a slice ({result['slice']['per_source']} per source of "
                   f"{result['slice']['of']} corpus entries): the run is recorded as partial, `parity_gaps.py --prune` "
@@ -274,9 +292,7 @@ def main():
         phase("stack_up", t0)
 
         t0 = time.time()
-        surface = run([PY, os.path.join(ROOT, "conformance", "scripts", "sync_loki.py"), "--version", surface_version(),
-                       "--check-live", f"http://127.0.0.1:{state['ports']['loki']}"], log=step_log, check=False)
-        result["loki_surface_drift"] = surface.returncode != 0
+        result["loki_surface_drift"] = record_loki_surface(state, out, step_log)
         phase("loki_surface", t0)
 
         t0 = time.time()
