@@ -128,7 +128,7 @@ var dynamicIdentityKnown = func() map[string]map[string]string {
 	for _, fn := range []string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time"} {
 		for _, shape := range dynamicIdentityShapes {
 			q := fmt.Sprintf(shape, keepIdentityHead(fn))
-			if strings.Contains(q, `__error__`) || fn == "max_over_time" && strings.HasPrefix(q, "max by (app) (") {
+			if fn == "max_over_time" && strings.HasPrefix(q, "max by (app) (") {
 				continue
 			}
 			add(perSeries, sliding, q)
