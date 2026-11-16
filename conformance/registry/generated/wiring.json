@@ -1662,10 +1662,13 @@
       "test/e2e-compat/logql_unicode_runes_test.go"
     ],
     "semantics/loki-build-phase-window": [
+      "internal/proxy/build_phase_replay_test.go",
       "internal/proxy/build_phase_window_loki_test.go"
     ],
     "semantics/loki-error-phase-order": [
+      "internal/logql/error_phase_calls_test.go",
       "internal/logql/error_phase_fuzz_test.go",
+      "internal/proxy/build_phase_replay_test.go",
       "internal/proxy/error_phase_grid_test.go"
     ],
     "semantics/loki-error-phases": [
@@ -2606,6 +2609,9 @@
     "internal/logql/error_order_loki_test.go": [
       "semantics/loki-error-phases"
     ],
+    "internal/logql/error_phase_calls_test.go": [
+      "semantics/loki-error-phase-order"
+    ],
     "internal/logql/error_phase_fuzz_test.go": [
       "semantics/loki-error-phase-order"
     ],
@@ -2907,6 +2913,10 @@
     ],
     "internal/proxy/blank_grouping_test.go": [
       "semantics/translator-reads-blank-grouping-as-none"
+    ],
+    "internal/proxy/build_phase_replay_test.go": [
+      "semantics/loki-build-phase-window",
+      "semantics/loki-error-phase-order"
     ],
     "internal/proxy/build_phase_window_loki_test.go": [
       "semantics/loki-build-phase-window"
@@ -5632,7 +5642,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 667,
+  "tests_with_markers": 669,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

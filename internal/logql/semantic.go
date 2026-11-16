@@ -54,6 +54,9 @@ func semanticPass(expr Expr, raw string, build bool) string {
 			return *x.treeErr
 		}
 		if build {
+			if x.Func == "vector" {
+				return "" // a number: no pipeline to build
+			}
 			inner := x.Inner
 			if inner == nil {
 				inner, _ = opaqueFirstArgument(raw, x.Raw)
