@@ -17,21 +17,28 @@ import (
 // build the error (unparsedLinePipelineError). A row VictoriaLogs returned for
 // that lookup stays in the window it was found in (rows are append-only), so
 // it is remembered per tenant and lookup text, local to the replica, for the
-// parse-risk probe TTL: a later lookup of a window that holds its timestamp
-// reads it with no VictoriaLogs call. That keeps the row evaluator from
-// asking the question the risk check just answered, and lets a repeat or a
-// refresh skip the speculative stats query and the other checks the strict
-// split starts beside the lookup, so it sends the same requests every time.
+// parse-risk probe TTL, with the window it was looked up in. The row
+// evaluator builds Loki's error from the row of exactly its own lookup, so it
+// reuses a row only when the window is the same (the risk check's lookup of
+// that request) instead of asking the question again; another window may
+// hold another first row, and the error names the row's series. A later
+// request whose window merely holds the row's timestamp (a refresh, the next
+// step) is known to hold a rejected line, so the strict split skips the
+// speculative stats query and the checks it would start beside the lookup,
+// and sends the same requests every time.
 
 // unparsedLineRowMaxBytes bounds a remembered row; a longer one is read again
 // when needed.
 const unparsedLineRowMaxBytes = 64 << 10
 
-// unparsedLineRow is a remembered row: its _time in Unix nanoseconds and the
-// row as VictoriaLogs returned it.
+// unparsedLineRow is a remembered row: its _time in Unix nanoseconds, the
+// window [From, To] it was looked up in and the row as VictoriaLogs returned
+// it.
 type unparsedLineRow struct {
-	T   int64           `json:"t"`
-	Row json.RawMessage `json:"r"`
+	T    int64           `json:"t"`
+	From int64           `json:"f"`
+	To   int64           `json:"u"`
+	Row  json.RawMessage `json:"r"`
 }
 
 // unparsedLineLookup is the lookup text for a base query: the first line of
@@ -53,8 +60,8 @@ func (p *Proxy) unparsedLineRowKey(ctx context.Context, lookup string) string {
 }
 
 // cachedUnparsedLineRow returns a remembered row of lookup whose time lies in
-// [from, to].
-func (p *Proxy) cachedUnparsedLineRow(ctx context.Context, lookup string, from, to time.Time) ([]byte, bool) {
+// [from, to]; with exact, only one looked up over exactly [from, to].
+func (p *Proxy) cachedUnparsedLineRow(ctx context.Context, lookup string, from, to time.Time, exact bool) ([]byte, bool) {
 	if p.cache == nil {
 		return nil, false
 	}
@@ -64,6 +71,9 @@ func (p *Proxy) cachedUnparsedLineRow(ctx context.Context, lookup string, from, 
 	}
 	var r unparsedLineRow
 	if json.Unmarshal(raw, &r) != nil || len(r.Row) == 0 || r.T < from.UnixNano() || r.T > to.UnixNano() {
+		return nil, false
+	}
+	if exact && (r.From != from.UnixNano() || r.To != to.UnixNano()) {
 		return nil, false
 	}
 	return r.Row, true
@@ -99,17 +109,18 @@ func (p *Proxy) readUnparsedLineRow(ctx context.Context, lookup string, from, to
 		return nil, fmt.Errorf("invalid backend metric row: %w", err)
 	}
 	if ts, err := time.Parse(time.RFC3339Nano, fields.Time); err == nil && p.cache != nil && p.parseRiskProbeCacheTTL > 0 && len(row) <= unparsedLineRowMaxBytes {
-		if raw, err := json.Marshal(unparsedLineRow{T: ts.UnixNano(), Row: row}); err == nil {
+		if raw, err := json.Marshal(unparsedLineRow{T: ts.UnixNano(), From: from.UnixNano(), To: to.UnixNano(), Row: row}); err == nil {
 			p.cache.SetLocalOnlyWithTTL(p.unparsedLineRowKey(ctx, lookup), raw, p.parseRiskProbeCacheTTL)
 		}
 	}
 	return row, nil
 }
 
-// unparsedLineRowFor returns a row of lookup in [from, to]: a remembered one,
-// or one VictoriaLogs returns (nil when the window holds none).
+// unparsedLineRowFor returns the row of lookup over [from, to]: the one
+// remembered from exactly this lookup, or one VictoriaLogs returns (nil when
+// the window holds none).
 func (p *Proxy) unparsedLineRowFor(ctx context.Context, lookup string, from, to time.Time) ([]byte, error) {
-	if row, ok := p.cachedUnparsedLineRow(ctx, lookup, from, to); ok {
+	if row, ok := p.cachedUnparsedLineRow(ctx, lookup, from, to, true); ok {
 		return row, nil
 	}
 	return p.readUnparsedLineRow(ctx, lookup, from, to)

@@ -211,7 +211,6 @@
       "internal/proxy/instrumentation_secrets_test.go"
     ],
     "json-metric-unparsed-line-lookup-once": [
-      "internal/proxy/ordered_json_detected_level_split_test.go",
       "internal/proxy/ordered_json_unparsed_row_test.go"
     ],
     "limits/admission-limits-answer-queue-full": [
@@ -3392,7 +3391,6 @@
       "semantics/label-filter-before-parser-pushdown"
     ],
     "internal/proxy/ordered_json_detected_level_split_test.go": [
-      "json-metric-unparsed-line-lookup-once",
       "semantics/json-detected-level-error-split",
       "semantics/json-metric-detected-level-derivation",
       "severity-detected-level-derivation"

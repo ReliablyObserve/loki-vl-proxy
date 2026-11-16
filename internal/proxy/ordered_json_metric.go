@@ -1481,7 +1481,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		// A line Loki's parser rejects, found in this window before, decides
 		// the answer (the row evaluator's) before any check or the stats start.
 		first, last := unparsedLineWindow(start, end, step, plan.window)
-		if _, ok := p.cachedUnparsedLineRow(ctx, unparsedLineLookup(probeBase), first, last); ok {
+		if _, ok := p.cachedUnparsedLineRow(ctx, unparsedLineLookup(probeBase), first, last, false); ok {
 			return nil, false, false, nil
 		}
 	}

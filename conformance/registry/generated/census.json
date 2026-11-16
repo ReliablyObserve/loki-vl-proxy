@@ -1619,7 +1619,6 @@
     "internal/proxy/ordered_json_conditional_unpack_test.go | semantics/json-filter-pushdown-without-error-drop",
     "internal/proxy/ordered_json_conditional_unpack_test.go | semantics/json-label-spelling-probe",
     "internal/proxy/ordered_json_conditional_unpack_test.go | semantics/label-filter-before-parser-pushdown",
-    "internal/proxy/ordered_json_detected_level_split_test.go | json-metric-unparsed-line-lookup-once",
     "internal/proxy/ordered_json_detected_level_split_test.go | semantics/json-detected-level-error-split",
     "internal/proxy/ordered_json_detected_level_split_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/ordered_json_detected_level_split_test.go | severity-detected-level-derivation",

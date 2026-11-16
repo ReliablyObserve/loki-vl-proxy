@@ -204,9 +204,6 @@ func (p *Proxy) jsonLokiRejectHazardRisk(ctx context.Context, base string, start
 func (p *Proxy) jsonUnparsedLineRisk(ctx context.Context, base string, start, end time.Time, step, window time.Duration) (bool, error) {
 	lookup := unparsedLineLookup(base)
 	first, last := unparsedLineWindow(start, end, step, window)
-	if _, ok := p.cachedUnparsedLineRow(ctx, lookup, first, last); ok {
-		return true, nil // a line found before lies in the window
-	}
 	key := "json-unparsed-line:v1:" + getOrgID(ctx) + ":" + base
 	_, risky, err := p.coveredWindowProbe(ctx, key, first, last, func(from, to time.Time, _ string) (string, bool, error) {
 		// The row is remembered, for the row evaluator and later windows

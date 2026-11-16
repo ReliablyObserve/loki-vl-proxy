@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 // keepMetricQuery is a `| json` metric the strict split answers: a keep after
@@ -134,9 +136,10 @@ func TestOrderedJSONUnparsedLine_RowEvaluatorReusesTheRiskChecksRow(t *testing.T
 // cancels them once the lookup finds a line Loki's parser rejects: with
 // VictoriaLogs answering after a round trip (here 20 ms) every one of them
 // has been sent by then, and 60 cold requests send one set. Once a row is
-// found, a refresh of the window (the next step) starts nothing beside it: no
-// stats, no checks, no second lookup, only the row evaluator's read, the same
-// on every refresh. Every request gets the same answer.
+// found, a refresh of the window (the next step) starts nothing beside the row
+// evaluator: no stats, no checks, only its own lookup of the refreshed window
+// (its error names the first row of exactly that window) and its read, the
+// same on every refresh. Every request gets a success answer.
 //
 // conformance: json-metric-unparsed-line-lookup-once
 func TestOrderedJSONUnparsedLine_OneSpellingSendsOneRequestSet(t *testing.T) {
@@ -153,8 +156,8 @@ func TestOrderedJSONUnparsedLine_OneSpellingSendsOneRequestSet(t *testing.T) {
 			for j := 1; j <= 5; j++ {
 				answers[unparsedLineRequest(t, p, 1700000000+int64(60*j))]++
 				got := stub.take()
-				if slices.ContainsFunc(got, func(r string) bool { return strings.Contains(r, "stats_query_range") }) || lookupsOf(got) != 0 {
-					t.Fatalf("refresh %d started the stats or a lookup again:\n%s", j, strings.Join(got, "\n"))
+				if slices.ContainsFunc(got, func(r string) bool { return strings.Contains(r, "stats_query_range") }) || lookupsOf(got) != 1 {
+					t.Fatalf("refresh %d started the stats or the checks, or looked up more than once:\n%s", j, strings.Join(got, "\n"))
 				}
 				if refresh == nil {
 					refresh = got
@@ -162,8 +165,8 @@ func TestOrderedJSONUnparsedLine_OneSpellingSendsOneRequestSet(t *testing.T) {
 					t.Fatalf("refresh %d sent %d requests, the first refresh %d", j, len(got), len(refresh))
 				}
 			}
-			if len(refresh) != 1 {
-				t.Fatalf("a refresh sent %d requests, want the row evaluator's read only:\n%s", len(refresh), strings.Join(refresh, "\n"))
+			if len(refresh) != 2 {
+				t.Fatalf("a refresh sent %d requests, want the row evaluator's lookup and read:\n%s", len(refresh), strings.Join(refresh, "\n"))
 			}
 		}
 	}
@@ -206,15 +209,22 @@ func TestOrderedJSONUnparsedLine_RememberedRowOnlyDecidesItsWindow(t *testing.T)
 		{"window ending before the row", at.Add(-time.Hour), at.Add(-time.Nanosecond), false},
 		{"window starting after the row", at.Add(time.Nanosecond), at.Add(time.Hour), false},
 	} {
-		if _, ok := p.cachedUnparsedLineRow(ctx, lookup, tc.from, tc.to); ok != tc.want {
+		if _, ok := p.cachedUnparsedLineRow(ctx, lookup, tc.from, tc.to, false); ok != tc.want {
 			t.Errorf("%s: remembered %v, want %v", tc.name, ok, tc.want)
 		}
 	}
+	// The row evaluator reuses only the row of exactly its own lookup.
+	if _, ok := p.cachedUnparsedLineRow(ctx, lookup, at.Add(-time.Minute), at.Add(time.Minute), true); !ok {
+		t.Error("the row of the same window is not reused")
+	}
+	if _, ok := p.cachedUnparsedLineRow(ctx, lookup, at.Add(-time.Hour), at.Add(time.Hour), true); ok {
+		t.Error("the row of another window is reused as the first row of this one")
+	}
 	other := context.WithValue(context.Background(), orgIDKey, "team-b")
-	if _, ok := p.cachedUnparsedLineRow(other, lookup, at.Add(-time.Hour), at.Add(time.Hour)); ok {
+	if _, ok := p.cachedUnparsedLineRow(other, lookup, at.Add(-time.Hour), at.Add(time.Hour), false); ok {
 		t.Error("another tenant reads the remembered row")
 	}
-	if _, ok := p.cachedUnparsedLineRow(ctx, unparsedLineLookup(`A:="1"`), at.Add(-time.Hour), at.Add(time.Hour)); ok {
+	if _, ok := p.cachedUnparsedLineRow(ctx, unparsedLineLookup(`A:="1"`), at.Add(-time.Hour), at.Add(time.Hour), false); ok {
 		t.Error("another lookup reads the remembered row")
 	}
 }
@@ -246,5 +256,24 @@ func TestCoveredWindowProbe_CancelledCheckRemembersNothing(t *testing.T) {
 	}
 	if _, _, err := p.coveredWindowProbe(ctx, "cancel-test", start, end, check(nil)); err != nil || calls != 2 {
 		t.Fatalf("a completed clean check was not remembered (%d checks, %v)", calls, err)
+	}
+}
+
+// BenchmarkUnparsedLineRowMiss is what the strict split adds to a request on
+// clean data: one remembered-row lookup that misses, before it starts.
+func BenchmarkUnparsedLineRowMiss(b *testing.B) {
+	p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: cache.New(time.Minute, 1000), LogLevel: "error"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	ctx := context.WithValue(context.Background(), orgIDKey, "team-a")
+	lookup := unparsedLineLookup(`app:="api" | unpack_json fields (a)`)
+	from, to := time.Unix(1700000000, 0), time.Unix(1700003600, 0)
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, ok := p.cachedUnparsedLineRow(ctx, lookup, from, to, false); ok {
+			b.Fatal("hit")
+		}
 	}
 }
