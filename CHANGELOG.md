@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answers recorded with Loki's engine and pipeline for the same lines and queries: every conversion over number,
   duration and size spellings (signs, units, overflow, NaN and infinities, blanks, logfmt and JSON lines), the
   labels the logfmt, JSON, unpack and regexp parsers give generated lines, and the status and text of the error
-  over 30 query shapes. The VictoriaLogs requests and the answers are unchanged, except that stddev_over_time and
+  over 39 query shapes. The VictoriaLogs requests and the answers are unchanged, except that stddev_over_time and
   stdvar_over_time over a range longer than the step merge their buckets in two passes (a window's value can differ
   from the previous build in its last bit, as close to the exact value as before). Two fuzz targets join
   fuzz-smoke.
