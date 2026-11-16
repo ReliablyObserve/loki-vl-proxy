@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.310.1] - 2026-11-16
+
 ### Fixed
 
 - A query whose VictoriaLogs answer is larger than the proxy buffers (`-backend-max-buffered-response-bytes`), or that
@@ -14,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and every other query on that proxy then answered 500 "circuit breaker open" without reaching VictoriaLogs; now
   only the request itself answers its limit error. The stats extent cache surfaced an oversized bucket read as a
   transport error, which the breaker counted.
+
+### Changed
+
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
 
 ## [2.310.0] - 2026-11-16
 
