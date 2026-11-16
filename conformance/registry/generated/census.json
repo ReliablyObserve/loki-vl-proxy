@@ -1288,8 +1288,6 @@
     "internal/proxy/blank_after_keyword_test.go | semantics/parser-reads-unicode-blank-as-white-space",
     "internal/proxy/blank_after_keyword_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/proxy/blank_grouping_test.go | semantics/translator-reads-blank-grouping-as-none",
-    "internal/proxy/breaker_size_limit_test.go | backend-deadlines-and-cancellation",
-    "internal/proxy/breaker_size_limit_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/proxy/capture_error_replay_test.go | limits/series-limit-error",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-backend-text",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-body-shape",
@@ -2858,7 +2856,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 653,
+      "go": 652,
       "playwright": 1
     },
     "page_kinds": {
