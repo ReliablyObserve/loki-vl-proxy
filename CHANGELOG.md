@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A query whose VictoriaLogs answer is larger than the proxy buffers (`-backend-max-buffered-response-bytes`), or that
+  passes a series or row budget, no longer counts as a backend failure. Five such requests opened the circuit breaker,
+  and every other query on that proxy then answered 500 "circuit breaker open" without reaching VictoriaLogs; now
+  only the request itself answers its limit error. The stats extent cache surfaced an oversized bucket read as a
+  transport error, which the breaker counted.
 - A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
   accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
   per-stream series took the stream's `detected_level`.
