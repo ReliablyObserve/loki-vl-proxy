@@ -21,14 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   flag hides it: leave it off when such pushes carry structured metadata. Pushing with `disable_message_parsing=1`
   stays the supported setup and needs no flag. With the flag off nothing changes.
 
-### Fixed
-
-- A query whose VictoriaLogs answer is larger than the proxy buffers (`-backend-max-buffered-response-bytes`), or that
-  passes a series or row budget, no longer counts as a backend failure. Five such requests opened the circuit breaker,
-  and every other query on that proxy then answered 500 "circuit breaker open" without reaching VictoriaLogs; now
-  only the request itself answers its limit error. The stats extent cache surfaced an oversized bucket read as a
-  transport error, which the breaker counted.
-
 ## [2.310.0] - 2026-11-16
 
 ### Changed
