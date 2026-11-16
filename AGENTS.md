@@ -371,6 +371,12 @@ Loki's speed or better is part of the same work, not a follow-up. Measure it
 query shapes) and keep improving it. Only when that is not possible within
 the change, show why with numbers and ask the maintainers before it ships.
 
+A cold run that is a first request for a selector whose state the proxy has not built, where Loki answers from a
+structure it built at ingest (the Drilldown patterns of a selector, from Loki's pattern ingester), is a "first ask":
+its shape carries `first_ask_max_s` in `bench/ab/shapes.json` and is held to that absolute bound instead of Loki's
+time; its repeats keep the 2× bound (`bench/ab/README.md`, "First ask, state not built"). The bound comes from
+measured stack runs, and only such a request gets one.
+
 Regexps sent to VictoriaLogs avoid character classes that are wide, hold the
 ASCII letters and are closed under case folding (`[^"]`, `[^"\\]`,
 `[^0-9.:]`). Go's regexp/syntax prints such a class in about a millisecond,

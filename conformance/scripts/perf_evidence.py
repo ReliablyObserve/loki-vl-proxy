@@ -1055,6 +1055,9 @@ def render_quality_summary(q, target_is_docs=False):
     all_over = q["over"].get("rows", [])
     # The list holds rows of both Loki profiles; the sentence below states the one shown above.
     over = [r for r in all_over if (r.get("profile") or LEGACY_PROFILE) == q["profile"]]
+    # A listed first ask is held to its absolute bound now (over2x.first_ask_bound); the weekly run removes it.
+    first_asks = [r for r in over if r["mode"] == "cold" and over2x.first_ask_bound(r["shape"], r["range"]) is not None]
+    over = [r for r in over if r not in first_asks]
     over_modes = {m: sum(1 for r in over if r["mode"] == m) for m in over2x.MODES}
     commits = ", ".join(f"`{c[:10]}`" for c in q["commits"])
     notes = {p: re.split(r"\.\s", n)[0].rstrip(".") for p, n in over2x.PROFILE_NOTES.items()}
@@ -1132,6 +1135,14 @@ def render_quality_summary(q, target_is_docs=False):
     else:
         out.append(f"- No row is on the above-2× list for the `{q['profile']}` profile. {locked} of {len(q['blocks'])} covered registry items are "
                    f"locked at the 2× bound.")
+    if first_asks:
+        out.append(f"- **{len(first_asks)}** listed first requests are first asks ("
+                   + ", ".join(f"{code(r['shape'])} over {r['range']}" for r in first_asks)
+                   + "): the first request for a selector whose pattern state the proxy has not built yet, which Loki "
+                   "answers from the state its pattern ingester built at push time. They are held to an absolute bound "
+                   "instead of Loki's time (" + ", ".join(
+                       f"{over2x.first_ask_bound(r['shape'], r['range']):g} s" for r in first_asks)
+                   + "), and leave the list on the next weekly run; their repeats keep the 2× bound.")
     # The list keeps a row until two runs measure it within 2×; the figures quoted are the run shown above.
     now = q.get("over_latest", {})
     judged = [(r, now.get((r.get("set"), r["shape"], r["range"], r["mode"]))) for r in over]
