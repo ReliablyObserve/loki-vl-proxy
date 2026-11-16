@@ -43,7 +43,7 @@ compare:
   expect: "Loki's 400 text for every grid query; the known count may only fall."
 gap:
   status: fixed
-  fixed_by: TBD-PR
+  fixed_by: '#1580'
   impact: api-only
   effort: M
   area: "internal/logql parser.go actionErrorSoFar, parseVectorAggregation, semantic.go semanticPass; internal/proxy query_tree_validation.go validateQueryPhases"
