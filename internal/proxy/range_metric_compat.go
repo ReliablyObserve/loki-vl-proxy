@@ -1619,6 +1619,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	params := url.Values{}
 	params.Set("query", statsQuery)
 	setSlidingStatsRangeParams(params, start, end, hitStep)
+	params = p.levelLessFirstRead(ctx, "/select/logsql/stats_query_range", params)
 
 	// The detected_level chain is narrowed (a probe request) before a slot is
 	// taken, not while holding one.
