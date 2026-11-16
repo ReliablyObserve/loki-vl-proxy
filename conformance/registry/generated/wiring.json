@@ -1837,9 +1837,11 @@
       "test/e2e-compat/loki_metric_probe_window_test.go"
     ],
     "semantics/query-range-window-budget": [
+      "internal/proxy/query_range_windowing_test.go",
       "test/e2e-compat/query_range_window_budget_test.go"
     ],
     "semantics/query-range-window-full-limit-reads": [
+      "internal/proxy/query_range_window_full_limit_test.go",
       "test/e2e-compat/query_range_window_moved_reuse_test.go",
       "test/e2e-fleet/query_range_window_moved_reuse_test.go"
     ],
@@ -1985,12 +1987,16 @@
       "internal/proxy/tail_backend_retry_test.go",
       "test/e2e-compat/tail_backend_outage_test.go"
     ],
+    "semantics/tenant-header-loki-answers": [
+      "internal/proxy/tenant_auth_parity_test.go"
+    ],
     "semantics/tenant-label-default-aliases": [
       "internal/proxy/alerting_tenant_label_test.go",
       "internal/proxy/multitenant_tenant_label_test.go",
       "test/e2e-compat/tenant_label_isolation_test.go"
     ],
     "semantics/tenant-numeric-canonical": [
+      "internal/proxy/tenant_routing_test.go",
       "test/e2e-compat/tenant_numeric_routing_test.go"
     ],
     "semantics/topk-bottomk-range-series": [
@@ -2274,6 +2280,12 @@
       "internal/proxy/multitenant_tenant_failure_test.go",
       "internal/proxy/plan_defect_test.go",
       "internal/proxy/upstream_bad_request_test.go"
+    ],
+    "semantics/window-edge-float64-nanoseconds": [
+      "internal/proxy/sub_second_step_test.go"
+    ],
+    "semantics/window-wider-than-step-raw-rows": [
+      "internal/proxy/sub_second_step_test.go"
     ],
     "semantics/without-comparison-inside-ignored": [
       "internal/proxy/without_open_shapes_test.go",
@@ -3752,8 +3764,14 @@
       "semantics/unwrap-over-time-range-windows",
       "tenant-numeric-routing"
     ],
+    "internal/proxy/query_range_window_full_limit_test.go": [
+      "semantics/query-range-window-full-limit-reads"
+    ],
     "internal/proxy/query_range_window_lead_test.go": [
       "semantics/query-range-window-lead-window"
+    ],
+    "internal/proxy/query_range_windowing_test.go": [
+      "semantics/query-range-window-budget"
     ],
     "internal/proxy/query_semantics_compat_handlers_test.go": [
       "semantics/absent-over-time-semantics",
@@ -4001,6 +4019,8 @@
     ],
     "internal/proxy/sub_second_step_test.go": [
       "semantics/sub-second-step-grid",
+      "semantics/window-edge-float64-nanoseconds",
+      "semantics/window-wider-than-step-raw-rows",
       "window-bounds-and-step-alignment"
     ],
     "internal/proxy/sum_without_differential_test.go": [
@@ -4041,6 +4061,7 @@
       "loki_api_v1_tail"
     ],
     "internal/proxy/tenant_auth_parity_test.go": [
+      "semantics/tenant-header-loki-answers",
       "tenant-auth-follows-loki",
       "tenant-numeric-routing"
     ],
@@ -4072,6 +4093,7 @@
       "tenant-query-limits"
     ],
     "internal/proxy/tenant_routing_test.go": [
+      "semantics/tenant-numeric-canonical",
       "tenant-numeric-routing"
     ],
     "internal/proxy/time_bounds_test.go": [
@@ -5632,7 +5654,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 667,
+  "tests_with_markers": 669,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5709,7 +5731,6 @@
     "semantics/stream-label-shadowed-after-json-parser",
     "semantics/stream-level-shadowed-by-ingest-json-key",
     "semantics/tail-history-limit-above-max-entries",
-    "semantics/tenant-header-loki-answers",
     "semantics/topk-per-step-membership-differs",
     "semantics/translator-folds-binary-by-operand-without",
     "semantics/translator-reads-vector-operand-as-text",
@@ -5726,13 +5747,11 @@
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
     "semantics/uppercase-topk-ranks-once",
     "semantics/vector-call-blank-before-parenthesis-as-query",
-    "semantics/window-edge-float64-nanoseconds",
-    "semantics/window-wider-than-step-raw-rows",
     "semantics/without-fold-detected-level-unknown",
     "service-name-derivation",
     "severity/otlp-severity-before-vl-1.50",
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 388
+  "wired_items": 391
 }
