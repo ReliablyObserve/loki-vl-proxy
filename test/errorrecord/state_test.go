@@ -21,9 +21,20 @@ import (
 // nothing.
 func TestStateIsWrittenIntoEveryReRecordedRow(t *testing.T) {
 	answers, order := copyFiles(t)
+	before, err := lokirecorded.Read(answers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := map[string]string{}
+	for _, r := range before.Rows {
+		if !r.Comparable() {
+			kept[r.ID] = r.State
+		}
+	}
 	base := fakeLoki(t, recordedAnswers(t, answers, order), "3.7.9")
 	var out bytes.Buffer
-	cfg := config{loki: base, files: []string{answers}, state: lokirecorded.StateServing}
+	// The committed rows were recorded from a serving Loki; this one is fresh.
+	cfg := config{loki: base, files: []string{answers}, state: lokirecorded.StateFresh}
 	changed, err := run(cfg, &out)
 	if err != nil {
 		t.Fatal(err)
@@ -35,13 +46,13 @@ func TestStateIsWrittenIntoEveryReRecordedRow(t *testing.T) {
 	comparable := 0
 	for _, r := range f.Rows {
 		if !r.Comparable() {
-			if r.State == lokirecorded.StateServing {
-				t.Errorf("%s: a row that was not re-recorded got the state", r.ID)
+			if r.State != kept[r.ID] {
+				t.Errorf("%s: a row that was not re-recorded changed its state to %q", r.ID, r.State)
 			}
 			continue
 		}
 		comparable++
-		if r.State != lokirecorded.StateServing {
+		if r.State != lokirecorded.StateFresh {
 			t.Errorf("%s: state %q", r.ID, r.State)
 		}
 	}
@@ -87,6 +98,7 @@ type fixtureLoki struct {
 	pushStatus int
 	emptyFor   int32
 	probes     atomic.Int32
+	services   atomic.Int32
 	pushed     atomic.Int32
 	body       atomic.Value
 }
@@ -98,6 +110,12 @@ func (f *fixtureLoki) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.body.Store(raw)
 		f.pushed.Add(1)
 		w.WriteHeader(f.pushStatus)
+	case "/services":
+		if f.services.Add(1) == 1 {
+			_, _ = io.WriteString(w, "ingester => Running\nruler => Starting\n")
+			return
+		}
+		_, _ = io.WriteString(w, "ingester => Running\nruler => Running\n")
 	case "/loki/api/v1/query_range":
 		if r.URL.Query().Get("query") != servingProbe {
 			http.Error(w, "unexpected query", http.StatusBadRequest)
@@ -126,7 +144,7 @@ func TestIngestPushesTheFixtureAndWaitsUntilLokiServesIt(t *testing.T) {
 	if err := ingestFixture(srv.URL, time.Minute, at, &out); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
-	if loki.pushed.Load() != 1 || loki.probes.Load() != 2 {
+	if loki.pushed.Load() != 1 || loki.probes.Load() != 2 || loki.services.Load() < 2 {
 		t.Fatalf("pushes %d, probes %d", loki.pushed.Load(), loki.probes.Load())
 	}
 	var push struct {
@@ -180,5 +198,23 @@ func TestServingNeedsASeries(t *testing.T) {
 	}
 	if serving("http://127.0.0.1:1", time.Now()) {
 		t.Error("an unreachable Loki reported serving")
+	}
+}
+
+// A /services answer that is not a list of running modules is not running.
+func TestModuleStatesNeedEveryModuleRunning(t *testing.T) {
+	for body, want := range map[string]bool{
+		"ingester => Running\nruler => Running\n":  true,
+		"ingester => Running\nruler => Starting\n": false,
+		"": false, "not a list": false,
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, body) }))
+		if _, got := moduleStates(srv.URL); got != want {
+			t.Errorf("%q: running %v, want %v", body, got, want)
+		}
+		srv.Close()
+	}
+	if _, got := moduleStates("http://127.0.0.1:1"); got {
+		t.Error("an unreachable Loki reported running modules")
 	}
 }

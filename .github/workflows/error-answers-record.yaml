@@ -6,8 +6,9 @@ name: Error answers re-record
 # replay and the generated error compatibility matrix compare against, so a Loki bump
 # that changes one of its messages shows here before it shows as a surprise elsewhere.
 #
-# Some answers move with Loki's state (a Loki that serves data answers a few wrong-method
-# and non-selector requests differently from one that has just started empty), so the
+# Some answers move with Loki's state (a Loki that serves data answers /patterns given a
+# query that is not a stream selector with its empty success, where one that has just
+# started empty answered 400), so the
 # recorded Loki holds data: the recorder writes a fixture to it first and waits until its
 # range metric path serves it, and every re-recorded row carries the state it was recorded
 # in ("state": "serving").

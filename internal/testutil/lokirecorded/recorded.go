@@ -81,8 +81,8 @@ type Row struct {
 }
 
 // The states of a recorded Loki. Some answers move with it: a Loki that holds
-// data answers a few wrong-method and non-selector requests differently from
-// a Loki that has just started with none.
+// data answers /patterns given a query that is not a stream selector with its
+// empty success, where a Loki that has just started with none answered 400.
 const (
 	StateServing = "serving"
 	StateFresh   = "fresh"

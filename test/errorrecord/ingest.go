@@ -110,16 +110,47 @@ func ingestFixture(base string, wait time.Duration, at time.Time, out io.Writer)
 	}
 	fmt.Fprintf(out, "pushed %d lines in %d streams\n", lines, len(fixtureStreams))
 	deadline := time.Now().Add(wait)
-	for {
-		if serving(base, time.Now()) {
-			fmt.Fprintln(out, "Loki serves the fixture on its range metric path")
-			return nil
-		}
+	for !serving(base, time.Now()) {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("the Loki did not serve the fixture on its range metric path within %s", wait)
 		}
 		time.Sleep(ingestPoll)
 	}
+	fmt.Fprintln(out, "Loki serves the fixture on its range metric path")
+	// Every module of the Loki is to be running as well: a module that is still starting answers for its routes
+	// as a Loki in another state would.
+	for {
+		states, running := moduleStates(base)
+		if running {
+			fmt.Fprintf(out, "every Loki module is running %s after the push:\n%s\n", time.Since(at).Round(time.Second), states)
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("not every Loki module is running within %s:\n%s", wait, states)
+		}
+		time.Sleep(ingestPoll)
+	}
+}
+
+// moduleStates is the Loki's /services answer (one "module => State" line per module) and whether every module
+// it lists is Running.
+func moduleStates(base string) (string, bool) {
+	resp, err := httpClient.Get(strings.TrimRight(base, "/") + "/services")
+	if err != nil {
+		return err.Error(), false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	text := strings.TrimSpace(string(raw))
+	if resp.StatusCode != http.StatusOK || text == "" {
+		return fmt.Sprintf("/services answered %d: %s", resp.StatusCode, text), false
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if _, state, ok := strings.Cut(line, "=>"); !ok || strings.TrimSpace(state) != "Running" {
+			return text, false
+		}
+	}
+	return text, true
 }
 
 // serving reports whether the Loki at base answers a range metric query over

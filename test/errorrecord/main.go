@@ -14,9 +14,9 @@
 // changed and exits 1 when there are any. A scheduled run uses it to notice a
 // Loki bump, and uploads the rewritten files for review.
 //
-// Some of Loki's answers move with its state: a Loki that holds data answers a
-// few wrong-method and non-selector requests differently from one that has just
-// started with none. The answers are recorded from a Loki that serves data:
+// Some of Loki's answers move with its state: a Loki that holds data answers
+// /patterns given a query that is not a stream selector with its empty success,
+// where one that has just started with none answered 400. The answers are recorded from a Loki that serves data:
 // -ingest writes a small fixture to the Loki and waits until its range metric
 // path answers with it, then exits (run it once, before recording). Before it
 // records, the command asks the Loki whether it serves that data, and writes
