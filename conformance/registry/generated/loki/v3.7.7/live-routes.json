@@ -1,0 +1,200 @@
+{
+  "/api/prom/label": {
+    "DELETE": 404,
+    "GET": 200,
+    "POST": 200,
+    "PUT": 405
+  },
+  "/api/prom/label/{name}/values": {
+    "DELETE": 404,
+    "GET": 200,
+    "POST": 200,
+    "PUT": 405
+  },
+  "/api/prom/push": {
+    "DELETE": 404,
+    "GET": 404,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/api/prom/query": {
+    "DELETE": 404,
+    "GET": 400,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/api/prom/rules": {
+    "DELETE": 405,
+    "GET": 400,
+    "POST": 405,
+    "PUT": 405
+  },
+  "/api/prom/rules/{namespace}": {
+    "DELETE": 500,
+    "GET": 400,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/api/prom/rules/{namespace}/{groupName}": {
+    "DELETE": 500,
+    "GET": 400,
+    "POST": 405,
+    "PUT": 405
+  },
+  "/api/prom/series": {
+    "DELETE": 404,
+    "GET": 200,
+    "POST": 200,
+    "PUT": 405
+  },
+  "/loki/api/v1/cache/generation_numbers": {
+    "DELETE": 404,
+    "GET": 404,
+    "POST": 404,
+    "PUT": 404
+  },
+  "/loki/api/v1/delete": {
+    "DELETE": 404,
+    "GET": 404,
+    "POST": 404,
+    "PUT": 404
+  },
+  "/loki/api/v1/detected_field/{name}/values": {
+    "DELETE": 404,
+    "GET": 400,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/loki/api/v1/detected_fields": {
+    "DELETE": 404,
+    "GET": 400,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/loki/api/v1/detected_labels": {
+    "DELETE": 404,
+    "GET": 200,
+    "POST": 200,
+    "PUT": 405
+  },
+  "/loki/api/v1/drilldown-limits": {
+    "DELETE": 405,
+    "GET": 200,
+    "POST": 405,
+    "PUT": 405
+  },
+  "/loki/api/v1/format_query": {
+    "DELETE": 405,
+    "GET": 400,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/loki/api/v1/index/shards": {
+    "DELETE": 404,
+    "GET": 400,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/loki/api/v1/index/stats": {
+    "DELETE": 404,
+    "GET": 400,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/loki/api/v1/index/volume": {
+    "DELETE": 404,
+    "GET": 400,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/loki/api/v1/index/volume_range": {
+    "DELETE": 404,
+    "GET": 400,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/loki/api/v1/label": {
+    "DELETE": 404,
+    "GET": 200,
+    "POST": 200,
+    "PUT": 405
+  },
+  "/loki/api/v1/label/{name}/values": {
+    "DELETE": 404,
+    "GET": 200,
+    "POST": 200,
+    "PUT": 405
+  },
+  "/loki/api/v1/labels": {
+    "DELETE": 404,
+    "GET": 200,
+    "POST": 200,
+    "PUT": 405
+  },
+  "/loki/api/v1/patterns": {
+    "DELETE": 404,
+    "GET": 400,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/loki/api/v1/push": {
+    "DELETE": 404,
+    "GET": 404,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/loki/api/v1/query": {
+    "DELETE": 404,
+    "GET": 400,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/loki/api/v1/query_range": {
+    "DELETE": 404,
+    "GET": 400,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/loki/api/v1/rules": {
+    "DELETE": 405,
+    "GET": 400,
+    "POST": 405,
+    "PUT": 405
+  },
+  "/loki/api/v1/rules/{namespace}": {
+    "DELETE": 500,
+    "GET": 400,
+    "POST": 400,
+    "PUT": 405
+  },
+  "/loki/api/v1/rules/{namespace}/{groupName}": {
+    "DELETE": 500,
+    "GET": 400,
+    "POST": 405,
+    "PUT": 405
+  },
+  "/loki/api/v1/series": {
+    "DELETE": 404,
+    "GET": 200,
+    "POST": 200,
+    "PUT": 405
+  },
+  "/loki/api/v1/status/buildinfo": {
+    "DELETE": 405,
+    "GET": 200,
+    "POST": 405,
+    "PUT": 405
+  },
+  "/prometheus/api/v1/alerts": {
+    "DELETE": 405,
+    "GET": 200,
+    "POST": 405,
+    "PUT": 405
+  },
+  "/prometheus/api/v1/rules": {
+    "DELETE": 405,
+    "GET": 200,
+    "POST": 405,
+    "PUT": 405
+  }
+}

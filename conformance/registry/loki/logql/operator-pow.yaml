@@ -1,15 +1,13 @@
-id: operator-optypesub
+id: operator-pow
 kind: operator
-logql: "-"
-loki_constant: OpTypeSub
+logql: "^"
+source: https://grafana.com/docs/loki/v3.7.x/query/query_reference/
 generated:
   supported_by_proxy: true
   seen_in:
-    - internal/logql/ip_filter.go
+    - internal/logql/parser.go
     - internal/logql/scanner.go
-    - internal/translator/ast_translate.go
     - internal/proxy/binary_matching.go
-    - internal/proxy/metric_agg.go
     - internal/proxy/metric_binary.go
 
 semantics: |

@@ -1,16 +1,16 @@
-id: operator-optypemul
-kind: operator
-logql: "*"
-loki_constant: OpTypeMul
+id: pipeline_stage-pipe
+kind: pipeline_stage
+logql: "|"
+source: https://grafana.com/docs/loki/v3.7.x/query/log_queries/
 generated:
   supported_by_proxy: true
   seen_in:
-    - internal/logql/ast.go
-    - internal/logql/ip_filter.go
-    - internal/logql/parser.go
     - internal/logql/scanner.go
-    - internal/logql/semantic.go
-    - internal/logql/stage_validate.go
+    - internal/logql/validate.go
+    - internal/proxy/drilldown.go
+    - internal/proxy/drilldown_burst_coalescer.go
+    - internal/proxy/label_handlers.go
+    - internal/proxy/label_index.go
 
 semantics: |
   TODO: Loki's exact semantics, including how it treats missing labels,
