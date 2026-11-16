@@ -135,10 +135,13 @@ func anyStddev(chain []queryplan.Node) bool {
 // text, with the `* ` a query that starts with a pipe needs in front of it.
 func (p planProfile) operandTranslate(q string) (string, error) {
 	s, ok := p.translate(q)
-	if spaced := blankspace.Collapse(q); !ok && spaced != q {
-		// An unwrap with a blank the translator does not read as a space: the proxy serves the operand from the
-		// plan, which writes the spaced spelling's text (semantics/translator-reads-only-space-between-tokens).
-		s, ok = p.translate(spaced)
+	if spaced := blankspace.Collapse(q); spaced != q {
+		// A blank the translator does not read as a space (an unwrap written `|<TAB>unwrap`, which it rejects or reads
+		// as no unwrap): the proxy serves the operand from the plan, which writes the spaced spelling's text
+		// (semantics/translator-reads-only-space-between-tokens).
+		if respelled, rok := p.translate(spaced); rok {
+			s, ok = respelled, true
+		}
 	}
 	if !ok {
 		return "", fmt.Errorf("the string translator rejects %q", q)

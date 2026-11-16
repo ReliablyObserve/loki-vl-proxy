@@ -1,5 +1,5 @@
 id: semantics/keyword-fold-runes-read-as-keyword
-title: A keyword written with the Kelvin sign for a k or U+0130 for an i (`topK(`, `avg_over_tİme(`, `wİthout`) is the lower case query, as in Loki (fixed)
+title: A keyword written with the Kelvin sign for a k or U+0130 for an i (`topK(`, `avg_over_tİme(`, `wİthout`) is the lower case query, as in Loki (fixed)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -8,7 +8,7 @@ consumer: api
 why: |
   Loki's lexer lower cases a word before it looks it up, and Go's lower casing
   turns the Kelvin sign (U+212A) into k and U+0130 into i: Loki accepts
-  `topK(1, rate({app="a"}[1m]))`, `bottomK(`, `| Keep a`, `| unpacK`,
+  `topK(1, rate({app="a"}[1m]))`, `bottomK(`, `| Keep a`, `| unpacK`,
   `avg_over_tİme(`, `sum wİthout (a)`, `| x = İp("1.2.3.4")` and reads the
   expression of the lower case spelling (Loki oracle, check command with the
   lower case spelling as the printed form: the same expression). U+017F (ſ),
@@ -18,7 +18,7 @@ why: |
   The proxy's parser read them as keywords, but the request path wrote only
   ASCII capitals in lower case before the handlers, the cache keys and the
   translation read the query, so the string translator, which matches `topk(`,
-  sent `topK(1, rate({app="a"}[1m]))` to VictoriaLogs as a phrase search and
+  sent `topK(1, rate({app="a"}[1m]))` to VictoriaLogs as a phrase search and
   answered a log query, and the same for `avg_over_tİme(`. The lower casing now
   covers both letters, so every handler, cache key and translation reads the
   lower case query: the same VictoriaLogs requests and the same answer
@@ -39,7 +39,7 @@ request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'topK(1, rate({app="api-gateway"}[5m]))'
+    query: "top\u212A(1, rate({app=\"api-gateway\"}[5m]))"
     start: 'now-1h'
     end: 'now'
     step: '60'

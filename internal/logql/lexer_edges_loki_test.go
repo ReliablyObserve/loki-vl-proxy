@@ -12,6 +12,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankspace"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
@@ -529,4 +530,92 @@ func BenchmarkLowercaseKeywords(b *testing.B) {
 			}
 		})
 	}
+}
+
+const keywordBlankAnswers = "testdata/keyword-blank-loki.jsonl.gz"
+
+// keywordBlankGrid is every keyword template with each blank Loki's lexer skips and each character it rejects
+// (blankspace.Skipped, blankspace.Rejected) in the place of the space after the keyword, or in front of the
+// parenthesis of a call, each with the spelling with that space (or with no blank before the parenthesis) as its
+// reference.
+func keywordBlankGrid() (queries, refs []string) {
+	seen := map[string]bool{}
+	for _, kt := range keywordTemplates {
+		i := strings.Index(kt.tpl, keywordMark)
+		ref := kt.tpl[:i] + kt.word + kt.tpl[i+1:]
+		rest := kt.tpl[i+1:]
+		for _, b := range append(append([]string{}, blankspace.Skipped...), blankspace.Rejected...) {
+			var q string
+			switch {
+			case strings.HasPrefix(rest, " "):
+				q = kt.tpl[:i] + kt.word + b + rest[1:]
+			case strings.HasPrefix(rest, "("):
+				q = kt.tpl[:i] + kt.word + b + rest
+			default:
+				continue
+			}
+			if !seen[q] {
+				seen[q] = true
+				queries, refs = append(queries, q), append(refs, ref)
+			}
+		}
+	}
+	return queries, refs
+}
+
+// A tab, a line feed, a carriage return or a run of them after any keyword (a function, an aggregation, a grouping, a
+// binary operator or modifier, a stage, a conversion) or before a call's parenthesis is the query with the space to
+// Loki, and a vertical tab, a form feed, U+0085, U+00A0 or a control byte there is Loki's parse error. The proxy's
+// parser reads the same tree for the first and answers Loki's error for the second (recorded Loki answers,
+// LVP_RUN_ORACLES=1 records them again); internal/proxy TestKeywordBlankRequestsEqualSpaced holds the requests.
+//
+// conformance: semantics/translator-reads-only-space-between-tokens, semantics/parser-reads-unicode-blank-as-white-space, semantics/approx-topk-errors-differ
+func TestKeywordBlankMatchesLoki(t *testing.T) {
+	queries, refs := keywordBlankGrid()
+	if os.Getenv("LVP_RUN_ORACLES") == "1" {
+		recordLexerEdgeAnswers(t, keywordBlankAnswers, queries, refs)
+	}
+	answers := readLexerEdgeAnswers(t, keywordBlankAnswers, queries, refs)
+	var accepted, rejected, known int
+	for _, a := range answers {
+		msg := ValidateLogQL(a.Q)
+		if !a.Accept {
+			rejected++
+			if msg != a.Error {
+				if strings.HasPrefix(a.Q, "approx_topk") {
+					// approx_topk's errors are a known difference of their own (semantics/approx-topk-errors-differ).
+					known++
+					continue
+				}
+				t.Errorf("%q:\n proxy %q\n Loki  %q", a.Q, msg, a.Error)
+			}
+			continue
+		}
+		accepted++
+		if !a.Same {
+			t.Errorf("%q: Loki reads another query than %q", a.Q, a.Ref)
+		}
+		if msg != "" {
+			t.Errorf("%q: the proxy rejects what Loki accepts: %s", a.Q, msg)
+			continue
+		}
+		got, _ := Parse(a.Q)
+		want, _ := Parse(a.Ref)
+		if got == nil || want == nil {
+			t.Errorf("%q: the proxy reads %v, the spaced spelling %v", a.Q, got, want)
+			continue
+		}
+		gotText, wantText := blankspace.Collapse(got.String()), blankspace.Collapse(want.String())
+		for _, name := range []string{"label_replace", "vector", "approx_topk"} {
+			// An opaque call keeps its text as written, at any depth: the blank before its parenthesis stays in it.
+			gotText = strings.ReplaceAll(gotText, name+" (", name+"(")
+		}
+		if gotText != wantText {
+			t.Errorf("%q: the proxy reads\n  %v\n but the spaced spelling reads\n  %v", a.Q, got, want)
+		}
+	}
+	if accepted == 0 || rejected == 0 {
+		t.Fatalf("%d accepted, %d rejected: the grid must hold both", accepted, rejected)
+	}
+	t.Logf("%d spellings: Loki accepts %d (the spaced query) and rejects %d; %d are approx_topk's known difference", len(answers), accepted, rejected, known)
 }

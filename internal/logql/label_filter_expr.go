@@ -183,6 +183,8 @@ type lfParser struct {
 	// prevStart is the start of the token before tok; before the first token it is the offset of the token
 	// before the text (negative when the text is part of a longer query).
 	prevStart int
+	// lastNUL is the offset of the last NUL byte of the text, or -1: a string that opens before it may hold it.
+	lastNUL int
 }
 
 // maxLabelFilterDepth bounds the nesting of parentheses and the length of a
@@ -212,7 +214,7 @@ func parseLabelFilterText(text string, before int) (*LabelFilterExpr, *LabelFilt
 // where a binary operator of the query follows it (`| a>5 + 3`: the operator belongs to the query, whose left
 // operand is the pipeline); end is where the expression ends, len(text) when it takes the whole text.
 func scanLabelFilter(text string, before int, binary bool) (expr *LabelFilterExpr, end int, serr *LabelFilterSyntaxError) {
-	p := &lfParser{src: text, literalEnd: -1, prevStart: before}
+	p := &lfParser{src: text, literalEnd: -1, prevStart: before, lastNUL: strings.LastIndexByte(text, 0)}
 	p.next()
 	expr, err := p.parseOr(true)
 	end = len(text)
@@ -330,7 +332,7 @@ func connectorKind(word string) lfTokKind {
 // lexString reads the quoted literal that starts at start; it reports false, with the lexer error set, when the
 // literal is not terminated.
 func (p *lfParser) lexString(start int, quote byte) bool {
-	if p.lexErr == nil && strings.IndexByte(p.src[start:], 0) >= 0 {
+	if p.lexErr == nil && p.lastNUL > start {
 		// A NUL byte in the string, or after it: Loki's scanner reports the string's errors in the order of the text
 		// (lokiStringError).
 		if msg := lokiStringError(p.src, start); msg != "" {

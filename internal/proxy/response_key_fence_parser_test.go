@@ -298,6 +298,10 @@ func fenceWants(query string) map[string]bool {
 		"reserved-field-labels":    f.reservedLabel,
 		"keyword-label-names":      f.keywordSpelling,
 		"stream-level-series":      f.perStreamSeries,
+		// An unwrap stage of the tree that the text does not write `| unwrap ` (outside quotes and comments): the
+		// printed tree writes each stage so.
+		"unwrap-blank-spelling": strings.Count(textOutsideQuotes(expr.String()), "| unwrap ") >
+			strings.Count(strings.ToLower(textOutsideQuotes(query)), "| unwrap "),
 		// Read by fenceGains: the text screen of repeated filters also counts a quoted text that looks like a stage.
 		"a-label-filter-stage": f.labelFilterStages >= 1,
 	}
@@ -340,6 +344,8 @@ func fenceMisses(query string) []string {
 }
 
 var fenceSpellingBases = []string{
+	"rate({app=\"a\"} |\tunwrap n [5m])", "sum(max_over_time({app=\"a\"} | json |\r\nunwrap  bytes(n) [5m]))",
+	`sum_over_time({app="a"} |  unwrap n [5m]) / sum_over_time({app="a"} | unwrap n [5m])`,
 	`{app="a"} | json | unwrap n | keep a`,
 	`{app="a"} | decolorize | keep a, b | json | line_format "{{.a}}"`,
 	`{app="a"} | json | _time > 5s | _msg = "x" | _stream != "y"`,
@@ -455,6 +461,8 @@ var fenceScreens = []struct {
 	{"reserved-field-labels", refReservedLabel, reservedFieldLabelResponseKeyVersion},
 	{"keyword-label-names", refKeywordLabel, keywordLabelResponseKeyVersion},
 	{"stream-level-series", refStreamLevelSeries, streamLevelSeriesResponseKeyVersion},
+	// New with the plan serving an unwrap written with other blanks: no older screen fired it.
+	{"unwrap-blank-spelling", func(string) bool { return false }, unwrapBlankSpellingResponseKeyVersion},
 }
 
 // fenceLosses lists the fences an older binary's screen fired for that the screen now lacks: a response key it wrote
@@ -608,6 +616,7 @@ func fenceFires(name, query string) bool {
 		"logfmt-presence":          func() string { return logfmtPresenceResponseKeyVersion(r, query) },
 		"stream-level-series":      func() string { return streamLevelSeriesResponseKeyVersion(query) },
 		"unwrap-dynamic-identity":  func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
+		"unwrap-blank-spelling":    func() string { return unwrapBlankSpellingResponseKeyVersion(query) },
 	}[name]() != ""
 }
 
@@ -741,6 +750,58 @@ func TestResponseKeyFenceScreensDoNotAllocate(t *testing.T) {
 			if allocs := testing.AllocsPerRun(50, func() { _ = screen(query) }); allocs != 0 {
 				t.Errorf("%s screen of %q allocates %v times", name, query, allocs)
 			}
+		}
+	}
+}
+
+// textOutsideQuotes is s with the content of its quoted and backquoted strings and its comments left out: the text a
+// response key fence reads as words.
+func textOutsideQuotes(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case '"', '`':
+			i = skipQuoted(s, i)
+			b.WriteString(`""`)
+		case '#':
+			i = skipComment(s, i) - 1
+			b.WriteByte('\n')
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// An unwrap written with other blanks than one space on each side of `| unwrap` is served from the plan with the
+// spaced spelling's answer, where the string translator failed it or read no unwrap, so its response key carries the
+// unwrap blank spelling fence; a query whose every unwrap is written `| unwrap ` keeps its key.
+//
+// conformance: cache-response-key-versions, semantics/translator-reads-only-space-between-tokens
+func TestUnwrapBlankSpellingFence(t *testing.T) {
+	for q, want := range map[string]bool{
+		"rate({app=\"a\"} |\tunwrap n [5m])":                                           true,
+		"max_over_time({A=\"0\"} | unwrap\rA [1m])":                                    true,
+		"max_over_time({A=\"0\"}| unwrap\nA [1m])":                                     true,
+		`sum_over_time({app="a"} |  unwrap n [5m])`:                                    true,
+		`sum_over_time({app="a"} |unwrap n [5m])`:                                      true,
+		"sum_over_time({app=\"a\"} | # c\n unwrap n [5m])":                             true,
+		`sum(rate({app="a"} | unwrap n [5m])) / sum(rate({app="b"} |  unwrap n [5m]))`: true,
+		`sum_over_time({app="a"} | UNWRAP n [5m])`:                                     false,
+		`sum_over_time({app="a"} | unwrap n [5m])`:                                     false,
+		`sum_over_time({app="a"} | unwrap  n [5m])`:                                    false,
+		`quantile_over_time(0.9, {app="a"} | json | unwrap duration(d) [5m]) by (a)`:   false,
+		`sum(rate({app="a"} | unwrap n [5m])) / sum(rate({app="b"} | unwrap m [5m]))`:  false,
+		`count_over_time({app="a"} |= "x\tunwrap" [5m])`:                               false,
+		"count_over_time({app=\"a\"} |= `|\tunwrap` [5m])":                             false,
+		`count_over_time({app="a", unwrapped="1"} [5m])`:                               false,
+		`rate({app="a"}[5m])`:                                                          false,
+	} {
+		if got := unwrapBlankSpellingResponseKeyVersion(q) != ""; got != want {
+			t.Errorf("%q: fence %v, want %v", q, got, want)
+		}
+		if keys := responseKeyFences(fenceShapeRequest(q), q, responseKeyCompatQueryRange); strings.Contains(keys, unwrapBlankSpellingResponseVersion) != want {
+			t.Errorf("%q: compat key fences %q", q, keys)
 		}
 	}
 }

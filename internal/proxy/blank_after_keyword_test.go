@@ -216,7 +216,7 @@ func TestUnwrapBlankUnderWrappersEqualsSpaced(t *testing.T) {
 		`sum(max_over_time({A="0"} |¤unwrap¤a [5m])) / sum(count_over_time({A="0"} [5m]))`,
 		`max_over_time({A="0"} |¤unwrap¤a [5m]) > 1`, `max_over_time({A="0"} |¤unwrap¤a [5m] offset 5m)`,
 		`avg by (A) (avg_over_time({A="0"} | logfmt |¤unwrap¤duration(a) [5m]))`, `rate({A="0"} |¤unwrap¤a [5m])`,
-		`quantile_over_time(0.5, {A="0"} |¤unwrap¤c [5m]) by (d)`,
+		`quantile_over_time(0.5, {A="0"} |¤unwrap¤c [5m]) by (d)`, `topk(1, rate({A="0"} |¤unwrap¤a [5m]))`,
 	} {
 		for _, endpoint := range []string{"query_range", "query"} {
 			wantVL, wantBody := blankAfterKeywordRequests(t, endpoint, strings.ReplaceAll(tpl, "¤", " "))

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -27,7 +28,13 @@ type keywordFoldAnswer struct {
 
 func readKeywordFoldAnswers(t *testing.T) []keywordFoldAnswer {
 	t.Helper()
-	f, err := os.Open("../logql/testdata/keyword-fold-runes-loki.jsonl.gz")
+	return readLexerEdgeAnswerFile(t, "../logql/testdata/keyword-fold-runes-loki.jsonl.gz")
+}
+
+// readLexerEdgeAnswerFile reads one of the Loki answer files internal/logql records for its lexer edge grids.
+func readLexerEdgeAnswerFile(t *testing.T, path string) []keywordFoldAnswer {
+	t.Helper()
+	f, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,6 +71,14 @@ func TestKeywordFoldRunesRequestsEqualLowerCase(t *testing.T) {
 	prev := log.Writer()
 	log.SetOutput(io.Discard)
 	t.Cleanup(func() { log.SetOutput(prev) })
+	var upstream atomic.Int64
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstream.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer vl.Close()
+	rejector := newCompatTestProxy(t, vl.URL)
 	served, rejected := 0, 0
 	for _, a := range readKeywordFoldAnswers(t) {
 		if a.Ref == "" || strings.Contains(a.Q, "ſ") || strings.Contains(a.Q, "é") {
@@ -75,9 +90,14 @@ func TestKeywordFoldRunesRequestsEqualLowerCase(t *testing.T) {
 		}
 		for _, endpoint := range endpoints {
 			if !a.Accept {
-				_, body := blankAfterKeywordRequests(t, endpoint, a.Q)
-				if !strings.Contains(body, jsonQuoted(a.Error)) {
-					t.Errorf("%s %q: %s, want Loki's %q", endpoint, a.Q, body, a.Error)
+				params := url.Values{"query": {a.Q}, "start": {"1700000000"}, "end": {"1700000600"}, "step": {"60"}, "time": {"1700000600"}}
+				before := upstream.Load()
+				rec := doCompatProxyRequest(rejector, "/loki/api/v1/"+endpoint+"?"+params.Encode(), map[string]string{"X-Scope-OrgID": "team-a"})
+				if body := rec.Body.String(); rec.Code != http.StatusBadRequest || !strings.Contains(body, a.Error) && !strings.Contains(body, jsonQuoted(a.Error)) {
+					t.Errorf("%s %q: %d %s, want Loki's 400 %q", endpoint, a.Q, rec.Code, body, a.Error)
+				}
+				if calls := upstream.Load() - before; calls != 0 {
+					t.Errorf("%s %q: %d requests reached VictoriaLogs", endpoint, a.Q, calls)
 				}
 				rejected++
 				continue
@@ -158,3 +178,89 @@ func TestKeywordFoldRunesShareTheLowerCaseCacheEntry(t *testing.T) {
 		}
 	}
 }
+
+// A tab, a line feed, a carriage return or a run of them after any keyword or before a call's parenthesis is the
+// spaced query to Loki (recorded Loki answers, internal/logql TestKeywordBlankMatchesLoki): the proxy sends
+// VictoriaLogs the requests of the spaced spelling and answers the same, on query_range and on query for a metric
+// query. A character Loki does not skip there is Loki's 400 with Loki's text before any VictoriaLogs request. The
+// spellings the string translator still reads unlike Loki are known differences of their own, pinned here so a
+// change shows: a blank before the parenthesis of a range function or of vector()
+// (semantics/translator-reads-blank-before-range-call-as-text, semantics/vector-call-blank-before-parenthesis-as-query).
+//
+// conformance: semantics/translator-reads-only-space-between-tokens, semantics/parser-reads-unicode-blank-as-white-space, semantics/blank-before-call-parenthesis-read-unlike-loki, semantics/translator-reads-blank-before-range-call-as-text, semantics/vector-call-blank-before-parenthesis-as-query
+func TestKeywordBlankRequestsEqualSpaced(t *testing.T) {
+	prev := log.Writer()
+	log.SetOutput(io.Discard)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	var upstream atomic.Int64
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstream.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer vl.Close()
+	rejector := newCompatTestProxy(t, vl.URL)
+	served, rejected, known := 0, 0, 0
+	knownCases := map[string]int{}
+	for _, a := range readLexerEdgeAnswerFile(t, "../logql/testdata/keyword-blank-loki.jsonl.gz") {
+		endpoints := []string{"query_range", "query"}
+		if strings.HasPrefix(a.Q, "{") {
+			endpoints = endpoints[:1]
+		}
+		for _, endpoint := range endpoints {
+			if !a.Accept {
+				if strings.HasPrefix(a.Q, "approx_topk") {
+					continue // semantics/approx-topk-errors-differ
+				}
+				params := url.Values{"query": {a.Q}, "start": {"1700000000"}, "end": {"1700000600"}, "step": {"60"}, "time": {"1700000600"}}
+				before := upstream.Load()
+				rec := doCompatProxyRequest(rejector, "/loki/api/v1/"+endpoint+"?"+params.Encode(), map[string]string{"X-Scope-OrgID": "team-a"})
+				if body := rec.Body.String(); rec.Code != http.StatusBadRequest || !strings.Contains(body, a.Error) && !strings.Contains(body, jsonQuoted(a.Error)) {
+					t.Errorf("%s %q: %d %s, want Loki's 400 %q", endpoint, a.Q, rec.Code, rec.Body.String(), a.Error)
+				}
+				if calls := upstream.Load() - before; calls != 0 {
+					t.Errorf("%s %q: %d requests reached VictoriaLogs", endpoint, a.Q, calls)
+				}
+				rejected++
+				continue
+			}
+			wantVL, wantBody := blankAfterKeywordRequests(t, endpoint, a.Ref)
+			gotVL, gotBody := blankAfterKeywordRequests(t, endpoint, a.Q)
+			racy := !strings.HasPrefix(a.Q, "{") && strings.Contains(a.Ref, "| keep")
+			same := (racy || slices.Equal(gotVL, wantVL)) && gotBody == wantBody
+			if caseID := blankKnownDifference(a.Q); caseID != "" && !same {
+				known++
+				knownCases[caseID]++
+				continue
+			}
+			if !same {
+				t.Errorf("%s %q: %d requests, answer %s;\n want the spaced spelling's %d requests, answer %s", endpoint, a.Q, len(gotVL), gotBody, len(wantVL), wantBody)
+			}
+			served++
+		}
+	}
+	if served < 300 || rejected < 300 {
+		t.Fatalf("%d served and %d rejected spellings: the grid is too small", served, rejected)
+	}
+	t.Logf("%d spellings answered as the spaced query, %d rejected with Loki's text, %d known differences %v", served, rejected, known, knownCases)
+}
+
+// blankKnownDifference names the registry case of a blank spelling the proxy still answers unlike the spaced one, or
+// "": a tab, a line feed or a carriage return between a call's name and its parenthesis.
+func blankKnownDifference(q string) string {
+	m := blankBeforeCall.FindStringSubmatch(q)
+	if m == nil {
+		return ""
+	}
+	switch name := strings.ToLower(m[1]); {
+	case name == "vector":
+		return "semantics/vector-call-blank-before-parenthesis-as-query"
+	case strings.HasSuffix(name, "_over_time") || strings.HasPrefix(name, "rate") || name == "bytes_rate":
+		return "semantics/translator-reads-blank-before-range-call-as-text"
+	}
+	return "semantics/blank-before-call-parenthesis-read-unlike-loki"
+}
+
+// blankBeforeCall finds a name followed by blanks with a tab, a line feed or a carriage return in them, and a
+// parenthesis.
+var blankBeforeCall = regexp.MustCompile(`([A-Za-z_]+)[ ]*[\t\r\n][ \t\r\n]*\(`)

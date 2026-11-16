@@ -1,0 +1,48 @@
+id: semantics/blank-before-call-parenthesis-read-unlike-loki
+title: A tab, a line feed or a carriage return between label_replace, an unwrap conversion, sort_desc, approx_topk or ip and its parenthesis is answered unlike the spelling without it (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's lexer looks ahead over the blanks it skips for a call's parenthesis:
+  `label_replace<TAB>(rate({app="a"}[1m]), "a", "b", "c", "d")`,
+  `sum_over_time({app="a"} | unwrap bytes<TAB>(a) [1m])`, `sort_desc<TAB>(...)`,
+  `approx_topk<TAB>(...)` and `{app="a"} | x = ip<TAB>("1.2.3.4")` are the query
+  without the blank (Loki oracle, check command: the same expression;
+  internal/logql testdata/keyword-blank-loki.jsonl.gz). The proxy's parser
+  reads them as Loki does (TestKeywordBlankMatchesLoki), but the requests and
+  answers differ from the spelling without the blank: the handlers and the
+  string translator match the name and the parenthesis together.
+
+  Found by the keyword blank sweep (internal/proxy
+  TestKeywordBlankRequestsEqualSpaced pins these rows; a range function and
+  vector() spelled so are semantics/translator-reads-blank-before-range-call-as-text
+  and semantics/vector-call-blank-before-parenthesis-as-query). Not changed here.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: "label_replace\t(rate({app=\"api-gateway\"}[5m]), \"a\", \"b\", \"c\", \"d\")"
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, data]
+  expect: |
+    The answer of the same query without the tab.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/proxy handlers and the string translator (the call name and its parenthesis are matched as one text)'
+  loki: 'the lexer reads a call name followed by any blank it skips and a parenthesis as the call'
+  proxy: 'the requests and the answer differ from the spelling without the blank'
+  planned_test: 'TestKeywordBlankRequestsEqualSpaced (internal/proxy, pinned rows); TestKeywordBlankMatchesLoki (internal/logql, recorded Loki answers)'
+  visual: none
+  visual_reason: 'a spelling no Grafana panel writes'
+  clusters: []
