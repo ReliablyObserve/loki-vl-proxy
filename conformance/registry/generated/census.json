@@ -273,6 +273,8 @@
     "quality/label-values-chunk-window | gap:open",
     "quality/labels-backfill-into-cached-bucket | compare:observed",
     "quality/labels-backfill-into-cached-bucket | gap:open",
+    "quality/labels-just-pushed-stream-before-window | compare:observed",
+    "quality/labels-just-pushed-stream-before-window | gap:open",
     "quality/logfmt-parse-risk-candidates | compare:exact",
     "quality/logfmt-parse-risk-candidates | gap:fixed",
     "quality/logfmt-parse-risk-candidates | perf",
@@ -1155,6 +1157,7 @@
     "cmd/proxy/tenant_routing_test.go | tenant-query-limits",
     "internal/cache/cache_coverage_test.go | observability-query-flow",
     "internal/cache/cache_test.go | shutdown-releases-background-work",
+    "internal/cache/peer_close_conn_test.go | shutdown-releases-background-work",
     "internal/cache/peer_hedge_test.go | peer-cache-patterns",
     "internal/cache/peer_hedge_test.go | peer-cache-read-hedge",
     "internal/cache/peer_protocol_edges_test.go | peer-cache-fleet-recovery",
@@ -1545,7 +1548,10 @@
     "internal/proxy/keep_series_grouping_test.go | semantics/keep-leaves-labels-loki-drops",
     "internal/proxy/keep_series_grouping_test.go | semantics/stage-name-followed-by-more-of-stage",
     "internal/proxy/keep_unwrap_identity_test.go | semantics/keep-before-unwrap-series-identity",
+    "internal/proxy/label_backfill_cached_bucket_test.go | quality/labels-backfill-into-cached-bucket",
+    "internal/proxy/label_backfill_cached_bucket_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/label_cache_behavior_test.go | loki_api_v1_labels",
+    "internal/proxy/label_cache_behavior_test.go | quality/label-cache-aged-labels-kept",
     "internal/proxy/label_empty_run_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/label_filter_expression_test.go | loki_api_v1_query_range",
     "internal/proxy/label_filter_expression_test.go | semantics/label-filter-expression-syntax",
@@ -2668,6 +2674,8 @@
     "test/e2e-compat/label_replace_new_label_test.go | semantics/label-replace-range-binary-marker",
     "test/e2e-compat/labels_alias_test.go | loki_api_v1_label",
     "test/e2e-compat/labels_alias_test.go | loki_api_v1_labels",
+    "test/e2e-compat/labels_backfill_cached_bucket_test.go | quality/labels-backfill-into-cached-bucket",
+    "test/e2e-compat/labels_backfill_cached_bucket_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "test/e2e-compat/labels_zero_width_test.go | semantics/labels-end-inclusive-like-loki",
     "test/e2e-compat/line_fields_parity_test.go | loki_api_v1_detected_fields",
     "test/e2e-compat/line_fields_parity_test.go | loki_api_v1_index_stats",
@@ -2965,12 +2973,12 @@
       "any": 35,
       "api": 109,
       "drilldown": 53,
-      "explore": 190,
+      "explore": 191,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 695,
+      "go": 698,
       "playwright": 2
     },
     "page_kinds": {
@@ -2989,8 +2997,8 @@
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 95,
-    "wired_items": 395
+    "unwired_items": 94,
+    "wired_items": 397
   },
   "gates": [
     "A/B shape selection",

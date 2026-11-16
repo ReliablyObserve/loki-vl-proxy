@@ -323,6 +323,7 @@ func NewPeerCache(cfg PeerConfig) *PeerCache {
 	pc.replication = min(max(cfg.ReplicationFactor, 1), MaxReplicationFactor)
 	pc.pushQueue = make(chan pushJob, maxQueuedPushes)
 	pc.ctx, pc.cancel = context.WithCancel(context.Background())
+	pc.client.Transport.(*http.Transport).DialContext = pc.dialPeer
 	if cfg.PushBufferMaxEntries == 0 {
 		cfg.PushBufferMaxEntries = DefaultPushBufferMaxEntries
 	}
@@ -1700,6 +1701,31 @@ func (pc *PeerCache) Close() {
 	if pc.cancel != nil {
 		pc.cancel()
 	}
+	// The calls Close cancelled close their connections; the idle ones are
+	// closed here, and a dial still running when Close ran is closed by
+	// dialPeer, so no connection of the peer cache outlives it.
+	if pc.client != nil {
+		pc.client.CloseIdleConnections()
+	}
+}
+
+// peerDialer dials peer connections.
+var peerDialer = &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+
+// dialPeer dials a peer unless the peer cache is closed, and closes a
+// connection whose dial finished after Close: the transport keeps a dialled
+// connection for later requests even when the request that asked for it was
+// cancelled, and it would stay open until its idle timeout.
+func (pc *PeerCache) dialPeer(ctx context.Context, network, addr string) (net.Conn, error) {
+	if err := pc.ctx.Err(); err != nil {
+		return nil, net.ErrClosed
+	}
+	conn, err := peerDialer.DialContext(ctx, network, addr)
+	if err == nil && pc.ctx.Err() != nil {
+		_ = conn.Close()
+		return nil, net.ErrClosed
+	}
+	return conn, err
 }
 
 // Stats returns peer cache statistics.
