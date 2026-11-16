@@ -41,6 +41,9 @@ request:
     step: '60'
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    blocked_by: fixture
+    reason: "rate(...) keeps its labels and a label-less vector(1) matches none of its series (no on()), so Loki answers empty here and so does the proxy: the request cannot show the difference on any stack; a left operand without labels (sum(rate(...)) + vector (1)) would, and changing the query is a plan corpus row change left to its own change"
 compare:
   mode: observed
   fields: [status, series labels, values]

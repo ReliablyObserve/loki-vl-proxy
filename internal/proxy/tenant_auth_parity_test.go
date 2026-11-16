@@ -18,7 +18,7 @@ import (
 // '..', longer than 150, a byte outside its set) is 400 with Loki's text on
 // every route, before routing, the cache or any VictoriaLogs call.
 //
-// conformance: tenant-auth-follows-loki
+// conformance: tenant-auth-follows-loki, semantics/tenant-header-loki-answers
 func TestTenantAuth_AnswersLikeLoki(t *testing.T) {
 	meta, rows := readTenantAuthLokiAnswers(t)
 	if meta.Loki == "" || len(rows) < 300 {

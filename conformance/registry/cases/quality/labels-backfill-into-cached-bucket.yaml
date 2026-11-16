@@ -31,6 +31,9 @@ request:
     end: 'now-6h'
   headers:
     X-Scope-OrgID: "0"
+  verify:
+    blocked_by: fixture
+    reason: "the case is rows arriving into a window after a first read cached it empty: one seed before the run cannot be a backfill after a cached read"
 compare:
   mode: observed
   fields: [data]
