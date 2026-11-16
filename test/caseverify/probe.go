@@ -37,6 +37,9 @@ type Probe struct {
 	// EmptyIsAnswer is why two empty answers prove the case (request.verify.empty_is_answer): the case is
 	// that a query the proxy once mishandled is answered like Loki, with nothing and no error.
 	EmptyIsAnswer string
+	// EmptyRange is why the case's range holds no data on purpose (request.verify.empty_range): the case is the
+	// answer to a range without data, so two empty counts are the data the case needs, not a verdict of `empty`.
+	EmptyRange string
 	// Control is a second request of the case (request.verify.control: params laid over the request's own) that
 	// must return data on both sides. Where the case's own answers are both empty, a control that answers data on
 	// both sides proves the data is there, and the two empty answers match; the control's own answers are not
@@ -167,6 +170,7 @@ func probeOf(c registry.Case) Probe {
 	blockedBy, _ := verify["blocked_by"].(string)
 	reason, _ := verify["reason"].(string)
 	p.EmptyIsAnswer, _ = verify["empty_is_answer"].(string)
+	p.EmptyRange, _ = verify["empty_range"].(string)
 	badControl := false
 	if c, ok := verify["control"].(map[string]any); ok {
 		p.Control = stringMap(c["params"])

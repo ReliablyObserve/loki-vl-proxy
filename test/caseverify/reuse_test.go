@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+func init() { retryWait, indexWait = 0, 0 }
+
 const sampleMetrics = `# HELP loki_vl_proxy_backend_duration_seconds x
 loki_vl_proxy_backend_duration_seconds_count{system="victorialogs",direction="upstream",endpoint="/select/logsql/query",route="query_range"} 3
 loki_vl_proxy_backend_duration_seconds_count{system="victorialogs",direction="upstream",endpoint="/select/logsql/stats_query_range",route="a,b"} 2
@@ -84,8 +86,8 @@ func TestMeasureReuse(t *testing.T) {
 		{"background calls on other endpoints", same, background, cold, reuseReused, ""},
 		{"no meter", same, nil, cold, reuseNotMeasured, "could not be read"},
 		{"no cold cost", same, hit, nil, reuseNotMeasured, "could not be read"},
-		{"a failed repeat", failing, hit, cold, reuseNotMeasured, "repeat or its metrics"},
-		{"metrics gone", same, meter{}, cold, reuseNotMeasured, "repeat or its metrics"},
+		{"a failed repeat", failing, hit, cold, reuseNotMeasured, "the repeat could not be asked: reset"},
+		{"metrics gone", same, meter{}, cold, reuseNotMeasured, "metrics could not be read"},
 	}
 	for _, c := range cases {
 		r := measureReuse(p, req, ok(matrixA), c.cost, c.src, c.m, []string{facetStatus, facetLabels}, Options{})
@@ -314,5 +316,77 @@ func TestVLCallsOfReadsTheProxyHeaders(t *testing.T) {
 	a := (&Live{Bases: map[string]string{"proxy": srv.URL}, Client: http.DefaultClient}).Ask("proxy", "c", 1, Request{Method: "GET", Path: "/"})
 	if a.VLCalls == nil || *a.VLCalls != 4 || a.CacheResult != "miss" {
 		t.Errorf("live answer %+v", a)
+	}
+}
+
+// flakyMeter fails its first scrapes of every phase, then answers like the table.
+type flakyMeter struct {
+	meter
+	fail  int
+	tries map[string]int
+}
+
+func (m *flakyMeter) Measure(c, v, phase string) (Snapshot, bool) {
+	m.tries[phase]++
+	if m.tries[phase] <= m.fail {
+		return nil, false
+	}
+	return m.meter.Measure(c, v, phase)
+}
+
+// failingOnce answers the repeat with an error once, then like the wrapped source.
+type failingOnce struct {
+	Source
+	failed bool
+}
+
+func (f *failingOnce) Ask(side, id string, attempt int, r Request) Answer {
+	if attempt == repeatAttempt && !f.failed {
+		f.failed = true
+		return Answer{Err: "connection reset"}
+	}
+	return f.Source.Ask(side, id, attempt, r)
+}
+
+// A repeat is judged by the request's own count and answer: a scrape of /metrics that fails once or twice is tried again,
+// and a scrape that stays down leaves the verdict standing without the metric delta.
+func TestMeasureReuseSurvivesScrapeFailures(t *testing.T) {
+	p := Probe{ID: "c"}
+	req := Request{Method: "GET", Path: "/loki/api/v1/query_range"}
+	zero, one := 0, 1
+	withCount := func(a Answer, n *int) Answer { a.VLCalls = n; return a }
+	hit := meter{"repeat_before": {"vl_calls": 2}, "repeat_after": {"vl_calls": 2, "loki:l1_memory:requests": 1, "loki:l1_memory:hits": 1}}
+	src := func(n *int) fake { return fake{"c": {repeatAttempt: {"proxy": withCount(ok(matrixA), n)}}} }
+	first := withCount(ok(matrixA), &one)
+
+	// Two failed scrapes per phase, the third answers: measured, with the metric delta.
+	flaky := &flakyMeter{meter: hit, fail: 2, tries: map[string]int{}}
+	r := measureReuse(p, req, first, Snapshot{"vl_calls": 1}, src(&zero), flaky, []string{facetStatus}, Options{})
+	if r.Verdict != reuseReused || r.Source != sourceHeader || r.Repeat["loki:l1_memory:hits"] != 1 || flaky.tries["repeat_before"] != 3 {
+		t.Errorf("a scrape that answers on its third try: %+v (tries %v)", r, flaky.tries)
+	}
+
+	// Scrapes that stay down: the header's count and the answer still give the verdict.
+	gone := &flakyMeter{meter: hit, fail: 99, tries: map[string]int{}}
+	r = measureReuse(p, req, first, nil, src(&zero), gone, []string{facetStatus}, Options{})
+	if r.Verdict != reuseReused || r.Source != sourceHeader || len(r.Repeat) != 0 || r.Cold["vl_calls"] != 1 {
+		t.Errorf("metrics gone, header present: %+v", r)
+	}
+	r = measureReuse(p, req, first, nil, src(&one), gone, []string{facetStatus}, Options{})
+	if r.Verdict != reuseNotReused || !strings.Contains(r.Reason, "called VictoriaLogs 1 time(s)") || r.Repeat["vl_calls"] != 1 {
+		t.Errorf("a repeat that called VictoriaLogs is a finding even with the metrics gone: %+v", r)
+	}
+
+	// Without the header the metrics are the only count: unreadable, the repeat is not measured, and says why.
+	r = measureReuse(p, req, ok(matrixA), Snapshot{"vl_calls": 1}, src(nil), gone, []string{facetStatus}, Options{})
+	if r.Verdict != reuseNotMeasured || !strings.Contains(r.Reason, "no X-Loki-VL-Backend-Calls") {
+		t.Errorf("no header, no metrics: %+v", r)
+	}
+
+	// A repeat that fails once is asked again.
+	once := &failingOnce{Source: src(&zero)}
+	r = measureReuse(p, req, first, Snapshot{"vl_calls": 1}, once, hit, []string{facetStatus}, Options{})
+	if r.Verdict != reuseReused || !once.failed {
+		t.Errorf("a repeat that failed once: %+v", r)
 	}
 }
