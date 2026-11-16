@@ -24,6 +24,8 @@ import (
 	fj "github.com/valyala/fastjson"
 	"golang.org/x/sync/errgroup"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -90,6 +92,11 @@ type logQueryShape struct {
 	keepConditions []translator.DropCondition
 	bareDropFields []string
 	bareKeepFields []string
+	// pipeline is the parsed pipeline (parsed only).
+	pipeline []logqlpkg.Stage
+	// rowLines picks a placeholder row's rebuilt-line fields with
+	// -json-line-fields-as-line-keys (json_line_keys.go).
+	rowLines rowLineFields
 	// fingerprint identifies the LogQL pipeline in window cache keys. Cached
 	// fragments hold resolved stream labels, and some stages that change them
 	// (conditional | drop / | keep) emit no LogsQL.
@@ -117,11 +124,24 @@ func newLogQueryShape(query string) logQueryShape {
 		classifyAsParsed: pipelineHasParserStageOf(lq.Pipeline, true, true),
 		exposure:         pipelineAddsLabels(lq.Pipeline),
 		parsed:           true,
+		pipeline:         lq.Pipeline,
 		captureFields:    pipelineRegexpCaptureFields(lq.Pipeline),
 		lineFields:       pipelineLineFields(lq.Pipeline),
 		fingerprint:      logQueryShapeFingerprint(responseKeyFences(nil, query, responseKeyLogWindowShape) + strings.Join(stages, "\n")),
 	}
 	shape.dropConditions, shape.keepConditions, shape.bareDropFields, shape.bareKeepFields = dropKeepFromPipeline(lq.Pipeline)
+	return shape
+}
+
+// newLogQueryShape is newLogQueryShape with the placeholder reading of
+// -json-line-fields-as-line-keys (json_line_keys.go) on the exposure.
+func (p *Proxy) newLogQueryShape(query string) logQueryShape {
+	shape := newLogQueryShape(query)
+	if !shape.parsed || !p.jsonLineKeysActive() {
+		return shape
+	}
+	p.withPlaceholderLine(&shape.exposure, shape.pipeline)
+	shape.rowLines = rowLineFieldsOf(&shape.exposure, shape.lineFields)
 	return shape
 }
 
@@ -191,7 +211,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	categorizedLabels := requestWantsCategorizedLabels(r)
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
 	p.metrics.RecordTupleMode(tupleModeForRequest(categorizedLabels, emitStructuredMetadata))
-	shape := newLogQueryShape(r.FormValue("query"))
+	shape := p.newLogQueryShape(r.FormValue("query"))
 
 	// Loki reads a limited log query's splits in the query's direction and
 	// stops once the limit is met (backward splits are read newest first). A dense stream's limit
@@ -887,7 +907,7 @@ func (p *Proxy) queryRangeWindowCacheKey(
 // Hot-path callers should use vlLogsToLokiWindowEntriesStream to avoid the
 // io.ReadAll allocation entirely.
 func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) []queryRangeWindowEntry {
-	entries, _ := p.vlLogsToLokiWindowEntriesStream(bytes.NewReader(body), newLogQueryShape(originalQuery), categorizedLabels, emitStructuredMetadata)
+	entries, _ := p.vlLogsToLokiWindowEntriesStream(bytes.NewReader(body), p.newLogQueryShape(originalQuery), categorizedLabels, emitStructuredMetadata)
 	return entries
 }
 
@@ -984,7 +1004,11 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 		rawStream := fjVal.GetStringBytes("_stream")
 		rowStream := rowLevels.stream(rawStream)
 		detected := rowLevels.fjRow(fjVal, fjObj, rowStream)
-		msg := storedLogLineFromFJ(fjVal, rowStream.labels, shape.lineFields, p.defaultMsgValue())
+		lineFields := shape.lineFields
+		if shape.rowLines.active {
+			lineFields = forRowMsg(shape.rowLines, fjVal.GetStringBytes("_msg"))
+		}
+		msg := storedLogLineFromFJ(fjVal, rowStream.labels, lineFields, p.defaultMsgValue())
 		levelBytes := visibleStoredLevelFJ(fjVal, rowStream.labels, exposure)
 		desc := p.logRowStreamDescriptor(rawStream, rowStream, levelBytes, detected, emitTupleMetadata, levelStages, streamDescriptorCache)
 

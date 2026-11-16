@@ -1,0 +1,11 @@
+id: peer-cache-read-hedge
+state: partial
+pending: true
+reason: |
+  Unit-proven with paused peer stubs and on the three-replica in-process
+  ring (internal/cache/peer_hedge_test.go, peer_replication_test.go). The
+  stack proof is the fleet peer cache proof's paused-owner edge
+  (test/e2e-fleet edge_owner_paused_timeout_bound), which now bounds each
+  request by the read hedge maximum instead of the peer timeout.
+owner_decision: null
+waiver: null

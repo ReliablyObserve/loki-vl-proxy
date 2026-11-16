@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
   `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
   parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
+- The `detected_level` the proxy derives for returned rows is rewritten from Loki's documented settings and from
+  answers recorded from a real Loki 3.7.9 for 1551 generated inputs, one stream each: structured metadata and stream
+  labels of every level field, field pairs, `severity_number` values, JSON lines to depth 5 with value types and
+  broken shapes, logfmt variants, plain lines by letter case, position, boundary byte and near-miss words, long
+  lines and OTLP records. The table and the evidence of the run are committed
+  (`internal/proxy/testdata/detected_level_golden.json`, `detected_level_golden_loki.json`), a live check compares
+  about 200 of its rows with the stack's Loki in the e2e core group, and a fuzz target holds the derivation to a
+  plain reference evaluator that is itself held to the recorded answers. Answers are unchanged except for the fix
+  below.
 
 ### Fixed
 
@@ -28,6 +37,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shapes x 4 request kinds x 2 versions: 144 of 160 runs match Loki, from 86 (every run of the 15 operations, and
   under `sum(…)`, `label_replace(…)` and with an `offset`). A `count`, `stddev` or `stdvar` under the clause, and a ranking over the operation, are unchanged. Answers cached before the fix are not served again
   (semantics/binary-operand-without-empty-collapses). `-query-plan-lowering=false` keeps the previous reading.
+- A paused or hung peer-cache replica no longer stalls a request for `-peer-timeout` (2 s by default). A lookup that
+  misses memory and disk asks the key's replicas in ring order; when the replica asked has not sent its response headers
+  within the read hedge delay, the lookup also asks the next replica and takes the first answer, and with no replica left
+  it reads VictoriaLogs after `-peer-read-hedge-max-delay` (new flag and Helm value, default `200ms`, `0` turns it off).
+  The delay is twice the p99 of the peer header latencies the proxy measured, at least 5 ms, so a healthy fleet asks a
+  second replica for about one read in a hundred. The call left waiting runs on in the background, where its timeout
+  still suspends the peer for the breaker cooldown, and meanwhile reads ask that peer last or skip it, so one read per
+  proxy pays the delay; the half-open probe after the cooldown and the `/patterns` owner presence check are bounded the
+  same way. Before, the first lookup on a paused replica and the probe after every cooldown each waited the full peer
+  timeout (one query per run at 2.0 s and a `/labels` p99 at the timeout in a fleet run with one replica paused). New
+  metrics: `loki_vl_proxy_peer_cache_read_hedges_total{action="next_replica"|"gave_up"}` and
+  `loki_vl_proxy_peer_cache_read_hedge_delay_seconds`; peer error reason `peer_slow`.
+- `/loki/api/v1/patterns` on a proxy that forwards a selector to the peer holding its pattern state no longer
+  keeps the owner's empty answer. The owner answers empty while the lines have not reached VictoriaLogs yet; the
+  forwarding peer cached that answer for the patterns cache's retention, so the patterns of a new stream never
+  appeared on it. An empty forwarded answer is now asked again on the next request.
+- A stored field named `log.level` (structured metadata or an OTLP log attribute pushed under that name) no longer
+  sets `detected_level` on log responses: Loki stores such metadata as `log_level` and does not read it, so the row's
+  level comes from its other fields or its line, as in Loki (recorded answers, `severity/recorded-level-table`). A
+  JSON line whose key `log.level` VictoriaLogs unpacked into a field still gives the level, as the line does in Loki.
+  Metric grouping by `detected_level` still reads the field (`severity/stored-log-dot-level-in-metric-chain`, open).
 - `sum`, `max`, `min` and `avg` (with or without `by`) over `avg_over_time`, `max_over_time`, `min_over_time`,
   `stddev_over_time` or `stdvar_over_time` of a label unwrapped after an extraction list (`| logfmt amount, route`,
   `| json amount`) now read Loki's series: the stream plus the labels the list names, less the unwrapped one, where
@@ -39,6 +69,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `avg_over_time` up to 12% more, for the per-series step Loki's answer needs. Count,
   first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
   read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
+
+### Added
+
+- `-json-line-fields-as-line-keys` (Helm `extraArgs.json-line-fields-as-line-keys`, off by default): for JSON lines
+  pushed to VictoriaLogs' Loki push route without `disable_message_parsing=1`, which VictoriaLogs stores as one field
+  per key with its missing-message placeholder in `_msg`, the proxy reads every stored field of such a row as a key of
+  the row's JSON line, as Loki holds the pushed line. The fields are no labels until `| json` (or a json extraction
+  list) reads them, `| logfmt` reads none of them, a label filter on such a key with no parser drops the line, and a
+  query that unwraps or filters a label no stage can give such a line (after `| logfmt` or without a parser) leaves
+  those rows out in VictoriaLogs, so `max_over_time({...} | logfmt amount | unwrap amount [5m])` answers only the
+  logfmt streams. `| json` metric queries read such a row as a valid JSON object instead of answering
+  `JSONParserErr`. VictoriaLogs stores structured metadata pushed beside such a line among the line's keys, so the
+  flag hides it: leave it off when such pushes carry structured metadata. Pushing with `disable_message_parsing=1`
+  stays the supported setup and needs no flag. With the flag off nothing changes.
 
 ## [2.311.0] - 2026-11-16
 
