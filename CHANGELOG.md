@@ -7,15 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Performance
-
-- Metric queries over streams without a level label take VictoriaLogs less time, with the same answers: about a
-  quarter less for `rate` and `sort(rate(...))` over a parser on a first load, and 15-50% less on a refresh. Such a query, read per stream (for example `count_over_time({...} | logfmt [5m])` or
-  `max_over_time({...} | logfmt amount | unwrap amount [5m])`), reads those streams a second time to give each line
-  Loki's `detected_level`. That second read now narrows its level derivation to the level fields and keys the window
-  holds on every route, including instant queries and `rate` or `sort(rate(...))` over a parser, which sent the full
-  derivation before. Once the proxy has seen that a query holds such streams, its next reads (a refresh, a moved
-  window) read the labelled streams and the others separately, so no stream is read twice.
+## [2.310.0] - 2026-11-16
 
 ### Changed
 
@@ -28,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   LogQL's documented meaning and is held to the recorded answers. The engine oracle gains an unaligned mode (Loki's
   engine at the request's own bounds). The query_range step alignment middleware is renamed for what it does
   (alignToStepMiddleware); behaviour is unchanged.
+
+## [2.309.0] - 2026-11-16
+
+### Performance
+
+- Metric queries over streams without a level label take VictoriaLogs less time, with the same answers: about a
+  quarter less for `rate` and `sort(rate(...))` over a parser on a first load, and 15-50% less on a refresh. Such a query, read per stream (for example `count_over_time({...} | logfmt [5m])` or
+  `max_over_time({...} | logfmt amount | unwrap amount [5m])`), reads those streams a second time to give each line
+  Loki's `detected_level`. That second read now narrows its level derivation to the level fields and keys the window
+  holds on every route, including instant queries and `rate` or `sort(rate(...))` over a parser, which sent the full
+  derivation before. Once the proxy has seen that a query holds such streams, its next reads (a refresh, a moved
+  window) read the labelled streams and the others separately, so no stream is read twice.
 
 ## [2.308.0] - 2026-11-16
 
