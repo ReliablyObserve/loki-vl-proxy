@@ -230,7 +230,10 @@ func FuzzParseTerminates(f *testing.F) {
 		`{a="1", b="2", c="3"} |= "x|y" != "z" | json | x="a\x41"`, `{a="b"}` + strings.Repeat(` | json`, 40), `{a="b"} |= "x\"|`,
 		`rate({a="b"}[1µs])`, `rate({a="b"}[5m5m])`, `rate({a="b"}[0])`, `rate({a="b"}[0] offset 0)`, "sum # c\nby # c\n(a) (rate({a=\"b\"}[0]))", "sum_over_time({a=\"b\"} | unwrap bytes # c\n # d\n(c) [5m])", "label_replace # c\n(vector # c\n(1), \"d\", \"$1\", \"a\", \"(.*)\")", "{a=\"b\"} |= ip # c\n(\"1.2.3.4\")", `rate({a="b"}[9999999999h5x])`, `rate({a="b"}[']) / on rate({a="b"}[5m])`, `{A="0"} | A<- 0`,
 		// a topk or bottomk first argument Loki reads as an expression (semantics/topk-first-argument-error-text)
-		`topk(-1, rate({a="b"}[5m]))`, `bottomk(1 + 2, rate({a="b"}[5m]))`, `topk(rate({a="b"}[5m]), 2)`, `topk({a="b"}, 2)`, `topk(-1)`, `topk(((((-1`, `sort(topk(- -1, rate({a="b"}[5m])))`} {
+		`topk(-1, rate({a="b"}[5m]))`, `bottomk(1 + 2, rate({a="b"}[5m]))`, `topk(rate({a="b"}[5m]), 2)`, `topk({a="b"}, 2)`, `topk(-1)`, `topk(((((-1`, `sort(topk(- -1, rate({a="b"}[5m])))`,
+		`sum(1, rate({a="b"}[5m])) )`, `sort_desc(0x1, sum(1, topk(0, rate({a="b"}[5m]))))`, `approx_topk by (a) (2, rate({a="b"}[5m]))`,
+		`quantile_over_time(-1, {a="b"} | unwrap c [5m])`, `{a=~"(b" "x"}`, `{a="b"} | c > 1PB | pattern "<_>" | unpack a`,
+		`label_replace(count_over_time({a="b"} | pattern "<_>" [5m]), "x", "$1", "a", "(.*)") )`} {
 		f.Add(q)
 	}
 	f.Fuzz(func(t *testing.T, q string) {

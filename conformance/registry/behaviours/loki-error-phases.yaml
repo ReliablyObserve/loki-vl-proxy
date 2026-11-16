@@ -17,15 +17,19 @@ victorialogs: |
 
 proxy: |
   The proxy answers request, parse, tree and limit errors with Loki's texts through internal/lokierr. Its parser
-  reports a later syntax or lexer error ahead of an earlier action, builds pipelines before the query plan's tree
-  checks, and raises pipeline errors for JSONParserErr and SampleExtractionErr only.
+  answers an action error ahead of a later syntax or lexer error, keeps a vector operation's parameter check on its
+  node for the tree walk, and the validation checks the whole tree, the query plan's checks included, before it
+  builds any pipeline (semantics/loki-error-phase-order). It raises pipeline errors for JSONParserErr and
+  SampleExtractionErr only.
 
 implementation:
   - internal/logql/validate.go
   - internal/logql/semantic.go
+  - internal/logql/parser.go
   - internal/proxy/query_tree_validation.go
 
 cases:
   - semantics/loki-error-phases
   - semantics/loki-pipeline-error-rules
   - semantics/loki-build-phase-window
+  - semantics/loki-error-phase-order

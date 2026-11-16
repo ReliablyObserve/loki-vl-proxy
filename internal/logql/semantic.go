@@ -76,6 +76,9 @@ func semanticPass(expr Expr, raw string, build bool) string {
 	case *OpaqueMetricExpr:
 		// label_replace(inner, ...) and similar wrappers: Loki validates the
 		// wrapped sample expression like any other.
+		if x.treeErr != "" && !build {
+			return x.treeErr
+		}
 		if build {
 			inner := x.Inner
 			if inner == nil {

@@ -16,8 +16,8 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2605,
+      "keys": 2550,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -25,8 +25,8 @@
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2605,
+      "keys": 2550,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -34,8 +34,8 @@
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2605,
+      "keys": 2550,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -43,8 +43,8 @@
       "unsound": 0
     },
     "v1.53 identity": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2605,
+      "keys": 2550,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -52,8 +52,8 @@
       "unsound": 0
     },
     "v1.53 no body scan": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2605,
+      "keys": 2550,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -61,8 +61,8 @@
       "unsound": 0
     },
     "v1.53 no body scan, stream fields, keepLine": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2605,
+      "keys": 2550,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -70,8 +70,8 @@
       "unsound": 0
     },
     "v1.53 stream fields": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2605,
+      "keys": 2550,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -79,8 +79,8 @@
       "unsound": 0
     },
     "v1.53 stream fields and labels": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2605,
+      "keys": 2550,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -88,8 +88,8 @@
       "unsound": 0
     },
     "v1.53 stream labels": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2605,
+      "keys": 2550,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -97,8 +97,8 @@
       "unsound": 0
     },
     "v1.53 stream labels keepLine": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2605,
+      "keys": 2550,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -106,8 +106,8 @@
       "unsound": 0
     },
     "v1.53 underscores": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2605,
+      "keys": 2550,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -115,8 +115,8 @@
       "unsound": 0
     },
     "v1.53 underscores keepLine": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2605,
+      "keys": 2550,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -598,9 +598,9 @@
     }
   },
   "shadow": {
-    "rows": 24159,
+    "rows": 24150,
     "profiles": 12,
-    "native": 20905,
+    "native": 20896,
     "native_proxy_evaluated": 3870,
     "mismatches": 0,
     "delegated_by_construct": {

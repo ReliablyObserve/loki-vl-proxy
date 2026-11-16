@@ -611,6 +611,8 @@ type OpaqueMetricExpr struct {
 	Inner Expr
 	Args  []string
 	Value float64
+	// treeErr is Loki's error for a grouping on approx_topk, raised over the parsed tree.
+	treeErr string
 }
 
 func (o *OpaqueMetricExpr) String() string { return o.Raw }

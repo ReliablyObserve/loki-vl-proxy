@@ -1660,6 +1660,10 @@
     "semantics/loki-build-phase-window": [
       "internal/proxy/build_phase_window_loki_test.go"
     ],
+    "semantics/loki-error-phase-order": [
+      "internal/logql/error_phase_fuzz_test.go",
+      "internal/proxy/error_phase_grid_test.go"
+    ],
     "semantics/loki-error-phases": [
       "internal/logql/error_order_loki_test.go",
       "internal/proxy/error_phase_grid_test.go"
@@ -2529,7 +2533,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 601,
+  "registry_items": 602,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -2597,6 +2601,9 @@
     ],
     "internal/logql/error_order_loki_test.go": [
       "semantics/loki-error-phases"
+    ],
+    "internal/logql/error_phase_fuzz_test.go": [
+      "semantics/loki-error-phase-order"
     ],
     "internal/logql/input_size_test.go": [
       "architecture-syntax-package-layering"
@@ -3107,6 +3114,7 @@
       "semantics/error-layer-silent-success"
     ],
     "internal/proxy/error_phase_grid_test.go": [
+      "semantics/loki-error-phase-order",
       "semantics/loki-error-phases"
     ],
     "internal/proxy/error_refusals_test.go": [
@@ -5614,7 +5622,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 664,
+  "tests_with_markers": 665,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5716,5 +5724,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 387
+  "wired_items": 388
 }

@@ -22,7 +22,7 @@ type errorPhaseGridRow struct {
 
 // knownErrorPhaseGridDifferences is the number of grid queries the proxy's query validation still answers otherwise
 // than Loki. It may only fall.
-const knownErrorPhaseGridDifferences = 58
+const knownErrorPhaseGridDifferences = 51
 
 func readErrorPhaseGrid(t testing.TB) []errorPhaseGridRow {
 	t.Helper()
@@ -57,7 +57,7 @@ func readErrorPhaseGrid(t testing.TB) []errorPhaseGridRow {
 // meets them, the pipeline build last, and the parameter of a vector operation read as a number token. The queries
 // it still answers otherwise are counted; the count may only fall.
 //
-// conformance: semantics/loki-error-phases
+// conformance: semantics/loki-error-phases, semantics/loki-error-phase-order
 func TestErrorPhaseGridMatchesLoki(t *testing.T) {
 	byCarrier := map[string]int{}
 	differ := 0

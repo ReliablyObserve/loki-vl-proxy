@@ -98,10 +98,15 @@ func parseExpressionOpts(input string, untypedTemplates, keepTree bool) (expr Ex
 	if err == nil && p.cur.Typ != TokEOF {
 		err = p.syntaxErrorAt("")
 	}
-	if (err != nil || p.sc.lexErrCount() > 0) && p.plainUnwrapAt == 0 {
+	if err != nil || p.sc.lexErrCount() > 0 {
 		// An action Loki runs while it parses (a regex or parser stage it cannot build) stops its parse: it answers
-		// ahead of a later syntax error and of every lexer error the parse went on after.
-		if msg := p.actionErrorSoFar(); msg != "" {
+		// ahead of a later syntax error and of every lexer error the parse went on after. Past an unwrap stage
+		// outside a range aggregation Loki reads nothing, so only the actions before it count.
+		msg := p.plainUnwrapErr
+		if p.plainUnwrapAt == 0 {
+			msg = p.actionErrorSoFar()
+		}
+		if msg != "" {
 			return nil, nil, nil, &ParseError{Msg: msg}
 		}
 	}
@@ -469,6 +474,17 @@ func (p *parser) parsePrimary() (Expr, error) {
 		// receives the original expression unchanged.
 		startPos := p.sc.pos - len(p.cur.Val)
 		p.advance()
+		var treeErr string
+		if name == "approx_topk" && (p.cur.Typ == TokBy || p.cur.Typ == TokWithout) {
+			// Loki's grammar reads a grouping before approx_topk's arguments and refuses it over the parsed tree.
+			if _, err := p.parseGrouping(); err != nil {
+				return nil, err
+			}
+			treeErr = "parse error : grouping not allowed for approx_topk aggregation"
+			if p.treeErr == "" {
+				p.treeErr = treeErr
+			}
+		}
 		if p.cur.Typ == TokLParen {
 			p.advance() // consume '('
 			argStart := p.pos()
@@ -485,9 +501,10 @@ func (p *parser) parsePrimary() (Expr, error) {
 				}
 			}
 			raw := strings.TrimSpace(p.sc.src[startPos:endPos])
-			o := &OpaqueMetricExpr{Raw: raw, Func: name}
+			o := &OpaqueMetricExpr{Raw: raw, Func: name, treeErr: treeErr}
 			if p.canon == nil {
 				typeOpaqueCall(o)
+				p.noteOpaqueCall(o.Inner)
 			}
 			return o, nil
 		}
@@ -692,13 +709,8 @@ func (p *parser) parseLogQuery() (*LogQuery, error) {
 	mem := new(logQueryMem)
 	lq := &mem.lq
 	lq.Selector = &mem.sel
-	if prev := p.curLogQuery; prev != nil && mayFailWhileParsed(prev) {
-		if p.checkedLogQueryCount < len(p.checkedLogQueries) {
-			p.checkedLogQueries[p.checkedLogQueryCount] = prev
-		} else {
-			p.moreCheckedLogQueries = append(p.moreCheckedLogQueries, prev)
-		}
-		p.checkedLogQueryCount++
+	if prev := p.curLogQuery; prev != nil {
+		p.noteChecked(prev)
 	}
 	// The log query is the one read from its selector on: a matcher Loki builds as it reads it fails ahead of a
 	// later syntax error in the same selector (actionErrorSoFar).
@@ -1150,6 +1162,52 @@ func (p *parser) unwrapStageError(expecting string) error {
 		return &ParseError{Msg: msg}
 	}
 	return p.syntaxErrorAt(expecting)
+}
+
+// noteChecked keeps a log query read before the current one when it has a matcher or stage Loki builds while it
+// parses (mayFailWhileParsed), in the order of the text: the first ones in an array, which keeps the parser off the
+// heap, the others in moreCheckedLogQueries.
+func (p *parser) noteChecked(lq *LogQuery) {
+	if !mayFailWhileParsed(lq) {
+		return
+	}
+	if p.checkedLogQueryCount < len(p.checkedLogQueries) {
+		p.checkedLogQueries[p.checkedLogQueryCount] = lq
+	} else {
+		p.moreCheckedLogQueries = append(p.moreCheckedLogQueries, lq)
+	}
+	p.checkedLogQueryCount++
+}
+
+// noteOpaqueCall keeps the log queries of a call kept as text (label_replace's sample expression, read by
+// typeOpaqueCall's own parser) after the ones read before it, so that their actions answer ahead of a later syntax
+// error as the others do.
+func (p *parser) noteOpaqueCall(inner Expr) {
+	if inner == nil {
+		return
+	}
+	if p.curLogQuery != nil {
+		p.noteChecked(p.curLogQuery)
+		p.curLogQuery = nil
+	}
+	walkLogQueries(inner, p.noteChecked)
+}
+
+// walkLogQueries calls f for every log query of expr, in the order of the text.
+func walkLogQueries(expr Expr, f func(*LogQuery)) {
+	switch x := expr.(type) {
+	case *LogQuery:
+		f(x)
+	case *RangeAggregation:
+		walkLogQueries(x.Inner, f)
+	case *VectorAggregation:
+		walkLogQueries(x.Inner, f)
+	case *BinOpExpr:
+		walkLogQueries(x.Left, f)
+		walkLogQueries(x.Right, f)
+	case *OpaqueMetricExpr:
+		walkLogQueries(x.Inner, f)
+	}
 }
 
 // stageErrorSoFar is the first error Loki raises while it parses (an action, actionErrorSoFar) among the log
