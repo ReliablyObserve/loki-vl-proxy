@@ -60,7 +60,7 @@ gap:
   area: 'internal/proxy sliding_window_stats.go (encodeTopK), metric_binary.go (applyTopKToMatrix); cases limits/top-n-ranking-not-silent'
   loki: 'topk and bottomk rank per step, so a series has a point only at the steps it ranks (test/e2e-compat topk_range_per_step_test.go)'
   proxy: 'k series per step over every series (bounded heap over the VictoriaLogs window stats); ties broken by label order'
-  planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics); TestTopKRangeDifferential and TestTopKRangeDifferentialRawEvaluator against Loki's recorded engine answers, TestTopKReferenceMatchesRecordedLoki, FuzzTopKPerStep and TestTopKTieAtKthPlaceLokiVariesProxyByLabelKey (internal/proxy)'
+  planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics); TestTopKRangeDifferential and TestTopKRangeDifferentialRawEvaluator against Loki''s recorded engine answers, TestTopKReferenceMatchesRecordedLoki, FuzzTopKPerStep and TestTopKTieAtKthPlaceLokiVariesProxyByLabelKey (internal/proxy)'
   note: 'Measured on origin/main cf738b80. The plain spelling already ranked per step before #736, so nothing here changed for it but the shared NaN comparison; the tie explanation of the recorded difference is verified only once TestCompat_TopkRangePerStep runs against Loki 3.7.7 and VictoriaLogs (it is written and not yet run). If Loki shows fewer ties than assumed, this row reopens.'
   clusters:
     - 8bc2e155
