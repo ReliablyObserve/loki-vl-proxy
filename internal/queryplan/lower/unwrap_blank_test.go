@@ -24,15 +24,17 @@ func TestUnwrapBlankSpellingsLowerAsSpaced(t *testing.T) {
 		`sum_over_time({A="0"} | json |¤unwrap¤a [1m])`, `sum_over_time({A="0"} | logfmt |¤unwrap¤bytes(a) [1m])`,
 		`quantile_over_time(0.5, {app="x"} |¤unwrap¤c [5m]) by (d)`, `sum(avg_over_time({A="0"} |¤unwrap¤duration(a)¤[1m]))`,
 		`max by (a) (max_over_time({A="0"} |¤unwrap¤A [1m]))`,
+		// The pipe written right before unwrap, with a blank after it or with one space (`|unwrap n`).
+		`max_over_time({A="0"} |unwrap¤A [1m])`, `sum_over_time({A="0"} | json |unwrap¤a [1m])`,
 	}
 	rows := 0
 	for _, tpl := range templates {
-		spaced := strings.ReplaceAll(tpl, "¤", " ")
+		spaced := strings.ReplaceAll(strings.ReplaceAll(tpl, "|unwrap", "| unwrap"), "¤", " ")
 		want, err := PlanQuery(spaced, planOf(t, spaced), Profile{})
 		if err != nil {
 			t.Fatalf("%s: the spaced spelling is not lowered: %v", spaced, err)
 		}
-		for _, blank := range []string{"\t", "\n", "\r", "\r\n", " \t ", "  "} {
+		for _, blank := range []string{"\t", "\n", "\r", "\r\n", " \t ", "  ", " "} {
 			q := strings.ReplaceAll(tpl, "¤", blank)
 			got, err := PlanQuery(q, planOf(t, q), Profile{})
 			if err != nil {
@@ -53,7 +55,8 @@ func TestUnwrapBlankSpellingsLowerAsSpaced(t *testing.T) {
 	t.Logf("%d blank spellings lowered as the spaced one", rows)
 }
 
-// spacedBlanks writes each run of the blanks Loki skips outside quoted strings as one space and keeps the strings.
+// spacedBlanks writes each run of the blanks Loki skips outside quoted strings as one space, a space after a pipe a
+// name follows, and keeps the strings.
 //
 // conformance: semantics/translator-reads-only-space-between-tokens
 func TestSpacedBlanks(t *testing.T) {
@@ -65,6 +68,8 @@ func TestSpacedBlanks(t *testing.T) {
 		"a |= `x\n\ny` |\nunwrap b":   "a |= `x\n\ny` | unwrap b",
 		"a |= \"x\\\"\t\" |\tb":       "a |= \"x\\\"\t\" | b",
 		"a |= \"open\t":               "a |= \"open\t",
+		"a |unwrap b |= \"|x\"":       "a | unwrap b |= \"|x\"",
+		"a |= \"x\" |json":            "a |= \"x\" | json",
 		"":                            "",
 	} {
 		if got := spacedBlanks(in); got != want {

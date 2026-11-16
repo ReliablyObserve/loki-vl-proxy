@@ -230,7 +230,7 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				// The translator reads `| unwrap` with one space only: it rejects another blank there, or reads no
 				// unwrap. Loki and the plan read the spaced spelling, which the translator is held to
 				// (semantics/translator-reads-only-space-between-tokens).
-				if spaced := blankspace.Collapse(q); spaced != q {
+				if spaced := blankspace.UnwrapSpaced(q); spaced != q {
 					if respelled, rok := prof.translate(spaced); rok {
 						legacy, ok = respelled, true
 					}

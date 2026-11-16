@@ -167,7 +167,9 @@ func FuzzMetricFlipGate(f *testing.F) {
 		// which the request path writes in lower case.
 		"max_over_time({A=\"0\"} | unwrap\tA [5m])", "sum(max_over_time({A=\"0\"} |\nunwrap\r\nA [5m]))",
 		"top\u212A(2, sum by (app) (rate({app=\"a\"}[5m])))", "avg_over_t\u0130me({app=\"a\"} | unwrap n [5m])",
-		"sum w\u0130thout (pod) (rate({app=\"a\"}[5m]))",
+		"sum w\u0130thout (pod) (rate({app=\"a\"}[5m]))", "max_over_time({A=\"0\"} |unwrap A [5m])", "rate({A=\"0\"} |unwrap\tA [5m])",
+		// A log query in parentheses (found by this target): the log flip's, held by FuzzLogFlipGate.
+		"({A=\"0\"} |A0> + 00)",
 	} {
 		f.Add(q)
 	}
@@ -195,6 +197,12 @@ func FuzzMetricFlipGate(f *testing.F) {
 		if logqlpkg.ParseAndValidate(q) != nil {
 			return
 		}
+		// A log query written in parentheses (`({A="0"} |A0> + 00)`) is a log query to the translation, served by the
+		// log query flip whatever the metric constructs: FuzzLogFlipGate holds it, with its recorded divergences (here
+		// the signed number written with a blank, semantics/translator-writes-signed-number-with-blank).
+		if strings.HasPrefix(logqlpkg.CanonicalizeLogRanges(q), "{") {
+			return
+		}
 		got, gotErr := on.translateQueryOpts(context.Background(), q, false)
 		// The translator reads a grouping of blanks (`by( )`) as no grouping, Loki and the plan as `by ()`
 		// (semantics/translator-reads-blank-grouping-as-none), and a tab, a line feed or a carriage return after a
@@ -207,7 +215,7 @@ func FuzzMetricFlipGate(f *testing.F) {
 		// A query with an unspaced parser the screen leaves to the translator gets the translator's own text, as with
 		// nothing flipped; one the plan serves may escape a byte the spaced spelling's text copies raw.
 		respelled, delegated := false, false
-		if respaced(blankspace.Collapse(q)) != q {
+		if respaced(blankspace.UnwrapSpaced(q)) != q {
 			unflipped, unflippedErr := off.translateQueryOpts(context.Background(), q, false)
 			// A construct the plan leaves to the translator (its text and its failure are the translator's own) is not
 			// served from this text: the handlers read it through their own path, which TestBlankAfterKeywordRequests
@@ -235,7 +243,7 @@ func FuzzMetricFlipGate(f *testing.F) {
 // skips written as one space, a parser expression with a blank before it, and a `by` clause of only blanks as `by ()`.
 // Loki's tree holds the same query for every spelling of it (Loki oracle, TestBlankAfterKeywordMatchesLoki).
 func spelledAsTranslatorReads(q string) string {
-	return respaced(blankgrouping.Cut(blankspace.Collapse(q)))
+	return respaced(blankgrouping.Cut(blankspace.UnwrapSpaced(q)))
 }
 
 // The metric screen (lower.ScreenMetric) holds to the plan on every metric query of the corpus under every translator

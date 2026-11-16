@@ -534,37 +534,53 @@ func BenchmarkLowercaseKeywords(b *testing.B) {
 
 const keywordBlankAnswers = "testdata/keyword-blank-loki.jsonl.gz"
 
-// keywordBlankGrid is every keyword template with each blank Loki's lexer skips and each character it rejects
-// (blankspace.Skipped, blankspace.Rejected) in the place of the space after the keyword, or in front of the
-// parenthesis of a call, each with the spelling with that space (or with no blank before the parenthesis) as its
-// reference.
+// keywordBlankGrid is every keyword template with each blank Loki's lexer skips (blankspace.Skipped, and two spaces)
+// and each character it rejects (blankspace.Rejected) in the place of the space after the keyword, in front of the
+// parenthesis of a call, and for a stage between its pipe and its keyword or right after the keyword written against
+// its pipe, and a label filter with each in the same places, each with the spaced spelling as its reference.
 func keywordBlankGrid() (queries, refs []string) {
 	seen := map[string]bool{}
+	add := func(q, ref string) {
+		if !seen[q] {
+			seen[q] = true
+			queries, refs = append(queries, q), append(refs, ref)
+		}
+	}
+	blanks := append(append(append([]string{}, blankspace.Skipped...), "  "), blankspace.Rejected...)
 	for _, kt := range keywordTemplates {
 		i := strings.Index(kt.tpl, keywordMark)
-		ref := kt.tpl[:i] + kt.word + kt.tpl[i+1:]
-		rest := kt.tpl[i+1:]
-		for _, b := range append(append([]string{}, blankspace.Skipped...), blankspace.Rejected...) {
-			var q string
+		before, rest := kt.tpl[:i], kt.tpl[i+1:]
+		ref := before + kt.word + rest
+		for _, b := range blanks {
 			switch {
 			case strings.HasPrefix(rest, " "):
-				q = kt.tpl[:i] + kt.word + b + rest[1:]
+				add(before+kt.word+b+rest[1:], ref)
 			case strings.HasPrefix(rest, "("):
-				q = kt.tpl[:i] + kt.word + b + rest
-			default:
-				continue
+				add(before+kt.word+b+rest, ref)
 			}
-			if !seen[q] {
-				seen[q] = true
-				queries, refs = append(queries, q), append(refs, ref)
+			if pipe := strings.TrimSuffix(before, " "); strings.HasSuffix(before, "| ") {
+				// A stage keyword after its pipe: the blank between the two, and the keyword right after the pipe with
+				// the blank after it (`|keep<CR>a`).
+				add(pipe+b+kt.word+rest, ref)
+				if strings.HasPrefix(rest, " ") {
+					add(pipe+kt.word+b+rest[1:], ref)
+				}
 			}
 		}
+	}
+	// A label filter after its pipe, and the blank between a label and its operator.
+	for _, b := range blanks {
+		add(`{app="a"} |`+b+`a="b"`, `{app="a"} | a="b"`)
+		add(`{app="a"} | json |`+b+`a="b"`, `{app="a"} | json | a="b"`)
+		add(`{app="a"} | a`+b+`= "b"`, `{app="a"} | a = "b"`)
+		add(`count_over_time({app="a"} | json |`+b+`a="b" [1m])`, `count_over_time({app="a"} | json | a="b" [1m])`)
 	}
 	return queries, refs
 }
 
 // A tab, a line feed, a carriage return or a run of them after any keyword (a function, an aggregation, a grouping, a
-// binary operator or modifier, a stage, a conversion) or before a call's parenthesis is the query with the space to
+// binary operator or modifier, a stage, a conversion), before a call's parenthesis, between a pipe and its stage
+// keyword or label filter (`|<TAB>keep a`, `|keep<CR>a`) or before a label filter's operator is the query with the space to
 // Loki, and a vertical tab, a form feed, U+0085, U+00A0 or a control byte there is Loki's parse error. The proxy's
 // parser reads the same tree for the first and answers Loki's error for the second (recorded Loki answers,
 // LVP_RUN_ORACLES=1 records them again); internal/proxy TestKeywordBlankRequestsEqualSpaced holds the requests.

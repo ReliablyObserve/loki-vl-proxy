@@ -18,6 +18,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankspace"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -245,6 +246,10 @@ func FuzzLogFlipGate(f *testing.F) {
 		`{app="a"} | json | label_format x="{{.a}}", y=z`, `{app="a"} | json | line_format "{{.a}} {{.b}}"`,
 		`{app="a"} | pattern "<_> <m> <_>" | m="GET"`, "{app=\"a\"} | regexp `(?P<m>[A-Z]+) ` | m=\"GET\"",
 		`{app="a"} | logfmt | line_format "{{.msg}}" | json | level="error"`, `{app="a"} | json | _time="x"`,
+		// A blank Loki skips where the translator reads only a space (found by this target on main).
+		"{A=\"0\"}|keep\rA", "{A=\"0\"}|drop\tA", "{A=\"0\"} |\tjson\nA", "{A=\"0\"}|logfmt\r\na", "{A=\"0\"} | json |\tline_format\t\"x\"",
+		"{A=\"0\"}  |  label_format  a=b", "{A=\"0\"}|regexp\t`(?P<a>x)`", "{A=\"0\"}|pattern\r\"<a> x\"", "{A=\"0\"}|\ta=\"b\"",
+		"({A=\"0\"} |A0> + 00)", "({A=\"0\"} | json |\tkeep\ta)",
 	} {
 		f.Add(q)
 	}
@@ -256,7 +261,8 @@ func FuzzLogFlipGate(f *testing.F) {
 	withFlippedLogStages(on, logStageFlipCandidates...)
 	off.flippedLogStages = 0
 	f.Fuzz(func(t *testing.T, q string) {
-		if len(q) > 512 || !strings.HasPrefix(strings.TrimSpace(q), "{") {
+		// A log query, written in parentheses too (`({A="0"} |A0> + 00)`, which the metric gate leaves here).
+		if len(q) > 512 || !strings.HasPrefix(logqlpkg.CanonicalizeLogRanges(strings.TrimSpace(q)), "{") {
 			return
 		}
 		// The query as the handlers and the translation read it (lowercaseQueryKeywords), and only one the request's
@@ -266,13 +272,17 @@ func FuzzLogFlipGate(f *testing.F) {
 			return
 		}
 		got, gotErr := on.translateLogResponseQuery(context.Background(), q)
-		want, wantErr := off.translateLogResponseQuery(context.Background(), respaced(q))
+		// The translator is held to the spelling it reads as Loki does: each run of the blanks Loki skips written as
+		// one space (it copies `| keep<CR>a` into a pipe VictoriaLogs reads as another query,
+		// semantics/translator-reads-only-space-between-tokens), and a parser expression with a blank before it.
+		spelled := respaced(blankspace.Collapse(q))
+		want, wantErr := off.translateLogResponseQuery(context.Background(), spelled)
 		// An unspaced parser's expression is quoted by the plan, where the translator copies the spaced spelling's as it
 		// is written: a control byte is escaped in one and raw in the other, the same string to LogsQL.
-		respelled := respaced(q) != q && sameLogsQL(got, want)
+		respelled := spelled != q && sameLogsQL(got, want)
 		// A query with an unspaced parser the screen leaves to the translator gets the translator's own text, as with
 		// nothing flipped.
-		if !respelled && respaced(q) != q {
+		if !respelled && spelled != q {
 			unflipped, _ := off.translateLogResponseQuery(context.Background(), q)
 			respelled = got == unflipped
 		}

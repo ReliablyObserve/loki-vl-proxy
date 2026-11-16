@@ -30,8 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Loki's line and column, on every route and before any VictoriaLogs request. The proxy used to read the byte as part of
   the string, and dropped a comment holding it. When such a string also has a bad escape, a line break or no closing
   quote, the first of these errors in the text is the one reported, as in Loki.
-- An unwrap written with a tab, a line feed, a carriage return or more than one space around `| unwrap`
-  (`max_over_time({app="a"} | unwrap<tab>n [1m])`) is now answered like the spelling with single spaces, also under
+- An unwrap written with a tab, a line feed, a carriage return or more than one space around `| unwrap`, or with no
+  space after the pipe (`max_over_time({app="a"} | unwrap<tab>n [1m])`, `|unwrap n`), is now answered like the
+  spelling with single spaces, also under
   topk, bottomk, sort, label_replace, a binary operation, an aggregation and offset. It used to fail with a 500, and
   `rate({app="a"} |<tab>unwrap n [5m])` counted the lines instead of reading the unwrapped value. Such a query gets a
   new response cache key, so an answer cached before is not served; it may miss the cache once after the upgrade, and

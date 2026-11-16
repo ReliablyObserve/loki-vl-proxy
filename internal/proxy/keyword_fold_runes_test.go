@@ -177,8 +177,8 @@ func TestKeywordFoldRunesShareTheLowerCaseCacheEntry(t *testing.T) {
 	}
 }
 
-// A tab, a line feed, a carriage return or a run of them after any keyword or before a call's parenthesis is the
-// spaced query to Loki (recorded Loki answers, internal/logql TestKeywordBlankMatchesLoki): the proxy sends
+// A tab, a line feed, a carriage return or a run of them after any keyword, before a call's parenthesis, or between a
+// pipe and its stage keyword or label filter (`{A="0"}|keep<CR>A`, found by FuzzLogFlipGate) is the spaced query to Loki (recorded Loki answers, internal/logql TestKeywordBlankMatchesLoki): the proxy sends
 // VictoriaLogs the requests of the spaced spelling and answers the same, on query_range and on query for a metric
 // query. A character Loki does not skip there is Loki's 400 with Loki's text before any VictoriaLogs request. The
 // spellings the string translator still reads unlike Loki are known differences of their own, pinned here so a
@@ -244,7 +244,7 @@ func TestKeywordBlankRequestsEqualSpaced(t *testing.T) {
 }
 
 // blankKnownDifference names the registry case of a blank spelling the proxy still answers unlike the spaced one, or
-// "": a tab, a line feed or a carriage return between a call's name and its parenthesis.
+// "": a tab, a line feed, a carriage return or a run of spaces between a call's name and its parenthesis.
 func blankKnownDifference(q string) string {
 	m := blankBeforeCall.FindStringSubmatch(q)
 	if m == nil {
@@ -259,9 +259,9 @@ func blankKnownDifference(q string) string {
 	return "semantics/blank-before-call-parenthesis-read-unlike-loki"
 }
 
-// blankBeforeCall finds a name followed by blanks with a tab, a line feed or a carriage return in them, and a
-// parenthesis.
-var blankBeforeCall = regexp.MustCompile(`([A-Za-z_]+)[ ]*[\t\r\n][ \t\r\n]*\(`)
+// blankBeforeCall finds a name followed by blanks that are not a single space (a tab, a line feed, a carriage return,
+// two spaces or more), and a parenthesis.
+var blankBeforeCall = regexp.MustCompile(`([A-Za-z_]+)(?:[ ]*[\t\r\n][ \t\r\n]*|[ ]{2,})\(`)
 
 // requestSetVaries reports a metric query whose set of VictoriaLogs requests varies from run to run for one spelling,
 // so a test compares its answer and not its requests: a keep under a range function
