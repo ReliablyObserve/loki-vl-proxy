@@ -273,6 +273,9 @@ func TestTailSettle_RowsVisibleOutOfOrderAllArrive(t *testing.T) {
 		{"polling", TailModeSynthetic, 2600 * time.Millisecond, 3 * time.Second, 10 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.mode == TailModeSynthetic && testing.Short() {
+				t.Skip("slow (5s or more); runs without -short")
+			}
 			t.Parallel()
 			vl := newSettleVL(t)
 			c := dialRetryClient(t, settleProxy(t, vl, tc.mode, tc.settle))
@@ -338,6 +341,9 @@ func TestTailSettle_NativeOffsetIsTheSettleDelay(t *testing.T) {
 // VictoriaLogs' later reads reach back.
 // conformance: semantics/tail-delivers-rows-visible-out-of-order, tail-reads-settled-rows, semantics/tail-survives-backend-outage
 func TestTailSettle_ReopenedStreamLosesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow (5s or more); runs without -short")
+	}
 	vl := newSettleVL(t)
 	vl.overlap = 250 * time.Millisecond
 	c := dialRetryClient(t, settleProxy(t, vl, TailModeNative, time.Second))
