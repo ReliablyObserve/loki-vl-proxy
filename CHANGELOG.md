@@ -56,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with Loki's engine at the instant and over a range: right operand, left operand, nested operand). A rejected
   value only in an operand after the first answered 200 before; the check now decides again on the hits each later
   operand records, as long as nothing of the answer went out (semantics/unwrap-conversion-error-binary-operand).
+  Rows an earlier operand already looked up are not looked up again, and once the answer is Loki's error the
+  request sends no further VictoriaLogs reads.
   The response cache asks the check before it keeps an answer, an operand's included, so a repeat of the query
   answers the same 400 (a repeated range query whose rejected value sat in the first operand answered 200 before);
   a checked VictoriaLogs answer over the body-size limit answers the limit error.
