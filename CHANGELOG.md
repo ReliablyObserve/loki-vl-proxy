@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.308.0] - 2026-11-16
+
 ### Fixed
 
 - A `topk` or `bottomk` whose first argument is not a number followed by a comma now answers Loki's parse error.
