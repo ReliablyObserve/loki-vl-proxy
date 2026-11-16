@@ -2420,6 +2420,7 @@
       "internal/proxy/detected_level_keys_gate_test.go",
       "internal/proxy/detected_level_levelless_oracle_test.go",
       "internal/proxy/detected_level_one_value_test.go",
+      "internal/proxy/detected_level_reference_test.go",
       "internal/proxy/detected_level_stream_series_test.go",
       "internal/proxy/detected_level_sweep_test.go",
       "internal/proxy/detected_level_test.go",
@@ -2434,6 +2435,7 @@
       "internal/translator/detected_level_logsql_test.go",
       "test/e2e-compat/detected_level_corpus_test.go",
       "test/e2e-compat/detected_level_filter_test.go",
+      "test/e2e-compat/detected_level_golden_test.go",
       "test/e2e-compat/detected_level_test.go",
       "test/e2e-compat/logfmt_risk_candidates_test.go"
     ],
@@ -2457,6 +2459,11 @@
     ],
     "severity/normalisation-table": [
       "test/e2e-compat/detected_level_corpus_test.go"
+    ],
+    "severity/recorded-level-table": [
+      "internal/proxy/detected_level_reference_test.go",
+      "internal/proxy/detected_level_test.go",
+      "test/e2e-compat/detected_level_golden_test.go"
     ],
     "shutdown-releases-background-work": [
       "internal/cache/cache_test.go",
@@ -2622,7 +2629,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 603,
+  "registry_items": 605,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -3136,6 +3143,10 @@
       "semantics/detected-level-pipes-known-differences",
       "semantics/json-metric-detected-level-derivation"
     ],
+    "internal/proxy/detected_level_reference_test.go": [
+      "severity-detected-level-derivation",
+      "severity/recorded-level-table"
+    ],
     "internal/proxy/detected_level_response_test.go": [
       "severity-exposure-surfaces",
       "severity/detected-level-stage-side-effects"
@@ -3158,7 +3169,8 @@
       "severity-detected-level-derivation"
     ],
     "internal/proxy/detected_level_test.go": [
-      "severity-detected-level-derivation"
+      "severity-detected-level-derivation",
+      "severity/recorded-level-table"
     ],
     "internal/proxy/detected_level_unknown_differential_test.go": [
       "semantics/detected-level-missing-from-stats-answers",
@@ -5138,6 +5150,10 @@
       "severity-detected-level-derivation",
       "severity/detected-level-filter-json-level"
     ],
+    "test/e2e-compat/detected_level_golden_test.go": [
+      "severity-detected-level-derivation",
+      "severity/recorded-level-table"
+    ],
     "test/e2e-compat/detected_level_keys_gate_test.go": [
       "semantics/json-metric-detected-level-derivation"
     ],
@@ -5854,7 +5870,7 @@
       "drilldown/long-range-pieces-answer-like-loki"
     ]
   },
-  "tests_with_markers": 702,
+  "tests_with_markers": 704,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5948,8 +5964,9 @@
     "semantics/without-fold-detected-level-unknown",
     "service-name-derivation",
     "severity/otlp-severity-before-vl-1.50",
+    "severity/stored-log-dot-level-in-metric-chain",
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 398
+  "wired_items": 399
 }

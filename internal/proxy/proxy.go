@@ -3064,12 +3064,12 @@ func (p *Proxy) responseProfileCacheKey(r *http.Request) string {
 
 // detectedLevelCacheKey versions cached log responses by the detected_level
 // derivation, so entries written before it, or with the other body-scan
-// setting, are never served.
+// setting, are never served. dl2: a stored log.level field is no level field.
 func (p *Proxy) detectedLevelCacheKey() string {
 	if p.detectedLevelBodyScan {
-		return "dl1"
+		return "dl2"
 	}
-	return "dl1-stored"
+	return "dl2-stored"
 }
 
 // lokiInstantLogQueryError is Loki's rejection of a log query sent to the
