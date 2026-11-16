@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"slices"
+	"time"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -51,13 +53,18 @@ func streamDecidesLevel(stream map[string]string) bool {
 // level: every name streamDecidesLevel reads is missing or empty. VictoriaLogs
 // matches a missing label with ="" in a stream filter.
 var levelLessStreamFilter = sync.OnceValue(func() string {
+	return logsql.StreamFilter{Matchers: levelLessMatchers()}.String()
+})
+
+// levelLessMatchers are the matchers of levelLessStreamFilter.
+func levelLessMatchers() []logsql.LabelMatcher {
 	matchers := make([]logsql.LabelMatcher, 0, len(levelFieldNames)+1)
 	matchers = append(matchers, logsql.LabelMatcher{Name: detectedLevelLabel, Op: "="})
 	for _, name := range levelFieldNames {
 		matchers = append(matchers, logsql.LabelMatcher{Name: name, Op: "="})
 	}
-	return logsql.StreamFilter{Matchers: matchers}.String()
-})
+	return matchers
+}
 
 // levelLessParams returns params restricted to the streams that decide no
 // level, through extra_filters: an argument VictoriaLogs ANDs with the query,
@@ -93,12 +100,9 @@ var statsStreamKey = []byte(`"_stream":`)
 // the read grouped by (ensureStreamDetectedLevel reads it), is decided. The
 // merged answer holds at most maxSeries series, as the read does
 // (seriesCountingReader).
-func (p *Proxy) withLevelLessStreams(ctx context.Context, path string, params url.Values, body []byte, maxSeries int) ([]byte, error) {
-	if !bytes.Contains(body, statsStreamKey) {
-		return body, nil
-	}
-	// The labels of each series are read in place: only an answer that names a
-	// stream without a level label is parsed and rebuilt.
+// levelLessStreamsOf returns the streams of a per-stream stats answer that
+// decide no level and carry no detected_level, or nil.
+func levelLessStreamsOf(body []byte) map[string]bool {
 	var levelLess map[string]bool
 	_, _ = jsonparser.ArrayEach(body, func(res []byte, _ jsonparser.ValueType, _ int, _ error) {
 		metric, kind, _, err := jsonparser.Get(res, "metric")
@@ -120,8 +124,24 @@ func (p *Proxy) withLevelLessStreams(ctx context.Context, path string, params ur
 		}
 		levelLess[streamStr] = true
 	}, "data", "result")
-	if levelLess == nil {
-		return body, nil
+	return levelLess
+}
+
+func (p *Proxy) withLevelLessStreams(ctx context.Context, path string, params url.Values, body []byte, maxSeries int) ([]byte, error) {
+	// A first read restricted to the labelled streams (levelLessFirstRead) is
+	// followed by the read of the others whatever it answered. Otherwise the
+	// labels of each series are read in place, and only an answer that names a
+	// stream without a level label is parsed and rebuilt.
+	params, known := withoutLabelledRestriction(params)
+	var levelLess map[string]bool
+	if !known {
+		if !bytes.Contains(body, statsStreamKey) {
+			return body, nil
+		}
+		if levelLess = levelLessStreamsOf(body); levelLess == nil {
+			return body, nil
+		}
+		p.rememberLevelLessBase(ctx, path, params)
 	}
 	grouped, ok := logsql.WithGroupKeyAfterStream(params.Get("query"), detectedLevelLabel)
 	if !ok {
@@ -129,7 +149,7 @@ func (p *Proxy) withLevelLessStreams(ctx context.Context, path string, params ur
 	}
 	follow := levelLessParams(params)
 	follow.Set("query", withLevelChainAhead(grouped))
-	resp, err := p.vlPost(ctx, path, follow)
+	resp, err := p.vlPost(context.WithValue(ctx, levelLessReadKey{}, true), path, follow)
 	if err != nil {
 		return nil, &statsUpstreamError{err: err}
 	}
@@ -155,6 +175,10 @@ func (p *Proxy) withLevelLessStreams(ctx context.Context, path string, params ur
 	// it answers; a stream it does not answer (no row matched any more) keeps
 	// the first read's series.
 	derivedResults := derived.GetArray("data", "result")
+	if known && len(derivedResults) == 0 {
+		// The base holds no stream without a level label any more.
+		p.forgetLevelLessBase(ctx, path, params)
+	}
 	answered := make(map[string]bool, len(levelLess))
 	for _, res := range derivedResults {
 		answered[string(res.GetObject("metric").Get("_stream").GetStringBytes())] = true
@@ -208,4 +232,73 @@ func (p *Proxy) takeStatsQueryRangeSlot(ctx context.Context) (func(), error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+}
+
+// levelLessReadKey marks the read of the streams without a level label: its
+// chain is narrowed on the instant stats route too, and its presence witness
+// rides every stats pipe (pruneLevelChain).
+type levelLessReadKey struct{}
+
+func levelLessRead(ctx context.Context) bool {
+	on, _ := ctx.Value(levelLessReadKey{}).(bool)
+	return on
+}
+
+// labelledStreamFilter is the complement of levelLessStreamFilter: the streams
+// whose labels decide a level.
+var labelledStreamFilter = sync.OnceValue(func() string {
+	return logsql.Exclude{Expr: logsql.StreamFilter{Matchers: levelLessMatchers()}}.String()
+})
+
+// levelLessBaseTTL is how long the proxy remembers that a per-stream read held
+// a stream without a level label.
+const levelLessBaseTTL = 10 * time.Minute
+
+func (p *Proxy) levelLessBaseKey(ctx context.Context, path string, params url.Values) string {
+	return p.windowProbeKey(ctx, "level-less-base:v1:"+path+"\x00"+params.Get("query"))
+}
+
+// levelLessFirstRead returns the params of a per-stream stats read. When the
+// same read lately named a stream without a level label, it is restricted to
+// the labelled streams: the others are read once, with the chain
+// (withLevelLessStreams), instead of twice. The two reads cover disjoint
+// streams whose union is every stream the read matches.
+func (p *Proxy) levelLessFirstRead(ctx context.Context, path string, params url.Values) url.Values {
+	if p.cache == nil {
+		return params
+	}
+	if _, ok := p.cacheGet(ctx, p.cache, p.levelLessBaseKey(ctx, path, params)); !ok {
+		return params
+	}
+	out := cloneURLValues(params)
+	out.Add("extra_filters", labelledStreamFilter())
+	return out
+}
+
+func (p *Proxy) rememberLevelLessBase(ctx context.Context, path string, params url.Values) {
+	if p.cache != nil {
+		p.cache.SetWithTTL(p.levelLessBaseKey(ctx, path, params), []byte("1"), levelLessBaseTTL)
+	}
+}
+
+func (p *Proxy) forgetLevelLessBase(ctx context.Context, path string, params url.Values) {
+	if p.cache != nil {
+		p.cache.Invalidate(p.levelLessBaseKey(ctx, path, params))
+	}
+}
+
+// withoutLabelledRestriction returns params without the restriction
+// levelLessFirstRead added, and whether it was there.
+func withoutLabelledRestriction(params url.Values) (url.Values, bool) {
+	filters := params["extra_filters"]
+	at := slices.Index(filters, labelledStreamFilter())
+	if at < 0 {
+		return params, false
+	}
+	out := cloneURLValues(params)
+	out["extra_filters"] = slices.Delete(slices.Clone(filters), at, at+1)
+	if len(out["extra_filters"]) == 0 {
+		delete(out, "extra_filters")
+	}
+	return out, true
 }
