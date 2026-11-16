@@ -1044,6 +1044,10 @@
       "internal/proxy/metadata_edge_refresh_test.go",
       "test/e2e-compat/label_freshness_e2e_test.go"
     ],
+    "quality/probe-regexp-parse-cost": [
+      "internal/proxy/vl_regexp_class_oracle_test.go",
+      "internal/proxy/vl_regexp_class_test.go"
+    ],
     "quality/query-range-extent-cache": [
       "internal/proxy/first_last_window_cache_test.go",
       "internal/proxy/manual_metric_encoding_test.go",
@@ -2531,7 +2535,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 601,
+  "registry_items": 602,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4228,6 +4232,12 @@
     "internal/proxy/vl_calls_header_test.go": [
       "quality/edge-cache-oversized-reply"
     ],
+    "internal/proxy/vl_regexp_class_oracle_test.go": [
+      "quality/probe-regexp-parse-cost"
+    ],
+    "internal/proxy/vl_regexp_class_test.go": [
+      "quality/probe-regexp-parse-cost"
+    ],
     "internal/proxy/volume_segments_test.go": [
       "loki_api_v1_index_volume",
       "quality/index-volume-settled-segments"
@@ -5620,7 +5630,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 665,
+  "tests_with_markers": 667,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -5722,5 +5732,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 387
+  "wired_items": 388
 }

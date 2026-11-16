@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-29 of 109 items are locked; 5 carry an effort exception.
+29 of 110 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -145,23 +145,23 @@ Rows the newest weekly run measured; rows it does not re-measure are listed unde
 | DP1 patterns of a plain-text service | 1h | 0.33s | 0.02s | 0.01s | 0.02s | `drilldown/patterns-full-range-counts`, `drilldown/patterns-one-series-per-level` |
 | DP2 patterns of an environment | 1h | 1.62s | 0.27s | 0.15s | 0.28s | `drilldown/patterns-full-range-counts`, `drilldown/patterns-one-series-per-level` |
 | DP2 patterns of an environment | 24h | 0.34s | 0.20s | 0.29s | 0.21s | `drilldown/patterns-full-range-counts`, `drilldown/patterns-one-series-per-level` |
-| X1 json filter level_extracted, by level | 1h | 0.36s | 0.27s | 0.06s | 0.06s | `parser-error-and-label-collision`, `quality/json-label-probe-gates`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
-| E7 json count by level_extracted | 1h | 0.14s | 0.06s | 0.05s | 0.02s | `loki-compatible-profile`, `profiles/structured-metadata-label-collision`, `quality/json-label-probe-gates`, `semantics/extracted-suffix-collision` |
+| X1 json filter level_extracted, by level | 1h | 0.36s | 0.27s | 0.06s | 0.06s | `parser-error-and-label-collision`, `quality/json-label-probe-gates`, `quality/probe-regexp-parse-cost`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
+| E7 json count by level_extracted | 1h | 0.14s | 0.06s | 0.05s | 0.02s | `loki-compatible-profile`, `profiles/structured-metadata-label-collision`, `quality/json-label-probe-gates`, `quality/probe-regexp-parse-cost`, `semantics/extracted-suffix-collision` |
 | IP4 count, json ip=ip(CIDR) | 1h | 0.13s | 0.06s | 0.04s | 0.01s | `semantics/ip-filter-json-stats-pushdown`, `semantics/ip-label-filter-missing-label` |
 | DLV1 drilldown logs volume, json | 6h | 0.33s | 0.25s | 0.04s | 0.03s | `semantics/json-detected-level-error-split`, `semantics/json-metric-detected-level-derivation`, `severity-detected-level-derivation` |
-| A explore volume, 2 filters, drop | 1h | 0.43s | 0.33s | 0.04s | 0.11s | `explore-logs-volume-json`, `parser-error-and-label-collision`, `semantics/json-filter-pushdown-translated-label`, `semantics/json-filter-pushdown-underscore-label` |
-| A explore volume, 2 filters, drop | 24h | 6.73s | 5.07s | 0.06s | 0.11s | `explore-logs-volume-json`, `parser-error-and-label-collision`, `semantics/json-filter-pushdown-translated-label`, `semantics/json-filter-pushdown-underscore-label` |
+| A explore volume, 2 filters, drop | 1h | 0.43s | 0.33s | 0.04s | 0.11s | `explore-logs-volume-json`, `parser-error-and-label-collision`, `quality/probe-regexp-parse-cost`, `semantics/json-filter-pushdown-translated-label`, `semantics/json-filter-pushdown-underscore-label` |
+| A explore volume, 2 filters, drop | 24h | 6.73s | 5.07s | 0.06s | 0.11s | `explore-logs-volume-json`, `parser-error-and-label-collision`, `quality/probe-regexp-parse-cost`, `semantics/json-filter-pushdown-translated-label`, `semantics/json-filter-pushdown-underscore-label` |
 | F field breakdown service_version (explore) | 1h | 0.35s | 0.25s | 0.04s | 0.08s | `parsed-label-series-identity`, `semantics/json-filter-pushdown-underscore-label`, `semantics/json-label-spelling-probe` |
-| K6 count by kept key, json | 24h | 1.47s | 0.93s | 0.06s | 0.01s | `operator-keep`, `semantics/keep-leaves-labels-loki-drops` |
-| K6 count by kept key, json | 6h | 0.40s | 0.22s | 0.07s | 0.01s | `operator-keep`, `semantics/keep-leaves-labels-loki-drops` |
+| K6 count by kept key, json | 24h | 1.47s | 0.93s | 0.06s | 0.01s | `operator-keep`, `quality/probe-regexp-parse-cost`, `semantics/keep-leaves-labels-loki-drops` |
+| K6 count by kept key, json | 6h | 0.40s | 0.22s | 0.07s | 0.01s | `operator-keep`, `quality/probe-regexp-parse-cost`, `semantics/keep-leaves-labels-loki-drops` |
 | LF10 drilldown logs, level pill multi-select, json service | 24h | 0.32s | 0.12s | 0.03s | 0.29s | `drilldown-service-landing`, `severity-detected-level-derivation`, `severity/detected-level-filter-json-level` |
 | LF14 explore volume, plain-text service | 24h | 0.17s | 0.10s | 0.03s | 0.01s | `severity-detected-level-derivation`, `severity/detected-level-filter-json-level` |
 | LF20 logfmt count by detected_level | 24h | 0.34s | 0.26s | 0.03s | 0.01s | `parser-error-and-label-collision`, `parser-logfmt`, `severity-detected-level-derivation` |
 | LF21 logfmt count by detected_level, level filter | 24h | 0.27s | 0.20s | 0.02s | 0.01s | `parser-logfmt`, `severity-detected-level-derivation`, `severity/detected-level-filter-json-level` |
 | LF29 logs, drop detected_level | 1h | 0.08s | 0.01s | 0.04s | 0.01s | `operator-drop`, `semantics/query-range-window-lead-window`, `severity-exposure-surfaces`, `severity/detected-level-stage-side-effects` |
 | LF9 drilldown logs, level pill, logfmt service | 24h | 0.22s | 0.15s | 0.03s | 0.18s | `drilldown-service-landing`, `severity-detected-level-derivation`, `severity/detected-level-filter-json-level` |
-| LS8 json count by level_extracted, collision | 1h | 0.14s | 0.04s | 0.06s | 0.01s | `parser-error-and-label-collision`, `quality/json-label-probe-gates`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
-| LS8 json count by level_extracted, collision | 6h | 0.56s | 0.17s | 0.07s | 0.01s | `parser-error-and-label-collision`, `quality/json-label-probe-gates`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
+| LS8 json count by level_extracted, collision | 1h | 0.14s | 0.04s | 0.06s | 0.01s | `parser-error-and-label-collision`, `quality/json-label-probe-gates`, `quality/probe-regexp-parse-cost`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
+| LS8 json count by level_extracted, collision | 6h | 0.56s | 0.17s | 0.07s | 0.01s | `parser-error-and-label-collision`, `quality/json-label-probe-gates`, `quality/probe-regexp-parse-cost`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
 | A5 drilldown exclude, volume by detected_level | 24h | 0.24s | 0.15s | 0.03s | 0.01s | `semantics/pattern-line-filter-anchoring` |
 | E2 json duration_ms p95 by service | 6h | 0.35s | 0.28s | 0.02s | 0.02s | `parser-error-and-label-collision`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error` |
 
@@ -244,6 +244,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `quality/index-volume-settled-segments` | 1 × 4 ranges | 4 same | worst 0.35s / 0.01s (24h) | 0.11s † / 0.09s | differs | not locked |
 | `quality/json-label-probe-gates` | 6 × 4 ranges | 16 same | worst 6.52s / 0.08s (24h) | 6.50s / 0.07s | same; 4 slower than Loki cold | not locked |
 | `quality/logfmt-parse-risk-candidates` | 1 × 4 ranges | 4 same | worst 1.46s / 0.02s (24h) | 8.07s / 0.07s | same | not locked |
+| `quality/probe-regexp-parse-cost` | 6 × 4 ranges | 18 same | worst 6.73s / 0.06s (24h) | 5.07s / 0.11s | same; 8 slower than Loki cold | not locked |
 | `quality/query-range-extent-cache-large-answer` | 3 × 5 ranges | 14 same | worst 4.48s / 0.74s (24h) | 7.15s / 0.65s | differs | not locked |
 | `quality/query-range-settled-steps` | 52 × 5 ranges | 9 faster, 4 fixed, 171 same | worst 2.65s / 0.02s (24h) | 6.97s / 0.07s | differs; 1 slower than Loki cold | not locked |
 | `quality/stats-answer-transform-cost` | 3 × 5 ranges | 14 same | worst 4.48s / 0.74s (24h) | 7.15s / 0.65s | differs | not locked |
