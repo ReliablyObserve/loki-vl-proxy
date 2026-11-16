@@ -52,7 +52,7 @@ func TestBuildCoverage(t *testing.T) {
 		"a/open2":{"verdict":"blocked","class":"fixture","expected":"differ","gap_status":"open","reason":"needs data the stack does not hold"}}}`
 	write(t, filepath.Join(in.CasesDir, "cases-v1.53.0.json"), run)
 	write(t, filepath.Join(in.CasesDir, "cases-v1.49.0.json"), strings.ReplaceAll(run, "v1.53.0", "v1.49.0"))
-	in.Wiring = write(t, filepath.Join(t.TempDir(), "wiring.json"), `{"item_to_tests":{"a/fixed":["internal/proxy/fixed_test.go"]}}`)
+	in.Wiring = write(t, filepath.Join(t.TempDir(), "wiring.json"), `{"item_to_tests":{"a/fixed":["internal/proxy/fixed_test.go"],"a/open2":["test/e2e-compat/x_test.go"]}}`)
 	in.Runs = write(t, filepath.Join(t.TempDir(), "runs.json"), `{"fetched":"2026-11-14T07:00:00Z","workflows":{
 		"query-corpus.yaml":{"main":{"conclusion":"success","date":"2026-11-14","url":"https://x/1"}},
 		"ci.yaml":{"main":{"conclusion":"success","date":"2026-11-14","url":"https://x/ci"}}}}`)
@@ -74,7 +74,8 @@ func TestBuildCoverage(t *testing.T) {
 		t.Errorf("a case proven by a test names it: %+v", proof)
 	}
 	none := byCase["a/open2"]["v1.53.0"].(map[string]any)["coverage"].(map[string]any)
-	if none["state"] != coverageNone || !strings.Contains(none["reason"].(string), "needs data the stack does not hold") {
+	if none["state"] != coverageNone || !strings.Contains(none["reason"].(string), "needs data the stack does not hold") ||
+		!strings.Contains(none["reason"].(string), "wired only to 1 test file(s) ci.yaml's test job does not run") {
 		t.Errorf("a case not proven says why: %+v", none)
 	}
 	if _, has := byCase["a/open1"]["v1.53.0"].(map[string]any)["coverage"]; has {
@@ -82,7 +83,7 @@ func TestBuildCoverage(t *testing.T) {
 	}
 	md := Report(s, nil)
 	for _, want := range []string{"| Coverage, VictoriaLogs v1.53.0 | 2 | 1 | 66.7% |",
-		"Coverage, VictoriaLogs v1.53.0: 2 of 3 cases proven (live 1, by a named passing test 1); not proven 1 (blocked: fixture 1); tests passing: ci.yaml run of 2026-11-14 on main, https://x/ci."} {
+		"Coverage, VictoriaLogs v1.53.0: 2 of 3 cases proven (live 1, by a named test file ci.yaml runs 1); not proven 1 (blocked: fixture 1); tests passing: ci.yaml run of 2026-11-14 on main, https://x/ci (the wiring is per test file, not per function)."} {
 		if !strings.Contains(md, want) {
 			t.Errorf("report lacks %q:\n%s", want, md)
 		}
@@ -129,5 +130,35 @@ func TestExactRepeatText(t *testing.T) {
 	}
 	if md := Markdown(s); !strings.Contains(md, "0 rows lost reuse. Exact repeats: 110 rows, 109 without a VictoriaLogs call, 1 calls in all.") {
 		t.Errorf("the markdown does not report the exact repeat:\n%s", md)
+	}
+}
+
+// Only a wired file ci.yaml's test job runs counts: a Go test file under internal/, cmd/ or pkg/ without a build tag. An
+// e2e, Playwright or oracle test is wired too, and a green ci.yaml says nothing about it.
+func TestOnlyFilesCIRunsProveACase(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "internal/p/plain_test.go"), "package p\n")
+	write(t, filepath.Join(dir, "internal/p/tagged_test.go"), "//go:build oracle\n\npackage p\n")
+	write(t, filepath.Join(dir, "internal/p/note_test.go"), "// a comment that mentions //go:build later\npackage p\n")
+	write(t, filepath.Join(dir, "test/e2e-compat/x_test.go"), "package e\n")
+	t.Chdir(dir)
+	for file, want := range map[string]bool{
+		"internal/p/plain_test.go": true, "internal/p/tagged_test.go": false, "internal/p/note_test.go": true,
+		"internal/p/missing_test.go": true, // unreadable: judged by its path
+		"test/e2e-compat/x_test.go":  false, "test/e2e-ui/tests/x.spec.ts": false, "internal/p/helper.go": false,
+		"cmd/proxy/main_test.go": true, "pkg/x/y_test.go": true, "scripts/x_test.go": false,
+	} {
+		if got := runsInCI(file); got != want {
+			t.Errorf("runsInCI(%q) = %v, want %v", file, got, want)
+		}
+	}
+	files := []string{"internal/p/plain_test.go", "internal/p/tagged_test.go", "test/e2e-compat/x_test.go"}
+	if got := ciTests(files); len(got) != 1 || got[0] != files[0] {
+		t.Errorf("ciTests %v", got)
+	}
+	// A case wired only to tests CI does not run is not proven by a test, and says so.
+	o := caseOutcome{verdict: "empty", reason: "both sides hold no line"}
+	if state, _ := coverageOf(o, ciTests([]string{"test/e2e-compat/x_test.go"}), greenCI); state != coverageNone {
+		t.Errorf("an e2e-only case is %s", state)
 	}
 }

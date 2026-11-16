@@ -414,7 +414,7 @@ func TestLiveCounterAsksTheCasesTenant(t *testing.T) {
 	if a, ok := rp.Count("vl", CountKey{Selector: `{app="a"}`, Start: 1, End: int64(time.Hour), Tenant: "7"}); !ok || a.Count != 5 {
 		t.Errorf("replayed tenant count %+v %v", a, ok)
 	}
-	for tenant, want := range map[string]bool{"": false, "0": true, "7": true, "tenant-a": false, "a|b": false, "-1": false} {
+	for tenant, want := range map[string]bool{"": false, "0": true, "7": true, "tenant-a": false, "a|b": false, "-1": false, "007": false, "+7": false, "4294967295": true, "4294967296": false} {
 		if countableTenant(tenant) != want {
 			t.Errorf("countableTenant(%q) = %v", tenant, !want)
 		}

@@ -2,15 +2,57 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path"
+	"regexp"
 	"sort"
 	"strings"
 )
 
+// runsInCI reports whether ci.yaml's test job runs a wired test file: a Go test file under internal/, cmd/ or pkg/ whose
+// build constraint, when it has one, is none (an e2e, oracle or integration tag keeps it out of `go test ./...`). A
+// file that cannot be read is judged by its path alone.
+func runsInCI(file string) bool {
+	if !strings.HasSuffix(file, "_test.go") {
+		return false
+	}
+	switch strings.SplitN(file, "/", 2)[0] {
+	case "internal", "cmd", "pkg":
+	default:
+		return false
+	}
+	raw, err := os.ReadFile(path.Clean(file))
+	if err != nil {
+		return true
+	}
+	head := raw
+	if len(head) > 1024 {
+		head = head[:1024]
+	}
+	return !buildTag.Match(head)
+}
+
+var buildTag = regexp.MustCompile(`(?m)^//go:build `)
+
+// ciTests are the wired files ci.yaml's test job runs.
+func ciTests(files []string) []string {
+	var out []string
+	for _, f := range files {
+		if runsInCI(f) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // Coverage: how each registry case is proven, in three states, per VictoriaLogs version.
 //
 //	proven live        Loki and the proxy answered the case on equal, non-empty data (verdict matches or differs)
-//	proven by a test   not proven live, and wired to a named test (conformance/registry/generated/wiring.json) while
-//	                   the last ci.yaml run on main is green: the tests are named, and the run that passed them is cited
+//	proven by a test   not proven live, and wired (conformance/registry/generated/wiring.json) to a test file that
+//	                   ci.yaml's test job runs (a Go test file under internal/, cmd/ or pkg/ with no build tag), while
+//	                   the last ci.yaml run on main is green: the files are named, and the run that passed them is cited.
+//	                   The wiring is per file, not per test function, and an e2e, Playwright or oracle test does not
+//	                   count: ci.yaml's green says nothing about the tests it did not run
 //	not proven         neither, with the reason the live run gave (empty on both sides, blocked and its class, not
 //	                   executable, data that differs, ...), or the wired tests' CI state when it is not green
 //
@@ -89,8 +131,13 @@ func (s *Summary) coverage(in Inputs, merged map[string]any) error {
 		for _, id := range ids {
 			o := s.outcomes[v][id]
 			part.Cases++
-			tests := wiring.ItemToTests[id]
+			wired := wiring.ItemToTests[id]
+			tests := ciTests(wired)
 			state, why := coverageOf(o, tests, ci)
+			if state == coverageNone && len(tests) == 0 && len(wired) > 0 {
+				why.reason = join(strings.TrimSuffix(why.reason, "; no named test is wired to it"),
+					fmt.Sprintf("wired only to %d test file(s) ci.yaml's test job does not run (e2e, Playwright, oracle)", len(wired)))
+			}
 			switch state {
 			case coverageLive:
 				part.ProvenLive++
@@ -154,7 +201,7 @@ func join(a, b string) string {
 // coverageDetail is the report's text for one version: the three states and why the rest is not proven.
 func coverageDetail(v string, c *CoveragePart) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Coverage, VictoriaLogs %s: %d of %d cases proven (live %d, by a named passing test %d); not proven %d",
+	fmt.Fprintf(&b, "Coverage, VictoriaLogs %s: %d of %d cases proven (live %d, by a named test file ci.yaml runs %d); not proven %d",
 		v, c.ProvenLive+c.ProvenByTest, c.Cases, c.ProvenLive, c.ProvenByTest, c.NotProven)
 	if len(c.NotProvenBy) > 0 {
 		keys := make([]string, 0, len(c.NotProvenBy))
@@ -170,7 +217,7 @@ func coverageDetail(v string, c *CoveragePart) string {
 	}
 	switch {
 	case c.CI.Green():
-		fmt.Fprintf(&b, "; tests passing: %s run of %s on main, %s.", c.CI.Workflow, c.CI.Date, c.CI.URL)
+		fmt.Fprintf(&b, "; tests passing: %s run of %s on main, %s (the wiring is per test file, not per function).", c.CI.Workflow, c.CI.Date, c.CI.URL)
 	case c.CI != nil:
 		fmt.Fprintf(&b, "; wired tests are not counted: the last %s run on main ended %s.", c.CI.Workflow, c.CI.Conclusion)
 	default:

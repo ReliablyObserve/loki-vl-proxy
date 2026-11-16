@@ -190,7 +190,7 @@ class CallsHeaderFlagTest(unittest.TestCase):
         self.assertFalse(by["release"].calls_header)
         self.assertEqual(by["release"].args, ["-backend=x", "-debug-vl-calls-header=false"])  # not touched
 
-    def test_a_build_not_asked_about_is_probed(self):
+    def test_no_build_gets_the_flag_unless_the_caller_asks(self):
         class P(stack.Proxy):
             def start(self):
                 pass
@@ -199,11 +199,12 @@ class CallsHeaderFlagTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as out, \
                 mock.patch.object(stack, "proxy_command", return_value=(["-backend=x"], {})), \
                 mock.patch.object(stack, "source_align_default", return_value=False), \
-                mock.patch.object(stack, "probe_calls_header_support", side_effect=lambda binary: binary == "/bin/main"), \
+                mock.patch.object(stack, "probe_calls_header_support", side_effect=AssertionError("not probed")), \
                 mock.patch.object(stack, "Proxy", P):
             stack.start_proxies([("release", "/bin/release", "/t1", 1000), ("main", "/bin/main", "/t2", 1002)], out,
                                 mock.Mock(vl="http://vl"), "svc", proxies, supported={"release": False, "main": False})
-        self.assertEqual([(p.name, p.calls_header) for p in proxies], [("release", False), ("main", True)])
+        self.assertEqual([(p.name, p.calls_header, p.args) for p in proxies],
+                         [("release", False, ["-backend=x"]), ("main", False, ["-backend=x"])])
 
 
 class AlignFlagTest(unittest.TestCase):

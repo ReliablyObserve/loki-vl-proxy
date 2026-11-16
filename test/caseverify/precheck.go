@@ -36,16 +36,16 @@ type CountKey struct {
 	Tenant string `json:"tenant,omitempty"`
 }
 
-// countableTenant reports whether VictoriaLogs can count a tenant's lines: the proxy routes a numeric X-Scope-OrgID
-// to the VictoriaLogs account of that number (-tenant.numeric-passthrough, which the stack runs), so the count is
-// asked of that account. Any other tenant (a name, a multi-tenant "a|b" list) needs a tenant map this check does
-// not read.
+// countableTenant reports whether VictoriaLogs can count a tenant's lines: the proxy routes a canonical decimal
+// X-Scope-OrgID (no sign, no leading zero, up to 4294967295) to the VictoriaLogs account of that number
+// (-tenant.numeric-passthrough, which the stack runs), so the count is asked of that account. Any other tenant (a
+// name, "007", a multi-tenant "a|b" list) is refused or needs a tenant map this check does not read.
 func countableTenant(tenant string) bool {
-	if tenant == "" {
+	if tenant == "" || (len(tenant) > 1 && tenant[0] == '0') {
 		return false
 	}
 	_, err := strconv.ParseUint(tenant, 10, 32)
-	return err == nil
+	return err == nil && !strings.HasPrefix(tenant, "+")
 }
 
 // CountAnswer is one side's count. Empty is set when Loki's count query answered no series at all (its

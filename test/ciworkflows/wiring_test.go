@@ -207,9 +207,14 @@ func TestDailyReportBranchRunAndStack(t *testing.T) {
 	verify := jobs["verify"]
 	upAt, up := verify.step(t, "Start the stack")
 	backfillAt, backfill := verify.step(t, "Backfill the log generator's history")
+	liveAt, live := verify.step(t, "Start the live log generator")
 	caseAt, cases := verify.step(t, "Every executable registry case against Loki and the proxy")
-	if !(upAt < backfillAt && backfillAt < caseAt) {
-		t.Errorf("the stack starts (%d), is backfilled (%d), and only then is verified (%d)", upAt, backfillAt, caseAt)
+	if upAt >= backfillAt || backfillAt >= liveAt || liveAt >= caseAt {
+		t.Errorf("the stack starts (%d), is backfilled (%d), the live generator follows (%d), and only then is verified (%d)", upAt, backfillAt, liveAt, caseAt)
+	}
+	// The history is written before any live line: Loki refuses a line older than the newest of its stream.
+	if strings.Contains(up, "--profile ui") || !strings.Contains(live, "--profile ui up -d --no-build log-generator") {
+		t.Errorf("the live generator must not start with the stack:\n%s\n%s", up, live)
 	}
 	// The flag goes to every proxy of the stack through a copy of its file, which the later compose steps use too.
 	if !strings.Contains(up, "docker-compose.daily.yml") || !strings.Contains(up, "-debug-vl-calls-header=true") ||
@@ -217,13 +222,13 @@ func TestDailyReportBranchRunAndStack(t *testing.T) {
 		t.Errorf("the stack's proxies do not all get the call header:\n%s", up)
 	}
 	if !strings.Contains(backfill, "LOG_BACKFILL_SECONDS=21600") || !strings.Contains(backfill, "LOG_BACKFILL_ONLY=1") ||
-		!strings.Contains(backfill, "LOG_BACKFILL_END=$((STACK_UP_AT - 60))") {
+		!strings.Contains(backfill, `LOG_BACKFILL_END="$((now - 60))"`) {
 		t.Errorf("backfill:\n%s", backfill)
 	}
 	// The fixture seed runs in the step of the verifier (its background process stops with the step) and the
 	// verifier waits for every stream to be ready first.
 	seedAt, readyAt, verifierAt := strings.Index(cases, "casefixtures-seed\" -loki"), strings.Index(cases, "grep -c '^ready '"), strings.Index(cases, "go run ./test/caseverify")
-	if seedAt < 0 || !strings.Contains(cases, "-follow") || !(seedAt < readyAt && readyAt < verifierAt) || !strings.Contains(cases, "trap 'kill") {
+	if seedAt < 0 || !strings.Contains(cases, "-follow") || seedAt >= readyAt || readyAt >= verifierAt || !strings.Contains(cases, "trap 'kill") {
 		t.Errorf("the verifier does not wait for the fixture seed:\n%s", cases)
 	}
 	if strings.Contains(string(raw), "pkill") || strings.Contains(string(raw), "killall") {

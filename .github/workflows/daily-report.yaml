@@ -248,10 +248,9 @@ jobs:
           fi
           echo "COMPOSE_FILE=docker-compose.daily.yml" >> "$GITHUB_ENV"
           export COMPOSE_FILE=docker-compose.daily.yml
-          # The generator's history ends a minute before the live generator starts: no line is written twice.
-          echo "STACK_UP_AT=$(date +%s)" >> "$GITHUB_ENV"
-          # The ui profile adds the log generator the registry cases' services come from.
-          docker compose --profile ui up -d --no-build
+          # Without the ui profile: the live log generator starts after the backfill below, so its lines are never
+          # older than the history's (Loki refuses a line older than the newest of its stream by about an hour).
+          docker compose up -d --no-build
           ../../scripts/ci/wait_e2e_stack.sh 240
 
       - name: Backfill the log generator's history
@@ -260,11 +259,19 @@ jobs:
           # Six hours at one batch per 10 s, written to Loki and VictoriaLogs with the same bytes (the generator's
           # own backfill, as bench/ab seeds a stack). Without it the stack holds minutes of data and most cases
           # read an empty window on both sides, which proves nothing.
+          now="$(date +%s)"
           LOKI_URL=http://127.0.0.1:13101 VL_URL=http://127.0.0.1:19428 LOG_BATCH=8 \
             LOG_BACKFILL_SECONDS=21600 LOG_BACKFILL_INTERVAL=10 LOG_BACKFILL_ONLY=1 \
-            LOG_BACKFILL_END=$((STACK_UP_AT - 60)) LOG_BACKFILL_SEED="${STACK_UP_AT}" \
+            LOG_BACKFILL_END="$((now - 60))" LOG_BACKFILL_SEED="$now" \
             python3 test/e2e-compat/log-generator.py
           curl -fsS -X POST http://127.0.0.1:13101/flush || echo "::warning::Loki /flush failed; the counts decide"
+
+      - name: Start the live log generator
+        working-directory: test/e2e-compat
+        run: |
+          set -euo pipefail
+          # The ui profile is the generator the registry cases' services come from: its lines continue the history.
+          docker compose --profile ui up -d --no-build log-generator
 
       - name: Ingest the e2e data and wait for Loki's metric path
         run: |

@@ -25,9 +25,9 @@ A check is one area of this table at its target. Counted items are the units of 
 
 - Registry cases: fixed 4 + no gap 2 are good; accepted 1 (documented 1, owner-kept 0) and upstream-blocked 1 are shown apart; good + accepted 7 of 11 (63.6%); open by impact: explore-visible 1, edge 2.
 - Live verdicts, VictoriaLogs v1.49.0: proven = matches 4 + differs 0 = 4 of 6 cases; regressions 0; proposed closes 1; behaviour changed 0.
-- Coverage, VictoriaLogs v1.49.0: 5 of 6 cases proven (live 4, by a named passing test 1); not proven 1 (empty 1); tests passing: ci.yaml run of 2026-11-15 on main, https://x/ci.
+- Coverage, VictoriaLogs v1.49.0: 5 of 6 cases proven (live 4, by a named test file ci.yaml runs 1); not proven 1 (empty 1); tests passing: ci.yaml run of 2026-11-15 on main, https://x/ci (the wiring is per test file, not per function).
 - Live verdicts, VictoriaLogs v1.53.0: proven = matches 3 + differs 1 = 4 of 6 cases; regressions 1; proposed closes 2; behaviour changed 0.
-- Coverage, VictoriaLogs v1.53.0: 5 of 6 cases proven (live 4, by a named passing test 1); not proven 1 (empty 1); tests passing: ci.yaml run of 2026-11-15 on main, https://x/ci.
+- Coverage, VictoriaLogs v1.53.0: 5 of 6 cases proven (live 4, by a named test file ci.yaml runs 1); not proven 1 (empty 1); tests passing: ci.yaml run of 2026-11-15 on main, https://x/ci (the wiring is per test file, not per function).
 - Error answers: 1 known differences, 0 known leaks; live re-record: 0 of 20 rows changed; unit replay passes.
 - Grammar sweep: 958 queries agree out of 1000 (every difference row counted); Loki accepts 700 and rejects 300.
 - Parity slice: 40 requests (same 24, differ 6, both empty 8, blocked 2); 5 clusters, 1 claimed by no registry case.

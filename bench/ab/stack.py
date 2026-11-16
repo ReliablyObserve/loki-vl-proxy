@@ -435,13 +435,14 @@ def start_proxies(specs, out, st, service, proxies, profile="aligned", supported
 
     supported maps a build's name to whether its binary knows -align-queries-with-step (probe_align_support);
     each started Proxy records its `align` state (align_args). Each profile has its own work directory and log.
-    calls_header maps a build's name to whether its binary knows -debug-vl-calls-header (probe_calls_header_support,
-    asked when not given): a build that does is started with it, so each of its answers carries the request's own
-    VictoriaLogs call count; one that does not is counted by the process-wide metrics. Each Proxy records it.
+    calls_header maps a build's name to whether to start it with -debug-vl-calls-header (the caller asks
+    probe_calls_header_support first: an unknown flag makes the process exit), so each of its answers carries the
+    request's own VictoriaLogs call count; a build not listed, or all of them when it is not given, runs without
+    it and is counted by the process-wide metrics. Only the daily run reads the count, so it alone opts in; each
+    Proxy records what it got.
     """
     supported = supported if supported is not None else {name: probe_align_support(binary) for name, binary, _, _ in specs}
-    calls_header = calls_header if calls_header is not None else {
-        name: probe_calls_header_support(binary) for name, binary, _, _ in specs}
+    calls_header = calls_header or {}
     for name, binary, tree, port in specs:
         work = os.path.join(out, f"work-{name}-{profile}")
         os.makedirs(work, exist_ok=True)
