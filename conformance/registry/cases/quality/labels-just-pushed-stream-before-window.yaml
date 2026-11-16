@@ -32,6 +32,9 @@ request:
     One stream with a unique label pushed seconds before the request with a
     sample at T (hours back), another stream of the app pushed with a sample
     at T+10m; both backends flushed.
+  verify:
+    blocked_by: write
+    reason: "the fixture streams must be pushed seconds before the request"
 compare:
   mode: observed
   fields: [data]
