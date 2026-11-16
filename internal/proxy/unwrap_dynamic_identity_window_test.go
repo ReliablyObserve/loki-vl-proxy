@@ -739,3 +739,74 @@ func TestDynamicIdentityWindowsChunkedRefresh(t *testing.T) {
 	}
 	t.Logf("calls: cold %d, repeat %d, refresh %d", cold, repeat, refresh)
 }
+
+// The chunk plan's row count is read like any other VictoriaLogs answer: a failed count answers Loki's error and reads
+// nothing else, and an unreadable one is not taken for a count.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func TestDynamicIdentityRowCountFailure(t *testing.T) {
+	s := dynChunkScenario(200, true)
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+	for _, tc := range []struct {
+		name string
+		body string
+		code int
+	}{{"a failed count", `{"error":"boom"}`, http.StatusServiceUnavailable}, {"an unreadable count", `not json`, http.StatusOK}} {
+		inner := emu.Handler()
+		var bucketReads int
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = r.ParseForm()
+			if strings.HasSuffix(r.FormValue("query"), "| stats count() as __lvp_rows") {
+				w.WriteHeader(tc.code)
+				_, _ = w.Write([]byte(tc.body))
+				return
+			}
+			if strings.Contains(r.FormValue("query"), "hash(__lvp_sid)") {
+				bucketReads++
+			}
+			inner.ServeHTTP(w, r)
+		}))
+		p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(time.Minute, 100), LogLevel: "error"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		params := url.Values{"query": {s.query()}, "start": {strconv.FormatInt(s.start/1e9, 10)}, "end": {strconv.FormatInt(s.end/1e9, 10)}, "step": {"30"}}
+		res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+		if res.Code != http.StatusInternalServerError || bucketReads != 0 {
+			t.Errorf("%s: %d %.200s after %d bucket reads, want Loki's 500 and none", tc.name, res.Code, res.Body, bucketReads)
+		}
+		if strings.Contains(res.Body.String(), "boom") || strings.Contains(res.Body.String(), "not json") {
+			t.Errorf("%s: the answer carries VictoriaLogs' text: %s", tc.name, res.Body)
+		}
+		closeTestProxy(p)
+		backend.Close()
+	}
+}
+
+// planIdentityChunks: every step is in exactly one chunk, in order; a chunk's window holds at most the budget's rows
+// unless it is a single step; a budget above every window is one chunk.
+func TestPlanIdentityChunks(t *testing.T) {
+	counts := rowCounts{start: 0, step: 10, counts: []int64{5, 5, 50, 5, 5, 5, 5, 5, 5, 5, 5, 5}}
+	for _, budget := range []int64{1, 20, 30, 1000} {
+		chunks := planIdentityChunks(counts, 20, 110, 10, 20, budget)
+		next := int64(20)
+		for _, c := range chunks {
+			if c.first != next || c.last < c.first {
+				t.Fatalf("budget %d: chunks %v do not tile the steps", budget, chunks)
+			}
+			if c.last > c.first && counts.within(c.first-20, c.last) > budget {
+				t.Fatalf("budget %d: chunk %v holds %d rows", budget, c, counts.within(c.first-20, c.last))
+			}
+			next = c.last + 10
+		}
+		if next != 120 {
+			t.Fatalf("budget %d: chunks %v end at %d", budget, chunks, next)
+		}
+		if budget == 1000 && len(chunks) != 1 {
+			t.Fatalf("a budget above every window: %d chunks", len(chunks))
+		}
+	}
+	if (rowCounts{}).within(0, 10) != 0 {
+		t.Fatal("no counts hold rows")
+	}
+}

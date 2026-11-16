@@ -126,6 +126,7 @@
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/backend_response_guard_test.go",
       "internal/proxy/backend_stale_cancel_test.go",
+      "internal/proxy/breaker_size_limit_test.go",
       "internal/proxy/drilldown_burst_cancel_test.go",
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/ordered_json_result_cache_test.go",
@@ -2155,6 +2156,7 @@
       "internal/proxy/unwrap_over_time_window_test.go"
     ],
     "semantics/unwrap-per-series-identity-raw-rows": [
+      "internal/proxy/breaker_size_limit_test.go",
       "internal/proxy/unwrap_dynamic_identity_binary_test.go",
       "internal/proxy/unwrap_dynamic_identity_cache_test.go",
       "internal/proxy/unwrap_dynamic_identity_test.go",
@@ -2853,6 +2855,10 @@
     ],
     "internal/proxy/blank_grouping_test.go": [
       "semantics/translator-reads-blank-grouping-as-none"
+    ],
+    "internal/proxy/breaker_size_limit_test.go": [
+      "backend-deadlines-and-cancellation",
+      "semantics/unwrap-per-series-identity-raw-rows"
     ],
     "internal/proxy/capture_error_replay_test.go": [
       "limits/series-limit-error",
@@ -5538,7 +5544,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 653,
+  "tests_with_markers": 654,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

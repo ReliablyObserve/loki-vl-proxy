@@ -45,6 +45,8 @@ decisions:
       - 'k = range / gcd(range, step) tumbling reads at shifted phases of the step = range text, each aggregated in VictoriaLogs (k scans of the window: 60 for a [5m] range at a 5 s step)'
       - 'keeping the stream''s series on sliding windows (the values were not Loki''s: the group''s pooled samples)'
       - 'reading the raw rows of the window (proportional to data volume, refused by the metric rules)'
+      - 'one bucket read of the whole range (its answer grows with the lines when every line is a series of its own: 64 MiB at 6h of the e2e generator, then a 500)'
+      - 'folding the one-sample series inside VictoriaLogs (total_stats by the hash, then a stats pipe per bucket and group): far smaller answers for a series per line, but a custom fold in the window evaluator and new VictoriaLogs pipe semantics to prove on v1.49 and v1.53 (follow-up)'
     why: |
       Loki takes the function per series over (t-range, t] and the vector
       aggregation over the series; the series is the stream and the parsed
@@ -58,10 +60,16 @@ decisions:
       proxy holds is series x occupied buckets (never more than the window's
       rows), bounded by the raw-row budget of a request that folds its series.
       An extreme of extremes needs no series and keeps the cheaper read.
+      The read is split by time into chunks sized by one row count of the
+      selection (no parser, no hash): each chunk's bucket answer stays under an
+      eighth of what the proxy reads from one stats answer, so proxy memory is
+      bounded by the chunk, not by the data; the first chunk's answer measures
+      the bytes a row costs, so few series of many lines are read in one or
+      two chunks.
     evidence: 'internal/querycorpus (2026-11-16, Loki engine oracle, VictoriaLogs v1.53.0 and v1.49.0): step<range runs that match Loki, base -> head: TestUnwrapDynamicIdentityMatchLoki 5 -> 54 of 74, TestKeepUnwrapIdentityMatchLoki 65 -> 73 of 93, TestStddevStdvarMatchLoki 29 -> 35 of 39, TestUnwrapDynamicValueFormsMatchLoki 82 -> 200 of 200; internal/proxy TestDynamicIdentityWindowsMatchLokiReference (generated windows, v1.49.0 and v1.53.0 emulated, no raw rows), TestDynamicIdentityWindowCacheReuse (repeat 0 calls, refresh 6 of 367 buckets)'
     code: [internal/queryplan/lower/unwrap_dynamic.go, internal/queryplan/lower/unwrap.go, internal/proxy/unwrap_dynamic_identity.go, internal/proxy/range_metric_compat.go, internal/proxy/unwrap_samples.go, internal/proxy/vector_agg_fold.go]
-    tests: [TestUnwrapDynamicIdentityMatchLoki, TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki, TestUnwrapDynamicValueFormsMatchLoki, TestDynamicIdentityWindowsMatchLokiReference, TestDynamicIdentityWindowsKeepExtremes, TestDynamicIdentityWindowsFoldBeyondSeriesLimit, TestDynamicIdentityWindowsBucketOverflowReadsNoRows, TestDynamicIdentityWindowCacheReuse, TestDynamicUnwrapIdentityAhead, FuzzDynamicUnwrapIdentity, FuzzDynamicIdentityWindowsMark, TestCompat_UnwrapPerSeriesIdentity]
-    quality: 'Loki''s series and values at every step for every range and step; one VictoriaLogs call per request; no raw rows (a bucket answer above the bytes read from one stats response answers Loki''s response-too-large error, TestDynamicIdentityWindowsBucketOverflowReadsNoRows); the hash never reaches a client.'
+    tests: [TestUnwrapDynamicIdentityMatchLoki, TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki, TestUnwrapDynamicValueFormsMatchLoki, TestDynamicIdentityWindowsMatchLokiReference, TestDynamicIdentityWindowsKeepExtremes, TestDynamicIdentityWindowsFoldBeyondSeriesLimit, TestDynamicIdentityWindowsChunked, TestDynamicIdentityWindowsChunkFloor, TestDynamicIdentityWindowsChunkedRefresh, TestDynamicIdentityWindowCacheReuse, TestDynamicUnwrapIdentityAhead, FuzzDynamicUnwrapIdentity, FuzzDynamicIdentityWindowsMark, TestCompat_UnwrapPerSeriesIdentity]
+    quality: 'Loki''s series and values at every step for every range and step; one VictoriaLogs call per request; no raw rows; proxy memory bounded by one chunk''s bucket answer; the hash never reaches a client.'
     performance:
       - 'internal/proxy/unwrap_dynamic_identity_window_bench_test.go BenchmarkDynamicIdentityWindows (2026-11-16, Apple M5 Pro, GOMAXPROCS=2, n=6 interleaved, VictoriaLogs answers from the emulator served again): 2,000 lines over 1h at a 1m step under [5m]; a series per line: sum by (pod) of avg 0.46 -> 13.8 ms/op, 822 -> 58,959 allocs/op; 40 series: 0.43 -> 2.0 ms/op, 766 -> 2,219 allocs/op; max by of max unchanged. The cost is the per-series bucket read the Loki answer needs (base read one group, with the wrong values); the hits collector''s per-series label map and key are the bulk of the allocations (follow-up).'
 perf:

@@ -2620,6 +2620,54 @@
       "dynamic": false,
       "error_text": false,
       "error_type": null,
+      "expression": "r.Context(), identityAheadReadError(r.Context(), err)",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/unwrap_dynamic_identity_chunks.go foldDynamicIdentityChunks",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), fmt.Errorf(\"parser identity chunk not served\")",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/unwrap_dynamic_identity_chunks.go foldDynamicIdentityChunks",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/unwrap_dynamic_identity_chunks.go foldDynamicIdentityChunks",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), err",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
+      "where": "internal/proxy/unwrap_dynamic_identity_chunks.go foldDynamicIdentityChunks",
+      "writer": "writeErr"
+    },
+    {
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
       "expression": "r.Context(), err",
       "kind": "layer",
       "message": null,
@@ -2754,11 +2802,11 @@
         "no_body_sites": 0
       },
       "derived": {
-        "count": 177,
+        "count": 181,
         "dynamic_sites": 2,
         "error_text_sites": 1,
         "error_type": null,
-        "layer_sites": 173,
+        "layer_sites": 177,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"
@@ -2766,6 +2814,6 @@
         "no_body_sites": 1
       }
     },
-    "call_sites": 221
+    "call_sites": 225
   }
 }

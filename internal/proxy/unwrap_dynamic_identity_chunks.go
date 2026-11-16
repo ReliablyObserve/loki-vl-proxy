@@ -25,7 +25,7 @@ import (
 // (few series of many lines) are read in few chunks. A selection whose rows fit the budget is read in one call, as
 // before.
 
-// identityChunkBytes is the bytes one chunk's bucket answer is sized for: a quarter of what the proxy reads from one
+// identityChunkBytes is the bytes one chunk's bucket answer is sized for: an eighth of what the proxy reads from one
 // stats answer (maxStatsBucketResponseBytes, and -backend-max-buffered-response-bytes when lower), so an estimate off
 // by a few times still fits.
 func (p *Proxy) identityChunkBytes() int64 {
@@ -33,7 +33,7 @@ func (p *Proxy) identityChunkBytes() int64 {
 	if buffered := int64(p.limits().BufferedBackendBodyBytes); buffered > 0 && buffered < limit {
 		limit = buffered
 	}
-	return max(limit/4, 1)
+	return max(limit/8, 1)
 }
 
 // identityBytesPerRow is the bytes a row is assumed to cost in a bucket answer before one is measured: a series of its

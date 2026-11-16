@@ -91,10 +91,15 @@ why: |
   buckets only (series x occupied buckets, never more rows than the window
   holds), bounded by the raw-row budget of a request that folds its series
   (-manual-range-metric-row-limit, Loki's limit error beyond it); the folded
-  answer is held to the tenant's series limit, and a bucket answer above the
-  bytes the proxy reads from one stats response is Loki's response-too-large
-  error, never a read of the window's rows
-  (TestDynamicIdentityWindowsBucketOverflowReadsNoRows). max by (L) of max_over_time and
+  answer is held to the tenant's series limit. A key of its own on every line
+  makes a series per line, so the read is split by time into chunks sized by
+  a cheap row count of the selection (foldDynamicIdentityChunks): each chunk's
+  bucket answer stays under an eighth of what the proxy reads from one stats
+  answer and the proxy holds one chunk at a time (TestDynamicIdentityWindowsChunked,
+  the chunked answer equals the single read and Loki's;
+  TestDynamicIdentityWindowsChunkedRefresh). One evaluation window too large
+  for one stats answer is Loki's response-too-large error, never a read of
+  the window's rows (TestDynamicIdentityWindowsChunkFloor). max by (L) of max_over_time and
   min by (L) of min_over_time are the extreme of the group's samples whatever
   the series and keep the stream's grouping (unwrapGroupPushdown). An unwrapped
   label named like a reserved VictoriaLogs field in another case (`_TIME`),
