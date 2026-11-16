@@ -151,16 +151,24 @@ func (p *Proxy) withLevelLessStreams(ctx context.Context, path string, params ur
 		return body, nil // the caller reports what it cannot read
 	}
 	results := v.GetArray("data", "result")
+	// The second read's series replace the first read's series of the streams
+	// it answers; a stream it does not answer (no row matched any more) keeps
+	// the first read's series.
+	derivedResults := derived.GetArray("data", "result")
+	answered := make(map[string]bool, len(levelLess))
+	for _, res := range derivedResults {
+		answered[string(res.GetObject("metric").Get("_stream").GetStringBytes())] = true
+	}
 	var arena fj.Arena
 	merged := arena.NewArray()
 	n := 0
 	for _, res := range results {
-		if !levelLess[string(res.GetObject("metric").Get("_stream").GetStringBytes())] {
+		if !answered[string(res.GetObject("metric").Get("_stream").GetStringBytes())] {
 			merged.SetArrayItem(n, res)
 			n++
 		}
 	}
-	for _, res := range derived.GetArray("data", "result") {
+	for _, res := range derivedResults {
 		merged.SetArrayItem(n, res)
 		n++
 	}
