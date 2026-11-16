@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
@@ -214,9 +216,9 @@ func canonicalLabelText(m map[string]string) string {
 	return b.String()
 }
 
-// engineStreams groups emulator rows into the Loki streams the engine oracle reads: each row's stream labels and
-// its line as line gives it (the emulator's own line when line is nil).
-func engineStreams(rows []vlemu.Row, line func(vlemu.Row) string) []oraclerun.EngineStream {
+// engineStreams groups emulator rows into the Loki streams the engine oracle reads: each row's stream labels, and
+// its line and structured metadata as entry gives them.
+func engineStreams(rows []vlemu.Row, entry func(vlemu.Row) (string, map[string]string)) []oraclerun.EngineStream {
 	var out []oraclerun.EngineStream
 	index := map[string]int{}
 	for _, r := range rows {
@@ -226,9 +228,78 @@ func engineStreams(rows []vlemu.Row, line func(vlemu.Row) string) []oraclerun.En
 			index[r.Stream] = i
 			out = append(out, oraclerun.EngineStream{Labels: vlemu.StreamLabels(r.Stream)})
 		}
-		out[i].Entries = append(out[i].Entries, oraclerun.EngineEntry{TS: r.TS, Line: line(r)})
+		line, metadata := entry(r)
+		out[i].Entries = append(out[i].Entries, oraclerun.EngineEntry{TS: r.TS, Line: line, Metadata: metadata})
 	}
 	return out
+}
+
+// unwrapRowEntry writes an emulator row as a Loki line for a query that unwraps field after parser: with no parser
+// the line is the emulator's and the field is structured metadata (a VictoriaLogs field that is no stream label);
+// with logfmt or json the line holds the field and the labels the row's parser extracts.
+func unwrapRowEntry(parser, field string, r vlemu.Row) (string, map[string]string) {
+	names := make([]string, 0, len(r.Labels))
+	for k := range r.Labels {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	switch parser {
+	case "logfmt":
+		parts := []string{field + "=" + r.Text()}
+		for _, k := range names {
+			parts = append(parts, k+"="+strconv.Quote(r.Labels[k]))
+		}
+		return strings.Join(parts, " "), nil
+	case "json":
+		obj := map[string]string{field: r.Text()}
+		for _, k := range names {
+			obj[k] = r.Labels[k]
+		}
+		b, _ := json.Marshal(obj)
+		return string(b), nil
+	}
+	line := r.Msg
+	if line == "" {
+		line = field + "=" + r.Text()
+	}
+	return line, map[string]string{field: r.Text()}
+}
+
+// lokiMetricRequest is a request for query over [start, end] (ns, sent in whole seconds as the tests send the
+// proxy) every step, at Loki's own bounds; step 0 is an instant query at end.
+func lokiMetricRequest(id, query string, start, end int64, step time.Duration) oraclerun.EngineRequest {
+	if step == 0 {
+		return oraclerun.EngineRequest{ID: id, Instant: true, Form: url.Values{"query": {query}, "time": {strconv.FormatInt(end/1e9, 10)}}.Encode()}
+	}
+	return oraclerun.EngineRequest{ID: id, Unaligned: true, Form: url.Values{
+		"query": {query}, "start": {strconv.FormatInt(start/1e9, 10)}, "end": {strconv.FormatInt(end/1e9, 10)},
+		"step": {strconv.FormatFloat(step.Seconds(), 'f', -1, 64)},
+	}.Encode()}
+}
+
+// lokiMetricPoints reads a recorded answer as series (label text) -> time in ns -> value; a non-200 answer fails
+// the test.
+func lokiMetricPoints(t testing.TB, label string, a lokiEngineAnswer) (map[string]map[int64]float64, map[string]map[string]string) {
+	t.Helper()
+	if a.Status != 200 {
+		t.Fatalf("%s: Loki answered %d %s", label, a.Status, a.Error)
+	}
+	s, err := decodeLokiSeries(a.Body)
+	if err != nil {
+		t.Fatalf("%s: %v", label, err)
+	}
+	out := map[string]map[int64]float64{}
+	for key, points := range s.Points {
+		out[key] = map[int64]float64{}
+		for ms, text := range points {
+			v, err := strconv.ParseFloat(text, 64)
+			if err != nil {
+				t.Fatalf("%s: value %q", label, text)
+			}
+			out[key][ms*int64(time.Millisecond)] = v
+		}
+	}
+	return out, s.Labels
 }
 
 // sameSampleText reports whether two value texts are the same number (NaN equals NaN, and -0 equals 0 only when
