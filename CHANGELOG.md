@@ -7,16 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Internal: the translation's query-plan decisions are one helper, with a reference entry point the corpus shadow reads,
-  so the shadow counts the recorded differences the proxy already serves from the plan (a keep before an unwrap, a
-  parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
-  `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
-  parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
-
 ### Fixed
 
+- A query whose VictoriaLogs answer is larger than the proxy buffers (`-backend-max-buffered-response-bytes`), or that
+  passes a series or row budget, no longer counts as a backend failure. Five such requests opened the circuit breaker,
+  and every other query on that proxy then answered 500 "circuit breaker open" without reaching VictoriaLogs; now
+  only the request itself answers its limit error. The stats extent cache surfaced an oversized bucket read as a
+  transport error, which the breaker counted.
 - A binary operation whose operand is a `sum`, `avg`, `min` or `max` with an empty `without ()` clause
   (`sum without () (count_over_time({app="x"}[5m])) / 2`, `max(rate({app="x"}[5m])) without () > on(app) group_left …`)
   now answers every series of that operand, as Loki does: a clause of no label drops none, so each series is its own
@@ -28,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shapes x 4 request kinds x 2 versions: 144 of 160 runs match Loki, from 86 (every run of the 15 operations, and
   under `sum(…)`, `label_replace(…)` and with an `offset`). A `count`, `stddev` or `stdvar` under the clause, and a ranking over the operation, are unchanged. Answers cached before the fix are not served again
   (semantics/binary-operand-without-empty-collapses). `-query-plan-lowering=false` keeps the previous reading.
+
+### Changed
+
+- Internal: the translation's query-plan decisions are one helper, with a reference entry point the corpus shadow reads,
+  so the shadow counts the recorded differences the proxy already serves from the plan (a keep before an unwrap, a
+  parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
+  `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
+  parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
 
 ## [2.310.0] - 2026-11-16
 
