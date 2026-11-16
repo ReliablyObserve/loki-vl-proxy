@@ -967,6 +967,7 @@ type unwrapCheck struct {
 	// confirmed counts the hits already looked up and lookups the lookups made: a request whose inner evaluations
 	// record their status before its last read decides again on the hits that came later, within one budget.
 	confirmed, lookups int
+	looked             map[unwrapHit]bool
 	// query is the request's query as it arrived, the key of the recent errors.
 	query string
 }
@@ -1252,10 +1253,14 @@ func (c *unwrapCheck) confirm(ctx context.Context, p *Proxy) *orderedJSONPipelin
 // Loki's conversion decides.
 func (c *unwrapCheck) confirmHits(ctx context.Context, p *Proxy, hits []unwrapHit) *orderedJSONPipelineError {
 	sort.SliceStable(hits, func(i, j int) bool { return hits[i].from.Before(hits[j].from) })
-	for i, h := range hits {
-		if i > 0 && h == hits[i-1] {
-			continue
+	for _, h := range hits {
+		if c.looked[h] {
+			continue // the same rows read by an earlier operand, or twice by one
 		}
+		if c.looked == nil {
+			c.looked = map[unwrapHit]bool{}
+		}
+		c.looked[h] = true
 		looked := map[[2]time.Duration]bool{}
 		for _, probe := range c.probesFor(h.field, h.conv) {
 			if looked[[2]time.Duration{probe.window, probe.offset}] {
@@ -1890,8 +1895,11 @@ func (l *unwrapLookupWriter) decide() {
 		if key := l.recentHitKey(); key != "" {
 			unwrapRecentErrors.mark(key)
 		}
-		// Written with the client's context: the check cancels its own read once it has the error.
+		// Written with the client's context; the request's own reads (a later operand's) stop: the answer is sent.
 		l.p.writeErr(l.out, l.parent, l.err)
+		if l.check.cancel != nil {
+			l.check.cancel()
+		}
 	}
 }
 
