@@ -344,9 +344,9 @@ func TestDynamicIdentityWindowsMatchLokiReference(t *testing.T) {
 							if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
 								t.Fatalf("#%d %s: read raw rows: %s", i, s.query(), raw[0])
 							}
-							calls := emu.EndpointCalls("/select/logsql/stats_query_range")
-							if len(calls) != 1 || !strings.Contains(calls[0], "hash(__lvp_sid) as __lvp_sid") || !strings.Contains(calls[0], "__lvp_sid, __lvp_bad)") {
-								t.Fatalf("#%d %s: VictoriaLogs read %d stats queries, want one grouped by the series hash: %v", i, s.query(), len(calls), calls)
+							calls, counts := identityStatsCalls(emu)
+							if len(calls) != 1 || counts != 1 {
+								t.Fatalf("#%d %s: VictoriaLogs read %d bucket queries grouped by the series hash and %d row counts, want one each", i, s.query(), len(calls), counts)
 							}
 						}
 					})
@@ -413,38 +413,86 @@ func TestDynamicIdentityWindowsFoldBeyondSeriesLimit(t *testing.T) {
 	t.Logf("budget of 600: %d %.200s", code, body)
 }
 
-// A bucket answer above the bytes the proxy buffers for a stats response (a series per line over a long window) is
-// Loki's response-too-large error, never a read of the window's raw rows: the series of a parser's identity can be as
-// many as the window's lines. The same read under the limit answers Loki's values.
-//
-// conformance: semantics/unwrap-per-series-identity-raw-rows
-func TestDynamicIdentityWindowsBucketOverflowReadsNoRows(t *testing.T) {
+// dynChunkScenario is a sliding window over many lines: a key of its own on most lines (a series per line) and a few
+// series of many lines, over 40 minutes at a 30 s step under [2m].
+func dynChunkScenario(lines int, perLine bool) dynWindowScenario {
 	s := dynWindowScenario{outer: "sum", by: "pod", fn: "avg_over_time", parser: "logfmt", window: 2 * time.Minute, step: 30 * time.Second}
 	base := int64(1_800_000_000) * 1e9
-	s.start, s.end = base, base+10*int64(30*time.Second)
-	for i := 0; i < 1200; i++ {
-		ts := s.start - int64(s.window) + int64(i)*int64(time.Second)/3 + 7e6
-		s.rows = append(s.rows, dynWindowRow(ts, []string{"a", "b"}[i%2], "logfmt", map[string]string{"req": "r" + strconv.Itoa(i)}, float64(i%17)))
+	s.start, s.end = base, base+80*int64(30*time.Second)
+	span := s.end - s.start + int64(s.window)
+	for i := 0; i < lines; i++ {
+		ts := s.start - int64(s.window) + int64(i)*span/int64(lines) + 7e6
+		labels := map[string]string{"route": []string{"/x", "/y"}[i%2]}
+		if perLine && i%5 != 0 {
+			labels["req"] = "r" + strconv.Itoa(i)
+		}
+		s.rows = append(s.rows, dynWindowRow(ts, []string{"a", "b"}[i%2], "logfmt", labels, float64(i%17)))
 	}
+	return s
+}
+
+// A window read whose bucket answer would exceed the bytes it is sized for is split by time into chunks, each read on
+// its own and folded, and the merged answer equals the one read in a single call and Loki's: the read holds a series
+// per line, so one read over a long window of a busy service is as large as its lines. No raw rows are read, every
+// chunk answer fits the bytes the proxy reads from one stats answer, and few series of many lines (rows far above
+// their buckets) are read in few chunks once the first chunk's answer measured what a row costs.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func TestDynamicIdentityWindowsChunked(t *testing.T) {
 	old := maxStatsBucketResponseBytes
 	t.Cleanup(func() { maxStatsBucketResponseBytes = old })
-	for _, limit := range []int64{8 << 10, old} {
-		maxStatsBucketResponseBytes = limit
+	for _, tc := range []struct {
+		name      string
+		perLine   bool
+		maxChunks int
+	}{{"a series per line", true, 40}, {"few series", false, 3}} {
+		s := dynChunkScenario(6000, tc.perLine)
+		want := lokiDynamicWindows(s)
+		maxStatsBucketResponseBytes = old
+		single := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+		one, code, body := runDynWindowScenario(t, single, s, Config{})
+		if code != http.StatusOK {
+			t.Fatalf("%s, one read: %d %.300s", tc.name, code, body)
+		}
+		if reads, _ := identityStatsCalls(single); len(reads) != 1 {
+			t.Fatalf("%s: the default budget read %d bucket queries, want one", tc.name, len(reads))
+		}
+		maxStatsBucketResponseBytes = 1 << 20
 		emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
 		got, code, body := runDynWindowScenario(t, emu, s, Config{})
+		if code != http.StatusOK {
+			t.Fatalf("%s, chunked: %d %.300s", tc.name, code, body)
+		}
+		compareDynWindows(t, tc.name+" chunked vs Loki", s, got, want)
+		compareDynWindows(t, tc.name+" chunked vs one read", s, got, one)
+		reads, counts := identityStatsCalls(emu)
 		if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
-			t.Fatalf("limit %d: read raw rows: %s", limit, raw[0])
+			t.Fatalf("%s: read raw rows", tc.name)
 		}
-		if limit == old {
-			if code != http.StatusOK {
-				t.Fatalf("limit %d: %d %s", limit, code, body)
-			}
-			compareDynWindows(t, "under the limit", s, got, lokiDynamicWindows(s))
-			continue
+		if counts != 1 || len(reads) < 2 && tc.perLine || len(reads) > tc.maxChunks {
+			t.Fatalf("%s: %d row counts and %d chunk reads, want one count and 2..%d reads", tc.name, counts, len(reads), tc.maxChunks)
 		}
-		if code != http.StatusInternalServerError || !strings.Contains(body, "ResourceExhausted") {
-			t.Fatalf("limit %d: %d %.300s, want Loki's response-too-large error", limit, code, body)
-		}
+		t.Logf("%s: %d chunk reads under a %d KiB answer bound", tc.name, len(reads), maxStatsBucketResponseBytes>>10)
+	}
+}
+
+// The floor of the chunks is one evaluation step, whose window reaches one range back: a window holding more rows than
+// one stats answer can carry answers Loki's response-too-large error, a per-request outcome (the breaker stays
+// closed), never a read of the window's raw rows.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func TestDynamicIdentityWindowsChunkFloor(t *testing.T) {
+	old := maxStatsBucketResponseBytes
+	t.Cleanup(func() { maxStatsBucketResponseBytes = old })
+	maxStatsBucketResponseBytes = 8 << 10
+	s := dynChunkScenario(6000, true)
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+	_, code, body := runDynWindowScenario(t, emu, s, Config{})
+	if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
+		t.Fatalf("read raw rows: %s", raw[0])
+	}
+	if code != http.StatusInternalServerError || !strings.Contains(body, "ResourceExhausted") {
+		t.Fatalf("%d %.300s, want Loki's response-too-large error", code, body)
 	}
 }
 
@@ -532,11 +580,14 @@ func TestDynamicIdentityWindowCacheReuse(t *testing.T) {
 }
 
 // shimReadHashAhead reports stats_query_range calls the extent shim saw, every one writing the series hash before the
-// unwrap gate (lower.Profile IdentityAhead) and grouping by it.
+// unwrap gate (lower.Profile IdentityAhead) and grouping by it, the chunk plan's row count aside.
 func shimReadHashAhead(s *extentShim) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, c := range s.calls {
+		if strings.HasSuffix(c.query, "| stats count() as __lvp_rows") {
+			continue // the chunk plan's row count
+		}
 		hash := strings.Index(c.query, "| hash(__lvp_sid) as __lvp_sid |")
 		gate := strings.Index(c.query, "| copy ")
 		if hash < 0 || gate < hash || !strings.Contains(c.query, "__lvp_sid, __lvp_bad)") {
@@ -621,4 +672,18 @@ func TestIdentityAheadReadError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "ResourceExhausted") && !strings.Contains(err.Error(), "larger than max") {
 		t.Errorf("a marked request's oversized answer: %v, want Loki's response-too-large error", err)
 	}
+}
+
+// identityStatsCalls are the stats_query_range calls the emulator saw that read a parser's identity buckets (the hash
+// before the gate, grouped by it), and how many row counts the chunk plan read (identityCountQuery).
+func identityStatsCalls(emu *vlemu.Emulator) (buckets []string, counts int) {
+	for _, q := range emu.EndpointCalls("/select/logsql/stats_query_range") {
+		switch {
+		case strings.HasSuffix(q, "| stats count() as __lvp_rows"):
+			counts++
+		case strings.Contains(q, "hash(__lvp_sid) as __lvp_sid") && strings.Contains(q, "__lvp_sid, __lvp_bad)"):
+			buckets = append(buckets, q)
+		}
+	}
+	return buckets, counts
 }

@@ -478,7 +478,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 			return p.proxyManualRangeMetricRange(w, shaped, shapedSpec, origSpec, manualFunc)
 		}
 	}
-	return p.foldRangeSeries(w, r, func(w http.ResponseWriter, r *http.Request) bool {
+	return p.foldRangeSeries(w, r, spec.BaseQuery, func(w http.ResponseWriter, r *http.Request) bool {
 		return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
 	})
 }
@@ -487,9 +487,9 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 // aggregations. The evaluator decides on the request's query text (isSumAllLogRange): the fold reads the same text.
 // The buckets of a parser's identity whose hash stands before the gate (identityAhead) are grouped by the series
 // hash: the evaluator answers each series' windows, and the outer aggregation folds the series (foldDynamicIdentity).
-func (p *Proxy) foldRangeSeries(w http.ResponseWriter, r *http.Request, serve func(http.ResponseWriter, *http.Request) bool) bool {
+func (p *Proxy) foldRangeSeries(w http.ResponseWriter, r *http.Request, base string, serve func(http.ResponseWriter, *http.Request) bool) bool {
 	if identityAhead(r.Context()) {
-		return p.foldDynamicIdentity(w, r, serve)
+		return p.foldDynamicIdentity(w, r, base, serve)
 	}
 	return foldVectorAggregations(p, w, r, r.FormValue("query"), serve)
 }
@@ -1664,6 +1664,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	if err != nil {
 		return nil, nil, err
 	}
+	addIdentityReadBytes(ctx, len(body))
 
 	// Build VL→Loki label name mapping from groupBy↔origGroupBy.
 	vlToLoki := make(map[string]string, len(groupBy))

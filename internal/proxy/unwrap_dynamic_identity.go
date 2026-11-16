@@ -248,14 +248,21 @@ func extremeOfExtremes(query string) bool {
 // takes Loki's value of each group at each step, which drops the hash. Loki counts max_query_series on the folded
 // answer, so the reads of the series are bounded by the raw-row budget of a request that folds its series
 // (-manual-range-metric-row-limit, recordFoldBudget), and the folded answer by the tenant's series limit.
-func (p *Proxy) foldDynamicIdentity(w http.ResponseWriter, r *http.Request, serve func(http.ResponseWriter, *http.Request) bool) bool {
+//
+// A request whose window rows do not fit one bounded read is served in time chunks (foldDynamicIdentityChunks); base
+// is the LogsQL query of its buckets, before the stats pipe.
+func (p *Proxy) foldDynamicIdentity(w http.ResponseWriter, r *http.Request, base string, serve func(http.ResponseWriter, *http.Request) bool) bool {
 	expr, ok := sharedLogQLExpr(dynamicQuery(r.FormValue("query")))
 	va, isAgg := expr.(*logqlpkg.VectorAggregation)
 	if !ok || !isAgg {
 		return serve(w, r)
 	}
 	p.recordFoldBudget(r.Context())
-	return foldVectorChain(p, w, r, []*logqlpkg.VectorAggregation{va}, serve)
+	chain := []*logqlpkg.VectorAggregation{va}
+	if p.foldDynamicIdentityChunks(w, r, base, chain, serve) {
+		return true
+	}
+	return foldVectorChain(p, w, r, chain, serve)
 }
 
 // identityAheadReadError is the answer to a failed bucket read of a request marked identityAheadKey: its buckets
