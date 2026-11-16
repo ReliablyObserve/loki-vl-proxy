@@ -16,7 +16,7 @@ import (
 // between the two closest ranks: NaN for no value, -Inf for phi below 0, +Inf above 1, and otherwise, the values
 // sorted ascending (NaN first, as sort.Float64s orders them), rank phi*(n-1) between the values at its floor and
 // the next, weighted by its fraction: lower*(1-w) + upper*w. TestQuantileReferenceMatchesRecordedLoki holds it to
-// Loki's answers bit for bit, NaN and the infinities included.
+// Loki's answers, NaN and the infinities included.
 func quantileReference(phi float64, values []float64) float64 {
 	switch {
 	case len(values) == 0 || math.IsNaN(phi):
@@ -61,7 +61,8 @@ func quantileWindowReference(phi float64, samples []quantileSample, start, end i
 	return quantileReference(phi, values), true, true
 }
 
-// The quantile reference gives Loki's quantile_over_time bit for bit over recorded value sets: one value, two,
+// The quantile reference gives Loki's quantile_over_time over recorded value sets (to the last bits a fused
+// multiply-add changes; NaN and the infinities exactly): one value, two,
 // repeated values, negatives, NaN, +Inf and -Inf, phi at and between the bounds and above 1
 // (test/oracle/loki engine; LVP_RUN_ORACLES=1 records again).
 //
@@ -110,7 +111,10 @@ func TestQuantileReferenceMatchesRecordedLoki(t *testing.T) {
 		}
 		for _, series := range points {
 			for _, v := range series {
-				if want := quantileReference(c.phi, c.values); !sameQuantileBits(v, want) {
+				// The interpolation may be fused into one multiply-add on one architecture and not on another
+				// (the recording and the run may differ), so finite values agree to the last bits; NaN and the
+				// infinities exactly.
+				if want := quantileReference(c.phi, c.values); !sameQuantile(v, want) {
 					t.Fatalf("#%d quantile %v of %v: reference %v, Loki %v", i, c.phi, c.values, want, v)
 				}
 			}
