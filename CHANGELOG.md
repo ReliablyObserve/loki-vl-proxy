@@ -7,15 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.310.1] - 2026-11-16
-
 ### Fixed
 
-- A query whose VictoriaLogs answer is larger than the proxy buffers (`-backend-max-buffered-response-bytes`), or that
-  passes a series or row budget, no longer counts as a backend failure. Five such requests opened the circuit breaker,
-  and every other query on that proxy then answered 500 "circuit breaker open" without reaching VictoriaLogs; now
-  only the request itself answers its limit error. The stats extent cache surfaced an oversized bucket read as a
-  transport error, which the breaker counted.
 - A binary operation whose operand is a `sum`, `avg`, `min` or `max` with an empty `without ()` clause
   (`sum without () (count_over_time({app="x"}[5m])) / 2`, `max(rate({app="x"}[5m])) without () > on(app) group_left …`)
   now answers every series of that operand, as Loki does: a clause of no label drops none, so each series is its own
@@ -35,6 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
   `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
   parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
+
+## [2.310.1] - 2026-11-16
+
+### Fixed
+
+- A query whose VictoriaLogs answer is larger than the proxy buffers (`-backend-max-buffered-response-bytes`), or that
+  passes a series or row budget, no longer counts as a backend failure. Five such requests opened the circuit breaker,
+  and every other query on that proxy then answered 500 "circuit breaker open" without reaching VictoriaLogs; now
+  only the request itself answers its limit error. The stats extent cache surfaced an oversized bucket read as a
+  transport error, which the breaker counted.
 
 ### Changed
 
