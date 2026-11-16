@@ -380,7 +380,11 @@ func (p *Proxy) fetchStatsQueryRangeBody(r *http.Request, logsqlQuery string, tu
 		return nil, &statsUpstreamError{status: resp.StatusCode, body: errBody}
 	}
 	counter := &seriesCountingReader{r: resp.Body, limit: maxSeries}
-	return readBodyLimited(counter, int64(p.limits().BufferedBackendBodyBytes))
+	body, err := readBodyLimited(counter, int64(p.limits().BufferedBackendBodyBytes))
+	if err != nil {
+		return nil, err
+	}
+	return p.withLevelLessStreams(r.Context(), "/select/logsql/stats_query_range", params, body, maxSeries)
 }
 
 // fieldBreakdownParserRE matches the end of a parsed field breakdown's base
@@ -1783,6 +1787,11 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, stats ph
 
 	if guarded {
 		body = dropEmptyInputGuard(body)
+	}
+	// A stream without a level label is one series per level its lines carry.
+	if body, err = p.withLevelLessStreams(r.Context(), "/select/logsql/stats_query", params, body, 0); err != nil {
+		p.writeErr(w, r.Context(), p.levelLessErr("stats_query", err))
+		return
 	}
 	body, err = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
 	if err != nil {

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,6 +19,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/blankspace"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -229,9 +231,12 @@ func TestQueryPlanLowering_LogScreenCorpus(t *testing.T) {
 // families flipped, a query is translated to the same text as with none flipped (the translator's, or the plan's for a
 // filter-only query, which the filter flip already serves), or to the translator's text with its keyword label names
 // quoted (lower.QuoteKeywordFieldText: VictoriaLogs rejects them bare, semantics/translator-writes-keyword-field-names-bare);
-// the screen, the gate and the lowering never panic out of lowerLogSelect.
+// the screen, the gate and the lowering never panic out of lowerLogSelect. The translator is held to the spelling it
+// reads as Loki does (spelledAsTranslatorReads), as in FuzzMetricFlipGate: a tab, a line feed or a carriage return
+// after a parser keyword is Loki's blank, which the translator copies into a pipe VictoriaLogs rejects
+// (semantics/translator-reads-only-space-between-tokens).
 //
-// conformance: architecture-syntax-package-layering
+// conformance: architecture-syntax-package-layering, semantics/translator-reads-only-space-between-tokens
 func FuzzLogFlipGate(f *testing.F) {
 	for _, q := range []string{
 		`{app="a"} | detected_level="error"`, `{service_name="a"} |= "x" | detected_level=~"error|warn" | status >= 500`,
@@ -245,6 +250,12 @@ func FuzzLogFlipGate(f *testing.F) {
 		`{app="a"} | json | label_format x="{{.a}}", y=z`, `{app="a"} | json | line_format "{{.a}} {{.b}}"`,
 		`{app="a"} | pattern "<_> <m> <_>" | m="GET"`, "{app=\"a\"} | regexp `(?P<m>[A-Z]+) ` | m=\"GET\"",
 		`{app="a"} | logfmt | line_format "{{.msg}}" | json | level="error"`, `{app="a"} | json | _time="x"`,
+		// A blank Loki skips other than a space before a parser's expression (the translator copies the parser as written,
+		// semantics/translator-reads-only-space-between-tokens), capture names with a leading digit, and the characters
+		// Loki rejects there.
+		"{A=\"0\"}|regexp\t`(?<0>0)`", "{A=\"0\"} |regexp\n`(?P<0a>x)`", "{A=\"0\"}|pattern\r\n\"<a> x\"",
+		"{A=\"0\"} | regexp \t\"(?P<9>x)(?P<b>y)\"", "{A=\"0\"} |= \"x\" |regexp\r`(?<a>0)`", "{A=\"0\"}|regexp\v`(?<a>0)`",
+		"{A=\"0\"}|regexp\f`(?<a>0)`", "{A=\"0\"}|pattern\u0085\"<a> x\"", "{A=\"0\"}|regexp\u00a0`(?<a>0)`",
 	} {
 		f.Add(q)
 	}
@@ -265,21 +276,89 @@ func FuzzLogFlipGate(f *testing.F) {
 		if logqlpkg.ParseAndValidate(q) != nil {
 			return
 		}
-		got, gotErr := on.translateLogResponseQuery(context.Background(), q)
-		want, wantErr := off.translateLogResponseQuery(context.Background(), respaced(q))
-		// An unspaced parser's expression is quoted by the plan, where the translator copies the spaced spelling's as it
-		// is written: a control byte is escaped in one and raw in the other, the same string to LogsQL.
-		respelled := respaced(q) != q && sameLogsQL(got, want)
-		// A query with an unspaced parser the screen leaves to the translator gets the translator's own text, as with
-		// nothing flipped.
-		if !respelled && respaced(q) != q {
-			unflipped, _ := off.translateLogResponseQuery(context.Background(), q)
-			respelled = got == unflipped
-		}
-		if (got != want && got != lower.QuoteKeywordFieldText(want) && !respelled) || (gotErr == nil) != (wantErr == nil) {
-			t.Fatalf("%q:\n flip on  %q %v\n flip off %q %v", q, got, gotErr, want, wantErr)
+		if err := logFlipGateHolds(on, off, q); err != "" {
+			t.Fatal(err)
 		}
 	})
+}
+
+// logFlipGateHolds is FuzzLogFlipGate's check of one valid log query on the flipped (on) and unflipped (off) proxies:
+// empty when the flipped text is the translator's of the spelling it reads as Loki does, else the difference.
+func logFlipGateHolds(on, off *Proxy, q string) string {
+	ctx := context.Background()
+	reads := spelledAsTranslatorReads(q)
+	got, gotErr := on.translateLogResponseQuery(ctx, q)
+	want, wantErr := off.translateLogResponseQuery(ctx, reads)
+	// A respelled parser's expression is quoted by the plan, where the translator copies the spaced spelling's as it
+	// is written: a control byte is escaped in one and raw in the other, the same string to LogsQL.
+	respelled := reads != q && sameLogsQL(got, want)
+	// A query with an unspaced parser the screen leaves to the translator gets the translator's own text, as with
+	// nothing flipped.
+	if !respelled && reads != q {
+		unflipped, _ := off.translateLogResponseQuery(ctx, q)
+		respelled = got == unflipped
+	}
+	if (got != want && got != lower.QuoteKeywordFieldText(want) && !respelled) || (gotErr == nil) != (wantErr == nil) {
+		return fmt.Sprintf("%q:\n flip on  %q %v\n flip off %q %v", q, got, gotErr, want, wantErr)
+	}
+	return ""
+}
+
+// The log flip gate's edge table: a regexp or pattern parser with each spelling of the blank before its expression,
+// each quote and capture names Loki reads (a leading digit included: Loki accepts `(?<0>0)`, Loki oracle, pipeline
+// command). A blank Loki skips (none, a space, a tab, a line feed, a carriage return, a run of them) is the spaced
+// query: the proxy serves the plan's extract pipe, the gate holds it to the translator's text of the spaced spelling,
+// and the translator's own text of a spelling other than a space is the parser copied as written (the recorded
+// divergence semantics/translator-reads-only-space-between-tokens, or translator-copies-unspaced-parser with no
+// blank). A character Loki does not skip (a vertical tab, a form feed, U+0085, U+00A0, a control byte) is rejected by
+// the request's validation (Loki's text: internal/logql TestBlankAfterKeywordMatchesLoki), so nothing is translated.
+//
+// conformance: semantics/translator-reads-only-space-between-tokens, semantics/translator-copies-unspaced-parser, architecture-syntax-package-layering
+func TestLogFlipGate_BlankBeforeParserExpression(t *testing.T) {
+	newProxy := func() *Proxy {
+		return newLoweringProfileProxy(t, "underscores", func(c *Config) { c.LabelStyle = LabelStyleUnderscores }, "")
+	}
+	on, off, shipped := newProxy(), newProxy(), newProxy()
+	withFlippedLogStages(on, logStageFlipCandidates...)
+	off.flippedLogStages = 0
+	ctx := context.Background()
+	parsers := []string{
+		"regexp`(?<0>0)`", "regexp`(?<a>0)`", "regexp\"(?P<0a>x)(?P<b>y)\"", "regexp`(?P<9>x)(?P<_0>y)`", "regexp`(?<1_>x)`",
+		"pattern\"<a> <_>\"", "pattern`<_> <m> <_>`",
+	}
+	var served, rejected int
+	for _, lead := range []string{`{A="0"}|`, `{A="0"} | `, `{A="0"} |= "x" |`} {
+		for _, parser := range parsers {
+			cut := strings.IndexAny(parser, "\"`")
+			for _, blank := range append([]string{"", " "}, blankspace.Skipped...) {
+				q := lead + parser[:cut] + blank + parser[cut:]
+				if err := logqlpkg.ParseAndValidate(q); err != nil {
+					t.Errorf("%q: Loki reads a blank here, the validation rejects it: %v", q, err)
+					continue
+				}
+				if err := logFlipGateHolds(on, off, q); err != "" {
+					t.Error(err)
+				}
+				got, err := shipped.translateLogResponseQuery(ctx, q)
+				spaced, _ := shipped.translateLogResponseQuery(ctx, lead+parser[:cut]+" "+parser[cut:])
+				if err != nil || got != spaced || !strings.Contains(got, "| extract") {
+					t.Errorf("%q: served %q (%v), the spaced spelling %q", q, got, err, spaced)
+				}
+				if own, _ := off.translateLogResponseQuery(ctx, q); !strings.HasPrefix(blank, " ") && own == got {
+					t.Errorf("%q: the string translator writes the plan's text %q: the recorded divergence is gone", q, own)
+				}
+				served++
+			}
+			for _, blank := range blankspace.Rejected {
+				q := lead + parser[:cut] + blank + parser[cut:]
+				if logqlpkg.ParseAndValidate(q) == nil {
+					t.Errorf("%q: Loki rejects the character, the validation accepts it", q)
+				}
+				rejected++
+			}
+		}
+	}
+	t.Logf("%d spellings served from the plan, %d rejected", served, rejected)
 }
 
 // sameLogsQL reports two LogsQL texts the LogsQL parser reads as the same query.
