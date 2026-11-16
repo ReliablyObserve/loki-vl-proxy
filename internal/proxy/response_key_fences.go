@@ -83,6 +83,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	}
 	b.add(dynamicUnwrapIdentityResponseKeyVersion(query))
 	b.add(streamLevelSeriesResponseKeyVersion(query))
+	b.add(emptyWithoutOperandResponseKeyVersion(query))
 	if site == responseKeyCompatQueryRange {
 		b.add(logfmtPresenceFence(r, query, other))
 	}

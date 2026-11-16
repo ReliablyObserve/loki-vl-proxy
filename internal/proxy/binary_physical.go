@@ -33,7 +33,7 @@ func BinaryOperandsPhysical(query string, translate func(string) (string, error)
 			sides[i] = physical.ScalarOp{V: v}
 			continue
 		}
-		text := side.String()
+		text := emptyWithoutOperand(side).String()
 		if v, vector := binaryVectorLiteral(text); vector {
 			sides[i] = physical.VectorOp{V: v}
 			continue

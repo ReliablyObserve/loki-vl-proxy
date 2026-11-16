@@ -46,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`| logfmt | label_format w="{{.n}}" | unwrap v`) names the series with the label as the stage writes it, as
   Loki does (recorded with Loki's engine); it kept the line's own value of the label before.
 
+## [2.310.2] - 2026-11-16
+
+### Changed
+
+- A code comment on the 24h query split now names its registry case. No behaviour changes.
+
 ## [2.310.1] - 2026-11-16
 
 ### Fixed

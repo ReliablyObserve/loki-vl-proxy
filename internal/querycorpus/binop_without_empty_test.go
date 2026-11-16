@@ -59,15 +59,19 @@ func foldedBy(b physical.Binary) physical.Binary {
 }
 
 // A binary operation with an operand that has a `without ()` clause lowers as Loki reads it: each series of the
-// operand stays its own. On every corpus and grid row the lowering answers, under every profile, the operators are
-// the ones the same query writes with a label in the clause, the fold's labels being none. A row with another
-// operand the lowering leaves to the translator, or a nest or an unwrap it names, is not lowered and is not counted.
+// operand stays its own. A sum, avg, min or max level with the clause answers its operand's series unchanged, so the
+// operand lowers as the query without that level (lower.EmptyWithoutLevelsOff), which is what the proxy's binary
+// route sends (proxy.BinaryOperandsPhysical): such a row equals the route. Any other level with the clause (count,
+// stddev, stdvar) lowers to the operators the same query writes with a label in the clause, the fold's labels being
+// none, and still differs from the route. On every corpus and grid row the lowering answers, under every profile,
+// one of the two holds. A row with another operand the lowering leaves to the translator, or a nest or an unwrap it
+// names, is not lowered and is not counted.
 //
 // conformance: semantics/binary-operand-without-empty-collapses
 func TestEmptyWithoutOperandsKeepEverySeries(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	seen := map[string]bool{}
-	checked, notEqualRoute := 0, 0
+	checked, levelsOff, notEqualRoute := 0, 0, 0
 	for _, q := range append(append(planCorpus(t), binOpMoreGrid()...), binOpGrid()...) {
 		if seen[q] {
 			continue
@@ -77,9 +81,21 @@ func TestEmptyWithoutOperandsKeepEverySeries(t *testing.T) {
 		if plan == nil || !lower.EmptyWithoutOperand(plan.Root) {
 			continue
 		}
-		ref := buildPlan(t, withLabelledClause(q))
-		if ref == nil {
+		// The query with its sum, avg, min and max `without ()` levels taken off its operands, and whether a clause
+		// is left that the lowering folds.
+		off := emptyWithoutLevelsOffText(q)
+		offPlan := buildPlan(t, off)
+		if offPlan == nil {
+			t.Errorf("%q: the query without its levels %q does not build", q, off)
 			continue
+		}
+		folded := lower.EmptyWithoutOperand(offPlan.Root)
+		ref, refQuery := offPlan, off
+		if folded {
+			refQuery = withLabelledClause(off)
+			if ref = buildPlan(t, refQuery); ref == nil {
+				continue
+			}
 		}
 		for _, prof := range planProfiles() {
 			got, err := lower.PlanQuery(q, plan, prof.lowerProfile())
@@ -91,24 +107,68 @@ func TestEmptyWithoutOperandsKeepEverySeries(t *testing.T) {
 				t.Errorf("%s: %q lowered to %T, want a binary operation", prof.name, q, got)
 				continue
 			}
-			want, err := lower.PlanQuery(withLabelledClause(q), ref, prof.lowerProfile())
+			want, err := lower.PlanQuery(refQuery, ref, prof.lowerProfile())
 			if err != nil {
-				t.Errorf("%s: %q lowers with an empty clause, not with a labelled one: %v", prof.name, q, err)
+				t.Errorf("%s: %q lowers, its reference %q does not: %v", prof.name, q, refQuery, err)
 				continue
 			}
 			checked++
-			if !physical.Equal(foldedBy(want.(physical.Binary)), b) {
-				t.Errorf("%s: %q:\n lowered %#v\n labelled %#v", prof.name, q, got, want)
+			wb, ok := want.(physical.Binary)
+			if !ok {
+				t.Errorf("%s: %q: the reference %q lowered to %T", prof.name, q, refQuery, want)
+				continue
 			}
-			if emptyWithoutDiffers(q, plan, prof) {
+			if folded {
+				wb = foldedBy(wb)
+			}
+			if !physical.Equal(wb, b) {
+				t.Errorf("%s: %q:\n lowered   %#v\n reference %#v (%s)", prof.name, q, got, wb, refQuery)
+			}
+			differs := emptyWithoutDiffers(q, plan, prof)
+			switch {
+			case !folded && differs:
+				t.Errorf("%s: %q: lowered without its levels, unlike the proxy's route", prof.name, q)
+			case !folded:
+				levelsOff++
+			case differs:
 				notEqualRoute++
 			}
 		}
 	}
-	t.Logf("%d lowered rows with a `without ()` operand checked against the labelled clause; %d unlike the proxy's route", checked, notEqualRoute)
-	if checked < 1000 || notEqualRoute != checked {
-		t.Fatalf("only %d lowered rows checked, %d unlike the route", checked, notEqualRoute)
+	t.Logf("%d lowered rows with a `without ()` operand checked: %d lowered without the level as the proxy's route sends them, %d folded (count, stddev, stdvar) unlike the route", checked, levelsOff, notEqualRoute)
+	if checked < 1000 || levelsOff+notEqualRoute != checked || levelsOff == 0 {
+		t.Fatalf("only %d lowered rows checked, %d without the level, %d folded unlike the route", checked, levelsOff, notEqualRoute)
 	}
+}
+
+// emptyWithoutLevelsOffText is q, a binary operation, with the outer sum, avg, min and max levels that have a
+// `without ()` clause taken off each operand, as the proxy's binary route sends them; q when it is no binary operation.
+func emptyWithoutLevelsOffText(q string) string {
+	expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
+	if err != nil {
+		return q
+	}
+	b, ok := expr.(*logql.BinOpExpr)
+	if !ok {
+		return q
+	}
+	off := func(e logql.Expr) logql.Expr {
+		for {
+			v, ok := e.(*logql.VectorAggregation)
+			if !ok || v.Grouping == nil || !v.Grouping.Without || len(v.Grouping.Labels) != 0 {
+				return e
+			}
+			switch v.Op {
+			case logql.VectorSum, logql.VectorAvg, logql.VectorMin, logql.VectorMax:
+				e = v.Inner
+			default:
+				return e
+			}
+		}
+	}
+	c := *b
+	c.Left, c.Right = off(b.Left), off(b.Right)
+	return c.String()
 }
 
 // buildPlan is the resolved plan of q, nil when it does not parse or build.

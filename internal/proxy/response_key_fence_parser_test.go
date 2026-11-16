@@ -42,6 +42,21 @@ type fenceFacts struct {
 	// levelChain is a read that may carry the detected_level chain: a range aggregation, or a stage that names
 	// detected_level (a label filter on it, keep or drop of it).
 	levelChain bool
+	// emptyWithoutOperand is a binary operation with an operand that is a sum, avg, min or max `without ()`.
+	emptyWithoutOperand bool
+}
+
+// keepsEveryOperandSeries reports a sum, avg, min or max with a `without` clause of no label, read from the tree.
+func keepsEveryOperandSeries(e logqlpkg.Expr) bool {
+	v, ok := e.(*logqlpkg.VectorAggregation)
+	if !ok || v.Grouping == nil || !v.Grouping.Without || len(v.Grouping.Labels) != 0 {
+		return false
+	}
+	switch v.Op {
+	case logqlpkg.VectorSum, logqlpkg.VectorAvg, logqlpkg.VectorMin, logqlpkg.VectorMax:
+		return true
+	}
+	return false
 }
 
 func (f *fenceFacts) name(name string, comparison bool) {
@@ -177,6 +192,9 @@ func (f *fenceFacts) expr(e logqlpkg.Expr) {
 		}
 		f.expr(e.Inner)
 	case *logqlpkg.BinOpExpr:
+		if keepsEveryOperandSeries(e.Left) || keepsEveryOperandSeries(e.Right) {
+			f.emptyWithoutOperand = true
+		}
 		f.expr(e.Left)
 		f.expr(e.Right)
 	case *logqlpkg.OpaqueMetricExpr:
@@ -308,6 +326,7 @@ func fenceWants(query string) map[string]bool {
 		"reserved-field-labels":    f.reservedLabel,
 		"keyword-label-names":      f.keywordSpelling,
 		"stream-level-series":      f.perStreamSeries || f.levelChain,
+		"binary-empty-without":     f.emptyWithoutOperand,
 		// Read by fenceGains: the text screen of repeated filters also counts a quoted text that looks like a stage.
 		"a-label-filter-stage": f.labelFilterStages >= 1,
 	}
@@ -395,6 +414,8 @@ var fenceSpellingBases = []string{
 	`sum by (x) (avg_over_time({app="a"} | json | unwrap n [5m]))`,
 	`max(stddev_over_time({app="a"} | logfmt | unwrap n [5m]))`,
 	`min by (x) (min_over_time({app="a"} | json | unwrap n [5m])) / sum(max_over_time({app="a"} | json | unwrap n [5m]))`,
+	`sum without () (count_over_time({app="a"} | json [5m])) / 2`,
+	`max without () (rate({app="a"}[5m])) > on(app) group_left sum by (app) (rate({app="a"}[5m]))`,
 }
 
 // TestResponseKeyFencesFireOnEverySpelling re-spells each base query many ways and requires every fence whose
@@ -565,6 +586,9 @@ func TestResponseKeyFencesKeepTheirOldKeys(t *testing.T) {
 		if miss := fenceMisses(q); len(miss) > 0 {
 			t.Errorf("%q: fences %v do not fire for the construct in the tree", q, miss)
 		}
+		if emptyWithoutOverFires(q) {
+			t.Errorf("%q: the binary empty without fence fires and the parsed tree holds no such operand", q)
+		}
 	}
 	t.Logf("%d of %d corpus queries carry a fence their older screens did not fire, each justified by its parsed tree", changed, len(corpus))
 }
@@ -599,7 +623,17 @@ func FuzzResponseKeyFencesMatchParsedTree(f *testing.F) {
 		if lost := fenceLosses(query); len(lost) > 0 {
 			t.Fatalf("%+q: fences %v fired before and do not now", query, lost)
 		}
+		if emptyWithoutOverFires(query) {
+			t.Fatalf("%+q: the binary empty without fence fires and the parsed tree holds no such operand", query)
+		}
 	})
+}
+
+// emptyWithoutOverFires reports a query whose key carries the binary empty without fence while its parsed tree holds
+// no binary operation with a sum, avg, min or max `without ()` operand: the fence is new, so no older screen states
+// where it fired, and it must fire nowhere else (no other query's key changes).
+func emptyWithoutOverFires(query string) bool {
+	return emptyWithoutOperandResponseKeyVersion(query) != "" && !fenceWants(query)["binary-empty-without"]
 }
 
 // fenceFires reports whether the named fence is in the response key chain of query (a query_range request).
@@ -618,6 +652,7 @@ func fenceFires(name, query string) bool {
 		"logfmt-presence":          func() string { return logfmtPresenceResponseKeyVersion(r, query) },
 		"stream-level-series":      func() string { return streamLevelSeriesResponseKeyVersion(query) },
 		"unwrap-dynamic-identity":  func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
+		"binary-empty-without":     func() string { return emptyWithoutOperandResponseKeyVersion(query) },
 	}[name]() != ""
 }
 
@@ -717,6 +752,16 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"unwrap-dynamic-identity", "MAX(MAX_OVER_T\u0130ME({a=\"b\"} | LOGFMT | UNWRAP n [5m]))", true},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | json | keep x | unwrap n [5m]))`, false},
 		{"unwrap-dynamic-identity", `sum by (x) (avg_over_time({a="b"} | unwrap n [5m]))`, false},
+		{"binary-empty-without", `sum without () (count_over_time({a="b"}[5m])) / 2`, true},
+		{"binary-empty-without", `SUM WITHOUT () (count_over_time({a="b"}[5m])) / 2`, true},
+		{"binary-empty-without", "sum w\u0130thout () (count_over_time({a=\"b\"}[5m])) / 2", false},
+		{"binary-empty-without", "2 * Avg(rate({a=\"b\"}[5m])) Without#c\n()", true},
+		{"binary-empty-without", `sum(sum without () (count_over_time({a="b"}[5m])) / 2)`, true},
+		{"binary-empty-without", `label_replace(max without () (rate({a="b"}[5m])) > 1, "x", "$1", "a", "(.*)")`, true},
+		{"binary-empty-without", `sum without () (count_over_time({a="b"}[5m]))`, false},
+		{"binary-empty-without", `count without () (count_over_time({a="b"}[5m])) / 2`, false},
+		{"binary-empty-without", `sum without (pod) (count_over_time({a="b"}[5m])) / 2`, false},
+		{"binary-empty-without", `sum by (a) (sum without () (count_over_time({a="b"}[5m]))) / 2`, false},
 		// Longer than the plan memo holds: the plan is built for the fence, uncached.
 		{"unwrap-dynamic-identity", `SUM BY (x) (AVG_OVER_TIME({a="b"} |= "` + strings.Repeat("x", validationCacheMaxQueryBytes) + `" | JSON | UNWRAP n [5m]))`, true},
 	} {
@@ -754,6 +799,12 @@ func TestResponseKeyFenceScreensDoNotAllocate(t *testing.T) {
 			"case":     reservedFieldCaseResponseKeyVersion,
 			"label":    reservedFieldLabelResponseKeyVersion,
 			"keyword":  keywordLabelResponseKeyVersion,
+			"empty-without": func(q string) string {
+				if emptyWithoutClauseIn(q) {
+					return emptyWithoutOperandResponseVersion
+				}
+				return ""
+			},
 		} {
 			if allocs := testing.AllocsPerRun(50, func() { _ = screen(query) }); allocs != 0 {
 				t.Errorf("%s screen of %q allocates %v times", name, query, allocs)
