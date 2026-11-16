@@ -183,8 +183,8 @@ type lfParser struct {
 	// prevStart is the start of the token before tok; before the first token it is the offset of the token
 	// before the text (negative when the text is part of a longer query).
 	prevStart int
-	// lastNUL is the offset of the last NUL byte of the text, or -1: a string that opens before it may hold it.
-	lastNUL int
+	// noNUL is set once no NUL byte stands after the start of a string read: no later string holds one.
+	noNUL bool
 }
 
 // maxLabelFilterDepth bounds the nesting of parentheses and the length of a
@@ -214,7 +214,7 @@ func parseLabelFilterText(text string, before int) (*LabelFilterExpr, *LabelFilt
 // where a binary operator of the query follows it (`| a>5 + 3`: the operator belongs to the query, whose left
 // operand is the pipeline); end is where the expression ends, len(text) when it takes the whole text.
 func scanLabelFilter(text string, before int, binary bool) (expr *LabelFilterExpr, end int, serr *LabelFilterSyntaxError) {
-	p := &lfParser{src: text, literalEnd: -1, prevStart: before, lastNUL: strings.LastIndexByte(text, 0)}
+	p := &lfParser{src: text, literalEnd: -1, prevStart: before}
 	p.next()
 	expr, err := p.parseOr(true)
 	end = len(text)
@@ -332,7 +332,11 @@ func connectorKind(word string) lfTokKind {
 // lexString reads the quoted literal that starts at start; it reports false, with the lexer error set, when the
 // literal is not terminated.
 func (p *lfParser) lexString(start int, quote byte) bool {
-	if p.lexErr == nil && p.lastNUL > start {
+	if p.lexErr == nil && !p.noNUL && strings.IndexByte(p.src[start:], 0) < 0 {
+		// No NUL from the first string on: none in a later one either, so the text is read for it once per parse.
+		p.noNUL = true
+	}
+	if p.lexErr == nil && !p.noNUL {
 		// A NUL byte in the string, or after it: Loki's scanner reports the string's errors in the order of the text
 		// (lokiStringError).
 		if msg := lokiStringError(p.src, start); msg != "" {
@@ -480,30 +484,40 @@ func (p *lfParser) keywordName(start int) string {
 	if len(word) > 20 || len(word) < 2 {
 		return "IDENTIFIER"
 	}
-	// The word in lower case, as the lexer lower cases it: the Kelvin sign and U+0130 are k and i (`İp`).
 	var lower [20]byte
-	n := 0
-	for i := 0; i < len(word); {
+	n := len(word)
+	for i := 0; i < len(word); i++ {
 		c := word[i]
 		if c >= utf8.RuneSelf {
-			r, size := utf8.DecodeRuneInString(word[i:])
-			if r = unicode.ToLower(r); r >= utf8.RuneSelf {
+			// The word in lower case, as the lexer lower cases it: the Kelvin sign and U+0130 are k and i (`İp`).
+			if n = foldedWord(word, &lower); n < 0 {
 				return "IDENTIFIER"
 			}
-			c, i = byte(r), i+size
-		} else {
-			if 'A' <= c && c <= 'Z' {
-				c += 'a' - 'A'
-			}
-			i++
+			break
 		}
-		lower[n] = c
-		n++
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		lower[i] = c
 	}
 	if name := keywordTokenName(p.src, p.pos, string(lower[:n])); name != "" {
 		return name
 	}
 	return "IDENTIFIER"
+}
+
+// foldedWord writes word in lower case into lower, rune by rune as strings.ToLower does, and returns its length, or
+// -1 for a word with a letter that does not lower case into ASCII.
+func foldedWord(word string, lower *[20]byte) int {
+	n := 0
+	for _, r := range word {
+		if r = unicode.ToLower(r); r >= utf8.RuneSelf || n == len(lower) {
+			return -1
+		}
+		lower[n] = byte(r)
+		n++
+	}
+	return n
 }
 
 // lfNameEnd is the length of the name at the start of s: letters, digits, '_' and, when dots is set, '.'.
@@ -718,7 +732,8 @@ func (p *lfParser) readSign(op string) (string, *LabelFilterSyntaxError) {
 // for the parenthesis over every character Go calls white space, so `ip` followed by one of those is the keyword
 // too, and the character after it is the unexpected token.
 func (p *lfParser) isIPCall() bool {
-	return lowerPrefixLen(p.tok.text, "ip") == len(p.tok.text) && strings.HasPrefix(strings.TrimLeftFunc(p.src[p.tok.end:], unicode.IsSpace), "(")
+	t := p.tok.text
+	return (strings.EqualFold(t, "ip") || len(t) == 3 && lowerPrefixLen(t, "ip") == 3) && strings.HasPrefix(strings.TrimLeftFunc(p.src[p.tok.end:], unicode.IsSpace), "(")
 }
 
 // unquoteLabelFilterString is the value of a string literal the way the LogQL
