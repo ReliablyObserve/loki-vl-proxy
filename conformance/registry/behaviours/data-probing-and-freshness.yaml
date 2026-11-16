@@ -62,7 +62,7 @@ decisions:
         measured: 'proxy 55-70 ms against Loki 13 ms (5.23x, above the locked 2x bound of operator-keep); four VictoriaLogs calls per repeat, the slowest a 33 ms probe'
         cause: 'a [^"]* class in the partial-parse probe: 17-24 ms of VictoriaLogs query parse per probe round'
         effect: 'every json metric refresh paid the parse; the warm rows of K6 and the json sets went above 2x Loki'
-        fixed_by: '#PR'
+        fixed_by: '#1573'
         after: 'the probe parses in 0.24-0.39 ms; the warm rows are to be measured on the stack (see the PR)'
     quality: 'The probes select the same lines as before on both VictoriaLogs versions and in Go''s regexp (edge table, fuzz, oracle store); every answer is unchanged.'
     performance:

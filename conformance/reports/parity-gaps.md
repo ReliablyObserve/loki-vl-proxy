@@ -196,7 +196,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `profiles/stream-selector-regexp-anchoring` — A stream-selector regexp matcher matches the whole label value, on every route and for __tenant_id__ (fixed) | TBD-PR | 0 | 0 |
 | `quality/json-label-probe-gates` — The parse-risk probes of a `\| json` metric run their key regexps only on lines that can hold the key they look for (fixed) | #1058 | 0 | 0 |
 | `quality/logfmt-parse-risk-candidates` — A `\| logfmt` metric refreshed over lines that carry the grouped label as a stored field is answered without the line-shape probe (fixed) | perf/logfmt-risk-candidate-gate | 0 | 0 |
-| `quality/probe-regexp-parse-cost` — The parse-risk probes and the JSON hazard filter hold no regexp class that costs VictoriaLogs milliseconds to parse | #PR | 0 | 0 |
+| `quality/probe-regexp-parse-cost` — The parse-risk probes and the JSON hazard filter hold no regexp class that costs VictoriaLogs milliseconds to parse | #1573 | 0 | 0 |
 | `quality/query-range-settled-steps` — a window-evaluated metric moved by a refresh or a re-run evaluates only the steps it does not hold, with the same answers, headers and 40... | TBD-PR | 0 | 0 |
 | `quality/stats-tumbling-relabel-one-parse` — A range-equals-step answer within the pooled parser's bound is translated and relabelled in one parse, with the same series limit and answer | #1097 | 0 | 0 |
 | `quality/unwrap-logfmt-narrowed-unpack` — An unwrap metric over `\| logfmt` grouped by plain labels unpacks only the labels it reads (fixed) | perf/unwrap-logfmt-unpack-fields | 0 | 0 |

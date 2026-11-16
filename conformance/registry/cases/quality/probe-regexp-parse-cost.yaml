@@ -65,7 +65,7 @@ compare:
     0.5 ms instead of 7-24 ms.
 gap:
   status: fixed
-  fixed_by: '#PR'
+  fixed_by: '#1573'
   impact: explore-visible
   visual: none
   visual_reason: 'a latency change: the probes select the same lines, so every answer and every panel is the base''s'
