@@ -370,6 +370,19 @@ Loki's speed or better is part of the same work, not a follow-up. Measure it
 (`benchstat`, the cost on VictoriaLogs, timings against Loki for the affected
 query shapes) and keep improving it. Only when that is not possible within
 the change, show why with numbers and ask the maintainers before it ships.
+
+Regexps sent to VictoriaLogs avoid character classes that are wide, hold the
+ASCII letters and are closed under case folding (`[^"]`, `[^"\\]`,
+`[^0-9.:]`). Go's regexp/syntax prints such a class in about a millisecond,
+and VictoriaLogs prints each regexp several times while it simplifies it on
+every query parse: 4-10 ms per class per query on v1.49.0 and v1.53.0. Write
+a run `[^set]*` as `vlNotInRun(set)` (`(?:[^setA-Za-z]*[A-Za-z]*)*`, for a set
+without letters). Splitting the letters out as an alternation does not help:
+the parser merges `(?:[^setA-Za-z]|[A-Za-z])` back into `[^set]`. A `^`
+between the two alternatives keeps them apart only where the class can
+never stand at the start of the text. Time a new regexp with VictoriaLogs'
+own parser (`logstorage.ParseQuery` from the `test/oracle/vl` module) on both
+versions, and its per-line match cost with a Go benchmark.
 ## Serving a construct from the query plan
 
 A construct moves from the string translator to the typed plan (`internal/queryplan/lower`, written by

@@ -280,6 +280,10 @@
     "quality/parity-corpus-asymmetric-visual-fixtures | compare:observed",
     "quality/parity-corpus-asymmetric-visual-fixtures | gap:open",
     "quality/parity-corpus-asymmetric-visual-fixtures | query",
+    "quality/probe-regexp-parse-cost | compare:exact",
+    "quality/probe-regexp-parse-cost | gap:fixed",
+    "quality/probe-regexp-parse-cost | perf",
+    "quality/probe-regexp-parse-cost | query",
     "quality/query-range-extent-cache | compare:numeric",
     "quality/query-range-extent-cache | query",
     "quality/query-range-extent-cache-large-answer | compare:numeric",
@@ -2100,6 +2104,8 @@
     "internal/proxy/vector_agg_series_differential_test.go | semantics/non-sum-vector-aggregation-unreduced",
     "internal/proxy/vector_agg_series_differential_test.go | window-bounds-and-step-alignment",
     "internal/proxy/vl_calls_header_test.go | quality/edge-cache-oversized-reply",
+    "internal/proxy/vl_regexp_class_oracle_test.go | quality/probe-regexp-parse-cost",
+    "internal/proxy/vl_regexp_class_test.go | quality/probe-regexp-parse-cost",
     "internal/proxy/volume_segments_test.go | loki_api_v1_index_volume",
     "internal/proxy/volume_segments_test.go | quality/index-volume-settled-segments",
     "internal/proxy/volume_test.go | drilldown/index_volume/end-millisecond-rounding",
@@ -2895,12 +2901,12 @@
       "any": 35,
       "api": 107,
       "drilldown": 53,
-      "explore": 188,
+      "explore": 189,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 665,
+      "go": 667,
       "playwright": 1
     },
     "page_kinds": {
@@ -2917,10 +2923,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 109,
+    "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 98,
-    "wired_items": 386
+    "wired_items": 387
   },
   "gates": [
     "A/B shape selection",
