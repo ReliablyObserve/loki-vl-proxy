@@ -108,7 +108,7 @@ func firstWindowRows(rnd *rand.Rand, from, to int64, rejectedAt []int64) []vlemu
 // -backend-heavy-query-min-range or more and meets a value the conversion
 // rejects in its first evaluation window answers Loki's 400 without waiting
 // for its stats read, which is cancelled (Loki stops at the first rejected
-// value, pkg/logql/evaluator.go:726-733) once the query met a conversion
+// value) once the query met a conversion
 // error lately. The answer is byte for byte the one the request gives when the
 // stats read answers first and when no lookup ran early (the query's first
 // heavy read, which looks the first window up after its hits), over random windows,

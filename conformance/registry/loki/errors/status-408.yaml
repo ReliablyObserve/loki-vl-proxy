@@ -16,7 +16,7 @@ loki_behaviour: |
   the client cancelled it and 504 "request timed out, decrease the duration
   of the request or add more label matchers (prefer exact match over regex
   match) to reduce the amount of data processed" when its deadline (the
-  tenant's query_timeout) passed (pkg/util/server/error.go:26-27, :103-107).
+  tenant's query_timeout) passed.
   The windowed log query_range path answered 408 with Go's context text
   while it waited to retry a failed window batch; it now answers through the
   error layer, and the proxy writes 408 nowhere.

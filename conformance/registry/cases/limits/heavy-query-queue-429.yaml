@@ -5,6 +5,7 @@ proves:
   - backend-admission-and-heavy-query-queueing
   - loki_api_v1_query_range
 consumer: explore
+evidence: needs recording
 why: |
   Loki's scheduler answers HTTP 429 with "too many outstanding requests" when a
   query cannot be admitted. A proxy that instead runs the query anyway is the
@@ -40,4 +41,6 @@ compare:
     log_contains:
       - limit_flag=-backend-max-concurrent-heavy-queries
 loki_parity: |
-  pkg/queue/queue.go ErrTooManyRequests, returned as 429 by the query frontend.
+  Loki's query frontend returns 429 when a tenant's outstanding requests pass
+  its queue limit (max_outstanding_requests_per_tenant,
+  https://grafana.com/docs/loki/latest/configure/).

@@ -3,7 +3,7 @@ kind: severity
 title: detected_level is derived on the read path
 
 loki: |
-  Loki sets detected_level at ingest (pkg/distributor/field_detection.go) when
+  Loki sets detected_level at ingest when
   discover_log_levels is on: it takes the level from structured metadata
   (level, LEVEL, Level, severity, SEVERITY, Severity, levelname, severity_text),
   then from the log line (JSON key or logfmt key, first match), then from

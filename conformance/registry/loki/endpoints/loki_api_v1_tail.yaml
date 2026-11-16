@@ -25,7 +25,7 @@ generated:
 
 description: |
   WebSocket live tail. Loki runs the query's whole pipeline on every pushed
-  entry (the ingester's tailer, pkg/ingester/tailer.go processStream) and
+  entry (the ingester's tailer) and
   sends frames of at most 100 entries, one stream per entry, in timestamp
   order. Stream labels follow the query encoder: without any pipeline stage
   the frame carries the index labels only; once a stage runs it carries every

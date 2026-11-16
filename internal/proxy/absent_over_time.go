@@ -19,16 +19,15 @@ import (
 
 // absent_over_time (Loki v3.7.7).
 //
-// pkg/logql/evaluator.go:647-664 builds an AbsentRangeVectorEvaluator, and
-// :754-778 (Next) answers a step whose window (t-range, t] holds no sample with
+// Loki answers a step whose window (t-range, t] holds no sample with
 // one series valued 1 and a step that holds one with nothing. The series
-// carries the labels absentLabels (:1320-1345) takes from the stream selector:
+// carries the labels it takes from the stream selector:
 // a name with exactly one equality matcher; a name any other matcher also
 // names, a regexp or inequality matcher, and a value of "" give none. The
-// sample extractor keeps no labels (syntax/extractor.go:44-48), so every line
+// sample extractor keeps no labels, so every line
 // the pipeline keeps is one sample whatever the parser extracted, and an
 // unwrapped label that is empty or absent makes no sample
-// (log/metrics_extraction.go:214-231). The steps are start, start+step, ...:
+// (registry semantics/absent-over-time-semantics). The steps are start, start+step, ...:
 // Loki aligns a query to its step only with -querier.align-querier-with-step,
 // off by default.
 //
@@ -57,8 +56,7 @@ type absentOverTimeCompatSpec struct {
 }
 
 // errAbsentGrouping is Loki's rejection of `absent_over_time(...) by (...)`
-// (pkg/logql/syntax/ast.go:1439-1447 RangeAggregationExpr.validate, wrapped as a
-// ParseError at :1409).
+// (a parse error).
 const (
 	errAbsentGroupingDetail = "grouping not allowed for absent_over_time aggregation"
 	errAbsentGrouping       = "parse error : " + errAbsentGroupingDetail
@@ -145,15 +143,20 @@ func (s absentOverTimeCompatSpec) presenceQuery() string {
 	return fmt.Sprintf("sum(%s(%s[%s]))", fn, s.baseQuery, s.rangeWindowStr)
 }
 
-// absentOverTimeLabels is absentLabels (pkg/logql/evaluator.go:1320-1345),
-// matcher by matcher, with the label builder's rule that an empty value
+// absentOverTimeLabels takes the labels of the absent series from the stream
+// selector, matcher by matcher, with the label builder's rule that an empty value
 // deletes the label.
 func absentOverTimeLabels(baseQuery string) map[string]string {
-	labels := map[string]string{}
 	lq, err := parseLogQLQuery(noFlowCtx, strings.TrimSpace(baseQuery))
 	if err != nil {
-		return labels
+		return map[string]string{}
 	}
+	return absentLabelsOf(lq)
+}
+
+// absentLabelsOf is absentOverTimeLabels of a parsed log query.
+func absentLabelsOf(lq *logqlpkg.LogQuery) map[string]string {
+	labels := map[string]string{}
 	var other []string
 	for _, m := range lq.Selector.Matchers {
 		if m.Name == "__name__" {
@@ -174,7 +177,7 @@ func absentOverTimeLabels(baseQuery string) map[string]string {
 }
 
 // series folds the one absent series through the vector aggregations, as
-// VectorAggEvaluator folds a single series (pkg/logql/evaluator.go:435-529):
+// Loki's vector aggregation folds a single series:
 // the grouping keeps or drops labels, count is 1, stddev and stdvar are 0, sum,
 // avg, min and max keep the value, topk, bottomk and sort keep the series whole
 // (none for k < 1), and label_replace then rewrites its labels. ok is false when
@@ -182,44 +185,52 @@ func absentOverTimeLabels(baseQuery string) map[string]string {
 func (s absentOverTimeCompatSpec) series() (labels map[string]string, value string, ok bool) {
 	labels, value = absentOverTimeLabels(s.baseQuery), "1"
 	for i := len(s.aggs) - 1; i >= 0; i-- {
-		agg := s.aggs[i]
-		switch agg.Op {
-		case logqlpkg.VectorSort, logqlpkg.VectorSortDesc:
-			continue // a sort keeps the series whole (evaluator.go:506-516)
-		case logqlpkg.VectorTopK, logqlpkg.VectorBottomK:
-			if int(agg.Param) < 1 {
-				return nil, "", false
-			}
-			continue
-		case logqlpkg.VectorCount:
-			value = "1"
-		case logqlpkg.VectorStddev, logqlpkg.VectorStdvar:
-			value = "0"
+		var none bool
+		if labels, value, none = foldAbsentSeries(s.aggs[i], labels, value); none {
+			return nil, "", false
 		}
-		kept := map[string]string{}
-		switch g := agg.Grouping; {
-		case g == nil:
-		case g.Without:
-			for k, v := range labels {
-				kept[k] = v
-			}
-			for _, name := range g.Labels {
-				delete(kept, name)
-			}
-		default:
-			for _, name := range g.Labels {
-				if v, has := labels[name]; has {
-					kept[name] = v
-				}
-			}
-		}
-		labels = kept
 	}
 	for i := len(s.labelReplaces) - 1; i >= 0; i-- {
 		spec := s.labelReplaces[i]
 		labels = replaceLabel(labels, regexp.MustCompile("^(?:"+spec.Regex+")$"), spec)
 	}
 	return labels, value, true
+}
+
+// foldAbsentSeries folds the one absent series through one vector aggregation; none is true when no series is
+// left (a ranking of k < 1).
+func foldAbsentSeries(agg *logqlpkg.VectorAggregation, labels map[string]string, value string) (map[string]string, string, bool) {
+	switch agg.Op {
+	case logqlpkg.VectorSort, logqlpkg.VectorSortDesc:
+		return labels, value, false // a sort keeps the series whole
+	case logqlpkg.VectorTopK, logqlpkg.VectorBottomK:
+		if int(agg.Param) < 1 {
+			return nil, "", true
+		}
+		return labels, value, false
+	case logqlpkg.VectorCount:
+		value = "1"
+	case logqlpkg.VectorStddev, logqlpkg.VectorStdvar:
+		value = "0"
+	}
+	kept := map[string]string{}
+	switch g := agg.Grouping; {
+	case g == nil:
+	case g.Without:
+		for k, v := range labels {
+			kept[k] = v
+		}
+		for _, name := range g.Labels {
+			delete(kept, name)
+		}
+	default:
+		for _, name := range g.Labels {
+			if v, has := labels[name]; has {
+				kept[name] = v
+			}
+		}
+	}
+	return kept, value, false
 }
 
 // absentPresenceDegraded reports a presence answer that is a stand-in for a
@@ -352,18 +363,25 @@ const absentMaxPoints = 2 * lokiMaxPointsPerSeries
 // index, not by its exact nanosecond: it reaches here as float seconds, which at
 // today's epoch resolve only a few hundred nanoseconds.
 func buildAbsentOverTimeMatrix(spec absentOverTimeCompatSpec, present map[int64]bool, startNs, endNs, stepNs int64) []byte {
+	labels, value, ok := spec.series()
+	return absentMatrix(labels, value, ok, present, startNs, endNs, stepNs)
+}
+
+// absentMatrix is the matrix of the one absent series (none when has is false) at the steps start, start+step, ...
+// end that are not in present.
+func absentMatrix(labels map[string]string, value string, has bool, present map[int64]bool, startNs, endNs, stepNs int64) []byte {
 	result := []lokiMatrixResult{}
-	if labels, value, ok := spec.series(); ok && stepNs > 0 {
-		has := make(map[int64]bool, len(present))
+	if has && stepNs > 0 {
+		steps := make(map[int64]bool, len(present))
 		for ts := range present {
-			has[int64(math.Round(float64(ts-startNs)/float64(stepNs)))] = true
+			steps[int64(math.Round(float64(ts-startNs)/float64(stepNs)))] = true
 		}
 		var values [][]any
 		// The handlers hold a range to Loki's 11,000 points per series, plus one for
 		// the step alignment; a caller that reaches this builder otherwise gets the
 		// first absentMaxPoints.
 		for i, n := int64(0), min64(stepCount(startNs, endNs, stepNs), absentMaxPoints); i < n; i++ {
-			if !has[i] {
+			if !steps[i] {
 				values = append(values, []any{lokiSampleSeconds(startNs + i*stepNs), value})
 			}
 		}
@@ -388,9 +406,8 @@ func isAbsentOverTimeQuery(query string) bool {
 
 // mergeAbsentMultiTenant merges the per-tenant answers of an absent_over_time.
 // Loki's multi-tenant querier merges the tenants' samples into one iterator
-// before the evaluator runs (pkg/querier/multi_tenant_querier.go SelectSamples),
-// so a step is absent only when no tenant has a sample, and the series carries
-// the selector's labels alone, never __tenant_id__ (evaluator.go absentLabels).
+// before the evaluator runs, so a step is absent only when no tenant has a sample, and the series carries
+// the selector's labels alone, never __tenant_id__.
 // A tenant's answer holds a step exactly when it has no sample there, so the
 // merged answer is the steps every tenant holds, per series. Samples are
 // compared by label set and value, which the tenants share.

@@ -8,8 +8,7 @@ consumer: explore
 why: |
   `rate({service_name="payment-service"} | logfmt amount | unwrap amount [5m])` has
   one series per stream on Loki 3.7.7: `| logfmt amount` extracts only the
-  unwrapped label, which the series identity drops
-  (pkg/logql/log/metrics_extraction.go:150-178). The proxy answers a series per
+  unwrapped label, which the series identity drops. The proxy answers a series per
   stream and per value of every other key of the lines (msg, error_code,
   currency, provider, latency_ms ...), because the raw-row route that answers a
   bare range function with unwrap keeps all parsed labels.
@@ -36,7 +35,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/proxy raw-row range metric evaluator (the labels of a series built from the parsed fields)'
-  loki: 'pkg/logql/log/metrics_extraction.go:150-178 labelSampleExtractor (series = stream + the labels the parsers extract, less the unwrapped one)'
+  loki: 'the series are the stream plus the labels the parsers extract, less the unwrapped one (268 series on Loki against 2035 on the proxy, in this case)'
   proxy: 'a series per stream and per value of every parsed key'
   planned_test: 'TestCompat_UnwrapBareRangeSeriesLabels (test/e2e-compat, group core) over rate and the over-time functions, extraction list, range and instant'
   note: 'Found while fixing semantics/unwrap-sum-without-collapses; related semantics/unwrap-per-series-identity-raw-rows and profiles/json-extraction-list-exposes-only-listed (the same for log queries).'

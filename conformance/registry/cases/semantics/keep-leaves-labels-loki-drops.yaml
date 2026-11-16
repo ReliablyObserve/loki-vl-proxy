@@ -6,8 +6,7 @@ proves:
   - loki_api_v1_query
 consumer: explore
 why: |
-  Loki's keep stage keeps a label only when its exact name is listed
-  (pkg/logql/log/keep_labels.go:15-45); every other label, stream label,
+  Loki's keep stage keeps a label only when its exact name is listed; every other label, stream label,
   structured metadata or parsed, is deleted.
 
   The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
@@ -69,7 +68,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/proxy/loki_profile.go extractedName (rename after keep), internal/proxy/keep_series_grouping.go (series of a range aggregation over a keep)'
-  loki: 'pkg/logql/log/keep_labels.go:15-45 (exact-name keep); pkg/logql/log/metrics_extraction.go:162 (unwrapped label left out of the series)'
+  loki: 'an exact-name keep leaves the labels it does not name out; an unwrapped label is left out of the series (test/e2e-compat keep_service_name_test.go)'
   proxy: 'only the kept labels, on log entries and metric series'
   planned_test: 'TestCompat_KeepDropsUnlistedLabels (test/e2e-compat, group core): log keep after json/logfmt collisions, count over keep on query_range and query'
   clusters: []

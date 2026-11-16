@@ -14,8 +14,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// Unwrap sample validity (Loki v3.7.7 pkg/logql/log/metrics_extraction.go,
-// streamLabelSampleExtractor.Process): a line whose unwrapped label is absent
+// Unwrap sample validity (Loki v3.7.7; registry semantics/unwrap-sample-validity): a line whose unwrapped label is absent
 // or empty makes no sample, and a value the conversion rejects is not a sample
 // either (it carries __error__="SampleExtractionErr", which `| __error__=""`
 // drops). VictoriaLogs' stats functions parse leniently instead (a unit such as
@@ -129,8 +128,7 @@ func unwrapBucketAgg(manualFunc string) string {
 }
 
 // mergeUnwrapBuckets merges the partial aggregates of the buckets of one window
-// into Loki's value over the window (pkg/logql/range_vector.go:371-420
-// sumOverTime, avgOverTime, maxOverTime, minOverTime): the sum (of a rate too,
+// into Loki's value over the window: the sum (of a rate too,
 // before its division), the sum over the window's sample count, or the
 // extreme, where a NaN gives way as in Loki; stddev and stdvar merge the
 // buckets' deviations (mergeDeviationBuckets). first and last take the earliest
@@ -395,13 +393,10 @@ var unwrapGroupPushdownOff bool
 // (max_over_time(...))` and `min by (L) (min_over_time(...))`, L possibly
 // empty, under an optional label_replace. Loki
 // takes the extreme per series over the window and then per group of L
-// (pkg/logql/range_vector.go:405-420 maxOverTime, minOverTime;
-// pkg/logql/evaluator.go VectorAggEvaluator.Next, a NaN giving way in both),
-// which is the extreme of the group's samples in the window: VictoriaLogs takes
+// (a NaN giving way in both), which is the extreme of the group's samples in the window: VictoriaLogs takes
 // it per bucket and group of L, the proxy over the window's buckets, and no
 // series per stream (or per line, for a parser query) is read or folded. Loki
-// counts max_query_series on the groups (pkg/logql/engine.go:530-590
-// JoinSampleVector). The translated grouping must be L and the series
+// counts max_query_series on the groups (registry limits/series-limit-error). The translated grouping must be L and the series
 // identity (_stream, _msg, level); anything else is not pushed down.
 func (p *Proxy) unwrapGroupPushdown(spec statsCompatSpec, manualFunc, query string) (statsCompatSpec, bool) {
 	agg, ok := decomposableUnwrapAggregation(query, manualFunc)
@@ -481,7 +476,7 @@ func decomposableUnwrapAggregation(query, manualFunc string) (*logqlpkg.VectorAg
 // max, min, stddev, stdvar, first or last over time with unwrap from anchored
 // buckets of their partial aggregates (unwrapBucketAgg): a range longer than the step, whose windows
 // overlap, so one step bucket per point holds only the newest step of Loki's
-// window (t-range, t] (pkg/logql/range_vector.go:102-189). A range up to the
+// window (t-range, t] (registry semantics/unwrap-over-time-range-windows). A range up to the
 // step stays on the native step buckets, which hold exactly one window each
 // (the window phase filter keeps a shorter range's lines). The query is gated
 // and its series are a stats grouping the evaluator reads from buckets

@@ -4,11 +4,10 @@
 # from extents an earlier set or range filled. Selected with --loki-uncached
 # (stack.py, pr_smoke.py); applied after docker-compose.ab.yml.
 #
-# Loki applies command-line flags after the config file
-# (pkg/util/cfg/cfg.go DefaultUnmarshal), so these switch the caches off over
-# loki-local-config.yaml's `cache_results: true`; flag names from Loki 3.7.7
-# pkg/querier/queryrange/queryrangebase/roundtrip.go:50 and
-# pkg/querier/queryrange/roundtrip.go:66-75. The rest of the command is the
+# Loki applies command-line flags after the config file, so these switch the
+# caches off over loki-local-config.yaml's `cache_results: true`; the flag names
+# are in Loki's configuration reference
+# (https://grafana.com/docs/loki/latest/configure/). The rest of the command is the
 # base stack's (tests/test_stack.py fails when it drifts).
 services:
   loki:

@@ -37,7 +37,7 @@ gap:
   impact: explore-visible
   effort: L
   area: 'internal/proxy quantile_histogram.go (collectQuantileHistogram, quantileOfCounts, quantileOuter), range_metric_compat.go (proxyManualRangeMetricRange, proxyManualRangeMetricInstant)'
-  loki: 'pkg/logql/range_vector.go:449-487 quantileOverTime, Quantile (sorted samples of the window, linear interpolation at rank phi*(n-1)); pkg/logql/syntax/extractor.go:21-60 (a range by groups the samples); pkg/logql/evaluator.go newVectorAggEvaluator (a vector aggregation folds per-series values)'
+  loki: 'quantile_over_time takes the sorted samples of the window with linear interpolation at rank phi*(n-1); a range by groups the samples (test/e2e-compat unwrap_quantile_test.go)'
   proxy: 'VictoriaLogs counts the rows per converted value and anchored bucket; the proxy merges the buckets of each window and interpolates like Loki'
   planned_test: 'TestUnwrapQuantileResponseLimit, TestQuantileOfCountsEdges, TestQuantileWindowMergesBuckets, TestQuantileHistogramDifferential, TestQuantileHistogramOuterAggregationDifferential, TestQuantileStatsGroupByKeepsLevel (internal/proxy); TestCompat_UnwrapQuantile (test/e2e-compat, group core)'
   note: |

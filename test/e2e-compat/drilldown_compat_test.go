@@ -1431,8 +1431,7 @@ func TestDrilldown_TenantLimitsEndpointContract(t *testing.T) {
 }
 
 // assertLokiVolumeRangeShape checks a volume_range answer against Loki's
-// result-type rule (pkg/querier/queryrange/volume.go toPrometheusData, verified
-// live on Loki 3.7.1): a vector when every series has exactly one sample, with
+// result-type rule (verified live on Loki 3.7.1): a vector when every series has exactly one sample, with
 // each series carrying "value"; otherwise a matrix whose series all carry
 // non-empty "values" and at least one of which has several samples.
 func assertLokiVolumeRangeShape(t *testing.T, data map[string]interface{}) {

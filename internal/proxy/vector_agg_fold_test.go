@@ -147,7 +147,7 @@ func foldResult(t *testing.T, body []byte) []foldSeries {
 	return out
 }
 
-// foldByGrouping is Loki's VectorAggEvaluator over the series the manual
+// foldByGrouping is Loki's vector aggregation over the series the manual
 // evaluator returns: per step, the series that share the labels the grouping
 // keeps become one; a series with no sample at a step is not counted at it.
 //

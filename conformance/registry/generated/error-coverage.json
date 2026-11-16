@@ -341,22 +341,26 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 0,
-      "covered": false,
-      "e2e": false,
-      "e2e_rows": [],
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1605"
+      ],
       "kind": "methods_routing",
       "known_difference_ids": [],
-      "matching_rows": 0,
-      "messages": [],
+      "matching_rows": 1,
+      "messages": [
+        "method-not-allowed"
+      ],
       "modes": {},
-      "proxy_matches": null,
+      "proxy_matches": true,
       "reason": "",
-      "recorded": false,
+      "recorded": true,
       "route": "detected_field_values",
-      "rows": 0,
-      "state": "gap",
-      "unit_gate": false
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
     },
     {
       "comparable_rows": 4,
@@ -577,7 +581,7 @@
       "reason": "",
       "recorded": true,
       "route": "detected_fields",
-      "rows": 2,
+      "rows": 3,
       "state": "match",
       "unit_gate": true
     },
@@ -1623,22 +1627,26 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 0,
-      "covered": false,
-      "e2e": false,
-      "e2e_rows": [],
+      "comparable_rows": 1,
+      "covered": true,
+      "e2e": true,
+      "e2e_rows": [
+        "r1604"
+      ],
       "kind": "methods_routing",
       "known_difference_ids": [],
-      "matching_rows": 0,
-      "messages": [],
+      "matching_rows": 1,
+      "messages": [
+        "method-not-allowed"
+      ],
       "modes": {},
-      "proxy_matches": null,
+      "proxy_matches": true,
       "reason": "",
-      "recorded": false,
+      "recorded": true,
       "route": "index_volume_range",
-      "rows": 0,
-      "state": "gap",
-      "unit_gate": false
+      "rows": 1,
+      "state": "match",
+      "unit_gate": true
     },
     {
       "comparable_rows": 9,
@@ -2376,7 +2384,7 @@
       "unit_gate": true
     },
     {
-      "comparable_rows": 2,
+      "comparable_rows": 5,
       "covered": true,
       "e2e": true,
       "e2e_rows": [
@@ -2385,7 +2393,7 @@
       ],
       "kind": "logql_validation",
       "known_difference_ids": [],
-      "matching_rows": 2,
+      "matching_rows": 5,
       "messages": [
         "only-label-matchers",
         "parse"
@@ -2395,7 +2403,7 @@
       "reason": "",
       "recorded": true,
       "route": "patterns",
-      "rows": 2,
+      "rows": 5,
       "state": "match",
       "unit_gate": true
     },
@@ -3902,7 +3910,9 @@
     "r1439",
     "r1449",
     "r1451",
-    "r1561"
+    "r1561",
+    "r1604",
+    "r1605"
   ],
   "kinds": [
     {
@@ -4306,7 +4316,7 @@
       "status": 400
     },
     "method-not-allowed": {
-      "comparable_rows": 59,
+      "comparable_rows": 61,
       "e2e_rows": [
         "r1191",
         "r1205",
@@ -4320,17 +4330,21 @@
         "r1257",
         "r1264",
         "r1271",
-        "r1278"
+        "r1278",
+        "r1604",
+        "r1605"
       ],
       "item": "msg-method-not-allowed",
       "kind": "route",
-      "matching_rows": 59,
+      "matching_rows": 61,
       "routes": [
+        "detected_field_values",
         "detected_fields",
         "detected_labels",
         "format_query",
         "index_stats",
         "index_volume",
+        "index_volume_range",
         "label_values",
         "labels",
         "other_routes",
@@ -4399,7 +4413,9 @@
         "r1279",
         "r1280",
         "r1281",
-        "r1282"
+        "r1282",
+        "r1604",
+        "r1605"
       ],
       "source": "lokierr",
       "stage": "routing",
@@ -4490,7 +4506,7 @@
       "status": 400
     },
     "only-label-matchers": {
-      "comparable_rows": 8,
+      "comparable_rows": 11,
       "e2e_rows": [
         "r0287",
         "r0288",
@@ -4503,7 +4519,7 @@
       ],
       "item": "msg-only-label-matchers",
       "kind": "param",
-      "matching_rows": 8,
+      "matching_rows": 11,
       "routes": [
         "detected_labels",
         "index_stats",
@@ -4522,7 +4538,10 @@
         "r0291",
         "r0294",
         "r0295",
-        "r0296"
+        "r0296",
+        "r1600",
+        "r1601",
+        "r1602"
       ],
       "source": "lokierr",
       "stage": "logql_validation",
@@ -5150,24 +5169,24 @@
   },
   "summary": {
     "cells": 124,
-    "cells_e2e": 71,
-    "cells_matching": 98,
-    "cells_recorded": 65,
+    "cells_e2e": 73,
+    "cells_matching": 100,
+    "cells_recorded": 67,
     "check_order_rows": 33,
-    "comparable_rows": 231,
-    "coverage_ratio": 0.5726,
-    "covered_cells": 71,
+    "comparable_rows": 236,
+    "coverage_ratio": 0.5887,
+    "covered_cells": 73,
     "differing_rows": 8,
-    "e2e_rows": 140,
-    "match_ratio": 0.9654,
-    "matching_rows": 223,
+    "e2e_rows": 142,
+    "match_ratio": 0.9661,
+    "matching_rows": 228,
     "messages": 36,
     "messages_documented": 9,
     "messages_recorded": 27,
-    "not_comparable_rows": 71,
+    "not_comparable_rows": 72,
     "recorded_loki": "3.7.9",
-    "recorded_on": "2026-11-13",
-    "recorded_rows": 302,
+    "recorded_on": "2026-11-15",
+    "recorded_rows": 308,
     "unmapped_items": 8
   }
 }

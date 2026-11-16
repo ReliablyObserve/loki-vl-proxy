@@ -2008,7 +2008,7 @@ func TestContract_Volume_ReturnsGatewayErrorWithoutCacheOnBackendFailure(t *test
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 without cached volume fallback, got %d body=%s", w.Code, w.Body.String())
 	}
-	// Loki's 500 carries no backend text (pkg/util/server/error.go:124-128).
+	// Loki's 500 carries no backend text.
 	if got := lokiErrorText(t, w); got != lokiErrInternal {
 		t.Fatalf("expected Loki's %q, got %q", lokiErrInternal, got)
 	}

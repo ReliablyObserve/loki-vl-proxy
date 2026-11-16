@@ -81,7 +81,7 @@ func TestLokiError_BackendDown_ReturnsUnavailable(t *testing.T) {
 	mux.ServeHTTP(w, r)
 
 	resp := readErrorRec(t, w)
-	// Loki answers a failed backend call with 500 and its own text (pkg/util/server/error.go:124-128).
+	// Loki answers a failed backend call with 500 and its own text.
 	if w.Code != http.StatusInternalServerError || resp.Error != lokiErrInternal {
 		t.Errorf("backend down should return 500 %q, got %d %q", lokiErrInternal, w.Code, resp.Error)
 	}

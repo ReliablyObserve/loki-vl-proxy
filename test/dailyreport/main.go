@@ -91,6 +91,7 @@ func parseFlags(args []string) (config, error) {
 	fs.IntVar(&in.ErrorReplayExit, "error-replay-exit", 0, "the exit status of TestLokiErrorAnswersReplay")
 	fs.BoolVar(&in.SkipRerecord, "no-error-rerecord", false, "the run did not re-record the error answers")
 	fs.BoolVar(&in.SkipReplay, "no-error-replay", false, "the run did not replay the error answers")
+	fs.StringVar(&in.Wiring, "wiring", "conformance/registry/generated/wiring.json", "the registry's wiring: the tests wired to each case (coverage by a named test); empty leaves it out")
 	fs.StringVar(&in.Sweep, "sweep", "conformance/registry/grammar-sweep.json", "the grammar sweep's recorded classes")
 	fs.StringVar(&in.Parity, "parity", "", "the parity slice's result.json")
 	fs.StringVar(&in.Smoke, "smoke", "", "the perf smoke's smoke.json")

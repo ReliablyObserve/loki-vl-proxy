@@ -19,8 +19,8 @@ const PatternFilterScratch = "__lvp_pf"
 // `or` alternatives into parts of the LogsQL query: the text the string
 // translator writes, which PatternLineFilter builds as nodes.
 //
-// Loki keeps a line when pattern.Matcher.Test accepts it
-// (pkg/logql/log/pattern/pattern.go:124-165): each literal is searched once,
+// Loki keeps a line when its pattern matcher accepts it
+// (registry semantics/pattern-line-filter-anchoring): each literal is searched once,
 // at its first occurrence after the previous one (a leading literal may start
 // anywhere in the line), every capture must be non-empty, and a pattern that
 // ends on a literal must end the line there. A regexp backtracks to later
@@ -327,7 +327,7 @@ func (a patternLineFilterAlt) filterText() string {
 func planPatternLineFilterAlt(value string, id int) patternLineFilterAlt {
 	if value == "" {
 		// Loki's empty pattern is a matcher with no expression, which accepts
-		// only an empty line (pkg/logql/log/pattern ParseLineFilter, Test).
+		// only an empty line.
 		return patternLineFilterAlt{re: "^$"}
 	}
 	nodes := logql.LinePatternNodes(value)

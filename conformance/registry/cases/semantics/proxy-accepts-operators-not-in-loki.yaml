@@ -6,11 +6,10 @@ proves:
 consumer: api
 why: |
   Loki 3.7.7 has no `group` aggregation and no `label_join`: its lexer makes a
-  function token only of the names in pkg/logql/syntax/lex.go functionTokens
+  function token only of a fixed set of names
   (the range operations, sum avg max min count stddev stdvar bottomk topk sort
   sort_desc approx_topk, vector, label_replace and the unwrap conversions), so
-  any other name is an IDENTIFIER the grammar cannot place (syntax.y vectorOp,
-  rangeOp, labelReplaceExpr, vectorExpr). `group(count_over_time({...}[5m]))`
+  any other name is an IDENTIFIER the grammar cannot place. `group(count_over_time({...}[5m]))`
   and `label_join(...)` are HTTP 400 `parse error at line 1, col 1: syntax
   error: unexpected IDENTIFIER`, and so is every PromQL name Loki lacks (abs,
   clamp, round, ceil, sqrt, ln, scalar, time, quantile, count_values, ...),
@@ -21,10 +20,10 @@ why: |
   Loki answers 400, and a client written against the proxy broke on Loki.
 
   The other direction: Loki's lexer lower-cases a word before it looks it up
-  (lex.go Lex: tokenTextLower, tokenNext), so `TOPK(3, X)`, `SUM BY (a) (X)`,
+  (its lexer), so `TOPK(3, X)`, `SUM BY (a) (X)`,
   `RATE(...)`, `OFFSET`, `UNWRAP`, `AND`, `ON`, `GROUP_LEFT`, `BOOL` and the
   parser keywords are the keywords they spell. A function name counts only when
-  a call follows (lex.go isFunction: "(" or by/without and "("), so a label
+  a call follows ("(" or by/without and "("), so a label
   called Rate or Count stays a label. The proxy matched the lower-case
   spelling only: `TOPK(...)` fell through the opaque path and answered a
   `streams` result, `SUM BY (app) (...)` was a parse error.
@@ -68,7 +67,7 @@ gap:
   impact: explore-visible
   effort: S
   area: 'internal/logql scanner (keyword case) + parser (opaque calls) + semantic (label_replace argument position); internal/proxy lowercaseQueryKeywords'
-  loki: 'pkg/logql/syntax/lex.go:95-137 functionTokens, :226-252 Lex lower-casing, :398 isFunction; syntax.y:477-490 vectorOp, :492-508 rangeOp'
+  loki: 'group, label_join and every other PromQL name Loki lacks are a 400 parse error (unexpected IDENTIFIER) (test/e2e-compat operators_not_in_loki_test.go)'
   proxy: '400 with Loki''s text; keywords accepted in any case'
   planned_test: 'TestCompat_OperatorsNotInLokiRejected and TestCompat_UppercaseKeywordsMatchLoki (test/e2e-compat, group semantics); TestValidateLogQL_NamesLokiDoesNotKnowAreRejected, TestValidateLogQL_KeywordsAreCaseInsensitive and TestLowercaseKeywords (internal/logql); TestUnknownLogQLNamesRejectedLikeLoki and TestUppercaseKeywordsSendTheLowercaseBackendRequests (internal/proxy)'
   note: 'Grafana Explore captures show the result or error for representative query shapes. Differential e2e compares exact status and error text for both query endpoints; proxy tests also cover form POST and tenants.'

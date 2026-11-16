@@ -17,8 +17,8 @@ import (
 
 // This file pins an aggregation over a topk, bottomk or sort to Loki's: the
 // inner vector is ranked at every step on its own, and the outer aggregation
-// folds what survived at that step (Loki v3.7.7 pkg/logql/evaluator.go
-// VectorAggEvaluator.Next evaluates its operand to a vector per step, so
+// folds what survived at that step (Loki v3.7.7 evaluates the operand of an
+// aggregation to a vector per step, so
 // `sum(topk(3, x))` is the sum of the 3 best samples of each step). The
 // reference below is written apart from the proxy and evaluates every layer on
 // the vector of one step.

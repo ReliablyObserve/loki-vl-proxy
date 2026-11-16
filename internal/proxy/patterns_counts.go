@@ -19,7 +19,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// patternCountsMinStep is the resolution Loki keeps pattern samples at (pkg/pattern/drain TimeResolution): a
+// patternCountsMinStep is the resolution Loki keeps pattern samples at (registry drilldown/patterns-counts-tier-step-buckets): a
 // smaller step is answered at it.
 const patternCountsMinStep = 10 * time.Second
 
@@ -252,11 +252,20 @@ func (p *Proxy) patternsFromCounts(r *http.Request, query, startParam, endParam,
 	if !ok {
 		return nil, false
 	}
-	windows := patternCountsWindows(scope.startNs, scope.endNs)
+	readStart, readEnd := scope.startNs, scope.endNs
+	if step := int64(scope.step); step > 0 && step%int64(lokiPatternSampleInterval) == 0 {
+		// With a step of whole 10 s samples, VictoriaLogs' step buckets are Loki's samples counted into steps, so
+		// the samples starting inside the range are counted whole, as Loki counts them, by reading from the first
+		// one's start to the last one's end.
+		if from, to := patternSamplesEndNs(scope.startNs), patternSamplesEndNs(scope.endNs); from < to {
+			readStart, readEnd = from, to
+		}
+	}
+	windows := patternCountsWindows(readStart, readEnd)
 	inputs := make([]patternWindowInputs, len(windows))
 	oks := make([]bool, len(windows))
 	if len(windows) == 1 {
-		inputs[0], oks[0] = p.readPatternWindowInputs(r.Context(), scope.filter, scope.step, scope.startNs, scope.endNs)
+		inputs[0], oks[0] = p.readPatternWindowInputs(r.Context(), scope.filter, scope.step, readStart, readEnd)
 	} else {
 		sem := make(chan struct{}, patternCountsParallel)
 		var wg sync.WaitGroup

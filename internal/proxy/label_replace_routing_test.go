@@ -11,8 +11,7 @@ import (
 )
 
 // A label_replace around a bare range function yields the series of the
-// function under it (pkg/logql/evaluator.go LabelReplaceEvaluator passes the
-// series through): one per stream on an instant query too. The grouping by the
+// function under it (label_replace passes the series through): one per stream on an instant query too. The grouping by the
 // stream was added only for a query that itself starts with the function, so an
 // instant `label_replace(count_over_time(...))` came back as one unlabeled
 // total.

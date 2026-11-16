@@ -19,7 +19,7 @@ why: |
   method="GET"` as a garbled field name (the VictoriaLogs parse error), and
   `a="1" b="2"` the same way.
 
-  Loki's labelFilter rule (pkg/logql/syntax/syntax.y:302) gives AND and OR a
+  Loki's labelFilter rule gives AND and OR a
   precedence (AND above OR, both left associative) and COMMA and the juxtaposed
   `labelFilter labelFilter` none, so goyacc always shifts: the right operand of
   a comma or of a juxtaposition is the rest of the group. `a, b or c` is `a and
@@ -35,7 +35,7 @@ why: |
   Known, not changed here: a numeric comparison on a value that is not a
   number keeps the line in Loki (it sets `__error__`) and drops it in
   VictoriaLogs, for a single filter as for a group. The value of every label
-  filter has the kind Loki's grammar wants (syntax.y:328-356): a string after
+  filter has the kind Loki's grammar wants: a string after
   =~ and !~; a string, number, duration, bytes size or ip("...") after = and
   !=; a number, duration or bytes size after ==, <, <=, > and >=. A single
   filter with a wrongly typed value (`duration > "1s"`, `ok=true`, `a =~ 5`)
@@ -65,7 +65,7 @@ gap:
   impact: explore-visible
   effort: M
   area: 'internal/translator/label_filter_expr.go (ParseLabelFilterExpr, LabelFilterExpr.translate); internal/translator/translator.go (translateLabelFilter, canonicalLabelFilterStage, extractPipelineStage); internal/logql/parser.go (parseLabelFilterStage, consumeRestOfStage)'
-  loki: 'pkg/logql/syntax/syntax.y:302 labelFilter: labelFilter COMMA labelFilter, OPEN_PARENTHESIS labelFilter CLOSE_PARENTHESIS, labelFilter labelFilter, AND and OR (precedence at :90-91); pkg/logql/log/label_filter.go BinaryLabelFilter'
+  loki: 'label filters combine with comma, and, or, adjacency and parentheses (TestCompat_LabelFilterExpressionSyntax)'
   proxy: 'one grammar for the parser (Loki-shaped 400) and the translator (every binary node parenthesized into one | filter pipe)'
   planned_test: 'TestCompat_LabelFilterExpressionSyntax (test/e2e-compat, group semantics) and TestComplex_Logfmt_FilterAfterParse (test/e2e-compat, group otel-edge); neither has run yet: prepared without a stack; TestLabelFilterExpressionMatchesLokiGolden (internal/logql, 1036 expressions recorded from Loki v3.7.9), TestParseLogQuery_LabelFilterExpressionStages, TestValidateLogQL_LabelFilterExpressionContexts, TestValidateLogQL_LabelFilterExpressionErrorsInMetrics (internal/logql); TestParseLabelFilterExpr_Precedence, TestParseLabelFilterExpr_SyntaxErrors, TestTranslateLabelFilterExpression_LogsQL, TestTranslateLabelFilterExpression_PipelineContexts, TestLabelFilterExpression_ReferenceParserAgrees, TestLabelFilterExpression_EmittedLogsQLEvaluatesLikeLokiTree, TestLabelFilterExpression_CompoundStageHasNoSingleIdentity, TestLabelFilterExpression_JSONAliasRewrittenPerFilter (internal/translator); TestQueryRange_LabelFilterExpressionsReachVictoriaLogsAsOneFilter, TestQueryRange_LabelFilterExpressionMetricsTakeTheRouteOfASingleFilter, TestQueryRange_MalformedLabelFilterExpressionsAreRejectedLikeLoki (internal/proxy); FuzzLabelFilterExpression (internal/translator, CI fuzz smoke)'
   note: 'The e2e (TestCompat_LabelFilterExpressionSyntax, semantics group) runs in CI on every product pull request, and the full differential parity run of 2026-11-04 (parity-refresh run 41870079042, main 69d07019) shows none of this case''s clusters.'

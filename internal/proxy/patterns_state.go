@@ -217,10 +217,10 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				lines, rangeErr = p.countPatternLines(ctx, scope, scope.startNs, scope.endNs)
+				lines, rangeErr = p.countPatternLines(ctx, scope, scope.startNs, patternSamplesEndNs(scope.endNs))
 			}()
 		}
-		retained, retainedErr = p.countPatternLines(ctx, scope, retainFrom, scope.endNs)
+		retained, retainedErr = p.countPatternLines(ctx, scope, retainFrom, patternSamplesEndNs(scope.endNs))
 		wg.Wait()
 		if rangeErr != nil {
 			lines = -1
@@ -240,7 +240,8 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 		t.selectors[selector] = s
 		expected = retained
 	}
-	readTo := scope.endNs
+	// The range's last sample is read whole, as Loki answers it, with the lines after the range's end in it.
+	readTo := patternSamplesEndNs(scope.endNs)
 	if nowNs := now.UnixNano(); readTo > nowNs {
 		readTo = nowNs
 	}
