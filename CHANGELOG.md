@@ -9,9 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Comments in the string translator that named lines of Loki's sources now cite recorded Loki answers or Loki's public
-  documentation instead; no behaviour changes. The pattern line filter tests no longer carry a port of Loki's matcher:
-  they compare the filter with Loki's own verdicts, recorded with the Loki pipeline oracle.
 - Internal: the translation's query-plan decisions are one helper, with a reference entry point the corpus shadow reads,
   so the shadow counts the recorded differences the proxy already serves from the plan (a keep before an unwrap, a
   parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
@@ -42,6 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `avg_over_time` up to 12% more, for the per-series step Loki's answer needs. Count,
   first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
   read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
+
+## [2.311.0] - 2026-11-16
+
+### Changed
+
+- Comments in the string translator that named lines of Loki's sources now cite recorded Loki answers or Loki's public
+  documentation instead; no behaviour changes. The pattern line filter tests no longer carry a port of Loki's matcher:
+  they compare the filter with Loki's own verdicts, recorded with the Loki pipeline oracle.
 
 ## [2.310.2] - 2026-11-16
 
