@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,12 +20,12 @@ import (
 )
 
 // This file pins count, min, max and avg of a range function to Loki's, over
-// generated rows and windows, with a reference evaluator written apart from the
-// proxy, modelling Loki v3.7.7: every series of the input vector is folded into
-// the group its labels name, `by` keeping the listed labels, `without` dropping
-// them, no grouping keeping none; count is the number of series, avg a running
-// mean, max and min the extreme of their values, over count_over_time and rate
-// of the lines of a series in the window (t-range, t].
+// generated rows and windows, with vaReference (the nested aggregation
+// reference, held to Loki's recorded answers by
+// TestNestedReferenceMatchesRecordedLoki): every series of the input vector is
+// folded into the group its labels name, `by` keeping the listed labels,
+// `without` dropping them, no grouping keeping none, over count_over_time and
+// rate of the lines of a series in the window (t-range, t].
 //
 // The proxy under test is the real handler; only VictoriaLogs is simulated, by
 // the same vlemu.Emulator the unwrap sum differential uses.
@@ -161,103 +160,6 @@ func labelsKey(labels map[string]string) string {
 	return b.String()
 }
 
-// lokiFold is Loki's vector aggregation: the series of the vector fall into the
-// group whose labels they share, and each group takes the operator's value.
-func lokiFold(in []vaSeries, stage vaStage) []vaSeries {
-	type group struct {
-		labels map[string]string
-		values []float64
-	}
-	groups := map[string]*group{}
-	var order []string
-	for _, series := range in {
-		labels := map[string]string{}
-		for name, value := range series.labels {
-			if slices.Contains(stage.by, name) != stage.without {
-				labels[name] = value
-			}
-		}
-		key := labelsKey(labels)
-		g := groups[key]
-		if g == nil {
-			g = &group{labels: labels}
-			groups[key] = g
-			order = append(order, key)
-		}
-		g.values = append(g.values, series.value)
-	}
-	var out []vaSeries
-	for _, key := range order {
-		g := groups[key]
-		var v float64
-		switch stage.op {
-		case "sum", "avg":
-			for _, x := range g.values {
-				v += x
-			}
-			if stage.op == "avg" {
-				v /= float64(len(g.values))
-			}
-		case "count":
-			v = float64(len(g.values))
-		case "max":
-			v = slices.Max(g.values)
-		case "min":
-			v = slices.Min(g.values)
-		default:
-			panic("reference: " + stage.op)
-		}
-		out = append(out, vaSeries{g.labels, v})
-	}
-	return out
-}
-
-// lokiVectorAgg is the reference: per evaluation time, the value of the range
-// function of every stream that has a line in (t-window, t] (count_over_time
-// and rate), folded by the stages. It returns labels key -> time -> value.
-func lokiVectorAgg(s vaScenario) (map[string]map[int64]float64, map[string]map[string]string) {
-	out := map[string]map[int64]float64{}
-	labelsOf := map[string]map[string]string{}
-	for _, t := range s.times() {
-		perStream := map[string]float64{}
-		for _, row := range s.rows {
-			if row.TS > t-int64(s.window) && row.TS <= t {
-				perStream[row.Stream]++
-			}
-		}
-		var vec []vaSeries
-		for stream, count := range perStream {
-			value := count
-			if s.fn == "rate" {
-				value = count / s.window.Seconds()
-			}
-			labels := map[string]string{"service_name": "uw"}
-			if s.withLevel {
-				labels["detected_level"] = "unknown"
-			}
-			for _, name := range []string{"app", "pod", "zone"} {
-				labels[name] = streamLabel(stream, name)
-			}
-			vec = append(vec, vaSeries{labels, value})
-		}
-		for _, stage := range s.stages {
-			vec = lokiFold(vec, stage)
-		}
-		for _, series := range vec {
-			if s.divisor != 0 {
-				series.value /= s.divisor
-			}
-			key := labelsKey(series.labels)
-			if out[key] == nil {
-				out[key] = map[int64]float64{}
-				labelsOf[key] = series.labels
-			}
-			out[key][t] = series.value
-		}
-	}
-	return out, labelsOf
-}
-
 func streamLabel(stream, label string) string {
 	for _, part := range strings.Split(strings.Trim(stream, "{}"), ",") {
 		if k, v, ok := strings.Cut(part, "="); ok && k == label {
@@ -339,7 +241,7 @@ func runVectorAggScenario(t *testing.T, label string, s vaScenario) {
 		t.Fatal(err)
 	}
 
-	want, wantLabels := lokiVectorAgg(s)
+	want, wantLabels := vaReference(s)
 	got := map[string]map[int64]float64{}
 	for _, series := range resp.Data.Result {
 		if !s.withLevel {
