@@ -2039,6 +2039,7 @@
     "internal/proxy/unwrap_over_time_window_test.go | semantics/unwrap-gate-parsefloat-divergences",
     "internal/proxy/unwrap_over_time_window_test.go | semantics/unwrap-over-time-range-windows",
     "internal/proxy/unwrap_over_time_window_test.go | semantics/unwrap-over-time-range-windows-residual-forms",
+    "internal/proxy/unwrap_over_time_window_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/proxy/unwrap_over_time_window_test.go | window-bounds-and-step-alignment",
     "internal/proxy/unwrap_quantile_response_limit_test.go | semantics/unwrap-quantile-response-limit",
     "internal/proxy/unwrap_range_last_point_test.go | semantics/unwrap-over-time-range-windows",

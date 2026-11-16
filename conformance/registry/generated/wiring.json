@@ -2159,6 +2159,7 @@
       "internal/proxy/unwrap_dynamic_identity_cache_test.go",
       "internal/proxy/unwrap_dynamic_identity_test.go",
       "internal/proxy/unwrap_dynamic_identity_window_test.go",
+      "internal/proxy/unwrap_over_time_window_test.go",
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
       "internal/querycorpus/stddev_stdvar_loki_diff_test.go",
       "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go",
@@ -4107,6 +4108,7 @@
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-over-time-range-windows",
       "semantics/unwrap-over-time-range-windows-residual-forms",
+      "semantics/unwrap-per-series-identity-raw-rows",
       "window-bounds-and-step-alignment"
     ],
     "internal/proxy/unwrap_quantile_response_limit_test.go": [
