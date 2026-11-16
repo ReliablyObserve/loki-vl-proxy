@@ -363,7 +363,7 @@ var unwrapErrorLogfmtShapes = []string{
 // the series the error names: the labels the parser hints keep); a shape the check does not evaluate is one Loki
 // answers 200, or a registered form (semantics/unwrap-conversion-error-postfilter-forms).
 //
-// conformance: semantics/unwrap-conversion-error, semantics/unwrap-conversion-error-postfilter-forms, parser-error-and-label-collision
+// conformance: semantics/unwrap-conversion-error, semantics/unwrap-conversion-error-postfilter-forms, semantics/unwrap-conversion-error-label-format-series, parser-error-and-label-collision
 func TestUnwrapConversionErrorMatchesRecordedLoki(t *testing.T) {
 	lines := map[string]string{"logfmt": `n=1 v=x7 w=abc`, "json": `{"n":"1","v":"x7","w":"abc","o":{"k":"2"}}`}
 	stream := map[string]string{"app": "x", "service_name": "x"}

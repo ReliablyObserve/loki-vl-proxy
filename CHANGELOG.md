@@ -44,7 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (semantics/binary-operand-without-empty-collapses). `-query-plan-lowering=false` keeps the previous reading.
 - The `SampleExtractionErr` answer of a metric whose pipeline holds a `label_format` before the unwrap
   (`| logfmt | label_format w="{{.n}}" | unwrap v`) names the series with the label as the stage writes it, as
-  Loki does (recorded with Loki's engine); it kept the line's own value of the label before.
+  Loki does (recorded with Loki's engine) for a rename and a copy of one label (`{{.label}}`); a label another
+  template writes is left out of the series, which kept the line's own value of the label before.
 
 ## [2.310.2] - 2026-11-16
 

@@ -2169,6 +2169,9 @@
       "test/e2e-compat/unwrap_rate_counter_one_sample_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
     ],
+    "semantics/unwrap-conversion-error-label-format-series": [
+      "internal/proxy/unwrap_recorded_loki_test.go"
+    ],
     "semantics/unwrap-conversion-error-postfilter-forms": [
       "internal/proxy/unwrap_conversion_error_differential_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
@@ -2603,7 +2606,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 600,
+  "registry_items": 601,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/delete_api_validation_test.go": [
@@ -4353,6 +4356,7 @@
     "internal/proxy/unwrap_recorded_loki_test.go": [
       "parser-error-and-label-collision",
       "semantics/unwrap-conversion-error",
+      "semantics/unwrap-conversion-error-label-format-series",
       "semantics/unwrap-conversion-error-postfilter-forms",
       "semantics/unwrap-duration-seconds",
       "semantics/unwrap-sample-validity"
@@ -5911,5 +5915,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 393
+  "wired_items": 394
 }

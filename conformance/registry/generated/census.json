@@ -959,6 +959,8 @@
     "semantics/unwrap-conversion-error | gap:fixed",
     "semantics/unwrap-conversion-error | perf",
     "semantics/unwrap-conversion-error | query",
+    "semantics/unwrap-conversion-error-label-format-series | compare:observed",
+    "semantics/unwrap-conversion-error-label-format-series | query",
     "semantics/unwrap-conversion-error-parser-divergence | compare:observed",
     "semantics/unwrap-conversion-error-parser-divergence | gap:open",
     "semantics/unwrap-conversion-error-parser-divergence | query",
@@ -2135,6 +2137,7 @@
     "internal/proxy/unwrap_range_last_point_test.go | window-bounds-and-step-alignment",
     "internal/proxy/unwrap_recorded_loki_test.go | parser-error-and-label-collision",
     "internal/proxy/unwrap_recorded_loki_test.go | semantics/unwrap-conversion-error",
+    "internal/proxy/unwrap_recorded_loki_test.go | semantics/unwrap-conversion-error-label-format-series",
     "internal/proxy/unwrap_recorded_loki_test.go | semantics/unwrap-conversion-error-postfilter-forms",
     "internal/proxy/unwrap_recorded_loki_test.go | semantics/unwrap-duration-seconds",
     "internal/proxy/unwrap_recorded_loki_test.go | semantics/unwrap-sample-validity",
@@ -2962,7 +2965,7 @@
       "any": 35,
       "api": 109,
       "drilldown": 53,
-      "explore": 190,
+      "explore": 191,
       "grafana-datasource": 2,
       "operator": 4
     },
@@ -2987,7 +2990,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 95,
-    "wired_items": 393
+    "wired_items": 394
   },
   "gates": [
     "A/B shape selection",
