@@ -205,7 +205,7 @@ func TestFetchFromRefusesWhatAPeerGetsWrong(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			pc, addr := clientPeer(t, c.handler)
 			before := pc.PeerErrors.Load()
-			body, ttl, memOnly, status := pc.fetchFrom(addr, "key")
+			body, ttl, memOnly, status := pc.fetchFrom(addr, "key", headerSink{})
 			if status != c.status || string(body) != c.body || ttl != c.ttl || memOnly != c.memOnly {
 				t.Errorf("fetchFrom = %q, %v, %v, %d; want %q, %v, %v, %d", body, ttl, memOnly, status, c.body, c.ttl, c.memOnly, c.status)
 			}
@@ -222,7 +222,7 @@ func TestFetchFromRefusesWhatAPeerGetsWrong(t *testing.T) {
 	// A peer that cannot be reached is an error of its own.
 	pc, addr := clientPeer(t, func(w http.ResponseWriter, r *http.Request) {})
 	pc.client.Transport = failingTransport{}
-	if body, _, _, status := pc.fetchFrom(addr, "key"); body != nil || status != 0 || pc.PeerErrors.Load() != 1 {
+	if body, _, _, status := pc.fetchFrom(addr, "key", headerSink{}); body != nil || status != 0 || pc.PeerErrors.Load() != 1 {
 		t.Errorf("unreachable: %q %d, %d errors", body, status, pc.PeerErrors.Load())
 	}
 }
