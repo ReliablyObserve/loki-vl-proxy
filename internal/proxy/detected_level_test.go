@@ -63,7 +63,7 @@ func goldenReconstructedLine(msg string, fields map[string]string) string {
 	return storedLogLineFromEntry(msg, entry, nil, nil, "")
 }
 
-// conformance: severity-detected-level-derivation
+// conformance: severity-detected-level-derivation, severity/recorded-level-table
 func TestDetectedLevelGoldenTable(t *testing.T) {
 	sources := map[string]int{}
 	for _, tc := range loadDetectedLevelGolden(t) {
@@ -85,7 +85,7 @@ func TestDetectedLevelGoldenTable(t *testing.T) {
 			}
 		})
 	}
-	for _, source := range []string{"loki-test", "loki-live", "loki-oracle", "victorialogs"} {
+	for _, source := range []string{"loki-live", "loki-oracle", "victorialogs"} {
 		if sources[source] == 0 {
 			t.Fatalf("golden table has no %q cases", source)
 		}

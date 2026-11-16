@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The `detected_level` the proxy derives for returned rows is rewritten from Loki's documented settings and from
+  answers recorded from a real Loki 3.7.9 for 1481 generated inputs, one stream each: structured metadata and stream
+  labels of every level field, field pairs, `severity_number` values, JSON lines to depth 5 with value types and
+  broken shapes, logfmt variants, plain lines by letter case, position, boundary byte and near-miss words, long
+  lines and OTLP records. The table and the evidence of the run are committed
+  (`internal/proxy/testdata/detected_level_golden.json`, `detected_level_golden_loki.json`), a live check compares
+  about 200 of its rows with the stack's Loki in the e2e core group, and a fuzz target holds the derivation to a
+  plain reference evaluator that is itself held to the recorded answers. Answers are unchanged except for the fix
+  below.
+
 - The tests that compare the proxy's metric answers with Loki's now take Loki's answer from Loki itself: answers
   recorded with Loki's query engine and request parser over the same lines and requests (test/oracle/loki, used
   only in tests), for binary operators and vector matching, topk and bottomk, vector aggregations (nested,
@@ -28,6 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   LogQL's documented meaning and is held to the recorded answers. The engine oracle gains an unaligned mode (Loki's
   engine at the request's own bounds). The query_range step alignment middleware is renamed for what it does
   (alignToStepMiddleware); behaviour is unchanged.
+
+### Fixed
+
+- A stored field named `log.level` (structured metadata or an OTLP log attribute pushed under that name) no longer
+  sets `detected_level` on log responses: Loki stores such metadata as `log_level` and does not read it, so the row's
+  level comes from its other fields or its line, as in Loki (recorded answers, `severity/recorded-level-table`). A
+  JSON line whose key `log.level` VictoriaLogs unpacked into a field still gives the level, as the line does in Loki.
+  Metric grouping by `detected_level` still reads the field (`severity/stored-log-dot-level-in-metric-chain`, open).
 
 ## [2.308.0] - 2026-11-16
 
