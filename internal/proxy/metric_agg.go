@@ -550,9 +550,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	innerStats, innerIsStats := translator.DecodeStats(translatedInner)
 
 	r = p.withRequestScope(r)
-	_, innerIsBinary := parsedInner.(*logqlpkg.BinOpExpr)
-	wrappedBinary := !innerIsBinary && holdsBinaryOperand(parsedInner)
-	if innerIsBinary || wrappedBinary {
+	if holdsBinaryOperand(parsedInner) {
 		// The operands of a binary expression fold and are limited on their own.
 		withoutLabels = nil
 	}
@@ -598,10 +596,9 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		}
 		p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, left, right, binOpExprToVMInfo(binOp))
 		dispatched = true
-	} else if wrappedBinary {
+	} else {
 		// A binary operation under aggregations or a label_replace: the operand is a query of its own.
-		p.serveOperandAsQuery(sc, r, parsedInner, "vector")
-		dispatched = true
+		dispatched = p.serveWrappedBinaryOperand(sc, r, parsedInner, "vector")
 	}
 
 	if bin, isBin := binaryOfStats(innerStats, innerIsStats); !dispatched && isBin {
@@ -709,9 +706,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 
 	r = p.withRequestScope(r)
 	parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner)
-	innerBinary, _ := parsedInner.(*logqlpkg.BinOpExpr)
-	wrappedBinary := innerBinary == nil && holdsBinaryOperand(parsedInner)
-	if innerBinary != nil || wrappedBinary {
+	if holdsBinaryOperand(parsedInner) {
 		// The operands of a binary expression fold on their own.
 		withoutLabels = nil
 	}
@@ -741,16 +736,11 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	// Native VL buckets are timestamped at their left edge; ranking those
 	// directly can select the next window's winner and omit the first point.
 	// The manual range adapter still uses VL pre-aggregation when available.
-	if innerBinary != nil {
-		// A binary operation is evaluated by the binary route, operand by
-		// operand, as the instant handler and a binary at the root are: the
-		// translation of the whole operation is the marker of its operands'
-		// queries (dropping a bool modifier and the right side of and, or and
-		// unless), never a query VictoriaLogs can read.
-		p.proxyBinaryLogQL(sc, innerR, innerBinary, "matrix")
-	} else if wrappedBinary {
-		// A binary operation under aggregations or a label_replace: the operand is a query of its own.
-		p.serveOperandAsQuery(sc, innerR, parsedInner, "matrix")
+	if p.serveRangeBinaryOperand(sc, innerR, parsedInner) {
+		// A binary operand (or one under aggregations or a label_replace) is
+		// evaluated operand by operand: the translation of the whole operation
+		// is the marker of its operands' queries, never a query VictoriaLogs
+		// can read.
 	} else if bin, isBin := binaryOfStats(innerStats, innerIsStats); isBin {
 		// The operand is a stats query and a number (stdvar_over_time, the
 		// deviation squared), answered as the range route answers it.

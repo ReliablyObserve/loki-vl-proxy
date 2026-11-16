@@ -29,6 +29,29 @@ func holdsBinaryOperand(e logqlpkg.Expr) bool {
 	}
 }
 
+// serveRangeBinaryOperand answers the operand of a ranking, stddev or stdvar on query_range when its answer is a binary
+// operation's and reports whether it did: a binary operation by the binary route (proxyBinaryLogQL), operand by operand,
+// as the instant handler and a binary at the root are (the translation drops a bool modifier and the right side of and,
+// or and unless); one under aggregations or label_replace calls as a query of its own (serveOperandAsQuery).
+func (p *Proxy) serveRangeBinaryOperand(w http.ResponseWriter, r *http.Request, operand logqlpkg.Expr) bool {
+	if binary, ok := operand.(*logqlpkg.BinOpExpr); ok {
+		p.proxyBinaryLogQL(w, r, binary, "matrix")
+		return true
+	}
+	return p.serveWrappedBinaryOperand(w, r, operand, "matrix")
+}
+
+// serveWrappedBinaryOperand answers an operand that is a binary operation under aggregations or label_replace calls as
+// a query of its own (serveOperandAsQuery) and reports whether it did; a binary operation itself, or any other operand,
+// is left to the caller.
+func (p *Proxy) serveWrappedBinaryOperand(w http.ResponseWriter, r *http.Request, operand logqlpkg.Expr, resultType string) bool {
+	if _, binary := operand.(*logqlpkg.BinOpExpr); binary || !holdsBinaryOperand(operand) {
+		return false
+	}
+	p.serveOperandAsQuery(w, r, operand, resultType)
+	return true
+}
+
 // serveOperandAsQuery answers the operand of a ranking, stddev or stdvar as a query of its own through the query
 // handlers (evaluateBinaryLogQLOperand: the request's bounds and tenant, the shared evaluation budget, the operand's
 // own response cache) and writes its answer, or its error, to w.

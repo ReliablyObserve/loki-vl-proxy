@@ -187,15 +187,24 @@ func streamLevelSeriesScan(query string) (fires, ranked bool) {
 	labelReplace := false
 	for s, i := query, strings.IndexByte(query, '('); i >= 0; i = strings.IndexByte(s, '(') {
 		name := trimRightBlanks(s[:i])
-		if hasSuffixFold(name, "sort") || hasSuffixFold(name, "sort_desc") {
-			return true, true
-		}
-		// sort and sort_desc also take a grouping before their parenthesis (sort by (app) (…)).
-		if ranked := groupedRankingName(name); hasSuffixFold(ranked, "sort") || hasSuffixFold(ranked, "sort_desc") {
-			return true, true
-		}
-		labelReplace = labelReplace || hasSuffixFold(name, "label_replace")
 		s = s[i+1:]
+		if name == "" {
+			continue
+		}
+		// Each name ends in an ASCII letter of its word in any case: the last byte picks the one check that can match.
+		switch name[len(name)-1] | 0x20 {
+		case 't', 'c':
+			if hasSuffixFold(name, "sort") || hasSuffixFold(name, "sort_desc") {
+				return true, true
+			}
+		case 'y':
+			// sort and sort_desc also take a grouping before their parenthesis (sort by (app) (…)).
+			if ranked := groupedRankingName(name); hasSuffixFold(ranked, "sort") || hasSuffixFold(ranked, "sort_desc") {
+				return true, true
+			}
+		case 'e':
+			labelReplace = labelReplace || hasSuffixFold(name, "label_replace")
+		}
 	}
 	if labelReplace {
 		return true, false
