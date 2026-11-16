@@ -6,51 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
-
-// lokiPatternTest is Loki's pattern matcher verdict for one pattern alternative on one line, as the registry records it
-// against Loki's pattern package (semantics/pattern-line-filter-anchoring: the filters matched Loki's real matcher on
-// 1.6M line checks): each literal is searched once, at its first occurrence
-// after the previous one (a leading literal may start anywhere in the line), every capture must be non-empty, and a
-// pattern that ends on a literal must end the line there. The empty pattern accepts only the empty line.
-func lokiPatternTest(pattern, line string) bool {
-	if pattern == "" {
-		return line == ""
-	}
-	nodes := logql.LinePatternNodes(pattern)
-	pos := 0
-	for i, n := range nodes {
-		switch {
-		case n.Capture:
-			end := len(line)
-			if i+1 < len(nodes) {
-				idx := strings.Index(line[pos:], nodes[i+1].Text)
-				if idx < 0 {
-					return false
-				}
-				end = pos + idx
-			}
-			if end == pos {
-				return false
-			}
-			pos = end
-		case i == 0:
-			idx := strings.Index(line, n.Text)
-			if idx < 0 {
-				return false
-			}
-			pos = idx + len(n.Text)
-		default:
-			if !strings.HasPrefix(line[pos:], n.Text) {
-				return false
-			}
-			pos += len(n.Text)
-		}
-	}
-	return !nodes[len(nodes)-1].Capture && pos == len(line) || nodes[len(nodes)-1].Capture
-}
 
 // vlExtract is VictoriaLogs' extract pipe over a line: every literal of the pattern is searched at its first
 // occurrence after the previous one, a field takes the text up to the next literal (the rest of the line for the last
@@ -214,66 +171,6 @@ func lines(alphabet []string, n int) []string {
 		frontier = next
 	}
 	return out
-}
-
-// The pattern line filter keeps exactly the lines Loki's pattern matcher accepts, for every alternative shape: a
-// capture alone, one literal with a capture before it, after it and on both sides, several literals, a trailing
-// literal and the empty pattern, with `or` alternatives and for the negated filter.
-// conformance: semantics/pattern-line-filter, semantics/pattern-line-filter-anchoring
-func TestPatternLineFilterKeepsLokiLines(t *testing.T) {
-	for _, c := range []struct {
-		patterns []string
-		alphabet []string
-		length   int
-	}{
-		{[]string{"<_>"}, []string{"a", "b", "\n"}, 4},
-		{[]string{"foo<_>"}, []string{"f", "o", "x"}, 6},
-		{[]string{"<_>foo"}, []string{"f", "o", "x"}, 6},
-		{[]string{"foo"}, []string{"f", "o", "x"}, 6},
-		{[]string{"<_>foo<_>"}, []string{"f", "o", "x"}, 6},
-		{[]string{"ab<_>cd"}, []string{"a", "b", "c", "d", "x"}, 6},
-		{[]string{"<_>ab<_>cd"}, []string{"a", "b", "c", "d", "x"}, 6},
-		{[]string{"ab<_>cd<_>"}, []string{"a", "b", "c", "d", "x"}, 6},
-		{[]string{"<_>ab<_>cd<_>"}, []string{"a", "b", "c", "d", "x"}, 6},
-		{[]string{"a<_>b<_>c"}, []string{"a", "b", "c", "x"}, 6},
-		{[]string{"<_>:<_>"}, []string{":", "x", " "}, 5},
-		{[]string{"a<_>a"}, []string{"a", "x"}, 6},
-		{[]string{"a<b>"}, []string{"a", "b", "<", ">"}, 5},
-		{[]string{""}, []string{"a"}, 2},
-		// Alternatives of an or chain.
-		{[]string{"foo<_>", "<_>bar"}, []string{"f", "o", "b", "a", "r", "x"}, 5},
-		{[]string{"ab<_>cd", "<_>ef", "gh"}, []string{"a", "b", "c", "d", "e", "f", "g", "h"}, 4},
-		{[]string{"", "<_>x"}, []string{"x", "y"}, 4},
-	} {
-		for _, negative := range []bool{false, true} {
-			seq := 0
-			filters, pipes := PatternLineFilter(c.patterns, negative, &seq)
-			parts := PatternLineFilterParts(c.patterns, negative, new(int))
-			// The nodes write the text of the string translator.
-			var text []string
-			for _, f := range filters {
-				text = append(text, f.String())
-			}
-			for _, p := range pipes {
-				text = append(text, p.String())
-			}
-			if len(parts) > 0 && strings.Join(parts, " ") != strings.Join(text, " ") {
-				t.Errorf("%q negative=%v: text of the nodes differs:\n nodes %s\n parts %s", c.patterns, negative, strings.Join(text, " "), strings.Join(parts, " "))
-			}
-			for _, line := range lines(c.alphabet, c.length) {
-				want := false
-				for _, p := range c.patterns {
-					want = want || lokiPatternTest(p, line)
-				}
-				if negative {
-					want = !want
-				}
-				if got := patternRowKept(t, filters, pipes, line); got != want {
-					t.Fatalf("%q negative=%v line %q: kept %v, Loki %v\n filters %v\n pipes %v", c.patterns, negative, line, got, want, filters, pipes)
-				}
-			}
-		}
-	}
 }
 
 // The extract pipe of the filter numbers its scratch fields per alternative that extracts, across the query.

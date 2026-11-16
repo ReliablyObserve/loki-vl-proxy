@@ -12,7 +12,7 @@ var statsFirstLastFuncRE = regexp.MustCompile(`\b(?:first|last)\(`)
 // VictoriaLogs has no first or last stats function (lib/logstorage/stats_*.go:
 // avg, count, max, min, sum, row_min, row_max, ...). Loki's first_over_time and
 // last_over_time are the sample with the earliest and the latest timestamp of
-// each series in the window (pkg/logql/first_last_over_time.go), which
+// each series in the window (LogQL's documented first_over_time and last_over_time), which
 // row_min(_time, v) and row_max(_time, v) return as a JSON row; a row_* result
 // is a label to VictoriaLogs, so the value is unpacked into a number before the
 // outer aggregation reads it.
