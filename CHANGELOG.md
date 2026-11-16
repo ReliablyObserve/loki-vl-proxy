@@ -12,6 +12,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comments in the string translator that named lines of Loki's sources now cite recorded Loki answers or Loki's public
   documentation instead; no behaviour changes. The pattern line filter tests no longer carry a port of Loki's matcher:
   they compare the filter with Loki's own verdicts, recorded with the Loki pipeline oracle.
+- Internal: the translation's query-plan decisions are one helper, with a reference entry point the corpus shadow reads,
+  so the shadow counts the recorded differences the proxy already serves from the plan (a keep before an unwrap, a
+  parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
+  `by( )` grouping to the text of `by ()`, and leaves out the corpus queries the request validation rejects with Loki's
+  parse error (the malformed `label_replace` calls and `label_join` among them). No proxy behaviour changes.
+- The unwrap code is rewritten from Loki's recorded answers and LogQL's documentation: the conversions of
+  `unwrap`, `duration()`, `duration_seconds()` and `bytes()`, the logfmt reading the conversion-error check and the
+  patterns miner use, the window merge of unwrap range functions from VictoriaLogs buckets, and the conversion-error
+  check (the counting gate, the lookups of a flagged bucket and the Loki error it answers). New tests hold it to
+  answers recorded with Loki's engine and pipeline for the same lines and queries: every conversion over number,
+  duration and size spellings (signs, units, overflow, NaN and infinities, blanks, logfmt and JSON lines), the
+  labels the logfmt, JSON, unpack and regexp parsers give generated lines, and the status and text of the error
+  over 30 query shapes. The VictoriaLogs requests and the answers are unchanged, except that stddev_over_time and
+  stdvar_over_time over a range longer than the step merge their buckets in two passes (a window's value can differ
+  from the previous build in its last bit, as close to the exact value as before). Two fuzz targets join
+  fuzz-smoke.
+
+### Fixed
+
+- A binary operation whose operand is a `sum`, `avg`, `min` or `max` with an empty `without ()` clause
+  (`sum without () (count_over_time({app="x"}[5m])) / 2`, `max(rate({app="x"}[5m])) without () > on(app) group_left …`)
+  now answers every series of that operand, as Loki does: a clause of no label drops none, so each series is its own
+  group. On query_range with the step equal to the range the operand was answered as one ungrouped series, at an
+  instant `avg` and `min` collapsed the same way, and on the other steps the series said `detected_level="unknown"`.
+  The binary route now sends the operand without that level, and an operation Loki refuses (`… + on() vector(0)`
+  over several series) answers Loki's 500 `multiple matches for labels: many-to-one matching must be explicit
+  (group_left/group_right)` where it answered 200. Held to real Loki and VictoriaLogs v1.49.0 and v1.53.0 on 20
+  shapes x 4 request kinds x 2 versions: 144 of 160 runs match Loki, from 86 (every run of the 15 operations, and
+  under `sum(…)`, `label_replace(…)` and with an `offset`). A `count`, `stddev` or `stdvar` under the clause, and a ranking over the operation, are unchanged. Answers cached before the fix are not served again
+  (semantics/binary-operand-without-empty-collapses). `-query-plan-lowering=false` keeps the previous reading.
+- The `SampleExtractionErr` answer of a metric whose pipeline holds a `label_format` before the unwrap
+  (`| logfmt | label_format w="{{.n}}" | unwrap v`) names the series with the label as the stage writes it, as
+  Loki does (recorded with Loki's engine); it kept the line's own value of the label before.
 
 ## [2.310.1] - 2026-11-16
 
@@ -29,25 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.310.0] - 2026-11-16
 
-### Fixed
-
-- The `SampleExtractionErr` answer of a metric whose pipeline holds a `label_format` before the unwrap
-  (`| logfmt | label_format w="{{.n}}" | unwrap v`) names the series with the label as the stage writes it, as
-  Loki does (recorded with Loki's engine); it kept the line's own value of the label before.
-
 ### Changed
 
-- The unwrap code is rewritten from Loki's recorded answers and LogQL's documentation: the conversions of
-  `unwrap`, `duration()`, `duration_seconds()` and `bytes()`, the logfmt reading the conversion-error check and the
-  patterns miner use, the window merge of unwrap range functions from VictoriaLogs buckets, and the conversion-error
-  check (the counting gate, the lookups of a flagged bucket and the Loki error it answers). New tests hold it to
-  answers recorded with Loki's engine and pipeline for the same lines and queries: every conversion over number,
-  duration and size spellings (signs, units, overflow, NaN and infinities, blanks, logfmt and JSON lines), the
-  labels the logfmt, JSON, unpack and regexp parsers give generated lines, and the status and text of the error
-  over 30 query shapes. The VictoriaLogs requests and the answers are unchanged, except that stddev_over_time and
-  stdvar_over_time over a range longer than the step merge their buckets in two passes (a window's value can differ
-  from the previous build in its last bit, as close to the exact value as before). Two fuzz targets join
-  fuzz-smoke.
 - The tests that compare the proxy's metric answers with Loki's now take Loki's answer from Loki itself: answers
   recorded with Loki's query engine and request parser over the same lines and requests (test/oracle/loki, used
   only in tests), for binary operators and vector matching, topk and bottomk, vector aggregations (nested,
