@@ -42,10 +42,26 @@ type lokiEngineAnswer struct {
 
 func lokiEngineDir() string { return filepath.Join("testdata", "loki_engine") }
 
-// lokiEngineKey is the digest of a request and the data set it runs over.
+// lokiEngineKey is the digest of a request and the data set it runs over. The streams are hashed in a canonical
+// order (by labels, each stream's entries by time and line): the order a test hands them over in carries no meaning
+// for Loki, and a test's rows may be reordered by the code under test.
 func lokiEngineKey(set oraclerun.EngineDataSet, req oraclerun.EngineRequest) string {
 	h := sha256.New()
-	data, _ := json.Marshal(set.Streams)
+	streams := make([]oraclerun.EngineStream, len(set.Streams))
+	for i, s := range set.Streams {
+		entries := append([]oraclerun.EngineEntry(nil), s.Entries...)
+		sort.SliceStable(entries, func(a, b int) bool {
+			if entries[a].TS != entries[b].TS {
+				return entries[a].TS < entries[b].TS
+			}
+			return entries[a].Line < entries[b].Line
+		})
+		streams[i] = oraclerun.EngineStream{Labels: s.Labels, Entries: entries}
+	}
+	sort.SliceStable(streams, func(a, b int) bool {
+		return canonicalLabelText(streams[a].Labels) < canonicalLabelText(streams[b].Labels)
+	})
+	data, _ := json.Marshal(streams)
 	h.Write(data)
 	fmt.Fprintf(h, "\x00%d\x00%v\x00%v\x00%s", set.MaxSeries, req.Instant, req.Unaligned, req.Form)
 	return hex.EncodeToString(h.Sum(nil)[:12])
@@ -466,7 +482,7 @@ func lokiEngineAnswerOf(t testing.TB, name string, set oraclerun.EngineDataSet) 
 	}
 	a, ok := file[key]
 	if !ok {
-		t.Fatalf("%s: no recorded Loki answer for %s: record again with LVP_RUN_ORACLES=1", path, req.Form)
+		t.Fatalf("%s: no recorded Loki answer %s for %s: record again with LVP_RUN_ORACLES=1", path, key, req.Form)
 	}
 	return a
 }

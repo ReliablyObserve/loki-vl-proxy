@@ -12,6 +12,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -106,6 +107,9 @@ func keepRows(rng *rand.Rand, s0 time.Time, n int, logfmt bool) []pushdownRow {
 		for k := range keys {
 			names = append(names, k)
 		}
+		// Sorted before the shuffle, so a seed gives the same lines in every run (Loki's recorded answers are
+		// keyed by the data).
+		sort.Strings(names)
 		rng.Shuffle(len(names), func(i, j int) { names[i], names[j] = names[j], names[i] })
 		parts := make([]string, 0, len(names))
 		for _, k := range names {
