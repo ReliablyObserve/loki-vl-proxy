@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A `topk` or `bottomk` whose first argument is not a number followed by a comma now answers Loki's parse error.
+  Loki reads that argument as the expression the operation aggregates, so `topk(-1, sum by (level) (...))` answers
+  400 `parse error at line 1, col 8: syntax error: unexpected ,` (the comma), as do `topk(1 + 2, ...)`,
+  `topk((1), ...)`, `topk(rate(...), 2)` and `topk({...}, 2)`; `topk(-1)` answers `parse error : parameter required
+  for operation topk`. The proxy failed at the minus (`col 6: syntax error: unexpected -`) or the operator, and
+  answered "parameter required" for `topk(rate(...), 2)` and `topk({...}, 2)`. The status was already 400; the text,
+  which Grafana shows, is now Loki's on query and query_range and through every wrapper (sum, sort, max by,
+  label_replace, binary operations), held by 1462 queries recorded with the Loki oracle and 12 rows recorded over
+  HTTP (semantics/topk-first-argument-error-text). A leading plus (`topk(+1, ...)`) is still rejected at the plus
+  (semantics/unary-plus-literal-rejected).
+
+## [2.307.0] - 2026-11-16
+
 ### Performance
 
 - The parse-risk probes of a `| json` metric, the `detected_level` keys probe and the JSON hazard filter cost
@@ -23,16 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- A `topk` or `bottomk` whose first argument is not a number followed by a comma now answers Loki's parse error.
-  Loki reads that argument as the expression the operation aggregates, so `topk(-1, sum by (level) (...))` answers
-  400 `parse error at line 1, col 8: syntax error: unexpected ,` (the comma), as do `topk(1 + 2, ...)`,
-  `topk((1), ...)`, `topk(rate(...), 2)` and `topk({...}, 2)`; `topk(-1)` answers `parse error : parameter required
-  for operation topk`. The proxy failed at the minus (`col 6: syntax error: unexpected -`) or the operator, and
-  answered "parameter required" for `topk(rate(...), 2)` and `topk({...}, 2)`. The status was already 400; the text,
-  which Grafana shows, is now Loki's on query and query_range and through every wrapper (sum, sort, max by,
-  label_replace, binary operations), held by 1462 queries recorded with the Loki oracle and 12 rows recorded over
-  HTTP (semantics/topk-first-argument-error-text). A leading plus (`topk(+1, ...)`) is still rejected at the plus
-  (semantics/unary-plus-literal-rejected).
+- A metric series of a stream with no level label now carries the level of its lines, as Loki gives. Loki gives
+  every line the level its structured metadata or its body carries (a logfmt or JSON level key, a level word of a
+  plain line), else `unknown`, so one such stream is one series per level. Queries the proxy reads per stream (for
+  example `count_over_time({...} | logfmt [5m])` and `max_over_time({...} | logfmt amount | unwrap amount [5m])` on
+  query_range, `sum without (pod) (max_over_time(... | unwrap ...))` at an instant, and `rate({...} | json [1m])`)
+  answered one series per stream with no `detected_level`, so the same query said `error` at one step and nothing at
+  another. Such a read is sent as before; only when its answer names a stream without a level label does the proxy
+  read those streams once more, restricted to them, with VictoriaLogs computing each line's level, and their series
+  are split by it. A window whose streams all carry a level label sends the same VictoriaLogs query as before and
+  nothing more. Answers cached before the fix are not served again (the response key fence moves to
+  `@stream-level-series-v4`), so each cached metric answer is read from VictoriaLogs once after the upgrade.
 
 ## [2.306.0] - 2026-11-16
 
