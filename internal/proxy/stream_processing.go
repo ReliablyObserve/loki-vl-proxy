@@ -298,9 +298,9 @@ func (p *Proxy) streamLogQuery(ctx context.Context, w http.ResponseWriter, resp 
 
 	captureFields := regexpCaptureFields(originalQuery)
 	lineFields := logQueryLineFields(originalQuery)
-	rowLines := p.rowLineFieldsOf(originalQuery, lineFields)
 	classifyAsParsed := hasLabelParserStage(originalQuery)
 	exposure := p.lineFieldExposure(originalQuery)
+	rowLines := rowLineFieldsOf(exposure, lineFields)
 	mergeParsed := mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructuredMetadata)
 	mergeParsed, captureFields, mergeMetadata := exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
 	levelAsMetadata := categorizedLabels && emitStructuredMetadata
@@ -661,7 +661,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	captureFields := regexpCaptureFields(originalQuery)
 	mergeParsed, captureFields, mergeMetadata := exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
 	lineFields := logQueryLineFields(originalQuery)
-	rowLines := p.rowLineFieldsOf(originalQuery, lineFields)
+	rowLines := rowLineFieldsOf(exposure, lineFields)
 	// classifyAsParsed is included so | json / | logfmt parsed fields are classified even
 	// without emitStructuredMetadata or categorizedLabels (see resolveLogQueryStream).
 	needsClassification := emitStructuredMetadata || categorizedLabels || classifyAsParsed || len(captureFields) > 0 || mergeMetadata || exposure.needsClassification()
@@ -872,6 +872,12 @@ func visibleStoredLevelFJ(row *fj.Value, streamLabels map[string]string, exposur
 	line := row.GetStringBytes(translator.StoredLineField)
 	if len(line) == 0 {
 		line = row.GetStringBytes("_msg")
+	}
+	if readsPlaceholderAsLine(exposure, line) {
+		if exposure.hidesPlaceholderLevel() {
+			return nil
+		}
+		return level
 	}
 	if exposure.hidesStoredLevel(line) {
 		return nil
@@ -1946,7 +1952,7 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 		if storedLine == "" {
 			storedLine, _ = stringifyEntryValue(entry["_msg"])
 		}
-		if !exposure.hidesStoredLevel([]byte(storedLine)) {
+		if !exposure.hidesStoredLevelOf([]byte(storedLine)) {
 			labels["level"] = value
 		}
 	}

@@ -1341,7 +1341,7 @@ func hideUnlistedBareParserMetricLevel(metric map[string]string, entry map[strin
 		return
 	}
 	msg, ok := entry["_msg"].(string)
-	if ok && exposure.hidesStoredLevel([]byte(msg)) {
+	if ok && exposure.hidesStoredLevelOf([]byte(msg)) {
 		delete(metric, "level")
 	}
 }
@@ -1365,6 +1365,7 @@ func (p *Proxy) bareParserMetricExposure(originalQuery, baseQuery string) *lineF
 		return nil
 	}
 	exposure := pipelineAddsLabels(logs.Pipeline)
+	p.withPlaceholderLine(&exposure, logs.Pipeline)
 	return &exposure
 }
 

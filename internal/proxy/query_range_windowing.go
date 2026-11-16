@@ -24,6 +24,8 @@ import (
 	fj "github.com/valyala/fastjson"
 	"golang.org/x/sync/errgroup"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -90,6 +92,8 @@ type logQueryShape struct {
 	keepConditions []translator.DropCondition
 	bareDropFields []string
 	bareKeepFields []string
+	// pipeline is the parsed pipeline (parsed only).
+	pipeline []logqlpkg.Stage
 	// rowLines picks a placeholder row's rebuilt-line fields with
 	// -json-line-fields-as-line-keys (json_line_keys.go).
 	rowLines rowLineFields
@@ -120,6 +124,7 @@ func newLogQueryShape(query string) logQueryShape {
 		classifyAsParsed: pipelineHasParserStageOf(lq.Pipeline, true, true),
 		exposure:         pipelineAddsLabels(lq.Pipeline),
 		parsed:           true,
+		pipeline:         lq.Pipeline,
 		captureFields:    pipelineRegexpCaptureFields(lq.Pipeline),
 		lineFields:       pipelineLineFields(lq.Pipeline),
 		fingerprint:      logQueryShapeFingerprint(responseKeyFences(nil, query, responseKeyLogWindowShape) + strings.Join(stages, "\n")),
@@ -135,13 +140,8 @@ func (p *Proxy) newLogQueryShape(query string) logQueryShape {
 	if !shape.parsed || !p.jsonLineKeysActive() {
 		return shape
 	}
-	shape.rowLines = p.rowLineFieldsOf(query, shape.lineFields)
-	shape.exposure.placeholderLine = true
-	shape.exposure.defaultMsg = p.defaultMsgValue()
-	shape.exposure.placeholderLineFields = shape.rowLines.placeholder
-	if lq, err := parseLogQLQuery(noFlowCtx, query); err == nil {
-		shape.exposure.logfmtOnly = placeholderLogfmtOnly(lq.Pipeline)
-	}
+	p.withPlaceholderLine(&shape.exposure, shape.pipeline)
+	shape.rowLines = rowLineFieldsOf(&shape.exposure, shape.lineFields)
 	return shape
 }
 

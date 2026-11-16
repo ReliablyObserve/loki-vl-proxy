@@ -361,12 +361,7 @@ func (p *Proxy) lineFieldExposure(query string) *lineFieldExposure {
 		return nil
 	}
 	exposure := pipelineAddsLabels(lq.Pipeline)
-	if p.jsonLineKeysActive() {
-		exposure.placeholderLine = true
-		exposure.defaultMsg = p.defaultMsgValue()
-		exposure.placeholderLineFields = placeholderPipelineLineFields(lq.Pipeline)
-		exposure.logfmtOnly = placeholderLogfmtOnly(lq.Pipeline)
-	}
+	p.withPlaceholderLine(&exposure, lq.Pipeline)
 	return &exposure
 }
 

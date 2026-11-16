@@ -55,11 +55,13 @@ type jlStream struct {
 	Labels   map[string]string `json:"labels"`
 	JSON     bool              `json:"json"`
 	Metadata map[string]string `json:"metadata,omitempty"`
+	// Level is the level key every line carries, "" for none.
+	Level string `json:"level,omitempty"`
 }
 
 var jlStreams = []jlStream{
 	{Labels: map[string]string{"app": "jl", "fmt": "json", "pod": "a", "service_name": "jl"}, JSON: true},
-	{Labels: map[string]string{"app": "jl", "fmt": "json", "pod": "b", "service_name": "jl"}, JSON: true},
+	{Labels: map[string]string{"app": "jl", "fmt": "json", "pod": "b", "service_name": "jl"}, JSON: true, Level: "info"},
 	{Labels: map[string]string{"app": "jl", "fmt": "logfmt", "pod": "c", "service_name": "jl"}},
 	{Labels: map[string]string{"app": "jl", "fmt": "logfmt", "pod": "d", "service_name": "jl"}},
 	{Labels: map[string]string{"app": "jlsm", "pod": "e", "service_name": "jlsm"}, JSON: true, Metadata: map[string]string{"trace_id": "t1"}},
@@ -88,6 +90,9 @@ func jlFixture() []jlEntry {
 				break
 			}
 			keys := [][2]string{{"amount", strconv.Itoa((i*7919 + s*104729) % 500)}}
+			if st.Level != "" {
+				keys = append(keys, [2]string{"level", st.Level})
+			}
 			if i%4 == 0 {
 				keys = append(keys, [2]string{"region", "eu"})
 			}
@@ -126,9 +131,13 @@ func jlLokiStreams(entries []jlEntry) []oraclerun.EngineStream {
 	return out
 }
 
-// jlLokiMetadata is the structured metadata Loki holds for a line of stream s.
+// jlLokiMetadata is the structured metadata Loki holds for a line of stream s: what was pushed beside it, and the
+// detected_level Loki's ingest reads from its level key (unknown without one).
 func jlLokiMetadata(s int) map[string]string {
 	out := map[string]string{"detected_level": "unknown"}
+	if l := jlStreams[s].Level; l != "" {
+		out["detected_level"] = l
+	}
 	for k, v := range jlStreams[s].Metadata {
 		out[k] = v
 	}

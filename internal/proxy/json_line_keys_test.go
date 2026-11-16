@@ -139,7 +139,7 @@ func TestJSONLineKeysOffChangesNothing(t *testing.T) {
 		t.Fatal("the flag off changed a | json split or probe")
 	}
 	const placeholder = `_msg:="missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field"`
-	if got := on.placeholderJSONStartFilter(); got != "("+jsonObjectStartFilter+" or "+placeholder+")" {
+	if got := on.placeholderJSONStartFilter(); got != `_msg:~"^[ \\t\\n\\r]*\\{" OR `+placeholder {
 		t.Fatalf("the | json split's brace filter with the flag on: %s", got)
 	}
 	if got := on.placeholderValidPipe(); got != ` | format if (`+placeholder+`) "1" as `+jsonValidField {
@@ -154,7 +154,7 @@ func TestJSONLineKeysOffChangesNothing(t *testing.T) {
 	if off.lineFieldExposure(`{a="b"} | json`).placeholderLine {
 		t.Fatal("the flag off reads placeholder rows as lines")
 	}
-	if f := off.rowLineFieldsOf(`{a="b"} | json amount`, nil); f.active {
+	if f := rowLineFieldsOf(off.lineFieldExposure(`{a="b"} | json amount`), nil); f.active {
 		t.Fatal("the flag off rebuilds placeholder lines otherwise")
 	}
 	// The namespace as it was before the flag existed.
@@ -243,7 +243,7 @@ func TestPlaceholderRowReading(t *testing.T) {
 			t.Errorf("placeholder line field %s: %v, want %v (%v)", name, got[name], want, got)
 		}
 	}
-	lf := p.rowLineFieldsOf(`{a="b"} | logfmt amount`, map[string]bool{"amount": true})
+	lf := rowLineFieldsOf(p.lineFieldExposure(`{a="b"} | logfmt amount`), map[string]bool{"amount": true})
 	if forRowMsg(lf, def)["amount"] || !forRowMsg(lf, "x=1")["amount"] || forRowMsg(lf, "")["amount"] {
 		t.Fatal("rowLineFields picks the placeholder set for placeholder rows only")
 	}
@@ -318,4 +318,33 @@ func FuzzPlaceholderExclusion(f *testing.F) {
 			t.Fatalf("%q: exclusion %q", q, filter)
 		}
 	})
+}
+
+// A placeholder row's stored level is a key of its JSON line: no label until | json or a json extraction list names
+// it; a logfmt extraction list naming it reads nothing from a JSON line.
+func TestPlaceholderLevelVisibility(t *testing.T) {
+	const def = "missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field"
+	on := newJSONLineKeysProxy(t, true, "")
+	off := newJSONLineKeysProxy(t, false, "")
+	for _, c := range []struct {
+		query  string
+		hidden bool
+	}{
+		{`{a="b"}`, true},
+		{`{a="b"} | json`, false},
+		{`{a="b"} | json level`, false},
+		{`{a="b"} | json amount`, true},
+		{`{a="b"} | logfmt`, true},
+		{`{a="b"} | logfmt level`, true},
+	} {
+		if got := on.lineFieldExposure(c.query).hidesStoredLevelOf([]byte(def)); got != c.hidden {
+			t.Errorf("%s: hides the stored level %v, want %v", c.query, got, c.hidden)
+		}
+		if off.lineFieldExposure(c.query).hidesStoredLevelOf([]byte(def)) {
+			t.Errorf("%s: the flag off hides the stored level of a placeholder row", c.query)
+		}
+	}
+	if (*lineFieldExposure)(nil).hidesStoredLevelOf([]byte(def)) {
+		t.Fatal("no exposure hides nothing")
+	}
 }

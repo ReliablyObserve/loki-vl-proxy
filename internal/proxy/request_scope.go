@@ -54,7 +54,8 @@ func (p *Proxy) contextScopeFingerprint(ctx context.Context) string {
 	if f := placeholderExclusionFrom(ctx); f != "" {
 		// The reads of a request with a placeholder exclusion carry it in
 		// extra_filters: their answers are kept apart (json_line_keys.go).
-		return p.contextScopeFingerprintOf(ctx) + ":placeholder-excluded"
+		sum := sha256.Sum256([]byte(f))
+		return p.contextScopeFingerprintOf(ctx) + ":placeholder-excluded:" + hex.EncodeToString(sum[:8])
 	}
 	return p.contextScopeFingerprintOf(ctx)
 }

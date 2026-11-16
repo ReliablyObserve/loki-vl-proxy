@@ -29,8 +29,11 @@ import (
 //     (placeholderExclusion);
 //   - the parse-risk probes of | json pipelines never count such a row as a line
 //     that is not JSON.
-// It runs in the Loki-compatible profile only, and only for the placeholder:
-// a row with an empty _msg keeps today's reading.
+// VictoriaLogs writes the placeholder for every row stored without a message,
+// so the reading also applies to jsonline rows and OpenTelemetry map bodies
+// without one, whose fields (OpenTelemetry attributes included) are then hidden
+// the same way. It runs in the Loki-compatible profile only (the default label
+// settings), and only for the placeholder.
 
 // jsonLineKeysActive reports whether stored fields of placeholder rows are read
 // as keys of the row's JSON line.
@@ -90,19 +93,28 @@ type rowLineFields struct {
 	blankIsPlaceholder bool
 }
 
-// rowLineFieldsOf is the rebuilt-line field choice of a log query.
-func (p *Proxy) rowLineFieldsOf(query string, base map[string]bool) rowLineFields {
-	out := rowLineFields{base: base, defaultMsg: p.defaultMsgValue()}
-	if !p.jsonLineKeysActive() {
+// rowLineFieldsOf is the rebuilt-line field choice of a log query whose
+// exposure is e (lineFieldExposure; nil in another profile or for a query the
+// parser rejects).
+func rowLineFieldsOf(e *lineFieldExposure, base map[string]bool) rowLineFields {
+	out := rowLineFields{base: base}
+	if e == nil || !e.placeholderLine {
 		return out
 	}
-	lq, err := parseLogQLQuery(noFlowCtx, query)
-	if err != nil {
-		return out
-	}
-	out.placeholder, out.active = placeholderPipelineLineFields(lq.Pipeline), true
-	out.blankIsPlaceholder = pipelineHasParserStageOf(lq.Pipeline, false, true)
+	out.placeholder, out.defaultMsg, out.active, out.blankIsPlaceholder = e.placeholderLineFields, e.defaultMsg, true, e.logfmt
 	return out
+}
+
+// withPlaceholderLine sets the placeholder reading of the flag on e, built from
+// the pipeline the exposure describes.
+func (p *Proxy) withPlaceholderLine(e *lineFieldExposure, pipeline []logqlpkg.Stage) {
+	if e == nil || !p.jsonLineKeysActive() {
+		return
+	}
+	e.placeholderLine = true
+	e.defaultMsg = p.defaultMsgValue()
+	e.placeholderLineFields = placeholderPipelineLineFields(pipeline)
+	e.logfmtOnly = placeholderLogfmtOnly(pipeline)
 }
 
 // forRowMsg is the field set for a row whose _msg is msg.
@@ -297,6 +309,9 @@ func (p *Proxy) placeholderRiskFilter() string {
 	return string(logsql.AppendFilter(nil, logsql.Not(p.placeholderMsg())))
 }
 
+// jsonObjectStartPattern is the pattern of jsonObjectStartFilter.
+const jsonObjectStartPattern = `^[ \t\n\r]*\{`
+
 // placeholderJSONStartFilter is the brace filter of a | json stats split
 // (jsonObjectStartFilter), which with the flag on also keeps the placeholder
 // rows: their line is a JSON object.
@@ -304,7 +319,7 @@ func (p *Proxy) placeholderJSONStartFilter() string {
 	if !p.jsonLineKeysActive() {
 		return jsonObjectStartFilter
 	}
-	return "(" + jsonObjectStartFilter + " or " + string(logsql.AppendFilter(nil, p.placeholderMsg())) + ")"
+	return string(logsql.AppendFilter(nil, logsql.Or(logsql.FieldRegexp("_msg", jsonObjectStartPattern), p.placeholderMsg())))
 }
 
 // placeholderValidPipe marks a placeholder row as a line VictoriaLogs parsed as
@@ -314,7 +329,8 @@ func (p *Proxy) placeholderValidPipe() string {
 	if !p.jsonLineKeysActive() {
 		return ""
 	}
-	return " | format if (" + string(logsql.AppendFilter(nil, p.placeholderMsg())) + ") \"1\" as " + jsonValidField
+	pipe := logsql.PipeFormat{Template: "1", ResultField: jsonValidField, If: p.placeholderMsg()}
+	return " " + string(logsql.AppendPipe(nil, pipe))
 }
 
 // placeholderRowLine is the line the | json row evaluator parses for a row:
@@ -367,4 +383,20 @@ func placeholderLogfmtOnly(pipeline []logqlpkg.Stage) map[string]bool {
 		}
 	}
 	return out
+}
+
+// hidesPlaceholderLevel reports whether a placeholder row read as its JSON line
+// hides a stored level field: the field is a key of the line, a label only once
+// | json or an extraction list naming it reads it (hidesStoredLevel).
+func (e *lineFieldExposure) hidesPlaceholderLevel() bool {
+	return e != nil && !e.jsonAll && (!e.names["level"] || e.logfmtOnly["level"])
+}
+
+// hidesStoredLevelOf is hidesStoredLevel of a row whose stored _msg is msg, a
+// placeholder row read as its JSON line included.
+func (e *lineFieldExposure) hidesStoredLevelOf(msg []byte) bool {
+	if readsPlaceholderAsLine(e, msg) {
+		return e.hidesPlaceholderLevel()
+	}
+	return e.hidesStoredLevel(msg)
 }
