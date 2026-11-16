@@ -7,19 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.310.0] - 2026-11-16
-
 ### Changed
 
-- The tests that compare the proxy's metric answers with Loki's now take Loki's answer from Loki itself: answers
-  recorded with Loki's query engine and request parser over the same lines and requests (test/oracle/loki, used
-  only in tests), for binary operators and vector matching, topk and bottomk, vector aggregations (nested,
-  `without`, stddev and stdvar), unwrap range functions over sliding and tumbling windows, absent_over_time,
-  first and last over time, rate_counter, quantile_over_time, keep, ip() label filters and sub-second steps. Where a
-  test needs to evaluate an expected answer itself (fuzz targets, tie detection), the evaluator is written from
-  LogQL's documented meaning and is held to the recorded answers. The engine oracle gains an unaligned mode (Loki's
-  engine at the request's own bounds). The query_range step alignment middleware is renamed for what it does
-  (alignToStepMiddleware); behaviour is unchanged.
 - Internal: the translation's query-plan decisions are one helper, with a reference entry point the corpus shadow reads,
   so the shadow counts the recorded differences the proxy already serves from the plan (a keep before an unwrap, a
   parser's series identity, a label named like a VictoriaLogs reserved field) as served and held to Loki, holds a
@@ -39,6 +28,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shapes x 4 request kinds x 2 versions: 144 of 160 runs match Loki, from 86 (every run of the 15 operations, and
   under `sum(…)`, `label_replace(…)` and with an `offset`). A `count`, `stddev` or `stdvar` under the clause, and a ranking over the operation, are unchanged. Answers cached before the fix are not served again
   (semantics/binary-operand-without-empty-collapses). `-query-plan-lowering=false` keeps the previous reading.
+
+## [2.310.0] - 2026-11-16
+
+### Changed
+
+- The tests that compare the proxy's metric answers with Loki's now take Loki's answer from Loki itself: answers
+  recorded with Loki's query engine and request parser over the same lines and requests (test/oracle/loki, used
+  only in tests), for binary operators and vector matching, topk and bottomk, vector aggregations (nested,
+  `without`, stddev and stdvar), unwrap range functions over sliding and tumbling windows, absent_over_time,
+  first and last over time, rate_counter, quantile_over_time, keep, ip() label filters and sub-second steps. Where a
+  test needs to evaluate an expected answer itself (fuzz targets, tie detection), the evaluator is written from
+  LogQL's documented meaning and is held to the recorded answers. The engine oracle gains an unaligned mode (Loki's
+  engine at the request's own bounds). The query_range step alignment middleware is renamed for what it does
+  (alignToStepMiddleware); behaviour is unchanged.
 
 ## [2.309.0] - 2026-11-16
 
