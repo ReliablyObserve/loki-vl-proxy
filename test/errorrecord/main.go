@@ -211,7 +211,8 @@ func wholeWindowMoves(row lokirecorded.Row) bool {
 		if err != nil || strconv.FormatInt(n, 10) != value {
 			return false
 		}
-		if !(n >= 1_000_000_000 && n < 100_000_000_000) && n < 1_000_000_000_000_000_000 {
+		seconds := n >= 1_000_000_000 && n < 100_000_000_000
+		if nanoseconds := n >= 1_000_000_000_000_000_000; !seconds && !nanoseconds {
 			return false
 		}
 	}
