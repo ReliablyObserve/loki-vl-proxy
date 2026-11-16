@@ -116,8 +116,9 @@ func TestBinaryMatchingErrorTextAndStepOrder(t *testing.T) {
 }
 
 // ignoring(label) over operands where the label is absent, present on one
-// side, or present on both: the join key and the labels of the result follow
-// Loki's matchingSignature and resultMetric (evaluator.go:945-953, :1096-1128).
+// side, or present on both: the join key and the labels of the result are
+// Loki's (the same joins over generated operands are held to Loki's recorded
+// answers in TestBinaryMatchingDifferential).
 // conformance: semantics/binary-ignoring-matching, loki_api_v1_query_range
 func TestBinaryIgnoringMatchingEdgeTable(t *testing.T) {
 	s := func(labels map[string]string, points [][]any) matchSeries { return matchSeries{labels, points} }
