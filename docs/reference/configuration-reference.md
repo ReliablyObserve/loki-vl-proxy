@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (265), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (266), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -98,6 +98,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-exact-parser-series-identity` | bool | `false` | `extraArgs.exact-parser-series-identity` | Name the series of a metric over `\| json` or `\| logfmt` with the labels those parsers extracted, as Loki does, instead of the stream. Every such query is then evaluated from rows (bounded by -manual-metric-row-budget) rather than pushed down to VictoriaLogs stats, so it costs far more on wide ranges; `\| regexp` and `\| pattern` captures are always part of the identity because the query names them |
 | `-extra-label-fields` | string | (empty) | `extraArgs.extra-label-fields` | host.id,custom.pipeline.processing |
 | `-field-mapping` | string | (empty) | `extraArgs.field-mapping` | vl_field |
+| `-json-line-fields-as-line-keys` | bool | `false` | `extraArgs.json-line-fields-as-line-keys` | Read every stored field of a row whose _msg is VictoriaLogs' missing-message placeholder (its -defaultMsgValue, or -backend-default-msg-value) as a key of the row's JSON line, as Loki holds a JSON line pushed to VictoriaLogs' Loki push route without disable_message_parsing=1: the fields are no labels until `\| json` (structured metadata without a parser, parsed labels after `\| logfmt` otherwise), and a query that reads a label no stage can give such a line (an unwrap or a label filter after `\| logfmt` or without a parser) leaves those rows out, in VictoriaLogs. VictoriaLogs cannot tell such a line's keys from structured metadata pushed beside it, so with this on that structured metadata is hidden too: leave it off when pushes carry structured metadata, and prefer pushing with disable_message_parsing=1, which keeps the line and needs no flag |
 | `-label-browse-extensions` | string | `"auto"` | `extraArgs.label-browse-extensions` | error-response-message-field |
 | `-label-style` | string | `"underscores"` | `extraArgs.label-style` | metadata-field-mode |
 | `-logql-dotted-names` | string | `"auto"` | `extraArgs.logql-dotted-names` | label-browse-extensions |

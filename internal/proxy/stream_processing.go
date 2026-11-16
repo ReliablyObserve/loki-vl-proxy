@@ -298,6 +298,7 @@ func (p *Proxy) streamLogQuery(ctx context.Context, w http.ResponseWriter, resp 
 
 	captureFields := regexpCaptureFields(originalQuery)
 	lineFields := logQueryLineFields(originalQuery)
+	rowLines := p.rowLineFieldsOf(originalQuery, lineFields)
 	classifyAsParsed := hasLabelParserStage(originalQuery)
 	exposure := p.lineFieldExposure(originalQuery)
 	mergeParsed := mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructuredMetadata)
@@ -328,7 +329,7 @@ func (p *Proxy) streamLogQuery(ctx context.Context, w http.ResponseWriter, resp 
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
 		streamLabels := parseStreamLabels(asString(entry["_stream"]))
-		msg = storedLogLineFromEntry(msg, entry, streamLabels, lineFields, p.defaultMsgValue())
+		msg = storedLogLineFromEntry(msg, entry, streamLabels, forRowMsg(rowLines, msg), p.defaultMsgValue())
 
 		tsNanos, ok := formatEntryTimestamp(timeStr)
 		if !ok {
@@ -660,6 +661,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	captureFields := regexpCaptureFields(originalQuery)
 	mergeParsed, captureFields, mergeMetadata := exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
 	lineFields := logQueryLineFields(originalQuery)
+	rowLines := p.rowLineFieldsOf(originalQuery, lineFields)
 	// classifyAsParsed is included so | json / | logfmt parsed fields are classified even
 	// without emitStructuredMetadata or categorizedLabels (see resolveLogQueryStream).
 	needsClassification := emitStructuredMetadata || categorizedLabels || classifyAsParsed || len(captureFields) > 0 || mergeMetadata || exposure.needsClassification()
@@ -735,7 +737,11 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		rawStream := fjVal.GetStringBytes("_stream")
 		rowStream := rowLevels.stream(rawStream)
 		detected := rowLevels.fjRow(fjVal, fjObj, rowStream)
-		msg := storedLogLineFromFJ(fjVal, rowStream.labels, lineFields, p.defaultMsgValue())
+		rowFields := lineFields
+		if rowLines.active {
+			rowFields = forRowMsg(rowLines, fjVal.GetStringBytes("_msg"))
+		}
+		msg := storedLogLineFromFJ(fjVal, rowStream.labels, rowFields, p.defaultMsgValue())
 		levelBytes := visibleStoredLevelFJ(fjVal, rowStream.labels, exposure)
 
 		// Pass raw bytes to avoid string allocation on descriptor cache hits.
@@ -1288,6 +1294,9 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 		}
 		if _, onStream := streamOnly[key]; onStream && exposure != nil && !rowReady {
 			msg, _ := stringifyEntryValue(entry["_msg"])
+			if readsPlaceholderAsLine(exposure, msg) {
+				msg = storedLogLineFromEntry(msg, entry, streamLabels, exposure.placeholderLineFields, exposure.defaultMsg)
+			}
 			row = lineRow{line: []byte(msg), keys: jsonLineKeys([]byte(msg)), stream: streamLabels}
 			lineMissing, rowReady = isVLMissingMsg(msg, p.defaultMsgValue()), true
 		}
@@ -1408,9 +1417,13 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels, stre
 	if storedLine != nil {
 		msgRaw = storedLine
 	}
+	placeholder := readsPlaceholderAsLine(exposure, msgRaw)
+	if placeholder {
+		msgRaw = []byte(rebuildLogLineFJ(obj, streamLabels, exposure.placeholderLineFields))
+	}
 	msgKeys := jsonLineKeys(msgRaw)
 	pendingFields = exposure.resolveStreamKeyFields(pendingFields, deferred, msgKeys, msgRaw)
-	row := lineRow{line: msgRaw, keys: msgKeys, stream: streamLabels}
+	row := lineRow{line: msgRaw, keys: msgKeys, stream: streamLabels, placeholder: placeholder}
 	var lineMissing bool
 	if exposure != nil {
 		lineMissing = isVLMissingMsgBytes(msgRaw, p.defaultMsgValue())
@@ -1960,6 +1973,10 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 	if exposure != nil {
 		if stored, ok := entry[translator.StoredLineField].(string); ok {
 			msg = stored // the line before a line_format VictoriaLogs ran
+		}
+		if readsPlaceholderAsLine(exposure, msg) {
+			msg = storedLogLineFromEntry(msg, entry, streamLabels, exposure.placeholderLineFields, exposure.defaultMsg)
+			lr.placeholder = true
 		}
 		lr.line = []byte(msg)
 		lr.keys = jsonLineKeys(lr.line)
