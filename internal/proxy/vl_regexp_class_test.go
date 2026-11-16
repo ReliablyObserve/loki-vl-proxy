@@ -80,7 +80,9 @@ func TestVLNotInPatternsHoldNoWideLetterClass(t *testing.T) {
 //
 // conformance: quality/probe-regexp-parse-cost
 func TestVLNotInPrintsCheaply(t *testing.T) {
-	if testing.Short() && raceDetectorEnabled {
+	// The race detector slows every step several times, so a time bound says nothing under it (race-stress runs
+	// without -short).
+	if raceDetectorEnabled {
 		t.Skip("timing under the race detector")
 	}
 	for _, p := range vlNotInPatterns[:3] {
