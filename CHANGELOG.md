@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- One stream now gets one `detected_level` on every metric query type, as Loki gives. For a stream labelled
+  `level="ERROR"`, `count_over_time({...} | logfmt [5m])`, `rate({...} | json [1m])`, `sort(rate({...} | json [1m]))`
+  and an unwrap at step 300 said `ERROR` while plain `rate` and `count_over_time` said `error`. A stream labelled
+  `severity`, `LEVEL` or `lvl` had no `detected_level` label at all on those queries. Those series are built by the
+  proxy from a per-stream or raw-row read, which copied the stored `level` value and read no other level key. They
+  now take the stream's level fields, else the row's `level` field, normalised as Loki does (`Debug` is `debug`); the
+  `level` label keeps its stored value. Plain range functions were already right for these streams: VictoriaLogs
+  v1.49.0 and v1.53.0 compute the same values with the chain the proxy sends (a stream label beside a stored level is
+  the next entry). Answers cached before the fix are not served again (the `@stream-level-series-v3` fence of the next
+  entry; semantics/detected-level-one-value-per-stream).
+- A stream's own level label now decides `detected_level` before a level stored on its lines, on every metric query
+  type and at every step, as Loki does (stream label, then structured metadata, then the line). A stream labelled
+  `severity="error"` whose lines carry structured metadata `level="debug"` said `debug` on `rate`, `count_over_time`,
+  `sum by (detected_level)` and the other queries VictoriaLogs' `detected_level` chain serves (and a
+  `| detected_level="error"` filter missed those lines); Loki answers `error`. The chain now marks the rows whose
+  stream holds a level field (one pipe, a stream filter evaluated once per block) and reads the level fields of those
+  rows from the stream only, where two or more level names are known, so a window with one level name sends the same
+  LogsQL as before; VictoriaLogs v1.49.0 and v1.53.0 answer Loki's value for every recorded stream, every text
+  survives their clone, and their CPU time for the chain stays within measurement noise. The raw-row reads
+  (`sum without (pod) (rate({...} | json amount | unwrap amount [5m]))` at an instant and step 60, `sort(rate({...} | json [1m]))` at an instant and step
+  300) answered `ERROR` and `Debug` for streams labelled `level="ERROR"` and `level="Debug"` (VictoriaLogs answers a
+  raw row with its stream fields as fields, so the row's `level` was the stream's, copied as stored); they now take
+  the stream's level fields first, then the row's `level`, normalised. VictoriaLogs calls per request do not change.
+  Answers cached before are not served again: the response key fence (`@stream-level-series-v3`) now covers every
+  metric query and every query naming `detected_level` (one cache miss per such key after the upgrade).
 - A `sort` or `sort_desc` written with a grouping before its parenthesis (`sort by (app) (rate({…}[5m]))`, which Loki
   accepts) now carries the stream-level series fence like `sort(…)`, so it is never answered from a key cached before
   per-stream series took the stream's `detected_level`.
