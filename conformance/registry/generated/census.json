@@ -1818,7 +1818,9 @@
     "internal/proxy/query_range_steps_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/query_range_steps_test.go | semantics/unwrap-over-time-range-windows",
     "internal/proxy/query_range_steps_test.go | tenant-numeric-routing",
+    "internal/proxy/query_range_window_full_limit_test.go | semantics/query-range-window-full-limit-reads",
     "internal/proxy/query_range_window_lead_test.go | semantics/query-range-window-lead-window",
+    "internal/proxy/query_range_windowing_test.go | semantics/query-range-window-budget",
     "internal/proxy/query_semantics_compat_handlers_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/query_semantics_compat_handlers_test.go | semantics/error-layer-silent-success",
     "internal/proxy/query_stats_loki_meaning_test.go | drilldown/logs-footer-query-stats",
@@ -1964,6 +1966,8 @@
     "internal/proxy/stream_tag_restore_test.go | severity/detected-level-filter-json-level",
     "internal/proxy/sub_second_step_precision_test.go | semantics/sub-second-step-grid",
     "internal/proxy/sub_second_step_test.go | semantics/sub-second-step-grid",
+    "internal/proxy/sub_second_step_test.go | semantics/window-edge-float64-nanoseconds",
+    "internal/proxy/sub_second_step_test.go | semantics/window-wider-than-step-raw-rows",
     "internal/proxy/sub_second_step_test.go | window-bounds-and-step-alignment",
     "internal/proxy/sum_without_differential_test.go | limits/drilldown-partial-with-warning",
     "internal/proxy/sum_without_differential_test.go | limits/series-limit-error",
@@ -1988,6 +1992,7 @@
     "internal/proxy/tail_history_test.go | loki_api_v1_tail",
     "internal/proxy/tail_history_test.go | semantics/tail-history-start-limit",
     "internal/proxy/tail_pipeline_test.go | loki_api_v1_tail",
+    "internal/proxy/tenant_auth_parity_test.go | semantics/tenant-header-loki-answers",
     "internal/proxy/tenant_auth_parity_test.go | tenant-auth-follows-loki",
     "internal/proxy/tenant_auth_parity_test.go | tenant-numeric-routing",
     "internal/proxy/tenant_header_fuzz_test.go | tenant-auth-follows-loki",
@@ -2009,6 +2014,7 @@
     "internal/proxy/tenant_query_limits_test.go | loki_api_v1_query_range",
     "internal/proxy/tenant_query_limits_test.go | series-limits-and-partial-results",
     "internal/proxy/tenant_query_limits_test.go | tenant-query-limits",
+    "internal/proxy/tenant_routing_test.go | semantics/tenant-numeric-canonical",
     "internal/proxy/tenant_routing_test.go | tenant-numeric-routing",
     "internal/proxy/time_bounds_test.go | semantics/error-request-validation-parity",
     "internal/proxy/time_bounds_test.go | semantics/request-time-bounds",
@@ -2904,7 +2910,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 666,
+      "go": 668,
       "playwright": 1
     },
     "page_kinds": {
@@ -2923,8 +2929,8 @@
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 98,
-    "wired_items": 388
+    "unwired_items": 95,
+    "wired_items": 391
   },
   "gates": [
     "A/B shape selection",
