@@ -73,17 +73,6 @@ var vaStreams = []string{
 	`{app="uw",pod="d",zone="y"}`,
 }
 
-func (s vaScenario) times() []int64 {
-	if s.step == 0 {
-		return []int64{s.end}
-	}
-	var out []int64
-	for t := s.start; t <= s.end; t += int64(s.step) {
-		out = append(out, t)
-	}
-	return out
-}
-
 func (s vaScenario) query() string {
 	selector := `{app="uw"}`
 	if s.parser != "" {
@@ -141,12 +130,6 @@ func generateVectorAggScenario(rnd *rand.Rand, fn string, stages []vaStage, inst
 	return s
 }
 
-// vaSeries is a series of Loki's input vector.
-type vaSeries struct {
-	labels map[string]string
-	value  float64
-}
-
 func labelsKey(labels map[string]string) string {
 	names := make([]string, 0, len(labels))
 	for name := range labels {
@@ -158,15 +141,6 @@ func labelsKey(labels map[string]string) string {
 		b.WriteString(name + "=" + labels[name] + ",")
 	}
 	return b.String()
-}
-
-func streamLabel(stream, label string) string {
-	for _, part := range strings.Split(strings.Trim(stream, "{}"), ",") {
-		if k, v, ok := strings.Cut(part, "="); ok && k == label {
-			return strings.Trim(v, `"`)
-		}
-	}
-	return ""
 }
 
 func newVectorAggProxy(t *testing.T, emu *vlemu.Emulator) (*Proxy, func()) {

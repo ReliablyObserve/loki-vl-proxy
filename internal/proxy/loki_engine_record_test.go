@@ -319,23 +319,6 @@ func lokiMetricPoints(t testing.TB, label string, a lokiEngineAnswer) (map[strin
 	return out, s.Labels
 }
 
-// sameSampleText reports whether two value texts are the same number (NaN equals NaN, and -0 equals 0 only when
-// both are written alike).
-func sameSampleText(a, b string) bool {
-	if a == b {
-		return true
-	}
-	x, err1 := strconv.ParseFloat(a, 64)
-	y, err2 := strconv.ParseFloat(b, 64)
-	if err1 != nil || err2 != nil {
-		return false
-	}
-	if math.IsNaN(x) || math.IsNaN(y) {
-		return math.IsNaN(x) && math.IsNaN(y)
-	}
-	return x == y && math.Signbit(x) == math.Signbit(y)
-}
-
 // lokiProcessRecord is one recorded pipeline answer (test/oracle/loki process) with the digest of its case.
 type lokiProcessRecord struct {
 	Key    string                  `json:"key"`

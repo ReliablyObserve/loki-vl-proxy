@@ -78,7 +78,7 @@ func FuzzFoldBinaryAggregation(f *testing.F) {
 		}
 		vec := make([]topKFoldRefSample, 0, len(samples))
 		for _, s := range samples {
-			vec = append(vec, topKFoldRefSample{s.labels, s.value})
+			vec = append(vec, topKFoldRefSample(s))
 		}
 		reference, _ := layer.eval(vec)
 		type group struct {

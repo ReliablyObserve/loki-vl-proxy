@@ -53,27 +53,6 @@ func (g stdGrouping) wrap(op, inner string) string {
 	}
 }
 
-// groupLabels returns the labels of the group a series with these labels falls into.
-func (g stdGrouping) groupLabels(series map[string]string) map[string]string {
-	out := map[string]string{}
-	switch g.kind {
-	case "by":
-		for _, l := range g.labels {
-			if v, ok := series[l]; ok {
-				out[l] = v
-			}
-		}
-	case "without":
-		for k, v := range series {
-			out[k] = v
-		}
-		for _, l := range g.labels {
-			delete(out, l)
-		}
-	}
-	return out
-}
-
 func canonicalLabels(m map[string]string) string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

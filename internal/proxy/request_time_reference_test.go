@@ -84,7 +84,7 @@ func TestRequestTimeReferenceMatchesRecordedLoki(t *testing.T) {
 	for i, step := range steps {
 		_, lokiOK := lokiTimes("step" + strconv.Itoa(i))
 		d, ok := lokiStep(step)
-		if ok != lokiOK && !(ok && d <= 0) {
+		if ok != lokiOK && (!ok || d > 0) {
 			t.Errorf("step %q: reference reads it %v (%v), Loki %v", step, ok, d, answers["step"+strconv.Itoa(i)])
 		}
 	}

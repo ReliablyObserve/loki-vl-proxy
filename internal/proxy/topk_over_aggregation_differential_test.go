@@ -270,14 +270,6 @@ func overAggQuery(chain []overAggLayer, inner string) string {
 	return query
 }
 
-func refVectorOf(vec []topKSeries) []topKFoldRefSample {
-	out := make([]topKFoldRefSample, 0, len(vec))
-	for _, s := range vec {
-		out = append(out, topKFoldRefSample{map[string]string{"app": s.app, "env": s.env}, s.value})
-	}
-	return out
-}
-
 // overAggPoints is a response by series labels and unix second.
 type overAggPoints map[string]map[int64]float64
 

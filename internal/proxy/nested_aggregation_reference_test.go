@@ -24,12 +24,12 @@ func nvFold(in []nvSeries, level nvLevel) []nvSeries {
 	}
 	vec := make([]topKFoldRefSample, len(in))
 	for i, s := range in {
-		vec[i] = topKFoldRefSample{s.labels, s.value}
+		vec[i] = topKFoldRefSample(s)
 	}
 	folded, _ := layer.eval(vec)
 	out := make([]nvSeries, len(folded))
 	for i, s := range folded {
-		out[i] = nvSeries{s.labels, s.value}
+		out[i] = nvSeries(s)
 	}
 	return out
 }
@@ -142,7 +142,7 @@ func nestedReferenceFor(s nvScenario, labelsOf func(vlemu.Row) map[string]string
 func vaReference(s vaScenario) (map[string]map[int64]float64, map[string]map[string]string) {
 	levels := make([]nvLevel, len(s.stages))
 	for i, st := range s.stages {
-		levels[i] = nvLevel{op: st.op, by: st.by, without: st.without}
+		levels[i] = nvLevel(st)
 	}
 	var extra map[string]string
 	if s.withLevel {
@@ -194,7 +194,7 @@ func nestedReferenceCases() []nvScenario {
 				va.parser, va.withLevel = parser, true
 				levels := make([]nvLevel, len(stages))
 				for i, st := range stages {
-					levels[i] = nvLevel{op: st.op, by: st.by, without: st.without}
+					levels[i] = nvLevel(st)
 				}
 				out = append(out, nvScenario{levels: levels, fn: va.fn, parser: va.parser, window: va.window, step: va.step, start: va.start, end: va.end, rows: va.rows, version: "level"})
 			}
