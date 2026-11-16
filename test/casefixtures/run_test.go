@@ -190,7 +190,7 @@ func TestFollowWritesATickPerIntervalUntilTheContextEnds(t *testing.T) {
 	defer cancel()
 	var errOut bytes.Buffer
 	Follow(ctx, cfg, s, time.Now().Add(-time.Second), &errOut)
-	if n := st.loki[selector(s[0])]; n < 3*len(s[0].Entries) {
+	if n := st.lokiLines(selector(s[0])); n < 3*len(s[0].Entries) {
 		t.Errorf("Loki holds %d lines after the follow ran, want at least three ticks", n)
 	}
 	// A refused write is reported and does not stop the loop.
@@ -218,7 +218,7 @@ func TestRunFollowsAfterTheBacklog(t *testing.T) {
 	}
 	// Four ticks of backlog; the follow writes the next one at once when the clock is already past it, and a second
 	// one when the run starts within the last seconds of a 30 second boundary and the 3 second context spans it.
-	if n := st.loki[selector(s[0])]; n < 4*len(s[0].Entries) || n > 6*len(s[0].Entries) {
+	if n := st.lokiLines(selector(s[0])); n < 4*len(s[0].Entries) || n > 6*len(s[0].Entries) {
 		t.Errorf("the backlog holds %d lines", n)
 	}
 }
