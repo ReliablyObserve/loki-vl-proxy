@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.304.0] - 2026-11-16
+
+### Fixed
+- `/loki/api/v1/patterns` now counts the last 10 s sample of a range whole when the range ends inside it, as Loki
+  does: Loki answers every sample that starts inside the range with all of its lines, including the lines after the
+  range's end. The proxy read lines only up to the end, so a range ending at, for example, `...019` showed 76 of the
+  sample's 98 lines in Logs Drilldown's patterns chart. The count also depended on timing: the request that started
+  the pattern state's background build got the partial sample (and kept it in the cache), later ones the whole
+  sample. The pattern state, the exact tier and the counts tier now read up to the end of that sample (up to now
+  while it is still being written, completed by the next refresh); the counts tier, with a step of whole 10 s
+  samples, also leaves out the lines of a sample that starts before the range, as Loki does. A range ending on a
+  sample's start reads exactly as before, and a repeat or a range ending earlier inside a sample already read makes
+  no VictoriaLogs call.
+
 ## [2.303.0] - 2026-11-16
 
 ### Fixed
