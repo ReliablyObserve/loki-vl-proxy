@@ -24,8 +24,9 @@ import (
 
 // TestExtractionListIdentityVictoriaLogsCost measures what the extraction list's series identity costs VictoriaLogs
 // (v1.53.0 and v1.49.0, its own query handlers through the serve oracle): the stats query the string translator
-// writes (a series per line) and the one the lowering writes (the series hash of the stream and the listed labels),
-// over logfmt rows of eight streams, median of repeated runs, interleaved. It records nothing; LVP_XLIST_VLCOST=1
+// writes, which origin/main sends (a series per line, or the clause alone), and the one the lowering writes (a value
+// per series of the stream, its stored level fields and the listed labels, then the aggregation), over logfmt rows of
+// eight streams, interleaved runs, the median and the 90th percentile of each and the answer's size. It records nothing; LVP_XLIST_VLCOST=1
 // runs it.
 func TestExtractionListIdentityVictoriaLogsCost(t *testing.T) {
 	if os.Getenv("LVP_XLIST_VLCOST") != "1" {
@@ -52,6 +53,8 @@ func TestExtractionListIdentityVictoriaLogsCost(t *testing.T) {
 		`sum by (ns) (max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`,
 		`avg by (ns) (avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`,
 		`max(stddev_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`,
+		`min(min_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`,
+		`sum by (route) (avg_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m]))`,
 	}
 	label := translator.WithStreamLabels(proxy.NewLabelTranslator(proxy.LabelStyleUnderscores, nil).ToVL, nil)
 	for _, prof := range diffProfiles() {
@@ -78,16 +81,30 @@ func TestExtractionListIdentityVictoriaLogsCost(t *testing.T) {
 			}
 			return time.Since(t0), len(body)
 		}
-		median := func(q string) (time.Duration, int) {
-			var ds []time.Duration
-			size := 0
-			run(q)
-			for i := 0; i < 11; i++ {
-				d, b := run(q)
-				ds, size = append(ds, d), b
+		// interleaved runs old and new rounds times each, alternating which goes first, after one warm-up run of each:
+		// the median and the 90th percentile of each, and the answer's size.
+		const rounds = 21
+		interleaved := func(old, new string) (o, n [2]time.Duration, ob, nb int) {
+			run(old)
+			run(new)
+			var od, nd []time.Duration
+			for i := 0; i < rounds; i++ {
+				if i%2 == 0 {
+					d, b := run(old)
+					od, ob = append(od, d), b
+					d, b = run(new)
+					nd, nb = append(nd, d), b
+				} else {
+					d, b := run(new)
+					nd, nb = append(nd, d), b
+					d, b = run(old)
+					od, ob = append(od, d), b
+				}
 			}
-			sort.Slice(ds, func(i, j int) bool { return ds[i] < ds[j] })
-			return ds[len(ds)/2], size
+			sort.Slice(od, func(i, j int) bool { return od[i] < od[j] })
+			sort.Slice(nd, func(i, j int) bool { return nd[i] < nd[j] })
+			p90 := rounds * 9 / 10
+			return [2]time.Duration{od[rounds/2], od[p90]}, [2]time.Duration{nd[rounds/2], nd[p90]}, ob, nb
 		}
 		var b strings.Builder
 		for _, q := range queries {
@@ -105,14 +122,12 @@ func TestExtractionListIdentityVictoriaLogsCost(t *testing.T) {
 				t.Fatal(err)
 			}
 			text := op.(physical.VLQuery).Text
-			o1, ob := median(old)
-			n1, nb := median(text)
-			o2, _ := median(old)
-			n2, _ := median(text)
-			o, nw := (o1+o2)/2, (n1+n2)/2
-			fmt.Fprintf(&b, "\n  %-90s per line %9s (%5d B)  identity %9s (%5d B)  %+6.1f%%", q, o.Round(time.Microsecond), ob, nw.Round(time.Microsecond), nb, 100*(float64(nw)-float64(o))/float64(o))
+			o, nw, ob, nb := interleaved(old, text)
+			fmt.Fprintf(&b, "\n  %-90s base p50 %9s p90 %9s (%5d B)  head p50 %9s p90 %9s (%5d B)  p50 %+6.1f%%", q,
+				o[0].Round(time.Microsecond), o[1].Round(time.Microsecond), ob, nw[0].Round(time.Microsecond), nw[1].Round(time.Microsecond), nb,
+				100*(float64(nw[0])-float64(o[0]))/float64(o[0]))
 		}
-		t.Logf("VictoriaLogs %s, %d rows, stats_query at the end, median of 11 runs, twice interleaved:%s", prof.version, n, b.String())
+		t.Logf("VictoriaLogs %s, %d rows, stats_query at the end, %d runs each, interleaved:%s", prof.version, n, rounds, b.String())
 		srv.Stop()
 	}
 }

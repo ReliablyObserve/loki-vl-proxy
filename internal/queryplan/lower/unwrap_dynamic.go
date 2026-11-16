@@ -19,6 +19,11 @@ import (
 // the labels a keep leaves (keptIdentity): a value per series, then the vector aggregation over the series. The
 // string translator groups these by the stream and each line instead, so the proxy serves them from the lowering
 // (DynamicUnwrapIdentity).
+//
+// After an extraction list of plain keys (`| logfmt amount, route`, `| json amount`) the labels a line ends with are
+// known from the query: the listed ones (an absent key is an empty value, one series with the lines that hold it
+// empty). The stats then group by the stream, its stored level fields and the listed labels as the query's own
+// unpack wrote them (listedStored), with no second unpack and no hash: VictoriaLogs reads each line once.
 
 // dynamicSeriesField is the field that holds the hash of a line's parsed labels less the unwrapped one.
 const dynamicSeriesField = "__lvp_sid"
@@ -36,8 +41,9 @@ var dynamicPacked = []string{dynamicPrefix + "*", "level", translate.DetectedLev
 var dynamicSeries = []string{dynamicSeriesField}
 
 // DynamicUnwrapIdentity reports a range function over an unwrapped label under one vector aggregation (sum, max, min
-// or avg, by labels or none) whose series are the stream and every label a json or logfmt parser extracts (no keep,
-// no drop, nothing that changes the line or the labels by their values): the queries whose series identity the
+// or avg, by labels or none) whose series are the stream and every label a json or logfmt parser extracts, of every
+// key or of an extraction list of plain keys (no keep, no drop, nothing that changes the line or the labels by their
+// values): the queries whose series identity the
 // lowering writes from the data (the top of this file). The functions are the ones taken per series that the outer
 // aggregation then folds: avg, max, min, stddev and stdvar over time (quantile_over_time and rate_counter need each
 // series' samples, which VictoriaLogs' stats cannot give without a row per series).
@@ -97,7 +103,8 @@ func dynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) (parser *q
 	if parser.Fields != nil {
 		// An extraction list: Loki's series are the stream and the labels it names (an empty value too), less the
 		// unwrapped one (parsedSeriesLabels; a name that is a stream label or a level is read otherwise).
-		if _, ok := parsedSeriesLabels(ra.In, unwrap.Label); !ok {
+		var buf [8]string
+		if _, ok := appendParsedSeriesLabels(buf[:0], ra.In, unwrap.Label); !ok {
 			return nil, false
 		}
 	}
@@ -115,18 +122,6 @@ func dynamicIdentityPipes(parser *queryplan.Parse, label string) string {
 	unpack := dynamicUnpackJSON
 	if parser.Type == logql.ParserLogfmt {
 		unpack = dynamicUnpackLogfmt
-	}
-	if parser.Fields != nil {
-		// An extraction list: the second unpack reads the keys it names, so the hash holds those labels alone.
-		names := make([]string, len(parser.Fields))
-		for i, f := range parser.Fields {
-			names[i] = f.Name
-		}
-		if parser.Type == logql.ParserLogfmt {
-			unpack = logsql.PipeUnpackLogfmt{From: "_msg", Fields: names, ResultPrefix: dynamicPrefix}.String()
-		} else {
-			unpack = logsql.PipeUnpackJSON{From: "_msg", Fields: names, ResultPrefix: dynamicPrefix}.String()
-		}
 	}
 	spellings := translate.ParsedKeyVariants(label)
 	deleted := make([]string, len(spellings))
@@ -154,8 +149,10 @@ var (
 var dynamicInnerNumber = logsql.PipeMath{Expr: "__lvp_inner", Alias: "__lvp_inner"}.String()
 
 // withDynamicIdentity sets the series identity of q to the dynamic identity of the query, when it has one and no
-// keep decided it: the identity pipes go first, before any stats.
-func (q *unwrapQuery) withDynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, label string) {
+// keep decided it. After a parser of every key the identity pipes go first, before any stats. After an extraction
+// list the labels of a series are known from the query (listedStored and the listed labels), and the stats group by them as the parser
+// left them: no second unpack and no hash.
+func (q *unwrapQuery) withDynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, label string, clause []string) {
 	if q.keptSet {
 		return
 	}
@@ -163,8 +160,34 @@ func (q *unwrapQuery) withDynamicIdentity(va *queryplan.VectorAgg, ra *queryplan
 	if !ok {
 		return
 	}
+	if parser.Fields != nil {
+		// The stored fields, then the listed labels; a list of the unwrapped label alone shares listedStored (its
+		// capacity is its length: an append copies it).
+		kept := listedStored[:len(listedStored):len(listedStored)]
+		if len(parser.Fields) > 1 || parser.Fields[0].Name != label {
+			kept, _ = appendParsedSeriesLabels(append(make([]string, 0, len(listedStored)+len(parser.Fields)), listedStored...), ra.In, label)
+		}
+		q.kept, q.keptSet, q.listed, q.clause = kept, true, true, clause
+		return
+	}
 	q.pipes = append(q.pipes, dynamicIdentityPipes(parser, label))
 	q.kept, q.keptSet, q.dynamic = dynamicSeries, true, true
+}
+
+// listedStored are the fields of a row the series identity of an extraction list groups by before the labels the list
+// names less the unwrapped one (which the query's own unpack wrote): the stream, and the structured metadata a series
+// holds in Loki that VictoriaLogs stores as fields of the row, the level the proxy reads and detected_level, as stored
+// (the fields the series hash of a bare parser packs). Lines without a listed key group under its empty value, as Loki
+// puts them in one series. detected_level is named here, not left to unwrapQuery.stats, which adds it after the stream
+// and level together with the chain that derives it: the identity reads it as stored, and only a clause naming it
+// derives it.
+var listedStored = []string{"_stream", "level", translate.DetectedLevelLabel}
+
+// listedUnpack are the labels the query's bare logfmt unpack reads under an extraction list's identity besides the
+// unwrapped one: the listed ones (q.kept less listedStored), the only keys the list extracts. The labels of the clause
+// and the stored level fields are not read from the line: Loki reads them from the stream and its metadata.
+func (q *unwrapQuery) listedUnpack() []string {
+	return q.kept[len(listedStored):]
 }
 
 // WritesDynamicUnwrapIdentity reports a plan with, at any depth, a vector aggregation over a range function whose
@@ -211,7 +234,8 @@ func withoutDynamicSeries(by []string) []string {
 // otherwise and leaves the series to the stream.
 func plainExtraction(st *queryplan.Parse) bool {
 	for _, f := range st.Fields {
-		if f.Expression != f.Name || !plainIdent(f.Name) {
+		// A name of the proxy's own fields (`_stream`, `_msg`) is not grouped by as the list's label.
+		if f.Expression != f.Name || !plainIdent(f.Name) || f.Name[0] == '_' {
 			return false
 		}
 	}

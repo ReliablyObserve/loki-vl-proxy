@@ -51,10 +51,13 @@ why: |
   Fixed: sum, max, min and avg (by labels, or none) over avg, max, min, stddev
   and stdvar over time after an extraction list of plain keys (`| logfmt
   amount, route`, `| json amount`), on an instant query and on a range up to
-  the step. The lowering writes the dynamic identity of a parser for them
-  (lower.DynamicUnwrapIdentity): the second unpack reads only the listed keys,
-  so the series hash holds the stream and those labels, and VictoriaLogs groups
-  the function by it. Still open (listed in extractionListKnownRuns): count over
+  the step. The lowering names the series from the query
+  (lower.DynamicUnwrapIdentity): the query's own logfmt unpack reads the listed
+  keys alone, and the stats group by the stream, its stored level fields
+  (level, detected_level) and the listed labels, a value per series, then the
+  aggregation over them. No second unpack and no hash: VictoriaLogs reads each
+  line once, as for origin/main's text. In the emulator run below the proxy now
+  answers the reference evaluator's 358 and x 55.944 / y 42.056. Still open (listed in extractionListKnownRuns): count over
   the series, first, last, quantile, rate and rate_counter under an
   aggregation, a json alias or path in the list, a ranking, sort or grouping by
   a listed label, and a count of lines (`count by (ns) (count_over_time(... |

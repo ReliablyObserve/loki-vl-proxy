@@ -2159,6 +2159,7 @@
     ],
     "semantics/unwrap-extraction-list-series-identity": [
       "internal/proxy/extraction_list_outside_without_test.go",
+      "internal/proxy/stdvar_grouped_binary_test.go",
       "internal/querycorpus/extraction_list_identity_loki_diff_test.go",
       "internal/queryplan/lower/unwrap_dynamic_test.go"
     ],
@@ -4009,6 +4010,7 @@
       "semantics/stddev-stdvar-over-time-range-window",
       "semantics/stddev-stdvar-over-time-step-bucket",
       "semantics/stdvar-grouped-binary-marker",
+      "semantics/unwrap-extraction-list-series-identity",
       "window-bounds-and-step-alignment"
     ],
     "internal/proxy/step_align_diff_test.go": [

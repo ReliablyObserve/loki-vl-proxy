@@ -1960,6 +1960,7 @@
     "internal/proxy/stdvar_grouped_binary_test.go | semantics/stddev-stdvar-over-time-range-window",
     "internal/proxy/stdvar_grouped_binary_test.go | semantics/stddev-stdvar-over-time-step-bucket",
     "internal/proxy/stdvar_grouped_binary_test.go | semantics/stdvar-grouped-binary-marker",
+    "internal/proxy/stdvar_grouped_binary_test.go | semantics/unwrap-extraction-list-series-identity",
     "internal/proxy/stdvar_grouped_binary_test.go | window-bounds-and-step-alignment",
     "internal/proxy/step_align_diff_test.go | loki_api_v1_query_range",
     "internal/proxy/step_align_diff_test.go | semantics/query-range-step-alignment",

@@ -16,8 +16,8 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -25,8 +25,8 @@
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -34,8 +34,8 @@
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -43,8 +43,8 @@
       "unsound": 0
     },
     "v1.53 identity": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -52,8 +52,8 @@
       "unsound": 0
     },
     "v1.53 no body scan": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -61,8 +61,8 @@
       "unsound": 0
     },
     "v1.53 no body scan, stream fields, keepLine": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -70,8 +70,8 @@
       "unsound": 0
     },
     "v1.53 stream fields": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -79,8 +79,8 @@
       "unsound": 0
     },
     "v1.53 stream fields and labels": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -88,8 +88,8 @@
       "unsound": 0
     },
     "v1.53 stream labels": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -97,8 +97,8 @@
       "unsound": 0
     },
     "v1.53 stream labels keepLine": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -106,8 +106,8 @@
       "unsound": 0
     },
     "v1.53 underscores": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -115,8 +115,8 @@
       "unsound": 0
     },
     "v1.53 underscores keepLine": {
-      "rows": 2606,
-      "keys": 2551,
+      "rows": 2608,
+      "keys": 2553,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -287,12 +287,12 @@
       "the plan does not route it: RangeAgg parser label cost": 2,
       "the plan does not route it: RangeAgg route level filter": 2,
       "the plan does not route it: RangeAgg route offset bounds": 1,
-      "the plan does not route it: RangeAgg route pipeline": 117,
+      "the plan does not route it: RangeAgg route pipeline": 118,
       "the plan does not route it: RangeAgg route reserved field": 1,
       "the plan does not route it: RangeAgg route spelling": 2,
       "the plan does not route it: RangeAgg route unwrap absent": 9,
       "the plan does not route it: RangeAgg route unwrap grouping": 2,
-      "the plan does not route it: RangeAgg route unwrap pipeline": 164,
+      "the plan does not route it: RangeAgg route unwrap pipeline": 165,
       "the plan does not route it: RangeAgg route unwrap quantile": 65,
       "the plan does not route it: RangeAgg route unwrap rate": 2,
       "the plan does not route it: RangeAgg route unwrap rate_counter": 7,

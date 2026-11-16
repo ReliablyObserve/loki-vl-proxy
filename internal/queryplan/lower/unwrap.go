@@ -241,6 +241,11 @@ type unwrapQuery struct {
 	keptSet bool
 	// dynamic says kept is the dynamic identity (withDynamicIdentity): the stream and the hash of the parsed labels.
 	dynamic bool
+	// listed says kept is the identity of an extraction list (listedStored and the listed labels): the stream, its stored level fields
+	// and the listed labels, grouped as stored (the identity derives no detected_level, a clause that names it
+	// does); clause is the vector aggregation's by clause.
+	listed bool
+	clause []string
 	// firstBy and firstEmpty are the grouping of the first stats pipe, which reads the unwrapped value (set marks
 	// them known); the bare logfmt unpack ahead of it is narrowed to the labels it reads.
 	firstBy    []string
@@ -283,7 +288,8 @@ func (q *unwrapQuery) noteFirst(by []string, empty bool) {
 // it: a grouping by the stream and its level also groups by detected_level.
 func (q *unwrapQuery) stats(by []string, empty bool, fn logsql.StatsFunc, alias string) {
 	q.noteFirst(by, empty)
-	var keyBuf [4]logsql.GroupKey
+	// Room for a clause and a series identity (an extraction list's is the stream, two level fields and its labels).
+	var keyBuf [8]logsql.GroupKey
 	var keys []logsql.GroupKey
 	if len(by) < len(keyBuf) {
 		keys = keyBuf[:len(by):len(keyBuf)]
@@ -292,7 +298,8 @@ func (q *unwrapQuery) stats(by []string, empty bool, fn logsql.StatsFunc, alias 
 	}
 	for i, f := range by {
 		keys[i] = logsql.GroupKey{Field: f}
-		q.chain = q.chain || f == translate.DetectedLevelLabel
+		// An extraction list's identity reads detected_level as stored; a clause that names it derives it.
+		q.chain = q.chain || f == translate.DetectedLevelLabel && (!q.listed || slices.Contains(q.clause, f))
 		q.service = q.service || f == "service_name"
 	}
 	if hasField(by, "_stream") && hasField(by, "level") && !hasField(by, translate.DetectedLevelLabel) {
@@ -433,9 +440,13 @@ func (q *unwrapQuery) op(op unwrapOp, log metricLog, field, conv string, prof Pr
 	narrowed := false
 	if q.parser && log.bareLogfmt >= 0 && q.firstSet {
 		by, empty := q.firstBy, q.firstEmpty
-		if q.dynamic {
+		switch {
+		case q.dynamic:
 			// The series hash unpacks the line on its own: the unpack reads the labels of the clause.
 			by, empty = withoutDynamicSeries(by), true
+		case q.listed:
+			// The unpack reads the listed labels alone: the stats read the clause and the stored fields as stored.
+			by, empty = q.listedUnpack(), true
 		}
 		names, narrowed = narrowedFields(field, by, empty, log.resolvable)
 	}
@@ -707,7 +718,7 @@ func unwrapVectorStats(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Pro
 	q := unwrapQuery{parser: log.parser, unpacked: log.unpacked(), pipes: pipeBuf[:0]}
 	q.kept, q.keptSet = keptIdentity(ra.In, prof)
 	if !prof.StreamIdentity {
-		q.withDynamicIdentity(va, ra, u.Label)
+		q.withDynamicIdentity(va, ra, u.Label, labels)
 	}
 	if rate {
 		// The unwrap stage stands where it was written: the translator takes a keep after it to decide the series.
@@ -889,7 +900,7 @@ func (q *unwrapQuery) seriesStats(op unwrapOp, by []string) {
 	if op.row {
 		q.pipes = append(q.pipes, firstLastUnpack)
 	}
-	if q.dynamic {
+	if q.dynamic || q.listed {
 		q.pipes = append(q.pipes, dynamicInnerNumber)
 	}
 }
