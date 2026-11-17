@@ -1,8 +1,14 @@
 package proxy
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
+	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 // BenchmarkRequestChain_MetricQueryRange_Hit times a metric query_range cache hit through the whole route chain,
@@ -26,5 +32,37 @@ func BenchmarkRequestQueryText(b *testing.B) {
 				_ = requestQueryText(c.q, 0)
 			}
 		})
+	}
+}
+
+// BenchmarkRequestChain_MetricQueryRange_Miss times a metric query_range miss through the whole route chain (the
+// request rewrite, validation, the response cache's miss, the translation and the VictoriaLogs call to a stub): each
+// request asks a window a minute later than the one before, so no cache answers it.
+func BenchmarkRequestChain_MetricQueryRange_Miss(b *testing.B) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"values":[{"value":"app","hits":100}]}`))
+	}))
+	defer backend.Close()
+	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(time.Minute, 1000), CompatCache: cache.New(time.Minute, 1000), LogLevel: "error"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = p.Shutdown(b.Context()) }()
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+	query := url.QueryEscape(`sum by (level) (count_over_time({app="nginx"} |= "error" [1m]))`)
+	end := time.Now().Truncate(time.Minute).Add(-24 * time.Hour)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		e := end.Add(time.Duration(i) * time.Minute)
+		target := "/loki/api/v1/query_range?query=" + query + "&step=15&start=" + strconv.FormatInt(e.Add(-time.Hour).UnixNano(), 10) + "&end=" + strconv.FormatInt(e.UnixNano(), 10)
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.Header.Set("X-Scope-OrgID", "0")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			b.Fatalf("%d %s", rec.Code, rec.Body)
+		}
 	}
 }

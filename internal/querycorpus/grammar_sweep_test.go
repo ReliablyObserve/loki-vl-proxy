@@ -247,10 +247,11 @@ func sweepProxyFacts(plan *queryplan.Plan) *sweepFacts {
 	return f
 }
 
-// sweepRequestQuery is the query a handler reads: the middleware removes comments and parser flags and writes the
-// keywords in lower case before any handler validates it (lowercaseQueryKeywords).
+// sweepRequestQuery is the query a handler reads: the middleware removes comments and parser flags, writes the
+// keywords in lower case and, for a query the validation accepts, the metric calls and parentheses in one spelling,
+// before any handler reads it (lowercaseQueryKeywords, proxy.RequestQueryText).
 func sweepRequestQuery(q string) string {
-	return logql.LowercaseKeywords(logql.StripParserFlags(logql.StripComments(q)))
+	return proxy.RequestQueryText(q)
 }
 
 // sweepValidate is the handlers' validation (Proxy.validateQuery) of a client query in the Loki-compatible profile
@@ -1079,7 +1080,7 @@ func sweepRecordOf(qs []sweepQuery, loki map[string]sweepLokiRow, classes []swee
 // LVP_GRAMMAR_SWEEP_REPORT=1 logs every class with examples and LVP_GRAMMAR_SWEEP_DUMP=<file> writes every query of
 // every class. LVP_GRAMMAR_SWEEP_SIZE=full sweeps the nightly size and reports without the ratchet.
 //
-// conformance: semantics/approx-topk-opaque-plan, semantics/binary-literal-operation-folded-in-loki, semantics/binary-on-without-label-list-accepted, semantics/drop-keep-matcher-ip-value-accepted, semantics/go-style-comment-rejected, semantics/label-replace-over-log-selector-accepted, semantics/metric-unread-line-format-template-error, semantics/parse-error-text-parity, semantics/parser-reads-unicode-blank-as-white-space, semantics/quantile-over-time-parameter-required, semantics/range-duration-grammar-wider-than-loki, semantics/set-operation-folded-literal-operand, semantics/sort-grouping-accepted, semantics/stage-after-unwrap-accepted, semantics/translator-reads-blank-before-range-call-as-text, semantics/translator-reads-only-space-between-tokens, semantics/translator-reads-parenthesized-metric-as-text, semantics/translator-writes-json-path-with-escaped-quote, semantics/translator-writes-leading-dot-quantile, semantics/translator-writes-negated-line-filter-after-pipe, semantics/unary-plus-literal-rejected, semantics/unknown-pipeline-stage-error-text, semantics/unwrap-in-log-query, semantics/unwrap-unknown-conversion-function-accepted, semantics/vector-aggregation-over-scalar-rejected
+// conformance: semantics/approx-topk-opaque-plan, semantics/binary-literal-operation-folded-in-loki, semantics/binary-on-without-label-list-accepted, semantics/drop-keep-matcher-ip-value-accepted, semantics/go-style-comment-rejected, semantics/label-replace-aggregation-over-transform, semantics/label-replace-over-log-selector-accepted, semantics/metric-unread-line-format-template-error, semantics/parse-error-text-parity, semantics/parser-reads-unicode-blank-as-white-space, semantics/quantile-over-time-parameter-required, semantics/range-duration-grammar-wider-than-loki, semantics/set-operation-folded-literal-operand, semantics/sort-grouping-accepted, semantics/stage-after-unwrap-accepted, semantics/translator-reads-blank-before-range-call-as-text, semantics/translator-reads-only-space-between-tokens, semantics/translator-reads-parenthesized-metric-as-text, semantics/translator-writes-json-path-with-escaped-quote, semantics/translator-writes-leading-dot-quantile, semantics/translator-writes-negated-line-filter-after-pipe, semantics/unary-plus-literal-rejected, semantics/unknown-pipeline-stage-error-text, semantics/unwrap-in-log-query, semantics/unwrap-unknown-conversion-function-accepted, semantics/vector-aggregation-over-scalar-rejected
 func TestGrammarSweep(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	qs := sweepQueries()

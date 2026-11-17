@@ -1725,6 +1725,9 @@
       "internal/proxy/fail_fast_unicode_test.go",
       "test/e2e-compat/label_list_trailing_comma_test.go"
     ],
+    "semantics/label-replace-aggregation-over-transform": [
+      "internal/querycorpus/grammar_sweep_test.go"
+    ],
     "semantics/label-replace-duplicates-before-ranking": [
       "internal/proxy/label_replace_duplicates_fold_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
@@ -4866,6 +4869,7 @@
       "semantics/binary-on-without-label-list-accepted",
       "semantics/drop-keep-matcher-ip-value-accepted",
       "semantics/go-style-comment-rejected",
+      "semantics/label-replace-aggregation-over-transform",
       "semantics/label-replace-over-log-selector-accepted",
       "semantics/metric-unread-line-format-template-error",
       "semantics/parse-error-text-parity",
@@ -6301,7 +6305,6 @@
     "semantics/ip-filter-keeps-parser-error-lines",
     "semantics/json-empty-value-label-series",
     "semantics/label-filter-numeric-error-label",
-    "semantics/label-replace-aggregation-over-transform",
     "semantics/label-replace-around-ranking-and-vector",
     "semantics/last-over-time-line-filter-offset-points",
     "semantics/log-entries-differ-same-count",
@@ -6342,5 +6345,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 434
+  "wired_items": 435
 }

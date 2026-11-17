@@ -2375,6 +2375,7 @@
     "internal/querycorpus/grammar_sweep_test.go | semantics/binary-on-without-label-list-accepted",
     "internal/querycorpus/grammar_sweep_test.go | semantics/drop-keep-matcher-ip-value-accepted",
     "internal/querycorpus/grammar_sweep_test.go | semantics/go-style-comment-rejected",
+    "internal/querycorpus/grammar_sweep_test.go | semantics/label-replace-aggregation-over-transform",
     "internal/querycorpus/grammar_sweep_test.go | semantics/label-replace-over-log-selector-accepted",
     "internal/querycorpus/grammar_sweep_test.go | semantics/metric-unread-line-format-template-error",
     "internal/querycorpus/grammar_sweep_test.go | semantics/parse-error-text-parity",
@@ -3181,8 +3182,8 @@
     },
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
-    "unwired_items": 94,
-    "wired_items": 434
+    "unwired_items": 93,
+    "wired_items": 435
   },
   "gates": [
     "A/B shape selection",

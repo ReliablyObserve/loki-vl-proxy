@@ -7,7 +7,7 @@
     "rejected": 8842
   },
   "differences_by_kind": {
-    "VictoriaLogs rejects the translator text": 393,
+    "VictoriaLogs rejects the translator text": 383,
     "accepted, translation fails": 32,
     "error text differs": 24,
     "error text differs, rejected at translation": 12,
@@ -18,7 +18,7 @@
     "tree fact differs: offsets": 4,
     "tree fact differs: outermost operation": 4
   },
-  "logsql_texts_checked": 56644,
+  "logsql_texts_checked": 56686,
   "logsql_texts_unrecorded": 0,
   "victorialogs_rejections_for_queries_loki_rejects": 0,
   "case_rules": [
@@ -43,7 +43,11 @@
       "case": "semantics/translator-writes-negated-line-filter-after-pipe"
     },
     {
-      "match": "^VictoriaLogs rejects the translator text \\| .*(binary left \\(|vecagg inner \\(|label_replace inner \\(|vecagg inner label_replace)",
+      "match": "^VictoriaLogs rejects the translator text \\| .*vecagg inner label_replace",
+      "case": "semantics/label-replace-aggregation-over-transform"
+    },
+    {
+      "match": "^VictoriaLogs rejects the translator text \\| .*(binary left \\(|vecagg inner \\(|label_replace inner \\()",
       "case": "semantics/translator-reads-parenthesized-metric-as-text"
     },
     {
@@ -376,44 +380,6 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | label_replace inner (rate({a=\"b\"}[5m]))": {
-      "count": 3,
-      "case": "semantics/translator-reads-parenthesized-metric-as-text",
-      "kind": "VictoriaLogs rejects the translator text",
-      "key": "missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0]",
-      "element": "label_replace inner (rate({a=\"b\"}[5m]))",
-      "examples": [
-        {
-          "query": "label_replace((rate({a=\"b\"}[5m])), \"d\", \"$1\", \"a\", \"(.*)\")",
-          "loki": "accepted",
-          "proxy": "LogsQL \"(rate({a=\"b\"}[5m]))\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"(rate({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"(rate({a=\"b]"
-        },
-        {
-          "query": "label_replace((rate({a=\"b\"}[5m])), \"d\", \"x\", \"b\", \"(?P\u003cn\u003ex)\")",
-          "loki": "accepted",
-          "proxy": "LogsQL \"(rate({a=\"b\"}[5m]))\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"(rate({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"(rate({a=\"b]"
-        }
-      ]
-    },
-    "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | rangeagg fn rate (%s)": {
-      "count": 3,
-      "case": "semantics/translator-reads-blank-before-range-call-as-text",
-      "kind": "VictoriaLogs rejects the translator text",
-      "key": "missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0]",
-      "element": "rangeagg fn rate (%s)",
-      "examples": [
-        {
-          "query": "rate ({a=\"b\"}[1w])",
-          "loki": "accepted",
-          "proxy": "LogsQL \"rate ({a=\"b\"}[1w])\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"rate ({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"rate ({a=\"b]"
-        },
-        {
-          "query": "rate ({a=\"b\"}[5m])",
-          "loki": "accepted",
-          "proxy": "LogsQL \"rate ({a=\"b\"}[5m])\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"rate ({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"rate ({a=\"b]"
-        }
-      ]
-    },
     "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | vecagg agg approx_topk|2, ": {
       "count": 4,
       "case": "semantics/approx-topk-opaque-plan",
@@ -433,28 +399,9 @@
         }
       ]
     },
-    "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | vecagg inner (rate({a=\"b\"}[5m]))": {
-      "count": 4,
-      "case": "semantics/translator-reads-parenthesized-metric-as-text",
-      "kind": "VictoriaLogs rejects the translator text",
-      "key": "missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0]",
-      "element": "vecagg inner (rate({a=\"b\"}[5m]))",
-      "examples": [
-        {
-          "query": "sum ((rate({a=\"b\"}[5m])))",
-          "loki": "accepted",
-          "proxy": "LogsQL \"sum ((rate({a=\"b\"}[5m])))\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"sum ((rate({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"sum ((rate({a=\"b]"
-        },
-        {
-          "query": "avg((rate({a=\"b\"}[5m]))) by ()",
-          "loki": "accepted",
-          "proxy": "LogsQL \"avg((rate({a=\"b\"}[5m]))) by ()\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"avg((rate({a=\\\"\" and \"b\"; probably, the whole string must be put into quotes; context: [\"avg((rate({a=\"b]"
-        }
-      ]
-    },
     "VictoriaLogs rejects the translator text | missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0] | vecagg inner label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")": {
       "count": 2,
-      "case": "semantics/translator-reads-parenthesized-metric-as-text",
+      "case": "semantics/label-replace-aggregation-over-transform",
       "kind": "VictoriaLogs rejects the translator text",
       "key": "missing whitespace or 'S' between \"S\" and \"S\" [v1.49.0+v1.53.0]",
       "element": "vecagg inner label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")",
@@ -462,7 +409,7 @@
         {
           "query": "sum (label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\"))",
           "loki": "accepted",
-          "proxy": "LogsQL \"sum (label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\"))\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"sum (label_replace(rate({a=\\\"\" and \"b\"; probably, the whole string must be ..."
+          "proxy": "LogsQL \"sum(label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\"))\" -\u003e VictoriaLogs missing whitespace or ':' between \"\\\"sum(label_replace(rate({a=\\\"\" and \"b\"; probably, the whole string must be pu..."
         },
         {
           "query": "min(label_replace(rate({a=\"b\"}[5m]), \"d\", \"$1\", \"a\", \"(.*)\")) without ()",
