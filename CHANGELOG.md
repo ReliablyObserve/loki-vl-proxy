@@ -20,6 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `avg_over_time` up to 12% more, for the per-series step Loki's answer needs. Count,
   first, last, quantile and rate over such series, a json alias in the list and a range longer than the step still
   read the stream's series (registry `semantics/unwrap-extraction-list-series-identity`).
+- `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` and `stdvar` over a binary operation now answer the operation on
+  `query_range` as they already did on `query`. The range route read the operand from the string translator's text,
+  which misreads several binary operations:
+  - A parenthesis in a quoted value (`topk(1, count_over_time({...} != "(" [1m]) * 2)`, a `pod!=")"` matcher) made it
+    rank the counts without the `* 2`, read from raw rows. The same misreading halved `stddev(... * 2)`, and
+    `topk(1, sum by (pod) (...) * 2)` answered 500.
+  - A chain (`... * 2 + 1`) was split at its first operator.
+  - `bool` and a `vector(n)` operand were dropped.
+  - A tumbling `sum by` operand under a number was stamped one step early.
+  - With a step shorter than the range, even `topk(1, rate({...}[1m]) * 2)` lost its first step.
+
+  The binary operation is now evaluated from its parsed tree, operand by operand, by the binary route the instant
+  query and a binary operation at the top of a query use. The answers are held to Loki's recorded answers on
+  VictoriaLogs v1.49.0 and v1.53.0 (registry `semantics/range-ranking-binary-operand-from-tree`).
 
 ## [2.317.0] - 2026-11-16
 

@@ -770,6 +770,9 @@
     "semantics/query-stats-shards-empty-pieces | query",
     "semantics/range-duration-grammar-wider-than-loki | compare:observed",
     "semantics/range-duration-grammar-wider-than-loki | gap:open",
+    "semantics/range-ranking-binary-operand-from-tree | compare:observed",
+    "semantics/range-ranking-binary-operand-from-tree | gap:fixed",
+    "semantics/range-ranking-binary-operand-from-tree | query",
     "semantics/regexp-chain-led-by-ip | compare:observed",
     "semantics/regexp-chain-led-by-ip | gap:open",
     "semantics/regexp-chain-led-by-ip | query",
@@ -1915,6 +1918,9 @@
     "internal/proxy/ranked_topk_cached_route_test.go | semantics/label-replace-duplicates-before-ranking",
     "internal/proxy/ranked_topk_cached_route_test.go | semantics/label-replace-new-label",
     "internal/proxy/ranked_topk_cached_route_test.go | series-limits-and-partial-results",
+    "internal/proxy/ranking_binary_operand_loki_test.go | loki_api_v1_query",
+    "internal/proxy/ranking_binary_operand_loki_test.go | loki_api_v1_query_range",
+    "internal/proxy/ranking_binary_operand_loki_test.go | semantics/range-ranking-binary-operand-from-tree",
     "internal/proxy/rate_counter_reference_test.go | semantics/unwrap-rate-counter-one-sample-series",
     "internal/proxy/rate_counter_singletons_test.go | metric-series-identity",
     "internal/proxy/rate_counter_singletons_test.go | semantics/unwrap-rate-counter-one-sample-series",
@@ -3035,12 +3041,12 @@
       "any": 35,
       "api": 109,
       "drilldown": 53,
-      "explore": 197,
+      "explore": 198,
       "grafana-datasource": 3,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 710,
+      "go": 711,
       "playwright": 2
     },
     "page_kinds": {
@@ -3060,7 +3066,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 95,
-    "wired_items": 414
+    "wired_items": 415
   },
   "gates": [
     "A/B shape selection",

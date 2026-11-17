@@ -700,11 +700,11 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	innerStats, innerIsStats := translator.DecodeStats(translatedInner)
 
 	r = p.withRequestScope(r)
-	if parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner); parsedInner != nil {
-		if _, binary := parsedInner.(*logqlpkg.BinOpExpr); binary {
-			// The operands of a binary expression fold on their own.
-			withoutLabels = nil
-		}
+	parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner)
+	_, innerIsBinary := parsedInner.(*logqlpkg.BinOpExpr)
+	if innerIsBinary {
+		// The operands of a binary expression fold on their own.
+		withoutLabels = nil
 	}
 	foldWithout = foldWithout && len(withoutLabels) > 0
 	if foldWithout {
@@ -732,7 +732,16 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	// Native VL buckets are timestamped at their left edge; ranking those
 	// directly can select the next window's winner and omit the first point.
 	// The manual range adapter still uses VL pre-aggregation when available.
-	if bin, isBin := binaryOfStats(innerStats, innerIsStats); isBin {
+	var binaryInner *logqlpkg.BinOpExpr
+	if innerIsBinary {
+		binaryInner = binaryExprForRequest(innerR)
+	}
+	if binaryInner != nil {
+		// A binary operation is evaluated from its parsed tree, operand by operand, as the instant route does: the
+		// translator's text for the whole operand is no reference (a parenthesis in a quoted value, a chain, bool, a
+		// set operator or a vector(n) make it drop or split the operation).
+		p.proxyBinaryLogQL(sc, innerR, binaryInner, "matrix")
+	} else if bin, isBin := binaryOfStats(innerStats, innerIsStats); isBin {
 		// The operand is a stats query and a number (stdvar_over_time, the
 		// deviation squared), answered as the range route answers it.
 		if scalarStats, ok := scalarStatsBinaryOf(bin); ok {

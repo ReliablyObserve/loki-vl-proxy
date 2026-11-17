@@ -21,7 +21,10 @@ import (
 // per request.
 const rankedTopKBenchQuery = `topk(3, label_replace(sum by (app) (count_over_time({env="production"}[5m])), "app_short", "$1", "app", "(.*)-.*"))`
 
-func benchRankedTopK(b *testing.B, mode string) {
+func benchRankedTopK(b *testing.B, mode string) { benchRankedTopKQuery(b, mode, rankedTopKBenchQuery) }
+
+// benchRankedTopKQuery is benchRankedTopK of query.
+func benchRankedTopKQuery(b *testing.B, mode, query string) {
 	end := time.Unix(1700003600, 0).UTC()
 	rng := rand.New(rand.NewSource(1))
 	var lines []slidingFixtureLine
@@ -45,7 +48,7 @@ func benchRankedTopK(b *testing.B, mode string) {
 	}
 	ask := func(p *Proxy, shift time.Duration) {
 		e := end.Add(-shift)
-		v := url.Values{"query": {rankedTopKBenchQuery}, "start": {strconv.FormatInt(e.Add(-time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(e.UnixNano(), 10)}, "step": {"15"}}
+		v := url.Values{"query": {query}, "start": {strconv.FormatInt(e.Add(-time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(e.UnixNano(), 10)}, "step": {"15"}}
 		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+v.Encode(), nil)
 		rec := httptest.NewRecorder()
 		p.handleQueryRange(rec, req)
@@ -87,3 +90,38 @@ func benchRankedTopK(b *testing.B, mode string) {
 func BenchmarkRankedTopKCold(b *testing.B)   { benchRankedTopK(b, "cold") }
 func BenchmarkRankedTopKRepeat(b *testing.B) { benchRankedTopK(b, "repeat") }
 func BenchmarkRankedTopKMoved(b *testing.B)  { benchRankedTopK(b, "moved") }
+
+// A ranking and a stddev over a binary operation of a count and a number (range route: the binary operand is
+// evaluated by the binary route): over a grouped count in a sliding window, with and without a parenthesis in a quoted
+// line filter, and over a count in a tumbling window (range == step), which the route answered right before it read
+// binary operands from their tree.
+const (
+	rankedTopKBinaryBenchQuery         = `topk(3, sum by (app) (count_over_time({env="production"}[5m])) * 2)`
+	rankedTopKBinaryQuotedBenchQuery   = `topk(3, sum by (app) (count_over_time({env="production"} != "(" [5m])) * 2)`
+	stddevBinaryBenchQuery             = `stddev(sum by (app) (count_over_time({env="production"}[5m])) * 2)`
+	rankedTopKBinaryTumblingBenchQuery = `topk(3, count_over_time({env="production"}[15s]) * 2)`
+	stddevBinaryTumblingBenchQuery     = `stddev(count_over_time({env="production"}[15s]) * 2)`
+)
+
+func BenchmarkRankedTopKBinaryCold(b *testing.B) {
+	benchRankedTopKQuery(b, "cold", rankedTopKBinaryBenchQuery)
+}
+func BenchmarkRankedTopKBinaryRepeat(b *testing.B) {
+	benchRankedTopKQuery(b, "repeat", rankedTopKBinaryBenchQuery)
+}
+func BenchmarkRankedTopKBinaryMoved(b *testing.B) {
+	benchRankedTopKQuery(b, "moved", rankedTopKBinaryBenchQuery)
+}
+func BenchmarkRankedTopKBinaryQuotedCold(b *testing.B) {
+	benchRankedTopKQuery(b, "cold", rankedTopKBinaryQuotedBenchQuery)
+}
+func BenchmarkStddevBinaryCold(b *testing.B) { benchRankedTopKQuery(b, "cold", stddevBinaryBenchQuery) }
+func BenchmarkRankedTopKBinaryTumblingCold(b *testing.B) {
+	benchRankedTopKQuery(b, "cold", rankedTopKBinaryTumblingBenchQuery)
+}
+func BenchmarkRankedTopKBinaryTumblingRepeat(b *testing.B) {
+	benchRankedTopKQuery(b, "repeat", rankedTopKBinaryTumblingBenchQuery)
+}
+func BenchmarkStddevBinaryTumblingCold(b *testing.B) {
+	benchRankedTopKQuery(b, "cold", stddevBinaryTumblingBenchQuery)
+}
