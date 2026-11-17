@@ -191,7 +191,7 @@ func TestFirstLastWindowCoalesced(t *testing.T) {
 				srv, shim := newExtentShim(t, held)
 				uncachedSrv, uncachedShim := newExtentShim(t, emu)
 				_, want, _ := queryStepsGet(t, newExtentTestProxy(t, uncachedSrv.URL, false, 256<<20), query, w)
-				_, one := shimBucketReads(uncachedShim)
+				_, one := uncachedShim.bucketsRead()
 				p := newExtentTestProxy(t, srv.URL, true, 256<<20)
 				var wg sync.WaitGroup
 				answers := make([][]byte, clients)
@@ -210,9 +210,7 @@ func TestFirstLastWindowCoalesced(t *testing.T) {
 						t.Fatalf("client %d: %s, want %s", i, got, want)
 					}
 				}
-				// A parser's series identity over a range longer than the step reads one row count of its selection
-				// first (the chunk plan): the bucket reads are what the clients share.
-				calls, buckets := shimBucketReads(shim)
+				calls, buckets := shim.bucketsRead()
 				t.Logf("%d clients at once: %d stats_query_range calls, %d buckets (one read: %d)", clients, calls, buckets, one)
 				// One read for every client. The clients waiting for a slot come after the first round's read, whose
 				// buckets are stored off the request path; their lookups wait for that store instead of reading the

@@ -82,25 +82,14 @@ func keepsParsedGroupLabels(ctx context.Context) bool {
 // left to foldUngroupedSum.
 func foldVectorAggregations(p *Proxy, w http.ResponseWriter, r *http.Request, query string, serve func(http.ResponseWriter, *http.Request) bool) bool {
 	chain, ok := seriesAggregationChain(query)
-	if !ok && p.listedIdentityWindows(r.Context(), query) {
-		// An extraction list's series are told apart by their listed labels too: a sum folds them after their
-		// windows like the other operators (listedIdentityChain).
+	if !ok && p.identityWindows(r.Context(), query) {
+		// An extraction list's series are told apart by their listed labels too, a parser's by their series hash: a
+		// sum folds them after their windows like the other operators (listedIdentityChain).
 		chain, ok = listedIdentityChain(query)
 	}
 	if !ok {
 		return foldUngroupedSum(w, r, query, serve)
 	}
-	return foldVectorChain(p, w, r, chain, serve)
-}
-
-// foldVectorChain is foldVectorAggregations over the levels chain, innermost first.
-func foldVectorChain(p *Proxy, w http.ResponseWriter, r *http.Request, chain []*logqlpkg.VectorAggregation, serve func(http.ResponseWriter, *http.Request) bool) bool {
-	return foldVectorChainCapped(p, w, r, chain, serve, true)
-}
-
-// foldVectorChainCapped is foldVectorChain; capped false leaves the series limit to the caller, which applies it to
-// an answer it merges from several folds (the time chunks of a parser's series identity).
-func foldVectorChainCapped(p *Proxy, w http.ResponseWriter, r *http.Request, chain []*logqlpkg.VectorAggregation, serve func(http.ResponseWriter, *http.Request) bool, capped bool) bool {
 	buf := &bufferedResponseWriter{}
 	ctx := context.WithValue(context.WithValue(r.Context(), foldedSumKey{}, true), vectorAggFoldKey{}, true)
 	levels := make([]foldLevel, len(chain))
@@ -122,14 +111,12 @@ func foldVectorChainCapped(p *Proxy, w http.ResponseWriter, r *http.Request, cha
 				body = foldByGrouping(body, agg)
 			}
 		}
-		if capped {
-			limited, err := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
-			if err != nil {
-				p.writeErr(w, r.Context(), err)
-				return true
-			}
-			body = limited
+		capped, err := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
+		if err != nil {
+			p.writeErr(w, r.Context(), err)
+			return true
 		}
+		body = capped
 	}
 	copyHeaders(w.Header(), buf.Header())
 	if code != 0 {

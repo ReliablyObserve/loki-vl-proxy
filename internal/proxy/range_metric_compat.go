@@ -478,20 +478,11 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 			return p.proxyManualRangeMetricRange(w, shaped, shapedSpec, origSpec, manualFunc)
 		}
 	}
-	return p.foldRangeSeries(w, r, spec.BaseQuery, func(w http.ResponseWriter, r *http.Request) bool {
+	// The evaluator decides on the request's query text (isSumAllLogRange): the
+	// fold must read the same text.
+	return foldVectorAggregations(p, w, r, r.FormValue("query"), func(w http.ResponseWriter, r *http.Request) bool {
 		return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
 	})
-}
-
-// foldRangeSeries serves a range request with the window evaluator and folds its series by the query's vector
-// aggregations. The evaluator decides on the request's query text (isSumAllLogRange): the fold reads the same text.
-// The buckets of a parser's identity whose hash stands before the gate (identityAhead) are grouped by the series
-// hash: the evaluator answers each series' windows, and the outer aggregation folds the series (foldDynamicIdentity).
-func (p *Proxy) foldRangeSeries(w http.ResponseWriter, r *http.Request, base string, serve func(http.ResponseWriter, *http.Request) bool) bool {
-	if identityAhead(r.Context()) {
-		return p.foldDynamicIdentity(w, r, base, serve)
-	}
-	return foldVectorAggregations(p, w, r, r.FormValue("query"), serve)
 }
 
 // windowLongerThanStep reports an unwrap range function whose range is longer
@@ -1420,13 +1411,9 @@ func slidingStatsBucket(step, window time.Duration) (time.Duration, bool) {
 func setSlidingStatsRangeParams(params url.Values, start, end time.Time, hitStep time.Duration) {
 	params.Set("start", start.UTC().Format(time.RFC3339Nano))
 	params.Set("end", end.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano))
-	if hitStep%time.Second == 0 {
-		params.Set("step", strconv.FormatInt(int64(hitStep/time.Second), 10)+"s")
-	} else {
-		params.Set("step", strconv.FormatInt(int64(hitStep), 10)+"ns")
-	}
-	shift := ((start.UnixNano()+1)%int64(hitStep) + int64(hitStep)) % int64(hitStep)
-	params.Set("offset", strconv.FormatInt(-shift, 10)+"ns")
+	step, offset := slidingStatsGrid(start, hitStep)
+	params.Set("step", step)
+	params.Set("offset", offset)
 }
 
 // tumblingStatsRangeParams is the stats_query_range form of a tumbling fetch:
@@ -1626,6 +1613,13 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	// first and last over time read the row's value with a second stats of the
 	// same groups (rowBucketPick).
 	statsQuery := baseQuery + by + statsAggFunc + rowBucketPick(statsAggFunc, by)
+	// A parser's series identity folds the series that lie in one bucket (series_fold_read.go).
+	fold := seriesFoldFrom(ctx)
+	if folded, ok := fold.query(statsQuery, groupBy, start, hitStep); ok {
+		statsQuery = folded
+	} else {
+		fold = nil
+	}
 
 	params := url.Values{}
 	params.Set("query", statsQuery)
@@ -1659,7 +1653,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 
 	limit := p.resolvedMaxStatsQuerySeries(ctx)
 	withPresence := strings.Contains(statsAggFunc, " as __sample_count")
-	body, err := p.readStatsBucketBody(ctx, resp.Body, resp.ContentLength, limit, statsResultsPerSeries(withPresence, aux != "")+deviationResults(statsAggFunc))
+	body, err := p.readStatsBucketBody(ctx, resp.Body, resp.ContentLength, limit, statsResultsPerSeries(withPresence, aux != "")+deviationResults(statsAggFunc)+fold.extraResults())
 	if err != nil {
 		noteStatsReadOverflow(ctx, err)
 		return nil, nil, err
@@ -1672,7 +1666,6 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		noteStatsReadOverflow(ctx, err)
 		return nil, nil, p.levelLessErr("stats_query_range backend", err)
 	}
-	addIdentityReadBytes(ctx, len(body))
 
 	// Build VL→Loki label name mapping from groupBy↔origGroupBy.
 	vlToLoki := make(map[string]string, len(groupBy))
@@ -1740,6 +1733,9 @@ func (p *Proxy) collectRangeMetricHitsAux(
 			metric = p.statsGroupMetric(metricObj, vlToLoki)
 		}
 		seriesKey := canonicalLabelsKey(metric)
+		if fold != nil && fold.readsRow(seriesMap, seriesKey, metricObj, metric, name, values, start, hitStep) {
+			return
+		}
 		if devs != nil {
 			devs.add(seriesKey, statsGroupID(metricObj), metric, name, values, start, hitStep)
 			return
@@ -1831,7 +1827,7 @@ func (p *Proxy) statsGroupMetric(metricObj *fj.Object, vlToLoki map[string]strin
 		key := string(k)
 		if key == "__name__" || strings.HasPrefix(key, "__lvp_") && key != dynamicSeriesHashLabel {
 			// The series hash of a parser's identity stays: it tells the series apart until the outer aggregation
-			// folds them (foldDynamicIdentity), which drops it.
+			// folds them (matrixFoldSink), which drops it.
 			return
 		}
 		value := string(mv.GetStringBytes())
@@ -2583,6 +2579,9 @@ type manualSeriesSamples struct {
 	// Deviations holds the population standard deviation of every present
 	// bucket, ascending, for stddev and stdvar over time (deviationBucketStats).
 	Deviations []rangeMetricSample
+	// Folded marks the row of the series that lie wholly in one bucket, folded by VictoriaLogs (lower.SeriesFold):
+	// Samples holds the sum (or extreme) of their values per bucket and Counts how many they are.
+	Folded bool
 }
 
 func buildManualMetricLabels(streamLabels map[string]string, groupBy []string, byExplicit bool) map[string]string {
@@ -2884,8 +2883,18 @@ func hitsRangeMetricSeries(manualFunc string, series map[string]manualSeriesSamp
 	if sink == nil {
 		results = make([]map[string]interface{}, 0, len(keys))
 	}
+	var weights []float64
 	for _, key := range keys {
 		seriesEntry := series[key]
+		if seriesEntry.Folded {
+			if sink == nil {
+				return nil, &statsBucketsUnreadableError{"a folded series row without a fold"}
+			}
+			folded, weights = foldedWindows(seriesEntry, sink.acc.level.merge, startNS, endNS, stepNS, windowNS, folded[:0], weights[:0])
+			sink.addPartial(seriesEntry.Metric, folded, weights)
+			folded = folded[:0]
+			continue
+		}
 		samples := sortedHitsSamples(seriesEntry.Samples)
 		var prefix []float64
 		if !mergedUnwrap {

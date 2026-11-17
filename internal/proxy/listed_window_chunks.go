@@ -128,11 +128,13 @@ type listedChunkReads struct {
 func (p *Proxy) listedWindowChunksRoute(w http.ResponseWriter, r *http.Request, reads listedChunkReads, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc, statsAggFunc string, start, end time.Time, step, bucket, shift time.Duration) bool {
 	fold := matrixFoldFrom(r.Context())
 	if fold == nil || listedWindowChunksOff || !reads.bucketsOK || statsAggFunc == "" || *reads.rawRows || reads.counter || reads.quantile ||
-		!p.listedIdentityWindows(r.Context(), r.FormValue("query")) {
+		!p.identityWindows(r.Context(), r.FormValue("query")) {
 		return false
 	}
 	chunked := p.withSlidingWithoutCut(r, spec, origSpec, manualFunc, statsAggFunc, step)
 	routes := p.statsBucketRoutes(spec, chunked, bucket, origSpec.Window != step)
+	// A parser's series hash folds, in VictoriaLogs, the series that lie in one bucket (series_fold_read.go).
+	r = withSeriesFold(r, spec, manualFunc, fold)
 	handled, whole := p.writeListedWindowChunks(w, r, routes, manualFunc, start, end, step, origSpec.Window, bucket, shift, fold)
 	*reads.rawRows = whole
 	return handled

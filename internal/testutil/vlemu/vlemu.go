@@ -304,7 +304,8 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 			offset = int64(od)
 		}
 	}
-	pipes := strings.Split(r.FormValue("query"), " | ")
+	query, fold := cutSeriesFold(e, r.FormValue("query"))
+	pipes := strings.Split(query, " | ")
 	first := -1
 	for i, pipe := range pipes {
 		if strings.HasPrefix(pipe, "stats ") {
@@ -351,7 +352,23 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var recs []emuRec
+	// The rows the fold's subquery reads: every selected row, the gate's drops included, and the value it reads.
+	var subRows []emuRec
+	var subRaw []string
 	for _, row := range e.SelectRows(r) {
+		if fold != nil {
+			f := map[string]string{"_stream": row.Stream, "_msg": e.Line(row)}
+			for _, m := range StreamLabelRE.FindAllStringSubmatch(row.Stream, -1) {
+				f[m[1]] = m[2]
+			}
+			for k, v := range row.Labels {
+				f[k] = v
+			}
+			for _, op := range fieldOps {
+				op(f)
+			}
+			subRows, subRaw = append(subRows, emuRec{t: row.TS, f: f}), append(subRaw, row.Text())
+		}
 		if phaseStep > 0 {
 			if !WindowPhaseKeeps(row.TS, phaseAnchor, phaseStep, phaseLower, phaseUpper, e.FloatPhase) {
 				continue
@@ -386,8 +403,15 @@ func (e *Emulator) ServeStats(w http.ResponseWriter, r *http.Request) {
 		}
 		recs = append(recs, emuRec{t: row.TS, f: f})
 	}
+	var span map[string]bool
+	if fold != nil {
+		span = fold.spanning(subRows, subRaw)
+	}
 	var by, names []string
 	for _, pipe := range pipes[first:] {
+		if fold != nil && foldPipe(pipe, recs, span) {
+			continue
+		}
 		if m := emuMathRE.FindStringSubmatch(pipe); m != nil {
 			div, _ := strconv.ParseFloat(m[2], 64)
 			for _, rec := range recs {

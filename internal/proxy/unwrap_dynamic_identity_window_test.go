@@ -22,12 +22,13 @@ import (
 )
 
 // This file pins a parser's series identity over a range longer than the step (sliding windows) to Loki's answer,
-// with a reference evaluator written apart from the proxy, from Loki's documented semantics: a series is the stream
-// and every label the parser extracts less the unwrapped one (pkg/logql/log/metrics_extraction.go), the range
-// function is taken per series over the window (t-range, t] at every step (pkg/logql/range_vector.go), and the outer
-// sum, avg, max or min folds the series into the group its labels name (pkg/logql/evaluator.go
-// VectorAggEvaluator.Next). The proxy under test is the real handler; VictoriaLogs is the vlemu emulator, which
-// computes the series hash from each line.
+// with a reference evaluator written apart from the proxy, from LogQL's documented meaning: a series is the stream
+// and every label the parser extracts less the unwrapped one, the range function is taken per series over the window
+// (t-range, t] at every step, and the outer sum, avg, max or min folds the series into the group its labels name.
+// The reference is held to recorded Loki answers by the Loki differentials of internal/querycorpus
+// (TestSeriesFoldMatchLoki, TestUnwrapDynamicIdentityMatchLoki). The proxy under test is the real handler;
+// VictoriaLogs is the vlemu emulator, which computes the series hash from each line and runs the fold's subquery
+// over the rows a read selects.
 
 // dynWindowScenario is one sliding-window request of a parser's series identity.
 type dynWindowScenario struct {
@@ -96,6 +97,11 @@ func generateDynWindowScenario(rnd *rand.Rand, outer, by, fn, parser string) dyn
 	base := int64(1_800_000_000) * 1e9
 	s.start = base + int64(rnd.Intn(600))*1e9
 	s.start -= s.start % int64(s.step)
+	if rnd.Intn(2) == 0 {
+		// Bounds off the step's grid (a proxy that does not move them, -align-queries-with-step off): the buckets, and
+		// the grid the fold's subquery tells a series' buckets apart on, are offset from the minute.
+		s.start += int64(1+rnd.Intn(int(s.step/time.Second)-1)) * 1e9
+	}
 	s.end = s.start + int64(3+rnd.Intn(8))*int64(s.step)
 	pods := []string{"a", "b", "c"}
 	labelSets := []map[string]string{{"route": "/x"}, {"route": "/x", "region": "eu"}, {"route": "/y"}}
@@ -309,10 +315,11 @@ func compareDynWindows(t *testing.T, label string, s dynWindowScenario, got, wan
 }
 
 // TestDynamicIdentityWindowsMatchLokiReference: over generated rows and sliding windows (a range twice or five times
-// the step, and one the step does not divide), sum, avg, max and min, with no clause, by the stream's pod or by a
-// parsed label, over avg, max, min, stddev and stdvar over time after a json or a logfmt parser, answer Loki's series
-// and values at every step, on VictoriaLogs v1.49.0 and v1.53.0. VictoriaLogs answers one stats query grouped by the
-// series hash on anchored buckets; no raw rows are read, and the hash never reaches a client.
+// the step, and one the step does not divide, so the buckets are finer than the step), sum, avg, max and min, with no
+// clause, by the stream's pod or by a parsed label, over avg, max, min, stddev and stdvar over time after a json or a
+// logfmt parser, answer Loki's series and values at every step, on VictoriaLogs v1.49.0 and v1.53.0. VictoriaLogs
+// answers one stats query, the series that lie in one bucket folded in it (lower.SeriesFold); the answer equals the
+// one of the series read one by one (seriesFoldOff); no raw rows are read, and the hash never reaches a client.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity, window-bounds-and-step-alignment
 func TestDynamicIdentityWindowsMatchLokiReference(t *testing.T) {
@@ -330,28 +337,40 @@ func TestDynamicIdentityWindowsMatchLokiReference(t *testing.T) {
 					name := fmt.Sprintf("%s/%s/%s/%s_by_%s", version, parser, fn, sh.outer, sh.by)
 					t.Run(name, func(t *testing.T) {
 						rnd := rand.New(rand.NewSource(int64(len(name))*7919 + 31))
-						for i := 0; i < 6; i++ {
+						for i := 0; i < 4; i++ {
 							s := generateDynWindowScenario(rnd, sh.outer, sh.by, fn, parser)
-							emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
-							got, code, body := runDynWindowScenario(t, emu, s, Config{})
-							if code != http.StatusOK {
-								t.Fatalf("#%d %s: %d %s", i, s.query(), code, body)
-							}
-							if strings.Contains(body, dynamicSeriesHashLabel) {
-								t.Fatalf("#%d %s: the answer names the series hash: %.300s", i, s.query(), body)
-							}
-							compareDynWindows(t, fmt.Sprintf("#%d", i), s, got, lokiDynamicWindows(s))
-							if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
-								t.Fatalf("#%d %s: read raw rows: %s", i, s.query(), raw[0])
-							}
-							calls, counts := identityStatsCalls(emu)
-							if len(calls) != 1 || counts != 1 {
-								t.Fatalf("#%d %s: VictoriaLogs read %d bucket queries grouped by the series hash and %d row counts, want one each", i, s.query(), len(calls), counts)
-							}
+							checkSeriesFoldScenario(t, fmt.Sprintf("#%d", i), s, version)
 						}
 					})
 				}
 			}
+		}
+	}
+}
+
+// checkSeriesFoldScenario runs s with the fold and with the series read one by one: both answer the reference's
+// series and values, in one bucket read each, the folded read holding the subquery, and no raw rows.
+func checkSeriesFoldScenario(t *testing.T, label string, s dynWindowScenario, version string) {
+	t.Helper()
+	want := lokiDynamicWindows(s)
+	for _, off := range []bool{false, true} {
+		seriesFoldOff = off
+		emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
+		got, code, body := runDynWindowScenario(t, emu, s, Config{})
+		seriesFoldOff = false
+		if code != http.StatusOK {
+			t.Fatalf("%s %s (fold off %v): %d %s", label, s.query(), off, code, body)
+		}
+		if strings.Contains(body, dynamicSeriesHashLabel) {
+			t.Fatalf("%s %s: the answer names the series hash: %.300s", label, s.query(), body)
+		}
+		compareDynWindows(t, fmt.Sprintf("%s fold off %v", label, off), s, got, want)
+		if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
+			t.Fatalf("%s %s: read raw rows: %s", label, s.query(), raw[0])
+		}
+		reads := identityStatsCalls(emu)
+		if len(reads) != 1 || strings.Contains(reads[0], "__lvp_sid:in(") == off {
+			t.Fatalf("%s %s (fold off %v): %d bucket reads grouped by the series hash, want one: %v", label, s.query(), off, len(reads), reads)
 		}
 	}
 }
@@ -381,124 +400,140 @@ func TestDynamicIdentityWindowsKeepExtremes(t *testing.T) {
 }
 
 // Loki counts max_query_series on the folded answer: a sum by (pod) over more series than the tenant's limit (a key
-// of its own on every line) answers its two groups, the reads bounded by the raw-row budget of a request that folds
-// its series (-manual-range-metric-row-limit). Below that budget, the answer is Loki's limit error naming the flag's
-// budget, never a partial answer.
+// of its own on every line) answers its two groups. The series that lie in one bucket are folded in VictoriaLogs, so
+// a read budget of 600 (-manual-range-metric-row-limit, over a tenant limit of 500) under the 1,200 series answers
+// in one read; read one by one (seriesFoldOff), the request is read in time chunks under that budget, and answers
+// the same.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
 func TestDynamicIdentityWindowsFoldBeyondSeriesLimit(t *testing.T) {
 	s := dynWindowScenario{outer: "sum", by: "pod", fn: "avg_over_time", parser: "logfmt", window: 2 * time.Minute, step: 30 * time.Second}
 	base := int64(1_800_000_000) * 1e9
 	s.start, s.end = base, base+10*int64(30*time.Second)
-	for i := 0; i < 1200; i++ { // 1200 series, more than twice the default limit of 500
+	for i := 0; i < 1200; i++ { // 1200 series, more than twice the tenant's limit of 500
 		ts := s.start - int64(s.window) + int64(i)*int64(time.Second)/3 + 7e6
 		pod := []string{"a", "b"}[i%2]
 		s.rows = append(s.rows, dynWindowRow(ts, pod, "logfmt", map[string]string{"req": "r" + strconv.Itoa(i)}, float64(i%17)))
 	}
-	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
-	got, code, body := runDynWindowScenario(t, emu, s, Config{})
-	if code != http.StatusOK {
-		t.Fatalf("%s: %d %s", s.query(), code, body)
+	t.Cleanup(func() { seriesFoldOff = false })
+	for _, off := range []bool{false, true} {
+		seriesFoldOff = off
+		emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+		got, code, body := runDynWindowScenario(t, emu, s, Config{RangeMetricRowLimit: 600, MaxStatsQuerySeries: 500})
+		if code != http.StatusOK || len(got) != 2 {
+			t.Fatalf("fold off %v: %d, %d series %.300s; want the two pods", off, code, len(got), body)
+		}
+		compareDynWindows(t, fmt.Sprintf("fold off %v", off), s, got, lokiDynamicWindows(s))
+		if reads := len(identityStatsCalls(emu)); off == (reads == 1) {
+			t.Fatalf("fold off %v: %d bucket reads; want one folded, chunks one by one", off, reads)
+		}
 	}
-	if len(got) != 2 {
-		t.Fatalf("%d series, want the two pods", len(got))
-	}
-	compareDynWindows(t, "beyond the limit", s, got, lokiDynamicWindows(s))
-	// A budget under the series the window reads: Loki's limit error, which names the budget.
-	emu = &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
-	_, code, body = runDynWindowScenario(t, emu, s, Config{RangeMetricRowLimit: 600})
-	if code == http.StatusOK || !strings.Contains(body, "maximum") && !strings.Contains(body, "limit") {
-		t.Fatalf("a budget of 600 over 1200 series answered %d %.300s, want a limit error", code, body)
-	}
-	t.Logf("budget of 600: %d %.200s", code, body)
 }
 
-// dynChunkScenario is a sliding window over many lines: a key of its own on most lines (a series per line) and a few
-// series of many lines, over 40 minutes at a 30 s step under [2m].
-func dynChunkScenario(lines int, perLine bool) dynWindowScenario {
+// dynSpanScenario is a sliding window over many lines where every series spans buckets: each request id is logged
+// twice, a bucket apart (the worst case of the fold, every series keeps its partials), over 40 minutes at a 30 s step
+// under [2m].
+func dynSpanScenario(lines int) dynWindowScenario {
+	s := dynWindowScenario{outer: "sum", by: "pod", fn: "avg_over_time", parser: "logfmt", window: 2 * time.Minute, step: 30 * time.Second}
+	base := int64(1_800_000_000) * 1e9
+	s.start, s.end = base, base+80*int64(30*time.Second)
+	span := s.end - s.start + int64(s.window) - int64(s.step)
+	for i := 0; i < lines/2; i++ {
+		ts := s.start - int64(s.window) + int64(i)*span/int64(lines/2) + 7e6
+		labels := map[string]string{"route": []string{"/x", "/y"}[i%2], "req": "r" + strconv.Itoa(i)}
+		pod := []string{"a", "b"}[i%2]
+		s.rows = append(s.rows, dynWindowRow(ts, pod, "logfmt", labels, float64(i%17)),
+			dynWindowRow(ts+int64(s.step), pod, "logfmt", labels, float64(i%13)))
+	}
+	return s
+}
+
+// The fold's worst case: every series spans buckets, so every one keeps its partials and the reads hold a series
+// per request id. The time chunks of listed_window_chunks.go bound them: under a read budget of 300 series (over a
+// tenant limit of 200) the request is read in chunks, no chunk holds more than the budget, and the answer is the one read whole and Loki's.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
+func TestSeriesFoldSpanningChunks(t *testing.T) {
+	s := dynSpanScenario(4000)
+	want := lokiDynamicWindows(s)
+	one, code, body := runDynWindowScenario(t, &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}, s, Config{})
+	if code != http.StatusOK {
+		t.Fatalf("one read: %d %.300s", code, body)
+	}
+	compareDynWindows(t, "one read", s, one, want)
+	var chunks, widest int
+	listedWindowChunksObserve = func(_, _ int64, m statsReadMeter) {
+		chunks++
+		if !m.over {
+			widest = max(widest, m.series)
+		}
+	}
+	t.Cleanup(func() { listedWindowChunksObserve = nil })
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+	got, code, body := runDynWindowScenario(t, emu, s, Config{RangeMetricRowLimit: 300, MaxStatsQuerySeries: 200})
+	if code != http.StatusOK {
+		t.Fatalf("chunked: %d %.300s", code, body)
+	}
+	compareDynWindows(t, "chunked vs Loki", s, got, want)
+	compareDynWindows(t, "chunked vs one read", s, got, one)
+	if chunks < 3 || widest > 300 || widest == 0 {
+		t.Fatalf("%d chunk reads, the widest holding %d series; want several, each within the budget of 300", chunks, widest)
+	}
+	if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
+		t.Fatalf("read raw rows: %s", raw[0])
+	}
+	t.Logf("%d chunk reads, the widest %d series", chunks, widest)
+}
+
+// The proxy's memory for a folded read does not grow with the lines: a series per line, four times as many lines
+// over the same window, answers Loki's values from a read of as many rows (the folded rows are one per bucket and
+// group), where the series read one by one hold a row per line.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
+func TestSeriesFoldMemoryBound(t *testing.T) {
+	read := func(lines int, off bool) int {
+		s := dynChunkLines(lines)
+		var widest int
+		listedWindowChunksObserve = func(_, _ int64, m statsReadMeter) { widest = max(widest, m.series) }
+		defer func() { listedWindowChunksObserve = nil }()
+		seriesFoldOff = off
+		defer func() { seriesFoldOff = false }()
+		got, code, body := runDynWindowScenario(t, &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}, s, Config{RangeMetricRowLimit: 100000})
+		if code != http.StatusOK {
+			t.Fatalf("%d lines (fold off %v): %d %.300s", lines, off, code, body)
+		}
+		compareDynWindows(t, fmt.Sprintf("%d lines", lines), s, got, lokiDynamicWindows(s))
+		return widest
+	}
+	small, large := read(1000, false), read(4000, false)
+	if large != small {
+		t.Fatalf("folded reads held %d series for 1000 lines and %d for 4000: they grow with the lines", small, large)
+	}
+	if byLine := read(1000, true); byLine <= 4*small {
+		t.Fatalf("read one by one 1000 lines held %d series, folded %d: the fold should hold far fewer", byLine, small)
+	}
+	t.Logf("folded: %d series for 1000 and 4000 lines", small)
+}
+
+// dynChunkLines is a sliding window of lines with a key of their own (a series per line), over 40 minutes at a 30 s
+// step under [2m], the lines spread so none sits on a bucket edge.
+func dynChunkLines(lines int) dynWindowScenario {
 	s := dynWindowScenario{outer: "sum", by: "pod", fn: "avg_over_time", parser: "logfmt", window: 2 * time.Minute, step: 30 * time.Second}
 	base := int64(1_800_000_000) * 1e9
 	s.start, s.end = base, base+80*int64(30*time.Second)
 	span := s.end - s.start + int64(s.window)
 	for i := 0; i < lines; i++ {
 		ts := s.start - int64(s.window) + int64(i)*span/int64(lines) + 7e6
-		labels := map[string]string{"route": []string{"/x", "/y"}[i%2]}
-		if perLine && i%5 != 0 {
-			labels["req"] = "r" + strconv.Itoa(i)
-		}
+		labels := map[string]string{"route": []string{"/x", "/y"}[i%2], "req": "r" + strconv.Itoa(i)}
 		s.rows = append(s.rows, dynWindowRow(ts, []string{"a", "b"}[i%2], "logfmt", labels, float64(i%17)))
 	}
 	return s
 }
 
-// A window read whose bucket answer would exceed the bytes it is sized for is split by time into chunks, each read on
-// its own and folded, and the merged answer equals the one read in a single call and Loki's: the read holds a series
-// per line, so one read over a long window of a busy service is as large as its lines. No raw rows are read, every
-// chunk answer fits the bytes the proxy reads from one stats answer, and few series of many lines (rows far above
-// their buckets) are read in few chunks once the first chunk's answer measured what a row costs.
-//
-// conformance: semantics/unwrap-per-series-identity-raw-rows
-func TestDynamicIdentityWindowsChunked(t *testing.T) {
-	old := maxStatsBucketResponseBytes
-	t.Cleanup(func() { maxStatsBucketResponseBytes = old })
-	for _, tc := range []struct {
-		name      string
-		perLine   bool
-		maxChunks int
-	}{{"a series per line", true, 40}, {"few series", false, 3}} {
-		s := dynChunkScenario(6000, tc.perLine)
-		want := lokiDynamicWindows(s)
-		maxStatsBucketResponseBytes = old
-		single := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
-		one, code, body := runDynWindowScenario(t, single, s, Config{})
-		if code != http.StatusOK {
-			t.Fatalf("%s, one read: %d %.300s", tc.name, code, body)
-		}
-		if reads, _ := identityStatsCalls(single); len(reads) != 1 {
-			t.Fatalf("%s: the default budget read %d bucket queries, want one", tc.name, len(reads))
-		}
-		maxStatsBucketResponseBytes = 1 << 20
-		emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
-		got, code, body := runDynWindowScenario(t, emu, s, Config{})
-		if code != http.StatusOK {
-			t.Fatalf("%s, chunked: %d %.300s", tc.name, code, body)
-		}
-		compareDynWindows(t, tc.name+" chunked vs Loki", s, got, want)
-		compareDynWindows(t, tc.name+" chunked vs one read", s, got, one)
-		reads, counts := identityStatsCalls(emu)
-		if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
-			t.Fatalf("%s: read raw rows", tc.name)
-		}
-		if counts != 1 || len(reads) < 2 && tc.perLine || len(reads) > tc.maxChunks {
-			t.Fatalf("%s: %d row counts and %d chunk reads, want one count and 2..%d reads", tc.name, counts, len(reads), tc.maxChunks)
-		}
-		t.Logf("%s: %d chunk reads under a %d KiB answer bound", tc.name, len(reads), maxStatsBucketResponseBytes>>10)
-	}
-}
-
-// The floor of the chunks is one evaluation step, whose window reaches one range back: a window holding more rows than
-// one stats answer can carry answers Loki's response-too-large error, a per-request outcome (the breaker stays
-// closed), never a read of the window's raw rows.
-//
-// conformance: semantics/unwrap-per-series-identity-raw-rows
-func TestDynamicIdentityWindowsChunkFloor(t *testing.T) {
-	old := maxStatsBucketResponseBytes
-	t.Cleanup(func() { maxStatsBucketResponseBytes = old })
-	maxStatsBucketResponseBytes = 8 << 10
-	s := dynChunkScenario(6000, true)
-	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
-	_, code, body := runDynWindowScenario(t, emu, s, Config{})
-	if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
-		t.Fatalf("read raw rows: %s", raw[0])
-	}
-	if code != http.StatusInternalServerError || !strings.Contains(body, "ResourceExhausted") {
-		t.Fatalf("%d %.300s, want Loki's response-too-large error", code, body)
-	}
-}
-
 // A repeat of a parser's series identity over a range longer than the step asks VictoriaLogs nothing and answers the
-// same series; a refresh one minute later reads only the buckets it does not hold, and answers what an uncached proxy
-// answers. Every stats call groups by the series hash. The test logs VictoriaLogs' calls and bytes per request.
+// same series. The folded buckets depend on the read's window (a series spans buckets in one read, not in another),
+// so the stats extent cache never keeps them: a refresh one minute later reads its window again, in the same number
+// of calls, and answers what an uncached proxy answers. The test logs VictoriaLogs' calls and bytes per request.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows, quality/query-range-extent-cache
 func TestDynamicIdentityWindowCacheReuse(t *testing.T) {
@@ -537,60 +572,35 @@ func TestDynamicIdentityWindowCacheReuse(t *testing.T) {
 		shim.reset()
 		cold := get(end)
 		coldCalls, coldBytes := counter.take()
-		_, coldBuckets := shim.bucketsRead()
-		if !shimReadHashAhead(shim) {
-			t.Errorf("%s: the stats calls do not group by the series hash written before the gate", q)
+		if !shimReadsFold(shim) {
+			t.Errorf("%s: the stats calls do not fold the series hash written before the gate", q)
 		}
-		shim.reset()
 		again := get(end)
 		repCalls, repBytes := counter.take()
 		if coldCalls == 0 || repCalls != 0 || string(dynamicIdentityResult(t, cold)) != string(dynamicIdentityResult(t, again)) {
 			t.Errorf("%s: cold %d calls, repeat %d calls, want a repeat with no call and the same answer", q, coldCalls, repCalls)
 		}
-		shim.reset()
 		refreshed := get(end.Add(time.Minute))
 		refCalls, refBytes := counter.take()
-		_, refBuckets := shim.bucketsRead()
-		if refBuckets == 0 || refBuckets*10 > coldBuckets {
-			t.Errorf("%s refresh: read %d buckets, the cold request %d: it should read the new ones only", q, refBuckets, coldBuckets)
+		if refCalls != coldCalls {
+			t.Errorf("%s refresh: %d calls, the cold request %d: the folded buckets are not kept", q, refCalls, coldCalls)
 		}
 		if _, want := extentQueryRange(t, uncached, q, end.Add(time.Minute-time.Hour), end.Add(time.Minute), step, nil); string(dynamicIdentityResult(t, refreshed)) != string(dynamicIdentityResult(t, want)) {
-			t.Errorf("%s refresh: the cached answer differs from the uncached one\n cached: %.300s\nuncached: %.300s", q, refreshed, want)
+			t.Errorf("%s refresh: the answer differs from the uncached one\n cached: %.300s\nuncached: %.300s", q, refreshed, want)
 		}
-		t.Logf("%s: cold %d calls %d B (%d buckets), repeat %d calls %d B, refresh %d calls %d B (%d buckets)", q, coldCalls, coldBytes, coldBuckets, repCalls, repBytes, refCalls, refBytes, refBuckets)
-	}
-	// Another outer aggregation over the same function and clause reads the same buckets (the window evaluator's stats
-	// query is the first stats pipe, grouped by the clause and the hash): the first request of each asks VictoriaLogs
-	// nothing, and answers what an uncached proxy answers.
-	for _, q := range []string{
-		`avg by (pod) (avg_over_time({app="dw"} | json | unwrap amount [1m]))`,
-		`max by (pod) (avg_over_time({app="dw"} | json | unwrap amount [1m]))`,
-	} {
-		counter.take()
-		code, body := extentQueryRange(t, p, q, end.Add(-time.Hour), end, step, nil)
-		p.statsExtentStores.wait()
-		calls, _ := counter.take()
-		if code != http.StatusOK || calls != 0 {
-			t.Errorf("%s: %d after sum by (pod) over the same function, %d VictoriaLogs calls; want 200 and none", q, code, calls)
-		}
-		if _, want := extentQueryRange(t, uncached, q, end.Add(-time.Hour), end, step, nil); string(dynamicIdentityResult(t, body)) != string(dynamicIdentityResult(t, want)) {
-			t.Errorf("%s: the answer from the shared buckets differs from the uncached one", q)
-		}
+		t.Logf("%s: cold %d calls %d B, repeat %d calls %d B, refresh %d calls %d B", q, coldCalls, coldBytes, repCalls, repBytes, refCalls, refBytes)
 	}
 }
 
-// shimReadHashAhead reports stats_query_range calls the extent shim saw, every one writing the series hash before the
-// unwrap gate (lower.Profile IdentityAhead) and grouping by it, the chunk plan's row count aside.
-func shimReadHashAhead(s *extentShim) bool {
+// shimReadsFold reports stats_query_range calls the extent shim saw, every one writing the series hash before the
+// unwrap gate (lower.Profile IdentityAhead), grouping by it and folding it (the subquery of lower.SeriesFold).
+func shimReadsFold(s *extentShim) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, c := range s.calls {
-		if strings.HasSuffix(c.query, "| stats count() as __lvp_rows") {
-			continue // the chunk plan's row count
-		}
 		hash := strings.Index(c.query, "| hash(__lvp_sid) as __lvp_sid |")
 		gate := strings.Index(c.query, "| copy ")
-		if hash < 0 || gate < hash || !strings.Contains(c.query, "__lvp_sid, __lvp_bad)") {
+		if hash < 0 || gate < hash || !strings.Contains(c.query, "__lvp_sid, __lvp_bad)") || !strings.Contains(c.query, "-__lvp_sid:in(") {
 			return false
 		}
 	}
@@ -599,8 +609,8 @@ func shimReadHashAhead(s *extentShim) bool {
 
 // FuzzDynamicIdentityWindowsMark holds the window decision of a parser's series identity on any query and step: a
 // request gets at most one mark; the hash-ahead mark only for a root identity (the one the lowering serves) whose
-// range is longer than the step, never for a max of max_over_time or a min of min_over_time; and a marked request is
-// not decided again.
+// range is longer than the step and whose hash the lowering writes ahead of the gate (never a max of max_over_time
+// or a min of min_over_time, never an extraction list); and a marked request is not decided again.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows
 func FuzzDynamicIdentityWindowsMark(f *testing.F) {
@@ -619,6 +629,7 @@ func FuzzDynamicIdentityWindowsMark(f *testing.F) {
 		{`sum(avg_over_time({app="a"} | json | unwrap n [1m]))`, 300},
 		{`sum(quantile_over_time(0.9, {app="a"} | json | unwrap n [5m]))`, 60},
 		{`sum(max_over_time({app="a"} | logfmt | unwrap _TIME [5m]))`, 60},
+		{`sum(max_over_time({app="a"} | logfmt n, m | unwrap n [5m]))`, 60},
 	} {
 		f.Add(s.q, s.step)
 	}
@@ -644,8 +655,8 @@ func FuzzDynamicIdentityWindowsMark(f *testing.F) {
 			if !p.dynamicUnwrapIdentity(q) || !ok || window <= time.Duration(step)*time.Second {
 				t.Fatalf("%q step %d: the hash ahead without a root identity over a range longer than the step (%v %s)", q, step, ok, window)
 			}
-			if extremeOfExtremes(q) || !identityAheadWritten(q) {
-				t.Fatalf("%q step %d: an extreme of extremes, or an unwrap whose gate the evaluator cannot read, reads the hash", q, step)
+			if !identityAheadWritten(q) || listedIdentity(q) {
+				t.Fatalf("%q step %d: the hash ahead for a query whose lowering writes no hash ahead of the gate", q, step)
 			}
 		}
 		if (stream || ahead) && p.dynamicIdentityWindows(out, q) != out {
@@ -654,8 +665,8 @@ func FuzzDynamicIdentityWindowsMark(f *testing.F) {
 	})
 }
 
-// A failed bucket read of a request without the hash-ahead mark falls back as before (no error); with it, an
-// oversized answer is Loki's response-too-large error and any other failure is answered as it is.
+// A failed bucket read of a request without the hash-ahead mark falls back as before (no error); with it, the failure
+// is the request's answer as it is (the time chunks cut a read past its bound and read it again).
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows
 func TestIdentityAheadReadError(t *testing.T) {
@@ -665,211 +676,22 @@ func TestIdentityAheadReadError(t *testing.T) {
 	if err := identityAheadReadError(plain, errBodyTooLarge); err != nil {
 		t.Errorf("an unmarked request: %v, want the fallback", err)
 	}
-	if err := identityAheadReadError(ahead, other); err != other {
-		t.Errorf("a marked request's backend failure: %v, want it as it is", err)
-	}
-	err := identityAheadReadError(ahead, errBodyTooLarge)
-	if err == nil || !strings.Contains(err.Error(), "ResourceExhausted") && !strings.Contains(err.Error(), "larger than max") {
-		t.Errorf("a marked request's oversized answer: %v, want Loki's response-too-large error", err)
+	for _, err := range []error{other, errBodyTooLarge} {
+		if got := identityAheadReadError(ahead, err); got != err {
+			t.Errorf("a marked request's failure %v: %v, want it as it is", err, got)
+		}
 	}
 }
 
 // identityStatsCalls are the stats_query_range calls the emulator saw that read a parser's identity buckets (the hash
-// before the gate, grouped by it), and how many row counts the chunk plan read (identityCountQuery).
-func identityStatsCalls(emu *vlemu.Emulator) (buckets []string, counts int) {
+// before the gate, grouped by it).
+func identityStatsCalls(emu *vlemu.Emulator) (buckets []string) {
 	for _, q := range emu.EndpointCalls("/select/logsql/stats_query_range") {
-		switch {
-		case strings.HasSuffix(q, "| stats count() as __lvp_rows"):
-			counts++
-		case strings.Contains(q, "hash(__lvp_sid) as __lvp_sid") && strings.Contains(q, "__lvp_sid, __lvp_bad)"):
+		if strings.Contains(q, "hash(__lvp_sid) as __lvp_sid") && strings.Contains(q, "__lvp_sid, __lvp_bad)") {
 			buckets = append(buckets, q)
 		}
 	}
-	return buckets, counts
-}
-
-// A chunked window read is not kept as per-series buckets (they hold a series per line): its folded steps are, so a
-// repeat asks VictoriaLogs nothing and a refresh one step later reads one row count and one small bucket read for the
-// step it lacks, and answers what an uncached proxy answers.
-//
-// conformance: semantics/unwrap-per-series-identity-raw-rows, quality/query-range-extent-cache
-func TestDynamicIdentityWindowsChunkedRefresh(t *testing.T) {
-	old := maxStatsBucketResponseBytes
-	t.Cleanup(func() { maxStatsBucketResponseBytes = old })
-	maxStatsBucketResponseBytes = 1 << 20
-	s := dynChunkScenario(6000, true)
-	shift := time.Now().Add(-3*time.Hour).Truncate(time.Minute).UnixNano() - s.end
-	for i := range s.rows {
-		s.rows[i].TS += shift
-	}
-	end := time.Unix(0, s.end+shift)
-	q := s.query()
-	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
-	counter := &stubCallCounter{inner: emu.Handler()}
-	srv := httptest.NewServer(counter)
-	t.Cleanup(srv.Close)
-	p := newExtentTestProxy(t, srv.URL, true, 256<<20)
-	uncachedSrv := httptest.NewServer(emu.Handler())
-	t.Cleanup(uncachedSrv.Close)
-	uncached := newExtentTestProxy(t, uncachedSrv.URL, false, 256<<20)
-	span := time.Duration(s.end - s.start)
-	get := func(e time.Time) []byte {
-		t.Helper()
-		code, body := extentQueryRange(t, p, q, e.Add(-span), e, s.step, nil)
-		p.statsExtentStores.wait()
-		if code != http.StatusOK {
-			t.Fatalf("%d %.300s", code, body)
-		}
-		return body
-	}
-	counter.take()
-	get(end)
-	cold, _ := counter.take()
-	get(end)
-	repeat, _ := counter.take()
-	before := len(emu.EndpointCalls("/select/logsql/stats_query_range"))
-	refreshed := get(end.Add(s.step))
-	refresh, _ := counter.take()
-	calls := emu.EndpointCalls("/select/logsql/stats_query_range")[before:]
-	if cold < 3 || repeat != 0 || refresh > 2 {
-		t.Fatalf("calls: cold %d, repeat %d, refresh %d; want a chunked cold read, no call on repeat, at most a count and one read on refresh: %d", cold, repeat, refresh, len(calls))
-	}
-	if _, want := extentQueryRange(t, uncached, q, end.Add(s.step-span), end.Add(s.step), s.step, nil); string(dynamicIdentityResult(t, refreshed)) != string(dynamicIdentityResult(t, want)) {
-		t.Fatalf("the refreshed answer differs from an uncached proxy's\n cached: %.300s\nuncached: %.300s", refreshed, want)
-	}
-	t.Logf("calls: cold %d, repeat %d, refresh %d", cold, repeat, refresh)
-}
-
-// The chunk plan's row count is read like any other VictoriaLogs answer: a failed count answers Loki's error and reads
-// nothing else, and an unreadable one is not taken for a count.
-//
-// conformance: semantics/unwrap-per-series-identity-raw-rows
-func TestDynamicIdentityRowCountFailure(t *testing.T) {
-	s := dynChunkScenario(200, true)
-	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
-	for _, tc := range []struct {
-		name string
-		body string
-		code int
-	}{{"a failed count", `{"error":"boom"}`, http.StatusServiceUnavailable}, {"an unreadable count", `not json`, http.StatusOK}} {
-		inner := emu.Handler()
-		var bucketReads int
-		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_ = r.ParseForm()
-			if strings.HasSuffix(r.FormValue("query"), "| stats count() as __lvp_rows") {
-				w.WriteHeader(tc.code)
-				_, _ = w.Write([]byte(tc.body))
-				return
-			}
-			if strings.Contains(r.FormValue("query"), "hash(__lvp_sid)") {
-				bucketReads++
-			}
-			inner.ServeHTTP(w, r)
-		}))
-		p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(time.Minute, 100), LogLevel: "error"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		params := url.Values{"query": {s.query()}, "start": {strconv.FormatInt(s.start/1e9, 10)}, "end": {strconv.FormatInt(s.end/1e9, 10)}, "step": {"30"}}
-		res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
-		if res.Code != http.StatusInternalServerError || bucketReads != 0 {
-			t.Errorf("%s: %d %.200s after %d bucket reads, want Loki's 500 and none", tc.name, res.Code, res.Body, bucketReads)
-		}
-		if strings.Contains(res.Body.String(), "boom") || strings.Contains(res.Body.String(), "not json") {
-			t.Errorf("%s: the answer carries VictoriaLogs' text: %s", tc.name, res.Body)
-		}
-		closeTestProxy(p)
-		backend.Close()
-	}
-}
-
-// planIdentityChunks: every step is in exactly one chunk, in order; a chunk's window holds at most the budget's rows
-// unless it is a single step; a budget above every window is one chunk.
-func TestPlanIdentityChunks(t *testing.T) {
-	counts := rowCounts{start: 0, step: 10, counts: []int64{5, 5, 50, 5, 5, 5, 5, 5, 5, 5, 5, 5}}
-	for _, budget := range []int64{1, 20, 30, 1000} {
-		chunks := planIdentityChunks(counts, 20, 110, 10, 20, budget)
-		next := int64(20)
-		for _, c := range chunks {
-			if c.first != next || c.last < c.first {
-				t.Fatalf("budget %d: chunks %v do not tile the steps", budget, chunks)
-			}
-			if c.last > c.first && counts.within(c.first-20, c.last) > budget {
-				t.Fatalf("budget %d: chunk %v holds %d rows", budget, c, counts.within(c.first-20, c.last))
-			}
-			next = c.last + 10
-		}
-		if next != 120 {
-			t.Fatalf("budget %d: chunks %v end at %d", budget, chunks, next)
-		}
-		if budget == 1000 && len(chunks) != 1 {
-			t.Fatalf("a budget above every window: %d chunks", len(chunks))
-		}
-	}
-	if (rowCounts{}).within(0, 10) != 0 {
-		t.Fatal("no counts hold rows")
-	}
-}
-
-// shimBucketReads is extentShim.bucketsRead without the row counts of the chunk plan of a parser's series identity.
-func shimBucketReads(s *extentShim) (calls int, buckets int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, c := range s.calls {
-		if strings.HasSuffix(c.query, "| stats count() as __lvp_rows") {
-			continue
-		}
-		calls++
-		buckets += (c.end - c.start) / c.step
-	}
-	return calls, buckets
-}
-
-// The series limit of a chunked read is Loki's on the whole answer: over the limit, a Logs Drilldown request keeps the
-// same busiest series with Loki's warning as one read would, and any other client gets Loki's error, as one read.
-//
-// conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
-func TestDynamicIdentityWindowsChunkedSeriesLimit(t *testing.T) {
-	old := maxStatsBucketResponseBytes
-	t.Cleanup(func() { maxStatsBucketResponseBytes = old })
-	s := dynChunkScenario(6000, true)
-	s.by = "route, pod"
-	answer := func(limit int64, headers map[string]string) (int, string) {
-		maxStatsBucketResponseBytes = limit
-		emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
-		backend := httptest.NewServer(emu.Handler())
-		defer backend.Close()
-		c := cache.New(time.Minute, 100)
-		defer c.Close()
-		p, err := New(Config{BackendURL: backend.URL, Cache: c, LogLevel: "error", MaxStatsQuerySeries: 1})
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer closeTestProxy(p)
-		params := url.Values{"query": {s.query()}, "start": {strconv.FormatInt(s.start/1e9, 10)}, "end": {strconv.FormatInt(s.end/1e9, 10)}, "step": {"30"}}
-		res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), headers)
-		var body struct {
-			Data struct {
-				Result json.RawMessage `json:"result"`
-			} `json:"data"`
-			Warnings []string `json:"warnings"`
-		}
-		if res.Code == http.StatusOK {
-			_ = json.Unmarshal(res.Body.Bytes(), &body)
-			return res.Code, string(body.Data.Result) + fmt.Sprint(body.Warnings)
-		}
-		return res.Code, res.Body.String()
-	}
-	for _, h := range []map[string]string{
-		{"X-Scope-OrgID": "0", "X-Query-Tags": "Source=grafana-lokiexplore-app"},
-		{"X-Scope-OrgID": "0"},
-	} {
-		oneCode, one := answer(old, h)
-		chunkCode, chunked := answer(1<<20, h)
-		if oneCode != chunkCode || one != chunked {
-			t.Errorf("%v: one read %d %.200s, chunked %d %.200s", h, oneCode, one, chunkCode, chunked)
-		}
-	}
+	return buckets
 }
 
 // streamLabel is the value of label in a stream's text, `{pod="a",app="b"}`.
@@ -880,4 +702,34 @@ func streamLabel(stream, label string) string {
 		}
 	}
 	return ""
+}
+
+// FuzzSeriesFold holds the folded read of a parser's series identity to the series read one by one and to the
+// reference over generated rows: any seed, outer aggregation, clause, function, parser and window (a range twice or
+// five times the step, or one the step does not divide).
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
+func FuzzSeriesFold(f *testing.F) {
+	for _, seed := range []struct {
+		seed          int64
+		outer, by, fn uint8
+		json          bool
+	}{{1, 0, 0, 0, true}, {7, 1, 1, 3, false}, {42, 2, 2, 4, true}, {99, 3, 3, 1, false}, {5, 0, 2, 2, true}} {
+		f.Add(seed.seed, seed.outer, seed.by, seed.fn, seed.json)
+	}
+	outers := []string{"sum", "avg", "max", "min"}
+	bys := []string{"", "pod", "route", "pod, route"}
+	fns := []string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time"}
+	f.Fuzz(func(t *testing.T, seed int64, outer, by, fn uint8, json bool) {
+		o, fun := outers[int(outer)%len(outers)], fns[int(fn)%len(fns)]
+		if o == "max" && fun == "max_over_time" || o == "min" && fun == "min_over_time" {
+			return // no series hash (TestDynamicIdentityWindowsKeepExtremes)
+		}
+		parser := "logfmt"
+		if json {
+			parser = "json"
+		}
+		s := generateDynWindowScenario(rand.New(rand.NewSource(seed)), o, bys[int(by)%len(bys)], fun, parser)
+		checkSeriesFoldScenario(t, fmt.Sprintf("seed %d", seed), s, "v1.53.0")
+	})
 }

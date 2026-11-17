@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -112,8 +111,8 @@ func streamIdentityOnly(ctx context.Context) bool {
 }
 
 // dynamicSeriesHashLabel is the field the lowering writes the series hash of a parser's identity into
-// (lower.DynamicUnwrapIdentity): the window evaluator's buckets group by it, and its series carry it until
-// foldDynamicIdentity folds them.
+// (lower.DynamicUnwrapIdentity): the window evaluator's buckets group by it, and its series carry it until the
+// matrix fold (matrixFoldSink) folds them.
 const dynamicSeriesHashLabel = "__lvp_sid"
 
 // identityAheadKey marks a range request of a root dynamic identity whose range is longer than the step
@@ -231,57 +230,24 @@ func identityAheadWritten(query string) bool {
 	return plan != nil && lower.DynamicIdentityAhead(plan)
 }
 
-// extremeOfExtremes reports a root dynamic identity whose outer aggregation is max over max_over_time or min over
-// min_over_time (dynamicWindowRange's shape).
-func extremeOfExtremes(query string) bool {
-	expr, ok := sharedLogQLExpr(dynamicQuery(query))
-	if !ok {
-		return false
-	}
-	va, ok := expr.(*logqlpkg.VectorAggregation)
-	if !ok {
-		return false
-	}
-	ra, ok := va.Inner.(*logqlpkg.RangeAggregation)
-	return ok && (va.Op == logqlpkg.VectorMax && ra.Op == logqlpkg.RangeMaxOverTime || va.Op == logqlpkg.VectorMin && ra.Op == logqlpkg.RangeMinOverTime)
-}
-
-// foldDynamicIdentity serves a range request marked identityAheadKey and folds its series by the query's outer
-// aggregation: the evaluator answers a series per hash of a parser's identity (the stream and the parsed labels less
-// the unwrapped one), each with its own windows, and the sum, max, min or avg by the clause's labels or none then
-// takes Loki's value of each group at each step, which drops the hash. Loki counts max_query_series on the folded
-// answer, so the reads of the series are bounded by the raw-row budget of a request that folds its series
-// (-manual-range-metric-row-limit, recordFoldBudget), and the folded answer by the tenant's series limit.
-//
-// A request whose window rows do not fit one bounded read is served in time chunks (foldDynamicIdentityChunks); base
-// is the LogsQL query of its buckets, before the stats pipe.
-func (p *Proxy) foldDynamicIdentity(w http.ResponseWriter, r *http.Request, base string, serve func(http.ResponseWriter, *http.Request) bool) bool {
-	expr, ok := sharedLogQLExpr(dynamicQuery(r.FormValue("query")))
-	va, isAgg := expr.(*logqlpkg.VectorAggregation)
-	if !ok || !isAgg {
-		return serve(w, r)
-	}
-	p.recordFoldBudget(r.Context())
-	chain := []*logqlpkg.VectorAggregation{va}
-	if p.foldDynamicIdentityChunks(w, r, base, chain, serve) {
-		return true
-	}
-	return foldVectorChain(p, w, r, chain, serve)
-}
-
 // identityAheadReadError is the answer to a failed bucket read of a request marked identityAheadKey: its buckets
 // hold a series per hash of each line's parsed labels, so the rows behind them can be as many as the window holds,
-// and the raw-row evaluator the other window reads fall back to would read them all. An answer above the bytes the
-// proxy buffers for a stats response is Loki's response-too-large error (-backend-max-buffered-response-bytes);
-// any other failure is answered as it is. Every other request falls back as before (nil).
+// and the raw-row evaluator the other window reads fall back to would read them all. The read's failure is the
+// request's answer: the time chunks (writeListedWindowChunks) cut a chunk whose read passed its bound and read it
+// again, a single step over it is Loki's limit error, and any other failure is answered as it is. Every other request
+// falls back as before (nil).
 func identityAheadReadError(ctx context.Context, err error) error {
 	if !identityAhead(ctx) {
 		return nil
 	}
-	if errors.Is(err, errBodyTooLarge) {
-		return newManualMetricResponseTooLarge(maxStatsBucketResponseBytes)
-	}
 	return err
+}
+
+// identityWindows reports a request whose stats group by a series identity the window evaluator merges on a range
+// longer than the step, in time chunks folded as they are read (listed_window_chunks.go): an extraction list's fields
+// (listedIdentityWindows), or the series hash of a parser of every key written ahead of the gate (identityAhead).
+func (p *Proxy) identityWindows(ctx context.Context, query string) bool {
+	return identityAhead(ctx) || p.listedIdentityWindows(ctx, query)
 }
 
 // dynamicIdentityAtDepth reports a query that holds, below its root and outside a binary operation, a range function

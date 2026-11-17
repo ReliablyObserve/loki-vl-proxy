@@ -804,7 +804,7 @@ func TestUnwrapOverTimeResidualShapesKeepStatsBuckets(t *testing.T) {
 			if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
 				t.Fatalf("%s: read raw rows: %s", query, raw[0])
 			}
-			calls, _ := identityStatsCalls(emu)
+			calls := identityStatsCalls(emu)
 			if len(calls) != 1 || !owWindowMergeRE.MatchString(calls[0]) {
 				t.Fatalf("%s: want one window merge grouped by the series hash, read %d", query, len(calls))
 			}
