@@ -7,15 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- A `label_replace` inside the binary operand of `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` or `stdvar` is now
-  applied once, as Loki does, on `query` and `query_range`:
-  `topk(1, label_replace(count_over_time({...}[1m]), "pod", "x-$1", "pod", "(.*)") * 2)` answered `pod="x-x-p1"`. The
-  operand's own request applied the call and the handlers applied it again over the ranking's answer; the same held
-  for a `label_replace` around the binary operation inside the ranking. Answers cached before are not served again
-  (registry `semantics/rank-binary-operand-label-replace-once`).
-
 ### Performance
 
 - `max` over `max_over_time` and `min` over `min_over_time` (by labels or none) of a label unwrapped after a json or
@@ -37,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   other binary operand keeps the binary route. A first request allocates 1.1-1.4% less than through the binary route;
   a repeated or refreshed one reads the stats extents again instead of the operand's cached answer, and allocates 38-62%
   more (one VictoriaLogs call cold, none on a repeat, either way).
+
+### Fixed
+
+- A `label_replace` inside the binary operand of `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` or `stdvar` is now
+  applied once, as Loki does, on `query` and `query_range`:
+  `topk(1, label_replace(count_over_time({...}[1m]), "pod", "x-$1", "pod", "(.*)") * 2)` answered `pod="x-x-p1"`. The
+  operand's own request applied the call and the handlers applied it again over the ranking's answer; the same held
+  for a `label_replace` around the binary operation inside the ranking. Answers cached before are not served again
+  (registry `semantics/rank-binary-operand-label-replace-once`).
 
 ## [2.319.0] - 2026-11-17
 

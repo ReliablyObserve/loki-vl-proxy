@@ -3053,7 +3053,7 @@
       "any": 35,
       "api": 109,
       "drilldown": 53,
-      "explore": 199,
+      "explore": 200,
       "grafana-datasource": 3,
       "operator": 4
     },
@@ -3078,7 +3078,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 95,
-    "wired_items": 416
+    "wired_items": 417
   },
   "gates": [
     "A/B shape selection",
