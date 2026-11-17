@@ -45,3 +45,27 @@ perf:
   locked: false
   locked_since: null
   effort_exception: null
+
+decisions:
+  - id: extraction-list-sliding-windows
+    chosen: 'on a range longer than the step, an extraction list''s series identity (the stream, its stored level fields and the listed labels, fields of the row) groups VictoriaLogs'' sub-step buckets, the window evaluator merges each series'' buckets into its window and the proxy folds the vector aggregation after the windows'
+    over:
+      - 'the stream''s series and each line''s step bucket (origin/main): each line a series of its own and each step bucket read as the window, so sum over stdvar_over_time answered 0'
+      - 'the same for a parser of every key: its identity is a hash per distinct parsed label set, one series per line when lines carry a key of their own, which the window evaluator would hold in the proxy per bucket'
+    why: |
+      Loki evaluates a range function per series over (t-range, t] and then
+      folds the vector aggregation. After an extraction list the series are
+      known from the query and are fields VictoriaLogs groups by, so the
+      partial aggregates (sum and count, mean, count and deviation, extremes)
+      of each series' sub-step buckets merge into the series' windows exactly,
+      and the fold reads one value per series. A clause by level or
+      detected_level keeps the stream's series (the line's level is read from
+      raw rows there).
+    evidence: 'TestExtractionListIdentityMatchLoki (Loki engine oracle, VictoriaLogs v1.49.0 and v1.53.0, 2026-11-17): step<range 55 -> 82 of 149 runs match (27 queries), every other request kind unchanged; TestUnwrapDynamicValueFormsMatchLoki: the 45 extraction-list rows at step<range match; TestListedIdentityWindowsVictoriaLogsCost (600,000 rows, query_range 1h, step 60s, range 5m): VictoriaLogs time -31% to -76% on five shapes, +16% on sum by (ns) over max_over_time'
+    code: [internal/proxy/unwrap_dynamic_identity.go, internal/proxy/unwrap_samples.go, internal/proxy/vector_agg_fold.go, internal/queryplan/lower/unwrap_dynamic.go]
+    tests: [TestListedUnwrapIdentity, TestDynamicIdentityHandlersReadThePlan, TestExtractionListOutsideWithoutKeepsItsGrouping, TestResponseKeyFencesFireOnTheSpellingsTheParserReads, TestExtractionListIdentityMatchLoki, TestUnwrapDynamicValueFormsMatchLoki]
+    quality: 'Every extraction-list run at step<range that differed now matches Loki; no run of any kind moves from matching to differing.'
+    performance:
+      tracked: ['TestListedIdentityWindowsVictoriaLogsCost (LVP_XLIST_WINDOWS_VLCOST=1): VictoriaLogs time of the stats calls per shape, origin/main''s route vs the windows', 'BenchmarkListedIdentityWindowsDecision, base vs head']
+      bound: 'one stats_query_range per request as before; VictoriaLogs time at or below base except sum by over max_over_time (+16%, the per-series step Loki''s answer needs)'
+    pending: true

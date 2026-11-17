@@ -2329,12 +2329,15 @@
       "test/e2e-compat/unwrap_over_time_window_test.go"
     ],
     "semantics/unwrap-over-time-range-windows-residual-forms": [
-      "internal/proxy/unwrap_over_time_window_test.go"
+      "internal/proxy/unwrap_over_time_window_test.go",
+      "internal/querycorpus/extraction_list_identity_loki_diff_test.go",
+      "internal/queryplan/lower/unwrap_dynamic_test.go"
     ],
     "semantics/unwrap-per-series-identity-raw-rows": [
       "internal/proxy/unwrap_dynamic_identity_binary_test.go",
       "internal/proxy/unwrap_dynamic_identity_cache_test.go",
       "internal/proxy/unwrap_dynamic_identity_test.go",
+      "internal/querycorpus/extraction_list_identity_loki_diff_test.go",
       "internal/querycorpus/keep_unwrap_identity_loki_diff_test.go",
       "internal/querycorpus/stddev_stdvar_loki_diff_test.go",
       "internal/querycorpus/unwrap_dynamic_identity_loki_diff_test.go",
@@ -4634,7 +4637,9 @@
     ],
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go": [
       "semantics/unwrap-bare-range-exposes-parsed-labels",
-      "semantics/unwrap-extraction-list-series-identity"
+      "semantics/unwrap-extraction-list-series-identity",
+      "semantics/unwrap-over-time-range-windows-residual-forms",
+      "semantics/unwrap-per-series-identity-raw-rows"
     ],
     "internal/querycorpus/first_last_loki_diff_test.go": [
       "semantics/keep-before-unwrap-series-identity",
@@ -4963,6 +4968,7 @@
     "internal/queryplan/lower/unwrap_dynamic_test.go": [
       "semantics/stdvar-grouped-pooled-variance",
       "semantics/unwrap-extraction-list-series-identity",
+      "semantics/unwrap-over-time-range-windows-residual-forms",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
     "internal/queryplan/lower/unwrap_keep_test.go": [

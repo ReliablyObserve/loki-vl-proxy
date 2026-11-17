@@ -1,5 +1,5 @@
 id: semantics/unwrap-over-time-range-windows-residual-forms
-title: some outer aggregations of sum, avg, max and min over time with unwrap answer the step bucket, not the window, when the range is longer than the step (open)
+title: some outer aggregations of sum, avg, max and min over time with unwrap answer the step bucket, not the window, when the range is longer than the step (open, partly fixed - after an extraction list)
 proves:
   - window-bounds-and-step-alignment
   - metric-series-identity
@@ -26,7 +26,12 @@ why: |
     over a sum, a `without` under another aggregation, a ranking `without`);
   - an empty `without ()` (semantics/without-empty-grouping-range-collapses).
   Exact windows need Loki's parsed series identity as a stats grouping first;
-  then the partial aggregates merge per window like the other forms. Found with
+  then the partial aggregates merge per window like the other forms. After an
+  extraction list of plain keys that identity is fields of the row, so the
+  buckets group by it and the windows merge (listedIdentityWindows, held to
+  recorded Loki answers by TestExtractionListIdentityMatchLoki and
+  TestUnwrapDynamicValueFormsMatchLoki); after a parser of every key the
+  stream's series stay. Found with
   an emulated VictoriaLogs while fixing semantics/unwrap-over-time-range-windows
   (not measured on a stack).
 request:

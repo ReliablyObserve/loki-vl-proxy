@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -336,6 +337,12 @@ func fenceWants(query string) map[string]bool {
 	if plan, err := queryplan.Build(expr, queryplan.Inputs{}); err == nil {
 		queryplan.Resolve(plan)
 		want["unwrap-dynamic-identity"] = lower.WritesDynamicUnwrapIdentity(plan)
+		// The request has a step of 15s: an extraction list's identity at the root over a longer range is fenced.
+		if va, ok := plan.Root.(*queryplan.VectorAgg); ok && listedWindowsPlan(plan) {
+			if ra, ok := va.In.(*queryplan.RangeAgg); ok && ra.Range > 15*time.Second {
+				want["extraction-list-windows"] = true
+			}
+		}
 	}
 	resolved := resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	if rexpr, err := logqlpkg.Parse(resolved); err == nil {
@@ -653,6 +660,7 @@ func fenceFires(name, query string) bool {
 		"stream-level-series":      func() string { return streamLevelSeriesResponseKeyVersion(query) },
 		"unwrap-dynamic-identity":  func() string { return dynamicUnwrapIdentityResponseKeyVersion(query) },
 		"binary-empty-without":     func() string { return emptyWithoutOperandResponseKeyVersion(query) },
+		"extraction-list-windows":  func() string { return listedWindowsResponseKeyVersion(r, query) },
 	}[name]() != ""
 }
 
@@ -762,6 +770,14 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"binary-empty-without", `count without () (count_over_time({a="b"}[5m])) / 2`, false},
 		{"binary-empty-without", `sum without (pod) (count_over_time({a="b"}[5m])) / 2`, false},
 		{"binary-empty-without", `sum by (a) (sum without () (count_over_time({a="b"}[5m]))) / 2`, false},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | logfmt n | unwrap n [5m]))`, true},
+		{"extraction-list-windows", `SUM BY (x) (MAX_OVER_TIME({a="b"} | JSON n, m | UNWRAP n [5m]))`, true},
+		{"extraction-list-windows", "avg(avg_over_t\u0130me({a=\"b\"} | logfmt n, m | unwrap n [1m]))", true},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | logfmt n | unwrap n [10s]))`, false},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | logfmt | unwrap n [5m]))`, false},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | json a="n" | unwrap a [5m]))`, false},
+		{"extraction-list-windows", `count by (x) (max_over_time({a="b"} | logfmt n | unwrap n [5m]))`, false},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | logfmt n | unwrap n [5m])) * 2`, false},
 		// Longer than the plan memo holds: the plan is built for the fence, uncached.
 		{"unwrap-dynamic-identity", `SUM BY (x) (AVG_OVER_TIME({a="b"} |= "` + strings.Repeat("x", validationCacheMaxQueryBytes) + `" | JSON | UNWRAP n [5m]))`, true},
 	} {

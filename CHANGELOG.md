@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- After an extraction list of plain keys (`| logfmt amount, route`, `| json amount`), `sum`, `max`, `min` and `avg`
+  (by labels or none) over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time` or
+  `stdvar_over_time` now answer Loki's values on a query_range whose range is longer than the step. For example
+  `sum(stdvar_over_time({...} | logfmt amount | unwrap amount [5m]))` at a step of one minute answered 0 (each line
+  was a series of its own, and each step bucket was read as the window). VictoriaLogs groups each step bucket by
+  the series the list names (the stream, its level fields and the listed labels), and the proxy merges each series'
+  buckets into its window, then applies the aggregation. Answers cached before the fix are not served again; a parser
+  of every key keeps the stream's series on such a range (registry `semantics/unwrap-per-series-identity-raw-rows`).
+
 - `sum`, `max`, `min` and `avg` (with or without `by`) over `avg_over_time`, `max_over_time`, `min_over_time`,
   `stddev_over_time` or `stdvar_over_time` of a label unwrapped after an extraction list (`| logfmt amount, route`,
   `| json amount`) now read Loki's series: the stream plus the labels the list names, less the unwrapped one, where
