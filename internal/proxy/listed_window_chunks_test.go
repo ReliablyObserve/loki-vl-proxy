@@ -253,7 +253,8 @@ func countOver(chunks []statsReadMeter) int {
 }
 
 // TestListedWindowChunksEdges pins the chunked read's edges: a single step whose window holds more series than the
-// budget is the one refusal (Loki's limit error, the flag in the log only), and a VictoriaLogs whose bucket read fails
+// budget answers Loki's limit error (the flag in the log only), one whose stats pass the body bound Loki's
+// message-size error, and a VictoriaLogs whose bucket read fails
 // is asked once before the window evaluator reads the raw rows, as without chunks.
 //
 // conformance: semantics/unwrap-per-series-identity-raw-rows, metric-series-identity
@@ -268,6 +269,18 @@ func TestListedWindowChunksEdges(t *testing.T) {
 		}
 		if n := len(run.chunks); n < 2 || !run.chunks[n-1].over {
 			t.Fatalf("want the read cut down to one step over the budget, read %d chunks", n)
+		}
+	})
+	t.Run("a step over the body bound", func(t *testing.T) {
+		old := maxStatsBucketResponseBytes
+		maxStatsBucketResponseBytes = 2_000
+		t.Cleanup(func() { maxStatsBucketResponseBytes = old })
+		run := runListedChunks(t, rows, query, end, 30*time.Minute, 30*time.Second, 0, false)[0]
+		if run.code != http.StatusInternalServerError || !strings.Contains(run.body, "ResourceExhausted") || strings.Contains(run.body, "backend-max-buffered") {
+			t.Fatalf("want Loki's message-size answer, got %d %.300s", run.code, run.body)
+		}
+		if n := len(run.chunks); n < 2 || !run.chunks[n-1].overBytes {
+			t.Fatalf("want the read cut down to one step over the body bound, read %d chunks", n)
 		}
 	})
 	t.Run("a failed bucket read", func(t *testing.T) {

@@ -29,10 +29,13 @@ import (
 // The chunk's size:
 //   - known up front: no chunk reads more than heavyQueryBucketThreshold buckets (the bound past which the
 //     unchunked request is read from raw rows), and a size this replica measured for the same read before;
-//   - measured: a chunk whose read passes its bound (the series before the fold, or the body bound) is halved and
-//     read again; after a read, the next chunk is sized from the share of the bound that read used, at most half of
-//     it. A single step whose window holds more than the bound is the only refusal left: Loki's limit error naming
-//     -manual-range-metric-row-limit, a bound on one chunk's memory.
+//   - measured: a chunk whose read passes its bound is cut to a quarter (listedChunkShrink) and read again; after a
+//     read, the next chunk is sized from the share of the bound that read used, at most half of it. The bounds are
+//     the series before the fold (the larger of -manual-range-metric-row-limit and the tenant's max_query_series,
+//     recordFoldBudget) and the stats body (64 MiB, maxStatsBucketResponseBytes, or
+//     -backend-max-buffered-response-bytes where the unwrap check reads the body first). A single step whose window
+//     passes one of them is the only refusal left besides Loki's own series limit: Loki's limit error naming
+//     -manual-range-metric-row-limit for the series, Loki's message-size error for the body.
 //
 // Chunks are read one after another (one stats_query_range slot each, takeStatsQueryRangeSlot), so the request holds
 // one chunk's partials and the fold's groups at a time. A request that fits one chunk reads exactly as before.
@@ -40,11 +43,12 @@ import (
 // statsReadMeterKey carries a statsReadMeter in a context.
 type statsReadMeterKey struct{}
 
-// statsReadMeter records the stats_query_range reads of a chunk: whether one passed its bound, and what they held.
+// statsReadMeter records the stats_query_range reads of a chunk: whether one passed its bound (overBytes: the body
+// bound, else the series before the fold), and what they held.
 type statsReadMeter struct {
-	over   bool
-	bytes  int
-	series int
+	over, overBytes bool
+	bytes           int
+	series          int
 }
 
 func withStatsReadMeter(ctx context.Context) (context.Context, *statsReadMeter) {
@@ -55,8 +59,13 @@ func withStatsReadMeter(ctx context.Context) (context.Context, *statsReadMeter) 
 // noteStatsReadOverflow records a read that stopped at its bound: more series than the read may hold, or a body over
 // the stats body bound.
 func noteStatsReadOverflow(ctx context.Context, err error) {
-	if m, _ := ctx.Value(statsReadMeterKey{}).(*statsReadMeter); m != nil && (errors.Is(err, errBodyTooLarge) || isSeriesLimitError(err)) {
-		m.over = true
+	if m, _ := ctx.Value(statsReadMeterKey{}).(*statsReadMeter); m != nil {
+		switch {
+		case errors.Is(err, errBodyTooLarge):
+			m.over, m.overBytes = true, true
+		case isSeriesLimitError(err):
+			m.over = true
+		}
 	}
 }
 
@@ -182,6 +191,10 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 		case meter.over && last > first:
 			size, halved = max(1, (last-first+1)/listedChunkShrink), true
 			continue
+		case meter.overBytes:
+			// One step's stats pass the body bound: Loki's answer to a response over its message size.
+			p.writeErr(w, ctx, newManualMetricResponseTooLarge(int64(p.limits().BufferedBackendBodyBytes)))
+			return true, false
 		case meter.over:
 			rows, _ := p.manualMetricRowBudget()
 			p.writeErr(w, ctx, newRowLimitError(rows, "series in the window of one step", 0))
