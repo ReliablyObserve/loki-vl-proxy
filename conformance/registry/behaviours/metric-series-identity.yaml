@@ -72,3 +72,52 @@ decisions:
       tracked: ['TestExtractionListIdentityVictoriaLogsCost (LVP_XLIST_VLCOST=1): VictoriaLogs p50 per shape, translator vs base vs head', 'BenchmarkExtractionListIdentityLowering and BenchmarkTranslateExtractionListMiss, base vs head']
       bound: 'VictoriaLogs time of the max and min shapes at or below base on v1.49.0 and v1.53.0; no other shape slower'
     pending: true
+  - id: extraction-list-sliding-windows
+    chosen: 'on a range longer than the step, an extraction list''s series identity (the stream, its stored level fields and the listed labels, fields of the row) groups VictoriaLogs'' sub-step buckets, the window evaluator merges each series'' buckets into its window and the proxy folds the vector aggregation after the windows'
+    over:
+      - 'the stream''s series and each line''s step bucket (origin/main): each line a series of its own and each step bucket read as the window, so sum over stdvar_over_time answered 0'
+      - 'the same for a parser of every key: its identity is a hash per distinct parsed label set, one series per line when lines carry a key of their own, which the window evaluator would hold in the proxy per bucket'
+    why: |
+      Loki evaluates a range function per series over (t-range, t] and then
+      folds the vector aggregation. After an extraction list the series are
+      known from the query and are fields VictoriaLogs groups by, so the
+      partial aggregates (sum and count, mean, count and deviation, extremes)
+      of each series' sub-step buckets merge into the series' windows exactly,
+      and the fold reads one value per series. A clause by level or
+      detected_level keeps the stream's series (the line's level is read from
+      raw rows there).
+    evidence: 'TestExtractionListIdentityMatchLoki (Loki engine oracle, VictoriaLogs v1.49.0 and v1.53.0, 2026-11-17): step<range 55 -> 82 of 149 runs match (27 queries), every other request kind unchanged; TestUnwrapDynamicValueFormsMatchLoki: the 45 extraction-list rows at step<range match; TestListedIdentityWindowsVictoriaLogsCost (600,000 rows, query_range 1h, step 60s, range 5m): VictoriaLogs time -31% to -76% on five shapes, +16% on sum by (ns) over max_over_time'
+    code: [internal/proxy/unwrap_dynamic_identity.go, internal/proxy/unwrap_samples.go, internal/proxy/vector_agg_fold.go, internal/queryplan/lower/unwrap_dynamic.go]
+    tests: [TestListedUnwrapIdentity, TestDynamicIdentityHandlersReadThePlan, TestExtractionListOutsideWithoutKeepsItsGrouping, TestResponseKeyFencesFireOnTheSpellingsTheParserReads, TestExtractionListIdentityMatchLoki, TestUnwrapDynamicValueFormsMatchLoki]
+    quality: 'Every extraction-list run at step<range that differed now matches Loki; no run of any kind moves from matching to differing.'
+    performance:
+      tracked: ['TestListedIdentityWindowsVictoriaLogsCost (LVP_XLIST_WINDOWS_VLCOST=1): VictoriaLogs time of the stats calls per shape, origin/main''s route vs the windows', 'BenchmarkListedIdentityWindowsDecision, base vs head']
+      bound: 'one stats_query_range per request as before; VictoriaLogs time at or below base except sum by over max_over_time (+16%, the per-series step Loki''s answer needs)'
+    pending: true
+  - id: extraction-list-window-chunks
+    chosen: 'the windows of an extraction list''s series identity on a range longer than the step are evaluated in time chunks, as a query frontend splits a range: a chunk of steps reads its buckets from the range before its first step to its last, its windows are folded into the one fold of the request as they are read, and its partials are dropped. A chunk reads at most 11,000 buckets; -manual-range-metric-row-limit bounds the series one chunk''s read holds (and the stats body bound its bytes): a chunk over either is cut to a quarter and read again, and the next chunk is sized to half the bound from what the last one held. The size a request needed is kept for ten minutes on the replica, so the next request reads no chunk over the bound. Chunks are read one after another.'
+    over:
+      - 'one read of every series and bucket before the fold (the extraction-list windows as first written): a listed label of many values over a long range passed the read bound and answered 400, or fell to the raw rows and passed the response bound (500), where Loki answers 200'
+      - 'raising the default bound, or a hidden ceiling: either leaves a request Loki answers refused past it'
+      - 'a ring of per-series partials over rows consumed in time order: VictoriaLogs answers stats_query_range series by series (sorted by result name, then labels), each with every bucket, so one series'' partials are not adjacent and the answer is not time ordered'
+      - 'splitting the request into requests of their own through the query_range handler (as the settled-steps cache evaluates its gaps): each would plan, look up caches and fence again, and the overflow would have to be read back from an answer''s text'
+      - 'halving a chunk over the bound: over a tenfold overflow it threw away three VictoriaLogs reads computed in full, a quarter two (VictoriaLogs time 15-17 s against 9-10 s on avg by (ns) (stddev_over_time(... | logfmt amount, id ...)) over 6 h)'
+    why: |
+      A step's value at t depends only on the buckets in (t-range, t]. A chunk
+      whose fetch starts a whole number of steps after the request's reads the
+      same buckets on the same grid, and the fold keeps a cell per group and
+      sample time and visits a step's series in sorted key order within the one
+      chunk that holds the step, so the chunked answer is the one-read answer
+      byte for byte. VictoriaLogs still does the aggregation (stats per series
+      and bucket); the proxy merges partials and holds one chunk at a time.
+      The only refusal left is a single step whose window holds more series than
+      the bound, Loki's limit error naming the flag; the folded answer keeps
+      Loki's series limit.
+    evidence: 'TestListedWindowChunksMatchLoki (internal/querycorpus, Loki engine oracle, VictoriaLogs v1.49.0 and v1.53.0, 2026-11-17): five shapes over 6 h at 15 s and 7 s, 2,500 listed values, every run Loki''s answer; at a bound of 600 series 37-38 chunks, the result byte for byte the one-read one; at 7 s (21,900 one-second buckets) 3 chunks under the default bound. TestListedWindowChunksMatchUnchunked and FuzzListedWindowChunks: random windows, steps, ranges and bounds, byte-identical. TestListedWindowChunksMemoryBounded: series 1,534 -> 23,939 in one read, at most 3,168 per chunk (budget 6,000).'
+    code: [internal/proxy/listed_window_chunks.go, internal/proxy/range_metric_compat.go]
+    tests: [TestListedWindowChunksMatchLoki, TestListedWindowChunksMatchUnchunked, FuzzListedWindowChunks, TestListedWindowChunksMemoryBounded, TestExtractionListOutsideWithoutKeepsItsGrouping]
+    quality: 'A long range over a listed label of many values answers 200 with Loki''s values; every request that fits one chunk reads and answers exactly as before.'
+    performance:
+      tracked: ['TestListedWindowChunksVictoriaLogsCost (LVP_XLIST_CHUNKS_VLCOST=1): status, VictoriaLogs time and calls per shape, one read vs chunks', 'TestListedIdentityWindowsVictoriaLogsCost (LVP_XLIST_WINDOWS_VLCOST=1)', 'BenchmarkListedWindowsRequest, base vs head']
+      bound: 'a request that fits one chunk: one stats_query_range as before, proxy cost within noise; a chunked request: one stats_query_range per chunk read one after another, each reading the range before its chunk again'
+    pending: true
