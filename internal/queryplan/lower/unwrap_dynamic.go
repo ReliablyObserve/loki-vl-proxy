@@ -78,6 +78,28 @@ func ListedUnwrapIdentity(p *queryplan.Plan) bool {
 	return ok && parser.Fields != nil
 }
 
+// DynamicIdentityAhead reports a plan DynamicUnwrapIdentity names of a parser of every key (not an extraction list,
+// not a fold of rows: foldsRows) whose series hash the lowering writes before the unwrap gate (Profile IdentityAhead) with the gate still ending the pipes before the first stats pipe, the text the
+// window evaluator reads: not an unwrapped label named like a reserved VictoriaLogs field in another case, whose gate
+// the lowering writes in the outbound guard's form (logsql.GuardReservedFieldCase), which no gate split reads.
+func DynamicIdentityAhead(p *queryplan.Plan) bool {
+	if !DynamicUnwrapIdentity(p) || ListedUnwrapIdentity(p) {
+		return false
+	}
+	va := p.Root.(*queryplan.VectorAgg)
+	ra := va.In.(*queryplan.RangeAgg)
+	if foldsRows(va.Op, ra.Op) {
+		// No hash: the aggregation reads the rows of its groups.
+		return false
+	}
+	for _, st := range ra.In.Stages {
+		if u, ok := st.(*queryplan.Unwrap); ok {
+			return !logsql.ReservedFieldNameOtherCase(u.Label)
+		}
+	}
+	return false
+}
+
 // dynamicIdentity is the parser of a query DynamicUnwrapIdentity names, ok false for any other.
 func dynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) (parser *queryplan.Parse, ok bool) {
 	switch va.Op {
@@ -137,6 +159,12 @@ func dynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) (parser *q
 // unpacked under dynamicPrefix, every spelling of the unwrapped label deleted, the rest packed and hashed. They are
 // written as one text from the typed pipes.
 func dynamicIdentityPipes(parser *queryplan.Parse, label string) string {
+	return dynamicHashPipes(parser, label) + dynamicRenumber
+}
+
+// dynamicHashPipes are dynamicIdentityPipes up to the hash: the second unpack, the deletion of every spelling of the
+// unwrapped label, the pack and the hash.
+func dynamicHashPipes(parser *queryplan.Parse, label string) string {
 	unpack := dynamicUnpackJSON
 	if parser.Type == logql.ParserLogfmt {
 		unpack = dynamicUnpackLogfmt
@@ -157,8 +185,8 @@ var (
 	dynamicUnpackJSON   = logsql.PipeUnpackJSON{From: "_msg", ResultPrefix: dynamicPrefix}.String()
 	dynamicUnpackLogfmt = logsql.PipeUnpackLogfmt{From: "_msg", ResultPrefix: dynamicPrefix}.String()
 	dynamicPackHash     = " " + logsql.PipePackJSON{Fields: dynamicPacked, ResultField: dynamicSeriesField}.String() + " " +
-		logsql.PipeHash{Fields: []string{dynamicSeriesField}, Result: dynamicSeriesField}.String() + " " +
-		logsql.PipeMath{Expr: translate.UnwrapValueAlias, Alias: translate.UnwrapValueAlias}.String()
+		logsql.PipeHash{Fields: []string{dynamicSeriesField}, Result: dynamicSeriesField}.String()
+	dynamicRenumber = " " + logsql.PipeMath{Expr: translate.UnwrapValueAlias, Alias: translate.UnwrapValueAlias}.String()
 )
 
 // dynamicInnerNumber reads each series' value (the inner stats' text) as a number for the outer aggregation, for the
@@ -170,7 +198,12 @@ var dynamicInnerNumber = logsql.PipeMath{Expr: "__lvp_inner", Alias: "__lvp_inne
 // keep decided it. After a parser of every key the identity pipes go first, before any stats. After an extraction
 // list the labels of a series are known from the query (listedStored and the listed labels), and the stats group by them as the parser
 // left them: no second unpack and no hash.
-func (q *unwrapQuery) withDynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, label string, clause []string) {
+//
+// ahead (Profile IdentityAhead) writes the hash of a parser of every key before the unwrap gate instead (q.ahead), so
+// the gate ends the pipes before the first stats pipe: the window evaluator reads that pipe and its gate, takes the
+// function per series and per anchored bucket and merges the windows of a range longer than the step itself. The
+// gate's math then writes the unwrapped value last, so it is not read again.
+func (q *unwrapQuery) withDynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, label string, clause []string, ahead bool) {
 	if q.keptSet {
 		return
 	}
@@ -196,7 +229,11 @@ func (q *unwrapQuery) withDynamicIdentity(va *queryplan.VectorAgg, ra *queryplan
 		q.kept, q.keptSet, q.listed, q.clause = kept, true, true, clause
 		return
 	}
-	q.pipes = append(q.pipes, dynamicIdentityPipes(parser, label))
+	if ahead {
+		q.ahead = " " + dynamicHashPipes(parser, label)
+	} else {
+		q.pipes = append(q.pipes, dynamicIdentityPipes(parser, label))
+	}
 	q.kept, q.keptSet, q.dynamic = dynamicSeries, true, true
 }
 

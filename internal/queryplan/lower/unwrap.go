@@ -243,6 +243,8 @@ type unwrapQuery struct {
 	keptSet bool
 	// dynamic says kept is the dynamic identity (withDynamicIdentity): the stream and the hash of the parsed labels.
 	dynamic bool
+	// ahead are the pipes of the dynamic identity written before the unwrap gate (Profile IdentityAhead).
+	ahead string
 	// listed says kept is the identity of an extraction list (listedStored and the listed labels): the stream, its stored level fields
 	// and the listed labels, grouped as stored (the identity derives no detected_level, a clause that names it
 	// does); clause is the vector aggregation's by clause.
@@ -623,7 +625,7 @@ func (q *unwrapQuery) text(log metricLog, field, conv, keys string, prof Profile
 	// The gate is translate.UnwrapGateFor(field, conv) written in pieces.
 	match, convert := translate.UnwrapGateParts(field, conv)
 	inRange := translate.UnwrapInRange(conv)
-	n := len(match) + len(convert) + len(translate.UnwrapFilterPipe) + len(inRange) + len(keys)
+	n := len(match) + len(convert) + len(translate.UnwrapFilterPipe) + len(inRange) + len(keys) + len(q.ahead)
 	for _, p := range q.pipes {
 		n += len(p) + 1
 	}
@@ -632,6 +634,7 @@ func (q *unwrapQuery) text(log metricLog, field, conv, keys string, prof Profile
 	// The pipes that resolve the labels of the first stats pipe, and drop the lines that have no value when they
 	// resolved the unwrapped label or a copy defines it (a stored stream value, a json expression).
 	b.WriteString(keys)
+	b.WriteString(q.ahead)
 	b.WriteString(match)
 	b.WriteString(convert)
 	b.WriteString(translate.UnwrapFilterPipe)
@@ -728,7 +731,7 @@ func unwrapVectorStats(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Pro
 	q := unwrapQuery{parser: log.parser, unpacked: log.unpacked(), pipes: pipeBuf[:0]}
 	q.kept, q.keptSet = keptIdentity(ra.In, prof)
 	if !prof.StreamIdentity {
-		q.withDynamicIdentity(va, ra, u.Label, labels)
+		q.withDynamicIdentity(va, ra, u.Label, labels, prof.IdentityAhead)
 	}
 	if rate {
 		// The unwrap stage stands where it was written: the translator takes a keep after it to decide the series.

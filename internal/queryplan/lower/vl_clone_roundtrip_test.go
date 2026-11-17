@@ -15,6 +15,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
@@ -161,6 +162,41 @@ func vlClonePlanQueries() []string {
 	return append(qs, vlCloneE2EQueries...)
 }
 
+// seriesFoldCloneTexts are the folded bucket reads of the proxy's window evaluator (SeriesFold) over a text the
+// lowering writes with the series hash ahead of the gate: the base query before its first stats pipe, the bucket
+// stats of avg over time grouped as that pipe groups, and the fold of a sum and of a max on an aligned grid and on
+// one offset by a fraction of the bucket. None for a text without the hash ahead of a gate.
+func seriesFoldCloneTexts(text string) []string {
+	first := strings.Index(text, " | stats by (")
+	if first < 0 {
+		return nil
+	}
+	ungated, field, ok := translate.SplitUnwrapGate(text[:first])
+	if !ok || !strings.HasSuffix(ungated, "| hash(__lvp_sid) as __lvp_sid") {
+		return nil
+	}
+	by := text[first+len(" | stats by ("):]
+	by = by[:strings.IndexByte(by, ')')]
+	var out []string
+	for _, grid := range [][2]string{{"60s", "-1ns"}, {"20s", "-17000000001ns"}} {
+		for _, outer := range []logql.VectorOp{logql.VectorSum, logql.VectorMax} {
+			read, ok := SeriesFold{Outer: outer, By: strings.Split(by, ", "), Columns: []string{"__lvp_sum", "__sample_count"},
+				Stats: []logsql.StatsFuncAlias{{Func: logsql.Sum{Field: "__lvp_v"}, Alias: "__lvp_sum"}, {Func: logsql.Count{}, Alias: "__sample_count"}},
+				Value: "__lvp_sum / __sample_count", ValueColumn: "__lvp_sum", CountColumn: "__sample_count", Singletons: SingletonsKept,
+				Field: field, Bucket: grid[0], Offset: grid[1], From: 1767225617000000000}.Pipes(ungated)
+			if !ok {
+				continue
+			}
+			b := text[:first]
+			for _, p := range read.Pipes {
+				b += " " + p.String()
+			}
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
 // vlClonePlanTexts are the texts the lowering sends to VictoriaLogs for every query of the plan grid.
 func vlClonePlanTexts() []string {
 	seen := map[string]bool{}
@@ -173,6 +209,17 @@ func vlClonePlanTexts() []string {
 			var texts []string
 			if op, err := PlanQuery(q, p, Profile{Caps: prof.caps, Label: prof.label, StreamFields: prof.stream}); err == nil {
 				collectVLTexts(reflect.ValueOf(&op), &texts)
+			}
+			// The window evaluator's text of a parser's series identity: the hash before the unwrap gate, and the
+			// folded bucket read the proxy sends from it (seriesFoldCloneTexts).
+			if WritesDynamicUnwrapIdentity(p) {
+				if op, err := PlanQuery(q, p, Profile{Caps: prof.caps, Label: prof.label, StreamFields: prof.stream, IdentityAhead: true}); err == nil {
+					n := len(texts)
+					collectVLTexts(reflect.ValueOf(&op), &texts)
+					for _, t := range texts[n:] {
+						texts = append(texts, seriesFoldCloneTexts(t)...)
+					}
+				}
 			}
 			if legacy, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps); err == nil {
 				if op, err := translator.DecodePhysical(legacy); err == nil {

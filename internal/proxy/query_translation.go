@@ -440,6 +440,12 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		// text, kept apart from the lowering's.
 		cacheKey = "\x00stream-identity\x00" + cacheKey
 	}
+	ahead := !baseIdentity && identityAhead(ctx)
+	if ahead {
+		// A root dynamic identity over a range longer than the step (dynamicIdentityWindows): the lowering's text with
+		// the series hash before the unwrap gate, kept apart from the text of the instant and step-bucket requests.
+		cacheKey = "\x00identity-ahead\x00" + cacheKey
+	}
 	streamLabels := p.plainStreamLabelNames(ctx, normalized)
 	if len(streamLabels) > 0 {
 		cacheKey += streamLabelsCacheKey(streamLabels)
@@ -474,6 +480,8 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		// A query the typed lowering covers is served from it: the same text, so the shadow has nothing to compare.
 		if p.queryPlanLowering {
 			prof := loweringProfile(labelFn, streamFieldsMap, caps, keepLine)
+			// A root identity over a range longer than the step writes its series hash ahead of the gate.
+			prof.IdentityAhead = ahead
 			if lowered, ok := p.lowerTranslation(ctx, canon, prof, baseIdentity); ok {
 				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
 			}

@@ -29,6 +29,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `count_over_time({...}[1m]) or rate({...} | json [1m])`) no longer answers `500`: it was read as one metric whose
   selector ran through the operator.
 - An unwrap conversion error under `label_replace` now fails with Loki's `400`, as it does under other functions.
+- `query_range` with a range longer than the step (sliding windows, the `$__auto` steps Grafana sends under a `[5m]`
+  range) now reads Loki's series for `sum`, `sum by`, `max`, `min` and `avg` over `avg_over_time`, `max_over_time`,
+  `min_over_time`, `stddev_over_time` and `stdvar_over_time` after `| json` or `| logfmt` with no `| keep`: the stream
+  plus every parsed label except the unwrapped one, as `query` and a range up to the step already did. Those requests
+  kept one series per stream or per group, so `sum by (app) (avg_over_time({app="api"} | json | unwrap duration_ms
+  [5m]))` at a 1m step answered the group's pooled mean instead of the sum of the per-series means (over six hours of
+  lines that each carry a request id, the points added up to 9.0e5 instead of 3.0e9). VictoriaLogs takes the function's partial
+  aggregates per series and per anchored bucket and, in the same stats query, folds the series that lie wholly in
+  one bucket of the read (a subquery over the read lists the series that span buckets): the answer holds a row per
+  bucket and group for those, and the partials of the spanning series, not a row per line. The proxy merges the
+  kept series' buckets into Loki's windows and adds the folded rows to the outer aggregation. One VictoriaLogs call
+  per request (more only when the series that span buckets pass the read budget, read in the time chunks of the
+  extraction list's windows); no raw rows are read; proxy memory does not grow with the lines. These reads are not
+  kept in the stats extent cache (their buckets depend on the read's window): a refresh reads its window again, and
+  identical requests in flight share one call. `max by` over `max_over_time` and `min by` over `min_over_time` keep
+  their per-group read. Answers cached before the fix are not served again
+  (semantics/unwrap-per-series-identity-raw-rows).
 
 ## [2.332.0] - 2026-11-17
 

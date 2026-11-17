@@ -2235,6 +2235,10 @@
     "internal/proxy/unwrap_dynamic_identity_cache_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/proxy/unwrap_dynamic_identity_test.go | semantics/stdvar-grouped-pooled-variance",
     "internal/proxy/unwrap_dynamic_identity_test.go | semantics/unwrap-per-series-identity-raw-rows",
+    "internal/proxy/unwrap_dynamic_identity_window_test.go | metric-series-identity",
+    "internal/proxy/unwrap_dynamic_identity_window_test.go | quality/query-range-extent-cache",
+    "internal/proxy/unwrap_dynamic_identity_window_test.go | semantics/unwrap-per-series-identity-raw-rows",
+    "internal/proxy/unwrap_dynamic_identity_window_test.go | window-bounds-and-step-alignment",
     "internal/proxy/unwrap_extent_cache_test.go | loki_api_v1_query_range",
     "internal/proxy/unwrap_extent_cache_test.go | quality/query-range-extent-cache",
     "internal/proxy/unwrap_extent_cache_test.go | quality/unwrap-query-range-extent-cache",
@@ -2254,6 +2258,7 @@
     "internal/proxy/unwrap_over_time_window_test.go | semantics/unwrap-gate-parsefloat-divergences",
     "internal/proxy/unwrap_over_time_window_test.go | semantics/unwrap-over-time-range-windows",
     "internal/proxy/unwrap_over_time_window_test.go | semantics/unwrap-over-time-range-windows-residual-forms",
+    "internal/proxy/unwrap_over_time_window_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/proxy/unwrap_over_time_window_test.go | window-bounds-and-step-alignment",
     "internal/proxy/unwrap_quantile_response_limit_test.go | semantics/unwrap-quantile-response-limit",
     "internal/proxy/unwrap_range_last_point_test.go | semantics/unwrap-over-time-range-windows",
@@ -2449,6 +2454,9 @@
     "internal/querycorpus/rank_step_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/series_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/series_agg_grid_test.go | semantics/stddev-stdvar-nested-or-binary",
+    "internal/querycorpus/series_fold_loki_diff_test.go | metric-series-identity",
+    "internal/querycorpus/series_fold_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
+    "internal/querycorpus/series_fold_scope_vl_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/shadow_rejected_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/shadow_rejected_loki_test.go | semantics/parse-error-text-parity",
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
@@ -2521,6 +2529,7 @@
     "internal/queryplan/lower/route_query_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/route_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/series_agg_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/series_fold_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unpack_test.go | semantics/translator-writes-unpack-as-unpack-json",
     "internal/queryplan/lower/unspaced_parser_test.go | semantics/translator-copies-unspaced-parser",
@@ -2532,6 +2541,7 @@
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-extraction-list-series-identity",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-over-time-range-windows-residual-forms",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-per-series-identity-raw-rows",
+    "internal/queryplan/lower/unwrap_dynamic_window_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/unwrap_keep_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/queryplan/lower/unwrap_stats_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
@@ -3152,7 +3162,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 732,
+      "go": 737,
       "playwright": 2
     },
     "page_kinds": {
