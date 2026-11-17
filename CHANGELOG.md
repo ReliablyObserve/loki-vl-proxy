@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for a `label_replace` around the binary operation inside the ranking. Answers cached before are not served again
   (registry `semantics/rank-binary-operand-label-replace-once`).
 
+### Performance
+
+- Every `query` and `query_range` request skips the SHA-256 digest of its query that the debug log lines carry
+  unless debug logging is on (4 to 9 fewer allocations per request), and the binary route prints each operand's LogQL
+  once and reads a `vector(n)` operand without a regular expression (about 20 fewer allocations per cold ranking over
+  a binary operation). Answers, requests and cache keys are unchanged.
+
 ## [2.320.0] - 2026-11-17
 
 ### Performance
