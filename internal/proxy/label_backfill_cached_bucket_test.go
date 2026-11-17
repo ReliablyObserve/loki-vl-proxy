@@ -79,37 +79,61 @@ func TestMetadataFreshness_RowsBackfilledIntoACachedNonEmptyHourAppearOnTheNextR
 }
 
 // A shipper that delivers rows a little late keeps adding rows to the newest
-// sealed hour. That hour holds rows and ended within the last hour, so it is
-// no part of a run: refreshes of an unchanged older window keep sending only
-// the edges and about one count, and the hour is revalidated on its labels TTL
-// schedule, not rescanned on every listing.
+// hour: the hour before the one the request is in, which ended within the last
+// hour. A bucket of that hour holds rows and ended within the last hour, so it
+// is no part of a run: refreshes of an unchanged older window keep sending
+// only the edges and about one count, and the hour is revalidated on its
+// labels TTL schedule, not rescanned on every listing.
+//
+// The test runs at fixed UTC times of day (inventoryClockAt). With the wall
+// clock it failed in the first two minutes of every hour, when it picked the
+// hour before that one: an hour that ended more than an hour ago, whose
+// trickled rows the run's count rightly finds and rescans (rows backfilled into
+// a settled hour appear on the next listing, the test above). In the first
+// minute of an hour the request ends before the newest hour does, so the plan
+// holds that hour as 5m and 1m buckets, which carry no row count either.
 //
 // conformance: quality/labels-backfill-into-cached-bucket
 func TestMetadataFreshness_RowsTricklingIntoTheNewestHourDoNotRescanEveryListing(t *testing.T) {
-	now := time.Now()
-	start := now.Add(-6 * time.Hour).Truncate(time.Hour).Add(7*time.Minute + 30*time.Second)
-	end := sealedWindowEnd(now)
-	newest := end.Add(-time.Minute).Truncate(time.Hour).Add(-time.Hour) // a sealed hour that ended within the last hour
-	vl := &backfillVL{trickleFrom: newest.UnixNano(), trickleTo: newest.Add(time.Hour).UnixNano()}
-	vl.trickle.Store(1)
-	_, mux := newFreshnessProxy(t, vl.server(t).URL, 24*time.Hour)
-	path := fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d", start.UnixNano(), end.UnixNano())
-	edges := inventoryEdgeCount(start, end)
-	if got := getMetadataList(t, mux, path); !contains(got, "late_label") {
-		t.Fatalf("the first listing: %v", got)
-	}
-	for i := 0; i < 4; i++ {
-		vl.trickle.Add(1)
-		time.Sleep(200 * time.Millisecond) // past the recent-tail staleness
-		scans, counts := vl.scan.Load(), vl.counts.Load()
-		_ = getMetadataList(t, mux, path)
-		scans, counts = vl.scan.Load()-scans, vl.counts.Load()-counts
-		t.Logf("refresh %d with a row trickling into the newest hour: %d scans, %d counts", i, scans, counts)
-		if scans != edges {
-			t.Fatalf("refresh %d made %d scans, want only the %d edges: the newest hour is rescanned on every listing", i, scans, edges)
-		}
-		if counts > 2 {
-			t.Fatalf("refresh %d made %d counts", i, counts)
-		}
+	for _, tc := range []struct {
+		name string
+		tod  time.Duration // UTC time of day of the test's now
+	}{
+		{name: "just past midnight", tod: 30 * time.Second},
+		{name: "first seconds of the hour", tod: 4*time.Hour + 30*time.Second},
+		{name: "end on the hour boundary", tod: 4*time.Hour + time.Minute},
+		{name: "end one minute past the hour", tod: 4*time.Hour + 2*time.Minute + 15*time.Second},
+		{name: "a few minutes past the hour", tod: 4*time.Hour + 8*time.Minute + 8*time.Second},
+		{name: "mid hour", tod: 13*time.Hour + 30*time.Minute},
+		{name: "last minute of the hour", tod: 23*time.Hour + 59*time.Minute + 30*time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			now := inventoryClockAt(t, tc.tod)
+			start := now.Add(-6 * time.Hour).Truncate(time.Hour).Add(7*time.Minute + 30*time.Second)
+			end := sealedWindowEnd(now)
+			newest := now.Truncate(time.Hour).Add(-time.Hour) // ended within the last hour
+			vl := &backfillVL{now: now, trickleFrom: newest.UnixNano(), trickleTo: newest.Add(time.Hour).UnixNano()}
+			vl.trickle.Store(1)
+			_, mux := newFreshnessProxy(t, vl.server(t).URL, 24*time.Hour)
+			path := fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d", start.UnixNano(), end.UnixNano())
+			edges := inventoryEdgeCount(start, end)
+			if got := getMetadataList(t, mux, path); !contains(got, "late_label") {
+				t.Fatalf("the first listing: %v", got)
+			}
+			for i := 0; i < 4; i++ {
+				vl.trickle.Add(1)
+				time.Sleep(200 * time.Millisecond) // past the recent-tail staleness
+				scans, counts := vl.scan.Load(), vl.counts.Load()
+				_ = getMetadataList(t, mux, path)
+				scans, counts = vl.scan.Load()-scans, vl.counts.Load()-counts
+				t.Logf("now %s: refresh %d with a row trickling into the newest hour: %d scans, %d counts", now.UTC().Format(time.RFC3339), i, scans, counts)
+				if scans != edges {
+					t.Fatalf("refresh %d made %d scans, want only the %d edges: the newest hour is rescanned on every listing", i, scans, edges)
+				}
+				if counts > 2 {
+					t.Fatalf("refresh %d made %d counts", i, counts)
+				}
+			}
+		})
 	}
 }
