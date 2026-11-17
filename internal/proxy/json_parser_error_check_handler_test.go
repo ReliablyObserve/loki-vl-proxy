@@ -297,4 +297,27 @@ func TestJSONMarkMemo(t *testing.T) {
 	if _, _ = m.mark("a", true, mark); calls != 5 {
 		t.Errorf("the raw-row form shared the stats form's entry")
 	}
+	// A level derivation's read is several KiB: it is remembered too, within the byte budget; a text above
+	// jsonMarkMemoMaxText is marked each time, and a memo whose texts would pass maxBytes starts over.
+	long := strings.Repeat("x", 8<<10)
+	m = &jsonMarkMemo{entries: map[string]jsonMarkedText{}, max: 100, maxBytes: 40 << 10}
+	calls = 0
+	for i := 0; i < 3; i++ {
+		m.mark(long, false, mark)
+	}
+	if calls != 1 {
+		t.Errorf("an 8 KiB text marked %d times, want once", calls)
+	}
+	huge := strings.Repeat("y", jsonMarkMemoMaxText+1)
+	m.mark(huge, false, mark)
+	m.mark(huge, false, mark)
+	if calls != 3 {
+		t.Errorf("a text above jsonMarkMemoMaxText marked %d times in all, want 3 (it is not kept)", calls)
+	}
+	other := strings.Repeat("z", 16<<10)
+	m.mark(other, false, mark) // 16 KiB + its mark: the budget of 40 KiB passes, the memo starts over
+	m.mark(long, false, mark)
+	if calls != 5 || m.bytes > m.maxBytes {
+		t.Errorf("calls %d, bytes %d of %d: the memo did not start over at its byte budget", calls, m.bytes, m.maxBytes)
+	}
 }

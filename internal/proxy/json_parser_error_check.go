@@ -291,8 +291,14 @@ var jsonErrorMarkSpec = logsql.JSONMark{Sentinel: jsonValidField, Flag: jsonErro
 // jsonMarkedTexts remembers the marked text of a query, by the read it is
 // for: a metric sends the same few texts on every request, and the mark is a
 // function of the text alone (no tenant, no time), so one parse serves them
-// all. A full memo starts over.
-var jsonMarkedTexts = &jsonMarkMemo{entries: map[string]jsonMarkedText{}, max: 4096}
+// all. A full memo starts over: at max entries, or when its texts would hold
+// more than maxBytes. A level derivation's read (a long `format if` chain)
+// is several KiB, so the bound is on bytes, not only on entries.
+var jsonMarkedTexts = &jsonMarkMemo{entries: map[string]jsonMarkedText{}, max: 4096, maxBytes: 16 << 20}
+
+// jsonMarkMemoMaxText is the longest query text the memo keeps; a longer one
+// is marked on every read.
+const jsonMarkMemoMaxText = 64 << 10
 
 type jsonMarkedText struct {
 	text string
@@ -300,15 +306,17 @@ type jsonMarkedText struct {
 }
 
 type jsonMarkMemo struct {
-	mu      sync.Mutex
-	entries map[string]jsonMarkedText
-	max     int
+	mu       sync.Mutex
+	entries  map[string]jsonMarkedText
+	max      int
+	maxBytes int
+	bytes    int
 }
 
 // mark is mark(query) through the memo; rows tells the raw-row form.
 func (m *jsonMarkMemo) mark(query string, rows bool, mark func(string) (string, bool)) (string, bool) {
-	if len(query) > validationCacheMaxQueryBytes {
-		return mark(query) // a long text is marked each time: the memo stays small in bytes too
+	if len(query) > jsonMarkMemoMaxText {
+		return mark(query) // a very long text is marked each time: the memo stays bounded in bytes
 	}
 	key := "s" + query
 	if rows {
@@ -321,11 +329,14 @@ func (m *jsonMarkMemo) mark(query string, rows bool, mark func(string) (string, 
 		return e.text, e.ok
 	}
 	text, ok := mark(query)
+	size := len(key) + len(text)
 	m.mu.Lock()
-	if len(m.entries) >= m.max {
+	if len(m.entries) >= m.max || m.maxBytes > 0 && m.bytes+size > m.maxBytes {
 		clear(m.entries)
+		m.bytes = 0
 	}
 	m.entries[key] = jsonMarkedText{text: text, ok: ok}
+	m.bytes += size
 	m.mu.Unlock()
 	return text, ok
 }
