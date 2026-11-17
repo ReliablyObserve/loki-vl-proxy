@@ -40,7 +40,7 @@ why: |
   (the translator is frozen): it closes when metric queries are served from
   the plan.
 
-  Fixed in the proxy (#PRNUM): the request rewrite that writes keywords in
+  Fixed in the proxy (#1644): the request rewrite that writes keywords in
   lower case and drops comments (lowercaseQueryKeywords) also writes the
   metric calls and parentheses of a query Loki accepts in one spelling
   (logql.CanonicalSpelling): no blank between a metric call's name and its
@@ -71,7 +71,7 @@ compare:
     The series of rate({app="x"}[5m]), as without the blank.
 gap:
   status: fixed
-  fixed_by: "#PRNUM"
+  fixed_by: "#1644"
   impact: edge
   effort: S
   area: 'internal/logql canonical_spelling.go (CanonicalSpelling), applied by internal/proxy http_utils.go lowercaseQueryKeywords (requestQueryText) before any handler'

@@ -30,7 +30,7 @@ why: |
   and semantics/vector-call-blank-before-parenthesis-as-query).
 
   label_replace, sort_desc and the other metric calls spelled so are fixed
-  (#PRNUM): the request rewrite writes a metric call without the blanks before
+  (#1644): the request rewrite writes a metric call without the blanks before
   its parenthesis before any handler reads the query (logql.CanonicalSpelling),
   so they get the requests and the answer of the spelling without them (the
   keyword blank sweep's known rows fell from 343 to 56). What is left:
