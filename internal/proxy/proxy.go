@@ -529,7 +529,7 @@ type Config struct {
 	DefaultMaxQueryLength time.Duration
 	// MaxStatsQuerySeries caps the number of series returned by stats_query_range
 	// (count_over_time, rate, bytes_rate with explicit by()). Matches Loki's
-	// max_query_series behaviour. 0 means use the built-in default (500).
+	// max_query_series behaviour. 0 means use the built-in default (1000).
 	MaxStatsQuerySeries int
 	// ExecutionLimits bounds per-request work and the bytes a request may pull
 	// out of VictoriaLogs. Zero values select the built-in defaults.
@@ -804,7 +804,7 @@ type Proxy struct {
 	rangeMetricRowLimit                   int           // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
 	orderedJSONMaxBytes                   int64         // ordered JSON metric byte cap (0=1 GiB)
 	labelFilterRefillMaxPages             int           // extra pages read to fill a filtered log page (0=none)
-	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=5000)
+	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=1000)
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	heavyQueryLimiter                     *heavyQueryLimiter
 	metadataScanLimiter                   *metadataScanLimiter

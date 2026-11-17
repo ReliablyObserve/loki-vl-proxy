@@ -20,7 +20,7 @@ series it receives; it sorts them and draws them.
 
 Loki (v3.7.7) answers these like any other metric query: every series, exact
 values on its evaluation timestamps, no sample for a step whose window holds no
-line. Above `max_query_series` (default 500) it returns a partial result with
+line. Above `max_query_series` (Loki's default is 500; the proxy's is 1000) it returns a partial result with
 the warning `maximum number of series (N) reached for a single query; returning
 partial results` for Drilldown and a `400` for every other client (Loki v3.7.7;
 `limits/series-limit-error` and `limits/drilldown-partial-with-warning` in the
@@ -42,7 +42,7 @@ proxyStatsQueryRange
                  | unpack_json if (-f:*) fields (f) | filter f:!""
                  | stats by (f) count()
       limit = tenant's max_query_series
-              (-tenant-limits → -tenant-default-limits → -max-stats-query-series → 500)
+              (-tenant-limits → -tenant-default-limits → -max-stats-query-series → 1000)
       Drilldown: take a -stats-query-range-concurrency slot
       one stats_query_range call, read until limit+1 series
       under the limit: every series (Drilldown and plain clients alike)

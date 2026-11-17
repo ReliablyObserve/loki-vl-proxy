@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The default `-max-stats-query-series`, the proxy's `max_query_series`, rises from 500 to 1000. The proxy answers
+  faster than Loki, so it can afford more series per query than Loki's own default of 500, which stays Loki's. A metric
+  query with 501 to 1000 series, which answered Loki's HTTP 400 `maximum number of series (N) reached for a single
+  query`, now answers, and Logs Drilldown's partial result (the busiest N series and Loki's warning) holds up to 1000
+  series. `/loki/api/v1/drilldown-limits` and `/config/tenant/v1/limits` publish 1000 where no flag or tenant limit sets
+  it, and the chart's commented `max-stats-query-series` example and the generated configuration and limits pages say
+  1000. Operators who want Loki's 500 set `-max-stats-query-series=500`, or `max_query_series` in
+  `-tenant-limits` or `-tenant-default-limits`. Sizing: `-backend-max-buffered-response-bytes` (64 MiB by default)
+  holds about 1,500 dense series over 1,000 steps, so a full 1000-series result over 1,000 steps (about 40 MB) fits,
+  and over about 1,600 steps the byte budget has to be raised with the cap.
+
+### Fixed
+
+- After an extraction list of plain keys (`| logfmt amount, route`, `| json amount`), `sum`, `max`, `min` and `avg`
+  (by labels or none) over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time` or
+  `stdvar_over_time` now answer Loki's values on a query_range whose range is longer than the step. For example
+  `sum(stdvar_over_time({...} | logfmt amount | unwrap amount [5m]))` at a step of one minute answered 0 (each line
+  was a series of its own, and each step bucket was read as the window). VictoriaLogs groups each step bucket by
+  the series the list names (the stream, its level fields and the listed labels), and the proxy merges each series'
+  buckets into its window, then applies the aggregation. Answers cached before the fix are not served again; a parser
+  of every key keeps the stream's series on such a range (registry `semantics/unwrap-per-series-identity-raw-rows`).
+  A listed label of many values over a long range (`| logfmt amount, user_id` over hours or a day) is read in time
+  chunks, each with the range before it, and folded chunk by chunk, so it answers Loki's values with the proxy holding
+  one chunk at a time. A chunk reads at most 11,000 buckets, and `-manual-range-metric-row-limit` now bounds the
+  series one chunk's read holds: a chunk over it is cut to a quarter and read again, and the next chunks are sized from what
+  the last one held. Only a single step whose window holds more series than the limit is refused. A request that fits
+  one chunk reads exactly as before.
+
+## [2.323.0] - 2026-11-17
+
 ### Fixed
 
 - `count by (...)` over `stdvar_over_time` of an unwrapped label now answers the number of series of each group, as
@@ -22,20 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variance did (-17% to +7% measured); without a parser the series include each line's detected_level, which the query
   derives as count over `stddev_over_time` does (32 to 268 ms on 600,000 rows, the cost of count over
   `stddev_over_time`).
-- After an extraction list of plain keys (`| logfmt amount, route`, `| json amount`), `sum`, `max`, `min` and `avg`
-  (by labels or none) over `avg_over_time`, `max_over_time`, `min_over_time`, `stddev_over_time` or
-  `stdvar_over_time` now answer Loki's values on a query_range whose range is longer than the step. For example
-  `sum(stdvar_over_time({...} | logfmt amount | unwrap amount [5m]))` at a step of one minute answered 0 (each line
-  was a series of its own, and each step bucket was read as the window). VictoriaLogs groups each step bucket by
-  the series the list names (the stream, its level fields and the listed labels), and the proxy merges each series'
-  buckets into its window, then applies the aggregation. Answers cached before the fix are not served again; a parser
-  of every key keeps the stream's series on such a range (registry `semantics/unwrap-per-series-identity-raw-rows`).
-  A listed label of many values over a long range (`| logfmt amount, user_id` over hours or a day) is read in time
-  chunks, each with the range before it, and folded chunk by chunk, so it answers Loki's values with the proxy holding
-  one chunk at a time. A chunk reads at most 11,000 buckets, and `-manual-range-metric-row-limit` now bounds the
-  series one chunk's read holds: a chunk over it is cut to a quarter and read again, and the next chunks are sized from what
-  the last one held. Only a single step whose window holds more series than the limit is refused. A request that fits
-  one chunk reads exactly as before.
 
 ## [2.322.0] - 2026-11-17
 

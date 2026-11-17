@@ -487,13 +487,13 @@ func TestStddevStdvarParenthesizedOuterQuery(t *testing.T) {
 }
 
 // Loki counts max_query_series on the answer of the aggregation
-// so 600 streams in 3 apps are 3 series, while 600 groups
-// are over the limit. The operand's own series are not what the limit counts.
+// so 1200 streams in 3 apps are 3 series, while 1200 groups
+// are over the default limit of 1000. The operand's own series are not what the limit counts.
 //
 // conformance: semantics/stddev-stdvar-grouped-values
 func TestStddevStdvarCountsSeriesLimitOnTheGroups(t *testing.T) {
 	var rows []vlemu.Row
-	for i := 0; i < 600; i++ {
+	for i := 0; i < 1200; i++ {
 		rows = append(rows, vlemu.Row{TS: 1_800_000_000_000_000_000 + int64(i%5)*1e9 + int64(i), Stream: fmt.Sprintf(`{app=%q,pod="p%d"}`, []string{"a", "b", "c"}[i%3], i), Value: 1, Msg: "line"})
 	}
 	p := foldedStdProxy(t, rows)
@@ -511,7 +511,7 @@ func TestStddevStdvarCountsSeriesLimitOnTheGroups(t *testing.T) {
 				}
 				code, body = foldedStdRequest(t, p, op+` by (pod) (count_over_time({env="production"}[5m]))`, ranged)
 				if code != 400 || !strings.Contains(string(body), "max_query_series") && !strings.Contains(string(body), "series") {
-					t.Fatalf("%d: 600 groups want the series limit error: %s", code, body)
+					t.Fatalf("%d: 1200 groups want the series limit error: %s", code, body)
 				}
 			})
 		}

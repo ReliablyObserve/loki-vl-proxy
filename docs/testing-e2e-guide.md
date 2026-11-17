@@ -148,7 +148,7 @@ VictoriaLogs, plus every variant above, and checks each against Loki.
 | 13108 | loki-vl-proxy-no-metadata | Loki, `-emit-structured-metadata=false` | off | Structured metadata emission disabled |
 | 13103 | loki-vl-proxy-tail | Loki (default) | off | Synthetic tail mode, browser origin allowlist |
 | 13105 | loki-vl-proxy-tail-native | Loki (default) | off | Native VL tail mode |
-| 13109 | loki-vl-proxy-vmauth | Loki (underscores / translated) | off | Backend routed through vmauth; the one variant left at the default `-max-stats-query-series` (500), for the series-limit e2e cases (every other variant matches the stack Loki's `max_query_series: 1000000`) |
+| 13109 | loki-vl-proxy-vmauth | Loki (underscores / translated) | off | Backend routed through vmauth; the one variant left at the default `-max-stats-query-series` (1000), for the series-limit e2e cases (every other variant matches the stack Loki's `max_query_series: 1000000`) |
 | 13150 | loki-vl-proxy-peer-a | Loki | off | L3 peer ring member (zone-a), cache-tier benchmarks |
 | 13151 | loki-vl-proxy-peer-b | Loki | off | L3 peer ring member (zone-b), cache-tier benchmarks |
 

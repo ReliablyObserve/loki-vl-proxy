@@ -34,8 +34,9 @@ import (
 
 const listedChunksAnswersPath = "testdata/listed-window-chunks-loki-diff.jsonl.gz"
 
-// listedChunksBudget is the bound of the chunked runs: more than Loki's default series limit (the bound of a read
-// that folds afterwards is the row limit then), less than the series of the request.
+// listedChunksBudget is the bound of the chunked runs: more than the differential's series limit (500, which
+// runMetricHandler sets; the bound of a read that folds afterwards is the row limit then), less than the series of the
+// request.
 const listedChunksBudget = 600
 
 // listedChunksQueries are the shapes: sum, avg and max over the functions that merge from buckets, by a stream label

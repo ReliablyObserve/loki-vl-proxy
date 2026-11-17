@@ -608,7 +608,7 @@ services:
       # variants at once OOM-killed VictoriaLogs).
       - "-labels-cache-warm=false"
       # The one proxy left at the built-in -max-stats-query-series default
-      # (500, Loki's own default max_query_series), so the series-limit
+      # (1000, above Loki's own default max_query_series of 500), so the series-limit
       # behaviour (Loki's error for a plain client, a partial result with a
       # warning for Logs Drilldown) is exercised by the e2e suite
       # (TestRangeMetricCompatibilityOffsetAndSeriesLimit). Every other proxy

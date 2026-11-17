@@ -2129,6 +2129,7 @@
     "internal/proxy/tenant_query_limits_test.go | limits/per-tenant-override",
     "internal/proxy/tenant_query_limits_test.go | limits/published-equals-enforced",
     "internal/proxy/tenant_query_limits_test.go | limits/query-timeout-per-tenant",
+    "internal/proxy/tenant_query_limits_test.go | limits/series-limit-error",
     "internal/proxy/tenant_query_limits_test.go | loki_api_v1_drilldown_limits",
     "internal/proxy/tenant_query_limits_test.go | loki_api_v1_query",
     "internal/proxy/tenant_query_limits_test.go | loki_api_v1_query_range",
