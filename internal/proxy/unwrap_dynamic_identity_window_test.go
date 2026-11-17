@@ -740,3 +740,64 @@ func FuzzSeriesFold(f *testing.F) {
 		checkSeriesFoldScenario(t, fmt.Sprintf("seed %d", seed), s, "v1.53.0", true)
 	})
 }
+
+// A folded read whose text would pass VictoriaLogs' default query length (the read's filter is written three times:
+// the read and the subquery's two uses) is never sent: the read is sent again reading every series, which answers
+// the reference's values with no error.
+//
+// conformance: semantics/unwrap-per-series-identity-raw-rows
+func TestSeriesFoldTooLongReadsEverySeries(t *testing.T) {
+	s := generateDynWindowScenario(rand.New(rand.NewSource(11)), "sum", "pod", "avg_over_time", "json")
+	// The same query with a short line filter is folded.
+	short := s
+	short.parser = `json != "nope"`
+	shortEmu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+	if _, code, body := runDynWindowScenario(t, shortEmu, short, Config{}); code != http.StatusOK || len(identityStatsCalls(shortEmu)) != 1 ||
+		!strings.Contains(identityStatsCalls(shortEmu)[0], "__lvp_ks:in(") {
+		t.Fatalf("a short filter: %d, reads %v: %.200s", code, identityStatsCalls(shortEmu), body)
+	}
+	long := strings.Repeat("x", 5000)
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: "v1.53.0"}
+	backend := httptest.NewServer(emu.Handler())
+	defer backend.Close()
+	c := cache.New(time.Minute, 100)
+	defer c.Close()
+	p, err := New(Config{BackendURL: backend.URL, Cache: c, LogLevel: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestProxy(p)
+	// A line filter no line holds: the emulator selects every row, as it does without it.
+	q := strings.Replace(s.query(), `{app="dw"}`, `{app="dw"} != "`+long+`"`, 1)
+	params := url.Values{"query": {q}, "start": {strconv.FormatInt(s.start/1e9, 10)}, "end": {strconv.FormatInt(s.end/1e9, 10)},
+		"step": {strconv.FormatInt(int64(s.step/time.Second), 10)}}
+	res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+	if res.Code != http.StatusOK {
+		t.Fatalf("%d %.300s", res.Code, res.Body)
+	}
+	reads := identityStatsCalls(emu)
+	if len(reads) != 1 || strings.Contains(reads[0], "__lvp_ks:in(") || len(reads[0]) > 16384 {
+		t.Fatalf("%d reads (folded %v), want one read of every series under the query length", len(reads), len(reads) > 0 && strings.Contains(reads[0], "__lvp_ks:in("))
+	}
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]map[int64]float64{}
+	for _, series := range resp.Data.Result {
+		key := labelsSortedKey(series.Metric)
+		got[key] = map[int64]float64{}
+		for _, point := range series.Values {
+			v, _ := strconv.ParseFloat(point[1].(string), 64)
+			got[key][int64(point[0].(float64))*1e9] = v
+		}
+	}
+	compareDynWindows(t, "too long", s, got, lokiDynamicWindows(s))
+}

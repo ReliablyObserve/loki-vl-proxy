@@ -2422,7 +2422,6 @@
     "internal/querycorpus/series_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/series_agg_grid_test.go | semantics/stddev-stdvar-nested-or-binary",
     "internal/querycorpus/series_fold_loki_diff_test.go | metric-series-identity",
-    "internal/querycorpus/series_fold_loki_diff_test.go | semantics/unwrap-gate-parsefloat-divergences",
     "internal/querycorpus/series_fold_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/series_fold_scope_vl_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/shadow_rejected_loki_test.go | architecture-syntax-package-layering",

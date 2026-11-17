@@ -2361,7 +2361,6 @@
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
       "internal/proxy/unwrap_over_time_window_test.go",
-      "internal/querycorpus/series_fold_loki_diff_test.go",
       "internal/querycorpus/unwrap_dynamic_value_forms_loki_diff_test.go",
       "internal/translate/unwrap_gate_syntax_test.go",
       "internal/translator/unwrap_gate_property_test.go",
@@ -4944,7 +4943,6 @@
     ],
     "internal/querycorpus/series_fold_loki_diff_test.go": [
       "metric-series-identity",
-      "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
     "internal/querycorpus/series_fold_scope_vl_test.go": [

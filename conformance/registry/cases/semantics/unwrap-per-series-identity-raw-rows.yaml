@@ -132,9 +132,12 @@ why: |
   stream's series on such a window (lower.DynamicIdentityAhead). Answers cached
   before are fenced (@unwrap-dynamic-identity-v2). Proven by
   TestSeriesFoldMatchLoki (Loki engine oracle, VictoriaLogs v1.53.0 and v1.49.0:
-  14 queries over a data set of a request id per line and a mixed one with
-  repeated series, request ids logged twice and a NaN, steps of 60 s, 20 s, 7 s
-  and 120 s and bounds off the grid, every run matches Loki in one folded read),
+  16 queries over a data set of a request id per line, a mixed one with
+  repeated series, request ids logged twice, a NaN and a stream without a level,
+  and one where every series spans buckets, steps of 60 s, 20 s, 7 s and 120 s
+  and bounds off the grid; every run matches Loki in one folded read, and the
+  spanning set read in time chunks under a budget of 600 series answers the one
+  read's answer byte for byte),
   TestUnwrapDynamicIdentityMatchLoki at step < range,
   TestDynamicIdentityWindowsMatchLokiReference and FuzzSeriesFold (generated rows
   and windows, a range the step does not divide, bounds off the step's grid, json
@@ -150,8 +153,7 @@ why: |
 
   Still open: rate_counter and quantile_over_time
   (semantics/unwrap-quantile-sum-by-group-quantile) keep their previous series;
-  a label filter between the parser and the unwrap under the Loki profile
-  (semantics/unwrap-per-series-identity-label-filter); first and last over a
+  first and last over a
   range longer than the step (semantics/unwrap-first-last-range-longer-than-step);
   rate_counter's extrapolated value (semantics/unwrap-rate-counter-window-extrapolation);
   an identity under a ranking or a label_replace over a range longer than the
