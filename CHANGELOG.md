@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stored-line and unwrap-value field names, the vector matching type) now call `internal/translate` and
   `internal/queryplan/physical` directly instead of going through `internal/translator`: sixteen fewer files import the
   translator. No answer, request or cache key changes.
+- The route parity test now also gates the VictoriaLogs requests every plan-corpus query sends under each request
+  profile, and counts its VictoriaLogs calls (`X-Loki-VL-Backend-Calls`) cold and on an exact repeat, recorded per
+  profile and construct in `conformance/registry/query-plan.json`: a change that adds a call fails, and one that moves
+  a request fails until it is recorded. So that the probes the proxy races (the json and logfmt parse-risk probes, the
+  checks beside an ordered-JSON stats attempt) send the same requests on every run, a request the test marks waits for
+  every probe it started before reading the verdicts, in the probes' order. Nothing in the proxy marks a request: no
+  answer, status, request sent to VictoriaLogs or cache key changes.
 
 ### Fixed
 
