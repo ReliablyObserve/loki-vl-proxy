@@ -42,7 +42,7 @@ A route or a linked test is not a full compatibility claim.
 | `/loki/api/v1/label/{name}/values` | GET, POST | partial | VictoriaLogs native | explore, drilldown, datasource, api | 50 | 15 | internal/proxy/label_handlers.go:122 |
 | `/loki/api/v1/labels` | GET, POST | proven | VictoriaLogs native | explore, drilldown, datasource, api | 84 | 18 | internal/proxy/label_handlers.go:26 |
 | `/loki/api/v1/patterns` | GET, POST | proven | hybrid | drilldown, api | 23 | 3 | internal/proxy/patterns.go:163 |
-| `/loki/api/v1/query` | GET, POST | proven | hybrid | explore, drilldown, api | 104 | 40 | internal/proxy/proxy.go:3086 |
+| `/loki/api/v1/query` | GET, POST | proven | hybrid | explore, drilldown, api | 104 | 40 | internal/proxy/proxy.go:3094 |
 | `/loki/api/v1/query_range` | GET, POST | proven | hybrid | explore, drilldown, api | 217 | 64 | internal/proxy/proxy.go:2625 |
 | `/loki/api/v1/rules` | GET | partial | VictoriaLogs native | api | 10 | 2 | internal/proxy/alerting.go:99 |
 | `/loki/api/v1/rules/{namespace}` | GET | partial | VictoriaLogs native | api | 4 | 0 | internal/proxy/alerting.go:99 |

@@ -758,14 +758,21 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 	// read the cache sends itself carries the rewritten query already.
 	sentParams := params
 	var stripUnwrapCounter func([]byte) ([]byte, error)
+	// A metric checked for JSON parser errors marks the lines VictoriaLogs
+	// cannot vouch for in the same stats pass (json_parser_error_check.go).
+	var stripJSONMarks func([]byte) ([]byte, []jsonErrorHit, error)
 	if fetch, _ := ctx.Value(statsExtentFetchKey{}).(bool); !fetch {
 		params, stripUnwrapCounter, _ = unwrapCheckFrom(ctx).countingStatsQuery(path, params)
+		params, stripJSONMarks, _ = jsonErrorCheckFrom(ctx).jsonCountingStatsQuery(ctx, path, params)
 	}
 	if resp, ok, err := p.statsExtentPost(ctx, path, params); ok {
 		if err == nil && stripUnwrapCounter != nil {
 			if err := p.unwrapStripResponse(resp, stripUnwrapCounter); err != nil {
 				return nil, err
 			}
+		}
+		if err == nil && stripJSONMarks != nil {
+			resp, _, err = p.jsonStripResponse(ctx, resp, stripJSONMarks, path, sentParams)
 		}
 		return resp, err
 	}
@@ -818,6 +825,12 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 	if stripUnwrapCounter != nil {
 		if err := p.unwrapStripResponse(resp, stripUnwrapCounter); err != nil {
 			return nil, err
+		}
+	}
+	if stripJSONMarks != nil {
+		var refetched bool
+		if resp, refetched, err = p.jsonStripResponse(ctx, resp, stripJSONMarks, path, sentParams); err != nil || refetched {
+			return resp, err
 		}
 	}
 	if witness != nil {
@@ -888,7 +901,7 @@ func (p *Proxy) vlGetCoalescedWithStatus(ctx context.Context, key, path string, 
 // vlPostCoalesced wraps vlPostInner with request coalescing and a CB guard.
 func (p *Proxy) vlPostCoalesced(ctx context.Context, key, path string, params url.Values) (int, []byte, error) {
 	key += ":scope:" + p.contextScopeFingerprint(ctx)
-	if c := unwrapCheckFrom(ctx); c != nil && len(c.probes) > 0 {
+	if c := unwrapCheckFrom(ctx); c != nil && (len(c.probes) > 0 || c.json != nil) {
 		// The answer is read by this request's unwrap conversion check; another
 		// request's call does not report its hits here. A check without a probe
 		// (it only counts the nan values) records nothing: the rewrite and the

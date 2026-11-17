@@ -145,7 +145,7 @@ var keepIdentityKnown = func() map[string]map[string]string {
 		"sum("+keep("rate_counter")+")", "max by (app) ("+keep("rate_counter")+")")
 	// Under label_replace and in a binary operation between two such functions the operand keeps the stream's
 	// series (and label_replace's range answer hits the series limit, as before).
-	add("semantics/keep-before-unwrap-identity-in-operands", all, keepIdentityExtraQueries[2], keepIdentityExtraQueries[4])
+	add("semantics/keep-before-unwrap-identity-in-operands", all, keepIdentityExtraQueries[2])
 	return known
 }()
 
