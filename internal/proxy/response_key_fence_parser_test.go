@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -353,6 +354,12 @@ func fenceWants(query string) map[string]bool {
 	if plan, err := queryplan.Build(expr, queryplan.Inputs{}); err == nil {
 		queryplan.Resolve(plan)
 		want["unwrap-dynamic-identity"] = lower.WritesDynamicUnwrapIdentity(plan)
+		// The request has a step of 15s: an extraction list's identity at the root over a longer range is fenced.
+		if va, ok := plan.Root.(*queryplan.VectorAgg); ok && listedWindowsPlan(plan) {
+			if ra, ok := va.In.(*queryplan.RangeAgg); ok && ra.Range > 15*time.Second {
+				want["extraction-list-windows"] = true
+			}
+		}
 		want["count-stdvar-series"] = lower.WritesCountVarianceSeries(plan)
 	}
 	resolved := resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -685,9 +692,10 @@ func fenceFires(name, query string) bool {
 		"rank-over-binary-lr": func() string {
 			return rankOverBinaryLabelReplaceFence(query)
 		},
-		"binary-empty-without":  func() string { return emptyWithoutOperandResponseKeyVersion(query) },
-		"unwrap-blank-spelling": func() string { return unwrapBlankSpellingResponseKeyVersion(query) },
-		"count-stdvar-series":   func() string { return countVarianceResponseKeyVersion(query) },
+		"binary-empty-without":    func() string { return emptyWithoutOperandResponseKeyVersion(query) },
+		"unwrap-blank-spelling":   func() string { return unwrapBlankSpellingResponseKeyVersion(query) },
+		"extraction-list-windows": func() string { return listedWindowsResponseKeyVersion(r, query) },
+		"count-stdvar-series":     func() string { return countVarianceResponseKeyVersion(query) },
 	}[name]() != ""
 }
 
@@ -799,6 +807,14 @@ func TestResponseKeyFencesFireOnTheSpellingsTheParserReads(t *testing.T) {
 		{"binary-empty-without", `count without () (count_over_time({a="b"}[5m])) / 2`, false},
 		{"binary-empty-without", `sum without (pod) (count_over_time({a="b"}[5m])) / 2`, false},
 		{"binary-empty-without", `sum by (a) (sum without () (count_over_time({a="b"}[5m]))) / 2`, false},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | logfmt n | unwrap n [5m]))`, true},
+		{"extraction-list-windows", `SUM BY (x) (MAX_OVER_TIME({a="b"} | JSON n, m | UNWRAP n [5m]))`, true},
+		{"extraction-list-windows", "avg(avg_over_t\u0130me({a=\"b\"} | logfmt n, m | unwrap n [1m]))", true},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | logfmt n | unwrap n [10s]))`, false},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | logfmt | unwrap n [5m]))`, false},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | json a="n" | unwrap a [5m]))`, false},
+		{"extraction-list-windows", `count by (x) (max_over_time({a="b"} | logfmt n | unwrap n [5m]))`, false},
+		{"extraction-list-windows", `sum(stdvar_over_time({a="b"} | logfmt n | unwrap n [5m])) * 2`, false},
 		{"count-stdvar-series", `count by (x) (stdvar_over_time({a="b"} | unwrap n [5m]))`, true},
 		{"count-stdvar-series", `COUNT BY (x) (STDVAR_OVER_TIME({a="b"} | LOGFMT | UNWRAP n [5m]))`, true},
 		{"count-stdvar-series", "count by (x) (stdvar_over_t\u0130me({a=\"b\"} | json | unwrap n [5m]))", true},

@@ -1663,6 +1663,8 @@
     "internal/proxy/line_fields_without_parser_test.go | profiles/parsed-fields-without-parser",
     "internal/proxy/line_format_error_test.go | profiles/tail-line-format-parse-error-status",
     "internal/proxy/line_format_error_test.go | semantics/line-format-template-error-keeps-entry",
+    "internal/proxy/listed_window_chunks_test.go | metric-series-identity",
+    "internal/proxy/listed_window_chunks_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/proxy/logfmt_risk_candidates_test.go | loki_api_v1_query_range",
     "internal/proxy/logfmt_risk_candidates_test.go | parser-logfmt",
     "internal/proxy/logfmt_risk_candidates_test.go | quality/logfmt-parse-risk-candidates",
@@ -1802,6 +1804,7 @@
     "internal/proxy/ordered_json_steps_cache_test.go | loki_api_v1_query_range",
     "internal/proxy/ordered_json_steps_cache_test.go | quality/query-range-settled-steps",
     "internal/proxy/ordered_json_steps_cache_test.go | window-bounds-and-step-alignment",
+    "internal/proxy/ordered_json_unparsed_row_test.go | json-metric-unparsed-line-lookup-once",
     "internal/proxy/ordered_json_valid_split_test.go | semantics/json-error-filter-metric-split-pushdown",
     "internal/proxy/ordered_json_valid_split_test.go | semantics/pipeline-error-text-parity",
     "internal/proxy/ordered_json_vector_cache_test.go | semantics/logfmt-existence-filter-ungrouped-sum",
@@ -2313,6 +2316,8 @@
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-bare-range-exposes-parsed-labels",
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-conversion-error-names-another-line",
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-extraction-list-series-identity",
+    "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-over-time-range-windows-residual-forms",
+    "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/first_last_loki_diff_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/querycorpus/first_last_loki_diff_test.go | semantics/last-over-time-vl149-row-max-wrong-row",
     "internal/querycorpus/first_last_loki_diff_test.go | semantics/unwrap-first-last-range-longer-than-step",
@@ -2364,6 +2369,8 @@
     "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/listed_window_chunks_loki_diff_test.go | metric-series-identity",
+    "internal/querycorpus/listed_window_chunks_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/querycorpus/logql_surface_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/metric_stages_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/odd_spellings_loki_test.go | semantics/parser-reads-unicode-blank-as-white-space",
@@ -2483,6 +2490,7 @@
     "internal/queryplan/lower/unwrap_dynamic_split_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/stdvar-grouped-pooled-variance",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-extraction-list-series-identity",
+    "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-over-time-range-windows-residual-forms",
     "internal/queryplan/lower/unwrap_dynamic_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/unwrap_keep_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/queryplan/lower/unwrap_stats_test.go | architecture-syntax-package-layering",
@@ -3101,7 +3109,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 720,
+      "go": 723,
       "playwright": 2
     },
     "page_kinds": {
@@ -3121,7 +3129,7 @@
     "shape_covers_distinct": 110,
     "shapes_path_only": 8,
     "unwired_items": 93,
-    "wired_items": 425
+    "wired_items": 426
   },
   "gates": [
     "A/B shape selection",

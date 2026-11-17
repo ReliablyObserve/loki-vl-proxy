@@ -108,6 +108,12 @@ func TestDynamicIdentityHandlersReadThePlan(t *testing.T) {
 		{`topk(1, sum by (app) (avg_over_time({app="a"} | json | unwrap n [5m])))`, "300", false},
 		{`sum(sum_over_time({app="a"} | json | unwrap n [5m]))`, "60", false},
 		{`sum by (app) (quantile_over_time(0.9, {app="a"} | json | unwrap n [5m]))`, "60", false},
+		// An extraction list's series are fields of the row: the window evaluator merges them, the identity stays.
+		{`sum(stdvar_over_time({app="a"} | logfmt n | unwrap n [5m]))`, "60", false},
+		{`sum by (app) (max_over_time({app="a"} | json n, m | unwrap n [5m]))`, "60", false},
+		{`topk(1, sum by (app) (avg_over_time({app="a"} | logfmt n, m | unwrap n [5m])))`, "60", true},
+		// A clause by a level label reads the line's level from raw rows: the stream's series stay.
+		{`sum by (level) (max_over_time({app="a"} | logfmt n | unwrap n [5m]))`, "60", true},
 	} {
 		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?step="+tc.step, nil)
 		out := p.dynamicIdentityWindows(r, tc.q)
