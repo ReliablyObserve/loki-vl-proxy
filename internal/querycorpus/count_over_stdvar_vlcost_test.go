@@ -78,8 +78,10 @@ func TestCountOverStdvarVictoriaLogsCost(t *testing.T) {
 			}
 			return time.Since(t0), len(body)
 		}
-		const rounds = 21
-		var b strings.Builder
+		const rounds = 15
+		// Every text of every query is run in one interleave, the first of a turn moving by one each round, after one
+		// warm-up run of each: the texts of different queries are measured under the same conditions.
+		var texts []string
 		for _, q := range queries {
 			canon := logql.CanonicalizeLogRanges(q)
 			old, err := translator.TranslateLogQLWithCapabilities(canon, label, nil, caps)
@@ -96,27 +98,31 @@ func TestCountOverStdvarVictoriaLogsCost(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			texts := []string{old, op.(physical.VLQuery).Text}
-			ds := make([][]time.Duration, len(texts))
-			size := make([]int, len(texts))
-			for _, text := range texts {
-				run(text)
+			texts = append(texts, old, op.(physical.VLQuery).Text)
+		}
+		ds := make([][]time.Duration, len(texts))
+		size := make([]int, len(texts))
+		for _, text := range texts {
+			run(text)
+		}
+		for i := 0; i < rounds; i++ {
+			for k := range texts {
+				j := (i + k) % len(texts)
+				d, sz := run(texts[j])
+				ds[j], size[j] = append(ds[j], d), sz
 			}
-			for i := 0; i < rounds; i++ {
-				for k := range texts {
-					j := (i + k) % len(texts)
-					d, sz := run(texts[j])
-					ds[j], size[j] = append(ds[j], d), sz
-				}
-			}
-			var p50, p90 [2]time.Duration
-			for j, d := range ds {
-				sort.Slice(d, func(a, c int) bool { return d[a] < d[c] })
-				p50[j], p90[j] = d[rounds/2], d[rounds*9/10]
-			}
+		}
+		p50, p90 := make([]time.Duration, len(texts)), make([]time.Duration, len(texts))
+		for j, d := range ds {
+			sort.Slice(d, func(a, c int) bool { return d[a] < d[c] })
+			p50[j], p90[j] = d[rounds/2], d[rounds*9/10]
+		}
+		var b strings.Builder
+		for i, q := range queries {
+			o, h := 2*i, 2*i+1
 			fmt.Fprintf(&b, "\n  %-90s base p50 %9s p90 %9s (%5d B)  head p50 %9s p90 %9s (%5d B)  p50 %+6.1f%%", q,
-				p50[0].Round(time.Microsecond), p90[0].Round(time.Microsecond), size[0], p50[1].Round(time.Microsecond),
-				p90[1].Round(time.Microsecond), size[1], 100*(float64(p50[1])-float64(p50[0]))/float64(p50[0]))
+				p50[o].Round(time.Microsecond), p90[o].Round(time.Microsecond), size[o], p50[h].Round(time.Microsecond),
+				p90[h].Round(time.Microsecond), size[h], 100*(float64(p50[h])-float64(p50[o]))/float64(p50[o]))
 		}
 		t.Logf("VictoriaLogs %s, %d rows, stats_query at the end, %d runs each, interleaved:%s", prof.version, n, rounds, b.String())
 		srv.Stop()

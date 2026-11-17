@@ -59,6 +59,7 @@ var stddevShapes = []string{
 	`count by (app) (%s({job="json"} | json | unwrap duration_ms [5m]))`,
 	`count by (app) (%s({job="json"} | unwrap duration_ms [5m]))`,
 	`count by (app, pod) (%s({job="logfmt"} | logfmt | unwrap duration_ms [5m]))`,
+	`count by (app) (%s({job="meta"} | unwrap d [5m]))`,
 }
 
 // stddevExtraQueries are queries of both functions.
@@ -128,7 +129,8 @@ func stddevQueries(t *testing.T) []metricQuery {
 	return out
 }
 
-// stddevFixture is the data of every query: six streams, a line of duration_ms every 23 seconds on each.
+// stddevFixture is the data of every query: nine streams, a line of duration_ms (or structured metadata d) every 23
+// seconds on each.
 func stddevFixture() metricFixture {
 	f := metricFixture{Streams: []map[string]string{
 		{"job": "json", "app": "api", "pod": "a", "service_name": "api"},
@@ -137,6 +139,10 @@ func stddevFixture() metricFixture {
 		{"job": "logfmt", "app": "api", "pod": "a", "service_name": "api"},
 		{"job": "logfmt", "app": "api", "pod": "b", "service_name": "api"},
 		{"job": "logfmt", "app": "web", "pod": "c", "service_name": "web"},
+		// The value in structured metadata, read without a parser: two series of app=api and one of app=web.
+		{"job": "meta", "app": "api", "pod": "m", "service_name": "api"},
+		{"job": "meta", "app": "api", "pod": "n", "service_name": "api"},
+		{"job": "meta", "app": "web", "pod": "o", "service_name": "web"},
 	}}
 	span := metricWindow + 20*time.Minute
 	first := metricEnd.Add(-span)
@@ -155,11 +161,14 @@ func stddevFixture() metricFixture {
 			}
 			v := strconv.FormatFloat(float64((i*7919+s*104729)%5000)+0.25*float64(i%4), 'f', -1, 64)
 			line := `{"duration_ms":` + v + `}`
-			if labels["job"] == "logfmt" {
+			metadata := map[string]string{"detected_level": metricStreamLevels[s%len(metricStreamLevels)]}
+			switch labels["job"] {
+			case "logfmt":
 				line = "duration_ms=" + v
+			case "meta":
+				line, metadata["d"] = "tick", v
 			}
-			f.Entries = append(f.Entries, metricEntry{Stream: s, TS: at.UnixNano(), Line: line,
-				Metadata: map[string]string{"detected_level": metricStreamLevels[s%len(metricStreamLevels)]}})
+			f.Entries = append(f.Entries, metricEntry{Stream: s, TS: at.UnixNano(), Line: line, Metadata: metadata})
 		}
 	}
 	sort.SliceStable(f.Entries, func(i, j int) bool { return f.Entries[i].TS < f.Entries[j].TS })
