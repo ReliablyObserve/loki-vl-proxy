@@ -25,12 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-recent-tail-refresh-max-staleness` is reused, so a repeat inside it sends no count; non-empty 5-minute and
   1-minute buckets (no row count), hours with rows from the last hour (where shippers' late rows land, revalidated
   every labels TTL) and listings that cannot be counted keep their revalidation schedule.
-- A `label_replace` inside the binary operand of `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` or `stdvar` is now
-  applied once, as Loki does, on `query` and `query_range`:
-  `topk(1, label_replace(count_over_time({...}[1m]), "pod", "x-$1", "pod", "(.*)") * 2)` answered `pod="x-x-p1"`. The
-  operand's own request applied the call and the handlers applied it again over the ranking's answer; the same held
-  for a `label_replace` around the binary operation inside the ranking. Answers cached before are not served again
-  (registry `semantics/rank-binary-operand-label-replace-once`).
 
 ### Performance
 
@@ -38,6 +32,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unless debug logging is on (4 to 9 fewer allocations per request), and the binary route prints each operand's LogQL
   once and reads a `vector(n)` operand without a regular expression (about 20 fewer allocations per cold ranking over
   a binary operation). Answers, requests and cache keys are unchanged.
+
+## [2.321.0] - 2026-11-17
+
+### Fixed
+
+- A `label_replace` inside the binary operand of `topk`, `bottomk`, `sort`, `sort_desc`, `stddev` or `stdvar` is now
+  applied once, as Loki does, on `query` and `query_range`:
+  `topk(1, label_replace(count_over_time({...}[1m]), "pod", "x-$1", "pod", "(.*)") * 2)` answered `pod="x-x-p1"`. The
+  operand's own request applied the call and the handlers applied it again over the ranking's answer; the same held
+  for a `label_replace` around the binary operation inside the ranking. Answers cached before are not served again
+  (registry `semantics/rank-binary-operand-label-replace-once`).
+
+## [2.320.1] - 2026-11-17
+
+### Changed
+
+- The query plan no longer describes a `vector(n)` inside a chain of binary operations as a constant when it is
+  spelled with a blank before its parenthesis (`vector (2) > on(x) (rate(...) * 2)`, `(vector (2) + sum(...)) * 2`):
+  the proxy's binary route reads each operation of a chain on its own and sends that spelling on as a query, so the
+  plan leaves such a chain to the translator, as it already did for a `vector (n)` next to a query (registry
+  `semantics/vector-call-blank-before-parenthesis-as-query`, still open). No answer, request or cache key changes.
 
 ## [2.320.0] - 2026-11-17
 
